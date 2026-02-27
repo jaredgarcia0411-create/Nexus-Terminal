@@ -35,6 +35,7 @@ export default function NexusTerminal() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'journal' | 'performance' | 'filter' | 'backtesting'>('dashboard');
   const [trades, setTrades] = useState<Trade[]>([]);
   const [user, setUser] = useState<{ name: string; email: string; picture?: string } | null>(null);
+  const [contextFiles, setContextFiles] = useState<File[]>([]);
   const [globalTags, setGlobalTags] = useState<string[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -810,8 +811,30 @@ export default function NexusTerminal() {
                     <label className="flex flex-col items-center gap-2 p-8 border-2 border-dashed border-white/5 rounded-2xl hover:border-emerald-500/20 hover:bg-emerald-500/5 transition-all cursor-pointer group">
                       <Upload className="w-8 h-8 text-zinc-500 group-hover:text-emerald-500 transition-colors" />
                       <span className="text-sm font-medium text-zinc-400 group-hover:text-zinc-200">Add context files (.csv, .json, .txt)</span>
-                      <input type="file" className="hidden" multiple />
+                      <input 
+                        type="file" 
+                        className="hidden" 
+                        multiple 
+                        onChange={(e) => {
+                          if (e.target.files) {
+                            setContextFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                          }
+                        }}
+                      />
                     </label>
+                    {contextFiles.length > 0 && (
+                      <div className="flex flex-wrap gap-2 justify-center max-w-xl">
+                        {contextFiles.map((file, idx) => (
+                          <div key={idx} className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1 rounded-full text-[10px] font-mono">
+                            <X 
+                              className="w-3 h-3 cursor-pointer hover:text-rose-500" 
+                              onClick={() => setContextFiles(prev => prev.filter((_, i) => i !== idx))}
+                            />
+                            {file.name}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <p className="text-[10px] text-zinc-600 uppercase font-bold tracking-widest">Context files help the engine understand your strategy parameters</p>
                   </div>
 
