@@ -1,20 +1,37 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Nexus Terminal - Vercel Deployment Guide
 
-# Run and deploy your AI Studio app
+This application is ready to be deployed to Vercel. Follow these steps to get your custom URL and live application.
 
-This contains everything you need to run your app locally.
+## 1. Push to GitHub
+1. Create a new repository on GitHub.
+2. Push your code to the repository.
 
-View your app in AI Studio: https://ai.studio/apps/304e4c06-726a-4a1d-b267-a67a10fd9b98
+## 2. Deploy to Vercel
+1. Go to [Vercel](https://vercel.com) and click **"Add New"** > **"Project"**.
+2. Import your GitHub repository.
+3. In the **Environment Variables** section, add the following:
 
-## Run Locally
+| Variable | Description |
+|----------|-------------|
+| `GOOGLE_CLIENT_ID` | Your Google OAuth Client ID |
+| `GOOGLE_CLIENT_SECRET` | Your Google OAuth Client Secret |
+| `SCHWAB_CLIENT_ID` | Your Schwab API Client ID |
+| `SCHWAB_CLIENT_SECRET` | Your Schwab API Client Secret |
+| `JWT_SECRET` | A long random string for session security |
+| `NEXT_PUBLIC_GEMINI_API_KEY` | Your Gemini API Key |
 
-**Prerequisites:**  Node.js
+*Note: `APP_URL` is optional on Vercel as the app will automatically detect its URL.*
 
+## 3. Configure OAuth Redirect URIs
+Once Vercel gives you a URL (e.g., `https://nexus-terminal.vercel.app`), you must update your OAuth providers:
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### Google Console
+- **Authorized Redirect URI**: `https://your-app.vercel.app/api/auth/google/callback`
+
+### Schwab Developer Portal
+- **Authorized Redirect URI**: `https://your-app.vercel.app/api/auth/schwab/callback`
+
+## 4. Custom Domain
+1. In Vercel, go to **Settings** > **Domains**.
+2. Enter your purchased domain (e.g., `www.yourtradingjournal.com`).
+3. Follow the DNS instructions provided by Vercel to connect your domain registrar.

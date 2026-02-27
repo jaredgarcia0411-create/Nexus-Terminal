@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
+import { getBaseUrl } from '@/lib/env';
 
 export async function GET() {
   const clientId = process.env.SCHWAB_CLIENT_ID;
-  const redirectUri = `${process.env.APP_URL}/api/auth/schwab/callback`;
+  const redirectUri = `${getBaseUrl()}/api/auth/schwab/callback`;
   
   // Schwab OAuth 2.0 URL
   const params = new URLSearchParams({

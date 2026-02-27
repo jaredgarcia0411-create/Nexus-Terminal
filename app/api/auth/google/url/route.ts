@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
+import { getBaseUrl } from '@/lib/env';
 
 export async function GET() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
-  const redirectUri = `${process.env.APP_URL}/api/auth/google/callback`;
+  const redirectUri = `${getBaseUrl()}/api/auth/google/callback`;
   
   const params = new URLSearchParams({
     client_id: clientId!,

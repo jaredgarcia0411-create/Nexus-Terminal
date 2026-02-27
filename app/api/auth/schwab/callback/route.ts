@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
+import { getBaseUrl } from '@/lib/env';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -14,7 +15,7 @@ export async function GET(request: Request) {
       code,
       client_id: process.env.SCHWAB_CLIENT_ID,
       client_secret: process.env.SCHWAB_CLIENT_SECRET,
-      redirect_uri: `${process.env.APP_URL}/api/auth/schwab/callback`,
+      redirect_uri: `${getBaseUrl()}/api/auth/schwab/callback`,
       grant_type: 'authorization_code',
     });
 

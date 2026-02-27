@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
 import { createSession } from '@/lib/auth';
+import { getBaseUrl } from '@/lib/env';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
       code,
       client_id: process.env.GOOGLE_CLIENT_ID,
       client_secret: process.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: `${process.env.APP_URL}/api/auth/google/callback`,
+      redirect_uri: `${getBaseUrl()}/api/auth/google/callback`,
       grant_type: 'authorization_code',
     });
 
