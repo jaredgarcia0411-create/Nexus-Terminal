@@ -35,7 +35,7 @@ const config: NextAuthConfig = {
     },
   },
   pages: {
-    signIn: '/',
+    signIn: '/login',
   },
 };
 
