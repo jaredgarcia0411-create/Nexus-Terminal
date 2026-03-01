@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
 import { getBaseUrl } from '@/lib/env';
+import { setSchwabTokens } from '@/lib/auth';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -20,17 +21,14 @@ export async function GET(request: Request) {
     });
 
     const { access_token, refresh_token } = tokenResponse.data;
-
-    // Store Schwab tokens in a secure way (e.g., database associated with user)
-    // For now, we'll just send a success message to the parent window
-    // In a real app, you'd associate these tokens with the logged-in user session.
+    await setSchwabTokens(access_token, refresh_token);
 
     return new NextResponse(`
       <html>
         <body>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'SCHWAB_AUTH_SUCCESS', tokens: { access_token: '${access_token}' } }, '*');
+              window.opener.postMessage({ type: 'SCHWAB_AUTH_SUCCESS' }, '*');
               window.close();
             } else {
               window.location.href = '/';

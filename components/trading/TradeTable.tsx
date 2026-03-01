@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { Trade } from '@/lib/types';
 import { formatCurrency, getPnLColor, formatR } from '@/lib/trading-utils';
 import { format } from 'date-fns';
-import { Tag as TagIcon, X, Plus } from 'lucide-react';
+import { X, Plus } from 'lucide-react';
 
 interface TradeTableProps {
   trades: Trade[];
@@ -13,6 +13,7 @@ interface TradeTableProps {
   onSelectAll: (ids: string[]) => void;
   onAddTag: (tradeId: string, tagName: string) => void;
   onRemoveTag: (tradeId: string, tagName: string) => void;
+  onUpdateNotes?: (tradeId: string, notes: string) => void;
   onDeleteGlobalTag?: (tagName: string) => void;
   globalTags: string[];
   readOnly?: boolean;
@@ -25,6 +26,7 @@ export default function TradeTable({
   onSelectAll,
   onAddTag,
   onRemoveTag,
+  onUpdateNotes,
   onDeleteGlobalTag,
   globalTags,
   readOnly = false
@@ -32,6 +34,8 @@ export default function TradeTable({
   const allSelected = trades.length > 0 && trades.every(t => selectedIds.has(t.id));
   const [activeTagInput, setActiveTagInput] = useState<string | null>(null);
   const [newTagValue, setNewTagValue] = useState('');
+  const [activeNotesInput, setActiveNotesInput] = useState<string | null>(null);
+  const [notesDraft, setNotesDraft] = useState('');
 
   return (
     <div className="overflow-x-auto rounded-xl border border-white/5 bg-[#121214]">
@@ -52,6 +56,7 @@ export default function TradeTable({
             <th className="px-4 py-3">Symbol</th>
             <th className="px-4 py-3">Side</th>
             <th className="px-4 py-3">Tags</th>
+            <th className="px-4 py-3">Notes</th>
             <th className="px-4 py-3 text-right">Avg Entry</th>
             <th className="px-4 py-3 text-right">Avg Exit</th>
             <th className="px-4 py-3 text-right">Qty</th>
@@ -106,7 +111,7 @@ export default function TradeTable({
                   {!readOnly && (
                     <div className="relative">
                       {activeTagInput === trade.id ? (
-                        <div className="absolute left-0 top-0 z-50 bg-[#18181b] border border-white/10 rounded-lg p-2 shadow-2xl min-w-[150px]">
+                        <div className="absolute left-0 bottom-0 z-50 bg-[#18181b] border border-white/10 rounded-lg p-2 shadow-2xl min-w-[150px] max-h-[200px] overflow-y-auto">
                           <input
                             autoFocus
                             type="text"
@@ -165,6 +170,53 @@ export default function TradeTable({
                   )}
                 </div>
               </td>
+              <td className="px-4 py-3 max-w-[220px]" onClick={(e) => e.stopPropagation()}>
+                {readOnly ? (
+                  <span className="text-zinc-500 text-xs line-clamp-2">{trade.notes?.trim() || '-'}</span>
+                ) : activeNotesInput === trade.id ? (
+                  <div className="space-y-2">
+                    <textarea
+                      autoFocus
+                      value={notesDraft}
+                      onChange={(e) => setNotesDraft(e.target.value)}
+                      rows={3}
+                      className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs focus:outline-none focus:border-emerald-500/50 resize-none"
+                      placeholder="Add trade notes..."
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          onUpdateNotes?.(trade.id, notesDraft.trim());
+                          setActiveNotesInput(null);
+                          setNotesDraft('');
+                        }}
+                        className="text-[10px] uppercase font-bold text-emerald-500 hover:text-emerald-400"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => {
+                          setActiveNotesInput(null);
+                          setNotesDraft('');
+                        }}
+                        className="text-[10px] uppercase font-bold text-zinc-500 hover:text-zinc-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setActiveNotesInput(trade.id);
+                      setNotesDraft(trade.notes || '');
+                    }}
+                    className="text-xs text-left text-zinc-400 hover:text-white transition-colors"
+                  >
+                    {trade.notes?.trim() ? trade.notes : 'Add note'}
+                  </button>
+                )}
+              </td>
               <td className="px-4 py-3 text-right font-mono">{formatCurrency(trade.avgEntryPrice)}</td>
               <td className="px-4 py-3 text-right font-mono">{formatCurrency(trade.avgExitPrice)}</td>
               <td className="px-4 py-3 text-right font-mono text-zinc-400">{trade.totalQuantity}</td>
@@ -185,7 +237,7 @@ export default function TradeTable({
           ))}
           {trades.length === 0 && (
             <tr>
-              <td colSpan={10} className="px-4 py-12 text-center text-zinc-500 italic">
+              <td colSpan={readOnly ? 11 : 12} className="px-4 py-12 text-center text-zinc-500 italic">
                 No trades found.
               </td>
             </tr>
@@ -193,12 +245,14 @@ export default function TradeTable({
         </tbody>
       </table>
       
-      {activeTagInput && (
+      {(activeTagInput || activeNotesInput) && (
         <div 
           className="fixed inset-0 z-40" 
           onClick={() => {
             setActiveTagInput(null);
             setNewTagValue('');
+            setActiveNotesInput(null);
+            setNotesDraft('');
           }} 
         />
       )}

@@ -1,12 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Papa from 'papaparse';
+import Image from 'next/image';
 import { 
-  TrendingUp, 
   Activity, 
-  Layers, 
   Settings, 
   Search, 
   Bell, 
@@ -18,7 +17,6 @@ import {
   List,
   Plus,
   Trash2,
-  ChevronDown,
   Filter
 } from 'lucide-react';
 
@@ -53,6 +51,20 @@ export default function NexusTerminal() {
   const [selectedFilterTags, setSelectedFilterTags] = useState<Set<string>>(new Set());
   const [bulkTagInput, setBulkTagInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isManualTradeOpen, setIsManualTradeOpen] = useState(false);
+  const [manualTrade, setManualTrade] = useState({
+    symbol: '',
+    direction: 'LONG' as Direction,
+    entryPrice: '',
+    exitPrice: '',
+    quantity: '',
+    date: format(new Date(), 'yyyy-MM-dd'),
+    initialRisk: '',
+  });
+  const [activeSidebarPanel, setActiveSidebarPanel] = useState<'none' | 'notifications' | 'settings' | 'user'>('none');
+  const googlePopupPollRef = useRef<number | null>(null);
+  const userRef = useRef<{ name: string; email: string; picture?: string } | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   // Load data from localStorage on mount
   useEffect(() => {
@@ -90,36 +102,61 @@ export default function NexusTerminal() {
 
   const sortTrades = (list: Trade[]) => [...list].sort((a, b) => b.date.getTime() - a.date.getTime());
 
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  const clearGooglePopupPoll = () => {
+    if (googlePopupPollRef.current !== null) {
+      window.clearInterval(googlePopupPollRef.current);
+      googlePopupPollRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      clearGooglePopupPoll();
+    };
+  }, []);
+
   const filteredTrades = sortTrades(trades.filter(trade => {
     // Search Filter (Always active if query exists)
     if (searchQuery) {
       if (!trade.symbol.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     }
 
-    // Date Range Filter (Filter Page)
-    if (activeTab === 'filter') {
-      if (startDate || endDate) {
-        const tradeDate = new Date(trade.date);
-        const start = startDate ? parseISO(startDate) : new Date(0);
-        const end = endDate ? parseISO(endDate) : new Date(8640000000000000);
-        if (!isWithinInterval(tradeDate, { start, end })) return false;
-      }
+    // Date Range Filter
+    if (startDate || endDate) {
+      const tradeDate = new Date(trade.date);
+      const start = startDate ? parseISO(startDate) : new Date(0);
+      const end = endDate ? parseISO(endDate) : new Date(8640000000000000);
+      if (!isWithinInterval(tradeDate, { start, end })) return false;
+    }
 
-      // Presets
-      if (filterPreset !== 'all') {
-        const days = parseInt(filterPreset);
-        const cutoff = subDays(new Date(), days);
-        if (!isAfter(new Date(trade.date), cutoff)) return false;
-      }
-      
-      // Tags
-      if (selectedFilterTags.size > 0) {
-        if (!trade.tags || !trade.tags.some(tag => selectedFilterTags.has(tag))) return false;
-      }
+    // Presets
+    if (filterPreset !== 'all') {
+      const days = parseInt(filterPreset);
+      const cutoff = subDays(new Date(), days);
+      if (!isAfter(new Date(trade.date), cutoff)) return false;
+    }
+    
+    // Tags
+    if (selectedFilterTags.size > 0) {
+      if (!trade.tags || !trade.tags.some(tag => selectedFilterTags.has(tag))) return false;
     }
     
     return true;
   }));
+
+  const hasActiveFilters = selectedFilterTags.size > 0 || filterPreset !== 'all' || !!startDate || !!endDate;
+  const activeFilterCount = selectedFilterTags.size + (filterPreset !== 'all' ? 1 : 0) + (startDate ? 1 : 0) + (endDate ? 1 : 0);
+
+  const clearAllFilters = () => {
+    setFilterPreset('all');
+    setSelectedFilterTags(new Set());
+    setStartDate('');
+    setEndDate('');
+  };
 
   const handleToggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -144,9 +181,7 @@ export default function NexusTerminal() {
     if (selectedIds.size === 0) return;
     
     setTrades(currentTrades => {
-      const nextTrades = currentTrades.filter(t => !selectedIds.has(t.id));
-      localStorage.setItem('nexus-trades', JSON.stringify(nextTrades));
-      return nextTrades;
+      return currentTrades.filter(t => !selectedIds.has(t.id));
     });
     
     setSelectedIds(new Set());
@@ -164,6 +199,96 @@ export default function NexusTerminal() {
     }));
     setRiskInput('');
     setSelectedIds(new Set());
+  };
+
+  const handleUpdateNotes = (tradeId: string, notes: string) => {
+    setTrades(prev => prev.map(t => {
+      if (t.id === tradeId) {
+        return { ...t, notes };
+      }
+      return t;
+    }));
+  };
+
+  const handleCreateManualTrade = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    const symbol = manualTrade.symbol.trim().toUpperCase();
+    const entryPrice = parsePrice(manualTrade.entryPrice);
+    const exitPrice = parsePrice(manualTrade.exitPrice);
+    const quantity = parseFloat(manualTrade.quantity);
+    const initialRisk = manualTrade.initialRisk.trim() ? parseFloat(manualTrade.initialRisk) : undefined;
+
+    if (!symbol || !manualTrade.date || entryPrice <= 0 || exitPrice <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
+      setError('Please fill all required trade fields with valid values.');
+      return;
+    }
+    if (initialRisk !== undefined && (!Number.isFinite(initialRisk) || initialRisk <= 0)) {
+      setError('Initial risk must be a positive number.');
+      return;
+    }
+
+    const date = parseISO(manualTrade.date);
+    const sortKey = format(date, 'yyyy-MM-dd');
+    const id = `${sortKey}|${symbol}|${manualTrade.direction}|manual-${Date.now()}`;
+
+    const newTrade: Trade = {
+      id,
+      date,
+      sortKey,
+      symbol,
+      direction: manualTrade.direction,
+      avgEntryPrice: entryPrice,
+      avgExitPrice: exitPrice,
+      totalQuantity: quantity,
+      pnl: calculatePnL(manualTrade.direction, entryPrice, exitPrice, quantity),
+      executions: 1,
+      initialRisk,
+      tags: [],
+    };
+
+    setTrades(prev => sortTrades([newTrade, ...prev]));
+    setIsManualTradeOpen(false);
+    setError(null);
+    setManualTrade({
+      symbol: '',
+      direction: 'LONG',
+      entryPrice: '',
+      exitPrice: '',
+      quantity: '',
+      date: format(new Date(), 'yyyy-MM-dd'),
+      initialRisk: '',
+    });
+  };
+
+  const handleExportTrades = () => {
+    const payload = JSON.stringify(trades, null, 2);
+    const blob = new Blob([payload], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `nexus-trades-${format(new Date(), 'yyyy-MM-dd')}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleClearAllData = () => {
+    const confirmed = window.confirm('Clear all trades and tags? This cannot be undone.');
+    if (!confirmed) return;
+
+    setTrades([]);
+    setGlobalTags([]);
+    setSelectedIds(new Set());
+    setSelectedFilterTags(new Set());
+    setFilterPreset('all');
+    setStartDate('');
+    setEndDate('');
+    setSearchQuery('');
+    setActiveSidebarPanel('none');
+    localStorage.removeItem('nexus-trades');
+    localStorage.removeItem('nexus-tags');
   };
 
   // Tagging Logic
@@ -277,8 +402,21 @@ export default function NexusTerminal() {
       }
 
       setTrades((prev) => {
+        const existingById = new Map(prev.map(trade => [trade.id, trade]));
+        const mergedNewTrades = allNewTrades.map(newTrade => {
+          const existing = existingById.get(newTrade.id);
+          if (!existing) return newTrade;
+
+          return {
+            ...newTrade,
+            tags: existing.tags || [],
+            notes: existing.notes,
+            initialRisk: existing.initialRisk,
+          };
+        });
+
         const filtered = prev.filter(t => !processedDates.has(t.sortKey));
-        return sortTrades([...allNewTrades, ...filtered]);
+        return sortTrades([...mergedNewTrades, ...filtered]);
       });
     } catch (err: any) {
       setError(`Processing error: ${err.message}`);
@@ -290,7 +428,6 @@ export default function NexusTerminal() {
 
   const handleTabChange = (tab: typeof activeTab) => {
     setActiveTab(tab);
-    setSearchQuery('');
   };
 
   const handleGoogleLogin = async () => {
@@ -303,6 +440,17 @@ export default function NexusTerminal() {
         alert('Please allow popups for this site');
         return;
       }
+
+      clearGooglePopupPoll();
+      googlePopupPollRef.current = window.setInterval(() => {
+        if (!popup.closed) return;
+
+        clearGooglePopupPoll();
+        if (!userRef.current) {
+          setError('Login cancelled.');
+          window.setTimeout(() => setError(current => current === 'Login cancelled.' ? null : current), 2500);
+        }
+      }, 300);
     } catch (err) {
       console.error('Login failed', err);
     }
@@ -316,6 +464,8 @@ export default function NexusTerminal() {
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        clearGooglePopupPoll();
+        setError(null);
         // Refresh user session
         fetch('/api/auth/me')
           .then(res => res.json())
@@ -365,11 +515,35 @@ export default function NexusTerminal() {
           <button onClick={() => handleTabChange('backtesting')} className={`p-2 rounded-lg transition-colors ${activeTab === 'backtesting' ? 'text-emerald-500 bg-emerald-500/10' : 'hover:text-white'}`} title="Backtesting">
             <Search className="w-5 h-5" />
           </button>
-          <Bell className="w-5 h-5 cursor-pointer hover:text-white transition-colors" />
+          <button
+            onClick={() => setActiveSidebarPanel(prev => prev === 'notifications' ? 'none' : 'notifications')}
+            className="p-2 rounded-lg transition-colors hover:text-white"
+            title="Notifications"
+          >
+            <Bell className="w-5 h-5" />
+          </button>
         </div>
         <div className="mt-auto flex flex-col gap-6 text-zinc-500">
-          <Settings className="w-5 h-5 cursor-pointer hover:text-white transition-colors" />
-          <User className="w-5 h-5 cursor-pointer hover:text-white transition-colors" />
+          <button
+            onClick={() => setActiveSidebarPanel(prev => prev === 'settings' ? 'none' : 'settings')}
+            className="p-2 rounded-lg transition-colors hover:text-white"
+            title="Settings"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => {
+              if (user) {
+                setActiveSidebarPanel(prev => prev === 'user' ? 'none' : 'user');
+                return;
+              }
+              handleGoogleLogin();
+            }}
+            className="p-2 rounded-lg transition-colors hover:text-white"
+            title={user ? 'User' : 'Login'}
+          >
+            <User className="w-5 h-5" />
+          </button>
         </div>
       </nav>
 
@@ -384,6 +558,20 @@ export default function NexusTerminal() {
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               {trades.length} TRADES LOGGED
             </div>
+            {hasActiveFilters && (
+              <>
+                <div className="h-4 w-[1px] bg-white/10 mx-2" />
+                <div className="flex items-center gap-2 text-xs font-mono text-amber-400 bg-amber-500/10 px-2 py-1 rounded">
+                  {activeFilterCount} FILTERS ACTIVE
+                </div>
+                <button
+                  onClick={clearAllFilters}
+                  className="text-xs text-rose-400 hover:text-rose-300 transition-colors"
+                >
+                  Clear
+                </button>
+              </>
+            )}
           </div>
           
           {error && (
@@ -401,7 +589,13 @@ export default function NexusTerminal() {
                 </div>
                 <button onClick={handleLogout} className="group relative">
                   {user.picture ? (
-                    <img src={user.picture} alt={user.name} className="w-8 h-8 rounded-full border border-white/10" />
+                    <Image
+                      src={user.picture}
+                      alt={user.name}
+                      width={32}
+                      height={32}
+                      className="w-8 h-8 rounded-full border border-white/10"
+                    />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30">
                       <User className="w-4 h-4 text-emerald-500" />
@@ -415,7 +609,13 @@ export default function NexusTerminal() {
                   onClick={handleGoogleLogin}
                   className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
                 >
-                  <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-4 h-4" alt="Google" />
+                  <Image
+                    src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+                    className="w-4 h-4"
+                    alt="Google"
+                    width={16}
+                    height={16}
+                  />
                   Login with Google
                 </button>
               )}
@@ -433,13 +633,19 @@ export default function NexusTerminal() {
                 </div>
               )}
               
-              <label className="bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-4 py-1.5 rounded-lg text-sm transition-colors cursor-pointer flex items-center gap-2">
+              <button
+                onClick={() => importInputRef.current?.click()}
+                className="bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-4 py-1.5 rounded-lg text-sm transition-colors cursor-pointer flex items-center gap-2"
+              >
                 <Upload className="w-4 h-4" />
                 Bulk Import
-                <input type="file" accept=".csv" multiple className="hidden" onChange={handleFileUpload} />
-              </label>
+              </button>
+              <input ref={importInputRef} type="file" accept=".csv" multiple className="hidden" onChange={handleFileUpload} />
 
-              <button className="bg-emerald-500 hover:bg-emerald-400 text-black font-medium px-4 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2">
+              <button
+                onClick={() => setIsManualTradeOpen(true)}
+                className="bg-emerald-500 hover:bg-emerald-400 text-black font-medium px-4 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2"
+              >
                 <Plus className="w-4 h-4" />
                 New Trade
               </button>
@@ -457,50 +663,74 @@ export default function NexusTerminal() {
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-8"
               >
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-[#121214] border border-white/5 p-6 rounded-2xl">
-                    <div className="text-zinc-500 text-xs font-mono uppercase mb-2">Total PnL</div>
-                    <div className={`text-3xl font-bold tracking-tight ${trades.reduce((acc, t) => acc + t.pnl, 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                      ${trades.reduce((acc, t) => acc + t.pnl, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                {trades.length === 0 ? (
+                  <div className="bg-[#121214] border border-white/5 rounded-2xl p-10 text-center space-y-5">
+                    <h2 className="text-2xl font-bold">Welcome to Nexus Terminal</h2>
+                    <p className="text-sm text-zinc-400 max-w-2xl mx-auto">
+                      Import your Charles Schwab execution logs to track performance, journal trades, and analyze results by date, tags, and behavior.
+                    </p>
+                    <div className="flex flex-col items-center gap-3">
+                      <button
+                        onClick={() => importInputRef.current?.click()}
+                        className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold px-5 py-2 rounded-lg transition-colors inline-flex items-center gap-2"
+                      >
+                        <Upload className="w-4 h-4" />
+                        Import Trades
+                      </button>
+                      <p className="text-xs text-zinc-500">
+                        Expected CSV filename format: <span className="font-mono">MM-DD-YY.csv</span> (example: <span className="font-mono">01-31-26.csv</span>)
+                      </p>
                     </div>
                   </div>
-                  <div className="bg-[#121214] border border-white/5 p-6 rounded-2xl">
-                    <div className="text-zinc-500 text-xs font-mono uppercase mb-2">Win Rate</div>
-                    <div className="text-3xl font-bold tracking-tight">
-                      {trades.length > 0 ? ((trades.filter(t => t.pnl > 0).length / trades.length) * 100).toFixed(1) : '0.0'}%
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="bg-[#121214] border border-white/5 p-6 rounded-2xl">
+                        <div className="text-zinc-500 text-xs font-mono uppercase mb-2">Total PnL</div>
+                        <div className={`text-3xl font-bold tracking-tight ${trades.reduce((acc, t) => acc + t.pnl, 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                          ${trades.reduce((acc, t) => acc + t.pnl, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
+                      <div className="bg-[#121214] border border-white/5 p-6 rounded-2xl">
+                        <div className="text-zinc-500 text-xs font-mono uppercase mb-2">Win Rate</div>
+                        <div className="text-3xl font-bold tracking-tight">
+                          {trades.length > 0 ? ((trades.filter(t => t.pnl > 0).length / trades.length) * 100).toFixed(1) : '0.0'}%
+                        </div>
+                      </div>
+                      <div className="bg-[#121214] border border-white/5 p-6 rounded-2xl">
+                        <div className="text-zinc-500 text-xs font-mono uppercase mb-2">Profit Factor</div>
+                        <div className="text-3xl font-bold tracking-tight">
+                          {(() => {
+                            const wins = trades.filter(t => t.pnl > 0).reduce((acc, t) => acc + t.pnl, 0);
+                            const losses = Math.abs(trades.filter(t => t.pnl < 0).reduce((acc, t) => acc + t.pnl, 0));
+                            return losses === 0 ? (wins > 0 ? '∞' : '0.00') : (wins / losses).toFixed(2);
+                          })()}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="bg-[#121214] border border-white/5 p-6 rounded-2xl">
-                    <div className="text-zinc-500 text-xs font-mono uppercase mb-2">Profit Factor</div>
-                    <div className="text-3xl font-bold tracking-tight">
-                      {(() => {
-                        const wins = trades.filter(t => t.pnl > 0).reduce((acc, t) => acc + t.pnl, 0);
-                        const losses = Math.abs(trades.filter(t => t.pnl < 0).reduce((acc, t) => acc + t.pnl, 0));
-                        return losses === 0 ? (wins > 0 ? '∞' : '0.00') : (wins / losses).toFixed(2);
-                      })()}
-                    </div>
-                  </div>
-                </div>
 
-                <PerformanceCharts trades={trades} metric={performanceMetric} />
-                
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-xl font-semibold">Recent Trades</h2>
-                    <button onClick={() => setActiveTab('journal')} className="text-sm text-emerald-500 hover:text-emerald-400">View Journal</button>
-                  </div>
-                  <TradeTable 
-                    trades={trades.slice(0, 10)} 
-                    selectedIds={selectedIds}
-                    onToggleSelect={handleToggleSelect}
-                    onSelectAll={handleSelectAll}
-                    onAddTag={handleAddTag}
-                    onRemoveTag={handleRemoveTag}
-                    onDeleteGlobalTag={handleDeleteGlobalTag}
-                    globalTags={globalTags}
-                    readOnly
-                  />
-                </div>
+                    <PerformanceCharts trades={trades} metric={performanceMetric} />
+                    
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h2 className="text-xl font-semibold">Recent Trades</h2>
+                        <button onClick={() => setActiveTab('journal')} className="text-sm text-emerald-500 hover:text-emerald-400">View Journal</button>
+                      </div>
+                      <TradeTable 
+                        trades={trades.slice(0, 10)} 
+                        selectedIds={selectedIds}
+                        onToggleSelect={handleToggleSelect}
+                        onSelectAll={handleSelectAll}
+                        onAddTag={handleAddTag}
+                        onRemoveTag={handleRemoveTag}
+                        onUpdateNotes={handleUpdateNotes}
+                        onDeleteGlobalTag={handleDeleteGlobalTag}
+                        globalTags={globalTags}
+                        readOnly
+                      />
+                    </div>
+                  </>
+                )}
               </motion.div>
             )}
 
@@ -577,6 +807,7 @@ export default function NexusTerminal() {
                   onSelectAll={handleSelectAll}
                   onAddTag={handleAddTag}
                   onRemoveTag={handleRemoveTag}
+                  onUpdateNotes={handleUpdateNotes}
                   onDeleteGlobalTag={handleDeleteGlobalTag}
                   globalTags={globalTags}
                 />
@@ -756,12 +987,9 @@ export default function NexusTerminal() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold">Filtered Results ({filteredTrades.length})</h3>
-                    {selectedFilterTags.size > 0 || filterPreset !== 'all' ? (
+                    {hasActiveFilters ? (
                       <button 
-                        onClick={() => {
-                          setFilterPreset('all');
-                          setSelectedFilterTags(new Set());
-                        }}
+                        onClick={clearAllFilters}
                         className="text-xs text-rose-500 hover:text-rose-400 font-medium"
                       >
                         Clear All Filters
@@ -775,6 +1003,7 @@ export default function NexusTerminal() {
                     onSelectAll={handleSelectAll}
                     onAddTag={handleAddTag}
                     onRemoveTag={handleRemoveTag}
+                    onUpdateNotes={handleUpdateNotes}
                     onDeleteGlobalTag={handleDeleteGlobalTag}
                     globalTags={globalTags}
                     readOnly
@@ -860,6 +1089,160 @@ export default function NexusTerminal() {
           </AnimatePresence>
         </div>
       </main>
+
+      {activeSidebarPanel !== 'none' && (
+        <div className="fixed inset-0 z-[90]" onClick={() => setActiveSidebarPanel('none')}>
+          <aside
+            className="absolute left-16 top-0 h-full w-80 border-r border-white/10 bg-[#101012] p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {activeSidebarPanel === 'notifications' && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold">Notifications</h3>
+                <div className="text-sm text-zinc-500 border border-white/10 rounded-xl p-4">
+                  No notifications.
+                </div>
+              </div>
+            )}
+
+            {activeSidebarPanel === 'settings' && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold">Settings</h3>
+                <button
+                  onClick={handleExportTrades}
+                  className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-4 py-2 text-sm text-left"
+                >
+                  Export trades as JSON
+                </button>
+                <button
+                  onClick={handleClearAllData}
+                  className="w-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-lg px-4 py-2 text-sm text-left text-rose-400"
+                >
+                  Clear all data
+                </button>
+              </div>
+            )}
+
+            {activeSidebarPanel === 'user' && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold">User</h3>
+                {user ? (
+                  <div className="space-y-3 border border-white/10 rounded-xl p-4">
+                    <p className="text-sm"><span className="text-zinc-500">Name:</span> {user.name}</p>
+                    <p className="text-sm"><span className="text-zinc-500">Email:</span> {user.email}</p>
+                    <button
+                      onClick={handleLogout}
+                      className="text-xs text-rose-400 hover:text-rose-300"
+                    >
+                      Log out
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleGoogleLogin}
+                    className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-4 py-2 text-sm"
+                  >
+                    Login with Google
+                  </button>
+                )}
+              </div>
+            )}
+          </aside>
+        </div>
+      )}
+
+      {isManualTradeOpen && (
+        <div className="fixed inset-0 z-[95] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <form onSubmit={handleCreateManualTrade} className="w-full max-w-lg bg-[#121214] border border-white/10 rounded-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">New Manual Trade</h3>
+              <button
+                type="button"
+                onClick={() => setIsManualTradeOpen(false)}
+                className="text-zinc-500 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <input
+                type="text"
+                placeholder="Symbol"
+                value={manualTrade.symbol}
+                onChange={(e) => setManualTrade(prev => ({ ...prev, symbol: e.target.value }))}
+                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500/50"
+              />
+              <select
+                value={manualTrade.direction}
+                onChange={(e) => setManualTrade(prev => ({ ...prev, direction: e.target.value as Direction }))}
+                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500/50"
+              >
+                <option value="LONG">LONG</option>
+                <option value="SHORT">SHORT</option>
+              </select>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Entry Price"
+                value={manualTrade.entryPrice}
+                onChange={(e) => setManualTrade(prev => ({ ...prev, entryPrice: e.target.value }))}
+                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500/50"
+              />
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Exit Price"
+                value={manualTrade.exitPrice}
+                onChange={(e) => setManualTrade(prev => ({ ...prev, exitPrice: e.target.value }))}
+                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500/50"
+              />
+              <input
+                type="number"
+                step="1"
+                min="1"
+                placeholder="Quantity"
+                value={manualTrade.quantity}
+                onChange={(e) => setManualTrade(prev => ({ ...prev, quantity: e.target.value }))}
+                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500/50"
+              />
+              <input
+                type="date"
+                value={manualTrade.date}
+                onChange={(e) => setManualTrade(prev => ({ ...prev, date: e.target.value }))}
+                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500/50"
+              />
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Initial Risk (optional)"
+                value={manualTrade.initialRisk}
+                onChange={(e) => setManualTrade(prev => ({ ...prev, initialRisk: e.target.value }))}
+                className="md:col-span-2 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500/50"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsManualTradeOpen(false)}
+                className="px-3 py-1.5 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-3 py-1.5 text-sm bg-emerald-500 hover:bg-emerald-400 text-black font-medium rounded-lg"
+              >
+                Save Trade
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Loading Overlay */}
       {isImporting && (

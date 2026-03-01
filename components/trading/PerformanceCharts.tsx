@@ -23,20 +23,35 @@ interface PerformanceChartsProps {
 }
 
 export default function PerformanceCharts({ trades, metric }: PerformanceChartsProps) {
-  // Calculate cumulative PnL or R
-  const chartData = trades
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    .reduce((acc: any[], trade, index) => {
-      const prevVal = index > 0 ? acc[index - 1].cumulative : 0;
-      const val = metric === '$' ? trade.pnl : (trade.initialRisk ? trade.pnl / trade.initialRisk : 0);
-      
-      acc.push({
-        date: format(new Date(trade.date), 'MM/dd'),
-        value: val,
-        cumulative: prevVal + val,
-      });
-      return acc;
-    }, []);
+  const chartData = useMemo(() => {
+    const dailyTotals = new Map<string, { date: Date; value: number }>();
+
+    trades.forEach((trade) => {
+      const key = trade.sortKey;
+      const current = dailyTotals.get(key);
+      const value = metric === '$' ? trade.pnl : (trade.initialRisk ? trade.pnl / trade.initialRisk : 0);
+      if (!current) {
+        dailyTotals.set(key, {
+          date: new Date(trade.date),
+          value,
+        });
+        return;
+      }
+      current.value += value;
+    });
+
+    return Array.from(dailyTotals.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .reduce<Array<{ date: string; value: number; cumulative: number }>>((acc, [, day]) => {
+        const previousCumulative = acc.at(-1)?.cumulative ?? 0;
+        acc.push({
+          date: format(day.date, 'MM/dd'),
+          value: day.value,
+          cumulative: previousCumulative + day.value,
+        });
+        return acc;
+      }, []);
+  }, [trades, metric]);
 
   const formatValue = (v: number) => metric === '$' ? formatCurrency(v) : formatR(v);
 
@@ -71,6 +86,14 @@ export default function PerformanceCharts({ trades, metric }: PerformanceChartsP
     // Filter to show only hours with trades
     return stats.filter(s => trades.some(t => new Date(t.date).getHours() === s.hour));
   }, [trades, metric]);
+
+  if (trades.length === 0) {
+    return (
+      <div className="bg-[#121214] border border-white/5 rounded-2xl p-12 text-center text-zinc-500">
+        Import trades to see performance analytics.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">

@@ -6,6 +6,8 @@ export interface RawExecution {
   qty: number;
   price: number;
   time: string;
+  commission: number;
+  fees: number;
 }
 
 export interface SymbolExecutions {
@@ -39,6 +41,17 @@ export const parseDateFromFilename = (filename: string) => {
 
 export const processCsvData = (data: any[], dateInfo: { date: Date, sortKey: string }): Trade[] => {
   const symbolMap: Record<string, SymbolExecutions> = {};
+  const parseCost = (value: unknown): number => {
+    if (typeof value === 'number' && Number.isFinite(value)) return Math.abs(value);
+    if (typeof value !== 'string') return 0;
+    const cleaned = value.replace(/[$,\s]/g, '').trim();
+    if (!cleaned) return 0;
+    const normalized = cleaned.startsWith('(') && cleaned.endsWith(')')
+      ? `-${cleaned.slice(1, -1)}`
+      : cleaned;
+    const parsed = parseFloat(normalized);
+    return Number.isFinite(parsed) ? Math.abs(parsed) : 0;
+  };
 
   data.forEach(row => {
     const sym = (row.Symbol || '').toUpperCase().trim();
@@ -46,6 +59,8 @@ export const processCsvData = (data: any[], dateInfo: { date: Date, sortKey: str
     const qty = parseFloat(row.Qty || row.Quantity) || 0;
     const price = parsePrice(row.Price);
     const time = row.Time || '';
+    const commission = parseCost(row.Commission);
+    const fees = parseCost(row.Fees);
 
     if (!sym || !side || qty === 0) return;
 
@@ -56,10 +71,10 @@ export const processCsvData = (data: any[], dateInfo: { date: Date, sortKey: str
     // Logic based on user request:
     // Long: MARGIN (Buy), S (Sell)
     // Short: SS (Short Sell), B (Buy back)
-    if (side === 'SS') symbolMap[sym].shortEntry.push({ qty, price, time });
-    else if (side === 'B') symbolMap[sym].shortExit.push({ qty, price, time });
-    else if (side === 'MARGIN') symbolMap[sym].longEntry.push({ qty, price, time });
-    else if (side === 'S') symbolMap[sym].longExit.push({ qty, price, time });
+    if (side === 'SS') symbolMap[sym].shortEntry.push({ qty, price, time, commission, fees });
+    else if (side === 'B') symbolMap[sym].shortExit.push({ qty, price, time, commission, fees });
+    else if (side === 'MARGIN') symbolMap[sym].longEntry.push({ qty, price, time, commission, fees });
+    else if (side === 'S') symbolMap[sym].longExit.push({ qty, price, time, commission, fees });
   });
 
   const matchedPairs: any[] = [];
@@ -72,6 +87,8 @@ export const processCsvData = (data: any[], dateInfo: { date: Date, sortKey: str
       const entry = se.shift()!;
       const exit = sx.shift()!;
       const q = Math.min(entry.qty, exit.qty);
+      const commission = ((entry.commission / entry.qty) * q) + ((exit.commission / exit.qty) * q);
+      const fees = ((entry.fees / entry.qty) * q) + ((exit.fees / exit.qty) * q);
       
       matchedPairs.push({
         symbol: sym,
@@ -79,7 +96,9 @@ export const processCsvData = (data: any[], dateInfo: { date: Date, sortKey: str
         entryPrice: entry.price,
         exitPrice: exit.price,
         qty: q,
-        pnl: (entry.price - exit.price) * q
+        commission,
+        fees,
+        pnl: ((entry.price - exit.price) * q) - commission - fees,
       });
 
       if (entry.qty > exit.qty) se.unshift({ ...entry, qty: entry.qty - q });
@@ -93,6 +112,8 @@ export const processCsvData = (data: any[], dateInfo: { date: Date, sortKey: str
       const entry = le.shift()!;
       const exit = lx.shift()!;
       const q = Math.min(entry.qty, exit.qty);
+      const commission = ((entry.commission / entry.qty) * q) + ((exit.commission / exit.qty) * q);
+      const fees = ((entry.fees / entry.qty) * q) + ((exit.fees / exit.qty) * q);
       
       matchedPairs.push({
         symbol: sym,
@@ -100,7 +121,9 @@ export const processCsvData = (data: any[], dateInfo: { date: Date, sortKey: str
         entryPrice: entry.price,
         exitPrice: exit.price,
         qty: q,
-        pnl: (exit.price - entry.price) * q
+        commission,
+        fees,
+        pnl: ((exit.price - entry.price) * q) - commission - fees,
       });
 
       if (entry.qty > exit.qty) le.unshift({ ...entry, qty: entry.qty - q });
@@ -125,6 +148,8 @@ export const processCsvData = (data: any[], dateInfo: { date: Date, sortKey: str
         totalQuantity: 0,
         pnl: 0,
         executions: 0,
+        commission: 0,
+        fees: 0,
         tags: []
       };
     }
@@ -156,6 +181,8 @@ export const processCsvData = (data: any[], dateInfo: { date: Date, sortKey: str
     
     trade.totalQuantity += pair.qty;
     trade.pnl += pair.pnl;
+    trade.commission = (trade.commission || 0) + pair.commission;
+    trade.fees = (trade.fees || 0) + pair.fees;
     trade.executions++;
     trade.avgEntryPrice = entryValue / trade.totalQuantity;
     trade.avgExitPrice = exitValue / trade.totalQuantity;

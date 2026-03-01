@@ -12,7 +12,8 @@ export interface Trade {
   pnl: number;
   executions: number;
   initialRisk?: number; // Initial risk in $
-  rMultiple?: number;
+  commission?: number;
+  fees?: number;
   tags: string[];
   notes?: string;
 }
