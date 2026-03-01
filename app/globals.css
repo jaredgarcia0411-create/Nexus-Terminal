@@ -1,7 +1,54 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: #0A0A0B;
+  --color-foreground: #E4E4E7;
+  --color-card: #121214;
+  --color-card-foreground: #E4E4E7;
+  --color-popover: #121214;
+  --color-popover-foreground: #E4E4E7;
+  --color-primary: #10b981;
+  --color-primary-foreground: #000000;
+  --color-secondary: rgba(255, 255, 255, 0.05);
+  --color-secondary-foreground: #E4E4E7;
+  --color-muted: #18181b;
+  --color-muted-foreground: #71717a;
+  --color-accent: rgba(255, 255, 255, 0.05);
+  --color-accent-foreground: #E4E4E7;
+  --color-destructive: #f43f5e;
+  --color-destructive-foreground: #ffffff;
+  --color-border: rgba(255, 255, 255, 0.05);
+  --color-input: rgba(255, 255, 255, 0.1);
+  --color-ring: #10b981;
+  --color-chart-1: #10b981;
+  --color-chart-2: #f43f5e;
+  --color-chart-3: #3b82f6;
+  --color-chart-4: #f59e0b;
+  --color-chart-5: #8b5cf6;
+  --radius: 0.75rem;
+  --color-sidebar-background: #0A0A0B;
+  --color-sidebar-foreground: #E4E4E7;
+  --color-sidebar-primary: #10b981;
+  --color-sidebar-primary-foreground: #000000;
+  --color-sidebar-accent: rgba(255, 255, 255, 0.05);
+  --color-sidebar-accent-foreground: #E4E4E7;
+  --color-sidebar-border: rgba(255, 255, 255, 0.05);
+  --color-sidebar-ring: #10b981;
+}
 
 @layer base {
   html {
     font-size: 110%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
   }
 }

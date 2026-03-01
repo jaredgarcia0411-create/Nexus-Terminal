@@ -1,9 +1,28 @@
 import { NextResponse } from 'next/server';
-import axios from 'axios';
 import { getBaseUrl } from '@/lib/env';
-import { setSchwabTokens } from '@/lib/auth';
+import { auth } from '@/lib/auth-config';
+import { getDb } from '@/lib/db';
+import { ensureUser } from '@/lib/server-db-utils';
 
 export async function GET(request: Request) {
+  const session = await auth();
+  const user = session?.user as ({ id?: string; email?: string | null; name?: string | null; image?: string | null } | undefined);
+  if (!user?.id || !user.email) {
+    return NextResponse.redirect(new URL('/', request.url));
+  }
+
+  const db = getDb();
+  if (!db) {
+    return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
+  }
+
+  await ensureUser(db, {
+    id: user.id,
+    email: user.email,
+    name: user.name ?? null,
+    picture: user.image ?? null,
+  });
+
   const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
 
@@ -12,18 +31,47 @@ export async function GET(request: Request) {
   }
 
   try {
-    const tokenResponse = await axios.post('https://api.schwab.com/v1/oauth/token', {
-      code,
-      client_id: process.env.SCHWAB_CLIENT_ID,
-      client_secret: process.env.SCHWAB_CLIENT_SECRET,
-      redirect_uri: `${getBaseUrl()}/api/auth/schwab/callback`,
-      grant_type: 'authorization_code',
+    const tokenResponse = await fetch('https://api.schwab.com/v1/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code,
+        client_id: process.env.SCHWAB_CLIENT_ID,
+        client_secret: process.env.SCHWAB_CLIENT_SECRET,
+        redirect_uri: `${getBaseUrl()}/api/auth/schwab/callback`,
+        grant_type: 'authorization_code',
+      }),
     });
 
-    const { access_token, refresh_token } = tokenResponse.data;
-    await setSchwabTokens(access_token, refresh_token);
+    if (!tokenResponse.ok) {
+      const detail = await tokenResponse.text();
+      console.error('Schwab OAuth error response:', detail);
+      return NextResponse.json({ error: 'Schwab connection failed' }, { status: 500 });
+    }
 
-    return new NextResponse(`
+    const tokenData = (await tokenResponse.json()) as {
+      access_token: string;
+      refresh_token: string;
+      expires_in?: number;
+    };
+
+    const expiresAt = new Date(Date.now() + (tokenData.expires_in ?? 3600) * 1000).toISOString();
+
+    await db.execute({
+      sql: `
+        INSERT INTO schwab_tokens (user_id, access_token, refresh_token, expires_at, updated_at)
+        VALUES (?, ?, ?, ?, datetime('now'))
+        ON CONFLICT(user_id) DO UPDATE SET
+          access_token = excluded.access_token,
+          refresh_token = excluded.refresh_token,
+          expires_at = excluded.expires_at,
+          updated_at = datetime('now')
+      `,
+      args: [user.id, tokenData.access_token, tokenData.refresh_token, expiresAt],
+    });
+
+    return new NextResponse(
+      `
       <html>
         <body>
           <script>
@@ -37,11 +85,13 @@ export async function GET(request: Request) {
           <p>Charles Schwab connected successfully. This window should close automatically.</p>
         </body>
       </html>
-    `, {
-      headers: { 'Content-Type': 'text/html' },
-    });
-  } catch (err: any) {
-    console.error('Schwab OAuth error:', err.response?.data || err.message);
+      `,
+      {
+        headers: { 'Content-Type': 'text/html' },
+      },
+    );
+  } catch (err) {
+    console.error('Schwab OAuth error:', err);
     return NextResponse.json({ error: 'Schwab connection failed' }, { status: 500 });
   }
 }

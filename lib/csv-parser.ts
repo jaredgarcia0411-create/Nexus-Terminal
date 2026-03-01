@@ -59,8 +59,8 @@ export const processCsvData = (data: any[], dateInfo: { date: Date, sortKey: str
     const qty = parseFloat(row.Qty || row.Quantity) || 0;
     const price = parsePrice(row.Price);
     const time = row.Time || '';
-    const commission = parseCost(row.Commission);
-    const fees = parseCost(row.Fees);
+    const commission = parseCost(row.Commission || row.Comm);
+    const fees = parseCost(row.Fees || row.Fee);
 
     if (!sym || !side || qty === 0) return;
 

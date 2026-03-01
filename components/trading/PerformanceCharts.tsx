@@ -13,6 +13,7 @@ import {
   Bar,
   Cell
 } from 'recharts';
+import { BarChart3 } from 'lucide-react';
 import { Trade } from '@/lib/types';
 import { formatCurrency, formatR } from '@/lib/trading-utils';
 import { format } from 'date-fns';
@@ -89,8 +90,9 @@ export default function PerformanceCharts({ trades, metric }: PerformanceChartsP
 
   if (trades.length === 0) {
     return (
-      <div className="bg-[#121214] border border-white/5 rounded-2xl p-12 text-center text-zinc-500">
-        Import trades to see performance analytics.
+      <div className="bg-[#121214] border border-white/5 rounded-2xl p-12 flex flex-col items-center justify-center text-center">
+        <BarChart3 className="w-12 h-12 text-zinc-700 mb-4" />
+        <p className="text-zinc-500 text-sm">Import trades to see performance analytics</p>
       </div>
     );
   }
