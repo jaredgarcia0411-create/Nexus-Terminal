@@ -23,8 +23,8 @@ Deployment: Vercel
 
 # Still in testing
 
-Adding Broker Sync to auto sync executions if preferred
-Adding multiple broker CSV formats for parsing
-Updating to handle broken CSV parses &/or notify when file name formatted improperly
-Building out Backtesting Simulation Logic based on Charles Schwab Market Data API.
-Final goal is to have small dedicated server to run backtests with virtually 0 bottlenck, as well as possibility of connecting an agent to it's own RAG & train it on your system(s).
+- Adding Broker Sync to auto sync executions if preferred
+- Adding multiple broker CSV formats for parsing
+- Updating to handle broken CSV parses &/or notify when file name formatted improperly
+- Building out Backtesting Simulation Logic based on Charles Schwab Market Data API.
+- Final goal is to have small dedicated server to run backtests with virtually 0 bottlenck, as well as possibility of connecting an agent to it's own RAG & train it on your system(s).
