@@ -23,6 +23,7 @@ Deployment: Vercel
 
 # Still in testing
 
+- Needs to handle refresh token rotation
 - Adding Broker Sync to auto sync executions if preferred
 - Adding multiple broker CSV formats for parsing
 - Updating to handle broken CSV parses
