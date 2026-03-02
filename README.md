@@ -25,7 +25,8 @@ Deployment: Vercel
 
 - Adding Broker Sync to auto sync executions if preferred
 - Adding multiple broker CSV formats for parsing
-- Updating to handle broken CSV parses &/or notify when file name formatted improperly
+- Updating to handle broken CSV parses
+- Changing bulk import to select a folder, not have user manually select multiple folders withint that file.
 - Building out Backtesting Simulation Logic based on Charles Schwab Market Data API as well as investigating building it out on either Codex or Claude Code.
 - Small dedicated server to run backtests with virtually 0 bottlenck, as well as possibility of connecting an agent to it's own RAG & train it on your system(s).
 - Connect to your own personal Discord server & have the agent organize information into new channels & send notifications as per instructrions on training/capabilities.
