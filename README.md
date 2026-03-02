@@ -3,12 +3,12 @@
 ### Nexus Terminal is a web-based trading dashboard that lets you import trade data, analyze performance metrics, and connect directly to brokerage APIs for live market access. It integrates AI-powered analysis via Google Gemini to help surface patterns in your trading history.
 Core Features
 
-Trade Journal — Import and organize trades from CSV files with automatic date parsing and sorting.
-Charles Schwab Integration — OAuth 2.0 connection to Schwab's API for live market data and account access.
-Google OAuth — Secure authentication via Google for user sessions (JWT-based).
-AI Analysis — Gemini API integration for contextual trade analysis and strategy evaluation.
-Backtesting — Historical data search and strategy testing tools.
-File Context Upload — Attach CSV, JSON, or TXT files to enrich AI analysis with your strategy parameters.
+- Trade Journal — Import and organize trades from CSV files with automatic date parsing and sorting.
+- Charles Schwab Integration — OAuth 2.0 connection to Schwab's API for live market data and account access.
+- Google OAuth — Secure authentication via Google for user sessions (JWT-based).
+- AI Analysis — Gemini API integration for contextual trade analysis and strategy evaluation.
+- Backtesting — Historical data search and strategy testing tools.
+- File Context Upload — Attach CSV, JSON, or TXT files to enrich AI analysis with your strategy parameters.
 
 ### Tech Stack
 
