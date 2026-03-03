@@ -15,7 +15,7 @@ Nexus Terminal is a trading journal and analytics platform for day traders.
 | Frontend | React 19, shadcn/ui, motion/react animations |
 | Charts | Recharts (equity curves), lightweight-charts v5 (candlesticks) |
 | Auth | NextAuth v5 beta, JWT strategy, Google OAuth, `ALLOWED_EMAILS` env gating |
-| Database | Turso (libsql), schema in `lib/db.ts` |
+| Database | PostgreSQL via Neon (Drizzle ORM), schema in `lib/db/schema.ts` |
 | Broker | Charles Schwab API (OAuth2, token rotation, market data, transaction sync) |
 | Services | Docker Compose stack: Redis, Express+BullMQ backtest gateway, Python backtest worker, Discord bot |
 | Styling | Tailwind v4, dark theme (#0A0A0B base, emerald-500 accent) |
@@ -42,7 +42,7 @@ services/                Docker Compose microservices (backtest-gateway, backtes
 
 **`d78514a`** — Auth gating, UI refactor, Schwab integration build-out, CSV warning support, dependency cleanup
 
-This commit established the authenticated multi-user architecture (NextAuth + Turso), the Schwab OAuth connection flow, and the CSV import pipeline with the existing DAS Trader format. It is the baseline from which all uncommitted work branches.
+This commit established the authenticated multi-user architecture (NextAuth + PostgreSQL via Neon/Drizzle), the Schwab OAuth connection flow, and the CSV import pipeline with the existing DAS Trader format. It is the baseline from which all uncommitted work branches.
 
 ---
 
@@ -282,7 +282,7 @@ Added deterministic unit tests for `runBacktest()` covering long/short execution
 ## Security Notes
 
 ### Schwab OAuth Token Handling
-- Tokens stored in `schwab_tokens` table (Turso DB) with `access_token`, `refresh_token`, `expires_at`
+- Tokens stored in `schwab_tokens` table (PostgreSQL via Neon) with `access_token`, `refresh_token`, `expires_at`
 - Per-user mutex prevents concurrent refresh races
 - Single-retry on transient network errors during refresh
 - Token refresh events are audited in `token_refresh_log`
@@ -305,7 +305,7 @@ Added deterministic unit tests for `runBacktest()` covering long/short execution
 - `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID` — Discord bot credentials
 - `BACKTEST_GATEWAY_URL` — URL for the backtest gateway (default: `http://localhost:4000`)
 - Standard NextAuth vars: `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-- Turso: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
+- Database: `DATABASE_URL`
 
 ### Input Validation
 - Market data route validates `periodType` and `frequencyType` against allowlists

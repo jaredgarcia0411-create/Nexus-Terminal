@@ -1,4 +1,6 @@
-import { getDb } from '@/lib/db';
+import { and, eq } from 'drizzle-orm';
+import { getPoolDb } from '@/lib/db';
+import { trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 
 type BulkPayload = {
@@ -11,7 +13,7 @@ export async function POST(request: Request) {
   const authState = await requireUser();
   if ('error' in authState) return authState.error;
 
-  const db = getDb();
+  const db = getPoolDb();
   if (!db) return dbUnavailable();
   await ensureUser(db, authState.user);
 
@@ -20,47 +22,51 @@ export async function POST(request: Request) {
     return Response.json({ error: 'ids are required' }, { status: 400 });
   }
 
-  await db.execute('BEGIN');
-  try {
+  if (body.action === 'applyRisk') {
+    const risk = Number(body.value);
+    if (!Number.isFinite(risk) || risk <= 0) {
+      return Response.json({ error: 'value must be a positive number' }, { status: 400 });
+    }
+  }
+
+  if (body.action === 'addTag') {
+    const tag = String(body.value ?? '').trim();
+    if (!tag) {
+      return Response.json({ error: 'value is required for addTag' }, { status: 400 });
+    }
+  }
+
+  await db.transaction(async (tx) => {
     if (body.action === 'delete') {
       for (const id of body.ids) {
-        await db.execute({ sql: 'DELETE FROM trades WHERE id = ? AND user_id = ?', args: [id, authState.user.id] });
+        await tx.delete(trades)
+          .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)));
       }
     }
 
     if (body.action === 'applyRisk') {
       const risk = Number(body.value);
-      if (!Number.isFinite(risk) || risk <= 0) {
-        await db.execute('ROLLBACK');
-        return Response.json({ error: 'value must be a positive number' }, { status: 400 });
-      }
       for (const id of body.ids) {
-        await db.execute({ sql: 'UPDATE trades SET initial_risk = ? WHERE id = ? AND user_id = ?', args: [risk, id, authState.user.id] });
+        await tx.update(trades)
+          .set({ initialRisk: risk })
+          .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)));
       }
     }
 
     if (body.action === 'addTag') {
       const tag = String(body.value ?? '').trim();
-      if (!tag) {
-        await db.execute('ROLLBACK');
-        return Response.json({ error: 'value is required for addTag' }, { status: 400 });
-      }
 
-      await db.execute({
-        sql: 'INSERT OR IGNORE INTO tags (user_id, name) VALUES (?, ?)',
-        args: [authState.user.id, tag],
-      });
+      await tx.insert(tagsTable)
+        .values({ userId: authState.user.id, name: tag })
+        .onConflictDoNothing();
 
       for (const id of body.ids) {
-        await db.execute({ sql: 'INSERT OR IGNORE INTO trade_tags (trade_id, tag) VALUES (?, ?)', args: [id, tag] });
+        await tx.insert(tradeTagsTable)
+          .values({ tradeId: id, tag })
+          .onConflictDoNothing();
       }
     }
-
-    await db.execute('COMMIT');
-  } catch (error) {
-    await db.execute('ROLLBACK');
-    throw error;
-  }
+  });
 
   return Response.json({ success: true, action: body.action, ids: body.ids });
 }

@@ -1,4 +1,6 @@
+import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
+import { trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser, toTrade } from '@/lib/server-db-utils';
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -12,47 +14,43 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const { id } = await context.params;
   const body = (await request.json()) as { notes?: string; initialRisk?: number | null; tags?: string[] };
 
-  const updates: string[] = [];
-  const args: Array<string | number | null> = [];
+  const updateData: Partial<typeof trades.$inferInsert> = {};
 
   if (Object.prototype.hasOwnProperty.call(body, 'notes')) {
-    updates.push('notes = ?');
-    args.push(body.notes?.trim() ? body.notes.trim() : null);
+    updateData.notes = body.notes?.trim() || null;
   }
 
   if (Object.prototype.hasOwnProperty.call(body, 'initialRisk')) {
-    updates.push('initial_risk = ?');
-    args.push(body.initialRisk ?? null);
+    updateData.initialRisk = body.initialRisk ?? null;
   }
 
-  if (updates.length > 0) {
-    await db.execute({
-      sql: `UPDATE trades SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`,
-      args: [...args, id, authState.user.id],
-    });
+  if (Object.keys(updateData).length > 0) {
+    await db.update(trades)
+      .set(updateData)
+      .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)));
   }
 
   if (Array.isArray(body.tags)) {
-    await db.execute({ sql: 'DELETE FROM trade_tags WHERE trade_id = ?', args: [id] });
+    await db.delete(tradeTagsTable).where(eq(tradeTagsTable.tradeId, id));
     for (const tag of body.tags) {
-      await db.execute({ sql: 'INSERT OR IGNORE INTO trade_tags (trade_id, tag) VALUES (?, ?)', args: [id, tag] });
-      await db.execute({ sql: 'INSERT OR IGNORE INTO tags (user_id, name) VALUES (?, ?)', args: [authState.user.id, tag] });
+      await db.insert(tradeTagsTable).values({ tradeId: id, tag }).onConflictDoNothing();
+      await db.insert(tagsTable).values({ userId: authState.user.id, name: tag }).onConflictDoNothing();
     }
   }
 
-  const tradeRes = await db.execute({
-    sql: 'SELECT * FROM trades WHERE id = ? AND user_id = ? LIMIT 1',
-    args: [id, authState.user.id],
-  });
-
-  if (tradeRes.rows.length === 0) {
+  const [trade] = await db.select().from(trades)
+    .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)))
+    .limit(1);
+  if (!trade) {
     return Response.json({ error: 'Trade not found' }, { status: 404 });
   }
 
-  const tagRows = await db.execute({ sql: 'SELECT tag FROM trade_tags WHERE trade_id = ?', args: [id] });
-  const tags = tagRows.rows.map((row) => String(row.tag));
+  const tagRows = await db.select({ tag: tradeTagsTable.tag })
+    .from(tradeTagsTable)
+    .where(eq(tradeTagsTable.tradeId, id));
+  const tagList = tagRows.map((r) => r.tag);
 
-  return Response.json({ trade: toTrade(tradeRes.rows[0], tags) });
+  return Response.json({ trade: toTrade(trade, tagList) });
 }
 
 export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -65,10 +63,8 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
 
   const { id } = await context.params;
 
-  await db.execute({
-    sql: 'DELETE FROM trades WHERE id = ? AND user_id = ?',
-    args: [id, authState.user.id],
-  });
+  await db.delete(trades)
+    .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)));
 
   return Response.json({ success: true, id });
 }

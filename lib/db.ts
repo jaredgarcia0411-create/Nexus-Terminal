@@ -1,114 +1,86 @@
-import { createClient, type Client } from '@libsql/client';
+import { neon, Pool } from '@neondatabase/serverless';
+import { drizzle as drizzleHttp, type NeonHttpDatabase } from 'drizzle-orm/neon-http';
+import { drizzle as drizzleWs, type NeonDatabase } from 'drizzle-orm/neon-serverless';
+import * as schema from './db/schema';
 
-let client: Client | null = null;
+type LegacySqlArgs = { sql: string; args?: unknown[] };
+type LegacyExecuteResult = { rows: Array<Record<string, unknown>>; lastInsertRowid?: number };
+type SqlClient = { query: (queryWithPlaceholders: string, params?: any[]) => Promise<any> };
+type DrizzleExecuteArg = Parameters<NeonHttpDatabase<typeof schema>['execute']>[0];
+type DrizzleExecuteResult = ReturnType<NeonHttpDatabase<typeof schema>['execute']>;
+type CompatExecute = {
+  (query: LegacySqlArgs): Promise<LegacyExecuteResult>;
+  (query: DrizzleExecuteArg): DrizzleExecuteResult;
+};
 
-export function getDb(): Client | null {
-  if (!process.env.TURSO_DATABASE_URL) {
+export type Db = Omit<NeonHttpDatabase<typeof schema>, 'execute'> & {
+  execute: CompatExecute;
+};
+
+export type PoolDb = NeonDatabase<typeof schema>;
+
+let httpDb: Db | null = null;
+let poolDb: PoolDb | null = null;
+
+function toPgPlaceholders(sqlText: string) {
+  let i = 0;
+  return sqlText.replace(/\?/g, () => `$${++i}`);
+}
+
+function applyLegacyExecute(db: NeonHttpDatabase<typeof schema>, sqlClient: SqlClient): Db {
+  const originalExecute = db.execute.bind(db);
+  const compatDb = db as Db;
+
+  compatDb.execute = (async (query: LegacySqlArgs | DrizzleExecuteArg) => {
+    if (typeof query === 'object' && query !== null && 'sql' in query) {
+      let sqlText = String(query.sql).replace(/datetime\('now'\)/g, 'now()');
+
+      // Preserve previous insert-id behavior expected by existing discord alert route.
+      if (/^\s*insert\s+into\s+price_alerts\b/i.test(sqlText) && !/\breturning\b/i.test(sqlText)) {
+        sqlText = `${sqlText} RETURNING id`;
+      }
+
+      const mappedSql = toPgPlaceholders(sqlText);
+      const rows = (await sqlClient.query(mappedSql, query.args ?? [])) as Array<Record<string, unknown>>;
+      const result: LegacyExecuteResult = { rows };
+      const firstId = rows[0]?.id;
+      if (firstId != null) {
+        result.lastInsertRowid = Number(firstId);
+      }
+      return result;
+    }
+
+    return originalExecute(query as DrizzleExecuteArg);
+  }) as CompatExecute;
+
+  return compatDb;
+}
+
+/** HTTP-based client for reads and single-statement writes. */
+export function getDb() {
+  if (!process.env.DATABASE_URL) {
     return null;
   }
 
-  if (!client) {
-    client = createClient({
-      url: process.env.TURSO_DATABASE_URL,
-      authToken: process.env.TURSO_AUTH_TOKEN,
-    });
+  if (!httpDb) {
+    const sql = neon(process.env.DATABASE_URL);
+    const db = drizzleHttp(sql, { schema });
+    httpDb = applyLegacyExecute(db, sql);
   }
 
-  return client;
+  return httpDb;
 }
 
-export async function initDb() {
-  const db = getDb();
-  if (!db) return;
+/** Pool-based client for transactional writes (bulk, import). */
+export function getPoolDb() {
+  if (!process.env.DATABASE_URL) {
+    return null;
+  }
 
-  await db.executeMultiple(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
-      name TEXT,
-      picture TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
+  if (!poolDb) {
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    poolDb = drizzleWs(pool, { schema });
+  }
 
-    CREATE TABLE IF NOT EXISTS trades (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES users(id),
-      date TEXT NOT NULL,
-      sort_key TEXT NOT NULL,
-      symbol TEXT NOT NULL,
-      direction TEXT NOT NULL CHECK (direction IN ('LONG', 'SHORT')),
-      avg_entry_price REAL NOT NULL,
-      avg_exit_price REAL NOT NULL,
-      total_quantity REAL NOT NULL,
-      pnl REAL NOT NULL,
-      executions INTEGER NOT NULL DEFAULT 1,
-      initial_risk REAL,
-      commission REAL DEFAULT 0,
-      fees REAL DEFAULT 0,
-      notes TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS trade_tags (
-      trade_id TEXT NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
-      tag TEXT NOT NULL,
-      PRIMARY KEY (trade_id, tag)
-    );
-
-    CREATE TABLE IF NOT EXISTS tags (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL REFERENCES users(id),
-      name TEXT NOT NULL,
-      UNIQUE(user_id, name)
-    );
-
-    CREATE TABLE IF NOT EXISTS schwab_tokens (
-      user_id TEXT PRIMARY KEY REFERENCES users(id),
-      access_token TEXT NOT NULL,
-      refresh_token TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      updated_at TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS broker_sync_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL REFERENCES users(id),
-      broker TEXT NOT NULL,
-      account_number TEXT NOT NULL,
-      sync_start TEXT NOT NULL,
-      sync_end TEXT NOT NULL,
-      trades_synced INTEGER NOT NULL DEFAULT 0,
-      synced_at TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS token_refresh_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL REFERENCES users(id),
-      rotated INTEGER NOT NULL DEFAULT 0,
-      error TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS discord_user_links (
-      user_id TEXT NOT NULL REFERENCES users(id),
-      discord_user_id TEXT NOT NULL,
-      guild_id TEXT NOT NULL,
-      linked_at TEXT DEFAULT (datetime('now')),
-      PRIMARY KEY (user_id, discord_user_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS price_alerts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL REFERENCES users(id),
-      symbol TEXT NOT NULL,
-      condition TEXT NOT NULL CHECK (condition IN ('above', 'below')),
-      target_price REAL NOT NULL,
-      triggered INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_trades_user_sort_key ON trades(user_id, sort_key);
-    CREATE INDEX IF NOT EXISTS idx_trade_tags_trade_id ON trade_tags(trade_id);
-    CREATE INDEX IF NOT EXISTS idx_tags_user_id ON tags(user_id);
-  `);
+  return poolDb;
 }

@@ -1,4 +1,6 @@
+import { desc, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
+import { trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
 import {
   dbUnavailable,
   ensureUser,
@@ -17,16 +19,15 @@ export async function GET() {
 
   await ensureUser(db, authState.user);
 
-  const tradeRows = await db.execute({
-    sql: 'SELECT * FROM trades WHERE user_id = ? ORDER BY date DESC',
-    args: [authState.user.id],
-  });
+  const tradeRows = await db.select().from(trades)
+    .where(eq(trades.userId, authState.user.id))
+    .orderBy(desc(trades.date));
 
-  const tradeIds = tradeRows.rows.map((row) => String(row.id));
+  const tradeIds = tradeRows.map((row) => row.id);
   const tagMap = await loadTagsForTradeIds(db, tradeIds);
 
-  const trades = tradeRows.rows.map((row) => toTrade(row, tagMap.get(String(row.id)) ?? []));
-  return Response.json({ trades });
+  const tradeList = tradeRows.map((row) => toTrade(row, tagMap.get(row.id) ?? []));
+  return Response.json({ trades: tradeList });
 }
 
 export async function POST(request: Request) {
@@ -42,60 +43,52 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Missing required fields' }, { status: 400 });
   }
 
-  await db.execute({
-    sql: `
-      INSERT INTO trades (
-        id, user_id, date, sort_key, symbol, direction, avg_entry_price, avg_exit_price,
-        total_quantity, pnl, executions, initial_risk, commission, fees, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        date = excluded.date,
-        sort_key = excluded.sort_key,
-        symbol = excluded.symbol,
-        direction = excluded.direction,
-        avg_entry_price = excluded.avg_entry_price,
-        avg_exit_price = excluded.avg_exit_price,
-        total_quantity = excluded.total_quantity,
-        pnl = excluded.pnl,
-        executions = excluded.executions,
-        initial_risk = excluded.initial_risk,
-        commission = excluded.commission,
-        fees = excluded.fees,
-        notes = excluded.notes
-    `,
-    args: [
-      body.id,
-      authState.user.id,
-      body.date,
-      body.sortKey,
-      body.symbol,
-      body.direction,
-      body.avgEntryPrice ?? 0,
-      body.avgExitPrice ?? 0,
-      body.totalQuantity ?? 0,
-      body.pnl ?? 0,
-      body.executions ?? 1,
-      body.initialRisk ?? null,
-      body.commission ?? 0,
-      body.fees ?? 0,
-      body.notes ?? null,
-    ],
+  await db.insert(trades).values({
+    id: body.id,
+    userId: authState.user.id,
+    date: body.date,
+    sortKey: body.sortKey,
+    symbol: body.symbol,
+    direction: body.direction,
+    avgEntryPrice: body.avgEntryPrice ?? 0,
+    avgExitPrice: body.avgExitPrice ?? 0,
+    totalQuantity: body.totalQuantity ?? 0,
+    pnl: body.pnl ?? 0,
+    executions: body.executions ?? 1,
+    initialRisk: body.initialRisk ?? null,
+    commission: body.commission ?? 0,
+    fees: body.fees ?? 0,
+    notes: body.notes ?? null,
+  }).onConflictDoUpdate({
+    target: trades.id,
+    set: {
+      date: body.date,
+      sortKey: body.sortKey,
+      symbol: body.symbol,
+      direction: body.direction,
+      avgEntryPrice: body.avgEntryPrice ?? 0,
+      avgExitPrice: body.avgExitPrice ?? 0,
+      totalQuantity: body.totalQuantity ?? 0,
+      pnl: body.pnl ?? 0,
+      executions: body.executions ?? 1,
+      initialRisk: body.initialRisk ?? null,
+      commission: body.commission ?? 0,
+      fees: body.fees ?? 0,
+      notes: body.notes ?? null,
+    },
   });
 
   if (Array.isArray(body.tags)) {
-    await db.execute({ sql: 'DELETE FROM trade_tags WHERE trade_id = ?', args: [body.id] });
+    await db.delete(tradeTagsTable).where(eq(tradeTagsTable.tradeId, body.id));
     for (const tag of body.tags) {
-      await db.execute({ sql: 'INSERT OR IGNORE INTO trade_tags (trade_id, tag) VALUES (?, ?)', args: [body.id, tag] });
-      await db.execute({ sql: 'INSERT OR IGNORE INTO tags (user_id, name) VALUES (?, ?)', args: [authState.user.id, tag] });
+      await db.insert(tradeTagsTable).values({ tradeId: body.id, tag }).onConflictDoNothing();
+      await db.insert(tagsTable).values({ userId: authState.user.id, name: tag }).onConflictDoNothing();
     }
   }
 
-  const tradeRes = await db.execute({
-    sql: 'SELECT * FROM trades WHERE id = ? AND user_id = ? LIMIT 1',
-    args: [body.id, authState.user.id],
-  });
-
-  const created = tradeRes.rows[0];
+  const [created] = await db.select().from(trades)
+    .where(eq(trades.id, body.id))
+    .limit(1);
   if (!created) return Response.json({ error: 'Trade not found after save' }, { status: 500 });
 
   const trade = toTrade(created, body.tags ?? []);

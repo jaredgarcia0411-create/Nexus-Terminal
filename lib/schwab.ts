@@ -1,11 +1,6 @@
-import type { Client, InValue } from '@libsql/client';
-
-type TokenRow = {
-  user_id: string;
-  access_token: string;
-  refresh_token: string;
-  expires_at: string;
-};
+import { eq } from 'drizzle-orm';
+import { type Db } from '@/lib/db';
+import { schwabTokens } from '@/lib/db/schema';
 
 export type SchwabTokenState = {
   accessToken: string;
@@ -13,12 +8,21 @@ export type SchwabTokenState = {
   expiresAt: string;
 };
 
-function readTokenRow(row: Record<string, InValue>): SchwabTokenState {
-  return {
-    accessToken: String(row.access_token),
-    refreshToken: String(row.refresh_token),
-    expiresAt: String(row.expires_at),
+export function logTokenEvent(userId: string, success: boolean, message?: string) {
+  const payload = {
+    event: 'schwab_token_refresh',
+    userId,
+    success,
+    timestamp: new Date().toISOString(),
+    ...(message ? { message } : {}),
   };
+
+  if (success) {
+    console.info(JSON.stringify(payload));
+    return;
+  }
+
+  console.error(JSON.stringify(payload));
 }
 
 export function isTokenExpired(expiresAtIso: string): boolean {
@@ -58,7 +62,7 @@ async function refreshSchwabToken(refreshToken: string): Promise<{ accessToken: 
     const payload = (await res.json().catch(() => ({}))) as {
       access_token?: string;
       refresh_token?: string;
-      expires_in?: number;
+      expires_in?: number | string;
       error?: string;
     };
 
@@ -66,7 +70,9 @@ async function refreshSchwabToken(refreshToken: string): Promise<{ accessToken: 
       throw new Error(payload.error || 'Failed to refresh Schwab token');
     }
 
-    const expiresAt = new Date(Date.now() + (payload.expires_in ?? 3600) * 1000).toISOString();
+    const expiresInSeconds = Number(payload.expires_in ?? 3600);
+    const expiresAtDate = new Date(Date.now() + expiresInSeconds * 1000);
+    const expiresAt = Number.isNaN(expiresAtDate.getTime()) ? 'invalid' : expiresAtDate.toISOString();
     return {
       accessToken: payload.access_token,
       refreshToken: payload.refresh_token || refreshToken,
@@ -87,29 +93,24 @@ async function refreshSchwabToken(refreshToken: string): Promise<{ accessToken: 
   }
 }
 
-export async function loadUserSchwabToken(db: Client, userId: string): Promise<SchwabTokenState | null> {
-  const rowRes = await db.execute({
-    sql: 'SELECT user_id, access_token, refresh_token, expires_at FROM schwab_tokens WHERE user_id = ? LIMIT 1',
-    args: [userId],
-  });
+type TokenReader = Pick<Db, 'select'>;
 
-  const row = rowRes.rows[0] as Record<string, InValue> | undefined;
+export async function loadUserSchwabToken(db: TokenReader, userId: string): Promise<SchwabTokenState | null> {
+  const rows = await db.select()
+    .from(schwabTokens)
+    .where(eq(schwabTokens.userId, userId))
+    .limit(1);
+
+  const row = rows[0];
   if (!row) return null;
-  return readTokenRow(row);
+  return {
+    accessToken: row.accessToken,
+    refreshToken: row.refreshToken,
+    expiresAt: row.expiresAt,
+  };
 }
 
-async function logTokenRefresh(db: Client, userId: string, rotated: boolean, error?: string) {
-  try {
-    await db.execute({
-      sql: `INSERT INTO token_refresh_log (user_id, rotated, error, created_at) VALUES (?, ?, ?, datetime('now'))`,
-      args: [userId, rotated ? 1 : 0, error ?? null],
-    });
-  } catch {
-    // Non-critical — don't break the refresh flow
-  }
-}
-
-export async function getValidSchwabToken(db: Client, userId: string): Promise<SchwabTokenState | null> {
+export async function getValidSchwabToken(db: Db, userId: string): Promise<SchwabTokenState | null> {
   // If another request is already refreshing for this user, wait on it
   const existing = refreshLocks.get(userId);
   if (existing) {
@@ -118,48 +119,50 @@ export async function getValidSchwabToken(db: Client, userId: string): Promise<S
 
   const doRefresh = async (): Promise<SchwabTokenState | null> => {
     try {
-      const token = await loadUserSchwabToken(db, userId);
-      if (!token) return null;
+      return await db.transaction(async (tx) => {
+        const token = await loadUserSchwabToken(tx, userId);
+        if (!token) return null;
 
-      if (!isTokenExpired(token.expiresAt)) {
-        return token;
-      }
+        if (!isTokenExpired(token.expiresAt)) {
+          return token;
+        }
 
-      // Re-read from DB — another request may have already refreshed
-      const freshToken = await loadUserSchwabToken(db, userId);
-      if (freshToken && !isTokenExpired(freshToken.expiresAt)) {
-        console.log(`[schwab] Token for user ${userId} was already refreshed by another request`);
-        return freshToken;
-      }
+        // Re-read from DB — another request may have already refreshed
+        const freshToken = await loadUserSchwabToken(tx, userId);
+        if (freshToken && !isTokenExpired(freshToken.expiresAt)) {
+          console.log(`[schwab] Token for user ${userId} was already refreshed by another request`);
+          return freshToken;
+        }
 
-      const tokenToRefresh = freshToken ?? token;
-      console.log(`[schwab] Refreshing token for user ${userId}`);
+        const tokenToRefresh = freshToken ?? token;
+        console.log(`[schwab] Refreshing token for user ${userId}`);
 
-      const refreshed = await refreshSchwabToken(tokenToRefresh.refreshToken);
-      const rotated = refreshed.refreshToken !== tokenToRefresh.refreshToken;
+        const refreshed = await refreshSchwabToken(tokenToRefresh.refreshToken);
+        const rotated = refreshed.refreshToken !== tokenToRefresh.refreshToken;
 
-      console.log(`[schwab] Token refreshed for user ${userId}, rotation=${rotated}, expires=${refreshed.expiresAt}`);
+        if (Number.isNaN(new Date(refreshed.expiresAt).getTime())) {
+          throw new Error('Invalid expiresAt received from Schwab token refresh');
+        }
 
-      await db.execute({
-        sql: `
-          UPDATE schwab_tokens
-          SET access_token = ?, refresh_token = ?, expires_at = ?, updated_at = datetime('now')
-          WHERE user_id = ?
-        `,
-        args: [refreshed.accessToken, refreshed.refreshToken, refreshed.expiresAt, userId],
+        await tx.update(schwabTokens)
+          .set({
+            accessToken: refreshed.accessToken,
+            refreshToken: refreshed.refreshToken,
+            expiresAt: refreshed.expiresAt,
+          })
+          .where(eq(schwabTokens.userId, userId));
+
+        logTokenEvent(userId, true, rotated ? 'refresh_token_rotated' : 'refresh_token_reused');
+
+        return {
+          accessToken: refreshed.accessToken,
+          refreshToken: refreshed.refreshToken,
+          expiresAt: refreshed.expiresAt,
+        };
       });
-
-      await logTokenRefresh(db, userId, rotated);
-
-      return {
-        accessToken: refreshed.accessToken,
-        refreshToken: refreshed.refreshToken,
-        expiresAt: refreshed.expiresAt,
-      };
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown refresh error';
-      console.error(`[schwab] Token refresh failed for user ${userId}: ${msg}`);
-      await logTokenRefresh(db, userId, false, msg);
+      logTokenEvent(userId, false, msg);
       throw error;
     } finally {
       refreshLocks.delete(userId);
@@ -170,5 +173,3 @@ export async function getValidSchwabToken(db: Client, userId: string): Promise<S
   refreshLocks.set(userId, promise);
   return promise;
 }
-
-export type { TokenRow };

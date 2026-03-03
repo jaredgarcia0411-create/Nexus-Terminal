@@ -1,4 +1,4 @@
-import { getDb, initDb } from '@/lib/db';
+import { getDb } from '@/lib/db';
 
 export async function GET() {
   const db = getDb();
@@ -6,6 +6,5 @@ export async function GET() {
     return Response.json({ db: false }, { status: 503 });
   }
 
-  await initDb();
   return Response.json({ db: true });
 }

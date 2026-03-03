@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getBaseUrl } from '@/lib/env';
 import { auth } from '@/lib/auth-config';
-import { getDb } from '@/lib/db';
+import { getDb, type Db } from '@/lib/db';
+import { schwabTokens } from '@/lib/db/schema';
 import { ensureUser } from '@/lib/server-db-utils';
 
 export async function GET(request: Request) {
@@ -11,7 +12,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 
-  const db = getDb();
+  const db: Db | null = getDb();
   if (!db) {
     return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
   }
@@ -57,17 +58,20 @@ export async function GET(request: Request) {
 
     const expiresAt = new Date(Date.now() + (tokenData.expires_in ?? 3600) * 1000).toISOString();
 
-    await db.execute({
-      sql: `
-        INSERT INTO schwab_tokens (user_id, access_token, refresh_token, expires_at, updated_at)
-        VALUES (?, ?, ?, ?, datetime('now'))
-        ON CONFLICT(user_id) DO UPDATE SET
-          access_token = excluded.access_token,
-          refresh_token = excluded.refresh_token,
-          expires_at = excluded.expires_at,
-          updated_at = datetime('now')
-      `,
-      args: [user.id, tokenData.access_token, tokenData.refresh_token, expiresAt],
+    await db.insert(schwabTokens).values({
+      userId: user.id,
+      accessToken: tokenData.access_token,
+      refreshToken: tokenData.refresh_token,
+      expiresAt,
+      updatedAt: new Date(),
+    }).onConflictDoUpdate({
+      target: schwabTokens.userId,
+      set: {
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+        expiresAt,
+        updatedAt: new Date(),
+      },
     });
 
     return new NextResponse(
