@@ -2,37 +2,58 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Activity, Search, Upload, X } from 'lucide-react';
+import { Activity, Play, Search, Upload, X } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
 import { format } from 'date-fns';
+import dynamic from 'next/dynamic';
+import type { IndicatorType, CandleData, TradeMarker } from '@/components/trading/CandlestickChart';
+import { ALL_STRATEGIES, type StrategyDefinition } from '@/lib/backtesting/strategies';
+import { runBacktest, type BacktestResult } from '@/lib/backtesting/engine';
+import type { OHLCData } from '@/lib/indicators';
+import BacktestResultsPanel from '@/components/trading/BacktestResultsPanel';
+
+const CandlestickChart = dynamic(() => import('@/components/trading/CandlestickChart'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[400px] items-center justify-center">
+      <div className="h-10 w-10 animate-spin rounded-full border-4 border-emerald-500/20 border-t-emerald-500" />
+    </div>
+  ),
+});
 
 type SchwabStatusResponse = {
   connected: boolean;
   expiresAt?: string;
 };
 
-type Candle = {
-  datetime: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-};
-
 type MarketDataResponse = {
   symbol: string;
-  candles: Candle[];
+  candles: CandleData[];
 };
+
+type TimeframeOption = {
+  label: string;
+  periodType: string;
+  period: string;
+  frequencyType: string;
+  frequency: string;
+};
+
+const TIMEFRAMES: TimeframeOption[] = [
+  { label: '1D', periodType: 'day', period: '1', frequencyType: 'minute', frequency: '5' },
+  { label: '1W', periodType: 'day', period: '5', frequencyType: 'minute', frequency: '30' },
+  { label: '1M', periodType: 'month', period: '1', frequencyType: 'daily', frequency: '1' },
+  { label: '3M', periodType: 'month', period: '3', frequencyType: 'daily', frequency: '1' },
+  { label: '1Y', periodType: 'year', period: '1', frequencyType: 'daily', frequency: '1' },
+];
+
+const INDICATOR_OPTIONS: { id: IndicatorType; label: string }[] = [
+  { id: 'sma20', label: 'SMA 20' },
+  { id: 'sma50', label: 'SMA 50' },
+  { id: 'ema12', label: 'EMA 12' },
+  { id: 'ema26', label: 'EMA 26' },
+  { id: 'bollinger', label: 'Bollinger' },
+];
 
 export default function BacktestingTab() {
   const [symbolQuery, setSymbolQuery] = useState('NVDA');
@@ -42,6 +63,20 @@ export default function BacktestingTab() {
   const [loadingData, setLoadingData] = useState(false);
   const [marketData, setMarketData] = useState<MarketDataResponse | null>(null);
   const [contextFiles, setContextFiles] = useState<File[]>([]);
+  const [selectedTimeframe, setSelectedTimeframe] = useState<TimeframeOption>(TIMEFRAMES[4]); // 1Y default
+  const [activeIndicators, setActiveIndicators] = useState<Set<IndicatorType>>(new Set());
+
+  // Backtesting state
+  const [selectedStrategy, setSelectedStrategy] = useState<StrategyDefinition>(ALL_STRATEGIES[0]);
+  const [strategyParams, setStrategyParams] = useState<Record<string, number>>(() => {
+    const defaults: Record<string, number> = {};
+    ALL_STRATEGIES[0].params.forEach((p) => { defaults[p.key] = p.defaultValue; });
+    return defaults;
+  });
+  const [initialCapital, setInitialCapital] = useState(10000);
+  const [positionSizePct, setPositionSizePct] = useState(0.1);
+  const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
+  const [runningBacktest, setRunningBacktest] = useState(false);
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -90,13 +125,21 @@ export default function BacktestingTab() {
     }
   };
 
-  const loadSymbolData = useCallback(async (symbol: string) => {
+  const loadSymbolData = useCallback(async (symbol: string, tf: TimeframeOption = selectedTimeframe) => {
     try {
       setLoadingData(true);
       const cleanSymbol = symbol.trim().toUpperCase();
       if (!cleanSymbol) return;
 
-      const res = await fetch(`/api/schwab/market-data?symbol=${encodeURIComponent(cleanSymbol)}`);
+      const params = new URLSearchParams({
+        symbol: cleanSymbol,
+        periodType: tf.periodType,
+        period: tf.period,
+        frequencyType: tf.frequencyType,
+        frequency: tf.frequency,
+      });
+
+      const res = await fetch(`/api/schwab/market-data?${params}`);
       const data = (await res.json()) as MarketDataResponse & { error?: string };
       if (!res.ok) {
         throw new Error(data.error || 'Could not fetch market data');
@@ -114,20 +157,81 @@ export default function BacktestingTab() {
     } finally {
       setLoadingData(false);
     }
-  }, []);
+  }, [selectedTimeframe]);
 
-  const chartData = useMemo(
-    () =>
-      (marketData?.candles ?? []).map((candle) => ({
-        date: format(new Date(candle.datetime), 'MM/dd'),
-        close: candle.close,
-        open: candle.open,
-        high: candle.high,
-        low: candle.low,
-        volume: candle.volume,
-      })),
-    [marketData],
-  );
+  const handleTimeframeChange = (tf: TimeframeOption) => {
+    setSelectedTimeframe(tf);
+    if (activeSymbol) {
+      loadSymbolData(activeSymbol, tf);
+    }
+  };
+
+  const toggleIndicator = (id: IndicatorType) => {
+    setActiveIndicators((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const candles = useMemo(() => marketData?.candles ?? [], [marketData]);
+
+  const handleStrategyChange = (stratId: string) => {
+    const strat = ALL_STRATEGIES.find((s) => s.id === stratId);
+    if (!strat) return;
+    setSelectedStrategy(strat);
+    const defaults: Record<string, number> = {};
+    strat.params.forEach((p) => { defaults[p.key] = p.defaultValue; });
+    setStrategyParams(defaults);
+    setBacktestResult(null);
+  };
+
+  const handleRunBacktest = () => {
+    if (candles.length === 0) {
+      toast.error('Load market data first');
+      return;
+    }
+
+    setRunningBacktest(true);
+    setBacktestResult(null);
+
+    // Run in a setTimeout to avoid blocking the UI
+    setTimeout(() => {
+      try {
+        const ohlcData: OHLCData[] = candles.map((c) => ({
+          time: c.datetime,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+        }));
+
+        const stratConfig = selectedStrategy.createConfig(strategyParams);
+        const result = runBacktest(ohlcData, {
+          initialCapital,
+          positionSizePct,
+          ...stratConfig,
+        });
+
+        setBacktestResult(result);
+        toast.success(`Backtest complete: ${result.trades.length} trades`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Backtest failed');
+      } finally {
+        setRunningBacktest(false);
+      }
+    }, 10);
+  };
+
+  const tradeMarkers: TradeMarker[] = useMemo(() => {
+    if (!backtestResult) return [];
+    return backtestResult.trades.flatMap((trade) => [
+      { time: trade.entryTime, direction: trade.direction, price: trade.entryPrice, label: `${trade.direction} Entry` },
+      { time: trade.exitTime, direction: trade.direction, price: trade.exitPrice, label: 'Exit' },
+    ]);
+  }, [backtestResult]);
 
   return (
     <motion.div key="backtesting" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
@@ -209,36 +313,139 @@ export default function BacktestingTab() {
       </div>
 
       <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
-        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-zinc-400">
-          {activeSymbol ? `${activeSymbol} Historical Price` : 'Historical Price'}
-        </h3>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">
+            {activeSymbol ? `${activeSymbol} Historical Price` : 'Historical Price'}
+          </h3>
+
+          <div className="flex items-center gap-4">
+            {/* Timeframe selector */}
+            <div className="flex gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
+              {TIMEFRAMES.map((tf) => (
+                <button
+                  key={tf.label}
+                  onClick={() => handleTimeframeChange(tf)}
+                  className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                    selectedTimeframe.label === tf.label
+                      ? 'bg-emerald-500 text-black'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  {tf.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Indicator toggles */}
+            <div className="flex gap-1">
+              {INDICATOR_OPTIONS.map((ind) => (
+                <button
+                  key={ind.id}
+                  onClick={() => toggleIndicator(ind.id)}
+                  className={`rounded-lg border px-2 py-1 text-[10px] font-medium transition-colors ${
+                    activeIndicators.has(ind.id)
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                      : 'border-white/10 text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  {ind.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
         {loadingData ? (
-          <div className="flex h-[360px] items-center justify-center">
+          <div className="flex h-[400px] items-center justify-center">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-emerald-500/20 border-t-emerald-500" />
           </div>
-        ) : chartData.length === 0 ? (
-          <div className="flex h-[360px] items-center justify-center text-sm text-zinc-500">
+        ) : candles.length === 0 ? (
+          <div className="flex h-[400px] items-center justify-center text-sm text-zinc-500">
             {status.connected ? 'Search a symbol to load historical data.' : 'Connect Schwab to fetch historical data.'}
           </div>
         ) : (
-          <div className="h-[360px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                <XAxis dataKey="date" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} domain={['auto', 'auto']} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
-                  formatter={(value: number | string | undefined, key: string | undefined) => [
-                    Number(value ?? 0).toFixed(2),
-                    key ?? 'close',
-                  ]}
-                />
-                <Line type="monotone" dataKey="close" stroke="#10b981" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <CandlestickChart
+            candles={candles}
+            indicators={Array.from(activeIndicators)}
+            tradeMarkers={tradeMarkers}
+            height={400}
+          />
         )}
+      </div>
+      {/* Backtesting Strategy Panel */}
+      <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-zinc-400">Backtesting</h3>
+
+        <div className="mb-4 grid max-w-3xl grid-cols-4 gap-4">
+          <div>
+            <label className="mb-1 block text-xs text-zinc-400">Strategy</label>
+            <select
+              value={selectedStrategy.id}
+              onChange={(e) => handleStrategyChange(e.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:border-emerald-500/50 focus:outline-none"
+            >
+              {ALL_STRATEGIES.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-[10px] text-zinc-500">{selectedStrategy.description}</p>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-zinc-400">Initial Capital</label>
+            <input
+              type="number"
+              value={initialCapital}
+              onChange={(e) => setInitialCapital(Number(e.target.value) || 10000)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:border-emerald-500/50 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-zinc-400">Position Size %</label>
+            <input
+              type="number"
+              value={(positionSizePct * 100).toFixed(0)}
+              onChange={(e) => setPositionSizePct((Number(e.target.value) || 10) / 100)}
+              min={1}
+              max={100}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:border-emerald-500/50 focus:outline-none"
+            />
+          </div>
+
+          <div className="flex flex-col">
+            <label className="mb-1 block text-xs text-zinc-400">Parameters</label>
+            {selectedStrategy.params.map((p) => (
+              <div key={p.key} className="mb-1 flex items-center gap-2">
+                <span className="text-[10px] text-zinc-500">{p.label}</span>
+                <input
+                  type="number"
+                  value={strategyParams[p.key] ?? p.defaultValue}
+                  onChange={(e) => setStrategyParams((prev) => ({ ...prev, [p.key]: Number(e.target.value) || p.defaultValue }))}
+                  min={p.min}
+                  max={p.max}
+                  step={p.step}
+                  className="w-20 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs focus:border-emerald-500/50 focus:outline-none"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button
+          onClick={handleRunBacktest}
+          disabled={runningBacktest || candles.length === 0}
+          className="flex items-center gap-2 rounded-lg bg-emerald-500 px-6 py-2 text-sm font-medium text-black transition-colors hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Play className="h-4 w-4" />
+          {runningBacktest ? 'Running...' : 'Run Backtest'}
+        </button>
+
+        {backtestResult ? (
+          <div className="mt-6">
+            <BacktestResultsPanel result={backtestResult} />
+          </div>
+        ) : null}
       </div>
     </motion.div>
   );

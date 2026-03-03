@@ -70,6 +70,43 @@ export async function initDb() {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS broker_sync_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      broker TEXT NOT NULL,
+      account_number TEXT NOT NULL,
+      sync_start TEXT NOT NULL,
+      sync_end TEXT NOT NULL,
+      trades_synced INTEGER NOT NULL DEFAULT 0,
+      synced_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS token_refresh_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      rotated INTEGER NOT NULL DEFAULT 0,
+      error TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS discord_user_links (
+      user_id TEXT NOT NULL REFERENCES users(id),
+      discord_user_id TEXT NOT NULL,
+      guild_id TEXT NOT NULL,
+      linked_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, discord_user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS price_alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      symbol TEXT NOT NULL,
+      condition TEXT NOT NULL CHECK (condition IN ('above', 'below')),
+      target_price REAL NOT NULL,
+      triggered INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_trades_user_sort_key ON trades(user_id, sort_key);
     CREATE INDEX IF NOT EXISTS idx_trade_tags_trade_id ON trade_tags(trade_id);
     CREATE INDEX IF NOT EXISTS idx_tags_user_id ON tags(user_id);

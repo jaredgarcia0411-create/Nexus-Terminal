@@ -14,6 +14,7 @@ import JournalTab from '@/components/trading/JournalTab';
 import PerformanceTab from '@/components/trading/PerformanceTab';
 import FilterTab from '@/components/trading/FilterTab';
 import BacktestingTab from '@/components/trading/BacktestingTab';
+import BrokerSyncTab from '@/components/trading/BrokerSyncTab';
 import { useTrades } from '@/hooks/use-trades';
 
 export default function NexusTerminal() {
@@ -32,6 +33,7 @@ export default function NexusTerminal() {
     error,
     useLocalStorage,
     importInputRef,
+    folderInputRef,
     selectedIds,
     startDate,
     endDate,
@@ -62,6 +64,7 @@ export default function NexusTerminal() {
     handleBulkAddTag,
     handleClearAllData,
     handleFileUpload,
+    handleFolderUpload,
   } = useTrades();
 
   const selectedTrade = useMemo(() => trades.find((trade) => trade.id === selectedTradeId) ?? null, [selectedTradeId, trades]);
@@ -97,10 +100,13 @@ export default function NexusTerminal() {
           selectedCount={selectedIds.size}
           onDeleteSelected={handleDeleteSelected}
           onImportClick={() => importInputRef.current?.click()}
+          onFolderImportClick={() => folderInputRef.current?.click()}
           onNewTradeClick={() => setIsManualTradeOpen(true)}
           onSignOut={handleSignOut}
         />
         <input ref={importInputRef} type="file" accept=".csv" multiple className="hidden" onChange={handleFileUpload} />
+        {/* @ts-expect-error webkitdirectory is non-standard but widely supported */}
+        <input ref={folderInputRef} type="file" accept=".csv" multiple webkitdirectory="" className="hidden" onChange={handleFolderUpload} />
 
         <div className="mx-auto max-w-7xl p-8">
           <AnimatePresence mode="wait">
@@ -185,6 +191,8 @@ export default function NexusTerminal() {
             ) : null}
 
             {activeTab === 'backtesting' ? <BacktestingTab /> : null}
+
+            {activeTab === 'sync' ? <BrokerSyncTab /> : null}
           </AnimatePresence>
         </div>
       </main>

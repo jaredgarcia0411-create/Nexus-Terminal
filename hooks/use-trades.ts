@@ -6,6 +6,7 @@ import Papa from 'papaparse';
 import { toast } from 'sonner';
 import type { Trade } from '@/lib/types';
 import { parseDateFromFilename, processCsvData } from '@/lib/csv-parser';
+import { detectParser, getParserById } from '@/lib/parsers';
 import { isDatabaseAvailable } from '@/lib/storage';
 import { useSession } from 'next-auth/react';
 
@@ -61,6 +62,7 @@ export function useTrades() {
   const [bulkTagInput, setBulkTagInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
 
   const sortTrades = (list: Trade[]) => [...list].sort((a, b) => b.date.getTime() - a.date.getTime());
 
@@ -551,6 +553,114 @@ export function useTrades() {
     }
   };
 
+  const handleFolderUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsImporting(true);
+    setError(null);
+
+    const allNewTrades: Trade[] = [];
+    const processedDates = new Set<string>();
+    const warnings: string[] = [];
+
+    try {
+      // Group files by subdirectory name (broker hint)
+      const groups = new Map<string, File[]>();
+      for (let i = 0; i < files.length; i += 1) {
+        const file = files[i];
+        if (!file.name.endsWith('.csv')) continue;
+        const relativePath = (file as any).webkitRelativePath as string | undefined;
+        const parts = relativePath?.split('/') ?? [];
+        // e.g. "my-trades/schwab/01-15-25.csv" → subdirName = "schwab"
+        const subdirName = parts.length >= 3 ? parts[parts.length - 2].toLowerCase() : 'default';
+        if (!groups.has(subdirName)) groups.set(subdirName, []);
+        groups.get(subdirName)!.push(file);
+      }
+
+      for (const [subdirName, groupFiles] of groups) {
+        // Try to resolve parser by subdirectory name
+        const parserById = getParserById(subdirName);
+
+        for (const file of groupFiles) {
+          const dateInfo = parseDateFromFilename(file.name);
+          if (!dateInfo) {
+            warnings.push(`Skipped ${file.name}: could not parse date from filename`);
+            continue;
+          }
+
+          processedDates.add(dateInfo.sortKey);
+
+          await new Promise<void>((resolve, reject) => {
+            Papa.parse(file, {
+              header: true,
+              skipEmptyLines: true,
+              complete: (results) => {
+                try {
+                  const rows = results.data as Record<string, unknown>[];
+                  // Resolve parser: by dir name → auto-detect from headers → built-in
+                  const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+                  const parser = parserById ?? detectParser(headers, rows);
+                  const parsed = processCsvData(rows, dateInfo, parser.id !== 'default' ? parser : undefined);
+                  allNewTrades.push(...parsed.trades);
+                  warnings.push(...parsed.warnings);
+                  resolve();
+                } catch (parseError) {
+                  reject(parseError);
+                }
+              },
+              error: (parseError) => reject(parseError),
+            });
+          });
+        }
+      }
+
+      if (warnings.length > 0) {
+        toast.warning(`${warnings.length} warning(s) during folder import`);
+      }
+
+      if (useLocalStorage) {
+        setTrades((prev) => {
+          const existingMeta = new Map(
+            prev
+              .filter((trade) => processedDates.has(trade.sortKey))
+              .map((trade) => [trade.id, { tags: trade.tags, notes: trade.notes, initialRisk: trade.initialRisk }] as const),
+          );
+
+          const mergedNewTrades = allNewTrades.map((trade) => {
+            const preserved = existingMeta.get(trade.id);
+            if (!preserved) return trade;
+            return {
+              ...trade,
+              tags: preserved.tags ?? [],
+              notes: preserved.notes,
+              initialRisk: preserved.initialRisk,
+            };
+          });
+
+          const filtered = prev.filter((trade) => !processedDates.has(trade.sortKey));
+          return sortTrades([...mergedNewTrades, ...filtered]);
+        });
+      } else {
+        const importRes = await apiRequest<{ trades: ApiTrade[] }>('/api/trades/import', {
+          method: 'POST',
+          body: JSON.stringify({ trades: allNewTrades.map(toApiTrade) }),
+        });
+
+        setTrades(sortTrades(importRes.trades.map(fromApiTrade)));
+        const tagsRes = await apiRequest<{ tags: string[] }>('/api/tags');
+        setGlobalTags(tagsRes.tags);
+      }
+    } catch (uploadError) {
+      const msg = uploadError instanceof Error ? uploadError.message : 'Processing error';
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setIsImporting(false);
+      event.target.value = '';
+    }
+  };
+
   return {
     status,
     user,
@@ -562,6 +672,7 @@ export function useTrades() {
     error,
     useLocalStorage,
     importInputRef,
+    folderInputRef,
     selectedIds,
     startDate,
     endDate,
@@ -592,5 +703,6 @@ export function useTrades() {
     handleBulkAddTag,
     handleClearAllData,
     handleFileUpload,
+    handleFolderUpload,
   };
 }

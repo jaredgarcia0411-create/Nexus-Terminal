@@ -1,12 +1,12 @@
 'use client';
 
-import { Activity, BarChart3, Filter, LayoutGrid, List, Search, User } from 'lucide-react';
+import { Activity, BarChart3, Filter, LayoutGrid, List, RefreshCw, Search, User } from 'lucide-react';
 import type { Dispatch, SetStateAction } from 'react';
 import SettingsMenu from '@/components/trading/SettingsMenu';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import type { Trade } from '@/lib/types';
 
-export type TabKey = 'dashboard' | 'journal' | 'performance' | 'filter' | 'backtesting';
+export type TabKey = 'dashboard' | 'journal' | 'performance' | 'filter' | 'backtesting' | 'sync';
 
 type UserSession = { id?: string; name?: string | null; email?: string | null; image?: string | null } | undefined;
 
@@ -68,6 +68,13 @@ export default function Sidebar({
           title="Backtesting"
         >
           <Search className="h-5 w-5" />
+        </button>
+        <button
+          onClick={() => setActiveTab('sync')}
+          className={`rounded-lg p-2 transition-colors ${activeTab === 'sync' ? 'bg-emerald-500/10 text-emerald-500' : 'hover:text-white'}`}
+          title="Broker Sync"
+        >
+          <RefreshCw className="h-5 w-5" />
         </button>
       </div>
 

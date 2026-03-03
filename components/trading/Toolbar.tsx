@@ -1,7 +1,8 @@
 'use client';
 
 import Image from 'next/image';
-import { Plus, Trash2, Upload, User, X } from 'lucide-react';
+import { Plus, Trash2, User, X } from 'lucide-react';
+import ImportDropdown from '@/components/trading/ImportDropdown';
 
 interface ToolbarProps {
   filteredTradesCount: number;
@@ -14,6 +15,7 @@ interface ToolbarProps {
   selectedCount: number;
   onDeleteSelected: () => void;
   onImportClick: () => void;
+  onFolderImportClick: () => void;
   onNewTradeClick: () => void;
   onSignOut: () => void;
 }
@@ -29,6 +31,7 @@ export default function Toolbar({
   selectedCount,
   onDeleteSelected,
   onImportClick,
+  onFolderImportClick,
   onNewTradeClick,
   onSignOut,
 }: ToolbarProps) {
@@ -90,13 +93,7 @@ export default function Toolbar({
           </div>
         ) : null}
 
-        <button
-          onClick={onImportClick}
-          className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-white/10"
-        >
-          <Upload className="h-4 w-4" />
-          Bulk Import
-        </button>
+        <ImportDropdown onImportFiles={onImportClick} onImportFolder={onFolderImportClick} />
 
         <button
           onClick={onNewTradeClick}

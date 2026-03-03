@@ -15,6 +15,9 @@ type SchwabPriceHistoryResponse = {
   error?: string;
 };
 
+const ALLOWED_PERIOD_TYPES = ['day', 'month', 'year', 'ytd'];
+const ALLOWED_FREQUENCY_TYPES = ['minute', 'daily', 'weekly', 'monthly'];
+
 export async function GET(request: Request) {
   const authState = await requireUser();
   if ('error' in authState) return authState.error;
@@ -41,14 +44,32 @@ export async function GET(request: Request) {
     return Response.json({ error: 'Schwab not connected' }, { status: 401 });
   }
 
+  // Flexible query params with sensible defaults
+  const periodType = searchParams.get('periodType') ?? 'year';
+  const period = searchParams.get('period') ?? '1';
+  const frequencyType = searchParams.get('frequencyType') ?? 'daily';
+  const frequency = searchParams.get('frequency') ?? '1';
+  const startDate = searchParams.get('startDate');
+  const endDate = searchParams.get('endDate');
+
+  if (!ALLOWED_PERIOD_TYPES.includes(periodType)) {
+    return Response.json({ error: `Invalid periodType: ${periodType}` }, { status: 400 });
+  }
+  if (!ALLOWED_FREQUENCY_TYPES.includes(frequencyType)) {
+    return Response.json({ error: `Invalid frequencyType: ${frequencyType}` }, { status: 400 });
+  }
+
   const apiBase = process.env.SCHWAB_API_BASE_URL || 'https://api.schwabapi.com';
   const url = new URL('/marketdata/v1/pricehistory', apiBase);
   url.searchParams.set('symbol', symbol);
-  url.searchParams.set('periodType', 'year');
-  url.searchParams.set('period', '1');
-  url.searchParams.set('frequencyType', 'daily');
-  url.searchParams.set('frequency', '1');
+  url.searchParams.set('periodType', periodType);
+  url.searchParams.set('period', period);
+  url.searchParams.set('frequencyType', frequencyType);
+  url.searchParams.set('frequency', frequency);
   url.searchParams.set('needExtendedHoursData', 'false');
+
+  if (startDate) url.searchParams.set('startDate', startDate);
+  if (endDate) url.searchParams.set('endDate', endDate);
 
   const res = await fetch(url.toString(), {
     headers: {
