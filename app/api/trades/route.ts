@@ -1,6 +1,7 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
+import { requireUserOrService } from '@/lib/service-auth';
 import {
   dbUnavailable,
   ensureUser,
@@ -10,21 +11,23 @@ import {
   type ApiTrade,
 } from '@/lib/server-db-utils';
 
-export async function GET() {
-  const authState = await requireUser();
-  if ('error' in authState) return authState.error;
-
+export async function GET(request: Request) {
   const db = getDb();
   if (!db) return dbUnavailable();
 
-  await ensureUser(db, authState.user);
+  const authState = await requireUserOrService(request, db);
+  if ('error' in authState) return authState.error;
+
+  if (authState.source === 'session') {
+    await ensureUser(db, authState.user);
+  }
 
   const tradeRows = await db.select().from(trades)
     .where(eq(trades.userId, authState.user.id))
     .orderBy(desc(trades.date));
 
   const tradeIds = tradeRows.map((row) => row.id);
-  const tagMap = await loadTagsForTradeIds(db, tradeIds);
+  const tagMap = await loadTagsForTradeIds(db, authState.user.id, tradeIds);
 
   const tradeList = tradeRows.map((row) => toTrade(row, tagMap.get(row.id) ?? []));
   return Response.json({ trades: tradeList });
@@ -60,7 +63,7 @@ export async function POST(request: Request) {
     fees: body.fees ?? 0,
     notes: body.notes ?? null,
   }).onConflictDoUpdate({
-    target: trades.id,
+    target: [trades.userId, trades.id],
     set: {
       date: body.date,
       sortKey: body.sortKey,
@@ -79,15 +82,22 @@ export async function POST(request: Request) {
   });
 
   if (Array.isArray(body.tags)) {
-    await db.delete(tradeTagsTable).where(eq(tradeTagsTable.tradeId, body.id));
+    await db.delete(tradeTagsTable).where(and(
+      eq(tradeTagsTable.userId, authState.user.id),
+      eq(tradeTagsTable.tradeId, body.id),
+    ));
     for (const tag of body.tags) {
-      await db.insert(tradeTagsTable).values({ tradeId: body.id, tag }).onConflictDoNothing();
+      await db.insert(tradeTagsTable).values({
+        userId: authState.user.id,
+        tradeId: body.id,
+        tag,
+      }).onConflictDoNothing();
       await db.insert(tagsTable).values({ userId: authState.user.id, name: tag }).onConflictDoNothing();
     }
   }
 
   const [created] = await db.select().from(trades)
-    .where(eq(trades.id, body.id))
+    .where(and(eq(trades.userId, authState.user.id), eq(trades.id, body.id)))
     .limit(1);
   if (!created) return Response.json({ error: 'Trade not found after save' }, { status: 500 });
 

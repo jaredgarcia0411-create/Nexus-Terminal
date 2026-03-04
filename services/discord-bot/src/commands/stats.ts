@@ -3,7 +3,7 @@ import {
   EmbedBuilder,
   SlashCommandBuilder,
 } from "discord.js";
-import { fetchNexusApi, formatCurrency, pnlColor, type Trade } from "../utils.js";
+import { buildDiscordUserHeaders, fetchNexusApi, formatCurrency, pnlColor, type Trade } from "../utils.js";
 
 const PERIOD_DAYS: Record<string, number | null> = {
   "30d": 30,
@@ -35,7 +35,10 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   const days = PERIOD_DAYS[period] ?? null;
 
   try {
-    let trades = await fetchNexusApi<Trade[]>("/api/trades");
+    const response = await fetchNexusApi<{ trades: Trade[] }>("/api/trades", {
+      headers: buildDiscordUserHeaders(interaction.user.id, interaction.guildId),
+    });
+    let trades = response.trades ?? [];
 
     if (!trades || trades.length === 0) {
       await interaction.editReply("No trades found.");
@@ -49,7 +52,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       const cutoffStr = cutoff.toISOString();
 
       trades = trades.filter((t) => {
-        const dateStr = t.exitDate ?? t.entryDate ?? "";
+        const dateStr = t.date ?? t.exitDate ?? t.entryDate ?? "";
         return dateStr >= cutoffStr;
       });
     }

@@ -31,9 +31,16 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
 
   if (Array.isArray(body.tags)) {
-    await db.delete(tradeTagsTable).where(eq(tradeTagsTable.tradeId, id));
+    await db.delete(tradeTagsTable).where(and(
+      eq(tradeTagsTable.userId, authState.user.id),
+      eq(tradeTagsTable.tradeId, id),
+    ));
     for (const tag of body.tags) {
-      await db.insert(tradeTagsTable).values({ tradeId: id, tag }).onConflictDoNothing();
+      await db.insert(tradeTagsTable).values({
+        userId: authState.user.id,
+        tradeId: id,
+        tag,
+      }).onConflictDoNothing();
       await db.insert(tagsTable).values({ userId: authState.user.id, name: tag }).onConflictDoNothing();
     }
   }
@@ -47,7 +54,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   const tagRows = await db.select({ tag: tradeTagsTable.tag })
     .from(tradeTagsTable)
-    .where(eq(tradeTagsTable.tradeId, id));
+    .where(and(eq(tradeTagsTable.userId, authState.user.id), eq(tradeTagsTable.tradeId, id)));
   const tagList = tagRows.map((r) => r.tag);
 
   return Response.json({ trade: toTrade(trade, tagList) });

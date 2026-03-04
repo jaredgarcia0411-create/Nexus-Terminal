@@ -1,4 +1,6 @@
+import { and, desc, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
+import { discordUserLinks } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 
 export async function GET() {
@@ -9,15 +11,18 @@ export async function GET() {
   if (!db) return dbUnavailable();
   await ensureUser(db, authState.user);
 
-  const result = await db.execute({
-    sql: 'SELECT discord_user_id, guild_id, linked_at FROM discord_user_links WHERE user_id = ?',
-    args: [authState.user.id],
-  });
+  const rows = await db.select({
+    discordUserId: discordUserLinks.discordUserId,
+    guildId: discordUserLinks.guildId,
+    linkedAt: discordUserLinks.linkedAt,
+  }).from(discordUserLinks)
+    .where(eq(discordUserLinks.userId, authState.user.id))
+    .orderBy(desc(discordUserLinks.linkedAt));
 
-  const links = result.rows.map((row) => ({
-    discordUserId: String(row.discord_user_id),
-    guildId: String(row.guild_id),
-    linkedAt: String(row.linked_at),
+  const links = rows.map((row) => ({
+    discordUserId: row.discordUserId,
+    guildId: row.guildId,
+    linkedAt: row.linkedAt?.toISOString() ?? '',
   }));
 
   return Response.json({ links });
@@ -39,16 +44,36 @@ export async function POST(request: Request) {
     return Response.json({ error: 'discordUserId and guildId are required' }, { status: 400 });
   }
 
-  await db.execute({
-    sql: `
-      INSERT INTO discord_user_links (user_id, discord_user_id, guild_id)
-      VALUES (?, ?, ?)
-      ON CONFLICT(user_id, discord_user_id) DO UPDATE SET
-        guild_id = excluded.guild_id,
-        linked_at = datetime('now')
-    `,
-    args: [authState.user.id, discordUserId, guildId],
-  });
+  await db.insert(discordUserLinks)
+    .values({
+      userId: authState.user.id,
+      discordUserId,
+      guildId,
+      linkedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [discordUserLinks.userId, discordUserLinks.discordUserId],
+      set: {
+        guildId,
+        linkedAt: new Date(),
+      },
+    });
 
-  return Response.json({ success: true });
+  const [link] = await db.select({
+    discordUserId: discordUserLinks.discordUserId,
+    guildId: discordUserLinks.guildId,
+    linkedAt: discordUserLinks.linkedAt,
+  }).from(discordUserLinks)
+    .where(and(eq(discordUserLinks.userId, authState.user.id), eq(discordUserLinks.discordUserId, discordUserId)))
+    .limit(1);
+
+  return Response.json({
+    link: link
+      ? {
+          discordUserId: link.discordUserId,
+          guildId: link.guildId,
+          linkedAt: link.linkedAt?.toISOString() ?? '',
+        }
+      : null,
+  });
 }

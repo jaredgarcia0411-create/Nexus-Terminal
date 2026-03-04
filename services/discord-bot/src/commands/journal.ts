@@ -4,6 +4,7 @@ import {
   SlashCommandBuilder,
 } from "discord.js";
 import {
+  buildDiscordUserHeaders,
   createTradeEmbed,
   fetchNexusApi,
   formatCurrency,
@@ -35,9 +36,16 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   }
 
   try {
-    const trades = await fetchNexusApi<Trade[]>(
-      `/api/trades?date=${encodeURIComponent(dateInput)}`,
+    const response = await fetchNexusApi<{ trades: Trade[] }>(
+      "/api/trades",
+      {
+        headers: buildDiscordUserHeaders(interaction.user.id, interaction.guildId),
+      },
     );
+    const trades = (response.trades ?? []).filter((trade) => {
+      const dateKey = trade.sortKey ?? trade.date?.slice(0, 10);
+      return dateKey === dateInput;
+    });
 
     if (!trades || trades.length === 0) {
       await interaction.editReply(`No trades found for **${dateInput}**.`);

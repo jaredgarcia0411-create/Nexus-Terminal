@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { tags as tagsTable, tradeTags as tradeTagsTable, trades } from '@/lib/db/schema';
+import { tags as tagsTable, tradeTags as tradeTagsTable } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 
 export async function GET() {
@@ -55,9 +55,8 @@ export async function DELETE(request: Request) {
 
   await db.delete(tagsTable)
     .where(and(eq(tagsTable.userId, authState.user.id), eq(tagsTable.name, name)));
-  const userTradeIds = db.select({ id: trades.id }).from(trades).where(eq(trades.userId, authState.user.id));
   await db.delete(tradeTagsTable)
-    .where(and(inArray(tradeTagsTable.tradeId, userTradeIds), eq(tradeTagsTable.tag, name)));
+    .where(and(eq(tradeTagsTable.userId, authState.user.id), eq(tradeTagsTable.tag, name)));
 
   return Response.json({ success: true, name });
 }

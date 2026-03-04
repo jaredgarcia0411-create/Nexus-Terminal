@@ -1,5 +1,6 @@
 import { getDb } from '@/lib/db';
-import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
+import { requireUserOrService } from '@/lib/service-auth';
+import { dbUnavailable, ensureUser } from '@/lib/server-db-utils';
 import { getValidSchwabToken } from '@/lib/schwab';
 
 type SchwabPriceHistoryResponse = {
@@ -19,12 +20,15 @@ const ALLOWED_PERIOD_TYPES = ['day', 'month', 'year', 'ytd'];
 const ALLOWED_FREQUENCY_TYPES = ['minute', 'daily', 'weekly', 'monthly'];
 
 export async function GET(request: Request) {
-  const authState = await requireUser();
-  if ('error' in authState) return authState.error;
-
   const db = getDb();
   if (!db) return dbUnavailable();
-  await ensureUser(db, authState.user);
+
+  const authState = await requireUserOrService(request, db);
+  if ('error' in authState) return authState.error;
+
+  if (authState.source === 'session') {
+    await ensureUser(db, authState.user);
+  }
 
   const { searchParams } = new URL(request.url);
   const symbol = searchParams.get('symbol')?.trim().toUpperCase();

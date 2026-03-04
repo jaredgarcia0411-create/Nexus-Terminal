@@ -57,11 +57,21 @@ app.post('/api/backtest', async (req, res) => {
 
 // Poll for backtest result
 app.get('/api/backtest/:jobId', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) {
+    return res.status(401).json({ error: 'Missing x-user-id header' });
+  }
+
   const { jobId } = req.params;
 
   const job = await backtestQueue.getJob(jobId);
   if (!job) {
     return res.status(404).json({ error: 'Job not found' });
+  }
+
+  const jobUserId = (job.data as { userId?: string } | undefined)?.userId;
+  if (!jobUserId || jobUserId !== userId) {
+    return res.status(403).json({ error: 'Forbidden' });
   }
 
   const state = await job.getState();

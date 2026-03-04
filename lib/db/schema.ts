@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, text, doublePrecision, integer, serial, timestamp, primaryKey, index, unique } from 'drizzle-orm/pg-core';
+import { pgTable, text, doublePrecision, integer, serial, timestamp, primaryKey, index, unique, foreignKey, boolean } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
@@ -10,7 +10,7 @@ export const users = pgTable('users', {
 });
 
 export const trades = pgTable('trades', {
-  id: text('id').primaryKey(),
+  id: text('id').notNull(),
   userId: text('user_id').notNull().references(() => users.id),
   date: text('date').notNull(),
   sortKey: text('sort_key').notNull(),
@@ -27,15 +27,21 @@ export const trades = pgTable('trades', {
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 }, (table) => [
+  primaryKey({ columns: [table.userId, table.id] }),
   index('idx_trades_user_sort_key').on(table.userId, table.sortKey),
 ]);
 
 export const tradeTags = pgTable('trade_tags', {
-  tradeId: text('trade_id').notNull().references(() => trades.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id),
+  tradeId: text('trade_id').notNull(),
   tag: text('tag').notNull(),
 }, (table) => [
-  primaryKey({ columns: [table.tradeId, table.tag] }),
-  index('idx_trade_tags_trade_id').on(table.tradeId),
+  primaryKey({ columns: [table.userId, table.tradeId, table.tag] }),
+  foreignKey({
+    columns: [table.userId, table.tradeId],
+    foreignColumns: [trades.userId, trades.id],
+  }).onDelete('cascade'),
+  index('idx_trade_tags_user_trade_id').on(table.userId, table.tradeId),
 ]);
 
 export const tags = pgTable('tags', {
@@ -65,3 +71,26 @@ export const brokerSyncLog = pgTable('broker_sync_log', {
   tradesSynced: integer('trades_synced').notNull().default(0),
   syncedAt: timestamp('synced_at', { withTimezone: true }).defaultNow(),
 });
+
+export const discordUserLinks = pgTable('discord_user_links', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  discordUserId: text('discord_user_id').notNull(),
+  guildId: text('guild_id').notNull(),
+  linkedAt: timestamp('linked_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.discordUserId] }),
+  index('idx_discord_links_discord_guild').on(table.discordUserId, table.guildId),
+  index('idx_discord_links_user_id').on(table.userId),
+]);
+
+export const priceAlerts = pgTable('price_alerts', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  symbol: text('symbol').notNull(),
+  condition: text('condition', { enum: ['above', 'below'] }).notNull(),
+  targetPrice: doublePrecision('target_price').notNull(),
+  triggered: boolean('triggered').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('idx_price_alerts_user_triggered').on(table.userId, table.triggered),
+]);

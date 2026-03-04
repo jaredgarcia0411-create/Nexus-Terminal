@@ -1246,3 +1246,105 @@ Update the database line in Project Context to reflect PostgreSQL + Drizzle + Ne
 19. Run `npm run build` — must pass with zero TypeScript errors
 20. Run `npm run dev` and test manually per Testing Requirements
 21. Run `npm test` — existing vitest suite must pass
+
+---
+
+## 6. Code Review Hardening Sprint (2026-03-03) — Completed
+
+### Objective
+
+Close the highest-risk authorization and auth-flow gaps found in the 2026-03-03 code review, then repair integration contracts (Discord/backtest).
+
+### Findings to Address
+
+1. `critical` Cross-tenant trade overwrite/read via globally-scoped `trades.id` and unscoped upserts.
+2. `high` Schwab OAuth flow missing `state` protection.
+3. `high` Trade-tag writes not ownership-scoped.
+4. `medium` Discord bot auth and schema contracts are inconsistent with app routes.
+5. `medium` Backtest command/API contract mismatch and gateway job ownership not enforced.
+
+### Required Changes
+
+#### Change A: Enforce tenant-safe trade identity
+
+**Files:**
+- `lib/db/schema.ts`
+- `app/api/trades/route.ts`
+- `app/api/trades/import/route.ts`
+- `app/api/schwab/sync/route.ts`
+- `app/api/trades/[id]/route.ts`
+- `app/api/trades/bulk/route.ts`
+
+**Actions:**
+- Make trade uniqueness tenant-scoped (composite key/unique on `(user_id, id)` or move to surrogate PK plus unique tenant key).
+- Replace all `onConflictDoUpdate({ target: trades.id })` with tenant-safe conflict targets.
+- Ensure every read/update/delete path involving a trade includes `user_id` constraints.
+- Prevent tag delete/insert on trades not owned by authenticated user.
+
+**Acceptance Criteria:**
+- [x] No code path can update/read another user’s trade by guessed ID.
+- [x] All tag mutation paths enforce ownership.
+- [x] Add tests covering cross-user collision attempts.
+
+#### Change B: Add Schwab OAuth `state` validation
+
+**Files:**
+- `app/api/auth/schwab/url/route.ts`
+- `app/api/auth/schwab/callback/route.ts`
+
+**Actions:**
+- Generate cryptographically-random `state`, bind it to user session (cookie or server store), send in auth URL.
+- Verify callback `state` matches expected value; reject mismatches.
+- Expire/clear used state after successful callback.
+
+**Acceptance Criteria:**
+- [x] Callback without valid state is rejected.
+- [x] Replay/mismatched state is rejected.
+
+#### Change C: Reconcile Discord API contract
+
+**Files:**
+- `services/discord-bot/src/utils.ts`
+- `app/api/discord/alerts/route.ts`
+- `app/api/discord/link/route.ts`
+- `lib/db/schema.ts` + migration(s)
+
+**Actions:**
+- Pick one auth model for bot-to-app calls (service token/JWT or dedicated service route set) and implement consistently.
+- Add missing schema tables used by Discord routes (`discord_user_links`, `price_alerts`) or remove/replace those routes.
+- Align payload fields (`targetPrice` vs `price`) and response shapes.
+
+**Acceptance Criteria:**
+- [x] Bot commands authenticate successfully without relying on browser session cookies.
+- [x] Discord routes execute without missing-table runtime errors.
+- [x] `/alert` persists target price correctly.
+
+#### Change D: Reconcile backtest command and gateway access control
+
+**Files:**
+- `services/discord-bot/src/commands/backtest.ts`
+- `app/api/backtest/route.ts`
+- `services/backtest-gateway/src/index.ts`
+
+**Actions:**
+- Align poll route contract (`/api/backtest?jobId=` vs `/api/backtest/:jobId`) across bot and app.
+- Ensure submission payload includes gateway-required fields (`candles`, etc.) or adapt gateway expectations.
+- Enforce job ownership check in gateway GET handler (compare requesting user to job user).
+
+**Acceptance Criteria:**
+- [x] Backtest command can submit and poll successfully.
+- [x] Users cannot fetch other users’ job results.
+
+### Validation Requirements
+
+- [x] `npm run lint`
+- [x] `npm test`
+- [x] `npx tsc --noEmit`
+- [x] Add/extend tests for cross-tenant trade protections and OAuth state verification
+
+### Completion Notes
+
+- Tenant-safe trade identity is enforced with composite keys/FKs and user-scoped tag mutations.
+- Schwab OAuth now uses a generated `state` cookie with callback verification and one-time clear.
+- Discord bot/app auth now supports service-token + Discord user mapping, with aligned payload contracts.
+- Backtest command, app proxy, and gateway polling contracts are aligned, with gateway ownership checks.

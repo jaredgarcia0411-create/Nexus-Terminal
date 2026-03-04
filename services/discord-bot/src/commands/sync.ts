@@ -3,58 +3,52 @@ import {
   EmbedBuilder,
   SlashCommandBuilder,
 } from "discord.js";
-import { fetchNexusApi } from "../utils.js";
+import { buildDiscordUserHeaders, fetchNexusApi } from "../utils.js";
 
 export const data = new SlashCommandBuilder()
   .setName("sync")
-  .setDescription("Trigger a Schwab broker sync");
+  .setDescription("Trigger a Schwab broker sync")
+  .addStringOption((opt) =>
+    opt
+      .setName("account")
+      .setDescription("Schwab account ID")
+      .setRequired(true),
+  );
 
 interface SyncResult {
-  success: boolean;
-  message?: string;
-  tradesImported?: number;
-  errors?: string[];
+  tradesImported: number;
+  warnings?: string[];
 }
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply();
+  const accountId = interaction.options.getString("account", true);
 
   try {
     const result = await fetchNexusApi<SyncResult>("/api/schwab/sync", {
       method: "POST",
+      body: { accountId },
+      headers: buildDiscordUserHeaders(interaction.user.id, interaction.guildId),
     });
 
     const embed = new EmbedBuilder()
       .setTitle("Schwab Sync")
       .setTimestamp();
 
-    if (result.success) {
-      embed
-        .setColor(0x22c55e)
-        .setDescription("Sync completed successfully.")
-        .addFields({
-          name: "Trades Imported",
-          value: (result.tradesImported ?? 0).toString(),
-          inline: true,
-        });
+    embed
+      .setColor(0x22c55e)
+      .setDescription("Sync completed successfully.")
+      .addFields({
+        name: "Trades Imported",
+        value: String(result.tradesImported ?? 0),
+        inline: true,
+      });
 
-      if (result.message) {
-        embed.addFields({ name: "Details", value: result.message });
-      }
-    } else {
-      embed
-        .setColor(0xef4444)
-        .setDescription("Sync failed.");
-
-      if (result.message) {
-        embed.addFields({ name: "Error", value: result.message });
-      }
-      if (result.errors && result.errors.length > 0) {
-        embed.addFields({
-          name: "Errors",
-          value: result.errors.slice(0, 5).join("\n"),
-        });
-      }
+    if (result.warnings && result.warnings.length > 0) {
+      embed.addFields({
+        name: "Warnings",
+        value: result.warnings.slice(0, 5).join("\n"),
+      });
     }
 
     await interaction.editReply({ embeds: [embed] });

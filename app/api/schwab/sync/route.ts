@@ -1,7 +1,8 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { brokerSyncLog, trades } from '@/lib/db/schema';
-import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
+import { requireUserOrService } from '@/lib/service-auth';
+import { dbUnavailable, ensureUser } from '@/lib/server-db-utils';
 import { getValidSchwabToken } from '@/lib/schwab';
 import { normalizeSchwabTransaction, type SchwabTransaction } from '@/lib/parsers/schwab-api';
 import { processCsvData } from '@/lib/csv-parser';
@@ -11,12 +12,15 @@ const MAX_RANGE_DAYS = 90;
 const COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
 
 export async function POST(request: Request) {
-  const authState = await requireUser();
-  if ('error' in authState) return authState.error;
-
   const db = getDb();
   if (!db) return dbUnavailable();
-  await ensureUser(db, authState.user);
+
+  const authState = await requireUserOrService(request, db);
+  if ('error' in authState) return authState.error;
+
+  if (authState.source === 'session') {
+    await ensureUser(db, authState.user);
+  }
 
   const body = (await request.json().catch(() => ({}))) as {
     accountId?: string;
@@ -145,7 +149,7 @@ export async function POST(request: Request) {
         commission: trade.commission ?? 0,
         fees: trade.fees ?? 0,
       }).onConflictDoUpdate({
-        target: trades.id,
+        target: [trades.userId, trades.id],
         set: {
           avgEntryPrice: trade.avgEntryPrice,
           avgExitPrice: trade.avgExitPrice,

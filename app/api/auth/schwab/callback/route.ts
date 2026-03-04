@@ -1,9 +1,21 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { getBaseUrl } from '@/lib/env';
 import { auth } from '@/lib/auth-config';
 import { getDb, type Db } from '@/lib/db';
 import { schwabTokens } from '@/lib/db/schema';
 import { ensureUser } from '@/lib/server-db-utils';
+import { SCHWAB_OAUTH_STATE_COOKIE, statesMatch } from '@/lib/schwab-oauth-state';
+
+function clearOAuthStateCookie(response: NextResponse) {
+  response.cookies.set({
+    name: SCHWAB_OAUTH_STATE_COOKIE,
+    value: '',
+    path: '/',
+    maxAge: 0,
+  });
+  return response;
+}
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -26,9 +38,16 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
+  const state = searchParams.get('state');
+  const cookieStore = await cookies();
+  const expectedState = cookieStore.get(SCHWAB_OAUTH_STATE_COOKIE)?.value;
+
+  if (!statesMatch(expectedState, state)) {
+    return clearOAuthStateCookie(NextResponse.json({ error: 'Invalid OAuth state' }, { status: 400 }));
+  }
 
   if (!code) {
-    return NextResponse.json({ error: 'No code provided' }, { status: 400 });
+    return clearOAuthStateCookie(NextResponse.json({ error: 'No code provided' }, { status: 400 }));
   }
 
   try {
@@ -47,7 +66,7 @@ export async function GET(request: Request) {
     if (!tokenResponse.ok) {
       const detail = await tokenResponse.text();
       console.error('Schwab OAuth error response:', detail);
-      return NextResponse.json({ error: 'Schwab connection failed' }, { status: 500 });
+      return clearOAuthStateCookie(NextResponse.json({ error: 'Schwab connection failed' }, { status: 500 }));
     }
 
     const tokenData = (await tokenResponse.json()) as {
@@ -74,7 +93,7 @@ export async function GET(request: Request) {
       },
     });
 
-    return new NextResponse(
+    const response = new NextResponse(
       `
       <html>
         <body>
@@ -94,8 +113,9 @@ export async function GET(request: Request) {
         headers: { 'Content-Type': 'text/html' },
       },
     );
+    return clearOAuthStateCookie(response);
   } catch (err) {
     console.error('Schwab OAuth error:', err);
-    return NextResponse.json({ error: 'Schwab connection failed' }, { status: 500 });
+    return clearOAuthStateCookie(NextResponse.json({ error: 'Schwab connection failed' }, { status: 500 }));
   }
 }

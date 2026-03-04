@@ -1,4 +1,4 @@
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { auth } from '@/lib/auth-config';
 import { type Db, type PoolDb } from '@/lib/db';
 import { users, trades, tradeTags } from '@/lib/db/schema';
@@ -72,12 +72,12 @@ export function toTrade(row: typeof trades.$inferSelect, tags: string[] = []): A
   };
 }
 
-export async function loadTagsForTradeIds(db: QueryDb, tradeIds: string[]) {
+export async function loadTagsForTradeIds(db: QueryDb, userId: string, tradeIds: string[]) {
   if (tradeIds.length === 0) return new Map<string, string[]>();
 
   const rows = await db.select()
     .from(tradeTags)
-    .where(inArray(tradeTags.tradeId, tradeIds));
+    .where(and(eq(tradeTags.userId, userId), inArray(tradeTags.tradeId, tradeIds)));
 
   const tagMap = new Map<string, string[]>();
   for (const row of rows) {

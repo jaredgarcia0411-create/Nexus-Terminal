@@ -46,7 +46,7 @@ export async function POST(request: Request) {
         fees: trade.fees ?? 0,
         notes: trade.notes ?? null,
       }).onConflictDoUpdate({
-        target: trades.id,
+        target: [trades.userId, trades.id],
         set: {
           avgEntryPrice: trade.avgEntryPrice,
           avgExitPrice: trade.avgExitPrice,
@@ -61,7 +61,11 @@ export async function POST(request: Request) {
       if (trade.tags?.length) {
         for (const tag of trade.tags) {
           await tx.insert(tagsTable).values({ userId: authState.user.id, name: tag }).onConflictDoNothing();
-          await tx.insert(tradeTagsTable).values({ tradeId: trade.id, tag }).onConflictDoNothing();
+          await tx.insert(tradeTagsTable).values({
+            userId: authState.user.id,
+            tradeId: trade.id,
+            tag,
+          }).onConflictDoNothing();
         }
       }
     }
@@ -71,7 +75,7 @@ export async function POST(request: Request) {
     .where(eq(trades.userId, authState.user.id))
     .orderBy(desc(trades.date));
   const tradeIds = tradeRows.map((row) => row.id);
-  const tagMap = await loadTagsForTradeIds(db, tradeIds);
+  const tagMap = await loadTagsForTradeIds(db, authState.user.id, tradeIds);
 
   const tradeList = tradeRows.map((row) => toTrade(row, tagMap.get(row.id) ?? []));
   return Response.json({ trades: tradeList });

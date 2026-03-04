@@ -3,7 +3,7 @@ import {
   EmbedBuilder,
   SlashCommandBuilder,
 } from "discord.js";
-import { fetchNexusApi, formatCurrency, pnlColor, type Trade } from "../utils.js";
+import { buildDiscordUserHeaders, fetchNexusApi, formatCurrency, pnlColor, type Trade } from "../utils.js";
 
 export const data = new SlashCommandBuilder()
   .setName("pnl")
@@ -21,7 +21,10 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   const symbol = interaction.options.getString("symbol")?.toUpperCase() ?? null;
 
   try {
-    const trades = await fetchNexusApi<Trade[]>("/api/trades");
+    const response = await fetchNexusApi<{ trades: Trade[] }>("/api/trades", {
+      headers: buildDiscordUserHeaders(interaction.user.id, interaction.guildId),
+    });
+    const trades = response.trades ?? [];
 
     if (!trades || trades.length === 0) {
       await interaction.editReply("No trades found.");

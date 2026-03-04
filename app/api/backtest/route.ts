@@ -1,10 +1,23 @@
-import { requireUser } from '@/lib/server-db-utils';
+import { getDb } from '@/lib/db';
+import { requireServiceUser } from '@/lib/service-auth';
+import { dbUnavailable, requireUser } from '@/lib/server-db-utils';
 
 const GATEWAY_URL = process.env.BACKTEST_GATEWAY_URL || 'http://localhost:4000';
 
 export async function POST(request: Request) {
-  const authState = await requireUser();
-  if ('error' in authState) return authState.error;
+  const sessionState = await requireUser();
+  const userState = 'error' in sessionState
+    ? null
+    : sessionState;
+
+  let userId = userState?.user.id ?? null;
+  if (!userId) {
+    const db = getDb();
+    if (!db) return dbUnavailable();
+    const serviceState = await requireServiceUser(request, db);
+    if ('error' in serviceState) return serviceState.error;
+    userId = serviceState.user.id;
+  }
 
   const body = await request.json().catch(() => null);
   if (!body) {
@@ -16,7 +29,7 @@ export async function POST(request: Request) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': authState.user.id,
+        'x-user-id': userId,
       },
       body: JSON.stringify(body),
     });
@@ -32,8 +45,19 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const authState = await requireUser();
-  if ('error' in authState) return authState.error;
+  const sessionState = await requireUser();
+  const userState = 'error' in sessionState
+    ? null
+    : sessionState;
+
+  let userId = userState?.user.id ?? null;
+  if (!userId) {
+    const db = getDb();
+    if (!db) return dbUnavailable();
+    const serviceState = await requireServiceUser(request, db);
+    if ('error' in serviceState) return serviceState.error;
+    userId = serviceState.user.id;
+  }
 
   const { searchParams } = new URL(request.url);
   const jobId = searchParams.get('jobId');
@@ -43,7 +67,7 @@ export async function GET(request: Request) {
 
   try {
     const res = await fetch(`${GATEWAY_URL}/api/backtest/${encodeURIComponent(jobId)}`, {
-      headers: { 'x-user-id': authState.user.id },
+      headers: { 'x-user-id': userId },
     });
 
     const data = await res.json().catch(() => ({}));

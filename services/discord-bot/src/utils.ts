@@ -27,6 +27,7 @@ export function getWebhookSecret(): string {
 export interface NexusRequestOptions {
   method?: string;
   body?: unknown;
+  headers?: Record<string, string>;
 }
 
 /**
@@ -43,6 +44,7 @@ export async function fetchNexusApi<T = unknown>(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${getWebhookSecret()}`,
+    ...(options.headers ?? {}),
   };
 
   const res = await fetch(url, {
@@ -57,6 +59,16 @@ export async function fetchNexusApi<T = unknown>(
   }
 
   return res.json() as Promise<T>;
+}
+
+export function buildDiscordUserHeaders(discordUserId: string, guildId?: string | null): Record<string, string> {
+  const headers: Record<string, string> = {
+    "x-discord-user-id": discordUserId,
+  };
+  if (guildId) {
+    headers["x-discord-guild-id"] = guildId;
+  }
+  return headers;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +104,8 @@ export interface Trade {
   symbol: string;
   direction: string;
   pnl: number;
+  date?: string;
+  sortKey?: string;
   entryPrice?: number;
   exitPrice?: number;
   quantity?: number;

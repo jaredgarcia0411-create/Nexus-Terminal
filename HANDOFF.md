@@ -1,9 +1,45 @@
 # Nexus Terminal — Handoff Document
 
 **Generated:** 2026-03-03
-**Last Commit:** `d78514a` — Auth gating, UI refactor, Schwab integration build-out, CSV warning support, dependency cleanup
+**Last Commit:** `ce7d4a5` — Checkpoint: prompt + architect documentation updates
 
 ---
+
+## Latest Code Review (2026-03-03)
+
+### Validation Run
+
+- `npm run lint` (pass)
+- `npm test` (pass, 28 tests)
+- `npx tsc --noEmit` (pass)
+
+### Findings Status (Post-Hardening)
+
+1. **[resolved] Cross-tenant trade overwrite/read via globally scoped IDs**
+   - Trades are now tenant-scoped by composite PK `(user_id, id)` and `trade_tags` uses user-scoped FK ownership: [`lib/db/schema.ts`](/home/jared/Nexus-Terminal/lib/db/schema.ts:13), [`lib/db/schema.ts`](/home/jared/Nexus-Terminal/lib/db/schema.ts:34).
+   - Upserts were moved to tenant-safe conflict targets: [`app/api/trades/route.ts`](/home/jared/Nexus-Terminal/app/api/trades/route.ts:66), [`app/api/trades/import/route.ts`](/home/jared/Nexus-Terminal/app/api/trades/import/route.ts:49), [`app/api/schwab/sync/route.ts`](/home/jared/Nexus-Terminal/app/api/schwab/sync/route.ts:152).
+   - Added schema tests for tenant isolation: [`__tests__/schema-tenant-isolation.test.ts`](/home/jared/Nexus-Terminal/__tests__/schema-tenant-isolation.test.ts:1).
+
+2. **[resolved] Schwab OAuth CSRF state missing**
+   - Added state generation/cookie binding and callback verification with one-time clear: [`app/api/auth/schwab/url/route.ts`](/home/jared/Nexus-Terminal/app/api/auth/schwab/url/route.ts:23), [`app/api/auth/schwab/callback/route.ts`](/home/jared/Nexus-Terminal/app/api/auth/schwab/callback/route.ts:45), [`lib/schwab-oauth-state.ts`](/home/jared/Nexus-Terminal/lib/schwab-oauth-state.ts:1).
+   - Added tests for helper behavior: [`__tests__/schwab-oauth-state.test.ts`](/home/jared/Nexus-Terminal/__tests__/schwab-oauth-state.test.ts:1).
+
+3. **[resolved] Tag mutations not ownership-scoped**
+   - Tag writes/deletes are now scoped by `user_id` in trade PATCH/POST/bulk/import/tag-delete paths: [`app/api/trades/[id]/route.ts`](/home/jared/Nexus-Terminal/app/api/trades/[id]/route.ts:33), [`app/api/trades/route.ts`](/home/jared/Nexus-Terminal/app/api/trades/route.ts:85), [`app/api/trades/bulk/route.ts`](/home/jared/Nexus-Terminal/app/api/trades/bulk/route.ts:43), [`app/api/tags/route.ts`](/home/jared/Nexus-Terminal/app/api/tags/route.ts:57).
+
+4. **[resolved] Discord bot/app auth and schema contract mismatch**
+   - Added service auth bridge + Discord identity headers for bot calls: [`lib/service-auth.ts`](/home/jared/Nexus-Terminal/lib/service-auth.ts:1), [`services/discord-bot/src/utils.ts`](/home/jared/Nexus-Terminal/services/discord-bot/src/utils.ts:64).
+   - Added missing schema tables and migration: [`lib/db/schema.ts`](/home/jared/Nexus-Terminal/lib/db/schema.ts:75), [`drizzle/0001_goofy_dreadnoughts.sql`](/home/jared/Nexus-Terminal/drizzle/0001_goofy_dreadnoughts.sql:1).
+   - Alert payload shape aligned (`targetPrice` with backward compatibility for `price`): [`app/api/discord/alerts/route.ts`](/home/jared/Nexus-Terminal/app/api/discord/alerts/route.ts:56), [`services/discord-bot/src/commands/alert.ts`](/home/jared/Nexus-Terminal/services/discord-bot/src/commands/alert.ts:53).
+
+5. **[resolved] Backtest contract mismatch + weak job ownership control**
+   - Bot now submits candles and polls `?jobId=` contract through app proxy: [`services/discord-bot/src/commands/backtest.ts`](/home/jared/Nexus-Terminal/services/discord-bot/src/commands/backtest.ts:95), [`services/discord-bot/src/commands/backtest.ts`](/home/jared/Nexus-Terminal/services/discord-bot/src/commands/backtest.ts:120), [`app/api/backtest/route.ts`](/home/jared/Nexus-Terminal/app/api/backtest/route.ts:60).
+   - Gateway now enforces per-job `x-user-id` ownership before returning status/results: [`services/backtest-gateway/src/index.ts`](/home/jared/Nexus-Terminal/services/backtest-gateway/src/index.ts:60), [`services/backtest-gateway/src/index.ts`](/home/jared/Nexus-Terminal/services/backtest-gateway/src/index.ts:72).
+
+### Residual Risks
+
+- Discord account linking remains a prerequisite for bot commands (service-auth requires an existing `discord_user_links` mapping); there is no auto-link flow in bot commands yet.
+- Service-level TypeScript builds for `services/backtest-gateway` and `services/discord-bot` were not fully validated in this environment because service dependencies are not installed locally.
 
 ## Project Overview
 
