@@ -1,101 +1,96 @@
-# Nexus Terminal — Handoff Document
+# Nexus Terminal — Handoff
 
-**Generated:** 2026-03-04
-**Current Branch:** `main`
+**Generated:** 2026-03-04  
+**Branch:** `main`  
+**Latest Commit:** `a68c30e` (`API routes, UI updates, CSV parser fixes, & trade logging fixes`)
 
-## Current Status
+## Current State
 
-Workstreams **1 through 13** are implemented in code.
+The v2 implementation plan was applied to the codebase and shipped to `main`, including:
 
-### Validation Snapshot
+1. Expanded trade domain model + schema
+- New analytics/execution fields on trades (`grossPnl`, `netPnl`, `entryTime`, `exitTime`, `mfe`, `mae`, `bestExitPnl`, `exitEfficiency`, `executionCount`, `rawExecutions`)
+- New `trade_executions` table
+- Transitional compatibility support for legacy aliases/columns
 
-- `npm run lint` passed
-- `npx tsc --noEmit` passed
-- `npm test` passed (**13 files, 58 tests**)
+2. Parser/import pipeline updates
+- New DAS Trader parser with context-aware side resolution
+- Parser registry/type updates to support contextual normalization
+- FIFO matching and execution consolidation improvements in CSV pipeline
 
-## Implemented in This Session
+3. API + hook changes
+- Trade import/create/detail routes now persist/return raw executions
+- `useTrades` supports:
+  - lazy trade detail fetch
+  - post-import MFE/MAE batch compute
+  - single and bulk recalculation actions
+- Added `useCandleData` with cache and typed status handling
 
-### Workstream 11.3: Compatibility Cleanup
+4. Analytics + charting
+- Added `lib/mfe-mae.ts`
+- New deterministic MFE/MAE tests (`__tests__/mfe-mae.test.ts`)
+- NY-timezone normalized candle windows for chart and analytics filtering
+- Trade detail chart execution markers wired from execution payloads
 
-- Removed legacy default shared-secret Authorization fallback from Discord bot API client (`services/discord-bot/src/utils.ts`).
-- Bot API calls now require explicit scoped JWT headers.
-- Updated compatibility status notes in `docs/SERVICE_AUTH_SCOPES.md`.
+5. UI/reporting refresh
+- Trade detail 4-tab layout: Overview / Chart / Executions / Notes
+- Journal day-card grouping with expandable trade tables
+- Dashboard KPI additions (MFE/MAE/Exit Efficiency)
+- Reports additions in performance charts:
+  - Win vs Loss Days
+  - Drawdown panel
+  - Tag Breakdown
 
-### Workstream 12: Test Coverage Expansion (Completed)
+6. Security hardening completed
+- User-scoped execution row IDs at write time to prevent cross-tenant ID collisions.
+- Server-side request pacing for `/api/schwab/market-data` (per-user throttling) to prevent UI/client spam bypass.
 
-Added and passing:
+## Validation Snapshot
 
-1. Service token and auth tests
-- `__tests__/service-token.test.ts`
-  - valid token, wrong secret, previous-secret rotation, expiry/malformed handling, scope checks
-- `__tests__/service-request.test.ts`
-  - missing auth, insufficient scope, replay rejection, valid scoped+replay path
+All checks passed on 2026-03-04:
 
-2. Route-level service tests
-- `__tests__/webhook-trade-event-route.test.ts`
-  - auth rejection, no-link short-circuit, enqueue + dedupe counters
-- `__tests__/alerts-evaluate-route.test.ts`
-  - DB unavailable, auth rejection, evaluation summary path
-- `__tests__/notifications-process-route.test.ts`
-  - cron auth rejection, DB unavailable, processor metrics response
-- `__tests__/discord-link-code-route.test.ts`
-  - code generation path, missing claims rejection, invalid code rejection, successful code claim/link
+- `npm run lint`
+- `npx tsc --noEmit`
+- `npm test` (**16 files, 83 tests**)
+- `npm run build`
 
-3. Notification processor transition tests
-- `__tests__/notification-jobs.test.ts`
-  - sent, retried, dead-by-attempt-limit, dead-without-bot-token transitions
+Runtime smoke checks on built app:
 
-4. Strategy parity tests
-- `__tests__/backtest-strategy-parity.test.ts`
-  - TS engine vs Python worker comparison for:
-    - `sma-crossover`
-    - `mean-reversion`
-    - `breakout`
-  - Explicit tolerances documented in test comments:
-    - trade count delta <= 1
-    - win rate delta <= 0.15
-    - total PnL delta <= 300
-    - max drawdown delta <= 500
-    - final equity delta <= 300
+- `GET /`, `GET /login`, `GET /discord/link` -> `200`
+- `GET /api/health` -> `200`
+- Protected routes (`/api/trades`, `/api/schwab/market-data`) -> `401` while unauthenticated (expected)
 
-### Workstream 13: Repository Hygiene (Completed)
+## Known Follow-ups
 
-- Artifact ignore policy encoded in `.gitignore`:
-  - `services/*/dist/`
-  - `services/**/__pycache__/`
-  - `tsconfig.tsbuildinfo`
-- Validation matrix documented:
-  - `docs/VALIDATION_MATRIX.md`
-- Removed tracked Python cache artifact:
-  - `services/backtest-worker/__pycache__/main.cpython-312.pyc`
+1. Manual signed-in UI sanity pass is still required
+- Needs browser auth session to verify end-to-end interaction quality for:
+  - dashboard panels
+  - performance/report charts
+  - journal day-card interactions
+  - detail sheet tab and recalc flows
 
-## Previously Implemented (in current branch)
+2. Local host trust config
+- Local runtime checks showed NextAuth `UntrustedHost` warnings when running on non-default local port without matching trust config.
 
-### Workstream 10: Reliability and Operations
+## Key Files Added/Changed in Latest Rollout
 
-- Durable DB-backed queue (`notification_jobs`)
-- Alert evaluator + webhook enqueue integration
-- Scheduler endpoints (`/api/cron/alerts`, `/api/notifications/process`)
-- Ops runbook (`docs/ALERTS_NOTIFICATIONS_OPERATIONS.md`)
-
-### Workstream 11.1 and 11.2: Scoped Service JWT + Replay Mitigation
-
-- Route-level scope enforcement
-- `jti` replay protection via `service_token_jtis`
-- Bot scoped token minting with per-request `jti`
-- Scope matrix (`docs/SERVICE_AUTH_SCOPES.md`)
-
-## Remaining Work
-
-No in-repo implementation workstreams remain from the active plan.
-
-## Operational Follow-up (External to Code)
-
-1. Scheduler platform wiring
-- Configure deployment scheduler to call `/api/cron/alerts` at desired cadence (recommended 1 minute).
-
-2. Environment readiness
-- Ensure `CRON_SECRET`, `DISCORD_BOT_TOKEN`, `DATABASE_URL`, and service JWT secrets are configured in deployment.
-
-3. Service package build environment
-- Install service-local dependencies in CI/service workspaces before running package-level builds (e.g., Discord bot `tsc`).
+- `lib/mfe-mae.ts`
+- `hooks/use-candle-data.ts`
+- `lib/parsers/das-trader.ts`
+- `lib/csv-parser.ts`
+- `hooks/use-trades.ts`
+- `app/api/trades/route.ts`
+- `app/api/trades/import/route.ts`
+- `app/api/trades/[id]/route.ts`
+- `app/api/schwab/market-data/route.ts`
+- `app/api/schwab/sync/route.ts`
+- `components/trading/TradeDetailSheet.tsx`
+- `components/trading/CandlestickChart.tsx`
+- `components/trading/JournalTab.tsx`
+- `components/trading/DashboardTab.tsx`
+- `components/trading/PerformanceCharts.tsx`
+- `__tests__/mfe-mae.test.ts`
+- `__tests__/das-trader-parser.test.ts`
+- `__tests__/candlestick-chart-lifecycle.test.ts`
+- `drizzle/0005_natural_morg.sql`
+- `drizzle/backfill-v2.sql`
