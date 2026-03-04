@@ -3,7 +3,7 @@ import {
   EmbedBuilder,
   SlashCommandBuilder,
 } from "discord.js";
-import { buildDiscordUserHeaders, fetchNexusApi } from "../utils.js";
+import { buildDiscordUserHeaders, fetchNexusApi, SERVICE_SCOPE } from "../utils.js";
 
 export const data = new SlashCommandBuilder()
   .setName("sync")
@@ -28,7 +28,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     const result = await fetchNexusApi<SyncResult>("/api/schwab/sync", {
       method: "POST",
       body: { accountId },
-      headers: buildDiscordUserHeaders(interaction.user.id, interaction.guildId),
+      headers: buildDiscordUserHeaders(interaction.user.id, interaction.guildId, [SERVICE_SCOPE.SCHWAB_SYNC]),
     });
 
     const embed = new EmbedBuilder()

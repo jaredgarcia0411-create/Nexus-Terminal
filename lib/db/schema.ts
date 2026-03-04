@@ -83,6 +83,17 @@ export const discordUserLinks = pgTable('discord_user_links', {
   index('idx_discord_links_user_id').on(table.userId),
 ]);
 
+export const discordLinkCodes = pgTable('discord_link_codes', {
+  code: text('code').primaryKey(),
+  discordUserId: text('discord_user_id').notNull(),
+  guildId: text('guild_id').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('idx_discord_link_codes_user').on(table.discordUserId),
+  index('idx_discord_link_codes_expires').on(table.expiresAt),
+]);
+
 export const priceAlerts = pgTable('price_alerts', {
   id: serial('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -93,4 +104,32 @@ export const priceAlerts = pgTable('price_alerts', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 }, (table) => [
   index('idx_price_alerts_user_triggered').on(table.userId, table.triggered),
+]);
+
+export const notificationJobs = pgTable('notification_jobs', {
+  id: serial('id').primaryKey(),
+  type: text('type', { enum: ['trade_event', 'price_alert'] }).notNull(),
+  discordUserId: text('discord_user_id').notNull(),
+  content: text('content').notNull(),
+  dedupeKey: text('dedupe_key'),
+  status: text('status', { enum: ['pending', 'processing', 'sent', 'failed'] }).notNull().default('pending'),
+  attempts: integer('attempts').notNull().default(0),
+  maxAttempts: integer('max_attempts').notNull().default(5),
+  nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+  lastError: text('last_error'),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().$onUpdateFn(() => sql`now()`),
+}, (table) => [
+  unique().on(table.dedupeKey),
+  index('idx_notification_jobs_status_next_attempt').on(table.status, table.nextAttemptAt),
+  index('idx_notification_jobs_discord_user').on(table.discordUserId),
+]);
+
+export const serviceTokenJtis = pgTable('service_token_jtis', {
+  jti: text('jti').primaryKey(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('idx_service_token_jtis_expires').on(table.expiresAt),
 ]);

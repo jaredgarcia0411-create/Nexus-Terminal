@@ -194,7 +194,7 @@ export default function TradeTable({
 
           {trades.length === 0 ? (
             <tr>
-              <td colSpan={readOnly ? 11 : 12} className="px-4 py-12 text-center text-zinc-500 italic">
+              <td colSpan={readOnly ? 10 : 11} className="px-4 py-12 text-center text-zinc-500 italic">
                 No trades found.
               </td>
             </tr>

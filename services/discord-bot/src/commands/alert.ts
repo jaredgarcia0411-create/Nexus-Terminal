@@ -3,7 +3,7 @@ import {
   EmbedBuilder,
   SlashCommandBuilder,
 } from "discord.js";
-import { buildDiscordUserHeaders, fetchNexusApi, formatCurrency } from "../utils.js";
+import { buildDiscordUserHeaders, fetchNexusApi, formatCurrency, SERVICE_SCOPE } from "../utils.js";
 
 export const data = new SlashCommandBuilder()
   .setName("alert")
@@ -53,7 +53,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
         targetPrice: price,
         discordUserId: interaction.user.id,
       },
-      headers: buildDiscordUserHeaders(interaction.user.id, interaction.guildId),
+      headers: buildDiscordUserHeaders(interaction.user.id, interaction.guildId, [SERVICE_SCOPE.ALERTS_WRITE]),
     });
 
     const embed = new EmbedBuilder()

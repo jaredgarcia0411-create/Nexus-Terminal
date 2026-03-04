@@ -1,4 +1,5 @@
 import { EmbedBuilder } from "discord.js";
+import { createHmac, randomUUID } from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // Environment helpers
@@ -20,6 +21,36 @@ export function getWebhookSecret(): string {
   return getEnv("TRADE_WEBHOOK_SECRET");
 }
 
+function base64UrlEncode(input: string): string {
+  return Buffer.from(input)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function signHmacSha256(input: string, secret: string): string {
+  return createHmac("sha256", secret)
+    .update(input)
+    .digest("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+export const SERVICE_SCOPE = {
+  TRADES_READ: "trades:read",
+  SCHWAB_MARKET_DATA_READ: "schwab:market-data:read",
+  SCHWAB_SYNC: "schwab:sync",
+  BACKTEST_RUN: "backtest:run",
+  BACKTEST_READ: "backtest:read",
+  ALERTS_READ: "alerts:read",
+  ALERTS_WRITE: "alerts:write",
+  ALERTS_EVALUATE: "alerts:evaluate",
+  LINK_CODE_CREATE: "link:code:create",
+  WEBHOOK_TRADE_EVENT: "webhooks:trade-event",
+} as const;
+
 // ---------------------------------------------------------------------------
 // API helpers
 // ---------------------------------------------------------------------------
@@ -32,7 +63,7 @@ export interface NexusRequestOptions {
 
 /**
  * Fetch wrapper for calling the Nexus Terminal API.
- * Automatically injects the shared-secret Bearer token.
+ * Requires callers to provide Authorization with a scoped service JWT.
  */
 export async function fetchNexusApi<T = unknown>(
   path: string,
@@ -43,9 +74,11 @@ export async function fetchNexusApi<T = unknown>(
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${getWebhookSecret()}`,
     ...(options.headers ?? {}),
   };
+  if (!headers.Authorization) {
+    throw new Error(`Missing Authorization header for Nexus API request: ${path}`);
+  }
 
   const res = await fetch(url, {
     method: options.method ?? "GET",
@@ -61,14 +94,36 @@ export async function fetchNexusApi<T = unknown>(
   return res.json() as Promise<T>;
 }
 
-export function buildDiscordUserHeaders(discordUserId: string, guildId?: string | null): Record<string, string> {
-  const headers: Record<string, string> = {
-    "x-discord-user-id": discordUserId,
+export function buildDiscordUserHeaders(
+  discordUserId: string,
+  guildId?: string | null,
+  scopes: string[] = [SERVICE_SCOPE.TRADES_READ],
+): Record<string, string> {
+  return {
+    Authorization: `Bearer ${buildServiceTokenWithScopes(discordUserId, guildId, scopes)}`,
   };
-  if (guildId) {
-    headers["x-discord-guild-id"] = guildId;
-  }
-  return headers;
+}
+
+function buildServiceTokenWithScopes(discordUserId: string, guildId: string | null | undefined, scopes: string[]): string {
+  const now = Math.floor(Date.now() / 1000);
+  const uniqueScopes = Array.from(new Set(scopes.map((scope) => scope.trim()).filter(Boolean)));
+  const payload = {
+    iss: "nexus-service",
+    aud: "nexus-api",
+    iat: now,
+    exp: now + 5 * 60,
+    jti: randomUUID(),
+    scope: uniqueScopes,
+    discordUserId,
+    ...(guildId ? { guildId } : {}),
+  };
+  const header = { alg: "HS256", typ: "JWT" };
+
+  const encodedHeader = base64UrlEncode(JSON.stringify(header));
+  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
+  const signature = signHmacSha256(signingInput, getWebhookSecret());
+  return `${signingInput}.${signature}`;
 }
 
 // ---------------------------------------------------------------------------

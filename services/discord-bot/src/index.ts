@@ -17,6 +17,7 @@ import * as pnlCmd from "./commands/pnl.js";
 import * as syncCmd from "./commands/sync.js";
 import * as alertCmd from "./commands/alert.js";
 import * as backtestCmd from "./commands/backtest.js";
+import * as linkCmd from "./commands/link.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,6 +41,7 @@ const allCommands: Command[] = [
   syncCmd as unknown as Command,
   alertCmd as unknown as Command,
   backtestCmd as unknown as Command,
+  linkCmd as unknown as Command,
 ];
 
 for (const cmd of allCommands) {

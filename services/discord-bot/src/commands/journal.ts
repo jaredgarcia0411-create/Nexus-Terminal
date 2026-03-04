@@ -9,6 +9,7 @@ import {
   fetchNexusApi,
   formatCurrency,
   pnlColor,
+  SERVICE_SCOPE,
   type Trade,
 } from "../utils.js";
 
@@ -39,7 +40,11 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     const response = await fetchNexusApi<{ trades: Trade[] }>(
       "/api/trades",
       {
-        headers: buildDiscordUserHeaders(interaction.user.id, interaction.guildId),
+        headers: buildDiscordUserHeaders(
+          interaction.user.id,
+          interaction.guildId,
+          [SERVICE_SCOPE.TRADES_READ],
+        ),
       },
     );
     const trades = (response.trades ?? []).filter((trade) => {

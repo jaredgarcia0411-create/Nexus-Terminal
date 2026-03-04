@@ -74,7 +74,7 @@ export default function SettingsMenu({ trades, onClearAllData }: SettingsMenuPro
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="p-2 rounded-lg transition-colors hover:text-white text-zinc-500" title="Settings">
+          <button className="p-2 rounded-lg transition-colors hover:text-white text-zinc-500" title="Settings" aria-label="Settings">
             <Settings className="w-5 h-5" />
           </button>
         </DropdownMenuTrigger>

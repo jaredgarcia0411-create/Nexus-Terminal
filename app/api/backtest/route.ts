@@ -14,7 +14,10 @@ export async function POST(request: Request) {
   if (!userId) {
     const db = getDb();
     if (!db) return dbUnavailable();
-    const serviceState = await requireServiceUser(request, db);
+    const serviceState = await requireServiceUser(request, db, {
+      requiredScopes: ['backtest:run'],
+      enforceReplay: true,
+    });
     if ('error' in serviceState) return serviceState.error;
     userId = serviceState.user.id;
   }
@@ -54,7 +57,9 @@ export async function GET(request: Request) {
   if (!userId) {
     const db = getDb();
     if (!db) return dbUnavailable();
-    const serviceState = await requireServiceUser(request, db);
+    const serviceState = await requireServiceUser(request, db, {
+      requiredScopes: ['backtest:read'],
+    });
     if ('error' in serviceState) return serviceState.error;
     userId = serviceState.user.id;
   }

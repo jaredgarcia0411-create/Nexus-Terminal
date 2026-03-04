@@ -28,7 +28,7 @@ export default function LoginPage() {
         <p className="mt-2 text-sm text-zinc-400">Professional Trading Journal</p>
 
         <Button onClick={handleSignIn} className="mt-8 w-full bg-emerald-500 text-black hover:bg-emerald-400">
-          <Image src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="mr-2 h-4 w-4" alt="Google" width={16} height={16} />
+          <Image src="/google.svg" className="mr-2 h-4 w-4" alt="Google" width={16} height={16} />
           Sign in with Google
         </Button>
       </motion.div>

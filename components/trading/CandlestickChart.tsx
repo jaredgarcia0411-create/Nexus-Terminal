@@ -107,16 +107,18 @@ export default function CandlestickChart({
     });
     volumeSeriesRef.current = volumeSeries;
 
-    const handleResize = () => {
+    const resizeObserver = new ResizeObserver(() => {
       if (containerRef.current) {
         chart.applyOptions({ width: containerRef.current.clientWidth });
       }
-    };
+    });
 
-    window.addEventListener('resize', handleResize);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;

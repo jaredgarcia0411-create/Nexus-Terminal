@@ -3,7 +3,7 @@ import {
   EmbedBuilder,
   SlashCommandBuilder,
 } from "discord.js";
-import { buildDiscordUserHeaders, fetchNexusApi, formatCurrency, pnlColor, type Trade } from "../utils.js";
+import { buildDiscordUserHeaders, fetchNexusApi, formatCurrency, pnlColor, SERVICE_SCOPE, type Trade } from "../utils.js";
 
 export const data = new SlashCommandBuilder()
   .setName("pnl")
@@ -22,7 +22,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
   try {
     const response = await fetchNexusApi<{ trades: Trade[] }>("/api/trades", {
-      headers: buildDiscordUserHeaders(interaction.user.id, interaction.guildId),
+      headers: buildDiscordUserHeaders(interaction.user.id, interaction.guildId, [SERVICE_SCOPE.TRADES_READ]),
     });
     const trades = response.trades ?? [];
 

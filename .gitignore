@@ -6,3 +6,6 @@ coverage/
 .env*
 !.env.example
 .venv-backtest/
+tsconfig.tsbuildinfo
+services/*/dist/
+services/**/__pycache__/

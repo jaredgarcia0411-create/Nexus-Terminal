@@ -15,9 +15,11 @@ import PerformanceTab from '@/components/trading/PerformanceTab';
 import FilterTab from '@/components/trading/FilterTab';
 import BacktestingTab from '@/components/trading/BacktestingTab';
 import BrokerSyncTab from '@/components/trading/BrokerSyncTab';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { useTrades } from '@/hooks/use-trades';
 
 export default function NexusTerminal() {
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
   const [performanceMetric, setPerformanceMetric] = useState<'$' | 'R'>('$');
   const [isManualTradeOpen, setIsManualTradeOpen] = useState(false);
@@ -88,7 +90,7 @@ export default function NexusTerminal() {
         onSignOut={handleSignOut}
       />
 
-      <main className="pl-16">
+      <main className={isMobile ? 'pb-16' : 'pl-16'}>
         <Toolbar
           filteredTradesCount={filteredTrades.length}
           activeFilterCount={activeFilterCount}
@@ -102,7 +104,6 @@ export default function NexusTerminal() {
           onImportClick={() => importInputRef.current?.click()}
           onFolderImportClick={() => folderInputRef.current?.click()}
           onNewTradeClick={() => setIsManualTradeOpen(true)}
-          onSignOut={handleSignOut}
         />
         <input ref={importInputRef} type="file" accept=".csv" multiple className="hidden" onChange={handleFileUpload} />
         {/* @ts-expect-error webkitdirectory is non-standard but widely supported */}
@@ -209,10 +210,10 @@ export default function NexusTerminal() {
       />
 
       {isImporting ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" role="alertdialog" aria-label="Processing trade data">
           <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/10 bg-[#121214] p-8 shadow-2xl">
             <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-500/20 border-t-emerald-500" />
-            <p className="text-sm font-medium">Processing Trade Data...</p>
+            <p className="text-sm font-medium" aria-live="assertive">Processing Trade Data...</p>
           </div>
         </div>
       ) : null}

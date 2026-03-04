@@ -18,7 +18,7 @@ interface TradeDetailSheetProps {
 }
 
 export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNotes }: TradeDetailSheetProps) {
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(trade?.notes ?? '');
 
   const handleSave = async () => {
     if (!trade) return;

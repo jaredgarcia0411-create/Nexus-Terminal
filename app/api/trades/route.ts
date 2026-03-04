@@ -1,7 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
-import { requireUserOrService } from '@/lib/service-auth';
+import { requireUserOrServiceWithOptions } from '@/lib/service-auth';
 import {
   dbUnavailable,
   ensureUser,
@@ -15,7 +15,9 @@ export async function GET(request: Request) {
   const db = getDb();
   if (!db) return dbUnavailable();
 
-  const authState = await requireUserOrService(request, db);
+  const authState = await requireUserOrServiceWithOptions(request, db, {
+    service: { requiredScopes: ['trades:read'] },
+  });
   if ('error' in authState) return authState.error;
 
   if (authState.source === 'session') {

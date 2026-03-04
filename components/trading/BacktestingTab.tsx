@@ -9,6 +9,7 @@ import dynamic from 'next/dynamic';
 import type { IndicatorType, CandleData, TradeMarker } from '@/components/trading/CandlestickChart';
 import { ALL_STRATEGIES, type StrategyDefinition } from '@/lib/backtesting/strategies';
 import { runBacktest, type BacktestResult } from '@/lib/backtesting/engine';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { OHLCData } from '@/lib/indicators';
 import BacktestResultsPanel from '@/components/trading/BacktestResultsPanel';
 
@@ -264,7 +265,7 @@ export default function BacktestingTab() {
                 loadSymbolData(symbolQuery);
               }
             }}
-            className="w-full rounded-2xl border border-white/10 bg-white/5 py-6 pl-16 pr-28 text-lg shadow-2xl transition-all focus:border-emerald-500/50 focus:outline-none"
+            className="w-full rounded-2xl border border-white/10 bg-white/5 py-6 pl-16 pr-28 text-lg shadow-2xl transition-all focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
           />
           <button
             onClick={() => loadSymbolData(symbolQuery)}
@@ -275,13 +276,18 @@ export default function BacktestingTab() {
           </button>
         </div>
 
-        <label className="group flex max-w-xl cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-white/5 p-8 transition-all hover:border-emerald-500/20 hover:bg-emerald-500/5">
+        <label className="group flex max-w-xl cursor-not-allowed flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-white/5 p-8">
+          <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+            Coming Soon
+          </span>
           <Upload className="h-8 w-8 text-zinc-500 transition-colors group-hover:text-emerald-500" />
-          <span className="text-sm font-medium text-zinc-400 transition-colors group-hover:text-zinc-200">Add context files (.csv, .json, .txt)</span>
+          <span className="text-sm font-medium text-zinc-400">Add context files (.csv, .json, .txt)</span>
+          <span className="text-center text-xs text-zinc-500">Upload CSV, JSON, or TXT files for AI-assisted analysis (not yet functional).</span>
           <input
             type="file"
             className="hidden"
             multiple
+            disabled
             onChange={(event) => {
               if (event.target.files) {
                 setContextFiles((prev) => [...prev, ...Array.from(event.target.files || [])]);
@@ -376,18 +382,19 @@ export default function BacktestingTab() {
       <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-zinc-400">Backtesting</h3>
 
-        <div className="mb-4 grid max-w-3xl grid-cols-4 gap-4">
+        <div className="mb-4 grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <label className="mb-1 block text-xs text-zinc-400">Strategy</label>
-            <select
-              value={selectedStrategy.id}
-              onChange={(e) => handleStrategyChange(e.target.value)}
-              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:border-emerald-500/50 focus:outline-none"
-            >
-              {ALL_STRATEGIES.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
+            <Select value={selectedStrategy.id} onValueChange={handleStrategyChange}>
+              <SelectTrigger className="w-full border-white/10 bg-white/5 text-sm focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="border-white/10 bg-[#121214] text-white">
+                {ALL_STRATEGIES.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <p className="mt-1 text-[10px] text-zinc-500">{selectedStrategy.description}</p>
           </div>
 
@@ -397,7 +404,7 @@ export default function BacktestingTab() {
               type="number"
               value={initialCapital}
               onChange={(e) => setInitialCapital(Number(e.target.value) || 10000)}
-              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:border-emerald-500/50 focus:outline-none"
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
             />
           </div>
 
@@ -409,7 +416,7 @@ export default function BacktestingTab() {
               onChange={(e) => setPositionSizePct((Number(e.target.value) || 10) / 100)}
               min={1}
               max={100}
-              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:border-emerald-500/50 focus:outline-none"
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
             />
           </div>
 
@@ -425,7 +432,7 @@ export default function BacktestingTab() {
                   min={p.min}
                   max={p.max}
                   step={p.step}
-                  className="w-20 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs focus:border-emerald-500/50 focus:outline-none"
+                  className="w-20 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
                 />
               </div>
             ))}

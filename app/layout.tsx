@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { MotionConfig } from 'motion/react';
 import { SessionProvider } from 'next-auth/react';
 import { Toaster } from 'sonner';
 import './globals.css';
@@ -13,7 +14,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className="dark">
       <body suppressHydrationWarning>
         <SessionProvider>
-          {children}
+          <MotionConfig reducedMotion="user">
+            {children}
+          </MotionConfig>
           <Toaster theme="dark" richColors position="bottom-right" />
         </SessionProvider>
       </body>

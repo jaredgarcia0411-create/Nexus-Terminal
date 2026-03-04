@@ -57,7 +57,7 @@ export default function JournalTab({
                 placeholder="Search symbol..."
                 value={searchQuery}
                 onChange={(event) => onSearchQueryChange(event.target.value)}
-                className="w-64 rounded-lg border border-white/10 bg-white/5 py-1.5 pl-10 pr-4 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none"
+                className="w-64 rounded-lg border border-white/10 bg-white/5 py-1.5 pl-10 pr-4 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
               />
             </div>
           </div>
@@ -71,7 +71,7 @@ export default function JournalTab({
                   placeholder="$500"
                   value={riskInput}
                   onChange={(event) => onRiskInputChange(event.target.value)}
-                  className="w-16 border-b border-white/10 bg-transparent text-xs focus:outline-none"
+                  className="w-16 border-b border-white/10 bg-transparent text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
                 />
                 <button onClick={onApplyRisk} className="text-[10px] font-bold uppercase text-emerald-500 hover:text-emerald-400">
                   Apply
@@ -85,7 +85,7 @@ export default function JournalTab({
                   placeholder="Add Tag..."
                   value={bulkTagInput}
                   onChange={(event) => onBulkTagInputChange(event.target.value)}
-                  className="w-20 border-b border-white/10 bg-transparent text-xs focus:outline-none"
+                  className="w-20 border-b border-white/10 bg-transparent text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
                 />
                 <button onClick={onBulkAddTag} className="text-[10px] font-bold uppercase text-emerald-500 hover:text-emerald-400">
                   Add

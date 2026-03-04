@@ -1,5 +1,5 @@
 import { getDb } from '@/lib/db';
-import { requireUserOrService } from '@/lib/service-auth';
+import { requireUserOrServiceWithOptions } from '@/lib/service-auth';
 import { dbUnavailable, ensureUser } from '@/lib/server-db-utils';
 import { getValidSchwabToken } from '@/lib/schwab';
 
@@ -23,7 +23,9 @@ export async function GET(request: Request) {
   const db = getDb();
   if (!db) return dbUnavailable();
 
-  const authState = await requireUserOrService(request, db);
+  const authState = await requireUserOrServiceWithOptions(request, db, {
+    service: { requiredScopes: ['schwab:market-data:read'] },
+  });
   if ('error' in authState) return authState.error;
 
   if (authState.source === 'session') {

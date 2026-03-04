@@ -1,8 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import Image from 'next/image';
 import { Plus, Trash2, User, X } from 'lucide-react';
 import ImportDropdown from '@/components/trading/ImportDropdown';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 
 interface ToolbarProps {
   filteredTradesCount: number;
@@ -17,7 +21,6 @@ interface ToolbarProps {
   onImportClick: () => void;
   onFolderImportClick: () => void;
   onNewTradeClick: () => void;
-  onSignOut: () => void;
 }
 
 export default function Toolbar({
@@ -33,76 +36,107 @@ export default function Toolbar({
   onImportClick,
   onFolderImportClick,
   onNewTradeClick,
-  onSignOut,
 }: ToolbarProps) {
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const isMobile = useIsMobile();
+
   return (
-    <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-white/5 bg-[#0A0A0B]/80 px-8 backdrop-blur-md">
-      <div className="flex items-center gap-4">
-        <h1 className="text-lg font-medium tracking-tight">Nexus Terminal</h1>
-        <div className="mx-2 h-4 w-px bg-white/10" />
-        <div className="flex items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-500">
-          <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-          {filteredTradesCount} TRADES LOGGED
+    <>
+      <header className="sticky top-0 z-40 flex min-h-16 flex-wrap items-center gap-2 border-b border-white/5 bg-[#0A0A0B]/80 px-4 py-2 backdrop-blur-md sm:h-16 sm:flex-nowrap sm:justify-between sm:gap-3 sm:px-8 sm:py-0">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
+          <h1 className="shrink-0 text-lg font-medium tracking-tight">Nexus Terminal</h1>
+          <div className="mx-1 hidden h-4 w-px bg-white/10 sm:mx-2 sm:block" />
+          <div className="flex shrink-0 items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-500">
+            <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+            {filteredTradesCount} TRADES LOGGED
+          </div>
+
+          {hasActiveFilters ? (
+            <div className="flex items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-400">
+              <span>Filtered ({activeFilterCount})</span>
+              <button onClick={clearAllFilters} className="text-emerald-300 transition-colors hover:text-white" title="Clear filters">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ) : null}
+
+          {!isMobile ? (
+            <span className="text-[10px] uppercase tracking-widest text-zinc-600">{useLocalStorage ? 'Local Storage Mode' : 'Cloud Mode'}</span>
+          ) : null}
         </div>
-        {hasActiveFilters ? (
-          <div className="flex items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-400">
-            <span>Filtered ({activeFilterCount})</span>
-            <button onClick={clearAllFilters} className="text-emerald-300 transition-colors hover:text-white" title="Clear filters">
-              <X className="h-3 w-3" />
-            </button>
+
+        {!isMobile ? (
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <div className="text-xs font-medium">{user?.name}</div>
+              <div className="text-[10px] text-zinc-500">{user?.email}</div>
+            </div>
+            <div>
+              {user?.image ? (
+                <Image src={user.image} alt={user.name ?? 'User'} width={32} height={32} className="h-8 w-8 rounded-full border border-white/10" />
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/20">
+                  <User className="h-4 w-4 text-emerald-500" />
+                </div>
+              )}
+            </div>
           </div>
         ) : null}
 
-        <span className="text-[10px] uppercase tracking-widest text-zinc-600">{useLocalStorage ? 'Local Storage Mode' : 'Cloud Mode'}</span>
-      </div>
+        <div className="ml-auto flex items-center gap-2 sm:gap-3">
+          {selectedCount > 0 ? (
+            <div className="animate-in slide-in-from-right-2 fade-in flex items-center gap-2 sm:gap-3">
+              <span className="text-xs font-medium text-zinc-500">{selectedCount} selected</span>
+              <button
+                onClick={() => setConfirmDeleteOpen(true)}
+                className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-2 text-rose-500 transition-colors hover:bg-rose-500/20"
+                title="Delete Selected"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ) : null}
 
-      {error ? (
-        <div className="mx-8 flex-1 rounded-lg border border-rose-500/20 bg-rose-500/10 px-4 py-1.5 text-xs font-medium text-rose-500">
-          {error}
+          <ImportDropdown onImportFiles={onImportClick} onImportFolder={onFolderImportClick} />
+
+          <Button
+            onClick={onNewTradeClick}
+            className="flex items-center gap-2 bg-emerald-500 px-4 py-1.5 text-sm font-medium text-black hover:bg-emerald-400"
+          >
+            <Plus className="h-4 w-4" />
+            New Trade
+          </Button>
         </div>
-      ) : null}
 
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-3">
-          <div className="text-right">
-            <div className="text-xs font-medium">{user?.name}</div>
-            <div className="text-[10px] text-zinc-500">{user?.email}</div>
+        {error ? (
+          <div className="w-full rounded-lg border border-rose-500/20 bg-rose-500/10 px-4 py-1.5 text-xs font-medium text-rose-500 sm:order-none sm:mx-8 sm:flex-1">
+            {error}
           </div>
-          <button onClick={onSignOut} className="group relative">
-            {user?.image ? (
-              <Image src={user.image} alt={user.name ?? 'User'} width={32} height={32} className="h-8 w-8 rounded-full border border-white/10" />
-            ) : (
-              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/20">
-                <User className="h-4 w-4 text-emerald-500" />
-              </div>
-            )}
-            <div className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-[#0A0A0B] bg-rose-500 opacity-0 transition-opacity group-hover:opacity-100" />
-          </button>
-        </div>
+        ) : null}
+      </header>
 
-        {selectedCount > 0 ? (
-          <div className="animate-in slide-in-from-right-2 fade-in flex items-center gap-3">
-            <span className="text-xs font-medium text-zinc-500">{selectedCount} selected</span>
-            <button
-              onClick={onDeleteSelected}
-              className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-2 text-rose-500 transition-colors hover:bg-rose-500/20"
-              title="Delete Selected"
+      <Dialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <DialogContent className="border-white/10 bg-[#121214] text-white">
+          <DialogHeader>
+            <DialogTitle>Delete selected trades?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-zinc-400">{selectedCount} trade(s) will be permanently deleted. This action cannot be undone.</p>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setConfirmDeleteOpen(false)} className="bg-white/10 hover:bg-white/20">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                onDeleteSelected();
+                setConfirmDeleteOpen(false);
+              }}
+              className="bg-rose-500 text-white hover:bg-rose-400"
             >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </div>
-        ) : null}
-
-        <ImportDropdown onImportFiles={onImportClick} onImportFolder={onFolderImportClick} />
-
-        <button
-          onClick={onNewTradeClick}
-          className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-1.5 text-sm font-medium text-black transition-colors hover:bg-emerald-400"
-        >
-          <Plus className="h-4 w-4" />
-          New Trade
-        </button>
-      </div>
-    </header>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

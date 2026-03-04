@@ -3,6 +3,7 @@
 import React, { useMemo } from 'react';
 import { Trade } from '@/lib/types';
 import { formatCurrency, formatR } from '@/lib/trading-utils';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { 
   format, 
   startOfMonth, 
@@ -24,6 +25,7 @@ interface TradingCalendarProps {
 }
 
 export default function TradingCalendar({ trades }: TradingCalendarProps) {
+  const isMobile = useIsMobile();
   const [currentMonth, setCurrentMonth] = React.useState(new Date());
   const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
 
@@ -106,8 +108,8 @@ export default function TradingCalendar({ trades }: TradingCalendarProps) {
           </div>
         </div>
 
-        <div className="grid grid-cols-8 gap-px bg-white/5 border border-white/5 rounded-xl overflow-hidden">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Weekly'].map((day) => (
+        <div className={`grid gap-px overflow-hidden rounded-xl border border-white/5 bg-white/5 ${isMobile ? 'grid-cols-7' : 'grid-cols-8'}`}>
+          {(isMobile ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Weekly']).map((day) => (
             <div key={day} className="bg-[#18181b] py-3 text-center text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
               {day}
             </div>
@@ -127,22 +129,22 @@ export default function TradingCalendar({ trades }: TradingCalendarProps) {
                   <div 
                     key={dayIdx} 
                     onClick={() => setSelectedDate(isSelected ? null : dateKey)}
-                    className={`min-h-[100px] p-2 bg-[#121214] flex flex-col gap-1 transition-all cursor-pointer relative group ${
+                    className={`${isMobile ? 'min-h-[60px] p-1.5' : 'min-h-[100px] p-2'} relative flex cursor-pointer flex-col gap-1 bg-[#121214] transition-all group ${
                       !isCurrentMonth ? 'opacity-20' : 'hover:bg-white/[0.03]'
                     } ${isToday ? 'ring-1 ring-inset ring-emerald-500/50' : ''} ${
                       isOffDay ? 'bg-white/[0.01]' : ''
                     } ${isSelected ? 'bg-emerald-500/5 ring-1 ring-inset ring-emerald-500/30' : ''}`}
                   >
-                    <span className={`text-[10px] font-mono ${isToday ? 'text-emerald-500 font-bold' : 'text-zinc-500'}`}>
+                    <span className={`${isMobile ? 'text-[9px]' : 'text-[10px]'} font-mono ${isToday ? 'text-emerald-500 font-bold' : 'text-zinc-500'}`}>
                       {format(day, 'd')}
                     </span>
                     
                     {stats && (stats.pnl !== 0 || stats.r !== 0) && (
                       <div className="mt-auto flex flex-col gap-0.5">
-                        <div className={`text-[11px] font-bold ${stats.pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        <div className={`${isMobile ? 'text-[10px]' : 'text-[11px]'} font-bold ${stats.pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                           {stats.pnl >= 0 ? '+' : ''}{formatCurrency(stats.pnl)}
                         </div>
-                        <div className={`text-[9px] font-medium opacity-60 ${stats.r >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} font-medium opacity-60 ${stats.r >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                           {formatR(stats.r)}
                         </div>
                       </div>
@@ -154,15 +156,18 @@ export default function TradingCalendar({ trades }: TradingCalendarProps) {
                 );
               })}
               
-              {/* Weekly Totals Column */}
-              <div className="min-h-[100px] p-2 bg-white/5 flex flex-col justify-center items-center gap-1 border-l border-white/5">
-                <div className={`text-xs font-bold ${week.weeklyPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                  {week.weeklyPnl >= 0 ? '+' : ''}{formatCurrency(week.weeklyPnl)}
+              {!isMobile ? (
+                <div className="min-h-[100px] border-l border-white/5 bg-white/5 p-2">
+                  <div className="flex h-full flex-col items-center justify-center gap-1">
+                    <div className={`text-xs font-bold ${week.weeklyPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {week.weeklyPnl >= 0 ? '+' : ''}{formatCurrency(week.weeklyPnl)}
+                    </div>
+                    <div className={`text-[10px] font-medium opacity-70 ${week.weeklyR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {formatR(week.weeklyR)}
+                    </div>
+                  </div>
                 </div>
-                <div className={`text-[10px] font-medium opacity-70 ${week.weeklyR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {formatR(week.weeklyR)}
-                </div>
-              </div>
+              ) : null}
             </React.Fragment>
           ))}
         </div>

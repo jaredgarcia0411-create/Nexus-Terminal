@@ -4,14 +4,18 @@ import { priceAlerts } from '@/lib/db/schema';
 import { requireServiceUser } from '@/lib/service-auth';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 
-async function resolveAlertUser(request: Request, db: NonNullable<ReturnType<typeof getDb>>) {
+async function resolveAlertUser(
+  request: Request,
+  db: NonNullable<ReturnType<typeof getDb>>,
+  options?: { requiredScopes?: string[]; enforceReplay?: boolean },
+) {
   const sessionState = await requireUser();
   if (!('error' in sessionState)) {
     await ensureUser(db, sessionState.user);
     return { userId: sessionState.user.id };
   }
 
-  const serviceState = await requireServiceUser(request, db);
+  const serviceState = await requireServiceUser(request, db, options);
   if ('error' in serviceState) return serviceState;
 
   return { userId: serviceState.user.id };
@@ -21,7 +25,9 @@ export async function GET(request: Request) {
   const db = getDb();
   if (!db) return dbUnavailable();
 
-  const userState = await resolveAlertUser(request, db);
+  const userState = await resolveAlertUser(request, db, {
+    requiredScopes: ['alerts:read'],
+  });
   if ('error' in userState) return userState.error;
 
   const rows = await db.select({
@@ -49,7 +55,10 @@ export async function POST(request: Request) {
   const db = getDb();
   if (!db) return dbUnavailable();
 
-  const userState = await resolveAlertUser(request, db);
+  const userState = await resolveAlertUser(request, db, {
+    requiredScopes: ['alerts:write'],
+    enforceReplay: true,
+  });
   if ('error' in userState) return userState.error;
 
   const body = (await request.json()) as {

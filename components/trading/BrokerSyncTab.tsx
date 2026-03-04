@@ -5,6 +5,7 @@ import { motion } from 'motion/react';
 import { Activity, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, subDays } from 'date-fns';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 type SchwabAccount = { accountId: string; type: string };
 type SyncLog = { tradesImported: number; warnings: string[] };
@@ -126,17 +127,24 @@ export default function BrokerSyncTab() {
           <div className="grid max-w-2xl grid-cols-3 gap-4">
             <div>
               <label className="mb-1 block text-xs text-zinc-400">Account</label>
-              <select
-                value={selectedAccount}
-                onChange={(e) => setSelectedAccount(e.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:border-emerald-500/50 focus:outline-none"
-              >
-                {accounts.map((acct) => (
-                  <option key={acct.accountId} value={acct.accountId}>
-                    {acct.accountId} ({acct.type})
-                  </option>
-                ))}
-              </select>
+              {accounts.length === 0 ? (
+                <p className="rounded-lg border border-yellow-500/20 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-400">
+                  No accounts found. Check your Schwab connection.
+                </p>
+              ) : (
+                <Select value={selectedAccount} onValueChange={setSelectedAccount}>
+                  <SelectTrigger className="w-full border-white/10 bg-white/5 text-sm focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]">
+                    <SelectValue placeholder="Select account" />
+                  </SelectTrigger>
+                  <SelectContent className="border-white/10 bg-[#121214] text-white">
+                    {accounts.map((acct) => (
+                      <SelectItem key={acct.accountId} value={acct.accountId}>
+                        {acct.accountId} ({acct.type})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-xs text-zinc-400">Start Date</label>
@@ -144,7 +152,7 @@ export default function BrokerSyncTab() {
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:border-emerald-500/50 focus:outline-none"
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
               />
             </div>
             <div>
@@ -153,7 +161,7 @@ export default function BrokerSyncTab() {
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:border-emerald-500/50 focus:outline-none"
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
               />
             </div>
           </div>

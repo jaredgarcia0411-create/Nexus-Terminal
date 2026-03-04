@@ -104,6 +104,154 @@ def run_sma_crossover(df: pd.DataFrame, params: dict, initial_capital: float, po
     return {"trades": trades, "equityCurve": equity_curve, "stats": stats}
 
 
+def run_mean_reversion(df: pd.DataFrame, params: dict, initial_capital: float, position_size_pct: float) -> dict:
+    period = int(params.get("period", 20))
+    std_dev = float(params.get("stdDev", 2))
+
+    df = df.copy()
+    df["middle"] = df["close"].rolling(window=period, min_periods=period).mean()
+    rolling_std = df["close"].rolling(window=period, min_periods=period).std(ddof=0)
+    df["upper"] = df["middle"] + (rolling_std * std_dev)
+    df["lower"] = df["middle"] - (rolling_std * std_dev)
+    df.dropna(inplace=True)
+
+    if len(df) == 0:
+        return {"trades": [], "equityCurve": [], "stats": empty_stats(initial_capital)}
+
+    equity = initial_capital
+    position = None
+    trades = []
+    equity_curve = []
+
+    for i in range(len(df)):
+        row = df.iloc[i]
+
+        # Exit when price reverts to middle band
+        if position is not None and row["close"] >= row["middle"]:
+            exit_price = row["close"]
+            pnl = (exit_price - position["entryPrice"]) * position["qty"]
+            equity += pnl
+            trades.append({
+                "direction": "LONG",
+                "entryTime": position["entryTime"],
+                "exitTime": int(row["time"]),
+                "entryPrice": position["entryPrice"],
+                "exitPrice": exit_price,
+                "qty": position["qty"],
+                "pnl": pnl,
+            })
+            position = None
+
+        # Entry when price touches lower band
+        if position is None and row["close"] <= row["lower"]:
+            entry_price = row["close"]
+            qty = int((equity * position_size_pct) / entry_price)
+            if qty > 0:
+                position = {
+                    "entryPrice": entry_price,
+                    "entryTime": int(row["time"]),
+                    "qty": qty,
+                }
+
+        mtm = equity
+        if position:
+            mtm += (row["close"] - position["entryPrice"]) * position["qty"]
+        equity_curve.append({"time": int(row["time"]), "equity": mtm})
+
+    # Force close at last candle
+    if position is not None:
+        last_row = df.iloc[-1]
+        exit_price = last_row["close"]
+        pnl = (exit_price - position["entryPrice"]) * position["qty"]
+        equity += pnl
+        trades.append({
+            "direction": "LONG",
+            "entryTime": position["entryTime"],
+            "exitTime": int(last_row["time"]),
+            "entryPrice": position["entryPrice"],
+            "exitPrice": exit_price,
+            "qty": position["qty"],
+            "pnl": pnl,
+        })
+        if equity_curve:
+            equity_curve[-1]["equity"] = equity
+
+    stats = compute_stats(trades, equity_curve, initial_capital, equity)
+    return {"trades": trades, "equityCurve": equity_curve, "stats": stats}
+
+
+def run_breakout(df: pd.DataFrame, params: dict, initial_capital: float, position_size_pct: float) -> dict:
+    lookback = int(params.get("lookback", 20))
+
+    df = df.copy()
+    if len(df) == 0:
+        return {"trades": [], "equityCurve": [], "stats": empty_stats(initial_capital)}
+
+    equity = initial_capital
+    position = None
+    trades = []
+    equity_curve = []
+
+    for i in range(len(df)):
+        row = df.iloc[i]
+
+        # Exit on break below N-period low
+        if position is not None and i >= lookback:
+            low_break = df.iloc[i - lookback:i]["low"].min()
+            if row["close"] < low_break:
+                exit_price = row["close"]
+                pnl = (exit_price - position["entryPrice"]) * position["qty"]
+                equity += pnl
+                trades.append({
+                    "direction": "LONG",
+                    "entryTime": position["entryTime"],
+                    "exitTime": int(row["time"]),
+                    "entryPrice": position["entryPrice"],
+                    "exitPrice": exit_price,
+                    "qty": position["qty"],
+                    "pnl": pnl,
+                })
+                position = None
+
+        # Entry on breakout above N-period high
+        if position is None and i >= lookback:
+            high_break = df.iloc[i - lookback:i]["high"].max()
+            if row["close"] > high_break:
+                entry_price = row["close"]
+                qty = int((equity * position_size_pct) / entry_price)
+                if qty > 0:
+                    position = {
+                        "entryPrice": entry_price,
+                        "entryTime": int(row["time"]),
+                        "qty": qty,
+                    }
+
+        mtm = equity
+        if position:
+            mtm += (row["close"] - position["entryPrice"]) * position["qty"]
+        equity_curve.append({"time": int(row["time"]), "equity": mtm})
+
+    if position is not None:
+        last_row = df.iloc[-1]
+        exit_price = last_row["close"]
+        pnl = (exit_price - position["entryPrice"]) * position["qty"]
+        equity += pnl
+        trades.append({
+            "direction": "LONG",
+            "entryTime": position["entryTime"],
+            "exitTime": int(last_row["time"]),
+            "entryPrice": position["entryPrice"],
+            "exitPrice": exit_price,
+            "qty": position["qty"],
+            "pnl": pnl,
+        })
+        if equity_curve:
+            equity_curve[-1]["equity"] = equity
+
+    stats = compute_stats(trades, equity_curve, initial_capital, equity)
+    return {"trades": trades, "equityCurve": equity_curve, "stats": stats}
+
+
 def compute_stats(trades, equity_curve, initial_capital, final_equity):
     if not trades:
         return empty_stats(initial_capital)
@@ -168,6 +316,8 @@ def empty_stats(initial_capital):
 
 STRATEGY_HANDLERS = {
     "sma-crossover": run_sma_crossover,
+    "mean-reversion": run_mean_reversion,
+    "breakout": run_breakout,
 }
 
 

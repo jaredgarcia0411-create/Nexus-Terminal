@@ -1,6 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { type Db } from '@/lib/db';
 import { discordUserLinks, users } from '@/lib/db/schema';
+import { requireServiceClaims } from '@/lib/service-request';
 import { requireUser } from '@/lib/server-db-utils';
 
 type AuthenticatedUser = {
@@ -15,22 +16,24 @@ export type AuthContext = {
   user: AuthenticatedUser;
 };
 
-function hasValidServiceSecret(request: Request) {
-  const secret = process.env.TRADE_WEBHOOK_SECRET;
-  if (!secret) return false;
-  const authHeader = request.headers.get('authorization');
-  return authHeader === `Bearer ${secret}`;
-}
+type RequireServiceUserOptions = {
+  requiredScopes?: string[];
+  enforceReplay?: boolean;
+};
 
-export async function requireServiceUser(request: Request, db: Db): Promise<AuthContext | { error: Response }> {
-  if (!hasValidServiceSecret(request)) {
-    return { error: Response.json({ error: 'Unauthorized' }, { status: 401 }) };
-  }
+export async function requireServiceUser(
+  request: Request,
+  db: Db,
+  options?: RequireServiceUserOptions,
+): Promise<AuthContext | { error: Response }> {
+  const tokenState = await requireServiceClaims(request, db, options);
+  if ('error' in tokenState) return tokenState;
+  const { claims } = tokenState;
 
-  const discordUserId = request.headers.get('x-discord-user-id')?.trim();
-  const guildId = request.headers.get('x-discord-guild-id')?.trim();
+  const discordUserId = claims.discordUserId?.trim();
+  const guildId = claims.guildId?.trim();
   if (!discordUserId) {
-    return { error: Response.json({ error: 'Missing x-discord-user-id header' }, { status: 400 }) };
+    return { error: Response.json({ error: 'Service token missing discordUserId claim' }, { status: 400 }) };
   }
 
   const linkQuery = db.select({
@@ -75,6 +78,14 @@ export async function requireServiceUser(request: Request, db: Db): Promise<Auth
 }
 
 export async function requireUserOrService(request: Request, db: Db): Promise<AuthContext | { error: Response }> {
+  return requireUserOrServiceWithOptions(request, db);
+}
+
+export async function requireUserOrServiceWithOptions(
+  request: Request,
+  db: Db,
+  options?: { service?: RequireServiceUserOptions },
+): Promise<AuthContext | { error: Response }> {
   const sessionState = await requireUser();
   if (!('error' in sessionState)) {
     return {
@@ -83,5 +94,5 @@ export async function requireUserOrService(request: Request, db: Db): Promise<Au
     };
   }
 
-  return requireServiceUser(request, db);
+  return requireServiceUser(request, db, options?.service);
 }

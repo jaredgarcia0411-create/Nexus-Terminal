@@ -3,7 +3,7 @@ import {
   EmbedBuilder,
   SlashCommandBuilder,
 } from "discord.js";
-import { buildDiscordUserHeaders, fetchNexusApi, formatCurrency, pnlColor } from "../utils.js";
+import { buildDiscordUserHeaders, fetchNexusApi, formatCurrency, pnlColor, SERVICE_SCOPE } from "../utils.js";
 
 export const data = new SlashCommandBuilder()
   .setName("backtest")
@@ -62,12 +62,26 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
   const symbol = interaction.options.getString("symbol", true).toUpperCase();
   const strategy = interaction.options.getString("strategy", true);
-  const headers = buildDiscordUserHeaders(interaction.user.id, interaction.guildId);
+  const marketDataHeaders = buildDiscordUserHeaders(
+    interaction.user.id,
+    interaction.guildId,
+    [SERVICE_SCOPE.SCHWAB_MARKET_DATA_READ],
+  );
+  const backtestRunHeaders = buildDiscordUserHeaders(
+    interaction.user.id,
+    interaction.guildId,
+    [SERVICE_SCOPE.BACKTEST_RUN],
+  );
+  const backtestReadHeaders = buildDiscordUserHeaders(
+    interaction.user.id,
+    interaction.guildId,
+    [SERVICE_SCOPE.BACKTEST_READ],
+  );
 
   try {
     const market = await fetchNexusApi<MarketDataResponse>(
       `/api/schwab/market-data?symbol=${encodeURIComponent(symbol)}&periodType=year&period=1&frequencyType=daily&frequency=1`,
-      { headers },
+      { headers: marketDataHeaders },
     );
 
     if (!market.candles || market.candles.length < 10) {
@@ -86,7 +100,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
     const job = await fetchNexusApi<BacktestJob>("/api/backtest", {
       method: "POST",
-      headers,
+      headers: backtestRunHeaders,
       body: {
         symbol,
         strategy,
@@ -104,7 +118,10 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     let result: BacktestResult | null = null;
     for (let i = 0; i < MAX_POLLS; i += 1) {
       await sleep(POLL_INTERVAL_MS);
-      result = await fetchNexusApi<BacktestResult>(`/api/backtest?jobId=${encodeURIComponent(job.jobId)}`, { headers });
+      result = await fetchNexusApi<BacktestResult>(
+        `/api/backtest?jobId=${encodeURIComponent(job.jobId)}`,
+        { headers: backtestReadHeaders },
+      );
       if (result.status === "completed" || result.status === "failed") {
         break;
       }

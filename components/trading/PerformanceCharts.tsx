@@ -23,6 +23,8 @@ interface PerformanceChartsProps {
   metric: '$' | 'R';
 }
 
+type PointValue = { value: number };
+
 export default function PerformanceCharts({ trades, metric }: PerformanceChartsProps) {
   const chartData = useMemo(() => {
     const dailyTotals = new Map<string, { date: Date; value: number }>();
@@ -131,7 +133,7 @@ export default function PerformanceCharts({ trades, metric }: PerformanceChartsP
               <Tooltip 
                 contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
                 itemStyle={{ color: '#10b981' }}
-                formatter={(value: any) => [formatValue(Number(value || 0)), 'Equity']}
+                formatter={(value?: number) => [formatValue(Number(value || 0)), 'Equity']}
               />
               <Area 
                 type="monotone" 
@@ -169,10 +171,10 @@ export default function PerformanceCharts({ trades, metric }: PerformanceChartsP
               />
               <Tooltip 
                 contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
-                formatter={(value: any) => [formatValue(Number(value || 0)), 'Performance']}
+                formatter={(value?: number) => [formatValue(Number(value || 0)), 'Performance']}
               />
               <Bar dataKey="value">
-                {chartData.map((entry: any, index: number) => (
+                {chartData.map((entry: PointValue, index: number) => (
                   <Cell key={`cell-${index}`} fill={entry.value >= 0 ? '#10b981' : '#f43f5e'} />
                 ))}
               </Bar>
@@ -206,10 +208,10 @@ export default function PerformanceCharts({ trades, metric }: PerformanceChartsP
               />
               <Tooltip 
                 contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
-                formatter={(value: any) => [formatValue(Number(value || 0)), 'PnL']}
+                formatter={(value?: number) => [formatValue(Number(value || 0)), 'PnL']}
               />
               <Bar dataKey="value">
-                {dayOfWeekData.map((entry: any, index: number) => (
+                {dayOfWeekData.map((entry: PointValue, index: number) => (
                   <Cell key={`cell-${index}`} fill={entry.value >= 0 ? '#10b981' : '#f43f5e'} />
                 ))}
               </Bar>
@@ -241,10 +243,10 @@ export default function PerformanceCharts({ trades, metric }: PerformanceChartsP
               />
               <Tooltip 
                 contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
-                formatter={(value: any) => [formatValue(Number(value || 0)), 'PnL']}
+                formatter={(value?: number) => [formatValue(Number(value || 0)), 'PnL']}
               />
               <Bar dataKey="value">
-                {timeOfDayData.map((entry: any, index: number) => (
+                {timeOfDayData.map((entry: PointValue, index: number) => (
                   <Cell key={`cell-${index}`} fill={entry.value >= 0 ? '#10b981' : '#f43f5e'} />
                 ))}
               </Bar>

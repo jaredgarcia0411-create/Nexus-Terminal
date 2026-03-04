@@ -1,9 +1,11 @@
 'use client';
 
+import { useMemo } from 'react';
 import { motion } from 'motion/react';
 import { Upload } from 'lucide-react';
 import PerformanceCharts from '@/components/trading/PerformanceCharts';
 import TradeTable from '@/components/trading/TradeTable';
+import { Button } from '@/components/ui/button';
 import type { Trade } from '@/lib/types';
 
 interface DashboardTabProps {
@@ -39,6 +41,17 @@ export default function DashboardTab({
   onDeleteGlobalTag,
   onTradeClick,
 }: DashboardTabProps) {
+  const stats = useMemo(() => {
+    const totalPnl = trades.reduce((acc, trade) => acc + trade.pnl, 0);
+    const winningTrades = trades.filter((trade) => trade.pnl > 0);
+    const losingTrades = trades.filter((trade) => trade.pnl < 0);
+    const winRate = trades.length > 0 ? (winningTrades.length / trades.length) * 100 : 0;
+    const wins = winningTrades.reduce((acc, trade) => acc + trade.pnl, 0);
+    const losses = Math.abs(losingTrades.reduce((acc, trade) => acc + trade.pnl, 0));
+    const profitFactor = losses === 0 ? (wins > 0 ? Infinity : 0) : wins / losses;
+    return { totalPnl, winRate, profitFactor };
+  }, [trades]);
+
   return (
     <motion.div key="dashboard" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
       {trades.length === 0 ? (
@@ -46,19 +59,19 @@ export default function DashboardTab({
           <h2 className="text-2xl font-bold">Welcome to Nexus Terminal</h2>
           <p className="mx-auto max-w-2xl text-sm text-zinc-400">Import your trading data to get started.</p>
           <div className="flex flex-col items-center gap-3">
-            <button
+            <Button
               onClick={onImportClick}
-              className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-2 font-semibold text-black transition-colors hover:bg-emerald-400"
+              className="inline-flex items-center gap-2 bg-emerald-500 px-5 py-2 font-semibold text-black hover:bg-emerald-400"
             >
               <Upload className="h-4 w-4" />
               Import Trades
-            </button>
+            </Button>
             <p className="text-xs text-zinc-500">
               CSV files should be named like <span className="font-mono">01-15-25.csv</span> (MM-DD-YY)
             </p>
-            <button onClick={onNewTradeClick} className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10">
+            <Button onClick={onNewTradeClick} variant="outline" className="border-white/10 bg-white/5 text-sm text-white hover:bg-white/10">
               Or add a trade manually
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
@@ -66,24 +79,20 @@ export default function DashboardTab({
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
               <div className="mb-2 text-xs font-mono uppercase text-zinc-500">Total PnL</div>
-              <div className={`text-3xl font-bold tracking-tight ${trades.reduce((acc, trade) => acc + trade.pnl, 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                ${trades.reduce((acc, trade) => acc + trade.pnl, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              <div className={`text-3xl font-bold tracking-tight ${stats.totalPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                ${stats.totalPnl.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </div>
             </div>
             <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
               <div className="mb-2 text-xs font-mono uppercase text-zinc-500">Win Rate</div>
               <div className="text-3xl font-bold tracking-tight">
-                {trades.length > 0 ? ((trades.filter((trade) => trade.pnl > 0).length / trades.length) * 100).toFixed(1) : '0.0'}%
+                {stats.winRate.toFixed(1)}%
               </div>
             </div>
             <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
               <div className="mb-2 text-xs font-mono uppercase text-zinc-500">Profit Factor</div>
               <div className="text-3xl font-bold tracking-tight">
-                {(() => {
-                  const wins = trades.filter((trade) => trade.pnl > 0).reduce((acc, trade) => acc + trade.pnl, 0);
-                  const losses = Math.abs(trades.filter((trade) => trade.pnl < 0).reduce((acc, trade) => acc + trade.pnl, 0));
-                  return losses === 0 ? (wins > 0 ? '∞' : '0.00') : (wins / losses).toFixed(2);
-                })()}
+                {Number.isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : '∞'}
               </div>
             </div>
           </div>
@@ -93,9 +102,9 @@ export default function DashboardTab({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold">Recent Trades</h2>
-              <button onClick={() => onSetActiveTab('journal')} className="text-sm text-emerald-500 hover:text-emerald-400">
+              <Button variant="ghost" onClick={() => onSetActiveTab('journal')} className="text-sm text-emerald-500 hover:text-emerald-400">
                 View Journal
-              </button>
+              </Button>
             </div>
             <TradeTable
               trades={filteredTrades.slice(0, 10)}

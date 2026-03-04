@@ -3,6 +3,7 @@
 import { motion } from 'motion/react';
 import { Calendar as CalendarIcon, X } from 'lucide-react';
 import TradeTable from '@/components/trading/TradeTable';
+import { Button } from '@/components/ui/button';
 import type { Trade } from '@/lib/types';
 
 interface FilterTabProps {
@@ -58,9 +59,9 @@ export default function FilterTab({
             <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-500">Date Range</h3>
             <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
               <CalendarIcon className="h-4 w-4 text-zinc-500" />
-              <input type="date" value={startDate} onChange={(event) => onStartDateChange(event.target.value)} className="bg-transparent text-xs focus:outline-none" />
+              <input type="date" value={startDate} onChange={(event) => onStartDateChange(event.target.value)} className="bg-transparent text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]" />
               <span className="text-zinc-600">to</span>
-              <input type="date" value={endDate} onChange={(event) => onEndDateChange(event.target.value)} className="bg-transparent text-xs focus:outline-none" />
+              <input type="date" value={endDate} onChange={(event) => onEndDateChange(event.target.value)} className="bg-transparent text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]" />
             </div>
           </div>
 
@@ -73,7 +74,7 @@ export default function FilterTab({
                 { id: '60', label: 'Last 60 Days' },
                 { id: '90', label: 'Last 90 Days' },
               ].map((preset) => (
-                <button
+                <Button
                   key={preset.id}
                   onClick={() => onFilterPresetChange(preset.id as 'all' | '30' | '60' | '90')}
                   className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
@@ -83,7 +84,7 @@ export default function FilterTab({
                   }`}
                 >
                   {preset.label}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -123,9 +124,9 @@ export default function FilterTab({
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">Filtered Results ({filteredTrades.length})</h3>
           {hasActiveFilters ? (
-            <button onClick={onClearAllFilters} className="text-xs font-medium text-rose-500 hover:text-rose-400">
+            <Button variant="ghost" onClick={onClearAllFilters} className="text-xs font-medium text-rose-500 hover:text-rose-400">
               Clear All Filters
-            </button>
+            </Button>
           ) : null}
         </div>
         <TradeTable

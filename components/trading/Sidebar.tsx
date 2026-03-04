@@ -4,6 +4,7 @@ import { Activity, BarChart3, Filter, LayoutGrid, List, RefreshCw, Search, User 
 import type { Dispatch, SetStateAction } from 'react';
 import SettingsMenu from '@/components/trading/SettingsMenu';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { useIsMobile } from '@/hooks/use-mobile';
 import type { Trade } from '@/lib/types';
 
 export type TabKey = 'dashboard' | 'journal' | 'performance' | 'filter' | 'backtesting' | 'sync';
@@ -27,6 +28,59 @@ export default function Sidebar({
   onClearAllData,
   onSignOut,
 }: SidebarProps) {
+  const isMobile = useIsMobile();
+
+  const navItems: Array<{ tab: TabKey; title: string; icon: typeof LayoutGrid }> = [
+    { tab: 'dashboard', title: 'Dashboard', icon: LayoutGrid },
+    { tab: 'performance', title: 'Performance', icon: BarChart3 },
+    { tab: 'journal', title: 'Journal', icon: List },
+    { tab: 'filter', title: 'Filter', icon: Filter },
+    { tab: 'backtesting', title: 'Backtesting', icon: Search },
+    { tab: 'sync', title: 'Broker Sync', icon: RefreshCw },
+  ];
+
+  if (isMobile) {
+    return (
+      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/5 bg-[#0A0A0B] px-2 py-2">
+        <div className="flex items-center justify-around text-zinc-500">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.tab}
+                onClick={() => setActiveTab(item.tab)}
+                className={`rounded-lg p-2 transition-colors ${activeTab === item.tab ? 'bg-emerald-500/10 text-emerald-500' : 'hover:text-white'}`}
+                title={item.title}
+                aria-label={item.title}
+              >
+                <Icon className="h-5 w-5" />
+              </button>
+            );
+          })}
+
+          <SettingsMenu trades={trades} onClearAllData={onClearAllData} />
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="rounded-lg p-2 transition-colors hover:text-white" title="User Menu" aria-label="User Menu">
+                <User className="h-5 w-5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64 border-white/10 bg-[#121214] text-white">
+              <div className="border-b border-white/10 px-3 py-2">
+                <p className="text-xs text-zinc-400">{user?.name}</p>
+                <p className="text-[11px] text-zinc-500">{user?.email}</p>
+              </div>
+              <DropdownMenuItem onClick={onSignOut} className="cursor-pointer text-rose-400">
+                Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </nav>
+    );
+  }
+
   return (
     <nav className="fixed left-0 top-0 z-50 flex h-full w-16 flex-col items-center gap-8 border-r border-white/5 bg-[#0A0A0B] py-6">
       <div className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl bg-emerald-500 shadow-lg shadow-emerald-500/20">
@@ -34,48 +88,20 @@ export default function Sidebar({
       </div>
 
       <div className="flex flex-col gap-6 text-zinc-500">
-        <button
-          onClick={() => setActiveTab('dashboard')}
-          className={`rounded-lg p-2 transition-colors ${activeTab === 'dashboard' ? 'bg-emerald-500/10 text-emerald-500' : 'hover:text-white'}`}
-          title="Dashboard"
-        >
-          <LayoutGrid className="h-5 w-5" />
-        </button>
-        <button
-          onClick={() => setActiveTab('performance')}
-          className={`rounded-lg p-2 transition-colors ${activeTab === 'performance' ? 'bg-emerald-500/10 text-emerald-500' : 'hover:text-white'}`}
-          title="Performance"
-        >
-          <BarChart3 className="h-5 w-5" />
-        </button>
-        <button
-          onClick={() => setActiveTab('journal')}
-          className={`rounded-lg p-2 transition-colors ${activeTab === 'journal' ? 'bg-emerald-500/10 text-emerald-500' : 'hover:text-white'}`}
-          title="Journal"
-        >
-          <List className="h-5 w-5" />
-        </button>
-        <button
-          onClick={() => setActiveTab('filter')}
-          className={`rounded-lg p-2 transition-colors ${activeTab === 'filter' ? 'bg-emerald-500/10 text-emerald-500' : 'hover:text-white'}`}
-          title="Filter"
-        >
-          <Filter className="h-5 w-5" />
-        </button>
-        <button
-          onClick={() => setActiveTab('backtesting')}
-          className={`rounded-lg p-2 transition-colors ${activeTab === 'backtesting' ? 'bg-emerald-500/10 text-emerald-500' : 'hover:text-white'}`}
-          title="Backtesting"
-        >
-          <Search className="h-5 w-5" />
-        </button>
-        <button
-          onClick={() => setActiveTab('sync')}
-          className={`rounded-lg p-2 transition-colors ${activeTab === 'sync' ? 'bg-emerald-500/10 text-emerald-500' : 'hover:text-white'}`}
-          title="Broker Sync"
-        >
-          <RefreshCw className="h-5 w-5" />
-        </button>
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.tab}
+              onClick={() => setActiveTab(item.tab)}
+              className={`rounded-lg p-2 transition-colors ${activeTab === item.tab ? 'bg-emerald-500/10 text-emerald-500' : 'hover:text-white'}`}
+              title={item.title}
+              aria-label={item.title}
+            >
+              <Icon className="h-5 w-5" />
+            </button>
+          );
+        })}
       </div>
 
       <div className="mt-auto flex flex-col gap-6 text-zinc-500">
@@ -83,7 +109,7 @@ export default function Sidebar({
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="rounded-lg p-2 transition-colors hover:text-white" title="User Menu">
+            <button className="rounded-lg p-2 transition-colors hover:text-white" title="User Menu" aria-label="User Menu">
               <User className="h-5 w-5" />
             </button>
           </DropdownMenuTrigger>
