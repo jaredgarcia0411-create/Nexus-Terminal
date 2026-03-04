@@ -19,6 +19,7 @@ interface TradeTableProps {
   onTradeClick?: (trade: Trade) => void;
   globalTags: string[];
   readOnly?: boolean;
+  pnlMode?: 'net' | 'gross';
 }
 
 export default function TradeTable({
@@ -32,6 +33,7 @@ export default function TradeTable({
   onTradeClick,
   globalTags,
   readOnly = false,
+  pnlMode = 'net',
 }: TradeTableProps) {
   const allSelected = trades.length > 0 && trades.every((trade) => selectedIds.has(trade.id));
   const [tagPopoverTradeId, setTagPopoverTradeId] = useState<string | null>(null);
@@ -70,6 +72,7 @@ export default function TradeTable({
         <tbody className="divide-y divide-white/5">
           {trades.map((trade) => {
             const availableTags = globalTags.filter((tag) => !(trade.tags ?? []).includes(tag));
+            const pnlValue = pnlMode === 'gross' ? trade.grossPnl : trade.netPnl;
 
             return (
               <tr
@@ -182,10 +185,10 @@ export default function TradeTable({
                 <td className="px-4 py-3 text-right font-mono">{formatCurrency(trade.avgExitPrice)}</td>
                 <td className="px-4 py-3 text-right font-mono text-zinc-400">{trade.totalQuantity}</td>
                 <td className="px-4 py-3 text-right font-mono text-zinc-500">{trade.initialRisk ? formatCurrency(trade.initialRisk) : '-'}</td>
-                <td className={`px-4 py-3 text-right font-mono font-medium ${getPnLColor(trade.pnl)}`}>
+                <td className={`px-4 py-3 text-right font-mono font-medium ${getPnLColor(pnlValue)}`}>
                   <div className="flex flex-col items-end">
-                    <span>{formatCurrency(trade.pnl)}</span>
-                    {trade.initialRisk ? <span className="text-[10px] opacity-70">{formatR(trade.pnl / trade.initialRisk)}</span> : null}
+                    <span>{formatCurrency(pnlValue)}</span>
+                    {trade.initialRisk ? <span className="text-[10px] opacity-70">{formatR(pnlValue / trade.initialRisk)}</span> : null}
                   </div>
                 </td>
               </tr>

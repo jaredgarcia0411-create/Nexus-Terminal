@@ -26,7 +26,6 @@ const COLUMN_ALIASES: Record<string, string> = {
   SYM: 'Symbol',
   SIDE: 'Side',
   ACTION: 'Side',
-  TYPE: 'Side',
   INSTRUCTION: 'Side',
   QTY: 'Qty',
   QUANTITY: 'Qty',
@@ -78,7 +77,7 @@ export const defaultParser: BrokerParserConfig = {
   normalizeRow: (rawRow, _rowIndex): NormalizedExecution | null => {
     const row = normalizeColumnNames(rawRow);
     const sym = String(row.Symbol ?? '').toUpperCase().trim();
-    const rawSide = String(row.Side ?? '').toUpperCase().trim();
+    const rawSide = String(row.Side ?? row.Action ?? row.Type ?? '').toUpperCase().trim();
     const side = SIDE_ALIASES[rawSide];
     const qty = parseFloat(String(row.Qty ?? row.Quantity ?? '')) || 0;
     const price = parsePrice(row.Price);

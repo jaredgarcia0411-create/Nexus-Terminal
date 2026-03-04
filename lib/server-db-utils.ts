@@ -12,6 +12,26 @@ export type ApiTrade = {
   avgEntryPrice: number;
   avgExitPrice: number;
   totalQuantity: number;
+  grossPnl: number;
+  netPnl: number;
+  entryTime: string;
+  exitTime: string;
+  executionCount: number;
+  rawExecutions: Array<{
+    id: string;
+    side: 'ENTRY' | 'EXIT';
+    price: number;
+    qty: number;
+    time: string;
+    timestamp?: Date | string;
+    commission: number;
+    fees: number;
+  }>;
+  mfe?: number;
+  mae?: number;
+  bestExitPnl?: number;
+  exitEfficiency?: number;
+  // Transitional aliases kept until all consumers migrate.
   pnl: number;
   executions: number;
   initialRisk?: number;
@@ -52,7 +72,16 @@ export function dbUnavailable() {
   return Response.json({ error: 'Database not configured' }, { status: 503 });
 }
 
-export function toTrade(row: typeof trades.$inferSelect, tags: string[] = []): ApiTrade {
+export function toTrade(
+  row: typeof trades.$inferSelect,
+  tags: string[] = [],
+  rawExecutions: ApiTrade['rawExecutions'] = [],
+): ApiTrade {
+  const commission = row.commission ?? 0;
+  const fees = row.fees ?? 0;
+  const netPnl = row.netPnl === 0 && row.pnl !== 0 ? row.pnl : row.netPnl;
+  const grossPnl = row.grossPnl === 0 ? netPnl + commission + fees : row.grossPnl;
+  const executionCount = row.executionCount === 1 && row.executions !== 1 ? row.executions : row.executionCount;
   return {
     id: row.id,
     date: row.date,
@@ -62,11 +91,21 @@ export function toTrade(row: typeof trades.$inferSelect, tags: string[] = []): A
     avgEntryPrice: row.avgEntryPrice,
     avgExitPrice: row.avgExitPrice,
     totalQuantity: row.totalQuantity,
-    pnl: row.pnl,
-    executions: row.executions,
+    grossPnl,
+    netPnl,
+    entryTime: row.entryTime,
+    exitTime: row.exitTime,
+    executionCount,
+    rawExecutions,
+    mfe: row.mfe ?? undefined,
+    mae: row.mae ?? undefined,
+    bestExitPnl: row.bestExitPnl ?? undefined,
+    exitEfficiency: row.exitEfficiency ?? undefined,
+    pnl: netPnl,
+    executions: executionCount,
     initialRisk: row.initialRisk ?? undefined,
-    commission: row.commission ?? 0,
-    fees: row.fees ?? 0,
+    commission,
+    fees,
     tags,
     notes: row.notes ?? undefined,
   };
@@ -87,4 +126,17 @@ export async function loadTagsForTradeIds(db: QueryDb, userId: string, tradeIds:
   }
 
   return tagMap;
+}
+
+export function toExecutionRowId(userId: string, tradeId: string, executionId: string | undefined, index: number): string {
+  const normalized = String(executionId ?? '').trim();
+  if (normalized.startsWith(`${userId}:`)) {
+    return normalized;
+  }
+
+  if (normalized.length > 0) {
+    return `${userId}:${normalized}`;
+  }
+
+  return `${userId}:${tradeId}:${index}`;
 }

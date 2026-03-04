@@ -18,6 +18,20 @@ type SchwabPriceHistoryResponse = {
 
 const ALLOWED_PERIOD_TYPES = ['day', 'month', 'year', 'ytd'];
 const ALLOWED_FREQUENCY_TYPES = ['minute', 'daily', 'weekly', 'monthly'];
+const MARKET_DATA_MIN_INTERVAL_MS = 200;
+const marketDataLastRequestByUser = new Map<string, number>();
+
+function checkMarketDataThrottle(userId: string): number {
+  const now = Date.now();
+  const previous = marketDataLastRequestByUser.get(userId) ?? 0;
+  const elapsed = now - previous;
+  if (elapsed < MARKET_DATA_MIN_INTERVAL_MS) {
+    return MARKET_DATA_MIN_INTERVAL_MS - elapsed;
+  }
+
+  marketDataLastRequestByUser.set(userId, now);
+  return 0;
+}
 
 export async function GET(request: Request) {
   const db = getDb();
@@ -30,6 +44,14 @@ export async function GET(request: Request) {
 
   if (authState.source === 'session') {
     await ensureUser(db, authState.user);
+  }
+
+  const retryAfterMs = checkMarketDataThrottle(authState.user.id);
+  if (retryAfterMs > 0) {
+    return Response.json(
+      { error: `Too many market data requests. Retry in ${retryAfterMs}ms.` },
+      { status: 429, headers: { 'Retry-After': String(Math.max(1, Math.ceil(retryAfterMs / 1000))) } },
+    );
   }
 
   const { searchParams } = new URL(request.url);

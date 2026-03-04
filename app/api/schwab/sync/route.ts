@@ -1,15 +1,23 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { brokerSyncLog, trades } from '@/lib/db/schema';
+import { brokerSyncLog, tradeExecutions, trades } from '@/lib/db/schema';
 import { requireUserOrServiceWithOptions } from '@/lib/service-auth';
-import { dbUnavailable, ensureUser } from '@/lib/server-db-utils';
+import { dbUnavailable, ensureUser, toExecutionRowId } from '@/lib/server-db-utils';
 import { getValidSchwabToken } from '@/lib/schwab';
 import { normalizeSchwabTransaction, type SchwabTransaction } from '@/lib/parsers/schwab-api';
 import { processCsvData } from '@/lib/csv-parser';
+import type { Trade } from '@/lib/types';
 import { format } from 'date-fns';
 
 const MAX_RANGE_DAYS = 90;
 const COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
+function normalizeTimestamp(value: unknown): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string' && value.trim()) return value;
+  return null;
+}
 
 export async function POST(request: Request) {
   const db = getDb();
@@ -124,7 +132,7 @@ export async function POST(request: Request) {
   }
 
   // Process each date through the existing FIFO matcher
-  const allTrades: any[] = [];
+  const allTrades: Trade[] = [];
   const allWarnings: string[] = [];
 
   for (const [dateStr, rows] of byDate) {
@@ -139,6 +147,13 @@ export async function POST(request: Request) {
   if (allTrades.length > 0) {
     for (const trade of allTrades) {
       const tradeId = trade.id;
+      const commission = trade.commission ?? 0;
+      const fees = trade.fees ?? 0;
+      const netPnl = trade.netPnl ?? trade.pnl;
+      const grossPnl = trade.grossPnl ?? netPnl + commission + fees;
+      const legacyExecutionCount = (trade as unknown as Record<string, unknown>)['executions'];
+      const executionCount = trade.executionCount ?? (typeof legacyExecutionCount === 'number' ? legacyExecutionCount : 1);
+
       await db.insert(trades).values({
         id: tradeId,
         userId: authState.user.id,
@@ -149,22 +164,62 @@ export async function POST(request: Request) {
         avgEntryPrice: trade.avgEntryPrice,
         avgExitPrice: trade.avgExitPrice,
         totalQuantity: trade.totalQuantity,
-        pnl: trade.pnl,
-        executions: trade.executions,
-        commission: trade.commission ?? 0,
-        fees: trade.fees ?? 0,
+        grossPnl,
+        netPnl,
+        entryTime: trade.entryTime ?? '',
+        exitTime: trade.exitTime ?? '',
+        executionCount,
+        mfe: trade.mfe ?? null,
+        mae: trade.mae ?? null,
+        bestExitPnl: trade.bestExitPnl ?? null,
+        exitEfficiency: trade.exitEfficiency ?? null,
+        pnl: netPnl,
+        executions: executionCount,
+        commission,
+        fees,
       }).onConflictDoUpdate({
         target: [trades.userId, trades.id],
         set: {
           avgEntryPrice: trade.avgEntryPrice,
           avgExitPrice: trade.avgExitPrice,
           totalQuantity: trade.totalQuantity,
-          pnl: trade.pnl,
-          executions: trade.executions,
-          commission: trade.commission ?? 0,
-          fees: trade.fees ?? 0,
+          grossPnl,
+          netPnl,
+          entryTime: trade.entryTime ?? '',
+          exitTime: trade.exitTime ?? '',
+          executionCount,
+          mfe: trade.mfe ?? null,
+          mae: trade.mae ?? null,
+          bestExitPnl: trade.bestExitPnl ?? null,
+          exitEfficiency: trade.exitEfficiency ?? null,
+          pnl: netPnl,
+          executions: executionCount,
+          commission,
+          fees,
         },
       });
+
+      if (Array.isArray(trade.rawExecutions) && trade.rawExecutions.length > 0) {
+        await db.delete(tradeExecutions).where(and(
+          eq(tradeExecutions.userId, authState.user.id),
+          eq(tradeExecutions.tradeId, tradeId),
+        ));
+
+        await db.insert(tradeExecutions).values(
+          trade.rawExecutions.map((execution, index) => ({
+            id: toExecutionRowId(authState.user.id, tradeId, execution.id, index),
+            userId: authState.user.id,
+            tradeId,
+            side: execution.side,
+            price: execution.price,
+            qty: execution.qty,
+            time: execution.time,
+            timestamp: normalizeTimestamp(execution.timestamp),
+            commission: execution.commission ?? 0,
+            fees: execution.fees ?? 0,
+          })),
+        );
+      }
     }
   }
 

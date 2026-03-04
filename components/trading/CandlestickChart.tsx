@@ -48,6 +48,98 @@ function toUTCSeconds(ms: number): Time {
   return Math.floor(ms / 1000) as unknown as Time;
 }
 
+type ResizeObserverLike = {
+  observe: (target: Element) => void;
+  disconnect: () => void;
+};
+
+type ResizeObserverCtorLike = new (callback: ResizeObserverCallback) => ResizeObserverLike;
+
+type CreateChartFn = typeof createChart;
+
+export function createChartLifecycle({
+  container,
+  height,
+  createChartFn = createChart,
+  resizeObserverCtor = typeof ResizeObserver !== 'undefined' ? (ResizeObserver as ResizeObserverCtorLike) : undefined,
+}: {
+  container: HTMLDivElement;
+  height: number;
+  createChartFn?: CreateChartFn;
+  resizeObserverCtor?: ResizeObserverCtorLike | undefined;
+}) {
+  const chart = createChartFn(container, {
+    layout: {
+      background: { type: ColorType.Solid, color: '#121214' },
+      textColor: '#71717a',
+    },
+    grid: {
+      vertLines: { color: '#ffffff08' },
+      horzLines: { color: '#ffffff08' },
+    },
+    crosshair: {
+      mode: CrosshairMode.Normal,
+    },
+    rightPriceScale: {
+      borderColor: '#ffffff10',
+    },
+    timeScale: {
+      borderColor: '#ffffff10',
+      timeVisible: false,
+    },
+    width: container.clientWidth,
+    height,
+  });
+
+  const candleSeries = chart.addSeries(CandlestickSeries, {
+    upColor: '#10b981',
+    downColor: '#ef4444',
+    borderUpColor: '#10b981',
+    borderDownColor: '#ef4444',
+    wickUpColor: '#10b981',
+    wickDownColor: '#ef4444',
+  });
+
+  const volumeSeries = chart.addSeries(HistogramSeries, {
+    priceFormat: { type: 'volume' },
+    priceScaleId: 'volume',
+  });
+
+  chart.priceScale('volume').applyOptions({
+    scaleMargins: { top: 0.8, bottom: 0 },
+  });
+
+  const handleResize = () => {
+    const width = container.clientWidth;
+    if (width > 0) {
+      chart.applyOptions({ width });
+    }
+  };
+
+  let resizeObserver: ResizeObserverLike | null = null;
+  if (resizeObserverCtor) {
+    resizeObserver = new resizeObserverCtor(() => {
+      handleResize();
+    });
+    resizeObserver.observe(container);
+  }
+
+  const cleanup = () => {
+    if (resizeObserver) {
+      resizeObserver.disconnect();
+    }
+    chart.remove();
+  };
+
+  return {
+    chart,
+    candleSeries,
+    volumeSeries,
+    cleanup,
+    handleResize,
+  };
+}
+
 export default function CandlestickChart({
   candles,
   indicators = [],
@@ -63,63 +155,16 @@ export default function CandlestickChart({
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const chart = createChart(containerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: '#121214' },
-        textColor: '#71717a',
-      },
-      grid: {
-        vertLines: { color: '#ffffff08' },
-        horzLines: { color: '#ffffff08' },
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-      },
-      rightPriceScale: {
-        borderColor: '#ffffff10',
-      },
-      timeScale: {
-        borderColor: '#ffffff10',
-        timeVisible: false,
-      },
-      width: containerRef.current.clientWidth,
+    const lifecycle = createChartLifecycle({
+      container: containerRef.current,
       height,
     });
-
-    chartRef.current = chart;
-
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#10b981',
-      downColor: '#ef4444',
-      borderUpColor: '#10b981',
-      borderDownColor: '#ef4444',
-      wickUpColor: '#10b981',
-      wickDownColor: '#ef4444',
-    });
-    candleSeriesRef.current = candleSeries;
-
-    const volumeSeries = chart.addSeries(HistogramSeries, {
-      priceFormat: { type: 'volume' },
-      priceScaleId: 'volume',
-    });
-    chart.priceScale('volume').applyOptions({
-      scaleMargins: { top: 0.8, bottom: 0 },
-    });
-    volumeSeriesRef.current = volumeSeries;
-
-    const resizeObserver = new ResizeObserver(() => {
-      if (containerRef.current) {
-        chart.applyOptions({ width: containerRef.current.clientWidth });
-      }
-    });
-
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
-    }
+    chartRef.current = lifecycle.chart;
+    candleSeriesRef.current = lifecycle.candleSeries;
+    volumeSeriesRef.current = lifecycle.volumeSeries;
 
     return () => {
-      resizeObserver.disconnect();
-      chart.remove();
+      lifecycle.cleanup();
       chartRef.current = null;
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
@@ -131,13 +176,20 @@ export default function CandlestickChart({
     const chart = chartRef.current;
     const candleSeries = candleSeriesRef.current;
     const volumeSeries = volumeSeriesRef.current;
-    if (!chart || !candleSeries || !volumeSeries || candles.length === 0) return;
+    if (!chart || !candleSeries || !volumeSeries) return;
 
     // Remove old line series
     for (const ls of lineSeriesRefs.current) {
       chart.removeSeries(ls);
     }
     lineSeriesRefs.current = [];
+
+    if (candles.length === 0) {
+      candleSeries.setData([]);
+      volumeSeries.setData([]);
+      createSeriesMarkers(candleSeries, []);
+      return;
+    }
 
     // Sort candles by time
     const sorted = [...candles].sort((a, b) => a.datetime - b.datetime);
@@ -196,7 +248,7 @@ export default function CandlestickChart({
 
     // Trade markers
     if (tradeMarkers.length > 0) {
-      const markers = tradeMarkers
+      const markers = [...tradeMarkers]
         .sort((a, b) => a.time - b.time)
         .map((m) => ({
           time: toUTCSeconds(m.time),
@@ -206,6 +258,8 @@ export default function CandlestickChart({
           text: m.label,
         }));
       createSeriesMarkers(candleSeries, markers);
+    } else {
+      createSeriesMarkers(candleSeries, []);
     }
 
     chart.timeScale().fitContent();

@@ -1,15 +1,23 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
+import { tradeExecutions, trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
 import { requireUserOrServiceWithOptions } from '@/lib/service-auth';
 import {
   dbUnavailable,
   ensureUser,
   loadTagsForTradeIds,
   requireUser,
+  toExecutionRowId,
   toTrade,
   type ApiTrade,
 } from '@/lib/server-db-utils';
+
+function normalizeTimestamp(value: unknown): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string' && value.trim()) return value;
+  return null;
+}
 
 export async function GET(request: Request) {
   const db = getDb();
@@ -47,6 +55,11 @@ export async function POST(request: Request) {
   if (!body.id || !body.symbol || !body.date || !body.sortKey || !body.direction) {
     return Response.json({ error: 'Missing required fields' }, { status: 400 });
   }
+  const commission = body.commission ?? 0;
+  const fees = body.fees ?? 0;
+  const netPnl = body.netPnl ?? body.pnl ?? 0;
+  const grossPnl = body.grossPnl ?? netPnl + commission + fees;
+  const executionCount = body.executionCount ?? body.executions ?? 1;
 
   await db.insert(trades).values({
     id: body.id,
@@ -58,11 +71,20 @@ export async function POST(request: Request) {
     avgEntryPrice: body.avgEntryPrice ?? 0,
     avgExitPrice: body.avgExitPrice ?? 0,
     totalQuantity: body.totalQuantity ?? 0,
-    pnl: body.pnl ?? 0,
-    executions: body.executions ?? 1,
+    grossPnl,
+    netPnl,
+    entryTime: body.entryTime ?? '',
+    exitTime: body.exitTime ?? '',
+    executionCount,
+    mfe: body.mfe ?? null,
+    mae: body.mae ?? null,
+    bestExitPnl: body.bestExitPnl ?? null,
+    exitEfficiency: body.exitEfficiency ?? null,
+    pnl: netPnl,
+    executions: executionCount,
     initialRisk: body.initialRisk ?? null,
-    commission: body.commission ?? 0,
-    fees: body.fees ?? 0,
+    commission,
+    fees,
     notes: body.notes ?? null,
   }).onConflictDoUpdate({
     target: [trades.userId, trades.id],
@@ -74,14 +96,45 @@ export async function POST(request: Request) {
       avgEntryPrice: body.avgEntryPrice ?? 0,
       avgExitPrice: body.avgExitPrice ?? 0,
       totalQuantity: body.totalQuantity ?? 0,
-      pnl: body.pnl ?? 0,
-      executions: body.executions ?? 1,
+      grossPnl,
+      netPnl,
+      entryTime: body.entryTime ?? '',
+      exitTime: body.exitTime ?? '',
+      executionCount,
+      mfe: body.mfe ?? null,
+      mae: body.mae ?? null,
+      bestExitPnl: body.bestExitPnl ?? null,
+      exitEfficiency: body.exitEfficiency ?? null,
+      pnl: netPnl,
+      executions: executionCount,
       initialRisk: body.initialRisk ?? null,
-      commission: body.commission ?? 0,
-      fees: body.fees ?? 0,
+      commission,
+      fees,
       notes: body.notes ?? null,
     },
   });
+
+  if (Array.isArray(body.rawExecutions) && body.rawExecutions.length > 0) {
+    await db.delete(tradeExecutions).where(and(
+      eq(tradeExecutions.userId, authState.user.id),
+      eq(tradeExecutions.tradeId, body.id),
+    ));
+
+    await db.insert(tradeExecutions).values(
+      body.rawExecutions.map((execution, index) => ({
+        id: toExecutionRowId(authState.user.id, body.id!, execution.id, index),
+        userId: authState.user.id,
+        tradeId: body.id!,
+        side: execution.side,
+        price: execution.price,
+        qty: execution.qty,
+        time: execution.time,
+        timestamp: normalizeTimestamp(execution.timestamp),
+        commission: execution.commission ?? 0,
+        fees: execution.fees ?? 0,
+      })),
+    );
+  }
 
   if (Array.isArray(body.tags)) {
     await db.delete(tradeTagsTable).where(and(
@@ -103,6 +156,6 @@ export async function POST(request: Request) {
     .limit(1);
   if (!created) return Response.json({ error: 'Trade not found after save' }, { status: 500 });
 
-  const trade = toTrade(created, body.tags ?? []);
+  const trade = toTrade(created, body.tags ?? [], body.rawExecutions ?? []);
   return Response.json({ trade });
 }

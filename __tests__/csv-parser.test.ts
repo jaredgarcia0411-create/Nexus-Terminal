@@ -112,7 +112,7 @@ describe('processCsvData — basic FIFO pairing', () => {
       avgExitPrice: 101,
       commission: 2.5,
       fees: 0.5,
-      executions: 1,
+      executionCount: 1,
     });
     expect(result.trades[0].pnl).toBeCloseTo(7);
   });
@@ -144,7 +144,7 @@ describe('processCsvData — basic FIFO pairing', () => {
       avgExitPrice: 11.4,
       commission: 2,
       fees: 0.4,
-      executions: 2,
+      executionCount: 2,
     });
     expect(longTrade!.pnl).toBeCloseTo(137.6);
 
@@ -156,7 +156,7 @@ describe('processCsvData — basic FIFO pairing', () => {
       avgExitPrice: 18.6,
       commission: 1,
       fees: 0.2,
-      executions: 2,
+      executionCount: 2,
     });
     expect(shortTrade!.pnl).toBeCloseTo(68.8);
   });
@@ -248,5 +248,79 @@ describe('processCsvData — basic FIFO pairing', () => {
 
     expect(result.trades.every((trade) => Number.isFinite(trade.avgEntryPrice) && Number.isFinite(trade.avgExitPrice))).toBe(true);
     expect(result.trades.every((trade) => trade.totalQuantity > 0)).toBe(true);
+  });
+
+  it('computes gross/net pnl fields and keeps pnl alias in sync', () => {
+    const rows = [
+      { Symbol: 'NFLX', Side: 'MARGIN', Qty: '10', Price: '100', Time: '09:30:00', Commission: '1', Fees: '0.25' },
+      { Symbol: 'NFLX', Side: 'S', Qty: '10', Price: '103', Time: '10:00:00', Commission: '1', Fees: '0.25' },
+    ];
+
+    const result = processCsvData(rows, { date: new Date('2025-01-15'), sortKey: '2025-01-15' });
+    expect(result.trades).toHaveLength(1);
+
+    const trade = result.trades[0];
+    expect(trade.grossPnl).toBeCloseTo(30);
+    expect(trade.netPnl).toBeCloseTo(27.5);
+    expect(trade.pnl).toBeCloseTo(trade.netPnl);
+    expect(trade.entryTime).toBe('09:30:00');
+    expect(trade.exitTime).toBe('10:00:00');
+    expect(trade.rawExecutions).toHaveLength(2);
+  });
+
+  it('orders non-zero-padded times chronologically when deriving entry/exit times', () => {
+    const rows = [
+      { Symbol: 'AAPL', Side: 'S', Qty: '100', Price: '102', Time: '10:00:00', Commission: '0', Fees: '0' },
+      { Symbol: 'AAPL', Side: 'MARGIN', Qty: '40', Price: '100', Time: '9:05:00', Commission: '0', Fees: '0' },
+      { Symbol: 'AAPL', Side: 'MARGIN', Qty: '60', Price: '101', Time: '09:30:00', Commission: '0', Fees: '0' },
+    ];
+
+    const result = processCsvData(rows, { date: new Date('2025-01-15'), sortKey: '2025-01-15' });
+    expect(result.trades).toHaveLength(1);
+    expect(result.trades[0].entryTime).toBe('9:05:00');
+    expect(result.trades[0].exitTime).toBe('10:00:00');
+  });
+
+  it('consolidates duplicate fills at same side/time/price without losing totals', () => {
+    const rows = [
+      { Symbol: 'AMD', Side: 'MARGIN', Qty: '40', Price: '100', Time: '09:30:00', Commission: '0.4', Fees: '0.04' },
+      { Symbol: 'AMD', Side: 'MARGIN', Qty: '60', Price: '100', Time: '09:30:00', Commission: '0.6', Fees: '0.06' },
+      { Symbol: 'AMD', Side: 'S', Qty: '100', Price: '101', Time: '10:00:00', Commission: '1', Fees: '0.1' },
+    ];
+
+    const result = processCsvData(rows, { date: new Date('2025-01-15'), sortKey: '2025-01-15' });
+    expect(result.trades).toHaveLength(1);
+
+    const trade = result.trades[0];
+    expect(trade.totalQuantity).toBe(100);
+    expect(trade.executionCount).toBe(2);
+    expect(trade.rawExecutions).toHaveLength(2);
+
+    const entry = trade.rawExecutions.find((exec) => exec.side === 'ENTRY');
+    const exit = trade.rawExecutions.find((exec) => exec.side === 'EXIT');
+    expect(entry?.qty).toBeCloseTo(100);
+    expect(exit?.qty).toBeCloseTo(100);
+    expect((entry?.commission ?? 0) + (exit?.commission ?? 0)).toBeCloseTo(trade.commission || 0);
+    expect((entry?.fees ?? 0) + (exit?.fees ?? 0)).toBeCloseTo(trade.fees || 0);
+  });
+
+  it('matches reverse-chronological rows using chronological FIFO order', () => {
+    const rows = [
+      { Symbol: 'META', Side: 'S', Qty: '100', Price: '105', Time: '10:00:00', Commission: '1', Fees: '0.1' },
+      { Symbol: 'META', Side: 'MARGIN', Qty: '100', Price: '100', Time: '09:30:00', Commission: '1', Fees: '0.1' },
+    ];
+
+    const result = processCsvData(rows, { date: new Date('2025-01-15'), sortKey: '2025-01-15' });
+    expect(result.warnings).toHaveLength(0);
+    expect(result.trades).toHaveLength(1);
+
+    const trade = result.trades[0];
+    expect(trade.symbol).toBe('META');
+    expect(trade.direction).toBe('LONG');
+    expect(trade.entryTime).toBe('09:30:00');
+    expect(trade.exitTime).toBe('10:00:00');
+    expect(trade.executionCount).toBe(1);
+    expect(trade.rawExecutions).toHaveLength(2);
+    expect(trade.netPnl).toBeCloseTo(500 - 2 - 0.2);
   });
 });

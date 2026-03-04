@@ -4,6 +4,11 @@ import { defaultParser } from './default';
 const parsers: BrokerParserConfig[] = [defaultParser];
 
 export function registerParser(parser: BrokerParserConfig) {
+  const existingIdx = parsers.findIndex((p) => p.id === parser.id);
+  if (existingIdx >= 0) {
+    parsers.splice(existingIdx, 1);
+  }
+
   // Insert before default so auto-detect prefers specific parsers
   const defaultIdx = parsers.findIndex((p) => p.id === 'default');
   if (defaultIdx >= 0) {

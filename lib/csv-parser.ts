@@ -23,6 +23,42 @@ export interface ProcessedCsvResult {
   warnings: string[];
 }
 
+interface MatchedPair {
+  symbol: string;
+  direction: Direction;
+  entryPrice: number;
+  exitPrice: number;
+  qty: number;
+  commission: number;
+  fees: number;
+  grossPnl: number;
+  netPnl: number;
+  entryTime: string;
+  exitTime: string;
+}
+
+function parseTimeToSeconds(value: string): number | null {
+  const match = String(value ?? '').trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return null;
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3] ?? 0);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) return null;
+
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+function compareTimes(a: string, b: string): number {
+  const aSecs = parseTimeToSeconds(a);
+  const bSecs = parseTimeToSeconds(b);
+
+  if (aSecs != null && bSecs != null) return aSecs - bSecs;
+  if (aSecs != null && bSecs == null) return -1;
+  if (aSecs == null && bSecs != null) return 1;
+  return a.localeCompare(b);
+}
+
 function buildRemainingExecution(exec: RawExecution, matchedQty: number): RawExecution | null {
   const remainingQty = exec.qty - matchedQty;
   if (remainingQty <= 0) return null;
@@ -84,7 +120,6 @@ const COLUMN_ALIASES: Record<string, string> = {
   SYM: 'Symbol',
   SIDE: 'Side',
   ACTION: 'Side',
-  TYPE: 'Side',
   INSTRUCTION: 'Side',
   QTY: 'Qty',
   QUANTITY: 'Qty',
@@ -129,11 +164,42 @@ function parseCost(value: unknown): number {
   return Number.isFinite(parsed) ? Math.abs(parsed) : 0;
 }
 
+function consolidateExecutions(
+  tradeId: string,
+  executions: Trade['rawExecutions'],
+): Trade['rawExecutions'] {
+  const merged = new Map<string, Trade['rawExecutions'][number]>();
+
+  for (const exec of executions) {
+    const key = `${exec.side}|${exec.time}|${exec.price}`;
+    const existing = merged.get(key);
+    if (existing) {
+      existing.qty += exec.qty;
+      existing.commission += exec.commission;
+      existing.fees += exec.fees;
+      continue;
+    }
+    merged.set(key, { ...exec });
+  }
+
+  return Array.from(merged.values())
+    .sort((a, b) => {
+      const byTime = compareTimes(a.time, b.time);
+      if (byTime !== 0) return byTime;
+      if (a.side !== b.side) return a.side === 'ENTRY' ? -1 : 1;
+      return a.price - b.price;
+    })
+    .map((exec, index) => ({
+      ...exec,
+      id: `${tradeId}|${exec.side}|${index}`,
+    }));
+}
+
 /** Built-in row normalization (used when no parser plugin is provided) */
 function builtinNormalizeRow(rawRow: Record<string, unknown>, rowIndex: number, warnings: string[]): NormalizedExecution | null {
   const row = normalizeRow(rawRow);
   const sym = String(row.Symbol ?? '').toUpperCase().trim();
-  const rawSide = String(row.Side ?? '').trim();
+  const rawSide = String(row.Side ?? row.Action ?? row.Type ?? '').trim();
   const side = normalizeSide(rawSide);
   const qty = parseFloat(String(row.Qty ?? row.Quantity ?? '')) || 0;
   const price = parsePrice(row.Price);
@@ -165,11 +231,12 @@ export const processCsvData = (
 ): ProcessedCsvResult => {
   const symbolMap: Record<string, SymbolExecutions> = {};
   const warnings: string[] = [];
+  const parserContext = parser?.buildContext?.(data as Record<string, unknown>[]);
 
   data.forEach((rawRow, rowIndex) => {
     try {
       const exec = parser
-        ? parser.normalizeRow(rawRow as Record<string, unknown>, rowIndex)
+        ? parser.normalizeRow(rawRow as Record<string, unknown>, rowIndex, parserContext)
         : builtinNormalizeRow(rawRow as Record<string, unknown>, rowIndex, warnings);
 
       if (!exec) return;
@@ -190,7 +257,26 @@ export const processCsvData = (
     }
   });
 
-  const matchedPairs: any[] = [];
+  if (parserContext && typeof parserContext === 'object') {
+    const parserWarnings = (parserContext as { warnings?: unknown }).warnings;
+    if (Array.isArray(parserWarnings)) {
+      for (const warning of parserWarnings) {
+        if (typeof warning === 'string' && warning.trim()) {
+          warnings.push(warning);
+        }
+      }
+    }
+  }
+
+  // Normalize bucket ordering to chronological execution matching.
+  for (const bucket of Object.values(symbolMap)) {
+    bucket.shortEntry.sort((a, b) => compareTimes(a.time, b.time));
+    bucket.shortExit.sort((a, b) => compareTimes(a.time, b.time));
+    bucket.longEntry.sort((a, b) => compareTimes(a.time, b.time));
+    bucket.longExit.sort((a, b) => compareTimes(a.time, b.time));
+  }
+
+  const matchedPairs: MatchedPair[] = [];
 
   Object.entries(symbolMap).forEach(([sym, d]) => {
     const se = [...d.shortEntry];
@@ -223,7 +309,10 @@ export const processCsvData = (
         qty: q,
         commission,
         fees,
-        pnl: (entry.price - exit.price) * q - commission - fees,
+        grossPnl: (entry.price - exit.price) * q,
+        netPnl: (entry.price - exit.price) * q - commission - fees,
+        entryTime: entry.time,
+        exitTime: exit.time,
       });
 
       const entryRemainder = buildRemainingExecution(entry, q);
@@ -262,7 +351,10 @@ export const processCsvData = (
         qty: q,
         commission,
         fees,
-        pnl: (exit.price - entry.price) * q - commission - fees,
+        grossPnl: (exit.price - entry.price) * q,
+        netPnl: (exit.price - entry.price) * q - commission - fees,
+        entryTime: entry.time,
+        exitTime: exit.time,
       });
 
       const entryRemainder = buildRemainingExecution(entry, q);
@@ -299,6 +391,12 @@ export const processCsvData = (
         avgEntryPrice: 0,
         avgExitPrice: 0,
         totalQuantity: 0,
+        grossPnl: 0,
+        netPnl: 0,
+        entryTime: '',
+        exitTime: '',
+        executionCount: 0,
+        rawExecutions: [],
         pnl: 0,
         executions: 0,
         commission: 0,
@@ -330,13 +428,54 @@ export const processCsvData = (
     const exitValue = trade.avgExitPrice * trade.totalQuantity + pair.exitPrice * pair.qty;
 
     trade.totalQuantity += pair.qty;
-    trade.pnl += pair.pnl;
+    trade.grossPnl += pair.grossPnl;
+    trade.netPnl += pair.netPnl;
+    trade.pnl = trade.netPnl;
     trade.commission = (trade.commission || 0) + pair.commission;
     trade.fees = (trade.fees || 0) + pair.fees;
-    trade.executions++;
+    trade.executionCount++;
+    trade['executions'] = trade.executionCount;
     trade.avgEntryPrice = entryValue / trade.totalQuantity;
     trade.avgExitPrice = exitValue / trade.totalQuantity;
+
+    if (!trade.entryTime || compareTimes(pair.entryTime, trade.entryTime) < 0) {
+      trade.entryTime = pair.entryTime;
+    }
+    if (!trade.exitTime || compareTimes(pair.exitTime, trade.exitTime) > 0) {
+      trade.exitTime = pair.exitTime;
+    }
+
+    const executionBase = `${trade.id}|${trade.executionCount}`;
+    trade.rawExecutions.push(
+      {
+        id: `${executionBase}|ENTRY`,
+        side: 'ENTRY',
+        price: pair.entryPrice,
+        qty: pair.qty,
+        time: pair.entryTime,
+        commission: pair.commission / 2,
+        fees: pair.fees / 2,
+      },
+      {
+        id: `${executionBase}|EXIT`,
+        side: 'EXIT',
+        price: pair.exitPrice,
+        qty: pair.qty,
+        time: pair.exitTime,
+        commission: pair.commission / 2,
+        fees: pair.fees / 2,
+      },
+    );
   });
+
+  for (const trade of Object.values(mergedMap)) {
+    trade.rawExecutions = consolidateExecutions(trade.id, trade.rawExecutions);
+    const entryTimes = trade.rawExecutions.filter((exec) => exec.side === 'ENTRY').map((exec) => exec.time);
+    const exitTimes = trade.rawExecutions.filter((exec) => exec.side === 'EXIT').map((exec) => exec.time);
+
+    trade.entryTime = entryTimes.length > 0 ? entryTimes.sort((a, b) => compareTimes(a, b))[0] : '';
+    trade.exitTime = exitTimes.length > 0 ? exitTimes.sort((a, b) => compareTimes(b, a))[0] : '';
+  }
 
   return { trades: Object.values(mergedMap), warnings };
 };

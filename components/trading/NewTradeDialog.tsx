@@ -62,6 +62,7 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
       if (initialRisk !== undefined && (!Number.isFinite(initialRisk) || initialRisk <= 0)) {
         throw new Error('Invalid initial risk');
       }
+      const netPnl = calculatePnL(values.direction, values.entryPrice, values.exitPrice, values.quantity);
 
       const trade: Trade = {
         id,
@@ -72,7 +73,13 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
         avgEntryPrice: values.entryPrice,
         avgExitPrice: values.exitPrice,
         totalQuantity: values.quantity,
-        pnl: calculatePnL(values.direction, values.entryPrice, values.exitPrice, values.quantity),
+        grossPnl: netPnl,
+        netPnl,
+        entryTime: '',
+        exitTime: '',
+        executionCount: 1,
+        rawExecutions: [],
+        pnl: netPnl,
         executions: 1,
         initialRisk,
         commission: 0,

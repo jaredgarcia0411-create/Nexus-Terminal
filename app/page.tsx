@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { signOut } from 'next-auth/react';
 import { toast } from 'sonner';
@@ -59,6 +59,8 @@ export default function NexusTerminal() {
     handleCreateManualTrade,
     handleDeleteSelected,
     handleApplyRisk,
+    handleRecalculateMfeMae,
+    handleBulkRecalculateMfeMae,
     handleSaveNotes,
     handleAddTag,
     handleRemoveTag,
@@ -67,9 +69,15 @@ export default function NexusTerminal() {
     handleClearAllData,
     handleFileUpload,
     handleFolderUpload,
+    fetchTradeDetail,
   } = useTrades();
 
   const selectedTrade = useMemo(() => trades.find((trade) => trade.id === selectedTradeId) ?? null, [selectedTradeId, trades]);
+
+  useEffect(() => {
+    if (!selectedTradeId) return;
+    void fetchTradeDetail(selectedTradeId);
+  }, [selectedTradeId, fetchTradeDetail]);
 
   const handleSignOut = () => {
     signOut().catch(() => {
@@ -101,6 +109,7 @@ export default function NexusTerminal() {
           user={user}
           selectedCount={selectedIds.size}
           onDeleteSelected={handleDeleteSelected}
+          onRecalculateSelected={handleBulkRecalculateMfeMae}
           onImportClick={() => importInputRef.current?.click()}
           onFolderImportClick={() => folderInputRef.current?.click()}
           onNewTradeClick={() => setIsManualTradeOpen(true)}
@@ -207,6 +216,7 @@ export default function NexusTerminal() {
           if (!open) setSelectedTradeId(null);
         }}
         onSaveNotes={handleSaveNotes}
+        onRecalculateMfeMae={handleRecalculateMfeMae}
       />
 
       {isImporting ? (

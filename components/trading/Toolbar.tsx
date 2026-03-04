@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { Plus, Trash2, User, X } from 'lucide-react';
+import { Plus, RefreshCcw, Trash2, User, X } from 'lucide-react';
 import ImportDropdown from '@/components/trading/ImportDropdown';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -18,6 +18,7 @@ interface ToolbarProps {
   user: { name?: string | null; email?: string | null; image?: string | null } | undefined;
   selectedCount: number;
   onDeleteSelected: () => void;
+  onRecalculateSelected: () => void;
   onImportClick: () => void;
   onFolderImportClick: () => void;
   onNewTradeClick: () => void;
@@ -33,6 +34,7 @@ export default function Toolbar({
   user,
   selectedCount,
   onDeleteSelected,
+  onRecalculateSelected,
   onImportClick,
   onFolderImportClick,
   onNewTradeClick,
@@ -87,6 +89,13 @@ export default function Toolbar({
           {selectedCount > 0 ? (
             <div className="animate-in slide-in-from-right-2 fade-in flex items-center gap-2 sm:gap-3">
               <span className="text-xs font-medium text-zinc-500">{selectedCount} selected</span>
+              <button
+                onClick={onRecalculateSelected}
+                className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2 text-emerald-500 transition-colors hover:bg-emerald-500/20"
+                title="Recalculate MFE/MAE"
+              >
+                <RefreshCcw className="h-4 w-4" />
+              </button>
               <button
                 onClick={() => setConfirmDeleteOpen(true)}
                 className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-2 text-rose-500 transition-colors hover:bg-rose-500/20"

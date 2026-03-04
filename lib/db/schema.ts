@@ -19,7 +19,17 @@ export const trades = pgTable('trades', {
   avgEntryPrice: doublePrecision('avg_entry_price').notNull(),
   avgExitPrice: doublePrecision('avg_exit_price').notNull(),
   totalQuantity: doublePrecision('total_quantity').notNull(),
+  grossPnl: doublePrecision('gross_pnl').notNull().default(0),
+  netPnl: doublePrecision('net_pnl').notNull().default(0),
+  entryTime: text('entry_time').notNull().default(''),
+  exitTime: text('exit_time').notNull().default(''),
+  executionCount: integer('execution_count').notNull().default(1),
+  mfe: doublePrecision('mfe'),
+  mae: doublePrecision('mae'),
+  bestExitPnl: doublePrecision('best_exit_pnl'),
+  exitEfficiency: doublePrecision('exit_efficiency'),
   pnl: doublePrecision('pnl').notNull(),
+  // Transitional legacy column retained for one release cycle.
   executions: integer('executions').notNull().default(1),
   initialRisk: doublePrecision('initial_risk'),
   commission: doublePrecision('commission').default(0),
@@ -29,6 +39,26 @@ export const trades = pgTable('trades', {
 }, (table) => [
   primaryKey({ columns: [table.userId, table.id] }),
   index('idx_trades_user_sort_key').on(table.userId, table.sortKey),
+]);
+
+export const tradeExecutions = pgTable('trade_executions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tradeId: text('trade_id').notNull(),
+  side: text('side', { enum: ['ENTRY', 'EXIT'] }).notNull(),
+  price: doublePrecision('price').notNull(),
+  qty: doublePrecision('qty').notNull(),
+  time: text('time').notNull(),
+  timestamp: text('timestamp'),
+  commission: doublePrecision('commission').default(0),
+  fees: doublePrecision('fees').default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  foreignKey({
+    columns: [table.userId, table.tradeId],
+    foreignColumns: [trades.userId, trades.id],
+  }).onDelete('cascade'),
+  index('idx_executions_user_trade').on(table.userId, table.tradeId),
 ]);
 
 export const tradeTags = pgTable('trade_tags', {

@@ -1,11 +1,12 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { getPoolDb } from '@/lib/db';
-import { trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
+import { tradeExecutions, trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
 import {
   dbUnavailable,
   ensureUser,
   loadTagsForTradeIds,
   requireUser,
+  toExecutionRowId,
   toTrade,
   type ApiTrade,
 } from '@/lib/server-db-utils';
@@ -13,6 +14,13 @@ import {
 type ImportPayload = {
   trades: ApiTrade[];
 };
+
+function normalizeTimestamp(value: unknown): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string' && value.trim()) return value;
+  return null;
+}
 
 export async function POST(request: Request) {
   const authState = await requireUser();
@@ -29,6 +37,13 @@ export async function POST(request: Request) {
 
   await db.transaction(async (tx) => {
     for (const trade of body.trades) {
+      const commission = trade.commission ?? 0;
+      const fees = trade.fees ?? 0;
+      const netPnl = trade.netPnl ?? trade.pnl;
+      const grossPnl = trade.grossPnl ?? netPnl + commission + fees;
+      const legacyExecutionCount = (trade as unknown as Record<string, unknown>)['executions'];
+      const executionCount = trade.executionCount ?? (typeof legacyExecutionCount === 'number' ? legacyExecutionCount : 1);
+
       await tx.insert(trades).values({
         id: trade.id,
         userId: authState.user.id,
@@ -39,11 +54,20 @@ export async function POST(request: Request) {
         avgEntryPrice: trade.avgEntryPrice,
         avgExitPrice: trade.avgExitPrice,
         totalQuantity: trade.totalQuantity,
-        pnl: trade.pnl,
-        executions: trade.executions,
+        grossPnl,
+        netPnl,
+        entryTime: trade.entryTime ?? '',
+        exitTime: trade.exitTime ?? '',
+        executionCount,
+        mfe: trade.mfe ?? null,
+        mae: trade.mae ?? null,
+        bestExitPnl: trade.bestExitPnl ?? null,
+        exitEfficiency: trade.exitEfficiency ?? null,
+        pnl: netPnl,
+        executions: executionCount,
         initialRisk: trade.initialRisk ?? null,
-        commission: trade.commission ?? 0,
-        fees: trade.fees ?? 0,
+        commission,
+        fees,
         notes: trade.notes ?? null,
       }).onConflictDoUpdate({
         target: [trades.userId, trades.id],
@@ -51,12 +75,43 @@ export async function POST(request: Request) {
           avgEntryPrice: trade.avgEntryPrice,
           avgExitPrice: trade.avgExitPrice,
           totalQuantity: trade.totalQuantity,
-          pnl: trade.pnl,
-          executions: trade.executions,
-          commission: trade.commission ?? 0,
-          fees: trade.fees ?? 0,
+          grossPnl,
+          netPnl,
+          entryTime: trade.entryTime ?? '',
+          exitTime: trade.exitTime ?? '',
+          executionCount,
+          mfe: trade.mfe ?? null,
+          mae: trade.mae ?? null,
+          bestExitPnl: trade.bestExitPnl ?? null,
+          exitEfficiency: trade.exitEfficiency ?? null,
+          pnl: netPnl,
+          executions: executionCount,
+          commission,
+          fees,
         },
       });
+
+      if (Array.isArray(trade.rawExecutions) && trade.rawExecutions.length > 0) {
+        await tx.delete(tradeExecutions).where(and(
+          eq(tradeExecutions.userId, authState.user.id),
+          eq(tradeExecutions.tradeId, trade.id),
+        ));
+
+        await tx.insert(tradeExecutions).values(
+          trade.rawExecutions.map((execution, index) => ({
+            id: toExecutionRowId(authState.user.id, trade.id, execution.id, index),
+            userId: authState.user.id,
+            tradeId: trade.id,
+            side: execution.side,
+            price: execution.price,
+            qty: execution.qty,
+            time: execution.time,
+            timestamp: normalizeTimestamp(execution.timestamp),
+            commission: execution.commission ?? 0,
+            fees: execution.fees ?? 0,
+          })),
+        );
+      }
 
       if (trade.tags?.length) {
         for (const tag of trade.tags) {

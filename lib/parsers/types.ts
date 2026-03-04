@@ -15,6 +15,12 @@ export interface BrokerParserConfig {
   detect: (headers: string[], rows: Record<string, unknown>[]) => boolean;
   /** Optionally extract a date from the filename or row data */
   extractDate?: (filename: string, rows: Record<string, unknown>[]) => { date: Date; sortKey: string } | null;
+  /** Optionally pre-scan rows and build parser-specific context */
+  buildContext?: (rows: Record<string, unknown>[]) => Record<string, unknown>;
   /** Normalize a single CSV row into a standardized execution */
-  normalizeRow: (row: Record<string, unknown>, rowIndex: number) => NormalizedExecution | null;
+  normalizeRow: (
+    row: Record<string, unknown>,
+    rowIndex: number,
+    context?: Record<string, unknown>,
+  ) => NormalizedExecution | null;
 }

@@ -1,7 +1,48 @@
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
+import { tradeExecutions, trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser, toTrade } from '@/lib/server-db-utils';
+
+export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const authState = await requireUser();
+  if ('error' in authState) return authState.error;
+
+  const db = getDb();
+  if (!db) return dbUnavailable();
+  await ensureUser(db, authState.user);
+
+  const { id } = await context.params;
+
+  const [trade] = await db.select().from(trades)
+    .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)))
+    .limit(1);
+  if (!trade) {
+    return Response.json({ error: 'Trade not found' }, { status: 404 });
+  }
+
+  const [tagRows, executionRows] = await Promise.all([
+    db.select({ tag: tradeTagsTable.tag })
+      .from(tradeTagsTable)
+      .where(and(eq(tradeTagsTable.userId, authState.user.id), eq(tradeTagsTable.tradeId, id))),
+    db.select().from(tradeExecutions)
+      .where(and(eq(tradeExecutions.userId, authState.user.id), eq(tradeExecutions.tradeId, id)))
+      .orderBy(asc(tradeExecutions.time), asc(tradeExecutions.id)),
+  ]);
+
+  const tagList = tagRows.map((r) => r.tag);
+  const rawExecutions = executionRows.map((row) => ({
+    id: row.id,
+    side: row.side,
+    price: row.price,
+    qty: row.qty,
+    time: row.time,
+    timestamp: row.timestamp ?? undefined,
+    commission: row.commission ?? 0,
+    fees: row.fees ?? 0,
+  }));
+
+  return Response.json({ trade: toTrade(trade, tagList, rawExecutions) });
+}
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const authState = await requireUser();
@@ -52,12 +93,27 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     return Response.json({ error: 'Trade not found' }, { status: 404 });
   }
 
-  const tagRows = await db.select({ tag: tradeTagsTable.tag })
-    .from(tradeTagsTable)
-    .where(and(eq(tradeTagsTable.userId, authState.user.id), eq(tradeTagsTable.tradeId, id)));
+  const [tagRows, executionRows] = await Promise.all([
+    db.select({ tag: tradeTagsTable.tag })
+      .from(tradeTagsTable)
+      .where(and(eq(tradeTagsTable.userId, authState.user.id), eq(tradeTagsTable.tradeId, id))),
+    db.select().from(tradeExecutions)
+      .where(and(eq(tradeExecutions.userId, authState.user.id), eq(tradeExecutions.tradeId, id)))
+      .orderBy(asc(tradeExecutions.time), asc(tradeExecutions.id)),
+  ]);
   const tagList = tagRows.map((r) => r.tag);
+  const rawExecutions = executionRows.map((row) => ({
+    id: row.id,
+    side: row.side,
+    price: row.price,
+    qty: row.qty,
+    time: row.time,
+    timestamp: row.timestamp ?? undefined,
+    commission: row.commission ?? 0,
+    fees: row.fees ?? 0,
+  }));
 
-  return Response.json({ trade: toTrade(trade, tagList) });
+  return Response.json({ trade: toTrade(trade, tagList, rawExecutions) });
 }
 
 export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
