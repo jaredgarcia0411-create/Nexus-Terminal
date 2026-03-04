@@ -1,8 +1,9 @@
 # Nexus Terminal — Handoff Document
 
-**Generated:** 2026-03-04  
-**Current Branch:** `main`  
+**Generated:** 2026-03-04 (updated 2026-03-04)
+**Current Branch:** `main`
 **Latest Commits:**
+- `62f6086` — Refresh handoff document to reflect current post-hardening state
 - `1b1189e` — Document residual risks and next steps in CODEX prompt
 - `c1e0316` — Harden tenant auth boundaries and align Discord/backtest contracts
 
@@ -10,7 +11,7 @@
 
 ## Current Status
 
-The codebase is in a stable state after the hardening sprint. The highest-risk auth/authz findings from the 2026-03-03 review were addressed and validated.
+The codebase is in a stable state after the hardening sprint. All prior implementation workstreams (login page, page.tsx refactor, backtesting tab, bug fixes, DB migration to Neon/Drizzle, security hardening) are **complete**. A full UI/UX audit was performed on 2026-03-03 and its findings have been incorporated into the revised `CODEX_PROMPT.md`.
 
 ### Validation Snapshot
 
@@ -126,9 +127,62 @@ The codebase is in a stable state after the hardening sprint. The highest-risk a
 
 ---
 
-## Suggested Next Sprint
+## What's Changing Next (per CODEX_PROMPT.md)
 
-1. Add Discord `/link` flow (one-time code or signed challenge) to create `discord_user_links` safely.
-2. Harden service auth (short-lived signed tokens and explicit secret rotation process).
-3. Implement alert evaluation worker/cron and notification delivery path.
-4. Complete worker strategy support beyond `sma-crossover`.
+The revised `CODEX_PROMPT.md` archives workstreams 1-6 as completed and defines three new active workstreams:
+
+### Workstream 7: UI/UX Hardening (20 changes, frontend-only)
+
+A UI/UX audit surfaced 18 issues (4 critical, 8 warning, 8 suggestion). Key changes:
+
+**Critical fixes:**
+- Add confirmation dialog before bulk-deleting trades (Toolbar)
+- Fix TradeDetailSheet losing existing notes on open (initializes to blank instead of `trade.notes`)
+- Make Sidebar responsive — bottom nav on mobile using the existing `useIsMobile()` hook
+- Make Toolbar responsive — prevent overflow on narrow viewports
+
+**Accessibility:**
+- Add `aria-label` to all icon-only sidebar buttons
+- Add visible focus rings (`focus:ring-2`) to all raw inputs/selects (WCAG 2.1 SC 1.4.11)
+- Bundle Google SVG locally (remove external CDN dependency on login page)
+- Add `MotionConfig reducedMotion="user"` to respect `prefers-reduced-motion`
+
+**Polish:**
+- Remove non-discoverable sign-out from avatar click (keep sidebar dropdown)
+- Replace raw `<select>` with shadcn `Select` in BacktestingTab and BrokerSyncTab
+- Memoize dashboard stats (inline `.reduce()` in JSX)
+- Fix TradeTable empty state colspan (off by 1)
+- Add ARIA attributes to import loading overlay
+- Make TradingCalendar and backtesting strategy grid responsive
+- Remove `any` types from PerformanceCharts tooltip formatters
+- Use `ResizeObserver` instead of `window.resize` in CandlestickChart
+- Disable unused context files upload area with "Coming soon" badge
+- Add empty state for broker accounts select
+- Replace raw buttons with shadcn `Button` in DashboardTab, Toolbar, FilterTab
+
+**Files touched:** 16 modified, 1 created (`public/google.svg`). No database changes.
+
+### Workstream 8: Service Layer Completions
+
+Addresses the residual risks listed below:
+1. Discord `/link` onboarding command (new slash command)
+2. Webhook event forwarding (implement the stub in `trade-event/route.ts`)
+3. Price alert evaluation background process
+4. Backtest worker strategy parity (`mean-reversion`, `breakout`)
+
+### Workstream 9: Hardened Service Auth
+
+- Replace shared-secret bearer tokens with short-lived signed JWTs
+- Create `docs/SECRET_ROTATION.md` playbook
+
+### Implementation Order
+
+1. UI/UX critical fixes (7.1-7.4)
+2. UI/UX accessibility (7.5-7.8)
+3. UI/UX polish (7.9-7.20)
+4. Service layer completions (workstream 8)
+5. Hardened service auth (workstream 9)
+
+---
+
+## Residual Risks and Remaining Work (carried forward)

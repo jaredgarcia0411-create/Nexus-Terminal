@@ -2,1359 +2,770 @@
 
 ## Overview
 
-Nexus Terminal is a Next.js 15 trading journal app with Turso (LibSQL) cloud persistence, NextAuth v5 Google OAuth, and a dark theme built on shadcn/ui. The app is functional for core trade management but needs the following changes to be fully complete.
+Nexus Terminal is a Next.js 15 trading journal app with PostgreSQL (Neon) cloud persistence via Drizzle ORM, NextAuth v5 Google OAuth, and a dark theme built on shadcn/ui. The app is functional for core trade management with completed login flow, component decomposition, backtesting integration, broker sync, and database migration. The remaining work focuses on UI/UX hardening, accessibility, responsiveness, and service-layer completions.
 
-This document describes **4 workstreams** in priority order. Each section includes the exact files to create/modify, the behavior expected, and implementation constraints.
-
----
-
-## 1. Custom Login Page (Gate the Entire App)
-
-### Current Behavior
-- The app renders the full dashboard immediately. An unauthenticated user sees everything but with a "Sign in with Google" button in the sidebar header.
-- `lib/auth-config.ts` sets `pages: { signIn: '/' }`, meaning NextAuth redirects to the root page for sign-in — but there is no dedicated login UI.
-
-### Required Changes
-
-**Create `app/login/page.tsx`** — A dedicated full-screen login page:
-- Centered card on a dark background (`#0A0A0B`)
-- App logo/name "Nexus Terminal" with a tagline (e.g., "Professional Trading Journal")
-- A single "Sign in with Google" button using `signIn('google')` from `next-auth/react`
-- Styled with the existing emerald/dark theme — use shadcn `Button` component
-- Animated entrance using `motion/react` (fade + slide up), consistent with the rest of the app
-- No access to any app functionality from this page — login is the only action
-
-**Modify `lib/auth-config.ts`**:
-- Change `pages: { signIn: '/' }` to `pages: { signIn: '/login' }`
-- This makes NextAuth redirect unauthenticated users to `/login` automatically
-
-**Create `middleware.ts`** (project root):
-- Use NextAuth's `auth` export to protect all routes
-- Redirect unauthenticated users to `/login`
-- Allow unauthenticated access to: `/login`, `/api/auth/*` (NextAuth routes)
-- Use the `authorized` callback pattern from NextAuth v5:
-```ts
-export { auth as middleware } from '@/lib/auth-config';
-
-export const config = {
-  matcher: ['/((?!login|api/auth|_next/static|_next/image|favicon.ico).*)'],
-};
-```
-Note: This requires exporting `auth` from `lib/auth-config.ts` which is already done. The middleware approach may need adjustment — NextAuth v5 supports a `middleware` export or you can use the `authorized` callback in the auth config. Choose whichever approach works cleanly with the existing setup.
-
-**Modify `app/page.tsx`**:
-- Remove the inline Google sign-in button from the sidebar (the one that shows when `!session`)
-- Remove the `handleSignIn` function — login is now handled by the `/login` page
-- The page can now assume the user is always authenticated (middleware enforces this)
-- Keep `handleSignOut` — the user menu in the sidebar should still allow signing out
-- Remove any conditional rendering based on `!session` for the main content area
-
-**Remove the notification bell icon**:
-- In the sidebar icon group (around line 666-672 of `app/page.tsx`), remove the `<Bell>` icon button and its `onClick={() => toast('No new notifications')}` handler
-- Remove `Bell` from the lucide-react import
-
-### Acceptance Criteria
-- Visiting any page while unauthenticated redirects to `/login`
-- `/login` shows a clean, branded login page with Google sign-in
-- After signing in, user is redirected to the dashboard (`/`)
-- No app content is visible without authentication
-- The bell icon is completely removed from the sidebar
+This document describes **3 active workstreams** in priority order. Workstreams 1-6 from the previous plan are **completed** and archived at the bottom for reference. Each active section includes the exact files to create/modify, the behavior expected, and implementation constraints.
 
 ---
 
-## 2. Refactor `app/page.tsx` Into Smaller Components
+## Completed Workstreams (Archived)
+
+The following workstreams are done and should not be re-executed:
+
+1. **Custom Login Page + Middleware** — `app/login/page.tsx`, `middleware.ts`, `lib/auth-config.ts` all exist and function correctly. The app gates all routes behind Google OAuth.
+2. **Refactor `app/page.tsx`** — Decomposed into `hooks/use-trades.ts`, `components/trading/Sidebar.tsx`, `components/trading/Toolbar.tsx`, `DashboardTab.tsx`, `JournalTab.tsx`, `PerformanceTab.tsx`, `FilterTab.tsx`, `BacktestingTab.tsx`, `BrokerSyncTab.tsx`. `app/page.tsx` is now ~220 lines composing these components.
+3. **Build Out the Backtesting Tab** — Fully functional with Schwab market data fetching, CandlestickChart (lightweight-charts), technical indicators, strategy selection, client-side backtest engine, and results panel.
+4. **Bug Fixes & Polish** — CSV parser returns `warnings` array. `firebase-tools` removed. Schwab OAuth env validation added.
+5. **Database Migration (Turso to PostgreSQL/Neon/Drizzle)** — Complete. Schema in `lib/db/schema.ts`, dual HTTP+Pool clients in `lib/db.ts`, all API routes use Drizzle query builder. `@libsql/client` removed.
+6. **Code Review Hardening Sprint** — Tenant-safe composite keys, Schwab OAuth state validation, Discord/backtest contract reconciliation all done.
+
+---
+
+## 7. UI/UX Hardening
+
+### Objective
+
+Address critical usability bugs, accessibility gaps, and responsiveness failures identified in the 2026-03-03 UI/UX audit. This workstream consolidates 20 findings across critical, warning, and suggestion severity levels.
 
 ### Current State
-`app/page.tsx` is ~1100 lines containing all state management, event handlers, sidebar, toolbar, and tab content in a single `'use client'` component.
+
+The app is functionally complete but has several UI/UX issues:
+- Destructive actions lack confirmation dialogs
+- Trade detail sheet loses existing notes
+- No mobile/responsive behavior despite the existence of `useIsMobile()` hook
+- Accessibility gaps: missing ARIA labels, inadequate focus states, no reduced-motion support
+- Inconsistent component usage (raw `<button>` and `<select>` instead of shadcn equivalents)
+- Multiple `any` types in chart formatters
+- Dead features confusing users
 
 ### Required Changes
 
-**Extract a custom hook: `hooks/use-trades.ts`**:
-- Move all trade-related state: `trades`, `globalTags`, `useLocalStorage`, `mounted`
-- Move all trade handlers: `handleFileUpload`, `handleCreateManualTrade`, `handleDeleteSelected`, `handleApplyRisk`, `handleSaveNotes`, `handleAddTag`, `handleRemoveTag`, `handleDeleteGlobalTag`, `handleBulkAddTag`, `handleClearAllData`
-- Move the `useEffect` that loads trades (local or remote) and handles migration
-- Move `filteredTrades`, `hasActiveFilters`, `activeFilterCount`, `clearAllFilters`
-- Move filter state: `startDate`, `endDate`, `filterPreset`, `selectedFilterTags`, `searchQuery`
-- Export all state and handlers the components need
+#### Change 7.1: Add Confirmation Dialog for Delete Selected (CRITICAL)
 
-**Extract `components/trading/Sidebar.tsx`**:
-- The left sidebar with navigation icons, user avatar, settings menu
-- Props: `activeTab`, `setActiveTab`, `session`, `onSignOut`
-- Include the `SettingsMenu` integration
+**File:** `components/trading/Toolbar.tsx`
+**Action:** MODIFY
+**Complexity:** LOW
 
-**Extract `components/trading/Toolbar.tsx`**:
-- The top bar with search, import button, new trade button, filter controls, bulk actions
-- Props: all filter state/setters, selection state, import/delete/risk handlers
+The "Delete Selected" button (line 86-92) triggers `onDeleteSelected()` directly with no confirmation. This parallels the "Clear All Data" flow in `components/trading/SettingsMenu.tsx` which correctly uses a `Dialog` component for confirmation.
 
-**Extract tab content components**:
-- `components/trading/DashboardTab.tsx` — stats cards + recent trades table
-- `components/trading/JournalTab.tsx` — full trade table with selection/bulk actions
-- `components/trading/PerformanceTab.tsx` — charts wrapper with metric toggle
-- `components/trading/FilterTab.tsx` — filter controls (date range, presets, tags)
-- `components/trading/BacktestingTab.tsx` — (see workstream 3 below)
+**Implementation:**
+- Import `{ useState }` from react
+- Import `{ Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle }` from `@/components/ui/dialog`
+- Import `{ Button }` from `@/components/ui/button`
+- Add `const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)` state
+- Change the delete button's `onClick` to `() => setConfirmDeleteOpen(true)` instead of `onDeleteSelected`
+- Add a `<Dialog>` after the `</header>` element (inside a fragment) with:
+  - Title: "Delete selected trades?"
+  - Body: `{selectedCount} trade(s) will be permanently deleted. This action cannot be undone.`
+  - Cancel button: `<Button variant="secondary" onClick={() => setConfirmDeleteOpen(false)}>Cancel</Button>`
+  - Confirm button: `<Button onClick={() => { onDeleteSelected(); setConfirmDeleteOpen(false); }} className="bg-rose-500 hover:bg-rose-400 text-white">Delete</Button>`
+- Wrap the component return in a fragment (`<>...</>`) to include the Dialog alongside the header
 
-**Simplified `app/page.tsx`**:
-- Should be ~100-150 lines max
-- Imports and composes the above components
-- Uses `useTrades()` hook for state
-- Renders `<Sidebar>`, `<Toolbar>`, and the active tab component inside `<AnimatePresence>`
+**Reference pattern:** See `components/trading/SettingsMenu.tsx` lines 112-133 for the exact Dialog usage pattern.
 
-### Constraints
-- Do NOT change any functionality — this is a pure refactor
-- Keep all existing animations (motion/react)
-- Keep the same visual layout and styling
-- All existing features must work identically after refactor
-- Run `npm run build` after refactoring to verify no type errors
+**Acceptance Criteria:**
+- [ ] Clicking "Delete Selected" in the toolbar opens a confirmation dialog
+- [ ] The dialog shows the count of trades to be deleted
+- [ ] Clicking "Cancel" closes the dialog without deleting
+- [ ] Clicking "Delete" calls `onDeleteSelected()` and closes the dialog
+- [ ] Visual styling matches the existing SettingsMenu confirmation dialog
 
----
+#### Change 7.2: Fix TradeDetailSheet Notes Initialization (CRITICAL)
 
-## 3. Build Out the Backtesting Tab
+**File:** `components/trading/TradeDetailSheet.tsx`
+**Action:** MODIFY
+**Complexity:** LOW
 
-### Current State
-The backtesting tab (`page.tsx:1111-1171`) renders:
-- A heading "Backtesting Engine"
-- A search input (no state binding — non-functional)
-- A file upload area (files go to `contextFiles` state but are never used)
-- A "Connect Charles Schwab" button (opens OAuth popup, stores tokens, but tokens are never used)
+The `notes` state initializes to `''` (line 21) and never reads from `trade.notes`. When a user opens a trade that already has notes, they see an empty textarea. Saving would overwrite existing notes with blank text.
 
-The Schwab OAuth flow is implemented (`/api/auth/schwab/url`, `/api/auth/schwab/callback`) and tokens are stored in the `schwab_tokens` table, but no API calls use the tokens.
+**Implementation:**
+- Import `{ useEffect }` from react (add to existing import)
+- Change line 21 from `const [notes, setNotes] = useState('');` to `const [notes, setNotes] = useState(trade?.notes ?? '');`
+- Add a `useEffect` to sync notes when the trade prop changes:
+  ```typescript
+  useEffect(() => {
+    setNotes(trade?.notes ?? '');
+  }, [trade]);
+  ```
 
-### Required Changes
+**Acceptance Criteria:**
+- [ ] Opening a trade with existing notes shows those notes in the textarea
+- [ ] Opening a trade with no notes shows an empty textarea
+- [ ] Switching between trades (via prop change) updates the textarea content
+- [ ] Saving notes still works correctly
 
-**Fix Schwab OAuth env validation** — In `/api/auth/schwab/url/route.ts`:
-- Check if `SCHWAB_CLIENT_ID` is defined before using it
-- Return a 500 error with `{ error: 'Schwab integration not configured' }` if missing
+#### Change 7.3: Make Sidebar Responsive (CRITICAL)
 
-**Create `/api/schwab/market-data/route.ts`**:
-- GET endpoint that accepts `?symbol=NVDA` query param
-- Retrieves the user's Schwab access token from `schwab_tokens` table
-- Checks if token is expired; if so, refreshes using the refresh token
-- Calls Schwab Market Data API to fetch historical price data (daily candles)
-- Returns the data as JSON
-- If no Schwab token exists, return 401 with `{ error: 'Schwab not connected' }`
+**File:** `components/trading/Sidebar.tsx`
+**Action:** MODIFY
+**File:** `app/page.tsx`
+**Action:** MODIFY
+**Complexity:** MEDIUM
 
-**Create `/api/schwab/status/route.ts`**:
-- GET endpoint that checks if the current user has a valid (non-expired) Schwab connection
-- Returns `{ connected: true/false, expiresAt?: string }`
+The sidebar is `fixed left-0 w-16` and `main` has `pl-16` (app/page.tsx line 91). On screens < 768px the sidebar takes 64px of a small viewport with no collapse or drawer behavior. The `useIsMobile()` hook exists at `hooks/use-mobile.ts` (breakpoint 768px) but is never used.
 
-**Build `components/trading/BacktestingTab.tsx`**:
-- **Connection status**: Show whether Schwab is connected (green badge) or not (prompt to connect)
-- **Symbol search**: Functional search input with state binding. On submit (Enter key), fetch historical data from `/api/schwab/market-data?symbol=XXX`
-- **Price chart**: Display fetched historical data using Recharts (candlestick or line chart, consistent with existing PerformanceCharts styling)
-- **Context files**: The file upload area should display uploaded files and allow removal (this part already works via `contextFiles` state — just move it into this component)
-- **Error states**: Handle cases where Schwab isn't connected, symbol not found, API rate limited, token expired
-- **Loading states**: Show skeleton/spinner while fetching data
+**Implementation for `components/trading/Sidebar.tsx`:**
+- Import `{ useIsMobile }` from `@/hooks/use-mobile`
+- Add `const isMobile = useIsMobile();`
+- Desktop (not mobile): Keep existing layout unchanged — `fixed left-0 top-0 z-50 flex h-full w-16 flex-col`
+- Mobile: Render as a fixed bottom navigation bar:
+  - `fixed bottom-0 left-0 right-0 z-50 flex h-14 items-center justify-around border-t border-white/5 bg-[#0A0A0B] px-2`
+  - Show only the 6 nav icons in a horizontal row (no logo, no settings menu, no user menu on the bottom bar)
+  - Move SettingsMenu and User dropdown into a "more" menu or keep them accessible from the Toolbar on mobile
 
-**Note on Schwab API**: The Schwab Developer API may have specific endpoint URLs and authentication patterns. The implementation should follow their OAuth 2.0 token refresh flow. If exact API endpoints are unclear, structure the code so the base URL and endpoints are configurable via environment variables:
+**Implementation for `app/page.tsx`:**
+- Import `{ useIsMobile }` from `@/hooks/use-mobile`
+- Add `const isMobile = useIsMobile();`
+- Change `<main className="pl-16">` to `<main className={isMobile ? 'pb-16' : 'pl-16'}>`
+  - On mobile: bottom padding instead of left padding (bottom nav instead of sidebar)
+
+**Acceptance Criteria:**
+- [ ] On screens >= 768px: sidebar displays as the existing left column
+- [ ] On screens < 768px: sidebar displays as a bottom navigation bar
+- [ ] The main content area adjusts its padding accordingly
+- [ ] All 6 navigation tabs are accessible on mobile
+- [ ] User menu / settings remain accessible on mobile (via toolbar or collapsed menu)
+
+#### Change 7.4: Make Toolbar Responsive (CRITICAL)
+
+**File:** `components/trading/Toolbar.tsx`
+**Action:** MODIFY
+**Complexity:** MEDIUM
+
+The toolbar uses `flex justify-between` (line 39) with no wrapping. On narrow viewports the left side (title + badge + mode label) and right side (user info + buttons) will overlap or overflow.
+
+**Implementation:**
+- Import `{ useIsMobile }` from `@/hooks/use-mobile`
+- Add `const isMobile = useIsMobile();`
+- On mobile:
+  - Hide the user info section (name/email/avatar block, lines 66-81) — users have the sign-out option in the sidebar/bottom nav
+  - Hide the "Local Storage Mode" / "Cloud Mode" label (line 56)
+  - Simplify to: app title + trade count badge on the left, action buttons on the right
+  - If `selectedCount > 0`, show the delete button inline with the action buttons
+  - Wrap the toolbar items with `flex-wrap gap-2` to prevent overflow
+- On desktop: keep existing layout unchanged
+
+**Acceptance Criteria:**
+- [ ] Toolbar does not overflow on screens < 768px
+- [ ] Import and New Trade buttons remain accessible on mobile
+- [ ] Selected count and delete button remain accessible when trades are selected
+- [ ] No visual regression on desktop
+
+#### Change 7.5: Add aria-label to Sidebar Buttons (WARNING)
+
+**File:** `components/trading/Sidebar.tsx`
+**Action:** MODIFY
+**Complexity:** LOW
+
+All 6 sidebar nav buttons (lines 37-78) use only `title` attribute for labeling. Screen readers need `aria-label` since the buttons contain only icons (no visible text).
+
+**Implementation:**
+- Add `aria-label` matching the existing `title` to every sidebar icon button:
+  - `aria-label="Dashboard"` (line 40)
+  - `aria-label="Performance"` (line 46)
+  - `aria-label="Journal"` (line 52)
+  - `aria-label="Filter"` (line 58)
+  - `aria-label="Backtesting"` (line 64)
+  - `aria-label="Broker Sync"` (line 70)
+- Also add `aria-label="Settings"` to the SettingsMenu trigger button and `aria-label="User Menu"` to the User dropdown trigger
+
+**Acceptance Criteria:**
+- [ ] Every icon-only button in the sidebar has an `aria-label`
+- [ ] The `aria-label` values match the `title` values
+- [ ] No visual changes
+
+#### Change 7.6: Add Visible Focus States (WARNING)
+
+**Files to modify:**
+- `components/trading/JournalTab.tsx` (line 60)
+- `components/trading/FilterTab.tsx` (lines 61-63)
+- `components/trading/BacktestingTab.tsx` (lines 267, 396-428)
+- `components/trading/BrokerSyncTab.tsx` (lines 132-156)
+
+**Action:** MODIFY (all files)
+**Complexity:** LOW
+
+All raw `<input>` and `<select>` elements use `focus:outline-none` with only `focus:border-emerald-500/50` as a replacement. The border color change alone is insufficient for WCAG 2.1 SC 1.4.11 (non-text contrast) against the dark background.
+
+**Implementation:**
+- Find every instance of `focus:outline-none` in these files
+- Replace with: `focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]`
+- This applies to:
+  - `JournalTab.tsx`: search input (line 60), risk input (line 74)
+  - `FilterTab.tsx`: date inputs (lines 61-63)
+  - `BacktestingTab.tsx`: symbol search input (line 267), strategy select (line 385), capital input (line 400), position size input (line 412), parameter inputs (line 428)
+  - `BrokerSyncTab.tsx`: account select (line 132), start date input (line 147), end date input (line 155)
+
+**Acceptance Criteria:**
+- [ ] All interactive inputs show a visible emerald ring on focus
+- [ ] The ring is clearly visible against the `#121214` background
+- [ ] `focus:outline-none` is preserved (browser default outline removed)
+- [ ] No visual changes when elements are not focused
+
+#### Change 7.7: Bundle Google SVG Locally (WARNING)
+
+**File:** `app/login/page.tsx`
+**Action:** MODIFY
+**New file:** `public/google.svg`
+**Action:** CREATE
+**Complexity:** LOW
+
+The Google icon loads from `https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg` (line 31). If this CDN is unavailable, the login button renders with a broken image.
+
+**Implementation:**
+- Create `public/google.svg` with the standard Google "G" logo SVG content:
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+</svg>
 ```
-SCHWAB_API_BASE_URL=https://api.schwabapi.com
-```
+- In `app/login/page.tsx`, change the `Image` src from the external URL to `/google.svg`
+- Remove the `www.gstatic.com` entry from `next.config.ts` `images.remotePatterns` if it exists
 
-### Constraints
-- Use existing UI patterns (shadcn components, emerald theme, dark cards with `bg-[#121214]`)
-- Use Recharts for any new charts (already a dependency)
-- All API routes must validate authentication via `auth()` from NextAuth
-- Schwab tokens must never be exposed to the client — all Schwab API calls go through server-side API routes
+**Acceptance Criteria:**
+- [ ] `public/google.svg` exists with the Google "G" logo
+- [ ] Login page renders the Google icon from the local file
+- [ ] No external CDN dependency for the login button icon
+
+#### Change 7.8: Respect prefers-reduced-motion (WARNING)
+
+**File:** `app/layout.tsx`
+**Action:** MODIFY
+**Complexity:** LOW
+
+All components using `motion.div` apply entrance/exit animations but never check `prefers-reduced-motion`.
+
+**Implementation:**
+- The `motion` library (motion/react v12) supports a global `MotionConfig` component with a `reducedMotion` prop
+- In `app/layout.tsx`, wrap the children with:
+  ```tsx
+  import { MotionConfig } from 'motion/react';
+
+  // Inside the body:
+  <MotionConfig reducedMotion="user">
+    {children}
+  </MotionConfig>
+  ```
+- This causes all `motion.div` instances to respect the user's OS-level `prefers-reduced-motion` setting
+- No changes needed to individual components
+
+**Acceptance Criteria:**
+- [ ] `MotionConfig` with `reducedMotion="user"` wraps the app in `app/layout.tsx`
+- [ ] When the OS has `prefers-reduced-motion: reduce` enabled, animations are suppressed
+- [ ] No visual changes for users who have not enabled reduced motion
+
+#### Change 7.9: Remove Sign-Out from Avatar Click (WARNING)
+
+**File:** `components/trading/Toolbar.tsx`
+**Action:** MODIFY
+**Complexity:** LOW
+
+Clicking the user avatar (lines 71-80) triggers `onSignOut`. There is no visual indication this is a sign-out action — it looks like a profile image. The red dot on hover is subtle and non-discoverable. Users already have an explicit "Sign Out" option in the sidebar user dropdown.
+
+**Implementation:**
+- Remove the `onClick={onSignOut}` from the avatar button (line 71)
+- Remove the red dot indicator div (line 79)
+- Make the avatar non-interactive: change from `<button>` to a `<div>`
+- Remove `onSignOut` prop from `ToolbarProps` interface and the Toolbar component if no other element uses it
+- In `app/page.tsx`, remove the `onSignOut={handleSignOut}` prop from the `<Toolbar>` invocation
+
+**Acceptance Criteria:**
+- [ ] Clicking the user avatar in the toolbar does nothing
+- [ ] The red dot on hover is removed
+- [ ] Sign-out is still accessible via the sidebar user dropdown
+- [ ] No TypeScript errors from removing the unused prop
+
+#### Change 7.10: Replace Raw select with shadcn Select (WARNING)
+
+**Files:**
+- `components/trading/BacktestingTab.tsx` (lines 382-389)
+- `components/trading/BrokerSyncTab.tsx` (lines 129-139)
+
+**Action:** MODIFY (both files)
+**Complexity:** MEDIUM
+
+Raw `<select>` elements with `bg-white/5` render `<option>` elements with browser-default white backgrounds on Chrome/Firefox, creating unreadable text. The shadcn `Select` component already exists and is used in `NewTradeDialog`.
+
+**Implementation for `BacktestingTab.tsx`:**
+- Import `{ Select, SelectContent, SelectItem, SelectTrigger, SelectValue }` from `@/components/ui/select`
+- Replace the raw `<select>` for strategy selection with:
+  ```tsx
+  <Select value={selectedStrategy.id} onValueChange={handleStrategyChange}>
+    <SelectTrigger className="w-full border-white/10 bg-white/5">
+      <SelectValue />
+    </SelectTrigger>
+    <SelectContent className="border-white/10 bg-[#121214]">
+      {ALL_STRATEGIES.map((s) => (
+        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+      ))}
+    </SelectContent>
+  </Select>
+  ```
+
+**Implementation for `BrokerSyncTab.tsx`:**
+- Same pattern for account selection
+
+**Acceptance Criteria:**
+- [ ] Both `<select>` elements replaced with shadcn `<Select>`
+- [ ] Dropdown options render with the dark theme background
+- [ ] Value selection still works correctly
+
+#### Change 7.11: Memoize Dashboard Stats (WARNING)
+
+**File:** `components/trading/DashboardTab.tsx`
+**Action:** MODIFY
+**Complexity:** LOW
+
+Total PnL, Win Rate, and Profit Factor are computed inline (lines 69-88) with `.reduce()` and `.filter()` calls directly in JSX. These recalculate on every render.
+
+**Implementation:**
+- Import `{ useMemo }` from react
+- Extract the three computations into a single `useMemo`:
+  ```typescript
+  const stats = useMemo(() => {
+    const totalPnl = trades.reduce((acc, trade) => acc + trade.pnl, 0);
+    const winRate = trades.length > 0
+      ? (trades.filter((trade) => trade.pnl > 0).length / trades.length) * 100
+      : 0;
+    const wins = trades.filter((trade) => trade.pnl > 0).reduce((acc, trade) => acc + trade.pnl, 0);
+    const losses = Math.abs(trades.filter((trade) => trade.pnl < 0).reduce((acc, trade) => acc + trade.pnl, 0));
+    const profitFactor = losses === 0 ? (wins > 0 ? Infinity : 0) : wins / losses;
+    return { totalPnl, winRate, profitFactor };
+  }, [trades]);
+  ```
+- Reference `stats.totalPnl`, `stats.winRate`, `stats.profitFactor` in JSX
+
+**Acceptance Criteria:**
+- [ ] Stats are computed via `useMemo` with `[trades]` dependency
+- [ ] No inline `.reduce()` or `.filter()` calls remain in the JSX
+- [ ] Displayed values are identical to before
+
+#### Change 7.12: Fix TradeTable Empty State colspan (WARNING)
+
+**File:** `components/trading/TradeTable.tsx`
+**Action:** MODIFY
+**Complexity:** LOW
+
+The empty state row (line 197) uses `colSpan={readOnly ? 11 : 12}`, but the table has:
+- When `readOnly` is true: 10 columns (Date, Symbol, Side, Tags, Notes, Avg Entry, Avg Exit, Qty, Risk, PnL)
+- When `readOnly` is false: 11 columns (checkbox + the same 10)
+
+**Implementation:**
+- Change line 197 from `colSpan={readOnly ? 11 : 12}` to `colSpan={readOnly ? 10 : 11}`
+
+**Acceptance Criteria:**
+- [ ] Empty state message spans the full width of the table in both modes
+- [ ] No visual misalignment
+
+#### Change 7.13: Add ARIA to Import Loading Overlay (SUGGESTION)
+
+**File:** `app/page.tsx`
+**Action:** MODIFY
+**Complexity:** LOW
+
+The import loading overlay (lines 211-218) has no ARIA attributes. Screen readers won't announce the loading state.
+
+**Implementation:**
+- Add `role="alertdialog"` and `aria-label="Processing trade data"` to the outer overlay div (line 212)
+- Add `aria-live="assertive"` to the text element
+
+**Acceptance Criteria:**
+- [ ] The import overlay has `role="alertdialog"` and `aria-label`
+- [ ] Screen readers announce the loading state
+
+#### Change 7.14: Make TradingCalendar Responsive (SUGGESTION)
+
+**File:** `components/trading/TradingCalendar.tsx`
+**Action:** MODIFY
+**Complexity:** MEDIUM
+
+The calendar uses `grid-cols-8` (line 109) with `min-h-[100px]` cells. On mobile screens this creates horizontal overflow.
+
+**Implementation:**
+- Import `{ useIsMobile }` from `@/hooks/use-mobile`
+- On mobile (< 768px):
+  - Hide the "Weekly" summary column: use `grid-cols-7` instead of `grid-cols-8`
+  - Remove the weekly summary cells from the grid
+  - Reduce cell minimum height: `min-h-[60px]` on mobile
+  - Reduce font sizes within cells
+- On desktop: keep existing `grid-cols-8` layout unchanged
+
+**Acceptance Criteria:**
+- [ ] Calendar does not horizontally overflow on mobile screens
+- [ ] Weekly summary column is hidden on mobile
+- [ ] Calendar remains fully functional on desktop
+
+#### Change 7.15: Make Backtesting Strategy Grid Responsive (SUGGESTION)
+
+**File:** `components/trading/BacktestingTab.tsx`
+**Action:** MODIFY
+**Complexity:** LOW
+
+The strategy parameter grid (line 379) uses hardcoded `grid-cols-4` which makes inputs unusably narrow on smaller screens.
+
+**Implementation:**
+- Change `grid-cols-4` to `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4`
+
+**Acceptance Criteria:**
+- [ ] Strategy parameters stack into fewer columns on smaller screens
+- [ ] Inputs remain usable at all viewport widths
+
+#### Change 7.16: Type PerformanceCharts Tooltip Formatters (SUGGESTION)
+
+**File:** `components/trading/PerformanceCharts.tsx`
+**Action:** MODIFY
+**Complexity:** LOW
+
+Multiple tooltip `formatter` callbacks use `(value: any)` (lines 134, 172, 209, 244) and `.map((entry: any)` (lines 175, 212, 247), bypassing TypeScript safety.
+
+**Implementation:**
+- Replace `(value: any)` with `(value: number)` in all formatter callbacks
+- Replace `(entry: any, index: number)` with proper types derived from the chart data arrays
+
+**Acceptance Criteria:**
+- [ ] No `any` types remain in PerformanceCharts.tsx
+- [ ] `npm run build` passes without TypeScript errors
+- [ ] Chart tooltips still render correctly
+
+#### Change 7.17: Add ResizeObserver to CandlestickChart (SUGGESTION)
+
+**File:** `components/trading/CandlestickChart.tsx`
+**Action:** MODIFY
+**Complexity:** LOW
+
+Chart resize only listens to `window.resize` events (line 116). Container resizes (e.g., from sidebar toggle on mobile) won't trigger a resize.
+
+**Implementation:**
+- Replace the `window.addEventListener('resize', handleResize)` block with a `ResizeObserver`:
+  ```typescript
+  const resizeObserver = new ResizeObserver(() => {
+    if (containerRef.current && chartRef.current) {
+      chartRef.current.applyOptions({ width: containerRef.current.clientWidth });
+    }
+  });
+  if (containerRef.current) {
+    resizeObserver.observe(containerRef.current);
+  }
+
+  return () => {
+    resizeObserver.disconnect();
+    // ... existing cleanup
+  };
+  ```
+
+**Acceptance Criteria:**
+- [ ] Chart resizes when its container changes size (not just on window resize)
+- [ ] No memory leaks (observer disconnected on cleanup)
+- [ ] `window.resize` listener is removed
+
+#### Change 7.18: Clarify or Remove Context Files Area (SUGGESTION)
+
+**File:** `components/trading/BacktestingTab.tsx`
+**Action:** MODIFY
+**Complexity:** LOW
+
+The "Add context files" upload area (lines 278-301) accepts files but stores them in local state that is never consumed. This is a dead feature that could confuse users.
+
+**Implementation:**
+- Add a "Coming soon" badge above the upload area
+- Disable the file input by adding `disabled` attribute
+- Change cursor from `cursor-pointer` to `cursor-not-allowed`
+- Add a small description text: "Upload CSV, JSON, or TXT files for AI-assisted analysis (not yet functional)"
+
+**Acceptance Criteria:**
+- [ ] Context file upload area shows a "Coming soon" badge
+- [ ] File input is disabled (cannot upload)
+- [ ] Users understand the feature is planned but not yet available
+
+#### Change 7.19: Add Empty State for Broker Accounts (SUGGESTION)
+
+**File:** `components/trading/BrokerSyncTab.tsx`
+**Action:** MODIFY
+**Complexity:** LOW
+
+If the `accounts` array is empty after connecting to Schwab (edge case), the `<Select>` renders with no options and the sync button is disabled with no explanation.
+
+**Implementation:**
+- Add a conditional check before the account Select:
+  ```tsx
+  {accounts.length === 0 && connected ? (
+    <p className="text-xs text-yellow-400">No accounts found. Check your Schwab connection.</p>
+  ) : (
+    // existing Select component
+  )}
+  ```
+
+**Acceptance Criteria:**
+- [ ] When connected but accounts array is empty, a helpful message is displayed
+- [ ] When accounts exist, the Select renders normally
+
+#### Change 7.20: Replace Raw Buttons with shadcn Button (SUGGESTION)
+
+**Files:**
+- `components/trading/DashboardTab.tsx` (lines 49-54, 59)
+- `components/trading/Toolbar.tsx` (lines 98-104)
+- `components/trading/FilterTab.tsx` (lines 76-87)
+
+**Action:** MODIFY (all files)
+**Complexity:** LOW
+
+Multiple components use raw `<button>` with custom Tailwind classes instead of the shadcn `Button` component. This creates styling inconsistency.
+
+**Implementation:**
+- Import `{ Button }` from `@/components/ui/button` in each file
+- Replace primary action buttons (the emerald CTA buttons) with `<Button>` using appropriate variants
+- Keep icon-only buttons (sidebar nav) as raw buttons since they have custom toggle styling
+
+**Acceptance Criteria:**
+- [ ] Primary action buttons use the shadcn `Button` component
+- [ ] Visual appearance is consistent with existing buttons that already use shadcn
+- [ ] No functional changes
 
 ---
 
-## 4. Bug Fixes & Polish
+### Files Summary for Workstream 7
 
-### CSV Import: Warn About Skipped Trades
-**File: `lib/csv-parser.ts`**
-- The `processCsvData()` function currently silently drops executions that don't pair (entry without matching exit, or vice versa)
-- Modify the return type to include a `warnings: string[]` array
-- Add warnings like `"Skipped unmatched BUY execution for AAPL (no matching sell)"` for each dropped execution
-- **File: `app/page.tsx` (or the refactored equivalent)**
-- After CSV import, if `warnings.length > 0`, show a toast with the count: `toast.warning(\`${warnings.length} executions skipped (unmatched)\`)`
-
-### Remove Unused Dependency
-**File: `package.json`**
-- Remove `firebase-tools` from devDependencies — it's unused
-- Run `npm install` after to update lockfile
-
-### Schwab OAuth URL Validation (covered in workstream 3)
-Already described above — validate `SCHWAB_CLIENT_ID` exists before building the OAuth URL.
-
----
-
-## File Summary
-
-### New Files to Create
+#### New Files to Create
 | File | Purpose |
 |------|---------|
-| `app/login/page.tsx` | Dedicated login page with Google sign-in |
-| `middleware.ts` | Route protection — redirect unauthenticated users to `/login` |
-| `hooks/use-trades.ts` | Custom hook extracting all trade state & handlers from page.tsx |
-| `components/trading/Sidebar.tsx` | Left sidebar navigation component |
-| `components/trading/Toolbar.tsx` | Top toolbar with search, import, filters, bulk actions |
-| `components/trading/DashboardTab.tsx` | Dashboard tab content (stats + recent trades) |
-| `components/trading/JournalTab.tsx` | Journal tab content (full trade table) |
-| `components/trading/PerformanceTab.tsx` | Performance tab content (charts) |
-| `components/trading/FilterTab.tsx` | Filter tab content (date range, presets, tags) |
-| `components/trading/BacktestingTab.tsx` | Backtesting tab with Schwab integration |
-| `app/api/schwab/market-data/route.ts` | Fetch historical price data via Schwab API |
-| `app/api/schwab/status/route.ts` | Check Schwab connection status |
+| `public/google.svg` | Local Google "G" logo SVG for login page |
+
+#### Files to Modify
+| # | File | Risk | Changes |
+|---|------|------|---------|
+| 1 | `components/trading/Toolbar.tsx` | MEDIUM | Add delete confirmation dialog (7.1), responsive layout (7.4), remove avatar sign-out (7.9), use shadcn Button (7.20) |
+| 2 | `components/trading/TradeDetailSheet.tsx` | LOW | Initialize notes from trade prop (7.2) |
+| 3 | `components/trading/Sidebar.tsx` | MEDIUM | Mobile bottom nav (7.3), add aria-labels (7.5) |
+| 4 | `app/page.tsx` | LOW | Responsive padding (7.3), ARIA on import overlay (7.13) |
+| 5 | `components/trading/JournalTab.tsx` | LOW | Focus ring styles (7.6) |
+| 6 | `components/trading/FilterTab.tsx` | LOW | Focus ring styles (7.6), use shadcn Button (7.20) |
+| 7 | `components/trading/BacktestingTab.tsx` | LOW | Focus ring styles (7.6), shadcn Select (7.10), responsive grid (7.15), context files badge (7.18) |
+| 8 | `components/trading/BrokerSyncTab.tsx` | LOW | Focus ring styles (7.6), shadcn Select (7.10), empty accounts state (7.19) |
+| 9 | `app/login/page.tsx` | LOW | Local Google SVG (7.7) |
+| 10 | `app/layout.tsx` | LOW | MotionConfig reduced motion (7.8) |
+| 11 | `components/trading/DashboardTab.tsx` | LOW | Memoize stats (7.11), use shadcn Button (7.20) |
+| 12 | `components/trading/TradeTable.tsx` | LOW | Fix colspan (7.12) |
+| 13 | `components/trading/PerformanceCharts.tsx` | LOW | Type formatters (7.16) |
+| 14 | `components/trading/CandlestickChart.tsx` | LOW | ResizeObserver (7.17) |
+| 15 | `components/trading/TradingCalendar.tsx` | MEDIUM | Responsive grid (7.14) |
+| 16 | `next.config.ts` | LOW | Remove gstatic.com from remotePatterns (7.7) |
+
+### Testing Requirements
+
+- [ ] `npm run build` completes with zero TypeScript errors
+- [ ] `npm run lint` passes
+- [ ] `npm test` passes (existing vitest suite)
+- [ ] Delete Selected shows confirmation dialog before deleting
+- [ ] TradeDetailSheet shows existing notes when opening a trade
+- [ ] Sidebar renders as bottom nav on mobile (< 768px)
+- [ ] Toolbar does not overflow on mobile
+- [ ] All sidebar buttons have aria-label attributes
+- [ ] All form inputs show visible focus ring on Tab navigation
+- [ ] Login page Google icon loads from local SVG
+- [ ] Animations are suppressed when OS prefers-reduced-motion is enabled
+- [ ] Avatar click in toolbar does not trigger sign-out
+- [ ] Strategy and account selects render with dark theme dropdown options
+- [ ] Dashboard stats do not recompute when unrelated state changes
+- [ ] Empty trade table colspan spans correctly
+- [ ] Candlestick chart resizes on container resize (not just window resize)
+
+### Rollback Plan
+
+1. `git stash` or `git checkout .` to revert all changes
+2. No database changes in this workstream
+3. All changes are frontend-only and can be reverted independently
+
+### Security Considerations
+
+1. **No new API surface** — this workstream is purely frontend
+2. **Sign-out path preserved** — removing avatar sign-out still leaves the sidebar dropdown sign-out intact
+3. **Local SVG** — eliminates an external CDN dependency, reducing attack surface
+
+---
+
+## 8. Service Layer Completions
+
+### Objective
+
+Close the gaps identified in the hardening sprint handoff document. These are service-level tasks that require implementing missing functionality in the Discord bot, background workers, and webhook infrastructure.
+
+### Current State
+
+Per `HANDOFF.md` (2026-03-04), the following remain incomplete:
+
+1. **Discord onboarding gap** — Bot calls require an existing `discord_user_links` mapping, but there is no bot-side self-serve linking command.
+2. **Webhook delivery stub** — `/api/webhooks/trade-event` validates input but does not forward events.
+3. **Price alert evaluation** — Alert creation and storage works, but no background evaluator triggers alerts on live price conditions.
+4. **Backtest worker strategy parity** — Python worker implements only `sma-crossover`; `mean-reversion` and `breakout` are pending.
+
+### Required Changes
+
+#### Change 8.1: Discord `/link` Onboarding Command
+
+**File:** `services/discord-bot/src/commands/link.ts`
+**Action:** CREATE
+**Complexity:** HIGH
+
+Implement a `/link` slash command that generates a one-time linking code, prompts the user to enter it in the Nexus Terminal web UI (or vice versa), and creates a `discord_user_links` row via the `/api/discord/link` route.
+
+**Acceptance Criteria:**
+- [ ] `/link` command generates a unique code
+- [ ] User can link their Discord identity to their Nexus Terminal account
+- [ ] Duplicate linking attempts are handled gracefully
+- [ ] The linking is stored in `discord_user_links` table
+
+#### Change 8.2: Webhook Event Forwarding
+
+**File:** `app/api/webhooks/trade-event/route.ts`
+**Action:** MODIFY
+**Complexity:** MEDIUM
+
+Implement actual event forwarding to Discord (via bot webhook or direct API call) when trade events occur.
+
+**Acceptance Criteria:**
+- [ ] Trade events are forwarded to the user's linked Discord channel
+- [ ] Events without a linked Discord user are silently dropped (no error)
+- [ ] Rate limiting prevents spam
+
+#### Change 8.3: Price Alert Evaluation
+
+**New files in services or as a cron/scheduled function**
+**Action:** CREATE
+**Complexity:** HIGH
+
+Implement a background process that periodically checks market prices against stored `price_alerts` and triggers notifications.
+
+**Acceptance Criteria:**
+- [ ] Active (non-triggered) alerts are evaluated on a schedule
+- [ ] When price conditions are met, the alert is marked as triggered
+- [ ] A notification is sent (Discord or in-app)
+
+#### Change 8.4: Backtest Worker Strategy Parity
+
+**File:** `services/backtest-worker/` (Python)
+**Action:** MODIFY
+**Complexity:** MEDIUM
+
+Implement `mean-reversion` and `breakout` strategies in the Python backtest worker to match the client-side strategy definitions in `lib/backtesting/strategies.ts`.
+
+**Acceptance Criteria:**
+- [ ] Python worker supports all three strategies: `sma-crossover`, `mean-reversion`, `breakout`
+- [ ] Results are consistent with client-side engine for the same inputs
+
+---
+
+## 9. Hardened Service Auth
+
+### Objective
+
+Replace the shared-secret service authentication model with short-lived signed tokens and establish a secret rotation process.
+
+### Current State
+
+Service auth relies on a single shared `TRADE_WEBHOOK_SECRET` plus Discord identity headers (per `lib/service-auth.ts`). If the secret leaks, any linked user could be impersonated on service-enabled routes.
+
+### Required Changes
+
+#### Change 9.1: Short-lived Signed Service Tokens
+
+**Files:** `lib/service-auth.ts`, `services/discord-bot/src/utils.ts`
+**Action:** MODIFY
+**Complexity:** MEDIUM
+
+Replace the static bearer token with short-lived JWTs (e.g., 5-minute expiry) signed with the shared secret. Include the Discord user ID as a claim.
+
+**Acceptance Criteria:**
+- [ ] Service tokens expire after a short window (configurable, default 5 minutes)
+- [ ] Expired tokens are rejected
+- [ ] Discord user identity is embedded in the token (not passed as a separate header)
+
+#### Change 9.2: Secret Rotation Playbook
+
+**File:** `docs/SECRET_ROTATION.md`
+**Action:** CREATE
+**Complexity:** LOW
+
+Document the process for rotating `TRADE_WEBHOOK_SECRET` without downtime.
+
+**Acceptance Criteria:**
+- [ ] Document exists with step-by-step rotation instructions
+- [ ] Dual-secret acceptance period is described (accept old + new for a transition window)
+
+---
+
+## File Summary (All Active Workstreams)
+
+### New Files to Create
+| File | Purpose | Workstream |
+|------|---------|------------|
+| `public/google.svg` | Local Google "G" logo SVG | 7 |
+| `services/discord-bot/src/commands/link.ts` | Discord `/link` onboarding command | 8 |
+| `docs/SECRET_ROTATION.md` | Secret rotation playbook | 9 |
 
 ### Files to Modify
-| File | Changes |
-|------|---------|
-| `app/page.tsx` | Major simplification — compose extracted components, remove bell icon, remove inline sign-in |
-| `lib/auth-config.ts` | Change `pages.signIn` from `'/'` to `'/login'` |
-| `app/api/auth/schwab/url/route.ts` | Add env var validation for `SCHWAB_CLIENT_ID` |
-| `lib/csv-parser.ts` | Add `warnings` array to return type for skipped executions |
-| `package.json` | Remove `firebase-tools` |
-
-### Files to Delete
-None.
+| File | Workstream | Summary |
+|------|------------|---------|
+| `components/trading/Toolbar.tsx` | 7 | Delete confirmation, responsive, remove avatar sign-out, shadcn Button |
+| `components/trading/TradeDetailSheet.tsx` | 7 | Initialize notes from trade |
+| `components/trading/Sidebar.tsx` | 7 | Mobile bottom nav, aria-labels |
+| `app/page.tsx` | 7 | Responsive padding, ARIA on overlay |
+| `components/trading/JournalTab.tsx` | 7 | Focus ring styles |
+| `components/trading/FilterTab.tsx` | 7 | Focus ring styles, shadcn Button |
+| `components/trading/BacktestingTab.tsx` | 7 | Focus rings, shadcn Select, responsive grid, context files badge |
+| `components/trading/BrokerSyncTab.tsx` | 7 | Focus rings, shadcn Select, empty accounts state |
+| `app/login/page.tsx` | 7 | Local Google SVG |
+| `app/layout.tsx` | 7 | MotionConfig reduced motion |
+| `components/trading/DashboardTab.tsx` | 7 | Memoize stats, shadcn Button |
+| `components/trading/TradeTable.tsx` | 7 | Fix colspan |
+| `components/trading/PerformanceCharts.tsx` | 7 | Type formatters |
+| `components/trading/CandlestickChart.tsx` | 7 | ResizeObserver |
+| `components/trading/TradingCalendar.tsx` | 7 | Responsive grid |
+| `next.config.ts` | 7 | Remove gstatic.com from remotePatterns |
+| `app/api/webhooks/trade-event/route.ts` | 8 | Implement event forwarding |
+| `lib/service-auth.ts` | 9 | Short-lived JWT tokens |
+| `services/discord-bot/src/utils.ts` | 9 | Use signed tokens |
 
 ---
 
 ## Implementation Order
 
-1. **Login page + middleware** (workstream 1) — smallest scope, highest UX impact
-2. **Refactor page.tsx** (workstream 2) — makes workstream 3 easier to implement
-3. **Backtesting tab** (workstream 3) — depends on clean component structure
-4. **Bug fixes & polish** (workstream 4) — can be done at any point
+1. **UI/UX Hardening — Critical fixes** (7.1, 7.2, 7.3, 7.4) — highest user-facing impact
+2. **UI/UX Hardening — Accessibility** (7.5, 7.6, 7.7, 7.8) — WCAG compliance
+3. **UI/UX Hardening — Polish** (7.9-7.20) — consistency and minor fixes
+4. **Service Layer Completions** (workstream 8) — Discord onboarding, webhooks, alerts, worker parity
+5. **Hardened Service Auth** (workstream 9) — security improvement
+
+Within workstream 7, the changes are independent and can be implemented in any order. The grouping above reflects priority, not dependency.
 
 ---
 
 ## Tech Stack Reference
 
 - **Framework**: Next.js 15 (App Router, `'use client'` components)
-- **Auth**: NextAuth v5 (beta 30) with Google provider, JWT strategy
-- **Database**: Turso (LibSQL) with localStorage fallback
+- **Auth**: NextAuth v5 (beta 30) with Google provider, JWT strategy, `ALLOWED_EMAILS` gating
+- **Database**: PostgreSQL via Neon + Drizzle ORM, schema in `lib/db/schema.ts`
 - **UI**: shadcn/ui (New York style), Tailwind CSS v4, Radix primitives
-- **Charts**: Recharts v3
+- **Charts**: Recharts v3, lightweight-charts v5 (CandlestickChart)
 - **Forms**: React Hook Form + Zod v4
-- **Animations**: motion (Framer Motion) v12
+- **Animations**: motion (motion/react) v12
 - **Toasts**: Sonner v2
-- **Icons**: Lucide React
+- **Icons**: Lucide React v0.553
+- **Mobile detection**: `hooks/use-mobile.ts` — `useIsMobile()` hook (768px breakpoint)
+- **Services**: Redis, backtest-gateway (Express + BullMQ), backtest-worker (Python), Discord bot (discord.js)
 
 ## Existing Patterns to Follow
 
 - API routes use `auth()` from `@/lib/auth-config` for session validation
-- Database access via `getDb()` singleton from `@/lib/db`
+- Database access via `getDb()` (HTTP) or `getPoolDb()` (transactional) from `@/lib/db`
 - User validation via `requireUser()` and `ensureUser()` from `@/lib/server-db-utils`
 - Toast notifications via `toast()`, `toast.success()`, `toast.error()` from Sonner
 - All components use Tailwind classes with the existing dark theme variables
 - Card backgrounds: `bg-[#121214] border border-white/5 rounded-2xl`
 - Primary accent: emerald (`text-emerald-500`, `bg-emerald-500/10`)
 - Animations: `motion.div` with `initial/animate/exit` opacity + y-translate
-
----
-
-## 5. Migrate Database from Turso/SQLite to PostgreSQL (Drizzle ORM + Neon)
-
-### Objective
-
-Replace the Turso (libsql/SQLite) database backend with PostgreSQL hosted on Neon, using Drizzle ORM for type-safe schema management, queries, and migrations. This is a full backend migration that touches every file in the database layer.
-
-### Current State
-
-**Database client** — `lib/db.ts` (114 lines):
-- Library: `@libsql/client` v0.17.0
-- Pattern: Singleton `getDb()` returns a Turso `Client`. `initDb()` runs `db.executeMultiple(...)` with raw DDL to auto-create all tables.
-- Env vars: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
-- Fallback: If `TURSO_DATABASE_URL` is unset, `getDb()` returns `null` and the app falls back to localStorage.
-
-**Files that import `@libsql/client` types:**
-1. `lib/db.ts` — `createClient, type Client`
-2. `lib/server-db-utils.ts` — `type Client, type InValue`
-3. `lib/schwab.ts` — `type Client, type InValue`
-4. `app/api/schwab/sync/route.ts` — `type InValue`
-
-**Schema (6 tables, 3 indexes)** — all in `lib/db.ts` `initDb()`:
-1. `users` — id TEXT PK, email TEXT UNIQUE NOT NULL, name TEXT, picture TEXT, created_at TEXT DEFAULT datetime('now')
-2. `trades` — id TEXT PK, user_id FK→users, date TEXT, sort_key TEXT, symbol TEXT, direction TEXT CHECK, avg_entry_price REAL, avg_exit_price REAL, total_quantity REAL, pnl REAL, executions INTEGER, initial_risk REAL, commission REAL, fees REAL, notes TEXT, created_at TEXT DEFAULT datetime('now')
-3. `trade_tags` — trade_id TEXT FK→trades ON DELETE CASCADE, tag TEXT, composite PK (trade_id, tag)
-4. `tags` — id INTEGER PK AUTOINCREMENT, user_id FK→users, name TEXT, UNIQUE(user_id, name)
-5. `schwab_tokens` — user_id TEXT PK FK→users, access_token TEXT, refresh_token TEXT, expires_at TEXT, updated_at TEXT DEFAULT datetime('now')
-6. `broker_sync_log` — id INTEGER PK AUTOINCREMENT, user_id FK→users, broker TEXT, account_number TEXT, sync_start TEXT, sync_end TEXT, trades_synced INTEGER, synced_at TEXT DEFAULT datetime('now')
-
-Note: The existing `token_refresh_log`, `discord_user_links`, and `price_alerts` tables are excluded from this migration. They have no frontend consumers — `token_refresh_log` is a write-only audit trail, and the other two are only used by the Discord bot service. They can be added later if needed.
-
-Indexes: `idx_trades_user_sort_key`, `idx_trade_tags_trade_id`, `idx_tags_user_id`
-
-**Files that execute database queries** (14 files total):
-
-| # | File | Query Patterns |
-|---|------|----------------|
-| 1 | `lib/db.ts` | DDL via `executeMultiple` |
-| 2 | `lib/server-db-utils.ts` | INSERT...ON CONFLICT (upsert user), SELECT...WHERE IN (load tags) |
-| 3 | `lib/schwab.ts` | SELECT (load token), UPDATE (save refreshed token) |
-| 4 | `app/api/trades/route.ts` | SELECT all, INSERT...ON CONFLICT (upsert), DELETE trade_tags, INSERT OR IGNORE |
-| 5 | `app/api/trades/[id]/route.ts` | Dynamic UPDATE, DELETE trade_tags, INSERT OR IGNORE, SELECT, DELETE |
-| 6 | `app/api/trades/bulk/route.ts` | BEGIN/COMMIT/ROLLBACK, DELETE, UPDATE, INSERT OR IGNORE |
-| 7 | `app/api/trades/import/route.ts` | BEGIN/COMMIT/ROLLBACK, INSERT...ON CONFLICT, INSERT OR IGNORE, SELECT |
-| 8 | `app/api/tags/route.ts` | SELECT, INSERT OR IGNORE, DELETE (2 queries) |
-| 9 | `app/api/auth/schwab/callback/route.ts` | INSERT...ON CONFLICT with datetime('now') |
-| 10 | `app/api/schwab/status/route.ts` | Calls `getValidSchwabToken()` |
-| 11 | `app/api/schwab/accounts/route.ts` | Calls `getValidSchwabToken()` |
-| 12 | `app/api/schwab/market-data/route.ts` | Calls `getValidSchwabToken()` |
-| 13 | `app/api/schwab/sync/route.ts` | SELECT broker_sync_log, INSERT OR REPLACE trades, INSERT broker_sync_log |
-| 14 | `app/api/health/route.ts` | Calls `getDb()` and `initDb()` |
-
-Note: `app/api/discord/link/route.ts`, `app/api/discord/alerts/route.ts`, and `app/api/webhooks/trade-event/route.ts` are excluded — they have no frontend consumers. The webhook route contains no DB queries (it's a stub). The Discord routes will need migration only if the Discord bot is brought into scope later.
-
-**SQLite-specific constructs that must be translated:**
-
-| SQLite | PostgreSQL/Drizzle Equivalent |
-|--------|------------------------------|
-| `TEXT` for string columns | `text()` — same |
-| `REAL` for decimals | `doublePrecision()` |
-| `INTEGER PRIMARY KEY AUTOINCREMENT` | `serial()` |
-| `datetime('now')` in DEFAULT | `defaultNow()` using `timestamp` column |
-| `datetime('now')` in INSERT/UPDATE | `new Date()` or `sql\`NOW()\`` |
-| `INSERT OR IGNORE INTO` | `db.insert().onConflictDoNothing()` |
-| `INSERT OR REPLACE INTO` | `db.insert().onConflictDoUpdate()` |
-| `INSERT...ON CONFLICT(col) DO UPDATE` | `db.insert().onConflictDoUpdate({ target: col })` |
-| `db.executeMultiple()` | Not needed — Drizzle migrations handle schema |
-| `result.lastInsertRowid` | Use `.returning({ id })` |
-| Manual `BEGIN/COMMIT/ROLLBACK` | `db.transaction(async (tx) => { ... })` via Pool-based client |
-| `?` positional params | Not needed — Drizzle query builder handles parameterization |
-| `db.execute({ sql, args })` calling convention | Drizzle query builder (no raw SQL) |
-
-### Required Changes
-
-#### Change 1: Install Dependencies
-
-**File:** `package.json`
-**Action:** MODIFY
-
-Remove `@libsql/client`. Add Drizzle ORM, Drizzle Kit, and the Neon serverless driver:
-
-```bash
-npm uninstall @libsql/client
-npm install drizzle-orm @neondatabase/serverless
-npm install -D drizzle-kit
-```
-
-**Acceptance Criteria:**
-- [ ] `@libsql/client` is NOT in `package.json`
-- [ ] `drizzle-orm` and `@neondatabase/serverless` are in `dependencies`
-- [ ] `drizzle-kit` is in `devDependencies`
-- [ ] `npm install` succeeds
-
-#### Change 2: Create Drizzle Schema — `lib/db/schema.ts`
-
-**File:** `lib/db/schema.ts`
-**Action:** CREATE
-
-Define all 6 tables using Drizzle's `pgTable` builder. This replaces the raw DDL in the old `initDb()`.
-
-```typescript
-import { pgTable, text, doublePrecision, integer, serial, boolean, timestamp, primaryKey, index, unique } from 'drizzle-orm/pg-core';
-
-export const users = pgTable('users', {
-  id: text('id').primaryKey(),
-  email: text('email').unique().notNull(),
-  name: text('name'),
-  picture: text('picture'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-});
-
-export const trades = pgTable('trades', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id),
-  date: text('date').notNull(),
-  sortKey: text('sort_key').notNull(),
-  symbol: text('symbol').notNull(),
-  direction: text('direction', { enum: ['LONG', 'SHORT'] }).notNull(),
-  avgEntryPrice: doublePrecision('avg_entry_price').notNull(),
-  avgExitPrice: doublePrecision('avg_exit_price').notNull(),
-  totalQuantity: doublePrecision('total_quantity').notNull(),
-  pnl: doublePrecision('pnl').notNull(),
-  executions: integer('executions').notNull().default(1),
-  initialRisk: doublePrecision('initial_risk'),
-  commission: doublePrecision('commission').default(0),
-  fees: doublePrecision('fees').default(0),
-  notes: text('notes'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-}, (table) => [
-  index('idx_trades_user_sort_key').on(table.userId, table.sortKey),
-]);
-
-export const tradeTags = pgTable('trade_tags', {
-  tradeId: text('trade_id').notNull().references(() => trades.id, { onDelete: 'cascade' }),
-  tag: text('tag').notNull(),
-}, (table) => [
-  primaryKey({ columns: [table.tradeId, table.tag] }),
-  index('idx_trade_tags_trade_id').on(table.tradeId),
-]);
-
-export const tags = pgTable('tags', {
-  id: serial('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id),
-  name: text('name').notNull(),
-}, (table) => [
-  unique().on(table.userId, table.name),
-  index('idx_tags_user_id').on(table.userId),
-]);
-
-export const schwabTokens = pgTable('schwab_tokens', {
-  userId: text('user_id').primaryKey().references(() => users.id),
-  accessToken: text('access_token').notNull(),
-  refreshToken: text('refresh_token').notNull(),
-  expiresAt: text('expires_at').notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
-});
-
-export const brokerSyncLog = pgTable('broker_sync_log', {
-  id: serial('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id),
-  broker: text('broker').notNull(),
-  accountNumber: text('account_number').notNull(),
-  syncStart: text('sync_start').notNull(),
-  syncEnd: text('sync_end').notNull(),
-  tradesSynced: integer('trades_synced').notNull().default(0),
-  syncedAt: timestamp('synced_at', { withTimezone: true }).defaultNow(),
-});
-```
-
-**Acceptance Criteria:**
-- [ ] All 6 tables are defined with correct column types, constraints, and defaults
-- [ ] All 3 indexes are defined
-- [ ] Foreign keys match the original schema
-- [ ] `REAL` → `doublePrecision`, `INTEGER AUTOINCREMENT` → `serial`, `datetime('now')` → `timestamp().defaultNow()`
-- [ ] `token_refresh_log`, `discord_user_links`, and `price_alerts` are NOT included
-
-#### Change 3: Create Drizzle Config — `drizzle.config.ts`
-
-**File:** `drizzle.config.ts` (project root)
-**Action:** CREATE
-
-```typescript
-import { defineConfig } from 'drizzle-kit';
-
-export default defineConfig({
-  schema: './lib/db/schema.ts',
-  out: './drizzle',
-  dialect: 'postgresql',
-  dbCredentials: {
-    url: process.env.DATABASE_URL!,
-  },
-});
-```
-
-**Also add migration scripts to `package.json`:**
-```json
-{
-  "scripts": {
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
-  }
-}
-```
-
-**Acceptance Criteria:**
-- [ ] `drizzle.config.ts` exists at project root
-- [ ] Points to `lib/db/schema.ts` for schema
-- [ ] Outputs migrations to `./drizzle/`
-- [ ] All 4 db scripts added to `package.json`
-
-#### Change 4: Rewrite `lib/db.ts` — Neon + Drizzle Client (HTTP + Pool)
-
-**File:** `lib/db.ts`
-**Action:** MODIFY (full rewrite)
-
-Replace the Turso client with two Drizzle instances backed by Neon:
-1. **HTTP client** (`neon-http`) — for all standard reads and single-statement writes. Lightweight, no connection overhead.
-2. **Pool client** (`neon-serverless` with WebSocket) — for transactional writes only (bulk operations, imports). Required because Neon HTTP mode does not support interactive transactions.
-
-```typescript
-import { neon, Pool } from '@neondatabase/serverless';
-import { drizzle as drizzleHttp, type NeonHttpDatabase } from 'drizzle-orm/neon-http';
-import { drizzle as drizzleWs, type NeonDatabase } from 'drizzle-orm/neon-serverless';
-import * as schema from './db/schema';
-
-let httpDb: NeonHttpDatabase<typeof schema> | null = null;
-let poolDb: NeonDatabase<typeof schema> | null = null;
-
-/** HTTP-based client for reads and single-statement writes. */
-export function getDb() {
-  if (!process.env.DATABASE_URL) {
-    return null;
-  }
-
-  if (!httpDb) {
-    const sql = neon(process.env.DATABASE_URL);
-    httpDb = drizzleHttp(sql, { schema });
-  }
-
-  return httpDb;
-}
-
-/** Pool-based client for transactional writes (bulk, import). */
-export function getPoolDb() {
-  if (!process.env.DATABASE_URL) {
-    return null;
-  }
-
-  if (!poolDb) {
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-    poolDb = drizzleWs(pool, { schema });
-  }
-
-  return poolDb;
-}
-
-// Type aliases for use in function signatures across the codebase
-export type Db = NonNullable<ReturnType<typeof getDb>>;
-export type PoolDb = NonNullable<ReturnType<typeof getPoolDb>>;
-```
-
-**Key differences from the old `lib/db.ts`:**
-- No `initDb()` function — schema is managed via Drizzle migrations (`npm run db:push` or `npm run db:migrate`), not auto-created at runtime
-- Two clients: `getDb()` returns the HTTP client (used by most routes), `getPoolDb()` returns the Pool client (used only by `trades/bulk` and `trades/import` for transactions)
-- Single `DATABASE_URL` env var replaces `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`
-- The `Db` and `PoolDb` type exports replace `Client` from `@libsql/client`
-
-**When to use which client:**
-- `getDb()` (HTTP) — all GET handlers, single INSERT/UPDATE/DELETE operations, `ensureUser()`, `getValidSchwabToken()`, etc.
-- `getPoolDb()` (Pool) — only routes that need `db.transaction()`: `trades/bulk` and `trades/import`
-
-**Acceptance Criteria:**
-- [ ] `getDb()` returns an HTTP-based Drizzle instance when `DATABASE_URL` is set, `null` otherwise
-- [ ] `getPoolDb()` returns a Pool-based Drizzle instance when `DATABASE_URL` is set, `null` otherwise
-- [ ] No `initDb()` function — remove entirely
-- [ ] Both `Db` and `PoolDb` types are exported
-- [ ] No imports from `@libsql/client`
-- [ ] No raw SQL DDL in this file
-
-#### Change 5: Rewrite `lib/server-db-utils.ts`
-
-**File:** `lib/server-db-utils.ts`
-**Action:** MODIFY
-
-Replace all raw SQL with Drizzle query builder calls. Replace `Client` type with `Db`.
-
-**New implementation:**
-
-```typescript
-import { eq, inArray } from 'drizzle-orm';
-import { auth } from '@/lib/auth-config';
-import { type Db } from '@/lib/db';
-import { users, trades, tradeTags } from '@/lib/db/schema';
-
-export type ApiTrade = {
-  id: string;
-  date: string;
-  sortKey: string;
-  symbol: string;
-  direction: 'LONG' | 'SHORT';
-  avgEntryPrice: number;
-  avgExitPrice: number;
-  totalQuantity: number;
-  pnl: number;
-  executions: number;
-  initialRisk?: number;
-  commission?: number;
-  fees?: number;
-  tags: string[];
-  notes?: string;
-};
-
-export async function requireUser() {
-  // ... unchanged — no DB calls here
-}
-
-export async function ensureUser(db: Db, user: { id: string; email: string; name: string | null; picture: string | null }) {
-  await db.insert(users)
-    .values({ id: user.id, email: user.email, name: user.name, picture: user.picture })
-    .onConflictDoUpdate({
-      target: users.id,
-      set: { email: user.email, name: user.name, picture: user.picture },
-    });
-}
-
-export function dbUnavailable() {
-  return Response.json({ error: 'Database not configured' }, { status: 503 });
-}
-
-export function toTrade(row: typeof trades.$inferSelect, tradeTags: string[] = []): ApiTrade {
-  return {
-    id: row.id,
-    date: row.date,
-    sortKey: row.sortKey,
-    symbol: row.symbol,
-    direction: row.direction,
-    avgEntryPrice: row.avgEntryPrice,
-    avgExitPrice: row.avgExitPrice,
-    totalQuantity: row.totalQuantity,
-    pnl: row.pnl,
-    executions: row.executions,
-    initialRisk: row.initialRisk ?? undefined,
-    commission: row.commission ?? 0,
-    fees: row.fees ?? 0,
-    tags: tradeTags,
-    notes: row.notes ?? undefined,
-  };
-}
-
-export async function loadTagsForTradeIds(db: Db, tradeIds: string[]) {
-  if (tradeIds.length === 0) return new Map<string, string[]>();
-
-  const rows = await db.select()
-    .from(tradeTags)
-    .where(inArray(tradeTags.tradeId, tradeIds));
-
-  const tagMap = new Map<string, string[]>();
-  for (const row of rows) {
-    const list = tagMap.get(row.tradeId) ?? [];
-    list.push(row.tag);
-    tagMap.set(row.tradeId, list);
-  }
-  return tagMap;
-}
-```
-
-**Key differences:**
-- `import type { Client, InValue } from '@libsql/client'` → replaced with `Db` from `lib/db` and schema imports
-- `ensureUser()` uses `db.insert().onConflictDoUpdate()` instead of raw SQL
-- `toTrade()` receives a fully-typed `typeof trades.$inferSelect` row instead of `Record<string, InValue>` — Drizzle returns camelCase properties matching the schema definition, so no more `String(row.sort_key)` manual casting
-- `loadTagsForTradeIds()` uses `db.select().from().where(inArray())` instead of raw SQL with dynamic `?` placeholders
-- **Remove** `initDb()` import — it no longer exists
-
-**Acceptance Criteria:**
-- [ ] No imports from `@libsql/client`
-- [ ] All functions use `Db` type instead of `Client`
-- [ ] `toTrade()` leverages Drizzle's typed row output — no `String()` / `Number()` casts
-- [ ] `ensureUser()` uses Drizzle insert with `onConflictDoUpdate`
-- [ ] `loadTagsForTradeIds()` uses `inArray()` operator
-
-#### Change 6: Rewrite `lib/schwab.ts`
-
-**File:** `lib/schwab.ts`
-**Action:** MODIFY
-
-Replace `@libsql/client` types and raw SQL with Drizzle queries.
-
-**Specific changes:**
-
-1. **Import changes:**
-   - Remove: `import type { Client, InValue } from '@libsql/client'`
-   - Add: `import { eq } from 'drizzle-orm'`
-   - Add: `import { type Db } from '@/lib/db'`
-   - Add: `import { schwabTokens } from '@/lib/db/schema'`
-
-2. **`readTokenRow()`** — DELETE this function. Drizzle returns typed objects directly.
-
-3. **`loadUserSchwabToken(db: Db, userId: string)`:**
-   ```typescript
-   const rows = await db.select().from(schwabTokens).where(eq(schwabTokens.userId, userId)).limit(1);
-   const row = rows[0];
-   if (!row) return null;
-   return {
-     accessToken: row.accessToken,
-     refreshToken: row.refreshToken,
-     expiresAt: row.expiresAt,
-   };
-   ```
-
-4. **Remove `logTokenRefresh()`** — this function wrote to `token_refresh_log`, which is excluded from this migration. Delete the function entirely. If callers reference it, replace those calls with `console.info('[schwab] token refreshed', { userId, rotated: true })` so token refresh events remain observable in server logs during development. A structured logger can replace this later.
-
-5. **Token UPDATE in `getValidSchwabToken()`:**
-   ```typescript
-   await db.update(schwabTokens)
-     .set({
-       accessToken: refreshed.accessToken,
-       refreshToken: refreshed.refreshToken,
-       expiresAt: refreshed.expiresAt,
-       updatedAt: new Date(),
-     })
-     .where(eq(schwabTokens.userId, userId));
-   ```
-
-6. **All function signatures:** `db: Client` → `db: Db`
-
-**Acceptance Criteria:**
-- [ ] No imports from `@libsql/client`
-- [ ] `readTokenRow()` is deleted
-- [ ] `logTokenRefresh()` is deleted (the `token_refresh_log` table is excluded)
-- [ ] `datetime('now')` replaced with `new Date()` for `updatedAt`
-- [ ] All queries use Drizzle query builder
-
-#### Change 7: Update `app/api/trades/route.ts`
-
-**File:** `app/api/trades/route.ts`
-**Action:** MODIFY
-
-**GET handler:**
-```typescript
-import { eq, desc } from 'drizzle-orm';
-import { trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
-
-const tradeRows = await db.select().from(trades)
-  .where(eq(trades.userId, authState.user.id))
-  .orderBy(desc(trades.date));
-```
-
-**POST handler — upsert trade:**
-```typescript
-await db.insert(trades).values({
-  id: body.id,
-  userId: authState.user.id,
-  date: body.date,
-  sortKey: body.sortKey,
-  symbol: body.symbol,
-  direction: body.direction,
-  avgEntryPrice: body.avgEntryPrice ?? 0,
-  avgExitPrice: body.avgExitPrice ?? 0,
-  totalQuantity: body.totalQuantity ?? 0,
-  pnl: body.pnl ?? 0,
-  executions: body.executions ?? 1,
-  initialRisk: body.initialRisk ?? null,
-  commission: body.commission ?? 0,
-  fees: body.fees ?? 0,
-  notes: body.notes ?? null,
-}).onConflictDoUpdate({
-  target: trades.id,
-  set: {
-    date: body.date,
-    sortKey: body.sortKey,
-    symbol: body.symbol,
-    direction: body.direction,
-    avgEntryPrice: body.avgEntryPrice ?? 0,
-    avgExitPrice: body.avgExitPrice ?? 0,
-    totalQuantity: body.totalQuantity ?? 0,
-    pnl: body.pnl ?? 0,
-    executions: body.executions ?? 1,
-    initialRisk: body.initialRisk ?? null,
-    commission: body.commission ?? 0,
-    fees: body.fees ?? 0,
-    notes: body.notes ?? null,
-  },
-});
-```
-
-**POST handler — tags:**
-```typescript
-if (Array.isArray(body.tags)) {
-  await db.delete(tradeTagsTable).where(eq(tradeTagsTable.tradeId, body.id));
-  for (const tag of body.tags) {
-    await db.insert(tradeTagsTable).values({ tradeId: body.id, tag }).onConflictDoNothing();
-    await db.insert(tagsTable).values({ userId: authState.user.id, name: tag }).onConflictDoNothing();
-  }
-}
-```
-
-**POST handler — re-read created trade:**
-```typescript
-const [created] = await db.select().from(trades)
-  .where(eq(trades.id, body.id))
-  .limit(1);
-```
-
-**Acceptance Criteria:**
-- [ ] All `db.execute({ sql, args })` calls replaced with Drizzle query builder
-- [ ] `INSERT OR IGNORE` → `.onConflictDoNothing()`
-- [ ] `INSERT...ON CONFLICT DO UPDATE` → `.onConflictDoUpdate()`
-
-#### Change 8: Update `app/api/trades/[id]/route.ts`
-
-**File:** `app/api/trades/[id]/route.ts`
-**Action:** MODIFY
-
-**PATCH handler — dynamic update:**
-```typescript
-import { eq, and } from 'drizzle-orm';
-
-const updateData: Partial<typeof trades.$inferInsert> = {};
-if (Object.prototype.hasOwnProperty.call(body, 'notes')) {
-  updateData.notes = body.notes?.trim() || null;
-}
-if (Object.prototype.hasOwnProperty.call(body, 'initialRisk')) {
-  updateData.initialRisk = body.initialRisk ?? null;
-}
-
-if (Object.keys(updateData).length > 0) {
-  await db.update(trades)
-    .set(updateData)
-    .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)));
-}
-```
-
-**PATCH handler — tags:** Same pattern as Change 7 (delete then re-insert with `onConflictDoNothing`).
-
-**PATCH handler — re-read trade:**
-```typescript
-const [trade] = await db.select().from(trades)
-  .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)))
-  .limit(1);
-const tagRows = await db.select({ tag: tradeTagsTable.tag })
-  .from(tradeTagsTable).where(eq(tradeTagsTable.tradeId, id));
-const tagList = tagRows.map((r) => r.tag);
-```
-
-**DELETE handler:**
-```typescript
-await db.delete(trades)
-  .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)));
-```
-
-**Acceptance Criteria:**
-- [ ] Dynamic UPDATE uses a partial object + `db.update().set()`
-- [ ] No raw SQL or `?` placeholders
-
-#### Change 9: Update `app/api/trades/bulk/route.ts`
-
-**File:** `app/api/trades/bulk/route.ts`
-**Action:** MODIFY
-
-Replace manual `BEGIN/COMMIT/ROLLBACK` with Drizzle's `db.transaction()` using the **Pool-based client** (`getPoolDb()`). The Neon HTTP driver does NOT support interactive transactions — only the Pool/WebSocket driver does.
-
-**Key import change:**
-```typescript
-import { getPoolDb } from '@/lib/db';
-// NOT getDb() — this route needs transactional writes
-```
-
-Get the pool client at the top of the handler:
-```typescript
-const db = getPoolDb();
-if (!db) return dbUnavailable();
-```
-
-**Wrap all writes in a transaction:**
-```typescript
-import { eq, and } from 'drizzle-orm';
-import { trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
-
-await db.transaction(async (tx) => {
-  if (body.action === 'delete') {
-    for (const id of body.ids) {
-      await tx.delete(trades)
-        .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)));
-    }
-  }
-
-  if (body.action === 'applyRisk') {
-    // ... validation ...
-    for (const id of body.ids) {
-      await tx.update(trades)
-        .set({ initialRisk: risk })
-        .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)));
-    }
-  }
-
-  if (body.action === 'addTag') {
-    // ... validation ...
-    await tx.insert(tagsTable)
-      .values({ userId: authState.user.id, name: tag })
-      .onConflictDoNothing();
-    for (const id of body.ids) {
-      await tx.insert(tradeTagsTable)
-        .values({ tradeId: id, tag })
-        .onConflictDoNothing();
-    }
-  }
-});
-```
-
-Note: All operations inside the callback use `tx` (the transaction handle), not `db`. If any operation throws, the entire transaction is rolled back automatically.
-
-**Acceptance Criteria:**
-- [ ] Uses `getPoolDb()` instead of `getDb()`
-- [ ] All writes wrapped in `db.transaction(async (tx) => { ... })`
-- [ ] All queries inside the callback use `tx`, not `db`
-- [ ] No manual `BEGIN/COMMIT/ROLLBACK`
-- [ ] All `INSERT OR IGNORE` → `.onConflictDoNothing()`
-
-#### Change 10: Update `app/api/trades/import/route.ts`
-
-**File:** `app/api/trades/import/route.ts`
-**Action:** MODIFY
-
-Same dual-client pattern as Change 9. Use the **Pool-based client** (`getPoolDb()`) for transactional writes.
-
-**Key import change:**
-```typescript
-import { getPoolDb } from '@/lib/db';
-// NOT getDb() — this route needs transactional writes
-```
-
-Get the pool client at the top of the handler:
-```typescript
-const db = getPoolDb();
-if (!db) return dbUnavailable();
-```
-
-**Wrap the entire import loop in a transaction:**
-```typescript
-await db.transaction(async (tx) => {
-  for (const trade of body.trades) {
-    await tx.insert(trades).values({
-      id: trade.id,
-      userId: authState.user.id,
-      date: trade.date,
-      sortKey: trade.sortKey,
-      symbol: trade.symbol,
-      direction: trade.direction,
-      avgEntryPrice: trade.avgEntryPrice,
-      avgExitPrice: trade.avgExitPrice,
-      totalQuantity: trade.totalQuantity,
-      pnl: trade.pnl,
-      executions: trade.executions,
-      initialRisk: trade.initialRisk ?? null,
-      commission: trade.commission ?? 0,
-      fees: trade.fees ?? 0,
-      notes: trade.notes ?? null,
-    }).onConflictDoUpdate({
-      target: trades.id,
-      set: {
-        avgEntryPrice: trade.avgEntryPrice,
-        avgExitPrice: trade.avgExitPrice,
-        totalQuantity: trade.totalQuantity,
-        pnl: trade.pnl,
-        executions: trade.executions,
-        commission: trade.commission ?? 0,
-        fees: trade.fees ?? 0,
-      },
-    });
-
-    if (trade.tags?.length) {
-      for (const tag of trade.tags) {
-        await tx.insert(tagsTable).values({ userId: authState.user.id, name: tag }).onConflictDoNothing();
-        await tx.insert(tradeTagsTable).values({ tradeId: trade.id, tag }).onConflictDoNothing();
-      }
-    }
-  }
-});
-```
-
-Note: All operations inside the callback use `tx` (the transaction handle), not `db`. If any trade fails to import, the entire batch is rolled back — no partial imports.
-
-**Acceptance Criteria:**
-- [ ] Uses `getPoolDb()` instead of `getDb()`
-- [ ] All writes wrapped in `db.transaction(async (tx) => { ... })`
-- [ ] All queries inside the callback use `tx`, not `db`
-- [ ] No manual `BEGIN/COMMIT/ROLLBACK`
-- [ ] Import upsert uses `onConflictDoUpdate` with selective fields (preserves notes/tags/initialRisk)
-
-#### Change 11: Update `app/api/tags/route.ts`
-
-**File:** `app/api/tags/route.ts`
-**Action:** MODIFY
-
-```typescript
-import { eq, and, asc, inArray } from 'drizzle-orm';
-import { tags as tagsTable, tradeTags as tradeTagsTable, trades } from '@/lib/db/schema';
-
-// GET
-const result = await db.select({ name: tagsTable.name })
-  .from(tagsTable)
-  .where(eq(tagsTable.userId, authState.user.id))
-  .orderBy(asc(tagsTable.name));
-const tagNames = result.map((r) => r.name);
-
-// POST
-await db.insert(tagsTable)
-  .values({ userId: authState.user.id, name })
-  .onConflictDoNothing();
-
-// DELETE
-await db.delete(tagsTable)
-  .where(and(eq(tagsTable.userId, authState.user.id), eq(tagsTable.name, name)));
-
-// Delete orphaned trade_tags: subquery for user's trade IDs
-const userTradeIds = db.select({ id: trades.id }).from(trades).where(eq(trades.userId, authState.user.id));
-await db.delete(tradeTagsTable)
-  .where(and(inArray(tradeTagsTable.tradeId, userTradeIds), eq(tradeTagsTable.tag, name)));
-```
-
-**Acceptance Criteria:**
-- [ ] All 3 handlers (GET, POST, DELETE) use Drizzle query builder
-- [ ] DELETE uses a subquery for the user's trade IDs
-
-#### Change 12: Update `app/api/auth/schwab/callback/route.ts`
-
-**File:** `app/api/auth/schwab/callback/route.ts`
-**Action:** MODIFY
-
-Replace the raw SQL upsert with Drizzle:
-
-```typescript
-import { schwabTokens } from '@/lib/db/schema';
-
-await db.insert(schwabTokens).values({
-  userId: user.id,
-  accessToken: tokenData.access_token,
-  refreshToken: tokenData.refresh_token,
-  expiresAt,
-  updatedAt: new Date(),
-}).onConflictDoUpdate({
-  target: schwabTokens.userId,
-  set: {
-    accessToken: tokenData.access_token,
-    refreshToken: tokenData.refresh_token,
-    expiresAt,
-    updatedAt: new Date(),
-  },
-});
-```
-
-Also update the `ensureUser()` call — it now takes `Db` instead of `Client`. Import `type Db` from `@/lib/db`.
-
-**Acceptance Criteria:**
-- [ ] `datetime('now')` → `new Date()` for `updatedAt`
-- [ ] Uses Drizzle `onConflictDoUpdate`
-
-#### Change 13: Update `app/api/schwab/sync/route.ts`
-
-**File:** `app/api/schwab/sync/route.ts`
-**Action:** MODIFY
-
-**Critical changes:**
-1. **Remove:** `import type { InValue } from '@libsql/client'` (line 7)
-2. **Cooldown check:**
-   ```typescript
-   import { eq, and, desc } from 'drizzle-orm';
-   import { brokerSyncLog, trades } from '@/lib/db/schema';
-
-   const [lastSync] = await db.select({ syncedAt: brokerSyncLog.syncedAt })
-     .from(brokerSyncLog)
-     .where(and(eq(brokerSyncLog.userId, authState.user.id), eq(brokerSyncLog.accountNumber, accountId)))
-     .orderBy(desc(brokerSyncLog.syncedAt))
-     .limit(1);
-   ```
-   Access as `lastSync?.syncedAt` — Drizzle returns a `Date` object for timestamp columns, so use `.getTime()` directly.
-
-3. **Trade upsert** — replace `INSERT OR REPLACE` with `onConflictDoUpdate` that selectively updates only market-data fields (preserves user-added notes/tags/initialRisk):
-   ```typescript
-   await db.insert(trades).values({
-     id: tradeId,
-     userId: authState.user.id,
-     date: new Date(trade.date).toISOString(),
-     sortKey: trade.sortKey,
-     symbol: trade.symbol,
-     direction: trade.direction,
-     avgEntryPrice: trade.avgEntryPrice,
-     avgExitPrice: trade.avgExitPrice,
-     totalQuantity: trade.totalQuantity,
-     pnl: trade.pnl,
-     executions: trade.executions,
-     commission: trade.commission ?? 0,
-     fees: trade.fees ?? 0,
-   }).onConflictDoUpdate({
-     target: trades.id,
-     set: {
-       avgEntryPrice: trade.avgEntryPrice,
-       avgExitPrice: trade.avgExitPrice,
-       totalQuantity: trade.totalQuantity,
-       pnl: trade.pnl,
-       executions: trade.executions,
-       commission: trade.commission ?? 0,
-       fees: trade.fees ?? 0,
-     },
-   });
-   ```
-
-4. **Sync log insert:**
-   ```typescript
-   await db.insert(brokerSyncLog).values({
-     userId: authState.user.id,
-     broker: 'schwab',
-     accountNumber: accountId,
-     syncStart: start.toISOString(),
-     syncEnd: end.toISOString(),
-     tradesSynced: allTrades.length,
-   });
-   ```
-
-**Acceptance Criteria:**
-- [ ] `@libsql/client` import removed
-- [ ] `INSERT OR REPLACE` → `onConflictDoUpdate` with selective fields
-- [ ] `datetime('now')` → handled by `defaultNow()` in schema (omit from `.values()`)
-- [ ] Cooldown check uses Drizzle select with typed timestamp access
-
-#### Change 14: Update `app/api/schwab/status/route.ts`, `accounts/route.ts`, `market-data/route.ts`
-
-**Files:** 3 Schwab API routes
-**Action:** MODIFY (minimal)
-
-These routes don't execute queries directly — they call `getValidSchwabToken()` from `lib/schwab.ts` and pass `db` to it. The only change needed is the type of `db`:
-- `getDb()` now returns `Db | null` instead of `Client | null`
-- Since `getValidSchwabToken()` already accepts `Db` (after Change 6), these files just need to update their imports if they explicitly type `db`
-
-**Acceptance Criteria:**
-- [ ] No type errors when `getDb()` returns the new Drizzle type
-
-#### Change 15: Update `app/api/health/route.ts`
-
-**File:** `app/api/health/route.ts`
-**Action:** MODIFY
-
-Remove the `initDb()` call (it no longer exists). Just check if `getDb()` returns a non-null value:
-
-```typescript
-import { getDb } from '@/lib/db';
-
-export async function GET() {
-  const db = getDb();
-  if (!db) {
-    return Response.json({ db: false }, { status: 503 });
-  }
-  return Response.json({ db: true });
-}
-```
-
-Optionally, add a lightweight connectivity check by running a simple query:
-```typescript
-import { sql } from 'drizzle-orm';
-await db.execute(sql`SELECT 1`);
-```
-
-**Acceptance Criteria:**
-- [ ] No `initDb()` call
-- [ ] Returns `{ db: true }` when `DATABASE_URL` is configured
-
-#### Change 16: Update Environment Variables
-
-**File:** `.env.example`
-**Action:** MODIFY
-
-Replace:
-```
-# Turso Database (optional — app falls back to localStorage if not set)
-TURSO_DATABASE_URL=
-TURSO_AUTH_TOKEN=
-```
-
-With:
-```
-# PostgreSQL via Neon (optional — app falls back to localStorage if not set)
-# Format: postgresql://user:password@ep-xxxx.us-east-2.aws.neon.tech/nexus_terminal?sslmode=require
-DATABASE_URL=
-```
-
-The value is left empty so the app falls back to localStorage by default. Developers fill in their own Neon connection string in `.env.local` (do NOT commit). `DATABASE_URL` must be set via environment variable at runtime (Vercel env vars, shell export, etc.) and must never be committed with a real value.
-
-**Acceptance Criteria:**
-- [ ] `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` removed from `.env.example`
-- [ ] `DATABASE_URL=` added (empty value) with a comment showing the Neon format
-- [ ] Comment accurately describes fallback behavior
-
-#### Change 17: Update Documentation
-
-**File:** `HANDOFF.md`
-**Action:** MODIFY
-
-Update all references to Turso/libsql/SQLite:
-- Line 18: `Database | Turso (libsql), schema in lib/db.ts` → `Database | PostgreSQL via Neon (Drizzle ORM), schema in lib/db/schema.ts`
-- Update env var references from `TURSO_*` to `DATABASE_URL`
-- Update any mentions of `@libsql/client` to `drizzle-orm` / `@neondatabase/serverless`
-
-**File:** `.claude/agents/nexus-architect.md`
-**Action:** MODIFY
-
-Update the database line in Project Context to reflect PostgreSQL + Drizzle + Neon.
-
-**Acceptance Criteria:**
-- [ ] No remaining references to "Turso", "libsql", or "SQLite" in `HANDOFF.md`
-- [ ] Agent context reflects the new stack
-
----
-
-### Files Summary for Workstream 5
-
-#### New Files to Create
-| File | Purpose |
-|------|---------|
-| `lib/db/schema.ts` | Drizzle ORM schema — all 6 tables, indexes, constraints |
-| `drizzle.config.ts` | Drizzle Kit config for migrations |
-| `drizzle/` (directory) | Generated migration SQL files (via `npm run db:generate`) |
-
-#### Files to Modify
-| # | File | Risk | Summary |
-|---|------|------|---------|
-| 1 | `package.json` | LOW | Swap deps + add db scripts |
-| 2 | `lib/db.ts` | HIGH | Full rewrite: dual Neon clients (HTTP + Pool) + Drizzle |
-| 3 | `lib/server-db-utils.ts` | HIGH | All queries → Drizzle builder, typed rows |
-| 4 | `lib/schwab.ts` | HIGH | All queries → Drizzle, remove `logTokenRefresh()` |
-| 5 | `app/api/trades/route.ts` | MEDIUM | Drizzle queries |
-| 6 | `app/api/trades/[id]/route.ts` | MEDIUM | Drizzle queries + dynamic update |
-| 7 | `app/api/trades/bulk/route.ts` | MEDIUM | Pool client + `db.transaction()`, Drizzle queries |
-| 8 | `app/api/trades/import/route.ts` | MEDIUM | Pool client + `db.transaction()`, Drizzle queries |
-| 9 | `app/api/tags/route.ts` | LOW | Drizzle queries |
-| 10 | `app/api/auth/schwab/callback/route.ts` | MEDIUM | Drizzle upsert |
-| 11 | `app/api/schwab/sync/route.ts` | HIGH | Remove libsql import, fix INSERT OR REPLACE, Drizzle queries |
-| 12 | `app/api/schwab/status/route.ts` | LOW | Type compatibility |
-| 13 | `app/api/schwab/accounts/route.ts` | LOW | Type compatibility |
-| 14 | `app/api/schwab/market-data/route.ts` | LOW | Type compatibility |
-| 15 | `app/api/health/route.ts` | LOW | Remove `initDb()` call |
-| 16 | `.env.example` | LOW | Env var rename |
-| 17 | `HANDOFF.md` | LOW | Doc updates |
-| 18 | `.claude/agents/nexus-architect.md` | LOW | Doc updates |
-
-### Testing Requirements
-
-- [ ] `npm run build` completes with zero TypeScript errors
-- [ ] `npm run db:push` applies schema to Neon (or local PostgreSQL) without errors
-- [ ] `npm run dev` starts without errors
-- [ ] `GET /api/health` returns `{ "db": true }`
-- [ ] Sign in with Google OAuth succeeds
-- [ ] Create a trade via UI (POST /api/trades)
-- [ ] View trades list (GET /api/trades)
-- [ ] Edit trade notes and tags (PATCH /api/trades/[id])
-- [ ] Delete a trade (DELETE /api/trades/[id])
-- [ ] Bulk delete, apply risk, add tag all work (POST /api/trades/bulk)
-- [ ] Import trades via CSV (POST /api/trades/import)
-- [ ] Create and delete tags (GET/POST/DELETE /api/tags)
-- [ ] Schwab status check (GET /api/schwab/status)
-- [ ] Existing `npm test` (vitest) passes — tests don't touch DB layer directly
-- [ ] `getDb()` returns `null` when `DATABASE_URL` is unset (localStorage fallback works)
-- [ ] Routes excluded from this migration (`/api/discord/link`, `/api/discord/alerts`, `/api/webhooks/trade-event`) are unchanged and must still compile and function against the existing database layer. Do not modify these files.
-
-### Rollback Plan
-
-1. `git checkout .` to revert all changes
-2. `npm install` to restore `@libsql/client`
-3. Restore `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in `.env.local`
-4. No data migration from Turso is included — this is a fresh schema. If production data exists in Turso, a separate migration script is needed.
-
-### Security Considerations
-
-1. **`DATABASE_URL` contains credentials.** Ensure it's only in `.env.local` (gitignored by Next.js).
-2. **SQL injection:** Drizzle's query builder parameterizes all values automatically — same protection as Turso's `?` placeholders.
-3. **Neon connection:** Uses SSL by default (`?sslmode=require`). Do not disable this.
-4. **Schwab tokens:** Still stored as plain text. Pre-existing concern (see HANDOFF.md), unchanged by this migration.
-5. **Hardcoded credentials:** Any credentials in config files (docker-compose, .env.example) are for local dev only. Production uses Neon with environment-injected secrets.
-
-### Order of Operations
-
-1. Install dependencies (Change 1)
-2. Create `lib/db/schema.ts` (Change 2) — schema must exist before anything else
-3. Create `drizzle.config.ts` (Change 3)
-4. Rewrite `lib/db.ts` (Change 4) — foundation for all other files (HTTP + Pool clients)
-5. Rewrite `lib/server-db-utils.ts` (Change 5) — core utility used by every route
-6. Rewrite `lib/schwab.ts` (Change 6) — used by 4 Schwab routes, remove `logTokenRefresh()`
-7. Update `app/api/trades/route.ts` (Change 7)
-8. Update `app/api/trades/[id]/route.ts` (Change 8)
-9. Update `app/api/trades/bulk/route.ts` (Change 9) — uses `getPoolDb()` + `db.transaction()`
-10. Update `app/api/trades/import/route.ts` (Change 10) — uses `getPoolDb()` + `db.transaction()`
-11. Update `app/api/tags/route.ts` (Change 11)
-12. Update `app/api/auth/schwab/callback/route.ts` (Change 12)
-13. Update `app/api/schwab/sync/route.ts` (Change 13)
-14. Update Schwab status/accounts/market-data routes (Change 14)
-15. Update `app/api/health/route.ts` (Change 15)
-16. Update `.env.example` (Change 16)
-17. Update `HANDOFF.md` and `.claude/agents/nexus-architect.md` (Change 17)
-18. Run `npm run db:push` to apply schema to the database
-19. Run `npm run build` — must pass with zero TypeScript errors
-20. Run `npm run dev` and test manually per Testing Requirements
-21. Run `npm test` — existing vitest suite must pass
-
----
-
-## 6. Code Review Hardening Sprint (2026-03-03) — Completed
-
-### Objective
-
-Close the highest-risk authorization and auth-flow gaps found in the 2026-03-03 code review, then repair integration contracts (Discord/backtest).
-
-### Findings to Address
-
-1. `critical` Cross-tenant trade overwrite/read via globally-scoped `trades.id` and unscoped upserts.
-2. `high` Schwab OAuth flow missing `state` protection.
-3. `high` Trade-tag writes not ownership-scoped.
-4. `medium` Discord bot auth and schema contracts are inconsistent with app routes.
-5. `medium` Backtest command/API contract mismatch and gateway job ownership not enforced.
-
-### Required Changes
-
-#### Change A: Enforce tenant-safe trade identity
-
-**Files:**
-- `lib/db/schema.ts`
-- `app/api/trades/route.ts`
-- `app/api/trades/import/route.ts`
-- `app/api/schwab/sync/route.ts`
-- `app/api/trades/[id]/route.ts`
-- `app/api/trades/bulk/route.ts`
-
-**Actions:**
-- Make trade uniqueness tenant-scoped (composite key/unique on `(user_id, id)` or move to surrogate PK plus unique tenant key).
-- Replace all `onConflictDoUpdate({ target: trades.id })` with tenant-safe conflict targets.
-- Ensure every read/update/delete path involving a trade includes `user_id` constraints.
-- Prevent tag delete/insert on trades not owned by authenticated user.
-
-**Acceptance Criteria:**
-- [x] No code path can update/read another user’s trade by guessed ID.
-- [x] All tag mutation paths enforce ownership.
-- [x] Add tests covering cross-user collision attempts.
-
-#### Change B: Add Schwab OAuth `state` validation
-
-**Files:**
-- `app/api/auth/schwab/url/route.ts`
-- `app/api/auth/schwab/callback/route.ts`
-
-**Actions:**
-- Generate cryptographically-random `state`, bind it to user session (cookie or server store), send in auth URL.
-- Verify callback `state` matches expected value; reject mismatches.
-- Expire/clear used state after successful callback.
-
-**Acceptance Criteria:**
-- [x] Callback without valid state is rejected.
-- [x] Replay/mismatched state is rejected.
-
-#### Change C: Reconcile Discord API contract
-
-**Files:**
-- `services/discord-bot/src/utils.ts`
-- `app/api/discord/alerts/route.ts`
-- `app/api/discord/link/route.ts`
-- `lib/db/schema.ts` + migration(s)
-
-**Actions:**
-- Pick one auth model for bot-to-app calls (service token/JWT or dedicated service route set) and implement consistently.
-- Add missing schema tables used by Discord routes (`discord_user_links`, `price_alerts`) or remove/replace those routes.
-- Align payload fields (`targetPrice` vs `price`) and response shapes.
-
-**Acceptance Criteria:**
-- [x] Bot commands authenticate successfully without relying on browser session cookies.
-- [x] Discord routes execute without missing-table runtime errors.
-- [x] `/alert` persists target price correctly.
-
-#### Change D: Reconcile backtest command and gateway access control
-
-**Files:**
-- `services/discord-bot/src/commands/backtest.ts`
-- `app/api/backtest/route.ts`
-- `services/backtest-gateway/src/index.ts`
-
-**Actions:**
-- Align poll route contract (`/api/backtest?jobId=` vs `/api/backtest/:jobId`) across bot and app.
-- Ensure submission payload includes gateway-required fields (`candles`, etc.) or adapt gateway expectations.
-- Enforce job ownership check in gateway GET handler (compare requesting user to job user).
-
-**Acceptance Criteria:**
-- [x] Backtest command can submit and poll successfully.
-- [x] Users cannot fetch other users’ job results.
-
-### Validation Requirements
-
-- [x] `npm run lint`
-- [x] `npm test`
-- [x] `npx tsc --noEmit`
-- [x] Add/extend tests for cross-tenant trade protections and OAuth state verification
-
-### Completion Notes
-
-- Tenant-safe trade identity is enforced with composite keys/FKs and user-scoped tag mutations.
-- Schwab OAuth now uses a generated `state` cookie with callback verification and one-time clear.
-- Discord bot/app auth now supports service-token + Discord user mapping, with aligned payload contracts.
-- Backtest command, app proxy, and gateway polling contracts are aligned, with gateway ownership checks.
-
-### Open Issues / Residual Risks
-
-1. **Discord onboarding gap (medium):** Bot service-auth requires an existing `discord_user_links` mapping, but there is no bot-side self-serve link flow yet (session route exists at `/api/discord/link`).
-2. **Service secret blast radius (low):** Service auth currently relies on one shared `TRADE_WEBHOOK_SECRET` plus caller-supplied Discord identity headers; if leaked, any linked user could be impersonated across service-enabled routes.
-
-### Recommended Next Steps
-
-- [ ] Add a Discord `/link` onboarding command (one-time code or signed challenge) to create `discord_user_links` safely.
-- [ ] Replace or harden shared-secret service auth (short-lived signed tokens, strict network boundary, and secret rotation playbook).
+- Confirmation dialogs use shadcn `Dialog` component (see `SettingsMenu.tsx` for pattern)
+- Select dropdowns use shadcn `Select` component (see `NewTradeDialog.tsx` for pattern)
+- Mobile detection uses `useIsMobile()` from `hooks/use-mobile.ts`
