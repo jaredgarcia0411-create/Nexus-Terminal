@@ -1348,3 +1348,13 @@ Close the highest-risk authorization and auth-flow gaps found in the 2026-03-03 
 - Schwab OAuth now uses a generated `state` cookie with callback verification and one-time clear.
 - Discord bot/app auth now supports service-token + Discord user mapping, with aligned payload contracts.
 - Backtest command, app proxy, and gateway polling contracts are aligned, with gateway ownership checks.
+
+### Open Issues / Residual Risks
+
+1. **Discord onboarding gap (medium):** Bot service-auth requires an existing `discord_user_links` mapping, but there is no bot-side self-serve link flow yet (session route exists at `/api/discord/link`).
+2. **Service secret blast radius (low):** Service auth currently relies on one shared `TRADE_WEBHOOK_SECRET` plus caller-supplied Discord identity headers; if leaked, any linked user could be impersonated across service-enabled routes.
+
+### Recommended Next Steps
+
+- [ ] Add a Discord `/link` onboarding command (one-time code or signed challenge) to create `discord_user_links` safely.
+- [ ] Replace or harden shared-secret service auth (short-lived signed tokens, strict network boundary, and secret rotation playbook).
