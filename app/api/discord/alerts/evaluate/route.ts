@@ -18,7 +18,13 @@ export async function POST(request: Request) {
   const payload = await request.json().catch(() => ({})) as { maxAlerts?: number };
   const maxAlerts = typeof payload.maxAlerts === 'number' ? payload.maxAlerts : undefined;
 
-  const result = await evaluatePriceAlerts(db, { maxAlerts, runId });
+  let result;
+  try {
+    result = await evaluatePriceAlerts(db, { maxAlerts, runId });
+  } catch (error) {
+    console.error("Alert evaluation failed:", error);
+    return Response.json({ error: "Alert evaluation failed" }, { status: 500 });
+  }
 
   return Response.json({
     runId,

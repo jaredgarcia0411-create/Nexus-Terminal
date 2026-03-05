@@ -39,7 +39,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       .addFields(
         { name: "Code", value: `\`${response.code}\``, inline: true },
         { name: "Expires", value: `<t:${Math.floor(new Date(response.expiresAt).getTime() / 1000)}:R>`, inline: true },
-        { name: "Link Page", value: linkUrl },
+        { name: "Link Page", value: `[Click here to link](${linkUrl})` },
       )
       .setFooter({ text: "If code expires, run /link again." });
 

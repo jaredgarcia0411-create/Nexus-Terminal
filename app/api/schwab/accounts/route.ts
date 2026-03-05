@@ -1,5 +1,6 @@
 import { getDb } from '@/lib/db';
-import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
+import { dbUnavailable, ensureUser } from '@/lib/server-db-utils';
+import { requireUserOrService } from '@/lib/service-auth';
 import { getValidSchwabToken } from '@/lib/schwab';
 
 type SchwabAccountsResponse = {
@@ -9,13 +10,16 @@ type SchwabAccountsResponse = {
   };
 }[];
 
-export async function GET() {
-  const authState = await requireUser();
-  if ('error' in authState) return authState.error;
-
+export async function GET(request: Request) {
   const db = getDb();
   if (!db) return dbUnavailable();
-  await ensureUser(db, authState.user);
+
+  const authState = await requireUserOrService(request, db);
+  if ('error' in authState) return authState.error;
+
+  if (authState.source === 'session') {
+    await ensureUser(db, authState.user);
+  }
 
   let token;
   try {

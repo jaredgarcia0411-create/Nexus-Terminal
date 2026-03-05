@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import type { Trade } from '@/lib/types';
 import { Settings } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 
@@ -91,21 +91,33 @@ export default function SettingsMenu({ trades, onClearAllData }: SettingsMenuPro
           >
             Export Trades (JSON)
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() =>
-              download(
-                `nexus-trades-${format(new Date(), 'yyyy-MM-dd')}.csv`,
-                csvPayload,
-                'text/csv;charset=utf-8',
-              )
-            }
-            className="cursor-pointer"
-          >
-            Export Trades (CSV)
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setConfirmOpen(true)} className="cursor-pointer text-rose-400">
-            Clear All Data
-          </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() =>
+            download(
+              `nexus-trades-${format(new Date(), 'yyyy-MM-dd')}.csv`,
+              csvPayload,
+              'text/csv;charset=utf-8',
+            )
+          }
+          className="cursor-pointer"
+        >
+          Export Trades (CSV)
+        </DropdownMenuItem>
+        <DropdownMenuSeparator className="bg-white/10" />
+        <DropdownMenuItem asChild>
+          <a href="/discord/link" className="cursor-pointer">
+            Link Discord Account
+          </a>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <a href="https://developer.schwab.com" target="_blank" rel="noopener noreferrer" className="cursor-pointer">
+            Schwab Developer Portal
+          </a>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator className="bg-white/10" />
+        <DropdownMenuItem onClick={() => setConfirmOpen(true)} className="cursor-pointer text-rose-400">
+          Clear All Data
+        </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 

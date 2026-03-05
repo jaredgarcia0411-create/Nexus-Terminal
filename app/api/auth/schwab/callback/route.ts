@@ -93,22 +93,23 @@ export async function GET(request: Request) {
       },
     });
 
-    const response = new NextResponse(
-      `
-      <html>
-        <body>
-          <script>
-            if (window.opener) {
-              window.opener.postMessage({ type: 'SCHWAB_AUTH_SUCCESS' }, '*');
-              window.close();
-            } else {
-              window.location.href = '/';
-            }
-          </script>
-          <p>Charles Schwab connected successfully. This window should close automatically.</p>
-        </body>
-      </html>
-      `,
+  const baseUrl = getBaseUrl();
+  const response = new NextResponse(
+    `
+<html>
+<body>
+<script>
+if (window.opener) {
+  window.opener.postMessage({ type: 'SCHWAB_AUTH_SUCCESS' }, '${baseUrl}');
+  window.close();
+} else {
+  window.location.href = '/';
+}
+</script>
+<p>Charles Schwab connected successfully. This window should close automatically.</p>
+</body>
+</html>
+`,
       {
         headers: { 'Content-Type': 'text/html' },
       },

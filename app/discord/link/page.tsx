@@ -76,12 +76,19 @@ export default function DiscordLinkPage() {
           </Button>
         </form>
 
-        {linked ? (
-          <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-300">
-            Linked Discord user <span className="font-mono">{linked.discordUserId}</span> for guild <span className="font-mono">{linked.guildId}</span>.
-          </div>
-        ) : null}
-      </div>
+      {linked ? (
+        <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-300">
+          Linked Discord user <span className="font-mono">{linked.discordUserId}</span> for guild <span className="font-mono">{linked.guildId}</span>.
+        </div>
+      ) : null}
+
+      <Button
+        asChild
+        className="mt-6 w-full bg-white/10 text-white hover:bg-white/20"
+      >
+        <a href="/">Return to Terminal</a>
+      </Button>
     </div>
-  );
+  </div>
+);
 }

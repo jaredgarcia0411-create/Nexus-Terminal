@@ -1,14 +1,18 @@
 import { getDb } from '@/lib/db';
-import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
+import { dbUnavailable, ensureUser } from '@/lib/server-db-utils';
+import { requireUserOrService } from '@/lib/service-auth';
 import { getValidSchwabToken } from '@/lib/schwab';
 
-export async function GET() {
-  const authState = await requireUser();
-  if ('error' in authState) return authState.error;
-
+export async function GET(request: Request) {
   const db = getDb();
   if (!db) return dbUnavailable();
-  await ensureUser(db, authState.user);
+
+  const authState = await requireUserOrService(request, db);
+  if ('error' in authState) return authState.error;
+
+  if (authState.source === 'session') {
+    await ensureUser(db, authState.user);
+  }
 
   try {
     const token = await getValidSchwabToken(db, authState.user.id);
@@ -17,7 +21,8 @@ export async function GET() {
     }
 
     return Response.json({ connected: true, expiresAt: token.expiresAt });
-  } catch {
+  } catch (error) {
+    console.error("Failed to check Schwab connection:", error);
     return Response.json({ connected: false });
   }
 }

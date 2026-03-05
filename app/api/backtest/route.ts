@@ -27,6 +27,9 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
   try {
     const res = await fetch(`${GATEWAY_URL}/api/backtest`, {
       method: 'POST',
@@ -35,11 +38,17 @@ export async function POST(request: Request) {
         'x-user-id': userId,
       },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     const data = await res.json().catch(() => ({}));
     return Response.json(data, { status: res.status });
   } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      return Response.json({ error: 'Backtest request timed out' }, { status: 504 });
+    }
     return Response.json(
       { error: 'Backtest gateway unavailable. Start the gateway with: cd services && docker compose up' },
       { status: 503 },
@@ -70,14 +79,23 @@ export async function GET(request: Request) {
     return Response.json({ error: 'jobId is required' }, { status: 400 });
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
   try {
     const res = await fetch(`${GATEWAY_URL}/api/backtest/${encodeURIComponent(jobId)}`, {
       headers: { 'x-user-id': userId },
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     const data = await res.json().catch(() => ({}));
     return Response.json(data, { status: res.status });
   } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      return Response.json({ error: 'Backtest request timed out' }, { status: 504 });
+    }
     return Response.json(
       { error: 'Backtest gateway unavailable' },
       { status: 503 },
