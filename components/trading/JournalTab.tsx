@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import { motion } from 'motion/react';
 import { ChevronDown, ChevronRight, Search, Tag as TagIcon } from 'lucide-react';
 import TradeTable from '@/components/trading/TradeTable';
+import JournalTradeChart from '@/components/trading/JournalTradeChart';
 import { formatCurrency } from '@/lib/trading-utils';
 import type { Trade } from '@/lib/types';
 
@@ -38,6 +39,9 @@ type DayCard = {
   mfeMaeRatio: number | null;
   sparklinePoints: number[];
 };
+
+const INITIAL_CHART_BATCH = 4;
+const CHART_BATCH_STEP = 4;
 
 function DaySparkline({ points }: { points: number[] }) {
   if (points.length === 0) return <div className="h-8 text-[10px] text-zinc-600">-</div>;
@@ -83,6 +87,7 @@ export default function JournalTab({
   onTradeClick,
 }: JournalTabProps) {
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
+  const [chartCountByDay, setChartCountByDay] = useState<Record<string, number>>({});
 
   const dayCards = useMemo<DayCard[]>(() => {
     const dayMap = new Map<string, Trade[]>();
@@ -127,10 +132,21 @@ export default function JournalTab({
   }, [filteredTrades]);
 
   const toggleDay = (sortKey: string) => {
+    const isCurrentlyExpanded = expandedDays.has(sortKey);
+    if (!isCurrentlyExpanded) {
+      setChartCountByDay((counts) => ({
+        ...counts,
+        [sortKey]: counts[sortKey] ?? INITIAL_CHART_BATCH,
+      }));
+    }
+
     setExpandedDays((prev) => {
       const next = new Set(prev);
-      if (next.has(sortKey)) next.delete(sortKey);
-      else next.add(sortKey);
+      if (next.has(sortKey)) {
+        next.delete(sortKey);
+      } else {
+        next.add(sortKey);
+      }
       return next;
     });
   };
@@ -238,7 +254,7 @@ export default function JournalTab({
               </div>
 
               {expanded ? (
-                <div className="p-3">
+                <div className="space-y-4 p-3">
                   <TradeTable
                     trades={day.trades}
                     selectedIds={selectedIds}
@@ -250,6 +266,40 @@ export default function JournalTab({
                     onTradeClick={onTradeClick}
                     globalTags={globalTags}
                   />
+
+                  <div className="space-y-3 rounded-xl border border-white/10 bg-[#0F0F10] p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Trade Replay Charts</p>
+                    <div className="space-y-3">
+                      {day.trades.slice(0, chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH).map((trade) => (
+                        <div key={`chart-${trade.id}`} className="space-y-2 rounded-xl border border-white/10 bg-[#121214] p-3">
+                          <div className="flex items-center justify-between gap-2 text-xs">
+                            <p className="font-semibold text-zinc-200">{trade.symbol} ({trade.direction})</p>
+                            <p className="font-mono text-zinc-500">{trade.entryTime || '--:--'} - {trade.exitTime || '--:--'}</p>
+                          </div>
+                          <JournalTradeChart trade={trade} />
+                        </div>
+                      ))}
+
+                      {day.trades.length > (chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH) ? (
+                        <div className="flex justify-center">
+                          <button
+                            onClick={() => {
+                              setChartCountByDay((counts) => ({
+                                ...counts,
+                                [day.sortKey]: Math.min(
+                                  day.trades.length,
+                                  (counts[day.sortKey] ?? INITIAL_CHART_BATCH) + CHART_BATCH_STEP,
+                                ),
+                              }));
+                            }}
+                            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/10"
+                          >
+                            Load {Math.min(CHART_BATCH_STEP, day.trades.length - (chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH))} more charts
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
               ) : null}
             </div>

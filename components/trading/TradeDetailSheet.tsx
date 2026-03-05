@@ -18,7 +18,6 @@ interface TradeDetailSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaveNotes: (tradeId: string, notes: string) => Promise<void> | void;
-  onRecalculateMfeMae: (tradeId: string) => Promise<void> | void;
 }
 
 type TimeframeKey = '1m' | '5m' | '15m' | '1d';
@@ -159,11 +158,10 @@ function executionCashDelta(trade: Trade, side: 'ENTRY' | 'EXIT', price: number,
   return side === 'ENTRY' ? price * qty - cost : -price * qty - cost;
 }
 
-export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNotes, onRecalculateMfeMae }: TradeDetailSheetProps) {
+export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNotes }: TradeDetailSheetProps) {
   const [notes, setNotes] = useState(trade?.notes ?? '');
   const [timeframe, setTimeframe] = useState<TimeframeKey>('5m');
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
-  const [isRecalculating, setIsRecalculating] = useState(false);
 
   const chartOptions = useMemo(() => {
     if (!trade) return null;
@@ -220,20 +218,6 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
     } catch (error) {
       console.error(error);
       toast.error('Failed to save notes');
-    }
-  };
-
-  const handleRecalculate = async () => {
-    if (!trade) return;
-    try {
-      setIsRecalculating(true);
-      await onRecalculateMfeMae(trade.id);
-      toast.success('MFE/MAE recalculated');
-    } catch (error) {
-      console.error(error);
-      toast.error('Failed to recalculate MFE/MAE');
-    } finally {
-      setIsRecalculating(false);
     }
   };
 
@@ -309,18 +293,7 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                     </div>
                   ))}
                 </div>
-                <div className="flex justify-end">
-                  {trade.mfe == null ? (
-                    <Button
-                      variant="secondary"
-                      onClick={handleRecalculate}
-                      disabled={isRecalculating}
-                      className="bg-white/10 hover:bg-white/20"
-                    >
-                      {isRecalculating ? 'Recalculating...' : 'Recalculate MFE/MAE'}
-                    </Button>
-                  ) : null}
-                </div>
+                <div className="flex justify-end" />
               </div>
             ) : null}
 
@@ -346,7 +319,7 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                   <div className="flex h-[320px] items-center justify-center text-sm text-zinc-400">Loading candles...</div>
                 ) : candlesError ? (
                   <div className="flex h-[320px] items-center justify-center text-sm text-zinc-400">
-                    {candlesError === 'Schwab not connected' ? 'Connect Schwab to load candle data for this trade.' : candlesError}
+                    {candlesError}
                   </div>
                 ) : candles.length === 0 ? (
                   <div className="flex h-[320px] items-center justify-center text-sm text-zinc-400">
@@ -429,16 +402,6 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                 </div>
 
                 <div className="flex justify-end gap-2">
-                  {trade.mfe == null ? (
-                    <Button
-                      variant="secondary"
-                      onClick={handleRecalculate}
-                      disabled={isRecalculating}
-                      className="bg-white/10 hover:bg-white/20"
-                    >
-                      {isRecalculating ? 'Recalculating...' : 'Recalculate MFE/MAE'}
-                    </Button>
-                  ) : null}
                   <Button onClick={handleSave} className="bg-emerald-500 hover:bg-emerald-400 text-black">
                     Save Notes
                   </Button>

@@ -4,10 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { isAfter, isWithinInterval, parseISO, subDays } from 'date-fns';
 import Papa from 'papaparse';
 import { toast } from 'sonner';
-import type { CandleData } from '@/components/trading/CandlestickChart';
 import type { Trade } from '@/lib/types';
 import { parseDateFromFilename, processCsvData } from '@/lib/csv-parser';
-import { calculateMfeMae } from '@/lib/mfe-mae';
 import { detectParser, getParserById } from '@/lib/parsers';
 import { isDatabaseAvailable } from '@/lib/storage';
 import { useSession } from 'next-auth/react';
@@ -23,16 +21,6 @@ type TradeLike = Partial<Omit<Trade, 'date'>> & {
   avgEntryPrice: number;
   avgExitPrice: number;
   totalQuantity: number;
-};
-
-type MarketDataResponse = {
-  candles?: CandleData[];
-};
-
-type MfeMaeBatchResult = {
-  trades: Trade[];
-  computed: number;
-  unavailable: number;
 };
 
 const normalizeTrade = (trade: TradeLike): Trade => {
@@ -84,83 +72,6 @@ async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
   return data;
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-const NY_TIME_ZONE = 'America/New_York';
-const NY_DATE_PARTS = new Intl.DateTimeFormat('en-US', {
-  timeZone: NY_TIME_ZONE,
-  hourCycle: 'h23',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-});
-
-function parseSortKey(sortKey: string) {
-  const match = sortKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-
-  if (!Number.isFinite(year) || month < 1 || month > 12 || day < 1 || day > 31) {
-    return null;
-  }
-
-  return { year, month, day };
-}
-
-function getNyOffsetMs(atEpochMs: number) {
-  const parts = NY_DATE_PARTS.formatToParts(new Date(atEpochMs));
-  const map: Record<string, string> = {};
-  for (const part of parts) {
-    if (part.type !== 'literal') {
-      map[part.type] = part.value;
-    }
-  }
-
-  const asUtc = Date.UTC(
-    Number(map.year),
-    Number(map.month) - 1,
-    Number(map.day),
-    Number(map.hour),
-    Number(map.minute),
-    Number(map.second),
-  );
-
-  return asUtc - atEpochMs;
-}
-
-function nyDateTimeToEpoch(
-  year: number,
-  month: number,
-  day: number,
-  hours: number,
-  minutes: number,
-  seconds: number,
-) {
-  const utcGuess = Date.UTC(year, month - 1, day, hours, minutes, seconds);
-  const offset = getNyOffsetMs(utcGuess);
-  return utcGuess - offset;
-}
-
-function getMarketWindowEpoch(sortKey: string) {
-  const dateParts = parseSortKey(sortKey);
-  if (!dateParts) return {};
-
-  const start = nyDateTimeToEpoch(dateParts.year, dateParts.month, dateParts.day, 9, 30, 0);
-  const end = nyDateTimeToEpoch(dateParts.year, dateParts.month, dateParts.day, 16, 0, 0);
-
-  return {
-    startDate: String(start),
-    endDate: String(end),
-  };
-}
-
 export function useTrades() {
   const { data: session, status } = useSession();
   const user = session?.user as
@@ -184,7 +95,6 @@ export function useTrades() {
   const [searchQuery, setSearchQuery] = useState('');
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
-  const candleCacheRef = useRef<Map<string, CandleData[] | null>>(new Map());
   const tradesRef = useRef<Trade[]>([]);
 
   const sortTrades = useCallback((list: Trade[]) => [...list].sort((a, b) => b.date.getTime() - a.date.getTime()), []);
@@ -358,152 +268,6 @@ export function useTrades() {
       toast.error(text);
     });
 
-  const persistTradeUpdates = useCallback(async (updatedTrades: Trade[]) => {
-    if (updatedTrades.length === 0) return;
-
-    if (useLocalStorage) {
-      const updateMap = new Map(updatedTrades.map((trade) => [trade.id, trade]));
-      setTrades((prev) => sortTrades(prev.map((trade) => updateMap.get(trade.id) ?? trade)));
-      return;
-    }
-
-    const importRes = await apiRequest<{ trades: ApiTrade[] }>('/api/trades/import', {
-      method: 'POST',
-      body: JSON.stringify({ trades: updatedTrades.map(toApiTrade) }),
-    });
-
-    setTrades(sortTrades(importRes.trades.map(fromApiTrade)));
-    const tagsRes = await apiRequest<{ tags: string[] }>('/api/tags');
-    setGlobalTags(tagsRes.tags);
-  }, [useLocalStorage, sortTrades]);
-
-  const computeMfeMaeBatch = useCallback(async (
-    targetTrades: Trade[],
-    options: { showProgress?: boolean } = {},
-  ): Promise<MfeMaeBatchResult> => {
-    const { showProgress = true } = options;
-    if (targetTrades.length === 0) {
-      return { trades: targetTrades, computed: 0, unavailable: 0 };
-    }
-
-    const eligibleTrades = targetTrades.filter((trade) =>
-      !!trade.symbol && !!trade.sortKey && !!trade.entryTime && !!trade.exitTime);
-
-    if (eligibleTrades.length === 0) {
-      return {
-        trades: targetTrades.map((trade) => ({
-          ...trade,
-          mfe: undefined,
-          mae: undefined,
-          bestExitPnl: undefined,
-          exitEfficiency: undefined,
-        })),
-        computed: 0,
-        unavailable: targetTrades.length,
-      };
-    }
-
-    const groups = new Map<string, Trade[]>();
-    for (const trade of eligibleTrades) {
-      const key = `${trade.sortKey}|${trade.symbol.toUpperCase()}`;
-      const list = groups.get(key) ?? [];
-      list.push(trade);
-      groups.set(key, list);
-    }
-
-    const updates = new Map<string, Trade>();
-    let done = 0;
-    let computed = 0;
-    const toastId = showProgress ? toast.loading(`Computing MFE/MAE... 0/${eligibleTrades.length}`) : null;
-
-    let groupIndex = 0;
-    for (const [groupKey, groupTrades] of groups) {
-      if (groupIndex > 0) {
-        await sleep(200);
-      }
-
-      let candles = candleCacheRef.current.get(groupKey);
-      if (candles === undefined) {
-        const [sortKey, symbol] = groupKey.split('|');
-        const { startDate, endDate } = getMarketWindowEpoch(sortKey);
-
-        try {
-          const params = new URLSearchParams({
-            symbol,
-            periodType: 'day',
-            period: '1',
-            frequencyType: 'minute',
-            frequency: '1',
-          });
-          if (startDate) params.set('startDate', startDate);
-          if (endDate) params.set('endDate', endDate);
-          const res = await apiRequest<MarketDataResponse>(`/api/schwab/market-data?${params.toString()}`);
-          candles = res.candles && res.candles.length > 0 ? res.candles : null;
-        } catch {
-          candles = null;
-        }
-
-        candleCacheRef.current.set(groupKey, candles);
-      }
-
-      for (const trade of groupTrades) {
-        const result = candles
-          ? calculateMfeMae(
-              trade.direction,
-              trade.avgEntryPrice,
-              trade.totalQuantity,
-              trade.entryTime,
-              trade.exitTime,
-              trade.commission ?? 0,
-              trade.fees ?? 0,
-              trade.netPnl,
-              candles,
-            )
-          : null;
-
-        if (result) {
-          updates.set(trade.id, { ...trade, ...result });
-          computed += 1;
-        } else {
-          updates.set(trade.id, {
-            ...trade,
-            mfe: undefined,
-            mae: undefined,
-            bestExitPnl: undefined,
-            exitEfficiency: undefined,
-          });
-        }
-
-        done += 1;
-        if (toastId) {
-          toast.loading(`Computing MFE/MAE... ${done}/${eligibleTrades.length}`, { id: toastId });
-        }
-      }
-
-      groupIndex += 1;
-    }
-
-    if (toastId) {
-      const unavailable = targetTrades.length - computed;
-      if (computed > 0) {
-        toast.success(
-          unavailable > 0
-            ? `Computed MFE/MAE for ${computed} trade(s); ${unavailable} unavailable.`
-            : `Computed MFE/MAE for ${computed} trade(s).`,
-          { id: toastId },
-        );
-      } else {
-        toast.warning('MFE/MAE unavailable for selected trades.', { id: toastId });
-      }
-    }
-
-    return {
-      trades: targetTrades.map((trade) => updates.get(trade.id) ?? trade),
-      computed,
-      unavailable: targetTrades.length - computed,
-    };
-  }, []);
-
   const fetchTradeDetail = useCallback(async (tradeId: string) => {
     const current = tradesRef.current.find((trade) => trade.id === tradeId);
     if (!current) return null;
@@ -518,29 +282,6 @@ export function useTrades() {
     setTrades((prev) => prev.map((trade) => (trade.id === tradeId ? detailed : trade)));
     return detailed;
   }, [useLocalStorage]);
-
-  const handleRecalculateMfeMae = (tradeId: string) =>
-    withErrorToast('Failed to recalculate MFE/MAE', async () => {
-      const target = trades.find((trade) => trade.id === tradeId);
-      if (!target) return;
-
-      const { trades: recalculated } = await computeMfeMaeBatch([target], { showProgress: true });
-      await persistTradeUpdates(recalculated);
-    });
-
-  const handleBulkRecalculateMfeMae = () => {
-    if (selectedIds.size === 0) return;
-    const ids = new Set(selectedIds);
-
-    withErrorToast('Failed to recalculate MFE/MAE for selected trades', async () => {
-      const targets = trades.filter((trade) => ids.has(trade.id));
-      if (targets.length === 0) return;
-
-      const { trades: recalculated } = await computeMfeMaeBatch(targets, { showProgress: true });
-      await persistTradeUpdates(recalculated);
-      setSelectedIds(new Set());
-    });
-  };
 
   const handleCreateManualTrade = async (trade: Trade) => {
     if (useLocalStorage) {
@@ -819,8 +560,6 @@ export function useTrades() {
         toast.warning(`${warnings.length} executions skipped (unmatched)`);
       }
 
-      const { trades: tradesWithMfeMae } = await computeMfeMaeBatch(allNewTrades, { showProgress: true });
-
       if (useLocalStorage) {
         setTrades((prev) => {
           const existingMeta = new Map(
@@ -829,7 +568,7 @@ export function useTrades() {
               .map((trade) => [trade.id, { tags: trade.tags, notes: trade.notes, initialRisk: trade.initialRisk }] as const),
           );
 
-          const mergedNewTrades = tradesWithMfeMae.map((trade) => {
+          const mergedNewTrades = allNewTrades.map((trade) => {
             const preserved = existingMeta.get(trade.id);
             if (!preserved) return trade;
             return {
@@ -846,7 +585,7 @@ export function useTrades() {
       } else {
         const importRes = await apiRequest<{ trades: ApiTrade[] }>('/api/trades/import', {
           method: 'POST',
-          body: JSON.stringify({ trades: tradesWithMfeMae.map(toApiTrade) }),
+          body: JSON.stringify({ trades: allNewTrades.map(toApiTrade) }),
         });
 
         setTrades(sortTrades(importRes.trades.map(fromApiTrade)));
@@ -929,8 +668,6 @@ export function useTrades() {
         toast.warning(`${warnings.length} warning(s) during folder import`);
       }
 
-      const { trades: tradesWithMfeMae } = await computeMfeMaeBatch(allNewTrades, { showProgress: true });
-
       if (useLocalStorage) {
         setTrades((prev) => {
           const existingMeta = new Map(
@@ -939,7 +676,7 @@ export function useTrades() {
               .map((trade) => [trade.id, { tags: trade.tags, notes: trade.notes, initialRisk: trade.initialRisk }] as const),
           );
 
-          const mergedNewTrades = tradesWithMfeMae.map((trade) => {
+          const mergedNewTrades = allNewTrades.map((trade) => {
             const preserved = existingMeta.get(trade.id);
             if (!preserved) return trade;
             return {
@@ -956,7 +693,7 @@ export function useTrades() {
       } else {
         const importRes = await apiRequest<{ trades: ApiTrade[] }>('/api/trades/import', {
           method: 'POST',
-          body: JSON.stringify({ trades: tradesWithMfeMae.map(toApiTrade) }),
+          body: JSON.stringify({ trades: allNewTrades.map(toApiTrade) }),
         });
 
         setTrades(sortTrades(importRes.trades.map(fromApiTrade)));
@@ -1008,8 +745,6 @@ export function useTrades() {
     handleCreateManualTrade,
     handleDeleteSelected,
     handleApplyRisk,
-    handleRecalculateMfeMae,
-    handleBulkRecalculateMfeMae,
     handleSaveNotes,
     handleAddTag,
     handleRemoveTag,

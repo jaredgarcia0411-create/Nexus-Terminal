@@ -12,12 +12,10 @@ interface FilterTabProps {
   globalTags: string[];
   startDate: string;
   endDate: string;
-  filterPreset: 'all' | '30' | '60' | '90';
   selectedFilterTags: Set<string>;
   hasActiveFilters: boolean;
   onStartDateChange: (value: string) => void;
   onEndDateChange: (value: string) => void;
-  onFilterPresetChange: (value: 'all' | '30' | '60' | '90') => void;
   onToggleFilterTag: (tag: string) => void;
   onDeleteGlobalTag: (tagName: string) => void;
   onClearAllFilters: () => void;
@@ -34,12 +32,10 @@ export default function FilterTab({
   globalTags,
   startDate,
   endDate,
-  filterPreset,
   selectedFilterTags,
   hasActiveFilters,
   onStartDateChange,
   onEndDateChange,
-  onFilterPresetChange,
   onToggleFilterTag,
   onDeleteGlobalTag,
   onClearAllFilters,
@@ -54,7 +50,7 @@ export default function FilterTab({
       <div className="flex flex-col gap-6 rounded-2xl border border-white/5 bg-[#121214] p-6">
         <h2 className="text-2xl font-bold">Advanced Filters</h2>
 
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
           <div className="space-y-4">
             <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-500">Date Range</h3>
             <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
@@ -62,30 +58,6 @@ export default function FilterTab({
               <input type="date" value={startDate} onChange={(event) => onStartDateChange(event.target.value)} className="bg-transparent text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]" />
               <span className="text-zinc-600">to</span>
               <input type="date" value={endDate} onChange={(event) => onEndDateChange(event.target.value)} className="bg-transparent text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]" />
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-500">Time Presets</h3>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { id: 'all', label: 'All Time' },
-                { id: '30', label: 'Last 30 Days' },
-                { id: '60', label: 'Last 60 Days' },
-                { id: '90', label: 'Last 90 Days' },
-              ].map((preset) => (
-                <Button
-                  key={preset.id}
-                  onClick={() => onFilterPresetChange(preset.id as 'all' | '30' | '60' | '90')}
-                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
-                    filterPreset === preset.id
-                      ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20'
-                      : 'bg-white/5 text-zinc-400 hover:bg-white/10'
-                  }`}
-                >
-                  {preset.label}
-                </Button>
-              ))}
             </div>
           </div>
 

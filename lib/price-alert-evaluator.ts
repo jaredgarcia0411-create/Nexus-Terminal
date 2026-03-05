@@ -2,7 +2,6 @@ import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from '@/lib/db';
 import { discordUserLinks, priceAlerts } from '@/lib/db/schema';
 import { enqueueNotificationJob, notificationDedupeKey } from '@/lib/notification-jobs';
-import { getValidSchwabToken } from '@/lib/schwab';
 
 type QuoteKey = `${string}:${string}`;
 
@@ -15,34 +14,39 @@ export type PriceAlertEvaluationResult = {
 };
 
 async function fetchLatestClose(db: Db, userId: string, symbol: string) {
-  const token = await getValidSchwabToken(db, userId);
-  if (!token) return null;
+  void db;
+  void userId;
 
-  const apiBase = process.env.SCHWAB_API_BASE_URL || 'https://api.schwabapi.com';
-  const url = new URL('/marketdata/v1/pricehistory', apiBase);
-  url.searchParams.set('symbol', symbol);
-  url.searchParams.set('periodType', 'day');
-  url.searchParams.set('period', '1');
-  url.searchParams.set('frequencyType', 'minute');
-  url.searchParams.set('frequency', '1');
-  url.searchParams.set('needExtendedHoursData', 'false');
+  const url = new URL(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`);
+  url.searchParams.set('range', '1d');
+  url.searchParams.set('interval', '1m');
+  url.searchParams.set('includePrePost', 'false');
 
   const res = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${token.accessToken}`,
-      Accept: 'application/json',
-    },
+    headers: { Accept: 'application/json' },
     cache: 'no-store',
   });
 
-  const payload = (await res.json().catch(() => ({}))) as { candles?: Array<{ close?: number }> };
-  if (!res.ok || !payload.candles || payload.candles.length === 0) {
+  const payload = (await res.json().catch(() => ({}))) as {
+    chart?: {
+      result?: Array<{
+        indicators?: {
+          quote?: Array<{
+            close?: Array<number | null>;
+          }>;
+        };
+      }>;
+    };
+  };
+
+  const closes = payload.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? [];
+  const latest = closes.filter((value): value is number => typeof value === 'number').at(-1);
+
+  if (!res.ok || latest == null) {
     return null;
   }
 
-  const last = payload.candles[payload.candles.length - 1];
-  const close = Number(last?.close ?? NaN);
-  return Number.isFinite(close) ? close : null;
+  return Number.isFinite(latest) ? latest : null;
 }
 
 export async function evaluatePriceAlerts(

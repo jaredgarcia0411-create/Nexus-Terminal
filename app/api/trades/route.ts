@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { tradeExecutions, trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
 import { requireUserOrServiceWithOptions } from '@/lib/service-auth';
@@ -37,9 +37,42 @@ export async function GET(request: Request) {
     .orderBy(desc(trades.date));
 
   const tradeIds = tradeRows.map((row) => row.id);
-  const tagMap = await loadTagsForTradeIds(db, authState.user.id, tradeIds);
+  const [tagMap, executionRows] = await Promise.all([
+    loadTagsForTradeIds(db, authState.user.id, tradeIds),
+    tradeIds.length > 0
+      ? db.select().from(tradeExecutions)
+        .where(and(eq(tradeExecutions.userId, authState.user.id), inArray(tradeExecutions.tradeId, tradeIds)))
+        .orderBy(asc(tradeExecutions.time), asc(tradeExecutions.id))
+      : Promise.resolve([]),
+  ]);
 
-  const tradeList = tradeRows.map((row) => toTrade(row, tagMap.get(row.id) ?? []));
+  const executionsByTrade = new Map<string, Array<{
+    id: string;
+    side: 'ENTRY' | 'EXIT';
+    price: number;
+    qty: number;
+    time: string;
+    timestamp?: string;
+    commission: number;
+    fees: number;
+  }>>();
+
+  for (const row of executionRows) {
+    const list = executionsByTrade.get(row.tradeId) ?? [];
+    list.push({
+      id: row.id,
+      side: row.side,
+      price: row.price,
+      qty: row.qty,
+      time: row.time,
+      timestamp: row.timestamp ?? undefined,
+      commission: row.commission ?? 0,
+      fees: row.fees ?? 0,
+    });
+    executionsByTrade.set(row.tradeId, list);
+  }
+
+  const tradeList = tradeRows.map((row) => toTrade(row, tagMap.get(row.id) ?? [], executionsByTrade.get(row.id) ?? []));
   return Response.json({ trades: tradeList });
 }
 

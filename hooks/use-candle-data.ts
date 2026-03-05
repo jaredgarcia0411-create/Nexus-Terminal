@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { CandleData } from '@/components/trading/CandlestickChart';
 
 type CandleDataOptions = {
@@ -23,6 +23,8 @@ type CandleDataState = {
   error: string | null;
 };
 
+const candleDataCache = new Map<string, CandleData[]>();
+
 function buildCacheKey(symbol: string, options: CandleDataOptions) {
   return [
     symbol.toUpperCase(),
@@ -36,9 +38,9 @@ function buildCacheKey(symbol: string, options: CandleDataOptions) {
 }
 
 function statusToMessage(status: number, fallback: string) {
-  if (status === 401) return 'Schwab not connected';
+  if (status === 401) return 'Authentication required';
   if (status === 404) return 'Unknown symbol';
-  if (status === 429) return 'Rate limited by Schwab API';
+  if (status === 429) return 'Rate limited by market data provider';
   return fallback;
 }
 
@@ -50,7 +52,6 @@ export function useCandleData(symbol: string | null, options: CandleDataOptions 
   const startDate = options.startDate;
   const endDate = options.endDate;
 
-  const cacheRef = useRef<Map<string, CandleData[]>>(new Map());
   const [state, setState] = useState<CandleDataState>({
     candles: [],
     isLoading: false,
@@ -80,7 +81,7 @@ export function useCandleData(symbol: string | null, options: CandleDataOptions 
       startDate,
       endDate,
     });
-    const cached = cacheRef.current.get(cacheKey);
+    const cached = candleDataCache.get(cacheKey);
     if (cached) {
       scheduleState({ candles: cached, isLoading: false, error: null });
       return;
@@ -100,7 +101,7 @@ export function useCandleData(symbol: string | null, options: CandleDataOptions 
 
     scheduleState({ candles: [], isLoading: true, error: null });
 
-    void fetch(`/api/schwab/market-data?${params.toString()}`, { signal: controller.signal })
+    void fetch(`/api/market-data?${params.toString()}`, { signal: controller.signal })
       .then(async (res) => {
         const payload = (await res.json().catch(() => ({}))) as MarketDataResponse;
         if (!res.ok) {
@@ -108,7 +109,7 @@ export function useCandleData(symbol: string | null, options: CandleDataOptions 
         }
 
         const candles = payload.candles ?? [];
-        cacheRef.current.set(cacheKey, candles);
+        candleDataCache.set(cacheKey, candles);
         setState({ candles, isLoading: false, error: null });
       })
       .catch((error: unknown) => {

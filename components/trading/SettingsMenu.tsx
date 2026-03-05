@@ -109,11 +109,6 @@ export default function SettingsMenu({ trades, onClearAllData }: SettingsMenuPro
             Link Discord Account
           </a>
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <a href="https://developer.schwab.com" target="_blank" rel="noopener noreferrer" className="cursor-pointer">
-            Schwab Developer Portal
-          </a>
-        </DropdownMenuItem>
         <DropdownMenuSeparator className="bg-white/10" />
         <DropdownMenuItem onClick={() => setConfirmOpen(true)} className="cursor-pointer text-rose-400">
           Clear All Data

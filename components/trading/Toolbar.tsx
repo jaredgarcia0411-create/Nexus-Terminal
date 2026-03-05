@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { Plus, RefreshCcw, Trash2, User, X } from 'lucide-react';
+import { Plus, Trash2, User, X } from 'lucide-react';
 import ImportDropdown from '@/components/trading/ImportDropdown';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -16,9 +16,10 @@ interface ToolbarProps {
   useLocalStorage: boolean;
   error: string | null;
   user: { name?: string | null; email?: string | null; image?: string | null } | undefined;
+  filterPreset: 'all' | '30' | '60' | '90';
   selectedCount: number;
   onDeleteSelected: () => void;
-  onRecalculateSelected: () => void;
+  onFilterPresetChange: (value: 'all' | '30' | '60' | '90') => void;
   onImportClick: () => void;
   onFolderImportClick: () => void;
   onNewTradeClick: () => void;
@@ -32,9 +33,10 @@ export default function Toolbar({
   useLocalStorage,
   error,
   user,
+  filterPreset,
   selectedCount,
   onDeleteSelected,
-  onRecalculateSelected,
+  onFilterPresetChange,
   onImportClick,
   onFolderImportClick,
   onNewTradeClick,
@@ -65,6 +67,28 @@ export default function Toolbar({
           {!isMobile ? (
             <span className="text-[10px] uppercase tracking-widest text-zinc-600">{useLocalStorage ? 'Local Storage Mode' : 'Cloud Mode'}</span>
           ) : null}
+
+          <div className="ml-0 flex items-center gap-1 sm:ml-2">
+            {[
+              { id: 'all', label: 'All' },
+              { id: '30', label: '30D' },
+              { id: '60', label: '60D' },
+              { id: '90', label: '90D' },
+            ].map((preset) => (
+              <button
+                key={preset.id}
+                onClick={() => onFilterPresetChange(preset.id as 'all' | '30' | '60' | '90')}
+                className={`rounded-md px-2 py-1 text-[10px] font-semibold transition-colors sm:px-2.5 ${
+                  filterPreset === preset.id
+                    ? 'bg-emerald-500 text-black'
+                    : 'bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
+                }`}
+                title={`Filter ${preset.label}`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {!isMobile ? (
@@ -89,13 +113,6 @@ export default function Toolbar({
           {selectedCount > 0 ? (
             <div className="animate-in slide-in-from-right-2 fade-in flex items-center gap-2 sm:gap-3">
               <span className="text-xs font-medium text-zinc-500">{selectedCount} selected</span>
-              <button
-                onClick={onRecalculateSelected}
-                className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2 text-emerald-500 transition-colors hover:bg-emerald-500/20"
-                title="Recalculate MFE/MAE"
-              >
-                <RefreshCcw className="h-4 w-4" />
-              </button>
               <button
                 onClick={() => setConfirmDeleteOpen(true)}
                 className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-2 text-rose-500 transition-colors hover:bg-rose-500/20"

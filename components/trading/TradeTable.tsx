@@ -40,9 +40,10 @@ export default function TradeTable({
   const [tagQuery, setTagQuery] = useState('');
 
   const tableTradeIds = useMemo(() => trades.map((trade) => trade.id), [trades]);
+  const shouldScroll = trades.length > 20;
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-white/5 bg-[#121214]">
+    <div className={`overflow-x-auto rounded-xl border border-white/5 bg-[#121214] ${shouldScroll ? 'max-h-[46rem] overflow-y-auto' : ''}`}>
       <table className="w-full text-left text-sm">
         <thead className="border-b border-white/5 bg-white/5 text-zinc-500 font-medium">
           <tr>

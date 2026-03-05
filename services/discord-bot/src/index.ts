@@ -14,9 +14,7 @@ import {
 import * as journalCmd from "./commands/journal.js";
 import * as statsCmd from "./commands/stats.js";
 import * as pnlCmd from "./commands/pnl.js";
-import * as syncCmd from "./commands/sync.js";
 import * as alertCmd from "./commands/alert.js";
-import * as backtestCmd from "./commands/backtest.js";
 import * as linkCmd from "./commands/link.js";
 
 // ---------------------------------------------------------------------------
@@ -38,9 +36,7 @@ const allCommands: Command[] = [
   journalCmd as unknown as Command,
   statsCmd as unknown as Command,
   pnlCmd as unknown as Command,
-  syncCmd as unknown as Command,
   alertCmd as unknown as Command,
-  backtestCmd as unknown as Command,
   linkCmd as unknown as Command,
 ];
 

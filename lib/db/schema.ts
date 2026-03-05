@@ -83,14 +83,6 @@ export const tags = pgTable('tags', {
   index('idx_tags_user_id').on(table.userId),
 ]);
 
-export const schwabTokens = pgTable('schwab_tokens', {
-  userId: text('user_id').primaryKey().references(() => users.id),
-  accessToken: text('access_token').notNull(),
-  refreshToken: text('refresh_token').notNull(),
-  expiresAt: text('expires_at').notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().$onUpdateFn(() => sql`now()`),
-});
-
 export const brokerSyncLog = pgTable('broker_sync_log', {
   id: serial('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),

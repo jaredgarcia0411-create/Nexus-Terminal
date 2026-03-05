@@ -40,10 +40,6 @@ function signHmacSha256(input: string, secret: string): string {
 
 export const SERVICE_SCOPE = {
   TRADES_READ: "trades:read",
-  SCHWAB_MARKET_DATA_READ: "schwab:market-data:read",
-  SCHWAB_SYNC: "schwab:sync",
-  BACKTEST_RUN: "backtest:run",
-  BACKTEST_READ: "backtest:read",
   ALERTS_READ: "alerts:read",
   ALERTS_WRITE: "alerts:write",
   ALERTS_EVALUATE: "alerts:evaluate",

@@ -11,18 +11,14 @@ import { REST, Routes } from "discord.js";
 import * as journalCmd from "./commands/journal.js";
 import * as statsCmd from "./commands/stats.js";
 import * as pnlCmd from "./commands/pnl.js";
-import * as syncCmd from "./commands/sync.js";
 import * as alertCmd from "./commands/alert.js";
-import * as backtestCmd from "./commands/backtest.js";
 import * as linkCmd from "./commands/link.js";
 
 const commands = [
   journalCmd.data.toJSON(),
   statsCmd.data.toJSON(),
   pnlCmd.data.toJSON(),
-  syncCmd.data.toJSON(),
   alertCmd.data.toJSON(),
-  backtestCmd.data.toJSON(),
   linkCmd.data.toJSON(),
 ];
 

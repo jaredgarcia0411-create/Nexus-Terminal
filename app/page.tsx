@@ -13,8 +13,7 @@ import DashboardTab from '@/components/trading/DashboardTab';
 import JournalTab from '@/components/trading/JournalTab';
 import PerformanceTab from '@/components/trading/PerformanceTab';
 import FilterTab from '@/components/trading/FilterTab';
-import BacktestingTab from '@/components/trading/BacktestingTab';
-import BrokerSyncTab from '@/components/trading/BrokerSyncTab';
+import JarvisTab from '@/components/trading/JarvisTab';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useTrades } from '@/hooks/use-trades';
 
@@ -59,8 +58,6 @@ export default function NexusTerminal() {
     handleCreateManualTrade,
     handleDeleteSelected,
     handleApplyRisk,
-    handleRecalculateMfeMae,
-    handleBulkRecalculateMfeMae,
     handleSaveNotes,
     handleAddTag,
     handleRemoveTag,
@@ -98,7 +95,7 @@ export default function NexusTerminal() {
         onSignOut={handleSignOut}
       />
 
-      <main className={isMobile ? 'pb-16' : 'pl-16'}>
+      <main className={isMobile ? 'pb-16' : 'pl-56'}>
         <Toolbar
           filteredTradesCount={filteredTrades.length}
           activeFilterCount={activeFilterCount}
@@ -107,9 +104,10 @@ export default function NexusTerminal() {
           useLocalStorage={useLocalStorage}
           error={error}
           user={user}
+          filterPreset={filterPreset}
           selectedCount={selectedIds.size}
           onDeleteSelected={handleDeleteSelected}
-          onRecalculateSelected={handleBulkRecalculateMfeMae}
+          onFilterPresetChange={setFilterPreset}
           onImportClick={() => importInputRef.current?.click()}
           onFolderImportClick={() => folderInputRef.current?.click()}
           onNewTradeClick={() => setIsManualTradeOpen(true)}
@@ -176,12 +174,10 @@ export default function NexusTerminal() {
                 globalTags={globalTags}
                 startDate={startDate}
                 endDate={endDate}
-                filterPreset={filterPreset}
                 selectedFilterTags={selectedFilterTags}
                 hasActiveFilters={hasActiveFilters}
                 onStartDateChange={setStartDate}
                 onEndDateChange={setEndDate}
-                onFilterPresetChange={setFilterPreset}
                 onToggleFilterTag={(tag) => {
                   setSelectedFilterTags((prev) => {
                     const next = new Set(prev);
@@ -200,9 +196,7 @@ export default function NexusTerminal() {
               />
             ) : null}
 
-            {activeTab === 'backtesting' ? <BacktestingTab /> : null}
-
-            {activeTab === 'sync' ? <BrokerSyncTab /> : null}
+            {activeTab === 'jarvis' ? <JarvisTab trades={trades} /> : null}
           </AnimatePresence>
         </div>
       </main>
@@ -216,7 +210,6 @@ export default function NexusTerminal() {
           if (!open) setSelectedTradeId(null);
         }}
         onSaveNotes={handleSaveNotes}
-        onRecalculateMfeMae={handleRecalculateMfeMae}
       />
 
       {isImporting ? (

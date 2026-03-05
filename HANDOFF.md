@@ -1,96 +1,77 @@
 # Nexus Terminal — Handoff
 
-**Generated:** 2026-03-04  
-**Branch:** `main`  
-**Latest Commit:** `a68c30e` (`API routes, UI updates, CSV parser fixes, & trade logging fixes`)
+**Generated:** 2026-03-05  
+**Branch:** `main`
 
 ## Current State
 
-The v2 implementation plan was applied to the codebase and shipped to `main`, including:
+The codebase has been streamlined to a lean core focused on journaling, analytics, and Jarvis assistance.
 
-1. Expanded trade domain model + schema
-- New analytics/execution fields on trades (`grossPnl`, `netPnl`, `entryTime`, `exitTime`, `mfe`, `mae`, `bestExitPnl`, `exitEfficiency`, `executionCount`, `rawExecutions`)
-- New `trade_executions` table
-- Transitional compatibility support for legacy aliases/columns
+### Completed Refactor
 
-2. Parser/import pipeline updates
-- New DAS Trader parser with context-aware side resolution
-- Parser registry/type updates to support contextual normalization
-- FIFO matching and execution consolidation improvements in CSV pipeline
+- Removed Schwab-specific integration and OAuth routes.
+- Removed backtesting UI, engine, API routes, and worker/gateway services.
+- Removed MFE/MAE recomputation flow and related tests/files.
+- Introduced generic market data endpoint at `app/api/market-data/route.ts`.
+- Updated price alert evaluator to use non-Schwab market data fetch path.
 
-3. API + hook changes
-- Trade import/create/detail routes now persist/return raw executions
-- `useTrades` supports:
-  - lazy trade detail fetch
-  - post-import MFE/MAE batch compute
-  - single and bulk recalculation actions
-- Added `useCandleData` with cache and typed status handling
+### Navigation and Filtering
 
-4. Analytics + charting
-- Added `lib/mfe-mae.ts`
-- New deterministic MFE/MAE tests (`__tests__/mfe-mae.test.ts`)
-- NY-timezone normalized candle windows for chart and analytics filtering
-- Trade detail chart execution markers wired from execution payloads
+- Desktop sidebar now displays labels next to icons.
+- Active tabs are now: `dashboard`, `journal`, `performance`, `filter`, `jarvis`.
+- Time presets moved to global header controls in `components/trading/Toolbar.tsx`:
+  - `All`, `30D`, `60D`, `90D`
+- Filter page now focuses on date-range and tag filtering (presets removed from that page).
 
-5. UI/reporting refresh
-- Trade detail 4-tab layout: Overview / Chart / Executions / Notes
-- Journal day-card grouping with expandable trade tables
-- Dashboard KPI additions (MFE/MAE/Exit Efficiency)
-- Reports additions in performance charts:
-  - Win vs Loss Days
-  - Drawdown panel
-  - Tag Breakdown
+### Journal UX Enhancements
 
-6. Security hardening completed
-- User-scoped execution row IDs at write time to prevent cross-tenant ID collisions.
-- Server-side request pacing for `/api/schwab/market-data` (per-user throttling) to prevent UI/client spam bypass.
+- Expanded day cards in `JournalTab` now render per-trade replay charts.
+- New component: `components/trading/JournalTradeChart.tsx`.
+- Each chart overlays execution markers using `rawExecutions` when available.
+- Chart rendering is progressive per day card (batched "Load more") to prevent heavy initial render cost.
+- Trade table gains vertical scroll behavior when more than 20 rows are present.
 
-## Validation Snapshot
+### Jarvis (AI Assistant)
 
-All checks passed on 2026-03-04:
+- Jarvis tab and API are live:
+  - `components/trading/JarvisTab.tsx`
+  - `app/api/jarvis/route.ts`
+- Jarvis capabilities:
+  - daily summary
+  - trade analysis
+  - free-form assistant requests
+  - optional single-page web scraping context
+- Model/provider defaults now target GLM-4.7 configuration:
+  - `JARVIS_MODEL=glm-4.7`
+  - `JARVIS_API_BASE_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions`
+  - `JARVIS_API_KEY` for live responses
 
-- `npm run lint`
-- `npx tsc --noEmit`
-- `npm test` (**16 files, 83 tests**)
-- `npm run build`
+## Validation Snapshot (2026-03-05)
 
-Runtime smoke checks on built app:
-
-- `GET /`, `GET /login`, `GET /discord/link` -> `200`
-- `GET /api/health` -> `200`
-- Protected routes (`/api/trades`, `/api/schwab/market-data`) -> `401` while unauthenticated (expected)
+- `npm run build` passed
+- `npm test` passed (**12 files, 69 tests**)
 
 ## Known Follow-ups
 
-1. Manual signed-in UI sanity pass is still required
-- Needs browser auth session to verify end-to-end interaction quality for:
-  - dashboard panels
-  - performance/report charts
-  - journal day-card interactions
-  - detail sheet tab and recalc flows
+1. Perform a signed-in browser QA pass for:
+- per-trade journal chart loading behavior on large days
+- header preset behavior across all tabs
+- mobile toolbar wrapping and button density
 
-2. Local host trust config
-- Local runtime checks showed NextAuth `UntrustedHost` warnings when running on non-default local port without matching trust config.
+2. If trade volume becomes very large, consider pagination/virtualization for journal and table-heavy views.
 
-## Key Files Added/Changed in Latest Rollout
+## Primary Files Touched in Latest Rollout
 
-- `lib/mfe-mae.ts`
-- `hooks/use-candle-data.ts`
-- `lib/parsers/das-trader.ts`
-- `lib/csv-parser.ts`
-- `hooks/use-trades.ts`
+- `app/page.tsx`
+- `app/api/jarvis/route.ts`
+- `app/api/market-data/route.ts`
 - `app/api/trades/route.ts`
-- `app/api/trades/import/route.ts`
-- `app/api/trades/[id]/route.ts`
-- `app/api/schwab/market-data/route.ts`
-- `app/api/schwab/sync/route.ts`
-- `components/trading/TradeDetailSheet.tsx`
-- `components/trading/CandlestickChart.tsx`
+- `components/trading/Sidebar.tsx`
+- `components/trading/Toolbar.tsx`
+- `components/trading/FilterTab.tsx`
 - `components/trading/JournalTab.tsx`
-- `components/trading/DashboardTab.tsx`
-- `components/trading/PerformanceCharts.tsx`
-- `__tests__/mfe-mae.test.ts`
-- `__tests__/das-trader-parser.test.ts`
-- `__tests__/candlestick-chart-lifecycle.test.ts`
-- `drizzle/0005_natural_morg.sql`
-- `drizzle/backfill-v2.sql`
+- `components/trading/JournalTradeChart.tsx`
+- `components/trading/TradeTable.tsx`
+- `hooks/use-candle-data.ts`
+- `.env.example`
+- `README.md`

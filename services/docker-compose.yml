@@ -8,23 +8,6 @@ services:
     volumes:
       - redis-data:/data
 
-  backtest-gateway:
-    build: ./backtest-gateway
-    ports:
-      - '4000:4000'
-    environment:
-      - PORT=4000
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      - redis
-
-  backtest-worker:
-    build: ./backtest-worker
-    environment:
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      - redis
-
   discord-bot:
     build: ./discord-bot
     environment:
