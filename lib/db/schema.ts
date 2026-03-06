@@ -148,6 +148,17 @@ export const notificationJobs = pgTable('notification_jobs', {
   index('idx_notification_jobs_discord_user').on(table.discordUserId),
 ]);
 
+export const jarvisSourceUrls = pgTable('jarvis_source_urls', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  url: text('url').notNull(),
+  useCount: integer('use_count').notNull().default(1),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.url] }),
+  index('idx_jarvis_source_urls_user_last_used').on(table.userId, table.lastUsedAt),
+]);
+
 export const serviceTokenJtis = pgTable('service_token_jtis', {
   jti: text('jti').primaryKey(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),

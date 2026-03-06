@@ -1,7 +1,7 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { trades as tradesTable } from '@/lib/db/schema';
-import { requireUser } from '@/lib/server-db-utils';
+import { jarvisSourceUrls, trades as tradesTable } from '@/lib/db/schema';
+import { ensureUser, requireUser } from '@/lib/server-db-utils';
 
 type JarvisMode = 'daily-summary' | 'trade-analysis' | 'assistant';
 
@@ -20,8 +20,12 @@ type JarvisRequest = {
   mode?: JarvisMode;
   prompt?: string;
   url?: string;
+  urls?: string[];
   trades?: TradeInput[];
 };
+
+const MAX_SCRAPE_URLS = 5;
+const MAX_REMEMBERED_URLS = 20;
 
 function asDate(value: string | Date) {
   const date = value instanceof Date ? value : new Date(value);
@@ -176,14 +180,99 @@ async function scrapeUrl(url: string) {
   };
 }
 
-async function askLlm(basePrompt: string, scraped: Awaited<ReturnType<typeof scrapeUrl>>) {
+type ScrapedSource = NonNullable<Awaited<ReturnType<typeof scrapeUrl>>>;
+
+function normalizeScrapeUrls(body: JarvisRequest) {
+  const incoming = [
+    ...(Array.isArray(body.urls) ? body.urls : []),
+    typeof body.url === 'string' ? body.url : '',
+  ];
+
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const raw of incoming) {
+    const value = String(raw ?? '').trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    normalized.push(value);
+    if (normalized.length >= MAX_SCRAPE_URLS) break;
+  }
+
+  return normalized;
+}
+
+function sourceSummaryFor(scrapedSources: ScrapedSource[]) {
+  if (scrapedSources.length === 0) return undefined;
+  return scrapedSources.map((source) => `${source.title} (${source.host})`).join('; ');
+}
+
+async function rememberUrls(
+  user: { id: string; email: string; name: string | null; picture: string | null },
+  urls: string[],
+) {
+  const db = getDb();
+  if (!db || urls.length === 0) return;
+
+  await ensureUser(db, user);
+
+  await db.insert(jarvisSourceUrls)
+    .values(urls.map((url) => ({ userId: user.id, url, lastUsedAt: new Date() })))
+    .onConflictDoUpdate({
+      target: [jarvisSourceUrls.userId, jarvisSourceUrls.url],
+      set: {
+        lastUsedAt: new Date(),
+        useCount: sql`${jarvisSourceUrls.useCount} + 1`,
+      },
+    });
+
+  const staleRows = await db.select({ url: jarvisSourceUrls.url })
+    .from(jarvisSourceUrls)
+    .where(eq(jarvisSourceUrls.userId, user.id))
+    .orderBy(desc(jarvisSourceUrls.lastUsedAt))
+    .offset(MAX_REMEMBERED_URLS);
+
+  if (staleRows.length > 0) {
+    await db.delete(jarvisSourceUrls).where(
+      and(
+        eq(jarvisSourceUrls.userId, user.id),
+        inArray(jarvisSourceUrls.url, staleRows.map((row) => row.url)),
+      ),
+    );
+  }
+}
+
+async function loadRememberedUrls(userId: string) {
+  const db = getDb();
+  if (!db) return [] as string[];
+
+  const rows = await db.select({ url: jarvisSourceUrls.url })
+    .from(jarvisSourceUrls)
+    .where(eq(jarvisSourceUrls.userId, userId))
+    .orderBy(desc(jarvisSourceUrls.lastUsedAt))
+    .limit(MAX_REMEMBERED_URLS);
+
+  return rows.map((row) => row.url);
+}
+
+export async function GET() {
+  const authState = await requireUser();
+  if ('error' in authState) return authState.error;
+
+  const urls = await loadRememberedUrls(authState.user.id);
+  return Response.json({ urls });
+}
+
+async function askLlm(basePrompt: string, scrapedSources: ScrapedSource[]) {
   const apiKey = process.env.JARVIS_API_KEY ?? process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
 
   const model = process.env.JARVIS_MODEL || 'glm-4.7';
   const baseUrl = process.env.JARVIS_API_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
-  const extraContext = scraped
-    ? `\n\nScraped source (${scraped.host} - ${scraped.title}):\n${scraped.excerpt}`
+  const extraContext = scrapedSources.length > 0
+    ? `\n\nScraped sources:\n${scrapedSources
+        .map((source, index) => `${index + 1}. ${source.host} - ${source.title}\n${source.excerpt}`)
+        .join('\n\n')}`
     : '';
 
   const res = await fetch(baseUrl, {
@@ -248,25 +337,34 @@ export async function POST(request: Request) {
 
   const summary = summarizeTrades(trades);
   const basePrompt = toModePrompt(mode, summary, prompt);
-  const scraped = body.url ? await scrapeUrl(body.url.trim()) : null;
-  const llmMessage = await askLlm(basePrompt, scraped);
+  const scrapeUrls = normalizeScrapeUrls(body);
+  await rememberUrls(authState.user, scrapeUrls).catch(() => null);
+  const scrapedResults = await Promise.all(scrapeUrls.map((url) => scrapeUrl(url)));
+  const scrapedSources = scrapedResults.filter((result): result is ScrapedSource => result != null);
+  const sourceSummary = sourceSummaryFor(scrapedSources);
+  const llmMessage = await askLlm(basePrompt, scrapedSources);
 
   if (llmMessage) {
     return Response.json({
       message: llmMessage,
-      sourceSummary: scraped ? `${scraped.title} (${scraped.host})` : undefined,
+      sourceSummary,
     });
   }
 
   const fallback = [
     basePrompt,
-    scraped
-      ? `\n\nScraped Context (${scraped.host}):\n${scraped.title}\n${scraped.excerpt.slice(0, 700)}${scraped.excerpt.length > 700 ? '...' : ''}`
+    scrapedSources.length > 0
+      ? `\n\nScraped Context:\n${scrapedSources
+          .map(
+            (source) =>
+              `- ${source.host}: ${source.title}\n${source.excerpt.slice(0, 700)}${source.excerpt.length > 700 ? '...' : ''}`,
+          )
+          .join('\n\n')}`
       : '',
   ].join('');
 
   return Response.json({
     message: fallback,
-    sourceSummary: scraped ? `${scraped.title} (${scraped.host})` : undefined,
+    sourceSummary,
   });
 }

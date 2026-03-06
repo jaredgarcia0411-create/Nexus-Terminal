@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Bot, Globe, LineChart, Newspaper, Sparkles } from 'lucide-react';
+import { Bot, Globe, LineChart, Newspaper, Plus, Sparkles, X } from 'lucide-react';
 import { format } from 'date-fns';
 import type { Trade } from '@/lib/types';
 
@@ -13,6 +13,17 @@ type JarvisResponse = {
   sourceSummary?: string;
 };
 
+const MAX_SCRAPE_URLS = 5;
+
+function isScrapeUrlValid(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 interface JarvisTabProps {
   trades: Trade[];
 }
@@ -20,11 +31,105 @@ interface JarvisTabProps {
 export default function JarvisTab({ trades }: JarvisTabProps) {
   const [mode, setMode] = useState<JarvisMode>('assistant');
   const [prompt, setPrompt] = useState('');
-  const [url, setUrl] = useState('');
+  const [urlLines, setUrlLines] = useState<string[]>(['']);
+  const [rememberedUrls, setRememberedUrls] = useState<string[]>([]);
   const [response, setResponse] = useState<JarvisResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
   const todayLabel = useMemo(() => format(new Date(), 'EEEE, MMM d'), []);
+  const urlEntries = useMemo(
+    () => urlLines
+      .map((line, index) => ({
+        lineNumber: index + 1,
+        value: line.trim(),
+      }))
+      .filter((entry) => entry.value.length > 0)
+      .map((entry) => ({
+        ...entry,
+        isValid: isScrapeUrlValid(entry.value),
+      })),
+    [urlLines],
+  );
+
+  const invalidUrlEntries = useMemo(
+    () => urlEntries.filter((entry) => !entry.isValid),
+    [urlEntries],
+  );
+
+  const validUniqueUrls = useMemo(() => {
+    const seen = new Set<string>();
+    const values: string[] = [];
+
+    for (const entry of urlEntries) {
+      if (!entry.isValid || seen.has(entry.value)) continue;
+      seen.add(entry.value);
+      values.push(entry.value);
+    }
+
+    return values;
+  }, [urlEntries]);
+
+  const urlsForRequest = useMemo(
+    () => validUniqueUrls.slice(0, MAX_SCRAPE_URLS),
+    [validUniqueUrls],
+  );
+
+  const ignoredDuplicateCount = useMemo(() => {
+    const validCount = urlEntries.filter((entry) => entry.isValid).length;
+    return validCount - validUniqueUrls.length;
+  }, [urlEntries, validUniqueUrls]);
+
+  const overflowCount = Math.max(validUniqueUrls.length - MAX_SCRAPE_URLS, 0);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/jarvis')
+      .then((res) => (res.ok ? res.json() : { urls: [] }))
+      .then((payload: { urls?: string[] }) => {
+        if (cancelled) return;
+        setRememberedUrls(Array.isArray(payload.urls) ? payload.urls.filter((url) => typeof url === 'string') : []);
+      })
+      .catch(() => {
+        if (!cancelled) setRememberedUrls([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const setLineValue = (index: number, nextValue: string) => {
+    setUrlLines((current) => current.map((value, lineIndex) => (lineIndex === index ? nextValue : value)));
+  };
+
+  const addLine = () => {
+    setUrlLines((current) => (current.length >= MAX_SCRAPE_URLS ? current : [...current, '']));
+  };
+
+  const removeLine = (index: number) => {
+    setUrlLines((current) => {
+      if (current.length === 1) return [''];
+      return current.filter((_, lineIndex) => lineIndex !== index);
+    });
+  };
+
+  const useRememberedUrl = (url: string) => {
+    setUrlLines((current) => {
+      const normalizedCurrent = current.map((line) => line.trim());
+      if (normalizedCurrent.includes(url)) return current;
+
+      const firstEmpty = current.findIndex((line) => line.trim().length === 0);
+      if (firstEmpty >= 0) {
+        return current.map((line, index) => (index === firstEmpty ? url : line));
+      }
+
+      if (current.length < MAX_SCRAPE_URLS) {
+        return [...current, url];
+      }
+
+      return current;
+    });
+  };
 
   const runJarvis = async (nextMode: JarvisMode) => {
     setMode(nextMode);
@@ -38,7 +143,7 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
         body: JSON.stringify({
           mode: nextMode,
           prompt: prompt.trim(),
-          url: url.trim(),
+          urls: urlsForRequest,
           trades,
         }),
       });
@@ -46,6 +151,18 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
       const payload = (await res.json().catch(() => ({}))) as JarvisResponse & { error?: string };
       if (!res.ok) {
         throw new Error(payload.error ?? 'Jarvis is unavailable right now');
+      }
+
+      if (urlsForRequest.length > 0) {
+        setRememberedUrls((current) => {
+          const merged = [...urlsForRequest, ...current];
+          const deduped: string[] = [];
+          for (const url of merged) {
+            if (!deduped.includes(url)) deduped.push(url);
+            if (deduped.length >= 20) break;
+          }
+          return deduped;
+        });
       }
 
       setResponse({ message: payload.message, sourceSummary: payload.sourceSummary });
@@ -124,18 +241,90 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
             />
           </div>
           <div>
-            <label className="mb-2 block text-xs uppercase tracking-wider text-zinc-500">Optional Website URL</label>
-            <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-              <div className="mb-2 flex items-center gap-2 text-xs text-zinc-400">
-                <Globe className="h-3.5 w-3.5" />
-                Jarvis can scrape one page for context
+            <label className="mb-2 block text-xs uppercase tracking-wider text-zinc-500">Optional Website URLs</label>
+            <div className={`rounded-xl border bg-white/5 px-3 py-2 ${invalidUrlEntries.length > 0 ? 'border-amber-500/30' : 'border-white/10'}`}>
+              <div className="mb-2 flex items-center justify-between gap-2 text-xs text-zinc-400">
+                <div className="flex items-center gap-2">
+                  <Globe className="h-3.5 w-3.5" />
+                  Jarvis can scrape up to 5 pages for context
+                </div>
+                <span>{urlsForRequest.length}/{MAX_SCRAPE_URLS}</span>
               </div>
-              <input
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                placeholder="https://example.com/news"
-                className="w-full bg-transparent text-sm text-white outline-none placeholder:text-zinc-500"
-              />
+              <div className="space-y-2">
+                {urlLines.map((line, index) => {
+                  const trimmedValue = line.trim();
+                  const isInvalid = trimmedValue.length > 0 && !isScrapeUrlValid(trimmedValue);
+
+                  return (
+                    <div key={`url-line-${index}`}>
+                      <div className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 ${isInvalid ? 'border-amber-500/40 bg-amber-500/10' : 'border-white/10 bg-black/20'}`}>
+                        <span className="w-5 text-center text-[11px] text-zinc-500">{index + 1}</span>
+                        <input
+                          value={line}
+                          onChange={(event) => setLineValue(index, event.target.value)}
+                          placeholder="https://example.com/news"
+                          className="w-full bg-transparent text-sm text-white outline-none placeholder:text-zinc-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeLine(index)}
+                          className="rounded p-1 text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-300"
+                          aria-label={`Remove URL line ${index + 1}`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      {isInvalid ? <p className="mt-1 text-[11px] text-amber-300">Use a full `http://` or `https://` URL.</p> : null}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={addLine}
+                  disabled={urlLines.length >= MAX_SCRAPE_URLS}
+                  className="inline-flex items-center gap-1 rounded border border-white/10 px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add URL
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUrlLines([''])}
+                  className="rounded border border-white/10 px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-white/10"
+                >
+                  Clear URLs
+                </button>
+              </div>
+              <div className="mt-2 space-y-1 text-xs">
+                <p className="text-zinc-400">Valid URLs queued: {urlsForRequest.length}</p>
+                {ignoredDuplicateCount > 0 ? <p className="text-zinc-500">Duplicate URLs ignored: {ignoredDuplicateCount}</p> : null}
+                {overflowCount > 0 ? <p className="text-amber-300">{overflowCount} valid URL(s) exceed limit and will be skipped.</p> : null}
+                {invalidUrlEntries.length > 0 ? (
+                  <p className="text-amber-300">
+                    Invalid URL format on line(s): {invalidUrlEntries.map((entry) => entry.lineNumber).join(', ')}. Use full `http://` or `https://` links.
+                  </p>
+                ) : null}
+              </div>
+              {rememberedUrls.length > 0 ? (
+                <div className="mt-3 border-t border-white/10 pt-3">
+                  <p className="mb-2 text-[11px] uppercase tracking-wider text-zinc-500">Remembered URLs</p>
+                  <div className="flex flex-wrap gap-2">
+                    {rememberedUrls.map((url) => (
+                      <button
+                        key={url}
+                        type="button"
+                        onClick={() => useRememberedUrl(url)}
+                        className="max-w-full truncate rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/20"
+                        title={url}
+                      >
+                        {url}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -151,7 +340,7 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
           <button
             onClick={() => {
               setPrompt('');
-              setUrl('');
+              setUrlLines(['']);
               setResponse(null);
             }}
             className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-white/10"

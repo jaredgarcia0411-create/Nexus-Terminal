@@ -12,7 +12,8 @@ Nexus Terminal is a focused trading journal built with Next.js 15, React 19, and
   - daily summaries
   - trade analysis
   - on-demand help
-  - optional single-page web scraping context
+  - optional multi-page web scraping context (up to 5 URLs)
+  - per-user remembered URL suggestions for faster re-use
 
 ## Tech Stack
 
@@ -29,6 +30,8 @@ Nexus Terminal is a focused trading journal built with Next.js 15, React 19, and
 - Journal day cards now include medium per-trade replay charts with execution markers.
 - Journal trade replay charts load progressively in batches for better performance on heavy days.
 - Trade tables with more than 20 rows become vertically scrollable.
+- Jarvis URL editor provides inline per-line invalid highlighting and previews duplicate/overflow handling before submit.
+- Jarvis remembers recently used scrape URLs per user and surfaces them as quick-add chips.
 
 ## Jarvis LLM Configuration (GLM-4.7)
 
@@ -71,6 +74,16 @@ npm run dev
 npm test
 npm run build
 ```
+
+## Database Migration
+
+Jarvis URL memory requires the latest Drizzle migration:
+
+```bash
+npm run db:migrate
+```
+
+This creates `jarvis_source_urls` for per-user remembered scrape links.
 
 ## Project Layout (High-Level)
 

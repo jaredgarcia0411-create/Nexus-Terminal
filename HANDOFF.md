@@ -40,7 +40,16 @@ The codebase has been streamlined to a lean core focused on journaling, analytic
   - daily summary
   - trade analysis
   - free-form assistant requests
-  - optional single-page web scraping context
+  - optional multi-page web scraping context (up to 5 URLs)
+- Jarvis URL UX now includes line-by-line validation feedback in `components/trading/JarvisTab.tsx`:
+  - inline per-line highlighting for invalid URL rows (requires full `http://` or `https://` format)
+  - ignores duplicate URLs
+  - shows when valid URLs exceed the 5-link scrape cap
+- Jarvis now stores URL memory per user:
+  - New table: `jarvis_source_urls` (composite key `user_id + url`)
+  - API route `app/api/jarvis/route.ts` now supports `GET` to fetch remembered URLs
+  - `POST` upserts submitted scrape URLs and updates recency/use count
+  - UI renders remembered URLs as quick-add chips in `components/trading/JarvisTab.tsx`
 - Model/provider defaults now target GLM-4.7 configuration:
   - `JARVIS_MODEL=glm-4.7`
   - `JARVIS_API_BASE_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions`
@@ -50,6 +59,7 @@ The codebase has been streamlined to a lean core focused on journaling, analytic
 
 - `npm run build` passed
 - `npm test` passed (**12 files, 69 tests**)
+- `npm run db:migrate` passed (applied `0006_small_jarvis_memory`)
 
 ## Known Follow-ups
 
@@ -73,5 +83,8 @@ The codebase has been streamlined to a lean core focused on journaling, analytic
 - `components/trading/JournalTradeChart.tsx`
 - `components/trading/TradeTable.tsx`
 - `hooks/use-candle-data.ts`
+- `lib/db/schema.ts`
+- `drizzle/0006_small_jarvis_memory.sql`
+- `drizzle/meta/_journal.json`
 - `.env.example`
 - `README.md`
