@@ -9,19 +9,9 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
 
-export const userCredentials = pgTable('user_credentials', {
-  loginId: text('login_id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  passwordHash: text('password_hash').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().$onUpdateFn(() => sql`now()`),
-}, (table) => [
-  unique().on(table.userId),
-]);
-
 export const trades = pgTable('trades', {
   id: text('id').notNull(),
-  userId: text('user_id').notNull().references(() => users.id),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   date: text('date').notNull(),
   sortKey: text('sort_key').notNull(),
   symbol: text('symbol').notNull(),
@@ -72,7 +62,7 @@ export const tradeExecutions = pgTable('trade_executions', {
 ]);
 
 export const tradeTags = pgTable('trade_tags', {
-  userId: text('user_id').notNull().references(() => users.id),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   tradeId: text('trade_id').notNull(),
   tag: text('tag').notNull(),
 }, (table) => [
@@ -86,7 +76,7 @@ export const tradeTags = pgTable('trade_tags', {
 
 export const tags = pgTable('tags', {
   id: serial('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
 }, (table) => [
   unique().on(table.userId, table.name),
@@ -95,7 +85,7 @@ export const tags = pgTable('tags', {
 
 export const brokerSyncLog = pgTable('broker_sync_log', {
   id: serial('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   broker: text('broker').notNull(),
   accountNumber: text('account_number').notNull(),
   syncStart: text('sync_start').notNull(),

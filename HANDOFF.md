@@ -80,6 +80,42 @@ The codebase has been streamlined to a lean core focused on journaling, analytic
 
 2. If trade volume becomes very large, consider pagination/virtualization for journal and table-heavy views.
 
+## Next Session Priority — Login/Auth Bug Fix
+
+### Issue Summary
+
+- Account creation via `/login` is failing in the new credentials auth flow.
+- This blocks first-time user onboarding and effectively blocks access to protected pages.
+
+### Findings So Far
+
+1. DB is mandatory for account creation:
+- `POST /api/auth/register` returns `503` if `DATABASE_URL` is missing.
+
+2. Schema source mismatch likely causing drift:
+- `drizzle.config.ts` points to `./db/schema.ts`.
+- Runtime imports use `lib/db/schema.ts`.
+- These files are not aligned.
+
+3. Potential table shape mismatch:
+- Registration writes `users.name` and `users.picture`.
+- If DB schema was applied from minimal `db/schema.ts`, those columns may not exist.
+
+4. Potential type drift:
+- Credential migration defines `user_credentials.user_id` as `uuid`.
+- Runtime typing previously diverged and may still need reconciliation across all schema sources.
+
+5. UX symptom:
+- Login page may show generic create-account errors while server logs contain SQL root cause.
+
+### Immediate Next Steps
+
+1. Reproduce with browser network + server logs, capture exact `/api/auth/register` response and SQL error.
+2. Unify schema source of truth (Drizzle config + runtime import path).
+3. Align `users` + `user_credentials` definitions and create corrective migration(s) if needed.
+4. Re-run `npm run db:migrate` and verify account creation end-to-end.
+5. Re-verify sign-in, sign-out redirect, middleware gating, and Jarvis access in authenticated session.
+
 ## Primary Files Touched in Latest Rollout
 
 - `app/page.tsx`
