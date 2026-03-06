@@ -53,11 +53,12 @@ export async function GET(request: Request) {
   const frequency = searchParams.get('frequency') ?? '5';
   const startDate = searchParams.get('startDate');
   const endDate = searchParams.get('endDate');
+  const includePrePost = searchParams.get('includePrePost') === 'true';
 
   const interval = toYahooInterval(frequencyType, frequency);
   const endpoint = new URL(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`);
   endpoint.searchParams.set('interval', interval);
-  endpoint.searchParams.set('includePrePost', 'false');
+  endpoint.searchParams.set('includePrePost', includePrePost ? 'true' : 'false');
 
   const startMs = startDate ? Number(startDate) : NaN;
   const endMs = endDate ? Number(endDate) : NaN;

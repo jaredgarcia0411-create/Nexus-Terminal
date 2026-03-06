@@ -113,7 +113,7 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
     });
   };
 
-  const useRememberedUrl = (url: string) => {
+  const applyRememberedUrl = (url: string) => {
     setUrlLines((current) => {
       const normalizedCurrent = current.map((line) => line.trim());
       if (normalizedCurrent.includes(url)) return current;
@@ -315,7 +315,7 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
                       <button
                         key={url}
                         type="button"
-                        onClick={() => useRememberedUrl(url)}
+                         onClick={() => applyRememberedUrl(url)}
                         className="max-w-full truncate rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/20"
                         title={url}
                       >

@@ -10,6 +10,7 @@ type CandleDataOptions = {
   frequency?: string;
   startDate?: string;
   endDate?: string;
+  includePrePost?: boolean;
 };
 
 type MarketDataResponse = {
@@ -34,6 +35,7 @@ function buildCacheKey(symbol: string, options: CandleDataOptions) {
     options.frequency ?? '',
     options.startDate ?? '',
     options.endDate ?? '',
+    options.includePrePost ? '1' : '0',
   ].join('|');
 }
 
@@ -51,6 +53,7 @@ export function useCandleData(symbol: string | null, options: CandleDataOptions 
   const frequency = options.frequency ?? '5';
   const startDate = options.startDate;
   const endDate = options.endDate;
+  const includePrePost = options.includePrePost ?? false;
 
   const [state, setState] = useState<CandleDataState>({
     candles: [],
@@ -80,6 +83,7 @@ export function useCandleData(symbol: string | null, options: CandleDataOptions 
       frequency,
       startDate,
       endDate,
+      includePrePost,
     });
     const cached = candleDataCache.get(cacheKey);
     if (cached) {
@@ -98,6 +102,7 @@ export function useCandleData(symbol: string | null, options: CandleDataOptions 
 
     if (startDate) params.set('startDate', startDate);
     if (endDate) params.set('endDate', endDate);
+    if (includePrePost) params.set('includePrePost', 'true');
 
     scheduleState({ candles: [], isLoading: true, error: null });
 
@@ -127,6 +132,7 @@ export function useCandleData(symbol: string | null, options: CandleDataOptions 
     frequency,
     startDate,
     endDate,
+    includePrePost,
     scheduleState,
   ]);
 

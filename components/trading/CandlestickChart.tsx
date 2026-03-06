@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   createChart,
   createSeriesMarkers,
@@ -42,7 +42,18 @@ interface CandlestickChartProps {
   indicators?: IndicatorType[];
   tradeMarkers?: TradeMarker[];
   height?: number;
+  exactPriceMarkers?: boolean;
 }
+
+type ExactMarkerPoint = {
+  key: string;
+  x: number;
+  y: number;
+  color: string;
+  points: string;
+  label: string;
+  showLabel: boolean;
+};
 
 function toUTCSeconds(ms: number): Time {
   return Math.floor(ms / 1000) as unknown as Time;
@@ -62,11 +73,13 @@ export function createChartLifecycle({
   height,
   createChartFn = createChart,
   resizeObserverCtor = typeof ResizeObserver !== 'undefined' ? (ResizeObserver as ResizeObserverCtorLike) : undefined,
+  onResize,
 }: {
   container: HTMLDivElement;
   height: number;
   createChartFn?: CreateChartFn;
   resizeObserverCtor?: ResizeObserverCtorLike | undefined;
+  onResize?: (width: number) => void;
 }) {
   const chart = createChartFn(container, {
     layout: {
@@ -113,6 +126,7 @@ export function createChartLifecycle({
     const width = container.clientWidth;
     if (width > 0) {
       chart.applyOptions({ width });
+      onResize?.(width);
     }
   };
 
@@ -145,12 +159,75 @@ export default function CandlestickChart({
   indicators = [],
   tradeMarkers = [],
   height = 400,
+  exactPriceMarkers = false,
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const lineSeriesRefs = useRef<ISeriesApi<'Line'>[]>([]);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [exactMarkerPoints, setExactMarkerPoints] = useState<ExactMarkerPoint[]>([]);
+
+  const clearExactMarkerPoints = useCallback(() => {
+    queueMicrotask(() => setExactMarkerPoints([]));
+  }, []);
+
+  const recalculateExactMarkers = useCallback(() => {
+    if (!exactPriceMarkers) {
+      clearExactMarkerPoints();
+      return;
+    }
+
+    const chart = chartRef.current;
+    const candleSeries = candleSeriesRef.current;
+    if (!chart || !candleSeries || tradeMarkers.length === 0) {
+      clearExactMarkerPoints();
+      return;
+    }
+
+    const markerSize = 6;
+    const points = [...tradeMarkers]
+      .sort((a, b) => a.time - b.time)
+      .flatMap((marker, index) => {
+        const x = chart.timeScale().timeToCoordinate(toUTCSeconds(marker.time));
+        const y = candleSeries.priceToCoordinate(marker.price);
+        if (x == null || y == null) return [];
+
+        const isEntry = marker.label.toUpperCase().startsWith('ENTRY');
+        const color = isEntry ? '#10b981' : '#ef4444';
+        const triangle = isEntry
+          ? `${x},${y - markerSize} ${x - markerSize},${y + markerSize} ${x + markerSize},${y + markerSize}`
+          : `${x},${y + markerSize} ${x - markerSize},${y - markerSize} ${x + markerSize},${y - markerSize}`;
+
+        return [{
+          key: `${marker.time}:${marker.price}:${index}`,
+          x,
+          y,
+          color,
+          points: triangle,
+          label: isEntry ? 'E' : 'X',
+          showLabel: true,
+        }];
+      });
+
+    let lastLabeledX = Number.NEGATIVE_INFINITY;
+    let lastLabeledY = Number.NEGATIVE_INFINITY;
+    const collisionX = markerSize * 2 + 2;
+    const collisionY = markerSize * 2;
+
+    const withCollisionHandling = points.map((point) => {
+      if (Math.abs(point.x - lastLabeledX) <= collisionX && Math.abs(point.y - lastLabeledY) <= collisionY) {
+        return { ...point, showLabel: false };
+      }
+
+      lastLabeledX = point.x;
+      lastLabeledY = point.y;
+      return point;
+    });
+
+    queueMicrotask(() => setExactMarkerPoints(withCollisionHandling));
+  }, [clearExactMarkerPoints, exactPriceMarkers, tradeMarkers]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -158,7 +235,16 @@ export default function CandlestickChart({
     const lifecycle = createChartLifecycle({
       container: containerRef.current,
       height,
+      onResize: (width) => {
+        setContainerWidth(width);
+        if (exactPriceMarkers) {
+          requestAnimationFrame(() => {
+            recalculateExactMarkers();
+          });
+        }
+      },
     });
+    setContainerWidth(containerRef.current.clientWidth);
     chartRef.current = lifecycle.chart;
     candleSeriesRef.current = lifecycle.candleSeries;
     volumeSeriesRef.current = lifecycle.volumeSeries;
@@ -169,8 +255,9 @@ export default function CandlestickChart({
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
       lineSeriesRefs.current = [];
+      clearExactMarkerPoints();
     };
-  }, [height]);
+  }, [clearExactMarkerPoints, exactPriceMarkers, height, recalculateExactMarkers]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -188,6 +275,7 @@ export default function CandlestickChart({
       candleSeries.setData([]);
       volumeSeries.setData([]);
       createSeriesMarkers(candleSeries, []);
+      clearExactMarkerPoints();
       return;
     }
 
@@ -247,7 +335,7 @@ export default function CandlestickChart({
     }
 
     // Trade markers
-    if (tradeMarkers.length > 0) {
+    if (!exactPriceMarkers && tradeMarkers.length > 0) {
       const markers = [...tradeMarkers]
         .sort((a, b) => a.time - b.time)
         .map((m) => ({
@@ -263,7 +351,34 @@ export default function CandlestickChart({
     }
 
     chart.timeScale().fitContent();
-  }, [candles, indicators, tradeMarkers]);
 
-  return <div ref={containerRef} />;
+    if (exactPriceMarkers) {
+      const animationFrame = requestAnimationFrame(() => {
+        recalculateExactMarkers();
+      });
+      return () => cancelAnimationFrame(animationFrame);
+    }
+
+    clearExactMarkerPoints();
+  }, [candles, clearExactMarkerPoints, indicators, tradeMarkers, exactPriceMarkers, recalculateExactMarkers]);
+
+  return (
+    <div className="relative" style={{ height }}>
+      <div ref={containerRef} className="h-full w-full" />
+      {exactPriceMarkers && exactMarkerPoints.length > 0 ? (
+        <svg className="pointer-events-none absolute inset-0" width="100%" height="100%" viewBox={`0 0 ${Math.max(containerWidth, 1)} ${height}`} preserveAspectRatio="none">
+          {exactMarkerPoints.map((marker) => (
+            <g key={marker.key}>
+              <polygon points={marker.points} fill={marker.color} stroke="rgba(10, 10, 11, 0.45)" strokeWidth="1" />
+              {marker.showLabel ? (
+                <text x={marker.x + 10} y={marker.y - 10} fill="rgba(228, 228, 231, 0.9)" fontSize="10" fontWeight="700">
+                  {marker.label}
+                </text>
+              ) : null}
+            </g>
+          ))}
+        </svg>
+      ) : null}
+    </div>
+  );
 }

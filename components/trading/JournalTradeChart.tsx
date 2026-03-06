@@ -76,8 +76,8 @@ function nyDateTimeToEpoch(sortKey: string, time: string) {
 }
 
 function getMarketWindow(sortKey: string) {
-  const start = nyDateTimeToEpoch(sortKey, '09:30:00');
-  const end = nyDateTimeToEpoch(sortKey, '16:00:00');
+  const start = nyDateTimeToEpoch(sortKey, '04:00:00');
+  const end = nyDateTimeToEpoch(sortKey, '20:00:00');
   if (start == null || end == null) return null;
   return {
     startDate: String(start),
@@ -102,6 +102,7 @@ function JournalTradeChart({ trade }: JournalTradeChartProps) {
           frequency: '5',
           startDate: marketWindow.startDate,
           endDate: marketWindow.endDate,
+          includePrePost: true,
         }
       : undefined,
   );
@@ -156,20 +157,20 @@ function JournalTradeChart({ trade }: JournalTradeChartProps) {
   const indicators = useMemo<IndicatorType[]>(() => ['ema12', 'ema26'], []);
 
   if (isLoading) {
-    return <div className="flex h-88 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm text-zinc-400">Loading chart...</div>;
+    return <div className="flex h-[408px] items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm text-zinc-400">Loading chart...</div>;
   }
 
   if (error) {
-    return <div className="flex h-88 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm text-zinc-400">{error}</div>;
+    return <div className="flex h-[408px] items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm text-zinc-400">{error}</div>;
   }
 
   if (candles.length === 0) {
-    return <div className="flex h-88 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm text-zinc-500">No intraday candles for this trade day.</div>;
+    return <div className="flex h-[408px] items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm text-zinc-500">No intraday candles for this trade day.</div>;
   }
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-2">
-      <CandlestickChart candles={candles} tradeMarkers={tradeMarkers} indicators={indicators} height={340} />
+      <CandlestickChart candles={candles} tradeMarkers={tradeMarkers} indicators={indicators} height={408} exactPriceMarkers />
     </div>
   );
 }

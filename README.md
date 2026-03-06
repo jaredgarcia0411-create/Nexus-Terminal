@@ -13,6 +13,7 @@ Nexus Terminal is a trading journal built with Next.js 15, React 19, and TypeScr
 - Date filtering and global time presets (`All`, `30D`, `60D`, `90D`)
 - Per-trade detail sheet with notes support
 - Market data fetch endpoint for chart/replay context (`/api/market-data`)
+- Journal replay charts are taller (+20%), include pre/post market candles (`04:00-20:00` ET), and render entry/exit triangles at exact execution prices
 
 ## Jarvis
 

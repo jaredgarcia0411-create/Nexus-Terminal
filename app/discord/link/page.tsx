@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -86,7 +87,7 @@ export default function DiscordLinkPage() {
         asChild
         className="mt-6 w-full bg-white/10 text-white hover:bg-white/20"
       >
-        <a href="/">Return to Terminal</a>
+        <Link href="/">Return to Terminal</Link>
       </Button>
     </div>
   </div>
