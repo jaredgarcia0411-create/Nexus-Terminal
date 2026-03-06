@@ -55,11 +55,21 @@ The codebase has been streamlined to a lean core focused on journaling, analytic
   - `JARVIS_API_BASE_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions`
   - `JARVIS_API_KEY` for live responses
 
+### Authentication and Access Control
+
+- Auth flow now uses NextAuth Credentials (User ID + Password) instead of Google OAuth.
+- Added account registration endpoint at `app/api/auth/register/route.ts`.
+- Added password hashing utilities in `lib/password.ts` (PBKDF2 via Web Crypto).
+- Added `user_credentials` table in `lib/db/schema.ts` and migration SQL:
+  - `drizzle/0001_user_credentials.sql`
+- Middleware now gates UI pages until authenticated and excludes `/api/*` so service/webhook endpoints retain their own auth flow.
+- Sign out now redirects to `/login` and ends the active session.
+
 ## Validation Snapshot (2026-03-05)
 
 - `npm run build` passed
 - `npm test` passed (**12 files, 69 tests**)
-- `npm run db:migrate` passed (applied `0006_small_jarvis_memory`)
+- `npm run db:migrate` should be run to apply credential and Jarvis memory tables
 
 ## Known Follow-ups
 
@@ -83,8 +93,13 @@ The codebase has been streamlined to a lean core focused on journaling, analytic
 - `components/trading/JournalTradeChart.tsx`
 - `components/trading/TradeTable.tsx`
 - `hooks/use-candle-data.ts`
+- `lib/auth-config.ts`
+- `lib/password.ts`
 - `lib/db/schema.ts`
-- `drizzle/0006_small_jarvis_memory.sql`
+- `app/api/auth/register/route.ts`
+- `app/login/page.tsx`
+- `middleware.ts`
+- `drizzle/0001_user_credentials.sql`
 - `drizzle/meta/_journal.json`
 - `.env.example`
 - `README.md`

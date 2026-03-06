@@ -77,7 +77,7 @@ export default function NexusTerminal() {
   }, [selectedTradeId, fetchTradeDetail]);
 
   const handleSignOut = () => {
-    signOut().catch(() => {
+    signOut({ callbackUrl: '/login' }).catch(() => {
       toast.error('Could not sign out');
     });
   };

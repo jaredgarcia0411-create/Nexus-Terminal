@@ -19,7 +19,7 @@ Nexus Terminal is a focused trading journal built with Next.js 15, React 19, and
 
 - Framework: Next.js 15 (App Router), React 19, TypeScript 5.9
 - Styling: Tailwind CSS v4 + Motion (`motion/react`)
-- Auth: NextAuth v5 (Google provider)
+- Auth: NextAuth v5 (Credentials provider: User ID + Password)
 - Data: Drizzle ORM + PostgreSQL (Neon). Falls back to localStorage when DB is unavailable.
 - Charts: Recharts + lightweight-charts
 
@@ -32,6 +32,8 @@ Nexus Terminal is a focused trading journal built with Next.js 15, React 19, and
 - Trade tables with more than 20 rows become vertically scrollable.
 - Jarvis URL editor provides inline per-line invalid highlighting and previews duplicate/overflow handling before submit.
 - Jarvis remembers recently used scrape URLs per user and surfaces them as quick-add chips.
+- Login is required before app access; middleware gates app routes until a valid session exists.
+- Sign out now ends session and redirects directly to `/login`.
 
 ## Jarvis LLM Configuration (GLM-4.7)
 
@@ -53,8 +55,6 @@ Important variables:
 
 - `NEXTAUTH_URL`
 - `NEXTAUTH_SECRET`
-- `GOOGLE_CLIENT_ID`
-- `GOOGLE_CLIENT_SECRET`
 - `DATABASE_URL` (optional)
 - `TRADE_WEBHOOK_SECRET`
 - `CRON_SECRET`
@@ -83,7 +83,13 @@ Jarvis URL memory requires the latest Drizzle migration:
 npm run db:migrate
 ```
 
-This creates `jarvis_source_urls` for per-user remembered scrape links.
+This creates `jarvis_source_urls` and `user_credentials` for Jarvis URL memory and credential login.
+
+## Authentication Flow
+
+- New users create an account from `/login` using `User ID` + `Password`.
+- User IDs are normalized to lowercase and stored per user record.
+- Protected pages are inaccessible until authenticated.
 
 ## Project Layout (High-Level)
 

@@ -9,6 +9,16 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
 
+export const userCredentials = pgTable('user_credentials', {
+  loginId: text('login_id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  passwordHash: text('password_hash').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().$onUpdateFn(() => sql`now()`),
+}, (table) => [
+  unique().on(table.userId),
+]);
+
 export const trades = pgTable('trades', {
   id: text('id').notNull(),
   userId: text('user_id').notNull().references(() => users.id),
