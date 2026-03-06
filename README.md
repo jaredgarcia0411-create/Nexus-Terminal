@@ -1,64 +1,82 @@
 # Nexus Terminal
 
-Nexus Terminal is a focused trading journal built with Next.js 15, React 19, and TypeScript. It is designed to stay lean: trade logging, analytics, filtering, and an AI assistant (Jarvis) without broker lock-in or bundled backtesting services.
+Nexus Terminal is a trading journal built with Next.js 15, React 19, and TypeScript. The app focuses on journaling, analysis, filtering, alerts, and Jarvis assistance.
 
-## Current Product Scope
+## Current Features
 
-- Trade journal with CSV import and execution-level persistence
-- Tagging, search, date filtering, and bulk operations
-- Dashboard + performance analytics views
-- Candlestick visualizations with execution overlays
-- Jarvis assistant tab for:
-  - daily summaries
-  - trade analysis
-  - on-demand help
-  - optional multi-page web scraping context (up to 5 URLs)
-  - per-user remembered URL suggestions for faster re-use
+- Journal workflows for creating, editing, and deleting trades
+- CSV import (single file and folder import)
+- Execution-level persistence (`trade_executions`) with replay support
+- Tagging and global tag management
+- Bulk actions (multi-select delete and bulk tag add)
+- Dashboard, Journal, Performance, Filter, and Jarvis tabs
+- Date filtering and global time presets (`All`, `30D`, `60D`, `90D`)
+- Per-trade detail sheet with notes support
+- Market data fetch endpoint for chart/replay context (`/api/market-data`)
+
+## Jarvis
+
+Jarvis provides:
+
+- Daily summary
+- Trade analysis
+- Free-form assistant mode
+- Optional website context scraping with up to 5 URLs per request
+- URL validation with per-line feedback (invalid, duplicate, overflow)
+- Remembered URL suggestions per user (`jarvis_source_urls`)
+
+If no `JARVIS_API_KEY` is configured, Jarvis falls back to deterministic non-LLM responses.
+
+## Notifications and Integrations
+
+- Discord link flow (`/api/discord/link`, `/api/discord/link/code`)
+- Price alerts and alert evaluation endpoints
+- Notification queue processing endpoints
+- Trade event webhook endpoint (`/api/webhooks/trade-event`)
+- Service-token replay protection table (`service_token_jtis`)
+
+## Authentication and Access
+
+- NextAuth v5 with Google provider (current runtime config)
+- Sign-in page at `/login`
+- Protected app routes via middleware
+- API routes are excluded from middleware matcher and handle their own auth requirements
+- Sign out returns users to `/login`
+
+## Data and Storage
+
+- PostgreSQL (Neon) via Drizzle ORM when `DATABASE_URL` is set
+- LocalStorage fallback behavior exists in client flows when DB is unavailable
+- Drizzle schema source: `lib/db/schema.ts`
+- Migrations: `drizzle/0000_motionless_catseye.sql`, `drizzle/0001_nosy_nebula.sql`
 
 ## Tech Stack
 
-- Framework: Next.js 15 (App Router), React 19, TypeScript 5.9
-- Styling: Tailwind CSS v4 + Motion (`motion/react`)
-- Auth: NextAuth v5 (Credentials provider: User ID + Password)
-- Data: Drizzle ORM + PostgreSQL (Neon). Falls back to localStorage when DB is unavailable.
+- Framework: Next.js 15 (App Router)
+- UI: React 19
+- Language: TypeScript 5.9
+- Styling: Tailwind CSS v4
+- Animation: `motion/react`
+- Auth: NextAuth v5 beta
+- ORM/DB: Drizzle ORM + PostgreSQL (Neon)
 - Charts: Recharts + lightweight-charts
-
-## Key UX Notes
-
-- Desktop sidebar shows icon + page labels.
-- Time presets (`All`, `30D`, `60D`, `90D`) are global in the top header.
-- Journal day cards now include medium per-trade replay charts with execution markers.
-- Journal trade replay charts load progressively in batches for better performance on heavy days.
-- Trade tables with more than 20 rows become vertically scrollable.
-- Jarvis URL editor provides inline per-line invalid highlighting and previews duplicate/overflow handling before submit.
-- Jarvis remembers recently used scrape URLs per user and surfaces them as quick-add chips.
-- Login is required before app access; middleware gates app routes until a valid session exists.
-- Sign out now ends session and redirects directly to `/login`.
-
-## Jarvis LLM Configuration (GLM-4.7)
-
-Jarvis uses a configurable chat-completions provider and defaults to GLM-4.7.
-
-Required/optional environment variables:
-
-- `JARVIS_API_KEY` (optional, required for live LLM responses)
-- `JARVIS_API_BASE_URL` (default: `https://open.bigmodel.cn/api/paas/v4/chat/completions`)
-- `JARVIS_MODEL` (default: `glm-4.7`)
-
-If no key is configured, Jarvis still returns deterministic fallback summaries and analysis.
+- Tests: Vitest
 
 ## Environment Variables
 
-See `.env.example` for the current canonical list.
+See `.env.example` for the canonical list.
 
-Important variables:
+Commonly used variables:
 
 - `NEXTAUTH_URL`
 - `NEXTAUTH_SECRET`
-- `DATABASE_URL` (optional)
-- `TRADE_WEBHOOK_SECRET`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `DATABASE_URL`
+- `JARVIS_API_KEY`
+- `JARVIS_API_BASE_URL`
+- `JARVIS_MODEL`
 - `CRON_SECRET`
-- `JARVIS_API_KEY` / `JARVIS_API_BASE_URL` / `JARVIS_MODEL`
 
 ## Local Development
 
@@ -68,57 +86,51 @@ cp .env.example .env.local
 npm run dev
 ```
 
-## Validation Commands
+## Validation
 
 ```bash
 npm test
 npm run build
 ```
 
-## Database Migration
-
-Jarvis URL memory requires the latest Drizzle migration:
+## Database Migrations
 
 ```bash
 npm run db:migrate
 ```
-
-This creates `jarvis_source_urls` and `user_credentials` for Jarvis URL memory and credential login.
-
-## Authentication Flow
-
-- New users create an account from `/login` using `User ID` + `Password`.
-- User IDs are normalized to lowercase and stored per user record.
-- Protected pages are inaccessible until authenticated.
 
 ## Project Layout (High-Level)
 
 ```text
 app/
   page.tsx
+  login/page.tsx
   api/
-    jarvis/route.ts
-    market-data/route.ts
+    auth/
+    jarvis/
+    market-data/
     trades/
     tags/
     discord/
     cron/
+    notifications/
+    webhooks/
 
 components/trading/
   Sidebar.tsx
   Toolbar.tsx
+  DashboardTab.tsx
   JournalTab.tsx
   JournalTradeChart.tsx
+  PerformanceTab.tsx
+  FilterTab.tsx
   TradeDetailSheet.tsx
   JarvisTab.tsx
 
-hooks/
-  use-trades.ts
-  use-candle-data.ts
-
 lib/
-  db/
-  csv-parser.ts
-  price-alert-evaluator.ts
+  auth-config.ts
+  db.ts
+  db/schema.ts
+  server-db-utils.ts
   service-*.ts
 ```
