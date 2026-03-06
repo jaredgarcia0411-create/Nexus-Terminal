@@ -31,6 +31,7 @@ If no `JARVIS_API_KEY` is configured, Jarvis falls back to deterministic non-LLM
 ## Notifications and Integrations
 
 - Discord link flow (`/api/discord/link`, `/api/discord/link/code`)
+- Discord link page now uses Next.js `Link` for in-app return navigation (lint-compliant, no behavior change)
 - Price alerts and alert evaluation endpoints
 - Notification queue processing endpoints
 - Trade event webhook endpoint (`/api/webhooks/trade-event`)

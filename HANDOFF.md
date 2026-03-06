@@ -15,6 +15,7 @@ The app is currently focused on trading journal workflows, analytics, filtering,
 - Journal replay charts now run at a taller viewport (+20%)
 - Journal replay data window now includes extended hours (`04:00-20:00` ET) with pre/post market candles
 - Journal replay execution markers now render as exact-price triangles (entry `E`, exit `X`) with collision-aware label suppression
+- Journal chart enhancements above are intentionally scoped to Journal replay charts only; other chart surfaces remain unchanged
 - Replay chart loading is progressive per day card for performance
 - Trade table uses vertical scroll behavior on larger row counts
 - Jarvis supports summary/analysis/assistant modes with optional URL scraping context (max 5)
@@ -62,6 +63,10 @@ The app is currently focused on trading journal workflows, analytics, filtering,
   - `npm test`
   - `npm run build`
   - `npm run db:migrate`
+- Current session checks:
+  - `npm run lint` passed
+  - `npm test` passed (12 files, 69 tests)
+  - `npm run build` passed
 
 ## Known Follow-ups
 
@@ -72,6 +77,9 @@ The app is currently focused on trading journal workflows, analytics, filtering,
 - mobile toolbar density/wrapping
 
 2. If trade volume grows materially, consider pagination/virtualization for journal and other table-heavy views.
+
+3. Where we are leaving off:
+- docs and handoff are aligned with latest Journal chart updates; next practical pass is UI QA for marker readability on dense execution clusters.
 
 ## Primary Files to Reference Next Session
 
