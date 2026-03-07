@@ -84,24 +84,66 @@ export function buildStructuredFallbackFromText(rawContent: string): JarvisStruc
 export function buildStructuredFallbackFromSources(params: {
   prompt?: string;
   sourceSummary?: string;
-  sources: { host: string; title: string }[];
+  sources: { host: string; title: string; excerpt?: string; relevance?: number; tickers?: string[] }[];
   warnings?: string[];
 }) {
-  const findings = params.sources.map((source) => `${source.host} · ${source.title}`);
+  const sortedSources = [...params.sources].sort((a, b) => {
+    const relevanceDiff = (b.relevance ?? 0) - (a.relevance ?? 0);
+    if (relevanceDiff !== 0) return relevanceDiff;
+    const hostDiff = a.host.localeCompare(b.host);
+    if (hostDiff !== 0) return hostDiff;
+    return a.title.localeCompare(b.title);
+  });
 
-  if (findings.length === 0) {
-    findings.push('No valid source chunks were available.');
+  const findings = sortedSources.length > 0
+    ? sortedSources.slice(0, 5).map((source) => {
+      const excerpt = normalizeString(source.excerpt).replace(/\s+/g, ' ').slice(0, 140);
+      return excerpt
+        ? `${source.host} · ${source.title}: ${excerpt}`
+        : `${source.host} · ${source.title}`;
+    })
+    : ['No valid source chunks were available.'];
+
+  const uniqueTickers = [...new Set(
+    sortedSources
+      .flatMap((source) => source.tickers ?? [])
+      .map((ticker) => ticker.trim().toUpperCase())
+      .filter(Boolean),
+  )].slice(0, 6);
+
+  const actionSteps: string[] = [];
+  if (params.prompt) {
+    actionSteps.push(`Address the request directly: ${params.prompt.slice(0, 160)}`);
+  }
+  if (sortedSources[0]) {
+    actionSteps.push(`Cross-check the top claim against ${sortedSources[0].host} before placing a trade.`);
+  }
+  if (uniqueTickers.length > 0) {
+    actionSteps.push(`Validate catalyst timing and risk controls for ${uniqueTickers.join(', ')}.`);
+  }
+  if (actionSteps.length === 0) {
+    actionSteps.push('Validate position risk and sizing before taking action.');
   }
 
+  const warningRisks = normalizeStringList(params.warnings);
+  const risks = warningRisks.length > 0
+    ? warningRisks
+    : sortedSources.length === 0
+      ? ['No valid source chunks were available, so confidence is low.']
+      : sortedSources.length < 2
+        ? ['Only one source was available; verify with an additional independent source.']
+        : ['This response was generated without a live model call and may miss nuance.'];
+
+  const tldr = normalizeString(params.sourceSummary)
+    || (sortedSources.length > 0
+      ? `Fallback summary based on ${sortedSources.length} allowlisted source(s).`
+      : 'Fallback context was used because the LLM payload was unavailable.');
+
   return {
-    tldr: params.sourceSummary || 'Fallback context was used because the LLM payload was unavailable.',
+    tldr,
     findings,
-    actionSteps: params.prompt
-      ? [`Use your judgment with the available context for: ${params.prompt.slice(0, 160)}`]
-      : ['Validate position risk and sizing before taking action.'],
-    risks: params.warnings && params.warnings.length > 0
-      ? params.warnings
-      : ['No immediate source-level risk warning was captured.'],
+    actionSteps,
+    risks,
   };
 }
 

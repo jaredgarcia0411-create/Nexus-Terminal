@@ -99,8 +99,8 @@ Exit criteria: Jarvis uses ranked, deduplicated, structured excerpts. Response i
 | JRV-030 | Define response schema: TL;DR, Findings, Action Steps, Risks, Sources | S | done |
 | JRV-031 | System prompt engineering to enforce structured output | M | done |
 | JRV-032 | Response parser + validator with graceful fallback | M | done |
-| JRV-033 | UI: structured response renderer (sections, visual hierarchy, source links) | M | pending |
-| JRV-034 | Fallback quality mode: deterministic output matching same schema | S | pending |
+| JRV-033 | UI: structured response renderer (sections, visual hierarchy, source links) | M | done |
+| JRV-034 | Fallback quality mode: deterministic output matching same schema | S | done |
 
 Exit criteria: Every Jarvis response follows the defined schema with citations.
 
@@ -175,6 +175,8 @@ Exit criteria: Safe to scale with predictable performance and cost. Regression q
 
 | Date | Update |
 |---|---|
+| 2026-03-07 | JRV-033 completed: added `JarvisStructuredResponse` renderer with visual section hierarchy (`TL;DR`, findings, action steps, risks), warning styling, and clickable source links with relevance/ticker badges; wired `JarvisTab` to use the new renderer and added UI-focused rendering tests. |
+| 2026-03-07 | JRV-034 completed: improved deterministic fallback quality in `buildStructuredFallbackFromSources` (rank-aware findings, ticker-aware actions, confidence-aware risks) and made route-level fallback message schema-consistent via `formatStructuredMessage`. |
 | 2026-03-07 | JRV-032 completed: added `parseJarvisLlmResponse` validation/parsing + structured fallback helpers, integrated route-level parser fallback, and added regression coverage in response/scrape/route tests with `scraped source` context ranking contracts. |
 | 2026-03-07 | JRV-031 implemented in the route layer: consolidated strict system prompt for schema-only JSON output and added regression coverage asserting prompt contract shape. |
 | 2026-03-07 | JRV-030 marked done; structured Jarvis response schema now enforced end-to-end with parser/fallback coverage and explicit contract tests in route handler. |

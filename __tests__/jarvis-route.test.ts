@@ -140,7 +140,7 @@ describe('POST /api/jarvis', () => {
       'Domain "blocked.example.com" is not on the allowlist. To request this domain be added, please message support with the site and use case.',
     ]);
     expect(payload.sourceSummary).toContain('SEC filing');
-    expect(payload.message).toContain('Top context excerpts');
+    expect(payload.message).toContain('TL;DR: SEC filing (www.sec.gov)');
     expect(payload.sources).toHaveLength(1);
     expect(payload.sources?.[0]).toMatchObject({
       host: 'www.sec.gov',
@@ -361,12 +361,11 @@ describe('POST /api/jarvis', () => {
     const { response: safeResponse, payload } = await parseResponse(response);
 
     expect(safeResponse.status).toBe(200);
-    expect(payload.structured).toMatchObject({
-      findings: expect.arrayContaining(['www.marketwatch.com · Fallback Market']),
-      actionSteps: expect.any(Array),
-      risks: expect.any(Array),
-    });
-    expect(payload.message).toContain('Top context excerpts');
+    expect(payload.structured.findings[0]).toContain('www.marketwatch.com · Fallback Market');
+    expect(payload.structured.actionSteps).toEqual(expect.any(Array));
+    expect(payload.structured.risks).toEqual(expect.any(Array));
+    expect(payload.message).toContain('TL;DR: Fallback Market (www.marketwatch.com)');
+    expect(payload.message).toContain('Action Steps');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

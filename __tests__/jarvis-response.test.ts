@@ -53,14 +53,34 @@ describe('buildStructuredFallbackFromSources', () => {
       prompt: 'Summarize risks',
       sourceSummary: 'SEC filing · sec.gov',
       sources: [
-        { host: 'www.sec.gov', title: 'Filing A' },
+        {
+          host: 'www.sec.gov',
+          title: 'Filing A',
+          excerpt: 'Company posted stronger margins this quarter.',
+          relevance: 0.82,
+          tickers: ['AAPL'],
+        },
       ],
       warnings: ['Domain blocked'],
     });
 
     expect(structured.tldr).toBe('SEC filing · sec.gov');
-    expect(structured.findings).toEqual(['www.sec.gov · Filing A']);
-    expect(structured.actionSteps).toHaveLength(1);
+    expect(structured.findings).toEqual(['www.sec.gov · Filing A: Company posted stronger margins this quarter.']);
+    expect(structured.actionSteps.length).toBeGreaterThan(1);
+    expect(structured.actionSteps.join(' ')).toContain('AAPL');
     expect(structured.risks).toEqual(['Domain blocked']);
+  });
+
+  it('adds deterministic low-confidence risk when no sources exist', () => {
+    const structured = buildStructuredFallbackFromSources({
+      prompt: '',
+      sourceSummary: '',
+      sources: [],
+    });
+
+    expect(structured.tldr).toBe('Fallback context was used because the LLM payload was unavailable.');
+    expect(structured.findings).toEqual(['No valid source chunks were available.']);
+    expect(structured.actionSteps).toEqual(['Validate position risk and sizing before taking action.']);
+    expect(structured.risks).toEqual(['No valid source chunks were available, so confidence is low.']);
   });
 });

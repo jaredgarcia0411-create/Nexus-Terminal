@@ -8,6 +8,7 @@ import type { Trade } from '@/lib/types';
 import { isUrlAllowed } from '@/lib/jarvis-allowlist';
 import { type JarvisMode, type JarvisResponse, toJarvisTradeInput } from '@/lib/jarvis-types';
 import { sourcePacks } from '@/lib/jarvis-source-packs';
+import JarvisStructuredResponse from '@/components/trading/JarvisStructuredResponse';
 
 const MAX_SCRAPE_URLS = 5;
 
@@ -476,78 +477,18 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
       </div>
 
       <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
-            <p className="mb-2 text-xs uppercase tracking-wider text-zinc-500">Jarvis Response</p>
-          {response ? (
-            <div className="space-y-3">
-              {response.structured ? (
-                <div className="space-y-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-emerald-300">TL;DR</p>
-                    <p className="mt-1 text-sm text-zinc-100">{response.structured.tldr}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-emerald-300">Findings</p>
-                    <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-zinc-100">
-                      {response.structured.findings.map((item, index) => (
-                        <li key={`jarvis-finding-${index}-${item}`}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-emerald-300">Action Steps</p>
-                    <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-zinc-100">
-                      {response.structured.actionSteps.map((item, index) => (
-                        <li key={`jarvis-action-${index}-${item}`}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-emerald-300">Risks</p>
-                    <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-zinc-100">
-                      {response.structured.risks.map((item, index) => (
-                        <li key={`jarvis-risk-${index}-${item}`}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              ) : null}
-              <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">{response.message}</p>
-              {response.warnings && response.warnings.length > 0 ? (
-                <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-amber-100">
-                  <p className="text-xs uppercase tracking-[0.2em] text-amber-200">Warnings</p>
-                  <ul className="mt-2 space-y-1 text-xs">
-                    {response.warnings.map((warning, index) => (
-                      <li key={`jarvis-warning-${index}`} className="leading-relaxed">• {warning}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {response.sourceSummary ? (
-                <p className="text-xs text-zinc-400">Source: {response.sourceSummary}</p>
-              ) : null}
-            </div>
+        <p className="mb-2 text-xs uppercase tracking-wider text-zinc-500">Jarvis Response</p>
+        {response ? (
+          <JarvisStructuredResponse
+            message={response.message}
+            structured={response.structured}
+            warnings={response.warnings}
+            sourceSummary={response.sourceSummary}
+            sources={response.sources}
+          />
         ) : (
           <p className="text-sm text-zinc-500">Run one of the actions above to get started.</p>
         )}
-          {response?.sources && response.sources.length > 0 ? (
-            <div className="mt-4">
-              <p className="mb-2 text-xs uppercase tracking-wider text-zinc-500">Source Preview</p>
-              <div className="space-y-2">
-                {response.sources.map((source) => (
-                  <div key={source.url} className="rounded-lg border border-white/10 bg-black/20 p-3">
-                    <p className="text-xs text-zinc-300">
-                      <span className="font-semibold">{source.host}</span> · {source.title}
-                    </p>
-                    <p className="mt-1 text-[11px] text-zinc-400">Relevance {source.relevance.toFixed(2)} · {source.url}</p>
-                    <p className="mt-2 text-xs text-zinc-300">{source.excerpt}</p>
-                    {source.tickers.length > 0 ? (
-                      <p className="mt-1 text-[11px] text-emerald-300">Tickers: {source.tickers.join(', ')}</p>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
       </div>
     </motion.div>
   );

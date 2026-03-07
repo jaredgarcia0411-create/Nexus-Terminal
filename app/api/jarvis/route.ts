@@ -21,13 +21,13 @@ import {
 } from '@/lib/jarvis-scrape';
 import {
   buildStructuredFallbackFromSources,
+  formatStructuredMessage,
   parseJarvisLlmResponse,
 } from '@/lib/jarvis-response';
 
 const MAX_SCRAPE_URLS = 5;
 const MAX_REMEMBERED_URLS = 20;
 const SCRAPE_TIMEOUT_MS = 10_000;
-const CHUNK_CONTEXT_LIMIT = 240;
 const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v3.2';
 const DEFAULT_DEEPSEEK_BASE_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
 const JARVIS_SYSTEM_PROMPT = [
@@ -484,18 +484,6 @@ export async function POST(request: Request) {
       });
     }
 
-    const fallback = [
-      basePrompt,
-      scrapedSources.length > 0
-        ? `\n\nTop context excerpts:\n${sourceContexts
-            .map(
-              (source) =>
-                `- ${source.host}: ${source.title} (relevance ${source.relevance.toFixed(2)})\n${source.excerpt}${source.excerpt.length > CHUNK_CONTEXT_LIMIT ? '...' : ''}`,
-            )
-            .join('\n\n')}`
-        : '',
-    ].join('');
-
     const structuredFallback = buildStructuredFallbackFromSources({
       prompt,
       sourceSummary,
@@ -504,7 +492,7 @@ export async function POST(request: Request) {
     });
 
     return Response.json({
-      message: fallback,
+      message: formatStructuredMessage(structuredFallback),
       sourceSummary,
       sources: sourceContexts,
       structured: structuredFallback,
