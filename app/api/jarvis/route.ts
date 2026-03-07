@@ -3,30 +3,46 @@ import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-rou
 import { getDb } from '@/lib/db';
 import { jarvisSourceUrls, trades as tradesTable } from '@/lib/db/schema';
 import { ensureUser, requireUser } from '@/lib/server-db-utils';
-
-type JarvisMode = 'daily-summary' | 'trade-analysis' | 'assistant';
-
-type TradeInput = {
-  id: string;
-  symbol: string;
-  date: string | Date;
-  netPnl?: number;
-  pnl?: number;
-  direction?: 'LONG' | 'SHORT';
-  totalQuantity?: number;
-  tags?: string[];
-};
-
-type JarvisRequest = {
-  mode?: JarvisMode;
-  prompt?: string;
-  url?: string;
-  urls?: string[];
-  trades?: TradeInput[];
-};
+import {
+  type JarvisMode,
+  type JarvisRequest,
+  type ScrapeResult,
+  type ScrapedSource,
+  type JarvisTradeInput,
+} from '@/lib/jarvis-types';
+import { getBlockedUrlMessage, getTrustScoreForHost, isUrlAllowed } from '@/lib/jarvis-allowlist';
+import { getSourcePack } from '@/lib/jarvis-source-packs';
+import {
+  buildSourceContexts,
+  buildStructuredSource,
+  chunkScrapedSource,
+  dedupeSourceChunks,
+  rankSourceChunks,
+} from '@/lib/jarvis-scrape';
+import {
+  buildStructuredFallbackFromSources,
+  parseJarvisLlmResponse,
+} from '@/lib/jarvis-response';
 
 const MAX_SCRAPE_URLS = 5;
 const MAX_REMEMBERED_URLS = 20;
+const SCRAPE_TIMEOUT_MS = 10_000;
+const CHUNK_CONTEXT_LIMIT = 240;
+const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v3.2';
+const DEFAULT_DEEPSEEK_BASE_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
+const JARVIS_SYSTEM_PROMPT = [
+  'You are Jarvis, a focused trading assistant. Be concise, practical, and risk-aware.',
+  'Return ONLY valid JSON, with no markdown, no code fences, and no explanatory prose.',
+  'Output must be a single JSON object with exactly these keys: tldr, findings, actionSteps, risks.',
+  'Use this schema:',
+  '{',
+  '  "tldr": "<one sentence summary>",',
+  '  "findings": ["<bullet style finding>", "..."],',
+  '  "actionSteps": ["<concrete action>", "..."],',
+  '  "risks": ["<risk-aware caveat>", "..."]',
+  '}',
+  'Prefer non-empty findings/actionSteps/risks; use "No items identified." only when no valid item is known.',
+].join('\n');
 
 function asDate(value: string | Date) {
   const date = value instanceof Date ? value : new Date(value);
@@ -37,7 +53,7 @@ function formatMoney(value: number) {
   return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
 }
 
-function summarizeTrades(input: TradeInput[]) {
+function summarizeTrades(input: JarvisTradeInput[]) {
   const trades = input
     .map((trade) => {
       const date = asDate(trade.date);
@@ -47,6 +63,7 @@ function summarizeTrades(input: TradeInput[]) {
         date,
         pnl: Number(trade.netPnl ?? trade.pnl ?? 0),
         qty: Number(trade.totalQuantity ?? 0),
+        notes: trade.notes,
       };
     })
     .filter((trade): trade is NonNullable<typeof trade> => trade != null);
@@ -116,7 +133,13 @@ function toModePrompt(mode: JarvisMode, summary: ReturnType<typeof summarizeTrad
   }
 
   if (mode === 'trade-analysis') {
-    const lines = summary.latestTrades.map((trade) => `- ${trade.symbol} ${trade.direction ?? ''} (${formatMoney(trade.pnl)})`).join('\n');
+    const lines = summary.latestTrades
+      .map((trade) => {
+        const details = [trade.direction ?? '', formatMoney(trade.pnl)];
+        const notes = trade.notes ? ` notes: ${trade.notes.slice(0, 120)}` : '';
+        return `- ${trade.symbol} ${details.join(' ')}${notes}`;
+      })
+      .join('\n');
     return [
       'Trade Analysis:',
       `- Sample size: ${summary.totalTrades} trades`,
@@ -139,60 +162,88 @@ function toModePrompt(mode: JarvisMode, summary: ReturnType<typeof summarizeTrad
   ].join('\n');
 }
 
-function sanitizeHtml(input: string) {
-  return input
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-async function scrapeUrl(url: string) {
+async function scrapeUrl(url: string): Promise<ScrapedSource> {
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    return null;
+    return {
+      url,
+      title: '',
+      host: '',
+      excerpt: '',
+      scrapedAt: new Date(),
+      error: 'Invalid URL format.',
+    };
   }
 
   if (!['http:', 'https:'].includes(parsed.protocol)) {
-    return null;
+    return {
+      url,
+      title: '',
+      host: parsed.hostname,
+      excerpt: '',
+      scrapedAt: new Date(),
+      error: 'Only http/https URLs are allowed.',
+    };
+  }
+
+  const allowResult = isUrlAllowed(parsed.toString());
+  if (!allowResult.allowed) {
+    return {
+      url,
+      title: parsed.hostname,
+      host: parsed.hostname,
+      excerpt: '',
+      scrapedAt: new Date(),
+      blocked: true,
+      error: getBlockedUrlMessage(parsed.toString()),
+    };
   }
 
   let res: Response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
+
   try {
     res = await fetch(parsed.toString(), {
       headers: { 'User-Agent': 'Nexus-Jarvis/1.0' },
       cache: 'no-store',
+      signal: controller.signal,
     });
-  } catch {
-    return null;
+  } catch (error) {
+    clearTimeout(timeout);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    const isTimeout = message === 'This operation was aborted' || error instanceof DOMException && error.name === 'AbortError';
+
+    return {
+      url,
+      title: parsed.hostname,
+      host: parsed.hostname,
+      excerpt: '',
+      scrapedAt: new Date(),
+      error: isTimeout ? `Scrape timeout after ${SCRAPE_TIMEOUT_MS / 1000}s` : `Scrape failed: ${message}`,
+    };
   }
+  clearTimeout(timeout);
 
   if (!res.ok) {
-    return null;
+    return {
+      url,
+      title: parsed.hostname,
+      host: parsed.hostname,
+      excerpt: '',
+      scrapedAt: new Date(),
+      error: `Request failed with status ${res.status}`,
+    };
   }
 
   const html = await res.text();
-  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  const title = titleMatch?.[1]?.replace(/\s+/g, ' ').trim() ?? parsed.hostname;
-  const text = sanitizeHtml(html).slice(0, 2500);
-
-  return {
-    title,
-    host: parsed.hostname,
-    excerpt: text,
-  };
+  return buildStructuredSource(parsed.toString(), html, new Date());
 }
 
-type ScrapedSource = NonNullable<Awaited<ReturnType<typeof scrapeUrl>>>;
-
-function normalizeScrapeUrls(body: JarvisRequest) {
-  const incoming = [
-    ...(Array.isArray(body.urls) ? body.urls : []),
-    typeof body.url === 'string' ? body.url : '',
-  ];
+function normalizeScrapeUrls(urls?: string[]) {
+  const incoming = Array.isArray(urls) ? urls : [];
 
   const seen = new Set<string>();
   const normalized: string[] = [];
@@ -208,9 +259,38 @@ function normalizeScrapeUrls(body: JarvisRequest) {
   return normalized;
 }
 
+async function scrapeSources(urls: string[], tradeTickers: string[]): Promise<ScrapeResult> {
+  const results = await Promise.all(urls.map((url) => scrapeUrl(url)));
+
+  const sources = results.filter((result): result is ScrapedSource => !result.blocked && !result.error);
+  const warnings = results
+    .filter((result): result is ScrapedSource => Boolean(result.error))
+    .map((result) => result.error!);
+
+  const chunks = dedupeSourceChunks(
+    sources
+      .flatMap((source) => chunkScrapedSource(source)),
+  );
+
+  const rankedChunks = rankSourceChunks(chunks, {
+    tradeTickers,
+    trustByHost: Object.fromEntries(sources.map((source) => [source.host, getTrustScoreForHost(source.host)])),
+  });
+  const sourceContexts = buildSourceContexts(rankedChunks);
+
+  return { sources, chunks: rankedChunks, sourceContexts, warnings };
+}
+
 function sourceSummaryFor(scrapedSources: ScrapedSource[]) {
   if (scrapedSources.length === 0) return undefined;
-  return scrapedSources.map((source) => `${source.title} (${source.host})`).join('; ');
+  return scrapedSources
+    .slice(0, 5)
+    .map((source) => `${source.title} (${source.host})`)
+    .join('; ');
+}
+
+function extractTradeTickers(trades: JarvisTradeInput[]) {
+  return [...new Set(trades.map((trade) => trade.symbol.trim().toUpperCase()).filter(Boolean))];
 }
 
 async function rememberUrls(
@@ -274,17 +354,24 @@ export async function GET() {
   }
 }
 
-async function askLlm(basePrompt: string, scrapedSources: ScrapedSource[]) {
-  const apiKey = process.env.JARVIS_API_KEY ?? process.env.OPENAI_API_KEY;
+async function askLlm(
+  basePrompt: string,
+  sources: ScrapedSource[],
+  chunks: ScrapeResult['chunks'],
+) {
+  const apiKey = process.env.JARVIS_API_KEY ?? process.env.NVIDIA_API_KEY;
   if (!apiKey) return null;
 
-  const model = process.env.JARVIS_MODEL || 'glm-4.7';
-  const baseUrl = process.env.JARVIS_API_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
-  const extraContext = scrapedSources.length > 0
-    ? `\n\nScraped sources:\n${scrapedSources
-        .map((source, index) => `${index + 1}. ${source.host} - ${source.title}\n${source.excerpt}`)
-        .join('\n\n')}`
-    : '';
+  const model = process.env.JARVIS_MODEL || DEFAULT_DEEPSEEK_MODEL;
+  const baseUrl = process.env.JARVIS_API_BASE_URL || DEFAULT_DEEPSEEK_BASE_URL;
+  const previewChunks = chunks.length > 0 ? chunks.slice(0, 12) : [];
+  const extraContext = previewChunks.length > 0
+    ? `\n\nScraped chunks:\n${previewChunks
+      .map((chunk, index) => `${index + 1}. ${chunk.sourceHost} - ${chunk.sourceTitle} [relevance ${chunk.relevance?.toFixed(2)}]\n${chunk.text.slice(0, 640)}`)
+      .join('\n\n')}`
+    : sources.length > 0
+      ? `\n\nScraped sources:\n${sources.map((source, index) => `${index + 1}. ${source.host} - ${source.title}`).join('\n')}`
+      : '';
 
   let res: Response;
   try {
@@ -298,10 +385,10 @@ async function askLlm(basePrompt: string, scrapedSources: ScrapedSource[]) {
         model,
         temperature: 0.4,
         messages: [
-          {
-            role: 'system',
-            content: 'You are Jarvis, a focused trading assistant. Be concise, practical, and risk-aware.',
-          },
+      {
+        role: 'system',
+        content: JARVIS_SYSTEM_PROMPT,
+      },
           {
             role: 'user',
             content: `${basePrompt}${extraContext}`,
@@ -321,7 +408,10 @@ async function askLlm(basePrompt: string, scrapedSources: ScrapedSource[]) {
     choices?: Array<{ message?: { content?: string } }>;
   };
 
-  return payload.choices?.[0]?.message?.content?.trim() ?? null;
+  const content = payload.choices?.[0]?.message?.content?.trim();
+  if (!content) return null;
+
+  return parseJarvisLlmResponse(content);
 }
 
 export async function POST(request: Request) {
@@ -335,7 +425,7 @@ export async function POST(request: Request) {
     const mode = body.mode ?? 'assistant';
     const prompt = body.prompt?.trim() ?? '';
 
-    let trades = Array.isArray(body.trades) ? body.trades : [];
+    let trades: JarvisTradeInput[] = Array.isArray(body.trades) ? body.trades : [];
     if (trades.length === 0) {
       const db = getDb();
       if (db) {
@@ -346,45 +436,79 @@ export async function POST(request: Request) {
           direction: tradesTable.direction,
           totalQuantity: tradesTable.totalQuantity,
           netPnl: tradesTable.netPnl,
+          notes: tradesTable.notes,
         }).from(tradesTable)
           .where(eq(tradesTable.userId, authState.user.id))
           .orderBy(desc(tradesTable.date))
           .limit(500);
-        trades = rows;
+        trades = rows.map((row) => ({
+          ...row,
+          notes: row.notes ?? undefined,
+        }));
       }
     }
 
+    const usingSourcePack = Boolean(body.sourcePackId);
+    const hasManualUrls = Array.isArray(body.urls) && body.urls.length > 0;
+    if (usingSourcePack && hasManualUrls) {
+      return Response.json({ error: 'Provide either sourcePackId or urls, not both.' }, { status: 400 });
+    }
+
     const summary = summarizeTrades(trades);
-    const basePrompt = toModePrompt(mode, summary, prompt);
-    const scrapeUrls = normalizeScrapeUrls(body);
+    const tradeTickers = extractTradeTickers(trades);
+    const selectedPack = body.sourcePackId ? getSourcePack(body.sourcePackId) : undefined;
+    if (body.sourcePackId && !selectedPack) {
+      return Response.json({ error: `Unknown source pack: ${body.sourcePackId}` }, { status: 400 });
+    }
+
+    const resolvedPrompt = prompt || selectedPack?.promptTemplate || '';
+    const basePrompt = toModePrompt(mode, summary, resolvedPrompt);
+    const scrapeUrls = selectedPack ? selectedPack.urls : normalizeScrapeUrls(body.urls);
+
     await rememberUrls(authState.user, scrapeUrls).catch(() => null);
-    const scrapedResults = await Promise.all(scrapeUrls.map((url) => scrapeUrl(url)));
-    const scrapedSources = scrapedResults.filter((result): result is ScrapedSource => result != null);
+    const scrapeResult = await scrapeSources(scrapeUrls, tradeTickers);
+    const scrapedSources = scrapeResult.sources;
     const sourceSummary = sourceSummaryFor(scrapedSources);
-    const llmMessage = await askLlm(basePrompt, scrapedSources);
+    const sourceContexts = scrapeResult.sourceContexts;
+    const llmMessage = await askLlm(basePrompt, scrapedSources, scrapeResult.chunks);
+
+    const warnings = [...scrapeResult.warnings];
 
     if (llmMessage) {
       return Response.json({
-        message: llmMessage,
+        message: llmMessage.message,
         sourceSummary,
+        sources: sourceContexts,
+        structured: llmMessage.structured,
+        warnings,
       });
     }
 
     const fallback = [
       basePrompt,
       scrapedSources.length > 0
-        ? `\n\nScraped Context:\n${scrapedSources
+        ? `\n\nTop context excerpts:\n${sourceContexts
             .map(
               (source) =>
-                `- ${source.host}: ${source.title}\n${source.excerpt.slice(0, 700)}${source.excerpt.length > 700 ? '...' : ''}`,
+                `- ${source.host}: ${source.title} (relevance ${source.relevance.toFixed(2)})\n${source.excerpt}${source.excerpt.length > CHUNK_CONTEXT_LIMIT ? '...' : ''}`,
             )
             .join('\n\n')}`
         : '',
     ].join('');
 
+    const structuredFallback = buildStructuredFallbackFromSources({
+      prompt,
+      sourceSummary,
+      sources: sourceContexts,
+      warnings,
+    });
+
     return Response.json({
       message: fallback,
       sourceSummary,
+      sources: sourceContexts,
+      structured: structuredFallback,
+      warnings,
     });
   } catch (error) {
     logRouteError('jarvis.post', error);

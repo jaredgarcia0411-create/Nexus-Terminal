@@ -1,6 +1,6 @@
 # Jarvis Capability Plan
 
-Last updated: 2026-03-06
+Last updated: 2026-03-07
 
 ## Goal
 
@@ -96,9 +96,9 @@ Exit criteria: Jarvis uses ranked, deduplicated, structured excerpts. Response i
 
 | Ticket | Description | Size | Status |
 |---|---|---|---|
-| JRV-030 | Define response schema: TL;DR, Findings, Action Steps, Risks, Sources | S | pending |
-| JRV-031 | System prompt engineering to enforce structured output | M | pending |
-| JRV-032 | Response parser + validator with graceful fallback | M | pending |
+| JRV-030 | Define response schema: TL;DR, Findings, Action Steps, Risks, Sources | S | done |
+| JRV-031 | System prompt engineering to enforce structured output | M | done |
+| JRV-032 | Response parser + validator with graceful fallback | M | done |
 | JRV-033 | UI: structured response renderer (sections, visual hierarchy, source links) | M | pending |
 | JRV-034 | Fallback quality mode: deterministic output matching same schema | S | pending |
 
@@ -175,4 +175,8 @@ Exit criteria: Safe to scale with predictable performance and cost. Regression q
 
 | Date | Update |
 |---|---|
+| 2026-03-07 | JRV-032 completed: added `parseJarvisLlmResponse` validation/parsing + structured fallback helpers, integrated route-level parser fallback, and added regression coverage in response/scrape/route tests with `scraped source` context ranking contracts. |
+| 2026-03-07 | JRV-031 implemented in the route layer: consolidated strict system prompt for schema-only JSON output and added regression coverage asserting prompt contract shape. |
+| 2026-03-07 | JRV-030 marked done; structured Jarvis response schema now enforced end-to-end with parser/fallback coverage and explicit contract tests in route handler. |
+| 2026-03-07 | Jarvis LLM provider switched from GLM-4.7 to DeepSeek V3.2 via NVIDIA API. Updated `.env.example`, `CODEX_PROMPT.md`, `app/api/jarvis/route.ts` constants, and tests to reflect the change. |
 | 2026-03-06 | Plan created. Current state documented. Sprint board defined. Locked decisions captured. |

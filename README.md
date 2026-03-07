@@ -25,8 +25,10 @@ Jarvis provides:
 - Optional website context scraping with up to 5 URLs per request
 - URL validation with per-line feedback (invalid, duplicate, overflow)
 - Remembered URL suggestions per user (`jarvis_source_urls`)
+- Structured response format (TL;DR, Findings, Action Steps, Risks) with source citations
+- DeepSeek V3.2 LLM integration via NVIDIA API endpoint
 
-If no `JARVIS_API_KEY` is configured, Jarvis falls back to deterministic non-LLM responses.
+If no `JARVIS_API_KEY` (or `NVIDIA_API_KEY`) is configured, Jarvis falls back to deterministic non-LLM responses.
 
 ## Integrations
 

@@ -34,10 +34,10 @@ Schwab-specific broker coupling and bundled backtesting infrastructure were remo
   - trade analysis
   - free-form assistant mode
   - optional URL scraping context
-- Provider defaults now target GLM-4.7:
-  - `JARVIS_MODEL=glm-4.7`
-  - `JARVIS_API_BASE_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions`
-  - `JARVIS_API_KEY`
+- Provider defaults now target DeepSeek V3.2 on NVIDIA:
+  - `JARVIS_MODEL=deepseek-v3.2`
+  - `JARVIS_API_BASE_URL=https://integrate.api.nvidia.com/v1`
+  - `JARVIS_API_KEY` or `NVIDIA_API_KEY`
 
 5. Market Data
 - Added generic market data API at `app/api/market-data/route.ts`
