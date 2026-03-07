@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import { auth } from '@/lib/auth-config';
 import { type Db, type PoolDb } from '@/lib/db';
 import { users, trades, tradeTags } from '@/lib/db/schema';
@@ -60,12 +60,60 @@ export async function requireUser() {
 }
 
 export async function ensureUser(db: QueryDb, user: { id: string; email: string; name: string | null; picture: string | null }) {
-  await db.insert(users)
-    .values({ id: user.id, email: user.email, name: user.name, picture: user.picture })
-    .onConflictDoUpdate({
-      target: users.id,
-      set: { email: user.email, name: user.name, picture: user.picture },
-    });
+  const existingUsers = await db.select({ id: users.id, email: users.email, name: users.name, picture: users.picture })
+    .from(users)
+    .where(or(eq(users.id, user.id), eq(users.email, user.email)));
+
+  const userById = existingUsers.find((row) => row.id === user.id);
+  if (userById) {
+    if (userById.name !== user.name || userById.picture !== user.picture) {
+      await db.update(users)
+        .set({ name: user.name, picture: user.picture })
+        .where(eq(users.id, user.id));
+    }
+    return;
+  }
+
+  const userByEmail = existingUsers.find((row) => row.email === user.email);
+  if (userByEmail) {
+    user.id = userByEmail.id;
+    if (userByEmail.name !== user.name || userByEmail.picture !== user.picture) {
+      await db.update(users)
+        .set({ name: user.name, picture: user.picture })
+        .where(eq(users.id, user.id));
+    }
+    return;
+  }
+
+  try {
+    await db.insert(users)
+      .values({ id: user.id, email: user.email, name: user.name, picture: user.picture })
+      .onConflictDoUpdate({
+        target: users.id,
+        set: { name: user.name, picture: user.picture },
+      });
+  } catch (error) {
+    const errorCode = (error as { code?: unknown }).code;
+    if (typeof errorCode === 'string' && errorCode === '23505') {
+      const [canonicalUser] = await db.select({ id: users.id, name: users.name, picture: users.picture })
+        .from(users)
+        .where(eq(users.email, user.email));
+
+      if (!canonicalUser) {
+        throw error;
+      }
+
+      user.id = canonicalUser.id;
+      if (canonicalUser.name !== user.name || canonicalUser.picture !== user.picture) {
+        await db.update(users)
+          .set({ name: user.name, picture: user.picture })
+          .where(eq(users.id, user.id));
+      }
+      return;
+    }
+
+    throw error;
+  }
 }
 
 export function dbUnavailable() {

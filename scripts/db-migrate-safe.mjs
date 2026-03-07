@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -19,17 +19,142 @@ function loadJournalEntries() {
   return parsed.entries;
 }
 
+function loadMigrationTags() {
+  const migrationDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'drizzle');
+  return readdirSync(migrationDir)
+    .filter((name) => name.endsWith('.sql'))
+    .map((name) => name.replace(/\.sql$/, ''))
+    .sort();
+}
+
+function parseMigrationPrefix(tag) {
+  const match = /^([0-9]{4})_/.exec(tag);
+  return match ? Number(match[1]) : null;
+}
+
+function validateJournal(entries, migrationTags) {
+  const seenIdx = new Set();
+  for (const entry of entries) {
+    if (seenIdx.has(entry.idx)) {
+      throw new Error(`Duplicate journal idx detected: ${entry.idx}`);
+    }
+    seenIdx.add(entry.idx);
+  }
+
+  const migrationTagSet = new Set(migrationTags);
+  const journalSet = new Set(entries.map((entry) => entry.tag));
+  const missingFiles = entries
+    .map((entry) => entry.tag)
+    .filter((tag) => !migrationTagSet.has(tag));
+
+  if (missingFiles.length > 0) {
+    throw new Error(`Missing migration SQL files for journal entries: ${missingFiles.join(', ')}`);
+  }
+
+  const extraFiles = migrationTags.filter((tag) => !journalSet.has(tag));
+  if (extraFiles.length > 0) {
+    console.warn(`[db-migrate-safe] SQL files not tracked in journal: ${extraFiles.join(', ')}`);
+  }
+
+  const seenPrefixes = new Map();
+  for (const entry of entries) {
+    const prefix = parseMigrationPrefix(entry.tag);
+    if (prefix === null) {
+      console.warn(`[db-migrate-safe] Journal tag '${entry.tag}' does not start with four-digit prefix`);
+      continue;
+  }
+    seenPrefixes.set(prefix, (seenPrefixes.get(prefix) ?? 0) + 1);
+  }
+
+  const duplicatePrefixes = [...seenPrefixes.entries()].filter(([, count]) => count > 1);
+  if (duplicatePrefixes.length > 0) {
+    console.warn(
+      `[db-migrate-safe] Duplicate migration numeric prefixes detected: ${duplicatePrefixes
+        .map(([prefix, count]) => `${prefix} (${count})`)
+        .join(', ')}`,
+    );
+  }
+
+  const uniquePrefixes = [...seenPrefixes.keys()].filter((value) => value !== null).sort((a, b) => a - b);
+  const gapWarnings = [];
+  for (let i = 1; i < uniquePrefixes.length; i += 1) {
+    if (uniquePrefixes[i] !== uniquePrefixes[i - 1] + 1) {
+      gapWarnings.push(`${uniquePrefixes[i - 1]} -> ${uniquePrefixes[i]}`);
+    }
+  }
+  if (gapWarnings.length > 0) {
+    console.warn(`[db-migrate-safe] Migration prefix sequence has gaps: ${gapWarnings.join(', ')}`);
+  }
+}
+
+async function validateSchemaState(sql) {
+  const columnRows = await sql.query(`
+    select table_name, column_name, data_type
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name in (
+        'users',
+        'trades',
+        'trade_executions',
+        'trade_tags',
+        'tags',
+        'trade_import_batches',
+        'broker_sync_log',
+        'jarvis_source_urls'
+      )
+      and column_name in ('id', 'user_id', 'email')
+  `);
+
+  const usersIdType = columnRows.find((row) => row.table_name === 'users' && row.column_name === 'id')?.data_type;
+  if (!usersIdType) {
+    return;
+  }
+
+  const expected = usersIdType;
+  const userIdRows = columnRows.filter((row) => row.column_name === 'user_id');
+  const mismatchedUserIds = userIdRows.filter((row) => row.data_type !== expected);
+  if (mismatchedUserIds.length > 0) {
+    const detail = mismatchedUserIds
+      .map((row) => `${row.table_name}.user_id=${row.data_type}`)
+      .join(', ');
+    throw new Error(`Schema type mismatch for user_id columns: ${detail}`);
+  }
+
+  const usersEmailColumn = columnRows.find((row) => row.table_name === 'users' && row.column_name === 'email');
+  if (!usersEmailColumn) {
+    throw new Error('users.email column is missing');
+  }
+
+  const uniqueIndexRows = await sql.query(`
+    select 1
+    from information_schema.table_constraints tc
+    join information_schema.key_column_usage kcu
+      on tc.constraint_schema = kcu.constraint_schema
+      and tc.table_name = kcu.table_name
+      and tc.constraint_name = kcu.constraint_name
+    where tc.table_schema = 'public'
+      and tc.table_name = 'users'
+      and tc.constraint_type = 'UNIQUE'
+      and kcu.column_name = 'email'
+  `);
+
+  if (!Array.isArray(uniqueIndexRows) || uniqueIndexRows.length === 0) {
+    throw new Error('users.email does not have a UNIQUE constraint');
+  }
+}
+
 function findEntry(entries, tag) {
   return entries.find((entry) => entry.tag === tag) ?? null;
 }
 
-async function ensureMigrationBaseline() {
+async function ensureMigrationBaseline(sql) {
   if (!process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL is not set');
   }
 
   const entries = loadJournalEntries();
-  const sql = neon(process.env.DATABASE_URL);
+  validateJournal(entries, loadMigrationTags());
+  await validateSchemaState(sql);
 
   await sql.query('create schema if not exists drizzle');
   await sql.query(`
@@ -91,7 +216,12 @@ async function ensureMigrationBaseline() {
 }
 
 async function main() {
-  await ensureMigrationBaseline();
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL is not set');
+  }
+
+  const sql = neon(process.env.DATABASE_URL);
+  await ensureMigrationBaseline(sql);
 
   const result = spawnSync('npx', ['drizzle-kit', 'migrate'], {
     stdio: 'inherit',
