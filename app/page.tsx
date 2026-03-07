@@ -119,7 +119,6 @@ export default function NexusTerminal() {
 
       <main className={isMobile ? 'pb-16' : 'pl-56'}>
         <Toolbar
-          filteredTradesCount={filteredTrades.length}
           activeFilterCount={activeFilterCount}
           hasActiveFilters={hasActiveFilters}
           clearAllFilters={clearAllFilters}

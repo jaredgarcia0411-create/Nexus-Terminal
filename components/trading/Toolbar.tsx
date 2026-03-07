@@ -9,7 +9,6 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Button } from '@/components/ui/button';
 
 interface ToolbarProps {
-  filteredTradesCount: number;
   activeFilterCount: number;
   hasActiveFilters: boolean;
   clearAllFilters: () => void;
@@ -26,7 +25,6 @@ interface ToolbarProps {
 }
 
 export default function Toolbar({
-  filteredTradesCount,
   activeFilterCount,
   hasActiveFilters,
   clearAllFilters,
@@ -51,10 +49,6 @@ export default function Toolbar({
         <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
           <h1 className="shrink-0 text-lg font-medium tracking-tight">Nexus Terminal</h1>
           <div className="mx-1 hidden h-4 w-px bg-white/10 sm:mx-2 sm:block" />
-          <div className="flex shrink-0 items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-500">
-            <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-            {filteredTradesCount} TRADES LOGGED
-          </div>
 
           {hasActiveFilters ? (
             <div className="flex items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-400">

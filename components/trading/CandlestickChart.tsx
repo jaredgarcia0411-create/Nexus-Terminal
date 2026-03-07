@@ -181,6 +181,7 @@ export default function CandlestickChart({
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const markerAnimationFrameRef = useRef<number | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [exactMarkerPoints, setExactMarkerPoints] = useState<ExactMarkerPoint[]>([]);
   const sortedCandles = useMemo(() => [...candles].sort((a, b) => a.datetime - b.datetime), [candles]);
@@ -203,7 +204,7 @@ export default function CandlestickChart({
     }
 
     const candleTimestamps = sortedCandles.map((candle) => candle.datetime);
-    const markerSize = 10;
+    const markerSize = 6;
     const points = [...tradeMarkers]
       .sort((a, b) => a.time - b.time)
       .flatMap((marker, index) => {
@@ -236,11 +237,13 @@ export default function CandlestickChart({
 
     let lastLabeledX = Number.NEGATIVE_INFINITY;
     let lastLabeledY = Number.NEGATIVE_INFINITY;
-    const collisionX = markerSize * 2.2 + 4;
-    const collisionY = markerSize * 2.2;
+    const collisionX = markerSize * 3.5 + 10;
+    const collisionY = markerSize * 2.4;
 
     const withCollisionHandling = points.map((point) => {
-      if (Math.abs(point.x - lastLabeledX) <= collisionX && Math.abs(point.y - lastLabeledY) <= collisionY) {
+      const dx = Math.abs(point.x - lastLabeledX);
+      const dy = Math.abs(point.y - lastLabeledY);
+      if (dx <= collisionX || (dx <= collisionX * 1.5 && dy <= collisionY)) {
         return { ...point, showLabel: false };
       }
 
@@ -252,6 +255,32 @@ export default function CandlestickChart({
     queueMicrotask(() => setExactMarkerPoints(withCollisionHandling));
   }, [clearExactMarkerPoints, exactPriceMarkers, sortedCandles, tradeMarkers]);
 
+  const scheduleExactMarkerRecalculation = useCallback(() => {
+    if (markerAnimationFrameRef.current != null) {
+      cancelAnimationFrame(markerAnimationFrameRef.current);
+    }
+    markerAnimationFrameRef.current = requestAnimationFrame(() => {
+      markerAnimationFrameRef.current = null;
+      recalculateExactMarkers();
+    });
+  }, [recalculateExactMarkers]);
+
+  useEffect(() => {
+    if (!exactPriceMarkers) return;
+
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const handleRangeChange = () => {
+      scheduleExactMarkerRecalculation();
+    };
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handleRangeChange);
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleRangeChange);
+    };
+  }, [exactPriceMarkers, scheduleExactMarkerRecalculation]);
+
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -262,9 +291,7 @@ export default function CandlestickChart({
       onResize: (width) => {
         setContainerWidth(width);
         if (exactPriceMarkers) {
-          requestAnimationFrame(() => {
-            recalculateExactMarkers();
-          });
+          scheduleExactMarkerRecalculation();
         }
       },
     });
@@ -278,9 +305,13 @@ export default function CandlestickChart({
       chartRef.current = null;
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
+      if (markerAnimationFrameRef.current != null) {
+        cancelAnimationFrame(markerAnimationFrameRef.current);
+        markerAnimationFrameRef.current = null;
+      }
       clearExactMarkerPoints();
     };
-  }, [clearExactMarkerPoints, exactPriceMarkers, height, recalculateExactMarkers, showTimeAxis]);
+  }, [clearExactMarkerPoints, exactPriceMarkers, height, scheduleExactMarkerRecalculation, showTimeAxis]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -332,14 +363,11 @@ export default function CandlestickChart({
     chart.timeScale().fitContent();
 
     if (exactPriceMarkers) {
-      const animationFrame = requestAnimationFrame(() => {
-        recalculateExactMarkers();
-      });
-      return () => cancelAnimationFrame(animationFrame);
+      scheduleExactMarkerRecalculation();
     }
 
     clearExactMarkerPoints();
-  }, [sortedCandles, clearExactMarkerPoints, tradeMarkers, exactPriceMarkers, recalculateExactMarkers]);
+  }, [sortedCandles, clearExactMarkerPoints, tradeMarkers, exactPriceMarkers, scheduleExactMarkerRecalculation]);
 
   return (
     <div className="relative" style={{ height }}>
@@ -350,7 +378,7 @@ export default function CandlestickChart({
             <g key={marker.key}>
               <polygon points={marker.points} fill={marker.color} stroke="rgba(20, 20, 23, 0.9)" strokeWidth="2" />
               {marker.showLabel ? (
-                <text x={marker.x + 12} y={marker.y - 14} fill="#ffffff" fontSize="12" fontWeight="700" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.9)' }}>
+                <text x={marker.x + 7} y={marker.y - 9} fill="#ffffff" fontSize="11" fontWeight="700" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.9)' }}>
                   {marker.label}
                 </text>
               ) : null}

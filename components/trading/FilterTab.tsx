@@ -48,7 +48,13 @@ export default function FilterTab({
   return (
     <motion.div key="filter" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
       <div className="flex flex-col gap-6 rounded-2xl border border-white/5 bg-[#121214] p-6">
-        <h2 className="text-2xl font-bold">Advanced Filters</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-2xl font-bold">Advanced Filters</h2>
+          <div className="flex shrink-0 items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-500">
+            <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+            {filteredTrades.length} TRADES LOGGED
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
           <div className="space-y-4">
