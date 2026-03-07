@@ -141,10 +141,10 @@ export default function TradingCalendar({ trades }: TradingCalendarProps) {
                     
                     {stats && (stats.pnl !== 0 || stats.r !== 0) && (
                       <div className="mt-auto flex flex-col gap-0.5">
-                        <div className={`${isMobile ? 'text-[10px]' : 'text-[11px]'} font-bold ${stats.pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        <div className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-bold ${stats.pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                           {stats.pnl >= 0 ? '+' : ''}{formatCurrency(stats.pnl)}
                         </div>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} font-medium opacity-60 ${stats.r >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <div className={`${isMobile ? 'text-[10px]' : 'text-[11px]'} font-medium opacity-60 ${stats.r >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                           {formatR(stats.r)}
                         </div>
                       </div>
@@ -159,10 +159,10 @@ export default function TradingCalendar({ trades }: TradingCalendarProps) {
               {!isMobile ? (
                 <div className="min-h-[100px] border-l border-white/5 bg-white/5 p-2">
                   <div className="flex h-full flex-col items-center justify-center gap-1">
-                    <div className={`text-xs font-bold ${week.weeklyPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    <div className={`text-[13px] font-bold ${week.weeklyPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                       {week.weeklyPnl >= 0 ? '+' : ''}{formatCurrency(week.weeklyPnl)}
                     </div>
-                    <div className={`text-[10px] font-medium opacity-70 ${week.weeklyR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <div className={`text-[11px] font-medium opacity-70 ${week.weeklyR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {formatR(week.weeklyR)}
                     </div>
                   </div>

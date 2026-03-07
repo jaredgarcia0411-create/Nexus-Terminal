@@ -1,23 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createChart,
   createSeriesMarkers,
   ColorType,
   CandlestickSeries,
   HistogramSeries,
-  LineSeries,
   CrosshairMode,
   type IChartApi,
   type ISeriesApi,
   type CandlestickData,
   type HistogramData,
-  type LineData,
-  type LineWidth,
   type Time,
 } from 'lightweight-charts';
-import { sma, ema, bollingerBands } from '@/lib/indicators';
 
 export interface CandleData {
   datetime: number;
@@ -35,14 +31,12 @@ export interface TradeMarker {
   label: string;
 }
 
-export type IndicatorType = 'sma20' | 'sma50' | 'ema12' | 'ema26' | 'bollinger';
-
 interface CandlestickChartProps {
   candles: CandleData[];
-  indicators?: IndicatorType[];
   tradeMarkers?: TradeMarker[];
   height?: number;
   exactPriceMarkers?: boolean;
+  showTimeAxis?: boolean;
 }
 
 type ExactMarkerPoint = {
@@ -59,6 +53,25 @@ function toUTCSeconds(ms: number): Time {
   return Math.floor(ms / 1000) as unknown as Time;
 }
 
+function findNearestTimestamp(target: number, sortedTimestamps: number[]): number | null {
+  if (sortedTimestamps.length === 0) return null;
+
+  let left = 0;
+  let right = sortedTimestamps.length - 1;
+
+  while (left <= right) {
+    const middle = Math.floor((left + right) / 2);
+    const value = sortedTimestamps[middle];
+    if (value === target) return value;
+    if (value < target) left = middle + 1;
+    else right = middle - 1;
+  }
+
+  const upper = sortedTimestamps[Math.min(left, sortedTimestamps.length - 1)];
+  const lower = sortedTimestamps[Math.max(left - 1, 0)];
+  return Math.abs(upper - target) < Math.abs(target - lower) ? upper : lower;
+}
+
 type ResizeObserverLike = {
   observe: (target: Element) => void;
   disconnect: () => void;
@@ -71,12 +84,14 @@ type CreateChartFn = typeof createChart;
 export function createChartLifecycle({
   container,
   height,
+  showTimeAxis = false,
   createChartFn = createChart,
   resizeObserverCtor = typeof ResizeObserver !== 'undefined' ? (ResizeObserver as ResizeObserverCtorLike) : undefined,
   onResize,
 }: {
   container: HTMLDivElement;
   height: number;
+  showTimeAxis?: boolean;
   createChartFn?: CreateChartFn;
   resizeObserverCtor?: ResizeObserverCtorLike | undefined;
   onResize?: (width: number) => void;
@@ -98,7 +113,8 @@ export function createChartLifecycle({
     },
     timeScale: {
       borderColor: '#ffffff10',
-      timeVisible: false,
+      timeVisible: showTimeAxis,
+      secondsVisible: false,
     },
     width: container.clientWidth,
     height,
@@ -156,18 +172,18 @@ export function createChartLifecycle({
 
 export default function CandlestickChart({
   candles,
-  indicators = [],
   tradeMarkers = [],
   height = 400,
   exactPriceMarkers = false,
+  showTimeAxis = false,
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const lineSeriesRefs = useRef<ISeriesApi<'Line'>[]>([]);
   const [containerWidth, setContainerWidth] = useState(0);
   const [exactMarkerPoints, setExactMarkerPoints] = useState<ExactMarkerPoint[]>([]);
+  const sortedCandles = useMemo(() => [...candles].sort((a, b) => a.datetime - b.datetime), [candles]);
 
   const clearExactMarkerPoints = useCallback(() => {
     queueMicrotask(() => setExactMarkerPoints([]));
@@ -186,11 +202,18 @@ export default function CandlestickChart({
       return;
     }
 
-    const markerSize = 6;
+    const candleTimestamps = sortedCandles.map((candle) => candle.datetime);
+    const markerSize = 10;
     const points = [...tradeMarkers]
       .sort((a, b) => a.time - b.time)
       .flatMap((marker, index) => {
-        const x = chart.timeScale().timeToCoordinate(toUTCSeconds(marker.time));
+        let x = chart.timeScale().timeToCoordinate(toUTCSeconds(marker.time));
+        if (x == null) {
+          const nearestTimestamp = findNearestTimestamp(marker.time, candleTimestamps);
+          if (nearestTimestamp != null) {
+            x = chart.timeScale().timeToCoordinate(toUTCSeconds(nearestTimestamp));
+          }
+        }
         const y = candleSeries.priceToCoordinate(marker.price);
         if (x == null || y == null) return [];
 
@@ -213,8 +236,8 @@ export default function CandlestickChart({
 
     let lastLabeledX = Number.NEGATIVE_INFINITY;
     let lastLabeledY = Number.NEGATIVE_INFINITY;
-    const collisionX = markerSize * 2 + 2;
-    const collisionY = markerSize * 2;
+    const collisionX = markerSize * 2.2 + 4;
+    const collisionY = markerSize * 2.2;
 
     const withCollisionHandling = points.map((point) => {
       if (Math.abs(point.x - lastLabeledX) <= collisionX && Math.abs(point.y - lastLabeledY) <= collisionY) {
@@ -227,7 +250,7 @@ export default function CandlestickChart({
     });
 
     queueMicrotask(() => setExactMarkerPoints(withCollisionHandling));
-  }, [clearExactMarkerPoints, exactPriceMarkers, tradeMarkers]);
+  }, [clearExactMarkerPoints, exactPriceMarkers, sortedCandles, tradeMarkers]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -235,6 +258,7 @@ export default function CandlestickChart({
     const lifecycle = createChartLifecycle({
       container: containerRef.current,
       height,
+      showTimeAxis,
       onResize: (width) => {
         setContainerWidth(width);
         if (exactPriceMarkers) {
@@ -254,10 +278,9 @@ export default function CandlestickChart({
       chartRef.current = null;
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
-      lineSeriesRefs.current = [];
       clearExactMarkerPoints();
     };
-  }, [clearExactMarkerPoints, exactPriceMarkers, height, recalculateExactMarkers]);
+  }, [clearExactMarkerPoints, exactPriceMarkers, height, recalculateExactMarkers, showTimeAxis]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -265,13 +288,7 @@ export default function CandlestickChart({
     const volumeSeries = volumeSeriesRef.current;
     if (!chart || !candleSeries || !volumeSeries) return;
 
-    // Remove old line series
-    for (const ls of lineSeriesRefs.current) {
-      chart.removeSeries(ls);
-    }
-    lineSeriesRefs.current = [];
-
-    if (candles.length === 0) {
+    if (sortedCandles.length === 0) {
       candleSeries.setData([]);
       volumeSeries.setData([]);
       createSeriesMarkers(candleSeries, []);
@@ -279,10 +296,7 @@ export default function CandlestickChart({
       return;
     }
 
-    // Sort candles by time
-    const sorted = [...candles].sort((a, b) => a.datetime - b.datetime);
-
-    const candleData: CandlestickData[] = sorted.map((c) => ({
+    const candleData: CandlestickData[] = sortedCandles.map((c) => ({
       time: toUTCSeconds(c.datetime),
       open: c.open,
       high: c.high,
@@ -290,7 +304,7 @@ export default function CandlestickChart({
       close: c.close,
     }));
 
-    const volumeData: HistogramData[] = sorted.map((c) => ({
+    const volumeData: HistogramData[] = sortedCandles.map((c) => ({
       time: toUTCSeconds(c.datetime),
       value: c.volume,
       color: c.close >= c.open ? '#10b98133' : '#ef444433',
@@ -298,41 +312,6 @@ export default function CandlestickChart({
 
     candleSeries.setData(candleData);
     volumeSeries.setData(volumeData);
-
-    // Indicators
-    const closes = sorted.map((c) => c.close);
-    const times = sorted.map((c) => toUTCSeconds(c.datetime));
-
-    const addLine = (values: (number | null)[], color: string, lineWidth: LineWidth = 1 as LineWidth) => {
-      const series = chart.addSeries(LineSeries, {
-        color,
-        lineWidth: lineWidth as LineWidth,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        crosshairMarkerVisible: false,
-      });
-      const lineData: LineData[] = [];
-      for (let i = 0; i < values.length; i++) {
-        if (values[i] !== null) {
-          lineData.push({ time: times[i], value: values[i]! });
-        }
-      }
-      series.setData(lineData);
-      lineSeriesRefs.current.push(series);
-    };
-
-    for (const ind of indicators) {
-      if (ind === 'sma20') addLine(sma(closes, 20), '#f59e0b');
-      else if (ind === 'sma50') addLine(sma(closes, 50), '#3b82f6');
-      else if (ind === 'ema12') addLine(ema(closes, 12), '#8b5cf6');
-      else if (ind === 'ema26') addLine(ema(closes, 26), '#ec4899');
-      else if (ind === 'bollinger') {
-        const bb = bollingerBands(closes, 20, 2);
-        addLine(bb.upper, '#6366f1', 1);
-        addLine(bb.middle, '#6366f180', 1);
-        addLine(bb.lower, '#6366f1', 1);
-      }
-    }
 
     // Trade markers
     if (!exactPriceMarkers && tradeMarkers.length > 0) {
@@ -360,18 +339,18 @@ export default function CandlestickChart({
     }
 
     clearExactMarkerPoints();
-  }, [candles, clearExactMarkerPoints, indicators, tradeMarkers, exactPriceMarkers, recalculateExactMarkers]);
+  }, [sortedCandles, clearExactMarkerPoints, tradeMarkers, exactPriceMarkers, recalculateExactMarkers]);
 
   return (
     <div className="relative" style={{ height }}>
       <div ref={containerRef} className="h-full w-full" />
       {exactPriceMarkers && exactMarkerPoints.length > 0 ? (
-        <svg className="pointer-events-none absolute inset-0" width="100%" height="100%" viewBox={`0 0 ${Math.max(containerWidth, 1)} ${height}`} preserveAspectRatio="none">
+        <svg className="pointer-events-none absolute inset-0 z-20" width="100%" height="100%" viewBox={`0 0 ${Math.max(containerWidth, 1)} ${height}`} preserveAspectRatio="none">
           {exactMarkerPoints.map((marker) => (
             <g key={marker.key}>
-              <polygon points={marker.points} fill={marker.color} stroke="rgba(10, 10, 11, 0.45)" strokeWidth="1" />
+              <polygon points={marker.points} fill={marker.color} stroke="rgba(20, 20, 23, 0.9)" strokeWidth="2" />
               {marker.showLabel ? (
-                <text x={marker.x + 10} y={marker.y - 10} fill="rgba(228, 228, 231, 0.9)" fontSize="10" fontWeight="700">
+                <text x={marker.x + 12} y={marker.y - 14} fill="#ffffff" fontSize="12" fontWeight="700" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.9)' }}>
                   {marker.label}
                 </text>
               ) : null}

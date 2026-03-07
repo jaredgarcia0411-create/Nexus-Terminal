@@ -2,7 +2,7 @@
 
 import { memo, useMemo } from 'react';
 import type { Trade } from '@/lib/types';
-import CandlestickChart, { type IndicatorType, type TradeMarker } from '@/components/trading/CandlestickChart';
+import CandlestickChart, { type TradeMarker } from '@/components/trading/CandlestickChart';
 import { useCandleData } from '@/hooks/use-candle-data';
 
 const NY_DATE_PARTS = new Intl.DateTimeFormat('en-US', {
@@ -154,23 +154,21 @@ function JournalTradeChart({ trade }: JournalTradeChartProps) {
     return markers;
   }, [trade]);
 
-  const indicators = useMemo<IndicatorType[]>(() => ['ema12', 'ema26'], []);
-
   if (isLoading) {
-    return <div className="flex h-[408px] items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm text-zinc-400">Loading chart...</div>;
+    return <div className="flex h-[612px] items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm text-zinc-400">Loading chart...</div>;
   }
 
   if (error) {
-    return <div className="flex h-[408px] items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm text-zinc-400">{error}</div>;
+    return <div className="flex h-[612px] items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm text-zinc-400">{error}</div>;
   }
 
   if (candles.length === 0) {
-    return <div className="flex h-[408px] items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm text-zinc-500">No intraday candles for this trade day.</div>;
+    return <div className="flex h-[612px] items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm text-zinc-500">No intraday candles for this trade day.</div>;
   }
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-2">
-      <CandlestickChart candles={candles} tradeMarkers={tradeMarkers} indicators={indicators} height={408} exactPriceMarkers />
+      <CandlestickChart candles={candles} tradeMarkers={tradeMarkers} height={612} exactPriceMarkers showTimeAxis />
     </div>
   );
 }

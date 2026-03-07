@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import CandlestickChart, { type IndicatorType, type TradeMarker } from '@/components/trading/CandlestickChart';
+import CandlestickChart, { type TradeMarker } from '@/components/trading/CandlestickChart';
 import { useCandleData } from '@/hooks/use-candle-data';
 
 interface TradeDetailSheetProps {
@@ -175,8 +175,6 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
     chartOptions ?? undefined,
   );
 
-  const activeIndicators = useMemo<IndicatorType[]>(() => ['ema12', 'ema26', 'sma20'], []);
-
   const sortedExecutions = useMemo(() => {
     if (!trade) return [];
     return [...(trade.rawExecutions ?? [])].sort(
@@ -326,7 +324,7 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                     No candle data available for this trade window.
                   </div>
                 ) : (
-                  <CandlestickChart candles={candles} tradeMarkers={tradeMarkers} indicators={activeIndicators} height={320} />
+                  <CandlestickChart candles={candles} tradeMarkers={tradeMarkers} height={320} />
                 )}
               </div>
             ) : null}
