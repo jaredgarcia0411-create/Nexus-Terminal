@@ -15,6 +15,20 @@ function relevanceLabel(score: number) {
   return 'Low relevance';
 }
 
+function sourceTypeBadge(sourceType: JarvisSourceContext['sourceType']) {
+  if (sourceType === 'trade_journal') {
+    return { label: 'Journal', className: 'border-violet-500/30 bg-violet-500/10 text-violet-200' };
+  }
+  if (sourceType === 'user_document') {
+    return { label: 'Document', className: 'border-sky-500/30 bg-sky-500/10 text-sky-200' };
+  }
+  if (sourceType === 'cached_headline') {
+    return { label: 'Headline', className: 'border-amber-500/30 bg-amber-500/10 text-amber-200' };
+  }
+
+  return { label: 'Web', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' };
+}
+
 export default function JarvisStructuredResponse({ message, structured, warnings, sourceSummary, sources }: JarvisStructuredResponseProps) {
   return (
     <div className="space-y-4">
@@ -96,6 +110,7 @@ export default function JarvisStructuredResponse({ message, structured, warnings
               >
                 <p className="text-sm text-zinc-100">{source.title || source.host}</p>
                 <div className="mt-1 flex flex-wrap gap-2">
+                  <span className={`rounded-full border px-2 py-0.5 text-[11px] ${sourceTypeBadge(source.sourceType).className}`}>{sourceTypeBadge(source.sourceType).label}</span>
                   <span className="rounded-full border border-white/15 px-2 py-0.5 text-[11px] text-zinc-300">{source.host}</span>
                   <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-200">{relevanceLabel(source.relevance)}</span>
                   {source.tickers.slice(0, 3).map((ticker) => (

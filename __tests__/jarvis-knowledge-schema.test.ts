@@ -26,6 +26,7 @@ describe('jarvis knowledge chunk schema', () => {
       'source_type',
       'text',
       'hash',
+      'source_tags',
       'text_search',
       'embedding',
       'seen_count',

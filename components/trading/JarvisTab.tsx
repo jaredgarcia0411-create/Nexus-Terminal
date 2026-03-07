@@ -9,6 +9,7 @@ import { isUrlAllowed } from '@/lib/jarvis-allowlist';
 import { type JarvisMode, type JarvisResponse, toJarvisTradeInput } from '@/lib/jarvis-types';
 import { sourcePacks } from '@/lib/jarvis-source-packs';
 import JarvisStructuredResponse from '@/components/trading/JarvisStructuredResponse';
+import JarvisDocuments from '@/components/trading/JarvisDocuments';
 
 const MAX_SCRAPE_URLS = 5;
 
@@ -70,6 +71,7 @@ interface JarvisTabProps {
 }
 
 export default function JarvisTab({ trades }: JarvisTabProps) {
+  const [panelView, setPanelView] = useState<'assistant' | 'documents'>('assistant');
   const [mode, setMode] = useState<JarvisMode>('assistant');
   const [prompt, setPrompt] = useState('');
   const [urlLines, setUrlLines] = useState<string[]>(['']);
@@ -270,6 +272,27 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
 
   return (
     <motion.div key="jarvis" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setPanelView('assistant')}
+          className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${panelView === 'assistant' ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-200' : 'border-white/10 text-zinc-300 hover:bg-white/10'}`}
+        >
+          Assistant
+        </button>
+        <button
+          type="button"
+          onClick={() => setPanelView('documents')}
+          className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${panelView === 'documents' ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-200' : 'border-white/10 text-zinc-300 hover:bg-white/10'}`}
+        >
+          Documents
+        </button>
+      </div>
+
+      {panelView === 'documents' ? <JarvisDocuments /> : null}
+
+      {panelView === 'assistant' ? (
+        <>
       <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -490,6 +513,8 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
           <p className="text-sm text-zinc-500">Run one of the actions above to get started.</p>
         )}
       </div>
+        </>
+      ) : null}
     </motion.div>
   );
 }

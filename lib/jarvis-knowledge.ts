@@ -1,15 +1,23 @@
 import { and, asc, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { jarvisKnowledgeChunks } from '@/lib/db/schema';
-import { type JarvisSourceType, type ScrapedChunk } from '@/lib/jarvis-types';
+import { jarvisKnowledgeChunks, tradeTags as tradeTagsTable } from '@/lib/db/schema';
+import { getEmbeddingForText } from '@/lib/jarvis-embedding';
+import {
+  type JarvisSourceType,
+  type JarvisTradeInput,
+  type ScrapedChunk,
+} from '@/lib/jarvis-types';
+import { CHUNK_OVERLAP_TOKENS, CHUNK_TARGET_TOKENS, chunkScrapedSource, extractTickers } from '@/lib/jarvis-scrape';
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 6000;
 export const DEFAULT_USER_STORAGE_LIMIT_BYTES = 100 * 1024 * 1024;
 const CONTEXT_RESERVED_TOKENS = 500;
+const SINGLE_TRADE_NOTE_TOKEN_LIMIT = 400;
 
 export interface KnowledgeChunkRecord extends ScrapedChunk {
   id: string;
   sourceType: JarvisSourceType;
+  sourceTags?: string[];
   seenCount: number;
   score: number;
   lastSeenAt: string;
@@ -49,6 +57,11 @@ function normalizeTickers(input: string[] | undefined) {
   return [...new Set(input.map((value) => value.trim().toUpperCase()).filter(Boolean))];
 }
 
+function normalizeTags(input: string[] | undefined) {
+  if (!input || input.length === 0) return [];
+  return [...new Set(input.map((value) => value.trim().toLowerCase()).filter(Boolean))];
+}
+
 function toIsoString(value: Date | string | null | undefined) {
   if (!value) return undefined;
   const date = value instanceof Date ? value : new Date(value);
@@ -60,7 +73,21 @@ function estimatedTokenCount(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function toKnowledgeChunkRecord(row: typeof jarvisKnowledgeChunks.$inferSelect & { score: number }): KnowledgeChunkRecord {
+function chunkHash(input: string) {
+  const normalized = input.trim().toLowerCase();
+  let hash = 0x811c9dc5;
+
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash ^= normalized.charCodeAt(index);
+    hash = (hash * 0x01000193) >>> 0;
+  }
+
+  return hash.toString(16);
+}
+
+function toKnowledgeChunkRecord(
+  row: typeof jarvisKnowledgeChunks.$inferSelect & { score: number },
+): KnowledgeChunkRecord {
   const text = row.text;
   const tokenCount = row.tokenCount > 0 ? row.tokenCount : estimatedTokenCount(text);
   return {
@@ -69,6 +96,7 @@ function toKnowledgeChunkRecord(row: typeof jarvisKnowledgeChunks.$inferSelect &
     sourceUrl: row.sourceUrl,
     sourceHost: row.sourceHost,
     sourceTitle: row.sourceTitle,
+    sourceTags: normalizeTags(row.sourceTags),
     index: row.chunkIndex,
     startToken: row.startToken,
     endToken: row.endToken,
@@ -83,6 +111,10 @@ function toKnowledgeChunkRecord(row: typeof jarvisKnowledgeChunks.$inferSelect &
     score: row.score,
     lastSeenAt: toIsoString(row.lastSeenAt) ?? new Date(0).toISOString(),
   };
+}
+
+function vectorLiteral(values: number[]) {
+  return `[${values.join(',')}]`;
 }
 
 export async function ingestKnowledgeChunks(options: {
@@ -100,9 +132,11 @@ export async function ingestKnowledgeChunks(options: {
     if (!chunkText) continue;
 
     const tickers = normalizeTickers(chunk.tickers);
+    const sourceTags = normalizeTags(chunk.sourceTags);
     const relevance = Number.isFinite(chunk.relevance ?? NaN)
       ? Number((chunk.relevance ?? 0).toFixed(3))
       : 0;
+    const embedding = await getEmbeddingForText(chunkText).catch(() => null);
 
     await db.insert(jarvisKnowledgeChunks)
       .values({
@@ -120,8 +154,10 @@ export async function ingestKnowledgeChunks(options: {
         hash: chunk.hash,
         relevance,
         tickers,
+        sourceTags,
         publishedAt: chunk.publishedAt ? new Date(chunk.publishedAt) : undefined,
         author: chunk.author,
+        embedding,
         textSearch: sql`to_tsvector('english', ${chunkText})`,
         seenCount: 1,
         createdAt: now,
@@ -139,8 +175,10 @@ export async function ingestKnowledgeChunks(options: {
           text: chunkText,
           relevance: sql`GREATEST(${jarvisKnowledgeChunks.relevance}, ${relevance})`,
           tickers,
+          sourceTags,
           publishedAt: chunk.publishedAt ? new Date(chunk.publishedAt) : null,
           author: chunk.author ?? null,
+          embedding: embedding ?? jarvisKnowledgeChunks.embedding,
           textSearch: sql`to_tsvector('english', ${chunkText})`,
           seenCount: sql`${jarvisKnowledgeChunks.seenCount} + 1`,
           lastSeenAt: now,
@@ -153,17 +191,144 @@ export async function ingestKnowledgeChunks(options: {
   }
 }
 
+async function getTradeTagsByTradeId(userId: string, tradeIds: string[]) {
+  const db = getDb();
+  if (!db || tradeIds.length === 0) {
+    return new Map<string, string[]>();
+  }
+
+  const rows = await db.select({
+    tradeId: tradeTagsTable.tradeId,
+    tag: tradeTagsTable.tag,
+  })
+    .from(tradeTagsTable)
+    .where(and(
+      eq(tradeTagsTable.userId, userId),
+      inArray(tradeTagsTable.tradeId, tradeIds),
+    ));
+
+  const tagMap = new Map<string, string[]>();
+  for (const row of rows) {
+    const list = tagMap.get(row.tradeId) ?? [];
+    list.push(row.tag);
+    tagMap.set(row.tradeId, list);
+  }
+
+  return tagMap;
+}
+
+function formatPnl(value: number | undefined) {
+  if (!Number.isFinite(value ?? NaN)) return 'N/A';
+  return `${(value ?? 0) >= 0 ? '+' : ''}${(value ?? 0).toFixed(2)}`;
+}
+
+function buildTradeJournalChunks(userId: string, trade: JarvisTradeInput & { tags?: string[] }) {
+  const tags = normalizeTags(trade.tags);
+  const symbol = trade.symbol.trim().toUpperCase();
+  const direction = trade.direction ?? 'N/A';
+  const date = new Date(trade.date);
+  const dateLabel = Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : String(trade.date);
+  const performanceLine = `Trade Journal Entry: symbol ${symbol}; date ${dateLabel}; direction ${direction}; pnl ${formatPnl(trade.netPnl ?? trade.pnl)}; quantity ${trade.totalQuantity ?? 'N/A'}.`;
+  const tagsLine = tags.length > 0 ? `Tags: ${tags.join(', ')}.` : 'Tags: none.';
+  const notesText = String(trade.notes ?? '').trim();
+  if (!notesText) return [] as ScrapedChunk[];
+
+  const baseText = `${performanceLine} ${tagsLine} Notes: ${notesText}`;
+  const sourceUrl = `jarvis://trade/${trade.id}`;
+  const sourceHost = `journal.${userId}`;
+  const sourceTitle = `Trade note ${symbol} ${dateLabel}`;
+  const combinedTickers = normalizeTickers([symbol, ...extractTickers(baseText)]);
+
+  if (estimatedTokenCount(baseText) <= SINGLE_TRADE_NOTE_TOKEN_LIMIT) {
+    const tokenCount = estimatedTokenCount(baseText);
+    return [{
+      sourceType: 'trade_journal' as const,
+      sourceUrl,
+      sourceHost,
+      sourceTitle,
+      sourceTags: tags,
+      index: 0,
+      startToken: 0,
+      endToken: tokenCount,
+      tokenCount,
+      text: baseText,
+      hash: chunkHash(`${trade.id}:0:${baseText}`),
+      relevance: 0.72,
+      tickers: combinedTickers,
+      author: 'trade_journal',
+    }];
+  }
+
+  const chunked = chunkScrapedSource({
+    url: sourceUrl,
+    title: sourceTitle,
+    host: sourceHost,
+    excerpt: baseText.slice(0, 2500),
+    scrapedAt: new Date(),
+    body: baseText,
+    tickers: combinedTickers,
+    author: 'trade_journal',
+  }, CHUNK_TARGET_TOKENS, CHUNK_OVERLAP_TOKENS);
+
+  return chunked.map((chunk, index) => ({
+    ...chunk,
+    sourceType: 'trade_journal' as const,
+    sourceTags: tags,
+    hash: chunkHash(`${trade.id}:${index}:${chunk.text}`),
+    relevance: Number((0.7 - index * 0.02).toFixed(3)),
+  }));
+}
+
+export async function syncTradeJournalChunks(userId: string, trades: JarvisTradeInput[]) {
+  const db = getDb();
+  if (!db || trades.length === 0) return;
+
+  const candidates = trades.filter((trade) => String(trade.notes ?? '').trim().length > 0);
+  if (candidates.length === 0) return;
+
+  const tradeIds = candidates.map((trade) => trade.id);
+  const tagMap = await getTradeTagsByTradeId(userId, tradeIds);
+
+  const missingRows = await db.select({ sourceUrl: jarvisKnowledgeChunks.sourceUrl })
+    .from(jarvisKnowledgeChunks)
+    .where(and(
+      eq(jarvisKnowledgeChunks.userId, userId),
+      eq(jarvisKnowledgeChunks.sourceType, 'trade_journal'),
+      inArray(jarvisKnowledgeChunks.sourceUrl, tradeIds.map((tradeId) => `jarvis://trade/${tradeId}`)),
+    ));
+  const existing = new Set(missingRows.map((row) => row.sourceUrl));
+
+  const chunks: ScrapedChunk[] = [];
+  for (const trade of candidates) {
+    const sourceUrl = `jarvis://trade/${trade.id}`;
+    if (existing.has(sourceUrl)) continue;
+
+    const enrichedTrade = {
+      ...trade,
+      tags: trade.tags && trade.tags.length > 0 ? trade.tags : tagMap.get(trade.id) ?? [],
+    };
+    chunks.push(...buildTradeJournalChunks(userId, enrichedTrade));
+  }
+
+  await ingestKnowledgeChunks({
+    userId,
+    sourceType: 'trade_journal',
+    chunks,
+  });
+}
+
 export async function retrieveKnowledgeChunks(options: RetrieveKnowledgeOptions): Promise<KnowledgeChunkRecord[]> {
   const db = getDb();
   if (!db) return [];
 
   const sourceTypes = options.sourceTypes && options.sourceTypes.length > 0
     ? options.sourceTypes
-    : ['web_source'] as JarvisSourceType[];
+    : ['web_source', 'trade_journal', 'user_document'] as JarvisSourceType[];
   const includeGlobal = options.includeGlobal ?? true;
   const limit = Math.max(1, Math.min(options.limit ?? 20, 200));
   const query = options.query.trim();
   const tickers = normalizeTickers(options.tickers);
+  const queryEmbedding = query ? await getEmbeddingForText(query).catch(() => null) : null;
 
   const nonGlobalTypes = sourceTypes.filter((sourceType) => sourceType !== 'web_source');
 
@@ -177,14 +342,17 @@ export async function retrieveKnowledgeChunks(options: RetrieveKnowledgeOptions)
     : and(eq(jarvisKnowledgeChunks.userId, options.userId), inArray(jarvisKnowledgeChunks.sourceType, sourceTypes));
 
   const queryFilter = query
-    ? sql`${jarvisKnowledgeChunks.textSearch} @@ plainto_tsquery('english', ${query})`
+    ? sql`(${jarvisKnowledgeChunks.textSearch} @@ plainto_tsquery('english', ${query}) OR ${jarvisKnowledgeChunks.embedding} IS NOT NULL)`
     : undefined;
 
   const keywordScore = query
     ? sql<number>`ts_rank(${jarvisKnowledgeChunks.textSearch}, plainto_tsquery('english', ${query}))`
     : sql<number>`0`;
+  const semanticScore = queryEmbedding && queryEmbedding.length > 0
+    ? sql<number>`GREATEST(0, 1 - (${jarvisKnowledgeChunks.embedding} <=> ${vectorLiteral(queryEmbedding)}::vector))`
+    : sql<number>`0`;
   const recencyScore = sql<number>`GREATEST(0, LEAST(1, 1 - (EXTRACT(EPOCH FROM (now() - ${jarvisKnowledgeChunks.lastSeenAt})) / 86400 / 30)))`;
-  const score = sql<number>`((${keywordScore}) * 0.5) + ((${recencyScore}) * 0.3) + (COALESCE(${jarvisKnowledgeChunks.relevance}, 0) * 0.2)`;
+  const score = sql<number>`((${keywordScore}) * 0.35) + ((${semanticScore}) * 0.35) + ((${recencyScore}) * 0.15) + (COALESCE(${jarvisKnowledgeChunks.relevance}, 0) * 0.15)`;
 
   const rows = await db.select({
     id: jarvisKnowledgeChunks.id,
@@ -193,6 +361,7 @@ export async function retrieveKnowledgeChunks(options: RetrieveKnowledgeOptions)
     sourceHost: jarvisKnowledgeChunks.sourceHost,
     sourceTitle: jarvisKnowledgeChunks.sourceTitle,
     sourceType: jarvisKnowledgeChunks.sourceType,
+    sourceTags: jarvisKnowledgeChunks.sourceTags,
     chunkIndex: jarvisKnowledgeChunks.chunkIndex,
     startToken: jarvisKnowledgeChunks.startToken,
     endToken: jarvisKnowledgeChunks.endToken,
@@ -222,7 +391,10 @@ export async function retrieveKnowledgeChunks(options: RetrieveKnowledgeOptions)
   return filteredRows.slice(0, limit).map(toKnowledgeChunkRecord);
 }
 
-export function assembleKnowledgeContext(chunks: KnowledgeChunkRecord[], maxTokens = parsePositiveInt(process.env.JARVIS_MAX_CONTEXT_TOKENS, DEFAULT_MAX_CONTEXT_TOKENS)): AssembledKnowledgeContext {
+export function assembleKnowledgeContext(
+  chunks: KnowledgeChunkRecord[],
+  maxTokens = parsePositiveInt(process.env.JARVIS_MAX_CONTEXT_TOKENS, DEFAULT_MAX_CONTEXT_TOKENS),
+): AssembledKnowledgeContext {
   const effectiveBudget = Math.max(256, maxTokens - CONTEXT_RESERVED_TOKENS);
   let totalTokens = 0;
   const selected: KnowledgeChunkRecord[] = [];

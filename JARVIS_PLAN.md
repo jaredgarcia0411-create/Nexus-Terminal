@@ -123,11 +123,12 @@ Exit criteria: Jarvis answers from previously scraped knowledge without re-scrap
 
 | Ticket | Description | Size | Status |
 |---|---|---|---|
-| JRV-050 | Journal entry context: pull trade notes + tags into retrieval | M | pending |
-| JRV-051 | User doc upload API: `POST /api/jarvis/upload` for PDF + plain text | L | pending |
-| JRV-052 | Upload UI: file drop zone, upload status, manage uploaded docs | M | pending |
-| JRV-053 | Source attribution labels: `web_source`, `trade_journal`, `user_document`, `cached_headline` | S | pending |
-| JRV-054 | UI: color-coded source badges on each citation | S | pending |
+| JRV-055 | Embeddings integration: ingest-time vectors for all source types (NVIDIA) | M | done |
+| JRV-050 | Journal entry context: pull trade notes + tags into retrieval | M | done |
+| JRV-051 | User doc upload API: `POST /api/jarvis/upload` for PDF + plain text | L | done |
+| JRV-052 | Upload UI: file drop zone, upload status, manage uploaded docs | M | done |
+| JRV-053 | Source attribution labels: `web_source`, `trade_journal`, `user_document`, `cached_headline` | S | done |
+| JRV-054 | UI: color-coded source badges on each citation | S | done |
 
 Exit criteria: Jarvis blends web + journal + uploaded doc context with explicit attribution per finding.
 
@@ -175,6 +176,7 @@ Exit criteria: Safe to scale with predictable performance and cost. Regression q
 
 | Date | Update |
 |---|---|
+| 2026-03-07 | Sprint 5 completed (JRV-055, JRV-050 to JRV-054): added NVIDIA embedding integration with ingest-time vectors (migrated to `vector(1024)`), journal-note synchronization from trades with tags/performance context, PDF+text upload pipeline (`/api/jarvis/upload`) with document metadata tracking and chunk ingestion, Jarvis documents sub-tab UI for upload/list/delete management, retrieval/prompt attribution by source type, and color-coded citation badges for web/journal/document/headline sources. |
 | 2026-03-07 | Sprint 4 completed (JRV-040 to JRV-045): added persistent `jarvis_knowledge_chunks` schema + migration (with pgvector), write-through ingest with seen-count/last-seen updates, keyword+recency retrieval from PostgreSQL full-text search, token-budget context assembly via env-configurable limits, admin-only memory stats/purge APIs behind `x-jarvis-admin-key`, and automatic per-user eviction for non-web chunks at 100MB default bound. |
 | 2026-03-07 | JRV-033 completed: added `JarvisStructuredResponse` renderer with visual section hierarchy (`TL;DR`, findings, action steps, risks), warning styling, and clickable source links with relevance/ticker badges; wired `JarvisTab` to use the new renderer and added UI-focused rendering tests. |
 | 2026-03-07 | JRV-034 completed: improved deterministic fallback quality in `buildStructuredFallbackFromSources` (rank-aware findings, ticker-aware actions, confidence-aware risks) and made route-level fallback message schema-consistent via `formatStructuredMessage`. |

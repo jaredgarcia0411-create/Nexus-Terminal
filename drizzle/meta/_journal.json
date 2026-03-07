@@ -36,6 +36,13 @@
       "when": 1772913239289,
       "tag": "0004_good_princess_powerful",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1772918218170,
+      "tag": "0005_clever_leo",
+      "breakpoints": true
     }
   ]
 }

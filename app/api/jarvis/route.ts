@@ -28,6 +28,7 @@ import {
   assembleKnowledgeContext,
   ingestKnowledgeChunks,
   retrieveKnowledgeChunks,
+  syncTradeJournalChunks,
 } from '@/lib/jarvis-knowledge';
 
 const MAX_SCRAPE_URLS = 5;
@@ -380,7 +381,10 @@ async function askLlm(
   const previewChunks = chunks.length > 0 ? chunks.slice(0, 12) : [];
   const extraContext = previewChunks.length > 0
     ? `\n\nScraped chunks:\n${previewChunks
-      .map((chunk, index) => `${index + 1}. ${chunk.sourceHost} - ${chunk.sourceTitle} [relevance ${chunk.relevance?.toFixed(2)}]\n${chunk.text.slice(0, 640)}`)
+      .map((chunk, index) => {
+        const typeLabel = chunk.sourceType ? `[from ${chunk.sourceType}] ` : '';
+        return `${index + 1}. ${typeLabel}${chunk.sourceHost} - ${chunk.sourceTitle} [relevance ${chunk.relevance?.toFixed(2)}]\n${chunk.text.slice(0, 640)}`;
+      })
       .join('\n\n')}`
     : sources.length > 0
       ? `\n\nScraped sources:\n${sources.map((source, index) => `${index + 1}. ${source.host} - ${source.title}`).join('\n')}`
@@ -488,12 +492,16 @@ export async function POST(request: Request) {
       logRouteError('jarvis.memory.ingest', error);
     });
 
+    await syncTradeJournalChunks(authState.user.id, trades).catch((error) => {
+      logRouteError('jarvis.memory.sync_trade_journal', error);
+    });
+
     const knowledgeQuery = [resolvedPrompt, prompt, tradeTickers.join(' ')].filter(Boolean).join(' ').trim() || basePrompt;
     const retrievedChunks = await retrieveKnowledgeChunks({
       userId: authState.user.id,
       query: knowledgeQuery,
       tickers: tradeTickers,
-      sourceTypes: ['web_source'],
+      sourceTypes: ['web_source', 'trade_journal', 'user_document'],
       includeGlobal: true,
       limit: 40,
     }).catch((error) => {

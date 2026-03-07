@@ -6,9 +6,9 @@ const tsvector = customType<{ data: string }>({
   },
 });
 
-const vector768 = customType<{ data: number[] | null; driverData: string | null }>({
+const vector1024 = customType<{ data: number[] | null; driverData: string | null }>({
   dataType() {
-    return 'vector(768)';
+    return 'vector(1024)';
   },
   toDriver(value) {
     if (!value || value.length === 0) return null;
@@ -154,9 +154,10 @@ export const jarvisKnowledgeChunks = pgTable('jarvis_knowledge_chunks', {
   hash: text('hash').notNull(),
   relevance: doublePrecision('relevance').notNull().default(0),
   tickers: text('tickers').array().notNull().default([]),
+  sourceTags: text('source_tags').array().notNull().default([]),
   publishedAt: timestamp('published_at', { withTimezone: true }),
   author: text('author'),
-  embedding: vector768('embedding'),
+  embedding: vector1024('embedding'),
   textSearch: tsvector('text_search').notNull(),
   seenCount: integer('seen_count').notNull().default(1),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
@@ -167,5 +168,23 @@ export const jarvisKnowledgeChunks = pgTable('jarvis_knowledge_chunks', {
   index('idx_jarvis_knowledge_chunks_user_relevance').on(table.userId, table.relevance),
   index('idx_jarvis_knowledge_chunks_source_url').on(table.sourceUrl),
   index('idx_jarvis_knowledge_chunks_tickers').using('gin', table.tickers),
+  index('idx_jarvis_knowledge_chunks_source_tags').using('gin', table.sourceTags),
   index('idx_jarvis_knowledge_chunks_text_search').using('gin', table.textSearch),
+]);
+
+export const jarvisUserDocuments = pgTable('jarvis_user_documents', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  filename: text('filename').notNull(),
+  mimeType: text('mime_type').notNull(),
+  sizeBytes: integer('size_bytes').notNull(),
+  status: text('status', {
+    enum: ['pending', 'processing', 'processed', 'failed'],
+  }).notNull().default('pending'),
+  chunkCount: integer('chunk_count').notNull().default(0),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  processedAt: timestamp('processed_at', { withTimezone: true }),
+}, (table) => [
+  index('idx_jarvis_user_documents_user_created').on(table.userId, table.createdAt),
 ]);

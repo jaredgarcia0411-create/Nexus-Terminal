@@ -41,6 +41,8 @@ export interface ScrapedChunk {
   sourceUrl: string;
   sourceHost: string;
   sourceTitle: string;
+  sourceType?: JarvisSourceType;
+  sourceTags?: string[];
   index: number;
   startToken: number;
   endToken: number;
@@ -57,6 +59,8 @@ export interface JarvisSourceContext {
   url: string;
   title: string;
   host: string;
+  sourceType?: JarvisSourceType;
+  sourceTags?: string[];
   excerpt: string;
   relevance: number;
   publishedAt?: string;
