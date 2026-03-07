@@ -43,6 +43,7 @@ export default function Toolbar({
 }: ToolbarProps) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const isMobile = useIsMobile();
+  const [avatarLoadError, setAvatarLoadError] = useState<string | null>(null);
 
   return (
     <>
@@ -98,13 +99,21 @@ export default function Toolbar({
               <div className="text-[10px] text-zinc-500">{user?.email}</div>
             </div>
             <div>
-              {user?.image ? (
-                <Image src={user.image} alt={user.name ?? 'User'} width={32} height={32} className="h-8 w-8 rounded-full border border-white/10" />
-              ) : (
-                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/20">
-                  <User className="h-4 w-4 text-emerald-500" />
-                </div>
-              )}
+              {user?.image && avatarLoadError !== user.image ? (
+                  <Image
+                    src={user.image}
+                    alt={user.name ?? 'User'}
+                    width={32}
+                    height={32}
+                    className="h-8 w-8 rounded-full border border-white/10"
+                    key={user.image}
+                    onError={() => setAvatarLoadError(user.image ?? null)}
+                  />
+                ) : (
+                 <div className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/20">
+                   <User className="h-4 w-4 text-emerald-500" />
+                 </div>
+               )}
             </div>
           </div>
         ) : null}

@@ -10,34 +10,44 @@ export interface OHLCData {
 }
 
 export function sma(data: number[], period: number): (number | null)[] {
+  const safePeriod = Math.trunc(period);
+  if (!Number.isFinite(safePeriod) || safePeriod <= 0) {
+    return data.map(() => null);
+  }
+
   const result: (number | null)[] = [];
   for (let i = 0; i < data.length; i++) {
-    if (i < period - 1) {
+    if (i < safePeriod - 1) {
       result.push(null);
       continue;
     }
     let sum = 0;
-    for (let j = i - period + 1; j <= i; j++) {
+    for (let j = i - safePeriod + 1; j <= i; j++) {
       sum += data[j];
     }
-    result.push(sum / period);
+    result.push(sum / safePeriod);
   }
   return result;
 }
 
 export function ema(data: number[], period: number): (number | null)[] {
+  const safePeriod = Math.trunc(period);
+  if (!Number.isFinite(safePeriod) || safePeriod <= 0) {
+    return data.map(() => null);
+  }
+
   const result: (number | null)[] = [];
-  const multiplier = 2 / (period + 1);
+  const multiplier = 2 / (safePeriod + 1);
 
   for (let i = 0; i < data.length; i++) {
-    if (i < period - 1) {
+    if (i < safePeriod - 1) {
       result.push(null);
       continue;
     }
-    if (i === period - 1) {
+    if (i === safePeriod - 1) {
       let sum = 0;
-      for (let j = 0; j < period; j++) sum += data[j];
-      result.push(sum / period);
+      for (let j = 0; j < safePeriod; j++) sum += data[j];
+      result.push(sum / safePeriod);
       continue;
     }
     const prev = result[i - 1];
@@ -55,23 +65,32 @@ export function bollingerBands(
   period: number = 20,
   stdDevMultiplier: number = 2,
 ): { upper: (number | null)[]; middle: (number | null)[]; lower: (number | null)[] } {
-  const middle = sma(data, period);
+  const safePeriod = Math.trunc(period);
+  if (!Number.isFinite(safePeriod) || safePeriod <= 0) {
+    return {
+      upper: data.map(() => null),
+      middle: data.map(() => null),
+      lower: data.map(() => null),
+    };
+  }
+
+  const middle = sma(data, safePeriod);
   const upper: (number | null)[] = [];
   const lower: (number | null)[] = [];
 
   for (let i = 0; i < data.length; i++) {
     const mid = middle[i];
-    if (mid === null || i < period - 1) {
+    if (mid === null || i < safePeriod - 1) {
       upper.push(null);
       lower.push(null);
       continue;
     }
 
     let sumSqDiff = 0;
-    for (let j = i - period + 1; j <= i; j++) {
+    for (let j = i - safePeriod + 1; j <= i; j++) {
       sumSqDiff += (data[j] - mid) ** 2;
     }
-    const stdDev = Math.sqrt(sumSqDiff / period);
+    const stdDev = Math.sqrt(sumSqDiff / safePeriod);
     upper.push(mid + stdDevMultiplier * stdDev);
     lower.push(mid - stdDevMultiplier * stdDev);
   }
@@ -85,9 +104,21 @@ export function vwap(candles: OHLCData[]): (number | null)[] {
   let cumTP = 0;
 
   for (const candle of candles) {
-    const typicalPrice = (candle.high + candle.low + candle.close) / 3;
-    cumVolume += candle.volume;
-    cumTP += typicalPrice * candle.volume;
+    const high = Number(candle.high);
+    const low = Number(candle.low);
+    const close = Number(candle.close);
+    const volume = Number(candle.volume);
+
+    if (![high, low, close].every(Number.isFinite)) {
+      result.push(null);
+      continue;
+    }
+
+    const typicalPrice = (high + low + close) / 3;
+    const safeVolume = Number.isFinite(volume) ? volume : 0;
+
+    cumVolume += safeVolume;
+    cumTP += typicalPrice * safeVolume;
     result.push(cumVolume > 0 ? cumTP / cumVolume : null);
   }
 
@@ -95,25 +126,34 @@ export function vwap(candles: OHLCData[]): (number | null)[] {
 }
 
 export function rsi(data: number[], period: number = 14): (number | null)[] {
+  if (data.some((value) => !Number.isFinite(value))) {
+    return data.map(() => null);
+  }
+
+  const safePeriod = Math.trunc(period);
+  if (!Number.isFinite(safePeriod) || safePeriod <= 0) {
+    return data.map(() => null);
+  }
+
   const result: (number | null)[] = [];
 
-  if (data.length < period + 1) {
+  if (data.length < safePeriod + 1) {
     return data.map(() => null);
   }
 
   // Calculate initial average gain/loss
   let avgGain = 0;
   let avgLoss = 0;
-  for (let i = 1; i <= period; i++) {
+  for (let i = 1; i <= safePeriod; i++) {
     const change = data[i] - data[i - 1];
     if (change > 0) avgGain += change;
     else avgLoss += Math.abs(change);
   }
-  avgGain /= period;
-  avgLoss /= period;
+  avgGain /= safePeriod;
+  avgLoss /= safePeriod;
 
   // Fill nulls for the initial period
-  for (let i = 0; i < period; i++) {
+  for (let i = 0; i < safePeriod; i++) {
     result.push(null);
   }
 
@@ -122,13 +162,13 @@ export function rsi(data: number[], period: number = 14): (number | null)[] {
   result.push(100 - 100 / (1 + rs));
 
   // Smoothed RSI
-  for (let i = period + 1; i < data.length; i++) {
+  for (let i = safePeriod + 1; i < data.length; i++) {
     const change = data[i] - data[i - 1];
     const gain = change > 0 ? change : 0;
     const loss = change < 0 ? Math.abs(change) : 0;
 
-    avgGain = (avgGain * (period - 1) + gain) / period;
-    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    avgGain = (avgGain * (safePeriod - 1) + gain) / safePeriod;
+    avgLoss = (avgLoss * (safePeriod - 1) + loss) / safePeriod;
 
     const rsVal = avgLoss === 0 ? 100 : avgGain / avgLoss;
     result.push(100 - 100 / (1 + rsVal));
@@ -143,8 +183,27 @@ export function macd(
   slowPeriod: number = 26,
   signalPeriod: number = 9,
 ): { macd: (number | null)[]; signal: (number | null)[]; histogram: (number | null)[] } {
-  const fastEma = ema(data, fastPeriod);
-  const slowEma = ema(data, slowPeriod);
+  const safeFastPeriod = Math.trunc(fastPeriod);
+  const safeSlowPeriod = Math.trunc(slowPeriod);
+  const safeSignalPeriod = Math.trunc(signalPeriod);
+
+  if (
+    !Number.isFinite(safeFastPeriod) ||
+    !Number.isFinite(safeSlowPeriod) ||
+    !Number.isFinite(safeSignalPeriod) ||
+    safeFastPeriod <= 0 ||
+    safeSlowPeriod <= 0 ||
+    safeSignalPeriod <= 0
+  ) {
+    return {
+      macd: data.map(() => null),
+      signal: data.map(() => null),
+      histogram: data.map(() => null),
+    };
+  }
+
+  const fastEma = ema(data, safeFastPeriod);
+  const slowEma = ema(data, safeSlowPeriod);
 
   const macdLine: number[] = [];
   const macdWithNulls: (number | null)[] = [];
@@ -161,7 +220,7 @@ export function macd(
     }
   }
 
-  const signalLine = ema(macdLine, signalPeriod);
+  const signalLine = ema(macdLine, safeSignalPeriod);
 
   // Align signal line with macd line
   const signal: (number | null)[] = [];

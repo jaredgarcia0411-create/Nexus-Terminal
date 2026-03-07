@@ -1,12 +1,30 @@
 import NextAuth, { type NextAuthConfig } from 'next-auth';
 import Google from 'next-auth/providers/google';
 
+const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim();
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+const missingGoogleConfig = !googleClientId || !googleClientSecret;
+
+if (missingGoogleConfig) {
+  const message = 'Google OAuth is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET before enabling sign in.';
+
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error(message);
+  }
+
+  console.warn(`[auth-config] ${message}`);
+}
+
 const config: NextAuthConfig = {
   providers: [
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    }),
+    ...(missingGoogleConfig
+      ? []
+      : [
+          Google({
+            clientId: googleClientId,
+            clientSecret: googleClientSecret,
+          }),
+        ]),
   ],
   session: { strategy: 'jwt' },
   callbacks: {
