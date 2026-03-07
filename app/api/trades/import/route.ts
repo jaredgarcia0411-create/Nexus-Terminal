@@ -1,6 +1,12 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { getPoolDb } from '@/lib/db';
-import { tradeExecutions, trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
+import {
+  tradeExecutions,
+  tradeImportBatches,
+  trades,
+  tradeTags as tradeTagsTable,
+  tags as tagsTable,
+} from '@/lib/db/schema';
 import {
   dbUnavailable,
   ensureUser,
@@ -13,6 +19,7 @@ import {
 
 type ImportPayload = {
   trades: ApiTrade[];
+  batchKey?: string;
 };
 
 function normalizeTimestamp(value: unknown): string | null {
@@ -35,7 +42,26 @@ export async function POST(request: Request) {
     return Response.json({ error: 'trades must be an array' }, { status: 400 });
   }
 
+  const batchKey = typeof body.batchKey === 'string' ? body.batchKey.trim() : '';
+  if (batchKey.length > 256) {
+    return Response.json({ error: 'batchKey must be 256 characters or fewer' }, { status: 400 });
+  }
+
+  let importSkipped = false;
+
   await db.transaction(async (tx) => {
+    if (batchKey) {
+      const inserted = await tx.insert(tradeImportBatches)
+        .values({ userId: authState.user.id, batchKey })
+        .onConflictDoNothing()
+        .returning({ batchKey: tradeImportBatches.batchKey });
+
+      if (inserted.length === 0) {
+        importSkipped = true;
+        return;
+      }
+    }
+
     for (const trade of body.trades) {
       const commission = trade.commission ?? 0;
       const fees = trade.fees ?? 0;
@@ -133,5 +159,5 @@ export async function POST(request: Request) {
   const tagMap = await loadTagsForTradeIds(db, authState.user.id, tradeIds);
 
   const tradeList = tradeRows.map((row) => toTrade(row, tagMap.get(row.id) ?? []));
-  return Response.json({ trades: tradeList });
+  return Response.json({ trades: tradeList, importSkipped });
 }

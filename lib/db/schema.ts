@@ -83,6 +83,15 @@ export const tags = pgTable('tags', {
   index('idx_tags_user_id').on(table.userId),
 ]);
 
+export const tradeImportBatches = pgTable('trade_import_batches', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  batchKey: text('batch_key').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.batchKey] }),
+  index('idx_trade_import_batches_user_created').on(table.userId, table.createdAt),
+]);
+
 export const brokerSyncLog = pgTable('broker_sync_log', {
   id: serial('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

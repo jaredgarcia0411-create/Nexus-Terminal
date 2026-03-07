@@ -8,6 +8,12 @@ import type { Trade } from '@/lib/types';
 import { parseDateFromFilename, processCsvData } from '@/lib/csv-parser';
 import { detectParser, getParserById } from '@/lib/parsers';
 import { isDatabaseAvailable } from '@/lib/storage';
+import {
+  acquireMigrationLock,
+  createMigrationBatchKey,
+  isDatabaseUnavailableError,
+  releaseMigrationLock,
+} from '@/lib/trade-migration';
 import { useSession } from 'next-auth/react';
 
 type ApiTrade = Omit<Trade, 'date'> & { date: string };
@@ -55,6 +61,10 @@ const toApiTrade = (trade: Trade): ApiTrade => ({
 
 const fromApiTrade = (trade: ApiTrade): Trade => normalizeTrade(trade);
 
+const LOCAL_MIGRATION_LOCK_TTL_MS = 2 * 60 * 1000;
+
+type ApiRequestError = Error & { status?: number };
+
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -66,7 +76,9 @@ async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
 
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) {
-    throw new Error(data.error || 'Something went wrong');
+    const error = new Error(data.error || 'Something went wrong') as ApiRequestError;
+    error.status = res.status;
+    throw error;
   }
 
   return data;
@@ -144,14 +156,24 @@ export function useTrades() {
   useEffect(() => {
     if (status === 'loading') return;
 
+    if (status === 'unauthenticated') {
+      setUseLocalStorage(false);
+      setError('Authentication required');
+      setMounted(true);
+      return;
+    }
+
     const loadLocal = () => {
       const savedTrades = localStorage.getItem('nexus-trades');
       const savedTags = localStorage.getItem('nexus-tags');
 
+      let nextTrades: Trade[] = [];
+      let nextTags: string[] = [];
+
       if (savedTrades) {
         try {
           const parsed = JSON.parse(savedTrades) as TradeLike[];
-          setTrades(sortTrades(parsed.map((trade) => normalizeTrade(trade))));
+          nextTrades = sortTrades(parsed.map((trade) => normalizeTrade(trade)));
         } catch (loadError) {
           console.error('Failed to load local trades', loadError);
         }
@@ -159,55 +181,90 @@ export function useTrades() {
 
       if (savedTags) {
         try {
-          setGlobalTags(JSON.parse(savedTags) as string[]);
+          nextTags = JSON.parse(savedTags) as string[];
         } catch (loadError) {
           console.error('Failed to load local tags', loadError);
         }
       }
+
+      setTrades(nextTrades);
+      setGlobalTags(nextTags);
     };
 
     const loadRemote = async () => {
       try {
         const dbAvailable = await isDatabaseAvailable();
 
-        if (!dbAvailable || !user?.id) {
+        if (!dbAvailable) {
           setUseLocalStorage(true);
+          setError('Database not configured');
           loadLocal();
-          setMounted(true);
+          return;
+        }
+
+        if (!user?.id) {
+          setUseLocalStorage(false);
+          setError('Authentication required');
           return;
         }
 
         setUseLocalStorage(false);
+        setError(null);
 
         const localTradesRaw = localStorage.getItem('nexus-trades');
         const localTagsRaw = localStorage.getItem('nexus-tags');
-        const localTrades: ApiTrade[] = localTradesRaw
-          ? (JSON.parse(localTradesRaw) as TradeLike[]).map((trade) => toApiTrade(normalizeTrade(trade)))
-          : [];
-        const localTags: string[] = localTagsRaw ? (JSON.parse(localTagsRaw) as string[]) : [];
+        let localTrades: ApiTrade[] = [];
+        let localTags: string[] = [];
 
-        if (localTrades.length > 0) {
-          await apiRequest<{ trades: ApiTrade[] }>('/api/trades/import', {
-            method: 'POST',
-            body: JSON.stringify({ trades: localTrades }),
-          });
+        if (localTradesRaw) {
+          try {
+            localTrades = (JSON.parse(localTradesRaw) as TradeLike[]).map((trade) => toApiTrade(normalizeTrade(trade)));
+          } catch (parseError) {
+            console.error('Failed to parse local trades for migration', parseError);
+          }
         }
 
-        if (localTags.length > 0) {
-          await Promise.all(
-            localTags.map((tag) =>
-              apiRequest<{ tag: string }>('/api/tags', {
-                method: 'POST',
-                body: JSON.stringify({ name: tag }),
-              }),
-            ),
-          );
+        if (localTagsRaw) {
+          try {
+            localTags = JSON.parse(localTagsRaw) as string[];
+          } catch (parseError) {
+            console.error('Failed to parse local tags for migration', parseError);
+          }
         }
 
+        let migratedLocalData = false;
         if (localTrades.length > 0 || localTags.length > 0) {
-          localStorage.removeItem('nexus-trades');
-          localStorage.removeItem('nexus-tags');
-          toast.success('Trades migrated to cloud');
+          const migrationLockKey = `nexus-cloud-migration-lock:${user.id}`;
+          const lockAcquired = acquireMigrationLock(localStorage, migrationLockKey, Date.now(), LOCAL_MIGRATION_LOCK_TTL_MS);
+
+          if (lockAcquired) {
+            try {
+              if (localTrades.length > 0) {
+                const batchKey = createMigrationBatchKey(user.id, localTrades, localTags);
+                await apiRequest<{ trades: ApiTrade[]; importSkipped?: boolean }>('/api/trades/import', {
+                  method: 'POST',
+                  body: JSON.stringify({ trades: localTrades, batchKey }),
+                });
+              }
+
+              if (localTags.length > 0) {
+                await Promise.all(
+                  localTags.map((tag) =>
+                    apiRequest<{ tag: string }>('/api/tags', {
+                      method: 'POST',
+                      body: JSON.stringify({ name: tag }),
+                    }),
+                  ),
+                );
+              }
+
+              localStorage.removeItem('nexus-trades');
+              localStorage.removeItem('nexus-tags');
+              migratedLocalData = true;
+            } finally {
+              releaseMigrationLock(localStorage, migrationLockKey);
+            }
+          }
         }
 
         const [tradesRes, tagsRes] = await Promise.all([
@@ -217,16 +274,27 @@ export function useTrades() {
 
         setTrades(sortTrades(tradesRes.trades.map(fromApiTrade)));
         setGlobalTags(tagsRes.tags);
+
+        if (migratedLocalData) {
+          toast.success('Trades migrated to cloud');
+        }
       } catch (loadError) {
+        if (isDatabaseUnavailableError(loadError)) {
+          setUseLocalStorage(true);
+          setError('Database not configured');
+          loadLocal();
+          return;
+        }
+
         console.error(loadError);
-        setUseLocalStorage(true);
-        loadLocal();
+        setUseLocalStorage(false);
+        setError(loadError instanceof Error ? loadError.message : 'Could not load cloud data');
       } finally {
         setMounted(true);
       }
     };
 
-    loadRemote();
+    void loadRemote();
   }, [status, user?.id, sortTrades]);
 
   useEffect(() => {
