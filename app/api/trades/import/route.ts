@@ -55,6 +55,21 @@ function normalizeTimestamp(value: unknown): string | null {
   return null;
 }
 
+function importFailure(error: unknown) {
+  if (!(error instanceof Error)) {
+    return internalServerError();
+  }
+
+  const errorCode = (error as { code?: unknown }).code;
+  const code = typeof errorCode === 'string' ? errorCode : undefined;
+
+  return Response.json({
+    error: 'Import failed while saving trades',
+    details: error.message,
+    ...(code ? { code } : {}),
+  }, { status: 500 });
+}
+
 export async function POST(request: Request) {
   try {
     const authState = await requireUser();
@@ -200,6 +215,6 @@ export async function POST(request: Request) {
     return Response.json({ trades: tradeList, importSkipped });
   } catch (error) {
     logRouteError('trades.import.post', error);
-    return internalServerError();
+    return importFailure(error);
   }
 }

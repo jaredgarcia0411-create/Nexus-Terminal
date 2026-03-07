@@ -74,16 +74,38 @@ function buildRemainingExecution(exec: RawExecution, matchedQty: number): RawExe
 
 export const parseDateFromFilename = (filename: string) => {
   const base = filename.replace(/\.csv$/i, '');
-  const numbers = base.match(/\d+/g);
-  if (!numbers || numbers.length < 3) return null;
+  const numberParts = Array.from(base.matchAll(/\d+/g));
+  if (numberParts.length < 3) return null;
 
-  const nums = numbers.slice(-3);
-  const month = parseInt(nums[0], 10);
-  const day = parseInt(nums[1], 10);
-  let year = parseInt(nums[2], 10);
+  const lastThree = numberParts.slice(-3).map((part) => part[0]);
+  const [firstRaw, secondRaw, thirdRaw] = lastThree;
 
+  let year: number;
+  let month: number;
+  let day: number;
+
+  if (firstRaw.length === 4) {
+    year = Number(firstRaw);
+    month = Number(secondRaw);
+    day = Number(thirdRaw);
+  } else {
+    year = Number(thirdRaw.length === 2 ? `20${thirdRaw}` : thirdRaw);
+    const first = Number(firstRaw);
+    const second = Number(secondRaw);
+
+    if (first >= 1 && first <= 12 && second >= 1 && second <= 31) {
+      month = first;
+      day = second;
+    } else if (second >= 1 && second <= 12 && first >= 1 && first <= 31) {
+      month = second;
+      day = first;
+    } else {
+      return null;
+    }
+  }
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  if (year < 100) year = 2000 + year;
 
   const date = new Date(year, month - 1, day);
   if (date.getMonth() !== month - 1 || date.getDate() !== day) return null;

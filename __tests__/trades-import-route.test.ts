@@ -218,4 +218,41 @@ describe('POST /api/trades/import', () => {
     expect(payload.error).toContain('trades[0]');
     expect(db._mocks.tradeInsertValuesMock).not.toHaveBeenCalled();
   });
+
+  it('returns detailed 500 payload when transaction fails unexpectedly', async () => {
+    const db = {
+      transaction: vi.fn().mockRejectedValue(new Error('db write failed')),
+      select: vi.fn(),
+    };
+    getPoolDbMock.mockReturnValue(db as unknown as ReturnType<typeof makeDbWithBatchState>);
+
+    const response = await POST(new Request('http://localhost/api/trades/import', {
+      method: 'POST',
+      body: JSON.stringify({
+        trades: [
+          {
+            id: 'trade-1',
+            date: '2026-03-06T12:00:00.000Z',
+            sortKey: '2026-03-06',
+            symbol: 'AAPL',
+            direction: 'LONG',
+            avgEntryPrice: 100,
+            avgExitPrice: 105,
+            totalQuantity: 10,
+            pnl: 48,
+            rawExecutions: [],
+            tags: [],
+          },
+        ],
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    if (!response) throw new Error('Expected response');
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(payload.error).toBe('Import failed while saving trades');
+    expect(payload.details).toBe('db write failed');
+  });
 });

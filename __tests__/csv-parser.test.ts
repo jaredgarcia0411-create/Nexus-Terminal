@@ -15,6 +15,24 @@ describe('parseDateFromFilename', () => {
     expect(result!.sortKey).toBe('2024-12-05');
   });
 
+  it('parses YYYY-MM-DD format', () => {
+    const result = parseDateFromFilename('2025-01-15.csv');
+    expect(result).not.toBeNull();
+    expect(result!.sortKey).toBe('2025-01-15');
+  });
+
+  it('parses YYYY_MM_DD format', () => {
+    const result = parseDateFromFilename('trades_2025_01_15.csv');
+    expect(result).not.toBeNull();
+    expect(result!.sortKey).toBe('2025-01-15');
+  });
+
+  it('parses DD-MM-YY format when first segment exceeds 12', () => {
+    const result = parseDateFromFilename('15-01-25.csv');
+    expect(result).not.toBeNull();
+    expect(result!.sortKey).toBe('2025-01-15');
+  });
+
   it('returns null for invalid calendar dates', () => {
     expect(parseDateFromFilename('02-30-24.csv')).toBeNull();
   });

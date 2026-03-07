@@ -17,6 +17,7 @@ import {
 import { useSession } from 'next-auth/react';
 
 type ApiTrade = Omit<Trade, 'date'> & { date: string };
+type CsvParseIssue = { row?: number; message?: string; code?: string };
 
 type TradeLike = Partial<Omit<Trade, 'date'>> & {
   id: string;
@@ -62,6 +63,7 @@ const toApiTrade = (trade: Trade): ApiTrade => ({
 const fromApiTrade = (trade: ApiTrade): Trade => normalizeTrade(trade);
 
 const LOCAL_MIGRATION_LOCK_TTL_MS = 2 * 60 * 1000;
+const IMPORT_CHUNK_SIZE = 200;
 
 type ApiRequestError = Error & { status?: number };
 
@@ -74,14 +76,26 @@ async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
     },
   });
 
-  const data = (await res.json().catch(() => ({}))) as T & { error?: string };
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string; details?: string; code?: string };
   if (!res.ok) {
-    const error = new Error(data.error || 'Something went wrong') as ApiRequestError;
+    const base = data.error || 'Something went wrong';
+    const code = typeof data.code === 'string' && data.code ? ` [${data.code}]` : '';
+    const details = typeof data.details === 'string' && data.details ? `: ${data.details}` : '';
+    const error = new Error(`${base}${code}${details}`) as ApiRequestError;
     error.status = res.status;
     throw error;
   }
 
   return data;
+}
+
+function appendCsvParseWarnings(fileName: string, issues: CsvParseIssue[], warnings: string[]) {
+  for (const issue of issues) {
+    const row = typeof issue.row === 'number' ? ` row ${issue.row + 1}` : '';
+    const code = issue.code ? ` (${issue.code})` : '';
+    const message = issue.message?.trim() || 'Unknown CSV parse error';
+    warnings.push(`${fileName}${row}: ${message}${code}`);
+  }
 }
 
 export function useTrades() {
@@ -600,10 +614,9 @@ export function useTrades() {
         const dateInfo = parseDateFromFilename(file.name);
 
         if (!dateInfo) {
+          warnings.push(`Skipped ${file.name}: could not parse date from filename`);
           continue;
         }
-
-        processedDates.add(dateInfo.sortKey);
 
         await new Promise<void>((resolve, reject) => {
           Papa.parse(file, {
@@ -611,7 +624,15 @@ export function useTrades() {
             skipEmptyLines: true,
             complete: (results) => {
               try {
+                const parseIssues = (results.errors ?? []) as CsvParseIssue[];
+                if (parseIssues.length > 0) {
+                  appendCsvParseWarnings(file.name, parseIssues, warnings);
+                }
+
                 const parsed = processCsvData(results.data as Record<string, unknown>[], dateInfo);
+                if (parsed.trades.length > 0) {
+                  processedDates.add(dateInfo.sortKey);
+                }
                 allNewTrades.push(...parsed.trades);
                 warnings.push(...parsed.warnings);
                 resolve();
@@ -625,7 +646,14 @@ export function useTrades() {
       }
 
       if (warnings.length > 0) {
-        toast.warning(`${warnings.length} executions skipped (unmatched)`);
+        toast.warning(`${warnings.length} warning(s) during file import`);
+      }
+
+      if (allNewTrades.length === 0) {
+        if (warnings.length === 0) {
+          toast.warning('No valid trade rows found to import');
+        }
+        return;
       }
 
       if (useLocalStorage) {
@@ -651,13 +679,21 @@ export function useTrades() {
           return sortTrades([...mergedNewTrades, ...filtered]);
         });
       } else {
-        const importRes = await apiRequest<{ trades: ApiTrade[] }>('/api/trades/import', {
-          method: 'POST',
-          body: JSON.stringify({ trades: allNewTrades.map(toApiTrade) }),
-        });
+        const apiTrades = allNewTrades.map(toApiTrade);
+        for (let offset = 0; offset < apiTrades.length; offset += IMPORT_CHUNK_SIZE) {
+          const chunk = apiTrades.slice(offset, offset + IMPORT_CHUNK_SIZE);
+          await apiRequest<{ trades: ApiTrade[] }>('/api/trades/import', {
+            method: 'POST',
+            body: JSON.stringify({ trades: chunk }),
+          });
+        }
 
-        setTrades(sortTrades(importRes.trades.map(fromApiTrade)));
-        const tagsRes = await apiRequest<{ tags: string[] }>('/api/tags');
+        const [tradesRes, tagsRes] = await Promise.all([
+          apiRequest<{ trades: ApiTrade[] }>('/api/trades'),
+          apiRequest<{ tags: string[] }>('/api/tags'),
+        ]);
+
+        setTrades(sortTrades(tradesRes.trades.map(fromApiTrade)));
         setGlobalTags(tagsRes.tags);
       }
     } catch (uploadError) {
@@ -706,8 +742,6 @@ export function useTrades() {
             continue;
           }
 
-          processedDates.add(dateInfo.sortKey);
-
           await new Promise<void>((resolve, reject) => {
             Papa.parse(file, {
               header: true,
@@ -715,10 +749,17 @@ export function useTrades() {
               complete: (results) => {
                 try {
                   const rows = results.data as Record<string, unknown>[];
+                  const parseIssues = (results.errors ?? []) as CsvParseIssue[];
+                  if (parseIssues.length > 0) {
+                    appendCsvParseWarnings(file.name, parseIssues, warnings);
+                  }
                   // Resolve parser: by dir name → auto-detect from headers → built-in
                   const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
                   const parser = parserById ?? detectParser(headers, rows);
                   const parsed = processCsvData(rows, dateInfo, parser.id !== 'default' ? parser : undefined);
+                  if (parsed.trades.length > 0) {
+                    processedDates.add(dateInfo.sortKey);
+                  }
                   allNewTrades.push(...parsed.trades);
                   warnings.push(...parsed.warnings);
                   resolve();
@@ -734,6 +775,13 @@ export function useTrades() {
 
       if (warnings.length > 0) {
         toast.warning(`${warnings.length} warning(s) during folder import`);
+      }
+
+      if (allNewTrades.length === 0) {
+        if (warnings.length === 0) {
+          toast.warning('No valid trade rows found in folder import');
+        }
+        return;
       }
 
       if (useLocalStorage) {
@@ -759,13 +807,21 @@ export function useTrades() {
           return sortTrades([...mergedNewTrades, ...filtered]);
         });
       } else {
-        const importRes = await apiRequest<{ trades: ApiTrade[] }>('/api/trades/import', {
-          method: 'POST',
-          body: JSON.stringify({ trades: allNewTrades.map(toApiTrade) }),
-        });
+        const apiTrades = allNewTrades.map(toApiTrade);
+        for (let offset = 0; offset < apiTrades.length; offset += IMPORT_CHUNK_SIZE) {
+          const chunk = apiTrades.slice(offset, offset + IMPORT_CHUNK_SIZE);
+          await apiRequest<{ trades: ApiTrade[] }>('/api/trades/import', {
+            method: 'POST',
+            body: JSON.stringify({ trades: chunk }),
+          });
+        }
 
-        setTrades(sortTrades(importRes.trades.map(fromApiTrade)));
-        const tagsRes = await apiRequest<{ tags: string[] }>('/api/tags');
+        const [tradesRes, tagsRes] = await Promise.all([
+          apiRequest<{ trades: ApiTrade[] }>('/api/trades'),
+          apiRequest<{ tags: string[] }>('/api/tags'),
+        ]);
+
+        setTrades(sortTrades(tradesRes.trades.map(fromApiTrade)));
         setGlobalTags(tagsRes.tags);
       }
     } catch (uploadError) {
