@@ -45,8 +45,6 @@ type ExactMarkerPoint = {
   y: number;
   color: string;
   points: string;
-  label: string;
-  showLabel: boolean;
 };
 
 function toUTCSeconds(ms: number): Time {
@@ -218,9 +216,9 @@ export default function CandlestickChart({
         const y = candleSeries.priceToCoordinate(marker.price);
         if (x == null || y == null) return [];
 
-        const isEntry = marker.label.toUpperCase().startsWith('ENTRY');
-        const color = isEntry ? '#10b981' : '#ef4444';
-        const triangle = isEntry
+        const isBuy = marker.direction === 'LONG';
+        const color = isBuy ? '#10b981' : '#ef4444';
+        const triangle = isBuy
           ? `${x},${y - markerSize} ${x - markerSize},${y + markerSize} ${x + markerSize},${y + markerSize}`
           : `${x},${y + markerSize} ${x - markerSize},${y - markerSize} ${x + markerSize},${y - markerSize}`;
 
@@ -230,29 +228,10 @@ export default function CandlestickChart({
           y,
           color,
           points: triangle,
-          label: isEntry ? 'E' : 'X',
-          showLabel: true,
         }];
       });
 
-    let lastLabeledX = Number.NEGATIVE_INFINITY;
-    let lastLabeledY = Number.NEGATIVE_INFINITY;
-    const collisionX = markerSize * 3.5 + 10;
-    const collisionY = markerSize * 2.4;
-
-    const withCollisionHandling = points.map((point) => {
-      const dx = Math.abs(point.x - lastLabeledX);
-      const dy = Math.abs(point.y - lastLabeledY);
-      if (dx <= collisionX || (dx <= collisionX * 1.5 && dy <= collisionY)) {
-        return { ...point, showLabel: false };
-      }
-
-      lastLabeledX = point.x;
-      lastLabeledY = point.y;
-      return point;
-    });
-
-    queueMicrotask(() => setExactMarkerPoints(withCollisionHandling));
+    queueMicrotask(() => setExactMarkerPoints(points));
   }, [clearExactMarkerPoints, exactPriceMarkers, sortedCandles, tradeMarkers]);
 
   const scheduleExactMarkerRecalculation = useCallback(() => {
@@ -264,22 +243,6 @@ export default function CandlestickChart({
       recalculateExactMarkers();
     });
   }, [recalculateExactMarkers]);
-
-  useEffect(() => {
-    if (!exactPriceMarkers) return;
-
-    const chart = chartRef.current;
-    if (!chart) return;
-
-    const handleRangeChange = () => {
-      scheduleExactMarkerRecalculation();
-    };
-
-    chart.timeScale().subscribeVisibleLogicalRangeChange(handleRangeChange);
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleRangeChange);
-    };
-  }, [exactPriceMarkers, scheduleExactMarkerRecalculation]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -300,7 +263,21 @@ export default function CandlestickChart({
     candleSeriesRef.current = lifecycle.candleSeries;
     volumeSeriesRef.current = lifecycle.volumeSeries;
 
+    let unsubscribeRange: (() => void) | null = null;
+    if (exactPriceMarkers) {
+      const handleRangeChange = () => {
+        scheduleExactMarkerRecalculation();
+      };
+      lifecycle.chart.timeScale().subscribeVisibleLogicalRangeChange(handleRangeChange);
+      lifecycle.chart.timeScale().subscribeVisibleTimeRangeChange(handleRangeChange);
+      unsubscribeRange = () => {
+        lifecycle.chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleRangeChange);
+        lifecycle.chart.timeScale().unsubscribeVisibleTimeRangeChange(handleRangeChange);
+      };
+    }
+
     return () => {
+      unsubscribeRange?.();
       lifecycle.cleanup();
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -377,11 +354,6 @@ export default function CandlestickChart({
           {exactMarkerPoints.map((marker) => (
             <g key={marker.key}>
               <polygon points={marker.points} fill={marker.color} stroke="rgba(20, 20, 23, 0.9)" strokeWidth="2" />
-              {marker.showLabel ? (
-                <text x={marker.x + 7} y={marker.y - 9} fill="#ffffff" fontSize="11" fontWeight="700" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.9)' }}>
-                  {marker.label}
-                </text>
-              ) : null}
             </g>
           ))}
         </svg>

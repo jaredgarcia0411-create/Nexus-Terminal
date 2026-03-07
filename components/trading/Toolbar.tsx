@@ -2,16 +2,13 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { Plus, Trash2, User, X } from 'lucide-react';
+import { Plus, Trash2, User } from 'lucide-react';
 import ImportDropdown from '@/components/trading/ImportDropdown';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 
 interface ToolbarProps {
-  activeFilterCount: number;
-  hasActiveFilters: boolean;
-  clearAllFilters: () => void;
   useLocalStorage: boolean;
   error: string | null;
   user: { name?: string | null; email?: string | null; image?: string | null } | undefined;
@@ -25,9 +22,6 @@ interface ToolbarProps {
 }
 
 export default function Toolbar({
-  activeFilterCount,
-  hasActiveFilters,
-  clearAllFilters,
   useLocalStorage,
   error,
   user,
@@ -49,15 +43,6 @@ export default function Toolbar({
         <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
           <h1 className="shrink-0 text-lg font-medium tracking-tight">Nexus Terminal</h1>
           <div className="mx-1 hidden h-4 w-px bg-white/10 sm:mx-2 sm:block" />
-
-          {hasActiveFilters ? (
-            <div className="flex items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-400">
-              <span>Filtered ({activeFilterCount})</span>
-              <button onClick={clearAllFilters} className="text-emerald-300 transition-colors hover:text-white" title="Clear filters">
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          ) : null}
 
           {!isMobile ? (
             <span className="text-[10px] uppercase tracking-widest text-zinc-600">{useLocalStorage ? 'Local Storage Mode' : 'Cloud Mode'}</span>

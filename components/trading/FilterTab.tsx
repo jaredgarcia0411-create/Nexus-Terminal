@@ -8,6 +8,7 @@ import type { Trade } from '@/lib/types';
 
 interface FilterTabProps {
   filteredTrades: Trade[];
+  activeFilterCount: number;
   selectedIds: Set<string>;
   globalTags: string[];
   startDate: string;
@@ -28,6 +29,7 @@ interface FilterTabProps {
 
 export default function FilterTab({
   filteredTrades,
+  activeFilterCount,
   selectedIds,
   globalTags,
   startDate,
@@ -50,9 +52,19 @@ export default function FilterTab({
       <div className="flex flex-col gap-6 rounded-2xl border border-white/5 bg-[#121214] p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-2xl font-bold">Advanced Filters</h2>
-          <div className="flex shrink-0 items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-500">
-            <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-            {filteredTrades.length} TRADES LOGGED
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-500">
+              <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+              {filteredTrades.length} TRADES LOGGED
+            </div>
+            {hasActiveFilters ? (
+              <div className="flex items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-400">
+                <span>Filtered ({activeFilterCount})</span>
+                <button onClick={onClearAllFilters} className="text-emerald-300 transition-colors hover:text-white" title="Clear filters">
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
 

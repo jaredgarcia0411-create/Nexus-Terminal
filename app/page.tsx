@@ -119,9 +119,6 @@ export default function NexusTerminal() {
 
       <main className={isMobile ? 'pb-16' : 'pl-56'}>
         <Toolbar
-          activeFilterCount={activeFilterCount}
-          hasActiveFilters={hasActiveFilters}
-          clearAllFilters={clearAllFilters}
           useLocalStorage={useLocalStorage}
           error={error}
           user={user}
@@ -191,6 +188,7 @@ export default function NexusTerminal() {
             {activeTab === 'filter' ? (
               <FilterTab
                 filteredTrades={filteredTrades}
+                activeFilterCount={activeFilterCount}
                 selectedIds={selectedIds}
                 globalTags={globalTags}
                 startDate={startDate}
