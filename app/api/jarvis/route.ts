@@ -24,6 +24,11 @@ import {
   formatStructuredMessage,
   parseJarvisLlmResponse,
 } from '@/lib/jarvis-response';
+import {
+  assembleKnowledgeContext,
+  ingestKnowledgeChunks,
+  retrieveKnowledgeChunks,
+} from '@/lib/jarvis-knowledge';
 
 const MAX_SCRAPE_URLS = 5;
 const MAX_REMEMBERED_URLS = 20;
@@ -289,6 +294,14 @@ function sourceSummaryFor(scrapedSources: ScrapedSource[]) {
     .join('; ');
 }
 
+function sourceSummaryFromContexts(sourceContexts: ScrapeResult['sourceContexts']) {
+  if (sourceContexts.length === 0) return undefined;
+  return sourceContexts
+    .slice(0, 5)
+    .map((source) => `${source.title} (${source.host})`)
+    .join('; ');
+}
+
 function extractTradeTickers(trades: JarvisTradeInput[]) {
   return [...new Set(trades.map((trade) => trade.symbol.trim().toUpperCase()).filter(Boolean))];
 }
@@ -467,12 +480,50 @@ export async function POST(request: Request) {
 
     await rememberUrls(authState.user, scrapeUrls).catch(() => null);
     const scrapeResult = await scrapeSources(scrapeUrls, tradeTickers);
+    await ingestKnowledgeChunks({
+      userId: authState.user.id,
+      sourceType: 'web_source',
+      chunks: scrapeResult.chunks,
+    }).catch((error) => {
+      logRouteError('jarvis.memory.ingest', error);
+    });
+
+    const knowledgeQuery = [resolvedPrompt, prompt, tradeTickers.join(' ')].filter(Boolean).join(' ').trim() || basePrompt;
+    const retrievedChunks = await retrieveKnowledgeChunks({
+      userId: authState.user.id,
+      query: knowledgeQuery,
+      tickers: tradeTickers,
+      sourceTypes: ['web_source'],
+      includeGlobal: true,
+      limit: 40,
+    }).catch((error) => {
+      logRouteError('jarvis.memory.retrieve', error);
+      return [];
+    });
+    const assembledMemoryContext = assembleKnowledgeContext(retrievedChunks);
+
     const scrapedSources = scrapeResult.sources;
-    const sourceSummary = sourceSummaryFor(scrapedSources);
-    const sourceContexts = scrapeResult.sourceContexts;
-    const llmMessage = await askLlm(basePrompt, scrapedSources, scrapeResult.chunks);
+    const allChunks = [...scrapeResult.chunks, ...assembledMemoryContext.chunks];
+    const dedupedChunkMap = new Map<string, ScrapeResult['chunks'][number]>();
+    for (const chunk of allChunks) {
+      dedupedChunkMap.set(`${chunk.sourceUrl}:${chunk.hash}`, chunk);
+    }
+    const llmChunks = [...dedupedChunkMap.values()];
+    const sourceContexts = buildSourceContexts(
+      llmChunks
+        .map((chunk) => ({
+          ...chunk,
+          relevance: chunk.relevance ?? 0,
+        }))
+        .sort((a, b) => (b.relevance ?? 0) - (a.relevance ?? 0)),
+    );
+    const sourceSummary = sourceSummaryFor(scrapedSources) ?? sourceSummaryFromContexts(sourceContexts);
+    const llmMessage = await askLlm(basePrompt, scrapedSources, llmChunks);
 
     const warnings = [...scrapeResult.warnings];
+    if (assembledMemoryContext.truncated) {
+      warnings.push(`Memory context truncated to token budget (${assembledMemoryContext.totalTokens} tokens, dropped ${assembledMemoryContext.droppedCount} chunks).`);
+    }
 
     if (llmMessage) {
       return Response.json({

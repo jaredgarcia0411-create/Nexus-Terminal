@@ -35,6 +35,8 @@ export interface JarvisStructuredResponse {
   risks: string[];
 }
 
+export type JarvisSourceType = 'web_source' | 'trade_journal' | 'user_document' | 'cached_headline';
+
 export interface ScrapedChunk {
   sourceUrl: string;
   sourceHost: string;

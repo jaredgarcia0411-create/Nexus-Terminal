@@ -110,12 +110,12 @@ Exit criteria: Every Jarvis response follows the defined schema with citations.
 
 | Ticket | Description | Size | Status |
 |---|---|---|---|
-| JRV-040 | Knowledge store schema: `jarvis_knowledge_chunks` table | M | pending |
-| JRV-041 | Ingest pipeline: store structured chunks + metadata after scraping | M | pending |
-| JRV-042 | Retrieval pipeline: keyword + recency hybrid retrieval | L | pending |
-| JRV-043 | Token budget manager: assemble context within 80% model limit | M | pending |
-| JRV-044 | Memory management API: view count, purge by source, purge all | S | pending |
-| JRV-045 | Drizzle migration for `jarvis_knowledge_chunks` | S | pending |
+| JRV-040 | Knowledge store schema: `jarvis_knowledge_chunks` table | M | done |
+| JRV-041 | Ingest pipeline: store structured chunks + metadata after scraping | M | done |
+| JRV-042 | Retrieval pipeline: keyword + recency hybrid retrieval | L | done |
+| JRV-043 | Token budget manager: assemble context within 80% model limit | M | done |
+| JRV-044 | Memory management API: view count, purge by source, purge all | S | done |
+| JRV-045 | Drizzle migration for `jarvis_knowledge_chunks` | S | done |
 
 Exit criteria: Jarvis answers from previously scraped knowledge without re-scraping. Memory is indefinite and bounded.
 
@@ -175,6 +175,7 @@ Exit criteria: Safe to scale with predictable performance and cost. Regression q
 
 | Date | Update |
 |---|---|
+| 2026-03-07 | Sprint 4 completed (JRV-040 to JRV-045): added persistent `jarvis_knowledge_chunks` schema + migration (with pgvector), write-through ingest with seen-count/last-seen updates, keyword+recency retrieval from PostgreSQL full-text search, token-budget context assembly via env-configurable limits, admin-only memory stats/purge APIs behind `x-jarvis-admin-key`, and automatic per-user eviction for non-web chunks at 100MB default bound. |
 | 2026-03-07 | JRV-033 completed: added `JarvisStructuredResponse` renderer with visual section hierarchy (`TL;DR`, findings, action steps, risks), warning styling, and clickable source links with relevance/ticker badges; wired `JarvisTab` to use the new renderer and added UI-focused rendering tests. |
 | 2026-03-07 | JRV-034 completed: improved deterministic fallback quality in `buildStructuredFallbackFromSources` (rank-aware findings, ticker-aware actions, confidence-aware risks) and made route-level fallback message schema-consistent via `formatStructuredMessage`. |
 | 2026-03-07 | JRV-032 completed: added `parseJarvisLlmResponse` validation/parsing + structured fallback helpers, integrated route-level parser fallback, and added regression coverage in response/scrape/route tests with `scraped source` context ranking contracts. |

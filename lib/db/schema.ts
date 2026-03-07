@@ -1,4 +1,28 @@
-import { pgTable, text, doublePrecision, integer, serial, timestamp, primaryKey, index, unique, foreignKey } from 'drizzle-orm/pg-core';
+import { pgTable, text, doublePrecision, integer, serial, timestamp, primaryKey, index, unique, foreignKey, customType } from 'drizzle-orm/pg-core';
+
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return 'tsvector';
+  },
+});
+
+const vector768 = customType<{ data: number[] | null; driverData: string | null }>({
+  dataType() {
+    return 'vector(768)';
+  },
+  toDriver(value) {
+    if (!value || value.length === 0) return null;
+    return `[${value.join(',')}]`;
+  },
+  fromDriver(value) {
+    if (typeof value !== 'string' || value.length < 2) return null;
+    return value
+      .slice(1, -1)
+      .split(',')
+      .map((part) => Number(part.trim()))
+      .filter((part) => Number.isFinite(part));
+  },
+});
 
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
@@ -111,4 +135,37 @@ export const jarvisSourceUrls = pgTable('jarvis_source_urls', {
 }, (table) => [
   primaryKey({ columns: [table.userId, table.url] }),
   index('idx_jarvis_source_urls_user_last_used').on(table.userId, table.lastUsedAt),
+]);
+
+export const jarvisKnowledgeChunks = pgTable('jarvis_knowledge_chunks', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  sourceUrl: text('source_url').notNull(),
+  sourceHost: text('source_host').notNull(),
+  sourceTitle: text('source_title').notNull(),
+  sourceType: text('source_type', {
+    enum: ['web_source', 'trade_journal', 'user_document', 'cached_headline'],
+  }).notNull(),
+  chunkIndex: integer('chunk_index').notNull(),
+  startToken: integer('start_token').notNull(),
+  endToken: integer('end_token').notNull(),
+  tokenCount: integer('token_count').notNull(),
+  text: text('text').notNull(),
+  hash: text('hash').notNull(),
+  relevance: doublePrecision('relevance').notNull().default(0),
+  tickers: text('tickers').array().notNull().default([]),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  author: text('author'),
+  embedding: vector768('embedding'),
+  textSearch: tsvector('text_search').notNull(),
+  seenCount: integer('seen_count').notNull().default(1),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  unique('uq_jarvis_knowledge_chunks_source_hash').on(table.sourceType, table.sourceHost, table.hash),
+  index('idx_jarvis_knowledge_chunks_user_last_seen').on(table.userId, table.lastSeenAt),
+  index('idx_jarvis_knowledge_chunks_user_relevance').on(table.userId, table.relevance),
+  index('idx_jarvis_knowledge_chunks_source_url').on(table.sourceUrl),
+  index('idx_jarvis_knowledge_chunks_tickers').using('gin', table.tickers),
+  index('idx_jarvis_knowledge_chunks_text_search').using('gin', table.textSearch),
 ]);
