@@ -48,11 +48,21 @@ The app is currently focused on trading journal workflows, analytics, filtering,
   - adds `users.name`
 - `jarvis_source_urls` table exists for remembered Jarvis links
 
+## Jarvis Capability Program
+
+- Full plan documented in `JARVIS_PLAN.md`
+- 7 sprints across 5 phases (A through E)
+- Current status: all tickets pending, Sprint 0 is next
+- Key decisions locked: allowlist-first sources, indefinite memory, mandatory structured responses, background cron for macro headlines, PDF + text uploads first, quality over speed
+- First preset: Earnings (Earnings Whispers, MarketWatch, Nasdaq calendar, SEC EDGAR)
+- Next implementation step: Sprint 0 foundation work (shared types, allowlist module, scrape timeout, payload trim)
+
 ## Docs Updated This Session
 
 - Added canonical stack/schema reference: `TECHSTACK.md`
 - Updated project docs to match current runtime behavior: `README.md`
 - Updated handoff to include journal replay chart rendering and extended-hours context changes
+- Created Jarvis capability plan: `JARVIS_PLAN.md`
 
 ## Validation Snapshot
 
@@ -79,10 +89,12 @@ The app is currently focused on trading journal workflows, analytics, filtering,
 2. If trade volume grows materially, consider pagination/virtualization for journal and other table-heavy views.
 
 3. Where we are leaving off:
-- docs and handoff are aligned with latest Journal chart updates; next practical pass is UI QA for marker readability on dense execution clusters.
+- Jarvis capability plan is drafted and saved (`JARVIS_PLAN.md`). Next implementation work is Sprint 0 (foundation and guardrails).
+- Journal chart updates are complete; visual QA for marker readability on dense execution clusters is still pending.
 
 ## Primary Files to Reference Next Session
 
+- `JARVIS_PLAN.md`
 - `TECHSTACK.md`
 - `README.md`
 - `app/page.tsx`
