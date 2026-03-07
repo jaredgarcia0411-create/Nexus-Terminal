@@ -35,11 +35,6 @@ function applyLegacyExecute(db: NeonHttpDatabase<typeof schema>, sqlClient: SqlC
     if (typeof query === 'object' && query !== null && 'sql' in query) {
       let sqlText = String(query.sql).replace(/datetime\('now'\)/g, 'now()');
 
-      // Preserve previous insert-id behavior expected by existing discord alert route.
-      if (/^\s*insert\s+into\s+price_alerts\b/i.test(sqlText) && !/\breturning\b/i.test(sqlText)) {
-        sqlText = `${sqlText} RETURNING id`;
-      }
-
       const mappedSql = toPgPlaceholders(sqlText);
       const rows = (await sqlClient.query(mappedSql, query.args ?? [])) as Array<Record<string, unknown>>;
       const result: LegacyExecuteResult = { rows };

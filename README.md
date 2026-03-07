@@ -1,6 +1,6 @@
 # Nexus Terminal
 
-Nexus Terminal is a trading journal built with Next.js 15, React 19, and TypeScript. The app focuses on journaling, analysis, filtering, alerts, and Jarvis assistance.
+Nexus Terminal is a trading journal built with Next.js 15, React 19, and TypeScript. The app focuses on journaling, analysis, filtering, and Jarvis assistance.
 
 ## Current Features
 
@@ -28,14 +28,9 @@ Jarvis provides:
 
 If no `JARVIS_API_KEY` is configured, Jarvis falls back to deterministic non-LLM responses.
 
-## Notifications and Integrations
+## Integrations
 
-- Discord link flow (`/api/discord/link`, `/api/discord/link/code`)
-- Discord link page now uses Next.js `Link` for in-app return navigation (lint-compliant, no behavior change)
-- Price alerts and alert evaluation endpoints
-- Notification queue processing endpoints
-- Trade event webhook endpoint (`/api/webhooks/trade-event`)
-- Service-token replay protection table (`service_token_jtis`)
+- Jarvis optional external web context scraping (HTTP/HTTPS URLs)
 
 ## Authentication and Access
 
@@ -50,7 +45,7 @@ If no `JARVIS_API_KEY` is configured, Jarvis falls back to deterministic non-LLM
 - PostgreSQL (Neon) via Drizzle ORM when `DATABASE_URL` is set
 - LocalStorage fallback behavior exists in client flows when DB is unavailable
 - Drizzle schema source: `lib/db/schema.ts`
-- Migrations: `drizzle/0000_motionless_catseye.sql`, `drizzle/0001_nosy_nebula.sql`
+- Migrations live under `drizzle/*.sql`
 
 ## Tech Stack
 
@@ -78,7 +73,6 @@ Commonly used variables:
 - `JARVIS_API_KEY`
 - `JARVIS_API_BASE_URL`
 - `JARVIS_MODEL`
-- `CRON_SECRET`
 
 ## Local Development
 
@@ -113,10 +107,6 @@ app/
     market-data/
     trades/
     tags/
-    discord/
-    cron/
-    notifications/
-    webhooks/
 
 components/trading/
   Sidebar.tsx
@@ -131,8 +121,8 @@ components/trading/
 
 lib/
   auth-config.ts
+  api-route-utils.ts
   db.ts
   db/schema.ts
   server-db-utils.ts
-  service-*.ts
 ```

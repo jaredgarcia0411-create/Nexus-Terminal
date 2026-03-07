@@ -39,19 +39,3 @@ export interface Trade {
   tags: string[];
   notes?: string;
 }
-
-export interface DateRisk {
-  [date: string]: number; // Risk amount in $ for a specific date
-}
-
-export interface TradeTags {
-  [tradeId: string]: string[];
-}
-
-export interface JournalState {
-  rawTrades: Trade[];
-  dateRisks: DateRisk;
-  tradeTags: TradeTags;
-  savedTags: string[];
-  importedFiles: string[];
-}

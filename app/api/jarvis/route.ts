@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { jarvisSourceUrls, trades as tradesTable } from '@/lib/db/schema';
 import { ensureUser, requireUser } from '@/lib/server-db-utils';
@@ -159,10 +160,15 @@ async function scrapeUrl(url: string) {
     return null;
   }
 
-  const res = await fetch(parsed.toString(), {
-    headers: { 'User-Agent': 'Nexus-Jarvis/1.0' },
-    cache: 'no-store',
-  });
+  let res: Response;
+  try {
+    res = await fetch(parsed.toString(), {
+      headers: { 'User-Agent': 'Nexus-Jarvis/1.0' },
+      cache: 'no-store',
+    });
+  } catch {
+    return null;
+  }
 
   if (!res.ok) {
     return null;
@@ -256,11 +262,16 @@ async function loadRememberedUrls(userId: string) {
 }
 
 export async function GET() {
-  const authState = await requireUser();
-  if ('error' in authState) return authState.error;
+  try {
+    const authState = await requireUser();
+    if ('error' in authState) return authState.error;
 
-  const urls = await loadRememberedUrls(authState.user.id);
-  return Response.json({ urls });
+    const urls = await loadRememberedUrls(authState.user.id);
+    return Response.json({ urls });
+  } catch (error) {
+    logRouteError('jarvis.get', error);
+    return internalServerError();
+  }
 }
 
 async function askLlm(basePrompt: string, scrapedSources: ScrapedSource[]) {
@@ -275,27 +286,32 @@ async function askLlm(basePrompt: string, scrapedSources: ScrapedSource[]) {
         .join('\n\n')}`
     : '';
 
-  const res = await fetch(baseUrl, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.4,
-      messages: [
-        {
-          role: 'system',
-          content: 'You are Jarvis, a focused trading assistant. Be concise, practical, and risk-aware.',
-        },
-        {
-          role: 'user',
-          content: `${basePrompt}${extraContext}`,
-        },
-      ],
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(baseUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.4,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are Jarvis, a focused trading assistant. Be concise, practical, and risk-aware.',
+          },
+          {
+            role: 'user',
+            content: `${basePrompt}${extraContext}`,
+          },
+        ],
+      }),
+    });
+  } catch {
+    return null;
+  }
 
   if (!res.ok) {
     return null;
@@ -309,62 +325,69 @@ async function askLlm(basePrompt: string, scrapedSources: ScrapedSource[]) {
 }
 
 export async function POST(request: Request) {
-  const authState = await requireUser();
-  if ('error' in authState) return authState.error;
+  try {
+    const authState = await requireUser();
+    if ('error' in authState) return authState.error;
 
-  const body = (await request.json().catch(() => ({}))) as JarvisRequest;
-  const mode = body.mode ?? 'assistant';
-  const prompt = body.prompt?.trim() ?? '';
+    const bodyState = await parseJsonBody<JarvisRequest>(request);
+    if (bodyState.error) return bodyState.error;
+    const body = bodyState.data;
+    const mode = body.mode ?? 'assistant';
+    const prompt = body.prompt?.trim() ?? '';
 
-  let trades = Array.isArray(body.trades) ? body.trades : [];
-  if (trades.length === 0) {
-    const db = getDb();
-    if (db) {
-      const rows = await db.select({
-        id: tradesTable.id,
-        symbol: tradesTable.symbol,
-        date: tradesTable.date,
-        direction: tradesTable.direction,
-        totalQuantity: tradesTable.totalQuantity,
-        netPnl: tradesTable.netPnl,
-      }).from(tradesTable)
-        .where(eq(tradesTable.userId, authState.user.id))
-        .orderBy(desc(tradesTable.date))
-        .limit(500);
-      trades = rows;
+    let trades = Array.isArray(body.trades) ? body.trades : [];
+    if (trades.length === 0) {
+      const db = getDb();
+      if (db) {
+        const rows = await db.select({
+          id: tradesTable.id,
+          symbol: tradesTable.symbol,
+          date: tradesTable.date,
+          direction: tradesTable.direction,
+          totalQuantity: tradesTable.totalQuantity,
+          netPnl: tradesTable.netPnl,
+        }).from(tradesTable)
+          .where(eq(tradesTable.userId, authState.user.id))
+          .orderBy(desc(tradesTable.date))
+          .limit(500);
+        trades = rows;
+      }
     }
-  }
 
-  const summary = summarizeTrades(trades);
-  const basePrompt = toModePrompt(mode, summary, prompt);
-  const scrapeUrls = normalizeScrapeUrls(body);
-  await rememberUrls(authState.user, scrapeUrls).catch(() => null);
-  const scrapedResults = await Promise.all(scrapeUrls.map((url) => scrapeUrl(url)));
-  const scrapedSources = scrapedResults.filter((result): result is ScrapedSource => result != null);
-  const sourceSummary = sourceSummaryFor(scrapedSources);
-  const llmMessage = await askLlm(basePrompt, scrapedSources);
+    const summary = summarizeTrades(trades);
+    const basePrompt = toModePrompt(mode, summary, prompt);
+    const scrapeUrls = normalizeScrapeUrls(body);
+    await rememberUrls(authState.user, scrapeUrls).catch(() => null);
+    const scrapedResults = await Promise.all(scrapeUrls.map((url) => scrapeUrl(url)));
+    const scrapedSources = scrapedResults.filter((result): result is ScrapedSource => result != null);
+    const sourceSummary = sourceSummaryFor(scrapedSources);
+    const llmMessage = await askLlm(basePrompt, scrapedSources);
 
-  if (llmMessage) {
+    if (llmMessage) {
+      return Response.json({
+        message: llmMessage,
+        sourceSummary,
+      });
+    }
+
+    const fallback = [
+      basePrompt,
+      scrapedSources.length > 0
+        ? `\n\nScraped Context:\n${scrapedSources
+            .map(
+              (source) =>
+                `- ${source.host}: ${source.title}\n${source.excerpt.slice(0, 700)}${source.excerpt.length > 700 ? '...' : ''}`,
+            )
+            .join('\n\n')}`
+        : '',
+    ].join('');
+
     return Response.json({
-      message: llmMessage,
+      message: fallback,
       sourceSummary,
     });
+  } catch (error) {
+    logRouteError('jarvis.post', error);
+    return internalServerError();
   }
-
-  const fallback = [
-    basePrompt,
-    scrapedSources.length > 0
-      ? `\n\nScraped Context:\n${scrapedSources
-          .map(
-            (source) =>
-              `- ${source.host}: ${source.title}\n${source.excerpt.slice(0, 700)}${source.excerpt.length > 700 ? '...' : ''}`,
-          )
-          .join('\n\n')}`
-      : '',
-  ].join('');
-
-  return Response.json({
-    message: fallback,
-    sourceSummary,
-  });
 }

@@ -5,7 +5,7 @@
 
 ## Current State
 
-The app is currently focused on trading journal workflows, analytics, filtering, Jarvis assistance, and notifications/alerts integrations.
+The app is currently focused on trading journal workflows, analytics, filtering, and Jarvis assistance.
 
 ### Product Surface
 
@@ -27,7 +27,6 @@ The app is currently focused on trading journal workflows, analytics, filtering,
 - Market data endpoint supports optional `includePrePost=true` for extended-hours candles (used by journal replay charts only)
 - Trade APIs: list/create/update/delete, bulk, import, tag management
 - Jarvis API: `app/api/jarvis/route.ts` with remembered URL reads/writes
-- Discord + notification endpoints are present (`/api/discord/*`, `/api/notifications/*`, `/api/cron/alerts`, `/api/webhooks/trade-event`)
 
 ### Authentication and Access Control (Current Runtime)
 
@@ -41,8 +40,7 @@ The app is currently focused on trading journal workflows, analytics, filtering,
 - Drizzle schema source of truth: `lib/db/schema.ts`
 - Drizzle config uses the same path: `drizzle.config.ts` -> `./lib/db/schema.ts`
 - Current migrations in repo:
-  - `drizzle/0000_motionless_catseye.sql`
-  - `drizzle/0001_nosy_nebula.sql`
+  - `drizzle/*.sql`
 - `0001_nosy_nebula.sql` changes:
   - converts `user_id` columns from `uuid` to `text`
   - adds `users.name`
@@ -75,7 +73,7 @@ The app is currently focused on trading journal workflows, analytics, filtering,
   - `npm run db:migrate`
 - Current session checks:
   - `npm run lint` passed
-  - `npm test` passed (12 files, 69 tests)
+  - `npm test` passed (9 files, 52 tests)
   - `npm run build` passed
 
 ## Known Follow-ups

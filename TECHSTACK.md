@@ -81,38 +81,15 @@ The current schema source of truth is `lib/db/schema.ts`.
 - foreign key: `user_id -> users.id`
 - fields: broker, account_number, sync_start, sync_end, trades_synced, synced_at
 
-### discord_user_links
-- composite primary key: (`user_id`, `discord_user_id`)
-- foreign key: `user_id -> users.id`
-- indexes: `idx_discord_links_discord_guild`, `idx_discord_links_user_id`
-
-### discord_link_codes
-- `code` text primary key
-- fields: discord_user_id, guild_id, expires_at, created_at
-- indexes: `idx_discord_link_codes_user`, `idx_discord_link_codes_expires`
-
-### price_alerts
-- `id` serial primary key
-- foreign key: `user_id -> users.id`
-- fields: symbol, condition (`above | below`), target_price, triggered, created_at
-- index: `idx_price_alerts_user_triggered (user_id, triggered)`
-
-### notification_jobs
-- `id` serial primary key
-- unique: `dedupe_key`
-- fields: type, status, attempts, max_attempts, next_attempt_at, last_error, sent_at, timestamps
-- indexes: `idx_notification_jobs_status_next_attempt`, `idx_notification_jobs_discord_user`
-
 ### jarvis_source_urls
 - composite primary key: (`user_id`, `url`)
 - foreign key: `user_id -> users.id`
 - fields: use_count, created_at, last_used_at
 - index: `idx_jarvis_source_urls_user_last_used (user_id, last_used_at)`
 
-### service_token_jtis
-- `jti` text primary key
-- fields: expires_at, created_at
-- index: `idx_service_token_jtis_expires`
+### Legacy integration tables removed
+- Discord/notification/service-token tables are removed from schema source in the current code.
+- Migration `drizzle/0003_smiling_agent_zero.sql` drops those tables in existing databases.
 
 ## Migrations
 
@@ -137,8 +114,6 @@ From `.env.example` and project usage:
 - `JARVIS_MODEL`
 - `NVIDIA_API_KEY`
 - `ALLOWED_EMAILS`
-- `CRON_SECRET`
-- `TRADE_WEBHOOK_SECRET` (referenced in project docs)
 
 ## Tooling
 
@@ -150,12 +125,3 @@ From `.env.example` and project usage:
   - `npm run db:migrate`
   - `npm run db:push`
   - `npm run db:studio`
-
-## Secondary Service
-
-`services/discord-bot` is a separate Node + TypeScript Discord bot package.
-
-- Package name: `@nexus-terminal/discord-bot`
-- Runtime: ESM Node
-- Dependencies: `discord.js`, `dotenv`
-- Scripts: `dev`, `build`, `start`, `deploy-commands`

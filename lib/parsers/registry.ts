@@ -30,7 +30,3 @@ export function detectParser(headers: string[], rows: Record<string, unknown>[])
 export function getParserById(id: string): BrokerParserConfig | undefined {
   return parsers.find((p) => p.id === id);
 }
-
-export function getAllParsers(): BrokerParserConfig[] {
-  return [...parsers];
-}

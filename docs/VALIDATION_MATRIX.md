@@ -23,14 +23,13 @@ npm run db:migrate
 These run from repository root:
 
 ```bash
-npm run build --prefix services/discord-bot
 npm run build --prefix services/backtest-gateway
 python3 -m py_compile services/backtest-worker/main.py
 ```
 
 ## Environment-Limited Checks
 
-In this workspace, service package builds may fail until service-specific dependencies are installed in each service package context (for example, Discord bot TypeScript build requiring `discord.js` package types).
+In this workspace, service package builds may fail until service-specific dependencies are installed in each service package context.
 
 When service dependencies are unavailable locally:
 

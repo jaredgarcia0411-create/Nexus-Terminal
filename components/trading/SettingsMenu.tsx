@@ -104,12 +104,6 @@ export default function SettingsMenu({ trades, onClearAllData }: SettingsMenuPro
           Export Trades (CSV)
         </DropdownMenuItem>
         <DropdownMenuSeparator className="bg-white/10" />
-        <DropdownMenuItem asChild>
-          <a href="/discord/link" className="cursor-pointer">
-            Link Discord Account
-          </a>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator className="bg-white/10" />
         <DropdownMenuItem onClick={() => setConfirmOpen(true)} className="cursor-pointer text-rose-400">
           Clear All Data
         </DropdownMenuItem>

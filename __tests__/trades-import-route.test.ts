@@ -170,4 +170,52 @@ describe('POST /api/trades/import', () => {
     expect(payload.importSkipped).toBe(false);
     expect(db._mocks.tradeInsertValuesMock).toHaveBeenCalledTimes(1);
   });
+
+  it('returns 400 for malformed JSON payload', async () => {
+    const db = makeDbWithBatchState(false);
+    getPoolDbMock.mockReturnValue(db);
+
+    const response = await POST(new Request('http://localhost/api/trades/import', {
+      method: 'POST',
+      body: '{',
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    if (!response) throw new Error('Expected response');
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload).toEqual({ error: 'Invalid JSON body' });
+  });
+
+  it('returns 400 for invalid trade payload shape', async () => {
+    const db = makeDbWithBatchState(false);
+    getPoolDbMock.mockReturnValue(db);
+
+    const response = await POST(new Request('http://localhost/api/trades/import', {
+      method: 'POST',
+      body: JSON.stringify({
+        trades: [
+          {
+            id: 'trade-1',
+            date: '2026-03-06T12:00:00.000Z',
+            sortKey: '2026-03-06',
+            direction: 'LONG',
+            avgEntryPrice: 100,
+            avgExitPrice: 105,
+            totalQuantity: 10,
+            pnl: 48,
+          },
+        ],
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    if (!response) throw new Error('Expected response');
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toContain('trades[0]');
+    expect(db._mocks.tradeInsertValuesMock).not.toHaveBeenCalled();
+  });
 });
