@@ -6,7 +6,7 @@ import TradeTable from '@/components/trading/TradeTable';
 import { Button } from '@/components/ui/button';
 import type { Trade } from '@/lib/types';
 
-interface FilterTabProps {
+interface TradesTabProps {
   filteredTrades: Trade[];
   activeFilterCount: number;
   selectedIds: Set<string>;
@@ -15,6 +15,8 @@ interface FilterTabProps {
   endDate: string;
   selectedFilterTags: Set<string>;
   hasActiveFilters: boolean;
+  riskInput: string;
+  bulkTagInput: string;
   onStartDateChange: (value: string) => void;
   onEndDateChange: (value: string) => void;
   onToggleFilterTag: (tag: string) => void;
@@ -25,9 +27,13 @@ interface FilterTabProps {
   onAddTag: (tradeId: string, tagName: string) => void;
   onRemoveTag: (tradeId: string, tagName: string) => void;
   onTradeClick: (trade: Trade) => void;
+  onRiskInputChange: (value: string) => void;
+  onBulkTagInputChange: (value: string) => void;
+  onApplyRisk: () => void;
+  onBulkAddTag: () => void;
 }
 
-export default function FilterTab({
+export default function TradesTab({
   filteredTrades,
   activeFilterCount,
   selectedIds,
@@ -46,12 +52,18 @@ export default function FilterTab({
   onAddTag,
   onRemoveTag,
   onTradeClick,
-}: FilterTabProps) {
+  riskInput,
+  bulkTagInput,
+  onRiskInputChange,
+  onBulkTagInputChange,
+  onApplyRisk,
+  onBulkAddTag,
+}: TradesTabProps) {
   return (
     <motion.div key="filter" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
       <div className="flex flex-col gap-6 rounded-2xl border border-white/5 bg-[#121214] p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-2xl font-bold">Advanced Filters</h2>
+          <h2 className="text-2xl font-bold">Trades Management</h2>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex shrink-0 items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-500">
               <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
@@ -65,6 +77,33 @@ export default function FilterTab({
                 </button>
               </div>
             ) : null}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-4 md:flex-row md:items-center">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Add risk ($) to selected"
+              value={riskInput}
+              onChange={(e) => onRiskInputChange(e.target.value)}
+              className="w-full md:w-48 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+            />
+            <Button onClick={onApplyRisk} className="bg-emerald-500 hover:bg-emerald-600">
+              Apply Risk
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Add tag to selected"
+              value={bulkTagInput}
+              onChange={(e) => onBulkTagInputChange(e.target.value)}
+              className="w-full md:w-48 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+            />
+            <Button onClick={onBulkAddTag} className="bg-emerald-500 hover:bg-emerald-600">
+              Add Tag
+            </Button>
           </div>
         </div>
 
@@ -112,7 +151,7 @@ export default function FilterTab({
 
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Filtered Results ({filteredTrades.length})</h3>
+          <h3 className="text-lg font-semibold">Trades ({filteredTrades.length})</h3>
           {hasActiveFilters ? (
             <Button variant="ghost" onClick={onClearAllFilters} className="text-xs font-medium text-rose-500 hover:text-rose-400">
               Clear All Filters

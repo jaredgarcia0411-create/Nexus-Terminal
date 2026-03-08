@@ -12,7 +12,7 @@ import Toolbar from '@/components/trading/Toolbar';
 import DashboardTab from '@/components/trading/DashboardTab';
 import JournalTab from '@/components/trading/JournalTab';
 import PerformanceTab from '@/components/trading/PerformanceTab';
-import FilterTab from '@/components/trading/FilterTab';
+import TradesTab from '@/components/trading/TradesTab';
 import JarvisTab from '@/components/trading/JarvisTab';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useTrades } from '@/hooks/use-trades';
@@ -186,7 +186,7 @@ export default function NexusTerminal() {
             ) : null}
 
             {activeTab === 'filter' ? (
-              <FilterTab
+              <TradesTab
                 filteredTrades={filteredTrades}
                 activeFilterCount={activeFilterCount}
                 selectedIds={selectedIds}
@@ -212,6 +212,12 @@ export default function NexusTerminal() {
                 onAddTag={handleAddTag}
                 onRemoveTag={handleRemoveTag}
                 onTradeClick={(trade) => setSelectedTradeId(trade.id)}
+                riskInput={riskInput}
+                bulkTagInput={bulkTagInput}
+                onRiskInputChange={setRiskInput}
+                onBulkTagInputChange={setBulkTagInput}
+                onApplyRisk={handleApplyRisk}
+                onBulkAddTag={handleBulkAddTag}
               />
             ) : null}
 

@@ -34,7 +34,7 @@ export default function Sidebar({
     { tab: 'dashboard', title: 'Dashboard', icon: LayoutGrid },
     { tab: 'performance', title: 'Performance', icon: BarChart3 },
     { tab: 'journal', title: 'Journal', icon: List },
-    { tab: 'filter', title: 'Filter', icon: Filter },
+    { tab: 'filter', title: 'Trades', icon: Filter },
     { tab: 'jarvis', title: 'Jarvis', icon: Bot },
   ];
 
