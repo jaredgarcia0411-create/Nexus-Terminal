@@ -21,7 +21,7 @@ Transform Jarvis from a basic prompt-and-scrape assistant into a persistent, mul
 | Source policy | Allowlist-first |
 | First preset | Earnings: Earnings Whispers, MarketWatch earnings, Nasdaq earnings calendar, SEC EDGAR |
 | Memory retention | Indefinite, bounded per-user, eviction by relevance score |
-| Macro pipeline | Background cron + cache (target: every 30min) |
+| Macro pipeline | Background cron + cache (daily on Vercel Hobby tier) |
 | User doc uploads | PDF + plain text in first release |
 | Response format | Mandatory structured schema on all LLM responses |
 | Speed vs quality | Quality + token efficiency prioritized; median latency target < 8s |
@@ -134,12 +134,24 @@ Exit criteria: Jarvis blends web + journal + uploaded doc context with explicit 
 
 ### Phase D — Orchestrated Jarvis (Sprint 6)
 
+#### Sprint 6 Decisions
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| Vercel tier | Hobby — daily cron (`0 11 * * *`, 6 AM ET) | Hobby only supports daily crons; run before US market open |
+| Paywalled domains | Replace `bloomberg.com`, `ft.com`, `scmp.com` with `investing.com`, `tradingeconomics.com`, `nikkei.com` | Paywalled sites yield minimal scrapeable text |
+| Cached headline ownership | `userId: 'system'` — globally visible to all users | Macro headlines are not user-specific; avoids redundant scraping |
+| Critique step | OFF by default (`JARVIS_ORCHESTRATION_CRITIQUE=false`) | Ship pipeline stable first; toggle on via env var when latency baseline established |
+| Orchestration scope | `macro-summary` mode only; existing modes stay single-pass | Minimize regression risk; migrate other modes in Sprint 7 after validation |
+| LLM rate limit | 40 RPM on NVIDIA/DeepSeek API — orchestration must add 1.5s delay between LLM calls | Prevents 429s during multi-step pipeline; cron embedding ingestion must also throttle |
+| Macro domain list | US: `cnbc.com`, `reuters.com`, `investing.com`, `federalreserve.gov`; EU: `ecb.europa.eu`, `tradingeconomics.com`; Asia: `boj.or.jp`, `nikkei.com`; Global: `imf.org`, `worldbank.org` | 10 open-access domains across 4 regions |
+
 #### Sprint 6 — Orchestration Pipeline + Macro Summary
 
 | Ticket | Description | Size | Status |
 |---|---|---|---|
-| JRV-060 | Macro headline cron job: scrape allowlisted sources per region on schedule | L | pending |
-| JRV-061 | Macro source allowlist: curated domains per region (US, EU, Asia, global) | M | pending |
+| JRV-060 | Macro headline cron job: scrape allowlisted sources per region on daily schedule (Vercel Hobby) | L | pending |
+| JRV-061 | Macro source allowlist: curated domains per region (US, EU, Asia, global) — open-access only | M | pending |
 | JRV-062 | Orchestration engine: plan -> retrieve -> summarize -> critique -> answer | L | pending |
 | JRV-063 | Macro summary mode: new `macro-summary` JarvisMode with country-by-country output | M | pending |
 | JRV-064 | UI: macro summary action card with region breakdown | S | pending |
@@ -159,6 +171,7 @@ Exit criteria: Jarvis produces a daily macro summary from cached headlines using
 | JRV-074 | Scrape cache layer: cache by URL + hash with configurable TTL | M | pending |
 | JRV-075 | Observability endpoint: `/api/jarvis/stats` for latency, errors, tokens (admin only) | M | pending |
 | JRV-076 | Eval harness: golden prompt set + automated quality scoring per release | L | pending |
+| JRV-077 | Migrate daily-summary, trade-analysis, assistant modes to orchestration engine | M | pending |
 
 Exit criteria: Safe to scale with predictable performance and cost. Regression quality tracked automatically.
 
@@ -176,6 +189,7 @@ Exit criteria: Safe to scale with predictable performance and cost. Regression q
 
 | Date | Update |
 |---|---|
+| 2026-03-08 | Sprint 6 planning finalized. All decisions locked: Vercel Hobby daily cron at 6 AM ET (`0 11 * * *`), 10 open-access macro domains across 4 regions (replaced paywalled bloomberg/ft/scmp with investing.com/tradingeconomics.com/nikkei.com), system-level headlines (`userId: 'system'`), critique step off by default, orchestration scoped to macro-summary mode only (existing modes deferred to Sprint 7 as JRV-077), 40 RPM NVIDIA rate limit with 1.5s inter-call delay. Execution spec: 13 changes, 12 files (4 creates, 8 modifies). |
 | 2026-03-07 | Sprint 5 completed (JRV-055, JRV-050 to JRV-054): added NVIDIA embedding integration with ingest-time vectors (migrated to `vector(1024)`), journal-note synchronization from trades with tags/performance context, PDF+text upload pipeline (`/api/jarvis/upload`) with document metadata tracking and chunk ingestion, Jarvis documents sub-tab UI for upload/list/delete management, retrieval/prompt attribution by source type, and color-coded citation badges for web/journal/document/headline sources. |
 | 2026-03-07 | Sprint 4 completed (JRV-040 to JRV-045): added persistent `jarvis_knowledge_chunks` schema + migration (with pgvector), write-through ingest with seen-count/last-seen updates, keyword+recency retrieval from PostgreSQL full-text search, token-budget context assembly via env-configurable limits, admin-only memory stats/purge APIs behind `x-jarvis-admin-key`, and automatic per-user eviction for non-web chunks at 100MB default bound. |
 | 2026-03-07 | JRV-033 completed: added `JarvisStructuredResponse` renderer with visual section hierarchy (`TL;DR`, findings, action steps, risks), warning styling, and clickable source links with relevance/ticker badges; wired `JarvisTab` to use the new renderer and added UI-focused rendering tests. |
@@ -183,5 +197,5 @@ Exit criteria: Safe to scale with predictable performance and cost. Regression q
 | 2026-03-07 | JRV-032 completed: added `parseJarvisLlmResponse` validation/parsing + structured fallback helpers, integrated route-level parser fallback, and added regression coverage in response/scrape/route tests with `scraped source` context ranking contracts. |
 | 2026-03-07 | JRV-031 implemented in the route layer: consolidated strict system prompt for schema-only JSON output and added regression coverage asserting prompt contract shape. |
 | 2026-03-07 | JRV-030 marked done; structured Jarvis response schema now enforced end-to-end with parser/fallback coverage and explicit contract tests in route handler. |
-| 2026-03-07 | Jarvis LLM provider switched from GLM-4.7 to DeepSeek V3.2 via NVIDIA API. Updated `.env.example`, `CODEX_PROMPT.md`, `app/api/jarvis/route.ts` constants, and tests to reflect the change. |
+| 2026-03-07 | Jarvis LLM provider switched from GLM-4.7 to DeepSeek V3.2 via NVIDIA API. Updated `.env.example`, `app/api/jarvis/route.ts` constants, and tests to reflect the change. |
 | 2026-03-06 | Plan created. Current state documented. Sprint board defined. Locked decisions captured. |
