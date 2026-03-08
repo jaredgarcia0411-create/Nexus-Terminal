@@ -168,7 +168,7 @@ export default function TradesTab({
           onDeleteGlobalTag={onDeleteGlobalTag}
           onTradeClick={onTradeClick}
           globalTags={globalTags}
-          readOnly
+          readOnly={false}
         />
       </div>
     </motion.div>
