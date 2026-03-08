@@ -1,4 +1,4 @@
-export type JarvisMode = 'daily-summary' | 'trade-analysis' | 'assistant';
+export type JarvisMode = 'daily-summary' | 'trade-analysis' | 'assistant' | 'macro-summary';
 
 export interface JarvisTradeInput {
   id: string;
@@ -26,6 +26,7 @@ export interface JarvisResponse {
   sources?: JarvisSourceContext[];
   warnings?: string[];
   structured?: JarvisStructuredResponse;
+  macroSummary?: JarvisMacroSummaryOutput;
 }
 
 export interface JarvisStructuredResponse {
@@ -33,6 +34,22 @@ export interface JarvisStructuredResponse {
   findings: string[];
   actionSteps: string[];
   risks: string[];
+}
+
+export type MacroSummaryRegion = 'us' | 'eu' | 'asia' | 'global';
+
+export interface JarvisMacroRegionSummary {
+  region: MacroSummaryRegion;
+  headline: string;
+  details: string[];
+  sentiment: 'bullish' | 'bearish' | 'neutral' | 'mixed';
+}
+
+export interface JarvisMacroSummaryOutput {
+  date: string;
+  overallSentiment: 'bullish' | 'bearish' | 'neutral' | 'mixed';
+  regions: JarvisMacroRegionSummary[];
+  keyRisks: string[];
 }
 
 export type JarvisSourceType = 'web_source' | 'trade_journal' | 'user_document' | 'cached_headline';

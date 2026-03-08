@@ -1,5 +1,6 @@
 import React from 'react';
-import type { JarvisSourceContext, JarvisStructuredResponse } from '@/lib/jarvis-types';
+import type { JarvisMacroSummaryOutput, JarvisSourceContext, JarvisStructuredResponse } from '@/lib/jarvis-types';
+import JarvisMacroSummary from '@/components/trading/JarvisMacroSummary';
 
 interface JarvisStructuredResponseProps {
   message: string;
@@ -7,6 +8,7 @@ interface JarvisStructuredResponseProps {
   warnings?: string[];
   sourceSummary?: string;
   sources?: JarvisSourceContext[];
+  macroSummary?: JarvisMacroSummaryOutput;
 }
 
 function relevanceLabel(score: number) {
@@ -29,7 +31,7 @@ function sourceTypeBadge(sourceType: JarvisSourceContext['sourceType']) {
   return { label: 'Web', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' };
 }
 
-export default function JarvisStructuredResponse({ message, structured, warnings, sourceSummary, sources }: JarvisStructuredResponseProps) {
+export default function JarvisStructuredResponse({ message, structured, warnings, sourceSummary, sources, macroSummary }: JarvisStructuredResponseProps) {
   return (
     <div className="space-y-4">
       {structured ? (
@@ -80,6 +82,8 @@ export default function JarvisStructuredResponse({ message, structured, warnings
       ) : (
         <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">{message}</p>
       )}
+
+      {macroSummary ? <JarvisMacroSummary macroSummary={macroSummary} /> : null}
 
       {warnings && warnings.length > 0 ? (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-amber-100">

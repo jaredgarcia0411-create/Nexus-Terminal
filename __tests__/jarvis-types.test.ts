@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { JarvisMode, JarvisResponse } from '@/lib/jarvis-types';
 import { toJarvisTradeInput } from '@/lib/jarvis-types';
 
 describe('toJarvisTradeInput', () => {
@@ -30,5 +31,25 @@ describe('toJarvisTradeInput', () => {
       tags: ['swing'],
       notes: 'Important setup',
     });
+  });
+
+  it('includes macro-summary mode in JarvisMode', () => {
+    const mode: JarvisMode = 'macro-summary';
+
+    expect(mode).toBe('macro-summary');
+  });
+
+  it('allows optional macroSummary in JarvisResponse', () => {
+    const response: JarvisResponse = {
+      message: 'ok',
+      macroSummary: {
+        date: '2026-03-08',
+        overallSentiment: 'mixed',
+        regions: [{ region: 'us', headline: 'US mixed', details: ['Rates steady'], sentiment: 'mixed' }],
+        keyRisks: ['Inflation persistence'],
+      },
+    };
+
+    expect(response.macroSummary?.overallSentiment).toBe('mixed');
   });
 });

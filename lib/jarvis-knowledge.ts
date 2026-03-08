@@ -323,7 +323,7 @@ export async function retrieveKnowledgeChunks(options: RetrieveKnowledgeOptions)
 
   const sourceTypes = options.sourceTypes && options.sourceTypes.length > 0
     ? options.sourceTypes
-    : ['web_source', 'trade_journal', 'user_document'] as JarvisSourceType[];
+    : ['web_source', 'trade_journal', 'user_document', 'cached_headline'] as JarvisSourceType[];
   const includeGlobal = options.includeGlobal ?? true;
   const limit = Math.max(1, Math.min(options.limit ?? 20, 200));
   const query = options.query.trim();

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { getAllowedDomains, getBlockedUrlMessage, getTrustScoreForHost, getTrustScoreForUrl, isUrlAllowed } from '@/lib/jarvis-allowlist';
+import {
+  getAllowedDomains,
+  getAllowlistByRegion,
+  getBlockedUrlMessage,
+  getMacroAllowlistDomains,
+  getTrustScoreForHost,
+  getTrustScoreForUrl,
+  isUrlAllowed,
+} from '@/lib/jarvis-allowlist';
 
 describe('jarvis allowlist', () => {
   it('allows primary allowlisted domains', () => {
@@ -32,8 +40,8 @@ describe('jarvis allowlist', () => {
     const copyMutation = getAllowedDomains();
     expect(domains).toHaveLength(copyMutation.length);
 
-    copyMutation.push({ domain: 'hack.local', label: 'Hack', category: 'general' });
-    expect(domains).not.toContainEqual({ domain: 'hack.local', label: 'Hack', category: 'general' });
+    copyMutation.push({ domain: 'hack.local', label: 'Hack', category: 'general', region: 'us' });
+    expect(domains).not.toContainEqual({ domain: 'hack.local', label: 'Hack', category: 'general', region: 'us' });
   });
 
   it('maps trust by host and full URLs', () => {
@@ -42,5 +50,32 @@ describe('jarvis allowlist', () => {
     expect(getTrustScoreForUrl('https://www.sec.gov/market')).toBe(1);
     expect(getTrustScoreForUrl('https://sub.marketwatch.com/tools')).toBe(0.8);
     expect(getTrustScoreForUrl('https://example.com')).toBe(0.5);
+  });
+
+  it('filters allowlist entries by region', () => {
+    const euEntries = getAllowlistByRegion('eu');
+
+    expect(euEntries.length).toBeGreaterThan(0);
+    expect(euEntries.every((entry) => entry.region === 'eu')).toBe(true);
+    expect(euEntries.map((entry) => entry.domain)).toEqual(expect.arrayContaining(['ecb.europa.eu', 'tradingeconomics.com']));
+  });
+
+  it('returns macro-only entries from helper', () => {
+    const macroEntries = getMacroAllowlistDomains();
+
+    expect(macroEntries).toHaveLength(10);
+    expect(macroEntries.every((entry) => entry.category === 'macro')).toBe(true);
+    expect(macroEntries.map((entry) => entry.domain)).toEqual(expect.arrayContaining([
+      'cnbc.com',
+      'reuters.com',
+      'investing.com',
+      'federalreserve.gov',
+      'ecb.europa.eu',
+      'tradingeconomics.com',
+      'boj.or.jp',
+      'nikkei.com',
+      'imf.org',
+      'worldbank.org',
+    ]));
   });
 });

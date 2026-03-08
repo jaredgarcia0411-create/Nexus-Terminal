@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getDbMock, requireUserMock, ensureUserMock } = vi.hoisted(() => ({
+const { getDbMock, requireUserMock, ensureUserMock, runOrchestrationMock } = vi.hoisted(() => ({
   getDbMock: vi.fn(),
   requireUserMock: vi.fn(),
   ensureUserMock: vi.fn(),
+  runOrchestrationMock: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -13,6 +14,10 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/server-db-utils', () => ({
   ensureUser: ensureUserMock,
   requireUser: requireUserMock,
+}));
+
+vi.mock('@/lib/jarvis-orchestrator', () => ({
+  runOrchestration: runOrchestrationMock,
 }));
 
 import { GET, POST } from '@/app/api/jarvis/route';
@@ -104,8 +109,25 @@ describe('POST /api/jarvis', () => {
     ensureUserMock.mockResolvedValue(undefined);
     getDbMock.mockReturnValue(null);
     process.env.JARVIS_API_KEY = '';
+    process.env.JARVIS_ORCHESTRATION_CRITIQUE = 'false';
     delete process.env.OPENAI_API_KEY;
     delete process.env.JARVIS_API_BASE_URL;
+    runOrchestrationMock.mockResolvedValue({
+      message: 'orchestrated',
+      structured: {
+        tldr: 'orchestrated',
+        findings: ['macro finding'],
+        actionSteps: ['macro action'],
+        risks: ['macro risk'],
+      },
+      macroSummary: {
+        date: '2026-03-08',
+        overallSentiment: 'mixed',
+        regions: [{ region: 'us', headline: 'US mixed', details: ['d1'], sentiment: 'mixed' }],
+        keyRisks: ['risk'],
+      },
+      steps: [],
+    });
   });
 
   afterEach(() => {
@@ -366,6 +388,34 @@ describe('POST /api/jarvis', () => {
     expect(payload.structured.risks).toEqual(expect.any(Array));
     expect(payload.message).toContain('TL;DR: Fallback Market (www.marketwatch.com)');
     expect(payload.message).toContain('Action Steps');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes macro-summary mode through orchestration pipeline', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => makeTextResponse('<html><title>Macro Source</title>Macro body</html>'));
+
+    const response = await POST(new Request('http://localhost/api/jarvis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        urls: ['https://www.cnbc.com/economy/'],
+        prompt: 'Macro setup',
+        mode: 'macro-summary',
+      }),
+    }));
+
+    const { response: safeResponse, payload } = await parseResponse(response);
+
+    expect(safeResponse.status).toBe(200);
+    expect(runOrchestrationMock).toHaveBeenCalledTimes(1);
+    expect(payload.message).toBe('orchestrated');
+    expect(payload.macroSummary).toMatchObject({
+      overallSentiment: 'mixed',
+      regions: [{ region: 'us' }],
+    });
+    expect(payload.structured).toMatchObject({
+      tldr: 'orchestrated',
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

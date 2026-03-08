@@ -26,4 +26,18 @@ describe('jarvis source packs', () => {
   it('returns undefined for an unknown pack id', () => {
     expect(getSourcePack('not-found')).toBeUndefined();
   });
+
+  it('includes macro-daily pack and resolves by id', () => {
+    const macroPack = getSourcePack('macro-daily');
+
+    expect(macroPack).toBeDefined();
+    expect(macroPack?.category).toBe('macro');
+    expect(macroPack?.urls).toHaveLength(4);
+    expect(macroPack?.urls).toEqual([
+      'https://www.cnbc.com/economy/',
+      'https://www.reuters.com/markets/',
+      'https://www.investing.com/news/economy',
+      'https://tradingeconomics.com/calendar',
+    ]);
+  });
 });

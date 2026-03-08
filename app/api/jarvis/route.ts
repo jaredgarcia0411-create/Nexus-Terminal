@@ -12,6 +12,7 @@ import {
 } from '@/lib/jarvis-types';
 import { getBlockedUrlMessage, getTrustScoreForHost, isUrlAllowed } from '@/lib/jarvis-allowlist';
 import { getSourcePack } from '@/lib/jarvis-source-packs';
+import { runOrchestration } from '@/lib/jarvis-orchestrator';
 import {
   buildSourceContexts,
   buildStructuredSource,
@@ -157,6 +158,15 @@ function toModePrompt(mode: JarvisMode, summary: ReturnType<typeof summarizeTrad
       lines || '- No trades available',
       '',
       prompt ? `Your request: ${prompt}` : 'Tip: ask Jarvis for setup-specific feedback to get a deeper review.',
+    ].join('\n');
+  }
+
+  if (mode === 'macro-summary') {
+    return [
+      'Macro Market Summary:',
+      prompt || 'Provide a daily macro summary across US, EU, Asia, and global markets.',
+      '',
+      `Current performance snapshot: ${summary.totalTrades} trades, ${formatMoney(summary.totalPnl)} net.`,
     ].join('\n');
   }
 
@@ -526,6 +536,33 @@ export async function POST(request: Request) {
         .sort((a, b) => (b.relevance ?? 0) - (a.relevance ?? 0)),
     );
     const sourceSummary = sourceSummaryFor(scrapedSources) ?? sourceSummaryFromContexts(sourceContexts);
+    // --- Macro-summary mode: use orchestration pipeline ---
+    if (mode === 'macro-summary') {
+      const orchestrationResult = await runOrchestration({
+        userId: authState.user.id,
+        mode,
+        prompt: basePrompt,
+        tradeTickers,
+        scrapeChunks: llmChunks,
+        sourceContexts,
+      });
+
+      const warnings = [...scrapeResult.warnings];
+      if (assembledMemoryContext.truncated) {
+        warnings.push(`Memory context truncated to token budget (${assembledMemoryContext.totalTokens} tokens, dropped ${assembledMemoryContext.droppedCount} chunks).`);
+      }
+
+      return Response.json({
+        message: orchestrationResult.message,
+        sourceSummary,
+        sources: sourceContexts,
+        structured: orchestrationResult.structured,
+        macroSummary: orchestrationResult.macroSummary,
+        warnings,
+      });
+    }
+
+    // --- Standard modes: single-pass LLM ---
     const llmMessage = await askLlm(basePrompt, scrapedSources, llmChunks);
 
     const warnings = [...scrapeResult.warnings];

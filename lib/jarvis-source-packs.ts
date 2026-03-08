@@ -24,6 +24,21 @@ export const sourcePacks: SourcePack[] = [
     promptTemplate:
       'Summarize the upcoming earnings calendar, highlight any surprising whispers, and call out the most relevant filings for my current tickers.',
   },
+  {
+    id: 'macro-daily',
+    name: 'Macro Daily',
+    description: 'Daily macro market overview across US, EU, Asia, and global.',
+    icon: 'Globe',
+    category: 'macro',
+    urls: [
+      'https://www.cnbc.com/economy/',
+      'https://www.reuters.com/markets/',
+      'https://www.investing.com/news/economy',
+      'https://tradingeconomics.com/calendar',
+    ],
+    promptTemplate:
+      'Provide a daily macro market summary. Break down by region (US, Europe, Asia-Pacific, Global). For each region: headline development, market sentiment, and key risks. End with overall portfolio implications.',
+  },
 ];
 
 export const sourcePackRegistry = {

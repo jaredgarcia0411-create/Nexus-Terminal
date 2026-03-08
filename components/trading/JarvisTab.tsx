@@ -224,6 +224,7 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
         sources: payload.sources,
         warnings: payload.warnings,
         structured: payload.structured,
+        macroSummary: payload.macroSummary,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Jarvis is unavailable right now';
@@ -268,6 +269,12 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
       description: 'Ask for help, workflows, and market context with optional website scraping.',
       icon: Sparkles,
     },
+    {
+      mode: 'macro-summary',
+      label: 'Macro Summary',
+      description: 'Get a macro market overview across US, EU, Asia, and global markets.',
+      icon: Globe,
+    },
   ];
 
   return (
@@ -306,7 +313,7 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-4">
         {cards.map((card) => {
           const Icon = card.icon;
           const isActive = mode === card.mode;
@@ -508,6 +515,7 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
             warnings={response.warnings}
             sourceSummary={response.sourceSummary}
             sources={response.sources}
+            macroSummary={response.macroSummary}
           />
         ) : (
           <p className="text-sm text-zinc-500">Run one of the actions above to get started.</p>

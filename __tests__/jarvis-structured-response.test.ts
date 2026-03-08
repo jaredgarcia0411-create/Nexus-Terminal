@@ -87,4 +87,36 @@ describe('JarvisStructuredResponse', () => {
     expect(html).toContain('Journal');
     expect(html).toContain('Document');
   });
+
+  it('renders macro summary when provided', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(JarvisStructuredResponse, {
+        message: 'fallback',
+        structured: {
+          tldr: 'ok',
+          findings: ['f'],
+          actionSteps: ['a'],
+          risks: ['r'],
+        },
+        macroSummary: {
+          date: '2026-03-08',
+          overallSentiment: 'mixed',
+          regions: [
+            {
+              region: 'us',
+              headline: 'US growth mixed',
+              details: ['Labor remains resilient'],
+              sentiment: 'mixed',
+            },
+          ],
+          keyRisks: ['Sticky inflation'],
+        },
+      }),
+    );
+
+    expect(html).toContain('Macro Summary - 2026-03-08');
+    expect(html).toContain('United States');
+    expect(html).toContain('US growth mixed');
+    expect(html).toContain('Key Macro Risks');
+  });
 });
