@@ -1,6 +1,6 @@
 # Jarvis Capability Plan
 
-Last updated: 2026-03-07
+Last updated: 2026-03-09
 
 ## Goal
 
@@ -40,15 +40,15 @@ Transform Jarvis from a basic prompt-and-scrape assistant into a persistent, mul
 
 ## Current Jarvis Baseline
 
-- 3 modes: daily-summary, trade-analysis, assistant
-- Scrapes up to 5 user-provided URLs per request (raw HTML strip, 2500 char excerpt)
+- 4 modes: daily-summary, trade-analysis, assistant, macro-summary
+- Scrapes up to 5 URLs per request with allowlist validation, robots.txt checks, and scrape-cache short-circuiting
 - Remembers up to 20 recent URLs per user (`jarvis_source_urls`)
-- Single-pass LLM prompt (system + user message with appended scraped context)
-- Deterministic fallback when no API key is configured
-- No persistent content memory beyond URL pointers
-- No shared types between client and server
-- No test coverage for Jarvis logic
-- Full trade payload sent from client (more fields than needed)
+- Uses persistent knowledge memory (`jarvis_knowledge_chunks`) across web, journal, user docs, and cached headlines
+- Macro-summary mode runs the orchestration pipeline; other modes remain single-pass by design (JRV-077 deferred)
+- Includes deterministic structured fallback when LLM is unavailable or returns invalid output
+- Includes safety controls: per-user rate limiting, LLM circuit breaker, and token usage tracking (`jarvis_request_log`)
+- Includes admin observability endpoints for memory and request/token stats
+- Jarvis functionality is covered by route/module/eval tests
 
 ## Implementation Phases
 
@@ -142,7 +142,7 @@ Exit criteria: Jarvis blends web + journal + uploaded doc context with explicit 
 | Paywalled domains | Replace `bloomberg.com`, `ft.com`, `scmp.com` with `investing.com`, `tradingeconomics.com`, `nikkei.com` | Paywalled sites yield minimal scrapeable text |
 | Cached headline ownership | `userId: 'system'` — globally visible to all users | Macro headlines are not user-specific; avoids redundant scraping |
 | Critique step | OFF by default (`JARVIS_ORCHESTRATION_CRITIQUE=false`) | Ship pipeline stable first; toggle on via env var when latency baseline established |
-| Orchestration scope | `macro-summary` mode only; existing modes stay single-pass | Minimize regression risk; migrate other modes in Sprint 7 after validation |
+| Orchestration scope | `macro-summary` mode only; existing modes stay single-pass | Minimize regression risk; follow-up migration tracked as deferred JRV-077 |
 | LLM rate limit | 40 RPM on NVIDIA/DeepSeek API — orchestration must add 1.5s delay between LLM calls | Prevents 429s during multi-step pipeline; cron embedding ingestion must also throttle |
 | Macro domain list | US: `cnbc.com`, `reuters.com`, `investing.com`, `federalreserve.gov`; EU: `ecb.europa.eu`, `tradingeconomics.com`; Asia: `boj.or.jp`, `nikkei.com`; Global: `imf.org`, `worldbank.org` | 10 open-access domains across 4 regions |
 
@@ -150,11 +150,11 @@ Exit criteria: Jarvis blends web + journal + uploaded doc context with explicit 
 
 | Ticket | Description | Size | Status |
 |---|---|---|---|
-| JRV-060 | Macro headline cron job: scrape allowlisted sources per region on daily schedule (Vercel Hobby) | L | pending |
-| JRV-061 | Macro source allowlist: curated domains per region (US, EU, Asia, global) — open-access only | M | pending |
-| JRV-062 | Orchestration engine: plan -> retrieve -> summarize -> critique -> answer | L | pending |
-| JRV-063 | Macro summary mode: new `macro-summary` JarvisMode with country-by-country output | M | pending |
-| JRV-064 | UI: macro summary action card with region breakdown | S | pending |
+| JRV-060 | Macro headline cron job: scrape allowlisted sources per region on daily schedule (Vercel Hobby) | L | done |
+| JRV-061 | Macro source allowlist: curated domains per region (US, EU, Asia, global) — open-access only | M | done |
+| JRV-062 | Orchestration engine: plan -> retrieve -> summarize -> critique -> answer | L | done |
+| JRV-063 | Macro summary mode: new `macro-summary` JarvisMode with country-by-country output | M | done |
+| JRV-064 | UI: macro summary action card with region breakdown | S | done |
 
 Exit criteria: Jarvis produces a daily macro summary from cached headlines using multi-step reasoning. Pipeline is reusable.
 
@@ -169,7 +169,7 @@ Exit criteria: Jarvis produces a daily macro summary from cached headlines using
 | JRV-072 | Circuit breaker: disable LLM on high error rate, fall back to deterministic | S | done |
 | JRV-073 | Robots.txt respect before scraping | S | done |
 | JRV-074 | Scrape cache layer: cache by URL + hash with configurable TTL | M | done |
-| JRV-075 | Observability endpoint: `/api/jarvis/stats` for latency, errors, tokens (admin only) | M | done |
+| JRV-075 | Observability endpoint: `/api/jarvis/admin/stats` for latency, errors, tokens (admin only) | M | done |
 | JRV-076 | Eval harness: golden prompt set + automated quality scoring per release | L | done |
 | JRV-077 | Migrate daily-summary, trade-analysis, assistant modes to orchestration engine | M | deferred |
 
