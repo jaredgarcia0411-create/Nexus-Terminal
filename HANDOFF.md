@@ -1,1371 +1,966 @@
-# Sprint 6 — Execution Spec for opencode
+# Build Spec -- Sprint 7: Safety, Governance, and Cost Controls
 
-**Generated:** 2026-03-08
-**Branch:** `main`
-**Status:** READY FOR EXECUTION
+> Generated: 2026-03-09 | Agent: nexus-architect
+> Status: PENDING REVIEW -- do not execute until approved
 
 ---
 
-## Overview
+## Objective
 
-Transform Jarvis from a single-pass scrape-and-respond assistant into an orchestrated, multi-step reasoning engine. Add daily macro headline caching via Vercel cron, a new `macro-summary` mode with region-by-region output, and a reusable orchestration pipeline.
+Add safety, governance, and cost controls to the Jarvis AI subsystem. This sprint delivers per-user rate limiting, token budget tracking with a new database table, a circuit breaker for LLM failures, robots.txt respect before scraping, scrape caching via the existing knowledge store, an admin-only observability endpoint, and an automated evaluation harness.
 
-**Tickets:** JRV-060 through JRV-064
-**Files:** 12 total (4 creates, 8 modifies)
+**Tickets delivered:** JRV-070, JRV-071, JRV-072, JRV-073, JRV-074, JRV-075, JRV-076 (7 of 8)
+**Ticket deferred:** JRV-077 (migrate daily-summary, trade-analysis, assistant to orchestration engine) -- deferred to a future sprint. Macro-summary already uses orchestration; the other three modes remain on the existing single-pass `askLlm` path.
 
 ---
 
 ## Locked Decisions (do not deviate)
 
-- **Vercel Hobby tier** — daily cron only: `"0 11 * * *"` (6 AM ET)
-- **Open-access domains only** — no paywalled sites
-- **Final domain list:**
-  - US: `cnbc.com`, `reuters.com`, `investing.com`, `federalreserve.gov`
-  - EU: `ecb.europa.eu`, `tradingeconomics.com`
-  - Asia: `boj.or.jp`, `nikkei.com`
-  - Global: `imf.org`, `worldbank.org`
-- **System-level headlines** — `userId: 'system'`, globally visible to all users
-- **Critique step OFF by default** — `JARVIS_ORCHESTRATION_CRITIQUE=false`
-- **Orchestration for `macro-summary` only** — existing modes stay single-pass
-- **40 RPM rate limit** on NVIDIA/DeepSeek — add 1.5s delay between sequential LLM calls
-- **No database migration required** — `cached_headline` already exists in the schema enum
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Rate limiting storage | In-memory `Map` | Best-effort on Vercel serverless; no migration, no new dependency. Resets on cold start -- documented and accepted. |
+| Token tracking storage | New `jarvis_request_log` PostgreSQL table | Enables aggregation queries for observability endpoint. Requires Drizzle migration. |
+| Scrape cache strategy | Reuse `jarvis_knowledge_chunks.lastSeenAt` | Check if URL was ingested within TTL window before re-scraping. No new table. |
+| Scrape cache TTL | 1 hour for `web_source`, 12 hours for `cached_headline` | Web sources change frequently; cached headlines are daily. |
+| Eval harness format | Vitest test file (`__tests__/jarvis-eval.test.ts`) | 5-8 golden prompts, structural compliance checks only (not semantic). Run via `npm test`. |
+| JRV-077 | DEFERRED | Single-pass `askLlm` stays for daily-summary, trade-analysis, assistant. Only macro-summary uses orchestration. |
+| Rate limit target | 30 requests per hour per user | Configurable via `JARVIS_RATE_LIMIT_PER_HOUR` env var. |
+| Circuit breaker threshold | 5 consecutive LLM failures triggers open state; auto-reset after 60s | Configurable via `JARVIS_CIRCUIT_BREAKER_THRESHOLD` and `JARVIS_CIRCUIT_BREAKER_RESET_MS`. |
+
+---
+
+## What Changes and What Does Not
+
+### CHANGES
+- New file: `/home/jared/Nexus-Terminal/lib/jarvis-rate-limit.ts` (JRV-070)
+- New file: `/home/jared/Nexus-Terminal/lib/jarvis-token-tracking.ts` (JRV-071)
+- New file: `/home/jared/Nexus-Terminal/lib/jarvis-circuit-breaker.ts` (JRV-072)
+- New file: `/home/jared/Nexus-Terminal/lib/jarvis-robots.ts` (JRV-073)
+- New file: `/home/jared/Nexus-Terminal/lib/jarvis-scrape-cache.ts` (JRV-074)
+- New file: `/home/jared/Nexus-Terminal/app/api/jarvis/admin/stats/route.ts` (JRV-075)
+- New file: `/home/jared/Nexus-Terminal/__tests__/jarvis-eval.test.ts` (JRV-076)
+- New file: `/home/jared/Nexus-Terminal/__tests__/jarvis-rate-limit.test.ts` (JRV-070)
+- New file: `/home/jared/Nexus-Terminal/__tests__/jarvis-token-tracking.test.ts` (JRV-071)
+- New file: `/home/jared/Nexus-Terminal/__tests__/jarvis-circuit-breaker.test.ts` (JRV-072)
+- New file: `/home/jared/Nexus-Terminal/__tests__/jarvis-robots.test.ts` (JRV-073)
+- New file: `/home/jared/Nexus-Terminal/__tests__/jarvis-scrape-cache.test.ts` (JRV-074)
+- New file: `/home/jared/Nexus-Terminal/__tests__/jarvis-admin-stats-route.test.ts` (JRV-075)
+- Modified: `/home/jared/Nexus-Terminal/lib/db/schema.ts` (JRV-071 -- add `jarvisRequestLog` table)
+- Modified: `/home/jared/Nexus-Terminal/app/api/jarvis/route.ts` (JRV-070, 071, 072, 074)
+- Modified: `/home/jared/Nexus-Terminal/app/api/jarvis/cron/headlines/route.ts` (JRV-073, 074)
+- Modified: `/home/jared/Nexus-Terminal/lib/jarvis-orchestrator.ts` (JRV-072)
+- Modified: `/home/jared/Nexus-Terminal/.env.example` (new env vars)
+- Modified: `/home/jared/Nexus-Terminal/JARVIS_PLAN.md` (update ticket statuses)
+
+### DOES NOT CHANGE
+- `/home/jared/Nexus-Terminal/lib/jarvis-types.ts` -- no type changes needed
+- `/home/jared/Nexus-Terminal/lib/jarvis-knowledge.ts` -- JRV-074 reads from this table but adds a new helper file, not modifying this file
+- `/home/jared/Nexus-Terminal/lib/jarvis-response.ts` -- unchanged
+- `/home/jared/Nexus-Terminal/lib/jarvis-scrape.ts` -- unchanged (robots.txt check happens before scraping, in the caller)
+- `/home/jared/Nexus-Terminal/lib/jarvis-embedding.ts` -- unchanged
+- `/home/jared/Nexus-Terminal/lib/jarvis-allowlist.ts` -- unchanged
+- `/home/jared/Nexus-Terminal/lib/jarvis-admin.ts` -- unchanged (reused by JRV-075)
+- `/home/jared/Nexus-Terminal/components/trading/JarvisTab.tsx` -- no frontend changes
+- All existing test files -- unchanged
+- `middleware.ts` -- unchanged
+- `vercel.json` -- unchanged
+
+---
+
+## Security Notes (applies across all tickets)
+
+1. **ALLOWED_EMAILS** is still not enforced in auth callbacks. This is a known issue from CLAUDE.md. Not in Sprint 7 scope, but flagged per protocol.
+2. **JRV-075** (`/api/jarvis/admin/stats`) MUST use `requireJarvisAdmin()` from `lib/jarvis-admin.ts` -- NOT `requireUser()`. Regular users must not see aggregate system metrics.
+3. **JRV-071** token tracking must NEVER log prompt content, response content, or API keys. Only log: userId, mode, timestamp, inputTokens (estimated count), outputTokens (estimated count), durationMs, success boolean.
+4. **JRV-073** robots.txt fetching must use the same `Nexus-Jarvis/1.0` User-Agent string already used in scraping. Must have a timeout (5s) and must not throw on failure -- treat robots.txt fetch failure as "allowed."
+5. **JRV-070** rate limit responses return 429 with a JSON body `{ error: "Rate limit exceeded. Try again later." }`. Do not leak the user's request count or limit in the error message.
 
 ---
 
 ## Execution Order
 
-Execute changes in this exact order. Each change lists the file, what to do, and acceptance criteria.
+Execute changes in this exact sequence. Each ticket lists every file to create or modify, what to do, and acceptance criteria.
 
 ---
 
-### Change 1: Add env vars to `.env.example`
+### Change 1: JRV-073 -- Robots.txt Respect Before Scraping
 
-**File:** `/home/jared/Nexus-Terminal/.env.example`
-**Action:** MODIFY — append after line 27 (after `ALLOWED_EMAILS=`)
+**Complexity:** LOW (under 30 min)
 
-**Add these lines:**
+#### 1a. Create `/home/jared/Nexus-Terminal/lib/jarvis-robots.ts`
 
-```
-# Jarvis Cron (required for macro headline scraping on Vercel)
-CRON_SECRET=
-
-# Jarvis Orchestration (optional — enables multi-step critique)
-JARVIS_ORCHESTRATION_CRITIQUE=false
-```
-
-**Acceptance criteria:**
-- [ ] `CRON_SECRET=` appears in `.env.example`
-- [ ] `JARVIS_ORCHESTRATION_CRITIQUE=false` appears in `.env.example`
-- [ ] Comments explain purpose
-- [ ] No other lines changed
-
----
-
-### Change 2: Extend allowlist with regions and macro domains
-
-**File:** `/home/jared/Nexus-Terminal/lib/jarvis-allowlist.ts`
-**Action:** MODIFY
-
-**Step 2a — Update `AllowlistEntry` interface (line 1-5):**
-
-Replace the current interface with:
-
-```typescript
-export type AllowlistRegion = 'us' | 'eu' | 'asia' | 'global';
-
-export interface AllowlistEntry {
-  domain: string;
-  label: string;
-  category: 'earnings' | 'filings' | 'news' | 'general' | 'macro';
-  region: AllowlistRegion;
-}
-```
-
-**Step 2b — Update `ALLOWLIST` array (line 7-28):**
-
-Add `region: 'us'` to each existing entry. Then append 10 new macro entries:
-
-```typescript
-const ALLOWLIST: AllowlistEntry[] = [
-  // --- Existing entries (Sprint 0) ---
-  { domain: 'earningswhispers.com', label: 'Earnings Whispers', category: 'earnings', region: 'us' },
-  { domain: 'marketwatch.com', label: 'MarketWatch', category: 'earnings', region: 'us' },
-  { domain: 'nasdaq.com', label: 'NASDAQ', category: 'earnings', region: 'us' },
-  { domain: 'sec.gov', label: 'SEC EDGAR', category: 'filings', region: 'us' },
-  // --- Macro domains (Sprint 6) ---
-  { domain: 'cnbc.com', label: 'CNBC', category: 'macro', region: 'us' },
-  { domain: 'reuters.com', label: 'Reuters', category: 'macro', region: 'us' },
-  { domain: 'investing.com', label: 'Investing.com', category: 'macro', region: 'us' },
-  { domain: 'federalreserve.gov', label: 'Federal Reserve', category: 'macro', region: 'us' },
-  { domain: 'ecb.europa.eu', label: 'European Central Bank', category: 'macro', region: 'eu' },
-  { domain: 'tradingeconomics.com', label: 'Trading Economics', category: 'macro', region: 'eu' },
-  { domain: 'boj.or.jp', label: 'Bank of Japan', category: 'macro', region: 'asia' },
-  { domain: 'nikkei.com', label: 'Nikkei', category: 'macro', region: 'asia' },
-  { domain: 'imf.org', label: 'IMF', category: 'macro', region: 'global' },
-  { domain: 'worldbank.org', label: 'World Bank', category: 'macro', region: 'global' },
-];
-```
-
-**Step 2c — Update `TRUST_SCORES_BY_CATEGORY` (line 37-42):**
-
-Add `macro` category with trust score 0.85:
-
-```typescript
-const TRUST_SCORES_BY_CATEGORY: Record<AllowlistEntry['category'], number> = {
-  earnings: 0.8,
-  filings: 1,
-  news: 0.75,
-  general: 0.5,
-  macro: 0.85,
-};
-```
-
-**Step 2d — Add two new exported helpers (append after `getAllowedDomains` at line 111-113):**
-
-```typescript
-export function getAllowlistByRegion(region: AllowlistRegion) {
-  return ALLOWLIST.filter((entry) => entry.region === region);
-}
-
-export function getMacroAllowlistDomains() {
-  return ALLOWLIST.filter((entry) => entry.category === 'macro');
-}
-```
-
-**Acceptance criteria:**
-- [ ] `AllowlistEntry` has `region: AllowlistRegion` field
-- [ ] `AllowlistRegion` type is exported
-- [ ] Category union includes `'macro'`
-- [ ] All 4 existing entries have `region: 'us'`
-- [ ] 10 new macro entries exist with correct regions
-- [ ] `TRUST_SCORES_BY_CATEGORY` includes `macro: 0.85`
-- [ ] `getAllowlistByRegion('eu')` returns only EU entries
-- [ ] `getMacroAllowlistDomains()` returns only macro-category entries
-- [ ] `isUrlAllowed()` works for all domains (existing + new)
-- [ ] Existing tests in `__tests__/jarvis-allowlist.test.ts` still pass
-- [ ] Add new tests for region filtering and macro helpers
-
----
-
-### Change 3: Extend Jarvis types
-
-**File:** `/home/jared/Nexus-Terminal/lib/jarvis-types.ts`
-**Action:** MODIFY
-
-**Step 3a — Update `JarvisMode` (line 1):**
-
-```typescript
-export type JarvisMode = 'daily-summary' | 'trade-analysis' | 'assistant' | 'macro-summary';
-```
-
-**Step 3b — Add macro summary types (append after `JarvisStructuredResponse` interface, after line 36):**
-
-```typescript
-export type MacroSummaryRegion = 'us' | 'eu' | 'asia' | 'global';
-
-export interface JarvisMacroRegionSummary {
-  region: MacroSummaryRegion;
-  headline: string;
-  details: string[];
-  sentiment: 'bullish' | 'bearish' | 'neutral' | 'mixed';
-}
-
-export interface JarvisMacroSummaryOutput {
-  date: string;
-  overallSentiment: 'bullish' | 'bearish' | 'neutral' | 'mixed';
-  regions: JarvisMacroRegionSummary[];
-  keyRisks: string[];
-}
-```
-
-**Step 3c — Update `JarvisResponse` (line 23-29) to include optional `macroSummary`:**
-
-```typescript
-export interface JarvisResponse {
-  message: string;
-  sourceSummary?: string;
-  sources?: JarvisSourceContext[];
-  warnings?: string[];
-  structured?: JarvisStructuredResponse;
-  macroSummary?: JarvisMacroSummaryOutput;
-}
-```
-
-**Acceptance criteria:**
-- [ ] `JarvisMode` includes `'macro-summary'`
-- [ ] `MacroSummaryRegion`, `JarvisMacroRegionSummary`, `JarvisMacroSummaryOutput` are exported
-- [ ] `JarvisResponse` has optional `macroSummary` field
-- [ ] Existing tests in `__tests__/jarvis-types.test.ts` still pass
-- [ ] `npx tsc --noEmit` passes
-
----
-
-### Change 4: Add macro-daily source pack
-
-**File:** `/home/jared/Nexus-Terminal/lib/jarvis-source-packs.ts`
-**Action:** MODIFY
-
-**Step 4a — Add the `macro-daily` source pack to the `sourcePacks` array (after the existing `earnings` entry, before `];` on line 27):**
-
-```typescript
-  {
-    id: 'macro-daily',
-    name: 'Macro Daily',
-    description: 'Daily macro market overview across US, EU, Asia, and global.',
-    icon: 'Globe',
-    category: 'macro',
-    urls: [
-      'https://www.cnbc.com/economy/',
-      'https://www.reuters.com/markets/',
-      'https://www.investing.com/news/economy',
-      'https://tradingeconomics.com/calendar',
-    ],
-    promptTemplate:
-      'Provide a daily macro market summary. Break down by region (US, Europe, Asia-Pacific, Global). For each region: headline development, market sentiment, and key risks. End with overall portfolio implications.',
-  },
-```
-
-**Acceptance criteria:**
-- [ ] `sourcePacks` array has entry with `id: 'macro-daily'`
-- [ ] `getSourcePack('macro-daily')` returns the pack
-- [ ] Pack has 4 URLs (one per region)
-- [ ] Existing tests in `__tests__/jarvis-source-packs.test.ts` still pass
-
----
-
-### Change 5: Create orchestration engine
-
-**File:** `/home/jared/Nexus-Terminal/lib/jarvis-orchestrator.ts`
 **Action:** CREATE
 
-This is the most complex piece. Create the file with the following structure:
+This module checks robots.txt for a given URL and determines if the `Nexus-Jarvis` user agent is allowed to scrape it. Results are cached in-memory with a 1-hour TTL.
 
 ```typescript
-import {
-  type JarvisMode,
-  type JarvisMacroSummaryOutput,
-  type JarvisSourceContext,
-  type JarvisStructuredResponse,
-  type ScrapedChunk,
-} from '@/lib/jarvis-types';
-import {
-  assembleKnowledgeContext,
-  retrieveKnowledgeChunks,
-} from '@/lib/jarvis-knowledge';
-import {
-  buildStructuredFallbackFromSources,
-  formatStructuredMessage,
-  parseJarvisLlmResponse,
-} from '@/lib/jarvis-response';
-import { buildSourceContexts } from '@/lib/jarvis-scrape';
+// Exports:
 
-// --- Constants ---
-const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v3.2';
-const DEFAULT_DEEPSEEK_BASE_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const INTER_CALL_DELAY_MS = 1500; // Respect 40 RPM rate limit
+export async function isRobotAllowed(url: string): Promise<boolean>
+// Given a full URL (e.g., "https://www.cnbc.com/economy/"), fetch the site's
+// robots.txt, parse it, and return true if the path is allowed for user-agent
+// "Nexus-Jarvis" (or "*" fallback). Cache the parsed robots.txt per origin
+// in a module-level Map<string, { rules: ParsedRules; fetchedAt: number }>.
+// TTL: 1 hour (3_600_000 ms). Configurable via JARVIS_ROBOTS_CACHE_TTL_MS env.
+// On any fetch error or timeout (5s), return true (fail-open).
+// On 404 for robots.txt, return true (no restrictions).
 
-// --- Public interfaces ---
+export function clearRobotsCache(): void
+// Clears the in-memory cache. Used in tests.
+```
 
-export interface OrchestrationOptions {
+**Implementation details:**
+- Fetch `${origin}/robots.txt` with a 5-second AbortController timeout.
+- Parse the response text line by line. Track the current user-agent block. Look for `User-agent: Nexus-Jarvis` or `User-agent: *` blocks. Within each block, process `Disallow:` and `Allow:` directives.
+- Match the URL path against disallow/allow rules using prefix matching (standard robots.txt semantics).
+- If the user-agent `Nexus-Jarvis` has an explicit block, use that. Otherwise fall back to `*`. If neither exists, allow.
+- Use `Nexus-Jarvis/1.0` as the User-Agent header when fetching robots.txt.
+
+**Acceptance criteria:**
+- [ ] `isRobotAllowed('https://example.com/page')` fetches `https://example.com/robots.txt` exactly once and caches
+- [ ] Subsequent calls for the same origin within 1h use the cache without re-fetching
+- [ ] Returns `true` on fetch timeout, fetch error, or 404
+- [ ] Returns `false` when robots.txt disallows the path for `Nexus-Jarvis` or `*`
+- [ ] `clearRobotsCache()` resets the cache
+
+#### 1b. Modify `/home/jared/Nexus-Terminal/app/api/jarvis/route.ts`
+
+**Action:** MODIFY
+
+In the `scrapeUrl` function (line 181), after the allowlist check (line 207-218) and before the actual `fetch` call (line 224), add a robots.txt check:
+
+```typescript
+import { isRobotAllowed } from '@/lib/jarvis-robots';
+
+// Inside scrapeUrl, after the isUrlAllowed check passes:
+const robotsAllowed = await isRobotAllowed(parsed.toString());
+if (!robotsAllowed) {
+  return {
+    url,
+    title: parsed.hostname,
+    host: parsed.hostname,
+    excerpt: '',
+    scrapedAt: new Date(),
+    blocked: true,
+    error: `Scraping blocked by robots.txt for ${parsed.hostname}`,
+  };
+}
+```
+
+Insert this between line 218 (end of allowlist block) and line 220 (start of `let res: Response;`).
+
+#### 1c. Modify `/home/jared/Nexus-Terminal/app/api/jarvis/cron/headlines/route.ts`
+
+**Action:** MODIFY
+
+Add the same robots.txt check inside the `for (const entry of macroDomains)` loop, after the URL lookup (line 54) and before the fetch (line 64):
+
+```typescript
+import { isRobotAllowed } from '@/lib/jarvis-robots';
+
+// Inside the loop, after `if (!url)` check:
+const robotsAllowed = await isRobotAllowed(url);
+if (!robotsAllowed) {
+  errors.push(`${entry.domain}: blocked by robots.txt`);
+  continue;
+}
+```
+
+Insert this between line 56 (end of `continue;`) and line 59 (start of `try`).
+
+#### 1d. Create `/home/jared/Nexus-Terminal/__tests__/jarvis-robots.test.ts`
+
+**Action:** CREATE
+
+Tests:
+- `isRobotAllowed` returns `true` when robots.txt allows the path
+- `isRobotAllowed` returns `false` when robots.txt disallows the path for `*`
+- `isRobotAllowed` returns `false` when robots.txt disallows the path for `Nexus-Jarvis` specifically
+- `isRobotAllowed` returns `true` when robots.txt fetch times out
+- `isRobotAllowed` returns `true` when robots.txt returns 404
+- Second call for same origin uses cache (fetch called only once)
+- `clearRobotsCache()` forces a re-fetch
+
+Mock `globalThis.fetch` for all tests.
+
+---
+
+### Change 2: JRV-074 -- Scrape Cache Layer
+
+**Complexity:** MEDIUM (30 min to 2 hr)
+
+#### 2a. Create `/home/jared/Nexus-Terminal/lib/jarvis-scrape-cache.ts`
+
+**Action:** CREATE
+
+This module checks `jarvis_knowledge_chunks.lastSeenAt` to determine if a URL was recently ingested. If within the TTL, the caller should skip re-scraping and use the existing chunks from the knowledge store.
+
+```typescript
+import { eq, and, sql, desc } from 'drizzle-orm';
+import { getDb } from '@/lib/db';
+import { jarvisKnowledgeChunks } from '@/lib/db/schema';
+import type { JarvisSourceType } from '@/lib/jarvis-types';
+
+const DEFAULT_WEB_SOURCE_TTL_MS = 60 * 60 * 1000;        // 1 hour
+const DEFAULT_CACHED_HEADLINE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+
+export interface ScrapeCacheResult {
+  isFresh: boolean;
+  lastSeenAt: Date | null;
+  chunkCount: number;
+}
+
+export function getScrapeCacheTtlMs(sourceType: JarvisSourceType): number
+// Returns TTL in ms for the given source type.
+// web_source: parse JARVIS_SCRAPE_CACHE_TTL_WEB_MS env or default 3_600_000
+// cached_headline: parse JARVIS_SCRAPE_CACHE_TTL_HEADLINE_MS env or default 43_200_000
+// All others: return 0 (no caching)
+
+export async function isUrlFreshInCache(url: string, sourceType: JarvisSourceType): Promise<ScrapeCacheResult>
+// Query jarvis_knowledge_chunks for the most recent row matching sourceUrl = url.
+// SELECT MAX(last_seen_at) as lastSeenAt, COUNT(*) as chunkCount
+// FROM jarvis_knowledge_chunks WHERE source_url = $url
+// If lastSeenAt is within the TTL window (now - ttl), return { isFresh: true, lastSeenAt, chunkCount }.
+// If no rows or outside TTL, return { isFresh: false, lastSeenAt, chunkCount: 0 }.
+// If db is null, return { isFresh: false, lastSeenAt: null, chunkCount: 0 }.
+```
+
+#### 2b. Modify `/home/jared/Nexus-Terminal/app/api/jarvis/route.ts`
+
+**Action:** MODIFY
+
+In the `scrapeUrl` function, after the robots.txt check (added in Change 1) and before the actual HTTP fetch, add a cache check:
+
+```typescript
+import { isUrlFreshInCache } from '@/lib/jarvis-scrape-cache';
+
+// Inside scrapeUrl, after robotsAllowed check:
+const cacheResult = await isUrlFreshInCache(parsed.toString(), 'web_source');
+if (cacheResult.isFresh) {
+  return {
+    url,
+    title: parsed.hostname,
+    host: parsed.hostname,
+    excerpt: '',
+    scrapedAt: cacheResult.lastSeenAt ?? new Date(),
+    error: undefined,
+    // Special marker: source was served from cache. The caller's knowledge
+    // retrieval will pick up the existing chunks from the store.
+  };
+}
+```
+
+**Important:** When a cached result is returned from `scrapeUrl`, it will have an empty `excerpt` and no `body`, so `chunkScrapedSource` will produce zero chunks for it. This is correct -- the chunks already exist in the knowledge store and will be picked up by the `retrieveKnowledgeChunks` call later in the handler. The `sources` array for context will be empty for cached URLs, which is fine because the knowledge retrieval already handles deduplication.
+
+To preserve the source summary for cached URLs, add a `cached` boolean to the return and handle it in `scrapeSources`:
+
+```typescript
+// In scrapeSources, add cached sources to a separate tracking list:
+const cachedUrls = results
+  .filter((result) => !result.blocked && !result.error && !result.body && !result.excerpt)
+  .map((result) => result.url);
+// Add cachedUrls count to warnings if > 0:
+if (cachedUrls.length > 0) {
+  warnings.push(`${cachedUrls.length} URL(s) served from cache (within TTL).`);
+}
+```
+
+#### 2c. Modify `/home/jared/Nexus-Terminal/app/api/jarvis/cron/headlines/route.ts`
+
+**Action:** MODIFY
+
+Inside the scraping loop, before the HTTP fetch, add a cache check:
+
+```typescript
+import { isUrlFreshInCache } from '@/lib/jarvis-scrape-cache';
+
+// Inside the loop, after robotsAllowed check:
+const cacheResult = await isUrlFreshInCache(url, 'cached_headline');
+if (cacheResult.isFresh) {
+  totalScraped += 1; // Count as successful but skipped
+  continue;
+}
+```
+
+#### 2d. Create `/home/jared/Nexus-Terminal/__tests__/jarvis-scrape-cache.test.ts`
+
+**Action:** CREATE
+
+Tests:
+- `getScrapeCacheTtlMs('web_source')` returns 3600000 by default
+- `getScrapeCacheTtlMs('cached_headline')` returns 43200000 by default
+- `getScrapeCacheTtlMs('trade_journal')` returns 0
+- `isUrlFreshInCache` returns `isFresh: true` when lastSeenAt is within TTL
+- `isUrlFreshInCache` returns `isFresh: false` when lastSeenAt is outside TTL
+- `isUrlFreshInCache` returns `isFresh: false` when no rows exist
+- `isUrlFreshInCache` returns `isFresh: false` when db is null
+
+Mock `@/lib/db` with `getDb` returning a mock that implements `select().from().where()`.
+
+#### 2e. Modify `/home/jared/Nexus-Terminal/.env.example`
+
+**Action:** MODIFY -- append after the `JARVIS_ORCHESTRATION_CRITIQUE=false` line:
+
+```
+# Jarvis Scrape Cache TTL (optional — milliseconds, 0 = disabled)
+JARVIS_SCRAPE_CACHE_TTL_WEB_MS=3600000
+JARVIS_SCRAPE_CACHE_TTL_HEADLINE_MS=43200000
+```
+
+---
+
+### Change 3: JRV-072 -- Circuit Breaker
+
+**Complexity:** LOW (under 30 min)
+
+#### 3a. Create `/home/jared/Nexus-Terminal/lib/jarvis-circuit-breaker.ts`
+
+**Action:** CREATE
+
+A simple circuit breaker that tracks consecutive LLM call failures. When the threshold is reached, it "opens" and all LLM calls are short-circuited to return `null` (triggering the existing deterministic fallback). After a reset timeout, it transitions to "half-open" and allows one probe request.
+
+```typescript
+export interface CircuitBreakerState {
+  status: 'closed' | 'open' | 'half-open';
+  consecutiveFailures: number;
+  lastFailureAt: number | null;
+  openedAt: number | null;
+}
+
+const DEFAULT_THRESHOLD = 5;
+const DEFAULT_RESET_MS = 60_000;
+
+export function getCircuitBreakerState(): CircuitBreakerState
+// Returns a copy of the current state. Used by the observability endpoint.
+
+export function isCircuitOpen(): boolean
+// Returns true if the breaker is currently open (or half-open has not been
+// probed yet). When open, check if enough time has passed (resetMs) to
+// transition to half-open. If transitioning to half-open, return false
+// (allow one probe request).
+// Reads JARVIS_CIRCUIT_BREAKER_THRESHOLD (default 5) and
+// JARVIS_CIRCUIT_BREAKER_RESET_MS (default 60000) from env.
+
+export function recordLlmSuccess(): void
+// Reset consecutiveFailures to 0 and set status to 'closed'.
+
+export function recordLlmFailure(): void
+// Increment consecutiveFailures. If >= threshold, set status to 'open'
+// and record openedAt = Date.now().
+
+export function resetCircuitBreaker(): void
+// Reset all state to defaults. Used in tests.
+```
+
+**State is module-level (in-memory).** Same serverless caveat as rate limiting -- resets on cold start, which is acceptable (conservative: circuit starts closed).
+
+#### 3b. Modify `/home/jared/Nexus-Terminal/app/api/jarvis/route.ts`
+
+**Action:** MODIFY
+
+In the `askLlm` function (line 381), add circuit breaker check at the top and recording on success/failure:
+
+```typescript
+import { isCircuitOpen, recordLlmSuccess, recordLlmFailure } from '@/lib/jarvis-circuit-breaker';
+
+// At the start of askLlm, before the API key check:
+if (isCircuitOpen()) return null;
+
+// After a successful LLM response (after parseJarvisLlmResponse on line 441):
+recordLlmSuccess();
+return parseJarvisLlmResponse(content);
+
+// On fetch error (line 426 catch block), before returning null:
+recordLlmFailure();
+return null;
+
+// On non-ok response (line 430), before returning null:
+recordLlmFailure();
+return null;
+```
+
+#### 3c. Modify `/home/jared/Nexus-Terminal/lib/jarvis-orchestrator.ts`
+
+**Action:** MODIFY
+
+In the `callLlm` function (line 72), add the same circuit breaker integration:
+
+```typescript
+import { isCircuitOpen, recordLlmSuccess, recordLlmFailure } from '@/lib/jarvis-circuit-breaker';
+
+// At the start of callLlm, before the API key check:
+if (isCircuitOpen()) return null;
+
+// After successful response (line 103, before the return):
+recordLlmSuccess();
+return payload.choices?.[0]?.message?.content?.trim() ?? null;
+
+// On fetch error (line 93 catch), before return null:
+recordLlmFailure();
+return null;
+
+// On !res.ok (line 97), before return null:
+recordLlmFailure();
+return null;
+```
+
+#### 3d. Create `/home/jared/Nexus-Terminal/__tests__/jarvis-circuit-breaker.test.ts`
+
+**Action:** CREATE
+
+Tests:
+- `isCircuitOpen()` returns `false` when no failures recorded
+- After N consecutive `recordLlmFailure()` calls (where N = threshold), `isCircuitOpen()` returns `true`
+- `recordLlmSuccess()` resets the counter; `isCircuitOpen()` returns `false`
+- After circuit opens, it auto-transitions to half-open after resetMs (use `vi.useFakeTimers()`)
+- Half-open allows one request (returns `false` once, then re-opens if that fails)
+- `resetCircuitBreaker()` resets everything
+- `getCircuitBreakerState()` returns the correct status at each stage
+
+#### 3e. Modify `/home/jared/Nexus-Terminal/.env.example`
+
+**Action:** MODIFY -- append after the scrape cache lines added in Change 2:
+
+```
+# Jarvis Circuit Breaker (optional)
+JARVIS_CIRCUIT_BREAKER_THRESHOLD=5
+JARVIS_CIRCUIT_BREAKER_RESET_MS=60000
+```
+
+---
+
+### Change 4: JRV-070 -- Per-User Rate Limiting
+
+**Complexity:** MEDIUM (30 min to 2 hr)
+
+#### 4a. Create `/home/jared/Nexus-Terminal/lib/jarvis-rate-limit.ts`
+
+**Action:** CREATE
+
+In-memory sliding window rate limiter. Best-effort on Vercel serverless (resets on cold start).
+
+```typescript
+export interface RateLimitResult {
+  allowed: boolean;
+  remaining: number;
+  resetAt: number; // Unix timestamp (ms) when the window resets
+}
+
+const DEFAULT_LIMIT_PER_HOUR = 30;
+
+// Module-level state:
+// Map<string, number[]> where key = userId, value = array of request timestamps (ms)
+
+export function checkRateLimit(userId: string): RateLimitResult
+// 1. Read limit from JARVIS_RATE_LIMIT_PER_HOUR env (default 30).
+// 2. Get the user's timestamp array from the Map.
+// 3. Filter out timestamps older than 1 hour (3_600_000 ms) from now.
+// 4. If filtered length >= limit, return { allowed: false, remaining: 0, resetAt: oldest + 3600000 }.
+// 5. Otherwise, push Date.now() to the array, update the Map, return { allowed: true, remaining: limit - newLength, resetAt: now + 3600000 }.
+
+export function getRateLimitState(userId: string): { requestCount: number; windowMs: number; limit: number }
+// Returns current request count in the window, the window size, and the limit.
+// Used by the observability endpoint.
+
+export function resetRateLimits(): void
+// Clears the entire Map. Used in tests.
+```
+
+#### 4b. Modify `/home/jared/Nexus-Terminal/app/api/jarvis/route.ts`
+
+**Action:** MODIFY
+
+At the very beginning of the `POST` handler (line 444), after `requireUser()` succeeds (line 447) and before `parseJsonBody` (line 449), add the rate limit check:
+
+```typescript
+import { checkRateLimit } from '@/lib/jarvis-rate-limit';
+
+// Inside POST, after the auth check:
+const rateLimitResult = checkRateLimit(authState.user.id);
+if (!rateLimitResult.allowed) {
+  return Response.json(
+    { error: 'Rate limit exceeded. Try again later.' },
+    {
+      status: 429,
+      headers: {
+        'Retry-After': String(Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000)),
+      },
+    },
+  );
+}
+```
+
+**Note:** The GET handler (line 368) does NOT get rate limited -- it only returns remembered URLs, which is a lightweight read. Only POST is rate limited.
+
+#### 4c. Create `/home/jared/Nexus-Terminal/__tests__/jarvis-rate-limit.test.ts`
+
+**Action:** CREATE
+
+Tests:
+- First request returns `{ allowed: true, remaining: 29 }` (default limit 30)
+- 30 requests in rapid succession: first 30 allowed, 31st returns `{ allowed: false, remaining: 0 }`
+- After window expires (use `vi.useFakeTimers()` and advance 1h+), requests are allowed again
+- `resetRateLimits()` clears state
+- Custom `JARVIS_RATE_LIMIT_PER_HOUR=5` env is respected
+
+#### 4d. Modify `/home/jared/Nexus-Terminal/.env.example`
+
+**Action:** MODIFY -- append after the circuit breaker lines added in Change 3:
+
+```
+# Jarvis Rate Limiting (optional — per user, per hour)
+JARVIS_RATE_LIMIT_PER_HOUR=30
+```
+
+---
+
+### Change 5: JRV-071 -- Token Budget Tracking
+
+**Complexity:** MEDIUM (30 min to 2 hr)
+
+#### 5a. Modify `/home/jared/Nexus-Terminal/lib/db/schema.ts`
+
+**Action:** MODIFY -- add a new table definition after the `jarvisUserDocuments` table (after line 193):
+
+```typescript
+export const jarvisRequestLog = pgTable('jarvis_request_log', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  mode: text('mode').notNull(),
+  inputTokens: integer('input_tokens').notNull().default(0),
+  outputTokens: integer('output_tokens').notNull().default(0),
+  totalTokens: integer('total_tokens').notNull().default(0),
+  durationMs: integer('duration_ms').notNull().default(0),
+  success: integer('success').notNull().default(1), // 1 = true, 0 = false (integer for PG compat)
+  sourceCount: integer('source_count').notNull().default(0),
+  chunkCount: integer('chunk_count').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('idx_jarvis_request_log_user_created').on(table.userId, table.createdAt),
+  index('idx_jarvis_request_log_created').on(table.createdAt),
+]);
+```
+
+#### 5b. Run Drizzle migration
+
+After modifying the schema, run:
+
+```bash
+npm run db:generate
+npm run db:migrate
+```
+
+This will generate a new migration file in `drizzle/` and apply it.
+
+#### 5c. Create `/home/jared/Nexus-Terminal/lib/jarvis-token-tracking.ts`
+
+**Action:** CREATE
+
+```typescript
+import { getDb } from '@/lib/db';
+import { jarvisRequestLog } from '@/lib/db/schema';
+import type { JarvisMode } from '@/lib/jarvis-types';
+
+export interface TokenTrackingEntry {
   userId: string;
   mode: JarvisMode;
-  prompt: string;
-  tradeTickers: string[];
-  scrapeChunks: ScrapedChunk[];
-  sourceContexts: JarvisSourceContext[];
-}
-
-export interface OrchestrationResult {
-  message: string;
-  structured: JarvisStructuredResponse;
-  macroSummary?: JarvisMacroSummaryOutput;
-  steps: OrchestrationStepLog[];
-}
-
-export interface OrchestrationStepLog {
-  step: 'plan' | 'retrieve' | 'summarize' | 'critique' | 'answer';
+  inputTokens: number;
+  outputTokens: number;
   durationMs: number;
-  tokenEstimate: number;
-  skipped: boolean;
+  success: boolean;
+  sourceCount: number;
+  chunkCount: number;
 }
 
-// --- Internal types ---
+export async function logJarvisRequest(entry: TokenTrackingEntry): Promise<void>
+// Insert a row into jarvis_request_log.
+// id: crypto.randomUUID()
+// totalTokens: entry.inputTokens + entry.outputTokens
+// success: entry.success ? 1 : 0
+// If db is null, silently return (no-op).
+// Wrap in try/catch -- never throw. Log errors via logRouteError('jarvis.token_tracking', error).
 
-interface RetrievalPlan {
-  keywords: string[];
-  tickers: string[];
-  sourceTypes: string[];
-  focusRegions: string[];
-}
+export function estimateInputTokens(text: string): number
+// Same whitespace split estimator used elsewhere:
+// return text.trim().split(/\s+/).filter(Boolean).length;
 
-// --- Helpers ---
-
-function estimateTokens(text: string) {
-  return text.trim().split(/\s+/).filter(Boolean).length;
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isCritiqueEnabled() {
-  return String(process.env.JARVIS_ORCHESTRATION_CRITIQUE ?? 'false').toLowerCase() === 'true';
-}
-
-function getApiConfig() {
-  const apiKey = process.env.JARVIS_API_KEY ?? process.env.NVIDIA_API_KEY;
-  const model = process.env.JARVIS_MODEL || DEFAULT_DEEPSEEK_MODEL;
-  const baseUrl = process.env.JARVIS_API_BASE_URL || DEFAULT_DEEPSEEK_BASE_URL;
-  return { apiKey, model, baseUrl };
-}
-
-async function callLlm(systemPrompt: string, userMessage: string): Promise<string | null> {
-  const { apiKey, model, baseUrl } = getApiConfig();
-  if (!apiKey) return null;
-
-  let res: Response;
-  try {
-    res = await fetch(baseUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.3,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-      }),
-    });
-  } catch {
-    return null;
-  }
-
-  if (!res.ok) return null;
-
-  const payload = (await res.json().catch(() => ({}))) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-
-  return payload.choices?.[0]?.message?.content?.trim() ?? null;
-}
-
-// --- Pipeline steps ---
-
-function fallbackPlan(prompt: string, tradeTickers: string[]): RetrievalPlan {
-  const words = prompt
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 3);
-  const keywords = [...new Set(words)].slice(0, 10);
-  return {
-    keywords,
-    tickers: tradeTickers,
-    sourceTypes: ['web_source', 'cached_headline', 'user_document'],
-    focusRegions: ['us', 'eu', 'asia', 'global'],
-  };
-}
-
-const PLAN_SYSTEM_PROMPT = [
-  'You are a retrieval planner for a trading assistant.',
-  'Given a user prompt and context, produce a JSON retrieval plan.',
-  'Return ONLY valid JSON, no markdown, no code fences.',
-  'Schema: { "keywords": string[], "tickers": string[], "sourceTypes": string[], "focusRegions": string[] }',
-  'sourceTypes options: "web_source", "cached_headline", "trade_journal", "user_document"',
-  'focusRegions options: "us", "eu", "asia", "global"',
-].join('\n');
-
-async function stepPlan(
-  prompt: string,
-  tradeTickers: string[],
-  sourceContexts: JarvisSourceContext[],
-): Promise<{ plan: RetrievalPlan; log: OrchestrationStepLog }> {
-  const start = Date.now();
-
-  const sourceHints = sourceContexts
-    .slice(0, 5)
-    .map((s) => `${s.host}: ${s.title}`)
-    .join('; ');
-
-  const userMessage = [
-    `User prompt: ${prompt}`,
-    `Known tickers: ${tradeTickers.join(', ') || 'none'}`,
-    `Available sources: ${sourceHints || 'none'}`,
-  ].join('\n');
-
-  const raw = await callLlm(PLAN_SYSTEM_PROMPT, userMessage);
-  const durationMs = Date.now() - start;
-
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && Array.isArray(parsed.keywords)) {
-        return {
-          plan: {
-            keywords: parsed.keywords.filter((k: unknown) => typeof k === 'string').slice(0, 15),
-            tickers: parsed.tickers?.filter((t: unknown) => typeof t === 'string') ?? tradeTickers,
-            sourceTypes: parsed.sourceTypes?.filter((s: unknown) => typeof s === 'string') ?? ['web_source', 'cached_headline'],
-            focusRegions: parsed.focusRegions?.filter((r: unknown) => typeof r === 'string') ?? ['us', 'eu', 'asia', 'global'],
-          },
-          log: { step: 'plan', durationMs, tokenEstimate: estimateTokens(userMessage + (raw ?? '')), skipped: false },
-        };
-      }
-    } catch {
-      // Fall through to fallback
-    }
-  }
-
-  return {
-    plan: fallbackPlan(prompt, tradeTickers),
-    log: { step: 'plan', durationMs, tokenEstimate: estimateTokens(userMessage), skipped: false },
-  };
-}
-
-async function stepRetrieve(
-  options: OrchestrationOptions,
-  plan: RetrievalPlan,
-): Promise<{ chunks: ScrapedChunk[]; log: OrchestrationStepLog }> {
-  const start = Date.now();
-
-  const query = [...plan.keywords, ...plan.tickers].join(' ');
-  const validSourceTypes = plan.sourceTypes.filter(
-    (t): t is 'web_source' | 'cached_headline' | 'trade_journal' | 'user_document' =>
-      ['web_source', 'cached_headline', 'trade_journal', 'user_document'].includes(t),
-  );
-
-  const retrieved = await retrieveKnowledgeChunks({
-    userId: options.userId,
-    query: query || options.prompt,
-    tickers: plan.tickers.length > 0 ? plan.tickers : options.tradeTickers,
-    sourceTypes: validSourceTypes.length > 0 ? validSourceTypes : undefined,
-    includeGlobal: true,
-    limit: 40,
-  }).catch(() => []);
-
-  const assembled = assembleKnowledgeContext(retrieved);
-
-  // Merge retrieved chunks with scrape chunks, deduplicating by sourceUrl:hash
-  const deduped = new Map<string, ScrapedChunk>();
-  for (const chunk of [...options.scrapeChunks, ...assembled.chunks]) {
-    deduped.set(`${chunk.sourceUrl}:${chunk.hash}`, chunk);
-  }
-  const mergedChunks = [...deduped.values()];
-
-  const durationMs = Date.now() - start;
-  return {
-    chunks: mergedChunks,
-    log: { step: 'retrieve', durationMs, tokenEstimate: assembled.totalTokens, skipped: false },
-  };
-}
-
-const SUMMARIZE_SYSTEM_PROMPT = [
-  'You are Jarvis, a focused trading assistant. Be concise, practical, and risk-aware.',
-  'Return ONLY valid JSON, with no markdown, no code fences, and no explanatory prose.',
-  'Output must be a single JSON object with exactly these keys: tldr, findings, actionSteps, risks.',
-  'Use this schema:',
-  '{',
-  '  "tldr": "<one sentence summary>",',
-  '  "findings": ["<bullet style finding>", "..."],',
-  '  "actionSteps": ["<concrete action>", "..."],',
-  '  "risks": ["<risk-aware caveat>", "..."]',
-  '}',
-  'Prefer non-empty findings/actionSteps/risks; use "No items identified." only when no valid item is known.',
-].join('\n');
-
-const MACRO_SUMMARIZE_SYSTEM_PROMPT = [
-  'You are Jarvis, a focused trading assistant producing a macro market summary.',
-  'Return ONLY valid JSON, with no markdown, no code fences, and no explanatory prose.',
-  'Output must be a single JSON object with these keys: tldr, findings, actionSteps, risks, macroSummary.',
-  'Schema:',
-  '{',
-  '  "tldr": "<one sentence overall macro summary>",',
-  '  "findings": ["<bullet style finding>", "..."],',
-  '  "actionSteps": ["<concrete action>", "..."],',
-  '  "risks": ["<risk-aware caveat>", "..."],',
-  '  "macroSummary": {',
-  '    "date": "<YYYY-MM-DD>",',
-  '    "overallSentiment": "bullish" | "bearish" | "neutral" | "mixed",',
-  '    "regions": [',
-  '      {',
-  '        "region": "us" | "eu" | "asia" | "global",',
-  '        "headline": "<one sentence headline for this region>",',
-  '        "details": ["<detail bullet>", "..."],',
-  '        "sentiment": "bullish" | "bearish" | "neutral" | "mixed"',
-  '      }',
-  '    ],',
-  '    "keyRisks": ["<global risk>", "..."]',
-  '  }',
-  '}',
-  'Cover all 4 regions: us, eu, asia, global. Be specific about macro developments.',
-].join('\n');
-
-async function stepSummarize(
-  options: OrchestrationOptions,
-  chunks: ScrapedChunk[],
-): Promise<{ message: string; structured: JarvisStructuredResponse; macroSummary?: JarvisMacroSummaryOutput; log: OrchestrationStepLog }> {
-  const start = Date.now();
-  const isMacro = options.mode === 'macro-summary';
-  const systemPrompt = isMacro ? MACRO_SUMMARIZE_SYSTEM_PROMPT : SUMMARIZE_SYSTEM_PROMPT;
-
-  const previewChunks = chunks.slice(0, 12);
-  const chunkContext = previewChunks.length > 0
-    ? previewChunks
-        .map((chunk, i) => {
-          const typeLabel = chunk.sourceType ? `[${chunk.sourceType}] ` : '';
-          return `${i + 1}. ${typeLabel}${chunk.sourceHost} - ${chunk.sourceTitle} [relevance ${chunk.relevance?.toFixed(2) ?? '0.00'}]\n${chunk.text.slice(0, 640)}`;
-        })
-        .join('\n\n')
-    : 'No source context available.';
-
-  const userMessage = `${options.prompt}\n\nSource context:\n${chunkContext}`;
-  const raw = await callLlm(systemPrompt, userMessage);
-  const durationMs = Date.now() - start;
-
-  if (raw) {
-    const parsed = parseJarvisLlmResponse(raw);
-    let macroSummary: JarvisMacroSummaryOutput | undefined;
-
-    if (isMacro) {
-      try {
-        // Try to extract macroSummary from the raw JSON
-        const jsonStart = raw.indexOf('{');
-        const jsonEnd = raw.lastIndexOf('}');
-        if (jsonStart >= 0 && jsonEnd > jsonStart) {
-          const jsonPayload = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
-          if (jsonPayload.macroSummary && typeof jsonPayload.macroSummary === 'object') {
-            macroSummary = validateMacroSummary(jsonPayload.macroSummary);
-          }
-        }
-      } catch {
-        // macroSummary extraction failed — proceed without it
-      }
-    }
-
-    return {
-      message: parsed.message,
-      structured: parsed.structured,
-      macroSummary,
-      log: { step: 'summarize', durationMs, tokenEstimate: estimateTokens(userMessage + (raw ?? '')), skipped: false },
-    };
-  }
-
-  // Fallback: build deterministic response
-  const sourceContexts = buildSourceContexts(
-    chunks.map((c) => ({ ...c, relevance: c.relevance ?? 0 })).sort((a, b) => b.relevance - a.relevance),
-  );
-  const fallback = buildStructuredFallbackFromSources({
-    prompt: options.prompt,
-    sources: sourceContexts,
-  });
-
-  return {
-    message: formatStructuredMessage(fallback),
-    structured: fallback,
-    macroSummary: isMacro ? buildFallbackMacroSummary() : undefined,
-    log: { step: 'summarize', durationMs, tokenEstimate: estimateTokens(userMessage), skipped: false },
-  };
-}
-
-const CRITIQUE_SYSTEM_PROMPT = [
-  'You are a quality reviewer for a trading assistant response.',
-  'Given a summary, identify gaps, unsupported claims, and confidence issues.',
-  'Return ONLY valid JSON:',
-  '{ "gaps": ["..."], "unsupportedClaims": ["..."], "confidenceNote": "..." }',
-].join('\n');
-
-async function stepCritique(
-  summary: string,
-): Promise<{ critique: string | null; log: OrchestrationStepLog }> {
-  if (!isCritiqueEnabled()) {
-    return { critique: null, log: { step: 'critique', durationMs: 0, tokenEstimate: 0, skipped: true } };
-  }
-
-  const start = Date.now();
-  const raw = await callLlm(CRITIQUE_SYSTEM_PROMPT, `Summary to review:\n${summary}`);
-  const durationMs = Date.now() - start;
-
-  return {
-    critique: raw,
-    log: { step: 'critique', durationMs, tokenEstimate: estimateTokens(summary + (raw ?? '')), skipped: false },
-  };
-}
-
-// --- Validation helpers ---
-
-function validateSentiment(value: unknown): 'bullish' | 'bearish' | 'neutral' | 'mixed' {
-  if (typeof value === 'string' && ['bullish', 'bearish', 'neutral', 'mixed'].includes(value)) {
-    return value as 'bullish' | 'bearish' | 'neutral' | 'mixed';
-  }
-  return 'neutral';
-}
-
-function validateRegionCode(value: unknown): 'us' | 'eu' | 'asia' | 'global' | null {
-  if (typeof value === 'string' && ['us', 'eu', 'asia', 'global'].includes(value)) {
-    return value as 'us' | 'eu' | 'asia' | 'global';
-  }
-  return null;
-}
-
-function validateMacroSummary(raw: unknown): JarvisMacroSummaryOutput | undefined {
-  if (!raw || typeof raw !== 'object') return undefined;
-  const obj = raw as Record<string, unknown>;
-
-  const regions = Array.isArray(obj.regions)
-    ? obj.regions
-        .map((r: unknown) => {
-          if (!r || typeof r !== 'object') return null;
-          const region = r as Record<string, unknown>;
-          const code = validateRegionCode(region.region);
-          if (!code) return null;
-          return {
-            region: code,
-            headline: typeof region.headline === 'string' ? region.headline : 'No data available.',
-            details: Array.isArray(region.details)
-              ? region.details.filter((d: unknown) => typeof d === 'string') as string[]
-              : [],
-            sentiment: validateSentiment(region.sentiment),
-          };
-        })
-        .filter((r): r is NonNullable<typeof r> => r !== null)
-    : [];
-
-  if (regions.length === 0) return undefined;
-
-  return {
-    date: typeof obj.date === 'string' ? obj.date : new Date().toISOString().slice(0, 10),
-    overallSentiment: validateSentiment(obj.overallSentiment),
-    regions,
-    keyRisks: Array.isArray(obj.keyRisks)
-      ? obj.keyRisks.filter((r: unknown) => typeof r === 'string') as string[]
-      : ['No key risks identified.'],
-  };
-}
-
-function buildFallbackMacroSummary(): JarvisMacroSummaryOutput {
-  return {
-    date: new Date().toISOString().slice(0, 10),
-    overallSentiment: 'neutral',
-    regions: [
-      { region: 'us', headline: 'Unable to generate US summary — LLM unavailable.', details: [], sentiment: 'neutral' },
-      { region: 'eu', headline: 'Unable to generate EU summary — LLM unavailable.', details: [], sentiment: 'neutral' },
-      { region: 'asia', headline: 'Unable to generate Asia summary — LLM unavailable.', details: [], sentiment: 'neutral' },
-      { region: 'global', headline: 'Unable to generate Global summary — LLM unavailable.', details: [], sentiment: 'neutral' },
-    ],
-    keyRisks: ['Macro summary was generated without a live model call. Data may be stale or incomplete.'],
-  };
-}
-
-// --- Main orchestration function ---
-
-export async function runOrchestration(options: OrchestrationOptions): Promise<OrchestrationResult> {
-  const steps: OrchestrationStepLog[] = [];
-
-  // Step 1: Plan
-  const { plan, log: planLog } = await stepPlan(options.prompt, options.tradeTickers, options.sourceContexts);
-  steps.push(planLog);
-
-  await sleep(INTER_CALL_DELAY_MS);
-
-  // Step 2: Retrieve
-  const { chunks, log: retrieveLog } = await stepRetrieve(options, plan);
-  steps.push(retrieveLog);
-
-  // Step 3: Summarize
-  const { message, structured, macroSummary, log: summarizeLog } = await stepSummarize(options, chunks);
-  steps.push(summarizeLog);
-
-  await sleep(INTER_CALL_DELAY_MS);
-
-  // Step 4: Critique (optional)
-  const { critique, log: critiqueLog } = await stepCritique(message);
-  steps.push(critiqueLog);
-
-  if (critique && isCritiqueEnabled()) {
-    await sleep(INTER_CALL_DELAY_MS);
-  }
-
-  // Step 5: Answer — currently pass-through (critique integration is future work)
-  const answerLog: OrchestrationStepLog = {
-    step: 'answer',
-    durationMs: 0,
-    tokenEstimate: 0,
-    skipped: !isCritiqueEnabled(),
-  };
-  steps.push(answerLog);
-
-  return {
-    message,
-    structured,
-    macroSummary,
-    steps,
-  };
-}
+export function estimateOutputTokens(text: string): number
+// Same as estimateInputTokens.
 ```
 
-**Key design points:**
-- `callLlm()` mirrors the existing `askLlm()` pattern — returns `null` on any failure, never leaks API key
-- `INTER_CALL_DELAY_MS = 1500` ensures sequential calls respect 40 RPM
-- `stepPlan` falls back to keyword extraction from prompt when LLM unavailable
-- `stepSummarize` falls back to `buildStructuredFallbackFromSources()` when LLM unavailable
-- For `macro-summary` mode, extracts `macroSummary` from the LLM JSON response with strict validation
-- `validateMacroSummary()` defensively validates every field of the macro output
-- `buildFallbackMacroSummary()` provides deterministic output when LLM is down
-- `stepCritique` is a no-op when `JARVIS_ORCHESTRATION_CRITIQUE !== 'true'`
-- The `answer` step is a pass-through for now — when critique is enabled in the future, it will reconcile summary + critique
+#### 5d. Modify `/home/jared/Nexus-Terminal/app/api/jarvis/route.ts`
 
-**Acceptance criteria:**
-- [ ] `runOrchestration()` exported from `lib/jarvis-orchestrator.ts`
-- [ ] Pipeline executes plan -> retrieve -> summarize -> (optional critique) -> answer
-- [ ] 1.5s delay between LLM calls
-- [ ] LLM-unavailable fallback works at every step
-- [ ] `macro-summary` mode produces `macroSummary` field
-- [ ] `npx tsc --noEmit` passes
-- [ ] Create `__tests__/jarvis-orchestrator.test.ts` with tests for: successful pipeline, LLM fallback, critique-disabled path, macro-summary mode, `validateMacroSummary` edge cases
+**Action:** MODIFY
+
+Add timing and token logging around the main request paths. Wrap the core logic:
+
+At the start of the POST handler (after the rate limit check), capture `requestStartMs`:
+
+```typescript
+import { logJarvisRequest, estimateInputTokens, estimateOutputTokens } from '@/lib/jarvis-token-tracking';
+
+const requestStartMs = Date.now();
+```
+
+At each successful return point (there are 3: macro-summary on line 555, llmMessage on line 574, fallback on line 590), and at the error return point (line 597), add token logging:
+
+**For the macro-summary path (before the return on line 555):**
+
+```typescript
+logJarvisRequest({
+  userId: authState.user.id,
+  mode,
+  inputTokens: estimateInputTokens(basePrompt),
+  outputTokens: estimateOutputTokens(orchestrationResult.message),
+  durationMs: Date.now() - requestStartMs,
+  success: true,
+  sourceCount: sourceContexts.length,
+  chunkCount: llmChunks.length,
+}).catch(() => {});
+```
+
+**For the LLM success path (before the return on line 574):**
+
+```typescript
+logJarvisRequest({
+  userId: authState.user.id,
+  mode,
+  inputTokens: estimateInputTokens(basePrompt),
+  outputTokens: estimateOutputTokens(llmMessage.message),
+  durationMs: Date.now() - requestStartMs,
+  success: true,
+  sourceCount: sourceContexts.length,
+  chunkCount: llmChunks.length,
+}).catch(() => {});
+```
+
+**For the fallback path (before the return on line 590):**
+
+```typescript
+logJarvisRequest({
+  userId: authState.user.id,
+  mode,
+  inputTokens: estimateInputTokens(basePrompt),
+  outputTokens: 0,
+  durationMs: Date.now() - requestStartMs,
+  success: false,
+  sourceCount: sourceContexts.length,
+  chunkCount: llmChunks.length,
+}).catch(() => {});
+```
+
+**Important:** Always call `logJarvisRequest` with `.catch(() => {})` -- token tracking must never cause a request to fail.
+
+#### 5e. Create `/home/jared/Nexus-Terminal/__tests__/jarvis-token-tracking.test.ts`
+
+**Action:** CREATE
+
+Mock `@/lib/db` with `getDb`. Tests:
+- `logJarvisRequest` inserts a row with the correct fields
+- `logJarvisRequest` does not throw when db is null
+- `logJarvisRequest` does not throw when insert fails
+- `estimateInputTokens` counts whitespace-separated words
+- `estimateOutputTokens` counts whitespace-separated words
 
 ---
 
-### Change 6: Create cron endpoint for headline scraping
+### Change 6: JRV-075 -- Observability Endpoint
 
-**File:** `/home/jared/Nexus-Terminal/app/api/jarvis/cron/headlines/route.ts`
+**Complexity:** MEDIUM (30 min to 2 hr)
+
+#### 6a. Create `/home/jared/Nexus-Terminal/app/api/jarvis/admin/stats/route.ts`
+
 **Action:** CREATE
 
+This endpoint is admin-only (uses `requireJarvisAdmin()`) and returns:
+- Rate limiter summary (from `getRateLimitState` for a requested userId, or aggregate)
+- Circuit breaker state (from `getCircuitBreakerState`)
+- Token usage stats (from `jarvis_request_log` aggregated by day/user)
+
 ```typescript
-import { getMacroAllowlistDomains } from '@/lib/jarvis-allowlist';
-import { ingestKnowledgeChunks } from '@/lib/jarvis-knowledge';
-import {
-  buildStructuredSource,
-  chunkScrapedSource,
-  dedupeSourceChunks,
-  rankSourceChunks,
-} from '@/lib/jarvis-scrape';
-import { getTrustScoreForHost } from '@/lib/jarvis-allowlist';
-
-const SCRAPE_TIMEOUT_MS = 10_000;
-const SYSTEM_USER_ID = 'system';
-
-// Representative macro URLs per domain
-const DOMAIN_URLS: Record<string, string> = {
-  'cnbc.com': 'https://www.cnbc.com/economy/',
-  'reuters.com': 'https://www.reuters.com/markets/',
-  'investing.com': 'https://www.investing.com/news/economy',
-  'federalreserve.gov': 'https://www.federalreserve.gov/newsevents.htm',
-  'ecb.europa.eu': 'https://www.ecb.europa.eu/press/pr/html/index.en.html',
-  'tradingeconomics.com': 'https://tradingeconomics.com/calendar',
-  'boj.or.jp': 'https://www.boj.or.jp/en/mopo/index.htm',
-  'nikkei.com': 'https://asia.nikkei.com/Economy',
-  'imf.org': 'https://www.imf.org/en/News',
-  'worldbank.org': 'https://www.worldbank.org/en/news',
-};
-
-function requireCronSecret(request: Request) {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) {
-    return Response.json({ error: 'CRON_SECRET is not configured.' }, { status: 503 });
-  }
-
-  const authHeader = request.headers.get('authorization');
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
-
-  if (!token || token !== secret) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  return null;
-}
-
-async function scrapeUrlForCron(url: string): Promise<{ url: string; success: boolean; chunks: number; error?: string }> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
-
-  try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Nexus-Jarvis/1.0' },
-      cache: 'no-store',
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) {
-      return { url, success: false, chunks: 0, error: `HTTP ${res.status}` };
-    }
-
-    const html = await res.text();
-    const source = buildStructuredSource(url, html, new Date());
-    const chunks = chunkScrapedSource(source);
-
-    return { url, success: true, chunks: chunks.length };
-  } catch (error) {
-    clearTimeout(timeout);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return { url, success: false, chunks: 0, error: message };
-  }
-}
+import { desc, sql, eq } from 'drizzle-orm';
+import { getDb } from '@/lib/db';
+import { jarvisRequestLog } from '@/lib/db/schema';
+import { internalServerError, logRouteError } from '@/lib/api-route-utils';
+import { requireJarvisAdmin } from '@/lib/jarvis-admin';
+import { getCircuitBreakerState } from '@/lib/jarvis-circuit-breaker';
 
 export async function GET(request: Request) {
-  const authError = requireCronSecret(request);
-  if (authError) return authError;
+  // 1. requireJarvisAdmin(request) -- return error if not admin
+  // 2. Query jarvis_request_log for aggregated stats:
+  //    a. Total requests today (where created_at >= start of today UTC)
+  //    b. Total tokens today (sum of total_tokens)
+  //    c. Success rate today (count where success=1 / total count)
+  //    d. Average duration today (avg of duration_ms)
+  //    e. Per-user breakdown: userId, requestCount, totalTokens, avgDurationMs
+  //       (grouped by userId, ordered by totalTokens desc, limit 20)
+  // 3. Include circuit breaker state from getCircuitBreakerState()
+  // 4. Return JSON:
+  // {
+  //   circuitBreaker: CircuitBreakerState,
+  //   today: {
+  //     totalRequests: number,
+  //     totalTokens: number,
+  //     successRate: number, // 0-1
+  //     avgDurationMs: number,
+  //   },
+  //   userBreakdown: Array<{
+  //     userId: string,
+  //     requestCount: number,
+  //     totalTokens: number,
+  //     avgDurationMs: number,
+  //   }>,
+  // }
+}
+```
 
-  const start = Date.now();
-  const macroDomains = getMacroAllowlistDomains();
-  const errors: string[] = [];
-  let totalScraped = 0;
-  let totalIngested = 0;
+**Security:** Uses `requireJarvisAdmin` -- NOT `requireUser`. Protected by `x-jarvis-admin-key` header matching `JARVIS_ADMIN_KEY` env var.
 
-  for (const entry of macroDomains) {
-    const url = DOMAIN_URLS[entry.domain];
-    if (!url) {
-      errors.push(`No URL mapping for domain: ${entry.domain}`);
-      continue;
-    }
+#### 6b. Create `/home/jared/Nexus-Terminal/__tests__/jarvis-admin-stats-route.test.ts`
 
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
+**Action:** CREATE
 
-      let res: Response;
-      try {
-        res = await fetch(url, {
-          headers: { 'User-Agent': 'Nexus-Jarvis/1.0' },
-          cache: 'no-store',
-          signal: controller.signal,
+Follow the pattern of `__tests__/jarvis-admin-memory-route.test.ts`. Mock `@/lib/db`, `@/lib/jarvis-admin`, `@/lib/jarvis-circuit-breaker`.
+
+Tests:
+- Returns 503 when `JARVIS_ADMIN_KEY` is not configured
+- Returns 401 when `x-jarvis-admin-key` header is wrong
+- Returns 200 with correct shape when authorized
+- Includes `circuitBreaker` state
+- Includes `today` aggregate stats
+- Includes `userBreakdown` array
+
+---
+
+### Change 7: JRV-076 -- Eval Harness
+
+**Complexity:** HIGH (2+ hr)
+
+#### 7a. Create `/home/jared/Nexus-Terminal/__tests__/jarvis-eval.test.ts`
+
+**Action:** CREATE
+
+This file contains golden prompts for each mode and validates that Jarvis responses meet structural compliance. It does NOT require a live LLM -- it tests the full response pipeline with mocked LLM responses and validates the output schema.
+
+```typescript
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+
+// Mock dependencies (same pattern as jarvis-route.test.ts):
+// - @/lib/db (getDb returns null -- no DB needed)
+// - @/lib/server-db-utils (requireUser returns a mock user)
+// - @/lib/jarvis-orchestrator (runOrchestration returns a valid mock)
+
+// Import POST from @/app/api/jarvis/route
+
+// Define golden prompts:
+const GOLDEN_PROMPTS = [
+  {
+    id: 'eval-daily-summary',
+    mode: 'daily-summary' as const,
+    prompt: '',
+    description: 'Daily summary with no custom prompt',
+  },
+  {
+    id: 'eval-trade-analysis-basic',
+    mode: 'trade-analysis' as const,
+    prompt: 'Review my last 5 trades and identify patterns.',
+    description: 'Trade analysis with explicit prompt',
+  },
+  {
+    id: 'eval-assistant-risk',
+    mode: 'assistant' as const,
+    prompt: 'What are the key risks for holding AAPL through earnings?',
+    description: 'Assistant mode with risk-focused prompt',
+  },
+  {
+    id: 'eval-assistant-no-prompt',
+    mode: 'assistant' as const,
+    prompt: '',
+    description: 'Assistant mode with empty prompt',
+  },
+  {
+    id: 'eval-macro-summary',
+    mode: 'macro-summary' as const,
+    prompt: 'Provide a daily macro summary.',
+    description: 'Macro summary mode',
+  },
+  {
+    id: 'eval-assistant-urls',
+    mode: 'assistant' as const,
+    prompt: 'Summarize the latest earnings data.',
+    description: 'Assistant with source pack',
+    sourcePackId: 'earnings',
+  },
+];
+
+// For each golden prompt, validate:
+describe('Jarvis Eval Harness', () => {
+  // beforeEach: set up mocks, clear state
+
+  for (const golden of GOLDEN_PROMPTS) {
+    describe(`[${golden.id}] ${golden.description}`, () => {
+      it('returns 200', async () => { /* ... */ });
+
+      it('response has required top-level fields', async () => {
+        // payload must have: message (string), structured (object)
+        // structured must have: tldr (string), findings (string[]), actionSteps (string[]), risks (string[])
+      });
+
+      it('structured.tldr is a non-empty string', async () => { /* ... */ });
+
+      it('structured.findings is a non-empty array of strings', async () => { /* ... */ });
+
+      it('structured.actionSteps is a non-empty array of strings', async () => { /* ... */ });
+
+      it('structured.risks is a non-empty array of strings', async () => { /* ... */ });
+
+      it('message is a non-empty string', async () => { /* ... */ });
+
+      // For macro-summary mode only:
+      if (golden.mode === 'macro-summary') {
+        it('includes macroSummary with regions array', async () => {
+          // macroSummary must have: date, overallSentiment, regions, keyRisks
+          // regions must be an array with at least 1 region
+          // each region must have: region, headline, details, sentiment
         });
-      } catch (fetchError) {
-        clearTimeout(timeout);
-        const msg = fetchError instanceof Error ? fetchError.message : 'Unknown error';
-        errors.push(`${entry.domain}: ${msg}`);
-        continue;
       }
-      clearTimeout(timeout);
-
-      if (!res.ok) {
-        errors.push(`${entry.domain}: HTTP ${res.status}`);
-        continue;
-      }
-
-      const html = await res.text();
-      const source = buildStructuredSource(url, html, new Date());
-      const rawChunks = chunkScrapedSource(source);
-      const deduped = dedupeSourceChunks(rawChunks);
-      const ranked = rankSourceChunks(deduped, {
-        tradeTickers: [],
-        trustByHost: { [source.host]: getTrustScoreForHost(source.host) },
-      });
-
-      totalScraped += 1;
-
-      await ingestKnowledgeChunks({
-        userId: SYSTEM_USER_ID,
-        sourceType: 'cached_headline',
-        chunks: ranked,
-      });
-
-      totalIngested += ranked.length;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Unknown error';
-      errors.push(`${entry.domain}: ${msg}`);
-    }
-  }
-
-  const durationMs = Date.now() - start;
-
-  return Response.json({
-    scraped: totalScraped,
-    ingested: totalIngested,
-    errors,
-    durationMs,
-  });
-}
-```
-
-**Key design points:**
-- Auth: `requireCronSecret()` checks `Authorization: Bearer <CRON_SECRET>` — does NOT use `requireUser()` since cron has no session
-- Scrapes domains sequentially (not in parallel) to avoid overwhelming targets
-- Each domain failure is caught independently — one failure doesn't abort the job
-- Ingests with `userId: 'system'` and `sourceType: 'cached_headline'`
-- Returns a JSON summary with scrape/ingest counts, errors, and duration
-
-**Acceptance criteria:**
-- [ ] GET `/api/jarvis/cron/headlines` returns 401 without valid `CRON_SECRET`
-- [ ] Returns 503 when `CRON_SECRET` is not configured
-- [ ] Returns 200 with scrape summary on success
-- [ ] Ingested chunks have `sourceType: 'cached_headline'` and `userId: 'system'`
-- [ ] Individual URL failures don't abort the entire job
-- [ ] `npm run lint` passes
-- [ ] `npx tsc --noEmit` passes
-- [ ] Create `__tests__/jarvis-cron-headlines.test.ts` — test auth validation, basic flow
-
----
-
-### Change 7: Create `vercel.json`
-
-**File:** `/home/jared/Nexus-Terminal/vercel.json`
-**Action:** CREATE
-
-```json
-{
-  "crons": [
-    {
-      "path": "/api/jarvis/cron/headlines",
-      "schedule": "0 11 * * *"
-    }
-  ]
-}
-```
-
-**Acceptance criteria:**
-- [ ] `vercel.json` exists at project root
-- [ ] Contains valid JSON
-- [ ] Schedule is `"0 11 * * *"` (daily at 11:00 UTC / 6:00 AM ET)
-- [ ] Path matches the route from Change 6
-
----
-
-### Change 8: Wire orchestration into Jarvis route handler
-
-**File:** `/home/jared/Nexus-Terminal/app/api/jarvis/route.ts`
-**Action:** MODIFY
-
-**Step 8a — Add import (after line 6, alongside existing imports):**
-
-```typescript
-import { runOrchestration } from '@/lib/jarvis-orchestrator';
-```
-
-**Step 8b — Add `macro-summary` case to `toModePrompt` function (line 124-169):**
-
-Insert a new `if` block before the final `return` statement (before line 163):
-
-```typescript
-  if (mode === 'macro-summary') {
-    return [
-      'Macro Market Summary:',
-      prompt || 'Provide a daily macro summary across US, EU, Asia, and global markets.',
-      '',
-      `Current performance snapshot: ${summary.totalTrades} trades, ${formatMoney(summary.totalPnl)} net.`,
-    ].join('\n');
-  }
-```
-
-**Step 8c — Add orchestration branch in POST handler (after line 529, the `const llmMessage = await askLlm(...)` line):**
-
-Insert before the existing `const warnings = [...]` line. The logic is: if `mode === 'macro-summary'`, use orchestration pipeline instead of the `askLlm` result.
-
-Replace the section from line 529 (`const llmMessage = await askLlm(...)`) through line 559 (the closing of the final `return Response.json(...)`) with:
-
-```typescript
-    // --- Macro-summary mode: use orchestration pipeline ---
-    if (mode === 'macro-summary') {
-      const orchestrationResult = await runOrchestration({
-        userId: authState.user.id,
-        mode,
-        prompt: basePrompt,
-        tradeTickers,
-        scrapeChunks: llmChunks,
-        sourceContexts,
-      });
-
-      const warnings = [...scrapeResult.warnings];
-      if (assembledMemoryContext.truncated) {
-        warnings.push(`Memory context truncated to token budget (${assembledMemoryContext.totalTokens} tokens, dropped ${assembledMemoryContext.droppedCount} chunks).`);
-      }
-
-      return Response.json({
-        message: orchestrationResult.message,
-        sourceSummary,
-        sources: sourceContexts,
-        structured: orchestrationResult.structured,
-        macroSummary: orchestrationResult.macroSummary,
-        warnings,
-      });
-    }
-
-    // --- Standard modes: single-pass LLM ---
-    const llmMessage = await askLlm(basePrompt, scrapedSources, llmChunks);
-
-    const warnings = [...scrapeResult.warnings];
-    if (assembledMemoryContext.truncated) {
-      warnings.push(`Memory context truncated to token budget (${assembledMemoryContext.totalTokens} tokens, dropped ${assembledMemoryContext.droppedCount} chunks).`);
-    }
-
-    if (llmMessage) {
-      return Response.json({
-        message: llmMessage.message,
-        sourceSummary,
-        sources: sourceContexts,
-        structured: llmMessage.structured,
-        warnings,
-      });
-    }
-
-    const structuredFallback = buildStructuredFallbackFromSources({
-      prompt,
-      sourceSummary,
-      sources: sourceContexts,
-      warnings,
     });
-
-    return Response.json({
-      message: formatStructuredMessage(structuredFallback),
-      sourceSummary,
-      sources: sourceContexts,
-      structured: structuredFallback,
-      warnings,
-    });
+  }
+});
 ```
 
-**IMPORTANT:** The original lines 529-559 should be fully replaced. The new code has the macro-summary branch first (early return), then the existing single-pass flow unchanged.
+**Key design principle:** This harness validates structural compliance, not semantic quality. Every response -- whether from the LLM or the deterministic fallback -- must pass these checks. The LLM is mocked to return `null` (triggering fallback) for the baseline set, ensuring the fallback path also produces compliant output.
 
-**Acceptance criteria:**
-- [ ] `macro-summary` mode triggers orchestration pipeline and returns `macroSummary`
-- [ ] Other modes (`daily-summary`, `trade-analysis`, `assistant`) still use existing single-pass `askLlm` flow — no changes to their behavior
-- [ ] `toModePrompt` handles `'macro-summary'` without fallthrough
-- [ ] Response includes `macroSummary` field for macro-summary mode only
-- [ ] Existing tests in `__tests__/jarvis-route.test.ts` still pass
-- [ ] `npx tsc --noEmit` passes
+Add a second describe block that mocks the LLM to return a valid JSON response:
+
+```typescript
+describe('Jarvis Eval Harness (LLM path)', () => {
+  // Set JARVIS_API_KEY to 'eval-key'
+  // Mock fetch to return a valid structured JSON response for any LLM call
+  // Re-run the same golden prompts and validate the same structural contracts
+});
+```
 
 ---
 
-### Change 9: Create `JarvisMacroSummary` component
+### Change 8: Update `.env.example` and `JARVIS_PLAN.md`
 
-**File:** `/home/jared/Nexus-Terminal/components/trading/JarvisMacroSummary.tsx`
-**Action:** CREATE
+#### 8a. Final `.env.example` state
 
-```tsx
-import React from 'react';
-import type { JarvisMacroSummaryOutput, MacroSummaryRegion } from '@/lib/jarvis-types';
+**Action:** VERIFY that all env vars from Changes 2-4 are present. The final additions (after the existing `JARVIS_ORCHESTRATION_CRITIQUE=false` line) should be:
 
-interface JarvisMacroSummaryProps {
-  macroSummary: JarvisMacroSummaryOutput;
-}
+```
+# Jarvis Scrape Cache TTL (optional — milliseconds, 0 = disabled)
+JARVIS_SCRAPE_CACHE_TTL_WEB_MS=3600000
+JARVIS_SCRAPE_CACHE_TTL_HEADLINE_MS=43200000
 
-const REGION_LABELS: Record<MacroSummaryRegion, string> = {
-  us: 'United States',
-  eu: 'Europe',
-  asia: 'Asia-Pacific',
-  global: 'Global',
-};
+# Jarvis Circuit Breaker (optional)
+JARVIS_CIRCUIT_BREAKER_THRESHOLD=5
+JARVIS_CIRCUIT_BREAKER_RESET_MS=60000
 
-const SENTIMENT_STYLES: Record<string, { bg: string; border: string; text: string }> = {
-  bullish: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-300' },
-  bearish: { bg: 'bg-rose-500/10', border: 'border-rose-500/30', text: 'text-rose-300' },
-  neutral: { bg: 'bg-zinc-500/10', border: 'border-zinc-500/30', text: 'text-zinc-300' },
-  mixed: { bg: 'bg-amber-500/10', border: 'border-amber-500/30', text: 'text-amber-300' },
-};
+# Jarvis Rate Limiting (optional — per user, per hour)
+JARVIS_RATE_LIMIT_PER_HOUR=30
 
-function sentimentStyle(sentiment: string) {
-  return SENTIMENT_STYLES[sentiment] ?? SENTIMENT_STYLES.neutral;
-}
-
-export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryProps) {
-  const overallStyle = sentimentStyle(macroSummary.overallSentiment);
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-400">Macro Summary — {macroSummary.date}</p>
-        <span className={`rounded-full border px-3 py-0.5 text-xs capitalize ${overallStyle.bg} ${overallStyle.border} ${overallStyle.text}`}>
-          {macroSummary.overallSentiment}
-        </span>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        {macroSummary.regions.map((region) => {
-          const style = sentimentStyle(region.sentiment);
-          return (
-            <div
-              key={region.region}
-              className={`rounded-xl border p-4 ${style.border} bg-black/20`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-zinc-100">{REGION_LABELS[region.region] ?? region.region}</p>
-                <span className={`rounded-full border px-2 py-0.5 text-[11px] capitalize ${style.bg} ${style.border} ${style.text}`}>
-                  {region.sentiment}
-                </span>
-              </div>
-              <p className="mt-2 text-sm text-zinc-200">{region.headline}</p>
-              {region.details.length > 0 ? (
-                <ul className="mt-2 space-y-1">
-                  {region.details.map((detail, i) => (
-                    <li key={`macro-detail-${region.region}-${i}`} className="flex gap-2 text-xs text-zinc-400">
-                      <span className="text-zinc-500">•</span>
-                      <span>{detail}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-
-      {macroSummary.keyRisks.length > 0 ? (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-amber-200">Key Macro Risks</p>
-          <ul className="mt-2 space-y-1.5 text-sm text-amber-100">
-            {macroSummary.keyRisks.map((risk, i) => (
-              <li key={`macro-risk-${i}`} className="flex gap-2">
-                <span className="text-amber-300">!</span>
-                <span>{risk}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </div>
-  );
-}
+# Jarvis Robots.txt Cache (optional — milliseconds)
+JARVIS_ROBOTS_CACHE_TTL_MS=3600000
 ```
 
-**Design notes:**
-- 2x2 grid on desktop (`sm:grid-cols-2`), stacked on mobile
-- Sentiment-colored borders and badges per region
-- Key risks section in amber, matching existing risks pattern in `JarvisStructuredResponse`
-- No new dependencies — uses existing design tokens
+#### 8b. Modify `/home/jared/Nexus-Terminal/JARVIS_PLAN.md`
 
-**Acceptance criteria:**
-- [ ] Component renders a region card for each entry in `macroSummary.regions`
-- [ ] Each card shows: region name, headline, sentiment badge, detail bullets
-- [ ] Key risks section renders in amber warning style
-- [ ] Layout is responsive (2-col grid on desktop, stacked on mobile)
-- [ ] Uses existing design tokens (emerald, rose, amber, zinc, dark theme)
-- [ ] No new dependencies
+**Action:** MODIFY -- update ticket statuses in the Sprint 7 table:
+
+| Ticket | Status |
+|--------|--------|
+| JRV-070 | done |
+| JRV-071 | done |
+| JRV-072 | done |
+| JRV-073 | done |
+| JRV-074 | done |
+| JRV-075 | done |
+| JRV-076 | done |
+| JRV-077 | deferred |
+
+Add a progress log entry:
+
+```
+| 2026-03-09 | Sprint 7 completed (JRV-070 to JRV-076, JRV-077 deferred): added per-user in-memory rate limiting (30 req/hr), token budget tracking via `jarvis_request_log` table with Drizzle migration, circuit breaker for LLM failures (5-failure threshold, 60s reset), robots.txt compliance before scraping with 1h cache, scrape cache using `jarvis_knowledge_chunks.lastSeenAt` (1h web/12h headline TTL), admin-only observability endpoint (`/api/jarvis/admin/stats`), and eval harness with 6 golden prompts for structural compliance validation. JRV-077 (migrate remaining modes to orchestration) deferred to future sprint. |
+```
 
 ---
 
-### Change 10: Wire macro summary into `JarvisStructuredResponse`
+## Files Affected Summary
 
-**File:** `/home/jared/Nexus-Terminal/components/trading/JarvisStructuredResponse.tsx`
-**Action:** MODIFY
-
-**Step 10a — Add imports (line 1-2):**
-
-```typescript
-import React from 'react';
-import type { JarvisSourceContext, JarvisStructuredResponse, JarvisMacroSummaryOutput } from '@/lib/jarvis-types';
-import JarvisMacroSummary from '@/components/trading/JarvisMacroSummary';
-```
-
-**Step 10b — Update props interface (line 4-10):**
-
-```typescript
-interface JarvisStructuredResponseProps {
-  message: string;
-  structured?: JarvisStructuredResponse;
-  warnings?: string[];
-  sourceSummary?: string;
-  sources?: JarvisSourceContext[];
-  macroSummary?: JarvisMacroSummaryOutput;
-}
-```
-
-**Step 10c — Update the component signature (line 32) to destructure `macroSummary`:**
-
-```typescript
-export default function JarvisStructuredResponse({ message, structured, warnings, sourceSummary, sources, macroSummary }: JarvisStructuredResponseProps) {
-```
-
-**Step 10d — Render macro summary between structured response and warnings (after the `structured` section closing `</div>` at line 79, before the warnings section at line 84):**
-
-```tsx
-      {macroSummary ? <JarvisMacroSummary macroSummary={macroSummary} /> : null}
-```
-
-**Acceptance criteria:**
-- [ ] Props include optional `macroSummary`
-- [ ] `JarvisMacroSummary` renders when `macroSummary` is truthy
-- [ ] Existing rendering is unchanged when `macroSummary` is absent
-- [ ] Existing tests in `__tests__/jarvis-structured-response.test.ts` still pass
+| File | Action | Ticket(s) | Risk |
+|------|--------|-----------|------|
+| `lib/jarvis-robots.ts` | CREATE | JRV-073 | LOW |
+| `lib/jarvis-scrape-cache.ts` | CREATE | JRV-074 | LOW |
+| `lib/jarvis-circuit-breaker.ts` | CREATE | JRV-072 | LOW |
+| `lib/jarvis-rate-limit.ts` | CREATE | JRV-070 | LOW |
+| `lib/jarvis-token-tracking.ts` | CREATE | JRV-071 | LOW |
+| `app/api/jarvis/admin/stats/route.ts` | CREATE | JRV-075 | LOW |
+| `__tests__/jarvis-robots.test.ts` | CREATE | JRV-073 | LOW |
+| `__tests__/jarvis-scrape-cache.test.ts` | CREATE | JRV-074 | LOW |
+| `__tests__/jarvis-circuit-breaker.test.ts` | CREATE | JRV-072 | LOW |
+| `__tests__/jarvis-rate-limit.test.ts` | CREATE | JRV-070 | LOW |
+| `__tests__/jarvis-token-tracking.test.ts` | CREATE | JRV-071 | LOW |
+| `__tests__/jarvis-admin-stats-route.test.ts` | CREATE | JRV-075 | LOW |
+| `__tests__/jarvis-eval.test.ts` | CREATE | JRV-076 | LOW |
+| `lib/db/schema.ts` | MODIFY | JRV-071 | MEDIUM |
+| `app/api/jarvis/route.ts` | MODIFY | JRV-070, 071, 072, 073, 074 | HIGH |
+| `app/api/jarvis/cron/headlines/route.ts` | MODIFY | JRV-073, 074 | MEDIUM |
+| `lib/jarvis-orchestrator.ts` | MODIFY | JRV-072 | MEDIUM |
+| `.env.example` | MODIFY | JRV-070, 072, 073, 074 | LOW |
+| `JARVIS_PLAN.md` | MODIFY | all | LOW |
 
 ---
 
-### Change 11: Wire macro summary through `JarvisTab`
+## Testing Requirements
 
-**File:** `/home/jared/Nexus-Terminal/components/trading/JarvisTab.tsx`
-**Action:** MODIFY
-
-**Step 11a — Add `Globe` to the cards array (line 252-271).**
-
-Add a 4th card to the `cards` array:
-
-```typescript
-    {
-      mode: 'macro-summary' as JarvisMode,
-      label: 'Macro Summary',
-      description: 'Get a macro market overview across US, EU, Asia, and global markets.',
-      icon: Globe,
-    },
-```
-
-**Step 11b — Update the grid class (line 309) from `lg:grid-cols-3` to `lg:grid-cols-4`:**
-
-```tsx
-      <div className="grid gap-4 lg:grid-cols-4">
-```
-
-**Step 11c — Update `setResponse` in `runJarvis` (line 221-227) to capture `macroSummary`:**
-
-```typescript
-      setResponse({
-        message: payload.message,
-        sourceSummary: payload.sourceSummary,
-        sources: payload.sources,
-        warnings: payload.warnings,
-        structured: payload.structured,
-        macroSummary: payload.macroSummary,
-      });
-```
-
-**Step 11d — Pass `macroSummary` to `JarvisStructuredResponse` (line 505-511):**
-
-```tsx
-          <JarvisStructuredResponse
-            message={response.message}
-            structured={response.structured}
-            warnings={response.warnings}
-            sourceSummary={response.sourceSummary}
-            sources={response.sources}
-            macroSummary={response.macroSummary}
-          />
-```
-
-**Acceptance criteria:**
-- [ ] "Macro Summary" appears as 4th action card with Globe icon
-- [ ] Cards grid is 4-column on desktop
-- [ ] Clicking "Macro Summary" calls `runJarvis('macro-summary')`
-- [ ] `macroSummary` captured from API response and passed to structured renderer
-- [ ] `npx tsc --noEmit` passes
-
----
-
-### Change 12: Update retrieval to include `cached_headline` by default
-
-**File:** `/home/jared/Nexus-Terminal/lib/jarvis-knowledge.ts`
-**Action:** MODIFY
-
-**Update the default `sourceTypes` in `retrieveKnowledgeChunks` (line 324-326):**
-
-Change from:
-
-```typescript
-    : ['web_source', 'trade_journal', 'user_document'] as JarvisSourceType[];
-```
-
-To:
-
-```typescript
-    : ['web_source', 'trade_journal', 'user_document', 'cached_headline'] as JarvisSourceType[];
-```
-
-This ensures cached headlines from the cron job are included in retrieval by default for all modes.
-
-**Acceptance criteria:**
-- [ ] Default `sourceTypes` includes `'cached_headline'`
-- [ ] Existing retrieval behavior unchanged for explicit `sourceTypes` calls
-- [ ] `npx tsc --noEmit` passes
-
----
-
-### Change 13: Update `CLAUDE.md`
-
-**File:** `/home/jared/Nexus-Terminal/.claude/CLAUDE.md`
-**Action:** MODIFY
-
-Update these sections:
-
-1. **API Routes section** — Add:
-   ```
-   ## Jarvis Cron
-   - GET /api/jarvis/cron/headlines  (Vercel cron, CRON_SECRET auth)
-   ```
-   Update count from "12 active endpoints" to "13 active endpoints"
-
-2. **Components section** — Update count from "28 total" to "29 total", add `JarvisMacroSummary` to the Trading Feature Components list (count becomes 19)
-
-3. **Key Service Modules section** — Add:
-   ```
-   - lib/jarvis-orchestrator.ts — multi-step orchestration pipeline (plan, retrieve, summarize, critique, answer)
-   ```
-
-4. **Known Issues section** — Add:
-   ```
-   4. Vercel Hobby tier limits cron to daily; macro headlines may be stale by market close
-   ```
-
-**Acceptance criteria:**
-- [ ] API route count updated to 13
-- [ ] Cron endpoint listed
-- [ ] Component count updated to 29
-- [ ] `JarvisMacroSummary` listed
-- [ ] `jarvis-orchestrator.ts` listed in service modules
-
----
-
-## Post-Implementation Checklist
-
-Run these in order after all changes are complete:
+After all changes are complete, run:
 
 ```bash
 npm run lint
 npx tsc --noEmit
-npm run test
+npm test
 ```
 
-If any fail, fix before proceeding.
+All three must pass. Specifically:
 
-### Manual Verification
-
-1. **Cron auth test:**
-   ```bash
-   # Should return 401
-   curl http://localhost:3000/api/jarvis/cron/headlines
-
-   # Should return 200 with scrape summary (set CRON_SECRET in .env.local first)
-   curl -H "Authorization: Bearer <your-secret>" http://localhost:3000/api/jarvis/cron/headlines
-   ```
-
-2. **UI test:**
-   - Open Jarvis tab
-   - Verify 4 action cards appear (Daily Summary, Analyze Trades, Ask Jarvis, Macro Summary)
-   - Click "Macro Summary" — verify loading state, then region breakdown renders
-   - Verify other 3 modes still work identically
-
-3. **Regression check:**
-   - Run daily-summary mode — confirm response unchanged
-   - Run trade-analysis mode — confirm response unchanged
-   - Run assistant mode with URLs — confirm response unchanged
+- [ ] `npm run lint` passes with no errors
+- [ ] `npx tsc --noEmit` passes with no type errors
+- [ ] All existing tests in `__tests__/jarvis-*.test.ts` continue to pass
+- [ ] New test: `__tests__/jarvis-robots.test.ts` passes
+- [ ] New test: `__tests__/jarvis-scrape-cache.test.ts` passes
+- [ ] New test: `__tests__/jarvis-circuit-breaker.test.ts` passes
+- [ ] New test: `__tests__/jarvis-rate-limit.test.ts` passes
+- [ ] New test: `__tests__/jarvis-token-tracking.test.ts` passes
+- [ ] New test: `__tests__/jarvis-admin-stats-route.test.ts` passes
+- [ ] New test: `__tests__/jarvis-eval.test.ts` passes
+- [ ] Drizzle migration generates and applies successfully: `npm run db:generate && npm run db:migrate`
 
 ---
 
-## Files Summary
+## Rollback Plan
 
-| # | File | Action |
-|---|------|--------|
-| 1 | `.env.example` | MODIFY |
-| 2 | `lib/jarvis-allowlist.ts` | MODIFY |
-| 3 | `lib/jarvis-types.ts` | MODIFY |
-| 4 | `lib/jarvis-source-packs.ts` | MODIFY |
-| 5 | `lib/jarvis-orchestrator.ts` | CREATE |
-| 6 | `app/api/jarvis/cron/headlines/route.ts` | CREATE |
-| 7 | `vercel.json` | CREATE |
-| 8 | `app/api/jarvis/route.ts` | MODIFY |
-| 9 | `components/trading/JarvisMacroSummary.tsx` | CREATE |
-| 10 | `components/trading/JarvisStructuredResponse.tsx` | MODIFY |
-| 11 | `components/trading/JarvisTab.tsx` | MODIFY |
-| 12 | `lib/jarvis-knowledge.ts` | MODIFY |
-| 13 | `.claude/CLAUDE.md` | MODIFY |
+1. **If migration fails (JRV-071):** The `jarvis_request_log` table is completely independent -- no foreign keys to existing Jarvis tables. Drop it with `DROP TABLE IF EXISTS jarvis_request_log;`. Remove the schema entry from `lib/db/schema.ts` and delete the generated migration file.
+2. **If rate limiting causes false positives (JRV-070):** Set `JARVIS_RATE_LIMIT_PER_HOUR=999999` in env to effectively disable without code changes.
+3. **If circuit breaker is too aggressive (JRV-072):** Set `JARVIS_CIRCUIT_BREAKER_THRESHOLD=999999` in env to effectively disable.
+4. **If robots.txt blocking is too restrictive (JRV-073):** The fail-open design means only explicit disallow rules block scraping. If a specific domain is problematic, the issue is with that domain's robots.txt, not with our code.
+5. **If scrape cache serves stale data (JRV-074):** Set `JARVIS_SCRAPE_CACHE_TTL_WEB_MS=0` and `JARVIS_SCRAPE_CACHE_TTL_HEADLINE_MS=0` to disable caching.
+6. **For any code-level rollback:** Revert the commit. All new files are additive; modifications to existing files are minimal insertion points.
 
-## New Test Files
+---
 
-| File | Covers |
-|------|--------|
-| `__tests__/jarvis-orchestrator.test.ts` | Orchestration pipeline, fallbacks, macro mode, validation |
-| `__tests__/jarvis-cron-headlines.test.ts` | Cron auth, scrape+ingest flow |
+## Complexity Estimate
 
-Update existing tests:
-- `__tests__/jarvis-allowlist.test.ts` — region helpers, macro domain filtering
-- `__tests__/jarvis-types.test.ts` — new types compile
-- `__tests__/jarvis-source-packs.test.ts` — macro-daily pack lookup
+| Ticket | Estimate | Rationale |
+|--------|----------|-----------|
+| JRV-073 | LOW | New isolated module + small insertions in 2 routes |
+| JRV-074 | MEDIUM | DB query logic + integration in 2 routes |
+| JRV-072 | LOW | Simple state machine + small insertions in 2 files |
+| JRV-070 | MEDIUM | In-memory data structure + route integration + tests |
+| JRV-071 | MEDIUM | Schema change + migration + tracking module + 3 insertion points in route |
+| JRV-075 | MEDIUM | New API route with aggregation queries |
+| JRV-076 | HIGH | 6 golden prompts x 7 assertions each + dual mock paths |
+
+**Total sprint estimate:** 8-12 hours of implementation time.
