@@ -39,6 +39,12 @@ describe('toJarvisTradeInput', () => {
     expect(mode).toBe('macro-summary');
   });
 
+  it('includes dilution-research mode in JarvisMode', () => {
+    const mode: JarvisMode = 'dilution-research';
+
+    expect(mode).toBe('dilution-research');
+  });
+
   it('allows optional macroSummary in JarvisResponse', () => {
     const response: JarvisResponse = {
       message: 'ok',
@@ -51,5 +57,63 @@ describe('toJarvisTradeInput', () => {
     };
 
     expect(response.macroSummary?.overallSentiment).toBe('mixed');
+  });
+
+  it('allows optional dilutionReport in JarvisResponse', () => {
+    const response: JarvisResponse = {
+      message: 'ok',
+      dilutionReport: {
+        ticker: 'AAPL',
+        generatedAt: '2026-03-09T00:00:00.000Z',
+        header: {
+          price: null,
+          marketCap: null,
+          float: null,
+          outstanding: null,
+          country: '',
+          industry: '',
+          sector: '',
+          isAdr: false,
+          gain1d: null,
+          gain7d: null,
+          gain30d: null,
+          volume: null,
+          avgVolume: null,
+          shortFloat: null,
+          shortInterest: null,
+          feeRate: null,
+          insiderPercent: null,
+          affiliatePercent: null,
+          institutionsPercent: null,
+        },
+        dataSources: [],
+        news: [],
+        catalysts: [],
+        dilution: { rating: '', description: '', warrantExercise: '', warrantExerciseDesc: '', warrants: [], convertibles: [] },
+        offeringFrequency: { rating: '', description: '', offerings: [] },
+        offeringAbility: { rating: '', description: '', registrations: [] },
+        cashNeed: { rating: '', description: '', estimatedCash: null, cashBurn: null, cashRemainingMonths: null, totalDebt: null },
+        managementCommentary: '',
+        overallOfferingRisk: { rating: '', regsho: false, nasdaqCompliance: '', nasdaqComplianceDesc: '' },
+        scamRisk: {
+          countryRisk: '',
+          floatRisk: '',
+          underwriterRisk: '',
+          scamRisk: '',
+          scamDescription: '',
+          liquidationHistory: '',
+          numberOfLiquidations: 0,
+          lastLiquidationDate: '',
+          ipoDate: '',
+          lockUpExpiration: '',
+          underwriters: '',
+        },
+        agreements: [],
+        historicalFloat: [],
+        reverseSplits: [],
+      },
+    };
+
+    expect(response.dilutionReport?.ticker).toBe('AAPL');
   });
 });

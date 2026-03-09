@@ -51,6 +51,10 @@ interface RetrievalPlan {
   focusRegions: string[];
 }
 
+function isDilutionResearchMode(mode: JarvisMode) {
+  return mode === 'dilution-research';
+}
+
 function estimateTokens(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
@@ -131,16 +135,31 @@ const PLAN_SYSTEM_PROMPT = [
   'Given a user prompt and context, produce a JSON retrieval plan.',
   'Return ONLY valid JSON, no markdown, no code fences.',
   'Schema: { "keywords": string[], "tickers": string[], "sourceTypes": string[], "focusRegions": string[] }',
-  'sourceTypes options: "web_source", "cached_headline", "trade_journal", "user_document"',
+  'sourceTypes options: "web_source", "cached_headline", "trade_journal", "user_document", "api_data"',
   'focusRegions options: "us", "eu", "asia", "global"',
 ].join('\n');
 
 async function stepPlan(
+  mode: JarvisMode,
   prompt: string,
   tradeTickers: string[],
   sourceContexts: JarvisSourceContext[],
 ): Promise<{ plan: RetrievalPlan; log: OrchestrationStepLog }> {
   const start = Date.now();
+
+  if (isDilutionResearchMode(mode)) {
+    const ticker = tradeTickers[0] ?? '';
+    const durationMs = Date.now() - start;
+    return {
+      plan: {
+        keywords: ticker ? [ticker] : [],
+        tickers: ticker ? [ticker] : [],
+        sourceTypes: ['api_data'],
+        focusRegions: [],
+      },
+      log: { step: 'plan', durationMs, tokenEstimate: estimateTokens(prompt), skipped: false },
+    };
+  }
 
   const sourceHints = sourceContexts
     .slice(0, 5)
@@ -195,8 +214,8 @@ async function stepRetrieve(
 
   const query = [...plan.keywords, ...plan.tickers].join(' ');
   const validSourceTypes = plan.sourceTypes.filter(
-    (t): t is 'web_source' | 'cached_headline' | 'trade_journal' | 'user_document' =>
-      ['web_source', 'cached_headline', 'trade_journal', 'user_document'].includes(t),
+    (t): t is 'web_source' | 'cached_headline' | 'trade_journal' | 'user_document' | 'api_data' =>
+      ['web_source', 'cached_headline', 'trade_journal', 'user_document', 'api_data'].includes(t),
   );
 
   const retrieved = await retrieveKnowledgeChunks({
@@ -264,13 +283,34 @@ const MACRO_SUMMARIZE_SYSTEM_PROMPT = [
   'Cover all 4 regions: us, eu, asia, global. Be specific about macro developments.',
 ].join('\n');
 
+const DILUTION_SUMMARIZE_SYSTEM_PROMPT = [
+  'You are Jarvis, a focused trading assistant producing dilution research analysis for short-term traders.',
+  'Use AskEdgar-derived data context to assess dilution pressure and near-term downside risks.',
+  'Explicitly call out warrant exercise prices near current price, active shelf/ATM registration capacity, and imminent cash need under 6 months runway.',
+  'Flag high scam-risk indicators and quantify potential dilution from warrants and convertibles when data is available.',
+  'Return ONLY valid JSON, with no markdown, no code fences, and no explanatory prose.',
+  'Output must be a single JSON object with exactly these keys: tldr, findings, actionSteps, risks.',
+  'Use this schema:',
+  '{',
+  '  "tldr": "<one sentence summary>",',
+  '  "findings": ["<bullet style finding>", "..."],',
+  '  "actionSteps": ["<concrete action>", "..."],',
+  '  "risks": ["<risk-aware caveat>", "..."]',
+  '}',
+].join('\n');
+
 async function stepSummarize(
   options: OrchestrationOptions,
   chunks: ScrapedChunk[],
 ): Promise<{ message: string; structured: JarvisStructuredResponse; macroSummary?: JarvisMacroSummaryOutput; log: OrchestrationStepLog }> {
   const start = Date.now();
   const isMacro = options.mode === 'macro-summary';
-  const systemPrompt = isMacro ? MACRO_SUMMARIZE_SYSTEM_PROMPT : SUMMARIZE_SYSTEM_PROMPT;
+  const isDilution = isDilutionResearchMode(options.mode);
+  const systemPrompt = isMacro
+    ? MACRO_SUMMARIZE_SYSTEM_PROMPT
+    : isDilution
+      ? DILUTION_SUMMARIZE_SYSTEM_PROMPT
+      : SUMMARIZE_SYSTEM_PROMPT;
 
   const previewChunks = chunks.slice(0, 12);
   const chunkContext = previewChunks.length > 0
@@ -419,7 +459,7 @@ function buildFallbackMacroSummary(): JarvisMacroSummaryOutput {
 export async function runOrchestration(options: OrchestrationOptions): Promise<OrchestrationResult> {
   const steps: OrchestrationStepLog[] = [];
 
-  const { plan, log: planLog } = await stepPlan(options.prompt, options.tradeTickers, options.sourceContexts);
+  const { plan, log: planLog } = await stepPlan(options.mode, options.prompt, options.tradeTickers, options.sourceContexts);
   steps.push(planLog);
 
   await sleep(INTER_CALL_DELAY_MS);

@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Bot, CalendarClock, Globe, LineChart, Newspaper, Plus, Sparkles, X } from 'lucide-react';
+import { Bot, CalendarClock, Globe, LineChart, Newspaper, Plus, Search, Sparkles, X } from 'lucide-react';
 import { format } from 'date-fns';
 import type { Trade } from '@/lib/types';
 import { isUrlAllowed } from '@/lib/jarvis-allowlist';
@@ -22,9 +22,10 @@ type UrlEntry = {
   isAllowed: boolean;
 };
 
-function getPackIcon(icon: 'Newspaper' | 'CalendarClock' | 'Globe') {
+function getPackIcon(icon: 'Newspaper' | 'CalendarClock' | 'Globe' | 'Search') {
   if (icon === 'CalendarClock') return CalendarClock;
   if (icon === 'Newspaper') return Newspaper;
+  if (icon === 'Search') return Search;
   return Globe;
 }
 
@@ -78,8 +79,10 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
   const [inputMode, setInputMode] = useState<JarvisInputMode>('manual');
   const [selectedPackId, setSelectedPackId] = useState('');
   const [rememberedUrls, setRememberedUrls] = useState<string[]>([]);
+  const [dilutionTicker, setDilutionTicker] = useState('');
   const [response, setResponse] = useState<JarvisResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const dilutionTickerInputRef = useRef<HTMLInputElement>(null);
 
   const todayLabel = useMemo(() => format(new Date(), 'EEEE, MMM d'), []);
   const selectedPack = useMemo(() => sourcePacks.find((pack) => pack.id === selectedPackId) ?? null, [selectedPackId]);
@@ -198,6 +201,7 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
           urls: inputMode === 'manual' ? urlsForRequest : undefined,
           sourcePackId: inputMode === 'pack' ? selectedPackId : undefined,
           trades: trades.map(toJarvisTradeInput),
+          ticker: nextMode === 'dilution-research' ? dilutionTicker.trim().toUpperCase() : undefined,
         }),
       });
 
@@ -225,6 +229,7 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
         warnings: payload.warnings,
         structured: payload.structured,
         macroSummary: payload.macroSummary,
+        dilutionReport: payload.dilutionReport,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Jarvis is unavailable right now';
@@ -275,7 +280,22 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
       description: 'Get a macro market overview across US, EU, Asia, and global markets.',
       icon: Globe,
     },
+    {
+      mode: 'dilution-research',
+      label: 'Dilution Research',
+      description: 'SEC dilution risk report via AskEdgar.',
+      icon: Search,
+    },
   ];
+
+  const handleCardClick = (nextMode: JarvisMode) => {
+    if (nextMode === 'dilution-research' && !dilutionTicker.trim()) {
+      setMode(nextMode);
+      dilutionTickerInputRef.current?.focus();
+      return;
+    }
+    runJarvis(nextMode);
+  };
 
   return (
     <motion.div key="jarvis" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
@@ -313,14 +333,14 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid gap-4 lg:grid-cols-5">
         {cards.map((card) => {
           const Icon = card.icon;
           const isActive = mode === card.mode;
           return (
             <button
               key={card.mode}
-              onClick={() => runJarvis(card.mode)}
+              onClick={() => handleCardClick(card.mode)}
               className={`rounded-xl border p-4 text-left transition-colors ${isActive ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-white/10 bg-[#121214] hover:border-white/20'}`}
             >
               <Icon className="mb-3 h-5 w-5 text-emerald-400" />
@@ -330,6 +350,20 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
           );
         })}
       </div>
+
+      {mode === 'dilution-research' || dilutionTicker.trim().length > 0 ? (
+        <div className="rounded-xl border border-white/10 bg-[#121214] p-4">
+          <label htmlFor="dilution-ticker" className="mb-2 block text-xs uppercase tracking-wider text-zinc-500">Ticker</label>
+          <input
+            id="dilution-ticker"
+            ref={dilutionTickerInputRef}
+            value={dilutionTicker}
+            onChange={(event) => setDilutionTicker(event.target.value.toUpperCase())}
+            placeholder="e.g. MULN"
+            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-500/40"
+          />
+        </div>
+      ) : null}
 
       <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
         <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
@@ -516,6 +550,7 @@ export default function JarvisTab({ trades }: JarvisTabProps) {
             sourceSummary={response.sourceSummary}
             sources={response.sources}
             macroSummary={response.macroSummary}
+            dilutionReport={response.dilutionReport}
           />
         ) : (
           <p className="text-sm text-zinc-500">Run one of the actions above to get started.</p>

@@ -15,6 +15,7 @@ describe('jarvis-scrape-cache', () => {
     vi.clearAllMocks();
     delete process.env.JARVIS_SCRAPE_CACHE_TTL_WEB_MS;
     delete process.env.JARVIS_SCRAPE_CACHE_TTL_HEADLINE_MS;
+    delete process.env.JARVIS_SCRAPE_CACHE_TTL_API_MS;
   });
 
   afterEach(() => {
@@ -31,6 +32,10 @@ describe('jarvis-scrape-cache', () => {
 
   it('getScrapeCacheTtlMs(trade_journal) returns 0', () => {
     expect(getScrapeCacheTtlMs('trade_journal')).toBe(0);
+  });
+
+  it('getScrapeCacheTtlMs(api_data) returns default', () => {
+    expect(getScrapeCacheTtlMs('api_data')).toBe(86_400_000);
   });
 
   it('isUrlFreshInCache returns fresh=true within TTL', async () => {

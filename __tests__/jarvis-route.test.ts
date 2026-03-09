@@ -181,11 +181,11 @@ describe('POST /api/jarvis', () => {
     const response = await POST(new Request('http://localhost/api/jarvis', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        urls: ['https://www.sec.gov/cgi-bin/browse-edgar'],
-        sourcePackId: 'earnings',
-      }),
-    }));
+        body: JSON.stringify({
+          urls: ['https://www.sec.gov/cgi-bin/browse-edgar'],
+          sourcePackId: 'macro-daily',
+        }),
+      }));
 
     const { response: safeResponse, payload } = await parseResponse(response);
 
@@ -215,7 +215,7 @@ describe('POST /api/jarvis', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sourcePackId: 'earnings',
+        sourcePackId: 'macro-daily',
         prompt: '',
         mode: 'assistant',
       }),
@@ -232,7 +232,7 @@ describe('POST /api/jarvis', () => {
     expect(llmPayload.messages?.[0].content).toContain('Return ONLY valid JSON');
     expect(llmPayload.messages?.[0].content).toContain('single JSON object');
     expect(llmPayload.messages?.[0].content).toContain('exactly these keys: tldr, findings, actionSteps, risks');
-    expect(llmPayload.messages?.[1].content).toContain('Summarize the upcoming earnings calendar');
+    expect(llmPayload.messages?.[1].content).toContain('Provide a daily macro market summary');
     expect(llmPayload.messages?.[1].content).toContain('Scraped chunks');
     expect(payload.sources?.length).toBeGreaterThan(0);
   });

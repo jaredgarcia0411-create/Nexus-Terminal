@@ -13,6 +13,7 @@ import {
 import { getBlockedUrlMessage, getTrustScoreForHost, isUrlAllowed } from '@/lib/jarvis-allowlist';
 import { getSourcePack } from '@/lib/jarvis-source-packs';
 import { runOrchestration } from '@/lib/jarvis-orchestrator';
+import { aggregateDilutionReport } from '@/lib/askedgar-aggregator';
 import {
   buildSourceContexts,
   buildStructuredSource,
@@ -42,6 +43,7 @@ const MAX_REMEMBERED_URLS = 20;
 const SCRAPE_TIMEOUT_MS = 10_000;
 const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v3.2';
 const DEFAULT_DEEPSEEK_BASE_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
+const ASKEDGAR_TICKER_REGEX = /^[A-Z0-9.\-^]+$/;
 const JARVIS_SYSTEM_PROMPT = [
   'You are Jarvis, a focused trading assistant. Be concise, practical, and risk-aware.',
   'Return ONLY valid JSON, with no markdown, no code fences, and no explanatory prose.',
@@ -181,6 +183,33 @@ function toModePrompt(mode: JarvisMode, summary: ReturnType<typeof summarizeTrad
     '',
     `Current performance snapshot: ${summary.totalTrades} trades, ${formatMoney(summary.totalPnl)} net, ${summary.winRate.toFixed(1)}% win rate.`,
   ].join('\n');
+}
+
+function toDilutionPrompt(input: {
+  ticker: string;
+  report: Awaited<ReturnType<typeof aggregateDilutionReport>>['report'];
+  prompt: string;
+}) {
+  const { ticker, report, prompt } = input;
+  return [
+    `Dilution Research Report for ${ticker}`,
+    prompt ? `User request: ${prompt}` : '',
+    `Price: ${report.header.price ?? 'N/A'}`,
+    `Market cap: ${report.header.marketCap ?? 'N/A'}`,
+    `Float/Outstanding: ${report.header.float ?? 'N/A'} / ${report.header.outstanding ?? 'N/A'}`,
+    `Dilution rating: ${report.dilution.rating || 'N/A'} (${report.dilution.description || 'No details'})`,
+    `Offering frequency: ${report.offeringFrequency.rating || 'N/A'} (${report.offeringFrequency.description || 'No details'})`,
+    `Offering ability: ${report.offeringAbility.rating || 'N/A'} (${report.offeringAbility.description || 'No details'})`,
+    `Cash need: ${report.cashNeed.rating || 'N/A'} (${report.cashNeed.description || 'No details'})`,
+    `Overall offering risk: ${report.overallOfferingRisk.rating || 'N/A'}`,
+    `Scam risk: ${report.scamRisk.scamRisk || 'N/A'}`,
+    `Warrants: ${report.dilution.warrants.length}`,
+    `Convertibles: ${report.dilution.convertibles.length}`,
+    `Active registrations: ${report.offeringAbility.registrations.length}`,
+    `Recent offerings: ${report.offeringFrequency.offerings.length}`,
+    `Recent catalysts: ${report.catalysts.length}`,
+    `Management commentary: ${report.managementCommentary || 'No commentary available.'}`,
+  ].filter(Boolean).join('\n');
 }
 
 async function scrapeUrl(url: string): Promise<ScrapedSource> {
@@ -513,6 +542,7 @@ export async function POST(request: Request) {
     const body = bodyState.data;
     mode = body.mode ?? 'assistant';
     const prompt = body.prompt?.trim() ?? '';
+    const dilutionTicker = body.ticker?.trim().toUpperCase() ?? '';
 
     let trades: JarvisTradeInput[] = Array.isArray(body.trades) ? body.trades : [];
     if (trades.length === 0) {
@@ -634,6 +664,62 @@ export async function POST(request: Request) {
         structured: orchestrationResult.structured,
         macroSummary: orchestrationResult.macroSummary,
         warnings,
+      });
+    }
+
+    if (mode === 'dilution-research') {
+      if (!dilutionTicker || !ASKEDGAR_TICKER_REGEX.test(dilutionTicker)) {
+        return Response.json({ error: 'Ticker is required and must match /^[A-Z0-9.\-^]+$/.' }, { status: 400 });
+      }
+
+      const aggregation = await aggregateDilutionReport(dilutionTicker);
+      const reportPrompt = toDilutionPrompt({ ticker: dilutionTicker, report: aggregation.report, prompt });
+      const aggregationSourceContexts = buildSourceContexts(
+        aggregation.chunks.map((chunk) => ({
+          ...chunk,
+          relevance: chunk.relevance ?? 0,
+        })),
+      );
+
+      await ingestKnowledgeChunks({
+        userId: authState.user.id,
+        sourceType: 'api_data',
+        chunks: aggregation.chunks,
+      }).catch((error) => {
+        logRouteError('jarvis.memory.ingest_api_data', error);
+      });
+
+      const orchestrationResult = await runOrchestration({
+        userId: authState.user.id,
+        mode,
+        prompt: reportPrompt,
+        tradeTickers: [dilutionTicker],
+        scrapeChunks: aggregation.chunks,
+        sourceContexts: aggregationSourceContexts,
+      });
+
+      const warnings = [...scrapeResult.warnings, ...aggregation.warnings];
+      if (assembledMemoryContext.truncated) {
+        warnings.push(`Memory context truncated to token budget (${assembledMemoryContext.totalTokens} tokens, dropped ${assembledMemoryContext.droppedCount} chunks).`);
+      }
+
+      logJarvisRequest({
+        userId: authState.user.id,
+        mode,
+        inputTokens: estimateInputTokens(reportPrompt),
+        outputTokens: estimateOutputTokens(orchestrationResult.message),
+        durationMs: Date.now() - requestStartMs,
+        success: true,
+        sourceCount: aggregationSourceContexts.length,
+        chunkCount: aggregation.chunks.length,
+      }).catch(() => {});
+
+      return Response.json({
+        message: orchestrationResult.message,
+        structured: orchestrationResult.structured,
+        dilutionReport: aggregation.report,
+        warnings,
+        sources: aggregationSourceContexts,
       });
     }
 

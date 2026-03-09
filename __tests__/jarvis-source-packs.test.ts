@@ -3,24 +3,18 @@ import { describe, expect, it } from 'vitest';
 import { getSourcePack, sourcePacks } from '@/lib/jarvis-source-packs';
 
 describe('jarvis source packs', () => {
-  it('includes a preloaded earnings pack with multiple URLs', () => {
+  it('does not include the deprecated earnings pack', () => {
     const earningsPack = sourcePacks.find((pack) => pack.id === 'earnings');
-
-    expect(earningsPack).toBeDefined();
-    expect(earningsPack?.urls.length).toBe(4);
-    expect(earningsPack?.urls).toEqual([
-      'https://www.earningswhispers.com/calendar',
-      'https://www.marketwatch.com/tools/earnings',
-      'https://www.nasdaq.com/market-activity/earnings',
-      'https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&owner=include&count=40&type=8-K',
-    ]);
+    expect(earningsPack).toBeUndefined();
   });
 
-  it('resolves packs by id', () => {
-    const earningsPack = getSourcePack('earnings');
+  it('resolves dilution pack by id', () => {
+    const dilutionPack = getSourcePack('dilution-research');
 
-    expect(earningsPack?.id).toBe('earnings');
-    expect(earningsPack?.promptTemplate).toContain('earnings');
+    expect(dilutionPack?.id).toBe('dilution-research');
+    expect(dilutionPack?.category).toBe('dilution');
+    expect(dilutionPack?.icon).toBe('Search');
+    expect(dilutionPack?.urls).toEqual([]);
   });
 
   it('returns undefined for an unknown pack id', () => {

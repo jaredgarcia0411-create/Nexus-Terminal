@@ -1,6 +1,12 @@
 import React from 'react';
-import type { JarvisMacroSummaryOutput, JarvisSourceContext, JarvisStructuredResponse } from '@/lib/jarvis-types';
+import type {
+  DilutionResearchReport,
+  JarvisMacroSummaryOutput,
+  JarvisSourceContext,
+  JarvisStructuredResponse,
+} from '@/lib/jarvis-types';
 import JarvisMacroSummary from '@/components/trading/JarvisMacroSummary';
+import JarvisDilutionReport from '@/components/trading/JarvisDilutionReport';
 
 interface JarvisStructuredResponseProps {
   message: string;
@@ -9,6 +15,7 @@ interface JarvisStructuredResponseProps {
   sourceSummary?: string;
   sources?: JarvisSourceContext[];
   macroSummary?: JarvisMacroSummaryOutput;
+  dilutionReport?: DilutionResearchReport;
 }
 
 function relevanceLabel(score: number) {
@@ -27,11 +34,22 @@ function sourceTypeBadge(sourceType: JarvisSourceContext['sourceType']) {
   if (sourceType === 'cached_headline') {
     return { label: 'Headline', className: 'border-amber-500/30 bg-amber-500/10 text-amber-200' };
   }
+  if (sourceType === 'api_data') {
+    return { label: 'AskEdgar', className: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-200' };
+  }
 
   return { label: 'Web', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' };
 }
 
-export default function JarvisStructuredResponse({ message, structured, warnings, sourceSummary, sources, macroSummary }: JarvisStructuredResponseProps) {
+export default function JarvisStructuredResponse({
+  message,
+  structured,
+  warnings,
+  sourceSummary,
+  sources,
+  macroSummary,
+  dilutionReport,
+}: JarvisStructuredResponseProps) {
   return (
     <div className="space-y-4">
       {structured ? (
@@ -84,6 +102,7 @@ export default function JarvisStructuredResponse({ message, structured, warnings
       )}
 
       {macroSummary ? <JarvisMacroSummary macroSummary={macroSummary} /> : null}
+      {dilutionReport ? <JarvisDilutionReport report={dilutionReport} /> : null}
 
       {warnings && warnings.length > 0 ? (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-amber-100">

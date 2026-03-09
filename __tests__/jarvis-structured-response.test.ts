@@ -80,12 +80,22 @@ describe('JarvisStructuredResponse', () => {
             relevance: 0.6,
             tickers: ['MSFT'],
           },
+          {
+            url: 'askedgar://AAPL/header',
+            title: 'AskEdgar header',
+            host: 'askedgar.io',
+            sourceType: 'api_data',
+            excerpt: 'API context',
+            relevance: 0.9,
+            tickers: ['AAPL'],
+          },
         ],
       }),
     );
 
     expect(html).toContain('Journal');
     expect(html).toContain('Document');
+    expect(html).toContain('AskEdgar');
   });
 
   it('renders macro summary when provided', () => {

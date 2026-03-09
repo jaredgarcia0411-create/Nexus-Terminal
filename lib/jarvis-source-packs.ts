@@ -2,28 +2,13 @@ export interface SourcePack {
   id: string;
   name: string;
   description: string;
-  icon: 'Newspaper' | 'CalendarClock' | 'Globe';
-  category: 'earnings' | 'macro' | 'research';
+  icon: 'Newspaper' | 'CalendarClock' | 'Globe' | 'Search';
+  category: 'macro' | 'dilution';
   urls: string[];
   promptTemplate: string;
 }
 
 export const sourcePacks: SourcePack[] = [
-  {
-    id: 'earnings',
-    name: 'Earnings',
-    description: 'Earnings whispers, coverage, calendar, and filings.',
-    icon: 'CalendarClock',
-    category: 'earnings',
-    urls: [
-      'https://www.earningswhispers.com/calendar',
-      'https://www.marketwatch.com/tools/earnings',
-      'https://www.nasdaq.com/market-activity/earnings',
-      'https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&owner=include&count=40&type=8-K',
-    ],
-    promptTemplate:
-      'Summarize the upcoming earnings calendar, highlight any surprising whispers, and call out the most relevant filings for my current tickers.',
-  },
   {
     id: 'macro-daily',
     name: 'Macro Daily',
@@ -38,6 +23,15 @@ export const sourcePacks: SourcePack[] = [
     ],
     promptTemplate:
       'Provide a daily macro market summary. Break down by region (US, Europe, Asia-Pacific, Global). For each region: headline development, market sentiment, and key risks. End with overall portfolio implications.',
+  },
+  {
+    id: 'dilution-research',
+    name: 'Dilution Research',
+    description: 'SEC filings, dilution risk, scam indicators, and float analysis for a single ticker.',
+    icon: 'Search',
+    category: 'dilution',
+    urls: [],
+    promptTemplate: 'Generate a comprehensive dilution research report for the specified ticker.',
   },
 ];
 

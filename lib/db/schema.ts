@@ -147,7 +147,7 @@ export const jarvisKnowledgeChunks = pgTable('jarvis_knowledge_chunks', {
   sourceHost: text('source_host').notNull(),
   sourceTitle: text('source_title').notNull(),
   sourceType: text('source_type', {
-    enum: ['web_source', 'trade_journal', 'user_document', 'cached_headline'],
+    enum: ['web_source', 'trade_journal', 'user_document', 'cached_headline', 'api_data'],
   }).notNull(),
   chunkIndex: integer('chunk_index').notNull(),
   startToken: integer('start_token').notNull(),

@@ -31,7 +31,7 @@ const GOLDEN_PROMPTS = [
   { id: 'eval-assistant-risk', mode: 'assistant' as const, prompt: 'What are the key risks for holding AAPL through earnings?', description: 'Assistant mode with risk-focused prompt' },
   { id: 'eval-assistant-no-prompt', mode: 'assistant' as const, prompt: '', description: 'Assistant mode with empty prompt' },
   { id: 'eval-macro-summary', mode: 'macro-summary' as const, prompt: 'Provide a daily macro summary.', description: 'Macro summary mode' },
-  { id: 'eval-assistant-urls', mode: 'assistant' as const, prompt: 'Summarize the latest earnings data.', description: 'Assistant with source pack', sourcePackId: 'earnings' as const },
+  { id: 'eval-assistant-urls', mode: 'assistant' as const, prompt: 'Summarize the latest macro setup.', description: 'Assistant with source pack', sourcePackId: 'macro-daily' as const },
 ];
 
 async function invokeJarvis(golden: (typeof GOLDEN_PROMPTS)[number]) {

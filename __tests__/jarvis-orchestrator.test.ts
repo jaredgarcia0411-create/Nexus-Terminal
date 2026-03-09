@@ -151,4 +151,28 @@ describe('runOrchestration', () => {
     });
     expect(result.macroSummary?.keyRisks).toEqual(['Inflation']);
   });
+
+  it('short-circuits plan step for dilution-research mode', async () => {
+    process.env.JARVIS_API_KEY = 'test-key';
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: '{"tldr":"Dilution mixed","findings":["High warrant stack"],"actionSteps":["Monitor ATM"],"risks":["Cash runway short"]}' } }],
+      })));
+
+    const promise = runOrchestration({
+      userId: 'user-1',
+      mode: 'dilution-research',
+      prompt: 'Analyze dilution',
+      tradeTickers: ['AAPL'],
+      scrapeChunks: [],
+      sourceContexts: [],
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    const result = await promise;
+
+    expect(result.structured.tldr).toBe('Dilution mixed');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

@@ -5,6 +5,7 @@ import type { JarvisSourceType } from '@/lib/jarvis-types';
 
 const DEFAULT_WEB_SOURCE_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_CACHED_HEADLINE_TTL_MS = 12 * 60 * 60 * 1000;
+const DEFAULT_API_DATA_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface ScrapeCacheResult {
   isFresh: boolean;
@@ -21,6 +22,11 @@ export function getScrapeCacheTtlMs(sourceType: JarvisSourceType): number {
   if (sourceType === 'cached_headline') {
     const envTtl = Number(process.env.JARVIS_SCRAPE_CACHE_TTL_HEADLINE_MS);
     return Number.isFinite(envTtl) && envTtl >= 0 ? envTtl : DEFAULT_CACHED_HEADLINE_TTL_MS;
+  }
+
+  if (sourceType === 'api_data') {
+    const envTtl = Number(process.env.JARVIS_SCRAPE_CACHE_TTL_API_MS);
+    return Number.isFinite(envTtl) && envTtl >= 0 ? envTtl : DEFAULT_API_DATA_TTL_MS;
   }
 
   return 0;
