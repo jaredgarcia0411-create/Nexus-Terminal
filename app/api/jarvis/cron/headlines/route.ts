@@ -1,5 +1,7 @@
 import { getMacroAllowlistDomains, getTrustScoreForHost } from '@/lib/jarvis-allowlist';
 import { ingestKnowledgeChunks } from '@/lib/jarvis-knowledge';
+import { isRobotAllowed } from '@/lib/jarvis-robots';
+import { isUrlFreshInCache } from '@/lib/jarvis-scrape-cache';
 import {
   buildStructuredSource,
   chunkScrapedSource,
@@ -53,6 +55,18 @@ export async function GET(request: Request) {
     const url = DOMAIN_URLS[entry.domain];
     if (!url) {
       errors.push(`No URL mapping for domain: ${entry.domain}`);
+      continue;
+    }
+
+    const robotsAllowed = await isRobotAllowed(url);
+    if (!robotsAllowed) {
+      errors.push(`${entry.domain}: blocked by robots.txt`);
+      continue;
+    }
+
+    const cacheResult = await isUrlFreshInCache(url, 'cached_headline');
+    if (cacheResult.isFresh) {
+      totalScraped += 1;
       continue;
     }
 

@@ -31,6 +31,11 @@ import {
   retrieveKnowledgeChunks,
   syncTradeJournalChunks,
 } from '@/lib/jarvis-knowledge';
+import { isRobotAllowed } from '@/lib/jarvis-robots';
+import { isUrlFreshInCache } from '@/lib/jarvis-scrape-cache';
+import { isCircuitOpen, recordLlmFailure, recordLlmSuccess } from '@/lib/jarvis-circuit-breaker';
+import { checkRateLimit } from '@/lib/jarvis-rate-limit';
+import { estimateInputTokens, estimateOutputTokens, logJarvisRequest } from '@/lib/jarvis-token-tracking';
 
 const MAX_SCRAPE_URLS = 5;
 const MAX_REMEMBERED_URLS = 20;
@@ -217,6 +222,31 @@ async function scrapeUrl(url: string): Promise<ScrapedSource> {
     };
   }
 
+  const robotsAllowed = await isRobotAllowed(parsed.toString());
+  if (!robotsAllowed) {
+    return {
+      url,
+      title: parsed.hostname,
+      host: parsed.hostname,
+      excerpt: '',
+      scrapedAt: new Date(),
+      blocked: true,
+      error: `Scraping blocked by robots.txt for ${parsed.hostname}`,
+    };
+  }
+
+  const cacheResult = await isUrlFreshInCache(parsed.toString(), 'web_source');
+  if (cacheResult.isFresh) {
+    return {
+      url,
+      title: parsed.hostname,
+      host: parsed.hostname,
+      excerpt: '',
+      scrapedAt: cacheResult.lastSeenAt ?? new Date(),
+      error: undefined,
+    };
+  }
+
   let res: Response;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
@@ -282,6 +312,12 @@ async function scrapeSources(urls: string[], tradeTickers: string[]): Promise<Sc
   const warnings = results
     .filter((result): result is ScrapedSource => Boolean(result.error))
     .map((result) => result.error!);
+  const cachedUrls = results
+    .filter((result) => !result.blocked && !result.error && !result.body && !result.excerpt)
+    .map((result) => result.url);
+  if (cachedUrls.length > 0) {
+    warnings.push(`${cachedUrls.length} URL(s) served from cache (within TTL).`);
+  }
 
   const chunks = dedupeSourceChunks(
     sources
@@ -383,6 +419,8 @@ async function askLlm(
   sources: ScrapedSource[],
   chunks: ScrapeResult['chunks'],
 ) {
+  if (isCircuitOpen()) return null;
+
   const apiKey = process.env.JARVIS_API_KEY ?? process.env.NVIDIA_API_KEY;
   if (!apiKey) return null;
 
@@ -424,10 +462,12 @@ async function askLlm(
       }),
     });
   } catch {
+    recordLlmFailure();
     return null;
   }
 
   if (!res.ok) {
+    recordLlmFailure();
     return null;
   }
 
@@ -438,18 +478,40 @@ async function askLlm(
   const content = payload.choices?.[0]?.message?.content?.trim();
   if (!content) return null;
 
+  recordLlmSuccess();
   return parseJarvisLlmResponse(content);
 }
 
 export async function POST(request: Request) {
+  let mode: JarvisMode = 'assistant';
+  let basePrompt = '';
+  let sourceCount = 0;
+  let chunkCount = 0;
+  const requestStartMs = Date.now();
+  let authUserId: string | null = null;
+
   try {
     const authState = await requireUser();
     if ('error' in authState) return authState.error;
+    authUserId = authState.user.id;
+
+    const rateLimitResult = checkRateLimit(authState.user.id);
+    if (!rateLimitResult.allowed) {
+      return Response.json(
+        { error: 'Rate limit exceeded. Try again later.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000)),
+          },
+        },
+      );
+    }
 
     const bodyState = await parseJsonBody<JarvisRequest>(request);
     if (bodyState.error) return bodyState.error;
     const body = bodyState.data;
-    const mode = body.mode ?? 'assistant';
+    mode = body.mode ?? 'assistant';
     const prompt = body.prompt?.trim() ?? '';
 
     let trades: JarvisTradeInput[] = Array.isArray(body.trades) ? body.trades : [];
@@ -489,7 +551,7 @@ export async function POST(request: Request) {
     }
 
     const resolvedPrompt = prompt || selectedPack?.promptTemplate || '';
-    const basePrompt = toModePrompt(mode, summary, resolvedPrompt);
+    basePrompt = toModePrompt(mode, summary, resolvedPrompt);
     const scrapeUrls = selectedPack ? selectedPack.urls : normalizeScrapeUrls(body.urls);
 
     await rememberUrls(authState.user, scrapeUrls).catch(() => null);
@@ -535,6 +597,8 @@ export async function POST(request: Request) {
         }))
         .sort((a, b) => (b.relevance ?? 0) - (a.relevance ?? 0)),
     );
+    sourceCount = sourceContexts.length;
+    chunkCount = llmChunks.length;
     const sourceSummary = sourceSummaryFor(scrapedSources) ?? sourceSummaryFromContexts(sourceContexts);
     // --- Macro-summary mode: use orchestration pipeline ---
     if (mode === 'macro-summary') {
@@ -551,6 +615,17 @@ export async function POST(request: Request) {
       if (assembledMemoryContext.truncated) {
         warnings.push(`Memory context truncated to token budget (${assembledMemoryContext.totalTokens} tokens, dropped ${assembledMemoryContext.droppedCount} chunks).`);
       }
+
+      logJarvisRequest({
+        userId: authState.user.id,
+        mode,
+        inputTokens: estimateInputTokens(basePrompt),
+        outputTokens: estimateOutputTokens(orchestrationResult.message),
+        durationMs: Date.now() - requestStartMs,
+        success: true,
+        sourceCount,
+        chunkCount,
+      }).catch(() => {});
 
       return Response.json({
         message: orchestrationResult.message,
@@ -571,6 +646,17 @@ export async function POST(request: Request) {
     }
 
     if (llmMessage) {
+      logJarvisRequest({
+        userId: authState.user.id,
+        mode,
+        inputTokens: estimateInputTokens(basePrompt),
+        outputTokens: estimateOutputTokens(llmMessage.message),
+        durationMs: Date.now() - requestStartMs,
+        success: true,
+        sourceCount,
+        chunkCount,
+      }).catch(() => {});
+
       return Response.json({
         message: llmMessage.message,
         sourceSummary,
@@ -587,6 +673,17 @@ export async function POST(request: Request) {
       warnings,
     });
 
+    logJarvisRequest({
+      userId: authState.user.id,
+      mode,
+      inputTokens: estimateInputTokens(basePrompt),
+      outputTokens: 0,
+      durationMs: Date.now() - requestStartMs,
+      success: false,
+      sourceCount,
+      chunkCount,
+    }).catch(() => {});
+
     return Response.json({
       message: formatStructuredMessage(structuredFallback),
       sourceSummary,
@@ -595,6 +692,19 @@ export async function POST(request: Request) {
       warnings,
     });
   } catch (error) {
+    if (authUserId) {
+      logJarvisRequest({
+        userId: authUserId,
+        mode,
+        inputTokens: estimateInputTokens(basePrompt),
+        outputTokens: 0,
+        durationMs: Date.now() - requestStartMs,
+        success: false,
+        sourceCount,
+        chunkCount,
+      }).catch(() => {});
+    }
+
     logRouteError('jarvis.post', error);
     return internalServerError();
   }

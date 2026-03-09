@@ -15,6 +15,7 @@ import {
   parseJarvisLlmResponse,
 } from '@/lib/jarvis-response';
 import { buildSourceContexts } from '@/lib/jarvis-scrape';
+import { isCircuitOpen, recordLlmFailure, recordLlmSuccess } from '@/lib/jarvis-circuit-breaker';
 
 const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v3.2';
 const DEFAULT_DEEPSEEK_BASE_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
@@ -70,6 +71,8 @@ function getApiConfig() {
 }
 
 async function callLlm(systemPrompt: string, userMessage: string): Promise<string | null> {
+  if (isCircuitOpen()) return null;
+
   const { apiKey, model, baseUrl } = getApiConfig();
   if (!apiKey) return null;
 
@@ -91,15 +94,20 @@ async function callLlm(systemPrompt: string, userMessage: string): Promise<strin
       }),
     });
   } catch {
+    recordLlmFailure();
     return null;
   }
 
-  if (!res.ok) return null;
+  if (!res.ok) {
+    recordLlmFailure();
+    return null;
+  }
 
   const payload = (await res.json().catch(() => ({}))) as {
     choices?: Array<{ message?: { content?: string } }>;
   };
 
+  recordLlmSuccess();
   return payload.choices?.[0]?.message?.content?.trim() ?? null;
 }
 

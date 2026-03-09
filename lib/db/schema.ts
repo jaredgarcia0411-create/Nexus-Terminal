@@ -191,3 +191,20 @@ export const jarvisUserDocuments = pgTable('jarvis_user_documents', {
 }, (table) => [
   index('idx_jarvis_user_documents_user_created').on(table.userId, table.createdAt),
 ]);
+
+export const jarvisRequestLog = pgTable('jarvis_request_log', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  mode: text('mode').notNull(),
+  inputTokens: integer('input_tokens').notNull().default(0),
+  outputTokens: integer('output_tokens').notNull().default(0),
+  totalTokens: integer('total_tokens').notNull().default(0),
+  durationMs: integer('duration_ms').notNull().default(0),
+  success: integer('success').notNull().default(1),
+  sourceCount: integer('source_count').notNull().default(0),
+  chunkCount: integer('chunk_count').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('idx_jarvis_request_log_user_created').on(table.userId, table.createdAt),
+  index('idx_jarvis_request_log_created').on(table.createdAt),
+]);

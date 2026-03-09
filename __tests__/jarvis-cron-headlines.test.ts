@@ -8,6 +8,8 @@ const {
   chunkScrapedSourceMock,
   dedupeSourceChunksMock,
   rankSourceChunksMock,
+  isRobotAllowedMock,
+  isUrlFreshInCacheMock,
 } = vi.hoisted(() => ({
   getMacroAllowlistDomainsMock: vi.fn(),
   getTrustScoreForHostMock: vi.fn(),
@@ -16,6 +18,8 @@ const {
   chunkScrapedSourceMock: vi.fn(),
   dedupeSourceChunksMock: vi.fn(),
   rankSourceChunksMock: vi.fn(),
+  isRobotAllowedMock: vi.fn(),
+  isUrlFreshInCacheMock: vi.fn(),
 }));
 
 vi.mock('@/lib/jarvis-allowlist', () => ({
@@ -32,6 +36,14 @@ vi.mock('@/lib/jarvis-scrape', () => ({
   chunkScrapedSource: chunkScrapedSourceMock,
   dedupeSourceChunks: dedupeSourceChunksMock,
   rankSourceChunks: rankSourceChunksMock,
+}));
+
+vi.mock('@/lib/jarvis-robots', () => ({
+  isRobotAllowed: isRobotAllowedMock,
+}));
+
+vi.mock('@/lib/jarvis-scrape-cache', () => ({
+  isUrlFreshInCache: isUrlFreshInCacheMock,
 }));
 
 import { GET } from '@/app/api/jarvis/cron/headlines/route';
@@ -73,6 +85,8 @@ describe('GET /api/jarvis/cron/headlines', () => {
     dedupeSourceChunksMock.mockImplementation((chunks: unknown) => chunks);
     rankSourceChunksMock.mockImplementation((chunks: unknown) => chunks);
     ingestKnowledgeChunksMock.mockResolvedValue(undefined);
+    isRobotAllowedMock.mockResolvedValue(true);
+    isUrlFreshInCacheMock.mockResolvedValue({ isFresh: false, lastSeenAt: null, chunkCount: 0 });
   });
 
   afterEach(() => {

@@ -164,14 +164,14 @@ Exit criteria: Jarvis produces a daily macro summary from cached headlines using
 
 | Ticket | Description | Size | Status |
 |---|---|---|---|
-| JRV-070 | Per-user rate limiting (target: 30 requests/hour) | M | pending |
-| JRV-071 | Token budget tracking: log input/output tokens per request, aggregate per user/day | M | pending |
-| JRV-072 | Circuit breaker: disable LLM on high error rate, fall back to deterministic | S | pending |
-| JRV-073 | Robots.txt respect before scraping | S | pending |
-| JRV-074 | Scrape cache layer: cache by URL + hash with configurable TTL | M | pending |
-| JRV-075 | Observability endpoint: `/api/jarvis/stats` for latency, errors, tokens (admin only) | M | pending |
-| JRV-076 | Eval harness: golden prompt set + automated quality scoring per release | L | pending |
-| JRV-077 | Migrate daily-summary, trade-analysis, assistant modes to orchestration engine | M | pending |
+| JRV-070 | Per-user rate limiting (target: 30 requests/hour) | M | done |
+| JRV-071 | Token budget tracking: log input/output tokens per request, aggregate per user/day | M | done |
+| JRV-072 | Circuit breaker: disable LLM on high error rate, fall back to deterministic | S | done |
+| JRV-073 | Robots.txt respect before scraping | S | done |
+| JRV-074 | Scrape cache layer: cache by URL + hash with configurable TTL | M | done |
+| JRV-075 | Observability endpoint: `/api/jarvis/stats` for latency, errors, tokens (admin only) | M | done |
+| JRV-076 | Eval harness: golden prompt set + automated quality scoring per release | L | done |
+| JRV-077 | Migrate daily-summary, trade-analysis, assistant modes to orchestration engine | M | deferred |
 
 Exit criteria: Safe to scale with predictable performance and cost. Regression quality tracked automatically.
 
@@ -189,6 +189,7 @@ Exit criteria: Safe to scale with predictable performance and cost. Regression q
 
 | Date | Update |
 |---|---|
+| 2026-03-09 | Sprint 7 completed (JRV-070 to JRV-076, JRV-077 deferred): added per-user in-memory rate limiting (30 req/hr), token budget tracking via `jarvis_request_log` table with Drizzle migration, circuit breaker for LLM failures (5-failure threshold, 60s reset), robots.txt compliance before scraping with 1h cache, scrape cache using `jarvis_knowledge_chunks.lastSeenAt` (1h web/12h headline TTL), admin-only observability endpoint (`/api/jarvis/admin/stats`), and eval harness with 6 golden prompts for structural compliance validation. JRV-077 (migrate remaining modes to orchestration) deferred to future sprint. |
 | 2026-03-08 | Sprint 6 planning finalized. All decisions locked: Vercel Hobby daily cron at 6 AM ET (`0 11 * * *`), 10 open-access macro domains across 4 regions (replaced paywalled bloomberg/ft/scmp with investing.com/tradingeconomics.com/nikkei.com), system-level headlines (`userId: 'system'`), critique step off by default, orchestration scoped to macro-summary mode only (existing modes deferred to Sprint 7 as JRV-077), 40 RPM NVIDIA rate limit with 1.5s inter-call delay. Execution spec: 13 changes, 12 files (4 creates, 8 modifies). |
 | 2026-03-07 | Sprint 5 completed (JRV-055, JRV-050 to JRV-054): added NVIDIA embedding integration with ingest-time vectors (migrated to `vector(1024)`), journal-note synchronization from trades with tags/performance context, PDF+text upload pipeline (`/api/jarvis/upload`) with document metadata tracking and chunk ingestion, Jarvis documents sub-tab UI for upload/list/delete management, retrieval/prompt attribution by source type, and color-coded citation badges for web/journal/document/headline sources. |
 | 2026-03-07 | Sprint 4 completed (JRV-040 to JRV-045): added persistent `jarvis_knowledge_chunks` schema + migration (with pgvector), write-through ingest with seen-count/last-seen updates, keyword+recency retrieval from PostgreSQL full-text search, token-budget context assembly via env-configurable limits, admin-only memory stats/purge APIs behind `x-jarvis-admin-key`, and automatic per-user eviction for non-web chunks at 100MB default bound. |

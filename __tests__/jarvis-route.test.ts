@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getDbMock, requireUserMock, ensureUserMock, runOrchestrationMock } = vi.hoisted(() => ({
+const { getDbMock, requireUserMock, ensureUserMock, runOrchestrationMock, isRobotAllowedMock } = vi.hoisted(() => ({
   getDbMock: vi.fn(),
   requireUserMock: vi.fn(),
   ensureUserMock: vi.fn(),
   runOrchestrationMock: vi.fn(),
+  isRobotAllowedMock: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -18,6 +19,10 @@ vi.mock('@/lib/server-db-utils', () => ({
 
 vi.mock('@/lib/jarvis-orchestrator', () => ({
   runOrchestration: runOrchestrationMock,
+}));
+
+vi.mock('@/lib/jarvis-robots', () => ({
+  isRobotAllowed: isRobotAllowedMock,
 }));
 
 import { GET, POST } from '@/app/api/jarvis/route';
@@ -107,6 +112,7 @@ describe('POST /api/jarvis', () => {
     vi.clearAllMocks();
     requireUserMock.mockResolvedValue({ user: { id: 'user-1', email: 'u@example.com', name: null, picture: null } });
     ensureUserMock.mockResolvedValue(undefined);
+    isRobotAllowedMock.mockResolvedValue(true);
     getDbMock.mockReturnValue(null);
     process.env.JARVIS_API_KEY = '';
     process.env.JARVIS_ORCHESTRATION_CRITIQUE = 'false';
