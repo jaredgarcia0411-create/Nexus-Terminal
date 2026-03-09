@@ -39,7 +39,7 @@ Framework: Next.js 15, React 19, TypeScript 5.9, deployed on Vercel
 - Extensions: pgvector (1024-dim), tsvector full-text search
 - Connection: HTTP client for reads, WebSocket pool for transactions
 
-### Tables (10)
+### Tables (11)
 - users — Google OAuth accounts
 - trades — composite PK (user_id, id)
 - trade_executions — individual executions within trades
@@ -48,12 +48,13 @@ Framework: Next.js 15, React 19, TypeScript 5.9, deployed on Vercel
 - trade_import_batches — import deduplication
 - broker_sync_log — broker sync history
 - jarvis_source_urls — remembered URLs for Jarvis
-- jarvis_knowledge_chunks — knowledge base with embeddings
+- jarvis_knowledge_chunks — knowledge base with embeddings (sourceType: web_source, trade_journal, user_document, cached_headline, api_data)
 - jarvis_user_documents — user-uploaded documents
+- jarvis_request_log — per-request token/latency tracking for observability
 
 ---
 
-# API Routes (13 active endpoints)
+# API Routes (14 active endpoints)
 
 ## Trades
 - GET/POST     /api/trades
@@ -68,10 +69,11 @@ Framework: Next.js 15, React 19, TypeScript 5.9, deployed on Vercel
 - GET /api/market-data  (Yahoo Finance proxy)
 
 ## Jarvis AI
-- GET/POST         /api/jarvis  (summary/analysis/assistant modes)
+- GET/POST         /api/jarvis  (modes: daily-summary, trade-analysis, assistant, macro-summary; dilution-research planned Sprint 8)
 - GET/POST/DELETE  /api/jarvis/upload
 - GET              /api/jarvis/admin/memory/stats
 - DELETE           /api/jarvis/admin/memory/purge
+- GET              /api/jarvis/admin/stats  (token usage, circuit breaker, latency — admin-only via x-jarvis-admin-key)
 
 ## Jarvis Cron
 - GET /api/jarvis/cron/headlines  (Vercel cron, CRON_SECRET auth)
@@ -121,17 +123,47 @@ button, command, dialog, dropdown-menu, input, label, popover, select, sheet, te
 ---
 
 # Key Service Modules
+
+## Core
 - lib/auth-config.ts — NextAuth main config
 - lib/server-db-utils.ts — requireUser(), ensureUser()
 - lib/trading-utils.ts — formatCurrency, formatR, calculatePnL
 - lib/csv-parser.ts — CSV parsing with broker auto-detection
 - lib/parsers/ — pluggable parser system (DAS Trader, generic)
 - lib/indicators.ts — SMA, EMA, RSI, MACD, VWAP, Bollinger
-- lib/jarvis-knowledge.ts — knowledge ingestion/retrieval/eviction
+
+## Jarvis AI Pipeline
+- lib/jarvis-types.ts — shared types (JarvisMode, JarvisRequest, JarvisResponse, source types)
 - lib/jarvis-orchestrator.ts — multi-step orchestration pipeline (plan, retrieve, summarize, critique, answer)
+- lib/jarvis-knowledge.ts — knowledge ingestion/retrieval/eviction
 - lib/jarvis-scrape.ts — web scraping, chunking, ranking
 - lib/jarvis-embedding.ts — NVIDIA embedding API
 - lib/jarvis-response.ts — LLM response parsing
+- lib/jarvis-allowlist.ts — domain allowlist with trust scoring
+- lib/jarvis-source-packs.ts — source pack registry (macro-daily; earnings removed in Sprint 8)
+
+## Jarvis Safety & Observability
+- lib/jarvis-rate-limit.ts — per-user rate limiting (30 req/hr, in-memory)
+- lib/jarvis-token-tracking.ts — per-request token/latency logging to jarvis_request_log
+- lib/jarvis-circuit-breaker.ts — LLM failure circuit breaker (5 failures → open, 60s reset)
+- lib/jarvis-robots.ts — robots.txt compliance with 1h cache
+- lib/jarvis-scrape-cache.ts — URL freshness check against knowledge store TTL
+
+---
+
+# Sprint 8 — Dilution Research Pack (Planned, Not Yet Built)
+
+AskEdgar API integration for on-demand dilution research reports. Full spec in HANDOFF.md.
+
+- API: https://eapi.askedgar.io — auth via ASKEDGAR_API_KEY env var
+- 12 endpoints per report, 100 calls/day budget, fired via Promise.allSettled
+- New mode: `dilution-research` — single ticker, through orchestration engine
+- New source type: `api_data` in jarvis_knowledge_chunks
+- New files planned: lib/askedgar-client.ts, lib/askedgar-aggregator.ts, components/trading/JarvisDilutionReport.tsx
+- Replaces earnings source pack; macro-daily pack unchanged
+- 14-section report with risk color coding (Low=green, Medium=amber, High=red)
+- API docs: docs/AE_API_DOCS.md
+- Detailed spec: docs/SPRINT_8_SPEC.md
 
 ---
 
@@ -158,6 +190,7 @@ button, command, dialog, dropdown-menu, input, label, popover, select, sheet, te
 - Do not log sensitive data
 - Do not commit secrets to Git
 - Schwab tokens (if re-added) must never be returned to the client
+- ASKEDGAR_API_KEY must only be read server-side (lib/askedgar-client.ts) — never in client components
 
 ---
 

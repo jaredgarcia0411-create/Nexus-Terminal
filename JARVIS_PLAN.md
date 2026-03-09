@@ -1,6 +1,6 @@
 # Jarvis Capability Plan
 
-Last updated: 2026-03-09
+Last updated: 2026-03-10
 
 ## Goal
 
@@ -19,7 +19,8 @@ Transform Jarvis from a basic prompt-and-scrape assistant into a persistent, mul
 | Decision | Choice |
 |---|---|
 | Source policy | Allowlist-first |
-| First preset | Earnings: Earnings Whispers, MarketWatch earnings, Nasdaq earnings calendar, SEC EDGAR |
+| ~~First preset~~ | ~~Earnings~~ — replaced by Dilution Research pack (Sprint 8) |
+| Dilution research | AskEdgar API (`eapi.askedgar.io`) — on-demand, single-ticker, 12 endpoints |
 | Memory retention | Indefinite, bounded per-user, eviction by relevance score |
 | Macro pipeline | Background cron + cache (daily on Vercel Hobby tier) |
 | User doc uploads | PDF + plain text in first release |
@@ -40,11 +41,11 @@ Transform Jarvis from a basic prompt-and-scrape assistant into a persistent, mul
 
 ## Current Jarvis Baseline
 
-- 4 modes: daily-summary, trade-analysis, assistant, macro-summary
+- 4 modes: daily-summary, trade-analysis, assistant, macro-summary (dilution-research planned for Sprint 8)
 - Scrapes up to 5 URLs per request with allowlist validation, robots.txt checks, and scrape-cache short-circuiting
 - Remembers up to 20 recent URLs per user (`jarvis_source_urls`)
 - Uses persistent knowledge memory (`jarvis_knowledge_chunks`) across web, journal, user docs, and cached headlines
-- Macro-summary mode runs the orchestration pipeline; other modes remain single-pass by design (JRV-077 deferred)
+- Macro-summary mode runs the orchestration pipeline; other modes remain single-pass
 - Includes deterministic structured fallback when LLM is unavailable or returns invalid output
 - Includes safety controls: per-user rate limiting, LLM circuit breaker, and token usage tracking (`jarvis_request_log`)
 - Includes admin observability endpoints for memory and request/token stats
@@ -58,11 +59,11 @@ Transform Jarvis from a basic prompt-and-scrape assistant into a persistent, mul
 
 | Ticket | Description | Size | Status |
 |---|---|---|---|
-| JRV-001 | Extract shared Jarvis types to `lib/jarvis-types.ts` | S | pending |
-| JRV-002 | Domain allowlist module (`lib/jarvis-allowlist.ts`) with validation helper | S | pending |
-| JRV-003 | Scrape timeout (10s per URL) + structured error return | S | pending |
-| JRV-004 | Trim client trade payload to only fields Jarvis uses | S | pending |
-| JRV-005 | Remove legacy `url` singular field from `JarvisRequest` | XS | pending |
+| JRV-001 | Extract shared Jarvis types to `lib/jarvis-types.ts` | S | done |
+| JRV-002 | Domain allowlist module (`lib/jarvis-allowlist.ts`) with validation helper | S | done |
+| JRV-003 | Scrape timeout (10s per URL) + structured error return | S | done |
+| JRV-004 | Trim client trade payload to only fields Jarvis uses | S | done |
+| JRV-005 | Remove legacy `url` singular field from `JarvisRequest` | XS | done |
 
 Exit criteria: Shared types in place, allowlist enforced, scraping safer, payload leaner.
 
@@ -70,11 +71,11 @@ Exit criteria: Shared types in place, allowlist enforced, scraping safer, payloa
 
 | Ticket | Description | Size | Status |
 |---|---|---|---|
-| JRV-010 | Source pack data model in `lib/jarvis-source-packs.ts` | S | pending |
-| JRV-011 | Earnings preset: Earnings Whispers, MarketWatch, Nasdaq calendar, SEC EDGAR | S | pending |
-| JRV-012 | API: resolve source pack by ID in POST handler | S | pending |
-| JRV-013 | UI: source pack picker (dropdown/card in JarvisTab) | M | pending |
-| JRV-014 | UI: grouped chips (presets vs remembered vs manual), labels, timestamps | M | pending |
+| JRV-010 | Source pack data model in `lib/jarvis-source-packs.ts` | S | done |
+| JRV-011 | Earnings preset: Earnings Whispers, MarketWatch, Nasdaq calendar, SEC EDGAR | S | done (superseded by Dilution pack in Sprint 8) |
+| JRV-012 | API: resolve source pack by ID in POST handler | S | done |
+| JRV-013 | UI: source pack picker (dropdown/card in JarvisTab) | M | done |
+| JRV-014 | UI: grouped chips (presets vs remembered vs manual), labels, timestamps | M | done |
 
 Exit criteria: User can run Jarvis with 1 click using the Earnings preset. Pack template is reusable.
 
@@ -84,11 +85,11 @@ Exit criteria: User can run Jarvis with 1 click using the Earnings preset. Pack 
 
 | Ticket | Description | Size | Status |
 |---|---|---|---|
-| JRV-020 | Structured extractor: title, publish date, author, body, tickers | M | pending |
-| JRV-021 | Content chunking: overlapping chunks at 512-token target with metadata | M | pending |
-| JRV-022 | Hash-based dedupe: fingerprint chunks, suppress near-duplicates | S | pending |
-| JRV-023 | Source ranking: freshness + ticker relevance + trust tier scoring | M | pending |
-| JRV-024 | Context preview: return `sources[]` with title, host, relevance, excerpt | S | pending |
+| JRV-020 | Structured extractor: title, publish date, author, body, tickers | M | done |
+| JRV-021 | Content chunking: overlapping chunks at 512-token target with metadata | M | done |
+| JRV-022 | Hash-based dedupe: fingerprint chunks, suppress near-duplicates | S | done |
+| JRV-023 | Source ranking: freshness + ticker relevance + trust tier scoring | M | done |
+| JRV-024 | Context preview: return `sources[]` with title, host, relevance, excerpt | S | done |
 
 Exit criteria: Jarvis uses ranked, deduplicated, structured excerpts. Response includes source traceability.
 
@@ -171,9 +172,47 @@ Exit criteria: Jarvis produces a daily macro summary from cached headlines using
 | JRV-074 | Scrape cache layer: cache by URL + hash with configurable TTL | M | done |
 | JRV-075 | Observability endpoint: `/api/jarvis/admin/stats` for latency, errors, tokens (admin only) | M | done |
 | JRV-076 | Eval harness: golden prompt set + automated quality scoring per release | L | done |
-| JRV-077 | Migrate daily-summary, trade-analysis, assistant modes to orchestration engine | M | deferred |
+| JRV-077 | Migrate daily-summary, trade-analysis, assistant modes to orchestration engine | M | deferred (deprioritized — focus shifted to dilution research) |
 
 Exit criteria: Safe to scale with predictable performance and cost. Regression quality tracked automatically.
+
+### Phase F — Dilution Intelligence (Sprint 8)
+
+#### Sprint 8 Decisions
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| Data source | AskEdgar API only (`eapi.askedgar.io`) | Single API provides all dilution, offering, SEC filing, and scam risk data; no scraper needed |
+| Trigger model | On-demand, one ticker at a time (NOT cron) | Dilution research is ticker-specific and user-initiated |
+| Pipeline path | Orchestration engine (plan → retrieve → summarize → answer) | Reuses existing `runOrchestration`; plan step short-circuits (no LLM call) |
+| Knowledge persistence | Ingest AskEdgar results into `jarvis_knowledge_chunks` as `api_data` source type | Historical context for the same ticker surfaces automatically in future analyses |
+| New source type | `api_data` added to `JarvisSourceType` union | Distinguishes AskEdgar-sourced data from web scrapes, journals, and documents |
+| API rate budget | 100 calls/day tracked in-memory with env override `ASKEDGAR_DAILY_LIMIT` | Each report uses 12 calls; budget allows ~8 full reports/day; counter resets at midnight UTC |
+| Earnings pack | Remove entirely from `sourcePacks` array | Replaced by dilution research; earnings URLs were unreliable scraped targets |
+| Auth | `API-KEY: ${ASKEDGAR_API_KEY}` header | Matches AskEdgar API spec; key stored in env, never exposed to client |
+| Error handling | Graceful per-endpoint — each of 12 endpoints called independently via `Promise.allSettled` | One endpoint failure must not block the rest of the report |
+| UI card placement | Remove earnings card, keep macro summary card, add Dilution Research card alongside it | Two action cards total (Macro + Dilution) |
+| Risk color mapping | Low=emerald/green, Medium=amber/yellow, High=rose/red | Direct mapping from AskEdgar's High/Medium/Low ratings |
+| Skipped endpoints | `funds-underwriters` (institutional-only), `screener/options` (not needed) | Access restrictions and irrelevance |
+| Skipped report sections | PR History move stats, Theme, Chart History, Historical Commentary, View Historical Charts | User decision — focus on dilution data |
+
+#### Sprint 8 — Dilution Research Pack (AskEdgar Integration)
+
+| Ticket | Description | Size | Status |
+|---|---|---|---|
+| JRV-080 | AskEdgar API client with typed endpoints and daily rate tracking | M | pending |
+| JRV-081 | Dilution research types: new mode, source type, report schema | S | pending |
+| JRV-082 | Add `api_data` source type to DB schema + knowledge retrieval | S | pending |
+| JRV-083 | AskEdgar data aggregator: 12 endpoints → unified report + chunks | L | pending |
+| JRV-084 | Remove earnings pack, add dilution-research pack | XS | pending |
+| JRV-085 | Dilution-specific orchestration system prompt + plan shortcut | M | pending |
+| JRV-086 | Route handler: dilution-research mode with validation and ingestion | M | pending |
+| JRV-087 | Dilution report renderer component (14 visual sections) | L | pending |
+| JRV-088 | Wire dilution report into structured response renderer | S | pending |
+| JRV-089 | JarvisTab UI: dilution research card + ticker input | M | pending |
+| JRV-090 | Tests: client, aggregator, route integration | M | pending |
+
+Exit criteria: User can enter a ticker, receive a comprehensive dilution research report with 14 sections, risk color coding, and data source verification. Results persist in knowledge for future context. API budget tracked at 100 calls/day.
 
 ## Build Order
 
@@ -184,11 +223,13 @@ Exit criteria: Safe to scale with predictable performance and cost. Regression q
 | Phase C | Sprint 4 + Sprint 5 | Memory Jarvis |
 | Phase D | Sprint 6 | Orchestrated Jarvis |
 | Phase E | Sprint 7 (parallel from Phase B) | Production-Ready |
+| Phase F | Sprint 8 | Dilution Intelligence |
 
 ## Progress Log
 
 | Date | Update |
 |---|---|
+| 2026-03-10 | Sprint 8 planned (JRV-080 to JRV-090): Dilution Research Pack via AskEdgar API. 11 tickets, 3 creates, 9 modifies, 3 test files. Earnings pack will be replaced by dilution-research pack. On-demand single-ticker analysis through orchestration engine. 12 AskEdgar API endpoints per report with 100 calls/day budget. 14-section report with risk color coding. Sprint 0-2 ticket statuses corrected from pending to done (were implemented but never marked). JRV-077 deprioritized in favor of dilution research focus. |
 | 2026-03-09 | Sprint 7 completed (JRV-070 to JRV-076, JRV-077 deferred): added per-user in-memory rate limiting (30 req/hr), token budget tracking via `jarvis_request_log` table with Drizzle migration, circuit breaker for LLM failures (5-failure threshold, 60s reset), robots.txt compliance before scraping with 1h cache, scrape cache using `jarvis_knowledge_chunks.lastSeenAt` (1h web/12h headline TTL), admin-only observability endpoint (`/api/jarvis/admin/stats`), and eval harness with 6 golden prompts for structural compliance validation. JRV-077 (migrate remaining modes to orchestration) deferred to future sprint. |
 | 2026-03-08 | Sprint 6 planning finalized. All decisions locked: Vercel Hobby daily cron at 6 AM ET (`0 11 * * *`), 10 open-access macro domains across 4 regions (replaced paywalled bloomberg/ft/scmp with investing.com/tradingeconomics.com/nikkei.com), system-level headlines (`userId: 'system'`), critique step off by default, orchestration scoped to macro-summary mode only (existing modes deferred to Sprint 7 as JRV-077), 40 RPM NVIDIA rate limit with 1.5s inter-call delay. Execution spec: 13 changes, 12 files (4 creates, 8 modifies). |
 | 2026-03-07 | Sprint 5 completed (JRV-055, JRV-050 to JRV-054): added NVIDIA embedding integration with ingest-time vectors (migrated to `vector(1024)`), journal-note synchronization from trades with tags/performance context, PDF+text upload pipeline (`/api/jarvis/upload`) with document metadata tracking and chunk ingestion, Jarvis documents sub-tab UI for upload/list/delete management, retrieval/prompt attribution by source type, and color-coded citation badges for web/journal/document/headline sources. |
