@@ -619,3 +619,499 @@ All three must pass. Verify:
 2. Remove `ASKEDGAR_API_KEY` and `ASKEDGAR_DAILY_LIMIT` from deployed env
 3. Schema change is backward compatible (adding a value to text enum) — no DB rollback needed
 4. Any `api_data` chunks in knowledge store are harmless orphans
+
+---
+---
+
+# Build Spec — UI Layout Overhaul: Dashboard/Performance Redistribution
+
+> Generated: 2026-03-09 | Agent: nexus-architect (Opus 4.6)
+> Status: PENDING REVIEW — do not execute until approved
+
+---
+
+## Objective
+
+Redistribute chart content between DashboardTab and PerformanceTab, add a weekly calendar to Dashboard, add a comprehensive stats table to Performance, move the date range filter to the global Toolbar, and standardize title styling across all tabs.
+
+---
+
+## Current State Summary
+
+- **DashboardTab** (205 lines): No title, renders full `<PerformanceCharts>` (all 7 charts), stat cards, recent trades. No calendar.
+- **PerformanceTab** (91 lines): Title without border, renders full `<PerformanceCharts>` (duplicate of Dashboard), `<TradingCalendar>`, Symbol Distribution, Risk Summary.
+- **PerformanceCharts** (317 lines): 7 chart sections in 3 rows — Equity Curve, Daily Performance, Day of Week, Time of Day, Win/Loss Days, Drawdown, Tag Breakdown.
+- **TradesTab** (177 lines): Title with border, has date range filter + tag filter.
+- **Toolbar** (157 lines): Filter presets (All/30D/60D/90D), no date range picker.
+- **TradingCalendar** (237 lines): Monthly calendar with daily P&L, standalone component.
+
+### Title Styling Audit
+
+| Tab | Has Title | Has Border | Consistent |
+|-----|-----------|------------|------------|
+| Dashboard | NO | NO | NO |
+| Performance | YES | NO | NO |
+| Journal | YES | YES (container border) | PARTIAL |
+| Trades | YES | YES (container border) | YES |
+| Jarvis | YES | YES | YES |
+
+---
+
+## Execution Steps
+
+Execute in this exact sequence. Each step lists every file to create or modify.
+
+---
+
+### Step 1: Add `variant` prop to PerformanceCharts
+
+**Complexity:** LOW | **Dependencies:** None
+
+**File:** MODIFY `components/trading/PerformanceCharts.tsx`
+
+1. Add prop: `variant?: 'summary' | 'full'` defaulting to `'full'`
+2. When `variant === 'summary'`: render ONLY the first grid row (Equity Curve + Daily Performance). Skip rows 2-3 entirely.
+3. When `variant === 'summary'`: wrap the `dayOfWeekData`, `timeOfDayData`, `winLossDayData`, `tagBreakdownData` useMemo hooks so they return empty arrays when variant is `'summary'` (avoids unnecessary computation).
+4. When `variant === 'full'` (default): render ALL 7 chart sections unchanged. Backward compatible.
+
+**Acceptance criteria:**
+- [ ] `<PerformanceCharts trades={t} metric="$" variant="summary" />` renders only Equity Curve and Daily Performance
+- [ ] `<PerformanceCharts trades={t} metric="$" />` renders all 7 charts (backward compatible)
+- [ ] No computation of dayOfWeek/timeOfDay/winLoss/tag data when variant is `'summary'`
+- [ ] `npm run lint && npx tsc --noEmit` passes
+
+---
+
+### Step 2: Create WeeklyCalendar component
+
+**Complexity:** MEDIUM | **Dependencies:** None (can parallel with Step 1)
+
+**File:** CREATE `components/trading/WeeklyCalendar.tsx`
+
+A `'use client'` component showing the current week as 7 bordered day cards in a horizontal row.
+
+**Props:** `{ trades: Trade[] }`
+
+**Imports:**
+- `date-fns`: `startOfWeek`, `endOfWeek`, `eachDayOfInterval`, `format`, `isSameDay`, `isToday`
+- `@/lib/trading-utils`: `formatCurrency`
+- `@/lib/types`: `Trade`
+
+**Logic:**
+- Compute `weekDays`: `eachDayOfInterval({ start: startOfWeek(new Date(), { weekStartsOn: 1 }), end: endOfWeek(new Date(), { weekStartsOn: 1 }) })` — gives Mon-Sun for current week
+- Compute `dailyStats`: group trades by `format(tradeDate, 'yyyy-MM-dd')`, sum P&L, count trades per day
+
+**Render:**
+```tsx
+<div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
+  <h3 className="mb-4 text-lg font-semibold text-white">
+    {format(weekDays[0], 'MMM yyyy')}
+  </h3>
+  <div className="grid grid-cols-7 gap-3">
+    {weekDays.map(day => <DayCard />)}
+  </div>
+</div>
+```
+
+Each day card:
+```tsx
+<div className={`rounded-xl border p-4 flex flex-col gap-1 min-h-[120px] ${
+  isToday(day) ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-white/10 bg-white/[0.02]'
+}`}>
+  <div className="flex items-center justify-between">
+    <span className="text-2xl font-bold text-white">{format(day, 'd')}</span>
+    <span className="text-xs font-medium text-zinc-500">{format(day, 'EEE')}</span>
+  </div>
+  <div className="mt-auto">
+    <span className={`text-sm font-bold ${pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+      {formatCurrency(pnl)}
+    </span>
+    <span className="text-[10px] text-zinc-500 block">{count} trades</span>
+  </div>
+</div>
+```
+
+**Design reference:** Match the screenshot layout — large day number top-left, day name top-right, P&L and trade count at bottom. Each card is a rounded bordered box. Days with $0 P&L and 0 trades show "$0" and "0 trades" in muted text.
+
+**Acceptance criteria:**
+- [ ] Shows exactly 7 day cards (Mon through Sun of current week)
+- [ ] Today's card has emerald border highlight
+- [ ] Days with trades show green/red P&L and trade count
+- [ ] Days without trades show $0 and 0 trades in muted text
+- [ ] Responsive: reduce padding on mobile
+- [ ] TypeScript strict — no `any` types
+- [ ] `npm run lint && npx tsc --noEmit` passes
+
+---
+
+### Step 3: Create PerformanceStatsTable component
+
+**Complexity:** HIGH | **Dependencies:** None (can parallel with Steps 1-2)
+
+**File:** CREATE `components/trading/PerformanceStatsTable.tsx`
+
+A `'use client'` component displaying a comprehensive 3-column stats table.
+
+**Props:** `{ trades: Trade[]; onTradeClick: (trade: Trade) => void }`
+
+**Imports:**
+- `react`: `useMemo`
+- `@/lib/types`: `Trade`
+- `@/lib/trading-utils`: `formatCurrency`
+- `lucide-react`: `ArrowUpRight`, `Info`
+
+**Stats to compute (single useMemo):**
+- Total Gain/Loss, Largest Gain (with trade ref), Largest Loss (with trade ref)
+- Average Daily Gain/Loss, Average Daily Volume, Average Per-Share Gain/Loss
+- Average Trade Gain/Loss, Average Winning Trade, Average Losing Trade
+- Total Number of Trades, Number of Winning Trades (with %), Number of Losing Trades (with %)
+- Average Hold Time (scratch trades), Average Hold Time (winning trades), Average Hold Time (losing trades)
+- Number of Scratch Trades, Max Consecutive Wins (with trade ref), Max Consecutive Losses (with trade ref)
+- Trade P&L Standard Deviation, System Quality Number (SQN), Probability of Random Chance
+- Kelly Percentage, K-Ratio, Profit Factor
+- Total Commissions, Total Fees
+- Average Position MAE, Average Position MFE
+
+**Hold time formatting:** Convert minutes to human-readable ("about 4 hours", "0" for zero).
+
+**erf helper** (needed for Probability of Random Chance):
+```typescript
+function erf(x: number): number {
+  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741;
+  const a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+  const sign = x < 0 ? -1 : 1;
+  const t = 1 / (1 + p * Math.abs(x));
+  const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+  return sign * y;
+}
+```
+
+**Clickable stats:** Largest Gain, Largest Loss, Max Consecutive Wins, Max Consecutive Losses each have an `<ArrowUpRight>` icon button that calls `onTradeClick(trade)`.
+
+**Render:** 10 rows × 3 columns, bordered container:
+```tsx
+<div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
+  <div className="flex items-center gap-2 mb-6">
+    <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Stats</h3>
+    <Info className="h-3.5 w-3.5 text-zinc-600" />
+  </div>
+  <div className="divide-y divide-white/5">
+    {rows.map(row => (
+      <div className="grid grid-cols-3 gap-4 py-3">
+        {row.map(cell => (
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-zinc-500">{cell.label}</span>
+            <div className="flex items-center gap-1">
+              <span className="font-mono text-sm font-medium text-white">{cell.value}</span>
+              {cell.clickTrade && (
+                <button onClick={() => onTradeClick(cell.clickTrade)} className="text-emerald-500 hover:text-emerald-400">
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    ))}
+  </div>
+</div>
+```
+
+**Empty state:** When no trades, show "Import trades to see statistics" centered.
+
+**Design reference:** Match the screenshot — 3-column grid with labels left-aligned and values right-aligned per cell, thin dividers between rows.
+
+**Acceptance criteria:**
+- [ ] 10 rows × 3 columns render correctly
+- [ ] All stat values compute without NaN or errors on empty/partial data
+- [ ] Clickable arrows on Largest Gain/Loss and Max Consecutive Wins/Losses
+- [ ] Empty cells in last two rows render as blank space
+- [ ] Handles 0 trades gracefully (empty state)
+- [ ] No `any` types
+- [ ] `npm run lint && npx tsc --noEmit` passes
+
+---
+
+### Step 4: Modify DashboardTab — title, summary charts, add calendars
+
+**Complexity:** MEDIUM | **Dependencies:** Steps 1, 2
+
+**File:** MODIFY `components/trading/DashboardTab.tsx`
+
+1. **Add title row with border:** Add at the top of the dashboard content:
+   ```tsx
+   <div className="flex items-center justify-between border-b border-white/10 pb-4">
+     <h2 className="text-2xl font-bold">Dashboard</h2>
+     <div><!-- move existing Net/Gross toggle here --></div>
+   </div>
+   ```
+   Remove the standalone Net/Gross toggle div and place it inside the title row (right-aligned).
+
+2. **Use summary variant on PerformanceCharts:** Change:
+   ```tsx
+   <PerformanceCharts trades={filteredTrades} metric={performanceMetric} pnlMode={pnlMode} />
+   ```
+   to:
+   ```tsx
+   <PerformanceCharts trades={filteredTrades} metric={performanceMetric} pnlMode={pnlMode} variant="summary" />
+   ```
+
+3. **Add WeeklyCalendar:** After PerformanceCharts, before Recent Trades:
+   ```tsx
+   <WeeklyCalendar trades={filteredTrades} />
+   ```
+
+4. **Add TradingCalendar:** After WeeklyCalendar, before Recent Trades:
+   ```tsx
+   <TradingCalendar trades={filteredTrades} />
+   ```
+
+5. **Add imports:**
+   ```tsx
+   import WeeklyCalendar from '@/components/trading/WeeklyCalendar';
+   import TradingCalendar from '@/components/trading/TradingCalendar';
+   ```
+
+**Final section order in DashboardTab:**
+1. Title row (Dashboard + Net/Gross toggle)
+2. Stat cards (Total PnL, Win Rate, Profit Factor, etc.)
+3. Equity Curve + Daily Performance (summary variant)
+4. Weekly Calendar (new)
+5. Monthly Calendar (moved from Performance)
+6. Recent Trades table
+
+**Acceptance criteria:**
+- [ ] Dashboard has "Dashboard" title with `border-b border-white/10 pb-4`
+- [ ] Net/Gross toggle is in the title row (right-aligned)
+- [ ] Only Equity Curve and Daily Performance charts render
+- [ ] WeeklyCalendar appears after charts
+- [ ] TradingCalendar (monthly) appears after weekly calendar
+- [ ] Recent Trades section still at bottom
+- [ ] Stat cards unchanged
+- [ ] `npm run lint && npx tsc --noEmit` passes
+
+---
+
+### Step 5: Modify PerformanceTab — remove calendar, add stats table, title border
+
+**Complexity:** LOW | **Dependencies:** Steps 3, 8 (page.tsx prop wiring)
+
+**File:** MODIFY `components/trading/PerformanceTab.tsx`
+
+1. **Update title styling:** Add border to the title container:
+   ```tsx
+   <div className="flex items-center justify-between border-b border-white/10 pb-4">
+     <h2 className="text-2xl font-bold">Performance Analytics</h2>
+   ```
+
+2. **Remove TradingCalendar:** Delete `<TradingCalendar trades={filteredTrades} />` and remove the import.
+
+3. **Add PerformanceStatsTable:** After `<PerformanceCharts>` and before Symbol Distribution / Risk Summary grid:
+   ```tsx
+   <PerformanceStatsTable trades={filteredTrades} onTradeClick={onTradeClick} />
+   ```
+
+4. **Update props interface — add `onTradeClick`:**
+   ```tsx
+   interface PerformanceTabProps {
+     filteredTrades: Trade[];
+     performanceMetric: '$' | 'R';
+     onMetricChange: (metric: '$' | 'R') => void;
+     onTradeClick: (trade: Trade) => void;  // NEW
+   }
+   ```
+
+5. **Add import:**
+   ```tsx
+   import PerformanceStatsTable from '@/components/trading/PerformanceStatsTable';
+   ```
+
+**Acceptance criteria:**
+- [ ] TradingCalendar no longer renders in PerformanceTab
+- [ ] PerformanceStatsTable renders between charts and Symbol/Risk cards
+- [ ] Title has `border-b border-white/10 pb-4`
+- [ ] $/R metric toggle still works
+- [ ] `onTradeClick` prop wired through
+- [ ] `npm run lint && npx tsc --noEmit` passes
+
+---
+
+### Step 6: Move date range filter to Toolbar
+
+**Complexity:** LOW | **Dependencies:** None (can parallel with Steps 1-5)
+
+**File:** MODIFY `components/trading/Toolbar.tsx`
+
+1. **Update ToolbarProps** — add:
+   ```typescript
+   startDate: string;
+   endDate: string;
+   onStartDateChange: (value: string) => void;
+   onEndDateChange: (value: string) => void;
+   ```
+
+2. **Add date range inputs** after the filter preset buttons, before the right-side controls. Add a divider then the date inputs:
+   ```tsx
+   <div className="mx-1 hidden h-4 w-px bg-white/10 sm:block" />
+   <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1">
+     <CalendarIcon className="h-3.5 w-3.5 text-zinc-500" />
+     <input
+       type="date"
+       value={startDate}
+       onChange={(e) => onStartDateChange(e.target.value)}
+       className="bg-transparent text-[10px] text-zinc-400 focus:outline-none"
+       title="Start date"
+     />
+     <span className="text-[10px] text-zinc-600">—</span>
+     <input
+       type="date"
+       value={endDate}
+       onChange={(e) => onEndDateChange(e.target.value)}
+       className="bg-transparent text-[10px] text-zinc-400 focus:outline-none"
+       title="End date"
+     />
+   </div>
+   ```
+
+3. **Add import:** `Calendar as CalendarIcon` from `lucide-react` (existing imports: `Plus, Trash2, User` — add `Calendar`).
+
+4. **Mobile:** Hide date range on mobile (same pattern as storage mode label): wrap in `{!isMobile && ...}`.
+
+**Acceptance criteria:**
+- [ ] Date range inputs appear in Toolbar after filter preset buttons
+- [ ] Changing dates filters trades across ALL tabs
+- [ ] Hidden on mobile
+- [ ] Visual style matches existing toolbar (compact, dark)
+- [ ] `npm run lint && npx tsc --noEmit` passes
+
+---
+
+### Step 7: Remove date range from TradesTab
+
+**Complexity:** LOW | **Dependencies:** Step 6
+
+**File:** MODIFY `components/trading/TradesTab.tsx`
+
+1. **Remove from props interface:** Delete `startDate`, `endDate`, `onStartDateChange`, `onEndDateChange`
+2. **Remove from destructured props** in function signature
+3. **Remove the "Date Range" grid column** — delete the entire `<div className="space-y-4">` containing "Date Range" heading and the two date inputs
+4. **Simplify the grid:** Since only tag filter remains, remove the `grid grid-cols-1 md:grid-cols-2` wrapper or keep as single column
+5. **Remove `Calendar as CalendarIcon` import** from lucide-react (only `X` is still used)
+6. **Update title styling** — add `border-b border-white/10 pb-4` to the title's flex container:
+   ```tsx
+   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+     <h2 className="text-2xl font-bold">Trades Management</h2>
+   ```
+
+**Acceptance criteria:**
+- [ ] No date range inputs in TradesTab
+- [ ] Tag filter section still works
+- [ ] Title has bottom border separator
+- [ ] No TypeScript errors from removed props
+- [ ] `npm run lint && npx tsc --noEmit` passes
+
+---
+
+### Step 8: Title border for JournalTab
+
+**Complexity:** LOW | **Dependencies:** None
+
+**File:** MODIFY `components/trading/JournalTab.tsx`
+
+Add `border-b border-white/10 pb-4` to the title row (line ~157):
+```tsx
+<div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
+  <div className="flex items-center gap-4">
+    <h2 className="text-2xl font-bold">Trading Journal</h2>
+```
+
+**Acceptance criteria:**
+- [ ] Journal title has bottom border separator matching other tabs
+- [ ] `npm run lint && npx tsc --noEmit` passes
+
+---
+
+### Step 9: Wire all new/removed props in page.tsx
+
+**Complexity:** LOW | **Dependencies:** Steps 4, 5, 6, 7 (do this LAST)
+
+**File:** MODIFY `app/page.tsx`
+
+1. **Add date props to Toolbar:**
+   ```tsx
+   <Toolbar
+     ...existing props...
+     startDate={startDate}
+     endDate={endDate}
+     onStartDateChange={setStartDate}
+     onEndDateChange={setEndDate}
+   />
+   ```
+
+2. **Remove date props from TradesTab:** Delete `startDate`, `endDate`, `onStartDateChange`, `onEndDateChange` from the TradesTab JSX.
+
+3. **Add onTradeClick to PerformanceTab:**
+   ```tsx
+   <PerformanceTab
+     filteredTrades={filteredTrades}
+     performanceMetric={performanceMetric}
+     onMetricChange={setPerformanceMetric}
+     onTradeClick={(trade) => setSelectedTradeId(trade.id)}
+   />
+   ```
+
+**Acceptance criteria:**
+- [ ] Toolbar receives and renders date range inputs
+- [ ] TradesTab no longer receives date range props (no TS errors)
+- [ ] PerformanceTab receives onTradeClick
+- [ ] Date filtering works globally from Toolbar across all tabs
+- [ ] `npm run lint && npx tsc --noEmit` passes
+
+---
+
+## Files Summary
+
+| File | Action | Complexity |
+|------|--------|------------|
+| `components/trading/PerformanceCharts.tsx` | MODIFY (add variant prop) | LOW |
+| `components/trading/WeeklyCalendar.tsx` | CREATE | MEDIUM |
+| `components/trading/PerformanceStatsTable.tsx` | CREATE | HIGH |
+| `components/trading/DashboardTab.tsx` | MODIFY (title, summary charts, calendars) | MEDIUM |
+| `components/trading/PerformanceTab.tsx` | MODIFY (remove calendar, add stats, title) | LOW |
+| `components/trading/Toolbar.tsx` | MODIFY (add date range) | LOW |
+| `components/trading/TradesTab.tsx` | MODIFY (remove date range, title border) | LOW |
+| `components/trading/JournalTab.tsx` | MODIFY (title border) | LOW |
+| `app/page.tsx` | MODIFY (prop wiring) | LOW |
+
+**No changes to:** `TradingCalendar.tsx` (just moving where it's rendered), `useTrades` hook (filter state already exists), `lib/types.ts`, any API routes, any server code.
+
+---
+
+## Testing Requirements
+
+After all changes:
+
+```bash
+npm run lint && npx tsc --noEmit
+```
+
+Visual verification:
+- [ ] Dashboard shows: title + Net/Gross toggle, stat cards, Equity Curve + Daily Performance ONLY, weekly calendar, monthly calendar, recent trades
+- [ ] Performance shows: title with border + $/R toggle, ALL 7 charts, stats table (30 cells), Symbol Distribution, Risk Summary
+- [ ] Clicking ArrowUpRight on stats opens TradeDetailSheet for that trade
+- [ ] Trades tab: title with border, tag filters only (no date range), trade table
+- [ ] Journal tab: title with border
+- [ ] Date range in Toolbar filters ALL tabs
+- [ ] Weekly calendar shows current Mon-Sun, today highlighted in emerald
+- [ ] All tabs have consistent title styling with `border-b border-white/10 pb-4`
+- [ ] Mobile: date range hidden in toolbar, weekly calendar readable
+
+---
+
+## Rollback Plan
+
+All changes are client-side components. Revert via git:
+```bash
+git checkout HEAD -- components/trading/PerformanceCharts.tsx components/trading/DashboardTab.tsx components/trading/PerformanceTab.tsx components/trading/Toolbar.tsx components/trading/TradesTab.tsx components/trading/JournalTab.tsx app/page.tsx
+git rm components/trading/WeeklyCalendar.tsx components/trading/PerformanceStatsTable.tsx
+```
