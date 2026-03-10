@@ -149,4 +149,4 @@ Use this when the user wants to plan changes for opencode to execute.
 - Google OAuth login via NextAuth — flag any changes here as elevated risk
 - On-site session auth uses manual JWT (jose, HS256, httpOnly cookie) — flag any changes here as elevated risk, do not suggest NextAuth for this layer
 - When comparing current state to desired state, always specify what is missing, what exists but is wrong, and what exists and is correct.
-- Save all generated spec files to HANDOFF.md in the project root.
+- Save all generated spec files to HANDOFF.md in the project root & mark tasks that are complete.

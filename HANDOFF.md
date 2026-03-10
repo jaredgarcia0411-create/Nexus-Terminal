@@ -1,379 +1,467 @@
 # Nexus Terminal — HANDOFF.md
 
 > Generated: 2026-03-10 | Agent: nexus-architect
-> Status: IMPLEMENTED — awaiting visual verification
+> Status: PENDING REVIEW — do not execute until approved
 
 ---
 
-## Sprint 8 Summary (Complete)
-
-The Dilution Research Pack (AskEdgar Integration) is fully implemented. All 11 steps are done:
-
-- JRV-081: Dilution Research Types
-- JRV-082: `api_data` Source Type
-- JRV-080: AskEdgar API Client (`lib/askedgar-client.ts`)
-- JRV-084: Earnings Pack Removed, Dilution Research Pack Added (`lib/jarvis-source-packs.ts`)
-- JRV-083: AskEdgar Data Aggregator (`lib/askedgar-aggregator.ts`)
-- JRV-085: Dilution Orchestration Prompt
-- JRV-086: Route Handler (dilution-research mode in `/api/jarvis`)
-- JRV-087: Dilution Report Renderer (`components/trading/JarvisDilutionReport.tsx`)
-- JRV-088: Renderer Wired into `JarvisStructuredResponse`
-- JRV-089: JarvisTab UI (cards, ticker input)
-- JRV-090: Tests
-
-The one remaining Sprint 8 bug — the submit button hardcoding `'assistant'` mode — is resolved by Change 4 below.
-
----
-
-## Build Spec — UI Layout Overhaul
+## Sprint 9: Jarvis RAG-to-Pipeline Rewrite
 
 ### Objective
 
-Simplify the JarvisTab interface, fix the submit-path mode bug, correct calendar day ordering, and normalize $0 PnL color treatment across all components.
+Replace the entire Jarvis RAG pipeline (vector embeddings, knowledge chunks, multi-step orchestration, web scraping) with 3 deterministic pipelines + 1 chat interface + shared DB context layer. The JARVIS.md system prompt lives as a TS const in `lib/jarvis/prompts.ts`.
 
----
+### Architecture Summary
 
-### Change 1: Remove Daily Summary Card from JarvisTab
+```
+3 pipelines + 1 chat interface + 1 shared DB context layer
 
-- **File:** `components/trading/JarvisTab.tsx`
-- **Action:** MODIFY
-- **Complexity:** LOW
+Pipeline 1: Research Report (on demand)
+  User inputs ticker → fetch AskEdgar API → LLM call with template → store report → render
 
-**Steps:**
+Pipeline 2: Macro Summary (daily cron)
+  Cron fires → fetch 3-5 static URLs → LLM call with macro prompt → store summary → inject into chat
 
-1. In the `cards` array (starts at line 258), delete the object with `mode: 'daily-summary'` (lines 259-264).
-2. On line 336, change `lg:grid-cols-5` to `lg:grid-cols-4`. (This will be reduced further in Change 2.)
-3. If the `Newspaper` icon is no longer referenced anywhere in the file after this removal, remove it from the lucide-react import on line 5. Note: `getPackIcon` references `Newspaper` — check if any source pack still uses `icon: 'Newspaper'`. Currently none do (macro-daily uses `'Globe'`, dilution-research uses `'Search'`), so `Newspaper` can be removed from `getPackIcon` and from the import.
+Pipeline 3: Trade Analysis (on demand or post-import)
+  Query trades table → LLM call with analysis template → extract insights to memory → surface in UI
 
-**Acceptance Criteria:**
-- [x] No "Daily Summary" card appears in the Jarvis UI
-- [x] No unused `Newspaper` import remains
-- [x] `npm run lint` passes
-- [x] `npx tsc --noEmit` passes
-
----
-
-### Change 2: Merge "Analyze Trades" and "Ask Jarvis" into Single Card
-
-- **File:** `components/trading/JarvisTab.tsx`
-- **Action:** MODIFY
-- **Complexity:** LOW
-
-**Steps:**
-
-1. In the `cards` array, delete the object with `mode: 'trade-analysis'` (lines 265-270 before Change 1; adjust for prior deletion).
-2. Keep the `assistant` card as "Ask Jarvis". The API already receives all trades for every mode via the `trades` field in the request payload, so no backend changes are needed.
-3. Change the grid class (already modified in Change 1 to `lg:grid-cols-4`) to `lg:grid-cols-3`.
-4. If `LineChart` icon is no longer referenced anywhere in the file, remove it from the lucide-react import on line 5.
-
-After Changes 1 and 2, the `cards` array should contain exactly 3 entries:
-
-```ts
-const cards: Array<{ mode: JarvisMode; label: string; description: string; icon: typeof Bot }> = [
-  {
-    mode: 'assistant',
-    label: 'Ask Jarvis',
-    description: 'Ask for help, workflows, and market context with optional website scraping.',
-    icon: Sparkles,
-  },
-  {
-    mode: 'macro-summary',
-    label: 'Macro Summary',
-    description: 'Get a macro market overview across US, EU, Asia, and global markets.',
-    icon: Globe,
-  },
-  {
-    mode: 'dilution-research',
-    label: 'Dilution Research',
-    description: 'SEC dilution risk report via AskEdgar.',
-    icon: Search,
-  },
-];
+Chat Interface:
+  Load context (trades + memory + macro) → build prompt → call LLM → save conversation → return
+  Prefix dispatch: /research TICKER → Pipeline 1, /analyze → Pipeline 3, else → chat
 ```
 
-**Acceptance Criteria:**
-- [x] Only 3 cards render: Ask Jarvis, Macro Summary, Dilution Research
-- [x] Grid uses `lg:grid-cols-3`
-- [x] No unused `LineChart` import remains
-- [x] `npm run lint` passes
-- [x] `npx tsc --noEmit` passes
-
 ---
 
-### Change 3: Remove Manual URL Input
+## Phase 1: Schema Migration
 
-- **File:** `components/trading/JarvisTab.tsx`
-- **Action:** MODIFY
-- **Complexity:** MEDIUM — significant code removal
+**Objective:** Add 4 new tables. Do NOT drop old tables yet — they coexist until Phase 5.
 
-**What to remove:**
+**File:** `lib/db/schema.ts`
 
-1. **Types and constants:**
-   - Delete `const MAX_SCRAPE_URLS = 5;` (line 14)
-   - Delete `type JarvisInputMode = 'manual' | 'pack';` (line 16)
-   - Delete `type UrlEntry` (lines 18-23)
+### New Tables
 
-2. **Top-level helper functions:**
-   - Delete `toUrlEntries()` (lines 32-49)
-   - Delete `toLineStatus()` (lines 51-58)
-   - Delete `isScrapeUrlValid()` (lines 61-68)
+```typescript
+// lib/db/schema.ts additions
 
-3. **State variables — delete these `useState`/`useRef` calls:**
-   - `urlLines` (line 78)
-   - `inputMode` (line 79)
-   - `rememberedUrls` (line 81)
+export const agentMemory = pgTable('agent_memory', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  category: text('category').notNull(),
+  // categories: 'trade_insight' | 'user_preference' | 'strategy_note' | 'macro_fact'
+  key: text('key').notNull(),
+  value: text('value').notNull(),
+  valueJson: jsonb('value_json'),      // optional structured data
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+  expiresAt: timestamp('expires_at'),  // null = never expires
+}, (table) => ({
+  uniqueUserCategoryKey: unique().on(table.userId, table.category, table.key),
+  userCategoryIdx: index('agent_memory_user_category_idx').on(table.userId, table.category),
+}));
 
-4. **Memos — delete these `useMemo` calls:**
-   - `urlEntries` (lines 89-92)
-   - `urlStatusByLine` (line 94)
-   - `invalidUrlEntries` (lines 96-99)
-   - `validUniqueUrls` (lines 101-112)
-   - `urlsForRequest` (lines 114-117)
-   - `ignoredDuplicateCount` (lines 119-122)
-   - `overflowCount` (line 124)
-   - `shouldRememberUrlInputs` (line 126)
-   - `rememberedUrlStatus` (lines 128-135)
-   - `blockedRememberedCount` (line 137)
+export const researchReports = pgTable('research_reports', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  ticker: text('ticker').notNull(),
+  status: text('status').notNull().default('pending'), // pending, complete, failed
+  rawData: jsonb('raw_data'),          // AskEdgar API responses
+  reportJson: jsonb('report_json'),    // structured LLM output
+  modelUsed: text('model_used'),
+  errorMessage: text('error_message'),
+  generatedAt: timestamp('generated_at').defaultNow(),
+}, (table) => ({
+  userTickerIdx: index('research_reports_user_ticker_idx').on(table.userId, table.ticker, table.generatedAt),
+}));
 
-5. **The `useEffect` that fetches remembered URLs** (lines 139-154) — delete entirely.
+export const macroSummaries = pgTable('macro_summaries', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  summaryJson: jsonb('summary_json').notNull(), // JarvisMacroSummaryOutput structure
+  sourcesJson: jsonb('sources_json'),           // array of URLs fetched
+  modelUsed: text('model_used'),
+  generatedAt: timestamp('generated_at').defaultNow(),
+}, (table) => ({
+  generatedAtIdx: index('macro_summaries_generated_at_idx').on(table.generatedAt),
+}));
 
-6. **Helper functions — delete:**
-   - `setLineValue()` (lines 156-158)
-   - `addLine()` (lines 160-162)
-   - `removeLine()` (lines 164-169)
-   - `applyRememberedUrl()` (lines 171-187)
-   - `selectManualMode()` (lines 252-256)
-
-7. **In `runJarvis()`:**
-   - Line 201: Remove the `urls` field entirely from the request body. The request should not include `urls` at all.
-   - Line 202: Change `sourcePackId: inputMode === 'pack' ? selectedPackId : undefined,` to `sourcePackId: selectedPackId || undefined,`
-   - Lines 213-222: Delete the `shouldRememberUrlInputs` block that merges URLs into `rememberedUrls`.
-
-8. **In `selectPack()`:**
-   - Line 243: Remove `setInputMode('pack');` (inputMode no longer exists)
-   - Line 248: Remove `setUrlLines(['']);` (urlLines no longer exists)
-
-9. **JSX — remove the right column's manual URL UI:**
-   - Delete the "Source Input" label (line 381)
-   - Delete the Manual URLs / Source Pack toggle buttons (lines 383-398)
-   - Delete the entire manual URL input branch (`inputMode === 'manual'` conditional, lines 401-469)
-   - Keep only the source pack selector content (lines 471-496), but remove the `inputMode === 'pack'` conditional wrapper — always show it
-   - Delete the "Remembered URLs" section (lines 500-518)
-
-10. **Imports — remove if no longer used:**
-    - `Plus` from lucide-react (line 5)
-    - `X` from lucide-react (line 5)
-    - `isUrlAllowed` from `@/lib/jarvis-allowlist` (line 8)
-
-**What to keep:**
-- `selectedPackId` state
-- `selectedPack` memo
-- `selectPack()` function (minus the inputMode/urlLines lines)
-- The source pack selector buttons and prompt template display
-- `getPackIcon()` function
-
-**Acceptance Criteria:**
-- [x] No manual URL input UI renders
-- [x] No "Remembered URLs" section renders
-- [x] No "Manual URLs" / "Source Pack" toggle renders
-- [x] Source pack selector shows directly without a toggle
-- [x] `isUrlAllowed` import is removed
-- [x] `Plus` and `X` icon imports are removed (verify they are not used elsewhere in the file first)
-- [x] `npm run lint` passes
-- [x] `npx tsc --noEmit` passes
-
----
-
-### Change 4: Mode Cards Preload Prompts Instead of Auto-Firing
-
-- **File:** `components/trading/JarvisTab.tsx`
-- **Action:** MODIFY
-- **Complexity:** LOW
-
-This change also fixes the Sprint 8 remaining bug where the submit button hardcodes `'assistant'` mode.
-
-**Steps:**
-
-1. **Replace `handleCardClick()`** (lines 291-298). New behavior — clicking a card sets the mode and preloads the prompt, but does NOT call `runJarvis()`:
-
-```ts
-const handleCardClick = (nextMode: JarvisMode) => {
-  setMode(nextMode);
-
-  if (nextMode === 'macro-summary') {
-    selectPack('macro-daily');
-  } else if (nextMode === 'dilution-research') {
-    selectPack('dilution-research');
-    dilutionTickerInputRef.current?.focus();
-  } else {
-    // 'assistant' — clear pack, clear prompt
-    setSelectedPackId('');
-    setPrompt('');
-  }
-};
+export const jarvisConversations = pgTable('jarvis_conversations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  sessionId: text('session_id').notNull(), // group messages into sessions
+  role: text('role').notNull(),            // 'user' | 'assistant' | 'system'
+  content: text('content').notNull(),
+  mode: text('mode'),                      // 'chat' | 'research' | 'trade-analysis' | 'macro'
+  contextSnapshot: jsonb('context_snapshot'), // only on first message per session, or null
+  createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+  userSessionIdx: index('jarvis_conversations_user_session_idx').on(table.userId, table.sessionId, table.createdAt),
+}));
 ```
 
-The card-to-pack mapping:
+### Steps
 
-| Card Mode | Source Pack ID | Behavior |
-|-----------|---------------|----------|
-| `assistant` | none | Clears pack selection and prompt |
-| `macro-summary` | `macro-daily` | Loads `macro-daily` pack prompt template |
-| `dilution-research` | `dilution-research` | Loads `dilution-research` pack prompt template, focuses ticker input |
-
-2. **Fix the "Run Jarvis" button** (line 524). Change:
-```ts
-onClick={() => runJarvis('assistant')}
-```
-to:
-```ts
-onClick={() => runJarvis(mode)}
-```
-This uses the current `mode` state, which was set when the user clicked a card.
-
-3. **Verify** that `runJarvis()` still calls `setMode(nextMode)` on line 190. This is fine — it will set it to the same value that `handleCardClick` already set.
-
-**Acceptance Criteria:**
-- [x] Clicking "Ask Jarvis" card sets mode to `assistant`, clears prompt, clears pack
-- [x] Clicking "Macro Summary" card sets mode to `macro-summary`, loads macro-daily prompt template
-- [x] Clicking "Dilution Research" card sets mode to `dilution-research`, loads dilution-research prompt template, focuses ticker input
-- [x] No card auto-fires `runJarvis()` on click
-- [x] "Run Jarvis" button fires `runJarvis(mode)` using current mode state
-- [x] Dilution research requests include `ticker` field
-- [x] `npm run lint` passes
-- [x] `npx tsc --noEmit` passes
+| Step | Action | Detail |
+|------|--------|--------|
+| 1.1 | MODIFY `lib/db/schema.ts` | Add the 4 table definitions above |
+| 1.2 | RUN `npm run db:generate` | Generate migration SQL |
+| 1.3 | RUN `npm run db:migrate` | Apply migration to Neon |
+| 1.4 | VERIFY | Confirm 4 new tables exist alongside old tables |
 
 ---
 
-### Change 5: Weekly Calendar — Sunday on Left
+## Phase 2: Core Library Layer
 
-- **File:** `components/trading/WeeklyCalendar.tsx`
-- **Action:** MODIFY
-- **Complexity:** LOW
+**Objective:** Build the new `lib/jarvis/` module directory with all service files.
 
-**Steps:**
+### File Structure
 
-1. Line 20: Change `startOfWeek(new Date(), { weekStartsOn: 1 })` to `startOfWeek(new Date(), { weekStartsOn: 0 })`
-2. Line 21: Change `endOfWeek(start, { weekStartsOn: 1 })` to `endOfWeek(start, { weekStartsOn: 0 })`
-
-This makes Sunday the leftmost column, consistent with `TradingCalendar.tsx` which uses Sunday-first by default (date-fns default).
-
-**Acceptance Criteria:**
-- [x] WeeklyCalendar renders Sunday as the first (leftmost) day
-- [x] Matches TradingCalendar day ordering
-- [x] `npm run lint` passes
-- [x] `npx tsc --noEmit` passes
-
----
-
-### Change 6: $0 Values Use Muted Color Instead of Green
-
-- **Files:** `lib/trading-utils.ts`, `components/trading/DashboardTab.tsx`, `components/trading/WeeklyCalendar.tsx`, `components/trading/TradingCalendar.tsx`, `components/trading/JournalTab.tsx`, `components/trading/PerformanceCharts.tsx`
-- **Action:** MODIFY
-- **Complexity:** LOW
-
-**Step 1: Add `getPnLHex` to `lib/trading-utils.ts`**
-
-Add after the existing `getPnLColor` function (after line 31):
-
-```ts
-export const getPnLHex = (value: number) => {
-  if (value > 0) return '#10b981';
-  if (value < 0) return '#f43f5e';
-  return '#71717a';
-};
+```
+lib/jarvis/
+  types.ts              # JarvisMode, request/response types, memory categories, dilution types
+  client.ts             # Single LLM call wrapper (circuit breaker, retry, token tracking)
+  prompts.ts            # JARVIS.md system prompt as const + all per-pipeline prompt templates
+  memory.ts             # agent_memory CRUD (read, write, expire, extract insights)
+  context.ts            # Build context object from DB (trades, memory, macro) for each request
+  trade-analysis.ts     # Trade summarization logic (moved from current route.ts)
+  askedgar.ts           # AskEdgar API client + aggregator (merged from 2 existing files)
+  scrape-lite.ts        # Simple URL fetch + text extraction (no chunking, no embeddings)
+  rate-limit.ts         # Per-user rate limiting (moved from lib/jarvis-rate-limit.ts)
+  circuit-breaker.ts    # LLM circuit breaker (moved from lib/jarvis-circuit-breaker.ts)
+  token-tracking.ts     # Request logging (moved from lib/jarvis-token-tracking.ts)
+  admin.ts              # Admin key auth (moved from lib/jarvis-admin.ts)
 ```
 
-**Step 2: Replace `>= 0` ternaries in each file**
+### Steps
 
-Each location below uses `>= 0` which colors $0 as green. Replace with `getPnLColor()` or `getPnLHex()` which returns muted zinc-400 for zero.
+| Step | Action | File | Detail |
+|------|--------|------|--------|
+| 2.1 | CREATE | `lib/jarvis/types.ts` | Define JarvisMode (`'chat' \| 'research' \| 'trade-analysis' \| 'macro'`), request/response interfaces, memory categories. Carry forward dilution report types from current `lib/jarvis-types.ts` |
+| 2.2 | CREATE | `lib/jarvis/client.ts` | Single `callJarvis(systemPrompt, userMessage, temperature?)` function using OpenAI SDK pointed at NVIDIA/DeepSeek. Integrate circuit breaker. This is the ONLY file that touches the LLM — swap models by changing one file |
+| 2.3 | CREATE | `lib/jarvis/prompts.ts` | Export `JARVIS_SYSTEM_PROMPT` const string (the full JARVIS.md identity/scope/constraints). Export per-pipeline template functions: `buildTradeAnalysisPrompt(context)`, `buildMacroPrompt(context)`, `buildResearchPrompt(context)`, `buildChatPrompt(context)`. Each template injects a `<context>` JSON block containing: `user_trades` (last 30 days), `macro_summary` (today's), `memory` (relevant rows), `report_data` (if applicable) |
+| 2.4 | CREATE | `lib/jarvis/memory.ts` | CRUD: `readMemory(userId, category?)`, `writeMemory(userId, category, key, value)`, `upsertMemory(userId, category, key, value)`, `deleteExpired()`, `extractTradeInsights(analysisResult)` → writes behavioral patterns to agent_memory with category='trade_insight' |
+| 2.5 | CREATE | `lib/jarvis/context.ts` | `buildContext(userId, mode)`: queries trades (last 30 days), today's macro summary from `macro_summaries`, relevant `agent_memory` rows. Returns typed JSON context block |
+| 2.6 | CREATE | `lib/jarvis/trade-analysis.ts` | Move `summarizeTrades()` and `toModePrompt()` from current `app/api/jarvis/route.ts`. Add insight extraction logic for memory writes |
+| 2.7 | CREATE | `lib/jarvis/askedgar.ts` | Merge `lib/askedgar-client.ts` + `lib/askedgar-aggregator.ts` into single file. Keep `fetchTickerData(ticker)` with `Promise.allSettled` pattern for all 12 endpoints |
+| 2.8 | CREATE | `lib/jarvis/scrape-lite.ts` | Simple `fetchPageText(url): Promise<string>` — fetch HTML, strip tags, return plain text. No chunking, no embeddings, no robots.txt checking. Used only by macro cron |
+| 2.9 | MOVE | `lib/jarvis/rate-limit.ts` | Copy from `lib/jarvis-rate-limit.ts`, update imports |
+| 2.10 | MOVE | `lib/jarvis/circuit-breaker.ts` | Copy from `lib/jarvis-circuit-breaker.ts` |
+| 2.11 | MOVE | `lib/jarvis/token-tracking.ts` | Copy from `lib/jarvis-token-tracking.ts`, update JarvisMode import to new types |
+| 2.12 | MOVE | `lib/jarvis/admin.ts` | Copy from `lib/jarvis-admin.ts` |
 
-| File | Line | Current | Replacement |
-|------|------|---------|-------------|
-| `components/trading/DashboardTab.tsx` | 139 | `stats.totalPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'` | `getPnLColor(stats.totalPnl)` |
-| `components/trading/WeeklyCalendar.tsx` | 78 | `pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'` | `getPnLColor(pnl)` |
-| `components/trading/TradingCalendar.tsx` | 144 | `stats.pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'` | `getPnLColor(stats.pnl)` |
-| `components/trading/TradingCalendar.tsx` | 162 | `week.weeklyPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'` | `getPnLColor(week.weeklyPnl)` |
-| `components/trading/TradingCalendar.tsx` | 214 | `trade.pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'` | `getPnLColor(trade.pnl)` |
-| `components/trading/JournalTab.tsx` | 225 | `day.dailyNetPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'` | `getPnLColor(day.dailyNetPnl)` |
-| `components/trading/JournalTab.tsx` | 250 | `day.dailyNetPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'` | `getPnLColor(day.dailyNetPnl)` |
-| `components/trading/PerformanceCharts.tsx` | 220 | `entry.value >= 0 ? '#10b981' : '#f43f5e'` | `getPnLHex(entry.value)` |
-| `components/trading/PerformanceCharts.tsx` | 243 | `entry.value >= 0 ? '#10b981' : '#f43f5e'` | `getPnLHex(entry.value)` |
-| `components/trading/PerformanceCharts.tsx` | 263 | `entry.value >= 0 ? '#10b981' : '#f43f5e'` | `getPnLHex(entry.value)` |
+### JARVIS.md System Prompt (embedded in prompts.ts)
 
-**Step 3: Add imports**
+```typescript
+export const JARVIS_SYSTEM_PROMPT = `
+# JARVIS — Nexus Terminal AI Layer
 
-Each file needs to import the function from `@/lib/trading-utils`:
+## Identity
+You are Jarvis, the trading intelligence layer for Nexus Terminal.
+You are not a general assistant. You only reason about:
+- Equities, dilution, float, market structure
+- The user's trade history and performance patterns
+- Macro conditions relevant to the user's traded symbols
 
-- `DashboardTab.tsx` — add `getPnLColor` to existing import (already imports `formatCurrency`)
-- `WeeklyCalendar.tsx` — add `getPnLColor` to existing `formatCurrency` import
-- `TradingCalendar.tsx` — add `getPnLColor` to existing import (already imports `formatCurrency`, `formatR`)
-- `JournalTab.tsx` — add `getPnLColor` to existing import (already imports `formatCurrency`)
-- `PerformanceCharts.tsx` — add `getPnLHex` to existing import (already imports `formatCurrency`)
+## Scope Constraints
+- Never give financial advice or price targets
+- Never fabricate data. If a field is missing, say "No data"
+- Always cite which data source a claim comes from
+- Flag when you are reasoning without live data
 
-**Note:** There are additional `>= 0` color ternaries in `TradingCalendar.tsx` (lines 147, 165) for R-values that use `text-emerald-400`/`text-rose-400` (lighter shade). These are intentionally different shades and are NOT covered by `getPnLColor`. Leave them as-is. Similarly, `JournalTab.tsx` line 61 uses hex colors for an SVG sparkline — leave as-is.
+## Context Injected Per Request
+You will receive a JSON block called <context> containing:
+- user_trades: last 30 days of trades (symbol, direction, pnl, r_multiple)
+- macro_summary: today's macro summary if available
+- memory: relevant agent_memory rows for this user
+- report_data: raw API data for research reports (if applicable)
 
-**Acceptance Criteria:**
-- [x] `getPnLHex` function exists in `lib/trading-utils.ts`
-- [x] All 10 locations listed above use `getPnLColor()` or `getPnLHex()` instead of `>= 0` ternaries
-- [x] $0 PnL values render as muted zinc-400 / #71717a instead of green
-- [x] Positive values still render emerald, negative values still render rose
-- [x] `npm run lint` passes
-- [x] `npx tsc --noEmit` passes
+## Output Formats
+
+### Research Report
+Return structured JSON matching ResearchReportSchema.
+Never add fields not in the schema. Mark missing data as null, not "N/A" string.
+
+### Trade Analysis
+Return: strengths[], weaknesses[], patterns[], action_items[]
+Ground every claim in the provided trade data.
+
+### Macro Summary
+Return: headline, key_themes[], risk_flags[], watchlist_notes[]
+Max 300 words. Cite source URLs inline.
+
+### Chat Response
+Conversational. Reference context when relevant.
+If asked about a ticker not in context, say you need to run a research report first.
+
+## Data Sources
+- AskEdgar API: dilution, float, cash need, warrants
+- Macro URLs: [configured in macro cron]
+- Trades DB: injected via context
+- Research reports: stored in DB, injected when relevant
+
+## Memory Rules
+After every trade analysis, extract:
+- New behavioral patterns observed
+- Symbols the user trades frequently
+Write these to agent_memory with category='trade_insight'
+`;
+```
 
 ---
 
-## Files Affected
+## Phase 3: API Routes
 
-| File | Action | Changes | Risk |
-|------|--------|---------|------|
-| `components/trading/JarvisTab.tsx` | MODIFY | Changes 1-4: Remove 2 cards, remove manual URL UI, fix card click + submit mode | MEDIUM — largest change, many deletions |
-| `components/trading/WeeklyCalendar.tsx` | MODIFY | Change 5: weekStartsOn 0; Change 6: getPnLColor | LOW |
-| `components/trading/TradingCalendar.tsx` | MODIFY | Change 6: getPnLColor (3 locations) | LOW |
-| `components/trading/DashboardTab.tsx` | MODIFY | Change 6: getPnLColor (1 location) | LOW |
-| `components/trading/JournalTab.tsx` | MODIFY | Change 6: getPnLColor (2 locations) | LOW |
-| `components/trading/PerformanceCharts.tsx` | MODIFY | Change 6: getPnLHex (3 locations) | LOW |
-| `lib/trading-utils.ts` | MODIFY | Change 6: Add getPnLHex function | LOW |
+**Objective:** Build 4 new API routes replacing the monolithic `/api/jarvis` endpoint.
+
+### Route Structure
+
+```
+app/api/jarvis/
+  chat/route.ts              # POST - conversational endpoint
+  research/route.ts          # POST - generate research report for ticker
+  trade-analysis/route.ts    # POST - analyze user's trades
+  cron/
+    macro-summary/route.ts   # GET - daily macro cron (replaces cron/headlines)
+  admin/
+    stats/route.ts           # GET - admin stats (modify existing)
+    memory/
+      route.ts               # GET/DELETE - agent_memory admin (replace existing)
+```
+
+### Steps
+
+| Step | Action | File | Detail |
+|------|--------|------|--------|
+| 3.1 | CREATE | `app/api/jarvis/chat/route.ts` | POST: `requireUser()`, rate limit check, build context via `buildContext(userId, 'chat')`, check for prefix dispatch (`/research TICKER` → redirect to research endpoint, `/analyze` → redirect to trade-analysis), build prompt via `buildChatPrompt(context)`, call LLM via `callJarvis()`, save user+assistant messages to `jarvis_conversations`, return response. Supports `session_id` in request body for conversation continuity |
+| 3.2 | CREATE | `app/api/jarvis/research/route.ts` | POST: `requireUser()`, validate `ticker` param, check for existing today's report (return cached if found), call `fetchTickerData(ticker)` from askedgar.ts via `Promise.allSettled`, build prompt via `buildResearchPrompt(context)` with raw API data injected, call LLM, save to `research_reports` table (status: complete), return structured report. On LLM failure: save with status: failed + error_message |
+| 3.3 | CREATE | `app/api/jarvis/trade-analysis/route.ts` | POST: `requireUser()`, query trades from DB (last N days, configurable), build analysis prompt via `buildTradeAnalysisPrompt(context)`, call LLM, extract behavioral patterns via `extractTradeInsights()`, write insights to `agent_memory`, return structured response (strengths, weaknesses, patterns, action_items) |
+| 3.4 | CREATE | `app/api/jarvis/cron/macro-summary/route.ts` | GET: validate `CRON_SECRET` bearer token, fetch 3-5 static macro URLs via `fetchPageText()`, build macro prompt via `buildMacroPrompt(context)`, call LLM, save to `macro_summaries` table, return success. Configure URL list as const array in this file or in prompts.ts |
+| 3.5 | MODIFY | `app/api/jarvis/admin/stats/route.ts` | Update to query new tables: agent_memory row counts by category, research_reports count, macro_summaries last generated_at, jarvis_conversations count. Keep existing token tracking stats |
+| 3.6 | CREATE | `app/api/jarvis/admin/memory/route.ts` | GET: list agent_memory rows (filter by userId, category). DELETE: purge by userId or purge all. Requires admin key auth |
 
 ---
 
-## Order of Operations
+## Phase 4: UI Components
 
-1. **Change 6 first** — Add `getPnLHex` to `lib/trading-utils.ts`, then update all 6 component files. This is independent and low risk.
-2. **Change 5** — Fix WeeklyCalendar day ordering. Independent, trivial.
-3. **Changes 1 + 2** — Remove Daily Summary and Analyze Trades cards, reduce grid. Do together since both modify the same `cards` array.
-4. **Change 3** — Remove manual URL input. Largest deletion — do after cards are settled.
-5. **Change 4** — Fix card click behavior and submit button mode. Do last since it depends on the final card set from Changes 1-3.
-6. **Run verification** (see below).
+**Objective:** Replace JarvisTab (full tab) with JarvisPanel (slide-out side panel accessible from any tab).
+
+### UI Architecture
+
+```
+Any tab → click Jarvis icon in sidebar → slide-out panel from right
+
+Panel has 3 sections (internal tabs):
+1. Chat (with injected context) — conversational interface
+2. Research Reports (history + trigger new report)
+3. Daily Macro (latest summary)
+```
+
+### Steps
+
+| Step | Action | File | Detail |
+|------|--------|------|--------|
+| 4.1 | CREATE | `components/trading/JarvisPanel.tsx` | Sheet-based slide-out panel using existing `components/ui/sheet.tsx`. Props: `open: boolean`, `onOpenChange: (open: boolean) => void`, `trades: Trade[]`. Internal tab navigation for Chat / Research / Macro sections. Research section shows saved reports from `research_reports` table + "New Report" button with ticker input. Macro section shows today's summary from `macro_summaries` |
+| 4.2 | CREATE | `components/trading/JarvisChat.tsx` | Chat UI within the panel: scrollable message list, text input with send button. On send → POST to `/api/jarvis/chat` with `{ message, session_id }`. Renders assistant responses using `JarvisStructuredResponse` for structured data, plain text for conversational. Maintains `session_id` in state for conversation continuity. Prefix hints: show subtle autocomplete for `/research` and `/analyze` |
+| 4.3 | MODIFY | `components/trading/JarvisStructuredResponse.tsx` | Remove source type badges for `'web_source'`, `'cached_headline'`, `'user_document'` (these source types no longer exist). Simplify source display. Keep TL;DR / Findings / Actions / Risks structure |
+| 4.4 | MODIFY | `components/trading/Sidebar.tsx` | Remove `'jarvis'` from `TabKey` union type. Remove the jarvis nav item from `navItems` array. Add a persistent Jarvis toggle button (Bot icon from lucide-react) positioned above the Account button. New props: `onJarvisToggle: () => void`, `isJarvisOpen: boolean` |
+| 4.5 | MODIFY | `app/page.tsx` | Remove `JarvisTab` import and conditional render. Add state: `const [isJarvisOpen, setIsJarvisOpen] = useState(false)`. Render `<JarvisPanel open={isJarvisOpen} onOpenChange={setIsJarvisOpen} trades={trades} />`. Wire Sidebar: `onJarvisToggle={() => setIsJarvisOpen(!isJarvisOpen)}` |
+
+### Components Kept As-Is
+
+- `JarvisMacroSummary.tsx` — macro region summary renderer (used inside JarvisPanel macro section)
+- `JarvisDilutionReport.tsx` — dilution report renderer (used inside JarvisPanel research section)
+
+---
+
+## Phase 5: Cleanup & Deletion
+
+**Objective:** Remove all old RAG files, drop old tables, clean up dependencies. **Do this as a separate commit for clean rollback.**
+
+**IMPORTANT: Take a Neon DB snapshot before running the DROP TABLE migration.**
+
+### Files to DELETE
+
+**Old lib files (17):**
+- `lib/jarvis-types.ts`
+- `lib/jarvis-orchestrator.ts`
+- `lib/jarvis-knowledge.ts`
+- `lib/jarvis-embedding.ts`
+- `lib/jarvis-scrape.ts`
+- `lib/jarvis-response.ts`
+- `lib/jarvis-allowlist.ts`
+- `lib/jarvis-source-packs.ts`
+- `lib/jarvis-rate-limit.ts`
+- `lib/jarvis-token-tracking.ts`
+- `lib/jarvis-circuit-breaker.ts`
+- `lib/jarvis-robots.ts`
+- `lib/jarvis-scrape-cache.ts`
+- `lib/jarvis-documents.ts`
+- `lib/jarvis-admin.ts`
+- `lib/askedgar-client.ts`
+- `lib/askedgar-aggregator.ts`
+
+**Old route files (5):**
+- `app/api/jarvis/route.ts` (the 798-line monolith)
+- `app/api/jarvis/upload/route.ts`
+- `app/api/jarvis/cron/headlines/route.ts`
+- `app/api/jarvis/admin/memory/stats/route.ts`
+- `app/api/jarvis/admin/memory/purge/route.ts`
+
+**Old components (2):**
+- `components/trading/JarvisTab.tsx`
+- `components/trading/JarvisDocuments.tsx`
+
+**Old test files (23):**
+- All `__tests__/jarvis-*.test.ts` files
+
+### Schema Changes
+
+| Step | Action | Detail |
+|------|--------|--------|
+| 5.1 | MODIFY `lib/db/schema.ts` | Remove `jarvisKnowledgeChunks`, `jarvisSourceUrls`, `jarvisUserDocuments` table definitions. Remove `vector1024` and `tsvector` custom types if no longer referenced elsewhere |
+| 5.2 | RUN `npm run db:generate` | Generate DROP TABLE migration |
+| 5.3 | RUN `npm run db:migrate` | Apply destructive migration |
+
+### Dependency Cleanup
+
+| Step | Action | Detail |
+|------|--------|--------|
+| 5.4 | MODIFY `package.json` | Remove `pdf-parse` and `@types/pdf-parse` |
+| 5.5 | RUN `npm install` | Clean lockfile |
+
+### Environment Variable Cleanup
+
+**Remove from `.env.example`:**
+- `JARVIS_EMBEDDING_ENABLED`
+- `JARVIS_EMBEDDING_MODEL`
+- `JARVIS_EMBEDDING_API_BASE_URL`
+- `JARVIS_SCRAPE_CACHE_TTL_WEB_MS`
+- `JARVIS_SCRAPE_CACHE_TTL_HEADLINE_MS`
+- `JARVIS_SCRAPE_CACHE_TTL_API_MS`
+- `JARVIS_MAX_CONTEXT_TOKENS`
+- `JARVIS_USER_STORAGE_LIMIT_BYTES`
+- `JARVIS_ORCHESTRATION_CRITIQUE`
+
+**Keep:**
+- `JARVIS_API_KEY` / `NVIDIA_API_KEY`, `JARVIS_MODEL`, `JARVIS_API_BASE_URL`
+- `JARVIS_RATE_LIMIT_PER_HOUR`, `JARVIS_CIRCUIT_BREAKER_THRESHOLD`, `JARVIS_CIRCUIT_BREAKER_RESET_MS`
+- `JARVIS_ADMIN_KEY`, `CRON_SECRET`, `ASKEDGAR_API_KEY`
+
+### Config Updates
+
+| Step | Action | Detail |
+|------|--------|--------|
+| 5.6 | MODIFY Vercel cron config | Update cron path from `/api/jarvis/cron/headlines` to `/api/jarvis/cron/macro-summary` |
+| 5.7 | MODIFY `.claude/CLAUDE.md` | Update architecture docs to reflect new pipeline architecture |
+
+---
+
+## Phase 6: Testing
+
+| Step | Action | File | Detail |
+|------|--------|------|--------|
+| 6.1 | CREATE | `__tests__/jarvis-client.test.ts` | Test LLM client wrapper (mock OpenAI SDK) |
+| 6.2 | CREATE | `__tests__/jarvis-memory.test.ts` | Test agent_memory CRUD |
+| 6.3 | CREATE | `__tests__/jarvis-context.test.ts` | Test context builder |
+| 6.4 | CREATE | `__tests__/jarvis-prompts.test.ts` | Test prompt template rendering |
+| 6.5 | CREATE | `__tests__/jarvis-chat-route.test.ts` | Test chat endpoint |
+| 6.6 | CREATE | `__tests__/jarvis-research-route.test.ts` | Test research endpoint |
+| 6.7 | CREATE | `__tests__/jarvis-trade-analysis-route.test.ts` | Test trade analysis endpoint |
+| 6.8 | RUN | `npm run lint && npx tsc --noEmit && npm test` | Full verification |
+
+---
+
+## Files Affected Summary
+
+### Files to CREATE (18)
+
+| File | Complexity | Risk |
+|------|-----------|------|
+| `lib/jarvis/types.ts` | LOW | LOW |
+| `lib/jarvis/client.ts` | MEDIUM | MEDIUM |
+| `lib/jarvis/prompts.ts` | MEDIUM | LOW |
+| `lib/jarvis/memory.ts` | MEDIUM | MEDIUM |
+| `lib/jarvis/context.ts` | MEDIUM | MEDIUM |
+| `lib/jarvis/trade-analysis.ts` | LOW | LOW |
+| `lib/jarvis/askedgar.ts` | LOW | LOW (merge) |
+| `lib/jarvis/scrape-lite.ts` | LOW | LOW |
+| `lib/jarvis/rate-limit.ts` | LOW | LOW (move) |
+| `lib/jarvis/circuit-breaker.ts` | LOW | LOW (move) |
+| `lib/jarvis/token-tracking.ts` | LOW | LOW (move) |
+| `lib/jarvis/admin.ts` | LOW | LOW (move) |
+| `app/api/jarvis/chat/route.ts` | HIGH | MEDIUM |
+| `app/api/jarvis/research/route.ts` | HIGH | MEDIUM |
+| `app/api/jarvis/trade-analysis/route.ts` | MEDIUM | MEDIUM |
+| `app/api/jarvis/cron/macro-summary/route.ts` | MEDIUM | MEDIUM |
+| `components/trading/JarvisPanel.tsx` | HIGH | HIGH |
+| `components/trading/JarvisChat.tsx` | MEDIUM | MEDIUM |
+
+### Files to MODIFY (6)
+
+| File | Risk |
+|------|------|
+| `lib/db/schema.ts` | HIGH (migration) |
+| `app/api/jarvis/admin/stats/route.ts` | LOW |
+| `components/trading/JarvisStructuredResponse.tsx` | LOW |
+| `components/trading/Sidebar.tsx` | MEDIUM |
+| `app/page.tsx` | MEDIUM |
+| `.claude/CLAUDE.md` | LOW |
+
+### Files to DELETE (47)
+
+| Category | Count |
+|----------|-------|
+| Old lib files | 17 |
+| Old route files | 5 |
+| Old components | 2 |
+| Old test files | 23 |
+
+---
+
+## DB Tables Dropped (Phase 5)
+
+| Table | Current Purpose | Data Lost |
+|-------|----------------|-----------|
+| `jarvis_knowledge_chunks` | RAG knowledge base with pgvector embeddings | All chunks, embeddings, tsvector indexes |
+| `jarvis_source_urls` | Remembered scrape URLs per user | All remembered URLs |
+| `jarvis_user_documents` | Uploaded document metadata | All document records |
+
+**Note:** `jarvis_request_log` is KEPT — token/latency tracking is pipeline-agnostic.
+
+---
+
+## Security Checklist
+
+- [ ] All new API routes call `requireUser()` and return 401 on failure
+- [ ] `ASKEDGAR_API_KEY` only read in `lib/jarvis/askedgar.ts` — never exposed to client
+- [ ] Conversation history scoped by `user_id` — no cross-user data leakage
+- [ ] Agent memory writes validate `user_id` ownership
+- [ ] Cron endpoint uses `CRON_SECRET` bearer auth
+- [ ] Admin endpoints use `x-jarvis-admin-key` header auth
+
+---
+
+## Rollback Plan
+
+1. Phases 1-4 are additive — old files coexist with new
+2. Phase 5 (deletion) is a separate commit for clean revert
+3. Take Neon DB snapshot before Phase 5 DROP TABLE migration
+4. If new system fails, revert to commit before Phase 5
 
 ---
 
 ## Verification
 
-After all changes are complete, run:
+After all phases complete:
 
 ```bash
-npm run lint
-npx tsc --noEmit
+npm run lint && npx tsc --noEmit && npm test
 ```
 
-Then visually verify:
-
-- [ ] Jarvis tab shows exactly 3 cards: Ask Jarvis, Macro Summary, Dilution Research
-- [ ] Clicking a card does NOT auto-fire a request — it preloads the prompt
-- [ ] Clicking "Run Jarvis" fires with the correct mode (not always assistant)
-- [ ] Dilution Research card focuses the ticker input and loads the dilution prompt
-- [ ] No manual URL input, no "Remembered URLs", no Manual/Pack toggle visible
-- [ ] Source pack selector shows directly in the right column
-- [ ] WeeklyCalendar starts on Sunday (leftmost)
-- [ ] $0 PnL values appear in muted gray (zinc-400), not green
-- [ ] Positive PnL is still emerald, negative PnL is still rose
-
----
-
-## Security Considerations
-
-- No auth changes in this spec.
-- No new API routes or endpoints.
-- Removal of manual URL input reduces attack surface (no user-supplied URLs sent to scraper).
-- ALLOWED_EMAILS remains unenforced in auth callbacks (pre-existing, not addressed here).
+Visual verification:
+- [ ] Jarvis icon in sidebar opens slide-out panel from any tab
+- [ ] Chat section sends messages and receives structured responses
+- [ ] `/research AAPL` in chat triggers research report generation
+- [ ] `/analyze` in chat triggers trade analysis
+- [ ] Research section shows saved reports + "New Report" trigger
+- [ ] Macro section shows today's summary
+- [ ] No references to old RAG files remain (embeddings, knowledge chunks, orchestrator)
+- [ ] `jarvis_request_log` still records token usage for new pipelines
