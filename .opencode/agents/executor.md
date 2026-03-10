@@ -16,3 +16,4 @@ You are an execution agent for the Nexus Terminal project. You implement specs w
 - After all changes: run npm run lint, npx tsc --noEmit, npm test
 - Report pass/fail for each command
 - If a command fails, fix the error before marking complete
+- When all changes are made for the session update HANDOFF.md to check off what was completed.
