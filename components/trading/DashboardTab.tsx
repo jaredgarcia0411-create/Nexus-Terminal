@@ -8,6 +8,7 @@ import TradeTable from '@/components/trading/TradeTable';
 import TradingCalendar from '@/components/trading/TradingCalendar';
 import WeeklyCalendar from '@/components/trading/WeeklyCalendar';
 import { Button } from '@/components/ui/button';
+import { getPnLColor } from '@/lib/trading-utils';
 import type { Trade } from '@/lib/types';
 
 interface DashboardTabProps {
@@ -136,7 +137,7 @@ export default function DashboardTab({
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
               <div className="mb-2 text-xs font-mono uppercase text-zinc-500">Total {pnlMode === 'net' ? 'Net' : 'Gross'} PnL</div>
-              <div className={`text-3xl font-bold tracking-tight ${stats.totalPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+              <div className={`text-3xl font-bold tracking-tight ${getPnLColor(stats.totalPnl)}`}>
                 {fmtCurrency(stats.totalPnl)}
               </div>
             </div>

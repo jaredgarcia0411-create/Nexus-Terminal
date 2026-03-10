@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { eachDayOfInterval, endOfWeek, format, isSameDay, isToday, startOfWeek } from 'date-fns';
-import { formatCurrency } from '@/lib/trading-utils';
+import { formatCurrency, getPnLColor } from '@/lib/trading-utils';
 import { Trade } from '@/lib/types';
 
 interface WeeklyCalendarProps {
@@ -17,8 +17,8 @@ interface DayBucket {
 
 export default function WeeklyCalendar({ trades }: WeeklyCalendarProps) {
   const weekDays = useMemo(() => {
-    const start = startOfWeek(new Date(), { weekStartsOn: 1 });
-    const end = endOfWeek(start, { weekStartsOn: 1 });
+    const start = startOfWeek(new Date(), { weekStartsOn: 0 });
+    const end = endOfWeek(start, { weekStartsOn: 0 });
     return eachDayOfInterval({ start, end });
   }, []);
 
@@ -75,7 +75,7 @@ export default function WeeklyCalendar({ trades }: WeeklyCalendarProps) {
                 <span className="text-xs font-medium text-zinc-500">{format(day, 'EEE')}</span>
               </div>
               <div className="mt-auto">
-                <span className={`text-sm font-bold ${pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{formatCurrency(pnl)}</span>
+                <span className={`text-sm font-bold ${getPnLColor(pnl)}`}>{formatCurrency(pnl)}</span>
                 <span className="text-[10px] text-zinc-500 block">{count} trades</span>
               </div>
             </div>

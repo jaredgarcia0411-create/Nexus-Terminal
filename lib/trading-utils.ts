@@ -29,3 +29,9 @@ export const getPnLColor = (value: number) => {
   if (value < 0) return 'text-rose-500';
   return 'text-zinc-400';
 };
+
+export const getPnLHex = (value: number) => {
+  if (value > 0) return '#10b981';
+  if (value < 0) return '#f43f5e';
+  return '#71717a';
+};

@@ -6,7 +6,7 @@ import { motion } from 'motion/react';
 import { ChevronDown, ChevronRight, Search, Tag as TagIcon } from 'lucide-react';
 import TradeTable from '@/components/trading/TradeTable';
 import JournalTradeChart from '@/components/trading/JournalTradeChart';
-import { formatCurrency } from '@/lib/trading-utils';
+import { formatCurrency, getPnLColor } from '@/lib/trading-utils';
 import type { Trade } from '@/lib/types';
 
 interface JournalTabProps {
@@ -222,7 +222,7 @@ export default function JournalTab({
 
                 <div className="flex items-center gap-3">
                   <DaySparkline points={day.sparklinePoints} />
-                  <p className={`text-sm font-semibold ${day.dailyNetPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                  <p className={`text-sm font-semibold ${getPnLColor(day.dailyNetPnl)}`}>
                     {formatCurrency(day.dailyNetPnl)}
                   </p>
                 </div>
@@ -247,7 +247,7 @@ export default function JournalTab({
                 </div>
                 <div>
                   <p className="text-zinc-500">Net PnL</p>
-                  <p className={`font-medium ${day.dailyNetPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                  <p className={`font-medium ${getPnLColor(day.dailyNetPnl)}`}>
                     {formatCurrency(day.dailyNetPnl)}
                   </p>
                 </div>

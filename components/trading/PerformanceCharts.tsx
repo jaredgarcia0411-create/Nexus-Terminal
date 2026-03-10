@@ -16,7 +16,7 @@ import {
 } from 'recharts';
 import { BarChart3 } from 'lucide-react';
 import { Trade } from '@/lib/types';
-import { formatCurrency, formatR } from '@/lib/trading-utils';
+import { formatCurrency, formatR, getPnLHex } from '@/lib/trading-utils';
 import { format } from 'date-fns';
 
 interface PerformanceChartsProps {
@@ -217,7 +217,7 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
               />
               <Bar dataKey="value">
                 {chartData.map((entry: PointValue, index: number) => (
-                  <Cell key={`cell-${index}`} fill={entry.value >= 0 ? '#10b981' : '#f43f5e'} />
+                  <Cell key={`cell-${index}`} fill={getPnLHex(entry.value)} />
                 ))}
               </Bar>
             </BarChart>
@@ -240,7 +240,7 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
                   />
                   <Bar dataKey="value">
                     {dayOfWeekData.map((entry: PointValue, index: number) => (
-                      <Cell key={`cell-${index}`} fill={entry.value >= 0 ? '#10b981' : '#f43f5e'} />
+                      <Cell key={`cell-${index}`} fill={getPnLHex(entry.value)} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -260,7 +260,7 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
                   />
                   <Bar dataKey="value">
                     {timeOfDayData.map((entry: PointValue, index: number) => (
-                      <Cell key={`cell-${index}`} fill={entry.value >= 0 ? '#10b981' : '#f43f5e'} />
+                      <Cell key={`cell-${index}`} fill={getPnLHex(entry.value)} />
                     ))}
                   </Bar>
                 </BarChart>

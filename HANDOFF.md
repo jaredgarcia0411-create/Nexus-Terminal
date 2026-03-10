@@ -1,7 +1,7 @@
 # Nexus Terminal — HANDOFF.md
 
 > Generated: 2026-03-10 | Agent: nexus-architect
-> Status: PENDING REVIEW — do not execute until approved
+> Status: IMPLEMENTED — awaiting visual verification
 
 ---
 
@@ -46,10 +46,10 @@ Simplify the JarvisTab interface, fix the submit-path mode bug, correct calendar
 3. If the `Newspaper` icon is no longer referenced anywhere in the file after this removal, remove it from the lucide-react import on line 5. Note: `getPackIcon` references `Newspaper` — check if any source pack still uses `icon: 'Newspaper'`. Currently none do (macro-daily uses `'Globe'`, dilution-research uses `'Search'`), so `Newspaper` can be removed from `getPackIcon` and from the import.
 
 **Acceptance Criteria:**
-- [ ] No "Daily Summary" card appears in the Jarvis UI
-- [ ] No unused `Newspaper` import remains
-- [ ] `npm run lint` passes
-- [ ] `npx tsc --noEmit` passes
+- [x] No "Daily Summary" card appears in the Jarvis UI
+- [x] No unused `Newspaper` import remains
+- [x] `npm run lint` passes
+- [x] `npx tsc --noEmit` passes
 
 ---
 
@@ -92,11 +92,11 @@ const cards: Array<{ mode: JarvisMode; label: string; description: string; icon:
 ```
 
 **Acceptance Criteria:**
-- [ ] Only 3 cards render: Ask Jarvis, Macro Summary, Dilution Research
-- [ ] Grid uses `lg:grid-cols-3`
-- [ ] No unused `LineChart` import remains
-- [ ] `npm run lint` passes
-- [ ] `npx tsc --noEmit` passes
+- [x] Only 3 cards render: Ask Jarvis, Macro Summary, Dilution Research
+- [x] Grid uses `lg:grid-cols-3`
+- [x] No unused `LineChart` import remains
+- [x] `npm run lint` passes
+- [x] `npx tsc --noEmit` passes
 
 ---
 
@@ -173,14 +173,14 @@ const cards: Array<{ mode: JarvisMode; label: string; description: string; icon:
 - `getPackIcon()` function
 
 **Acceptance Criteria:**
-- [ ] No manual URL input UI renders
-- [ ] No "Remembered URLs" section renders
-- [ ] No "Manual URLs" / "Source Pack" toggle renders
-- [ ] Source pack selector shows directly without a toggle
-- [ ] `isUrlAllowed` import is removed
-- [ ] `Plus` and `X` icon imports are removed (verify they are not used elsewhere in the file first)
-- [ ] `npm run lint` passes
-- [ ] `npx tsc --noEmit` passes
+- [x] No manual URL input UI renders
+- [x] No "Remembered URLs" section renders
+- [x] No "Manual URLs" / "Source Pack" toggle renders
+- [x] Source pack selector shows directly without a toggle
+- [x] `isUrlAllowed` import is removed
+- [x] `Plus` and `X` icon imports are removed (verify they are not used elsewhere in the file first)
+- [x] `npm run lint` passes
+- [x] `npx tsc --noEmit` passes
 
 ---
 
@@ -234,14 +234,14 @@ This uses the current `mode` state, which was set when the user clicked a card.
 3. **Verify** that `runJarvis()` still calls `setMode(nextMode)` on line 190. This is fine — it will set it to the same value that `handleCardClick` already set.
 
 **Acceptance Criteria:**
-- [ ] Clicking "Ask Jarvis" card sets mode to `assistant`, clears prompt, clears pack
-- [ ] Clicking "Macro Summary" card sets mode to `macro-summary`, loads macro-daily prompt template
-- [ ] Clicking "Dilution Research" card sets mode to `dilution-research`, loads dilution-research prompt template, focuses ticker input
-- [ ] No card auto-fires `runJarvis()` on click
-- [ ] "Run Jarvis" button fires `runJarvis(mode)` using current mode state
-- [ ] Dilution research requests include `ticker` field
-- [ ] `npm run lint` passes
-- [ ] `npx tsc --noEmit` passes
+- [x] Clicking "Ask Jarvis" card sets mode to `assistant`, clears prompt, clears pack
+- [x] Clicking "Macro Summary" card sets mode to `macro-summary`, loads macro-daily prompt template
+- [x] Clicking "Dilution Research" card sets mode to `dilution-research`, loads dilution-research prompt template, focuses ticker input
+- [x] No card auto-fires `runJarvis()` on click
+- [x] "Run Jarvis" button fires `runJarvis(mode)` using current mode state
+- [x] Dilution research requests include `ticker` field
+- [x] `npm run lint` passes
+- [x] `npx tsc --noEmit` passes
 
 ---
 
@@ -259,10 +259,10 @@ This uses the current `mode` state, which was set when the user clicked a card.
 This makes Sunday the leftmost column, consistent with `TradingCalendar.tsx` which uses Sunday-first by default (date-fns default).
 
 **Acceptance Criteria:**
-- [ ] WeeklyCalendar renders Sunday as the first (leftmost) day
-- [ ] Matches TradingCalendar day ordering
-- [ ] `npm run lint` passes
-- [ ] `npx tsc --noEmit` passes
+- [x] WeeklyCalendar renders Sunday as the first (leftmost) day
+- [x] Matches TradingCalendar day ordering
+- [x] `npm run lint` passes
+- [x] `npx tsc --noEmit` passes
 
 ---
 
@@ -314,12 +314,12 @@ Each file needs to import the function from `@/lib/trading-utils`:
 **Note:** There are additional `>= 0` color ternaries in `TradingCalendar.tsx` (lines 147, 165) for R-values that use `text-emerald-400`/`text-rose-400` (lighter shade). These are intentionally different shades and are NOT covered by `getPnLColor`. Leave them as-is. Similarly, `JournalTab.tsx` line 61 uses hex colors for an SVG sparkline — leave as-is.
 
 **Acceptance Criteria:**
-- [ ] `getPnLHex` function exists in `lib/trading-utils.ts`
-- [ ] All 10 locations listed above use `getPnLColor()` or `getPnLHex()` instead of `>= 0` ternaries
-- [ ] $0 PnL values render as muted zinc-400 / #71717a instead of green
-- [ ] Positive values still render emerald, negative values still render rose
-- [ ] `npm run lint` passes
-- [ ] `npx tsc --noEmit` passes
+- [x] `getPnLHex` function exists in `lib/trading-utils.ts`
+- [x] All 10 locations listed above use `getPnLColor()` or `getPnLHex()` instead of `>= 0` ternaries
+- [x] $0 PnL values render as muted zinc-400 / #71717a instead of green
+- [x] Positive values still render emerald, negative values still render rose
+- [x] `npm run lint` passes
+- [x] `npx tsc --noEmit` passes
 
 ---
 

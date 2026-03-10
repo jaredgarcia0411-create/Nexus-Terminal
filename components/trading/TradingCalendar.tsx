@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { Trade } from '@/lib/types';
-import { formatCurrency, formatR } from '@/lib/trading-utils';
+import { formatCurrency, formatR, getPnLColor } from '@/lib/trading-utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { 
   format, 
@@ -141,7 +141,7 @@ export default function TradingCalendar({ trades }: TradingCalendarProps) {
                     
                     {stats && (stats.pnl !== 0 || stats.r !== 0) && (
                       <div className="mt-auto flex flex-col gap-0.5">
-                        <div className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-bold ${stats.pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        <div className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-bold ${getPnLColor(stats.pnl)}`}>
                           {stats.pnl >= 0 ? '+' : ''}{formatCurrency(stats.pnl)}
                         </div>
                         <div className={`${isMobile ? 'text-[10px]' : 'text-[11px]'} font-medium opacity-60 ${stats.r >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -159,7 +159,7 @@ export default function TradingCalendar({ trades }: TradingCalendarProps) {
               {!isMobile ? (
                 <div className="min-h-[100px] border-l border-white/5 bg-white/5 p-2">
                   <div className="flex h-full flex-col items-center justify-center gap-1">
-                    <div className={`text-[13px] font-bold ${week.weeklyPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    <div className={`text-[13px] font-bold ${getPnLColor(week.weeklyPnl)}`}>
                       {week.weeklyPnl >= 0 ? '+' : ''}{formatCurrency(week.weeklyPnl)}
                     </div>
                     <div className={`text-[11px] font-medium opacity-70 ${week.weeklyR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -211,7 +211,7 @@ export default function TradingCalendar({ trades }: TradingCalendarProps) {
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className={`text-sm font-bold ${trade.pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        <div className={`text-sm font-bold ${getPnLColor(trade.pnl)}`}>
                           {formatCurrency(trade.pnl)}
                         </div>
                         {trade.initialRisk && (
