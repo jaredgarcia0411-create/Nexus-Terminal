@@ -1,6 +1,6 @@
 'use client';
 
-import type { DilutionResearchReport, RiskLevel, RiskRating } from '@/lib/jarvis-types';
+import type { DilutionResearchReport, RiskLevel, RiskRating } from '@/lib/jarvis/types';
 
 interface JarvisDilutionReportProps {
   report: DilutionResearchReport;

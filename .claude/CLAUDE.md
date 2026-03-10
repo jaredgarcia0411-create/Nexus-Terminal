@@ -47,9 +47,10 @@ Framework: Next.js 15, React 19, TypeScript 5.9, deployed on Vercel
 - tags — user-defined tags
 - trade_import_batches — import deduplication
 - broker_sync_log — broker sync history
-- jarvis_source_urls — remembered URLs for Jarvis
-- jarvis_knowledge_chunks — knowledge base with embeddings (sourceType: web_source, trade_journal, user_document, cached_headline, api_data)
-- jarvis_user_documents — user-uploaded documents
+- agent_memory — persistent user memory (trade_insight, user_preference, strategy_note, macro_fact)
+- research_reports — AskEdgar + generated research output
+- macro_summaries — daily macro summaries from cron pipeline
+- jarvis_conversations — chat session history and context snapshots
 - jarvis_request_log — per-request token/latency tracking for observability
 
 ---
@@ -69,14 +70,14 @@ Framework: Next.js 15, React 19, TypeScript 5.9, deployed on Vercel
 - GET /api/market-data  (Yahoo Finance proxy)
 
 ## Jarvis AI
-- GET/POST         /api/jarvis  (modes: daily-summary, trade-analysis, assistant, macro-summary; dilution-research planned Sprint 8)
-- GET/POST/DELETE  /api/jarvis/upload
-- GET              /api/jarvis/admin/memory/stats
-- DELETE           /api/jarvis/admin/memory/purge
+- POST             /api/jarvis/chat
+- POST             /api/jarvis/research
+- POST             /api/jarvis/trade-analysis
+- GET/DELETE       /api/jarvis/admin/memory
 - GET              /api/jarvis/admin/stats  (token usage, circuit breaker, latency — admin-only via x-jarvis-admin-key)
 
 ## Jarvis Cron
-- GET /api/jarvis/cron/headlines  (Vercel cron, CRON_SECRET auth)
+- GET /api/jarvis/cron/macro-summary  (Vercel cron, CRON_SECRET auth)
 
 ## System
 - GET/POST /api/auth/[...nextauth]
@@ -134,7 +135,7 @@ button, command, dialog, dropdown-menu, input, label, popover, select, sheet, te
 
 ## Jarvis AI Pipeline
 - lib/jarvis-types.ts — shared types (JarvisMode, JarvisRequest, JarvisResponse, source types)
-- lib/jarvis-orchestrator.ts — multi-step orchestration pipeline (plan, retrieve, summarize, critique, answer)
+- lib/jarvis/client.ts — single LLM wrapper (retry + circuit breaker)
 - lib/jarvis-knowledge.ts — knowledge ingestion/retrieval/eviction
 - lib/jarvis-scrape.ts — web scraping, chunking, ranking
 - lib/jarvis-embedding.ts — NVIDIA embedding API

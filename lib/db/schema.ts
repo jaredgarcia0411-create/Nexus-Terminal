@@ -1,28 +1,4 @@
-import { pgTable, text, doublePrecision, integer, serial, timestamp, primaryKey, index, unique, foreignKey, customType } from 'drizzle-orm/pg-core';
-
-const tsvector = customType<{ data: string }>({
-  dataType() {
-    return 'tsvector';
-  },
-});
-
-const vector1024 = customType<{ data: number[] | null; driverData: string | null }>({
-  dataType() {
-    return 'vector(1024)';
-  },
-  toDriver(value) {
-    if (!value || value.length === 0) return null;
-    return `[${value.join(',')}]`;
-  },
-  fromDriver(value) {
-    if (typeof value !== 'string' || value.length < 2) return null;
-    return value
-      .slice(1, -1)
-      .split(',')
-      .map((part) => Number(part.trim()))
-      .filter((part) => Number.isFinite(part));
-  },
-});
+import { pgTable, text, doublePrecision, integer, serial, timestamp, primaryKey, index, unique, foreignKey, jsonb } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
@@ -129,67 +105,56 @@ export const brokerSyncLog = pgTable('broker_sync_log', {
   syncedAt: timestamp('synced_at', { withTimezone: true }).defaultNow(),
 });
 
-export const jarvisSourceUrls = pgTable('jarvis_source_urls', {
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  url: text('url').notNull(),
-  useCount: integer('use_count').notNull().default(1),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-  lastUsedAt: timestamp('last_used_at', { withTimezone: true }).defaultNow(),
-}, (table) => [
-  primaryKey({ columns: [table.userId, table.url] }),
-  index('idx_jarvis_source_urls_user_last_used').on(table.userId, table.lastUsedAt),
-]);
-
-export const jarvisKnowledgeChunks = pgTable('jarvis_knowledge_chunks', {
+export const agentMemory = pgTable('agent_memory', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  sourceUrl: text('source_url').notNull(),
-  sourceHost: text('source_host').notNull(),
-  sourceTitle: text('source_title').notNull(),
-  sourceType: text('source_type', {
-    enum: ['web_source', 'trade_journal', 'user_document', 'cached_headline', 'api_data'],
-  }).notNull(),
-  chunkIndex: integer('chunk_index').notNull(),
-  startToken: integer('start_token').notNull(),
-  endToken: integer('end_token').notNull(),
-  tokenCount: integer('token_count').notNull(),
-  text: text('text').notNull(),
-  hash: text('hash').notNull(),
-  relevance: doublePrecision('relevance').notNull().default(0),
-  tickers: text('tickers').array().notNull().default([]),
-  sourceTags: text('source_tags').array().notNull().default([]),
-  publishedAt: timestamp('published_at', { withTimezone: true }),
-  author: text('author'),
-  embedding: vector1024('embedding'),
-  textSearch: tsvector('text_search').notNull(),
-  seenCount: integer('seen_count').notNull().default(1),
+  category: text('category').notNull(),
+  key: text('key').notNull(),
+  value: text('value').notNull(),
+  valueJson: jsonb('value_json'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
 }, (table) => [
-  unique('uq_jarvis_knowledge_chunks_source_hash').on(table.sourceType, table.sourceHost, table.hash),
-  index('idx_jarvis_knowledge_chunks_user_last_seen').on(table.userId, table.lastSeenAt),
-  index('idx_jarvis_knowledge_chunks_user_relevance').on(table.userId, table.relevance),
-  index('idx_jarvis_knowledge_chunks_source_url').on(table.sourceUrl),
-  index('idx_jarvis_knowledge_chunks_tickers').using('gin', table.tickers),
-  index('idx_jarvis_knowledge_chunks_source_tags').using('gin', table.sourceTags),
-  index('idx_jarvis_knowledge_chunks_text_search').using('gin', table.textSearch),
+  unique().on(table.userId, table.category, table.key),
+  index('agent_memory_user_category_idx').on(table.userId, table.category),
 ]);
 
-export const jarvisUserDocuments = pgTable('jarvis_user_documents', {
+export const researchReports = pgTable('research_reports', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  filename: text('filename').notNull(),
-  mimeType: text('mime_type').notNull(),
-  sizeBytes: integer('size_bytes').notNull(),
-  status: text('status', {
-    enum: ['pending', 'processing', 'processed', 'failed'],
-  }).notNull().default('pending'),
-  chunkCount: integer('chunk_count').notNull().default(0),
+  ticker: text('ticker').notNull(),
+  status: text('status').notNull().default('pending'),
+  rawData: jsonb('raw_data'),
+  reportJson: jsonb('report_json'),
+  modelUsed: text('model_used'),
   errorMessage: text('error_message'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-  processedAt: timestamp('processed_at', { withTimezone: true }),
+  generatedAt: timestamp('generated_at', { withTimezone: true }).defaultNow(),
 }, (table) => [
-  index('idx_jarvis_user_documents_user_created').on(table.userId, table.createdAt),
+  index('research_reports_user_ticker_idx').on(table.userId, table.ticker, table.generatedAt),
+]);
+
+export const macroSummaries = pgTable('macro_summaries', {
+  id: text('id').primaryKey(),
+  summaryJson: jsonb('summary_json').notNull(),
+  sourcesJson: jsonb('sources_json'),
+  modelUsed: text('model_used'),
+  generatedAt: timestamp('generated_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('macro_summaries_generated_at_idx').on(table.generatedAt),
+]);
+
+export const jarvisConversations = pgTable('jarvis_conversations', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  sessionId: text('session_id').notNull(),
+  role: text('role').notNull(),
+  content: text('content').notNull(),
+  mode: text('mode'),
+  contextSnapshot: jsonb('context_snapshot'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('jarvis_conversations_user_session_idx').on(table.userId, table.sessionId, table.createdAt),
 ]);
 
 export const jarvisRequestLog = pgTable('jarvis_request_log', {

@@ -1,7 +1,7 @@
 # Nexus Terminal — HANDOFF.md
 
 > Generated: 2026-03-10 | Agent: nexus-architect
-> Status: PENDING REVIEW — do not execute until approved
+> Status: EXECUTED (session complete)
 
 ---
 
@@ -430,12 +430,12 @@ Panel has 3 sections (internal tabs):
 
 ## Security Checklist
 
-- [ ] All new API routes call `requireUser()` and return 401 on failure
-- [ ] `ASKEDGAR_API_KEY` only read in `lib/jarvis/askedgar.ts` — never exposed to client
-- [ ] Conversation history scoped by `user_id` — no cross-user data leakage
-- [ ] Agent memory writes validate `user_id` ownership
-- [ ] Cron endpoint uses `CRON_SECRET` bearer auth
-- [ ] Admin endpoints use `x-jarvis-admin-key` header auth
+- [x] All new API routes call `requireUser()` and return 401 on failure
+- [x] `ASKEDGAR_API_KEY` only read in `lib/jarvis/askedgar.ts` — never exposed to client
+- [x] Conversation history scoped by `user_id` — no cross-user data leakage
+- [x] Agent memory writes validate `user_id` ownership
+- [x] Cron endpoint uses `CRON_SECRET` bearer auth
+- [x] Admin endpoints use `x-jarvis-admin-key` header auth
 
 ---
 
@@ -455,6 +455,10 @@ After all phases complete:
 ```bash
 npm run lint && npx tsc --noEmit && npm test
 ```
+
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npm test`
 
 Visual verification:
 - [ ] Jarvis icon in sidebar opens slide-out panel from any tab

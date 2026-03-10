@@ -1,5 +1,5 @@
 import React from 'react';
-import type { JarvisMacroSummaryOutput, MacroSummaryRegion } from '@/lib/jarvis-types';
+import type { JarvisMacroSummaryOutput, MacroSummaryRegion } from '@/lib/jarvis/types';
 
 interface JarvisMacroSummaryProps {
   macroSummary: JarvisMacroSummaryOutput;

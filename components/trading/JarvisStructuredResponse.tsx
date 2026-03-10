@@ -4,7 +4,7 @@ import type {
   JarvisMacroSummaryOutput,
   JarvisSourceContext,
   JarvisStructuredResponse,
-} from '@/lib/jarvis-types';
+} from '@/lib/jarvis/types';
 import JarvisMacroSummary from '@/components/trading/JarvisMacroSummary';
 import JarvisDilutionReport from '@/components/trading/JarvisDilutionReport';
 
@@ -27,12 +27,6 @@ function relevanceLabel(score: number) {
 function sourceTypeBadge(sourceType: JarvisSourceContext['sourceType']) {
   if (sourceType === 'trade_journal') {
     return { label: 'Journal', className: 'border-violet-500/30 bg-violet-500/10 text-violet-200' };
-  }
-  if (sourceType === 'user_document') {
-    return { label: 'Document', className: 'border-sky-500/30 bg-sky-500/10 text-sky-200' };
-  }
-  if (sourceType === 'cached_headline') {
-    return { label: 'Headline', className: 'border-amber-500/30 bg-amber-500/10 text-amber-200' };
   }
   if (sourceType === 'api_data') {
     return { label: 'AskEdgar', className: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-200' };

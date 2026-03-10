@@ -1,9 +1,9 @@
 import { desc, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { jarvisRequestLog } from '@/lib/db/schema';
+import { agentMemory, jarvisConversations, jarvisRequestLog, macroSummaries, researchReports } from '@/lib/db/schema';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
-import { requireJarvisAdmin } from '@/lib/jarvis-admin';
-import { getCircuitBreakerState } from '@/lib/jarvis-circuit-breaker';
+import { requireJarvisAdmin } from '@/lib/jarvis/admin';
+import { getCircuitBreakerState } from '@/lib/jarvis/circuit-breaker';
 
 export async function GET(request: Request) {
   try {
@@ -42,6 +42,21 @@ export async function GET(request: Request) {
     const totalRequests = Number(todayRow?.totalRequests ?? 0);
     const successCount = Number(todayRow?.successCount ?? 0);
 
+    const [memoryTotals] = await db.select({
+      total: sql<number>`count(*)::int`,
+      tradeInsight: sql<number>`coalesce(sum(case when ${agentMemory.category} = 'trade_insight' then 1 else 0 end), 0)::int`,
+      userPreference: sql<number>`coalesce(sum(case when ${agentMemory.category} = 'user_preference' then 1 else 0 end), 0)::int`,
+      strategyNote: sql<number>`coalesce(sum(case when ${agentMemory.category} = 'strategy_note' then 1 else 0 end), 0)::int`,
+      macroFact: sql<number>`coalesce(sum(case when ${agentMemory.category} = 'macro_fact' then 1 else 0 end), 0)::int`,
+    }).from(agentMemory);
+
+    const [researchCount] = await db.select({ count: sql<number>`count(*)::int` }).from(researchReports);
+    const [conversationCount] = await db.select({ count: sql<number>`count(*)::int` }).from(jarvisConversations);
+    const [latestMacro] = await db.select({ generatedAt: macroSummaries.generatedAt })
+      .from(macroSummaries)
+      .orderBy(desc(macroSummaries.generatedAt))
+      .limit(1);
+
     return Response.json({
       circuitBreaker: getCircuitBreakerState(),
       today: {
@@ -56,6 +71,20 @@ export async function GET(request: Request) {
         totalTokens: Number(row.totalTokens ?? 0),
         avgDurationMs: Number(row.avgDurationMs ?? 0),
       })),
+      memory: {
+        total: Number(memoryTotals?.total ?? 0),
+        byCategory: {
+          trade_insight: Number(memoryTotals?.tradeInsight ?? 0),
+          user_preference: Number(memoryTotals?.userPreference ?? 0),
+          strategy_note: Number(memoryTotals?.strategyNote ?? 0),
+          macro_fact: Number(memoryTotals?.macroFact ?? 0),
+        },
+      },
+      researchReports: Number(researchCount?.count ?? 0),
+      macroSummaries: {
+        latestGeneratedAt: latestMacro?.generatedAt ?? null,
+      },
+      conversations: Number(conversationCount?.count ?? 0),
     });
   } catch (error) {
     logRouteError('jarvis.admin.stats', error);

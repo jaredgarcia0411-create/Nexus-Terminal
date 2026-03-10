@@ -13,7 +13,7 @@ import DashboardTab from '@/components/trading/DashboardTab';
 import JournalTab from '@/components/trading/JournalTab';
 import PerformanceTab from '@/components/trading/PerformanceTab';
 import TradesTab from '@/components/trading/TradesTab';
-import JarvisTab from '@/components/trading/JarvisTab';
+import JarvisPanel from '@/components/trading/JarvisPanel';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useTrades } from '@/hooks/use-trades';
 
@@ -23,6 +23,7 @@ export default function NexusTerminal() {
   const [performanceMetric, setPerformanceMetric] = useState<'$' | 'R'>('$');
   const [isManualTradeOpen, setIsManualTradeOpen] = useState(false);
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
+  const [isJarvisOpen, setIsJarvisOpen] = useState(false);
 
   const {
     user,
@@ -111,6 +112,8 @@ export default function NexusTerminal() {
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        onJarvisToggle={() => setIsJarvisOpen((prev) => !prev)}
+        isJarvisOpen={isJarvisOpen}
         user={user}
         trades={trades}
         onClearAllData={handleClearAllData}
@@ -221,11 +224,11 @@ export default function NexusTerminal() {
                 onBulkAddTag={handleBulkAddTag}
               />
             ) : null}
-
-            {activeTab === 'jarvis' ? <JarvisTab trades={trades} /> : null}
           </AnimatePresence>
         </div>
       </main>
+
+      <JarvisPanel open={isJarvisOpen} onOpenChange={setIsJarvisOpen} trades={trades} />
 
       <NewTradeDialog open={isManualTradeOpen} onOpenChange={setIsManualTradeOpen} onCreateTrade={handleCreateManualTrade} />
       <TradeDetailSheet

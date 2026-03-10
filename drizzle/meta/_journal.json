@@ -57,6 +57,20 @@
       "when": 1773067062054,
       "tag": "0007_smiling_jazinda",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1773164819741,
+      "tag": "0008_boring_proteus",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1773165722341,
+      "tag": "0009_simple_riptide",
+      "breakpoints": true
     }
   ]
 }
