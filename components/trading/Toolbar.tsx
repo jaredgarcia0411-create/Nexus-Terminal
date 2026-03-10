@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { Plus, Trash2, User } from 'lucide-react';
+import { Calendar as CalendarIcon, Plus, Trash2, User } from 'lucide-react';
 import ImportDropdown from '@/components/trading/ImportDropdown';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -16,6 +16,10 @@ interface ToolbarProps {
   selectedCount: number;
   onDeleteSelected: () => void;
   onFilterPresetChange: (value: 'all' | '30' | '60' | '90') => void;
+  startDate: string;
+  endDate: string;
+  onStartDateChange: (value: string) => void;
+  onEndDateChange: (value: string) => void;
   onImportClick: () => void;
   onFolderImportClick: () => void;
   onNewTradeClick: () => void;
@@ -29,6 +33,10 @@ export default function Toolbar({
   selectedCount,
   onDeleteSelected,
   onFilterPresetChange,
+  startDate,
+  endDate,
+  onStartDateChange,
+  onEndDateChange,
   onImportClick,
   onFolderImportClick,
   onNewTradeClick,
@@ -44,9 +52,7 @@ export default function Toolbar({
           <h1 className="shrink-0 text-lg font-medium tracking-tight">Nexus Terminal</h1>
           <div className="mx-1 hidden h-4 w-px bg-white/10 sm:mx-2 sm:block" />
 
-          {!isMobile ? (
-            <span className="text-[10px] uppercase tracking-widest text-zinc-600">{useLocalStorage ? 'Local Storage Mode' : 'Cloud Mode'}</span>
-          ) : null}
+          {!isMobile ? <span className="text-[10px] uppercase tracking-widest text-zinc-600">{useLocalStorage ? 'Local Storage Mode' : 'Cloud Mode'}</span> : null}
 
           <div className="ml-0 flex items-center gap-1 sm:ml-2">
             {[
@@ -68,6 +74,30 @@ export default function Toolbar({
                 {preset.label}
               </button>
             ))}
+
+            {!isMobile ? (
+              <>
+                <div className="mx-1 hidden h-4 w-px bg-white/10 sm:block" />
+                <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1">
+                  <CalendarIcon className="h-3.5 w-3.5 text-zinc-500" />
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(event) => onStartDateChange(event.target.value)}
+                    className="bg-transparent text-[10px] text-zinc-400 focus:outline-none"
+                    title="Start date"
+                  />
+                  <span className="text-[10px] text-zinc-600">—</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(event) => onEndDateChange(event.target.value)}
+                    className="bg-transparent text-[10px] text-zinc-400 focus:outline-none"
+                    title="End date"
+                  />
+                </div>
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -79,20 +109,20 @@ export default function Toolbar({
             </div>
             <div>
               {user?.image && avatarLoadError !== user.image ? (
-                  <Image
-                    src={user.image}
-                    alt={user.name ?? 'User'}
-                    width={32}
-                    height={32}
-                    className="h-8 w-8 rounded-full border border-white/10"
-                    key={user.image}
-                    onError={() => setAvatarLoadError(user.image ?? null)}
-                  />
-                ) : (
-                 <div className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/20">
-                   <User className="h-4 w-4 text-emerald-500" />
-                 </div>
-               )}
+                <Image
+                  src={user.image}
+                  alt={user.name ?? 'User'}
+                  width={32}
+                  height={32}
+                  className="h-8 w-8 rounded-full border border-white/10"
+                  key={user.image}
+                  onError={() => setAvatarLoadError(user.image ?? null)}
+                />
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/20">
+                  <User className="h-4 w-4 text-emerald-500" />
+                </div>
+              )}
             </div>
           </div>
         ) : null}

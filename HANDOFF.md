@@ -1,7 +1,30 @@
 # Build Spec — Sprint 8: Dilution Research Pack (AskEdgar Integration)
 
 > Generated: 2026-03-10 | Agent: nexus-architect
-> Status: PENDING REVIEW — do not execute until approved
+> Status: IN PROGRESS — implementation largely complete, final fixes pending
+
+## Sprint 8 Progress Snapshot
+
+- [x] Step 1: JRV-081 — Dilution Research Types
+- [x] Step 2: JRV-082 — Add `api_data` Source Type
+- [x] Step 3: JRV-080 — AskEdgar API Client
+- [x] Step 4: JRV-084 — Remove Earnings Pack, Add Dilution Research Pack
+- [x] Step 5: JRV-083 — AskEdgar Data Aggregator
+- [x] Step 6: JRV-085 — Dilution Orchestration Prompt
+- [x] Step 7: JRV-086 — Route Handler
+- [x] Step 8: JRV-087 — Dilution Report Renderer
+- [x] Step 9: JRV-088 — Wire Renderer into Structured Response
+- [~] Step 10: JRV-089 — JarvisTab UI (minor submit-path mismatch remains)
+- [~] Step 11: JRV-090 — Tests implemented; runtime verification remains final gate
+
+## Sprint 8 Remaining Items
+
+1. Update Jarvis primary submit path to honor selected mode (currently hardcoded assistant mode in `components/trading/JarvisTab.tsx`).
+2. Re-run and record final verification commands:
+   - `npm run lint`
+   - `npx tsc --noEmit`
+   - `npm test`
+3. Reconfirm manual dilution flow behavior with ticker-required submit UX.
 
 ---
 
@@ -626,7 +649,20 @@ All three must pass. Verify:
 # Build Spec — UI Layout Overhaul: Dashboard/Performance Redistribution
 
 > Generated: 2026-03-09 | Agent: nexus-architect (Opus 4.6)
-> Status: PENDING REVIEW — do not execute until approved
+> Status: COMPLETE — implemented in codebase
+
+## UI Overhaul Progress Snapshot
+
+- [x] Step 1: Add `variant` prop to `PerformanceCharts`
+- [x] Step 2: Create `WeeklyCalendar` component
+- [x] Step 3: Create `PerformanceStatsTable` component
+- [x] Step 4: Modify `DashboardTab` — title, summary charts, add calendars
+- [x] Step 5: Modify `PerformanceTab` — remove calendar, add stats table, title border
+- [x] Step 6: Move date range filter to `Toolbar`
+- [x] Step 7: Remove date range from `TradesTab`
+- [x] Step 8: Add title border for `JournalTab`
+- [x] Step 9: Wire all new/removed props in `app/page.tsx`
+- [~] Note: Weekly zero-PnL day styling is currently positive-colored instead of muted.
 
 ---
 

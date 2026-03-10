@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'motion/react';
-import { Calendar as CalendarIcon, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import TradeTable from '@/components/trading/TradeTable';
 import { Button } from '@/components/ui/button';
 import type { Trade } from '@/lib/types';
@@ -11,14 +11,10 @@ interface TradesTabProps {
   activeFilterCount: number;
   selectedIds: Set<string>;
   globalTags: string[];
-  startDate: string;
-  endDate: string;
   selectedFilterTags: Set<string>;
   hasActiveFilters: boolean;
   riskInput: string;
   bulkTagInput: string;
-  onStartDateChange: (value: string) => void;
-  onEndDateChange: (value: string) => void;
   onToggleFilterTag: (tag: string) => void;
   onDeleteGlobalTag: (tagName: string) => void;
   onClearAllFilters: () => void;
@@ -38,12 +34,8 @@ export default function TradesTab({
   activeFilterCount,
   selectedIds,
   globalTags,
-  startDate,
-  endDate,
   selectedFilterTags,
   hasActiveFilters,
-  onStartDateChange,
-  onEndDateChange,
   onToggleFilterTag,
   onDeleteGlobalTag,
   onClearAllFilters,
@@ -62,7 +54,7 @@ export default function TradesTab({
   return (
     <motion.div key="filter" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
       <div className="flex flex-col gap-6 rounded-2xl border border-white/5 bg-[#121214] p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
           <h2 className="text-2xl font-bold">Trades Management</h2>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex shrink-0 items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-500">
@@ -107,44 +99,32 @@ export default function TradesTab({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-          <div className="space-y-4">
-            <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-500">Date Range</h3>
-            <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-              <CalendarIcon className="h-4 w-4 text-zinc-500" />
-              <input type="date" value={startDate} onChange={(event) => onStartDateChange(event.target.value)} className="bg-transparent text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]" />
-              <span className="text-zinc-600">to</span>
-              <input type="date" value={endDate} onChange={(event) => onEndDateChange(event.target.value)} className="bg-transparent text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]" />
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-500">Tag Filters</h3>
-            <div className="flex flex-wrap gap-2">
-              {globalTags.map((tag) => (
-                <div
-                  key={tag}
-                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-all ${
-                    selectedFilterTags.has(tag)
-                      ? 'border-emerald-500/30 bg-emerald-500/20 text-emerald-500'
-                      : 'border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10'
-                  }`}
-                  onClick={() => onToggleFilterTag(tag)}
+        <div className="space-y-4">
+          <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-500">Tag Filters</h3>
+          <div className="flex flex-wrap gap-2">
+            {globalTags.map((tag) => (
+              <div
+                key={tag}
+                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-all ${
+                  selectedFilterTags.has(tag)
+                    ? 'border-emerald-500/30 bg-emerald-500/20 text-emerald-500'
+                    : 'border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10'
+                }`}
+                onClick={() => onToggleFilterTag(tag)}
+              >
+                <span>{tag}</span>
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDeleteGlobalTag(tag);
+                  }}
+                  className="rounded p-0.5 text-zinc-600 transition-colors hover:bg-rose-500/20 hover:text-rose-500"
                 >
-                  <span>{tag}</span>
-                  <button
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onDeleteGlobalTag(tag);
-                    }}
-                    className="rounded p-0.5 text-zinc-600 transition-colors hover:bg-rose-500/20 hover:text-rose-500"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-              {globalTags.length === 0 ? <span className="text-sm italic text-zinc-600">No tags created yet.</span> : null}
-            </div>
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+            {globalTags.length === 0 ? <span className="text-sm italic text-zinc-600">No tags created yet.</span> : null}
           </div>
         </div>
       </div>

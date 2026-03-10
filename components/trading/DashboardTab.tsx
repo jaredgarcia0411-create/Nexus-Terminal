@@ -5,6 +5,8 @@ import { motion } from 'motion/react';
 import { Upload } from 'lucide-react';
 import PerformanceCharts from '@/components/trading/PerformanceCharts';
 import TradeTable from '@/components/trading/TradeTable';
+import TradingCalendar from '@/components/trading/TradingCalendar';
+import WeeklyCalendar from '@/components/trading/WeeklyCalendar';
 import { Button } from '@/components/ui/button';
 import type { Trade } from '@/lib/types';
 
@@ -111,24 +113,25 @@ export default function DashboardTab({
             </Button>
           </div>
         </div>
-      ) : (
-        <>
-          <div className="flex items-center justify-end">
-            <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
-              <button
-                onClick={() => setPnlMode('net')}
-                className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'net' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
-              >
-                Net PnL
-              </button>
-              <button
-                onClick={() => setPnlMode('gross')}
-                className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'gross' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
-              >
-                Gross PnL
-              </button>
-            </div>
-          </div>
+        ) : (
+          <>
+           <div className="flex flex-wrap items-center justify-between border-b border-white/10 pb-4">
+             <h2 className="text-2xl font-bold">Dashboard</h2>
+             <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
+               <button
+                 onClick={() => setPnlMode('net')}
+                 className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'net' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+               >
+                 Net PnL
+               </button>
+               <button
+                 onClick={() => setPnlMode('gross')}
+                 className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'gross' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+               >
+                 Gross PnL
+               </button>
+             </div>
+           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
@@ -175,9 +178,12 @@ export default function DashboardTab({
             </div>
           </div>
 
-          <PerformanceCharts trades={filteredTrades} metric={performanceMetric} pnlMode={pnlMode} />
+           <PerformanceCharts trades={filteredTrades} metric={performanceMetric} pnlMode={pnlMode} variant="summary" />
 
-          <div className="space-y-4">
+           <WeeklyCalendar trades={filteredTrades} />
+           <TradingCalendar trades={filteredTrades} />
+
+           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold">Recent Trades</h2>
               <Button variant="ghost" onClick={() => onSetActiveTab('journal')} className="text-sm text-emerald-500 hover:text-emerald-400">

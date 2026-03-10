@@ -23,6 +23,7 @@ interface PerformanceChartsProps {
   trades: Trade[];
   metric: '$' | 'R';
   pnlMode?: 'net' | 'gross';
+  variant?: 'summary' | 'full';
 }
 
 type PointValue = { value: number };
@@ -34,7 +35,7 @@ type DailyPoint = {
   drawdown: number;
 };
 
-export default function PerformanceCharts({ trades, metric, pnlMode = 'net' }: PerformanceChartsProps) {
+export default function PerformanceCharts({ trades, metric, pnlMode = 'net', variant = 'full' }: PerformanceChartsProps) {
   const tradePnl = useCallback((trade: Trade) => (pnlMode === 'gross' ? trade.grossPnl : trade.netPnl), [pnlMode]);
   const metricValue = useCallback(
     (trade: Trade) => {
@@ -91,7 +92,13 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net' }: P
 
   const formatValue = (value: number) => (metric === '$' ? formatCurrency(value) : formatR(value));
 
+  const isSummary = variant === 'summary';
+
   const dayOfWeekData = useMemo(() => {
+    if (isSummary) {
+      return [];
+    }
+
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const stats = days.map((day) => ({ name: day, value: 0 }));
 
@@ -101,9 +108,13 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net' }: P
     });
 
     return stats.filter((day) => (day.name !== 'Sunday' && day.name !== 'Saturday') || day.value !== 0);
-  }, [trades, metricValue]);
+  }, [trades, metricValue, isSummary]);
 
   const timeOfDayData = useMemo(() => {
+    if (isSummary) {
+      return [];
+    }
+
     const stats = Array.from({ length: 24 }, (_, i) => ({
       name: `${i}:00`,
       hour: i,
@@ -116,9 +127,13 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net' }: P
     });
 
     return stats.filter((slot) => trades.some((trade) => new Date(trade.date).getHours() === slot.hour));
-  }, [trades, metricValue]);
+  }, [trades, metricValue, isSummary]);
 
   const winLossDayData = useMemo(() => {
+    if (isSummary) {
+      return [];
+    }
+
     const winDays = chartData.filter((day) => day.value > 0).length;
     const lossDays = chartData.filter((day) => day.value < 0).length;
 
@@ -126,9 +141,13 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net' }: P
       { name: 'Win Days', value: winDays },
       { name: 'Loss Days', value: lossDays },
     ];
-  }, [chartData]);
+  }, [chartData, isSummary]);
 
   const tagBreakdownData = useMemo(() => {
+    if (isSummary) {
+      return [];
+    }
+
     const tagMap = new Map<string, { count: number; value: number }>();
 
     trades.forEach((trade) => {
@@ -146,7 +165,7 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net' }: P
       .map(([tag, stats]) => ({ tag, ...stats }))
       .sort((a, b) => b.count - a.count || Math.abs(b.value) - Math.abs(a.value))
       .slice(0, 10);
-  }, [trades, metricValue]);
+  }, [trades, metricValue, isSummary]);
 
   if (trades.length === 0) {
     return (
@@ -205,113 +224,116 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net' }: P
           </ResponsiveContainer>
         </div>
       </div>
+      {variant === 'full' ? (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[350px]">
+              <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Performance by Day of Week ({metricLabel})</h3>
+              <ResponsiveContainer width="100%" height="85%">
+                <BarChart data={dayOfWeekData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                  <XAxis dataKey="name" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                    formatter={(value?: number) => [formatValue(Number(value || 0)), 'PnL']}
+                  />
+                  <Bar dataKey="value">
+                    {dayOfWeekData.map((entry: PointValue, index: number) => (
+                      <Cell key={`cell-${index}`} fill={entry.value >= 0 ? '#10b981' : '#f43f5e'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[350px]">
-          <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Performance by Day of Week ({metricLabel})</h3>
-          <ResponsiveContainer width="100%" height="85%">
-            <BarChart data={dayOfWeekData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-              <XAxis dataKey="name" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
-              <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
-                formatter={(value?: number) => [formatValue(Number(value || 0)), 'PnL']}
-              />
-              <Bar dataKey="value">
-                {dayOfWeekData.map((entry: PointValue, index: number) => (
-                  <Cell key={`cell-${index}`} fill={entry.value >= 0 ? '#10b981' : '#f43f5e'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+            <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[350px]">
+              <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Performance by Time of Day ({metricLabel})</h3>
+              <ResponsiveContainer width="100%" height="85%">
+                <BarChart data={timeOfDayData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                  <XAxis dataKey="name" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                    formatter={(value?: number) => [formatValue(Number(value || 0)), 'PnL']}
+                  />
+                  <Bar dataKey="value">
+                    {timeOfDayData.map((entry: PointValue, index: number) => (
+                      <Cell key={`cell-${index}`} fill={entry.value >= 0 ? '#10b981' : '#f43f5e'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
 
-        <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[350px]">
-          <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Performance by Time of Day ({metricLabel})</h3>
-          <ResponsiveContainer width="100%" height="85%">
-            <BarChart data={timeOfDayData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-              <XAxis dataKey="name" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
-              <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
-                formatter={(value?: number) => [formatValue(Number(value || 0)), 'PnL']}
-              />
-              <Bar dataKey="value">
-                {timeOfDayData.map((entry: PointValue, index: number) => (
-                  <Cell key={`cell-${index}`} fill={entry.value >= 0 ? '#10b981' : '#f43f5e'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[320px]">
+              <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Win vs Loss Days</h3>
+              <ResponsiveContainer width="100%" height="85%">
+                <BarChart data={winLossDayData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                  <XAxis dataKey="name" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                    formatter={(value?: number) => [`${Number(value || 0)} days`, 'Count']}
+                  />
+                  <Bar dataKey="value">
+                    {winLossDayData.map((entry, index) => (
+                      <Cell key={`win-loss-${index}`} fill={entry.name === 'Win Days' ? '#10b981' : '#f43f5e'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[320px]">
-          <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Win vs Loss Days</h3>
-          <ResponsiveContainer width="100%" height="85%">
-            <BarChart data={winLossDayData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-              <XAxis dataKey="name" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
-              <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
-                formatter={(value?: number) => [`${Number(value || 0)} days`, 'Count']}
-              />
-              <Bar dataKey="value">
-                {winLossDayData.map((entry, index) => (
-                  <Cell key={`win-loss-${index}`} fill={entry.name === 'Win Days' ? '#10b981' : '#f43f5e'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+            <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[320px]">
+              <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Drawdown</h3>
+              <ResponsiveContainer width="100%" height="85%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="colorDrawdown" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                  <XAxis dataKey="date" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
+                  <ReferenceLine y={0} stroke="#ffffff22" />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                    formatter={(value?: number) => [formatValue(Number(value || 0)), 'Drawdown']}
+                  />
+                  <Area type="monotone" dataKey="drawdown" stroke="#f43f5e" fillOpacity={1} fill="url(#colorDrawdown)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
 
-        <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[320px]">
-          <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Drawdown</h3>
-          <ResponsiveContainer width="100%" height="85%">
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="colorDrawdown" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-              <XAxis dataKey="date" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
-              <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
-              <ReferenceLine y={0} stroke="#ffffff22" />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
-                formatter={(value?: number) => [formatValue(Number(value || 0)), 'Drawdown']}
-              />
-              <Area type="monotone" dataKey="drawdown" stroke="#f43f5e" fillOpacity={1} fill="url(#colorDrawdown)" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[320px]">
-          <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Tag Breakdown</h3>
-          {tagBreakdownData.length === 0 ? (
-            <div className="h-[85%] flex items-center justify-center text-xs text-zinc-500">No tagged trades yet</div>
-          ) : (
-            <ResponsiveContainer width="100%" height="85%">
-              <BarChart data={tagBreakdownData} layout="vertical" margin={{ left: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" horizontal={false} />
-                <XAxis type="number" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
-                <YAxis dataKey="tag" type="category" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} width={85} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
-                  formatter={(value?: number) => [`${Number(value || 0)} trades`, 'Tagged Trades']}
-                />
-                <Bar dataKey="count" fill="#10b981" />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
+            <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[320px]">
+              <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Tag Breakdown</h3>
+              {tagBreakdownData.length === 0 ? (
+                <div className="h-[85%] flex items-center justify-center text-xs text-zinc-500">No tagged trades yet</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="85%">
+                  <BarChart data={tagBreakdownData} layout="vertical" margin={{ left: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" horizontal={false} />
+                    <XAxis type="number" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <YAxis dataKey="tag" type="category" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} width={85} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                      formatter={(value?: number) => [`${Number(value || 0)} trades`, 'Tagged Trades']}
+                    />
+                    <Bar dataKey="count" fill="#10b981" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

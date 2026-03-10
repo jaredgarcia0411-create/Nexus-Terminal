@@ -126,6 +126,10 @@ export default function NexusTerminal() {
           selectedCount={selectedIds.size}
           onDeleteSelected={handleDeleteSelected}
           onFilterPresetChange={setFilterPreset}
+          startDate={startDate}
+          endDate={endDate}
+          onStartDateChange={setStartDate}
+          onEndDateChange={setEndDate}
           onImportClick={() => importInputRef.current?.click()}
           onFolderImportClick={() => folderInputRef.current?.click()}
           onNewTradeClick={() => setIsManualTradeOpen(true)}
@@ -182,6 +186,7 @@ export default function NexusTerminal() {
                 filteredTrades={filteredTrades}
                 performanceMetric={performanceMetric}
                 onMetricChange={setPerformanceMetric}
+                onTradeClick={(trade) => setSelectedTradeId(trade.id)}
               />
             ) : null}
 
@@ -191,12 +196,8 @@ export default function NexusTerminal() {
                 activeFilterCount={activeFilterCount}
                 selectedIds={selectedIds}
                 globalTags={globalTags}
-                startDate={startDate}
-                endDate={endDate}
                 selectedFilterTags={selectedFilterTags}
                 hasActiveFilters={hasActiveFilters}
-                onStartDateChange={setStartDate}
-                onEndDateChange={setEndDate}
                 onToggleFilterTag={(tag) => {
                   setSelectedFilterTags((prev) => {
                     const next = new Set(prev);

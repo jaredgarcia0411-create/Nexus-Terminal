@@ -2,7 +2,7 @@
 
 import { motion } from 'motion/react';
 import PerformanceCharts from '@/components/trading/PerformanceCharts';
-import TradingCalendar from '@/components/trading/TradingCalendar';
+import PerformanceStatsTable from '@/components/trading/PerformanceStatsTable';
 import { formatCurrency } from '@/lib/trading-utils';
 import type { Trade } from '@/lib/types';
 
@@ -10,12 +10,13 @@ interface PerformanceTabProps {
   filteredTrades: Trade[];
   performanceMetric: '$' | 'R';
   onMetricChange: (metric: '$' | 'R') => void;
+  onTradeClick: (trade: Trade) => void;
 }
 
-export default function PerformanceTab({ filteredTrades, performanceMetric, onMetricChange }: PerformanceTabProps) {
+export default function PerformanceTab({ filteredTrades, performanceMetric, onMetricChange, onTradeClick }: PerformanceTabProps) {
   return (
     <motion.div key="performance" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between border-b border-white/10 pb-4">
         <h2 className="text-2xl font-bold">Performance Analytics</h2>
         <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 p-1">
           <button
@@ -34,7 +35,7 @@ export default function PerformanceTab({ filteredTrades, performanceMetric, onMe
       </div>
 
       <PerformanceCharts trades={filteredTrades} metric={performanceMetric} />
-      <TradingCalendar trades={filteredTrades} />
+      <PerformanceStatsTable trades={filteredTrades} onTradeClick={onTradeClick} />
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
