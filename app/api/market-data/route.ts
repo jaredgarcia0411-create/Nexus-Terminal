@@ -1,53 +1,73 @@
+import { requireUser } from '@/lib/server-db-utils';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 
-type YahooChartResponse = {
-  chart?: {
-    result?: Array<{
-      timestamp?: number[];
-      indicators?: {
-        quote?: Array<{
-          open?: Array<number | null>;
-          high?: Array<number | null>;
-          low?: Array<number | null>;
-          close?: Array<number | null>;
-          volume?: Array<number | null>;
-        }>;
-      };
-    }>;
-    error?: { description?: string } | null;
-  };
+type MassiveAggResponse = {
+  ticker?: string;
+  adjusted?: boolean;
+  queryCount?: number;
+  resultsCount?: number;
+  status?: string;
+  results?: Array<{
+    o?: number | null;
+    h?: number | null;
+    l?: number | null;
+    c?: number | null;
+    v?: number | null;
+    vw?: number | null;
+    t?: number | null;
+    n?: number | null;
+  }>;
 };
 
-function toYahooInterval(frequencyType: string, frequency: string) {
-  if (frequencyType === 'minute') {
-    const minute = Number(frequency);
-    if ([1, 2, 5, 15, 30, 60, 90].includes(minute)) return `${minute}m`;
-    return '5m';
+function toMassiveTimespan(frequencyType: string, frequency: string) {
+  if (frequencyType === 'minute') return { multiplier: frequency, timespan: 'minute' };
+  if (frequencyType === 'daily') return { multiplier: '1', timespan: 'day' };
+  if (frequencyType === 'weekly') return { multiplier: '1', timespan: 'week' };
+  if (frequencyType === 'monthly') return { multiplier: '1', timespan: 'month' };
+  return { multiplier: '1', timespan: 'day' };
+}
+
+function computeDateRange(periodType: string, period: string) {
+  const now = new Date();
+  const to = now.toISOString().split('T')[0];
+  const value = Math.max(1, Number(period) || 1);
+
+  const past = new Date(now);
+  if (periodType === 'day') {
+    past.setDate(past.getDate() - value);
+  } else if (periodType === 'month') {
+    past.setMonth(past.getMonth() - value);
+  } else if (periodType === 'year') {
+    past.setFullYear(past.getFullYear() - value);
+  } else {
+    past.setMonth(past.getMonth() - 1);
   }
 
-  if (frequencyType === 'daily') return '1d';
-  if (frequencyType === 'weekly') return '1wk';
-  if (frequencyType === 'monthly') return '1mo';
-  return '1d';
+  const from = past.toISOString().split('T')[0];
+  return { from, to };
 }
 
-function toYahooRange(periodType: string, period: string) {
-  const value = Number(period);
-  if (!Number.isFinite(value) || value <= 0) return '1mo';
-
-  if (periodType === 'day') return `${value}d`;
-  if (periodType === 'month') return `${value}mo`;
-  if (periodType === 'year') return `${value}y`;
-  return '1mo';
-}
-
-export async function GET(request: Request) {
+export async function GET(request: Request): Promise<Response> {
   try {
+    const auth = await requireUser();
+    if ('error' in auth) {
+      const authError = auth.error;
+      if (authError instanceof Response) {
+        return authError;
+      }
+      return internalServerError();
+    }
+
     const { searchParams } = new URL(request.url);
 
     const symbol = searchParams.get('symbol')?.trim().toUpperCase();
     if (!symbol) {
       return Response.json({ error: 'Missing symbol' }, { status: 400 });
+    }
+
+    const apiKey = process.env.MASSIVE_API_KEY;
+    if (!apiKey) {
+      return Response.json({ error: 'Market data provider not configured' }, { status: 503 });
     }
 
     const periodType = searchParams.get('periodType') ?? 'day';
@@ -56,57 +76,63 @@ export async function GET(request: Request) {
     const frequency = searchParams.get('frequency') ?? '5';
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
-    const includePrePost = searchParams.get('includePrePost') === 'true';
+    // includePrePost is accepted for backward compatibility but not forwarded.
+    void searchParams.get('includePrePost');
 
-    const interval = toYahooInterval(frequencyType, frequency);
-    const endpoint = new URL(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`);
-    endpoint.searchParams.set('interval', interval);
-    endpoint.searchParams.set('includePrePost', includePrePost ? 'true' : 'false');
+    const { multiplier, timespan } = toMassiveTimespan(frequencyType, frequency);
 
     const startMs = startDate ? Number(startDate) : NaN;
     const endMs = endDate ? Number(endDate) : NaN;
 
+    let from: string;
+    let to: string;
+
     if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs) {
-      endpoint.searchParams.set('period1', String(Math.floor(startMs / 1000)));
-      endpoint.searchParams.set('period2', String(Math.floor(endMs / 1000)));
+      from = String(startMs);
+      to = String(endMs);
     } else {
-      endpoint.searchParams.set('range', toYahooRange(periodType, period));
+      const range = computeDateRange(periodType, period);
+      from = range.from;
+      to = range.to;
     }
+
+    const endpoint = new URL(`https://api.massive.com/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/${multiplier}/${timespan}/${from}/${to}`);
+    endpoint.searchParams.set('apiKey', apiKey);
+    endpoint.searchParams.set('adjusted', 'true');
+    endpoint.searchParams.set('sort', 'asc');
+    endpoint.searchParams.set('limit', '50000');
 
     let res: Response;
     try {
       res = await fetch(endpoint.toString(), {
-        headers: { Accept: 'application/json' },
         cache: 'no-store',
       });
     } catch (error) {
-      console.error('[api:market-data] upstream request failed', { symbol, error });
+      console.error('[api:market-data] upstream request failed', { symbol, error: String(error) });
       return Response.json({ error: 'Market data provider unavailable' }, { status: 502 });
     }
 
-    const payload = (await res.json().catch(() => ({}))) as YahooChartResponse;
-    if (!res.ok || payload.chart?.error) {
-      const message = payload.chart?.error?.description ?? 'Failed to fetch market data';
-      return Response.json({ error: message }, { status: res.status || 502 });
+    const payload = (await res.json().catch(() => ({}))) as MassiveAggResponse;
+    if (!res.ok) {
+      return Response.json({ error: 'Failed to fetch market data' }, { status: res.status || 502 });
     }
 
-    const result = payload.chart?.result?.[0];
-    const timestamps = result?.timestamp ?? [];
-    const quote = result?.indicators?.quote?.[0];
-    if (!quote || timestamps.length === 0) {
+    const results = payload.results ?? [];
+    if (results.length === 0) {
       return Response.json({ symbol, candles: [] });
     }
 
-    const candles = timestamps.flatMap((ts, index) => {
-      const open = Number(quote.open?.[index] ?? NaN);
-      const high = Number(quote.high?.[index] ?? NaN);
-      const low = Number(quote.low?.[index] ?? NaN);
-      const close = Number(quote.close?.[index] ?? NaN);
-      const volume = Number(quote.volume?.[index] ?? 0);
+    const candles = results.flatMap((bar) => {
+      const open = Number(bar.o ?? NaN);
+      const high = Number(bar.h ?? NaN);
+      const low = Number(bar.l ?? NaN);
+      const close = Number(bar.c ?? NaN);
       if (![open, high, low, close].every(Number.isFinite)) return [];
 
+      const volume = Number(bar.v ?? 0);
+
       return [{
-        datetime: ts * 1000,
+        datetime: bar.t ?? 0,
         open,
         high,
         low,

@@ -484,7 +484,7 @@ Visual verification:
 ## Sprint 10: Massive Market Data API Integration
 
 > Generated: 2026-03-10 | Agent: nexus-architect
-> Status: PENDING — ready for opencode execution
+> Status: COMPLETE (session executed)
 
 ### Objective
 
@@ -679,15 +679,16 @@ export async function GET(request: Request) {
 - No Yahoo-specific response parsing (no `chart.result[0].indicators.quote[0]` nesting)
 
 **Acceptance criteria:**
-- [ ] `requireUser()` called before any business logic
-- [ ] Unauthenticated requests receive 401
-- [ ] Missing `MASSIVE_API_KEY` returns 503
-- [ ] Same query params accepted: `symbol`, `periodType`, `period`, `frequencyType`, `frequency`, `startDate`, `endDate`, `includePrePost`
-- [ ] Same response shape: `{ symbol, candles: [{ datetime, open, high, low, close, volume }] }`
-- [ ] `datetime` values are Unix milliseconds
-- [ ] Invalid candles (null OHLC) filtered out
-- [ ] 502 on network failure
-- [ ] `MASSIVE_API_KEY` never logged or returned to client
+ - [x] `requireUser()` called before any business logic
+ - [x] Unauthenticated requests receive 401
+ - [x] Missing `MASSIVE_API_KEY` returns 503
+ - [x] Same query params accepted: `symbol`, `periodType`, `period`, `frequencyType`, `frequency`, `startDate`, `endDate`, `includePrePost`
+ - [x] Same response shape: `{ symbol, candles: [{ datetime, open, high, low, close, volume }] }`
+ - [x] `datetime` values are Unix milliseconds
+ - [x] Invalid candles (null OHLC) filtered out
+ - [x] 502 on network failure
+  - [x] `MASSIVE_API_KEY` never logged or returned to client
+  - [x] Focused test assertion added for `includePrePost` (accepted and not forwarded)
 
 ---
 

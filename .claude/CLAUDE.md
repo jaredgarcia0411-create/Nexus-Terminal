@@ -67,7 +67,7 @@ Framework: Next.js 15, React 19, TypeScript 5.9, deployed on Vercel
 - GET/POST/DELETE /api/tags
 
 ## Market Data
-- GET /api/market-data  (Yahoo Finance proxy)
+ - GET /api/market-data  (Massive API proxy)
 
 ## Jarvis AI
 - POST             /api/jarvis/chat
