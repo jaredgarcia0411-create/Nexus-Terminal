@@ -317,17 +317,17 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                 </div>
 
                 {loadingCandles ? (
-                  <div className="flex h-[320px] items-center justify-center text-sm text-zinc-400">Loading candles...</div>
+                  <div className="flex h-[640px] items-center justify-center text-sm text-zinc-400">Loading candles...</div>
                 ) : candlesError ? (
-                  <div className="flex h-[320px] items-center justify-center text-sm text-zinc-400">
+                  <div className="flex h-[640px] items-center justify-center text-sm text-zinc-400">
                     {candlesError}
                   </div>
                 ) : candles.length === 0 ? (
-                  <div className="flex h-[320px] items-center justify-center text-sm text-zinc-400">
+                  <div className="flex h-[640px] items-center justify-center text-sm text-zinc-400">
                     No candle data available for this trade window.
                   </div>
                 ) : (
-                  <CandlestickChart candles={candles} tradeMarkers={tradeMarkers} height={320} exactPriceMarkers showTimeAxis />
+                  <CandlestickChart candles={candles} tradeMarkers={tradeMarkers} height={640} exactPriceMarkers showTimeAxis />
                 )}
               </div>
             ) : null}
