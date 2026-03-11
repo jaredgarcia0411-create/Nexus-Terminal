@@ -31,6 +31,11 @@ export interface TradeMarker {
   label: string;
 }
 
+const UP_COLOR = '#ffffff';
+const DOWN_COLOR = '#3b82f6';
+const UP_VOLUME_COLOR = '#ffffff33';
+const DOWN_VOLUME_COLOR = '#3b82f633';
+
 interface CandlestickChartProps {
   candles: CandleData[];
   tradeMarkers?: TradeMarker[];
@@ -119,12 +124,12 @@ export function createChartLifecycle({
   });
 
   const candleSeries = chart.addSeries(CandlestickSeries, {
-    upColor: '#10b981',
-    downColor: '#ef4444',
-    borderUpColor: '#10b981',
-    borderDownColor: '#ef4444',
-    wickUpColor: '#10b981',
-    wickDownColor: '#ef4444',
+    upColor: UP_COLOR,
+    downColor: DOWN_COLOR,
+    borderUpColor: UP_COLOR,
+    borderDownColor: DOWN_COLOR,
+    wickUpColor: UP_COLOR,
+    wickDownColor: DOWN_COLOR,
   });
 
   const volumeSeries = chart.addSeries(HistogramSeries, {
@@ -206,18 +211,15 @@ export default function CandlestickChart({
     const points = [...tradeMarkers]
       .sort((a, b) => a.time - b.time)
       .flatMap((marker, index) => {
-        let x = chart.timeScale().timeToCoordinate(toUTCSeconds(marker.time));
-        if (x == null) {
-          const nearestTimestamp = findNearestTimestamp(marker.time, candleTimestamps);
-          if (nearestTimestamp != null) {
-            x = chart.timeScale().timeToCoordinate(toUTCSeconds(nearestTimestamp));
-          }
-        }
+        const nearestTimestamp = findNearestTimestamp(marker.time, candleTimestamps);
+        if (nearestTimestamp == null) return [];
+
+        const x = chart.timeScale().timeToCoordinate(toUTCSeconds(nearestTimestamp));
         const y = candleSeries.priceToCoordinate(marker.price);
         if (x == null || y == null) return [];
 
         const isBuy = marker.direction === 'LONG';
-        const color = isBuy ? '#10b981' : '#ef4444';
+        const color = isBuy ? UP_COLOR : DOWN_COLOR;
         const triangle = isBuy
           ? `${x},${y - markerSize} ${x - markerSize},${y + markerSize} ${x + markerSize},${y + markerSize}`
           : `${x},${y + markerSize} ${x - markerSize},${y - markerSize} ${x + markerSize},${y - markerSize}`;
@@ -315,7 +317,7 @@ export default function CandlestickChart({
     const volumeData: HistogramData[] = sortedCandles.map((c) => ({
       time: toUTCSeconds(c.datetime),
       value: c.volume,
-      color: c.close >= c.open ? '#10b98133' : '#ef444433',
+      color: c.close >= c.open ? UP_VOLUME_COLOR : DOWN_VOLUME_COLOR,
     }));
 
     candleSeries.setData(candleData);
@@ -325,13 +327,17 @@ export default function CandlestickChart({
     if (!exactPriceMarkers && tradeMarkers.length > 0) {
       const markers = [...tradeMarkers]
         .sort((a, b) => a.time - b.time)
-        .map((m) => ({
-          time: toUTCSeconds(m.time),
+        .flatMap((m) => {
+          const nearestTimestamp = findNearestTimestamp(m.time, sortedCandles.map((candle) => candle.datetime));
+          if (nearestTimestamp == null) return [];
+          return [{
+            time: toUTCSeconds(nearestTimestamp),
           position: m.direction === 'LONG' ? ('belowBar' as const) : ('aboveBar' as const),
-          color: m.direction === 'LONG' ? '#10b981' : '#ef4444',
+          color: m.direction === 'LONG' ? UP_COLOR : DOWN_COLOR,
           shape: m.direction === 'LONG' ? ('arrowUp' as const) : ('arrowDown' as const),
           text: m.label,
-        }));
+          }];
+        });
       createSeriesMarkers(candleSeries, markers);
     } else {
       createSeriesMarkers(candleSeries, []);

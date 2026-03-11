@@ -33,13 +33,6 @@ const TIMEFRAME_CONFIG: Record<
   '1d': { label: 'Daily', periodType: 'year', period: '1', frequencyType: 'daily', frequency: '1' },
 };
 
-const NOTE_TEMPLATES = [
-  'Setup:\n',
-  'Execution:\n',
-  'Risk Management:\n',
-  'Lesson Learned:\n',
-];
-
 const NY_TIME_ZONE = 'America/New_York';
 const NY_DATE_PARTS = new Intl.DateTimeFormat('en-US', {
   timeZone: NY_TIME_ZONE,
@@ -150,14 +143,6 @@ function prettyPct(value?: number | null) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-function executionCashDelta(trade: Trade, side: 'ENTRY' | 'EXIT', price: number, qty: number, commission = 0, fees = 0) {
-  const cost = commission + fees;
-  if (trade.direction === 'LONG') {
-    return side === 'ENTRY' ? -price * qty - cost : price * qty - cost;
-  }
-  return side === 'ENTRY' ? price * qty - cost : -price * qty - cost;
-}
-
 export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNotes }: TradeDetailSheetProps) {
   const [notes, setNotes] = useState(trade?.notes ?? '');
   const [timeframe, setTimeframe] = useState<TimeframeKey>('5m');
@@ -184,28 +169,46 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
 
   const tradeMarkers = useMemo<TradeMarker[]>(() => {
     if (!trade) return [];
-    return sortedExecutions.map((execution) => ({
-      time: timeValue(trade.sortKey, execution.time, execution.timestamp),
-      direction: execution.side === 'ENTRY' ? 'LONG' : 'SHORT',
-      price: execution.price,
-      label: execution.side,
-    }));
-  }, [trade, sortedExecutions]);
+    if (sortedExecutions.length > 0) {
+      return sortedExecutions.map((execution) => {
+        const direction = execution.side === 'ENTRY'
+          ? trade.direction
+          : trade.direction === 'LONG'
+            ? 'SHORT'
+            : 'LONG';
 
-  const executionRows = useMemo(() => {
-    if (!trade) return [];
-    let running = 0;
-    return sortedExecutions.map((execution) => {
-      running += executionCashDelta(
-        trade,
-        execution.side,
-        execution.price,
-        execution.qty,
-        execution.commission ?? 0,
-        execution.fees ?? 0,
-      );
-      return { execution, running };
-    });
+        return {
+          time: timeValue(trade.sortKey, execution.time, execution.timestamp),
+          direction,
+          price: execution.price,
+          label: execution.side,
+        };
+      });
+    }
+
+    const markers: TradeMarker[] = [];
+    const entry = nyDateTimeToEpoch(trade.sortKey, trade.entryTime);
+    const exit = nyDateTimeToEpoch(trade.sortKey, trade.exitTime);
+
+    if (entry != null) {
+      markers.push({
+        time: entry,
+        direction: trade.direction,
+        price: trade.avgEntryPrice,
+        label: 'ENTRY',
+      });
+    }
+
+    if (exit != null) {
+      markers.push({
+        time: exit,
+        direction: trade.direction === 'LONG' ? 'SHORT' : 'LONG',
+        price: trade.avgExitPrice,
+        label: 'EXIT',
+      });
+    }
+
+    return markers;
   }, [trade, sortedExecutions]);
 
   const handleSave = async () => {
@@ -324,7 +327,7 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                     No candle data available for this trade window.
                   </div>
                 ) : (
-                  <CandlestickChart candles={candles} tradeMarkers={tradeMarkers} height={320} />
+                  <CandlestickChart candles={candles} tradeMarkers={tradeMarkers} height={320} exactPriceMarkers showTimeAxis />
                 )}
               </div>
             ) : null}
@@ -340,11 +343,10 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                       <th className="px-3 py-2 text-right">Price</th>
                       <th className="px-3 py-2 text-right">Commission</th>
                       <th className="px-3 py-2 text-right">Fees</th>
-                      <th className="px-3 py-2 text-right">Running PnL</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {executionRows.map(({ execution, running }) => (
+                    {sortedExecutions.map((execution) => (
                       <tr key={execution.id} className="border-b border-white/5 last:border-b-0">
                         <td className="px-3 py-2 font-mono">{execution.time}</td>
                         <td className="px-3 py-2">
@@ -360,12 +362,11 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                         <td className="px-3 py-2 text-right font-mono">{formatCurrency(execution.price)}</td>
                         <td className="px-3 py-2 text-right font-mono">{formatCurrency(execution.commission ?? 0)}</td>
                         <td className="px-3 py-2 text-right font-mono">{formatCurrency(execution.fees ?? 0)}</td>
-                        <td className={`px-3 py-2 text-right font-mono ${getPnLColor(running)}`}>{formatCurrency(running)}</td>
                       </tr>
                     ))}
-                    {executionRows.length === 0 ? (
+                    {sortedExecutions.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-3 py-6 text-center text-zinc-500">No execution rows available.</td>
+                        <td colSpan={6} className="px-3 py-6 text-center text-zinc-500">No execution rows available.</td>
                       </tr>
                     ) : null}
                   </tbody>
@@ -375,18 +376,6 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
 
             {activeTab === 'notes' ? (
               <div className="space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  {NOTE_TEMPLATES.map((template) => (
-                    <button
-                      key={template}
-                      onClick={() => setNotes((prev) => `${prev}${prev ? '\n' : ''}${template}`)}
-                      className="rounded bg-white/10 px-2 py-1 text-[10px] text-zinc-300 hover:bg-white/20"
-                    >
-                      Insert {template.trim().replace(':', '')}
-                    </button>
-                  ))}
-                </div>
-
                 <div className="space-y-2">
                   <Label htmlFor="trade-notes">Notes</Label>
                   <Textarea

@@ -12,6 +12,17 @@
 - [x] Verification complete: `npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run build`
 - [x] Hotfix status: COMPLETE
 
+## Chart UX Update (2026-03-10)
+
+- [x] Updated candlestick palette globally: up candles/volume to white, down candles/volume to blue
+- [x] Aligned execution marker timestamps to nearest candle timestamp in chart rendering
+- [x] Added replay chart timeframe selector (`1m`, `5m`, `15m`, `1d`) to match Trade Detail chart options
+- [x] Switched Trade Detail chart execution markers to triangle overlay template (`exactPriceMarkers`)
+- [x] Removed all notes preset insert buttons in Trade Detail notes tab
+- [x] Removed Running PnL column from Trade Detail executions table
+- [x] Verification complete: `npm run lint`, `npx tsc --noEmit`, `npm test`
+- [x] Chart UX update status: COMPLETE
+
 ---
 
 ## Sprint 9: Jarvis RAG-to-Pipeline Rewrite
