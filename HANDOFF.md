@@ -67,6 +67,17 @@
 - [x] Updated chart tab test assertions in `__tests__/charts-tab.test.ts` for icon-only screenshot/timeframe controls
 - [x] Verification complete: `npm run lint`, `npx tsc --noEmit`, `npm test`
 
+### Charts Header Reflow + Visual Parity + Responsive Fill (2026-03-11)
+
+- [x] Matched `components/trading/ChartsTab.tsx` candlestick/volume palette, chart background, grid/border colors, and session shading opacity to `components/trading/CandlestickChart.tsx`
+- [x] Reordered top header in `components/trading/ChartsTab.tsx`: search moved to left, symbol/price/change moved beside search, icon control cluster moved to right
+- [x] Added responsive top-header wrapping behavior for condensed layouts only (wrap enabled below `xl`, single-row maintained at `xl` and above)
+- [x] Converted chart content area in `components/trading/ChartsTab.tsx` to viewport-filling flex layout with dynamic chart resize and minimum chart height fallback (`min-h-[420px]`)
+- [x] Preserved compare rail and chart control behavior while adapting containers to responsive fill-height layout
+- [x] Polished condensed-width header spacing and typography in `components/trading/ChartsTab.tsx` (tighter gaps, smaller input/button/chips) while preserving desktop density
+- [x] Kept control bar one-row at `xl`+ and optimized wrapped `<xl` layout with right-aligned icon cluster on second row
+- [x] Re-verified: `npm run lint`, `npx tsc --noEmit`, `npm test`
+
 ---
 
 ## Sprint 9: Jarvis RAG-to-Pipeline Rewrite
