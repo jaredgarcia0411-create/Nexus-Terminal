@@ -3,13 +3,13 @@ import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-rou
 import { getDb } from '@/lib/db';
 import { jarvisConversations } from '@/lib/db/schema';
 import { requireUser } from '@/lib/server-db-utils';
-import { runResearchPipeline } from '@/app/api/jarvis/research/route';
-import { runTradeAnalysisPipeline } from '@/app/api/jarvis/trade-analysis/route';
 import { callJarvis } from '@/lib/jarvis/client';
 import { buildContext } from '@/lib/jarvis/context';
 import { JARVIS_SYSTEM_PROMPT, buildChatPrompt } from '@/lib/jarvis/prompts';
 import { checkRateLimit } from '@/lib/jarvis/rate-limit';
+import { runResearchPipeline } from '@/lib/jarvis/research';
 import { estimateInputTokens, estimateOutputTokens, logJarvisRequest } from '@/lib/jarvis/token-tracking';
+import { runTradeAnalysisPipeline } from '@/lib/jarvis/trade-analysis';
 import type { JarvisMode } from '@/lib/jarvis/types';
 
 interface ChatBody {

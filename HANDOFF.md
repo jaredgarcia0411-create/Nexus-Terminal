@@ -3,6 +3,15 @@
 > Generated: 2026-03-10 | Agent: nexus-architect
 > Status: EXECUTED (session complete)
 
+## Post-Deploy Hotfix (2026-03-10)
+
+- [x] Moved `runResearchPipeline` out of `app/api/jarvis/research/route.ts` into `lib/jarvis/research.ts`
+- [x] Moved `runTradeAnalysisPipeline` out of `app/api/jarvis/trade-analysis/route.ts` into `lib/jarvis/trade-analysis.ts`
+- [x] Updated `app/api/jarvis/chat/route.ts` to import pipeline helpers from `lib/jarvis/*` (removed route-to-route imports)
+- [x] Verified route files only export valid Next.js route handlers
+- [x] Verification complete: `npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run build`
+- [x] Hotfix status: COMPLETE
+
 ---
 
 ## Sprint 9: Jarvis RAG-to-Pipeline Rewrite
