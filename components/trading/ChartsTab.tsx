@@ -21,8 +21,8 @@ import {
 import {
   Camera,
   ChartCandlestick,
+  Clock3,
   Grid3X3,
-  Landmark,
   Magnet,
   Search,
   TrendingUp,
@@ -30,8 +30,15 @@ import {
 import { motion } from 'motion/react';
 import type { Trade } from '@/lib/types';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useCandleData } from '@/hooks/use-candle-data';
 import { bollingerBands, ema, sma, vwap } from '@/lib/indicators';
 import { epochToNySortKey, nyDateTimeToEpoch } from '@/lib/time-utils';
@@ -66,6 +73,38 @@ const SESSION_SHADE = 'rgba(148, 163, 184, 0.10)';
 
 function toTime(ms: number): Time {
   return Math.floor(ms / 1000) as unknown as Time;
+}
+
+function toEpochMs(time: Time | null | undefined): number | null {
+  if (time == null) return null;
+  if (typeof time === 'number') return Number.isFinite(time) ? time * 1000 : null;
+  if (typeof time === 'string') {
+    const parsed = Date.parse(time);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (typeof time === 'object') {
+    const businessDay = time as { year?: number; month?: number; day?: number };
+    if (
+      Number.isFinite(businessDay.year)
+      && Number.isFinite(businessDay.month)
+      && Number.isFinite(businessDay.day)
+    ) {
+      return Date.UTC(Number(businessDay.year), Number(businessDay.month) - 1, Number(businessDay.day));
+    }
+  }
+  return null;
+}
+
+function BarsIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden="true" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="1.5" y="10" width="2.2" height="7" rx="1" fill="currentColor" />
+      <rect x="5.2" y="7" width="2.2" height="10" rx="1" fill="currentColor" />
+      <rect x="8.9" y="4" width="2.2" height="13" rx="1" fill="currentColor" />
+      <rect x="12.6" y="8.5" width="2.2" height="8.5" rx="1" fill="currentColor" />
+      <rect x="16.3" y="5.5" width="2.2" height="11.5" rx="1" fill="currentColor" />
+    </svg>
+  );
 }
 
 function downloadCanvas(canvas: HTMLCanvasElement, filename: string) {
@@ -113,7 +152,6 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
   const [showEma21, setShowEma21] = useState(false);
   const [showVwap, setShowVwap] = useState(false);
   const [showBollinger, setShowBollinger] = useState(false);
-  const [showSessionShading, setShowSessionShading] = useState(true);
   const [sessionRects, setSessionRects] = useState<Array<{ key: string; left: number; width: number }>>([]);
 
   const frame = FRAME_CONFIG[timeframe];
@@ -312,11 +350,21 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
 
     chart.timeScale().fitContent();
 
-    const recalcSessionRects = () => {
-      if (!showSessionShading || !frame.intraday || sortedCandles.length === 0 || !chartWrapRef.current) {
+      const recalcSessionRects = () => {
+      if (!frame.intraday || sortedCandles.length === 0 || !chartWrapRef.current) {
         setSessionRects([]);
         return;
       }
+
+      const chartWidth = chartWrapRef.current.clientWidth;
+      if (!Number.isFinite(chartWidth) || chartWidth <= 0) {
+        setSessionRects([]);
+        return;
+      }
+
+      const visibleRange = chart.timeScale().getVisibleRange();
+      const visibleStart = toEpochMs(visibleRange?.from);
+      const visibleEnd = toEpochMs(visibleRange?.to);
 
       const byDay = new Set<string>();
       for (const candle of sortedCandles) {
@@ -336,11 +384,24 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
 
         for (const span of spans) {
           if (span.start == null || span.end == null || !Number.isFinite(span.start) || !Number.isFinite(span.end)) continue;
-          const x1 = chart.timeScale().timeToCoordinate(toTime(span.start));
-          const x2 = chart.timeScale().timeToCoordinate(toTime(span.end));
+
+          let clippedStart = span.start;
+          let clippedEnd = span.end;
+          if (visibleStart != null && visibleEnd != null) {
+            clippedStart = Math.max(clippedStart, visibleStart);
+            clippedEnd = Math.min(clippedEnd, visibleEnd);
+          }
+          if (clippedEnd <= clippedStart) continue;
+
+          const x1 = chart.timeScale().timeToCoordinate(toTime(clippedStart));
+          const x2 = chart.timeScale().timeToCoordinate(toTime(clippedEnd));
           if (x1 == null || x2 == null) continue;
-          const left = Math.min(x1, x2);
-          const width = Math.abs(x2 - x1);
+
+          const leftRaw = Math.min(x1, x2);
+          const rightRaw = Math.max(x1, x2);
+          const left = Math.max(0, Math.min(leftRaw, chartWidth));
+          const right = Math.max(0, Math.min(rightRaw, chartWidth));
+          const width = right - left;
           if (width <= 0) continue;
           rects.push({ key: span.key, left, width });
         }
@@ -383,16 +444,15 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
     showBollinger,
     showEma21,
     showGrid,
-    showSessionShading,
     showSma20,
     showVolume,
     showVwap,
   ]);
 
   return (
-    <motion.div key="charts" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-4">
-      <div className="rounded-2xl border border-white/10 bg-[#0b0d10] p-3">
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-[#0f1219] px-3 py-2">
+    <motion.div key="charts" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-3">
+      <div className="bg-[#090b10] px-1 py-2">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#0d1015] px-3 py-1.5">
           <div className="mr-2 flex items-center gap-2 border-r border-white/10 pr-3">
             <span className="text-sm font-semibold text-white">{symbol}</span>
             {headline.price != null ? <span className="text-sm text-zinc-300">${headline.price.toFixed(2)}</span> : null}
@@ -401,6 +461,86 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
                 {formatSignedPercent(headline.changePct)}
               </span>
             ) : null}
+          </div>
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="rounded-md p-2 text-zinc-300 hover:bg-white/10"
+                  title={`Timeframe (${FRAME_CONFIG[timeframe].label})`}
+                  aria-label={`Timeframe ${FRAME_CONFIG[timeframe].label}`}
+                >
+                  <Clock3 className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="border-white/10 bg-[#111319] text-white">
+                <DropdownMenuRadioGroup value={timeframe} onValueChange={(value) => setTimeframe(value as TimeframeKey)}>
+                  {Object.entries(FRAME_CONFIG).map(([key, cfg]) => (
+                    <DropdownMenuRadioItem key={key} value={key} className="cursor-pointer text-xs">
+                      {cfg.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className="rounded-md p-2 text-zinc-300 hover:bg-white/10" title="Candle type" aria-label="Candle type">
+                  <ChartCandlestick className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="border-white/10 bg-[#111319] text-white">
+                <DropdownMenuRadioGroup value={seriesType} onValueChange={(value) => setSeriesType(value as SeriesType)}>
+                  <DropdownMenuRadioItem value="candles" className="cursor-pointer text-xs">Candles</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="bars" className="cursor-pointer text-xs">Bars</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="line" className="cursor-pointer text-xs">Line</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="area" className="cursor-pointer text-xs">Area</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="baseline" className="cursor-pointer text-xs">Baseline</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className="rounded-md p-2 text-zinc-300 hover:bg-white/10" title="Indicators" aria-label="Indicators">
+                  <BarsIcon />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="border-white/10 bg-[#111319] text-white">
+                <DropdownMenuCheckboxItem checked={showVolume} onCheckedChange={(checked) => setShowVolume(Boolean(checked))} className="cursor-pointer text-xs">
+                  Volume
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem checked={showSma20} onCheckedChange={(checked) => setShowSma20(Boolean(checked))} className="cursor-pointer text-xs">
+                  SMA 20
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem checked={showEma21} onCheckedChange={(checked) => setShowEma21(Boolean(checked))} className="cursor-pointer text-xs">
+                  EMA 21
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem checked={showVwap} onCheckedChange={(checked) => setShowVwap(Boolean(checked))} className="cursor-pointer text-xs">
+                  VWAP
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem checked={showBollinger} onCheckedChange={(checked) => setShowBollinger(Boolean(checked))} className="cursor-pointer text-xs">
+                  Bollinger
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <button
+              type="button"
+              onClick={() => {
+                const chart = chartRef.current;
+                if (!chart) return;
+                const canvas = chart.takeScreenshot();
+                downloadCanvas(canvas, `${symbol}-${timeframe}.png`);
+              }}
+              className="rounded-md p-2 text-zinc-300 hover:bg-white/10"
+              title="Capture chart screenshot"
+              aria-label="Capture chart screenshot"
+            >
+              <Camera className="h-4 w-4" />
+            </button>
           </div>
 
           <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#111319] px-2 py-1">
@@ -422,57 +562,6 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
               Go
             </Button>
           </div>
-
-          {recentSymbols.map((s) => (
-            <button
-              key={s}
-              onClick={() => setSymbol(s)}
-              className={`rounded px-2 py-1 text-xs ${symbol === s ? 'bg-emerald-500 text-black' : 'bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white'}`}
-            >
-              {s}
-            </button>
-          ))}
-
-          <div className="mx-2 h-4 w-px bg-white/10" />
-
-          {Object.entries(FRAME_CONFIG).map(([key, cfg]) => (
-            <button
-              key={key}
-              onClick={() => setTimeframe(key as TimeframeKey)}
-              className={`rounded px-2 py-1 text-xs ${timeframe === key ? 'bg-[#2563eb] text-white' : 'bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white'}`}
-            >
-              {cfg.label}
-            </button>
-          ))}
-
-          <div className="mx-2 h-4 w-px bg-white/10" />
-
-          <Select value={seriesType} onValueChange={(value) => setSeriesType(value as SeriesType)}>
-            <SelectTrigger className="h-8 w-32 border-white/10 bg-white/5 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="border-white/10 bg-[#111319] text-white">
-              <SelectItem value="candles">Candles</SelectItem>
-              <SelectItem value="bars">Bars</SelectItem>
-              <SelectItem value="line">Line</SelectItem>
-              <SelectItem value="area">Area</SelectItem>
-              <SelectItem value="baseline">Baseline</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Button
-            variant="secondary"
-            onClick={() => {
-              const chart = chartRef.current;
-              if (!chart) return;
-              const canvas = chart.takeScreenshot();
-              downloadCanvas(canvas, `${symbol}-${timeframe}.png`);
-            }}
-            className="h-8 border border-white/10 bg-white/5 px-2 text-xs text-zinc-300 hover:bg-white/10"
-          >
-            <Camera className="mr-1 h-3.5 w-3.5" />
-            Screenshot
-          </Button>
         </div>
 
         <div className="grid gap-3 lg:grid-cols-[56px_1fr]">
@@ -482,12 +571,6 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
             </button>
             <button onClick={() => setShowGrid((prev) => !prev)} className={`rounded p-2 ${showGrid ? 'bg-emerald-500/20 text-emerald-400' : 'text-zinc-400 hover:bg-white/5'}`} title="Grid">
               <Grid3X3 className="h-4 w-4" />
-            </button>
-            <button onClick={() => setShowSessionShading((prev) => !prev)} className={`rounded p-2 ${showSessionShading ? 'bg-emerald-500/20 text-emerald-400' : 'text-zinc-400 hover:bg-white/5'}`} title="Session Shading">
-              <Landmark className="h-4 w-4" />
-            </button>
-            <button onClick={() => chartRef.current?.timeScale().fitContent()} className="rounded p-2 text-zinc-400 hover:bg-white/5" title="Fit Content">
-              <ChartCandlestick className="h-4 w-4" />
             </button>
             <button
               onClick={() => setCompareEnabled((prev) => !prev)}
@@ -499,40 +582,32 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
           </div>
 
           <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-[#111319] px-2 py-2 text-xs text-zinc-300">
-              <button onClick={() => setShowVolume((prev) => !prev)} className={`rounded px-2 py-1 ${showVolume ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/5 text-zinc-400'}`}>Volume</button>
-              <button onClick={() => setShowSma20((prev) => !prev)} className={`rounded px-2 py-1 ${showSma20 ? 'bg-violet-500/20 text-violet-300' : 'bg-white/5 text-zinc-400'}`}>SMA 20</button>
-              <button onClick={() => setShowEma21((prev) => !prev)} className={`rounded px-2 py-1 ${showEma21 ? 'bg-orange-500/20 text-orange-300' : 'bg-white/5 text-zinc-400'}`}>EMA 21</button>
-              <button onClick={() => setShowVwap((prev) => !prev)} className={`rounded px-2 py-1 ${showVwap ? 'bg-cyan-500/20 text-cyan-300' : 'bg-white/5 text-zinc-400'}`}>VWAP</button>
-              <button onClick={() => setShowBollinger((prev) => !prev)} className={`rounded px-2 py-1 ${showBollinger ? 'bg-slate-500/20 text-slate-300' : 'bg-white/5 text-zinc-400'}`}>Bollinger</button>
-
-              {compareEnabled ? (
-                <div className="ml-auto flex items-center gap-2">
-                  <Input
-                    value={compareInput}
-                    onChange={(event) => setCompareInput(event.target.value.toUpperCase())}
-                    className="h-7 w-24 border-white/10 bg-white/5 px-2 text-xs"
-                    placeholder="Compare"
-                  />
-                  <Button
-                    onClick={() => {
-                      const next = compareInput.trim().toUpperCase();
-                      if (next) setCompareSymbol(next);
-                    }}
-                    className="h-7 bg-amber-500 px-2 text-black hover:bg-amber-400"
-                  >
-                    Apply
-                  </Button>
-                </div>
-              ) : null}
-            </div>
+            {compareEnabled ? (
+              <div className="flex flex-wrap items-center justify-end gap-2 border border-white/10 bg-[#111319] px-2 py-2 text-xs text-zinc-300">
+                <Input
+                  value={compareInput}
+                  onChange={(event) => setCompareInput(event.target.value.toUpperCase())}
+                  className="h-7 w-24 border-white/10 bg-white/5 px-2 text-xs"
+                  placeholder="Compare"
+                />
+                <Button
+                  onClick={() => {
+                    const next = compareInput.trim().toUpperCase();
+                    if (next) setCompareSymbol(next);
+                  }}
+                  className="h-7 bg-amber-500 px-2 text-black hover:bg-amber-400"
+                >
+                  Apply
+                </Button>
+              </div>
+            ) : null}
 
             {isLoading ? <div className="flex h-[700px] items-center justify-center rounded-xl border border-white/10 bg-[#101219] text-sm text-zinc-400">Loading chart...</div> : null}
             {error ? <div className="flex h-[700px] items-center justify-center rounded-xl border border-white/10 bg-[#101219] text-sm text-zinc-400">{error}</div> : null}
             {!isLoading && !error ? (
-              <div ref={chartWrapRef} className="relative h-[700px] w-full rounded-xl border border-white/10 bg-[#101219]">
+              <div ref={chartWrapRef} className="relative h-[700px] w-full border border-white/10 bg-[#0b0e14]">
                 <div ref={containerRef} className="h-full w-full" />
-                {showSessionShading && frame.intraday && sessionRects.length > 0 ? (
+                {frame.intraday && sessionRects.length > 0 ? (
                   <div className="pointer-events-none absolute inset-0">
                     {sessionRects.map((rect) => (
                       <div

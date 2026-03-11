@@ -28,9 +28,9 @@ describe('ChartsTab', () => {
       }],
     }));
 
-    expect(html).toContain('Screenshot');
-    expect(html).toContain('SMA 20');
-    expect(html).toContain('Bollinger');
+    expect(html).toContain('Capture chart screenshot');
+    expect(html).toContain('Timeframe');
+    expect(html).not.toContain('Screenshot</');
     expect(html).toContain('SPY');
   });
 });

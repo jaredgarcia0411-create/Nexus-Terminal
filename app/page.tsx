@@ -142,7 +142,7 @@ export default function NexusTerminal() {
         {/* @ts-expect-error webkitdirectory is non-standard but widely supported */}
         <input ref={folderInputRef} type="file" accept=".csv" multiple webkitdirectory="" className="hidden" onChange={handleFolderUpload} />
 
-        <div className="mx-auto max-w-7xl p-8">
+        <div className={activeTab === 'charts' ? 'px-3 py-4' : 'mx-auto max-w-7xl p-8'}>
           <AnimatePresence mode="wait">
             {activeTab === 'dashboard' ? (
               <DashboardTab

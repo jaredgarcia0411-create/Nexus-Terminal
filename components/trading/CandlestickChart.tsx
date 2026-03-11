@@ -89,7 +89,8 @@ function toUTCSeconds(ms: number): Time {
   return Math.floor(ms / 1000) as unknown as Time;
 }
 
-function toEpochMs(time: Time): number | null {
+function toEpochMs(time: Time | undefined): number | null {
+  if (time == null) return null;
   if (typeof time === 'number') return Number.isFinite(time) ? time * 1000 : null;
 
   if (typeof time === 'string') {
@@ -349,6 +350,16 @@ export default function CandlestickChart({
       return;
     }
 
+    const viewportWidth = containerRef.current?.clientWidth ?? containerWidth;
+    if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
+      clearSessionShadeRects();
+      return;
+    }
+
+    const visibleRange = chart.timeScale().getVisibleRange();
+    const visibleStart = toEpochMs(visibleRange?.from);
+    const visibleEnd = toEpochMs(visibleRange?.to);
+
     const daySet = new Set<string>();
     for (const candle of sortedCandles) {
       daySet.add(epochToNySortKey(candle.datetime));
@@ -369,12 +380,23 @@ export default function CandlestickChart({
       for (const segment of segments) {
         if (segment.start == null || segment.end == null || segment.end <= first || segment.start >= last) continue;
 
-        const x1 = chart.timeScale().timeToCoordinate(toUTCSeconds(segment.start));
-        const x2 = chart.timeScale().timeToCoordinate(toUTCSeconds(segment.end));
+        let clippedStart = segment.start;
+        let clippedEnd = segment.end;
+        if (visibleStart != null && visibleEnd != null) {
+          clippedStart = Math.max(clippedStart, visibleStart);
+          clippedEnd = Math.min(clippedEnd, visibleEnd);
+        }
+        if (clippedEnd <= clippedStart) continue;
+
+        const x1 = chart.timeScale().timeToCoordinate(toUTCSeconds(clippedStart));
+        const x2 = chart.timeScale().timeToCoordinate(toUTCSeconds(clippedEnd));
         if (x1 == null || x2 == null) continue;
 
-        const left = Math.min(x1, x2);
-        const width = Math.abs(x2 - x1);
+        const leftRaw = Math.min(x1, x2);
+        const rightRaw = Math.max(x1, x2);
+        const left = Math.max(0, Math.min(leftRaw, viewportWidth));
+        const right = Math.max(0, Math.min(rightRaw, viewportWidth));
+        const width = right - left;
         if (width <= 0) continue;
 
         rects.push({
@@ -386,7 +408,7 @@ export default function CandlestickChart({
     }
 
     queueMicrotask(() => setSessionShadeRects(rects));
-  }, [clearSessionShadeRects, isIntraday, showSessionShading, sortedCandles]);
+  }, [clearSessionShadeRects, containerWidth, isIntraday, showSessionShading, sortedCandles]);
 
   const scheduleSessionShadeRecalculation = useCallback(() => {
     if (sessionAnimationFrameRef.current != null) {

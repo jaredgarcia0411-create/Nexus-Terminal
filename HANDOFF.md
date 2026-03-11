@@ -55,6 +55,18 @@
 - [x] Added basic render coverage for Charts tab in `__tests__/charts-tab.test.ts`
 - [x] Re-verified: `npm run lint`, `npx tsc --noEmit`, `npm test`
 
+### Charts Layout + Controls Refinement (2026-03-11)
+
+- [x] Updated `app/page.tsx` to render `charts` tab in a wider full-page container (removed `max-w-7xl` cap for charts view)
+- [x] Updated `components/trading/ChartsTab.tsx` to remove rounded card framing and adopt denser full-page chart chrome
+- [x] Reworked top-right chart controls into icon-only dropdown/action cluster (timeframe, candle type, indicators, screenshot)
+- [x] Removed ticker chips beside symbol search and removed `Fit Content` action from left rail
+- [x] Kept left rail controls for magnet/grid/compare only
+- [x] Kept session shading enabled for intraday and removed session shading toggle from Charts tab
+- [x] Hardened session shading coordinate reliability in `components/trading/ChartsTab.tsx` and `components/trading/CandlestickChart.tsx` (visible-range clipping + viewport clamping)
+- [x] Updated chart tab test assertions in `__tests__/charts-tab.test.ts` for icon-only screenshot/timeframe controls
+- [x] Verification complete: `npm run lint`, `npx tsc --noEmit`, `npm test`
+
 ---
 
 ## Sprint 9: Jarvis RAG-to-Pipeline Rewrite
