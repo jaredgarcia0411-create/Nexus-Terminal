@@ -478,3 +478,437 @@ Visual verification:
 - [ ] Macro section shows today's summary
 - [ ] No references to old RAG files remain (embeddings, knowledge chunks, orchestrator)
 - [ ] `jarvis_request_log` still records token usage for new pipelines
+
+---
+
+## Sprint 10: Massive Market Data API Integration
+
+> Generated: 2026-03-10 | Agent: nexus-architect
+> Status: PENDING — ready for opencode execution
+
+### Objective
+
+Replace Yahoo Finance as the upstream market data provider with the Massive API (`https://api.massive.com`) for all candlestick chart data. This is a **server-side-only change**: the API route translates existing client query params to Massive URL format and returns the same `{ symbol, candles: CandleData[] }` response shape. No frontend files change.
+
+### Massive API Reference
+
+- **Base URL:** `https://api.massive.com`
+- **Auth:** `apiKey` query parameter (e.g., `?apiKey=YOUR_KEY`)
+- **No rate limits**
+- **Candle endpoint:** `GET /v2/aggs/ticker/{stockTicker}/range/{multiplier}/{timespan}/{from}/{to}`
+  - `multiplier` (integer): timespan multiplier (e.g., 5)
+  - `timespan` (string): `minute`, `hour`, `day`, `week`, `month`, `quarter`, `year`
+  - `from`/`to`: `YYYY-MM-DD` or Unix milliseconds
+  - Optional query params: `adjusted` (bool, default true), `sort` (asc/desc), `limit` (max 50000, default 5000)
+  - **Response:** `{ ticker, adjusted, queryCount, resultsCount, status, results: [{ o, h, l, c, v, vw, t, n }] }`
+    - `t` = Unix ms, `o` = open, `h` = high, `l` = low, `c` = close, `v` = volume, `vw` = VWAP, `n` = transaction count
+
+### Current State
+
+| File | Role |
+|------|------|
+| `app/api/market-data/route.ts` | Yahoo Finance proxy — accepts `symbol`, `periodType`, `period`, `frequencyType`, `frequency`, `startDate` (epoch ms), `endDate` (epoch ms), `includePrePost`. Returns `{ symbol, candles: CandleData[] }`. **Has NO `requireUser()` call — security gap.** |
+| `hooks/use-candle-data.ts` | Client-side cache (Map), fetches from `/api/market-data`. Interface unchanged. |
+| `components/trading/CandlestickChart.tsx` | Expects `CandleData { datetime (ms), open, high, low, close, volume }`. Unchanged. |
+| `components/trading/JournalTradeChart.tsx` | 5m intraday, 04:00–20:00 ET window, `includePrePost: true`. Unchanged. |
+| `components/trading/TradeDetailSheet.tsx` | Multi-timeframe (1m/5m/15m/1d) via `TIMEFRAME_CONFIG`. Unchanged. |
+| `__tests__/market-data-route.test.ts` | 5 test cases asserting Yahoo URL structure and response shape. Must be rewritten. |
+
+---
+
+### Change 1: Rewrite `app/api/market-data/route.ts`
+
+**Action:** MODIFY (full rewrite of internals)
+
+Two changes in one file:
+1. Add `requireUser()` at the top of the GET handler (fixes security gap)
+2. Replace Yahoo Finance fetch with Massive API fetch
+
+**Implementation guide:**
+
+```typescript
+// app/api/market-data/route.ts
+
+import { requireUser } from '@/lib/server-db-utils';
+import { internalServerError, logRouteError } from '@/lib/api-route-utils';
+
+type MassiveAggResponse = {
+  ticker?: string;
+  adjusted?: boolean;
+  queryCount?: number;
+  resultsCount?: number;
+  status?: string;
+  results?: Array<{
+    o?: number | null;
+    h?: number | null;
+    l?: number | null;
+    c?: number | null;
+    v?: number | null;
+    vw?: number | null;
+    t?: number | null;
+    n?: number | null;
+  }>;
+};
+
+// Maps existing client params to Massive URL path segments
+function toMassiveTimespan(frequencyType: string, frequency: string): { multiplier: string; timespan: string } {
+  if (frequencyType === 'minute') return { multiplier: frequency, timespan: 'minute' };
+  if (frequencyType === 'daily')  return { multiplier: '1', timespan: 'day' };
+  if (frequencyType === 'weekly') return { multiplier: '1', timespan: 'week' };
+  if (frequencyType === 'monthly') return { multiplier: '1', timespan: 'month' };
+  return { multiplier: '1', timespan: 'day' };
+}
+
+// When startDate/endDate are NOT provided, compute from/to from periodType/period
+function computeDateRange(periodType: string, period: string): { from: string; to: string } {
+  const now = new Date();
+  const to = now.toISOString().split('T')[0]; // YYYY-MM-DD
+  const value = Math.max(1, Number(period) || 1);
+
+  const past = new Date(now);
+  if (periodType === 'day')        past.setDate(past.getDate() - value);
+  else if (periodType === 'month') past.setMonth(past.getMonth() - value);
+  else if (periodType === 'year')  past.setFullYear(past.getFullYear() - value);
+  else                             past.setMonth(past.getMonth() - 1); // default 1 month
+
+  const from = past.toISOString().split('T')[0];
+  return { from, to };
+}
+
+export async function GET(request: Request) {
+  try {
+    await requireUser();  // 401 if not authenticated
+
+    const { searchParams } = new URL(request.url);
+
+    const symbol = searchParams.get('symbol')?.trim().toUpperCase();
+    if (!symbol) {
+      return Response.json({ error: 'Missing symbol' }, { status: 400 });
+    }
+
+    const apiKey = process.env.MASSIVE_API_KEY;
+    if (!apiKey) {
+      return Response.json({ error: 'Market data provider not configured' }, { status: 503 });
+    }
+
+    const periodType    = searchParams.get('periodType') ?? 'day';
+    const period        = searchParams.get('period') ?? '1';
+    const frequencyType = searchParams.get('frequencyType') ?? 'minute';
+    const frequency     = searchParams.get('frequency') ?? '5';
+    const startDate     = searchParams.get('startDate');
+    const endDate       = searchParams.get('endDate');
+    // includePrePost accepted for backward compat but not forwarded — Massive returns all available data
+
+    const { multiplier, timespan } = toMassiveTimespan(frequencyType, frequency);
+
+    // Determine from/to: prefer startDate/endDate (epoch ms), fall back to periodType/period
+    let from: string;
+    let to: string;
+    const startMs = startDate ? Number(startDate) : NaN;
+    const endMs   = endDate ? Number(endDate) : NaN;
+
+    if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs) {
+      from = String(startMs);
+      to   = String(endMs);
+    } else {
+      const range = computeDateRange(periodType, period);
+      from = range.from;
+      to   = range.to;
+    }
+
+    const endpoint = new URL(
+      `https://api.massive.com/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/${multiplier}/${timespan}/${from}/${to}`
+    );
+    endpoint.searchParams.set('apiKey', apiKey);
+    endpoint.searchParams.set('adjusted', 'true');
+    endpoint.searchParams.set('sort', 'asc');
+    endpoint.searchParams.set('limit', '50000');
+
+    let res: Response;
+    try {
+      res = await fetch(endpoint.toString(), { cache: 'no-store' });
+    } catch (error) {
+      console.error('[api:market-data] upstream request failed', { symbol, error });
+      return Response.json({ error: 'Market data provider unavailable' }, { status: 502 });
+    }
+
+    const payload = (await res.json().catch(() => ({}))) as MassiveAggResponse;
+    if (!res.ok) {
+      return Response.json({ error: 'Failed to fetch market data' }, { status: res.status || 502 });
+    }
+
+    const results = payload.results ?? [];
+    if (results.length === 0) {
+      return Response.json({ symbol, candles: [] });
+    }
+
+    const candles = results.flatMap((bar) => {
+      const open  = Number(bar.o ?? NaN);
+      const high  = Number(bar.h ?? NaN);
+      const low   = Number(bar.l ?? NaN);
+      const close = Number(bar.c ?? NaN);
+      if (![open, high, low, close].every(Number.isFinite)) return [];
+
+      const volume = Number(bar.v ?? 0);
+      return [{
+        datetime: bar.t ?? 0,  // already in ms from Massive
+        open,
+        high,
+        low,
+        close,
+        volume: Number.isFinite(volume) ? volume : 0,
+      }];
+    });
+
+    return Response.json({ symbol, candles });
+  } catch (error) {
+    logRouteError('market-data.get', error);
+    return internalServerError();
+  }
+}
+```
+
+**Key differences from current Yahoo implementation:**
+- `requireUser()` added (line 1 of handler)
+- 503 returned if `MASSIVE_API_KEY` is missing
+- URL path encodes `multiplier/timespan/from/to` instead of query params
+- `apiKey` sent as query param to Massive
+- `from`/`to` use epoch ms directly (no divide-by-1000 conversion like Yahoo needed)
+- `datetime` = `bar.t` directly (Massive returns ms; Yahoo returned seconds requiring `* 1000`)
+- `includePrePost` accepted but not forwarded
+- No Yahoo-specific response parsing (no `chart.result[0].indicators.quote[0]` nesting)
+
+**Acceptance criteria:**
+- [ ] `requireUser()` called before any business logic
+- [ ] Unauthenticated requests receive 401
+- [ ] Missing `MASSIVE_API_KEY` returns 503
+- [ ] Same query params accepted: `symbol`, `periodType`, `period`, `frequencyType`, `frequency`, `startDate`, `endDate`, `includePrePost`
+- [ ] Same response shape: `{ symbol, candles: [{ datetime, open, high, low, close, volume }] }`
+- [ ] `datetime` values are Unix milliseconds
+- [ ] Invalid candles (null OHLC) filtered out
+- [ ] 502 on network failure
+- [ ] `MASSIVE_API_KEY` never logged or returned to client
+
+---
+
+### Change 2: Add `MASSIVE_API_KEY` to `.env.example`
+
+**Action:** MODIFY
+
+Add after the AskEdgar section:
+
+```
+# Market Data (Massive API)
+MASSIVE_API_KEY=
+```
+
+---
+
+### Change 3: Rewrite `__tests__/market-data-route.test.ts`
+
+**Action:** MODIFY (full rewrite)
+
+```typescript
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// Mock requireUser before importing the route
+vi.mock('@/lib/server-db-utils', () => ({
+  requireUser: vi.fn().mockResolvedValue({ id: 'test-user', email: 'test@example.com' }),
+}));
+
+import { GET } from '@/app/api/market-data/route';
+import { requireUser } from '@/lib/server-db-utils';
+
+function makeJsonResponse(payload: unknown, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function mockFetchResponse(payload: unknown, status = 200) {
+  return vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(makeJsonResponse(payload, status));
+}
+
+const MASSIVE_RESPONSE = {
+  ticker: 'AAPL',
+  resultsCount: 2,
+  status: 'OK',
+  results: [
+    { t: 1700000000000, o: 100, h: 102, l: 99, c: 101, v: 1000, vw: 100.5, n: 50 },
+    { t: 1700000060000, o: 101, h: 103, l: 100, c: 102, v: 2000, vw: 101.5, n: 75 },
+  ],
+};
+
+describe('GET /api/market-data', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    process.env.MASSIVE_API_KEY = 'test-key';
+  });
+
+  beforeAll(() => {
+    process.env.MASSIVE_API_KEY = 'test-key';
+  });
+
+  it('returns 400 when symbol is missing', async () => {
+    const response = await GET(new Request('http://localhost/api/market-data'));
+    const payload = await response.json();
+    expect(response.status).toBe(400);
+    expect(payload).toEqual({ error: 'Missing symbol' });
+  });
+
+  it('returns 401 when user is not authenticated', async () => {
+    vi.mocked(requireUser).mockRejectedValueOnce(
+      Response.json({ error: 'Unauthorized' }, { status: 401 })
+    );
+    const response = await GET(new Request('http://localhost/api/market-data?symbol=AAPL'));
+    // requireUser throws a Response, which the route's catch handler will surface
+    expect(response.status).toBe(401);
+  });
+
+  it('returns 503 when MASSIVE_API_KEY is not set', async () => {
+    delete process.env.MASSIVE_API_KEY;
+    const response = await GET(new Request('http://localhost/api/market-data?symbol=AAPL'));
+    const payload = await response.json();
+    expect(response.status).toBe(503);
+    expect(payload).toEqual({ error: 'Market data provider not configured' });
+  });
+
+  it('returns parsed candle payload on success', async () => {
+    mockFetchResponse(MASSIVE_RESPONSE);
+
+    const response = await GET(
+      new Request('http://localhost/api/market-data?symbol=aapl&startDate=1700000000000&endDate=1700000300000')
+    );
+    const payload = await response.json();
+
+    // Verify Massive URL structure
+    const calledUrl = new URL((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    expect(calledUrl.origin).toBe('https://api.massive.com');
+    expect(calledUrl.pathname).toContain('/v2/aggs/ticker/AAPL/range/');
+    expect(calledUrl.searchParams.get('apiKey')).toBe('test-key');
+    expect(calledUrl.searchParams.get('adjusted')).toBe('true');
+    expect(calledUrl.searchParams.get('sort')).toBe('asc');
+    expect(calledUrl.searchParams.get('limit')).toBe('50000');
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      symbol: 'AAPL',
+      candles: [
+        { datetime: 1700000000000, open: 100, high: 102, low: 99, close: 101, volume: 1000 },
+        { datetime: 1700000060000, open: 101, high: 103, low: 100, close: 102, volume: 2000 },
+      ],
+    });
+  });
+
+  it('filters out invalid candles while keeping valid rows', async () => {
+    mockFetchResponse({
+      status: 'OK',
+      resultsCount: 2,
+      results: [
+        { t: 1700000000000, o: 100, h: 102, l: 99, c: 101, v: 1000, vw: 100.5, n: 50 },
+        { t: 1700000060000, o: null, h: 103, l: 100, c: 102, v: 2000, vw: 101.5, n: 75 },
+      ],
+    });
+
+    const response = await GET(new Request('http://localhost/api/market-data?symbol=AAPL'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.candles).toEqual([
+      { datetime: 1700000000000, open: 100, high: 102, low: 99, close: 101, volume: 1000 },
+    ]);
+  });
+
+  it('returns upstream error status on provider failure', async () => {
+    mockFetchResponse({ status: 'ERROR' }, 404);
+
+    const response = await GET(new Request('http://localhost/api/market-data?symbol=ZZZZ'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(payload).toEqual({ error: 'Failed to fetch market data' });
+  });
+
+  it('returns 502 when upstream fetch throws', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('network unavailable'));
+
+    const response = await GET(new Request('http://localhost/api/market-data?symbol=AAPL'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(payload).toEqual({ error: 'Market data provider unavailable' });
+  });
+});
+```
+
+**Note:** The 401 test depends on how `requireUser()` throws in the actual codebase. Opencode should read `lib/server-db-utils.ts` to verify the throw mechanism and adjust the test mock accordingly.
+
+---
+
+### Change 4: Update `.claude/CLAUDE.md` line 70
+
+**Action:** MODIFY
+
+Change:
+```
+- GET /api/market-data  (Yahoo Finance proxy)
+```
+To:
+```
+- GET /api/market-data  (Massive API proxy)
+```
+
+---
+
+### Files NOT Changed (verified)
+
+| File | Reason |
+|------|--------|
+| `hooks/use-candle-data.ts` | Query param interface unchanged; response shape unchanged |
+| `components/trading/CandlestickChart.tsx` | Consumes `CandleData[]` — shape unchanged |
+| `components/trading/JournalTradeChart.tsx` | Calls `useCandleData` with same params |
+| `components/trading/TradeDetailSheet.tsx` | Calls `useCandleData` via `TIMEFRAME_CONFIG` |
+
+### New Capabilities (not consumed yet — future sprint)
+
+- **VWAP** (`vw` field) available per candle from Massive
+- **Transaction count** (`n` field) available per candle
+- **50,000 candle limit** per request (Yahoo limited to ~8,000)
+- **No rate limits** (Yahoo had undocumented throttling)
+
+---
+
+### Order of Operations
+
+1. Add `MASSIVE_API_KEY=<your-key>` to `.env.local` and Vercel env vars
+2. Modify `app/api/market-data/route.ts` — full rewrite per Change 1
+3. Modify `.env.example` — add `MASSIVE_API_KEY=` per Change 2
+4. Modify `__tests__/market-data-route.test.ts` — full rewrite per Change 3
+5. Modify `.claude/CLAUDE.md` line 70 — per Change 4
+6. Run `npm run lint && npx tsc --noEmit && npm test`
+7. Manual verification: Journal chart + TradeDetailSheet (all 4 timeframes)
+
+### Security Checklist
+
+- [ ] `MASSIVE_API_KEY` only read in `app/api/market-data/route.ts` via `process.env`
+- [ ] API key never logged, never in response body, never in client bundle
+- [ ] `requireUser()` added — closes public access security gap
+- [ ] API key passed as query param to Massive (appears in server fetch URL — ensure no request URL logging captures full URL)
+
+### Rollback
+
+1. `git revert` the single commit — restores Yahoo implementation
+2. Remove `MASSIVE_API_KEY` from env vars
+3. **Keep `requireUser()` even on rollback** — it fixes a real security gap (add it back manually if reverting)
+
+### Verification
+
+```bash
+npm run lint && npx tsc --noEmit && npm test
+```
+
+Manual:
+- [ ] Open Journal tab → expand a trade → candles render with execution markers
+- [ ] Open Trade Detail Sheet → switch 1m / 5m / 15m / 1d → candles render for each
+- [ ] Verify pre-market candles appear in Journal chart (04:00 ET start)
