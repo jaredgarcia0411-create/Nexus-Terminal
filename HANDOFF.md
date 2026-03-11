@@ -23,6 +23,17 @@
 - [x] Verification complete: `npm run lint`, `npx tsc --noEmit`, `npm test`
 - [x] Chart UX update status: COMPLETE
 
+## Replay Chart NY Time Alignment (2026-03-11)
+
+- [x] Locked chart bottom-axis and crosshair time formatting to `America/New_York` in `components/trading/CandlestickChart.tsx`
+- [x] Added strict absolute timestamp parser in `lib/time-utils.ts` (`Z`/offset-aware only; rejects ambiguous local datetime strings)
+- [x] Updated `components/trading/JournalTradeChart.tsx` marker timestamp parsing to use strict parser with NY fallback
+- [x] Updated `components/trading/TradeDetailSheet.tsx` timestamp parsing and removed browser-local fallback
+- [x] Hardened execution timestamp normalization in `app/api/trades/import/route.ts` and `app/api/trades/route.ts` to canonical ISO or `null`
+- [x] Added tests: `__tests__/time-utils.test.ts`, `__tests__/trades-route.test.ts`, and expanded existing route/chart tests
+- [x] Verification complete: `npm run lint`, `npx tsc --noEmit`, `npm test`
+- [x] Replay chart NY time alignment status: COMPLETE
+
 ---
 
 ## Sprint 9: Jarvis RAG-to-Pipeline Rewrite

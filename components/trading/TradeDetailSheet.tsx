@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import CandlestickChart, { type TradeMarker } from '@/components/trading/CandlestickChart';
 import { useCandleData } from '@/hooks/use-candle-data';
+import { parseAbsoluteTimestampMs } from '@/lib/time-utils';
 
 interface TradeDetailSheetProps {
   trade: Trade | null;
@@ -116,16 +117,13 @@ function getMarketWindowMs(sortKey: string) {
 }
 
 function timeValue(sortKey: string, time: string, timestamp?: string | Date) {
-  if (timestamp) {
-    const parsed = new Date(timestamp).getTime();
-    if (Number.isFinite(parsed)) return parsed;
-  }
+  const parsedTimestamp = parseAbsoluteTimestampMs(timestamp);
+  if (parsedTimestamp != null) return parsedTimestamp;
 
   const nyEpoch = nyDateTimeToEpoch(sortKey, time);
   if (nyEpoch != null) return nyEpoch;
 
-  const fallback = new Date(`${sortKey}T${time}`).getTime();
-  return Number.isFinite(fallback) ? fallback : 0;
+  return 0;
 }
 
 function prettyNumber(value?: number | null, digits = 2) {

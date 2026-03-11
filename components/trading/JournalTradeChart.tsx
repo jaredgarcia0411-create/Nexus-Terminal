@@ -5,6 +5,7 @@ import type { Trade } from '@/lib/types';
 import CandlestickChart, { type TradeMarker } from '@/components/trading/CandlestickChart';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCandleData } from '@/hooks/use-candle-data';
+import { parseAbsoluteTimestampMs } from '@/lib/time-utils';
 
 const NY_DATE_PARTS = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/New_York',
@@ -127,8 +128,8 @@ function JournalTradeChart({ trade }: JournalTradeChartProps) {
   const tradeMarkers = useMemo<TradeMarker[]>(() => {
     if (trade.rawExecutions.length > 0) {
       return trade.rawExecutions.flatMap((execution) => {
-        const fromTimestamp = execution.timestamp ? new Date(execution.timestamp).getTime() : NaN;
-        const parsed = Number.isFinite(fromTimestamp) ? fromTimestamp : nyDateTimeToEpoch(trade.sortKey, execution.time);
+        const fromTimestamp = parseAbsoluteTimestampMs(execution.timestamp);
+        const parsed = fromTimestamp ?? nyDateTimeToEpoch(trade.sortKey, execution.time);
         if (parsed == null || !Number.isFinite(parsed)) return [];
 
         const direction = execution.side === 'ENTRY'

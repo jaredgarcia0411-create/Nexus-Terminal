@@ -11,12 +11,11 @@ import {
   toTrade,
   type ApiTrade,
 } from '@/lib/server-db-utils';
+import { parseAbsoluteTimestampMs } from '@/lib/time-utils';
 
 function normalizeTimestamp(value: unknown): string | null {
-  if (value == null) return null;
-  if (value instanceof Date) return value.toISOString();
-  if (typeof value === 'string' && value.trim()) return value;
-  return null;
+  const parsed = parseAbsoluteTimestampMs(value as string | Date | null | undefined);
+  return parsed == null ? null : new Date(parsed).toISOString();
 }
 
 export async function GET(request: Request) {

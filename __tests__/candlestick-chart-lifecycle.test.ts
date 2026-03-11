@@ -109,6 +109,17 @@ describe('createChartLifecycle', () => {
     });
 
     expect(chart.priceScale).toHaveBeenCalledWith('volume');
+    expect(createChartFn).toHaveBeenCalledWith(
+      container,
+      expect.objectContaining({
+        localization: expect.objectContaining({
+          timeFormatter: expect.any(Function),
+        }),
+        timeScale: expect.objectContaining({
+          tickMarkFormatter: expect.any(Function),
+        }),
+      }),
+    );
     expect(volumeScaleApplyOptions).toHaveBeenCalledWith({
       scaleMargins: { top: 0.8, bottom: 0 },
     });

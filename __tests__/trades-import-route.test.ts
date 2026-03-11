@@ -291,6 +291,58 @@ describe('POST /api/trades/import', () => {
     expect(db._mocks.tradeTagsInsertValuesMock).toHaveBeenCalledWith({ userId: 'user-1', tradeId: 'trade-1', tag: 'swing' });
   });
 
+  it('normalizes ambiguous execution timestamps to null', async () => {
+    const db = makeDbWithBatchState(false);
+    getPoolDbMock.mockReturnValue(db);
+
+    const response = await POST(new Request('http://localhost/api/trades/import', {
+      method: 'POST',
+      body: JSON.stringify({
+        trades: [
+          {
+            id: 'trade-1',
+            date: '2026-03-06T12:00:00.000Z',
+            sortKey: '2026-03-06',
+            symbol: 'AAPL',
+            direction: 'LONG',
+            avgEntryPrice: 100,
+            avgExitPrice: 105,
+            totalQuantity: 10,
+            netPnl: 48,
+            entryTime: '09:35:00',
+            exitTime: '10:00:00',
+            executionCount: 1,
+            rawExecutions: [
+              {
+                id: 'entry-1',
+                side: 'ENTRY',
+                price: 100,
+                qty: 5,
+                time: '09:35:00',
+                timestamp: '2026-03-06 09:35:00',
+                commission: 0,
+                fees: 0,
+              },
+            ],
+            pnl: 48,
+            executions: 1,
+            tags: [],
+          },
+        ],
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    if (!response) throw new Error('Expected response');
+
+    expect(response.status).toBe(200);
+    expect(db._mocks.executionInsertValuesMock).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: 'exec-entry-1',
+        timestamp: null,
+      }),
+    ]);
+  });
+
   it('returns 400 for malformed JSON payload', async () => {
     const db = makeDbWithBatchState(false);
     getPoolDbMock.mockReturnValue(db);
