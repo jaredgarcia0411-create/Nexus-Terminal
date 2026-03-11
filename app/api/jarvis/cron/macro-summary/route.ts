@@ -42,6 +42,17 @@ function parseJson(text: string): unknown {
   }
 }
 
+function describeError(error: unknown): string {
+  return error instanceof Error && error.message.trim()
+    ? error.message
+    : 'Unknown error';
+}
+
+function isMissingJarvisConfig(error: unknown): boolean {
+  const message = describeError(error);
+  return message.includes('JARVIS_API_KEY') || message.includes('NVIDIA_API_KEY');
+}
+
 export async function GET(request: Request) {
   try {
     const authError = requireCronSecret(request);
@@ -53,6 +64,14 @@ export async function GET(request: Request) {
     const fetched = settled
       .map((result, index) => ({ result, url: MACRO_URLS[index] }))
       .filter((entry): entry is { result: PromiseFulfilledResult<string>; url: string } => entry.result.status === 'fulfilled');
+
+    if (fetched.length === 0) {
+      return Response.json({
+        error: 'Macro source fetch failed',
+        stage: 'scrape',
+        attemptedSources: MACRO_URLS.length,
+      }, { status: 502 });
+    }
 
     const sources = fetched.map((entry) => entry.url);
     const context = {
@@ -66,17 +85,50 @@ export async function GET(request: Request) {
     };
 
     const prompt = buildMacroPrompt(context);
-    const llm = await callJarvis(JARVIS_SYSTEM_PROMPT, prompt);
+    let llm: Awaited<ReturnType<typeof callJarvis>>;
+    try {
+      llm = await callJarvis(JARVIS_SYSTEM_PROMPT, prompt);
+    } catch (error) {
+      const message = describeError(error);
+      logRouteError('jarvis.cron.macro-summary.get.llm', error);
+      return Response.json({
+        error: isMissingJarvisConfig(error)
+          ? 'Jarvis provider is not configured'
+          : 'Macro summary generation failed',
+        stage: 'llm',
+        detail: message,
+      }, { status: isMissingJarvisConfig(error) ? 503 : 502 });
+    }
+
     const parsed = parseJson(llm.content);
 
     const db = getDb();
     if (db) {
-      await db.insert(macroSummaries).values({
-        id: crypto.randomUUID(),
-        summaryJson: parsed,
-        sourcesJson: sources,
-        modelUsed: llm.modelUsed,
-        generatedAt: new Date(),
+      try {
+        await db.insert(macroSummaries).values({
+          id: crypto.randomUUID(),
+          summaryJson: parsed,
+          sourcesJson: sources,
+          modelUsed: llm.modelUsed,
+          generatedAt: new Date(),
+        });
+      } catch (error) {
+        logRouteError('jarvis.cron.macro-summary.get.db', error);
+        return Response.json({
+          error: 'Macro summary persistence failed',
+          stage: 'db',
+        }, { status: 500 });
+      }
+    }
+
+    const failedSourceCount = settled.length - fetched.length;
+
+    if (failedSourceCount > 0) {
+      return Response.json({
+        success: true,
+        sources,
+        summary: parsed,
+        warnings: [`${failedSourceCount} macro source fetches failed`],
       });
     }
 

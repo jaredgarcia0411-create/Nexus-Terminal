@@ -12,7 +12,12 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import CandlestickChart, { type TradeMarker } from '@/components/trading/CandlestickChart';
 import { useCandleData } from '@/hooks/use-candle-data';
-import { getIntradaySessionWindow, nyDateTimeToEpoch, parseAbsoluteTimestampMs } from '@/lib/time-utils';
+import {
+  buildTradeChartOptions,
+  TRADE_CHART_TIMEFRAME_CONFIG,
+  type TradeChartTimeframeKey,
+} from '@/lib/chart-timeframes';
+import { nyDateTimeToEpoch, parseAbsoluteTimestampMs } from '@/lib/time-utils';
 
 interface TradeDetailSheetProps {
   trade: Trade | null;
@@ -21,28 +26,7 @@ interface TradeDetailSheetProps {
   onSaveNotes: (tradeId: string, notes: string) => Promise<void> | void;
 }
 
-type TimeframeKey = '1m' | '5m' | '15m' | '1d';
 type DetailTab = 'overview' | 'chart' | 'executions' | 'notes';
-
-const TIMEFRAME_CONFIG: Record<
-  TimeframeKey,
-  { label: string; periodType: string; period: string; frequencyType: string; frequency: string }
-> = {
-  '1m': { label: '1m', periodType: 'day', period: '1', frequencyType: 'minute', frequency: '1' },
-  '5m': { label: '5m', periodType: 'day', period: '1', frequencyType: 'minute', frequency: '5' },
-  '15m': { label: '15m', periodType: 'day', period: '1', frequencyType: 'minute', frequency: '15' },
-  '1d': { label: 'Daily', periodType: 'year', period: '1', frequencyType: 'daily', frequency: '1' },
-};
-
-function getMarketWindowMs(sortKey: string) {
-  const window = getIntradaySessionWindow(sortKey, true);
-  if (!window) return {};
-
-  return {
-    startDate: window.startDate,
-    endDate: window.endDate,
-  };
-}
 
 function timeValue(sortKey: string, time: string, timestamp?: string | Date) {
   const parsedTimestamp = parseAbsoluteTimestampMs(timestamp);
@@ -71,14 +55,12 @@ function prettyPct(value?: number | null) {
 
 export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNotes }: TradeDetailSheetProps) {
   const [notes, setNotes] = useState(trade?.notes ?? '');
-  const [timeframe, setTimeframe] = useState<TimeframeKey>('5m');
+  const [timeframe, setTimeframe] = useState<TradeChartTimeframeKey>('5m');
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
 
   const chartOptions = useMemo(() => {
     if (!trade) return null;
-    const base = TIMEFRAME_CONFIG[timeframe];
-    if (timeframe === '1d') return base;
-    return { ...base, ...getMarketWindowMs(trade.sortKey), includePrePost: true };
+    return buildTradeChartOptions(trade.sortKey, timeframe);
   }, [trade, timeframe]);
 
   const { candles, isLoading: loadingCandles, error: candlesError } = useCandleData(
@@ -228,12 +210,12 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
               <div className="space-y-3 rounded-lg border border-white/10 bg-white/5 p-3">
                 <div className="flex items-center justify-between gap-4">
                   <p className="text-[10px] uppercase tracking-wider text-zinc-500">Chart</p>
-                  <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TimeframeKey)}>
+                  <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TradeChartTimeframeKey)}>
                     <SelectTrigger className="h-8 w-28 bg-white/5 border-white/10 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-[#18181b] border-white/10 text-white">
-                      {Object.entries(TIMEFRAME_CONFIG).map(([value, cfg]) => (
+                      {Object.entries(TRADE_CHART_TIMEFRAME_CONFIG).map(([value, cfg]) => (
                         <SelectItem key={value} value={value}>
                           {cfg.label}
                         </SelectItem>

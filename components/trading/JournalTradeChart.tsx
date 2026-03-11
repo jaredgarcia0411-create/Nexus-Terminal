@@ -4,41 +4,23 @@ import { memo, useMemo, useState } from 'react';
 import type { Trade } from '@/lib/types';
 import CandlestickChart, { type TradeMarker } from '@/components/trading/CandlestickChart';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  buildTradeChartOptions,
+  TRADE_CHART_TIMEFRAME_CONFIG,
+  type TradeChartTimeframeKey,
+} from '@/lib/chart-timeframes';
 import { useCandleData } from '@/hooks/use-candle-data';
-import { getIntradaySessionWindow, nyDateTimeToEpoch, parseAbsoluteTimestampMs } from '@/lib/time-utils';
+import { nyDateTimeToEpoch, parseAbsoluteTimestampMs } from '@/lib/time-utils';
 
 interface JournalTradeChartProps {
   trade: Trade;
 }
 
-type TimeframeKey = '1m' | '5m' | '15m' | '1d';
-
-const TIMEFRAME_CONFIG: Record<
-  TimeframeKey,
-  { label: string; periodType: string; period: string; frequencyType: string; frequency: string }
-> = {
-  '1m': { label: '1m', periodType: 'day', period: '1', frequencyType: 'minute', frequency: '1' },
-  '5m': { label: '5m', periodType: 'day', period: '1', frequencyType: 'minute', frequency: '5' },
-  '15m': { label: '15m', periodType: 'day', period: '1', frequencyType: 'minute', frequency: '15' },
-  '1d': { label: 'Daily', periodType: 'year', period: '1', frequencyType: 'daily', frequency: '1' },
-};
-
 function JournalTradeChart({ trade }: JournalTradeChartProps) {
-  const [timeframe, setTimeframe] = useState<TimeframeKey>('5m');
-  const marketWindow = useMemo(() => getIntradaySessionWindow(trade.sortKey, true), [trade.sortKey]);
+  const [timeframe, setTimeframe] = useState<TradeChartTimeframeKey>('5m');
   const chartOptions = useMemo(() => {
-    const base = TIMEFRAME_CONFIG[timeframe];
-    if (timeframe === '1d') {
-      return base;
-    }
-
-    return {
-      ...base,
-      startDate: marketWindow?.startDate,
-      endDate: marketWindow?.endDate,
-      includePrePost: true,
-    };
-  }, [marketWindow, timeframe]);
+    return buildTradeChartOptions(trade.sortKey, timeframe);
+  }, [trade.sortKey, timeframe]);
 
   const { candles, isLoading, error } = useCandleData(
     trade.symbol,
@@ -107,12 +89,12 @@ function JournalTradeChart({ trade }: JournalTradeChartProps) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-2">
       <div className="mb-2 flex items-center justify-end">
-        <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TimeframeKey)}>
+        <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TradeChartTimeframeKey)}>
           <SelectTrigger className="h-8 w-28 bg-white/5 border-white/10 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-[#18181b] border-white/10 text-white">
-            {Object.entries(TIMEFRAME_CONFIG).map(([value, cfg]) => (
+            {Object.entries(TRADE_CHART_TIMEFRAME_CONFIG).map(([value, cfg]) => (
               <SelectItem key={value} value={value}>
                 {cfg.label}
               </SelectItem>

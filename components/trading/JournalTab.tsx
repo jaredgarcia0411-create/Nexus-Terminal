@@ -7,6 +7,11 @@ import { ChevronDown, ChevronRight, Search, Tag as TagIcon } from 'lucide-react'
 import TradeTable from '@/components/trading/TradeTable';
 import JournalTradeChart from '@/components/trading/JournalTradeChart';
 import { formatCurrency, getPnLColor } from '@/lib/trading-utils';
+import {
+  resolveInitialChartCount,
+  resolveLoadMoreCount,
+  resolveNextChartCount,
+} from '@/lib/journal-chart-batching';
 import type { Trade } from '@/lib/types';
 
 interface JournalTabProps {
@@ -136,7 +141,7 @@ export default function JournalTab({
     if (!isCurrentlyExpanded) {
       setChartCountByDay((counts) => ({
         ...counts,
-        [sortKey]: counts[sortKey] ?? INITIAL_CHART_BATCH,
+        [sortKey]: resolveInitialChartCount(counts[sortKey], INITIAL_CHART_BATCH),
       }));
     }
 
@@ -286,15 +291,16 @@ export default function JournalTab({
                             onClick={() => {
                               setChartCountByDay((counts) => ({
                                 ...counts,
-                                [day.sortKey]: Math.min(
+                                [day.sortKey]: resolveNextChartCount(
                                   day.trades.length,
-                                  (counts[day.sortKey] ?? INITIAL_CHART_BATCH) + CHART_BATCH_STEP,
+                                  counts[day.sortKey] ?? INITIAL_CHART_BATCH,
+                                  CHART_BATCH_STEP,
                                 ),
                               }));
                             }}
                             className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/10"
                           >
-                            Load {Math.min(CHART_BATCH_STEP, day.trades.length - (chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH))} more charts
+                            Load {resolveLoadMoreCount(day.trades.length, chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH, CHART_BATCH_STEP)} more charts
                           </button>
                         </div>
                       ) : null}

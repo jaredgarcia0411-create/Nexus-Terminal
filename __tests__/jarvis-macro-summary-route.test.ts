@@ -47,6 +47,62 @@ describe('jarvis cron macro-summary route', () => {
     expect(ensureResponse(response).status).toBe(401);
   });
 
+  it('returns 503 when jarvis provider is not configured', async () => {
+    callJarvisMock.mockRejectedValue(new Error('JARVIS_API_KEY (or NVIDIA_API_KEY) is not configured'));
+
+    const response = await cronGet(new Request('http://localhost/api/jarvis/cron/macro-summary', {
+      method: 'GET',
+      headers: { authorization: 'Bearer cron-secret' },
+    }));
+
+    const json = await ensureResponse(response).json();
+    expect(ensureResponse(response).status).toBe(503);
+    expect(json).toMatchObject({
+      error: 'Jarvis provider is not configured',
+      stage: 'llm',
+    });
+  });
+
+  it('returns 502 when all macro sources fail to fetch', async () => {
+    fetchPageTextMock.mockRejectedValue(new Error('source unavailable'));
+
+    const response = await cronGet(new Request('http://localhost/api/jarvis/cron/macro-summary', {
+      method: 'GET',
+      headers: { authorization: 'Bearer cron-secret' },
+    }));
+
+    const json = await ensureResponse(response).json();
+    expect(ensureResponse(response).status).toBe(502);
+    expect(json).toMatchObject({
+      error: 'Macro source fetch failed',
+      stage: 'scrape',
+      attemptedSources: 5,
+    });
+    expect(callJarvisMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 when db write fails after summary generation', async () => {
+    getDbMock.mockReturnValueOnce({
+      insert: vi.fn(() => ({
+        values: vi.fn(async () => {
+          throw new Error('db unavailable');
+        }),
+      })),
+    });
+
+    const response = await cronGet(new Request('http://localhost/api/jarvis/cron/macro-summary', {
+      method: 'GET',
+      headers: { authorization: 'Bearer cron-secret' },
+    }));
+
+    const json = await ensureResponse(response).json();
+    expect(ensureResponse(response).status).toBe(500);
+    expect(json).toMatchObject({
+      error: 'Macro summary persistence failed',
+      stage: 'db',
+    });
+  });
+
   it('runs and stores macro summary when cron secret is valid', async () => {
     const response = await cronGet(new Request('http://localhost/api/jarvis/cron/macro-summary', {
       method: 'GET',
@@ -70,6 +126,26 @@ describe('jarvis cron macro-summary route', () => {
     });
     expect(callJarvisMock).toHaveBeenCalledTimes(1);
     expect(fetchPageTextMock).toHaveBeenCalledTimes(5);
+  });
+
+  it('returns success with warnings when some sources fail', async () => {
+    fetchPageTextMock
+      .mockResolvedValueOnce('source one')
+      .mockRejectedValueOnce(new Error('source down'))
+      .mockResolvedValue('source ok');
+
+    const response = await cronGet(new Request('http://localhost/api/jarvis/cron/macro-summary', {
+      method: 'GET',
+      headers: { authorization: 'Bearer cron-secret' },
+    }));
+
+    const json = await ensureResponse(response).json();
+    expect(ensureResponse(response).status).toBe(200);
+    expect(json).toMatchObject({
+      success: true,
+      warnings: ['1 macro source fetches failed'],
+    });
+    expect(json.sources).toHaveLength(4);
   });
 });
 
