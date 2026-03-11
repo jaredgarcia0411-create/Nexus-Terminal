@@ -30,7 +30,7 @@ export default function JarvisPanel({ open, onOpenChange, trades }: JarvisPanelP
   const loadData = async () => {
     const [researchRes, macroRes] = await Promise.all([
       fetch('/api/jarvis/research').catch(() => null),
-      fetch('/api/jarvis/cron/macro-summary').catch(() => null),
+      fetch('/api/jarvis/macro-summary/latest').catch(() => null),
     ]);
 
     if (researchRes?.ok) {

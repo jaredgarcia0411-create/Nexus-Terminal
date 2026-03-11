@@ -8,10 +8,18 @@ import {
   CandlestickSeries,
   HistogramSeries,
   CrosshairMode,
+  PriceScaleMode,
+  LineStyle,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
   type CandlestickData,
   type HistogramData,
+  type LineWidth,
+  type SeriesMarker,
+  type SeriesMarkerBar,
+  type SeriesMarkerPrice,
   type Time,
 } from 'lightweight-charts';
 import { epochToNySortKey, nyDateTimeToEpoch } from '@/lib/time-utils';
@@ -37,28 +45,44 @@ const DOWN_COLOR = '#3b82f6';
 const UP_VOLUME_COLOR = '#ffffff33';
 const DOWN_VOLUME_COLOR = '#3b82f633';
 
-interface CandlestickChartProps {
+interface CandlestickChartProps extends CandlestickChartOptions {
   candles: CandleData[];
   tradeMarkers?: TradeMarker[];
   height?: number;
   exactPriceMarkers?: boolean;
   showTimeAxis?: boolean;
   showSessionShading?: boolean;
+  scaleMode?: PriceScaleMode;
 }
-
-type ExactMarkerPoint = {
-  key: string;
-  x: number;
-  y: number;
-  color: string;
-  points: string;
-};
 
 type SessionShadeRect = {
   key: string;
   left: number;
   width: number;
 };
+
+type NativeCrosshairPoint = {
+  timeLabel: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+};
+
+type NativePriceLine = {
+  price: number;
+  color?: string;
+  title?: string;
+  lineWidth?: LineWidth;
+  lineStyle?: LineStyle;
+  axisLabelVisible?: boolean;
+};
+
+export interface CandlestickChartOptions {
+  priceLines?: NativePriceLine[];
+  showCrosshairLegend?: boolean;
+}
 
 const NY_TIME_ZONE = 'America/New_York';
 
@@ -157,6 +181,7 @@ export function createChartLifecycle({
   container,
   height,
   showTimeAxis = false,
+  scaleMode = PriceScaleMode.Normal,
   createChartFn = createChart,
   resizeObserverCtor = typeof ResizeObserver !== 'undefined' ? (ResizeObserver as ResizeObserverCtorLike) : undefined,
   onResize,
@@ -164,6 +189,7 @@ export function createChartLifecycle({
   container: HTMLDivElement;
   height: number;
   showTimeAxis?: boolean;
+  scaleMode?: PriceScaleMode;
   createChartFn?: CreateChartFn;
   resizeObserverCtor?: ResizeObserverCtorLike | undefined;
   onResize?: (width: number) => void;
@@ -182,6 +208,7 @@ export function createChartLifecycle({
     },
     rightPriceScale: {
       borderColor: '#ffffff10',
+      mode: scaleMode,
     },
     timeScale: {
       borderColor: '#ffffff10',
@@ -246,6 +273,11 @@ export function createChartLifecycle({
   };
 }
 
+function formatNumber(value: number | null) {
+  if (value == null || Number.isNaN(value)) return '-';
+  return value.toFixed(4);
+}
+
 export default function CandlestickChart({
   candles,
   tradeMarkers = [],
@@ -253,16 +285,21 @@ export default function CandlestickChart({
   exactPriceMarkers = false,
   showTimeAxis = false,
   showSessionShading = false,
+  scaleMode,
+  priceLines,
+  showCrosshairLegend = false,
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const markerAnimationFrameRef = useRef<number | null>(null);
+  const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const priceLinesRef = useRef<IPriceLine[]>([]);
   const sessionAnimationFrameRef = useRef<number | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
-  const [exactMarkerPoints, setExactMarkerPoints] = useState<ExactMarkerPoint[]>([]);
   const [sessionShadeRects, setSessionShadeRects] = useState<SessionShadeRect[]>([]);
+  const [crosshairPoint, setCrosshairPoint] = useState<NativeCrosshairPoint | null>(null);
+
   const sortedCandles = useMemo(() => [...candles].sort((a, b) => a.datetime - b.datetime), [candles]);
   const isIntraday = useMemo(() => {
     if (sortedCandles.length < 2) return false;
@@ -270,66 +307,82 @@ export default function CandlestickChart({
     return Number.isFinite(spacingMs) && spacingMs > 0 && spacingMs < 24 * 60 * 60 * 1000;
   }, [sortedCandles]);
 
-  const clearExactMarkerPoints = useCallback(() => {
-    queueMicrotask(() => setExactMarkerPoints([]));
-  }, []);
+  const candleByEpoch = useMemo(() => {
+    const map = new Map<number, CandleData>();
+    for (const candle of sortedCandles) {
+      map.set(candle.datetime, candle);
+    }
+    return map;
+  }, [sortedCandles]);
 
   const clearSessionShadeRects = useCallback(() => {
     queueMicrotask(() => setSessionShadeRects([]));
   }, []);
 
-  const recalculateExactMarkers = useCallback(() => {
-    if (!exactPriceMarkers) {
-      clearExactMarkerPoints();
+  const clearCrosshairPoint = useCallback(() => {
+    setCrosshairPoint(null);
+  }, []);
+
+  const detachSeriesMarkers = useCallback(() => {
+    const plugin = markersPluginRef.current;
+    if (plugin == null) return;
+    plugin.detach();
+    markersPluginRef.current = null;
+  }, []);
+
+  const removePriceLines = useCallback(() => {
+    const candleSeries = candleSeriesRef.current;
+    if (candleSeries == null) {
+      priceLinesRef.current = [];
       return;
     }
 
-    const chart = chartRef.current;
-    const candleSeries = candleSeriesRef.current;
-    if (!chart || !candleSeries || tradeMarkers.length === 0) {
-      clearExactMarkerPoints();
-      return;
+    for (const line of priceLinesRef.current) {
+      candleSeries.removePriceLine(line);
+    }
+    priceLinesRef.current = [];
+  }, []);
+
+  const buildMarkers = useCallback((): SeriesMarker<Time>[] => {
+    if (tradeMarkers.length === 0 || sortedCandles.length === 0) {
+      return [];
     }
 
     const candleTimestamps = sortedCandles.map((candle) => candle.datetime);
-    const markerSize = 6;
-    const points = [...tradeMarkers]
+    const markers: Array<SeriesMarkerBar<Time> | SeriesMarkerPrice<Time>> = [];
+    [...tradeMarkers]
       .sort((a, b) => a.time - b.time)
-      .flatMap((marker, index) => {
+      .forEach((marker, index) => {
         const nearestTimestamp = findNearestTimestamp(marker.time, candleTimestamps);
-        if (nearestTimestamp == null) return [];
+        if (nearestTimestamp == null) return;
 
-        const x = chart.timeScale().timeToCoordinate(toUTCSeconds(nearestTimestamp));
-        const y = candleSeries.priceToCoordinate(marker.price);
-        if (x == null || y == null) return [];
+        if (exactPriceMarkers) {
+          markers.push({
+            id: `${marker.time}:${marker.price}:${index}`,
+            time: toUTCSeconds(nearestTimestamp),
+            position: marker.direction === 'LONG' ? 'atPriceBottom' : 'atPriceTop',
+            color: marker.direction === 'LONG' ? UP_COLOR : DOWN_COLOR,
+            shape: marker.direction === 'LONG' ? 'circle' : 'square',
+            price: marker.price,
+            text: marker.label,
+            size: 1,
+          });
+          return;
+        }
 
-        const isBuy = marker.direction === 'LONG';
-        const color = isBuy ? UP_COLOR : DOWN_COLOR;
-        const triangle = isBuy
-          ? `${x},${y - markerSize} ${x - markerSize},${y + markerSize} ${x + markerSize},${y + markerSize}`
-          : `${x},${y + markerSize} ${x - markerSize},${y - markerSize} ${x + markerSize},${y - markerSize}`;
-
-        return [{
-          key: `${marker.time}:${marker.price}:${index}`,
-          x,
-          y,
-          color,
-          points: triangle,
-        }];
+        markers.push({
+          id: `${marker.time}:${marker.price}:${index}`,
+          time: toUTCSeconds(nearestTimestamp),
+          position: marker.direction === 'LONG' ? 'belowBar' : 'aboveBar',
+          color: marker.direction === 'LONG' ? UP_COLOR : DOWN_COLOR,
+          shape: marker.direction === 'LONG' ? 'arrowUp' : 'arrowDown',
+          text: marker.label,
+          size: 1,
+        });
       });
 
-    queueMicrotask(() => setExactMarkerPoints(points));
-  }, [clearExactMarkerPoints, exactPriceMarkers, sortedCandles, tradeMarkers]);
-
-  const scheduleExactMarkerRecalculation = useCallback(() => {
-    if (markerAnimationFrameRef.current != null) {
-      cancelAnimationFrame(markerAnimationFrameRef.current);
-    }
-    markerAnimationFrameRef.current = requestAnimationFrame(() => {
-      markerAnimationFrameRef.current = null;
-      recalculateExactMarkers();
-    });
-  }, [recalculateExactMarkers]);
+    return markers;
+  }, [exactPriceMarkers, sortedCandles, tradeMarkers]);
 
   const recalculateSessionShading = useCallback(() => {
     if (!showSessionShading || !isIntraday) {
@@ -414,11 +467,47 @@ export default function CandlestickChart({
     if (sessionAnimationFrameRef.current != null) {
       cancelAnimationFrame(sessionAnimationFrameRef.current);
     }
+
     sessionAnimationFrameRef.current = requestAnimationFrame(() => {
       sessionAnimationFrameRef.current = null;
       recalculateSessionShading();
     });
   }, [recalculateSessionShading]);
+
+  const findCrosshairCandle = useCallback((time: Time): CandleData | null => {
+    const epoch = toEpochMs(time);
+    if (epoch == null || sortedCandles.length === 0) return null;
+
+    const exact = candleByEpoch.get(epoch);
+    if (exact != null) return exact;
+
+    const nearest = findNearestTimestamp(epoch, sortedCandles.map((c) => c.datetime));
+    if (nearest == null) return null;
+
+    return candleByEpoch.get(nearest) ?? null;
+  }, [candleByEpoch, sortedCandles]);
+
+  const updateCrosshairLegend = useCallback((time: Time | undefined) => {
+    if (time == null) {
+      clearCrosshairPoint();
+      return;
+    }
+
+    const candle = findCrosshairCandle(time);
+    if (candle == null) {
+      clearCrosshairPoint();
+      return;
+    }
+
+    setCrosshairPoint({
+      timeLabel: formatNyCrosshair(time),
+      open: candle.open,
+      high: candle.high,
+      low: candle.low,
+      close: candle.close,
+      volume: candle.volume,
+    });
+  }, [clearCrosshairPoint, findCrosshairCandle]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -427,75 +516,80 @@ export default function CandlestickChart({
       container: containerRef.current,
       height,
       showTimeAxis,
+      scaleMode,
       onResize: (width) => {
         setContainerWidth(width);
-        if (exactPriceMarkers) {
-          scheduleExactMarkerRecalculation();
-        }
         if (showSessionShading) {
           scheduleSessionShadeRecalculation();
         }
       },
     });
+
     setContainerWidth(containerRef.current.clientWidth);
     chartRef.current = lifecycle.chart;
     candleSeriesRef.current = lifecycle.candleSeries;
     volumeSeriesRef.current = lifecycle.volumeSeries;
 
-    let unsubscribeRange: (() => void) | null = null;
     let unsubscribeSessionRange: (() => void) | null = null;
-    if (exactPriceMarkers) {
-      const handleRangeChange = () => {
-        scheduleExactMarkerRecalculation();
+    if (showSessionShading) {
+      const onRangeChange = () => {
+        scheduleSessionShadeRecalculation();
       };
-      lifecycle.chart.timeScale().subscribeVisibleLogicalRangeChange(handleRangeChange);
-      lifecycle.chart.timeScale().subscribeVisibleTimeRangeChange(handleRangeChange);
-      unsubscribeRange = () => {
-        lifecycle.chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleRangeChange);
-        lifecycle.chart.timeScale().unsubscribeVisibleTimeRangeChange(handleRangeChange);
+
+      lifecycle.chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange);
+      lifecycle.chart.timeScale().subscribeVisibleTimeRangeChange(onRangeChange);
+      unsubscribeSessionRange = () => {
+        lifecycle.chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRangeChange);
+        lifecycle.chart.timeScale().unsubscribeVisibleTimeRangeChange(onRangeChange);
       };
     }
 
-    if (showSessionShading) {
-      const handleSessionRangeChange = (_range: unknown) => {
-        void _range;
-        scheduleSessionShadeRecalculation();
+    let unsubscribeCrosshair: ((param: unknown) => void) | null = null;
+    if (showCrosshairLegend) {
+      const crosshairMoveHandler = (param: any) => {
+        if (param == null || param.time == null || sortedCandles.length === 0) {
+          clearCrosshairPoint();
+          return;
+        }
+
+        updateCrosshairLegend(param.time);
       };
-      lifecycle.chart.timeScale().subscribeVisibleLogicalRangeChange(handleSessionRangeChange);
-      lifecycle.chart.timeScale().subscribeVisibleTimeRangeChange(handleSessionRangeChange);
-      unsubscribeSessionRange = () => {
-        lifecycle.chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleSessionRangeChange);
-        lifecycle.chart.timeScale().unsubscribeVisibleTimeRangeChange(handleSessionRangeChange);
-      };
+
+      lifecycle.chart.subscribeCrosshairMove(crosshairMoveHandler);
+      unsubscribeCrosshair = crosshairMoveHandler;
     }
 
     return () => {
-      unsubscribeRange?.();
       unsubscribeSessionRange?.();
-      lifecycle.cleanup();
-      chartRef.current = null;
-      candleSeriesRef.current = null;
-      volumeSeriesRef.current = null;
-      if (markerAnimationFrameRef.current != null) {
-        cancelAnimationFrame(markerAnimationFrameRef.current);
-        markerAnimationFrameRef.current = null;
+      if (unsubscribeCrosshair != null) {
+        lifecycle.chart.unsubscribeCrosshairMove(unsubscribeCrosshair);
       }
+      detachSeriesMarkers();
+      removePriceLines();
       if (sessionAnimationFrameRef.current != null) {
         cancelAnimationFrame(sessionAnimationFrameRef.current);
         sessionAnimationFrameRef.current = null;
       }
-      clearExactMarkerPoints();
       clearSessionShadeRects();
+      clearCrosshairPoint();
+      lifecycle.cleanup();
+      chartRef.current = null;
+      candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
     };
   }, [
-    clearExactMarkerPoints,
+    clearCrosshairPoint,
     clearSessionShadeRects,
-    exactPriceMarkers,
+    detachSeriesMarkers,
     height,
-    scheduleExactMarkerRecalculation,
+    removePriceLines,
+    scaleMode,
     scheduleSessionShadeRecalculation,
+    showCrosshairLegend,
     showSessionShading,
     showTimeAxis,
+    sortedCandles,
+    updateCrosshairLegend,
   ]);
 
   useEffect(() => {
@@ -507,70 +601,87 @@ export default function CandlestickChart({
     if (sortedCandles.length === 0) {
       candleSeries.setData([]);
       volumeSeries.setData([]);
-      createSeriesMarkers(candleSeries, []);
-      clearExactMarkerPoints();
+      detachSeriesMarkers();
       clearSessionShadeRects();
       return;
     }
 
-    const candleData: CandlestickData[] = sortedCandles.map((c) => ({
-      time: toUTCSeconds(c.datetime),
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
+    const candleData: CandlestickData[] = sortedCandles.map((candle) => ({
+      time: toUTCSeconds(candle.datetime),
+      open: candle.open,
+      high: candle.high,
+      low: candle.low,
+      close: candle.close,
     }));
 
-    const volumeData: HistogramData[] = sortedCandles.map((c) => ({
-      time: toUTCSeconds(c.datetime),
-      value: c.volume,
-      color: c.close >= c.open ? UP_VOLUME_COLOR : DOWN_VOLUME_COLOR,
+    const volumeData: HistogramData[] = sortedCandles.map((candle) => ({
+      time: toUTCSeconds(candle.datetime),
+      value: candle.volume,
+      color: candle.close >= candle.open ? UP_VOLUME_COLOR : DOWN_VOLUME_COLOR,
     }));
 
     candleSeries.setData(candleData);
     volumeSeries.setData(volumeData);
 
-    // Trade markers
-    if (!exactPriceMarkers && tradeMarkers.length > 0) {
-      const markers = [...tradeMarkers]
-        .sort((a, b) => a.time - b.time)
-        .flatMap((m) => {
-          const nearestTimestamp = findNearestTimestamp(m.time, sortedCandles.map((candle) => candle.datetime));
-          if (nearestTimestamp == null) return [];
-          return [{
-            time: toUTCSeconds(nearestTimestamp),
-          position: m.direction === 'LONG' ? ('belowBar' as const) : ('aboveBar' as const),
-          color: m.direction === 'LONG' ? UP_COLOR : DOWN_COLOR,
-          shape: m.direction === 'LONG' ? ('arrowUp' as const) : ('arrowDown' as const),
-          text: m.label,
-          }];
-        });
-      createSeriesMarkers(candleSeries, markers);
+    const markers = buildMarkers();
+    if (markers.length > 0) {
+      if (markersPluginRef.current == null) {
+        markersPluginRef.current = createSeriesMarkers(candleSeries, markers);
+      } else {
+        markersPluginRef.current.setMarkers(markers);
+      }
+    } else if (markersPluginRef.current == null) {
+      markersPluginRef.current = createSeriesMarkers(candleSeries, []);
     } else {
-      createSeriesMarkers(candleSeries, []);
+      markersPluginRef.current.setMarkers([]);
     }
 
     chart.timeScale().fitContent();
 
-    if (exactPriceMarkers) {
-      scheduleExactMarkerRecalculation();
-    }
-
     if (showSessionShading) {
       scheduleSessionShadeRecalculation();
     }
-
-    clearExactMarkerPoints();
   }, [
-    clearExactMarkerPoints,
+    buildMarkers,
     clearSessionShadeRects,
-    exactPriceMarkers,
-    scheduleExactMarkerRecalculation,
+    clearCrosshairPoint,
+    detachSeriesMarkers,
     scheduleSessionShadeRecalculation,
     showSessionShading,
     sortedCandles,
-    tradeMarkers,
   ]);
+
+  useEffect(() => {
+    const candleSeries = candleSeriesRef.current;
+    if (!candleSeries) return;
+
+    removePriceLines();
+    if (priceLines == null || priceLines.length === 0) return;
+
+    const createdLines = priceLines
+      .map((line) => {
+        if (!Number.isFinite(line.price)) return null;
+        const { price, ...lineOptions } = line;
+        const lineWidth = line.lineWidth ?? 1;
+
+        return candleSeries.createPriceLine({
+          ...lineOptions,
+          price,
+          color: line.color ?? '#ffffff',
+          lineWidth,
+          lineStyle: line.lineStyle ?? LineStyle.Solid,
+          axisLabelVisible: line.axisLabelVisible ?? true,
+          title: line.title ?? '',
+        });
+      })
+      .filter((line): line is IPriceLine => Boolean(line));
+
+    priceLinesRef.current = createdLines;
+
+    return () => {
+      removePriceLines();
+    };
+  }, [priceLines, removePriceLines]);
 
   return (
     <div className="relative" style={{ height }}>
@@ -590,14 +701,22 @@ export default function CandlestickChart({
           ))}
         </div>
       ) : null}
-      {exactPriceMarkers && exactMarkerPoints.length > 0 ? (
-        <svg className="pointer-events-none absolute inset-0 z-20" width="100%" height="100%" viewBox={`0 0 ${Math.max(containerWidth, 1)} ${height}`} preserveAspectRatio="none">
-          {exactMarkerPoints.map((marker) => (
-            <g key={marker.key}>
-              <polygon points={marker.points} fill={marker.color} stroke="rgba(20, 20, 23, 0.9)" strokeWidth="2" />
-            </g>
-          ))}
-        </svg>
+      {showCrosshairLegend && crosshairPoint != null ? (
+        <div className="pointer-events-none absolute left-2 top-2 z-20 rounded border border-white/15 bg-[#0d1017]/95 px-2 py-1 text-[11px] text-zinc-300 shadow">
+          <div className="mb-1 text-zinc-100">{crosshairPoint.timeLabel}</div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+            <span className="text-zinc-500">O</span>
+            <span className="font-mono">{formatNumber(crosshairPoint.open)}</span>
+            <span className="text-zinc-500">H</span>
+            <span className="font-mono">{formatNumber(crosshairPoint.high)}</span>
+            <span className="text-zinc-500">L</span>
+            <span className="font-mono">{formatNumber(crosshairPoint.low)}</span>
+            <span className="text-zinc-500">C</span>
+            <span className="font-mono">{formatNumber(crosshairPoint.close)}</span>
+            <span className="text-zinc-500">Vol</span>
+            <span className="font-mono">{crosshairPoint.volume?.toLocaleString()}</span>
+          </div>
+        </div>
       ) : null}
     </div>
   );

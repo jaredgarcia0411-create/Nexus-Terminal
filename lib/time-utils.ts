@@ -14,6 +14,13 @@ const NY_DATE_PARTS = new Intl.DateTimeFormat('en-US', {
   second: '2-digit',
 });
 
+const NY_WEEKDAY = new Intl.DateTimeFormat('en-US', {
+  timeZone: NY_TIME_ZONE,
+  weekday: 'short',
+});
+
+type DatePartMap = Record<string, string>;
+
 export function parseAbsoluteTimestampMs(input: string | Date | null | undefined): number | null {
   if (input == null) return null;
 
@@ -61,7 +68,7 @@ export function parseClockTime(time: string): { hours: number; minutes: number; 
 
 export function getNyOffsetMs(atEpochMs: number): number {
   const parts = NY_DATE_PARTS.formatToParts(new Date(atEpochMs));
-  const map: Record<string, string> = {};
+  const map: DatePartMap = {};
   for (const part of parts) {
     if (part.type !== 'literal') map[part.type] = part.value;
   }
@@ -76,6 +83,84 @@ export function getNyOffsetMs(atEpochMs: number): number {
   );
 
   return asUtc - atEpochMs;
+}
+
+export function isNyTradingDay(sortKey: string): boolean {
+  const start = nyDateTimeToEpoch(sortKey, '00:00:00');
+  if (start == null) return false;
+
+  const weekday = NY_WEEKDAY.format(new Date(start));
+  return weekday !== 'Sat' && weekday !== 'Sun';
+}
+
+export function getPreviousTradingSession(sortKey: string): string | null {
+  const start = nyDateTimeToEpoch(sortKey, '00:00:00');
+  if (start == null) return null;
+
+  let cursor = start;
+  for (let safety = 0; safety < 14; safety += 1) {
+    cursor -= 24 * 60 * 60 * 1000;
+    const candidate = epochToNySortKey(cursor);
+    if (isNyTradingDay(candidate)) return candidate;
+  }
+
+  return null;
+}
+
+export function normalizeToTradingSession(sortKey: string): {
+  requestedSortKey: string;
+  resolvedSortKey: string;
+  wasAdjusted: boolean;
+} | null {
+  if (!parseSortKey(sortKey)) return null;
+
+  if (isNyTradingDay(sortKey)) {
+    return {
+      requestedSortKey: sortKey,
+      resolvedSortKey: sortKey,
+      wasAdjusted: false,
+    };
+  }
+
+  const previous = getPreviousTradingSession(sortKey);
+  if (previous == null) return null;
+
+  return {
+    requestedSortKey: sortKey,
+    resolvedSortKey: previous,
+    wasAdjusted: true,
+  };
+}
+
+export type SessionWindow = {
+  startDate: string;
+  endDate: string;
+  sessionSortKey: string;
+  priorSessionSortKey?: string;
+};
+
+export function getIntradaySessionWindow(
+  sortKey: string,
+  includePriorSession = false,
+): SessionWindow | null {
+  const session = normalizeToTradingSession(sortKey);
+  if (session == null) return null;
+
+  const endDate = nyDateTimeToEpoch(session.resolvedSortKey, '20:00:00');
+  if (endDate == null) return null;
+
+  const startSortKey = includePriorSession ? getPreviousTradingSession(session.resolvedSortKey) : null;
+  const startDateKey = startSortKey ?? session.resolvedSortKey;
+
+  const startDate = nyDateTimeToEpoch(startDateKey, '04:00:00');
+  if (startDate == null) return null;
+
+  return {
+    startDate: String(startDate),
+    endDate: String(endDate),
+    sessionSortKey: session.resolvedSortKey,
+    ...(startSortKey ? { priorSessionSortKey: startSortKey } : {}),
+  };
 }
 
 export function nyDateTimeToEpoch(sortKey: string, time: string): number | null {
@@ -97,7 +182,7 @@ export function nyDateTimeToEpoch(sortKey: string, time: string): number | null 
 
 export function epochToNySortKey(epochMs: number): string {
   const parts = NY_DATE_PARTS.formatToParts(new Date(epochMs));
-  const map: Record<string, string> = {};
+  const map: DatePartMap = {};
   for (const part of parts) {
     if (part.type !== 'literal') map[part.type] = part.value;
   }

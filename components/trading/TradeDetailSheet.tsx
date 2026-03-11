@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import CandlestickChart, { type TradeMarker } from '@/components/trading/CandlestickChart';
 import { useCandleData } from '@/hooks/use-candle-data';
-import { nyDateTimeToEpoch, parseAbsoluteTimestampMs } from '@/lib/time-utils';
+import { getIntradaySessionWindow, nyDateTimeToEpoch, parseAbsoluteTimestampMs } from '@/lib/time-utils';
 
 interface TradeDetailSheetProps {
   trade: Trade | null;
@@ -35,13 +35,12 @@ const TIMEFRAME_CONFIG: Record<
 };
 
 function getMarketWindowMs(sortKey: string) {
-  const start = nyDateTimeToEpoch(sortKey, '04:00:00');
-  const end = nyDateTimeToEpoch(sortKey, '20:00:00');
-  if (start == null || end == null) return {};
+  const window = getIntradaySessionWindow(sortKey, true);
+  if (!window) return {};
 
   return {
-    startDate: String(start),
-    endDate: String(end),
+    startDate: window.startDate,
+    endDate: window.endDate,
   };
 }
 

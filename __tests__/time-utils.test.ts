@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  getIntradaySessionWindow,
   epochToNySortKey,
   hasExplicitTimezone,
+  normalizeToTradingSession,
   nyDateTimeToEpoch,
   parseAbsoluteTimestampMs,
 } from '@/lib/time-utils';
@@ -38,5 +40,36 @@ describe('time-utils', () => {
   it('generates NY sort keys from UTC timestamps', () => {
     expect(epochToNySortKey(Date.parse('2026-03-10T13:30:00.000Z'))).toBe('2026-03-10');
     expect(epochToNySortKey(Date.parse('2026-03-10T00:30:00.000Z'))).toBe('2026-03-09');
+  });
+
+  it('normalizes weekend dates to previous trading day', () => {
+    const adjusted = normalizeToTradingSession('2026-03-07'); // Saturday
+    expect(adjusted).toMatchObject({
+      requestedSortKey: '2026-03-07',
+      resolvedSortKey: '2026-03-06',
+      wasAdjusted: true,
+    });
+  });
+
+  it('builds intraday session windows with prior day support', () => {
+    expect(getIntradaySessionWindow('2026-03-06', true)).toEqual({
+      startDate: String(nyDateTimeToEpoch('2026-03-05', '04:00:00')),
+      endDate: String(nyDateTimeToEpoch('2026-03-06', '20:00:00')),
+      sessionSortKey: '2026-03-06',
+      priorSessionSortKey: '2026-03-05',
+    });
+
+    expect(getIntradaySessionWindow('2026-03-07', true)).toEqual({
+      startDate: String(nyDateTimeToEpoch('2026-03-05', '04:00:00')),
+      endDate: String(nyDateTimeToEpoch('2026-03-06', '20:00:00')),
+      sessionSortKey: '2026-03-06',
+      priorSessionSortKey: '2026-03-05',
+    });
+
+    expect(getIntradaySessionWindow('2026-03-06', false)).toEqual({
+      startDate: String(nyDateTimeToEpoch('2026-03-06', '04:00:00')),
+      endDate: String(nyDateTimeToEpoch('2026-03-06', '20:00:00')),
+      sessionSortKey: '2026-03-06',
+    });
   });
 });

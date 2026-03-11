@@ -5,17 +5,7 @@ import type { Trade } from '@/lib/types';
 import CandlestickChart, { type TradeMarker } from '@/components/trading/CandlestickChart';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCandleData } from '@/hooks/use-candle-data';
-import { nyDateTimeToEpoch, parseAbsoluteTimestampMs } from '@/lib/time-utils';
-
-function getMarketWindow(sortKey: string) {
-  const start = nyDateTimeToEpoch(sortKey, '04:00:00');
-  const end = nyDateTimeToEpoch(sortKey, '20:00:00');
-  if (start == null || end == null) return null;
-  return {
-    startDate: String(start),
-    endDate: String(end),
-  };
-}
+import { getIntradaySessionWindow, nyDateTimeToEpoch, parseAbsoluteTimestampMs } from '@/lib/time-utils';
 
 interface JournalTradeChartProps {
   trade: Trade;
@@ -35,7 +25,7 @@ const TIMEFRAME_CONFIG: Record<
 
 function JournalTradeChart({ trade }: JournalTradeChartProps) {
   const [timeframe, setTimeframe] = useState<TimeframeKey>('5m');
-  const marketWindow = useMemo(() => getMarketWindow(trade.sortKey), [trade.sortKey]);
+  const marketWindow = useMemo(() => getIntradaySessionWindow(trade.sortKey, true), [trade.sortKey]);
   const chartOptions = useMemo(() => {
     const base = TIMEFRAME_CONFIG[timeframe];
     if (timeframe === '1d') {

@@ -4,7 +4,6 @@ import { macroSummaries } from '@/lib/db/schema';
 import { callJarvis } from '@/lib/jarvis/client';
 import { JARVIS_SYSTEM_PROMPT, buildMacroPrompt } from '@/lib/jarvis/prompts';
 import { fetchPageText } from '@/lib/jarvis/scrape-lite';
-import { requireUser } from '@/lib/server-db-utils';
 import { desc } from 'drizzle-orm';
 
 const MACRO_URLS = [
@@ -47,18 +46,7 @@ export async function GET(request: Request) {
   try {
     const authError = requireCronSecret(request);
     if (authError) {
-      const authState = await requireUser();
-      if ('error' in authState) return authError;
-
-      const db = getDb();
-      if (!db) return Response.json({ latest: null });
-
-      const [latest] = await db.select({ summaryJson: macroSummaries.summaryJson })
-        .from(macroSummaries)
-        .orderBy(desc(macroSummaries.generatedAt))
-        .limit(1);
-
-      return Response.json({ latest: (latest?.summaryJson as unknown) ?? null });
+      return authError;
     }
 
     const settled = await Promise.allSettled(MACRO_URLS.map((url) => fetchPageText(url)));

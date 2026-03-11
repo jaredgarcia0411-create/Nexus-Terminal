@@ -8,6 +8,7 @@ vi.mock('lightweight-charts', () => ({
   HistogramSeries: 'HistogramSeries',
   LineSeries: 'LineSeries',
   CrosshairMode: { Normal: 'normal' },
+  PriceScaleMode: { Normal: 0 },
 }));
 
 function createChartMock() {
