@@ -14,6 +14,7 @@ import {
   type HistogramData,
   type Time,
 } from 'lightweight-charts';
+import { epochToNySortKey, nyDateTimeToEpoch } from '@/lib/time-utils';
 
 export interface CandleData {
   datetime: number;
@@ -42,6 +43,7 @@ interface CandlestickChartProps {
   height?: number;
   exactPriceMarkers?: boolean;
   showTimeAxis?: boolean;
+  showSessionShading?: boolean;
 }
 
 type ExactMarkerPoint = {
@@ -50,6 +52,12 @@ type ExactMarkerPoint = {
   y: number;
   color: string;
   points: string;
+};
+
+type SessionShadeRect = {
+  key: string;
+  left: number;
+  width: number;
 };
 
 const NY_TIME_ZONE = 'America/New_York';
@@ -243,18 +251,30 @@ export default function CandlestickChart({
   height = 400,
   exactPriceMarkers = false,
   showTimeAxis = false,
+  showSessionShading = false,
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const markerAnimationFrameRef = useRef<number | null>(null);
+  const sessionAnimationFrameRef = useRef<number | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [exactMarkerPoints, setExactMarkerPoints] = useState<ExactMarkerPoint[]>([]);
+  const [sessionShadeRects, setSessionShadeRects] = useState<SessionShadeRect[]>([]);
   const sortedCandles = useMemo(() => [...candles].sort((a, b) => a.datetime - b.datetime), [candles]);
+  const isIntraday = useMemo(() => {
+    if (sortedCandles.length < 2) return false;
+    const spacingMs = sortedCandles[1].datetime - sortedCandles[0].datetime;
+    return Number.isFinite(spacingMs) && spacingMs > 0 && spacingMs < 24 * 60 * 60 * 1000;
+  }, [sortedCandles]);
 
   const clearExactMarkerPoints = useCallback(() => {
     queueMicrotask(() => setExactMarkerPoints([]));
+  }, []);
+
+  const clearSessionShadeRects = useCallback(() => {
+    queueMicrotask(() => setSessionShadeRects([]));
   }, []);
 
   const recalculateExactMarkers = useCallback(() => {
@@ -310,6 +330,74 @@ export default function CandlestickChart({
     });
   }, [recalculateExactMarkers]);
 
+  const recalculateSessionShading = useCallback(() => {
+    if (!showSessionShading || !isIntraday) {
+      clearSessionShadeRects();
+      return;
+    }
+
+    const chart = chartRef.current;
+    if (!chart || sortedCandles.length === 0) {
+      clearSessionShadeRects();
+      return;
+    }
+
+    const first = sortedCandles[0]?.datetime;
+    const last = sortedCandles[sortedCandles.length - 1]?.datetime;
+    if (!Number.isFinite(first) || !Number.isFinite(last)) {
+      clearSessionShadeRects();
+      return;
+    }
+
+    const daySet = new Set<string>();
+    for (const candle of sortedCandles) {
+      daySet.add(epochToNySortKey(candle.datetime));
+    }
+
+    const rects: SessionShadeRect[] = [];
+    for (const dayKey of daySet) {
+      const preStart = nyDateTimeToEpoch(dayKey, '04:00:00');
+      const preEnd = nyDateTimeToEpoch(dayKey, '09:30:00');
+      const postStart = nyDateTimeToEpoch(dayKey, '16:00:00');
+      const postEnd = nyDateTimeToEpoch(dayKey, '20:00:00');
+
+      const segments = [
+        { key: `${dayKey}:pre`, start: preStart, end: preEnd },
+        { key: `${dayKey}:post`, start: postStart, end: postEnd },
+      ];
+
+      for (const segment of segments) {
+        if (segment.start == null || segment.end == null || segment.end <= first || segment.start >= last) continue;
+
+        const x1 = chart.timeScale().timeToCoordinate(toUTCSeconds(segment.start));
+        const x2 = chart.timeScale().timeToCoordinate(toUTCSeconds(segment.end));
+        if (x1 == null || x2 == null) continue;
+
+        const left = Math.min(x1, x2);
+        const width = Math.abs(x2 - x1);
+        if (width <= 0) continue;
+
+        rects.push({
+          key: segment.key,
+          left,
+          width,
+        });
+      }
+    }
+
+    queueMicrotask(() => setSessionShadeRects(rects));
+  }, [clearSessionShadeRects, isIntraday, showSessionShading, sortedCandles]);
+
+  const scheduleSessionShadeRecalculation = useCallback(() => {
+    if (sessionAnimationFrameRef.current != null) {
+      cancelAnimationFrame(sessionAnimationFrameRef.current);
+    }
+    sessionAnimationFrameRef.current = requestAnimationFrame(() => {
+      sessionAnimationFrameRef.current = null;
+      recalculateSessionShading();
+    });
+  }, [recalculateSessionShading]);
+
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -322,6 +410,9 @@ export default function CandlestickChart({
         if (exactPriceMarkers) {
           scheduleExactMarkerRecalculation();
         }
+        if (showSessionShading) {
+          scheduleSessionShadeRecalculation();
+        }
       },
     });
     setContainerWidth(containerRef.current.clientWidth);
@@ -330,6 +421,7 @@ export default function CandlestickChart({
     volumeSeriesRef.current = lifecycle.volumeSeries;
 
     let unsubscribeRange: (() => void) | null = null;
+    let unsubscribeSessionRange: (() => void) | null = null;
     if (exactPriceMarkers) {
       const handleRangeChange = () => {
         scheduleExactMarkerRecalculation();
@@ -342,8 +434,22 @@ export default function CandlestickChart({
       };
     }
 
+    if (showSessionShading) {
+      const handleSessionRangeChange = (_range: unknown) => {
+        void _range;
+        scheduleSessionShadeRecalculation();
+      };
+      lifecycle.chart.timeScale().subscribeVisibleLogicalRangeChange(handleSessionRangeChange);
+      lifecycle.chart.timeScale().subscribeVisibleTimeRangeChange(handleSessionRangeChange);
+      unsubscribeSessionRange = () => {
+        lifecycle.chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleSessionRangeChange);
+        lifecycle.chart.timeScale().unsubscribeVisibleTimeRangeChange(handleSessionRangeChange);
+      };
+    }
+
     return () => {
       unsubscribeRange?.();
+      unsubscribeSessionRange?.();
       lifecycle.cleanup();
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -352,9 +458,23 @@ export default function CandlestickChart({
         cancelAnimationFrame(markerAnimationFrameRef.current);
         markerAnimationFrameRef.current = null;
       }
+      if (sessionAnimationFrameRef.current != null) {
+        cancelAnimationFrame(sessionAnimationFrameRef.current);
+        sessionAnimationFrameRef.current = null;
+      }
       clearExactMarkerPoints();
+      clearSessionShadeRects();
     };
-  }, [clearExactMarkerPoints, exactPriceMarkers, height, scheduleExactMarkerRecalculation, showTimeAxis]);
+  }, [
+    clearExactMarkerPoints,
+    clearSessionShadeRects,
+    exactPriceMarkers,
+    height,
+    scheduleExactMarkerRecalculation,
+    scheduleSessionShadeRecalculation,
+    showSessionShading,
+    showTimeAxis,
+  ]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -367,6 +487,7 @@ export default function CandlestickChart({
       volumeSeries.setData([]);
       createSeriesMarkers(candleSeries, []);
       clearExactMarkerPoints();
+      clearSessionShadeRects();
       return;
     }
 
@@ -413,12 +534,40 @@ export default function CandlestickChart({
       scheduleExactMarkerRecalculation();
     }
 
+    if (showSessionShading) {
+      scheduleSessionShadeRecalculation();
+    }
+
     clearExactMarkerPoints();
-  }, [sortedCandles, clearExactMarkerPoints, tradeMarkers, exactPriceMarkers, scheduleExactMarkerRecalculation]);
+  }, [
+    clearExactMarkerPoints,
+    clearSessionShadeRects,
+    exactPriceMarkers,
+    scheduleExactMarkerRecalculation,
+    scheduleSessionShadeRecalculation,
+    showSessionShading,
+    sortedCandles,
+    tradeMarkers,
+  ]);
 
   return (
     <div className="relative" style={{ height }}>
       <div ref={containerRef} className="h-full w-full" />
+      {showSessionShading && isIntraday && sessionShadeRects.length > 0 ? (
+        <div className="pointer-events-none absolute inset-0 z-10">
+          {sessionShadeRects.map((rect) => (
+            <div
+              key={rect.key}
+              className="absolute bottom-0 top-0"
+              style={{
+                left: `${rect.left}px`,
+                width: `${rect.width}px`,
+                backgroundColor: 'rgba(148, 163, 184, 0.12)',
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
       {exactPriceMarkers && exactMarkerPoints.length > 0 ? (
         <svg className="pointer-events-none absolute inset-0 z-20" width="100%" height="100%" viewBox={`0 0 ${Math.max(containerWidth, 1)} ${height}`} preserveAspectRatio="none">
           {exactMarkerPoints.map((marker) => (

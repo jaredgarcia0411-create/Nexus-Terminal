@@ -2,6 +2,18 @@ export function hasExplicitTimezone(input: string): boolean {
   return /(Z|[+-]\d{2}:?\d{2})$/i.test(input.trim());
 }
 
+const NY_TIME_ZONE = 'America/New_York';
+const NY_DATE_PARTS = new Intl.DateTimeFormat('en-US', {
+  timeZone: NY_TIME_ZONE,
+  hourCycle: 'h23',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+});
+
 export function parseAbsoluteTimestampMs(input: string | Date | null | undefined): number | null {
   if (input == null) return null;
 
@@ -23,4 +35,71 @@ export function parseAbsoluteTimestampMs(input: string | Date | null | undefined
 
   const parsed = Date.parse(raw);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function parseSortKey(sortKey: string): { year: number; month: number; day: number } | null {
+  const match = sortKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return { year, month, day };
+}
+
+export function parseClockTime(time: string): { hours: number; minutes: number; seconds: number } | null {
+  const match = String(time ?? '').trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return null;
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3] ?? 0);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) return null;
+  return { hours, minutes, seconds };
+}
+
+export function getNyOffsetMs(atEpochMs: number): number {
+  const parts = NY_DATE_PARTS.formatToParts(new Date(atEpochMs));
+  const map: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') map[part.type] = part.value;
+  }
+
+  const asUtc = Date.UTC(
+    Number(map.year),
+    Number(map.month) - 1,
+    Number(map.day),
+    Number(map.hour),
+    Number(map.minute),
+    Number(map.second),
+  );
+
+  return asUtc - atEpochMs;
+}
+
+export function nyDateTimeToEpoch(sortKey: string, time: string): number | null {
+  const dateParts = parseSortKey(sortKey);
+  const timeParts = parseClockTime(time);
+  if (!dateParts || !timeParts) return null;
+
+  const utcGuess = Date.UTC(
+    dateParts.year,
+    dateParts.month - 1,
+    dateParts.day,
+    timeParts.hours,
+    timeParts.minutes,
+    timeParts.seconds,
+  );
+
+  return utcGuess - getNyOffsetMs(utcGuess);
+}
+
+export function epochToNySortKey(epochMs: number): string {
+  const parts = NY_DATE_PARTS.formatToParts(new Date(epochMs));
+  const map: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') map[part.type] = part.value;
+  }
+  return `${map.year}-${map.month}-${map.day}`;
 }

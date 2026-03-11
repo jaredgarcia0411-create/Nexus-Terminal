@@ -34,6 +34,27 @@
 - [x] Verification complete: `npm run lint`, `npx tsc --noEmit`, `npm test`
 - [x] Replay chart NY time alignment status: COMPLETE
 
+## Charts Expansion + Session Overlays (2026-03-11)
+
+- [x] Added intraday NY session shading overlays in `components/trading/CandlestickChart.tsx` for pre-market (`04:00-09:30`) and post-market (`16:00-20:00`)
+- [x] Limited session overlays to intraday data only (hidden for daily and higher timeframes)
+- [x] Updated `components/trading/TradeDetailSheet.tsx` intraday fetch window to `04:00-20:00` and enabled pre/post inclusion
+- [x] Updated `components/trading/JournalTradeChart.tsx` and `components/trading/TradeDetailSheet.tsx` to pass session shading flag only for intraday frames
+- [x] Created new full-page `components/trading/ChartsTab.tsx` with symbol/timeframe controls, series-type switching, indicator overlays (SMA/EMA/VWAP/Bollinger), compare-symbol overlay, and screenshot export
+- [x] Added `Charts` tab below `Trades` in `components/trading/Sidebar.tsx` and wired render path in `app/page.tsx`
+- [x] Consolidated NY time helpers in `lib/time-utils.ts` and reused in chart consumers
+- [x] Expanded time utility tests in `__tests__/time-utils.test.ts` for NY conversion and DST-safe behavior
+- [x] Verification complete: `npm run lint`, `npx tsc --noEmit`, `npm test`
+- [x] Charts expansion + session overlays status: COMPLETE
+
+### Polish Pass (2026-03-11)
+
+- [x] Refined `components/trading/ChartsTab.tsx` visual density and top/bottom chrome to better match TradingView-inspired layout
+- [x] Added headline quote strip (symbol, last price, change %) and status footer for active compare state
+- [x] Switched Charts tab session shading from area-series approximation to full-height translucent overlay rectangles synced to visible range + resize
+- [x] Added basic render coverage for Charts tab in `__tests__/charts-tab.test.ts`
+- [x] Re-verified: `npm run lint`, `npx tsc --noEmit`, `npm test`
+
 ---
 
 ## Sprint 9: Jarvis RAG-to-Pipeline Rewrite

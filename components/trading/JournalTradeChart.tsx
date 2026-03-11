@@ -5,77 +5,7 @@ import type { Trade } from '@/lib/types';
 import CandlestickChart, { type TradeMarker } from '@/components/trading/CandlestickChart';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCandleData } from '@/hooks/use-candle-data';
-import { parseAbsoluteTimestampMs } from '@/lib/time-utils';
-
-const NY_DATE_PARTS = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/New_York',
-  hourCycle: 'h23',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-});
-
-function getNyOffsetMs(atEpochMs: number) {
-  const parts = NY_DATE_PARTS.formatToParts(new Date(atEpochMs));
-  const map: Record<string, string> = {};
-  for (const part of parts) {
-    if (part.type !== 'literal') {
-      map[part.type] = part.value;
-    }
-  }
-
-  const asUtc = Date.UTC(
-    Number(map.year),
-    Number(map.month) - 1,
-    Number(map.day),
-    Number(map.hour),
-    Number(map.minute),
-    Number(map.second),
-  );
-
-  return asUtc - atEpochMs;
-}
-
-function parseSortKey(sortKey: string) {
-  const match = sortKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (!Number.isFinite(year) || month < 1 || month > 12 || day < 1 || day > 31) return null;
-  return { year, month, day };
-}
-
-function parseTime(time: string) {
-  const match = String(time ?? '').trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (!match) return null;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  const seconds = Number(match[3] ?? 0);
-  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) return null;
-  return { hours, minutes, seconds };
-}
-
-function nyDateTimeToEpoch(sortKey: string, time: string) {
-  const dateParts = parseSortKey(sortKey);
-  const timeParts = parseTime(time);
-  if (!dateParts || !timeParts) return null;
-
-  const utcGuess = Date.UTC(
-    dateParts.year,
-    dateParts.month - 1,
-    dateParts.day,
-    timeParts.hours,
-    timeParts.minutes,
-    timeParts.seconds,
-  );
-
-  const offset = getNyOffsetMs(utcGuess);
-  return utcGuess - offset;
-}
+import { nyDateTimeToEpoch, parseAbsoluteTimestampMs } from '@/lib/time-utils';
 
 function getMarketWindow(sortKey: string) {
   const start = nyDateTimeToEpoch(sortKey, '04:00:00');
@@ -200,7 +130,14 @@ function JournalTradeChart({ trade }: JournalTradeChartProps) {
           </SelectContent>
         </Select>
       </div>
-      <CandlestickChart candles={candles} tradeMarkers={tradeMarkers} height={612} exactPriceMarkers showTimeAxis />
+      <CandlestickChart
+        candles={candles}
+        tradeMarkers={tradeMarkers}
+        height={612}
+        exactPriceMarkers
+        showTimeAxis
+        showSessionShading={timeframe !== '1d'}
+      />
     </div>
   );
 }

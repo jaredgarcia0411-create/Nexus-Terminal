@@ -13,6 +13,7 @@ import DashboardTab from '@/components/trading/DashboardTab';
 import JournalTab from '@/components/trading/JournalTab';
 import PerformanceTab from '@/components/trading/PerformanceTab';
 import TradesTab from '@/components/trading/TradesTab';
+import ChartsTab from '@/components/trading/ChartsTab';
 import JarvisPanel from '@/components/trading/JarvisPanel';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useTrades } from '@/hooks/use-trades';
@@ -223,6 +224,10 @@ export default function NexusTerminal() {
                 onApplyRisk={handleApplyRisk}
                 onBulkAddTag={handleBulkAddTag}
               />
+            ) : null}
+
+            {activeTab === 'charts' ? (
+              <ChartsTab trades={trades} />
             ) : null}
           </AnimatePresence>
         </div>
