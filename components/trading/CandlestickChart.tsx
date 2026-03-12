@@ -44,6 +44,8 @@ const UP_COLOR = '#ffffff';
 const DOWN_COLOR = '#3b82f6';
 const UP_VOLUME_COLOR = '#ffffff33';
 const DOWN_VOLUME_COLOR = '#3b82f633';
+const LONG_MARKER_COLOR = '#22c55e';
+const SHORT_MARKER_COLOR = '#ef4444';
 
 interface CandlestickChartProps extends CandlestickChartOptions {
   candles: CandleData[];
@@ -361,10 +363,9 @@ export default function CandlestickChart({
             id: `${marker.time}:${marker.price}:${index}`,
             time: toUTCSeconds(nearestTimestamp),
             position: marker.direction === 'LONG' ? 'atPriceBottom' : 'atPriceTop',
-            color: marker.direction === 'LONG' ? UP_COLOR : DOWN_COLOR,
-            shape: marker.direction === 'LONG' ? 'circle' : 'square',
+            color: marker.direction === 'LONG' ? LONG_MARKER_COLOR : SHORT_MARKER_COLOR,
+            shape: marker.direction === 'LONG' ? 'arrowUp' : 'arrowDown',
             price: marker.price,
-            text: marker.label,
             size: 1,
           });
           return;
@@ -374,9 +375,8 @@ export default function CandlestickChart({
           id: `${marker.time}:${marker.price}:${index}`,
           time: toUTCSeconds(nearestTimestamp),
           position: marker.direction === 'LONG' ? 'belowBar' : 'aboveBar',
-          color: marker.direction === 'LONG' ? UP_COLOR : DOWN_COLOR,
+          color: marker.direction === 'LONG' ? LONG_MARKER_COLOR : SHORT_MARKER_COLOR,
           shape: marker.direction === 'LONG' ? 'arrowUp' : 'arrowDown',
-          text: marker.label,
           size: 1,
         });
       });

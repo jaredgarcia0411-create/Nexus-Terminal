@@ -1,19 +1,29 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import PerformanceCharts from '@/components/trading/PerformanceCharts';
 import PerformanceStatsTable from '@/components/trading/PerformanceStatsTable';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatCurrency } from '@/lib/trading-utils';
 import type { Trade } from '@/lib/types';
 
 interface PerformanceTabProps {
   filteredTrades: Trade[];
+  globalTags: string[];
   performanceMetric: '$' | 'R';
   onMetricChange: (metric: '$' | 'R') => void;
   onTradeClick: (trade: Trade) => void;
 }
 
-export default function PerformanceTab({ filteredTrades, performanceMetric, onMetricChange, onTradeClick }: PerformanceTabProps) {
+export default function PerformanceTab({ filteredTrades, globalTags, performanceMetric, onMetricChange, onTradeClick }: PerformanceTabProps) {
+  const [selectedTagFilter, setSelectedTagFilter] = useState<string>('all');
+
+  const performanceTrades = useMemo(() => {
+    if (selectedTagFilter === 'all') return filteredTrades;
+    return filteredTrades.filter((trade) => (trade.tags ?? []).includes(selectedTagFilter));
+  }, [filteredTrades, selectedTagFilter]);
+
   return (
     <motion.div key="performance" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
       <div className="flex flex-wrap items-center justify-between border-b border-white/10 pb-4">
@@ -34,15 +44,30 @@ export default function PerformanceTab({ filteredTrades, performanceMetric, onMe
         </div>
       </div>
 
-      <PerformanceCharts trades={filteredTrades} metric={performanceMetric} />
-      <PerformanceStatsTable trades={filteredTrades} onTradeClick={onTradeClick} />
+      <div className="flex items-center gap-3">
+        <span className="text-xs font-mono uppercase tracking-wider text-zinc-500">Tag Filter</span>
+        <Select value={selectedTagFilter} onValueChange={setSelectedTagFilter}>
+          <SelectTrigger className="h-8 w-56 border-white/10 bg-white/5 text-xs">
+            <SelectValue placeholder="Filter by tag" />
+          </SelectTrigger>
+          <SelectContent className="border-white/10 bg-[#18181b] text-white">
+            <SelectItem value="all">All tags</SelectItem>
+            {globalTags.map((tag) => (
+              <SelectItem key={tag} value={tag}>{tag}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <PerformanceCharts trades={performanceTrades} metric={performanceMetric} />
+      <PerformanceStatsTable trades={performanceTrades} onTradeClick={onTradeClick} />
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
           <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-zinc-400">Symbol Distribution</h3>
           <div className="space-y-3">
             {Object.entries(
-              filteredTrades.reduce<Record<string, number>>((acc, trade) => {
+              performanceTrades.reduce<Record<string, number>>((acc, trade) => {
                 acc[trade.symbol] = (acc[trade.symbol] || 0) + 1;
                 return acc;
               }, {}),
@@ -53,7 +78,7 @@ export default function PerformanceTab({ filteredTrades, performanceMetric, onMe
                 <div key={symbol} className="flex items-center justify-between">
                   <span className="font-mono text-sm">{symbol}</span>
                   <div className="mx-4 h-1.5 flex-1 overflow-hidden rounded-full bg-white/5">
-                    <div className="h-full bg-emerald-500" style={{ width: `${(count / Math.max(filteredTrades.length, 1)) * 100}%` }} />
+                    <div className="h-full bg-emerald-500" style={{ width: `${(count / Math.max(performanceTrades.length, 1)) * 100}%` }} />
                   </div>
                   <span className="text-xs text-zinc-500">{count} trades</span>
                 </div>
@@ -68,15 +93,15 @@ export default function PerformanceTab({ filteredTrades, performanceMetric, onMe
               <span className="text-sm text-zinc-500">Avg Risk per Trade</span>
               <span className="font-mono text-sm">
                 {formatCurrency(
-                  filteredTrades.filter((trade) => trade.initialRisk).reduce((acc, trade) => acc + (trade.initialRisk || 0), 0) /
-                    (filteredTrades.filter((trade) => trade.initialRisk).length || 1),
+                  performanceTrades.filter((trade) => trade.initialRisk).reduce((acc, trade) => acc + (trade.initialRisk || 0), 0) /
+                    (performanceTrades.filter((trade) => trade.initialRisk).length || 1),
                 )}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-zinc-500">Total R-Multiple</span>
               <span className="font-mono text-sm text-emerald-500">
-                {filteredTrades
+                {performanceTrades
                   .filter((trade) => trade.initialRisk)
                   .reduce((acc, trade) => acc + trade.pnl / (trade.initialRisk || 1), 0)
                   .toFixed(2)}

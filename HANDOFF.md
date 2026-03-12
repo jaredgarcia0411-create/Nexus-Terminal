@@ -531,3 +531,56 @@ All three checks currently pass.
 - `npm run lint` — **PASS**
 - `npx tsc --noEmit` — **PASS**
 - `npm test` — **PASS**
+
+## Planned Session Spec (2026-03-12) — Trades/Performance UI + Replay Marker Cleanup
+
+> Generated: 2026-03-12 | Agent: opencode
+> Status: EXECUTED (implementation complete)
+
+### Scope for this session
+
+- [x] Add Trades tab symbol search input that matches Journal search UI styling exactly.
+- [x] Add persistent automatic risk default control in Trades tab and apply it only to future trades.
+- [x] Add Performance tag filter dropdown below the title divider.
+- [x] Update trade replay execution markers to green/red arrows and remove ENTRY/EXIT marker text.
+- [x] Clean up tab title presentation by removing bordered title card wrappers for a cleaner look.
+
+### Decisions confirmed with user
+
+- [x] Reuse the same visual/input template as the Journal symbol search box for Trades tab.
+- [x] Automatic risk value persists across browser sessions.
+- [x] Performance analytics receives tag-based filtering via dropdown under the title divider.
+- [x] Replay execution markers use arrows and hide ENTRY/EXIT text labels.
+
+### Step-by-step implementation order (exact)
+
+1. **Trades search parity + title cleanup**
+   - [x] Added Journal-style symbol search input to `components/trading/TradesTab.tsx`.
+   - [x] Removed bordered title-card wrappers in `components/trading/TradesTab.tsx` and `components/trading/JournalTab.tsx` for cleaner page title presentation.
+
+2. **Persistent auto-risk defaults for future trades**
+   - [x] Added `defaultRisk` + `defaultRiskInput` state and localStorage persistence (`nexus-default-risk`) in `hooks/use-trades.ts`.
+   - [x] Added `handleSetDefaultRisk` action and wired Trades tab controls in `app/page.tsx` + `components/trading/TradesTab.tsx`.
+   - [x] Applied default risk only to future trade creation/import flows (`handleCreateManualTrade`, file import, folder import) without mutating prior trades.
+
+3. **Performance tag dropdown filter**
+   - [x] Added tag filter dropdown below Performance title divider in `components/trading/PerformanceTab.tsx`.
+   - [x] Filtered Performance charts/statistics/tables using selected tag while preserving existing metric toggle behavior.
+
+4. **Replay marker styling cleanup**
+   - [x] Updated trade marker colors in `components/trading/CandlestickChart.tsx` (long → green, short → red).
+   - [x] Updated marker shapes to arrows for exact-price replay markers.
+   - [x] Removed marker text labels for cleaner overlay display.
+
+5. **Verification + docs updates**
+   - [x] Ran `npm run lint`.
+   - [x] Ran `npx tsc --noEmit`.
+   - [x] Ran `npm test`.
+   - [x] Updated `README.md` with a new concise project summary.
+   - [x] Updated `HANDOFF.md` with this implementation and results.
+
+### Command Results (2026-03-12 trades/performance polish)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**

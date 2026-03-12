@@ -42,6 +42,8 @@ export default function NexusTerminal() {
     startDate,
     endDate,
     riskInput,
+    defaultRiskInput,
+    defaultRisk,
     filterPreset,
     selectedFilterTags,
     bulkTagInput,
@@ -52,6 +54,7 @@ export default function NexusTerminal() {
     setStartDate,
     setEndDate,
     setRiskInput,
+    setDefaultRiskInput,
     setFilterPreset,
     setSelectedFilterTags,
     setBulkTagInput,
@@ -61,6 +64,7 @@ export default function NexusTerminal() {
     handleCreateManualTrade,
     handleDeleteSelected,
     handleApplyRisk,
+    handleSetDefaultRisk,
     handleSaveNotes,
     handleAddTag,
     handleRemoveTag,
@@ -187,6 +191,7 @@ export default function NexusTerminal() {
             {activeTab === 'performance' ? (
               <PerformanceTab
                 filteredTrades={filteredTrades}
+                globalTags={globalTags}
                 performanceMetric={performanceMetric}
                 onMetricChange={setPerformanceMetric}
                 onTradeClick={(trade) => setSelectedTradeId(trade.id)}
@@ -201,6 +206,7 @@ export default function NexusTerminal() {
                 globalTags={globalTags}
                 selectedFilterTags={selectedFilterTags}
                 hasActiveFilters={hasActiveFilters}
+                searchQuery={searchQuery}
                 onToggleFilterTag={(tag) => {
                   setSelectedFilterTags((prev) => {
                     const next = new Set(prev);
@@ -217,10 +223,15 @@ export default function NexusTerminal() {
                 onRemoveTag={handleRemoveTag}
                 onTradeClick={(trade) => setSelectedTradeId(trade.id)}
                 riskInput={riskInput}
+                defaultRiskInput={defaultRiskInput}
+                defaultRisk={defaultRisk}
                 bulkTagInput={bulkTagInput}
+                onSearchQueryChange={setSearchQuery}
                 onRiskInputChange={setRiskInput}
+                onDefaultRiskInputChange={setDefaultRiskInput}
                 onBulkTagInputChange={setBulkTagInput}
                 onApplyRisk={handleApplyRisk}
+                onSetDefaultRisk={handleSetDefaultRisk}
                 onBulkAddTag={handleBulkAddTag}
               />
             ) : null}

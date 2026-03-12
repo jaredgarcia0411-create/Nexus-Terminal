@@ -64,6 +64,7 @@ const fromApiTrade = (trade: ApiTrade): Trade => normalizeTrade(trade);
 
 const LOCAL_MIGRATION_LOCK_TTL_MS = 2 * 60 * 1000;
 const IMPORT_CHUNK_SIZE = 200;
+const DEFAULT_RISK_STORAGE_KEY = 'nexus-default-risk';
 
 type ApiRequestError = Error & { status?: number };
 
@@ -115,6 +116,8 @@ export function useTrades() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [riskInput, setRiskInput] = useState('');
+  const [defaultRiskInput, setDefaultRiskInput] = useState('');
+  const [defaultRisk, setDefaultRisk] = useState<number | null>(null);
   const [filterPreset, setFilterPreset] = useState<'all' | '30' | '60' | '90'>('all');
   const [selectedFilterTags, setSelectedFilterTags] = useState<Set<string>>(new Set());
   const [bulkTagInput, setBulkTagInput] = useState('');
@@ -122,6 +125,7 @@ export function useTrades() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const tradesRef = useRef<Trade[]>([]);
+  const defaultRiskHydratedRef = useRef(false);
 
   const sortTrades = useCallback((list: Trade[]) => [...list].sort((a, b) => b.date.getTime() - a.date.getTime()), []);
 
@@ -166,6 +170,39 @@ export function useTrades() {
   useEffect(() => {
     tradesRef.current = trades;
   }, [trades]);
+
+  useEffect(() => {
+    const savedDefaultRisk = localStorage.getItem(DEFAULT_RISK_STORAGE_KEY);
+    if (savedDefaultRisk) {
+      const parsed = parseFloat(savedDefaultRisk);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        setDefaultRisk(parsed);
+        setDefaultRiskInput(parsed.toString());
+      }
+    }
+
+    defaultRiskHydratedRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!defaultRiskHydratedRef.current) return;
+
+    if (defaultRisk == null) {
+      localStorage.removeItem(DEFAULT_RISK_STORAGE_KEY);
+      return;
+    }
+
+    localStorage.setItem(DEFAULT_RISK_STORAGE_KEY, defaultRisk.toString());
+  }, [defaultRisk]);
+
+  const withDefaultRisk = useCallback(
+    (trade: Trade): Trade => {
+      if (defaultRisk == null) return trade;
+      if (typeof trade.initialRisk === 'number' && Number.isFinite(trade.initialRisk) && trade.initialRisk > 0) return trade;
+      return { ...trade, initialRisk: defaultRisk };
+    },
+    [defaultRisk],
+  );
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -366,14 +403,16 @@ export function useTrades() {
   }, [useLocalStorage]);
 
   const handleCreateManualTrade = async (trade: Trade) => {
+    const nextTrade = withDefaultRisk(trade);
+
     if (useLocalStorage) {
-      setTrades((prev) => sortTrades([trade, ...prev]));
+      setTrades((prev) => sortTrades([nextTrade, ...prev]));
       return;
     }
 
     const result = await apiRequest<{ trade: ApiTrade }>('/api/trades', {
       method: 'POST',
-      body: JSON.stringify(toApiTrade(trade)),
+      body: JSON.stringify(toApiTrade(nextTrade)),
     });
 
     setTrades((prev) => sortTrades([fromApiTrade(result.trade), ...prev.filter((item) => item.id !== result.trade.id)]));
@@ -597,6 +636,15 @@ export function useTrades() {
     });
   };
 
+  const handleSetDefaultRisk = () => {
+    const parsedRisk = parseFloat(defaultRiskInput);
+    if (!Number.isFinite(parsedRisk) || parsedRisk <= 0) return;
+
+    setDefaultRisk(parsedRisk);
+    setDefaultRiskInput(parsedRisk.toString());
+    toast.success(`Auto risk set to $${parsedRisk.toLocaleString()}`);
+  };
+
   const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -656,6 +704,8 @@ export function useTrades() {
         return;
       }
 
+      const importedTrades = allNewTrades.map((trade) => withDefaultRisk(trade));
+
       if (useLocalStorage) {
         setTrades((prev) => {
           const existingMeta = new Map(
@@ -664,7 +714,7 @@ export function useTrades() {
               .map((trade) => [trade.id, { tags: trade.tags, notes: trade.notes, initialRisk: trade.initialRisk }] as const),
           );
 
-          const mergedNewTrades = allNewTrades.map((trade) => {
+          const mergedNewTrades = importedTrades.map((trade) => {
             const preserved = existingMeta.get(trade.id);
             if (!preserved) return trade;
             return {
@@ -679,7 +729,7 @@ export function useTrades() {
           return sortTrades([...mergedNewTrades, ...filtered]);
         });
       } else {
-        const apiTrades = allNewTrades.map(toApiTrade);
+        const apiTrades = importedTrades.map(toApiTrade);
         for (let offset = 0; offset < apiTrades.length; offset += IMPORT_CHUNK_SIZE) {
           const chunk = apiTrades.slice(offset, offset + IMPORT_CHUNK_SIZE);
           await apiRequest<{ trades: ApiTrade[] }>('/api/trades/import', {
@@ -784,6 +834,8 @@ export function useTrades() {
         return;
       }
 
+      const importedTrades = allNewTrades.map((trade) => withDefaultRisk(trade));
+
       if (useLocalStorage) {
         setTrades((prev) => {
           const existingMeta = new Map(
@@ -792,7 +844,7 @@ export function useTrades() {
               .map((trade) => [trade.id, { tags: trade.tags, notes: trade.notes, initialRisk: trade.initialRisk }] as const),
           );
 
-          const mergedNewTrades = allNewTrades.map((trade) => {
+          const mergedNewTrades = importedTrades.map((trade) => {
             const preserved = existingMeta.get(trade.id);
             if (!preserved) return trade;
             return {
@@ -807,7 +859,7 @@ export function useTrades() {
           return sortTrades([...mergedNewTrades, ...filtered]);
         });
       } else {
-        const apiTrades = allNewTrades.map(toApiTrade);
+        const apiTrades = importedTrades.map(toApiTrade);
         for (let offset = 0; offset < apiTrades.length; offset += IMPORT_CHUNK_SIZE) {
           const chunk = apiTrades.slice(offset, offset + IMPORT_CHUNK_SIZE);
           await apiRequest<{ trades: ApiTrade[] }>('/api/trades/import', {
@@ -850,6 +902,8 @@ export function useTrades() {
     startDate,
     endDate,
     riskInput,
+    defaultRiskInput,
+    defaultRisk,
     filterPreset,
     selectedFilterTags,
     bulkTagInput,
@@ -860,6 +914,7 @@ export function useTrades() {
     setStartDate,
     setEndDate,
     setRiskInput,
+    setDefaultRiskInput,
     setFilterPreset,
     setSelectedFilterTags,
     setBulkTagInput,
@@ -869,6 +924,7 @@ export function useTrades() {
     handleCreateManualTrade,
     handleDeleteSelected,
     handleApplyRisk,
+    handleSetDefaultRisk,
     handleSaveNotes,
     handleAddTag,
     handleRemoveTag,
