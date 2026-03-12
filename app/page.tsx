@@ -14,7 +14,9 @@ import JournalTab from '@/components/trading/JournalTab';
 import PerformanceTab from '@/components/trading/PerformanceTab';
 import TradesTab from '@/components/trading/TradesTab';
 import ChartsTab from '@/components/trading/ChartsTab';
-import JarvisPanel from '@/components/trading/JarvisPanel';
+import MarketsTab from '@/components/trading/MarketsTab';
+import ResearchTab from '@/components/trading/ResearchTab';
+import BacktestingTab from '@/components/trading/BacktestingTab';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useTrades } from '@/hooks/use-trades';
 
@@ -24,7 +26,6 @@ export default function NexusTerminal() {
   const [performanceMetric, setPerformanceMetric] = useState<'$' | 'R'>('$');
   const [isManualTradeOpen, setIsManualTradeOpen] = useState(false);
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
-  const [isJarvisOpen, setIsJarvisOpen] = useState(false);
 
   const {
     user,
@@ -113,8 +114,6 @@ export default function NexusTerminal() {
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        onJarvisToggle={() => setIsJarvisOpen((prev) => !prev)}
-        isJarvisOpen={isJarvisOpen}
         user={user}
         trades={trades}
         onClearAllData={handleClearAllData}
@@ -229,11 +228,21 @@ export default function NexusTerminal() {
             {activeTab === 'charts' ? (
               <ChartsTab trades={trades} />
             ) : null}
+
+            {activeTab === 'markets' ? (
+              <MarketsTab />
+            ) : null}
+
+            {activeTab === 'research' ? (
+              <ResearchTab />
+            ) : null}
+
+            {activeTab === 'backtesting' ? (
+              <BacktestingTab />
+            ) : null}
           </AnimatePresence>
         </div>
       </main>
-
-      <JarvisPanel open={isJarvisOpen} onOpenChange={setIsJarvisOpen} trades={trades} />
 
       <NewTradeDialog open={isManualTradeOpen} onOpenChange={setIsManualTradeOpen} onCreateTrade={handleCreateManualTrade} />
       <TradeDetailSheet

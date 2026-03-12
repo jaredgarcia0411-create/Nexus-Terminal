@@ -1,21 +1,19 @@
 'use client';
 
-import { Activity, BarChart3, Bot, ChartCandlestick, Filter, LayoutGrid, List, User } from 'lucide-react';
+import { Activity, BarChart3, ChartCandlestick, Filter, FlaskConical, LayoutGrid, List, Newspaper, Search, User } from 'lucide-react';
 import type { Dispatch, SetStateAction } from 'react';
 import SettingsMenu from '@/components/trading/SettingsMenu';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useIsMobile } from '@/hooks/use-mobile';
 import type { Trade } from '@/lib/types';
 
-export type TabKey = 'dashboard' | 'journal' | 'performance' | 'filter' | 'charts';
+export type TabKey = 'dashboard' | 'journal' | 'performance' | 'filter' | 'charts' | 'markets' | 'research' | 'backtesting';
 
 type UserSession = { id?: string; name?: string | null; email?: string | null; image?: string | null } | undefined;
 
 interface SidebarProps {
   activeTab: TabKey;
   setActiveTab: Dispatch<SetStateAction<TabKey>>;
-  onJarvisToggle: () => void;
-  isJarvisOpen: boolean;
   user: UserSession;
   trades: Trade[];
   onClearAllData: () => void;
@@ -25,8 +23,6 @@ interface SidebarProps {
 export default function Sidebar({
   activeTab,
   setActiveTab,
-  onJarvisToggle,
-  isJarvisOpen,
   user,
   trades,
   onClearAllData,
@@ -40,6 +36,9 @@ export default function Sidebar({
     { tab: 'journal', title: 'Journal', icon: List },
     { tab: 'filter', title: 'Trades', icon: Filter },
     { tab: 'charts', title: 'Charts', icon: ChartCandlestick },
+    { tab: 'markets', title: 'Markets', icon: Newspaper },
+    { tab: 'research', title: 'Research', icon: Search },
+    { tab: 'backtesting', title: 'Backtesting', icon: FlaskConical },
   ];
 
   if (isMobile) {
@@ -62,15 +61,6 @@ export default function Sidebar({
           })}
 
           <SettingsMenu trades={trades} onClearAllData={onClearAllData} />
-
-          <button
-            onClick={onJarvisToggle}
-            className={`rounded-lg p-2 transition-colors ${isJarvisOpen ? 'bg-emerald-500/10 text-emerald-500' : 'hover:text-white'}`}
-            title="Jarvis"
-            aria-label="Jarvis"
-          >
-            <Bot className="h-5 w-5" />
-          </button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -125,16 +115,6 @@ export default function Sidebar({
 
       <div className="mt-auto flex flex-col gap-2 text-zinc-500">
         <SettingsMenu trades={trades} onClearAllData={onClearAllData} />
-
-        <button
-          onClick={onJarvisToggle}
-          className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${isJarvisOpen ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-white/5 hover:text-white'}`}
-          title="Jarvis"
-          aria-label="Jarvis"
-        >
-          <Bot className="h-5 w-5" />
-          <span className="text-sm font-medium">Jarvis</span>
-        </button>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

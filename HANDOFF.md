@@ -234,3 +234,77 @@ All three checks currently pass.
 
 - For Sprint 10 scope only, revert the committed change(s) if needed and re-apply `requireUser()` to `app/api/market-data/route.ts` regardless.
 - Remove/rotate `MASSIVE_API_KEY` if moving back to the previous provider.
+
+## Planned Session Spec (2026-03-12) — Jarvis Sidebar Split into Pages
+
+> Generated: 2026-03-12 | Agent: opencode
+> Status: PLANNED (awaiting implementation)
+
+### Scope for this session
+
+- [x] Split Jarvis panel tabs into dedicated sidebar pages: `Markets`, `Research`, `Backtesting`.
+- [x] Rename `Macro` to `Markets`.
+- [x] Rename `Chat` to `Backtesting` and preserve existing chat functionality/UI behavior.
+- [x] Keep Research data flow the same as current Jarvis panel and render reports on full page.
+- [x] Keep existing Jarvis functionality intact; migrate access pattern only (no API redesign).
+
+### Step-by-step implementation order (exact)
+
+1. **Create new tab components (no deletions yet)**
+   - [x] Add `components/trading/MarketsTab.tsx`.
+   - [x] Add `components/trading/ResearchTab.tsx`.
+   - [x] Add `components/trading/BacktestingTab.tsx`.
+
+2. **Implement Markets tab (Macro migration)**
+   - [x] Fetch latest macro summary from `/api/jarvis/macro-summary/latest`.
+   - [x] Render macro content using existing `JarvisMacroSummary` component.
+   - [x] Show empty-state message when no summary exists.
+
+3. **Implement Research tab (full-page layout)**
+   - [x] Keep existing research fetch/display behavior from `JarvisPanel` (`GET/POST /api/jarvis/research`).
+   - [x] Keep ticker input + `New Report` trigger behavior.
+   - [x] Render reports full-page (remove panel-height constraints) and prioritize full-page readability.
+
+4. **Implement Backtesting tab (Chat migration)**
+   - [x] Reuse existing `JarvisChat` functionality within Backtesting page.
+   - [x] Preserve existing commands and response rendering behavior.
+
+5. **Update sidebar navigation**
+   - [x] Update `TabKey` in `components/trading/Sidebar.tsx` to include: `markets`, `research`, `backtesting`.
+   - [x] Add new sidebar items with icons: `Markets` (`Newspaper`), `Research` (`Search`), `Backtesting` (`FlaskConical`).
+   - [x] Place them after existing tabs in this order: `Markets`, `Research`, `Backtesting`.
+   - [x] Remove Jarvis toggle button from sidebar (desktop + mobile).
+   - [x] Keep mobile bottom nav visible with the new tabs included (no mobile UX optimization in this pass).
+
+6. **Update app page tab routing**
+   - [x] Update `app/page.tsx` tab rendering to include `MarketsTab`, `ResearchTab`, `BacktestingTab`.
+   - [x] Remove `JarvisPanel` usage from `app/page.tsx`.
+   - [x] Remove now-unused `isJarvisOpen` state and related props.
+
+7. **Preservation rule for this pass**
+   - [x] Do not delete `components/trading/JarvisPanel.tsx` or other Jarvis files in this session.
+   - [x] Keep all `/app/api/jarvis/*` routes unchanged unless required to fix build/test failures.
+
+8. **Verification and closeout**
+   - [x] Run `npm run lint`.
+   - [x] Run `npx tsc --noEmit`.
+   - [x] Run `npm test`.
+   - [x] Record pass/fail for each command in this file and check off completed items.
+
+### Command Results (2026-03-12 Jarvis sidebar split)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
+
+## Session Update (2026-03-12 quick UI polish)
+
+- [x] Polished `Markets` page header/actions and added manual refresh affordance.
+- [x] Polished `Research` page controls/report presentation for full-page readability.
+- [x] Polished `Backtesting` page framing while keeping `JarvisChat` functionality unchanged.
+
+### Command Results (2026-03-12 quick UI polish)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
