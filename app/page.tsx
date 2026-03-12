@@ -116,13 +116,13 @@ export default function NexusTerminal() {
         setActiveTab={setActiveTab}
         user={user}
         trades={trades}
+        useLocalStorage={useLocalStorage}
         onClearAllData={handleClearAllData}
         onSignOut={handleSignOut}
       />
 
       <main className={isMobile ? 'pb-16' : 'pl-56'}>
         <Toolbar
-          useLocalStorage={useLocalStorage}
           error={error}
           user={user}
           filterPreset={filterPreset}

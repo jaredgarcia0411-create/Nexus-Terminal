@@ -34,6 +34,19 @@ type SnapshotPayload = {
   };
 };
 
+type SnapshotCoverage = {
+  totalInstruments: number;
+  availablePrices: number;
+  missingPriceCount: number;
+  missingPriceBySection: {
+    indices: number;
+    futures: number;
+    crypto: number;
+    fx: number;
+    equities: number;
+  };
+};
+
 function formatNumber(value: number | null, digits = 2) {
   if (value == null || !Number.isFinite(value)) return '--';
   return value.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -150,6 +163,7 @@ export default function MarketsTab() {
   const [loadingMacro, setLoadingMacro] = useState(true);
   const [loadingSnapshot, setLoadingSnapshot] = useState(true);
   const [warning, setWarning] = useState<string | null>(null);
+  const [coverage, setCoverage] = useState<SnapshotCoverage | null>(null);
   const [isStale, setIsStale] = useState(false);
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
 
@@ -177,9 +191,11 @@ export default function MarketsTab() {
         fetchedAt?: string;
         warning?: string | null;
         stale?: boolean;
+        coverage?: SnapshotCoverage;
       };
       setSnapshot(payload.data ?? null);
       setWarning(payload.warning ?? null);
+      setCoverage(payload.coverage ?? null);
       setIsStale(Boolean(payload.stale));
       setLastLoadedAt(payload.fetchedAt ? new Date(payload.fetchedAt) : new Date());
     } catch {
@@ -224,6 +240,11 @@ export default function MarketsTab() {
       <div className="rounded-xl border border-white/10 bg-[#111113] px-4 py-3 text-sm text-zinc-400">
         <p>Massive market data is delayed by approximately 15 minutes.</p>
         {lastLoadedAt ? <p className="mt-1 text-xs text-zinc-500">Last market update: {lastLoadedAt.toLocaleTimeString()}</p> : null}
+        {coverage ? (
+          <p className="mt-1 text-xs text-zinc-500">
+            Snapshot coverage: {coverage.availablePrices}/{coverage.totalInstruments} symbols populated ({coverage.missingPriceCount} missing).
+          </p>
+        ) : null}
         {warning ? <p className="mt-2 text-xs text-amber-300">{warning}</p> : null}
         {isStale ? <p className="mt-1 text-xs text-amber-300">Data is stale (older than 30 minutes).</p> : null}
       </div>
@@ -237,16 +258,16 @@ export default function MarketsTab() {
         </div>
 
         <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-          <h2 className="mb-3 text-sm font-semibold text-zinc-200">Futures</h2>
+          <h2 className="mb-3 text-sm font-semibold text-zinc-200">Crypto</h2>
           <div className="grid gap-2 sm:grid-cols-2">
-            {(snapshot?.futures ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
+            {(snapshot?.crypto ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
           </div>
         </div>
 
         <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-          <h2 className="mb-3 text-sm font-semibold text-zinc-200">Crypto</h2>
+          <h2 className="mb-3 text-sm font-semibold text-zinc-200">Futures</h2>
           <div className="grid gap-2 sm:grid-cols-2">
-            {(snapshot?.crypto ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
+            {(snapshot?.futures ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
           </div>
         </div>
 

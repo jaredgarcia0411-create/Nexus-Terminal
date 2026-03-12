@@ -52,5 +52,44 @@ describe('GET /api/market-data/snapshot', () => {
     expect(payload.data.fx[0].symbol).toBe('EURUSD');
     expect(payload.data.movers.gainers).toHaveLength(1);
     expect(payload.data.movers.losers).toHaveLength(0);
+    expect(payload.coverage.totalInstruments).toBeGreaterThan(0);
+    expect(payload.coverage.missingPriceCount).toBeGreaterThanOrEqual(0);
+    expect(payload.requestId).toEqual(expect.any(String));
+  });
+
+  it('returns live-no-cache when cache table is missing', async () => {
+    const dbWithMissingTable = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            orderBy: vi.fn(() => ({
+              limit: vi.fn().mockRejectedValue(Object.assign(new Error('relation "market_snapshots" does not exist'), { code: '42P01' })),
+            })),
+          })),
+        })),
+      })),
+      insert: vi.fn(),
+    };
+    getDbMock.mockReturnValueOnce(dbWithMissingTable);
+
+    const response = ensureResponse(await GET());
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.source).toBe('live-no-cache');
+    expect(payload.warning).toContain('cache unavailable');
+    expect(payload.requestId).toEqual(expect.any(String));
+  });
+
+  it('returns structured error metadata on upstream failure without cache', async () => {
+    fetchUnifiedSnapshotMock.mockRejectedValueOnce(new Error('Massive request failed: 429'));
+
+    const response = ensureResponse(await GET());
+    const payload = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(payload.code).toBe('upstream_fetch_failed');
+    expect(payload.stage).toBe('upstream_fetch');
+    expect(payload.requestId).toEqual(expect.any(String));
   });
 });

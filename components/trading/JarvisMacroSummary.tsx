@@ -95,12 +95,12 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
         </div>
 
         {keyRisks.length > 0 ? (
-          <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3">
+          <div className="rounded-lg border border-white/10 bg-black/20 p-3">
             <p className="text-[11px] uppercase tracking-[0.2em] text-amber-200">Key Macro Risks</p>
-            <ul className="mt-2 space-y-1.5 text-sm text-amber-100">
+            <ul className="mt-2 space-y-1.5 text-sm text-zinc-200">
               {keyRisks.map((risk, i) => (
                 <li key={`macro-risk-${i}`} className="flex gap-2">
-                  <span className="text-amber-300">!</span>
+                  <span className="text-zinc-400">!</span>
                   <span>{risk}</span>
                 </li>
               ))}
@@ -143,13 +143,13 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3">
+        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
           <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-200">Key Themes</p>
           {keyThemes.length > 0 ? (
-            <ul className="mt-2 space-y-1.5 text-sm text-emerald-100">
+            <ul className="mt-2 space-y-1.5 text-sm text-zinc-200">
               {keyThemes.map((theme, i) => (
                 <li key={`macro-theme-${i}`} className="flex gap-2">
-                  <span className="text-emerald-300">-</span>
+                  <span className="text-zinc-400">-</span>
                   <span>{theme}</span>
                 </li>
               ))}
@@ -157,13 +157,13 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
           ) : <p className="mt-2 text-sm text-zinc-400">No key themes available.</p>}
         </div>
 
-        <div className="rounded-lg border border-sky-500/20 bg-sky-500/10 p-3">
+        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
           <p className="text-[11px] uppercase tracking-[0.2em] text-sky-200">Watchlist Notes</p>
           {watchlistNotes.length > 0 ? (
-            <ul className="mt-2 space-y-1.5 text-sm text-sky-100">
+            <ul className="mt-2 space-y-1.5 text-sm text-zinc-200">
               {watchlistNotes.map((note, i) => (
                 <li key={`macro-watch-${i}`} className="flex gap-2">
-                  <span className="text-sky-300">-</span>
+                  <span className="text-zinc-400">-</span>
                   <span>{note}</span>
                 </li>
               ))}
@@ -173,12 +173,12 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
       </div>
 
       {riskFlags.length > 0 ? (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3">
+        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
           <p className="text-[11px] uppercase tracking-[0.2em] text-amber-200">Key Macro Risks</p>
-          <ul className="mt-2 space-y-1.5 text-sm text-amber-100">
+          <ul className="mt-2 space-y-1.5 text-sm text-zinc-200">
             {riskFlags.map((risk, i) => (
               <li key={`macro-risk-${i}`} className="flex gap-2">
-                <span className="text-amber-300">!</span>
+                <span className="text-zinc-400">!</span>
                 <span>{risk}</span>
               </li>
             ))}

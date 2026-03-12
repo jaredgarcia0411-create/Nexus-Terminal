@@ -437,3 +437,97 @@ All three checks currently pass.
   - API docs: `https://fred.stlouisfed.org/docs/api/fred/`
   - Candidate use: macro-economic indicators in Markets/Macro views (rates, inflation, labor, growth).
   - Deferred for now to keep this sprint focused on Massive market/snapshot/movers + Research persistence.
+
+## Session Update (2026-03-12 market snapshot diagnostics)
+
+- [x] Added stage-based diagnostic logging to `app/api/market-data/snapshot/route.ts` (`auth_check`, `cache_read`, `cache_write`, `upstream_fetch`, `fallback_response`, `route_handler`) with `requestId` correlation and safe error summaries.
+- [x] Added graceful handling for missing `market_snapshots` table (`Postgres 42P01`) so live Massive fetch can still succeed when cache is unavailable.
+- [x] Added structured error metadata in non-200 snapshot responses (`code`, `stage`, `requestId`) to speed production diagnosis.
+- [x] Added snapshot route regression tests in `__tests__/market-data-snapshot-route.test.ts` for `live-no-cache` path and structured upstream failure payload.
+- [x] Executed `npm run db:migrate`; confirmed `public.market_snapshots` exists in the configured `.env.local` database.
+
+### Command Results (2026-03-12 market snapshot diagnostics)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
+
+## Known Problems To Address
+
+- [ ] Drizzle migration history contains duplicate numeric prefixes (`0003_smiling_agent_zero`, `0003_superb_james_howlett`).
+- [ ] Drizzle migration numeric prefix sequence has a gap (`0001` -> `0003`, no `0002`).
+
+## Planned Session Spec (2026-03-12) — Markets Symbol Tweaks + Mode Badge Move
+
+> Generated: 2026-03-12 | Agent: opencode
+> Status: EXECUTED (implementation complete)
+
+### Scope for this session
+
+- [x] Swap display positions of Crypto and Futures cards in the Markets snapshot grid.
+- [x] Update index symbol from `RTY` to `IWM`.
+- [x] Add Natural Gas and 2Y Note to Futures snapshot symbols.
+- [x] Move storage mode indicator (`Cloud Mode` / `Local Storage Mode`) from top toolbar to left sidebar above Settings.
+
+### Step-by-step implementation order (exact)
+
+1. **Snapshot symbol updates**
+   - [x] In `app/api/market-data/snapshot/route.ts`, change `INDEX_SYMBOLS` from `RTY` to `IWM`.
+   - [x] In `app/api/market-data/snapshot/route.ts`, add `{ ticker: '/NG', label: 'Natural Gas' }` and `{ ticker: '/ZT', label: '2Y Note' }` to `FUTURE_SYMBOLS`.
+
+2. **Markets layout swap**
+   - [x] In `components/trading/MarketsTab.tsx`, swap the rendered order/placement of Crypto and Futures sections.
+
+3. **Mode indicator relocation**
+   - [x] In `components/trading/Sidebar.tsx`, add `useLocalStorage` prop and render mode badge above `SettingsMenu` in desktop sidebar.
+   - [x] In `components/trading/Toolbar.tsx`, remove the mode indicator text from the header.
+   - [x] In `app/page.tsx`, pass `useLocalStorage` to `Sidebar` and remove it from `Toolbar` props.
+
+4. **Verification + closeout**
+   - [x] Run `npm run lint`.
+   - [x] Run `npx tsc --noEmit`.
+   - [x] Run `npm test`.
+   - [x] Record pass/fail for each command.
+
+### Command Results (2026-03-12 markets symbol tweaks + mode badge move)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
+
+## Planned Session Spec (2026-03-12) — Snapshot Coverage Counter + Macro Block Styling
+
+> Generated: 2026-03-12 | Agent: opencode
+> Status: EXECUTED (implementation complete)
+
+### Scope for this session
+
+- [x] Add a snapshot coverage counter for missing instrument pricing in Markets snapshot responses.
+- [x] Surface snapshot coverage count in Markets tab status panel.
+- [x] Remove colored block backgrounds from macro summary content blocks while keeping title color coding.
+
+### Step-by-step implementation order (exact)
+
+1. **Snapshot coverage metadata**
+   - [x] In `app/api/market-data/snapshot/route.ts`, add coverage calculation (`totalInstruments`, `availablePrices`, `missingPriceCount`, `missingPriceBySection`).
+   - [x] Include `coverage` in successful snapshot responses (`live`, `live-no-cache`, `cache`, `cache-fallback`).
+
+2. **Markets UI counter**
+   - [x] In `components/trading/MarketsTab.tsx`, parse `coverage` from payload and display a summary counter in the snapshot status card.
+
+3. **Macro summary styling simplification**
+   - [x] In `components/trading/JarvisMacroSummary.tsx`, remove colored background/border treatments from macro content blocks.
+   - [x] Preserve title color coding for section headings (`Key Themes`, `Watchlist Notes`, `Key Macro Risks`).
+
+4. **Regression coverage + verification**
+   - [x] Extend `__tests__/market-data-snapshot-route.test.ts` assertions to validate coverage metadata is present.
+   - [x] Run `npm run lint`.
+   - [x] Run `npx tsc --noEmit`.
+   - [x] Run `npm test`.
+   - [x] Record pass/fail for each command.
+
+### Command Results (2026-03-12 snapshot coverage + macro styling)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**

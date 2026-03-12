@@ -9,7 +9,6 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Button } from '@/components/ui/button';
 
 interface ToolbarProps {
-  useLocalStorage: boolean;
   error: string | null;
   user: { name?: string | null; email?: string | null; image?: string | null } | undefined;
   filterPreset: 'all' | '30' | '60' | '90';
@@ -26,7 +25,6 @@ interface ToolbarProps {
 }
 
 export default function Toolbar({
-  useLocalStorage,
   error,
   user,
   filterPreset,
@@ -51,8 +49,6 @@ export default function Toolbar({
         <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
           <h1 className="shrink-0 text-lg font-medium tracking-tight">Nexus Terminal</h1>
           <div className="mx-1 hidden h-4 w-px bg-white/10 sm:mx-2 sm:block" />
-
-          {!isMobile ? <span className="text-[10px] uppercase tracking-widest text-zinc-600">{useLocalStorage ? 'Local Storage Mode' : 'Cloud Mode'}</span> : null}
 
           <div className="ml-0 flex items-center gap-1 sm:ml-2">
             {[
