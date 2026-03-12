@@ -11,7 +11,11 @@ const { callJarvisMock, fetchPageTextMock, getDbMock, requireUserMock, ensureUse
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
 vi.mock('@/lib/jarvis/client', () => ({ callJarvis: callJarvisMock }));
 vi.mock('@/lib/jarvis/scrape-lite', () => ({ fetchPageText: fetchPageTextMock }));
-vi.mock('@/lib/server-db-utils', () => ({ requireUser: requireUserMock, ensureUser: ensureUserMock }));
+vi.mock('@/lib/server-db-utils', () => ({
+  requireUser: requireUserMock,
+  ensureUser: ensureUserMock,
+  dbUnavailable: () => Response.json({ error: 'Database not configured' }, { status: 503 }),
+}));
 
 import { GET as cronGet } from '@/app/api/jarvis/cron/macro-summary/route';
 import { GET as latestGet } from '@/app/api/jarvis/macro-summary/latest/route';
@@ -30,7 +34,7 @@ describe('jarvis cron macro-summary route', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-15T11:00:00.000Z'));
     process.env.CRON_SECRET = 'cron-secret';
-    ensureUserMock.mockResolvedValue(undefined);
+    ensureUserMock.mockResolvedValue({ id: 'u1', email: 'test@example.com', name: null, picture: null });
     fetchPageTextMock.mockResolvedValue('sample page text');
     callJarvisMock.mockResolvedValue({
       content: '{"headline":"Markets stable","key_themes":[],"risk_flags":[],"watchlist_notes":[]}',
@@ -181,7 +185,7 @@ describe('jarvis macro-summary latest endpoint', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireUserMock.mockResolvedValue({ user: { id: 'u1', email: 'test@example.com', name: null, picture: null } });
-    ensureUserMock.mockResolvedValue(undefined);
+    ensureUserMock.mockResolvedValue({ id: 'u1', email: 'test@example.com', name: null, picture: null });
     getDbMock.mockReturnValue({
       select: vi.fn(() => ({
         from: vi.fn(() => ({
@@ -206,5 +210,13 @@ describe('jarvis macro-summary latest endpoint', () => {
     expect(ensureResponse(response).status).toBe(200);
     expect(ensureUserMock).toHaveBeenCalledTimes(1);
     expect(json).toEqual({ latest: { date: '2026-03-11', overallSentiment: 'bullish', regions: [], keyRisks: [] } });
+  });
+
+  it('returns 503 when database is unavailable', async () => {
+    getDbMock.mockReturnValueOnce(null);
+
+    const response = await latestGet();
+    expect(ensureResponse(response).status).toBe(503);
+    expect(ensureUserMock).not.toHaveBeenCalled();
   });
 });

@@ -2,7 +2,7 @@ import { desc } from 'drizzle-orm';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { macroSummaries } from '@/lib/db/schema';
-import { ensureUser, requireUser } from '@/lib/server-db-utils';
+import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 
 export async function GET() {
   try {
@@ -10,9 +10,7 @@ export async function GET() {
     if ('error' in authState) return authState.error;
 
     const db = getDb();
-    if (!db) {
-      return Response.json({ latest: null });
-    }
+    if (!db) return dbUnavailable();
     await ensureUser(db, authState.user);
 
     const [latest] = await db

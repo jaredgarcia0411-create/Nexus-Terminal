@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { jarvisConversations } from '@/lib/db/schema';
-import { ensureUser, requireUser } from '@/lib/server-db-utils';
+import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { callJarvis } from '@/lib/jarvis/client';
 import { buildContext } from '@/lib/jarvis/context';
 import { JARVIS_SYSTEM_PROMPT, buildChatPrompt } from '@/lib/jarvis/prompts';
@@ -18,6 +18,7 @@ interface ChatBody {
 }
 
 async function saveConversation(input: {
+  db: NonNullable<ReturnType<typeof getDb>>;
   userId: string;
   sessionId: string;
   role: 'user' | 'assistant' | 'system';
@@ -25,10 +26,7 @@ async function saveConversation(input: {
   mode: JarvisMode;
   contextSnapshot?: unknown;
 }) {
-  const db = getDb();
-  if (!db) return;
-
-  await db.insert(jarvisConversations).values({
+  await input.db.insert(jarvisConversations).values({
     id: crypto.randomUUID(),
     userId: input.userId,
     sessionId: input.sessionId,
@@ -46,12 +44,11 @@ export async function POST(request: Request) {
   try {
     const authState = await requireUser();
     if ('error' in authState) return authState.error;
-    userId = authState.user.id;
 
     const db = getDb();
-    if (db) {
-      await ensureUser(db, authState.user);
-    }
+    if (!db) return dbUnavailable();
+    const canonicalUser = await ensureUser(db, authState.user);
+    userId = canonicalUser.id;
 
     const rateLimitResult = checkRateLimit(userId);
     if (!rateLimitResult.allowed) {
@@ -75,12 +72,13 @@ export async function POST(request: Request) {
     const sessionId = bodyState.data.session_id?.trim() || crypto.randomUUID();
     const context = await buildContext(userId, 'chat');
 
-    const [firstMessage] = await (db?.select({ id: jarvisConversations.id })
+    const [firstMessage] = await db.select({ id: jarvisConversations.id })
       .from(jarvisConversations)
       .where(and(eq(jarvisConversations.userId, userId), eq(jarvisConversations.sessionId, sessionId)))
-      .limit(1) ?? Promise.resolve([]));
+      .limit(1);
 
     await saveConversation({
+      db,
       userId,
       sessionId,
       role: 'user',
@@ -93,45 +91,53 @@ export async function POST(request: Request) {
       const ticker = message.slice('/research '.length).trim().toUpperCase();
       const result = await runResearchPipeline(userId, ticker);
       const responseText = `Research report generated for ${result.ticker}.`;
-      await saveConversation({ userId, sessionId, role: 'assistant', content: responseText, mode: 'research' });
+      await saveConversation({ db, userId, sessionId, role: 'assistant', content: responseText, mode: 'research' });
       return Response.json({ message: responseText, session_id: sessionId, reportJson: result.report });
     }
 
     if (message.trim() === '/analyze') {
       const result = await runTradeAnalysisPipeline(userId, 30);
       const responseText = 'Trade analysis completed.';
-      await saveConversation({ userId, sessionId, role: 'assistant', content: responseText, mode: 'trade-analysis' });
+      await saveConversation({ db, userId, sessionId, role: 'assistant', content: responseText, mode: 'trade-analysis' });
       return Response.json({ message: responseText, session_id: sessionId, tradeAnalysis: result.analysis });
     }
 
     const prompt = buildChatPrompt(context, message);
     const llm = await callJarvis(JARVIS_SYSTEM_PROMPT, prompt);
-    await saveConversation({ userId, sessionId, role: 'assistant', content: llm.content, mode: 'chat' });
+    await saveConversation({ db, userId, sessionId, role: 'assistant', content: llm.content, mode: 'chat' });
 
-    await logJarvisRequest({
-      userId,
-      mode: 'chat',
-      inputTokens: estimateInputTokens(prompt),
-      outputTokens: estimateOutputTokens(llm.content),
-      durationMs: Date.now() - startedAt,
-      success: true,
-      sourceCount: 0,
-      chunkCount: 0,
-    });
+    try {
+      await logJarvisRequest({
+        userId,
+        mode: 'chat',
+        inputTokens: estimateInputTokens(prompt),
+        outputTokens: estimateOutputTokens(llm.content),
+        durationMs: Date.now() - startedAt,
+        success: true,
+        sourceCount: 0,
+        chunkCount: 0,
+      });
+    } catch (logError) {
+      logRouteError('jarvis.chat.post.token-tracking', logError);
+    }
 
     return Response.json({ message: llm.content, session_id: sessionId });
   } catch (error) {
     if (userId) {
-      await logJarvisRequest({
-        userId,
-        mode: 'chat',
-        inputTokens: 0,
-        outputTokens: 0,
-        durationMs: Date.now() - startedAt,
-        success: false,
-        sourceCount: 0,
-        chunkCount: 0,
-      });
+      try {
+        await logJarvisRequest({
+          userId,
+          mode: 'chat',
+          inputTokens: 0,
+          outputTokens: 0,
+          durationMs: Date.now() - startedAt,
+          success: false,
+          sourceCount: 0,
+          chunkCount: 0,
+        });
+      } catch (logError) {
+        logRouteError('jarvis.chat.post.token-tracking', logError);
+      }
     }
     logRouteError('jarvis.chat.post', error);
     return internalServerError();

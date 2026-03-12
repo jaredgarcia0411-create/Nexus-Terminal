@@ -43,6 +43,13 @@ export type ApiTrade = {
 
 type QueryDb = Db | PoolDb;
 
+export interface AuthUserIdentity {
+  id: string;
+  email: string;
+  name: string | null;
+  picture: string | null;
+}
+
 export async function requireUser() {
   const session = await auth();
   const user = session?.user as ({ id?: string; email?: string | null; name?: string | null; image?: string | null } | undefined);
@@ -59,7 +66,7 @@ export async function requireUser() {
   };
 }
 
-export async function ensureUser(db: QueryDb, user: { id: string; email: string; name: string | null; picture: string | null }) {
+export async function ensureUser(db: QueryDb, user: AuthUserIdentity): Promise<AuthUserIdentity> {
   const existingUsers = await db.select({ id: users.id, email: users.email, name: users.name, picture: users.picture })
     .from(users)
     .where(or(eq(users.id, user.id), eq(users.email, user.email)));
@@ -71,7 +78,12 @@ export async function ensureUser(db: QueryDb, user: { id: string; email: string;
         .set({ name: user.name, picture: user.picture })
         .where(eq(users.id, user.id));
     }
-    return;
+    return {
+      id: userById.id,
+      email: userById.email,
+      name: user.name,
+      picture: user.picture,
+    };
   }
 
   const userByEmail = existingUsers.find((row) => row.email === user.email);
@@ -82,7 +94,12 @@ export async function ensureUser(db: QueryDb, user: { id: string; email: string;
         .set({ name: user.name, picture: user.picture })
         .where(eq(users.id, user.id));
     }
-    return;
+    return {
+      id: user.id,
+      email: userByEmail.email,
+      name: user.name,
+      picture: user.picture,
+    };
   }
 
   try {
@@ -109,11 +126,23 @@ export async function ensureUser(db: QueryDb, user: { id: string; email: string;
           .set({ name: user.name, picture: user.picture })
           .where(eq(users.id, user.id));
       }
-      return;
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        picture: user.picture,
+      };
     }
 
     throw error;
   }
+
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    picture: user.picture,
+  };
 }
 
 export function dbUnavailable() {

@@ -7,7 +7,11 @@ const { requireUserMock, ensureUserMock, getDbMock, runResearchPipelineMock } = 
   runResearchPipelineMock: vi.fn(),
 }));
 
-vi.mock('@/lib/server-db-utils', () => ({ requireUser: requireUserMock, ensureUser: ensureUserMock }));
+vi.mock('@/lib/server-db-utils', () => ({
+  requireUser: requireUserMock,
+  ensureUser: ensureUserMock,
+  dbUnavailable: () => Response.json({ error: 'Database not configured' }, { status: 503 }),
+}));
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
 vi.mock('@/lib/jarvis/research', () => ({ runResearchPipeline: runResearchPipelineMock }));
 
@@ -22,7 +26,7 @@ describe('jarvis research route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireUserMock.mockResolvedValue({ user: { id: 'u1', email: 'u@x.com', name: null, picture: null } });
-    ensureUserMock.mockResolvedValue(undefined);
+    ensureUserMock.mockResolvedValue({ id: 'canonical-u1', email: 'u@x.com', name: null, picture: null });
     getDbMock.mockReturnValue({});
     runResearchPipelineMock.mockResolvedValue({ ticker: 'AAPL' });
   });
@@ -46,6 +50,19 @@ describe('jarvis research route', () => {
 
     expect(ensureResponse(response).status).toBe(200);
     expect(ensureUserMock).toHaveBeenCalledTimes(1);
-    expect(runResearchPipelineMock).toHaveBeenCalledWith('u1', 'AAPL');
+    expect(runResearchPipelineMock).toHaveBeenCalledWith('canonical-u1', 'AAPL');
+  });
+
+  it('returns 503 when database is unavailable', async () => {
+    getDbMock.mockReturnValueOnce(null);
+
+    const response = await POST(new Request('http://localhost/api/jarvis/research', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker: 'AAPL' }),
+    }));
+
+    expect(ensureResponse(response).status).toBe(503);
+    expect(ensureUserMock).not.toHaveBeenCalled();
   });
 });

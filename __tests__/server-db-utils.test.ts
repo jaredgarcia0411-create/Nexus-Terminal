@@ -91,7 +91,7 @@ describe('ensureUser', () => {
 
     const authUser = { id: 'user-1', email: 'user@example.com', name: 'New Name', picture: 'new-pic.png' };
 
-    await ensureUser(db as any, authUser);
+    const ensured = await ensureUser(db as any, authUser);
 
     expect(db.select).toHaveBeenCalledTimes(1);
     expect(db.insert).not.toHaveBeenCalled();
@@ -101,6 +101,7 @@ describe('ensureUser', () => {
       picture: authUser.picture,
     });
     expect(authUser.id).toBe('user-1');
+    expect(ensured.id).toBe('user-1');
   });
 
   it('inserts a user when no match exists', async () => {
@@ -108,7 +109,7 @@ describe('ensureUser', () => {
 
     const authUser = { id: 'user-1', email: 'user@example.com', name: 'Name', picture: null };
 
-    await ensureUser(db as any, authUser);
+    const ensured = await ensureUser(db as any, authUser);
 
     expect(db.select).toHaveBeenCalledTimes(1);
     expect(db.insert).toHaveBeenCalledTimes(1);
@@ -126,6 +127,7 @@ describe('ensureUser', () => {
       },
     });
     expect(db.update).not.toHaveBeenCalled();
+    expect(ensured.id).toBe('user-1');
   });
 
   it('falls back to canonical row if insert races on unique email', async () => {
@@ -151,12 +153,13 @@ describe('ensureUser', () => {
       picture: 'canonical.png',
     };
 
-    await ensureUser(db as any, authUser);
+    const ensured = await ensureUser(db as any, authUser);
 
     expect(db.select).toHaveBeenCalledTimes(2);
     expect(db.insert).toHaveBeenCalledTimes(1);
     expect(authUser.id).toBe('canonical-user');
     expect(db.update).not.toHaveBeenCalled();
+    expect(ensured.id).toBe('canonical-user');
   });
 
   it('reuses matching email row and updates auth user id', async () => {
@@ -175,11 +178,12 @@ describe('ensureUser', () => {
 
     const authUser = { id: 'nextauth-id', email: 'user@example.com', name: 'Stored Name', picture: 'stored.png' };
 
-    await ensureUser(db as any, authUser);
+    const ensured = await ensureUser(db as any, authUser);
 
     expect(authUser.id).toBe('canonical-user');
     expect(db.select).toHaveBeenCalledTimes(1);
     expect(db.insert).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
+    expect(ensured.id).toBe('canonical-user');
   });
 });

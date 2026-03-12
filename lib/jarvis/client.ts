@@ -2,6 +2,7 @@ import { isCircuitOpen, recordLlmFailure, recordLlmSuccess } from '@/lib/jarvis/
 
 const DEFAULT_MODEL = 'deepseek-v3.2';
 const DEFAULT_BASE_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
+const DEFAULT_TIMEOUT_MS = 25_000;
 
 function normalizeBaseUrl(value: string): string {
   const trimmed = value.trim();
@@ -45,6 +46,14 @@ async function readFailureDetail(response: Response): Promise<string> {
   return `: ${bodyText.slice(0, 240)}`;
 }
 
+function getTimeoutMs() {
+  const parsed = Number(process.env.JARVIS_TIMEOUT_MS);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_TIMEOUT_MS;
+  }
+  return Math.floor(parsed);
+}
+
 export interface JarvisClientResult {
   content: string;
   modelUsed: string;
@@ -58,22 +67,36 @@ async function requestLlm(systemPrompt: string, userMessage: string, temperature
 
   const model = process.env.JARVIS_MODEL || DEFAULT_MODEL;
   const baseUrl = normalizeBaseUrl(process.env.JARVIS_API_BASE_URL || DEFAULT_BASE_URL);
+  const timeoutMs = getTimeoutMs();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  const response = await fetch(baseUrl, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      temperature,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(baseUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+      }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if ((error as { name?: string }).name === 'AbortError') {
+      throw new Error(`LLM request timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const detail = await readFailureDetail(response);

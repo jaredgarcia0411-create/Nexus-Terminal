@@ -2,7 +2,7 @@ import { desc, eq } from 'drizzle-orm';
 import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { researchReports } from '@/lib/db/schema';
-import { ensureUser, requireUser } from '@/lib/server-db-utils';
+import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { runResearchPipeline } from '@/lib/jarvis/research';
 
 interface ResearchBody {
@@ -15,9 +15,8 @@ export async function POST(request: Request) {
     if ('error' in authState) return authState.error;
 
     const db = getDb();
-    if (db) {
-      await ensureUser(db, authState.user);
-    }
+    if (!db) return dbUnavailable();
+    const canonicalUser = await ensureUser(db, authState.user);
 
     const bodyState = await parseJsonBody<ResearchBody>(request);
     if (bodyState.error) return bodyState.error;
@@ -27,7 +26,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'ticker is required' }, { status: 400 });
     }
 
-    const result = await runResearchPipeline(authState.user.id, ticker);
+    const result = await runResearchPipeline(canonicalUser.id, ticker);
     return Response.json(result);
   } catch (error) {
     logRouteError('jarvis.research.post', error);
@@ -41,10 +40,8 @@ export async function GET() {
     if ('error' in authState) return authState.error;
 
     const db = getDb();
-    if (!db) {
-      return Response.json({ rows: [] });
-    }
-    await ensureUser(db, authState.user);
+    if (!db) return dbUnavailable();
+    const canonicalUser = await ensureUser(db, authState.user);
 
     const rows = await db.select({
       id: researchReports.id,
@@ -53,7 +50,7 @@ export async function GET() {
       reportJson: researchReports.reportJson,
     })
       .from(researchReports)
-      .where(eq(researchReports.userId, authState.user.id))
+      .where(eq(researchReports.userId, canonicalUser.id))
       .orderBy(desc(researchReports.generatedAt));
 
     return Response.json({ rows });

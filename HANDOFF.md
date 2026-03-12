@@ -207,6 +207,82 @@ All three checks currently pass.
 - `npx tsc --noEmit` — **PASS**
 - `npm test` — **PASS**
 
+## Planned Session Spec (2026-03-12) — Jarvis LLM Reliability Hardening Sequence
+
+> Generated: 2026-03-12 | Agent: opencode
+> Status: EXECUTED (implementation complete)
+
+### Scope for this planning pass
+
+- [x] Produce a concrete implementation sequence to harden Jarvis LLM-call reliability.
+- [x] Prioritize fixes that prevent pre-LLM failures (user FK/bootstrap path) before provider-level resiliency work.
+- [x] Keep architecture intact (no refactor) and preserve existing API contracts unless explicitly noted.
+
+### Step-by-step implementation order (exact)
+
+1. **Canonical user bootstrap contract (shared utility)**
+   - [x] Update `ensureUser` in `lib/server-db-utils.ts` to return canonical user identity data (at minimum canonical `userId`) instead of relying on mutable input side-effects.
+   - [x] Preserve current upsert/race handling semantics and metadata update behavior.
+
+2. **Route-level canonical ID adoption (Jarvis endpoints)**
+   - [x] In `app/api/jarvis/chat/route.ts`, derive the working `userId` from `ensureUser(...)` result and use that ID for all DB writes/reads, context build, and pipeline calls.
+   - [x] Apply the same canonical-ID usage pattern to:
+     - `app/api/jarvis/research/route.ts`
+     - `app/api/jarvis/trade-analysis/route.ts`
+     - `app/api/jarvis/macro-summary/latest/route.ts`
+
+3. **Fail-fast guardrails for user-keyed persistence prerequisites**
+   - [x] Ensure Jarvis routes that require DB-backed persistence return a clear non-200 response when DB is unavailable (instead of silently proceeding and failing downstream).
+   - [x] Keep auth semantics unchanged (`requireUser()` first, then user bootstrap).
+
+4. **Non-critical write isolation (response-path resilience)**
+   - [x] Prevent telemetry/logging failures (`jarvis_request_log`) from turning successful LLM responses into 500s.
+   - [x] Maintain existing error logging with route/stage context.
+
+5. **Provider reliability hardening (LLM request path)**
+   - [x] Add explicit request timeout protection in `lib/jarvis/client.ts` so hanging upstream calls fail deterministically.
+   - [x] Keep existing retry + circuit-breaker behavior; only harden transport failure handling and error clarity.
+
+6. **Regression tests for FK/canonical-ID failure mode**
+   - [x] Extend/add tests to cover mismatched auth ID vs canonical DB user ID for `/api/jarvis/chat` (`/analyze` and standard chat flow).
+   - [x] Add assertions that Jarvis routes use canonical ID returned by bootstrap before persistence.
+
+7. **Verification + closeout**
+   - [x] Run `npm run lint`.
+   - [x] Run `npx tsc --noEmit`.
+   - [x] Run `npm test`.
+   - [x] Record pass/fail for each command in this file.
+
+### Command Results (2026-03-12 jarvis reliability sequence planning)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
+
+### Execution Notes (2026-03-12 jarvis reliability implementation)
+
+- `ensureUser` now returns canonical identity (`id`, `email`, `name`, `picture`) and keeps existing upsert/race handling behavior.
+- Jarvis routes now use canonical user IDs and fail fast with `503` when DB is unavailable:
+  - `app/api/jarvis/chat/route.ts`
+  - `app/api/jarvis/research/route.ts`
+  - `app/api/jarvis/trade-analysis/route.ts`
+  - `app/api/jarvis/macro-summary/latest/route.ts`
+- `app/api/jarvis/chat/route.ts` now isolates telemetry writes so token-tracking failures do not convert successful response paths into 500s.
+- `lib/jarvis/client.ts` now applies configurable request timeout (`JARVIS_TIMEOUT_MS`, default 25s) with explicit timeout errors.
+- Added regression coverage for canonical-ID usage and DB-unavailable guards:
+  - `__tests__/jarvis-chat-route.test.ts`
+  - `__tests__/jarvis-research-route.test.ts`
+  - `__tests__/jarvis-trade-analysis-route.test.ts`
+  - `__tests__/jarvis-macro-summary-route.test.ts`
+  - `__tests__/jarvis-client.test.ts`
+  - `__tests__/server-db-utils.test.ts`
+
+### Command Results (2026-03-12 jarvis reliability implementation)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
+
 ### Residual Blockers / Follow-up (Current)
 
 - Need production environment verification that `JARVIS_API_BASE_URL` / key / model values are correct on Vercel.

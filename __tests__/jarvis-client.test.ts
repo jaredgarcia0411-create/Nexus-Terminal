@@ -19,6 +19,7 @@ describe('jarvis client', () => {
     vi.clearAllMocks();
     process.env.JARVIS_API_KEY = 'k';
     delete process.env.JARVIS_API_BASE_URL;
+    delete process.env.JARVIS_TIMEOUT_MS;
     isCircuitOpenMock.mockReturnValue(false);
   });
 
@@ -46,5 +47,13 @@ describe('jarvis client', () => {
 
     await expect(callJarvis('sys', 'user')).rejects.toThrow('LLM request failed with status 404: Not Found');
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns explicit timeout error when provider hangs', async () => {
+    process.env.JARVIS_TIMEOUT_MS = '50';
+    const abortError = Object.assign(new Error('request aborted'), { name: 'AbortError' });
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(abortError);
+
+    await expect(callJarvis('sys', 'user')).rejects.toThrow('LLM request timed out after 50ms');
   });
 });
