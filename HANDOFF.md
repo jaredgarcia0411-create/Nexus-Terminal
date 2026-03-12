@@ -135,6 +135,95 @@ All three checks currently pass.
 - Need confirmed **staging `DATABASE_URL`** target for final sign-off on migration validation.
 - Need valid **production Massive key + environment route validation path** to complete production reliability checks.
 
+## Next Session Plan (Pending User Confirmation)
+
+> Generated: 2026-03-11 | Agent: opencode
+> Status: PARTIALLY EXECUTED (code complete; production env validation pending)
+
+### Scope for next implementation pass
+
+- [x] Permanent Jarvis user bootstrap fix to prevent foreign-key failures on first use.
+- [x] Cron schedule verification for 6:00 New York market-prep run.
+- [ ] Production Jarvis provider config validation for cron/chat/research LLM calls.
+
+### Step-by-step implementation order
+
+1. **Baseline capture + reproducibility**
+   - [x] Reproduce current failure path for `/api/jarvis/chat` and `/api/jarvis/research`.
+   - [x] Capture active error signatures and confirm FK violations are tied to missing `users` rows.
+
+2. **Permanent user bootstrap fix (Jarvis routes)**
+   - [x] Update Jarvis user-protected routes to call `ensureUser(db, authState.user)` before DB writes/reads requiring `users` FK presence.
+   - [x] Target routes: `app/api/jarvis/chat/route.ts`, `app/api/jarvis/research/route.ts`, `app/api/jarvis/trade-analysis/route.ts`, `app/api/jarvis/macro-summary/latest/route.ts`.
+   - [x] Keep existing auth/error semantics unchanged (`requireUser()`, response codes, and logging behavior).
+
+3. **Test coverage for regression prevention**
+   - [x] Extend/add route tests to assert user bootstrap behavior is exercised before Jarvis persistence paths.
+   - [x] Verify no regressions in existing Jarvis route test suites.
+
+4. **Cron schedule validation (6:00 New York)**
+   - [x] Verify `vercel.json` cron expression and document UTC-to-NY mapping.
+   - [x] If strict year-round 6:00 AM NY is required, implement approved DST-safe scheduling strategy; otherwise keep current `0 11 * * *` behavior and document seasonal offset.
+
+5. **Provider configuration validation (production + local checks)**
+   - [ ] Validate production env variable names/values for Jarvis LLM (`JARVIS_API_KEY` or `NVIDIA_API_KEY`, `JARVIS_API_BASE_URL`, `JARVIS_MODEL`).
+   - [x] Investigate and resolve `LLM request failed with status 404` by correcting base URL/model/provider config mismatch.
+   - [ ] Re-run manual cron trigger with valid bearer token and confirm non-404 LLM stage.
+
+6. **Final verification**
+   - [x] Run `npm run lint`.
+   - [x] Run `npx tsc --noEmit`.
+   - [x] Run `npm test`.
+   - [x] Record pass/fail for each command.
+
+7. **Handoff updates**
+   - [x] Mark completed checklist items in this `HANDOFF.md`.
+   - [x] Document residual risks/blockers (if any) for follow-up.
+
+### Execution Notes (2026-03-11 follow-up)
+
+- Root-cause captured from live logs: Jarvis 500s were FK violations (`23503`) because `users` row was missing when writing `jarvis_request_log` and `jarvis_conversations`.
+- Added `ensureUser(...)` bootstrap in Jarvis routes before user-keyed DB interactions:
+  - `app/api/jarvis/chat/route.ts`
+  - `app/api/jarvis/research/route.ts`
+  - `app/api/jarvis/trade-analysis/route.ts`
+  - `app/api/jarvis/macro-summary/latest/route.ts`
+- Hardened Jarvis client/provider handling:
+  - `lib/jarvis/client.ts` now normalizes NVIDIA base URL values (`https://integrate.api.nvidia.com` and `/v1` map to `/v1/chat/completions`).
+  - Added provider error-detail passthrough in non-2xx errors for faster diagnosis.
+- Implemented strict 6:00 AM New York cron behavior with DST-safe strategy:
+  - `vercel.json` now schedules both `0 10 * * *` and `0 11 * * *`.
+  - `app/api/jarvis/cron/macro-summary/route.ts` now executes only during the NY 6 AM hour unless `?force=1` is provided.
+- Expanded test coverage to prevent regressions:
+  - `__tests__/jarvis-chat-route.test.ts`
+  - `__tests__/jarvis-research-route.test.ts`
+  - `__tests__/jarvis-trade-analysis-route.test.ts`
+  - `__tests__/jarvis-macro-summary-route.test.ts`
+  - `__tests__/jarvis-client.test.ts`
+
+### Command Results (2026-03-11 follow-up)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
+
+### Residual Blockers / Follow-up (Current)
+
+- Need production environment verification that `JARVIS_API_BASE_URL` / key / model values are correct on Vercel.
+- Need production smoke checks for `/api/jarvis/chat` and `/api/jarvis/research` with the finalized provider model configuration.
+
+## Session Update (2026-03-11 macro summary UI runtime fix)
+
+- [x] Confirmed manual cron trigger now reaches LLM successfully with valid provider key/model.
+- [x] Fixed Jarvis macro panel runtime crash by supporting both legacy macro payload shape and current cron payload shape in `components/trading/JarvisMacroSummary.tsx`.
+- [x] Added regression coverage for both payload variants in `__tests__/jarvis-macro-summary-component.test.ts`.
+
+### Command Results (2026-03-11 macro summary UI runtime fix)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
+
 ## Security Notes
 
 - Keep `MASSIVE_API_KEY` in server-only envs only (`app/api/market-data/route.ts`).

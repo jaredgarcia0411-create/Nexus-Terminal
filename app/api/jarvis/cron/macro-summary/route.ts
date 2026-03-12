@@ -14,6 +14,8 @@ const MACRO_URLS = [
   'https://tradingeconomics.com/calendar',
 ];
 
+const NEW_YORK_TIME_ZONE = 'America/New_York';
+
 function requireCronSecret(request: Request) {
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) {
@@ -53,11 +55,35 @@ function isMissingJarvisConfig(error: unknown): boolean {
   return message.includes('JARVIS_API_KEY') || message.includes('NVIDIA_API_KEY');
 }
 
+function isSixAmNewYorkHour(now: Date = new Date()): boolean {
+  const hourPart = new Intl.DateTimeFormat('en-US', {
+    timeZone: NEW_YORK_TIME_ZONE,
+    hour: '2-digit',
+    hour12: false,
+    hourCycle: 'h23',
+  }).format(now);
+
+  return hourPart === '06';
+}
+
+function shouldForceRun(request: Request): boolean {
+  const url = new URL(request.url);
+  return url.searchParams.get('force') === '1';
+}
+
 export async function GET(request: Request) {
   try {
     const authError = requireCronSecret(request);
     if (authError) {
       return authError;
+    }
+
+    if (!shouldForceRun(request) && !isSixAmNewYorkHour()) {
+      return Response.json({
+        success: false,
+        skipped: true,
+        reason: 'outside_6am_new_york_window',
+      }, { status: 202 });
     }
 
     const settled = await Promise.allSettled(MACRO_URLS.map((url) => fetchPageText(url)));

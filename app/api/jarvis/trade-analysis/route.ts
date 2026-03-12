@@ -1,5 +1,6 @@
 import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
-import { requireUser } from '@/lib/server-db-utils';
+import { getDb } from '@/lib/db';
+import { ensureUser, requireUser } from '@/lib/server-db-utils';
 import { runTradeAnalysisPipeline } from '@/lib/jarvis/trade-analysis';
 
 interface TradeAnalysisBody {
@@ -10,6 +11,11 @@ export async function POST(request: Request) {
   try {
     const authState = await requireUser();
     if ('error' in authState) return authState.error;
+
+    const db = getDb();
+    if (db) {
+      await ensureUser(db, authState.user);
+    }
 
     const bodyState = await parseJsonBody<TradeAnalysisBody>(request);
     if (bodyState.error) return bodyState.error;

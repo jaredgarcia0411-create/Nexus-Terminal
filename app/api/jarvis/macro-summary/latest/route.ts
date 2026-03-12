@@ -2,7 +2,7 @@ import { desc } from 'drizzle-orm';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { macroSummaries } from '@/lib/db/schema';
-import { requireUser } from '@/lib/server-db-utils';
+import { ensureUser, requireUser } from '@/lib/server-db-utils';
 
 export async function GET() {
   try {
@@ -13,6 +13,7 @@ export async function GET() {
     if (!db) {
       return Response.json({ latest: null });
     }
+    await ensureUser(db, authState.user);
 
     const [latest] = await db
       .select({ summaryJson: macroSummaries.summaryJson })

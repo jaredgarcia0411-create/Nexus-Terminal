@@ -2,7 +2,7 @@ import { desc, eq } from 'drizzle-orm';
 import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { researchReports } from '@/lib/db/schema';
-import { requireUser } from '@/lib/server-db-utils';
+import { ensureUser, requireUser } from '@/lib/server-db-utils';
 import { runResearchPipeline } from '@/lib/jarvis/research';
 
 interface ResearchBody {
@@ -13,6 +13,11 @@ export async function POST(request: Request) {
   try {
     const authState = await requireUser();
     if ('error' in authState) return authState.error;
+
+    const db = getDb();
+    if (db) {
+      await ensureUser(db, authState.user);
+    }
 
     const bodyState = await parseJsonBody<ResearchBody>(request);
     if (bodyState.error) return bodyState.error;
@@ -39,6 +44,7 @@ export async function GET() {
     if (!db) {
       return Response.json({ rows: [] });
     }
+    await ensureUser(db, authState.user);
 
     const rows = await db.select({
       id: researchReports.id,

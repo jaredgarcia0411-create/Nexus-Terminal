@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { jarvisConversations } from '@/lib/db/schema';
-import { requireUser } from '@/lib/server-db-utils';
+import { ensureUser, requireUser } from '@/lib/server-db-utils';
 import { callJarvis } from '@/lib/jarvis/client';
 import { buildContext } from '@/lib/jarvis/context';
 import { JARVIS_SYSTEM_PROMPT, buildChatPrompt } from '@/lib/jarvis/prompts';
@@ -48,6 +48,11 @@ export async function POST(request: Request) {
     if ('error' in authState) return authState.error;
     userId = authState.user.id;
 
+    const db = getDb();
+    if (db) {
+      await ensureUser(db, authState.user);
+    }
+
     const rateLimitResult = checkRateLimit(userId);
     if (!rateLimitResult.allowed) {
       return Response.json(
@@ -70,7 +75,7 @@ export async function POST(request: Request) {
     const sessionId = bodyState.data.session_id?.trim() || crypto.randomUUID();
     const context = await buildContext(userId, 'chat');
 
-    const [firstMessage] = await (getDb()?.select({ id: jarvisConversations.id })
+    const [firstMessage] = await (db?.select({ id: jarvisConversations.id })
       .from(jarvisConversations)
       .where(and(eq(jarvisConversations.userId, userId), eq(jarvisConversations.sessionId, sessionId)))
       .limit(1) ?? Promise.resolve([]));

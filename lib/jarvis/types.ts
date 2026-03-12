@@ -45,12 +45,21 @@ export interface JarvisMacroRegionSummary {
   sentiment: 'bullish' | 'bearish' | 'neutral' | 'mixed';
 }
 
-export interface JarvisMacroSummaryOutput {
+export interface JarvisMacroSummaryLegacyOutput {
   date: string;
   overallSentiment: 'bullish' | 'bearish' | 'neutral' | 'mixed';
   regions: JarvisMacroRegionSummary[];
   keyRisks: string[];
 }
+
+export interface JarvisMacroSummaryCronOutput {
+  headline: string;
+  key_themes: string[];
+  risk_flags: string[];
+  watchlist_notes: string[];
+}
+
+export type JarvisMacroSummaryOutput = JarvisMacroSummaryLegacyOutput | JarvisMacroSummaryCronOutput;
 
 export interface JarvisSourceContext {
   url: string;

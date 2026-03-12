@@ -1,16 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { callJarvisMock, fetchPageTextMock, getDbMock, requireUserMock } = vi.hoisted(() => ({
+const { callJarvisMock, fetchPageTextMock, getDbMock, requireUserMock, ensureUserMock } = vi.hoisted(() => ({
   callJarvisMock: vi.fn(),
   fetchPageTextMock: vi.fn(),
   getDbMock: vi.fn(),
   requireUserMock: vi.fn(),
+  ensureUserMock: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
 vi.mock('@/lib/jarvis/client', () => ({ callJarvis: callJarvisMock }));
 vi.mock('@/lib/jarvis/scrape-lite', () => ({ fetchPageText: fetchPageTextMock }));
-vi.mock('@/lib/server-db-utils', () => ({ requireUser: requireUserMock }));
+vi.mock('@/lib/server-db-utils', () => ({ requireUser: requireUserMock, ensureUser: ensureUserMock }));
 
 import { GET as cronGet } from '@/app/api/jarvis/cron/macro-summary/route';
 import { GET as latestGet } from '@/app/api/jarvis/macro-summary/latest/route';
@@ -26,7 +27,10 @@ function ensureResponse(response: Response | undefined): Response {
 describe('jarvis cron macro-summary route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-15T11:00:00.000Z'));
     process.env.CRON_SECRET = 'cron-secret';
+    ensureUserMock.mockResolvedValue(undefined);
     fetchPageTextMock.mockResolvedValue('sample page text');
     callJarvisMock.mockResolvedValue({
       content: '{"headline":"Markets stable","key_themes":[],"risk_flags":[],"watchlist_notes":[]}',
@@ -37,6 +41,10 @@ describe('jarvis cron macro-summary route', () => {
         values: vi.fn(async () => undefined),
       })),
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('requires valid cron secret', async () => {
@@ -61,6 +69,25 @@ describe('jarvis cron macro-summary route', () => {
       error: 'Jarvis provider is not configured',
       stage: 'llm',
     });
+  });
+
+  it('skips run outside 6 AM New York window', async () => {
+    vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'));
+
+    const response = await cronGet(new Request('http://localhost/api/jarvis/cron/macro-summary', {
+      method: 'GET',
+      headers: { authorization: 'Bearer cron-secret' },
+    }));
+
+    const json = await ensureResponse(response).json();
+    expect(ensureResponse(response).status).toBe(202);
+    expect(json).toMatchObject({
+      success: false,
+      skipped: true,
+      reason: 'outside_6am_new_york_window',
+    });
+    expect(fetchPageTextMock).not.toHaveBeenCalled();
+    expect(callJarvisMock).not.toHaveBeenCalled();
   });
 
   it('returns 502 when all macro sources fail to fetch', async () => {
@@ -153,6 +180,7 @@ describe('jarvis macro-summary latest endpoint', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireUserMock.mockResolvedValue({ user: { id: 'u1', email: 'test@example.com', name: null, picture: null } });
+    ensureUserMock.mockResolvedValue(undefined);
     getDbMock.mockReturnValue({
       select: vi.fn(() => ({
         from: vi.fn(() => ({
@@ -175,6 +203,7 @@ describe('jarvis macro-summary latest endpoint', () => {
     const json = await ensureResponse(response).json();
 
     expect(ensureResponse(response).status).toBe(200);
+    expect(ensureUserMock).toHaveBeenCalledTimes(1);
     expect(json).toEqual({ latest: { date: '2026-03-11', overallSentiment: 'bullish', regions: [], keyRisks: [] } });
   });
 });

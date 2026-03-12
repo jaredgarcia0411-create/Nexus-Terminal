@@ -3,6 +3,48 @@ import { isCircuitOpen, recordLlmFailure, recordLlmSuccess } from '@/lib/jarvis/
 const DEFAULT_MODEL = 'deepseek-v3.2';
 const DEFAULT_BASE_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
+function normalizeBaseUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return DEFAULT_BASE_URL;
+  }
+
+  const url = new URL(trimmed);
+  if (url.hostname !== 'integrate.api.nvidia.com') {
+    return url.toString();
+  }
+
+  const normalizedPath = url.pathname.replace(/\/+$/, '');
+  if (normalizedPath === '' || normalizedPath === '/v1') {
+    url.pathname = '/v1/chat/completions';
+  }
+
+  return url.toString();
+}
+
+async function readFailureDetail(response: Response): Promise<string> {
+  const bodyText = (await response.text()).trim();
+  if (!bodyText) {
+    return '';
+  }
+
+  try {
+    const parsed = JSON.parse(bodyText) as Record<string, unknown>;
+    const message = typeof parsed.error === 'string'
+      ? parsed.error
+      : typeof parsed.message === 'string'
+        ? parsed.message
+        : null;
+    if (message) {
+      return `: ${message}`;
+    }
+  } catch {
+    // fall through to plain text detail
+  }
+
+  return `: ${bodyText.slice(0, 240)}`;
+}
+
 export interface JarvisClientResult {
   content: string;
   modelUsed: string;
@@ -15,7 +57,7 @@ async function requestLlm(systemPrompt: string, userMessage: string, temperature
   }
 
   const model = process.env.JARVIS_MODEL || DEFAULT_MODEL;
-  const baseUrl = process.env.JARVIS_API_BASE_URL || DEFAULT_BASE_URL;
+  const baseUrl = normalizeBaseUrl(process.env.JARVIS_API_BASE_URL || DEFAULT_BASE_URL);
 
   const response = await fetch(baseUrl, {
     method: 'POST',
@@ -34,7 +76,8 @@ async function requestLlm(systemPrompt: string, userMessage: string, temperature
   });
 
   if (!response.ok) {
-    throw new Error(`LLM request failed with status ${response.status}`);
+    const detail = await readFailureDetail(response);
+    throw new Error(`LLM request failed with status ${response.status}${detail}`);
   }
 
   const payload = (await response.json()) as {
