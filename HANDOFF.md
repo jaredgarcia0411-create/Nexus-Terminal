@@ -660,3 +660,130 @@ All three checks currently pass.
 - `npm run lint` — **PASS**
 - `npx tsc --noEmit` — **PASS**
 - `npm test` — **PASS**
+
+## Pending Follow-up (2026-03-12)
+
+- [ ] **AskEdgar historical backfill importer**
+  - Add a one-time import path to ingest existing AskEdgar research reports from Discord archives into `research_reports`.
+  - Requirements: idempotent inserts, dedupe strategy by user+ticker+report-date/content hash, safe handling for malformed historical payloads, and runbook for dry-run vs commit mode.
+
+### Importer Spec — AskEdgar Discord Archive Backfill
+
+> Status: PLANNED (implementation pending)
+
+#### Goal
+
+- Ingest historical AskEdgar dilution research reports that already exist in Discord into `research_reports` so they are queryable in `GET /api/jarvis/research` and available for user history.
+
+#### Inputs
+
+- Source export file(s): Discord channel export JSON or normalized NDJSON.
+- Required fields per record:
+  - `userId` (Nexus user ID owner of the report)
+  - `ticker` (string)
+  - `generatedAt` (ISO timestamp)
+  - `reportJson` (parsed dilution report payload)
+- Optional fields:
+  - `rawData` (AskEdgar raw endpoint payload object)
+  - `modelUsed` (string)
+  - `sourceMessageId` (Discord message ID for traceability)
+
+#### Output target
+
+- Table: `research_reports`
+- Write shape:
+  - `id`: deterministic UUIDv5/hash-based ID from `userId+ticker+generatedAt+contentHash`
+  - `user_id`: `userId`
+  - `ticker`: uppercase ticker
+  - `status`: `complete`
+  - `raw_data`: optional object when available
+  - `report_json`: required parsed report JSON
+  - `model_used`: optional
+  - `generated_at`: source timestamp
+
+#### Dedupe + idempotency rules
+
+- Primary dedupe key: `userId + ticker + reportDate(UTC day) + contentHash(reportJson)`.
+- Re-runs of same input must produce 0 new inserts.
+- If same key exists but payload differs, log to conflict report and skip (no overwrite in importer path).
+- Keep importer append-only; no deletes/updates in first release.
+
+#### Validation + normalization rules
+
+- Uppercase + regex-validate ticker (`^[A-Z0-9.\-^]+$`).
+- Parse and validate `generatedAt`; reject invalid timestamps.
+- Require `reportJson` to be valid JSON object/array.
+- Reject records missing `userId`.
+- Maintain counters: scanned, valid, inserted, skipped_duplicate, skipped_invalid, skipped_conflict.
+
+#### Execution modes
+
+- `dry-run`:
+  - full parse/validate/dedupe simulation,
+  - no DB writes,
+  - produces JSON summary + error/conflict report artifacts.
+- `commit`:
+  - executes batched inserts,
+  - transaction per batch,
+  - retries transient DB failures once per batch.
+
+#### Suggested implementation shape
+
+- Add script: `scripts/import-askedgar-discord.ts`.
+- Add npm scripts:
+  - `npm run import:askedgar:dry -- --input=<path> --user=<id>`
+  - `npm run import:askedgar:commit -- --input=<path> --user=<id>`
+- Keep script server-side only; never expose Discord raw payloads through client routes.
+
+#### Safety requirements
+
+- No writes when `DATABASE_URL` is unset.
+- No secrets in logs.
+- Log only aggregate stats + non-sensitive row references (`sourceMessageId`, ticker, timestamp).
+- Keep malformed-record samples capped (max 20 examples in output report).
+
+#### Verification + acceptance criteria
+
+1. Dry-run over sample archive completes with summary + zero writes.
+2. Commit mode inserts expected count and is idempotent on second run.
+3. `GET /api/jarvis/research` returns imported records for target user.
+4. Lint/type/tests pass after implementation.
+
+#### Required commands after implementation
+
+- `npm run lint`
+- `npx tsc --noEmit`
+- `npm test`
+
+### Migrated From `JARVIS_PLAN.md` (Incomplete Work)
+
+- [ ] **JRV-077** — Migrate remaining Jarvis modes to orchestration engine.
+  - Scope migrated here before plan file deletion.
+  - Original intent: move non-macro legacy mode paths to orchestration while preserving response contracts and safeguards.
+  - Suggested first slice: evaluate `chat` and `trade-analysis` orchestration parity behind feature flag before default cutover.
+
+## Session Update (2026-03-12 jarvis plan archive + importer spec)
+
+- [x] Performed polish pass on Sprint 8 documentation updates.
+- [x] Added detailed importer implementation spec for historical AskEdgar Discord archives.
+- [x] Reviewed `JARVIS_PLAN.md` for incomplete work and migrated remaining open item (`JRV-077`) into this handoff.
+- [x] Deleted `JARVIS_PLAN.md` after migrating incomplete scope to `HANDOFF.md`.
+
+### Command Results (2026-03-12 jarvis plan archive + importer spec)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
+
+## Session Update (2026-03-12 sprint-8 documentation closeout)
+
+- [x] Updated `JARVIS_PLAN.md` to mark Sprint 8 (JRV-080 to JRV-090) complete.
+- [x] Added a full Sprint 8 implementation guide documenting architecture, endpoint flow, persistence model, error handling, and validation commands.
+- [x] Aligned Sprint 8 persistence notes to current architecture (`research_reports`) and current UI placement (`Research` page).
+- [x] Added pending follow-up item for importing historical AskEdgar reports from Discord archives.
+
+### Command Results (2026-03-12 sprint-8 documentation closeout)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
