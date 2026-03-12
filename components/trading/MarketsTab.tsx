@@ -4,53 +4,292 @@ import { useCallback, useEffect, useState } from 'react';
 import JarvisMacroSummary from '@/components/trading/JarvisMacroSummary';
 import type { JarvisMacroSummaryOutput } from '@/lib/jarvis/types';
 
+type MarketInstrument = {
+  symbol: string;
+  label: string;
+  price: number | null;
+  change: number | null;
+  changePercent: number | null;
+  marketStatus: string | null;
+};
+
+type MarketMoverRow = {
+  ticker: string;
+  price: number | null;
+  previousClose: number | null;
+  change: number | null;
+  changePercent: number | null;
+  updated: number | null;
+};
+
+type SnapshotPayload = {
+  indices: MarketInstrument[];
+  futures: MarketInstrument[];
+  crypto: MarketInstrument[];
+  fx: MarketInstrument[];
+  equities: MarketInstrument[];
+  movers: {
+    gainers: MarketMoverRow[];
+    losers: MarketMoverRow[];
+  };
+};
+
+function formatNumber(value: number | null, digits = 2) {
+  if (value == null || !Number.isFinite(value)) return '--';
+  return value.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+function formatPercent(value: number | null) {
+  if (value == null || !Number.isFinite(value)) return '--';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(2)}%`;
+}
+
+function formatChange(value: number | null) {
+  if (value == null || !Number.isFinite(value)) return '--';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(2)}`;
+}
+
+function isBigMove(value: number | null) {
+  return value != null && Number.isFinite(value) && Math.abs(value) > 30;
+}
+
+function InstrumentCard({ item }: { item: MarketInstrument }) {
+  const positive = (item.changePercent ?? 0) >= 0;
+  return (
+    <div className="rounded-lg border border-white/10 bg-[#121214] p-3">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-semibold text-zinc-200">{item.label}</p>
+        <span className={`text-xs ${positive ? 'text-emerald-300' : 'text-rose-300'}`}>{formatPercent(item.changePercent)}</span>
+      </div>
+      <p className="mt-2 text-base font-semibold text-white">{formatNumber(item.price)}</p>
+      <p className={`mt-1 text-xs ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>{formatChange(item.change)}</p>
+    </div>
+  );
+}
+
+function MoversTable({ title, rows }: { title: string; rows: MarketMoverRow[] }) {
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = rows.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-zinc-100">{title}</h3>
+        <p className="text-xs text-zinc-500">{rows.length} symbols</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-left text-xs">
+          <thead>
+            <tr className="border-b border-white/10 text-zinc-400">
+              <th className="px-2 py-2">Ticker</th>
+              <th className="px-2 py-2">Price</th>
+              <th className="px-2 py-2">Prev Close</th>
+              <th className="px-2 py-2">Change</th>
+              <th className="px-2 py-2">Change %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageRows.map((row) => {
+              const positive = (row.changePercent ?? 0) >= 0;
+              return (
+                <tr key={`${title}-${row.ticker}`} className="border-b border-white/5 text-zinc-200">
+                  <td className="px-2 py-2 font-medium">{row.ticker}</td>
+                  <td className="px-2 py-2">{formatNumber(row.price)}</td>
+                  <td className="px-2 py-2">{formatNumber(row.previousClose)}</td>
+                  <td className={`px-2 py-2 ${positive ? 'text-emerald-300' : 'text-rose-300'}`}>{formatChange(row.change)}</td>
+                  <td className={`px-2 py-2 ${positive ? 'text-emerald-300' : 'text-rose-300'}`}>
+                    <span>{formatPercent(row.changePercent)}</span>
+                    {isBigMove(row.changePercent) ? (
+                      <span className="ml-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">30%+</span>
+                    ) : null}
+                  </td>
+                </tr>
+              );
+            })}
+            {pageRows.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-2 py-4 text-zinc-500">No symbols available.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-3 flex items-center justify-between">
+        <p className="text-[11px] text-zinc-500">Page {safePage} of {totalPages}</p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+            disabled={safePage <= 1}
+            className="rounded border border-white/15 px-2 py-1 text-[11px] text-zinc-200 disabled:opacity-40"
+          >
+            Prev
+          </button>
+          <button
+            type="button"
+            onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+            disabled={safePage >= totalPages}
+            className="rounded border border-white/15 px-2 py-1 text-[11px] text-zinc-200 disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function MarketsTab() {
   const [macroSummary, setMacroSummary] = useState<JarvisMacroSummaryOutput | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [snapshot, setSnapshot] = useState<SnapshotPayload | null>(null);
+  const [loadingMacro, setLoadingMacro] = useState(true);
+  const [loadingSnapshot, setLoadingSnapshot] = useState(true);
+  const [warning, setWarning] = useState<string | null>(null);
+  const [isStale, setIsStale] = useState(false);
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
 
   const loadMacroSummary = useCallback(async () => {
-    setLoading(true);
+    setLoadingMacro(true);
     try {
       const response = await fetch('/api/jarvis/macro-summary/latest');
       if (!response.ok) throw new Error('Failed to load macro summary');
       const payload = (await response.json()) as { latest?: JarvisMacroSummaryOutput | null };
       setMacroSummary(payload.latest ?? null);
-      setLastLoadedAt(new Date());
     } catch {
       setMacroSummary(null);
     } finally {
-      setLoading(false);
+      setLoadingMacro(false);
     }
   }, []);
 
+  const loadSnapshot = useCallback(async () => {
+    setLoadingSnapshot(true);
+    try {
+      const response = await fetch('/api/market-data/snapshot');
+      if (!response.ok) throw new Error('Failed to load market snapshot');
+      const payload = (await response.json()) as {
+        data?: SnapshotPayload;
+        fetchedAt?: string;
+        warning?: string | null;
+        stale?: boolean;
+      };
+      setSnapshot(payload.data ?? null);
+      setWarning(payload.warning ?? null);
+      setIsStale(Boolean(payload.stale));
+      setLastLoadedAt(payload.fetchedAt ? new Date(payload.fetchedAt) : new Date());
+    } catch {
+      setWarning('Could not refresh market snapshot data.');
+    } finally {
+      setLoadingSnapshot(false);
+    }
+  }, []);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([loadMacroSummary(), loadSnapshot()]);
+  }, [loadMacroSummary, loadSnapshot]);
+
   useEffect(() => {
-    void loadMacroSummary();
-  }, [loadMacroSummary]);
+    void refreshAll();
+  }, [refreshAll]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void loadSnapshot();
+    }, 2 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [loadSnapshot]);
 
   return (
     <section className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="text-2xl font-semibold text-white">Markets</h1>
+        <div>
+          <h1 className="text-2xl font-semibold text-white">Markets</h1>
+          <p className="text-sm text-zinc-400">Unified market snapshot with delayed pricing and market movers.</p>
+        </div>
         <button
           type="button"
-          onClick={() => void loadMacroSummary()}
-          disabled={loading}
+          onClick={() => void refreshAll()}
+          disabled={loadingMacro || loadingSnapshot}
           className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {loading ? 'Refreshing...' : 'Refresh'}
+          {loadingMacro || loadingSnapshot ? 'Refreshing...' : 'Refresh'}
         </button>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-[#111113] px-4 py-3">
-        <p className="text-sm text-zinc-400">Latest macro market summary from Jarvis.</p>
-        {lastLoadedAt ? <p className="mt-1 text-xs text-zinc-500">Updated {lastLoadedAt.toLocaleTimeString()}</p> : null}
+      <div className="rounded-xl border border-white/10 bg-[#111113] px-4 py-3 text-sm text-zinc-400">
+        <p>Massive market data is delayed by approximately 15 minutes.</p>
+        {lastLoadedAt ? <p className="mt-1 text-xs text-zinc-500">Last market update: {lastLoadedAt.toLocaleTimeString()}</p> : null}
+        {warning ? <p className="mt-2 text-xs text-amber-300">{warning}</p> : null}
+        {isStale ? <p className="mt-1 text-xs text-amber-300">Data is stale (older than 30 minutes).</p> : null}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+          <h2 className="mb-3 text-sm font-semibold text-zinc-200">Indexes</h2>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(snapshot?.indices ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+          <h2 className="mb-3 text-sm font-semibold text-zinc-200">Futures</h2>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(snapshot?.futures ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+          <h2 className="mb-3 text-sm font-semibold text-zinc-200">Crypto</h2>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(snapshot?.crypto ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+          <h2 className="mb-3 text-sm font-semibold text-zinc-200">FX</h2>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(snapshot?.fx ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+        <h2 className="mb-3 text-sm font-semibold text-zinc-200">Major Equity Components</h2>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          {(snapshot?.equities ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
+        </div>
+      </div>
+
+      <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-4">
+        <h2 className="text-sm font-semibold text-zinc-100">Market Movers</h2>
+        <p className="text-xs text-zinc-500 md:hidden">Swipe horizontally to switch between gainers and losers.</p>
+
+        <div className="hidden gap-3 md:grid md:grid-cols-2">
+          <MoversTable title="Top Gainers" rows={snapshot?.movers.gainers ?? []} />
+          <MoversTable title="Top Losers" rows={snapshot?.movers.losers ?? []} />
+        </div>
+
+        <div className="md:hidden overflow-x-auto">
+          <div className="flex w-[200%] snap-x snap-mandatory gap-3">
+            <div className="w-1/2 shrink-0 snap-start">
+              <MoversTable title="Top Gainers" rows={snapshot?.movers.gainers ?? []} />
+            </div>
+            <div className="w-1/2 shrink-0 snap-start">
+              <MoversTable title="Top Losers" rows={snapshot?.movers.losers ?? []} />
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="rounded-xl border border-white/10 bg-black/20 p-5">
-        {loading ? <p className="text-sm text-zinc-500">Loading markets summary...</p> : null}
-        {!loading && macroSummary ? <JarvisMacroSummary macroSummary={macroSummary} /> : null}
-        {!loading && !macroSummary ? <p className="text-sm text-zinc-500">No macro summary available yet.</p> : null}
+        {loadingMacro ? <p className="text-sm text-zinc-500">Loading macro summary...</p> : null}
+        {!loadingMacro && macroSummary ? <JarvisMacroSummary macroSummary={macroSummary} /> : null}
+        {!loadingMacro && !macroSummary ? <p className="text-sm text-zinc-500">No macro summary available yet.</p> : null}
       </div>
     </section>
   );

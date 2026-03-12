@@ -76,7 +76,12 @@ export function buildMacroPrompt(context: JarvisContext) {
       'You are running macro mode.',
       'Output strict JSON with this shape only:',
       '{"headline": string, "key_themes": string[], "risk_flags": string[], "watchlist_notes": string[]}',
+      'Use only the macro source pages in report_data.pages as evidence.',
       'Cite source URLs inline where relevant.',
+      'Prioritize concrete, actionable information for an active trader.',
+      'Include major drivers for: index trend, rates/liquidity, volatility, commodities/energy, and risk events.',
+      'If a source has no useful data, skip it instead of inventing details.',
+      'Keep each bullet concise and specific.',
     ].join('\n'),
     context,
   );

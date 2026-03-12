@@ -103,7 +103,7 @@ describe('jarvis cron macro-summary route', () => {
     expect(json).toMatchObject({
       error: 'Macro source fetch failed',
       stage: 'scrape',
-      attemptedSources: 5,
+      attemptedSources: 6,
     });
     expect(callJarvisMock).not.toHaveBeenCalled();
   });
@@ -141,18 +141,19 @@ describe('jarvis cron macro-summary route', () => {
     expect(json).toMatchObject({
       success: true,
       sources: [
-        'https://www.cnbc.com/economy/',
+        'https://www.federalreserve.gov/',
+        'https://home.treasury.gov/',
+        'https://www.cboe.com/',
+        'https://www.google.com/finance/',
+        'https://www.cnn.com/business',
         'https://www.reuters.com/markets/',
-        'https://www.federalreserve.gov/newsevents.htm',
-        'https://www.ecb.europa.eu/press/pr/html/index.en.html',
-        'https://tradingeconomics.com/calendar',
       ],
       summary: {
         headline: 'Markets stable',
       },
     });
     expect(callJarvisMock).toHaveBeenCalledTimes(1);
-    expect(fetchPageTextMock).toHaveBeenCalledTimes(5);
+    expect(fetchPageTextMock).toHaveBeenCalledTimes(6);
   });
 
   it('returns success with warnings when some sources fail', async () => {
@@ -172,7 +173,7 @@ describe('jarvis cron macro-summary route', () => {
       success: true,
       warnings: ['1 macro source fetches failed'],
     });
-    expect(json.sources).toHaveLength(4);
+    expect(json.sources).toHaveLength(5);
   });
 });
 

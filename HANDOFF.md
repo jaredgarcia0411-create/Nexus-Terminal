@@ -238,7 +238,7 @@ All three checks currently pass.
 ## Planned Session Spec (2026-03-12) — Jarvis Sidebar Split into Pages
 
 > Generated: 2026-03-12 | Agent: opencode
-> Status: PLANNED (awaiting implementation)
+> Status: EXECUTED (implementation complete)
 
 ### Scope for this session
 
@@ -308,3 +308,132 @@ All three checks currently pass.
 - `npm run lint` — **PASS**
 - `npx tsc --noEmit` — **PASS**
 - `npm test` — **PASS**
+
+## Planned Session Spec (2026-03-12) — Markets + Research Data Expansion
+
+> Generated: 2026-03-12 | Agent: opencode
+> Status: PLANNED (awaiting implementation)
+
+### Scope for this session
+
+- [x] Add Daily Ticker Summary support in Research and persist summaries to DB.
+- [x] Add Markets unified snapshot sections for indices, futures, crypto, FX, and major equity components.
+- [x] Add Market Movers section with separate gainers/losers tables and required filters.
+- [x] Enhance macro summary experience with additional source links and stronger prompt/source guidance.
+- [x] Preserve existing Jarvis API surface and page architecture; extend without refactors.
+
+### Decisions confirmed with user
+
+- [x] Markets auto-refresh cadence: every 2 minutes.
+- [x] Add manual refresh button in Markets tab.
+- [x] Use a global stale-data warning (not per-card), shown when data is older than 30 minutes.
+- [x] Market movers shown as two separate tables (gainers + losers), not a toggle.
+- [x] Market movers threshold badge: highlight rows where move magnitude is greater than 30%.
+- [x] Market movers filter: exclude tickers whose previous session close is below $0.75.
+- [x] Market movers mobile behavior: swipeable tabs only for movers section.
+- [x] Daily summary defaults to today.
+- [x] Daily summaries persist multiple records except de-duplicate same `ticker + date` per user.
+- [x] Research tab uses sub-tabs: `AI Reports`, `Daily Summaries`, `Saved Tickers`.
+- [x] FX display format uses no slash (e.g. `EURUSD`).
+- [x] Include major equity components in Markets snapshot: `AAPL`, `MSFT`, `AMZN`, `GOOGL`, `NVDA`, `TSLA`, `META`, `JPM`, `JNJ`, `V`.
+- [x] Futures display should use human-readable labels (e.g. Gold for `/GC`).
+- [x] Skip FRED integration in this sprint; track as future enhancement.
+
+### Step-by-step implementation order (exact)
+
+1. **Schema + migration scaffolding**
+   - [x] Add `daily_ticker_summaries` table in `lib/db/schema.ts` for per-user daily OHLC summaries.
+   - [x] Add uniqueness/index strategy for same-user same-`ticker` + same-`date` dedupe behavior.
+   - [x] Add `saved_tickers` table in `lib/db/schema.ts` for Research watchlist/sub-tab support.
+   - [x] Add `market_snapshots` table in `lib/db/schema.ts` for server-side cache snapshots + staleness tracking.
+   - [x] Create corresponding Drizzle SQL migration file in `drizzle/`.
+
+2. **Massive API server integration helpers**
+   - [x] Add helper module(s) under `lib/` for Massive unified snapshot, top movers, and daily ticker summary requests.
+   - [x] Keep `MASSIVE_API_KEY` server-side only.
+   - [x] Normalize/validate response shapes for API routes + UI usage.
+
+3. **New API routes for Markets + Research data**
+   - [x] Add authenticated route for daily ticker summaries (fetch + persist + list).
+   - [x] Add authenticated route for saved tickers CRUD/list.
+   - [x] Add authenticated route(s) for unified snapshot and top market movers with cache/stale behavior.
+   - [x] Return cached data with warning metadata when upstream fails and cached data exists.
+
+4. **Markets tab build-out**
+   - [x] Extend `components/trading/MarketsTab.tsx` to load unified snapshot sections:
+     - indices: `SPY`, `QQQ`, `DIA`, `RTY`
+     - futures: `/GC`, `/SI`, `/CL`, `/ZN` with human-readable labels
+     - crypto: `BTC`, `ETH`
+     - FX (no slash format): include top pairs plus `CNYUSD`
+     - major equity components: `AAPL`, `MSFT`, `AMZN`, `GOOGL`, `NVDA`, `TSLA`, `META`, `JPM`, `JNJ`, `V`
+   - [x] Add 2-minute auto-refresh interval.
+   - [x] Add manual refresh button.
+   - [x] Add global stale-data indicator (older than 30 minutes).
+   - [x] Add Market Movers section with two tables side-by-side on desktop and swipeable on mobile.
+   - [x] In movers tables, apply `prevClose >= 0.75` filter and `>30%` move badge styling.
+
+5. **Research tab build-out**
+   - [x] Extend `components/trading/ResearchTab.tsx` with sub-tabs:
+     - `AI Reports` (existing behavior unchanged)
+     - `Daily Summaries` (new Massive daily summary fetch/persist/list)
+     - `Saved Tickers` (watchlist CRUD/list)
+   - [x] Default daily summary requests to today while storing the date for future historical expansion.
+   - [x] Preserve current research report persistence semantics.
+
+6. **Macro summary enhancements**
+   - [x] Expand macro source/link surfacing in UI to include:
+     - Federal Reserve
+     - U.S. Treasury
+     - CBOE
+     - Google Finance
+     - CNN Business
+   - [x] Strengthen macro prompt/source guidance for richer link-backed summaries without changing route contracts.
+
+7. **Test coverage updates**
+   - [x] Add/extend API tests for daily summaries, saved tickers, unified snapshot, and movers behavior.
+   - [x] Add/extend component tests for Markets tab sections and Research sub-tabs.
+   - [x] Add regression assertions ensuring existing Jarvis research flows remain intact.
+
+8. **Verification + closeout**
+   - [x] Run `npm run lint`.
+   - [x] Run `npx tsc --noEmit`.
+   - [x] Run `npm test`.
+   - [x] Record pass/fail for each command.
+   - [x] Update this `HANDOFF.md` checklist and command results when complete.
+
+### Execution Notes (2026-03-12 markets + research expansion)
+
+- Added new data persistence tables in `lib/db/schema.ts`: `daily_ticker_summaries`, `saved_tickers`, `market_snapshots`.
+- Added migration SQL in `drizzle/0010_markets_research_expansion.sql`.
+- Added Massive integration helper module in `lib/massive-market.ts`.
+- Added authenticated routes:
+  - `app/api/market-data/snapshot/route.ts`
+  - `app/api/market-data/daily-summary/route.ts`
+  - `app/api/saved-tickers/route.ts`
+- Expanded `components/trading/MarketsTab.tsx` with unified snapshot sections, 2-minute refresh, manual refresh, stale warning, desktop dual movers tables, and mobile swipeable movers section.
+- Expanded `components/trading/ResearchTab.tsx` with `AI Reports`, `Daily Summaries`, and `Saved Tickers` sub-tabs.
+- Enhanced macro experience:
+  - Added static source links in `components/trading/JarvisMacroSummary.tsx`.
+  - Updated macro source list in `app/api/jarvis/cron/macro-summary/route.ts`.
+  - Strengthened macro prompt guidance in `lib/jarvis/prompts.ts`.
+- Added/updated tests:
+  - `__tests__/market-data-snapshot-route.test.ts`
+  - `__tests__/market-data-daily-summary-route.test.ts`
+  - `__tests__/saved-tickers-route.test.ts`
+  - `__tests__/markets-tab.test.tsx`
+  - `__tests__/research-tab.test.tsx`
+  - `__tests__/jarvis-macro-summary-component.test.ts`
+  - `__tests__/jarvis-macro-summary-route.test.ts`
+
+### Command Results (2026-03-12 markets + research expansion)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
+
+## Future Enhancement Backlog
+
+- [ ] **FRED API Integration (deferred)**
+  - API docs: `https://fred.stlouisfed.org/docs/api/fred/`
+  - Candidate use: macro-economic indicators in Markets/Macro views (rates, inflation, labor, growth).
+  - Deferred for now to keep this sprint focused on Massive market/snapshot/movers + Research persistence.

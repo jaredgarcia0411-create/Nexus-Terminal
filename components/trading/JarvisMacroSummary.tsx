@@ -9,6 +9,14 @@ interface JarvisMacroSummaryProps {
   macroSummary: JarvisMacroSummaryOutput;
 }
 
+const MACRO_LINKS = [
+  { label: 'Federal Reserve', href: 'https://www.federalreserve.gov/' },
+  { label: 'U.S. Treasury', href: 'https://home.treasury.gov/' },
+  { label: 'CBOE', href: 'https://www.cboe.com/' },
+  { label: 'Google Finance', href: 'https://www.google.com/finance/' },
+  { label: 'CNN Business', href: 'https://www.cnn.com/business' },
+];
+
 const REGION_LABELS: Record<MacroSummaryRegion, string> = {
   us: 'United States',
   eu: 'Europe',
@@ -99,6 +107,23 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
             </ul>
           </div>
         ) : null}
+
+        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-400">Reference Links</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {MACRO_LINKS.map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded border border-white/15 bg-white/5 px-2 py-1 text-xs text-zinc-200 transition hover:bg-white/10"
+              >
+                {link.label}
+              </a>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -160,6 +185,23 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
           </ul>
         </div>
       ) : null}
+
+      <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+        <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-400">Reference Links</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {MACRO_LINKS.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded border border-white/15 bg-white/5 px-2 py-1 text-xs text-zinc-200 transition hover:bg-white/10"
+            >
+              {link.label}
+            </a>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

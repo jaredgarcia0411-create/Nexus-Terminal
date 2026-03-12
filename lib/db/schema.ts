@@ -134,6 +134,49 @@ export const researchReports = pgTable('research_reports', {
   index('research_reports_user_ticker_idx').on(table.userId, table.ticker, table.generatedAt),
 ]);
 
+export const dailyTickerSummaries = pgTable('daily_ticker_summaries', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  ticker: text('ticker').notNull(),
+  date: text('date').notNull(),
+  open: doublePrecision('open'),
+  high: doublePrecision('high'),
+  low: doublePrecision('low'),
+  close: doublePrecision('close'),
+  volume: doublePrecision('volume'),
+  preMarket: doublePrecision('pre_market'),
+  afterHours: doublePrecision('after_hours'),
+  rawData: jsonb('raw_data'),
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique().on(table.userId, table.ticker, table.date),
+  index('daily_ticker_summaries_user_date_idx').on(table.userId, table.fetchedAt),
+]);
+
+export const savedTickers = pgTable('saved_tickers', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  ticker: text('ticker').notNull(),
+  category: text('category').notNull().default('watchlist'),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique().on(table.userId, table.ticker),
+  index('saved_tickers_user_created_idx').on(table.userId, table.createdAt),
+]);
+
+export const marketSnapshots = pgTable('market_snapshots', {
+  id: text('id').primaryKey(),
+  snapshotType: text('snapshot_type').notNull(),
+  dataJson: jsonb('data_json').notNull(),
+  warning: text('warning'),
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+}, (table) => [
+  unique().on(table.snapshotType),
+  index('market_snapshots_expires_idx').on(table.expiresAt),
+]);
+
 export const macroSummaries = pgTable('macro_summaries', {
   id: text('id').primaryKey(),
   summaryJson: jsonb('summary_json').notNull(),

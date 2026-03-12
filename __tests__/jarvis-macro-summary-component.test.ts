@@ -19,6 +19,8 @@ describe('JarvisMacroSummary', () => {
     expect(html).toContain('US inflation');
     expect(html).toContain('Federal Reserve interest rate decision');
     expect(html).toContain('Oil volatility');
+    expect(html).toContain('Reference Links');
+    expect(html).toContain('Google Finance');
   });
 
   it('renders legacy macro summary payload', () => {

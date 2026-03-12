@@ -7,11 +7,12 @@ import { fetchPageText } from '@/lib/jarvis/scrape-lite';
 import { desc } from 'drizzle-orm';
 
 const MACRO_URLS = [
-  'https://www.cnbc.com/economy/',
+  'https://www.federalreserve.gov/',
+  'https://home.treasury.gov/',
+  'https://www.cboe.com/',
+  'https://www.google.com/finance/',
+  'https://www.cnn.com/business',
   'https://www.reuters.com/markets/',
-  'https://www.federalreserve.gov/newsevents.htm',
-  'https://www.ecb.europa.eu/press/pr/html/index.en.html',
-  'https://tradingeconomics.com/calendar',
 ];
 
 const NEW_YORK_TIME_ZONE = 'America/New_York';
