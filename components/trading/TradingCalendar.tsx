@@ -24,6 +24,12 @@ interface TradingCalendarProps {
   trades: Trade[];
 }
 
+type WeekData = {
+  days: Date[];
+  weeklyPnl: number;
+  weeklyR: number;
+};
+
 export default function TradingCalendar({ trades }: TradingCalendarProps) {
   const isMobile = useIsMobile();
   const [currentMonth, setCurrentMonth] = React.useState(new Date());
@@ -65,8 +71,8 @@ export default function TradingCalendar({ trades }: TradingCalendarProps) {
 
   // Group days into weeks
   const weeks = useMemo(() => {
-    const w: any[] = [];
-    let currentWeek: any[] = [];
+    const w: WeekData[] = [];
+    let currentWeek: Date[] = [];
     
     calendarDays.forEach((day, i) => {
       currentWeek.push(day);

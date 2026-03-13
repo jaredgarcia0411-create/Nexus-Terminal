@@ -1,13 +1,13 @@
 'use client';
 
-import { Activity, BarChart3, ChartCandlestick, Filter, FlaskConical, LayoutGrid, List, Newspaper, Search, User } from 'lucide-react';
+import { Activity, BarChart3, ChartCandlestick, Filter, LayoutGrid, List, MessageSquare, Newspaper, Search, User } from 'lucide-react';
 import type { Dispatch, SetStateAction } from 'react';
 import SettingsMenu from '@/components/trading/SettingsMenu';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useIsMobile } from '@/hooks/use-mobile';
 import type { Trade } from '@/lib/types';
 
-export type TabKey = 'dashboard' | 'journal' | 'performance' | 'filter' | 'charts' | 'markets' | 'research' | 'backtesting';
+export type TabKey = 'dashboard' | 'journal' | 'performance' | 'filter' | 'charts' | 'markets' | 'research' | 'jarvis';
 
 type UserSession = { id?: string; name?: string | null; email?: string | null; image?: string | null } | undefined;
 
@@ -40,7 +40,7 @@ export default function Sidebar({
     { tab: 'charts', title: 'Charts', icon: ChartCandlestick },
     { tab: 'markets', title: 'Markets', icon: Newspaper },
     { tab: 'research', title: 'Research', icon: Search },
-    { tab: 'backtesting', title: 'Backtesting', icon: FlaskConical },
+    { tab: 'jarvis', title: 'Jarvis', icon: MessageSquare },
   ];
 
   if (isMobile) {

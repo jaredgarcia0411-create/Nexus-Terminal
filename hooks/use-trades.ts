@@ -677,7 +677,7 @@ export function useTrades() {
                   appendCsvParseWarnings(file.name, parseIssues, warnings);
                 }
 
-                const parsed = processCsvData(results.data as Record<string, unknown>[], dateInfo);
+                const parsed = processCsvData(results.data as Record<string, string>[], dateInfo);
                 if (parsed.trades.length > 0) {
                   processedDates.add(dateInfo.sortKey);
                 }
@@ -798,7 +798,7 @@ export function useTrades() {
               skipEmptyLines: true,
               complete: (results) => {
                 try {
-                  const rows = results.data as Record<string, unknown>[];
+                  const rows = results.data as Record<string, string>[];
                   const parseIssues = (results.errors ?? []) as CsvParseIssue[];
                   if (parseIssues.length > 0) {
                     appendCsvParseWarnings(file.name, parseIssues, warnings);

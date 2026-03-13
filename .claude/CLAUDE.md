@@ -58,8 +58,11 @@ Professional trading terminal and analytics platform (SaaS). Tracks/journals tra
 - Connection: HTTP client for reads, WebSocket pool for transactions
 - Migrations output to `drizzle/` directory
 
-### Tables (11)
-users, trades (composite PK: user_id + id), trade_executions, trade_tags, tags, trade_import_batches, broker_sync_log, agent_memory, research_reports, macro_summaries, jarvis_conversations, jarvis_request_log
+### Tables (15)
+users, trades (composite PK: user_id + id), trade_executions, trade_tags, tags,
+trade_import_batches, broker_sync_log, agent_memory, research_reports,
+daily_ticker_summaries, saved_tickers, market_snapshots, macro_summaries,
+jarvis_conversations, jarvis_request_log
 
 ---
 
@@ -74,13 +77,19 @@ users, trades (composite PK: user_id + id), trade_executions, trade_tags, tags, 
 ## Tags
 - GET/POST/DELETE `/api/tags`
 
+## Saved Tickers
+- GET/POST/DELETE `/api/saved-tickers`
+
 ## Market Data
 - GET `/api/market-data` (Massive API proxy)
+- GET/POST `/api/market-data/daily-summary`
+- GET `/api/market-data/snapshot`
 
 ## Jarvis AI
 - POST `/api/jarvis/chat`, `/api/jarvis/research`, `/api/jarvis/trade-analysis`
 - GET/DELETE `/api/jarvis/admin/memory`
 - GET `/api/jarvis/admin/stats` (admin-only via x-jarvis-admin-key header)
+- GET `/api/jarvis/macro-summary/latest`
 
 ## System
 - GET/POST `/api/auth/[...nextauth]`
@@ -107,21 +116,20 @@ backtest/, cron/, discord/, notifications/, schwab/, webhooks/
 - `hooks/use-candle-data.ts` — market data fetching with cache
 - `hooks/use-mobile.ts` — responsive breakpoint detection
 
-## Jarvis AI Pipeline
-- `lib/jarvis-types.ts` — shared types (JarvisMode, JarvisRequest, JarvisResponse)
+## Jarvis AI Pipeline (lib/jarvis/)
 - `lib/jarvis/client.ts` — LLM wrapper with retry + circuit breaker
-- `lib/jarvis-knowledge.ts` — knowledge ingestion/retrieval/eviction
-- `lib/jarvis-scrape.ts` — web scraping, chunking, ranking
-- `lib/jarvis-embedding.ts` — NVIDIA embedding API
-- `lib/jarvis-response.ts` — LLM response parsing
-- `lib/jarvis-allowlist.ts` — domain allowlist with trust scoring
-- `lib/jarvis-source-packs.ts` — source pack registry
-
-## Jarvis Safety & Observability
-- `lib/jarvis-rate-limit.ts` — per-user rate limiting (30 req/hr, in-memory)
-- `lib/jarvis-token-tracking.ts` — per-request token/latency logging
-- `lib/jarvis-circuit-breaker.ts` — LLM failure circuit breaker (5 failures → open, 60s reset)
-- `lib/jarvis-robots.ts` — robots.txt compliance with 1h cache
+- `lib/jarvis/types.ts` — shared types (JarvisMode, JarvisRequest, JarvisResponse)
+- `lib/jarvis/prompts.ts` — system/user prompt construction
+- `lib/jarvis/context.ts` — conversation context assembly
+- `lib/jarvis/memory.ts` — persistent user memory CRUD
+- `lib/jarvis/research.ts` — research orchestration
+- `lib/jarvis/trade-analysis.ts` — trade analysis pipeline
+- `lib/jarvis/askedgar.ts` — AskEdgar API client
+- `lib/jarvis/scrape-lite.ts` — lightweight web scraping
+- `lib/jarvis/rate-limit.ts` — per-user rate limiting (30 req/hr)
+- `lib/jarvis/circuit-breaker.ts` — LLM failure circuit breaker
+- `lib/jarvis/token-tracking.ts` — per-request token/latency logging
+- `lib/jarvis/admin.ts` — admin stats and memory management
 
 ## Tests
 - All in `__tests__/` directory, run via vitest
@@ -134,15 +142,14 @@ backtest/, cron/, discord/, notifications/, schwab/, webhooks/
 AskEdgar API integration for on-demand dilution research reports.
 - API: `https://eapi.askedgar.io` — auth via ASKEDGAR_API_KEY
 - New mode: `dilution-research` through orchestration engine
-- Detailed spec: `docs/SPRINT_8_SPEC.md`, API docs: `docs/AE_API_DOCS.md`
+- API docs: `docs/AE_API_DOCS.md`
 
 ---
 
 # Known Issues
-1. ALLOWED_EMAILS is documented in .env.example but not enforced in auth callbacks
-2. Empty legacy API directories remain from removed Schwab/Discord/backtest features
-3. NextAuth v5 is pre-release (5.0.0-beta.30) — watch for breaking changes
-4. Vercel Hobby tier limits cron to daily; macro headlines may be stale by market close
+1. Empty legacy API directories remain from removed Schwab/Discord/backtest features
+2. NextAuth v5 is pre-release (5.0.0-beta.30) — watch for breaking changes
+3. Vercel Hobby tier limits cron to daily; macro headlines may be stale by market close
 
 ---
 

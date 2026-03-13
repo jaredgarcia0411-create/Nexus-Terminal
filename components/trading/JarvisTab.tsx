@@ -2,12 +2,12 @@
 
 import JarvisChat from '@/components/trading/JarvisChat';
 
-export default function BacktestingTab() {
+export default function JarvisTab() {
   return (
     <section className="space-y-5">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Backtesting</h1>
-        <p className="text-sm text-zinc-400">Chat-powered backtesting workspace powered by Jarvis.</p>
+        <h1 className="text-2xl font-semibold text-white">Jarvis</h1>
+        <p className="text-sm text-zinc-400">Chat-powered trading assistant workspace.</p>
       </div>
 
       <div className="rounded-xl border border-white/10 bg-[#111113] px-4 py-3">

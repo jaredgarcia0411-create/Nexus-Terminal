@@ -247,7 +247,7 @@ function builtinNormalizeRow(rawRow: Record<string, unknown>, rowIndex: number, 
 }
 
 export const processCsvData = (
-  data: any[],
+  data: Record<string, string>[],
   dateInfo: { date: Date; sortKey: string },
   parser?: BrokerParserConfig,
 ): ProcessedCsvResult => {

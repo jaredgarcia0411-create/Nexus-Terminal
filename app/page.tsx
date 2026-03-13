@@ -16,7 +16,7 @@ import TradesTab from '@/components/trading/TradesTab';
 import ChartsTab from '@/components/trading/ChartsTab';
 import MarketsTab from '@/components/trading/MarketsTab';
 import ResearchTab from '@/components/trading/ResearchTab';
-import BacktestingTab from '@/components/trading/BacktestingTab';
+import JarvisTab from '@/components/trading/JarvisTab';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useTrades } from '@/hooks/use-trades';
 
@@ -249,8 +249,8 @@ export default function NexusTerminal() {
               <ResearchTab />
             ) : null}
 
-            {activeTab === 'backtesting' ? (
-              <BacktestingTab />
+            {activeTab === 'jarvis' ? (
+              <JarvisTab />
             ) : null}
           </AnimatePresence>
         </div>

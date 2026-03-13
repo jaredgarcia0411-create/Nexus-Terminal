@@ -28,6 +28,12 @@ const config: NextAuthConfig = {
   ],
   session: { strategy: 'jwt' },
   callbacks: {
+    signIn({ user }) {
+      const allowedRaw = process.env.ALLOWED_EMAILS?.trim();
+      if (!allowedRaw) return true;
+      const allowed = allowedRaw.split(',').map((email) => email.trim().toLowerCase());
+      return allowed.includes(user.email?.toLowerCase() ?? '');
+    },
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
       const isLoginPage = nextUrl.pathname === '/login';

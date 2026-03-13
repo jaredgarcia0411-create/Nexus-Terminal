@@ -182,13 +182,13 @@ After Task 1 is complete, remove item 1 from Known Issues.
 ## Execution Checklist
 
 ```
-[ ] Task 1: ALLOWED_EMAILS enforcement in lib/auth-config.ts
-[ ] Task 2: Update .claude/CLAUDE.md (tables, routes, Jarvis paths, Sprint 8 ref)
-[ ] Task 3: Rename package.json name to "nexus-terminal"
-[ ] Task 4: Clean next.config.ts (remove picsum.photos, update comment)
-[ ] Task 5: Delete components/trading/JarvisPanel.tsx
-[ ] Task 6: Rename BacktestingTab → JarvisTab (3 files)
-[ ] Task 7: Fix 3 `any` types (csv-parser, TradingCalendar, CandlestickChart)
+[x] Task 1: ALLOWED_EMAILS enforcement in lib/auth-config.ts
+[x] Task 2: Update .claude/CLAUDE.md (tables, routes, Jarvis paths, Sprint 8 ref)
+[x] Task 3: Rename package.json name to "nexus-terminal"
+[x] Task 4: Clean next.config.ts (remove picsum.photos, update comment)
+[x] Task 5: Delete components/trading/JarvisPanel.tsx
+[x] Task 6: Rename BacktestingTab → JarvisTab (3 files)
+[x] Task 7: Fix 3 `any` types (csv-parser, TradingCalendar, CandlestickChart)
 ```
 
 **Post-execution:** Run `npm run lint && npx tsc --noEmit && npm run test` to verify nothing is broken.

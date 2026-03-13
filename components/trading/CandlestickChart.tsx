@@ -17,6 +17,7 @@ import {
   type CandlestickData,
   type HistogramData,
   type LineWidth,
+  type MouseEventParams,
   type SeriesMarker,
   type SeriesMarkerBar,
   type SeriesMarkerPrice,
@@ -544,9 +545,9 @@ export default function CandlestickChart({
       };
     }
 
-    let unsubscribeCrosshair: ((param: unknown) => void) | null = null;
+    let unsubscribeCrosshair: ((param: MouseEventParams<Time>) => void) | null = null;
     if (showCrosshairLegend) {
-      const crosshairMoveHandler = (param: any) => {
+      const crosshairMoveHandler = (param: MouseEventParams<Time>) => {
         if (param == null || param.time == null || sortedCandles.length === 0) {
           clearCrosshairPoint();
           return;

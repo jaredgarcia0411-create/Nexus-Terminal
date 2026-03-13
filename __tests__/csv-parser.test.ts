@@ -50,7 +50,7 @@ describe('processCsvData — basic FIFO pairing', () => {
     ];
 
     const dateInfo = { date: new Date('2025-01-15'), sortKey: '2025-01-15' };
-    const result = processCsvData(rows, dateInfo);
+    const result = processCsvData(rows as Record<string, string>[], dateInfo);
 
     expect(result.trades).toHaveLength(1);
 
@@ -71,7 +71,7 @@ describe('processCsvData — basic FIFO pairing', () => {
     ];
 
     const dateInfo = { date: new Date('2025-01-15'), sortKey: '2025-01-15' };
-    const result = processCsvData(rows, dateInfo);
+    const result = processCsvData(rows as unknown as Record<string, string>[], dateInfo);
 
     expect(result.trades).toHaveLength(1);
 
@@ -90,7 +90,7 @@ describe('processCsvData — basic FIFO pairing', () => {
     ];
 
     const dateInfo = { date: new Date('2025-01-15'), sortKey: '2025-01-15' };
-    const result = processCsvData(rows, dateInfo);
+    const result = processCsvData(rows as unknown as Record<string, string>[], dateInfo);
 
     expect(result.trades).toHaveLength(0);
   });
@@ -118,7 +118,7 @@ describe('processCsvData — basic FIFO pairing', () => {
     ];
 
     const dateInfo = { date: new Date('2025-01-15'), sortKey: '2025-01-15' };
-    const result = processCsvData(rows, dateInfo);
+    const result = processCsvData(rows as unknown as Record<string, string>[], dateInfo);
 
     expect(result.warnings).toHaveLength(0);
     expect(result.trades).toHaveLength(1);
