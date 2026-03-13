@@ -1,217 +1,171 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+---
+
+# Development Commands
+
+```bash
+npm run dev              # Start Next.js dev server (localhost:3000)
+npm run build            # Production build
+npm run lint             # ESLint (flat config, eslint 9)
+npx tsc --noEmit         # Type-check without emitting
+npm run test             # Run all tests (vitest)
+npx vitest run __tests__/csv-parser.test.ts  # Run a single test file
+npm run test:watch       # Watch mode
+
+# Database (Drizzle + Neon PostgreSQL)
+npm run db:generate      # Generate migration from schema changes
+npm run db:migrate       # Run migrations (safe wrapper script)
+npm run db:push          # Push schema directly (dev only)
+npm run db:studio        # Open Drizzle Studio GUI
+```
+
+**After every change:** `npm run lint && npx tsc --noEmit`
+
+---
+
 # Nexus Terminal
 
-Nexus Terminal is a professional trading terminal and analytics platform built as a SaaS web application.
-
-Primary goals:
-- Track and journal trades
-- Analyze trading performance
-- Visualize market data
-- AI-assisted trade analysis via Jarvis
-
-Target users:
-- Discretionary traders
-- Quantitative traders
-- Performance analysts
+Professional trading terminal and analytics platform (SaaS). Tracks/journals trades, analyzes performance, visualizes market data, AI-assisted analysis via Jarvis.
 
 ---
 
 # System Architecture
 
-Framework: Next.js 15, React 19, TypeScript 5.9, deployed on Vercel
+**Stack:** Next.js 15, React 19, TypeScript 5.9, Vercel deployment
 
 ## Frontend
-- Tab-based layout: Dashboard, Performance, Journal, Trades, Jarvis
+- Single-page app with tab-based layout: Dashboard, Performance, Journal, Trades, Charts, Markets, Research, Backtesting
+- Main entry: `app/page.tsx` (client component) orchestrates all tabs
 - Styling: Tailwind CSS v4, dark theme (#0A0A0B base, emerald-500 accent)
 - Animation: motion/react v12 via AnimatePresence
-- Icons: lucide-react
-- UI primitives: Radix UI + shadcn/ui pattern (button, command, dialog, dropdown-menu, input, label, popover, select, sheet, textarea)
-- Charts: recharts v3, lightweight-charts v5 (CandlestickChart)
+- UI primitives: Radix UI + shadcn/ui pattern (in `components/ui/`)
+- Charts: recharts v3 (analytics), lightweight-charts v5 (candlestick — dynamically imported, SSR disabled)
+- Path alias: `@/*` maps to project root
 
 ## Backend
-- Next.js API routes under app/api/
+- Next.js API routes under `app/api/`
 - Auth: NextAuth v5 beta (5.0.0-beta.30), Google OAuth, JWT sessions
-- All routes protected via requireUser() in lib/server-db-utils.ts except /api/health
-- Middleware in middleware.ts protects all routes except /login, /api/*, static assets
+- All routes protected via `requireUser()` in `lib/server-db-utils.ts` except `/api/health`
+- Middleware in `middleware.ts` protects all routes except `/login`, `/api/*`, static assets
 
 ## Database
-- PostgreSQL via Neon serverless
-- ORM: Drizzle v0.45.1
+- PostgreSQL via Neon serverless (`@neondatabase/serverless`)
+- ORM: Drizzle v0.45.1, schema at `lib/db/schema.ts`
 - Extensions: pgvector (1024-dim), tsvector full-text search
 - Connection: HTTP client for reads, WebSocket pool for transactions
+- Migrations output to `drizzle/` directory
 
 ### Tables (11)
-- users — Google OAuth accounts
-- trades — composite PK (user_id, id)
-- trade_executions — individual executions within trades
-- trade_tags — trade-to-tag associations
-- tags — user-defined tags
-- trade_import_batches — import deduplication
-- broker_sync_log — broker sync history
-- agent_memory — persistent user memory (trade_insight, user_preference, strategy_note, macro_fact)
-- research_reports — AskEdgar + generated research output
-- macro_summaries — daily macro summaries from cron pipeline
-- jarvis_conversations — chat session history and context snapshots
-- jarvis_request_log — per-request token/latency tracking for observability
+users, trades (composite PK: user_id + id), trade_executions, trade_tags, tags, trade_import_batches, broker_sync_log, agent_memory, research_reports, macro_summaries, jarvis_conversations, jarvis_request_log
 
 ---
 
-# API Routes (14 active endpoints)
+# API Routes
 
 ## Trades
-- GET/POST     /api/trades
-- GET/PATCH/DELETE /api/trades/[id]
-- POST         /api/trades/bulk
-- POST         /api/trades/import
+- GET/POST `/api/trades`
+- GET/PATCH/DELETE `/api/trades/[id]`
+- POST `/api/trades/bulk`
+- POST `/api/trades/import`
 
 ## Tags
-- GET/POST/DELETE /api/tags
+- GET/POST/DELETE `/api/tags`
 
 ## Market Data
- - GET /api/market-data  (Massive API proxy)
+- GET `/api/market-data` (Massive API proxy)
 
 ## Jarvis AI
-- POST             /api/jarvis/chat
-- POST             /api/jarvis/research
-- POST             /api/jarvis/trade-analysis
-- GET/DELETE       /api/jarvis/admin/memory
-- GET              /api/jarvis/admin/stats  (token usage, circuit breaker, latency — admin-only via x-jarvis-admin-key)
-
-## Jarvis Cron
-- GET /api/jarvis/cron/macro-summary  (Vercel cron, CRON_SECRET auth)
+- POST `/api/jarvis/chat`, `/api/jarvis/research`, `/api/jarvis/trade-analysis`
+- GET/DELETE `/api/jarvis/admin/memory`
+- GET `/api/jarvis/admin/stats` (admin-only via x-jarvis-admin-key header)
 
 ## System
-- GET/POST /api/auth/[...nextauth]
-- GET      /api/health
+- GET/POST `/api/auth/[...nextauth]`
+- GET `/api/health`
+- GET `/api/jarvis/cron/macro-summary` (Vercel cron, CRON_SECRET auth)
 
-## Empty/legacy directories (do not add routes here without explicit instruction)
+## Empty/legacy directories (do not add routes without explicit instruction)
 backtest/, cron/, discord/, notifications/, schwab/, webhooks/
 
 ---
 
-# Components (29 total)
-
-## Trading Feature Components (19)
-- DashboardTab — main dashboard with stats and charts
-- PerformanceTab — analytics with calendar view
-- JournalTab — daily journal with trade cards
-- TradesTab — trade management and filtering
-- JarvisTab — AI assistant interface
-- Sidebar — main navigation
-- Toolbar — time presets and actions
-- TradeTable — sortable trade table
-- TradeDetailSheet — slide-out trade details
-- CandlestickChart — TradingView-style charts
-- PerformanceCharts — P&L visualizations
-- JournalTradeChart — journal replay charts
-- JarvisStructuredResponse — AI response renderer
-- JarvisMacroSummary — macro region summary renderer
-- JarvisDocuments — document upload UI
-- NewTradeDialog — manual trade entry
-- ImportDropdown — import options menu
-- SettingsMenu — export/clear settings
-- TradingCalendar — monthly calendar view
-
-## UI Primitives (10)
-button, command, dialog, dropdown-menu, input, label, popover, select, sheet, textarea
-
----
-
-# Hooks
-- useTrades — trade CRUD, filtering, CSV import, cloud/local sync
-- useCandleData — market data fetching with cache
-- useIsMobile — responsive detection
-
----
-
-# Key Service Modules
+# Key Modules
 
 ## Core
-- lib/auth-config.ts — NextAuth main config
-- lib/server-db-utils.ts — requireUser(), ensureUser()
-- lib/trading-utils.ts — formatCurrency, formatR, calculatePnL
-- lib/csv-parser.ts — CSV parsing with broker auto-detection
-- lib/parsers/ — pluggable parser system (DAS Trader, generic)
-- lib/indicators.ts — SMA, EMA, RSI, MACD, VWAP, Bollinger
+- `lib/server-db-utils.ts` — `requireUser()`, `ensureUser()` — all API routes must use these
+- `lib/auth-config.ts` — NextAuth config
+- `lib/trading-utils.ts` — formatCurrency, formatR, calculatePnL
+- `lib/csv-parser.ts` — CSV parsing with broker auto-detection
+- `lib/parsers/` — pluggable parser system (DAS Trader, generic)
+- `lib/indicators.ts` — SMA, EMA, RSI, MACD, VWAP, Bollinger
+
+## State Management
+- `hooks/use-trades.ts` — central trade hook: CRUD, filtering, CSV import, dual localStorage/cloud sync
+- `hooks/use-candle-data.ts` — market data fetching with cache
+- `hooks/use-mobile.ts` — responsive breakpoint detection
 
 ## Jarvis AI Pipeline
-- lib/jarvis-types.ts — shared types (JarvisMode, JarvisRequest, JarvisResponse, source types)
-- lib/jarvis/client.ts — single LLM wrapper (retry + circuit breaker)
-- lib/jarvis-knowledge.ts — knowledge ingestion/retrieval/eviction
-- lib/jarvis-scrape.ts — web scraping, chunking, ranking
-- lib/jarvis-embedding.ts — NVIDIA embedding API
-- lib/jarvis-response.ts — LLM response parsing
-- lib/jarvis-allowlist.ts — domain allowlist with trust scoring
-- lib/jarvis-source-packs.ts — source pack registry (macro-daily; earnings removed in Sprint 8)
+- `lib/jarvis-types.ts` — shared types (JarvisMode, JarvisRequest, JarvisResponse)
+- `lib/jarvis/client.ts` — LLM wrapper with retry + circuit breaker
+- `lib/jarvis-knowledge.ts` — knowledge ingestion/retrieval/eviction
+- `lib/jarvis-scrape.ts` — web scraping, chunking, ranking
+- `lib/jarvis-embedding.ts` — NVIDIA embedding API
+- `lib/jarvis-response.ts` — LLM response parsing
+- `lib/jarvis-allowlist.ts` — domain allowlist with trust scoring
+- `lib/jarvis-source-packs.ts` — source pack registry
 
 ## Jarvis Safety & Observability
-- lib/jarvis-rate-limit.ts — per-user rate limiting (30 req/hr, in-memory)
-- lib/jarvis-token-tracking.ts — per-request token/latency logging to jarvis_request_log
-- lib/jarvis-circuit-breaker.ts — LLM failure circuit breaker (5 failures → open, 60s reset)
-- lib/jarvis-robots.ts — robots.txt compliance with 1h cache
-- lib/jarvis-scrape-cache.ts — URL freshness check against knowledge store TTL
+- `lib/jarvis-rate-limit.ts` — per-user rate limiting (30 req/hr, in-memory)
+- `lib/jarvis-token-tracking.ts` — per-request token/latency logging
+- `lib/jarvis-circuit-breaker.ts` — LLM failure circuit breaker (5 failures → open, 60s reset)
+- `lib/jarvis-robots.ts` — robots.txt compliance with 1h cache
+
+## Tests
+- All in `__tests__/` directory, run via vitest
+- Tests cover: parsers, indicators, API routes, Jarvis pipeline, schema isolation
 
 ---
 
 # Sprint 8 — Dilution Research Pack (Planned, Not Yet Built)
 
-AskEdgar API integration for on-demand dilution research reports. Full spec in HANDOFF.md.
-
-- API: https://eapi.askedgar.io — auth via ASKEDGAR_API_KEY env var
-- 12 endpoints per report, 100 calls/day budget, fired via Promise.allSettled
-- New mode: `dilution-research` — single ticker, through orchestration engine
-- New source type: `api_data` in jarvis_knowledge_chunks
-- New files planned: lib/askedgar-client.ts, lib/askedgar-aggregator.ts, components/trading/JarvisDilutionReport.tsx
-- Replaces earnings source pack; macro-daily pack unchanged
-- 14-section report with risk color coding (Low=green, Medium=amber, High=red)
-- API docs: docs/AE_API_DOCS.md
-- Detailed spec: docs/SPRINT_8_SPEC.md
+AskEdgar API integration for on-demand dilution research reports.
+- API: `https://eapi.askedgar.io` — auth via ASKEDGAR_API_KEY
+- New mode: `dilution-research` through orchestration engine
+- Detailed spec: `docs/SPRINT_8_SPEC.md`, API docs: `docs/AE_API_DOCS.md`
 
 ---
 
 # Known Issues
 1. ALLOWED_EMAILS is documented in .env.example but not enforced in auth callbacks
 2. Empty legacy API directories remain from removed Schwab/Discord/backtest features
-3. NextAuth v5 is pre-release (5.0.0-beta.30) — watch for breaking changes on upgrade
+3. NextAuth v5 is pre-release (5.0.0-beta.30) — watch for breaking changes
 4. Vercel Hobby tier limits cron to daily; macro headlines may be stale by market close
 
 ---
 
 # Development Rules
 1. Preserve existing architecture — no large refactors unless explicitly requested
-2. All new API routes must call requireUser() and return 401 on failure
+2. All new API routes must call `requireUser()` and return 401 on failure
 3. Never access DB directly from client components — server-only via API routes or server actions
 4. Maintain TypeScript strict typing throughout
-5. Prefer modular code — no logic in page.tsx or layout.tsx
-6. Run lint and type-check after every change: npm run lint && npx tsc --noEmit
+5. Prefer modular code — no logic in `page.tsx` or `layout.tsx`
+6. Run lint and type-check after every change: `npm run lint && npx tsc --noEmit`
 7. Avoid unnecessary dependencies
 
 # Security Rules
-- Never expose .env, .env.local, API keys, or OAuth secrets
-- Secrets via environment variables only
-- Do not log sensitive data
-- Do not commit secrets to Git
-- Schwab tokens (if re-added) must never be returned to the client
-- ASKEDGAR_API_KEY must only be read server-side (lib/askedgar-client.ts) — never in client components
+- Secrets via environment variables only — never expose .env, .env.local, API keys, or OAuth secrets
+- ASKEDGAR_API_KEY must only be read server-side — never in client components
+- Do not log sensitive data or commit secrets to Git
 
 ---
 
 # Agent Workflow
 
-Plan agent responsibilities:
-- Architecture planning
-- Writing implementation specs
-- Auditing codebase state
-- Producing prompts for opencode
+**Plan agent:** Architecture planning, writing implementation specs, auditing codebase, producing prompts for opencode.
 
-opencode responsibilities:
-- Implementing code from specs
-- Fixing lint and type errors
-- Writing and running tests
-- Running migrations
+**opencode:** Implements code from specs, fixes lint/type errors, writes/runs tests, runs migrations.
 
-Workflow:
-1. Plan reads codebase and designs solution
-2. Plan writes opencode execution spec
-3. opencode implements
-4. opencode runs lint, type-check, tests
-5. Plan reviews architecture integrity of result
+Workflow: Plan designs → Plan writes spec → opencode implements → opencode runs lint/type-check/tests → Plan reviews architecture integrity.
