@@ -72,6 +72,7 @@ const DOWN_COLOR = '#3b82f6';
 const UP_VOLUME_COLOR = '#ffffff33';
 const DOWN_VOLUME_COLOR = '#3b82f633';
 const SESSION_SHADE = 'rgba(148, 163, 184, 0.12)';
+const CHART_SYMBOL_STORAGE_KEY = 'nexus-chart-symbol';
 
 function toTime(ms: number): Time {
   return Math.floor(ms / 1000) as unknown as Time;
@@ -141,7 +142,17 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
   }, [trades]);
 
   const [symbolInput, setSymbolInput] = useState('');
-  const [symbol, setSymbol] = useState(recentSymbols[0] ?? 'SPY');
+  const [symbol, setSymbol] = useState(() => {
+    const fallback = recentSymbols[0] ?? 'SPY';
+    if (typeof window === 'undefined') return fallback;
+    try {
+      const stored = localStorage.getItem(CHART_SYMBOL_STORAGE_KEY)?.trim().toUpperCase();
+      if (stored) return stored;
+    } catch {
+      return fallback;
+    }
+    return fallback;
+  });
   const [timeframe, setTimeframe] = useState<TimeframeKey>('30m');
   const [seriesType, setSeriesType] = useState<SeriesType>('candles');
   const [compareEnabled, setCompareEnabled] = useState(false);
@@ -165,8 +176,24 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
     includePrePost: frame.intraday,
   }), [frame.frequency, frame.frequencyType, frame.intraday, frame.period, frame.periodType]);
 
-  const { candles, isLoading, error } = useCandleData(symbol, marketOptions);
-  const compareState = useCandleData(compareEnabled ? compareSymbol : null, marketOptions);
+  const { candles, isLoading, error } = useCandleData(symbol, { ...marketOptions, refreshIntervalMs: 60_000 });
+  const compareState = useCandleData(compareEnabled ? compareSymbol : null, { ...marketOptions, refreshIntervalMs: 60_000 });
+
+  useEffect(() => {
+    const cleanSymbol = symbol.trim().toUpperCase();
+    if (!cleanSymbol) return;
+    try {
+      localStorage.setItem(CHART_SYMBOL_STORAGE_KEY, cleanSymbol);
+    } catch {
+      // Ignore persistence failures.
+    }
+  }, [symbol]);
+
+  const applySymbolInput = () => {
+    const next = symbolInput.trim().toUpperCase();
+    if (!next) return;
+    setSymbol(next);
+  };
 
   const headline = useMemo(() => {
     if (candles.length < 2) return { price: null, changePct: null };
@@ -470,14 +497,16 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
             <Input
               value={symbolInput}
               onChange={(event) => setSymbolInput(event.target.value.toUpperCase())}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  applySymbolInput();
+                }
+              }}
               placeholder={symbol}
               className="h-6 w-20 border-0 bg-transparent px-1 text-[11px] xl:h-7 xl:w-24 xl:text-xs"
             />
             <Button
-              onClick={() => {
-                const next = symbolInput.trim().toUpperCase();
-                if (next) setSymbol(next);
-              }}
+              onClick={applySymbolInput}
               size="sm"
               className="h-6 bg-emerald-500 px-1.5 text-[11px] text-black hover:bg-emerald-400 xl:h-7 xl:px-2 xl:text-xs"
             >

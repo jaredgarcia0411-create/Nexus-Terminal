@@ -755,13 +755,6 @@ All three checks currently pass.
 - `npx tsc --noEmit`
 - `npm test`
 
-### Migrated From `JARVIS_PLAN.md` (Incomplete Work)
-
-- [ ] **JRV-077** — Migrate remaining Jarvis modes to orchestration engine.
-  - Scope migrated here before plan file deletion.
-  - Original intent: move non-macro legacy mode paths to orchestration while preserving response contracts and safeguards.
-  - Suggested first slice: evaluate `chat` and `trade-analysis` orchestration parity behind feature flag before default cutover.
-
 ## Session Update (2026-03-12 jarvis plan archive + importer spec)
 
 - [x] Performed polish pass on Sprint 8 documentation updates.
@@ -783,6 +776,20 @@ All three checks currently pass.
 - [x] Added pending follow-up item for importing historical AskEdgar reports from Discord archives.
 
 ### Command Results (2026-03-12 sprint-8 documentation closeout)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
+
+## Session Update (2026-03-13 charts persistence + refresh cadence)
+
+- [x] Removed `JRV-077` follow-up scope from this handoff.
+- [x] Updated Charts tab to persist and restore the last viewed symbol using local storage (`nexus-chart-symbol`).
+- [x] Added Enter-key submit behavior to Charts symbol input so it triggers the same action as the `Go` button.
+- [x] Added 60-second polling support in `useCandleData` and enabled it in Charts to fetch fresh Massive candles on a fixed cadence.
+- [x] Updated Markets snapshot auto-refresh cadence from 2 minutes to 60 seconds.
+
+### Command Results (2026-03-13 charts persistence + refresh cadence)
 
 - `npm run lint` — **PASS**
 - `npx tsc --noEmit` — **PASS**

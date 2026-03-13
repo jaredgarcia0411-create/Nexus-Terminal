@@ -11,6 +11,7 @@ type CandleDataOptions = {
   startDate?: string;
   endDate?: string;
   includePrePost?: boolean;
+  refreshIntervalMs?: number;
 };
 
 type MarketDataResponse = {
@@ -54,6 +55,7 @@ export function useCandleData(symbol: string | null, options: CandleDataOptions 
   const startDate = options.startDate;
   const endDate = options.endDate;
   const includePrePost = options.includePrePost ?? false;
+  const refreshIntervalMs = options.refreshIntervalMs;
 
   const [state, setState] = useState<CandleDataState>({
     candles: [],
@@ -85,45 +87,77 @@ export function useCandleData(symbol: string | null, options: CandleDataOptions 
       endDate,
       includePrePost,
     });
+
+    let activeController: AbortController | null = null;
+
+    const fetchCandles = (forceRefresh: boolean) => {
+      if (forceRefresh) {
+        candleDataCache.delete(cacheKey);
+      }
+
+      const params = new URLSearchParams({
+        symbol: cleanSymbol,
+        periodType,
+        period,
+        frequencyType,
+        frequency,
+      });
+
+      if (startDate) params.set('startDate', startDate);
+      if (endDate) params.set('endDate', endDate);
+      if (includePrePost) params.set('includePrePost', 'true');
+
+      setState((prev) => ({
+        candles: forceRefresh ? prev.candles : [],
+        isLoading: true,
+        error: null,
+      }));
+
+      activeController?.abort();
+      const controller = new AbortController();
+      activeController = controller;
+
+      void fetch(`/api/market-data?${params.toString()}`, { signal: controller.signal })
+        .then(async (res) => {
+          const payload = (await res.json().catch(() => ({}))) as MarketDataResponse;
+          if (!res.ok) {
+            throw new Error(statusToMessage(res.status, payload.error ?? 'Could not fetch market data'));
+          }
+
+          const candles = payload.candles ?? [];
+          candleDataCache.set(cacheKey, candles);
+          setState({ candles, isLoading: false, error: null });
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          const message = error instanceof Error ? error.message : 'Could not fetch market data';
+          setState((prev) => ({ candles: prev.candles, isLoading: false, error: message }));
+        });
+    };
+
     const cached = candleDataCache.get(cacheKey);
     if (cached) {
       scheduleState({ candles: cached, isLoading: false, error: null });
-      return;
+      if (refreshIntervalMs != null && refreshIntervalMs > 0) {
+        fetchCandles(true);
+      }
+    } else {
+      fetchCandles(false);
     }
 
-    const controller = new AbortController();
-    const params = new URLSearchParams({
-      symbol: cleanSymbol,
-      periodType,
-      period,
-      frequencyType,
-      frequency,
-    });
+    let intervalId: number | null = null;
+    if (refreshIntervalMs != null && refreshIntervalMs > 0) {
+      intervalId = window.setInterval(() => {
+        fetchCandles(true);
+      }, refreshIntervalMs);
+    }
 
-    if (startDate) params.set('startDate', startDate);
-    if (endDate) params.set('endDate', endDate);
-    if (includePrePost) params.set('includePrePost', 'true');
-
-    scheduleState({ candles: [], isLoading: true, error: null });
-
-    void fetch(`/api/market-data?${params.toString()}`, { signal: controller.signal })
-      .then(async (res) => {
-        const payload = (await res.json().catch(() => ({}))) as MarketDataResponse;
-        if (!res.ok) {
-          throw new Error(statusToMessage(res.status, payload.error ?? 'Could not fetch market data'));
-        }
-
-        const candles = payload.candles ?? [];
-        candleDataCache.set(cacheKey, candles);
-        setState({ candles, isLoading: false, error: null });
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        const message = error instanceof Error ? error.message : 'Could not fetch market data';
-        setState({ candles: [], isLoading: false, error: message });
-      });
-
-    return () => controller.abort();
+    return () => {
+      if (intervalId != null) {
+        window.clearInterval(intervalId);
+      }
+      activeController?.abort();
+    };
   }, [
     symbol,
     periodType,
@@ -133,6 +167,7 @@ export function useCandleData(symbol: string | null, options: CandleDataOptions 
     startDate,
     endDate,
     includePrePost,
+    refreshIntervalMs,
     scheduleState,
   ]);
 

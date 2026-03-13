@@ -216,7 +216,7 @@ export default function MarketsTab() {
   useEffect(() => {
     const interval = window.setInterval(() => {
       void loadSnapshot();
-    }, 2 * 60 * 1000);
+    }, 60 * 1000);
     return () => window.clearInterval(interval);
   }, [loadSnapshot]);
 
