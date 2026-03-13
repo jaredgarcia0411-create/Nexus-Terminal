@@ -56,8 +56,8 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
     return (
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-3">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-400">Macro Summary - {macroSummary.date}</p>
-          <span className={`rounded-full border px-3 py-0.5 text-xs capitalize ${overallStyle.bg} ${overallStyle.border} ${overallStyle.text}`}>
+          <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Macro Summary - {macroSummary.date}</p>
+          <span className={`rounded-full border px-3 py-0.5 text-sm capitalize ${overallStyle.bg} ${overallStyle.border} ${overallStyle.text}`}>
             {macroSummary.overallSentiment}
           </span>
         </div>
@@ -73,16 +73,16 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
                 className={`rounded-xl border p-4 ${style.border} bg-black/20`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-zinc-100">{REGION_LABELS[region.region] ?? region.region}</p>
-                  <span className={`rounded-full border px-2 py-0.5 text-[11px] capitalize ${style.bg} ${style.border} ${style.text}`}>
+                  <p className="text-base font-semibold text-zinc-100">{REGION_LABELS[region.region] ?? region.region}</p>
+                  <span className={`rounded-full border px-2 py-0.5 text-xs capitalize ${style.bg} ${style.border} ${style.text}`}>
                     {region.sentiment}
                   </span>
                 </div>
-                <p className="mt-2 text-sm text-zinc-200">{region.headline}</p>
+                <p className="mt-2 text-base text-zinc-200">{region.headline}</p>
                 {details.length > 0 ? (
                   <ul className="mt-2 space-y-1">
                     {details.map((detail, i) => (
-                      <li key={`macro-detail-${region.region}-${i}`} className="flex gap-2 text-xs text-zinc-400">
+                      <li key={`macro-detail-${region.region}-${i}`} className="flex gap-2 text-sm text-zinc-400">
                         <span className="text-zinc-500">-</span>
                         <span>{detail}</span>
                       </li>
@@ -96,8 +96,8 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
 
         {keyRisks.length > 0 ? (
           <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-amber-200">Key Macro Risks</p>
-            <ul className="mt-2 space-y-1.5 text-sm text-zinc-200">
+            <p className="text-xs uppercase tracking-[0.2em] text-amber-200">Key Macro Risks</p>
+            <ul className="mt-2 space-y-1.5 text-base text-zinc-200">
               {keyRisks.map((risk, i) => (
                 <li key={`macro-risk-${i}`} className="flex gap-2">
                   <span className="text-zinc-400">!</span>
@@ -109,7 +109,7 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
         ) : null}
 
         <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-400">Reference Links</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Reference Links</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {MACRO_LINKS.map((link) => (
               <a
@@ -117,7 +117,7 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
                 href={link.href}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded border border-white/15 bg-white/5 px-2 py-1 text-xs text-zinc-200 transition hover:bg-white/10"
+                className="rounded border border-white/15 bg-white/5 px-2 py-1 text-sm text-zinc-200 transition hover:bg-white/10"
               >
                 {link.label}
               </a>
@@ -138,15 +138,15 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-        <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-400">Macro Summary</p>
-        <p className="mt-2 text-sm text-zinc-100">{headline}</p>
+        <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Macro Summary</p>
+        <p className="mt-2 text-base text-zinc-100">{headline}</p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-200">Key Themes</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-emerald-200">Key Themes</p>
           {keyThemes.length > 0 ? (
-            <ul className="mt-2 space-y-1.5 text-sm text-zinc-200">
+            <ul className="mt-2 space-y-1.5 text-base text-zinc-200">
               {keyThemes.map((theme, i) => (
                 <li key={`macro-theme-${i}`} className="flex gap-2">
                   <span className="text-zinc-400">-</span>
@@ -154,13 +154,13 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
                 </li>
               ))}
             </ul>
-          ) : <p className="mt-2 text-sm text-zinc-400">No key themes available.</p>}
+          ) : <p className="mt-2 text-base text-zinc-400">No key themes available.</p>}
         </div>
 
         <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-sky-200">Watchlist Notes</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-sky-200">Watchlist Notes</p>
           {watchlistNotes.length > 0 ? (
-            <ul className="mt-2 space-y-1.5 text-sm text-zinc-200">
+            <ul className="mt-2 space-y-1.5 text-base text-zinc-200">
               {watchlistNotes.map((note, i) => (
                 <li key={`macro-watch-${i}`} className="flex gap-2">
                   <span className="text-zinc-400">-</span>
@@ -168,14 +168,14 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
                 </li>
               ))}
             </ul>
-          ) : <p className="mt-2 text-sm text-zinc-400">No watchlist notes available.</p>}
+          ) : <p className="mt-2 text-base text-zinc-400">No watchlist notes available.</p>}
         </div>
       </div>
 
       {riskFlags.length > 0 ? (
         <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-amber-200">Key Macro Risks</p>
-          <ul className="mt-2 space-y-1.5 text-sm text-zinc-200">
+          <p className="text-xs uppercase tracking-[0.2em] text-amber-200">Key Macro Risks</p>
+          <ul className="mt-2 space-y-1.5 text-base text-zinc-200">
             {riskFlags.map((risk, i) => (
               <li key={`macro-risk-${i}`} className="flex gap-2">
                 <span className="text-zinc-400">!</span>
@@ -187,7 +187,7 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
       ) : null}
 
       <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-        <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-400">Reference Links</p>
+        <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Reference Links</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {MACRO_LINKS.map((link) => (
             <a
@@ -195,7 +195,7 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
               href={link.href}
               target="_blank"
               rel="noreferrer"
-              className="rounded border border-white/15 bg-white/5 px-2 py-1 text-xs text-zinc-200 transition hover:bg-white/10"
+              className="rounded border border-white/15 bg-white/5 px-2 py-1 text-sm text-zinc-200 transition hover:bg-white/10"
             >
               {link.label}
             </a>

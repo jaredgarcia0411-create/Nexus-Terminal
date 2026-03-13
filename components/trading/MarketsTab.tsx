@@ -11,6 +11,9 @@ type MarketInstrument = {
   change: number | null;
   changePercent: number | null;
   marketStatus: string | null;
+  quoteSession: 'pre-market' | 'regular' | 'after-hours' | 'closed' | 'snapshot';
+  extendedQuoteUnavailable: boolean;
+  extendedUnavailableLabel: string | null;
 };
 
 type MarketMoverRow = {
@@ -70,14 +73,28 @@ function isBigMove(value: number | null) {
 
 function InstrumentCard({ item }: { item: MarketInstrument }) {
   const positive = (item.changePercent ?? 0) >= 0;
+  const sessionBadge = item.quoteSession === 'pre-market'
+    ? 'Pre'
+    : item.quoteSession === 'after-hours'
+      ? 'AH'
+      : null;
+
   return (
     <div className="rounded-lg border border-white/10 bg-[#121214] p-3">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-semibold text-zinc-200">{item.label}</p>
-        <span className={`text-xs ${positive ? 'text-emerald-300' : 'text-rose-300'}`}>{formatPercent(item.changePercent)}</span>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-semibold text-zinc-200">{item.label}</p>
+          {sessionBadge ? <span className="rounded border border-white/15 bg-white/5 px-1 py-0.5 text-[10px] text-zinc-400">{sessionBadge}</span> : null}
+        </div>
+        <span className={`text-sm ${positive ? 'text-emerald-300' : 'text-rose-300'}`}>{formatPercent(item.changePercent)}</span>
       </div>
-      <p className="mt-2 text-base font-semibold text-white">{formatNumber(item.price)}</p>
-      <p className={`mt-1 text-xs ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>{formatChange(item.change)}</p>
+      <div className="mt-2 flex items-center gap-2">
+        <p className="text-lg font-semibold text-white">{formatNumber(item.price)}</p>
+        {item.extendedQuoteUnavailable && item.extendedUnavailableLabel ? (
+          <span className="rounded border border-zinc-500/25 bg-zinc-500/10 px-1.5 py-0.5 text-[10px] text-zinc-400">{item.extendedUnavailableLabel}</span>
+        ) : null}
+      </div>
+      <p className={`mt-1 text-sm ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>{formatChange(item.change)}</p>
     </div>
   );
 }
@@ -92,11 +109,11 @@ function MoversTable({ title, rows }: { title: string; rows: MarketMoverRow[] })
   return (
     <div className="rounded-xl border border-white/10 bg-black/20 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-zinc-100">{title}</h3>
-        <p className="text-xs text-zinc-500">{rows.length} symbols</p>
+        <h3 className="text-base font-semibold text-zinc-100">{title}</h3>
+        <p className="text-sm text-zinc-500">{rows.length} symbols</p>
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-xs">
+        <table className="min-w-full text-left text-sm">
           <thead>
             <tr className="border-b border-white/10 text-zinc-400">
               <th className="px-2 py-2">Ticker</th>
@@ -251,28 +268,28 @@ export default function MarketsTab() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-          <h2 className="mb-3 text-sm font-semibold text-zinc-200">Indexes</h2>
+          <h2 className="mb-3 text-base font-semibold text-zinc-200">Indexes</h2>
           <div className="grid gap-2 sm:grid-cols-2">
             {(snapshot?.indices ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
           </div>
         </div>
 
         <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-          <h2 className="mb-3 text-sm font-semibold text-zinc-200">Crypto</h2>
+          <h2 className="mb-3 text-base font-semibold text-zinc-200">Crypto</h2>
           <div className="grid gap-2 sm:grid-cols-2">
             {(snapshot?.crypto ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
           </div>
         </div>
 
         <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-          <h2 className="mb-3 text-sm font-semibold text-zinc-200">Futures</h2>
+          <h2 className="mb-3 text-base font-semibold text-zinc-200">Futures</h2>
           <div className="grid gap-2 sm:grid-cols-2">
             {(snapshot?.futures ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
           </div>
         </div>
 
         <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-          <h2 className="mb-3 text-sm font-semibold text-zinc-200">FX</h2>
+          <h2 className="mb-3 text-base font-semibold text-zinc-200">FX</h2>
           <div className="grid gap-2 sm:grid-cols-2">
             {(snapshot?.fx ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
           </div>
@@ -280,14 +297,14 @@ export default function MarketsTab() {
       </div>
 
       <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-        <h2 className="mb-3 text-sm font-semibold text-zinc-200">Major Equity Components</h2>
+        <h2 className="mb-3 text-base font-semibold text-zinc-200">Major Equity Components</h2>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
           {(snapshot?.equities ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
         </div>
       </div>
 
       <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-4">
-        <h2 className="text-sm font-semibold text-zinc-100">Market Movers</h2>
+        <h2 className="text-base font-semibold text-zinc-100">Market Movers</h2>
         <p className="text-xs text-zinc-500 md:hidden">Swipe horizontally to switch between gainers and losers.</p>
 
         <div className="hidden gap-3 md:grid md:grid-cols-2">

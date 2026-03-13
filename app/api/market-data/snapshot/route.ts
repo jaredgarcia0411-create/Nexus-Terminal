@@ -2,7 +2,14 @@ import { desc, eq } from 'drizzle-orm';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { marketSnapshots } from '@/lib/db/schema';
-import { fetchTopMarketMovers, fetchUnifiedSnapshot } from '@/lib/massive-market';
+import {
+  fetchBatchDailyTickerSummaries,
+  fetchTopMarketMovers,
+  fetchUnifiedSnapshot,
+  getEasternMarketSession,
+  normalizeMassiveTicker,
+  type EasternMarketSession,
+} from '@/lib/massive-market';
 import { requireUser } from '@/lib/server-db-utils';
 
 type MarketInstrument = {
@@ -12,6 +19,9 @@ type MarketInstrument = {
   change: number | null;
   changePercent: number | null;
   marketStatus: string | null;
+  quoteSession: EasternMarketSession | 'snapshot';
+  extendedQuoteUnavailable: boolean;
+  extendedUnavailableLabel: string | null;
 };
 
 type MarketMoverRow = {
@@ -49,7 +59,7 @@ type SnapshotCoverage = {
 };
 
 const CACHE_SNAPSHOT_TYPE = 'markets_overview';
-const CACHE_TTL_MS = 15 * 60 * 1000;
+const CACHE_TTL_MS = 2 * 60 * 1000;
 const STALE_WARNING_MS = 30 * 60 * 1000;
 
 type PgLikeError = {
@@ -73,9 +83,10 @@ const CRYPTO_SYMBOLS = [
 ];
 const FX_SYMBOLS = ['C:EURUSD', 'C:GBPUSD', 'C:USDJPY', 'C:USDCAD', 'C:AUDUSD', 'C:CNYUSD'];
 const EQUITY_SYMBOLS = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'NVDA', 'TSLA', 'META', 'JPM', 'JNJ', 'V'];
+const EXTENDED_SESSION_SYMBOLS = [...INDEX_SYMBOLS, ...EQUITY_SYMBOLS];
 
 function normalizeTicker(raw: string) {
-  return raw.replace(/^X:/, '').replace(/^C:/, '').replace(/^I:/, '').trim().toUpperCase();
+  return normalizeMassiveTicker(raw);
 }
 
 function toNumberOrNull(value: unknown) {
@@ -83,16 +94,108 @@ function toNumberOrNull(value: unknown) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
-function toInstrument(ticker: string, label: string, lookup: Map<string, { session?: Record<string, unknown>; market_status?: string }>): MarketInstrument {
+function getNyIsoDate(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+}
+
+function calculateExtendedChange(price: number | null, close: number | null) {
+  if (price == null || close == null || close === 0) {
+    return { change: null, changePercent: null };
+  }
+  const change = price - close;
+  return {
+    change,
+    changePercent: (change / close) * 100,
+  };
+}
+
+function toInstrument(
+  ticker: string,
+  label: string,
+  lookup: Map<string, { session?: Record<string, unknown>; market_status?: string }>,
+  activeSession: EasternMarketSession,
+  extendedSummaries?: Map<string, { close: number | null; preMarket: number | null; afterHours: number | null }>
+): MarketInstrument {
+  const symbol = normalizeTicker(ticker);
   const entry = lookup.get(normalizeTicker(ticker));
   const session = entry?.session ?? {};
-  return {
-    symbol: normalizeTicker(ticker),
+
+  const defaultInstrument: MarketInstrument = {
+    symbol,
     label,
     price: toNumberOrNull(session.close),
     change: toNumberOrNull(session.change),
     changePercent: toNumberOrNull(session.change_percent),
     marketStatus: typeof entry?.market_status === 'string' ? entry.market_status : null,
+    quoteSession: 'snapshot',
+    extendedQuoteUnavailable: false,
+    extendedUnavailableLabel: null,
+  };
+
+  if (!extendedSummaries) {
+    return defaultInstrument;
+  }
+
+  const extended = extendedSummaries.get(symbol);
+  if (!extended) {
+    return defaultInstrument;
+  }
+
+  if (activeSession === 'pre-market') {
+    if (extended.preMarket != null) {
+      const calculated = calculateExtendedChange(extended.preMarket, extended.close);
+      return {
+        ...defaultInstrument,
+        price: extended.preMarket,
+        change: calculated.change,
+        changePercent: calculated.changePercent,
+        quoteSession: 'pre-market',
+      };
+    }
+
+    return {
+      ...defaultInstrument,
+      quoteSession: 'pre-market',
+      extendedQuoteUnavailable: true,
+      extendedUnavailableLabel: 'Pre-market unavailable',
+    };
+  }
+
+  if (activeSession === 'after-hours' || activeSession === 'closed') {
+    if (extended.afterHours != null) {
+      const calculated = calculateExtendedChange(extended.afterHours, extended.close);
+      return {
+        ...defaultInstrument,
+        price: extended.afterHours,
+        change: calculated.change,
+        changePercent: calculated.changePercent,
+        quoteSession: 'after-hours',
+      };
+    }
+
+    if (activeSession === 'after-hours') {
+      return {
+        ...defaultInstrument,
+        quoteSession: 'after-hours',
+        extendedQuoteUnavailable: true,
+        extendedUnavailableLabel: 'After-hours unavailable',
+      };
+    }
+
+    return {
+      ...defaultInstrument,
+      quoteSession: 'closed',
+    };
+  }
+
+  return {
+    ...defaultInstrument,
+    quoteSession: 'regular',
   };
 }
 
@@ -119,10 +222,12 @@ async function fetchFreshSnapshot(): Promise<MarketSnapshotPayload> {
     ...EQUITY_SYMBOLS,
   ];
 
-  const [snapshot, gainers, losers] = await Promise.all([
+  const activeSession = getEasternMarketSession();
+  const [snapshot, gainers, losers, extendedSummaries] = await Promise.all([
     fetchUnifiedSnapshot(tickers),
     fetchTopMarketMovers('gainers'),
     fetchTopMarketMovers('losers'),
+    fetchBatchDailyTickerSummaries(EXTENDED_SESSION_SYMBOLS, getNyIsoDate()),
   ]);
 
   const lookup = new Map<string, { session?: Record<string, unknown>; market_status?: string }>();
@@ -136,11 +241,11 @@ async function fetchFreshSnapshot(): Promise<MarketSnapshotPayload> {
   }
 
   return {
-    indices: INDEX_SYMBOLS.map((symbol) => toInstrument(symbol, symbol, lookup)),
-    futures: FUTURE_SYMBOLS.map((item) => toInstrument(item.ticker, item.label, lookup)),
-    crypto: CRYPTO_SYMBOLS.map((item) => toInstrument(item.ticker, item.symbol, lookup)),
-    fx: FX_SYMBOLS.map((symbol) => toInstrument(symbol, normalizeTicker(symbol), lookup)),
-    equities: EQUITY_SYMBOLS.map((symbol) => toInstrument(symbol, symbol, lookup)),
+    indices: INDEX_SYMBOLS.map((symbol) => toInstrument(symbol, symbol, lookup, activeSession, extendedSummaries)),
+    futures: FUTURE_SYMBOLS.map((item) => toInstrument(item.ticker, item.label, lookup, activeSession)),
+    crypto: CRYPTO_SYMBOLS.map((item) => toInstrument(item.ticker, item.symbol, lookup, activeSession)),
+    fx: FX_SYMBOLS.map((symbol) => toInstrument(symbol, normalizeTicker(symbol), lookup, activeSession)),
+    equities: EQUITY_SYMBOLS.map((symbol) => toInstrument(symbol, symbol, lookup, activeSession, extendedSummaries)),
     movers: {
       gainers: toMoverRows(gainers.tickers ?? []),
       losers: toMoverRows(losers.tickers ?? []),

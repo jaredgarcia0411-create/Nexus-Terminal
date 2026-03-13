@@ -21,6 +21,8 @@ describe('JarvisMacroSummary', () => {
     expect(html).toContain('Oil volatility');
     expect(html).toContain('Reference Links');
     expect(html).toContain('Google Finance');
+    expect(html).toContain('text-base text-zinc-100');
+    expect(html).toContain('text-sm text-zinc-200 transition');
   });
 
   it('renders legacy macro summary payload', () => {

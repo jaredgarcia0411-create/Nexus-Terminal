@@ -15,5 +15,7 @@ describe('MarketsTab', () => {
     expect(html).toContain('FX');
     expect(html).toContain('Market Movers');
     expect(html).toContain('Major Equity Components');
+    expect(html).toContain('text-base font-semibold text-zinc-100">Market Movers');
+    expect(html).toContain('text-base font-semibold text-zinc-200">Indexes');
   });
 });

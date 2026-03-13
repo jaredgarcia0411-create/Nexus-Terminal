@@ -794,3 +794,112 @@ All three checks currently pass.
 - `npm run lint` — **PASS**
 - `npx tsc --noEmit` — **PASS**
 - `npm test` — **PASS**
+
+## Planned Session Spec (2026-03-13) — Markets Snapshot Quote Freshness + Extended Sessions
+
+> Generated: 2026-03-13 | Agent: opencode
+> Status: EXECUTED (implementation complete)
+
+### Scope for this session
+
+- [x] Fix unified snapshot missing prices for crypto/futures/fx symbol coverage.
+- [x] Add session-aware quote selection for index ETFs + major equities (pre-market/regular/after-hours) using the most recent available quote.
+- [x] Increase font sizing by one Tailwind class for unified snapshot cards, market movers tables, and macro summary content only.
+- [x] Reduce market snapshot cache TTL to 2 minutes.
+- [x] Preserve existing architecture/routes and keep market movers sourcing unchanged (no extended-session overrides in movers).
+
+### Decisions confirmed with user
+
+- [x] Session detection timezone: Eastern Time (`America/New_York`).
+- [x] Quote display priority: most recent available quote by session (pre-market, regular, after-hours, then fallback).
+- [x] Change math for extended sessions: compare extended quote to the most recent regular close.
+- [x] Pre-market unavailable UX: subtle gray badge/indicator next to price.
+- [x] Show subtle session badges when extended quotes are displayed.
+- [x] Keep market movers as-is (no pre-market/after-hours integration).
+- [x] API volume is acceptable with current plan limits.
+
+### Step-by-step implementation order (exact)
+
+1. **Baseline + guardrails**
+   - [x] Confirm no scope changes beyond this planned spec.
+   - [x] Capture baseline by running `npm run lint`, `npx tsc --noEmit`, and `npm test`.
+
+2. **Fix symbol lookup normalization for unified snapshot coverage**
+   - [x] Update `app/api/market-data/snapshot/route.ts` lookup-map keying so API-returned tickers and requested tickers normalize consistently.
+   - [x] Verify crypto (`X:*`), FX (`C:*`), and futures (`/*`) symbols no longer miss due to prefix/key mismatch.
+
+3. **Add ET session utilities + extended quote fetch helper**
+   - [x] Extend `lib/massive-market.ts` with ET market-session detection helper (`pre-market`, `regular`, `after-hours`, `closed`).
+   - [x] Add a batch helper for daily summaries over target symbols (index ETFs + major equities) and normalize returned shape for snapshot usage.
+   - [x] Keep existing Massive helpers unchanged for movers and unified snapshot fetches.
+
+4. **Integrate session-aware quote selection in snapshot route**
+   - [x] In `app/api/market-data/snapshot/route.ts`, fetch extended-session candidates for index ETFs + major equities alongside existing snapshot/movers fetch.
+   - [x] For those 14 symbols, choose most recent available quote by current ET session with fallback to unified snapshot values.
+   - [x] Compute change/changePercent from the most recent regular close for pre-market and after-hours quotes.
+   - [x] Add instrument metadata fields needed by UI (session source + unavailable flags) while preserving current response contracts for unaffected sections.
+   - [x] Keep futures/crypto/fx sourced from unified snapshot path only (except missing-price fix in step 2).
+
+5. **Markets tab UI updates (targeted only)**
+   - [x] Update `components/trading/MarketsTab.tsx` instrument typing and card rendering for subtle session badges and subtle gray unavailable indicator.
+   - [x] Keep market movers tables/data behavior unchanged apart from requested font-size bump.
+   - [x] Increase text size by one Tailwind class only in:
+     - unified snapshot instrument cards,
+     - market movers table text,
+     - macro summary content render area.
+
+6. **Macro summary typography bump**
+   - [x] Update `components/trading/JarvisMacroSummary.tsx` text classes by one Tailwind size step, scoped to macro summary content only.
+
+7. **Snapshot cache cadence adjustment**
+   - [x] Update `CACHE_TTL_MS` in `app/api/market-data/snapshot/route.ts` from current value to `2 * 60 * 1000`.
+   - [x] Preserve stale-warning logic and existing fallback behavior.
+
+8. **Regression coverage updates**
+   - [x] Extend/add tests for:
+     - snapshot symbol coverage for crypto/futures/fx,
+     - session-aware quote precedence and fallback behavior,
+     - extended-session change math against regular close,
+     - UI indicator rendering (session badge + unavailable badge),
+     - typography class updates scoped to requested sections.
+
+9. **Verification + closeout**
+   - [x] Run `npm run lint`.
+   - [x] Run `npx tsc --noEmit`.
+   - [x] Run `npm test`.
+   - [x] Record pass/fail results in this file.
+   - [x] Update checklist items to `[x]` for completed work.
+
+### Execution Notes (2026-03-13 markets snapshot quote freshness + extended sessions)
+
+- Added ET session helper and batch daily-summary helper in `lib/massive-market.ts`, including resilient `Promise.allSettled` handling.
+- Updated snapshot normalization to use shared symbol normalization and fixed prefix/format matching for crypto/futures/fx keys.
+- Enhanced `app/api/market-data/snapshot/route.ts` to:
+  - lower cache TTL to 2 minutes,
+  - merge session-aware extended quotes for index ETFs + major equities,
+  - compute extended-session change metrics vs regular close,
+  - return instrument-level session metadata and subtle unavailable-state metadata.
+- Updated `components/trading/MarketsTab.tsx` with subtle session badges (`Pre`, `AH`), subtle unavailable badges, and one-step typography bump on snapshot cards + movers tables.
+- Updated `components/trading/JarvisMacroSummary.tsx` typography by one class step for macro content.
+- Extended regression coverage in:
+  - `__tests__/market-data-snapshot-route.test.ts`
+  - `__tests__/markets-tab.test.tsx`
+  - `__tests__/jarvis-macro-summary-component.test.ts`
+
+### Command Results (2026-03-13 markets snapshot quote freshness + extended sessions)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
+
+## Session Update (2026-03-13 planning handoff authoring)
+
+- [x] Added a concrete execution plan for Markets snapshot quote freshness + extended session handling.
+- [x] Captured confirmed UX/behavior decisions from user for session-aware quote display, unavailable indicators, and typography scope.
+- [x] Confirmed execution should begin only after plan review/approval.
+
+### Command Results (2026-03-13 planning handoff authoring)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
