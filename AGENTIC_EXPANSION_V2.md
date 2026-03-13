@@ -1,308 +1,441 @@
 # Nexus Terminal — Autonomous Agent Framework Architecture
+
 > Generated: 2026-03-13 | Status: DRAFT — Requires approval before implementation
 
 ---
 
 ## 1. Executive Summary
 
-This document specifies a multi-agent system for Nexus Terminal consisting of three runtime components: an **Orchestrator** (with built-in research routing pipeline), a **Dilutionary Small Cap Trader** agent, and a **Long Term Investor** agent. Discord serves as both an input and output channel alongside the existing web UI.
+This document specifies a multi-agent system for Nexus Terminal consisting of three runtime components: an **Orchestrator** (with built-in research routing pipeline and macro cron), a **Dilutionary Small Cap Trader** agent, and a **Long Term Investor** agent.
 
-The system runs in the existing Docker Compose stack. Agents communicate via the Postgres-backed job queue pattern already proven in `notification_jobs`. The LLM provider is Llama 3.1 70B Instruct via NVIDIA API (OpenAI-compatible endpoint). Market data comes from Polygon.io (configured, starter tier). Ticker research comes from AskEdgar API.
+Agents run as Docker Compose services on a home server (16GB RAM laptop). They communicate via a Postgres-backed job queue (Neon free tier). The LLM provider is NVIDIA API (OpenAI-compatible endpoint, currently running `deepseek-v3.2`) with support for local models via llama.cpp. Market data comes from Massive API (Polygon-compatible, unlimited rate limit on stock starter kit). Ticker research comes from AskEdgar API.
+
+The web UI migrates from the current Jarvis chat to a polling-based agent chat with a supervised report review queue (Level 1 autonomy — all agent reports require user approval before action).
 
 ### Design Principles
 
-- **Postgres is the backbone.** All inter-agent communication, state, memory, and job coordination flows through Postgres. No new infrastructure dependencies beyond what already exists.
+- **Postgres is the backbone.** All inter-agent communication, state, memory, and job coordination flows through Postgres. No Redis, no message broker, no new infrastructure.
 - **Agents are long-running Docker services.** They poll for work, execute, and write results back. They do not run on Vercel.
 - **The Orchestrator owns routing.** The collapsed Research Analyst logic lives inside the Orchestrator as a deterministic rules engine — no LLM call for routing decisions.
 - **Each agent has strict scope boundaries.** An agent can only read its own memory and the shared job queue. Cross-agent data access goes through the Orchestrator.
-- **Discord is a channel adapter, not an agent.** The existing Discord bot translates user commands into job queue entries and formats agent outputs into Discord embeds.
+- **Supervised by default.** Agent reports start as `pending_review`. The user approves or rejects from a review queue in the web UI.
+- **Provider-agnostic LLM.** The LLM wrapper detects provider from URL. Swapping from NVIDIA API to a local llama.cpp server is a config change.
 
 ---
 
 ## 2. System Topology
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        VERCEL (Next.js)                     │
-│                                                             │
-│  Web UI ─── /api/agents/chat ──┐                            │
-│  Web UI ─── /api/agents/reports ──┤  (writes to agent_jobs) │
-│                                   ▼                         │
-│                            ┌──────────┐                     │
-│                            │ Postgres │                     │
-│                            └──────────┘                     │
-└─────────────────────────────────────────────────────────────┘
-                                 │
-                    ┌────────────┼────────────┐
-                    ▼            ▼            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    DOCKER COMPOSE STACK                      │
-│                                                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ Orchestrator  │  │  Small Cap   │  │  Long Term       │  │
-│  │              │  │  Trader      │  │  Investor        │  │
-│  │ - Routes jobs│  │              │  │                  │  │
-│  │ - Manages    │  │ - Pre-market │  │ - Macro analysis │  │
-│  │   memory     │  │   scans      │  │ - Portfolio      │  │
-│  │ - Schedules  │  │ - Dilution   │  │   construction   │  │
-│  │   cron work  │  │   analysis   │  │ - Thesis         │  │
-│  │ - Research   │  │ - Technical  │  │   tracking       │  │
-│  │   routing    │  │   analysis   │  │                  │  │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────────┘  │
-│         │                 │                 │               │
-│         └────────┬────────┴─────────────────┘               │
-│                  ▼                                           │
-│  ┌──────────────────────┐  ┌────────────────────────────┐   │
-│  │   Discord Bot        │  │  Backtest Worker (existing) │  │
-│  │   (existing service) │  │  Redis + BullMQ (existing)  │  │
-│  └──────────────────────┘  └────────────────────────────┘   │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                    VERCEL (Next.js App)                    │
+│                                                          │
+│  Web UI ─── POST /api/agents/chat ──┐                    │
+│  Web UI ─── GET  /api/agents/chat ──┤  (polls for result)│
+│  Web UI ─── GET  /api/agents/reports ──┤                 │
+│  Web UI ─── PATCH /api/agents/reports/[id] ──┤           │
+│                                              ▼           │
+│                                     ┌──────────────┐     │
+│                                     │ Neon Postgres │     │
+│                                     │  (free tier)  │     │
+│                                     └──────────────┘     │
+└──────────────────────────────────────────────────────────┘
+                                            │
+                              ┌─────────────┼─────────────┐
+                              ▼             ▼             ▼
+┌──────────────────────────────────────────────────────────┐
+│          DOCKER COMPOSE (Home Server — 16GB RAM)          │
+│                                                          │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────┐  │
+│  │ Orchestrator  │  │  Small Cap   │  │  Long Term     │  │
+│  │  (512M)      │  │  Trader      │  │  Investor      │  │
+│  │              │  │  (512M)      │  │  (512M)        │  │
+│  │ - Routes jobs│  │              │  │                │  │
+│  │ - Macro cron │  │ - Pre-market │  │ - Macro        │  │
+│  │ - Memory     │  │   scans      │  │   analysis     │  │
+│  │   oversight  │  │ - Dilution   │  │ - Portfolio    │  │
+│  │ - Cross-agent│  │   analysis   │  │   construction │  │
+│  │   synthesis  │  │ - Technical  │  │ - Thesis       │  │
+│  │              │  │   analysis   │  │   tracking     │  │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬─────────┘  │
+│         │                 │                 │             │
+│         └────────┬────────┴─────────────────┘             │
+│                  ▼                                         │
+│          Neon Postgres (via WebSocket pool, max: 1 each)  │
+│          Total: ~1.5GB RAM, 3-6 DB connections            │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 3. Database Schema Additions
+## 3. Database Schema
 
-All new tables live alongside existing schema in `lib/db/schema.ts`. Migration will be a single Drizzle migration file.
+6 objects total: 5 new tables + 1 modified table. All live in `lib/db/schema.ts`.
 
-### 3.1 `agent_jobs` — Inter-agent job queue
-
-Reuses the proven `notification_jobs` pattern with agent-specific fields.
-
-```
-agent_jobs
-├── id                  SERIAL PRIMARY KEY
-├── source_agent        TEXT NOT NULL          -- 'orchestrator' | 'small_cap' | 'long_term' | 'user'
-├── target_agent        TEXT NOT NULL          -- 'orchestrator' | 'small_cap' | 'long_term'
-├── job_type            TEXT NOT NULL          -- 'research_request' | 'scan_result' | 'report' | 'chat_query' | 'scheduled_scan'
-├── payload             JSONB NOT NULL         -- job-specific structured data
-├── priority            INTEGER DEFAULT 0      -- higher = more urgent
-├── status              TEXT DEFAULT 'pending' -- 'pending' | 'claimed' | 'completed' | 'failed'
-├── attempts            INTEGER DEFAULT 0
-├── max_attempts        INTEGER DEFAULT 3
-├── result              JSONB                  -- agent output written on completion
-├── error               TEXT                   -- last error message
-├── dedupe_key          TEXT UNIQUE            -- prevents duplicate jobs
-├── claimed_at          TIMESTAMPTZ
-├── completed_at        TIMESTAMPTZ
-├── created_at          TIMESTAMPTZ DEFAULT now()
-├── updated_at          TIMESTAMPTZ DEFAULT now()
-└── INDEXES
-    ├── idx_agent_jobs_target_status ON (target_agent, status, priority DESC)
-    └── idx_agent_jobs_source ON (source_agent, created_at)
-```
-
-### 3.2 `agent_memory` — Per-agent persistent memory
-
-Each agent has isolated memory. The Orchestrator can read all agents' memory for oversight. Individual agents can only read their own.
-
-```
-agent_memory
-├── id                  SERIAL PRIMARY KEY
-├── agent_id            TEXT NOT NULL          -- 'orchestrator' | 'small_cap' | 'long_term'
-├── memory_type         TEXT NOT NULL          -- 'fact' | 'thesis' | 'watchlist' | 'scan_param' | 'performance'
-├── key                 TEXT NOT NULL          -- lookup key (e.g., ticker, theme name)
-├── value               JSONB NOT NULL         -- structured memory content
-├── confidence          REAL DEFAULT 1.0       -- 0.0-1.0, decays over time or on contradicting evidence
-├── expires_at          TIMESTAMPTZ            -- optional TTL for time-sensitive memories
-├── created_at          TIMESTAMPTZ DEFAULT now()
-├── updated_at          TIMESTAMPTZ DEFAULT now()
-└── CONSTRAINTS
-    ├── UNIQUE (agent_id, memory_type, key)
-    └── INDEX idx_agent_memory_agent_type ON (agent_id, memory_type)
-```
-
-### 3.3 `agent_reports` — Published research output
-
-Immutable once written. Reports are the primary output artifact of the system.
-
-```
-agent_reports
-├── id                  SERIAL PRIMARY KEY
-├── agent_id            TEXT NOT NULL
-├── report_type         TEXT NOT NULL          -- 'ticker_research' | 'dilution_analysis' | 'macro_summary' | 'portfolio_recommendation' | 'thesis_update'
-├── ticker              TEXT                   -- nullable (macro reports have no ticker)
-├── title               TEXT NOT NULL
-├── summary             TEXT NOT NULL          -- 2-3 sentence executive summary
-├── body                JSONB NOT NULL         -- structured report content (sections, data points, charts)
-├── data_sources        JSONB NOT NULL         -- array of { source, url, fetched_at } for audit trail
-├── confidence          REAL DEFAULT 0.5       -- agent's self-assessed confidence in the analysis
-├── created_at          TIMESTAMPTZ DEFAULT now()
-└── INDEXES
-    ├── idx_agent_reports_agent_type ON (agent_id, report_type, created_at DESC)
-    └── idx_agent_reports_ticker ON (ticker, created_at DESC)
-```
-
-### 3.4 `agent_conversations` — Chat history with users
-
-Stores the web UI and Discord conversation threads.
-
-```
-agent_conversations
-├── id                  SERIAL PRIMARY KEY
-├── user_id             TEXT NOT NULL           -- references users.id
-├── channel             TEXT NOT NULL            -- 'web' | 'discord'
-├── role                TEXT NOT NULL            -- 'user' | 'assistant' | 'system'
-├── content             TEXT NOT NULL
-├── agent_id            TEXT                     -- which agent responded (null for user messages)
-├── metadata            JSONB                    -- tool calls, report references, etc.
-├── created_at          TIMESTAMPTZ DEFAULT now()
-└── INDEXES
-    ├── idx_agent_conversations_user ON (user_id, created_at DESC)
-    └── idx_agent_conversations_channel ON (channel, user_id, created_at DESC)
-```
-
----
-
-## 4. Agent Specifications
-
-### 4.1 Orchestrator
-
-**Runtime:** Long-running Node.js process in Docker Compose.
-**Poll interval:** 2 seconds on `agent_jobs` where `target_agent = 'orchestrator'`.
-**Schedule:** Cron triggers at 6:00 AM EST (pre-market prep), 9:30 AM EST (market open), 4:30 PM EST (market close summary).
-
-**Responsibilities:**
-
-1. **Request routing (Research Analyst logic).** When a user query or scheduled scan arrives, the Orchestrator classifies it using deterministic rules — not an LLM call:
-   - Market cap < $200M AND pre-market gain >= 50% → route to `small_cap`
-   - Macro/sector/commodity/interest rate topic → route to `long_term`
-   - Ambiguous or multi-domain → split into sub-jobs, one per agent
-   - Simple factual lookup → handle directly via Polygon/AskEdgar without agent delegation
-
-2. **Memory oversight.** The Orchestrator can read all agents' memory rows. It uses this to detect contradictions (e.g., Small Cap agent is bullish on a ticker that Long Term agent flagged as fundamentally deteriorating) and inject context when routing jobs.
-
-3. **Report aggregation.** When agents complete reports, the Orchestrator receives the completion event, optionally adds cross-agent context, and pushes the final report to the appropriate output channel (web notification, Discord embed).
-
-4. **Schedule management.** Owns the cron schedule. At each trigger, it creates `scheduled_scan` jobs for each agent based on their registered scan parameters.
-
-**LLM usage:** The Orchestrator calls the LLM only for:
-- Synthesizing cross-agent summaries
-- Answering user chat queries that require reasoning (not routing)
-- Generating the daily briefing from aggregated agent outputs
-
-### 4.2 Dilutionary Small Cap Trader
-
-**Runtime:** Long-running Node.js process in Docker Compose.
-**Poll interval:** 5 seconds on `agent_jobs` where `target_agent = 'small_cap'`.
-**Autonomous trigger:** Pre-market scan at 7:00 AM EST. Checks Polygon.io for stocks matching: close >= $0.75, pre-market gain >= 50%, market cap < $200M.
-
-**Private state (in `agent_memory`):**
-- `scan_param` entries: threshold values (price floor, gain %, market cap ceiling)
-- `watchlist` entries: tickers currently being tracked with entry/exit levels
-- `fact` entries: per-ticker dilution history, historical performance notes
-- `performance` entries: accuracy of past calls (predicted vs actual outcome)
-
-**Capabilities:**
-1. **Pre-market scanner.** Fetches Polygon.io snapshot data, filters against scan parameters, produces candidate list.
-2. **Dilution analysis.** For each candidate, queries AskEdgar for SEC filings (S-3, prospectus supplements, 8-K dilution announcements). Cross-references with historical dilution patterns stored in memory.
-3. **Technical analysis.** Fetches OHLCV from Polygon.io, applies pattern recognition (support/resistance, volume profile, gap analysis) using the LLM with structured output schema.
-4. **Report generation.** Produces a `dilution_analysis` report with: ticker, dilution risk score, technical setup, entry/exit levels, confidence rating.
-
-**LLM usage:** Every analysis step after the initial scan filter. The LLM receives structured data (not raw HTML) and returns structured JSON per the output schema.
-
-**Historical research import:** You mentioned importing historical research reports. This will be a one-time bulk insert into `agent_memory` with `memory_type = 'fact'` and the ticker as the key. We will need a migration script for this — format TBD based on what your existing research looks like.
-
-### 4.3 Long Term Investor
-
-**Runtime:** Long-running Node.js process in Docker Compose.
-**Poll interval:** 10 seconds on `agent_jobs` where `target_agent = 'long_term'`.
-**Autonomous trigger:** Weekly macro scan on Sunday evening. Daily sector rotation check at 5:00 PM EST.
-
-**Private state (in `agent_memory`):**
-- `thesis` entries: active investment theses with entry conditions, invalidation criteria, and target exit signals
-- `watchlist` entries: sectors and names under observation
-- `fact` entries: macro indicators being tracked (Fed funds rate, CPI, PMI, yield curve)
-- `scan_param` entries: sector allocation targets, risk tolerance parameters
-- `performance` entries: thesis outcome tracking (validated, invalidated, in-progress)
-
-**Capabilities:**
-1. **Macro analysis.** Fetches economic data via Polygon.io and supplementary sources. Identifies macro regime (expansion, contraction, transition) and sector implications.
-2. **Sector screening.** Narrows from macro thesis to specific sectors, then to individual names using fundamental data from AskEdgar (10-K, 10-Q financials).
-3. **Portfolio construction.** Given user's age, time horizon, and goals (stored in Orchestrator memory as user profile), recommends a portfolio with position sizing rationale and suitability assessment.
-4. **Thesis lifecycle management.** Each thesis is a living document in memory. The agent updates thesis status based on new data, marks theses as invalidated when conditions change, and signals when a thesis has fully played out.
-
-**LLM usage:** All analysis and thesis generation. The LLM receives structured financial data and returns structured JSON. Portfolio recommendations require explicit suitability disclaimers in the output schema.
-
----
-
-## 5. Agent Registration & Lifecycle
-
-### 5.1 Agent Interface
-
-Every agent implements a common TypeScript interface:
-
-```typescript
-interface AgentDefinition {
-  id: string;                          // 'orchestrator' | 'small_cap' | 'long_term'
-  name: string;                        // Human-readable name
-  description: string;                 // What this agent does
-  version: string;                     // Semver for schema compatibility
-  pollInterval: number;                // Milliseconds between job queue polls
-  schedules: CronSchedule[];           // Autonomous cron triggers
-  capabilities: string[];              // Registered capability names
-  outputSchemas: Record<string, ZodSchema>; // Per-report-type output validation
-}
-
-interface AgentRuntime {
-  start(): Promise<void>;              // Begin polling + cron registration
-  stop(): Promise<void>;               // Graceful shutdown
-  health(): Promise<AgentHealthStatus>; // For Docker healthcheck
-  processJob(job: AgentJob): Promise<AgentJobResult>; // Core work handler
-}
-```
-
-### 5.2 Explicit Registration
-
-At startup, each agent service calls `registry.register()` which:
-1. Writes a heartbeat row to a `agent_registry` table (agent_id, version, last_heartbeat, status)
-2. Validates that its output schemas are compatible with the Orchestrator's expectations
-3. Begins its poll loop and registers its cron schedules
-
-The Orchestrator checks `agent_registry` heartbeats before routing jobs. If an agent has not heartbeated in 3x its poll interval, the Orchestrator marks it `unhealthy` and stops routing new work to it.
-
-### 5.3 `agent_registry` table
+### 3.1 `agent_registry` — Agent health tracking
 
 ```
 agent_registry
-├── agent_id            TEXT PRIMARY KEY
-├── version             TEXT NOT NULL
-├── status              TEXT DEFAULT 'starting' -- 'starting' | 'healthy' | 'unhealthy' | 'stopped'
-├── capabilities        JSONB NOT NULL          -- array of capability names
+├── id                  TEXT PRIMARY KEY              -- 'orchestrator' | 'small-cap-trader' | 'long-term-investor'
+├── display_name        TEXT NOT NULL
+├── description         TEXT NOT NULL
+├── status              TEXT NOT NULL DEFAULT 'offline'  -- 'online' | 'offline' | 'degraded'
+├── capabilities        JSONB NOT NULL DEFAULT '[]'      -- ["chat", "research", "trade-analysis", "macro"]
+├── config              JSONB NOT NULL DEFAULT '{}'      -- agent-specific config (model, temperature, etc.)
 ├── last_heartbeat      TIMESTAMPTZ
-├── started_at          TIMESTAMPTZ DEFAULT now()
-├── metadata            JSONB                   -- config, poll interval, etc.
+├── created_at          TIMESTAMPTZ DEFAULT now()
+└── updated_at          TIMESTAMPTZ DEFAULT now()
+
+-- No indexes beyond PK — max 3 rows.
 ```
+
+### 3.2 `agent_jobs` — Inter-agent job queue
+
+```
+agent_jobs
+├── id                  TEXT PRIMARY KEY              -- uuid
+├── agent_id            TEXT NOT NULL                 -- target agent (soft FK to agent_registry.id)
+├── user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
+├── job_type            TEXT NOT NULL                 -- 'chat' | 'research' | 'trade-analysis' | 'macro-summary'
+├── status              TEXT NOT NULL DEFAULT 'queued'  -- 'queued' | 'processing' | 'completed' | 'failed'
+├── priority            INTEGER NOT NULL DEFAULT 0   -- higher = more urgent
+├── input               JSONB NOT NULL               -- job-specific input payload
+├── result              JSONB                        -- job output when completed
+├── error_message       TEXT                         -- error detail when failed
+├── attempt             INTEGER NOT NULL DEFAULT 0   -- current attempt number
+├── max_attempts        INTEGER NOT NULL DEFAULT 3
+├── next_retry_at       TIMESTAMPTZ                  -- null = ready now; set for backoff
+├── created_at          TIMESTAMPTZ DEFAULT now()
+├── started_at          TIMESTAMPTZ
+├── completed_at        TIMESTAMPTZ
+└── INDEXES
+    ├── idx_agent_jobs_poll ON (agent_id, status, next_retry_at, priority DESC, created_at)
+    └── idx_agent_jobs_user_status ON (user_id, status, created_at)
+```
+
+**Poll query (FOR UPDATE SKIP LOCKED):**
+
+```sql
+UPDATE agent_jobs
+SET status = 'processing', started_at = now(), attempt = attempt + 1
+WHERE id = (
+  SELECT id FROM agent_jobs
+  WHERE agent_id = $1
+    AND status = 'queued'
+    AND (next_retry_at IS NULL OR next_retry_at <= now())
+  ORDER BY priority DESC, created_at ASC
+  LIMIT 1
+  FOR UPDATE SKIP LOCKED
+)
+RETURNING *;
+```
+
+### 3.3 `agent_reports` — Published research output (supervised)
+
+```
+agent_reports
+├── id                  TEXT PRIMARY KEY              -- uuid
+├── agent_id            TEXT NOT NULL
+├── user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
+├── job_id              TEXT                          -- optional FK to agent_jobs.id
+├── report_type         TEXT NOT NULL                 -- 'trade-analysis' | 'research' | 'macro-summary' | 'scan'
+├── title               TEXT NOT NULL
+├── summary             TEXT
+├── report_json         JSONB NOT NULL
+├── status              TEXT NOT NULL DEFAULT 'pending_review'  -- 'pending_review' | 'approved' | 'rejected' | 'archived'
+├── reviewed_at         TIMESTAMPTZ
+├── review_notes        TEXT
+├── created_at          TIMESTAMPTZ DEFAULT now()
+└── INDEXES
+    ├── idx_agent_reports_user_status ON (user_id, status, created_at DESC)
+    └── idx_agent_reports_agent ON (agent_id, created_at DESC)
+```
+
+### 3.4 `agent_conversations` — Chat history (replaces `jarvis_conversations`)
+
+```
+agent_conversations
+├── id                  TEXT PRIMARY KEY
+├── user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
+├── agent_id            TEXT NOT NULL
+├── session_id          TEXT NOT NULL
+├── role                TEXT NOT NULL                 -- 'user' | 'assistant' | 'system'
+├── content             TEXT NOT NULL
+├── channel             TEXT NOT NULL DEFAULT 'web'  -- 'web' (future: 'discord', 'api')
+├── context_snapshot    JSONB
+├── created_at          TIMESTAMPTZ DEFAULT now()
+└── INDEXES
+    ├── idx_agent_conversations_user_session ON (user_id, session_id, created_at)
+    └── idx_agent_conversations_agent ON (agent_id, created_at)
+```
+
+### 3.5 `agent_request_log` — Token/cost tracking (replaces `jarvis_request_log`)
+
+```
+agent_request_log
+├── id                   TEXT PRIMARY KEY
+├── user_id              TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
+├── agent_id             TEXT NOT NULL
+├── mode                 TEXT NOT NULL
+├── model_used           TEXT                         -- tracks which model was used
+├── input_tokens         INTEGER NOT NULL DEFAULT 0
+├── output_tokens        INTEGER NOT NULL DEFAULT 0
+├── total_tokens         INTEGER NOT NULL DEFAULT 0
+├── estimated_cost_cents INTEGER DEFAULT 0           -- estimated cost in cents
+├── duration_ms          INTEGER NOT NULL DEFAULT 0
+├── success              INTEGER NOT NULL DEFAULT 1
+├── source_count         INTEGER NOT NULL DEFAULT 0
+├── chunk_count          INTEGER NOT NULL DEFAULT 0
+├── created_at           TIMESTAMPTZ DEFAULT now()
+└── INDEXES
+    ├── idx_agent_request_log_user_created ON (user_id, created_at)
+    ├── idx_agent_request_log_agent_created ON (agent_id, created_at)
+    └── idx_agent_request_log_created ON (created_at)
+```
+
+### 3.6 `agent_memory` — Modified (add `agent_id` column)
+
+```
+agent_memory (MODIFIED)
+├── id                  TEXT PRIMARY KEY
+├── user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
+├── agent_id            TEXT NOT NULL DEFAULT 'orchestrator'   -- NEW COLUMN
+├── category            TEXT NOT NULL   -- expanded: 'fact' | 'thesis' | 'watchlist' | 'scan_param' | 'performance' | 'trade_insight' | 'user_preference' | 'strategy_note' | 'macro_fact'
+├── key                 TEXT NOT NULL
+├── value               TEXT NOT NULL
+├── value_json          JSONB
+├── created_at          TIMESTAMPTZ DEFAULT now()
+├── updated_at          TIMESTAMPTZ DEFAULT now()
+├── expires_at          TIMESTAMPTZ
+└── CONSTRAINTS
+    ├── UNIQUE(user_id, agent_id, category, key)  -- replaces old UNIQUE(user_id, category, key)
+    └── INDEX agent_memory_user_agent_category_idx ON (user_id, agent_id, category)
+```
+
+**Migration strategy:** Add column `agent_id` with default `'jarvis'`. Drop old unique constraint. Add new unique constraint. Update all existing rows to `agent_id = 'orchestrator'`.
 
 ---
 
-## 6. LLM Integration
+## 4. Data Migration Plan
 
-### 6.1 Single Call Wrapper
+Two separate migrations to allow rollback between them.
 
-All LLM calls go through one function. No agent calls the NVIDIA API directly.
+### Migration 0011 — Add new tables, alter agent_memory
+
+1. CREATE TABLE `agent_registry`
+2. CREATE TABLE `agent_jobs`
+3. CREATE TABLE `agent_reports`
+4. CREATE TABLE `agent_conversations`
+5. CREATE TABLE `agent_request_log`
+6. ALTER TABLE `agent_memory` — add `agent_id` column (default `'jarvis'`)
+7. DROP old unique constraint on `agent_memory`
+8. ADD new unique constraint `UNIQUE(user_id, agent_id, category, key)`
+9. UPDATE `agent_memory` SET `agent_id = 'orchestrator'` WHERE `agent_id = 'jarvis'`
+10. INSERT seed rows into `agent_registry` for 3 agents
+11. Copy data from `jarvis_conversations` → `agent_conversations` (map columns)
+12. Copy data from `jarvis_request_log` → `agent_request_log` (map columns, set `estimated_cost_cents = 0` for historical rows)
+
+### Migration 0012 — Drop legacy tables (after confirming 0011 works)
+
+1. DROP TABLE `jarvis_conversations`
+2. DROP TABLE `jarvis_request_log`
+
+---
+
+## 5. Connection Pooling Strategy
+
+Neon free tier: 20 connections max, 750 compute-hours/month.
+
+| Consumer | Connection Type | Count | Notes |
+|----------|----------------|-------|-------|
+| Vercel app (reads) | HTTP (`neon()`) | 0 pooled | Stateless HTTP, no persistent connection |
+| Vercel app (transactions) | WebSocket Pool | 1-3 | Existing `getPoolDb()`, bulk/import only |
+| Orchestrator | WebSocket Pool | 1 | `max: 1` |
+| Small Cap Trader | WebSocket Pool | 1 | `max: 1` |
+| Long Term Investor | WebSocket Pool | 1 | `max: 1` |
+
+**Steady state: 3-6 connections.** Well within the 20-connection limit.
+
+Pool config per agent:
 
 ```typescript
-// lib/agents/llm.ts
-async function callLLM(params: {
-  agentId: string;
-  systemPrompt: string;
-  messages: ChatMessage[];
-  outputSchema?: ZodSchema;       // If provided, enforce structured output
-  temperature?: number;            // Default 0.1 for analytical work
-  maxTokens?: number;              // Default 4096
-}): Promise<LLMResponse>
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 1,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
+});
 ```
 
-**Provider:** NVIDIA API Platform
-**Model:** `meta/llama-3.1-70b-instruct`
-**Endpoint:** `https://integrate.api.nvidia.com/v1`
-**Auth:** `NDIA_API_KEY` env var
+Agent heartbeats every 30 seconds keep Neon warm. Cold starts take 1-3 seconds, handled by the 10s connection timeout.
 
-### 6.2 System Prompts
+---
 
-Each agent has a dedicated system prompt file:
+## 6. Agent Specifications
+
+### 6.1 Orchestrator
+
+**Runtime:** Long-running Node.js process in Docker Compose (512M memory limit).
+**Poll interval:** 5 seconds on `agent_jobs` where `agent_id = 'orchestrator'`.
+**Macro cron:** `setInterval`-based, checks hourly if current hour = `MACRO_CRON_HOUR` (default 6) in `America/New_York`. Runs macro pipeline if today's summary is missing. Replaces the Vercel cron at `/api/jarvis/cron/macro-summary`.
+
+**Responsibilities:**
+
+1. **Request routing (Research Analyst logic).** Deterministic rules — no LLM call for routing:
+   - Market cap < $200M AND pre-market gain >= 50% → route to `small-cap-trader`
+   - Macro/sector/commodity/interest rate topic → route to `long-term-investor`
+   - Ambiguous or multi-domain → split into sub-jobs, one per agent
+   - Simple factual lookup → handle directly via Massive API/AskEdgar without agent delegation
+
+2. **Memory oversight.** Reads all agents' memory rows. Detects contradictions (e.g., Small Cap is bullish on a ticker that Long Term flagged as fundamentally deteriorating) and injects context when routing.
+
+3. **Report aggregation.** Receives completion events, optionally adds cross-agent context, writes final report to `agent_reports` with `status = 'pending_review'`.
+
+4. **Macro cron.** Runs the daily macro headline scraping pipeline that was previously a Vercel cron job. Uses `setInterval` inside the container.
+
+**LLM usage:** Only for synthesizing cross-agent summaries, answering user chat queries that require reasoning, and generating the daily briefing.
+
+### 6.2 Dilutionary Small Cap Trader
+
+**Runtime:** Long-running Node.js process in Docker Compose (512M memory limit).
+**Poll interval:** 5 seconds on `agent_jobs` where `agent_id = 'small-cap-trader'`.
+**Autonomous trigger:** Pre-market scan at 7:00 AM EST. Checks Massive API for stocks matching: close >= $0.75, pre-market gain >= 50%, market cap < $200M.
+
+**Private state (in `agent_memory`):**
+- `scan_param` — threshold values (price floor, gain %, market cap ceiling)
+- `watchlist` — tickers currently being tracked with entry/exit levels
+- `fact` — per-ticker dilution history, historical performance notes
+- `performance` — accuracy of past calls (predicted vs actual outcome)
+
+**Capabilities:**
+1. **Pre-market scanner.** Fetches Massive API snapshot data, filters against scan parameters, produces candidate list.
+2. **Dilution analysis.** For each candidate, queries AskEdgar for SEC filings (S-3, prospectus supplements, 8-K dilution announcements). Cross-references with historical dilution patterns in memory.
+3. **Technical analysis.** Fetches OHLCV from Massive API, applies pattern recognition (support/resistance, volume profile, gap analysis) using the LLM with structured output.
+4. **Report generation.** Produces a report with: ticker, dilution risk score, technical setup, entry/exit levels, confidence rating. Status starts as `pending_review`.
+
+**LLM usage:** Every analysis step after the initial scan filter. LLM receives structured data (not raw HTML) and returns structured JSON.
+
+### 6.3 Long Term Investor
+
+**Runtime:** Long-running Node.js process in Docker Compose (512M memory limit).
+**Poll interval:** 5 seconds on `agent_jobs` where `agent_id = 'long-term-investor'`.
+**Autonomous trigger:** Weekly macro scan on Sunday evening. Daily sector rotation check at 5:00 PM EST.
+
+**Private state (in `agent_memory`):**
+- `thesis` — active investment theses with entry conditions, invalidation criteria, target exit signals
+- `watchlist` — sectors and names under observation
+- `fact` / `macro_fact` — macro indicators (Fed funds rate, CPI, PMI, yield curve)
+- `scan_param` — sector allocation targets, risk tolerance parameters
+- `performance` — thesis outcome tracking (validated, invalidated, in-progress)
+
+**Capabilities:**
+1. **Macro analysis.** Fetches economic data via Massive API and supplementary sources. Identifies macro regime (expansion, contraction, transition) and sector implications.
+2. **Sector screening.** Narrows from macro thesis to specific sectors, then to individual names using fundamental data from AskEdgar (10-K, 10-Q).
+3. **Portfolio construction.** Given user's profile (age, time horizon, goals in Orchestrator memory), recommends a portfolio with position sizing rationale and suitability assessment.
+4. **Thesis lifecycle management.** Each thesis is a living document in memory. Updates thesis status on new data, marks theses as invalidated when conditions change.
+
+**LLM usage:** All analysis and thesis generation. Structured financial data in, structured JSON out. Portfolio recommendations include suitability disclaimers in the output schema.
+
+---
+
+## 7. Agent Registration & Lifecycle
+
+### 7.1 Agent Interface
+
+```typescript
+interface AgentConfig {
+  id: AgentId;
+  displayName: string;
+  model: string;              // e.g. 'deepseek-v3.2' or 'local/mistral-7b'
+  temperature: number;
+  capabilities: JobType[];
+  systemPrompt: string;
+}
+
+interface WorkerConfig {
+  agentId: AgentId;
+  pollIntervalMs: number;     // default 5000
+  handlers: Record<JobType, JobHandler>;
+}
+
+interface JobHandler {
+  (job: AgentJob, config: AgentConfig): Promise<{
+    result: unknown;
+    report?: { title: string; summary: string; reportJson: unknown; reportType: string };
+  }>;
+}
+```
+
+### 7.2 Explicit Registration
+
+At startup, each agent service:
+1. Writes/updates its row in `agent_registry` (status → `'online'`, heartbeat → `now()`)
+2. Begins its poll loop (`worker.ts`)
+3. Starts a 30-second heartbeat interval (`heartbeat.ts`)
+4. If Orchestrator, also starts the macro cron (`macro-cron.ts`)
+
+The Orchestrator checks `agent_registry` heartbeats before routing jobs. If an agent has not heartbeated in 3× its poll interval, the Orchestrator marks it `status = 'degraded'` and stops routing new work to it.
+
+### 7.3 Graceful Shutdown
+
+On `SIGTERM` / `SIGINT`:
+1. Stop accepting new jobs
+2. Finish current job (or mark it back to `queued` if taking too long)
+3. Update `agent_registry` status to `'offline'`
+4. Close database pool
+5. Exit
+
+---
+
+## 8. LLM Integration
+
+### 8.1 Provider-Agnostic Wrapper
+
+All LLM calls go through `lib/agents/llm-client.ts`. No agent calls any API directly.
+
+```typescript
+interface LlmRequest {
+  systemPrompt: string;
+  userMessage: string;
+  temperature?: number;
+  model?: string;
+}
+
+interface LlmResponse {
+  content: string;
+  modelUsed: string;
+  inputTokens: number;
+  outputTokens: number;
+  durationMs: number;
+}
+
+interface LlmProviderConfig {
+  apiKey: string;              // AGENT_API_KEY env var
+  baseUrl: string;             // AGENT_API_BASE_URL env var
+  model: string;               // AGENT_MODEL, can be overridden per-agent
+  timeoutMs: number;           // AGENT_LLM_TIMEOUT_MS, default 30000
+}
+
+function getLlmConfig(): LlmProviderConfig;
+async function callLlm(request: LlmRequest, config?: Partial<LlmProviderConfig>): Promise<LlmResponse>;
+```
+
+### 8.2 Provider Detection
+
+The wrapper detects provider from the base URL:
+- `https://integrate.api.nvidia.com/*` → NVIDIA API (current provider)
+- `http://localhost:*` or `http://127.0.0.1:*` → local llama.cpp server (OpenAI-compatible)
+- Any other URL → treated as generic OpenAI-compatible API
+
+All providers use the `/v1/chat/completions` format. Swapping providers is a config change (env vars only).
+
+### 8.3 Local Model Support
+
+For running on the home server without API costs:
+- llama.cpp with a 7B quantized model fits in 16GB RAM alongside the Docker agents
+- Set `AGENT_API_BASE_URL=http://host.docker.internal:8080/v1/chat/completions` and `AGENT_API_KEY=not-needed`
+- Cost tracking records `estimated_cost_cents = 0` for local models
+
+### 8.4 System Prompts
 
 ```
 lib/agents/prompts/
@@ -311,274 +444,623 @@ lib/agents/prompts/
 └── long-term.md          -- macro analysis framework, portfolio theory, suitability rules
 ```
 
-Each prompt enforces a strict JSON output schema per job type. The wrapper validates the response against the Zod schema before returning.
+### 8.5 Env Var Unification
+
+All LLM config uses `AGENT_*` prefix with fallback to legacy names:
+
+| New Name | Fallback | Default |
+|----------|----------|---------|
+| `AGENT_API_KEY` | `NVIDIA_API_KEY` | (required) |
+| `AGENT_API_BASE_URL` | `JARVIS_API_BASE_URL` | `https://integrate.api.nvidia.com/v1/chat/completions` |
+| `AGENT_MODEL` | `JARVIS_MODEL` | `deepseek-v3.2` |
+| `AGENT_LLM_TIMEOUT_MS` | `JARVIS_TIMEOUT_MS` | `30000` |
 
 ---
 
-## 7. Data Source Integration
+## 9. Shared Library: `lib/agents/` (16 files)
 
-### 7.1 Polygon.io
+| # | File | Purpose | Key Exports |
+|---|------|---------|-------------|
+| 1 | `types.ts` | Type definitions | `AgentId`, `JobType`, `JobStatus`, `ReportStatus`, `MemoryCategory`, `AgentJob`, `AgentReport`, `AgentConfig`, `LlmRequest`, `LlmResponse`, `JobHandler`, `WorkerConfig`, `LlmProviderConfig`, `TokenTrackingEntry` |
+| 2 | `db.ts` | DB connection factory for Docker services | `getAgentDb(): DrizzleClient` (single pooled WebSocket connection) |
+| 3 | `llm-client.ts` | Provider-agnostic LLM wrapper | `getLlmConfig()`, `callLlm(request, config?)` |
+| 4 | `circuit-breaker.ts` | Per-agent circuit breaker (same pattern as existing) | `CircuitBreaker` class — 5 failures = open, 60s reset |
+| 5 | `rate-limit.ts` | Per-user rate limiting | 30 req/hr, in-memory |
+| 6 | `retry.ts` | Backoff calculation | `calculateBackoffMs(attempt)`, `shouldRetry(attempt, maxAttempts)` |
+| 7 | `token-tracking.ts` | Cost estimation + request logging | `estimateCostCents(model, inputTokens, outputTokens)`, `logAgentRequest(db, entry)` |
+| 8 | `job-queue.ts` | Job CRUD with FOR UPDATE SKIP LOCKED | `createJob()`, `pollForJob()`, `completeJob()`, `failJob()`, `getJobStatus()` |
+| 9 | `heartbeat.ts` | Agent heartbeat updater | `startHeartbeat(db, agentId, intervalMs)` |
+| 10 | `memory.ts` | Scoped memory CRUD | `readMemory()`, `writeMemory()`, `upsertMemory()` — all filtered by `agent_id` |
+| 11 | `context.ts` | Context assembly for LLM calls | `buildAgentContext(db, userId, agentId)` — trades, macro, memory |
+| 12 | `prompts.ts` | System prompts per agent | `getSystemPrompt(agentId, mode)`, loads from `prompts/*.md` |
+| 13 | `config.ts` | Agent config registry | `AGENT_CONFIGS: Record<AgentId, AgentConfig>` with handlers |
+| 14 | `worker.ts` | Poll loop runtime | `startWorker(config: WorkerConfig): Promise<void>` — infinite loop with graceful shutdown |
+| 15 | `macro-cron.ts` | Macro headline cron | `startMacroCron(): void` — setInterval, checks hour in `America/New_York` |
+| 16 | `admin.ts` | Admin utilities | `requireAgentAdmin()` — validates `x-agent-admin-key` header |
 
-**Configured:** Yes (starter tier, in .env)
-**Rate limit:** 5 calls/minute on free tier
-**Usage pattern:** Sequential fetches with 12-second spacing between calls. No parallel Polygon requests.
-
-```typescript
-// lib/agents/data/polygon.ts
-class PolygonClient {
-  async getSnapshot(ticker: string): Promise<TickerSnapshot>;
-  async getOHLCV(ticker: string, timespan: string, from: string, to: string): Promise<Candle[]>;
-  async getMarketStatus(): Promise<MarketStatus>;
-  async getGainers(type: 'premarket' | 'regular'): Promise<GainerEntry[]>;
-}
-```
-
-### 7.2 AskEdgar
-
-**Configured:** Key acquired (`ASKEDGAR_API_KEY`)
-**Usage pattern:** Parallel fetches via `Promise.allSettled` (AskEdgar has generous rate limits).
-
-```typescript
-// lib/agents/data/askedgar.ts
-class AskEdgarClient {
-  async getFilings(ticker: string, types: string[]): Promise<Filing[]>;
-  async getFinancials(ticker: string, periods: number): Promise<FinancialData>;
-  async searchFilings(query: string): Promise<SearchResult[]>;
-}
-```
-
-### 7.3 Rate Limit Coordinator
-
-Because both agents share the same Polygon API key, a central rate limiter prevents exceeding 5 req/min:
+### Key Type Definitions
 
 ```typescript
-// lib/agents/data/rate-limiter.ts
-class PostgresRateLimiter {
-  // Uses a simple counter row in Postgres, checked before each external call
-  async acquire(source: 'polygon' | 'askedgar'): Promise<boolean>;
-  async release(source: 'polygon' | 'askedgar'): Promise<void>;
-}
+export type AgentId = 'orchestrator' | 'small-cap-trader' | 'long-term-investor';
+export type JobType = 'chat' | 'research' | 'trade-analysis' | 'macro-summary';
+export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed';
+export type ReportStatus = 'pending_review' | 'approved' | 'rejected' | 'archived';
+export type MemoryCategory = 'fact' | 'thesis' | 'watchlist' | 'scan_param' | 'performance'
+  | 'trade_insight' | 'user_preference' | 'strategy_note' | 'macro_fact';
 ```
-
-This is simpler than a Redis-based limiter and keeps Postgres as the single coordination layer.
 
 ---
 
-## 8. Channel Abstraction
+## 10. Error Handling & Retry
 
-### 8.1 Web UI → Orchestrator
+### Exponential Backoff
 
-The Next.js API route `POST /api/agents/chat` accepts user messages and writes them to `agent_jobs` with `source_agent = 'user'` and `target_agent = 'orchestrator'`. It then polls for the completed job result (or uses Server-Sent Events if you want real-time streaming later).
-
-```
-POST /api/agents/chat
-Body: { message: string, conversationId?: string }
-Auth: Existing JWT session
-Response: { jobId: string, status: 'queued' }
-
-GET /api/agents/chat/:jobId
-Auth: Existing JWT session
-Response: { status: 'pending' | 'completed', result?: AgentResponse }
+```typescript
+function calculateBackoffMs(attempt: number): number {
+  return Math.pow(2, attempt) * 2000;  // attempt 1 = 2s, attempt 2 = 8s, attempt 3 = 32s
+}
 ```
 
-### 8.2 Discord → Orchestrator
+### Retry Flow
 
-The existing Discord bot gets a new slash command: `/ask <query>`. This command:
-1. Resolves the Discord user to a Nexus user via `discord_user_links`
-2. Writes an `agent_job` with `source_agent = 'user'`, `target_agent = 'orchestrator'`, `channel = 'discord'`
-3. Defers the Discord reply
-4. Polls `agent_jobs` for completion
-5. Formats the result as a Discord embed and edits the deferred reply
+1. Job fails during processing
+2. If `attempt < max_attempts`: set `status = 'queued'`, `next_retry_at = now() + backoff`
+3. Job becomes eligible for polling again after `next_retry_at`
+4. **Dead letter:** When `attempt >= max_attempts` (default 3), set `status = 'failed'` permanently. Error preserved in `error_message`.
 
-### 8.3 Orchestrator → Discord (outbound)
+### Circuit Breaker
 
-When an agent produces a report autonomously (e.g., Small Cap scanner finds a match), the Orchestrator:
-1. Writes the report to `agent_reports`
-2. Enqueues a `notification_job` (existing pattern) with the report summary formatted for Discord
-3. The existing notification processor delivers it
-
-This means zero new Discord delivery infrastructure. We reuse `notification_jobs` and `sendDiscordDms`.
+Per-agent, in-memory state:
+- **Threshold:** 5 consecutive failures → circuit opens
+- **Reset:** 60 seconds after opening
+- **When open:** Jobs are immediately failed without attempting LLM call
 
 ---
 
-## 9. Docker Compose Additions
+## 11. Token Observability & Budget
+
+### Per-Request Logging
+
+Every LLM call writes to `agent_request_log` with:
+- `agent_id` — which agent made the call
+- `model_used` — actual model string (e.g., `deepseek-v3.2`)
+- `estimated_cost_cents` — calculated from pricing table
+
+### Cost Estimation
+
+```typescript
+const MODEL_PRICING: Record<string, { inputPer1k: number; outputPer1k: number }> = {
+  'deepseek-v3.2': { inputPer1k: 0.014, outputPer1k: 0.014 },
+  'local/*': { inputPer1k: 0, outputPer1k: 0 },
+};
+```
+
+### Monthly Budget
+
+- Default: `AGENT_MONTHLY_BUDGET_CENTS=10000` ($100/month)
+- **Observability only in v1** — no hard enforcement, just dashboard tracking
+- UI warning at >80% used, critical alert at >100%
+
+### Admin Stats Endpoint
+
+`GET /api/agents/admin/stats` returns:
+
+```json
+{
+  "circuitBreakers": { "orchestrator": "closed", ... },
+  "today": {
+    "totalRequests": 42,
+    "totalTokens": 128000,
+    "estimatedCostCents": 180,
+    "successRate": 0.95,
+    "avgDurationMs": 2300,
+    "byAgent": { "orchestrator": { ... }, "small-cap-trader": { ... } }
+  },
+  "thisMonth": {
+    "totalTokens": 3200000,
+    "estimatedCostCents": 4480,
+    "budgetCents": 10000,
+    "budgetUsedPercent": 44.8
+  },
+  "agents": [
+    { "id": "orchestrator", "displayName": "Orchestrator", "status": "online", "lastHeartbeat": "..." }
+  ],
+  "pendingReports": 3,
+  "memory": { "total": 156, "byCategory": { "fact": 89, "thesis": 12, ... } },
+  "macroSummaries": { "latestGeneratedAt": "..." }
+}
+```
+
+---
+
+## 12. Supervised Mode (Level 1 Autonomy)
+
+### Flow
+
+1. Agent produces report → writes to `agent_reports` with `status = 'pending_review'`
+2. `AgentReportQueue.tsx` displays pending reports as cards
+3. Each card shows: agent name, report type, title, summary, timestamp
+4. User clicks **Approve** or **Reject**
+5. `PATCH /api/agents/reports/[id]` updates `status`, `reviewed_at`, `review_notes`
+
+### Status Transitions
+
+```
+pending_review → approved    (user approves)
+pending_review → rejected    (user rejects with notes)
+approved       → archived    (user archives old report)
+rejected       → archived    (user archives old report)
+```
+
+### UI Integration
+
+- Badge count on sidebar "Agents" tab shows number of `pending_review` reports
+- Report queue is a sub-tab within the Agents tab
+
+---
+
+## 13. API Route Migration
+
+All routes under `/api/jarvis/*` are replaced by `/api/agents/*`.
+
+### New Routes
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/api/agents/chat` | POST | Create chat job → returns `{ job_id }` |
+| `/api/agents/chat` | GET | Poll for result `?job_id=X` → returns `{ status, result?, error? }` |
+| `/api/agents/reports` | GET | List reports `?status=pending_review` |
+| `/api/agents/reports/[id]` | GET | Get single report |
+| `/api/agents/reports/[id]` | PATCH | Approve/reject: `{ status, review_notes? }` |
+| `/api/agents/research` | POST | Create research job |
+| `/api/agents/research` | GET | List past research reports |
+| `/api/agents/trade-analysis` | POST | Create trade analysis job |
+| `/api/agents/admin/stats` | GET | Admin dashboard data |
+| `/api/agents/admin/memory` | GET/DELETE | Admin memory management |
+| `/api/agents/macro-summary/latest` | GET | Latest macro summary |
+
+### Chat Polling Flow
+
+1. Client POSTs `{ message, session_id?, agent_id? }` to `/api/agents/chat`
+2. Server saves user message to `agent_conversations`, routes to agent via deterministic rules, creates `agent_jobs` row, returns `{ job_id }`
+3. Client polls `GET /api/agents/chat?job_id=X` every **2 seconds**
+4. Returns `{ status: 'completed', result: { message, session_id } }` or `{ status: 'failed', error }` or `{ status: 'queued' | 'processing' }`
+
+**Pros of polling vs SSE:** Simpler to implement, works through all proxies/CDNs, stateless server.
+**Cons:** 2s latency floor, unnecessary requests while waiting. SSE can be added later as an optimization.
+
+### Agent Routing Logic
+
+```typescript
+function routeToAgent(message: string, explicitAgentId?: string): AgentId {
+  if (explicitAgentId && isValidAgentId(explicitAgentId)) return explicitAgentId;
+  if (message.startsWith('/research ')) return 'small-cap-trader';
+  if (message.startsWith('/analyze')) return 'small-cap-trader';
+  return 'orchestrator';  // default
+}
+```
+
+---
+
+## 14. Frontend Migration
+
+### New Components
+
+| Component | Replaces | Purpose |
+|-----------|----------|---------|
+| `AgentChat.tsx` | `JarvisChat.tsx` | Polling-based chat with "Thinking..." indicator, agent selector dropdown |
+| `AgentTab.tsx` | `JarvisTab.tsx` | Wraps AgentChat, adds sub-tabs: Chat, Reports, Stats |
+| `AgentReportQueue.tsx` | (new) | Lists `pending_review` reports as cards with Approve/Reject buttons |
+| `AgentStats.tsx` | (new) | Per-agent token usage, cost, latency charts. Budget tracking display. |
+
+### Sidebar Change
+
+- Tab key `'jarvis'` → `'agents'`
+- Label "Jarvis" → "Agents"
+- Badge count shows pending report count
+
+### Kept Renderers (no functional changes)
+
+- `JarvisStructuredResponse.tsx` — rename to `AgentStructuredResponse.tsx`
+- `JarvisDilutionReport.tsx` — rename to `AgentDilutionReport.tsx`
+- `JarvisMacroSummary.tsx` — rename to `AgentMacroSummary.tsx`
+
+---
+
+## 15. Docker Infrastructure
+
+### Single Shared Dockerfile
+
+```dockerfile
+# services/agent.Dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --production
+COPY lib/ ./lib/
+COPY services/agent-entrypoint.ts ./
+# Option A: compile
+RUN npx tsc services/agent-entrypoint.ts --outDir dist/ --esModuleInterop --resolveJsonModule --module commonjs --target es2022 --skipLibCheck
+CMD ["node", "dist/services/agent-entrypoint.js"]
+# Option B (alternative): use tsx runtime
+# CMD ["npx", "tsx", "services/agent-entrypoint.ts"]
+```
+
+Only copies `lib/` and the entrypoint — NOT the Next.js app or components.
+
+### Entrypoint
+
+```typescript
+// services/agent-entrypoint.ts
+import { startWorker } from '../lib/agents/worker';
+import { startMacroCron } from '../lib/agents/macro-cron';
+import { AGENT_CONFIGS } from '../lib/agents/config';
+import type { AgentId } from '../lib/agents/types';
+
+const agentId = process.env.AGENT_ID as AgentId;
+if (!agentId || !AGENT_CONFIGS[agentId]) {
+  console.error(`Unknown AGENT_ID: ${agentId}`);
+  process.exit(1);
+}
+
+if (agentId === 'orchestrator') {
+  startMacroCron();
+}
+
+startWorker({
+  agentId,
+  pollIntervalMs: Number(process.env.AGENT_POLL_INTERVAL_MS) || 5000,
+  handlers: AGENT_CONFIGS[agentId].handlers,
+});
+```
+
+### Docker Compose
 
 ```yaml
-# Added to existing services/docker-compose.yml
+# services/docker-compose.yml
+version: '3.8'
 
+services:
   orchestrator:
-    build: ./agent-orchestrator
+    build:
+      context: ..
+      dockerfile: services/agent.Dockerfile
     environment:
+      - AGENT_ID=orchestrator
       - DATABASE_URL=${DATABASE_URL}
-      - NDIA_API_KEY=${NDIA_API_KEY}
-      - NDIA_BASE_URL=https://integrate.api.nvidia.com/v1
-      - NDIA_MODEL=meta/llama-3.1-70b-instruct
-      - POLYGON_API_KEY=${POLYGON_API_KEY}
+      - AGENT_API_KEY=${AGENT_API_KEY}
+      - AGENT_API_BASE_URL=${AGENT_API_BASE_URL}
+      - AGENT_MODEL=${AGENT_MODEL}
+      - AGENT_POLL_INTERVAL_MS=${AGENT_POLL_INTERVAL_MS:-5000}
       - ASKEDGAR_API_KEY=${ASKEDGAR_API_KEY}
-    depends_on:
-      - redis
+      - MASSIVE_API_KEY=${MASSIVE_API_KEY}
+      - MACRO_CRON_HOUR=6
+      - TZ=America/New_York
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "node", "healthcheck.js"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
-  agent-small-cap:
-    build: ./agent-small-cap
+  small-cap-trader:
+    build:
+      context: ..
+      dockerfile: services/agent.Dockerfile
     environment:
+      - AGENT_ID=small-cap-trader
       - DATABASE_URL=${DATABASE_URL}
-      - NDIA_API_KEY=${NDIA_API_KEY}
-      - NDIA_BASE_URL=https://integrate.api.nvidia.com/v1
-      - NDIA_MODEL=meta/llama-3.1-70b-instruct
-      - POLYGON_API_KEY=${POLYGON_API_KEY}
+      - AGENT_API_KEY=${AGENT_API_KEY}
+      - AGENT_API_BASE_URL=${AGENT_API_BASE_URL}
+      - AGENT_MODEL=${AGENT_MODEL}
+      - AGENT_POLL_INTERVAL_MS=${AGENT_POLL_INTERVAL_MS:-5000}
       - ASKEDGAR_API_KEY=${ASKEDGAR_API_KEY}
-    depends_on:
-      - redis
+      - MASSIVE_API_KEY=${MASSIVE_API_KEY}
+      - TZ=America/New_York
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "node", "healthcheck.js"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
-  agent-long-term:
-    build: ./agent-long-term
+  long-term-investor:
+    build:
+      context: ..
+      dockerfile: services/agent.Dockerfile
     environment:
+      - AGENT_ID=long-term-investor
       - DATABASE_URL=${DATABASE_URL}
-      - NDIA_API_KEY=${NDIA_API_KEY}
-      - NDIA_BASE_URL=https://integrate.api.nvidia.com/v1
-      - NDIA_MODEL=meta/llama-3.1-70b-instruct
-      - POLYGON_API_KEY=${POLYGON_API_KEY}
+      - AGENT_API_KEY=${AGENT_API_KEY}
+      - AGENT_API_BASE_URL=${AGENT_API_BASE_URL}
+      - AGENT_MODEL=${AGENT_MODEL}
+      - AGENT_POLL_INTERVAL_MS=${AGENT_POLL_INTERVAL_MS:-5000}
       - ASKEDGAR_API_KEY=${ASKEDGAR_API_KEY}
-    depends_on:
-      - redis
+      - MASSIVE_API_KEY=${MASSIVE_API_KEY}
+      - TZ=America/New_York
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "node", "healthcheck.js"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+```
+
+**Total resource usage:** ~1.5GB RAM for 3 agents. Fits comfortably on a 16GB laptop.
+
+### Home Server Notes
+
+- Laptop must have sleep disabled (`systemd-inhibit` or power settings)
+- Use ethernet for reliability
+- `TZ=America/New_York` ensures cron schedules align with market hours
+- Future option: migrate to a VPS (Hetzner $4/mo, Oracle Cloud free tier with 4 ARM cores / 24GB RAM)
+
+---
+
+## 16. Build Order (7 Phases)
+
+Sequential phases. Each phase must pass `npm run lint && npx tsc --noEmit` before proceeding.
+
+### Phase 1: Foundation (no breaking changes)
+
+| Step | File | Depends On |
+|------|------|------------|
+| 1 | `lib/agents/types.ts` | — |
+| 2 | `lib/agents/retry.ts` | — |
+| 3 | `lib/agents/llm-client.ts` | types.ts |
+| 4 | `lib/agents/circuit-breaker.ts` | types.ts |
+| 5 | `lib/agents/rate-limit.ts` | types.ts |
+| 6 | `lib/agents/admin.ts` | — |
+
+### Phase 2: Schema & Migration
+
+| Step | Task | Depends On |
+|------|------|------------|
+| 7 | Update `lib/db/schema.ts` — add 5 new tables, modify `agent_memory` | Phase 1 |
+| 8 | `npm run db:generate` — generate migration 0011 | Step 7 |
+| 9 | `npm run db:migrate` — run migration 0011 | Step 8 |
+
+### Phase 3: Shared Agent Logic
+
+| Step | File | Depends On |
+|------|------|------------|
+| 10 | `lib/agents/db.ts` | Phase 2 |
+| 11 | `lib/agents/job-queue.ts` | db.ts, types.ts |
+| 12 | `lib/agents/token-tracking.ts` | db.ts, types.ts |
+| 13 | `lib/agents/memory.ts` | db.ts, types.ts |
+| 14 | `lib/agents/context.ts` | memory.ts |
+| 15 | `lib/agents/prompts.ts` | types.ts |
+| 16 | `lib/agents/config.ts` | types.ts, prompts.ts |
+| 17 | `lib/agents/heartbeat.ts` | db.ts |
+| 18 | `lib/agents/worker.ts` | job-queue.ts, heartbeat.ts, config.ts |
+| 19 | `lib/agents/macro-cron.ts` | db.ts, context.ts, llm-client.ts |
+
+### Phase 4: API Routes
+
+| Step | Route | Depends On |
+|------|-------|------------|
+| 20 | `app/api/agents/chat/route.ts` | Phase 3 |
+| 21 | `app/api/agents/reports/route.ts` | Phase 3 |
+| 22 | `app/api/agents/reports/[id]/route.ts` | Phase 3 |
+| 23 | `app/api/agents/research/route.ts` | Phase 3 |
+| 24 | `app/api/agents/trade-analysis/route.ts` | Phase 3 |
+| 25 | `app/api/agents/admin/stats/route.ts` | Phase 3 |
+| 26 | `app/api/agents/admin/memory/route.ts` | Phase 3 |
+| 27 | `app/api/agents/macro-summary/latest/route.ts` | Phase 3 |
+
+### Phase 5: Docker Infrastructure
+
+| Step | File | Depends On |
+|------|------|------------|
+| 28 | `services/agent.Dockerfile` | Phase 3 |
+| 29 | `services/agent-entrypoint.ts` | Phase 3 |
+| 30 | `services/docker-compose.yml` (rewrite) | Steps 28-29 |
+| 31 | `services/.env.example` | — |
+
+### Phase 6: Frontend
+
+| Step | File | Depends On |
+|------|------|------------|
+| 32 | `components/trading/AgentChat.tsx` | Phase 4 |
+| 33 | `components/trading/AgentTab.tsx` | Step 32 |
+| 34 | `components/trading/AgentReportQueue.tsx` | Phase 4 |
+| 35 | `components/trading/AgentStats.tsx` | Phase 4 |
+| 36 | Modify `Sidebar.tsx` — `'jarvis'` → `'agents'` | Steps 32-35 |
+
+### Phase 7: Cleanup (after full validation)
+
+| Step | Task | Depends On |
+|------|------|------------|
+| 37 | Delete `app/api/jarvis/` directory | Phase 4 verified |
+| 38 | Delete `lib/jarvis/` directory | Phase 3 verified |
+| 39 | Delete `JarvisChat.tsx`, `JarvisTab.tsx` | Phase 6 verified |
+| 40 | Remove Vercel cron config for macro-summary | Phase 5 verified |
+| 41 | Generate migration 0012 (drop `jarvis_conversations`, `jarvis_request_log`) | Phase 2 verified |
+| 42 | Run migration 0012 | Step 41 |
+
+---
+
+## 17. Complete File Inventory
+
+### Files to CREATE (34)
+
+```
+lib/agents/types.ts
+lib/agents/db.ts
+lib/agents/llm-client.ts
+lib/agents/circuit-breaker.ts
+lib/agents/rate-limit.ts
+lib/agents/retry.ts
+lib/agents/token-tracking.ts
+lib/agents/job-queue.ts
+lib/agents/heartbeat.ts
+lib/agents/memory.ts
+lib/agents/context.ts
+lib/agents/prompts.ts
+lib/agents/config.ts
+lib/agents/worker.ts
+lib/agents/macro-cron.ts
+lib/agents/admin.ts
+lib/agents/prompts/orchestrator.md
+lib/agents/prompts/small-cap.md
+lib/agents/prompts/long-term.md
+app/api/agents/chat/route.ts
+app/api/agents/reports/route.ts
+app/api/agents/reports/[id]/route.ts
+app/api/agents/research/route.ts
+app/api/agents/trade-analysis/route.ts
+app/api/agents/admin/stats/route.ts
+app/api/agents/admin/memory/route.ts
+app/api/agents/macro-summary/latest/route.ts
+components/trading/AgentChat.tsx
+components/trading/AgentTab.tsx
+components/trading/AgentReportQueue.tsx
+components/trading/AgentStats.tsx
+services/agent.Dockerfile
+services/agent-entrypoint.ts
+services/.env.example
+```
+
+### Files to MODIFY (4)
+
+```
+lib/db/schema.ts                  -- add 5 tables, alter agent_memory
+services/docker-compose.yml       -- rewrite (3 agent services, no Redis)
+components/trading/Sidebar.tsx    -- 'jarvis' → 'agents' tab
+package.json                      -- (if any new deps needed)
+```
+
+### Files to DELETE (Phase 7) (~22)
+
+```
+app/api/jarvis/chat/route.ts
+app/api/jarvis/research/route.ts
+app/api/jarvis/trade-analysis/route.ts
+app/api/jarvis/admin/memory/route.ts
+app/api/jarvis/admin/stats/route.ts
+app/api/jarvis/macro-summary/latest/route.ts
+app/api/jarvis/cron/macro-summary/route.ts
+lib/jarvis/client.ts
+lib/jarvis/types.ts
+lib/jarvis/prompts.ts
+lib/jarvis/context.ts
+lib/jarvis/memory.ts
+lib/jarvis/research.ts
+lib/jarvis/trade-analysis.ts
+lib/jarvis/askedgar.ts
+lib/jarvis/scrape-lite.ts
+lib/jarvis/rate-limit.ts
+lib/jarvis/circuit-breaker.ts
+lib/jarvis/token-tracking.ts
+lib/jarvis/admin.ts
+components/trading/JarvisChat.tsx
+components/trading/JarvisTab.tsx
 ```
 
 ---
 
-## 10. File Structure
+## 18. Environment Variables
 
-```
-services/
-├── agent-orchestrator/
-│   ├── Dockerfile
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── healthcheck.js
-│   └── src/
-│       ├── index.ts              -- entry point, poll loop, cron setup
-│       ├── router.ts             -- deterministic routing rules (Research Analyst logic)
-│       ├── scheduler.ts          -- cron trigger management
-│       └── synthesizer.ts        -- cross-agent report aggregation
-│
-├── agent-small-cap/
-│   ├── Dockerfile
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── healthcheck.js
-│   └── src/
-│       ├── index.ts              -- entry point, poll loop
-│       ├── scanner.ts            -- pre-market scan logic
-│       ├── dilution-analyzer.ts  -- SEC filing analysis
-│       └── technical-analyzer.ts -- OHLCV pattern analysis
-│
-├── agent-long-term/
-│   ├── Dockerfile
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── healthcheck.js
-│   └── src/
-│       ├── index.ts              -- entry point, poll loop
-│       ├── macro-analyzer.ts     -- economic regime identification
-│       ├── sector-screener.ts    -- sector-to-name funnel
-│       ├── portfolio-builder.ts  -- construction + suitability
-│       └── thesis-manager.ts     -- thesis lifecycle CRUD
-│
-lib/agents/                        -- shared code (used by all services + Next.js app)
-├── types.ts                       -- AgentDefinition, AgentJob, AgentReport interfaces
-├── registry.ts                    -- registry.register(), heartbeat, health check
-├── llm.ts                         -- callLLM wrapper
-├── job-queue.ts                   -- claimJob, completeJob, failJob (mirrors notification-jobs.ts pattern)
-├── memory.ts                      -- readMemory, writeMemory, queryMemory per agent
-├── prompts/
-│   ├── orchestrator.md
-│   ├── small-cap.md
-│   └── long-term.md
-└── data/
-    ├── polygon.ts                 -- Polygon.io client
-    ├── askedgar.ts                -- AskEdgar client
-    └── rate-limiter.ts            -- Postgres-based rate limiter
+### New Variables
 
-app/api/agents/
-├── chat/route.ts                  -- User chat → agent_jobs
-├── reports/route.ts               -- GET reports for user
-└── health/route.ts                -- Agent registry status
-```
+| Variable | Default | Used By | Purpose |
+|----------|---------|---------|---------|
+| `DATABASE_URL` | (existing, required) | All agents + Next.js | Neon Postgres connection string |
+| `AGENT_API_KEY` | (falls back to `NVIDIA_API_KEY`) | All agents | LLM API authentication |
+| `AGENT_API_BASE_URL` | `https://integrate.api.nvidia.com/v1/chat/completions` | All agents | LLM endpoint |
+| `AGENT_MODEL` | `deepseek-v3.2` | All agents | Default model |
+| `AGENT_LLM_TIMEOUT_MS` | `30000` | All agents | LLM request timeout |
+| `AGENT_POLL_INTERVAL_MS` | `5000` | All agents | Job queue poll interval |
+| `AGENT_ID` | (required per service) | Each Docker service | Agent identity |
+| `AGENT_ADMIN_KEY` | (falls back to `JARVIS_ADMIN_KEY`) | Next.js app | Admin API auth |
+| `AGENT_MONTHLY_BUDGET_CENTS` | `10000` | Next.js app | $100 budget tracking |
+| `MACRO_CRON_HOUR` | `6` | Orchestrator | Hour (ET) to run macro summary |
+| `MASSIVE_API_KEY` | (existing) | All agents | Market data API |
+| `ASKEDGAR_API_KEY` | (existing) | All agents | SEC filings API |
+| `TZ` | `America/New_York` | All agents | Timezone for cron/schedule alignment |
+
+### Deprecated (still read as fallback)
+
+| Old Name | Replaced By |
+|----------|-------------|
+| `NVIDIA_API_KEY` | `AGENT_API_KEY` |
+| `JARVIS_API_BASE_URL` | `AGENT_API_BASE_URL` |
+| `JARVIS_MODEL` | `AGENT_MODEL` |
+| `JARVIS_TIMEOUT_MS` | `AGENT_LLM_TIMEOUT_MS` |
+| `JARVIS_ADMIN_KEY` | `AGENT_ADMIN_KEY` |
+| `CRON_SECRET` | (removed — macro cron is now in-process) |
 
 ---
 
-## 11. Build Order
+## 19. Deferred: Discord Channel Adapter
 
-Sequential. Each step must pass validation before proceeding.
+Discord integration is deferred to a future sprint. When implemented:
 
-| Step | Description | Depends On |
-|------|-------------|------------|
-| 1 | Add env vars (POLYGON_API_KEY, ASKEDGAR_API_KEY, NDIA_API_KEY, NDIA_BASE_URL, NDIA_MODEL) | None |
-| 2 | Remove `@google/genai` package | None |
-| 3 | Create Drizzle migration for 5 new tables (agent_jobs, agent_memory, agent_reports, agent_conversations, agent_registry) | Step 1 |
-| 4 | Implement `lib/agents/` shared code (types, registry, llm, job-queue, memory, data clients) | Step 3 |
-| 5 | Implement Orchestrator service with routing rules + scheduler | Step 4 |
-| 6 | Implement Small Cap Trader agent | Step 5 |
-| 7 | Implement Long Term Investor agent | Step 5 |
-| 8 | Add `/ask` slash command to Discord bot + channel adapter wiring | Step 5 |
-| 9 | Implement web UI slide-out panel + API routes (`/api/agents/chat`, `/api/agents/reports`) | Step 5 |
-| 10 | Integration testing: end-to-end job flow from user query through agent response | Steps 6-9 |
-| 11 | Import historical research data into agent_memory | Step 6 |
+1. The existing Discord bot gets a `/ask <query>` slash command
+2. The command resolves Discord user → Nexus user via `discord_user_links`
+3. Writes an `agent_job` with `channel = 'discord'`
+4. Polls for completion, formats result as Discord embed
+5. Outbound: Orchestrator writes reports → `notification_jobs` (existing pattern) → Discord delivery
 
-Steps 6, 7, 8, and 9 can run in parallel after Step 5 is complete.
+**No schema changes required.** The `agent_conversations.channel` column already supports `'discord'`. The `agent_reports` table is channel-agnostic.
+
+**Prerequisites:** Discord bot service must be running, `discord_user_links` table populated.
 
 ---
 
-## 12. Security Considerations
+## 20. Deferred: Swing Trader Agent
 
-- **Agent services connect to Postgres via `DATABASE_URL`** — same as existing services. No new auth mechanism needed.
-- **API routes (`/api/agents/*`)** use existing JWT session auth for web users and scoped service JWTs for Discord bot.
-- **LLM API key** (`NDIA_API_KEY`) is only accessible to Docker services and the Next.js server — never exposed to the client.
-- **Agent memory isolation** is enforced at the application layer (agents filter by their own `agent_id`). Consider adding row-level security in Postgres if you later allow third-party agents.
-- **Rate limiter** prevents agents from burning through Polygon.io quota, which could cause service degradation for the backtesting tab.
-- **Report content** should include a standard disclaimer for any financial analysis. This is enforced in the output schema, not left to the LLM's discretion.
+A swing trader agent (trending companies, sentiment from social media, news commentary) is architecturally supported but not in the current build. To add later:
 
----
+1. Add `'swing-trader'` to the `AgentId` type union
+2. Add config entry in `lib/agents/config.ts`
+3. Add routing rules in the Orchestrator
+4. Add `lib/agents/prompts/swing-trader.md`
+5. Add service to `docker-compose.yml`
+6. Seed `agent_registry` row
 
-## 13. Deferred: Swing Trader Agent
-
-You referenced a swing trader capability in the Orchestrator description (trending companies, sentiment from social media, news commentary). This is not in the current roster but the architecture supports adding it later by:
-
-1. Creating `services/agent-swing-trader/`
-2. Implementing the `AgentDefinition` interface
-3. Calling `registry.register()` at startup
-4. Adding routing rules in the Orchestrator's `router.ts`
-5. Adding the new `agent_id` to the `agent_memory` and `agent_reports` queries
-
-No schema changes required. The tables are agent-agnostic by design.
+No schema changes required — tables are agent-agnostic by design.
 
 ---
 
-## 14. Open Questions (Require Your Input)
+## 21. Open Questions
 
-1. **Historical research format.** What format are your existing research reports in? (PDF, markdown, spreadsheet, plain text?) This determines the import script for Step 11.
+1. **Historical research import format.** What format are existing research reports in? (PDF, markdown, spreadsheet, plain text?) This determines the import script format.
 
-2. **User profile storage.** The Long Term Investor needs age, time horizon, and goals. Where should this live — `agent_memory` under the Orchestrator, or a dedicated `user_profiles` table?
+2. **User profile storage.** The Long Term Investor needs age, time horizon, and goals. Should this live in `agent_memory` under the Orchestrator (key: `user_preference`), or a dedicated column/table?
 
-3. **Polygon tier confirmation.** Does your starter key give you pre-market snapshot data (`/v2/snapshot/locale/us/markets/stocks/tickers`)? The Small Cap scanner depends on this endpoint specifically.
+---
 
-4. **Discord notification scope.** Should autonomous reports (e.g., Small Cap scanner finds a match at 7:15 AM) go to a specific Discord channel, or DM the user directly?
+## Appendix: Data Source Notes
 
-5. **Financial disclaimers.** How prominent do you want the "this is not financial advice" language? Embedded in every report, or a one-time acknowledgment flow?
+### Massive API (Polygon-compatible)
+
+- **Stock starter kit** has unlimited rate limit — no rate limiter needed
+- Used for: snapshots, OHLCV, market status, pre-market gainers
+- Same API shape as Polygon.io, existing `MASSIVE_API_KEY` env var
+
+### AskEdgar API
+
+- **Endpoint:** `https://eapi.askedgar.io`
+- **Auth:** `ASKEDGAR_API_KEY`
+- **Rate limit:** Generous, supports parallel `Promise.allSettled` fetches
+- Used for: SEC filings (S-3, 8-K, prospectus), 10-K/10-Q financials, filing search
+
+### Existing Jarvis Module Reuse
+
+| Jarvis Module | Agent Equivalent | Notes |
+|---------------|-----------------|-------|
+| `client.ts` | `llm-client.ts` | Rewrite with provider detection |
+| `circuit-breaker.ts` | `circuit-breaker.ts` | Same pattern, per-agent state |
+| `rate-limit.ts` | `rate-limit.ts` | Same 30 req/hr |
+| `token-tracking.ts` | `token-tracking.ts` | Extend with agent_id + cost |
+| `memory.ts` | `memory.ts` | Rewrite with agent_id scope |
+| `context.ts` | `context.ts` | Extend with agent-specific context |
+| `askedgar.ts` | (standalone) | Move to `lib/askedgar.ts` |
+| `prompts.ts` | `prompts.ts` | Split into per-agent files |
+| `scrape-lite.ts` | (reuse as-is) | No changes needed |
+| `trade-analysis.ts` | Small Cap handler | Becomes agent job handler |
+| `research.ts` | Small Cap handler | Becomes agent job handler |
