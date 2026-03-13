@@ -144,7 +144,6 @@ Use this when the user wants to plan changes for opencode to execute.
 
 - If app/page.tsx exceeds reasonable size, flag it as tech debt and recommend decomposition.
 - If empty legacy directories (backtest/, cron/, discord/, notifications/, schwab/, webhooks/) are referenced in a spec, flag them — do not route new features through them without explicit instruction.
-- ALLOWED_EMAILS is a known unresolved security gap. Flag it in every audit. Do not let it silently persist.
 - Auth has two surfaces:
 - Google OAuth login via NextAuth — flag any changes here as elevated risk
 - On-site session auth uses manual JWT (jose, HS256, httpOnly cookie) — flag any changes here as elevated risk, do not suggest NextAuth for this layer

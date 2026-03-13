@@ -192,3 +192,60 @@ After Task 1 is complete, remove item 1 from Known Issues.
 ```
 
 **Post-execution:** Run `npm run lint && npx tsc --noEmit && npm run test` to verify nothing is broken.
+
+---
+---
+
+# AskEdgar API: Add filing-titles endpoint + update docs
+
+> Generated: 2026-03-13 | Agent: nexus-architect
+> Status: READY FOR EXECUTION
+
+## Summary
+- Add `/v1/filing-titles` endpoint to `askedgar.ts`
+- Keep all 12 existing endpoints (no cuts — each maps to a distinct report section)
+- Replace `docs/AE_API_DOCS.md` with the updated API docs
+- Skip: ownership, offerings-advanced, dilution-data-advanced, rofr (institutional), screener/options (meta), ai-chart-analysis (+20% only), research-reports (+40% only), market-strength (market-wide)
+
+## Task 8: Add `/v1/filing-titles` endpoint
+
+### 8a. `lib/jarvis/askedgar.ts`
+- Add `'filing-titles'` to the `EndpointKey` union type (line ~120-132)
+- Add fetch function following the existing pattern:
+```typescript
+async function fetchFilingTitles(ticker: string, limit = 20) {
+  const validated = validateTickerOrError<unknown>(ticker);
+  if (typeof validated !== 'string') return validated;
+  return requestAskEdgar<unknown>('/v1/filing-titles', { ticker: validated, limit });
+}
+```
+- Add entry to `endpointConfigs` array in `fetchTickerData()` (line ~261-274):
+```typescript
+{ key: 'filing-titles', label: 'Filing Titles', run: () => fetchFilingTitles(normalizedTicker, 20) },
+```
+
+### 8b. `lib/jarvis/types.ts`
+- Add `FilingTitleItem` interface:
+```typescript
+export interface FilingTitleItem {
+  accessionNumber: string;
+  cik: string;
+  ticker: string;
+  headline: string;
+  filedAt: string;
+  fileNo: string;
+  formType: string;
+  documentUrl: string;
+}
+```
+- Add `filingTitles: FilingTitleItem[]` to the `DilutionResearchReport` interface (after `reverseSplits`)
+
+## Task 9: Replace API docs
+
+### 9a. `docs/AE_API_DOCS.md`
+- Replace entire file contents with the updated docs from `/mnt/c/Users/jared/Downloads/Ask Edgar Updated API Docs .md`
+
+## Verification
+```bash
+npm run lint && npx tsc --noEmit
+```
