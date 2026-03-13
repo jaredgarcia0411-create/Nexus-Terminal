@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import PerformanceCharts from '@/components/trading/PerformanceCharts';
 import PerformanceStatsTable from '@/components/trading/PerformanceStatsTable';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import TagFilterDropdown from '@/components/trading/TagFilterDropdown';
 import { formatCurrency } from '@/lib/trading-utils';
 import type { Trade } from '@/lib/types';
 
@@ -17,12 +17,12 @@ interface PerformanceTabProps {
 }
 
 export default function PerformanceTab({ filteredTrades, globalTags, performanceMetric, onMetricChange, onTradeClick }: PerformanceTabProps) {
-  const [selectedTagFilter, setSelectedTagFilter] = useState<string>('all');
+  const [selectedTagFilters, setSelectedTagFilters] = useState<Set<string>>(new Set());
 
   const performanceTrades = useMemo(() => {
-    if (selectedTagFilter === 'all') return filteredTrades;
-    return filteredTrades.filter((trade) => (trade.tags ?? []).includes(selectedTagFilter));
-  }, [filteredTrades, selectedTagFilter]);
+    if (selectedTagFilters.size === 0) return filteredTrades;
+    return filteredTrades.filter((trade) => (trade.tags ?? []).some((tag) => selectedTagFilters.has(tag)));
+  }, [filteredTrades, selectedTagFilters]);
 
   return (
     <motion.div key="performance" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
@@ -46,17 +46,19 @@ export default function PerformanceTab({ filteredTrades, globalTags, performance
 
       <div className="flex items-center gap-3">
         <span className="text-xs font-mono uppercase tracking-wider text-zinc-500">Tag Filter</span>
-        <Select value={selectedTagFilter} onValueChange={setSelectedTagFilter}>
-          <SelectTrigger className="h-8 w-56 border-white/10 bg-white/5 text-xs">
-            <SelectValue placeholder="Filter by tag" />
-          </SelectTrigger>
-          <SelectContent className="border-white/10 bg-[#18181b] text-white">
-            <SelectItem value="all">All tags</SelectItem>
-            {globalTags.map((tag) => (
-              <SelectItem key={tag} value={tag}>{tag}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <TagFilterDropdown
+          globalTags={globalTags}
+          selectedTags={selectedTagFilters}
+          onToggleTag={(tag) => {
+            setSelectedTagFilters((prev) => {
+              const next = new Set(prev);
+              if (next.has(tag)) next.delete(tag);
+              else next.add(tag);
+              return next;
+            });
+          }}
+          onClearTags={() => setSelectedTagFilters(new Set())}
+        />
       </div>
 
       <PerformanceCharts trades={performanceTrades} metric={performanceMetric} />

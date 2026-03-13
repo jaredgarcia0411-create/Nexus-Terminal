@@ -3,6 +3,7 @@
 import { motion } from 'motion/react';
 import { Search, X } from 'lucide-react';
 import TradeTable from '@/components/trading/TradeTable';
+import TagFilterDropdown from '@/components/trading/TagFilterDropdown';
 import { Button } from '@/components/ui/button';
 import type { Trade } from '@/lib/types';
 
@@ -20,6 +21,7 @@ interface TradesTabProps {
   bulkTagInput: string;
   onSearchQueryChange: (value: string) => void;
   onToggleFilterTag: (tag: string) => void;
+  onClearFilterTags: () => void;
   onDeleteGlobalTag: (tagName: string) => void;
   onClearAllFilters: () => void;
   onToggleSelect: (id: string) => void;
@@ -47,6 +49,7 @@ export default function TradesTab({
   defaultRisk,
   onSearchQueryChange,
   onToggleFilterTag,
+  onClearFilterTags,
   onDeleteGlobalTag,
   onClearAllFilters,
   onToggleSelect,
@@ -138,31 +141,12 @@ export default function TradesTab({
 
         <div className="space-y-4">
           <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-500">Tag Filters</h3>
-          <div className="flex flex-wrap gap-2">
-            {globalTags.map((tag) => (
-              <div
-                key={tag}
-                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-all ${
-                  selectedFilterTags.has(tag)
-                    ? 'border-emerald-500/30 bg-emerald-500/20 text-emerald-500'
-                    : 'border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10'
-                }`}
-                onClick={() => onToggleFilterTag(tag)}
-              >
-                <span>{tag}</span>
-                <button
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onDeleteGlobalTag(tag);
-                  }}
-                  className="rounded p-0.5 text-zinc-600 transition-colors hover:bg-rose-500/20 hover:text-rose-500"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-            {globalTags.length === 0 ? <span className="text-sm italic text-zinc-600">No tags created yet.</span> : null}
-          </div>
+          <TagFilterDropdown
+            globalTags={globalTags}
+            selectedTags={selectedFilterTags}
+            onToggleTag={onToggleFilterTag}
+            onClearTags={onClearFilterTags}
+          />
         </div>
       </div>
 

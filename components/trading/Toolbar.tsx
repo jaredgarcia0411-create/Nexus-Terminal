@@ -60,7 +60,7 @@ export default function Toolbar({
               <button
                 key={preset.id}
                 onClick={() => onFilterPresetChange(preset.id as 'all' | '30' | '60' | '90')}
-                className={`rounded-md px-2 py-1 text-[10px] font-semibold transition-colors sm:px-2.5 ${
+                className={`h-9 rounded-md px-3 text-xs font-semibold transition-colors ${
                   filterPreset === preset.id
                     ? 'bg-emerald-500 text-black'
                     : 'bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
@@ -74,21 +74,21 @@ export default function Toolbar({
             {!isMobile ? (
               <>
                 <div className="mx-1 hidden h-4 w-px bg-white/10 sm:block" />
-                <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1">
-                  <CalendarIcon className="h-3.5 w-3.5 text-zinc-500" />
+                <div className="flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3">
+                  <CalendarIcon className="h-4 w-4 text-zinc-500" />
                   <input
                     type="date"
                     value={startDate}
                     onChange={(event) => onStartDateChange(event.target.value)}
-                    className="bg-transparent text-[10px] text-zinc-400 focus:outline-none"
+                    className="bg-transparent text-sm text-zinc-400 focus:outline-none"
                     title="Start date"
                   />
-                  <span className="text-[10px] text-zinc-600">—</span>
+                  <span className="text-sm text-zinc-600">—</span>
                   <input
                     type="date"
                     value={endDate}
                     onChange={(event) => onEndDateChange(event.target.value)}
-                    className="bg-transparent text-[10px] text-zinc-400 focus:outline-none"
+                    className="bg-transparent text-sm text-zinc-400 focus:outline-none"
                     title="End date"
                   />
                 </div>

@@ -215,6 +215,7 @@ export default function NexusTerminal() {
                     return next;
                   });
                 }}
+                onClearFilterTags={() => setSelectedFilterTags(new Set())}
                 onDeleteGlobalTag={handleDeleteGlobalTag}
                 onClearAllFilters={clearAllFilters}
                 onToggleSelect={handleToggleSelect}

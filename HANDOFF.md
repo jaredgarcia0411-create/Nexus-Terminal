@@ -903,3 +903,77 @@ All three checks currently pass.
 - `npm run lint` — **PASS**
 - `npx tsc --noEmit` — **PASS**
 - `npm test` — **PASS**
+
+## Planned Session Spec (2026-03-13) — Tag Filter Dropdown Multi-Select + Toolbar Control Sizing
+
+> Generated: 2026-03-13 | Agent: opencode
+> Status: EXECUTED (implementation complete)
+
+### Scope for this session
+
+- [x] Enable multi-select tag filtering in `Performance` tab using a dropdown with checkboxes.
+- [x] Replace `Trades Management` tag-filter pills with the same dropdown-with-checkboxes template used in `Performance`.
+- [x] Ensure newly created tags appear in the `Trades` tag filter dropdown without page refresh.
+- [x] Increase only header global time preset controls (`30D/60D/90D`) and calendar date filter controls to match search bar height.
+
+### Decisions confirmed with user
+
+- [x] Use dropdown with checkboxes for tag filtering interactions.
+- [x] Use same dropdown format in `Trades` and do not render tag filters as pills.
+- [x] Keep dynamic tag list behavior in Trades so newly created tags show in dropdown.
+- [x] Match exact search-bar height for header preset/date controls.
+
+### Step-by-step implementation order (exact)
+
+1. **Create shared dropdown-with-checkboxes tag filter UI**
+   - [x] Add a reusable tag-filter dropdown component under `components/trading/`.
+   - [x] Support multi-select toggles, selected-count trigger text, and clear/reset behavior.
+
+2. **Enable Performance multi-tag filtering**
+   - [x] Update `components/trading/PerformanceTab.tsx` to use the shared dropdown component.
+   - [x] Switch local tag filter state from single-select string to multi-select set.
+   - [x] Apply OR-based filtering across selected tags; no selection means all tags.
+
+3. **Migrate Trades tag filters to shared dropdown template**
+   - [x] Update `components/trading/TradesTab.tsx` to replace pill list with shared dropdown component.
+   - [x] Keep existing `selectedFilterTags` behavior and filter semantics.
+   - [x] Ensure the dropdown options render directly from `globalTags` so new tags appear automatically.
+
+4. **Wire tag-clear callback for Trades dropdown**
+   - [x] Update `app/page.tsx` and `TradesTab` props to provide a clear-tag-filters callback used by the dropdown.
+
+5. **Increase toolbar control heights (targeted only)**
+   - [x] Update `components/trading/Toolbar.tsx` time-preset buttons and date filter control styling to match existing search-input height.
+   - [x] Keep all unrelated control sizing unchanged.
+
+6. **Verification + handoff closeout**
+   - [x] Run `npm run lint`.
+   - [x] Run `npx tsc --noEmit`.
+   - [x] Run `npm test`.
+   - [x] Record pass/fail results and mark completed checklist items in this file.
+
+### Execution Notes (2026-03-13 tag filter dropdown + toolbar sizing)
+
+- Added shared dropdown-based multi-tag selector in `components/trading/TagFilterDropdown.tsx` with checkbox selection and clear action.
+- Updated `components/trading/PerformanceTab.tsx` to use multi-select tag filtering (OR semantics across selected tags).
+- Updated `components/trading/TradesTab.tsx` to replace tag pills with the shared dropdown template and preserve existing filter behavior.
+- Updated `app/page.tsx` to provide `onClearFilterTags` callback wiring for Trades dropdown reset behavior.
+- Updated `components/trading/Toolbar.tsx` to increase header preset/date control heights to match search-input height.
+
+### Command Results (2026-03-13 tag filter dropdown + toolbar sizing)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
+
+## Session Update (2026-03-13 tag filter visual polish)
+
+- [x] Improved shared tag dropdown trigger text to show selected tag names (up to two) before falling back to count.
+- [x] Added trigger chevron and selected-count badge treatment for clearer affordance.
+- [x] Added dropdown label/separator structure and checked-state text emphasis for readability.
+
+### Command Results (2026-03-13 tag filter visual polish)
+
+- `npm run lint` — **PASS**
+- `npx tsc --noEmit` — **PASS**
+- `npm test` — **PASS**
