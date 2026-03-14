@@ -302,6 +302,17 @@ export interface ReverseSplitEntry {
   splitTo: number;
 }
 
+export interface FilingTitleItem {
+  accessionNumber: string;
+  cik: string;
+  ticker: string;
+  headline: string;
+  filedAt: string;
+  fileNo: string;
+  formType: string;
+  documentUrl: string;
+}
+
 export interface DilutionResearchReport {
   ticker: string;
   generatedAt: string;
@@ -319,4 +330,5 @@ export interface DilutionResearchReport {
   agreements: AgreementItem[];
   historicalFloat: HistoricalFloatEntry[];
   reverseSplits: ReverseSplitEntry[];
+  filingTitles: FilingTitleItem[];
 }

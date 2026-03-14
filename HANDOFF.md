@@ -249,3 +249,14 @@ export interface FilingTitleItem {
 ```bash
 npm run lint && npx tsc --noEmit
 ```
+
+## Execution Checklist
+
+```
+[x] Task 8a: Add filing-titles endpoint support in lib/jarvis/askedgar.ts
+[x] Task 8b: Add FilingTitleItem + filingTitles in lib/jarvis/types.ts
+[x] Task 9a: Replace docs/AE_API_DOCS.md from updated source doc
+[x] Validation: npm run lint
+[x] Validation: npx tsc --noEmit
+[x] Validation: npm test
+```

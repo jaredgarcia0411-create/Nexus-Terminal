@@ -380,6 +380,8 @@ Get Nasdaq compliance deficiency notices and status for stocks. Companies that f
 | `date_from` | date | No | Start of date range |
 | `date_to` | date | No | End of date range |
 | `deficiency` | string | No | Filter by deficiency type (e.g., bid price, market value, etc.) |
+| `added_date_from` | date | No | Filter by when the deficiency was added (start) |
+| `added_date_to` | date | No | Filter by when the deficiency was added (end) |
 | `page` | integer | No | Page number (default: `0`) |
 | `limit` | integer | No | Results per page (default: `100`) |
 
@@ -439,8 +441,6 @@ Get stock offerings — when a company sells new or existing shares to raise cap
 | `date_from` | date | No | Start of date range |
 | `date_to` | date | No | End of date range |
 | `headline` | string | No | Search offering headlines (minimum 4 characters) |
-| `potential_owners` | string | No | Filter by potential owners/investors involved |
-| `bank` | string | No | Filter by investment bank/underwriter |
 | `offering_type` | string | No | Filter by type of offering. Valid values: `"REGISTERED OFFERING"`, `"ATM USED"`, `"PRIVATE PLACEMENT"`, `"DEBT OFFERING"`, `"DEBT CONVERSION"`, `"SHARE ISSUANCE FOR ACQUISITION"`, `"NEW EQUITY LINE"`, `"CREDIT FACILITY"`, `"IPO"`, `"UPLIST"` |
 | `page` | integer | No | Page number (default: `0`) |
 | `limit` | integer | No | Results per page (default: `100`) |
@@ -476,6 +476,7 @@ curl "https://eapi.askedgar.io/v1/offerings?ticker=AAPL\&date\_from=2024-01-01" 
 
 | Field | Type | Description |
 | ----- | ----- | ----- |
+| `ticker` | string | Stock ticker |
 | `headline` | string | Short description of the offering |
 | `filed_at` | date | SEC filing date |
 | `form_type` | string | SEC form type (e.g., `"8-K"`, `"S-1"`, `"424B5"`) |
@@ -487,6 +488,39 @@ curl "https://eapi.askedgar.io/v1/offerings?ticker=AAPL\&date\_from=2024-01-01" 
 | `share_price` | number | Price per share in the offering |
 | `offering_amount` | number | Total dollar amount of the offering |
 | `conversion_price` | number | Conversion price (if applicable, for convertible offerings) |
+
+---
+
+### **5b. Offerings — Funds & Underwriters (Advanced)**
+
+**GET** `/v1/offerings-advanced`
+
+Same data as `/v1/offerings`, but with additional `investors` and `bank` fields showing which funds participated and which investment bank underwrote the deal.
+
+**Access note:** This endpoint is restricted to institutional/professional-tier API access. Not available to retail traders.
+
+#### **Parameters**
+
+Same as `/v1/offerings`, plus:
+
+| Parameter | Type | Required | Description |
+| ----- | ----- | ----- | ----- |
+| `investors` | string | No | Filter by investor/fund name (text search, partial match) |
+| `bank` | string | No | Filter by investment bank name (text search, partial match) |
+
+#### **Example request**
+
+curl "https://eapi.askedgar.io/v1/offerings-advanced?ticker=AAPL\&date\_from=2024-01-01" \\  
+  \-H "API-KEY: your\_api\_key\_here"
+
+#### **Response fields**
+
+Same as `/v1/offerings`, plus:
+
+| Field | Type | Description |
+| ----- | ----- | ----- |
+| `investors` | string | Names of investors/funds involved in the offering |
+| `bank` | string | Investment bank that underwrote the offering |
 
 ---
 
@@ -583,13 +617,13 @@ The results array contains a mix of **Warrant** and **Convertible** objects. You
 
 ---
 
-### **7\. Funds & Underwriters**
+### **7\. Dilution Data — Funds & Underwriters (Advanced)**
 
-**GET** `/v1/funds-underwriters`
+**GET** `/v1/dilution-data-advanced`
 
 This is the same data as `/v1/dilution-data` (warrants and convertibles), but with additional fields showing which banks underwrote the deal, which funds/investors participated, and what price protection provisions were negotiated.
 
-**Access note:** This endpoint is currently unavailable to retail traders. It is restricted to institutional/professional-tier API access.
+**Access note:** This endpoint is restricted to institutional/professional-tier API access. Not available to retail traders.
 
 #### **Parameters**
 
@@ -607,7 +641,7 @@ This is the same data as `/v1/dilution-data` (warrants and convertibles), but wi
 
 #### **Example request**
 
-curl "https://eapi.askedgar.io/v1/funds-underwriters?ticker=WNW" \\  
+curl "https://eapi.askedgar.io/v1/dilution-data-advanced?ticker=WNW" \\  
   \-H "API-KEY: your\_api\_key\_here"
 
 #### **Example response**
@@ -1283,6 +1317,404 @@ curl "https://eapi.askedgar.io/v1/screener/options?field=sector" \\
 
 ---
 
+### **15\. Right of First Refusal & Tail Financings (ROFR)**
+
+**GET** `/v1/rofr`
+
+Get Right of First Refusal (ROFR) and Tail Financing data from SEC filings. These are contractual provisions in underwriting agreements.
+
+**Access note:** This endpoint is restricted to institutional/professional-tier API access. Not available to retail traders.
+
+#### **What are these?**
+
+* **Right of First Refusal (ROFR)** — The investment bank gets first dibs on the company's next offering. If the company wants to raise capital again, the bank has the right to be the underwriter before anyone else is considered.  
+* **Tail Financing** — If the company does a deal with an investor that the bank originally introduced, the bank still receives a fee — even after the engagement has ended. This protects banks from being cut out of deals they helped create.
+
+#### **Parameters**
+
+| Parameter | Type | Required | Description |
+| ----- | ----- | ----- | ----- |
+| `ticker` | string | No | Filter by stock ticker |
+| `filed_at_from` | date | No | Filing date range start |
+| `filed_at_to` | date | No | Filing date range end |
+| `bank_name` | string | No | Filter by bank name |
+| `right_of_first_refusal_present` | boolean | No | `true` \= only show filings with ROFR |
+| `tail_financing_payments_present` | boolean | No | `true` \= only show filings with tail financing |
+| `right_of_first_refusal_duration_min` | number | No | Minimum ROFR duration (days) |
+| `right_of_first_refusal_duration_max` | number | No | Maximum ROFR duration (days) |
+| `tail_financing_payments_duration_min` | number | No | Minimum tail financing duration (days) |
+| `tail_financing_payments_duration_max` | number | No | Maximum tail financing duration (days) |
+| `right_of_first_refusal_end_date_from` | date | No | ROFR end date range start |
+| `right_of_first_refusal_end_date_to` | date | No | ROFR end date range end |
+| `page` | integer | No | Page number (default: `0`) |
+| `limit` | integer | No | Results per page (default: `100`) |
+
+#### **Example request**
+
+curl "https://eapi.askedgar.io/v1/rofr?ticker=AAPL\&right\_of\_first\_refusal\_present=true" \\  
+  \-H "API-KEY: your\_api\_key\_here"
+
+#### **Example response**
+
+{  
+  "status": "success",  
+  "count": 1,  
+  "results": \[  
+    {  
+      "ticker": "AAPL",  
+      "document\_url": "https://www.sec.gov/...",  
+      "form\_type": "8-K",  
+      "filed\_at": "2024-01-15",  
+      "offering\_type": "ATM",  
+      "bank\_name": "Goldman Sachs",  
+      "right\_of\_first\_refusal\_present": true,  
+      "right\_of\_first\_refusal\_details": "ROFR details...",  
+      "right\_of\_first\_refusal\_duration": 180,  
+      "right\_of\_first\_refusal\_type": "exclusive",  
+      "right\_of\_first\_refusal\_end\_date": "2025-07-15",  
+      "tail\_financing\_payments\_present": true,  
+      "tail\_financing\_payments\_duration": 90,  
+      "askedgar\_url": "https://app.askedgar.io/filing?ticker=AAPL&..."  
+    }  
+  \]  
+}
+
+#### **Response fields**
+
+| Field | Type | Description |
+| ----- | ----- | ----- |
+| `ticker` | string | Stock ticker |
+| `document_url` | string | URL to the SEC filing |
+| `form_type` | string | SEC form type |
+| `filed_at` | date | SEC filing date |
+| `offering_type` | string | Type of offering (e.g., `"ATM"`) |
+| `bank_name` | string | Name of the investment bank |
+| `right_of_first_refusal_present` | boolean | Whether a ROFR provision exists |
+| `right_of_first_refusal_details` | string | Details of the ROFR provision |
+| `right_of_first_refusal_duration` | number | Duration of the ROFR in days |
+| `right_of_first_refusal_type` | string | Type of ROFR (e.g., `"exclusive"`) |
+| `right_of_first_refusal_end_date` | date | When the ROFR expires |
+| `tail_financing_payments_present` | boolean | Whether tail financing provisions exist |
+| `tail_financing_payments_duration` | number | Duration of the tail financing period in days |
+| `askedgar_url` | string | Link to view on AskEdgar |
+
+---
+
+### **16\. Ownership**
+
+**GET** `/v1/ownership`
+
+Get ownership data for a specific ticker, grouped by reported date. Shows who owns shares (executives, directors, large investors) and how much they hold.
+
+**Note:** `ticker` is **required** for this endpoint.
+
+#### **Parameters**
+
+| Parameter | Type | Required | Description |
+| ----- | ----- | ----- | ----- |
+| `ticker` | string | **Yes** | Stock ticker (required) |
+| `page` | integer | No | Page number (default: `0`) |
+| `limit` | integer | No | Results per page (default: `100`) |
+
+#### **Example request**
+
+curl "https://eapi.askedgar.io/v1/ownership?ticker=AAPL" \\  
+  \-H "API-KEY: your\_api\_key\_here"
+
+#### **Example response**
+
+Results are grouped by `reported_date`, each containing an array of `owners`:
+
+{  
+  "status": "success",  
+  "count": 1,  
+  "results": \[  
+    {  
+      "reported\_date": "2024-01-12",  
+      "owners": \[  
+        {  
+          "ticker": "AAPL",  
+          "filed\_at": "2024-01-15",  
+          "form\_type": "4",  
+          "reported\_date": "2024-01-12",  
+          "owner\_name": "John Doe",  
+          "owner\_type": "Director",  
+          "title": "Director",  
+          "common\_shares\_amount": 50000,  
+          "preferred\_shares\_amount": 0,  
+          "options\_amount": 0,  
+          "warrants\_amount": 0,  
+          "shares\_underlying\_convertibles": 0,  
+          "outstanding\_shares\_final": 15500000000,  
+          "cik": "0000320193",  
+          "document\_url": "https://www.sec.gov/...",  
+          "classes\_details": "",  
+          "source\_table": ""  
+        }  
+      \]  
+    }  
+  \]  
+}
+
+#### **Owner fields**
+
+| Field | Type | Description |
+| ----- | ----- | ----- |
+| `ticker` | string | Stock ticker |
+| `filed_at` | date | SEC filing date |
+| `form_type` | string | SEC form type (commonly `"4"` for insider transactions) |
+| `reported_date` | date | Date the ownership was reported as of |
+| `owner_name` | string | Name of the owner |
+| `owner_type` | string | Type of owner. Values: `"Executive"`, `"Director"`, `"10+ Percent Investor"`, `"5-10 Percent Investor"` |
+| `title` | string | Title/role of the owner (e.g., `"CEO"`, `"Director"`) |
+| `common_shares_amount` | integer | Number of common shares held |
+| `preferred_shares_amount` | integer | Number of preferred shares held |
+| `options_amount` | integer | Number of options held |
+| `warrants_amount` | integer | Number of warrants held |
+| `shares_underlying_convertibles` | integer | Shares underlying convertible securities |
+| `outstanding_shares_final` | number | Total outstanding shares at time of report |
+| `cik` | string | SEC Central Index Key |
+| `document_url` | string | URL to the SEC filing |
+
+---
+
+### **17\. AI Chart Analysis (Gap Analysis)**
+
+**GET** `/v1/ai-chart-analysis`
+
+Get AI-generated chart analysis for a stock. This analyzes how a stock has historically performed on gap-up days (days where the stock opens significantly higher than the previous close).
+
+**Generated within a few minutes of a ticker hitting \+20% on the day.** There is no websocket or webhook — poll this endpoint to check for new analysis.
+
+**Note:** `ticker` is **required** for this endpoint. Returns the latest analysis.
+
+#### **Parameters**
+
+| Parameter | Type | Required | Description |
+| ----- | ----- | ----- | ----- |
+| `ticker` | string | **Yes** | Stock ticker (required) |
+| `page` | integer | No | Page number (default: `0`) |
+| `limit` | integer | No | Results per page (default: `100`) |
+
+#### **Example request**
+
+curl "https://eapi.askedgar.io/v1/ai-chart-analysis?ticker=AAPL" \\  
+  \-H "API-KEY: your\_api\_key\_here"
+
+#### **Example response**
+
+{  
+  "status": "success",  
+  "count": 1,  
+  "results": \[  
+    {  
+      "ticker": "AAPL",  
+      "gain\_percentage": 45.5,  
+      "chart\_count": 10,  
+      "analysis\_text": "Bullish pattern detected...",  
+      "volume": 55000000,  
+      "price": 150.25,  
+      "rating": "green",  
+      "created\_at": "2025-02-10T15:30:00",  
+      "post\_url": "https://..."  
+    }  
+  \]  
+}
+
+#### **Response fields**
+
+| Field | Type | Description |
+| ----- | ----- | ----- |
+| `ticker` | string | Stock ticker |
+| `gain_percentage` | number | How much the stock was up when analysis was generated (percentage) |
+| `chart_count` | integer | Number of historical gap-up days analyzed |
+| `analysis_text` | string | AI-generated chart analysis text |
+| `volume` | integer | Trading volume at time of analysis |
+| `price` | number | Stock price at time of analysis |
+| `rating` | string | Gap performance rating: `"green"` (closes strong more often than weak), `"yellow"` (mixed results), `"orange"` (mostly closes weak on gaps), `"red"` (always closes weak on gaps) |
+| `created_at` | datetime | When the analysis was generated |
+| `post_url` | string | URL to the published analysis |
+
+---
+
+### **18\. Research Reports**
+
+Three endpoints provide AI-generated research reports at different levels of detail. All three require `ticker`. **There is no websocket or webhook — poll these endpoints to check for new reports.**
+
+* **Full report** (`/v1/research-reports`) and **TLDR** (`/v1/research-reports-tldr`) — generated within a few minutes of a ticker hitting \+40% on the day.  
+* **Short report** (`/v1/research-reports-short`) — pulls from more data sources, generated within 10–15 minutes of a ticker hitting \+40% on the day.
+
+#### **18a. Full Research Report**
+
+**GET** `/v1/research-reports`
+
+Returns the most comprehensive AI-generated research report.
+
+curl "https://eapi.askedgar.io/v1/research-reports?ticker=AAPL" \\  
+  \-H "API-KEY: your\_api\_key\_here"
+
+**Response fields:**
+
+| Field | Type | Description |
+| ----- | ----- | ----- |
+| `ticker` | string | Stock ticker |
+| `gain_percentage` | number | How much the stock was up (percentage) |
+| `report_text` | string | Full research report text |
+| `volume` | integer | Trading volume |
+| `price` | number | Stock price |
+| `market_cap` | integer | Market capitalization |
+| `created_at` | datetime | When the report was generated |
+| `post_url` | string | URL to the published report |
+
+#### **18b. Short Research Report**
+
+**GET** `/v1/research-reports-short`
+
+Returns a condensed version of the research report that pulls from more data sources. Takes slightly longer to generate (10–15 minutes vs a few minutes for the full report).
+
+curl "https://eapi.askedgar.io/v1/research-reports-short?ticker=AAPL" \\  
+  \-H "API-KEY: your\_api\_key\_here"
+
+**Response fields:** Same as full report, plus:
+
+| Field | Type | Description |
+| ----- | ----- | ----- |
+| `tradable_float` | integer | Tradable float |
+| `outstanding` | integer | Outstanding shares |
+| `country` | string | Country |
+| `industry` | string | Industry |
+
+#### **18c. TLDR Research Report**
+
+**GET** `/v1/research-reports-tldr`
+
+Returns the shortest summary — a quick TLDR.
+
+curl "https://eapi.askedgar.io/v1/research-reports-tldr?ticker=AAPL" \\  
+  \-H "API-KEY: your\_api\_key\_here"
+
+**Response fields:**
+
+| Field | Type | Description |
+| ----- | ----- | ----- |
+| `ticker` | string | Stock ticker |
+| `gain_percentage` | number | How much the stock was up (percentage) |
+| `tldr_text` | string | Very short TLDR summary |
+| `report_id` | integer | ID linking to the full report |
+| `price` | number | Stock price |
+| `market_cap` | integer | Market capitalization |
+| `tradable_float` | integer | Tradable float |
+| `outstanding` | integer | Outstanding shares |
+| `country` | string | Country |
+| `industry` | string | Industry |
+| `created_at` | datetime | When generated |
+| `post_url` | string | URL to published report |
+
+---
+
+### **19\. Market Strength**
+
+**GET** `/v1/market-strength`
+
+AI-generated analysis of overall small-cap market strength. The AI is fed data on the day's top gappers (whether they closed red/green, broke premarket highs, broke 11am highs, closed over VWAP, etc.), multi-day runners, active sectors, news catalysts, prices, floats, and other data points. It then produces an analysis of the overall strength of the small-cap market and any active themes.
+
+**Generated daily at 2:30 AM CST.**
+
+#### **Parameters**
+
+| Parameter | Type | Required | Description |
+| ----- | ----- | ----- | ----- |
+| `date` | date | No | Specific date (`YYYY-MM-DD`) |
+| `latest` | boolean | No | Set `true` to get the most recent analysis (default: `false`) |
+| `page` | integer | No | Page number (default: `0`) |
+| `limit` | integer | No | Results per page (default: `100`) |
+
+#### **Example request**
+
+curl "https://eapi.askedgar.io/v1/market-strength?latest=true" \\  
+  \-H "API-KEY: your\_api\_key\_here"
+
+#### **Example response**
+
+{  
+  "status": "success",  
+  "count": 1,  
+  "results": \[  
+    {  
+      "date": "2024-01-01",  
+      "analysis": "Market analysis text...",  
+      "performance": "Market performance text..."  
+    }  
+  \]  
+}
+
+#### **Response fields**
+
+| Field | Type | Description |
+| ----- | ----- | ----- |
+| `date` | date | Date of the analysis |
+| `analysis` | string | AI-generated market analysis narrative |
+| `performance` | string | AI-generated market performance summary |
+
+---
+
+### **20\. Filing Titles**
+
+**GET** `/v1/filing-titles`
+
+Look up AI-generated filing titles and headlines. Instead of just showing the SEC form type (e.g., "8-K"), the `headline` field provides a human-readable one-liner describing what the filing is actually about. Useful for quickly understanding filings without reading them.
+
+#### **Parameters**
+
+| Parameter | Type | Required | Description |
+| ----- | ----- | ----- | ----- |
+| `ticker` | string | No | Filter by stock ticker |
+| `document_url` | string | No | Filter by SEC document URL |
+| `cik` | string | No | Filter by SEC Central Index Key |
+| `accession_number` | string | No | Filter by SEC accession number |
+| `form_type` | string | No | Filter by SEC form type (e.g., `"10-K"`, `"8-K"`) |
+| `page` | integer | No | Page number (default: `0`) |
+| `limit` | integer | No | Results per page (default: `100`) |
+
+#### **Example request**
+
+curl "https://eapi.askedgar.io/v1/filing-titles?ticker=AAPL\&form\_type=10-K" \\  
+  \-H "API-KEY: your\_api\_key\_here"
+
+#### **Example response**
+
+{  
+  "status": "success",  
+  "count": 1,  
+  "results": \[  
+    {  
+      "accession\_number": "0001234567-24-000001",  
+      "cik": "0000320193",  
+      "ticker": "AAPL",  
+      "headline": "Annual Report",  
+      "filed\_at": "2024-01-15",  
+      "file\_no": "001-123456",  
+      "form\_type": "10-K",  
+      "document\_url": "https://www.sec.gov/..."  
+    }  
+  \]  
+}
+
+#### **Response fields**
+
+| Field | Type | Description |
+| ----- | ----- | ----- |
+| `accession_number` | string | SEC accession number (unique filing identifier) |
+| `cik` | string | SEC Central Index Key |
+| `ticker` | string | Stock ticker |
+| `headline` | string | AI-generated one-liner describing what the filing is about (e.g., "Announces $50M ATM offering program" instead of just "8-K") |
+| `filed_at` | date | Filing date |
+| `file_no` | string | SEC file number |
+| `form_type` | string | SEC form type |
+| `document_url` | string | URL to the SEC document |
+
+---
+
 ## **Common Use Cases (Recipes)**
 
 Here are typical workflows a developer might want to build:
@@ -1301,7 +1733,18 @@ Here are typical workflows a developer might want to build:
 ### **"Get recent offerings for a ticker"**
 
 1. Call `/v1/offerings?ticker=XXXX&date_from=2024-01-01`  
-2. Call `/v1/funds-underwriters?ticker=XXXX` to see which funds and banks were involved
+2. Call `/v1/dilution-data-advanced?ticker=XXXX` to see which funds and banks were involved (institutional access)
+
+### **"Get an AI report on a stock that's running"**
+
+1. When a stock is up 20%+: poll `/v1/ai-chart-analysis?ticker=XXXX` for gap-day performance analysis  
+2. When a stock is up 40%+: poll `/v1/research-reports-tldr?ticker=XXXX` for a quick summary (available within minutes)  
+3. Wait 10-15 min, then call `/v1/research-reports-short?ticker=XXXX` for the deeper report with more sources  
+4. Call `/v1/research-reports?ticker=XXXX` for the full deep-dive
+
+### **"Check today's market conditions"**
+
+1. Call `/v1/market-strength?latest=true` for AI analysis of small-cap market strength (updated daily at 2:30 AM CST)
 
 ### **"Check if a stock might be a pump & dump"**
 
@@ -1324,13 +1767,22 @@ Here are typical workflows a developer might want to build:
 | `/v1/dilution-rating` | GET | API-KEY | Dilution risk ratings |
 | `/v1/nasdaq-compliance` | GET | API-KEY | Nasdaq compliance deficiency notices |
 | `/v1/offerings` | GET | API-KEY | Stock offerings (ATM, PIPE, direct, etc.) |
+| `/v1/offerings-advanced` | GET | API-KEY | Offerings \+ fund & bank details (institutional access only) |
 | `/v1/dilution-data` | GET | API-KEY | Warrants & convertibles (ticker required) |
-| `/v1/funds-underwriters` | GET | API-KEY | Dilution data \+ bank, fund & price protection details (institutional access only) |
+| `/v1/dilution-data-advanced` | GET | API-KEY | Dilution data \+ bank, fund & price protection details (institutional access only) |
 | `/v1/historical-float-pro` | GET | API-KEY | Historical float & market cap from SEC filings |
 | `/v1/news` | GET | API-KEY | News articles & SEC filings |
 | `/v1/registrations` | GET | API-KEY | SEC registrations (shelf, ATM, equity line) |
 | `/v1/agreements` | GET | API-KEY | Registration rights, participation rights, equity restrictions |
+| `/v1/rofr` | GET | API-KEY | Right of first refusal & tail financing data (institutional access only) |
+| `/v1/ownership` | GET | API-KEY | Ownership data grouped by reported date (ticker required) |
 | `/v1/pump-and-dump-tracker` | GET | API-KEY | Pump & dump risk tracker |
 | `/v1/screener` | GET | API-KEY | Stock screener with 60+ filters |
 | `/v1/screener/options` | GET | API-KEY | Valid values for screener dropdown filters |
+| `/v1/ai-chart-analysis` | GET | API-KEY | AI gap analysis — generated within minutes of \+20% (ticker required) |
+| `/v1/research-reports` | GET | API-KEY | Full AI research report — generated within minutes of \+40% (ticker required) |
+| `/v1/research-reports-short` | GET | API-KEY | Short AI research report — more sources, 10-15 min after \+40% (ticker required) |
+| `/v1/research-reports-tldr` | GET | API-KEY | TLDR AI research report — generated within minutes of \+40% (ticker required) |
+| `/v1/market-strength` | GET | API-KEY | AI analysis of small-cap market strength (generated daily 2:30 AM CST) |
+| `/v1/filing-titles` | GET | API-KEY | AI-generated human-readable filing headlines |
 

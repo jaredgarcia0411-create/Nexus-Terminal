@@ -20,8 +20,8 @@ describe('jarvis askedgar client', () => {
     const result = await client.fetchTickerData('AAPL');
 
     expect(result.ticker).toBe('AAPL');
-    expect(Object.keys(result.rawData)).toHaveLength(12);
-    expect(result.dataSources).toHaveLength(12);
+    expect(Object.keys(result.rawData)).toHaveLength(13);
+    expect(result.dataSources).toHaveLength(13);
   });
 
   it('tracks daily call count', async () => {
@@ -29,6 +29,6 @@ describe('jarvis askedgar client', () => {
     const client = await import('@/lib/jarvis/askedgar');
 
     await client.fetchTickerData('MSFT');
-    expect(client.getAskEdgarCallCount()).toBe(12);
+    expect(client.getAskEdgarCallCount()).toBe(13);
   });
 });

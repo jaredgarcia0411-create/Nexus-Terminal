@@ -129,7 +129,8 @@ type EndpointKey =
   | 'pump-and-dump-tracker'
   | 'agreements'
   | 'historical-float-pro'
-  | 'reverse-splits';
+  | 'reverse-splits'
+  | 'filing-titles';
 
 interface EndpointConfig {
   key: EndpointKey;
@@ -255,6 +256,12 @@ async function fetchReverseSplits(ticker: string) {
   return requestAskEdgar<unknown>('/v1/reverse-splits', { ticker: validated });
 }
 
+async function fetchFilingTitles(ticker: string, limit = 20) {
+  const validated = validateTickerOrError<unknown>(ticker);
+  if (typeof validated !== 'string') return validated;
+  return requestAskEdgar<unknown>('/v1/filing-titles', { ticker: validated, limit });
+}
+
 export async function fetchTickerData(ticker: string) {
   const normalizedTicker = ticker.trim().toUpperCase();
 
@@ -271,6 +278,7 @@ export async function fetchTickerData(ticker: string) {
     { key: 'agreements', label: 'Agreements', run: () => fetchAgreements(normalizedTicker) },
     { key: 'historical-float-pro', label: 'Historical Float', run: () => fetchHistoricalFloatPro(normalizedTicker, 20) },
     { key: 'reverse-splits', label: 'Reverse Splits', run: () => fetchReverseSplits(normalizedTicker) },
+    { key: 'filing-titles', label: 'Filing Titles', run: () => fetchFilingTitles(normalizedTicker, 20) },
   ];
 
   const settledResults = await Promise.allSettled(endpointConfigs.map((config) => config.run()));
