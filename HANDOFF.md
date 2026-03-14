@@ -339,3 +339,70 @@ npm test
 ```
 [x] Task 13a: Add Refresh (Ignore Cache) button and force flag request payload in components/trading/ResearchTab.tsx
 ```
+
+---
+
+# Research Report Null-Payload UX + Validation Plan
+
+> Generated: 2026-03-13 | Agent: opencode
+> Status: COMPLETE (IMPLEMENTED)
+
+## Goal
+- Prevent malformed/non-schema research payloads from being treated as valid cached reports.
+- Improve chat rendering for non-schema report payloads so users do not see a raw JSON wall by default.
+- Surface cache/warning context clearly in Jarvis chat responses.
+
+## Task 14: Schema Validation Before Cache Reuse
+
+### 14a. `lib/jarvis/research.ts`
+- Add strict schema-shape validation helper for `DilutionResearchReport` payloads.
+- Tighten `canReuseCachedReport(...)` to require:
+  - `status === 'complete'`
+  - report JSON matches dilution report schema shape
+  - rawData exists and has no endpoint-level `error` entries
+- If cached report fails validation, bypass cache and regenerate.
+
+## Task 15: Chat Fallback Rendering + Warning Visibility
+
+### 15a. `components/trading/JarvisChat.tsx`
+- Keep structured render path for valid `DilutionResearchReport` payloads.
+- Replace raw JSON fallback with compact, user-readable fallback panel:
+  - short message that report payload is incomplete/unstructured
+  - show warnings list when present
+  - optional small "view raw payload" details block for debugging
+
+### 15b. `components/trading/JarvisStructuredResponse.tsx`
+- Ensure warning panel is shown consistently for both structured and fallback-style rendering paths.
+
+## Task 16: Chat-Level Refresh/Caching Clarity
+
+### 16a. `app/api/jarvis/chat/route.ts`
+- Add support for optional forced refresh from chat command variant:
+  - `/research! TICKER` or `/research TICKER --force`
+- Pass `{ forceRefresh: true }` to `runResearchPipeline(...)` when force flag is used.
+- Include `fromCache` and `warnings` in response (already present; keep as contract).
+
+### 16b. `components/trading/JarvisChat.tsx`
+- Display a compact status line for research responses:
+  - "Source: Cache" vs "Source: Fresh"
+  - warning count badge when warnings exist
+
+## Verification
+```bash
+npm run lint
+npx tsc --noEmit
+npm test
+```
+
+## Execution Checklist
+
+```
+[x] Task 14a: Tightened cache reuse validation to require DilutionResearchReport shape in lib/jarvis/research.ts
+[x] Task 15a: Replaced raw JSON fallback with compact fallback + raw payload details in components/trading/JarvisChat.tsx
+[x] Task 15b: Ensured warnings render in both structured/fallback paths in components/trading/JarvisStructuredResponse.tsx
+[x] Task 16a: Added `/research!` and `--force` command support in app/api/jarvis/chat/route.ts
+[x] Task 16b: Added cache source + warning count status badges in components/trading/JarvisChat.tsx
+[x] Validation: npm run lint
+[x] Validation: npx tsc --noEmit
+[x] Validation: npm test
+```

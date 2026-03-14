@@ -59,7 +59,7 @@ describe('jarvis chat route', () => {
     buildContextMock.mockResolvedValue({ user_trades: [], macro_summary: null, memory: [] });
     callJarvisMock.mockResolvedValue({ content: 'hello back', modelUsed: 'm' });
     runTradeAnalysisPipelineMock.mockResolvedValue({ analysis: { strengths: [], weaknesses: [], patterns: [], action_items: [] } });
-    runResearchPipelineMock.mockResolvedValue({ ticker: 'AAPL', report: { ok: true } });
+    runResearchPipelineMock.mockResolvedValue({ ticker: 'AAPL', report: { ok: true }, warnings: [], fromCache: false });
     selectLimitMock.mockResolvedValue([]);
     insertValuesMock.mockResolvedValue(undefined);
     getDbMock.mockReturnValue({
@@ -109,5 +109,27 @@ describe('jarvis chat route', () => {
 
     expect(ensureResponse(response).status).toBe(503);
     expect(ensureUserMock).not.toHaveBeenCalled();
+  });
+
+  it('passes force refresh for /research with --force flag', async () => {
+    const response = await POST(new Request('http://localhost/api/jarvis/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: '/research AAPL --force' }),
+    }));
+
+    expect(ensureResponse(response).status).toBe(200);
+    expect(runResearchPipelineMock).toHaveBeenCalledWith('canonical-u1', 'AAPL', { forceRefresh: true });
+  });
+
+  it('passes force refresh for /research! command variant', async () => {
+    const response = await POST(new Request('http://localhost/api/jarvis/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: '/research! AAPL' }),
+    }));
+
+    expect(ensureResponse(response).status).toBe(200);
+    expect(runResearchPipelineMock).toHaveBeenCalledWith('canonical-u1', 'AAPL', { forceRefresh: true });
   });
 });

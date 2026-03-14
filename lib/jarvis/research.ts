@@ -5,6 +5,7 @@ import { fetchTickerData } from '@/lib/jarvis/askedgar';
 import { callJarvis } from '@/lib/jarvis/client';
 import { buildContext } from '@/lib/jarvis/context';
 import { JARVIS_SYSTEM_PROMPT, buildResearchPrompt } from '@/lib/jarvis/prompts';
+import type { DilutionResearchReport } from '@/lib/jarvis/types';
 
 interface ResearchPipelineOptions {
   forceRefresh?: boolean;
@@ -23,7 +24,28 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isCacheableReport(report: unknown): report is Record<string, unknown> {
-  return isObject(report);
+  if (!isObject(report)) return false;
+
+  const candidate = report as Partial<DilutionResearchReport>;
+  return (
+    typeof candidate.ticker === 'string'
+    && typeof candidate.generatedAt === 'string'
+    && isObject(candidate.header)
+    && Array.isArray(candidate.dataSources)
+    && Array.isArray(candidate.news)
+    && Array.isArray(candidate.catalysts)
+    && isObject(candidate.dilution)
+    && isObject(candidate.offeringFrequency)
+    && isObject(candidate.offeringAbility)
+    && isObject(candidate.cashNeed)
+    && typeof candidate.managementCommentary === 'string'
+    && isObject(candidate.overallOfferingRisk)
+    && isObject(candidate.scamRisk)
+    && Array.isArray(candidate.agreements)
+    && Array.isArray(candidate.historicalFloat)
+    && Array.isArray(candidate.reverseSplits)
+    && Array.isArray(candidate.filingTitles)
+  );
 }
 
 function collectRawDataWarnings(rawData: unknown) {

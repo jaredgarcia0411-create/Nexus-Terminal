@@ -16,6 +16,16 @@ interface JarvisStructuredResponseProps {
   sources?: JarvisSourceContext[];
   macroSummary?: JarvisMacroSummaryOutput;
   dilutionReport?: DilutionResearchReport;
+  rawPayload?: unknown;
+}
+
+function formatRawPayload(payload: unknown) {
+  if (typeof payload === 'string') return payload;
+  try {
+    return JSON.stringify(payload, null, 2);
+  } catch {
+    return 'Unable to serialize raw payload.';
+  }
 }
 
 function relevanceLabel(score: number) {
@@ -43,6 +53,7 @@ export default function JarvisStructuredResponse({
   sources,
   macroSummary,
   dilutionReport,
+  rawPayload,
 }: JarvisStructuredResponseProps) {
   return (
     <div className="space-y-4">
@@ -92,7 +103,15 @@ export default function JarvisStructuredResponse({
           </section>
         </div>
       ) : (
-        <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">{message}</p>
+        <div className="space-y-3 rounded-lg border border-white/10 bg-black/20 p-3">
+          <p className="text-sm text-zinc-200">{message}</p>
+          {rawPayload !== undefined ? (
+            <details className="rounded-lg border border-white/10 bg-black/30 p-2">
+              <summary className="cursor-pointer text-xs text-zinc-400">View raw payload</summary>
+              <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap text-xs text-zinc-300">{formatRawPayload(rawPayload)}</pre>
+            </details>
+          ) : null}
+        </div>
       )}
 
       {macroSummary ? <JarvisMacroSummary macroSummary={macroSummary} /> : null}

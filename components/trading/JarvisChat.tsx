@@ -47,16 +47,6 @@ function isDilutionResearchReport(value: unknown): value is DilutionResearchRepo
   );
 }
 
-function fallbackReportText(reportJson: unknown) {
-  if (typeof reportJson === 'string') return reportJson;
-  if (reportJson == null) return 'No report data returned.';
-  try {
-    return JSON.stringify(reportJson, null, 2);
-  } catch {
-    return 'Unable to render report payload.';
-  }
-}
-
 export default function JarvisChat() {
   const [sessionId, setSessionId] = useState<string>('');
   const [input, setInput] = useState('');
@@ -134,15 +124,34 @@ export default function JarvisChat() {
                 <p><strong>Action Items:</strong> {message.payload.tradeAnalysis.action_items.join('; ') || 'None'}</p>
               </div>
             ) : message.role === 'assistant' && message.payload?.reportJson ? (
-              isDilutionResearchReport(message.payload.reportJson) ? (
-                <JarvisStructuredResponse
-                  message={message.text}
-                  warnings={message.payload.warnings}
-                  dilutionReport={message.payload.reportJson}
-                />
-              ) : (
-                <p className="whitespace-pre-wrap text-sm text-zinc-100">{fallbackReportText(message.payload.reportJson)}</p>
-              )
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  {typeof message.payload.fromCache === 'boolean' ? (
+                    <span className={`rounded-full border px-2 py-0.5 ${message.payload.fromCache ? 'border-zinc-500/30 bg-zinc-500/10 text-zinc-200' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'}`}>
+                      Source: {message.payload.fromCache ? 'Cache' : 'Fresh'}
+                    </span>
+                  ) : null}
+                  {message.payload.warnings && message.payload.warnings.length > 0 ? (
+                    <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-amber-200">
+                      {message.payload.warnings.length} warning{message.payload.warnings.length === 1 ? '' : 's'}
+                    </span>
+                  ) : null}
+                </div>
+
+                {isDilutionResearchReport(message.payload.reportJson) ? (
+                  <JarvisStructuredResponse
+                    message={message.text}
+                    warnings={message.payload.warnings}
+                    dilutionReport={message.payload.reportJson}
+                  />
+                ) : (
+                  <JarvisStructuredResponse
+                    message="Research report generated, but the payload is incomplete or unstructured."
+                    warnings={message.payload.warnings}
+                    rawPayload={message.payload.reportJson}
+                  />
+                )}
+              </div>
             ) : (
               <p className="whitespace-pre-wrap text-sm text-zinc-100">{message.text}</p>
             )}

@@ -17,6 +17,42 @@ interface ChatBody {
   session_id?: string;
 }
 
+interface ResearchCommand {
+  ticker: string;
+  forceRefresh: boolean;
+}
+
+function parseResearchCommand(message: string): ResearchCommand | null {
+  const trimmed = message.trim();
+
+  let forceRefresh = false;
+  let remainder = '';
+
+  if (trimmed.startsWith('/research!')) {
+    forceRefresh = true;
+    remainder = trimmed.slice('/research!'.length).trim();
+  } else if (trimmed.startsWith('/research ')) {
+    remainder = trimmed.slice('/research '.length).trim();
+  } else {
+    return null;
+  }
+
+  if (!remainder) {
+    return { ticker: '', forceRefresh };
+  }
+
+  const tokens = remainder.split(/\s+/);
+  const filtered = tokens.filter((token) => token !== '--force');
+  if (tokens.length !== filtered.length) {
+    forceRefresh = true;
+  }
+
+  return {
+    ticker: (filtered[0] ?? '').toUpperCase(),
+    forceRefresh,
+  };
+}
+
 async function saveConversation(input: {
   db: NonNullable<ReturnType<typeof getDb>>;
   userId: string;
@@ -87,9 +123,13 @@ export async function POST(request: Request) {
       contextSnapshot: firstMessage ? null : context,
     });
 
-    if (message.startsWith('/research ')) {
-      const ticker = message.slice('/research '.length).trim().toUpperCase();
-      const result = await runResearchPipeline(userId, ticker);
+    const researchCommand = parseResearchCommand(message);
+    if (researchCommand) {
+      if (!researchCommand.ticker) {
+        return Response.json({ error: 'ticker is required' }, { status: 400 });
+      }
+
+      const result = await runResearchPipeline(userId, researchCommand.ticker, { forceRefresh: researchCommand.forceRefresh });
       const responseText = `Research report generated for ${result.ticker}.`;
       await saveConversation({ db, userId, sessionId, role: 'assistant', content: responseText, mode: 'research' });
       return Response.json({
