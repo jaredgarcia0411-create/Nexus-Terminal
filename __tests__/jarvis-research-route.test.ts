@@ -50,7 +50,7 @@ describe('jarvis research route', () => {
 
     expect(ensureResponse(response).status).toBe(200);
     expect(ensureUserMock).toHaveBeenCalledTimes(1);
-    expect(runResearchPipelineMock).toHaveBeenCalledWith('canonical-u1', 'AAPL');
+    expect(runResearchPipelineMock).toHaveBeenCalledWith('canonical-u1', 'AAPL', { forceRefresh: false });
   });
 
   it('returns 503 when database is unavailable', async () => {

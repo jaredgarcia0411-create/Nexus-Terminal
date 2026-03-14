@@ -2,12 +2,15 @@
 
 import { useMemo, useState } from 'react';
 import JarvisStructuredResponse from '@/components/trading/JarvisStructuredResponse';
+import type { DilutionResearchReport } from '@/lib/jarvis/types';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
   text: string;
   payload?: {
     reportJson?: unknown;
+    warnings?: string[];
+    fromCache?: boolean;
     tradeAnalysis?: {
       strengths: string[];
       weaknesses: string[];
@@ -15,6 +18,43 @@ interface ChatMessage {
       action_items: string[];
     };
   };
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isDilutionResearchReport(value: unknown): value is DilutionResearchReport {
+  if (!isObject(value)) return false;
+
+  return (
+    typeof value.ticker === 'string'
+    && typeof value.generatedAt === 'string'
+    && isObject(value.header)
+    && Array.isArray(value.dataSources)
+    && Array.isArray(value.news)
+    && Array.isArray(value.catalysts)
+    && isObject(value.dilution)
+    && isObject(value.offeringFrequency)
+    && isObject(value.offeringAbility)
+    && isObject(value.cashNeed)
+    && isObject(value.overallOfferingRisk)
+    && isObject(value.scamRisk)
+    && Array.isArray(value.agreements)
+    && Array.isArray(value.historicalFloat)
+    && Array.isArray(value.reverseSplits)
+    && Array.isArray(value.filingTitles)
+  );
+}
+
+function fallbackReportText(reportJson: unknown) {
+  if (typeof reportJson === 'string') return reportJson;
+  if (reportJson == null) return 'No report data returned.';
+  try {
+    return JSON.stringify(reportJson, null, 2);
+  } catch {
+    return 'Unable to render report payload.';
+  }
 }
 
 export default function JarvisChat() {
@@ -49,6 +89,8 @@ export default function JarvisChat() {
         message?: string;
         session_id?: string;
         reportJson?: unknown;
+        warnings?: string[];
+        fromCache?: boolean;
         tradeAnalysis?: NonNullable<ChatMessage['payload']>['tradeAnalysis'];
       };
 
@@ -65,6 +107,8 @@ export default function JarvisChat() {
         text: payload.message ?? '',
         payload: {
           reportJson: payload.reportJson,
+          warnings: payload.warnings,
+          fromCache: payload.fromCache,
           tradeAnalysis: payload.tradeAnalysis,
         },
       }]);
@@ -90,7 +134,15 @@ export default function JarvisChat() {
                 <p><strong>Action Items:</strong> {message.payload.tradeAnalysis.action_items.join('; ') || 'None'}</p>
               </div>
             ) : message.role === 'assistant' && message.payload?.reportJson ? (
-              <JarvisStructuredResponse message={JSON.stringify(message.payload.reportJson, null, 2)} />
+              isDilutionResearchReport(message.payload.reportJson) ? (
+                <JarvisStructuredResponse
+                  message={message.text}
+                  warnings={message.payload.warnings}
+                  dilutionReport={message.payload.reportJson}
+                />
+              ) : (
+                <p className="whitespace-pre-wrap text-sm text-zinc-100">{fallbackReportText(message.payload.reportJson)}</p>
+              )
             ) : (
               <p className="whitespace-pre-wrap text-sm text-zinc-100">{message.text}</p>
             )}

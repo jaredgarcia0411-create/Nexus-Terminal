@@ -116,6 +116,8 @@ export interface JarvisResponse {
   tradeAnalysis?: TradeAnalysisOutput;
   macroSummary?: JarvisMacroSummaryOutput;
   reportJson?: unknown;
+  warnings?: string[];
+  fromCache?: boolean;
   session_id?: string;
 }
 

@@ -92,7 +92,13 @@ export async function POST(request: Request) {
       const result = await runResearchPipeline(userId, ticker);
       const responseText = `Research report generated for ${result.ticker}.`;
       await saveConversation({ db, userId, sessionId, role: 'assistant', content: responseText, mode: 'research' });
-      return Response.json({ message: responseText, session_id: sessionId, reportJson: result.report });
+      return Response.json({
+        message: responseText,
+        session_id: sessionId,
+        reportJson: result.report,
+        warnings: result.warnings,
+        fromCache: result.fromCache,
+      });
     }
 
     if (message.trim() === '/analyze') {

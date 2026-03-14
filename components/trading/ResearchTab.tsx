@@ -104,7 +104,7 @@ export default function ResearchTab() {
     void Promise.all([loadResearchData(), loadDailyRows(), loadSavedRows()]);
   }, [loadResearchData, loadDailyRows, loadSavedRows]);
 
-  const runResearch = async () => {
+  const runResearch = async (force = false) => {
     const nextTicker = ticker.trim().toUpperCase();
     if (!nextTicker || loadingResearch) return;
 
@@ -113,7 +113,7 @@ export default function ResearchTab() {
       const response = await fetch('/api/jarvis/research', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: nextTicker }),
+        body: JSON.stringify({ ticker: nextTicker, force }),
       });
       if (!response.ok) throw new Error('Research request failed');
       await loadResearchData();
@@ -218,10 +218,18 @@ export default function ResearchTab() {
               <button
                 type="button"
                 disabled={loadingResearch}
-                onClick={() => void runResearch()}
+                onClick={() => void runResearch(false)}
                 className="rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-black disabled:opacity-60"
               >
                 {loadingResearch ? 'Running...' : 'New Report'}
+              </button>
+              <button
+                type="button"
+                disabled={loadingResearch}
+                onClick={() => void runResearch(true)}
+                className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm font-semibold text-zinc-100 disabled:opacity-60"
+              >
+                {loadingResearch ? 'Running...' : 'Refresh (Ignore Cache)'}
               </button>
             </div>
             <p className="mt-2 text-xs text-zinc-500">Run a new report by entering a single ticker symbol.</p>

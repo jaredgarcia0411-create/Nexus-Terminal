@@ -260,3 +260,82 @@ npm run lint && npx tsc --noEmit
 [x] Validation: npx tsc --noEmit
 [x] Validation: npm test
 ```
+
+---
+
+# Research Report Reliability + Rendering Fix
+
+> Generated: 2026-03-13 | Agent: opencode
+> Status: READY FOR EXECUTION
+
+## Goal
+- Prevent stale null/error research reports from being reused as valid cache.
+- Allow explicit refresh to bypass same-day cache.
+- Surface AskEdgar warnings/errors in API/chat responses.
+- Render dilution research in structured UI in Jarvis chat instead of raw JSON dump.
+
+## Task 10: Cache Validity + Force Refresh
+
+### 10a. `lib/jarvis/research.ts`
+- Add optional `forceRefresh` parameter to `runResearchPipeline(userId, ticker, options?)`.
+- Bypass cached report lookup when `forceRefresh` is true.
+- Add cache eligibility guard so only valid reports are reused:
+  - status must be `complete`
+  - `reportJson` must be a non-null object
+  - `rawData` must contain AskEdgar endpoint payloads and not include endpoint-level `error` fields
+- Return `warnings` consistently for both cached and fresh runs.
+
+### 10b. `app/api/jarvis/research/route.ts`
+- Accept optional boolean `force` in POST body.
+- Pass `{ forceRefresh: force }` into `runResearchPipeline`.
+
+## Task 11: Warning/Error Passthrough for Chat Research
+
+### 11a. `app/api/jarvis/chat/route.ts`
+- For `/research TICKER` responses, include `warnings` and `fromCache` in JSON response alongside `reportJson`.
+
+### 11b. `lib/jarvis/types.ts`
+- Extend `JarvisResponse` with optional `warnings?: string[]` and `fromCache?: boolean`.
+
+## Task 12: Structured Dilution Report Rendering in Chat
+
+### 12a. `components/trading/JarvisChat.tsx`
+- Add a narrow type guard for `DilutionResearchReport` payloads.
+- Replace raw `JSON.stringify(reportJson)` rendering path with:
+  - `JarvisStructuredResponse` with `dilutionReport` when payload matches schema
+  - fallback text rendering for non-matching payloads
+- Plumb `warnings` through message payload and pass to `JarvisStructuredResponse`.
+
+## Verification
+```bash
+npm run lint
+npx tsc --noEmit
+npm test
+```
+
+## Execution Checklist
+
+```
+[x] Task 10a: Add force refresh + cache eligibility guard in lib/jarvis/research.ts
+[x] Task 10b: Accept POST force flag in app/api/jarvis/research/route.ts
+[x] Task 11a: Include warnings/fromCache in app/api/jarvis/chat/route.ts research response
+[x] Task 11b: Extend JarvisResponse with warnings/fromCache in lib/jarvis/types.ts
+[x] Task 12a: Render structured dilution report in components/trading/JarvisChat.tsx
+[x] Validation: npm run lint
+[x] Validation: npx tsc --noEmit
+[x] Validation: npm test
+```
+
+---
+
+## Task 13: Add Force-Refresh UI Control for Research
+
+### 13a. `components/trading/ResearchTab.tsx`
+- Add a second action button in AI Reports: `Refresh (Ignore Cache)`.
+- Update `runResearch` to accept a `force` flag and send `{ force: true }` to `/api/jarvis/research` when refresh is requested.
+
+## Execution Checklist
+
+```
+[x] Task 13a: Add Refresh (Ignore Cache) button and force flag request payload in components/trading/ResearchTab.tsx
+```

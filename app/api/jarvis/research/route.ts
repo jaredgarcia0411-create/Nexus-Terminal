@@ -7,6 +7,7 @@ import { runResearchPipeline } from '@/lib/jarvis/research';
 
 interface ResearchBody {
   ticker?: string;
+  force?: boolean;
 }
 
 export async function POST(request: Request) {
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'ticker is required' }, { status: 400 });
     }
 
-    const result = await runResearchPipeline(canonicalUser.id, ticker);
+    const result = await runResearchPipeline(canonicalUser.id, ticker, { forceRefresh: bodyState.data.force === true });
     return Response.json(result);
   } catch (error) {
     logRouteError('jarvis.research.post', error);
