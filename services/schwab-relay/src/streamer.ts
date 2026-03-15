@@ -299,7 +299,7 @@ export class SchwabStreamer {
         requestid: toRequestId(),
         parameters: {
           keys: futures.join(','),
-          fields: '0,1,2,3,4,5,8,12,13,14,18,19,20',
+          fields: '0,1,2,3,8,12,13,14,18,19,20',
         },
       });
     }
@@ -343,11 +343,21 @@ export class SchwabStreamer {
       }
 
       if (Array.isArray(parsed.response)) {
-        const loginAck = parsed.response.some(
-          (entry) => entry.service === 'ADMIN' && entry.command === 'LOGIN',
+        const loginResponse = parsed.response.find(
+          (entry: { service?: string; command?: string }) =>
+            entry.service === 'ADMIN' && entry.command === 'LOGIN',
         );
-        if (loginAck) {
-          this.subscribe();
+        if (loginResponse) {
+          const code = (loginResponse as { content?: { code?: number } }).content?.code;
+          if (code === 0) {
+            console.log('[Streamer] LOGIN successful, subscribing...');
+            this.subscribe();
+          } else {
+            const msg = (loginResponse as { content?: { msg?: string } }).content?.msg;
+            console.error(`[Streamer] LOGIN failed: code=${code} msg=${msg}`);
+            this.onError(new Error(`Schwab LOGIN failed: ${msg ?? `code ${code}`}`));
+            this.disconnect();
+          }
         }
       }
 
@@ -405,8 +415,6 @@ export class SchwabStreamer {
         const quote: Partial<QuoteUpdate> = {
           assetType,
           quoteTimeMs: toNumber(timestamp),
-          exchangeId: typeof item['4'] === 'string' ? item['4'] : undefined,
-          securityStatus: typeof item['5'] === 'string' ? item['5'] : undefined,
         };
 
         for (const [fieldNumberRaw, fieldName] of Object.entries(map)) {
