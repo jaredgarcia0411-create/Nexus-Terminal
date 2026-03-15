@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, ChevronRight, Search, Tag as TagIcon } from 'lucide-react';
 import TradeTable from '@/components/trading/TradeTable';
 import JournalTradeChart from '@/components/trading/JournalTradeChart';
@@ -261,56 +261,65 @@ export default function JournalTab({
                 </div>
               </div>
 
-              {expanded ? (
-                <div className="space-y-4 p-3">
-                  <TradeTable
-                    trades={day.trades}
-                    selectedIds={selectedIds}
-                    onToggleSelect={onToggleSelect}
-                    onSelectAll={onSelectAll}
-                    onAddTag={onAddTag}
-                    onRemoveTag={onRemoveTag}
-                    onDeleteGlobalTag={onDeleteGlobalTag}
-                    onTradeClick={onTradeClick}
-                    globalTags={globalTags}
-                  />
+              <AnimatePresence mode="wait">
+                {expanded ? (
+                  <motion.div
+                    key={day.sortKey}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.2, ease: "easeInOut" }}
+                    className="space-y-4 p-3"
+                  >
+                    <TradeTable
+                      trades={day.trades}
+                      selectedIds={selectedIds}
+                      onToggleSelect={onToggleSelect}
+                      onSelectAll={onSelectAll}
+                      onAddTag={onAddTag}
+                      onRemoveTag={onRemoveTag}
+                      onDeleteGlobalTag={onDeleteGlobalTag}
+                      onTradeClick={onTradeClick}
+                      globalTags={globalTags}
+                    />
 
-                  <div className="space-y-3 rounded-xl border border-white/10 bg-[#121214] p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Trade Replay Charts</p>
-                    <div className="space-y-3">
-                      {day.trades.slice(0, chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH).map((trade) => (
-                        <div key={`chart-${trade.id}`} className="space-y-2 rounded-xl border border-white/10 bg-[#121214] p-3">
-                          <div className="flex items-center justify-between gap-2 text-xs">
-                            <p className="font-semibold text-zinc-200">{trade.symbol} ({trade.direction})</p>
-                            <p className="font-mono text-zinc-500">{trade.entryTime || '--:--'} - {trade.exitTime || '--:--'}</p>
+                    <div className="space-y-3 rounded-xl border border-white/10 bg-[#121214] p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Trade Replay Charts</p>
+                      <div className="space-y-3">
+                        {day.trades.slice(0, chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH).map((trade) => (
+                          <div key={`chart-${trade.id}`} className="space-y-2 rounded-xl border border-white/10 bg-[#121214] p-3">
+                            <div className="flex items-center justify-between gap-2 text-xs">
+                              <p className="font-semibold text-zinc-200">{trade.symbol} ({trade.direction})</p>
+                              <p className="font-mono text-zinc-500">{trade.entryTime || '--:--'} - {trade.exitTime || '--:--'}</p>
+                            </div>
+                            <JournalTradeChart trade={trade} />
                           </div>
-                          <JournalTradeChart trade={trade} />
-                        </div>
-                      ))}
+                        ))}
 
-                      {day.trades.length > (chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH) ? (
-                        <div className="flex justify-center">
-                          <button
-                            onClick={() => {
-                              setChartCountByDay((counts) => ({
-                                ...counts,
-                                [day.sortKey]: resolveNextChartCount(
-                                  day.trades.length,
-                                  counts[day.sortKey] ?? INITIAL_CHART_BATCH,
-                                  CHART_BATCH_STEP,
-                                ),
-                              }));
-                            }}
-                            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/10"
-                          >
-                            Load {resolveLoadMoreCount(day.trades.length, chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH, CHART_BATCH_STEP)} more charts
-                          </button>
-                        </div>
-                      ) : null}
+                        {day.trades.length > (chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH) ? (
+                          <div className="flex justify-center">
+                            <button
+                              onClick={() => {
+                                setChartCountByDay((counts) => ({
+                                  ...counts,
+                                  [day.sortKey]: resolveNextChartCount(
+                                    day.trades.length,
+                                    counts[day.sortKey] ?? INITIAL_CHART_BATCH,
+                                    CHART_BATCH_STEP,
+                                  ),
+                                }));
+                              }}
+                              className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/10"
+                            >
+                              Load {resolveLoadMoreCount(day.trades.length, chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH, CHART_BATCH_STEP)} more charts
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
-                </div>
-              ) : null}
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
             </div>
           );
         })}
