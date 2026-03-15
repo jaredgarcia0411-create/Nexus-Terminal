@@ -118,6 +118,112 @@ Detailed step-by-step execution specs and checklists were removed to save space.
 
 ---
 
+## Schwab Phases 1-2: Post-Review Fixes
+
+> Generated: 2026-03-15 | Agent: nexus-architect (review), claude (spec)
+> Status: PENDING — opencode should execute before starting Phase 3
+
+**Context:** Architecture review of Phases 1 & 2 found 5 actionable issues. Fix in priority order below.
+
+### Fix 1: Validate LOGIN response before subscribing (BUG — blocks relay operation)
+
+**File:** `services/schwab-relay/src/streamer.ts`
+
+In `handleMessage()`, the code currently checks for a LOGIN response and immediately calls `subscribe()` without verifying success. Schwab LOGIN responses include `content.code` — `0` means success, anything else is failure.
+
+**Steps:**
+1. Find the block that checks `service === 'ADMIN' && command === 'LOGIN'` (around line 346-351)
+2. Replace the simple existence check with a success validation:
+   ```typescript
+   const loginResponse = parsed.response?.find(
+     (entry: { service: string; command: string }) =>
+       entry.service === 'ADMIN' && entry.command === 'LOGIN'
+   );
+   if (loginResponse) {
+     const code = (loginResponse as { content?: { code?: number } }).content?.code;
+     if (code === 0) {
+       console.log('[Streamer] LOGIN successful, subscribing...');
+       this.subscribe();
+     } else {
+       const msg = (loginResponse as { content?: { msg?: string } }).content?.msg;
+       console.error(`[Streamer] LOGIN failed: code=${code} msg=${msg}`);
+       this.onError(new Error(`Schwab LOGIN failed: ${msg ?? `code ${code}`}`));
+       this.disconnect();
+     }
+   }
+   ```
+3. Run: `cd services/schwab-relay && npx tsc --noEmit`
+
+### Fix 2: Remove wrong exchangeId/securityStatus field extraction (BUG — data quality)
+
+**File:** `services/schwab-relay/src/streamer.ts`
+
+In `mapQuoteData()` (around lines 405-409), the code hardcodes `item['4']` as `exchangeId` and `item['5']` as `securityStatus`. These field numbers mean different things per service type (equities vs futures vs forex) and neither exchangeId nor securityStatus is subscribed for any service. Remove these two lines.
+
+**Steps:**
+1. Find the `mapQuoteData` function, locate these lines:
+   ```typescript
+   exchangeId: typeof item['4'] === 'string' ? item['4'] : undefined,
+   securityStatus: typeof item['5'] === 'string' ? item['5'] : undefined,
+   ```
+2. Delete both lines
+3. If `exchangeId` and `securityStatus` exist on the `QuoteUpdate` type but are now never assigned, leave them in the type (they may be populated in a future phase) — just remove the incorrect assignment
+4. Run: `cd services/schwab-relay && npx tsc --noEmit`
+
+### Fix 3: Clean up futures subscription fields (CLEANUP)
+
+**File:** `services/schwab-relay/src/streamer.ts`
+
+The LEVELONE_FUTURES subscription (around line 301) requests fields `0,1,2,3,4,5,8,12,13,14,18,19,20`. Fields 4 and 5 are not mapped in `FUTURES_FIELDS` and aren't used after Fix 2 removes the hardcoded extraction.
+
+**Steps:**
+1. Change the futures subscription field string from `0,1,2,3,4,5,8,12,13,14,18,19,20` to `0,1,2,3,8,12,13,14,18,19,20`
+2. Run: `cd services/schwab-relay && npx tsc --noEmit`
+
+### Fix 4: Update CLAUDE.md for Schwab infrastructure (DOCUMENTATION)
+
+**File:** `.claude/CLAUDE.md`
+
+The project docs are stale — they still list `schwab/` as empty/legacy and show 15 tables.
+
+**Steps:**
+1. Update the table count from `15` to `17` and add `schwab_links, realtime_quotes` to the table list
+2. Remove `schwab/` from the "Empty/legacy directories" line (keep the others)
+3. Add a new API Routes subsection:
+   ```
+   ## Schwab
+   - GET `/api/schwab/auth` (OAuth initiation)
+   - GET `/api/schwab/callback` (OAuth callback)
+   - GET/DELETE `/api/schwab/status` (link status + unlink)
+   ```
+4. Add under Key Modules:
+   ```
+   ## Schwab
+   - `lib/schwab/crypto.ts` — AES-256-GCM token encrypt/decrypt
+   - `lib/schwab/auth.ts` — OAuth URL generation, code exchange, token refresh
+   - `services/schwab-relay/` — Standalone streaming relay service (Fly.io)
+   ```
+5. Update Known Issues item 1 — change "Empty legacy API directories remain from removed Schwab/Discord/backtest features" to "Empty legacy API directories remain from removed Discord/backtest features"
+
+### Fix 5: Remove unused `RELAY_SERVICE_SECRET` from .env.example (CLEANUP)
+
+**File:** `.env.example`
+
+`RELAY_SERVICE_SECRET` is declared but never referenced in any code. Remove it or add a comment `# Reserved for future relay<->app auth (Phase 3+)`.
+
+**Steps:**
+1. Find `RELAY_SERVICE_SECRET` in `.env.example` and add a comment: `# Future: relay<->app auth (not yet used)`
+2. Done — no code changes needed
+
+### Validation
+
+After all fixes, run from project root:
+```bash
+cd services/schwab-relay && npx tsc --noEmit && cd ../.. && npm run lint && npx tsc --noEmit
+```
+
+---
+
 ## Notes
 
 - `.env` and secret files were not modified.
