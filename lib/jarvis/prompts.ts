@@ -118,6 +118,33 @@ export function buildResearchPrompt(reportData: Record<string, unknown[]>) {
   return `You are running research mode.\n${RESEARCH_SCHEMA}\n\n<report_data>\n${JSON.stringify(reportData)}\n</report_data>`;
 }
 
+/**
+ * Build a prompt that asks the LLM for a compact research TLDR.
+ * Output schema: { tldr: string, findings: string[], actionSteps: string[], risks: string[] }
+ */
+export function buildResearchTldrPrompt(reportData: Record<string, unknown[]>) {
+  return `Analyze this AskEdgar data and return a compact JSON research summary.
+
+OUTPUT FORMAT (strict JSON, no markdown):
+{
+  "tldr": "2-3 sentence executive summary of the ticker's dilution risk and outlook",
+  "findings": ["key fact 1", "key fact 2", ...],
+  "actionSteps": ["what to watch or do 1", "what to watch or do 2", ...],
+  "risks": ["risk flag 1", "risk flag 2", ...]
+}
+
+RULES:
+- findings: 5-8 bullets, focus on dilution, offerings, cash position, compliance
+- actionSteps: 3-5 bullets, actionable next steps for a trader
+- risks: 3-5 bullets, biggest risk flags
+- Be specific with numbers (prices, dates, percentages) when available
+- JSON only, no explanation
+
+<report_data>
+${JSON.stringify(reportData)}
+</report_data>`;
+}
+
 export function buildChatPrompt(context: JarvisContext, userMessage: string) {
   return withContext(`You are running chat mode. User message: ${userMessage}`, context);
 }

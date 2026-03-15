@@ -9,6 +9,12 @@ interface ChatMessage {
   text: string;
   payload?: {
     reportJson?: unknown;
+    researchTldr?: {
+      tldr: string;
+      findings: string[];
+      actionSteps: string[];
+      risks: string[];
+    };
     warnings?: string[];
     fromCache?: boolean;
     tradeAnalysis?: {
@@ -79,6 +85,7 @@ export default function JarvisChat() {
         message?: string;
         session_id?: string;
         reportJson?: unknown;
+        researchTldr?: NonNullable<ChatMessage['payload']>['researchTldr'];
         warnings?: string[];
         fromCache?: boolean;
         tradeAnalysis?: NonNullable<ChatMessage['payload']>['tradeAnalysis'];
@@ -97,6 +104,7 @@ export default function JarvisChat() {
         text: payload.message ?? '',
         payload: {
           reportJson: payload.reportJson,
+          researchTldr: payload.researchTldr,
           warnings: payload.warnings,
           fromCache: payload.fromCache,
           tradeAnalysis: payload.tradeAnalysis,
@@ -122,6 +130,46 @@ export default function JarvisChat() {
                 <p><strong>Weaknesses:</strong> {message.payload.tradeAnalysis.weaknesses.join('; ') || 'None'}</p>
                 <p><strong>Patterns:</strong> {message.payload.tradeAnalysis.patterns.join('; ') || 'None'}</p>
                 <p><strong>Action Items:</strong> {message.payload.tradeAnalysis.action_items.join('; ') || 'None'}</p>
+              </div>
+            ) : message.role === 'assistant' && message.payload?.researchTldr ? (
+              <div className="mt-2 space-y-3 text-sm">
+                <p className="text-zinc-200">{message.payload.researchTldr.tldr}</p>
+
+                {message.payload.researchTldr.findings.length > 0 ? (
+                  <div>
+                    <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Key Findings</h4>
+                    <ul className="list-inside list-disc space-y-0.5 text-zinc-300">
+                      {message.payload.researchTldr.findings.map((finding, findingIndex) => <li key={`finding-${findingIndex}`}>{finding}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {message.payload.researchTldr.actionSteps.length > 0 ? (
+                  <div>
+                    <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Action Steps</h4>
+                    <ul className="list-inside list-disc space-y-0.5 text-emerald-400/80">
+                      {message.payload.researchTldr.actionSteps.map((action, actionIndex) => <li key={`action-${actionIndex}`}>{action}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {message.payload.researchTldr.risks.length > 0 ? (
+                  <div>
+                    <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Risk Flags</h4>
+                    <ul className="list-inside list-disc space-y-0.5 text-rose-400/80">
+                      {message.payload.researchTldr.risks.map((risk, riskIndex) => <li key={`risk-${riskIndex}`}>{risk}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+
+                <div className="flex gap-2 text-xs">
+                  <span className={message.payload.fromCache ? 'text-zinc-500' : 'text-emerald-500'}>
+                    {message.payload.fromCache ? 'cached' : 'fresh'}
+                  </span>
+                  {message.payload.warnings && message.payload.warnings.length > 0 ? (
+                    <span className="text-amber-500">{message.payload.warnings.length} warning(s)</span>
+                  ) : null}
+                </div>
               </div>
             ) : message.role === 'assistant' && message.payload?.reportJson ? (
               <div className="space-y-2">

@@ -7,7 +7,7 @@ import { callJarvis } from '@/lib/jarvis/client';
 import { buildContext } from '@/lib/jarvis/context';
 import { JARVIS_SYSTEM_PROMPT, buildChatPrompt } from '@/lib/jarvis/prompts';
 import { checkRateLimit } from '@/lib/jarvis/rate-limit';
-import { runResearchPipeline } from '@/lib/jarvis/research';
+import { fetchAndCacheRawReport, runResearchTldr } from '@/lib/jarvis/research';
 import { estimateInputTokens, estimateOutputTokens, logJarvisRequest } from '@/lib/jarvis/token-tracking';
 import { runTradeAnalysisPipeline } from '@/lib/jarvis/trade-analysis';
 import type { JarvisMode } from '@/lib/jarvis/types';
@@ -19,37 +19,26 @@ interface ChatBody {
 
 interface ResearchCommand {
   ticker: string;
-  forceRefresh: boolean;
 }
 
 function parseResearchCommand(message: string): ResearchCommand | null {
   const trimmed = message.trim();
+  if (trimmed === '/research') {
+    return { ticker: '' };
+  }
 
-  let forceRefresh = false;
-  let remainder = '';
-
-  if (trimmed.startsWith('/research!')) {
-    forceRefresh = true;
-    remainder = trimmed.slice('/research!'.length).trim();
-  } else if (trimmed.startsWith('/research ')) {
-    remainder = trimmed.slice('/research '.length).trim();
-  } else {
+  if (!trimmed.startsWith('/research ')) {
     return null;
   }
 
-  if (!remainder) {
-    return { ticker: '', forceRefresh };
-  }
+  const remainder = trimmed.slice('/research '.length).trim();
 
-  const tokens = remainder.split(/\s+/);
-  const filtered = tokens.filter((token) => token !== '--force');
-  if (tokens.length !== filtered.length) {
-    forceRefresh = true;
+  if (!remainder) {
+    return { ticker: '' };
   }
 
   return {
-    ticker: (filtered[0] ?? '').toUpperCase(),
-    forceRefresh,
+    ticker: (remainder.split(/\s+/)[0] ?? '').toUpperCase(),
   };
 }
 
@@ -129,15 +118,16 @@ export async function POST(request: Request) {
         return Response.json({ error: 'ticker is required' }, { status: 400 });
       }
 
-      const result = await runResearchPipeline(userId, researchCommand.ticker, { forceRefresh: researchCommand.forceRefresh });
-      const responseText = `Research report generated for ${result.ticker}.`;
+      const rawResult = await fetchAndCacheRawReport(userId, researchCommand.ticker);
+      const tldr = await runResearchTldr(rawResult.rawData, rawResult.ticker);
+      const responseText = `Research TLDR for ${rawResult.ticker}`;
       await saveConversation({ db, userId, sessionId, role: 'assistant', content: responseText, mode: 'research' });
       return Response.json({
         message: responseText,
         session_id: sessionId,
-        reportJson: result.report,
-        warnings: result.warnings,
-        fromCache: result.fromCache,
+        researchTldr: tldr,
+        warnings: rawResult.warnings,
+        fromCache: rawResult.fromCache,
       });
     }
 

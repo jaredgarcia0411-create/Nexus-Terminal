@@ -1,14 +1,21 @@
-import { and, eq, gte } from 'drizzle-orm';
+import { and, desc, eq, gte } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { researchReports } from '@/lib/db/schema';
 import { fetchTickerData } from '@/lib/jarvis/askedgar';
 import type { AskEdgarResponse } from '@/lib/jarvis/askedgar';
 import { callJarvis } from '@/lib/jarvis/client';
-import { buildResearchPrompt } from '@/lib/jarvis/prompts';
+import { buildResearchPrompt, buildResearchTldrPrompt } from '@/lib/jarvis/prompts';
 import type { DilutionResearchReport } from '@/lib/jarvis/types';
 
 interface ResearchPipelineOptions {
   forceRefresh?: boolean;
+}
+
+export interface ResearchTldr {
+  tldr: string;
+  findings: string[];
+  actionSteps: string[];
+  risks: string[];
 }
 
 function parseJson(text: string): unknown {
@@ -209,4 +216,113 @@ export async function runResearchPipeline(userId: string, ticker: string, option
     });
     throw error;
   }
+}
+
+/**
+ * Fetch AskEdgar data for a ticker and cache it — no LLM call.
+ * Used by the Research Tab to display raw structured data directly.
+ */
+export async function fetchAndCacheRawReport(
+  userId: string,
+  ticker: string,
+): Promise<{
+  fromCache: boolean;
+  ticker: string;
+  rawData: Record<string, AskEdgarResponse<unknown>>;
+  warnings: string[];
+  generatedAt: string;
+}> {
+  const db = getDb();
+  if (!db) {
+    throw new Error('Database not configured');
+  }
+
+  const normalizedTicker = ticker.trim().toUpperCase();
+  if (!/^[A-Z0-9.\-^]+$/.test(normalizedTicker)) {
+    throw new Error('Invalid ticker');
+  }
+
+  const startOfDay = new Date();
+  startOfDay.setUTCHours(0, 0, 0, 0);
+
+  const [cached] = await db.select({
+    rawData: researchReports.rawData,
+    generatedAt: researchReports.generatedAt,
+  })
+    .from(researchReports)
+    .where(and(
+      eq(researchReports.userId, userId),
+      eq(researchReports.ticker, normalizedTicker),
+      gte(researchReports.generatedAt, startOfDay),
+    ))
+    .orderBy(desc(researchReports.generatedAt))
+    .limit(1);
+
+  if (isObject(cached?.rawData) && Object.keys(cached.rawData).length > 0) {
+    const generatedAt = cached.generatedAt ?? new Date();
+    return {
+      fromCache: true,
+      ticker: normalizedTicker,
+      rawData: cached.rawData as Record<string, AskEdgarResponse<unknown>>,
+      warnings: collectRawDataWarnings(cached.rawData),
+      generatedAt: generatedAt.toISOString(),
+    };
+  }
+
+  const result = await fetchTickerData(normalizedTicker);
+  const generatedAt = new Date();
+
+  await db.insert(researchReports).values({
+    id: crypto.randomUUID(),
+    userId,
+    ticker: normalizedTicker,
+    status: 'complete',
+    rawData: result.rawData,
+    reportJson: null,
+    modelUsed: null,
+    generatedAt,
+  });
+
+  return {
+    fromCache: false,
+    ticker: normalizedTicker,
+    rawData: result.rawData,
+    warnings: result.warnings,
+    generatedAt: generatedAt.toISOString(),
+  };
+}
+
+/**
+ * Generate a compact TLDR from AskEdgar data for Jarvis chat display.
+ * Expects rawData from fetchAndCacheRawReport() or fetchTickerData().
+ */
+export async function runResearchTldr(
+  rawData: Record<string, AskEdgarResponse<unknown>>,
+  ticker: string,
+): Promise<ResearchTldr> {
+  const trimmed = trimRawDataForLlm(rawData);
+  const userPrompt = buildResearchTldrPrompt(trimmed);
+  const reply = await callJarvis(
+    'You are a trading research analyst. Return JSON only.',
+    userPrompt,
+  );
+
+  const parsed = parseJson(reply.content);
+  const parsedObj = isObject(parsed) ? parsed : {};
+
+  const tldr = typeof parsedObj.tldr === 'string'
+    ? parsedObj.tldr
+    : `Research data fetched for ${ticker} but TLDR generation failed.`;
+
+  const findings = Array.isArray(parsedObj.findings)
+    ? parsedObj.findings.filter((item): item is string => typeof item === 'string')
+    : [];
+  const actionSteps = Array.isArray(parsedObj.actionSteps)
+    ? parsedObj.actionSteps.filter((item): item is string => typeof item === 'string')
+    : [];
+  const risks = Array.isArray(parsedObj.risks)
+    ? parsedObj.risks.filter((item): item is string => typeof item === 'string')
+    : [];
+
+  return { tldr, findings, actionSteps, risks };
 }

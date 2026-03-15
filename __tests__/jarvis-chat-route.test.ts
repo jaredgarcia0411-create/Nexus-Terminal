@@ -8,7 +8,8 @@ const {
   callJarvisMock,
   getDbMock,
   runTradeAnalysisPipelineMock,
-  runResearchPipelineMock,
+  fetchAndCacheRawReportMock,
+  runResearchTldrMock,
 } = vi.hoisted(() => ({
   requireUserMock: vi.fn(),
   ensureUserMock: vi.fn(),
@@ -17,7 +18,8 @@ const {
   callJarvisMock: vi.fn(),
   getDbMock: vi.fn(),
   runTradeAnalysisPipelineMock: vi.fn(),
-  runResearchPipelineMock: vi.fn(),
+  fetchAndCacheRawReportMock: vi.fn(),
+  runResearchTldrMock: vi.fn(),
 }));
 
 vi.mock('@/lib/server-db-utils', () => ({
@@ -29,7 +31,10 @@ vi.mock('@/lib/jarvis/rate-limit', () => ({ checkRateLimit: checkRateLimitMock }
 vi.mock('@/lib/jarvis/context', () => ({ buildContext: buildContextMock }));
 vi.mock('@/lib/jarvis/client', () => ({ callJarvis: callJarvisMock }));
 vi.mock('@/lib/jarvis/trade-analysis', () => ({ runTradeAnalysisPipeline: runTradeAnalysisPipelineMock }));
-vi.mock('@/lib/jarvis/research', () => ({ runResearchPipeline: runResearchPipelineMock }));
+vi.mock('@/lib/jarvis/research', () => ({
+  fetchAndCacheRawReport: fetchAndCacheRawReportMock,
+  runResearchTldr: runResearchTldrMock,
+}));
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
 
 import { POST } from '@/app/api/jarvis/chat/route';
@@ -59,7 +64,8 @@ describe('jarvis chat route', () => {
     buildContextMock.mockResolvedValue({ user_trades: [], macro_summary: null, memory: [] });
     callJarvisMock.mockResolvedValue({ content: 'hello back', modelUsed: 'm' });
     runTradeAnalysisPipelineMock.mockResolvedValue({ analysis: { strengths: [], weaknesses: [], patterns: [], action_items: [] } });
-    runResearchPipelineMock.mockResolvedValue({ ticker: 'AAPL', report: { ok: true }, warnings: [], fromCache: false });
+    fetchAndCacheRawReportMock.mockResolvedValue({ ticker: 'AAPL', rawData: { screener: { status: 'success', results: [] } }, warnings: [], fromCache: false, generatedAt: new Date().toISOString() });
+    runResearchTldrMock.mockResolvedValue({ tldr: 'summary', findings: [], actionSteps: [], risks: [] });
     selectLimitMock.mockResolvedValue([]);
     insertValuesMock.mockResolvedValue(undefined);
     getDbMock.mockReturnValue({
@@ -111,18 +117,19 @@ describe('jarvis chat route', () => {
     expect(ensureUserMock).not.toHaveBeenCalled();
   });
 
-  it('passes force refresh for /research with --force flag', async () => {
+  it('runs raw fetch + TLDR pipeline for /research command', async () => {
     const response = await POST(new Request('http://localhost/api/jarvis/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: '/research AAPL --force' }),
+      body: JSON.stringify({ message: '/research AAPL' }),
     }));
 
     expect(ensureResponse(response).status).toBe(200);
-    expect(runResearchPipelineMock).toHaveBeenCalledWith('canonical-u1', 'AAPL', { forceRefresh: true });
+    expect(fetchAndCacheRawReportMock).toHaveBeenCalledWith('canonical-u1', 'AAPL');
+    expect(runResearchTldrMock).toHaveBeenCalledWith({ screener: { status: 'success', results: [] } }, 'AAPL');
   });
 
-  it('passes force refresh for /research! command variant', async () => {
+  it('treats /research! as normal chat command text', async () => {
     const response = await POST(new Request('http://localhost/api/jarvis/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -130,6 +137,7 @@ describe('jarvis chat route', () => {
     }));
 
     expect(ensureResponse(response).status).toBe(200);
-    expect(runResearchPipelineMock).toHaveBeenCalledWith('canonical-u1', 'AAPL', { forceRefresh: true });
+    expect(fetchAndCacheRawReportMock).not.toHaveBeenCalled();
+    expect(callJarvisMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -2,13 +2,17 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
+import AskEdgarRawReport from '@/components/trading/AskEdgarRawReport';
+import JarvisDilutionReport from '@/components/trading/JarvisDilutionReport';
 import { Button } from '@/components/ui/button';
+import type { DilutionResearchReport } from '@/lib/jarvis/types';
 
 interface ResearchRow {
   id: string;
   ticker: string;
   generatedAt: string;
   reportJson: unknown;
+  rawData: Record<string, unknown> | null;
 }
 
 interface DailySummaryRow {
@@ -25,15 +29,7 @@ interface DailySummaryRow {
   fetchedAt: string;
 }
 
-interface SavedTickerRow {
-  id: string;
-  ticker: string;
-  category: string;
-  notes: string | null;
-  createdAt: string;
-}
-
-type ResearchView = 'ai-reports' | 'daily-summaries' | 'saved-tickers';
+type ResearchView = 'ai-reports' | 'daily-summaries';
 
 function formatNumber(value: number | null, digits = 2) {
   if (value == null || !Number.isFinite(value)) return '--';
@@ -44,21 +40,22 @@ function todayDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 export default function ResearchTab() {
   const [activeView, setActiveView] = useState<ResearchView>('ai-reports');
   const [ticker, setTicker] = useState('');
   const [dailyTicker, setDailyTicker] = useState('');
-  const [savedTicker, setSavedTicker] = useState('');
-  const [savedNotes, setSavedNotes] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [loadingResearch, setLoadingResearch] = useState(false);
   const [loadingDaily, setLoadingDaily] = useState(false);
-  const [loadingSavedTicker, setLoadingSavedTicker] = useState(false);
   const [loadingRows, setLoadingRows] = useState(true);
   const [loadingDailyRows, setLoadingDailyRows] = useState(true);
-  const [loadingSavedRows, setLoadingSavedRows] = useState(true);
   const [researchRows, setResearchRows] = useState<ResearchRow[]>([]);
   const [dailyRows, setDailyRows] = useState<DailySummaryRow[]>([]);
-  const [savedRows, setSavedRows] = useState<SavedTickerRow[]>([]);
 
   const loadResearchData = useCallback(async () => {
     setLoadingRows(true);
@@ -77,7 +74,20 @@ export default function ResearchTab() {
   const loadDailyRows = useCallback(async () => {
     setLoadingDailyRows(true);
     try {
-      const response = await fetch('/api/market-data/daily-summary');
+      const params = new URLSearchParams();
+      const normalizedTicker = dailyTicker.trim().toUpperCase();
+      if (normalizedTicker) {
+        params.set('ticker', normalizedTicker);
+      }
+      if (startDate) {
+        params.set('startDate', startDate);
+      }
+      if (endDate) {
+        params.set('endDate', endDate);
+      }
+
+      const query = params.toString();
+      const response = await fetch(query ? `/api/market-data/daily-summary?${query}` : '/api/market-data/daily-summary');
       if (!response.ok) throw new Error('Failed to fetch daily summaries');
       const payload = (await response.json()) as { rows?: DailySummaryRow[] };
       setDailyRows(payload.rows ?? []);
@@ -86,27 +96,13 @@ export default function ResearchTab() {
     } finally {
       setLoadingDailyRows(false);
     }
-  }, []);
-
-  const loadSavedRows = useCallback(async () => {
-    setLoadingSavedRows(true);
-    try {
-      const response = await fetch('/api/saved-tickers');
-      if (!response.ok) throw new Error('Failed to fetch saved tickers');
-      const payload = (await response.json()) as { rows?: SavedTickerRow[] };
-      setSavedRows(payload.rows ?? []);
-    } catch {
-      setSavedRows([]);
-    } finally {
-      setLoadingSavedRows(false);
-    }
-  }, []);
+  }, [dailyTicker, endDate, startDate]);
 
   useEffect(() => {
-    void Promise.all([loadResearchData(), loadDailyRows(), loadSavedRows()]);
-  }, [loadResearchData, loadDailyRows, loadSavedRows]);
+    void Promise.all([loadResearchData(), loadDailyRows()]);
+  }, [loadResearchData, loadDailyRows]);
 
-  const runResearch = async (force = false) => {
+  const runResearch = async () => {
     const nextTicker = ticker.trim().toUpperCase();
     if (!nextTicker || loadingResearch) return;
 
@@ -115,7 +111,7 @@ export default function ResearchTab() {
       const response = await fetch('/api/jarvis/research', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: nextTicker, force }),
+        body: JSON.stringify({ ticker: nextTicker }),
       });
       if (!response.ok) throw new Error('Research request failed');
       await loadResearchData();
@@ -131,10 +127,18 @@ export default function ResearchTab() {
 
     setLoadingDaily(true);
     try {
+      const body: { ticker: string; date?: string; startDate?: string; endDate?: string } = { ticker: nextTicker };
+      if (startDate && endDate) {
+        body.startDate = startDate;
+        body.endDate = endDate;
+      } else {
+        body.date = todayDate();
+      }
+
       const response = await fetch('/api/market-data/daily-summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: nextTicker, date: todayDate() }),
+        body: JSON.stringify(body),
       });
       if (!response.ok) throw new Error('Daily summary request failed');
       await loadDailyRows();
@@ -144,37 +148,12 @@ export default function ResearchTab() {
     }
   };
 
-  const addSavedTicker = async () => {
-    const nextTicker = savedTicker.trim().toUpperCase();
-    if (!nextTicker || loadingSavedTicker) return;
-
-    setLoadingSavedTicker(true);
-    try {
-      const response = await fetch('/api/saved-tickers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: nextTicker, category: 'watchlist', notes: savedNotes }),
-      });
-      if (!response.ok) throw new Error('Failed to save ticker');
-      await loadSavedRows();
-      setSavedTicker('');
-      setSavedNotes('');
-    } finally {
-      setLoadingSavedTicker(false);
-    }
-  };
-
-  const removeSavedTicker = async (id: string) => {
-    await fetch(`/api/saved-tickers?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-    await loadSavedRows();
-  };
-
   return (
     <motion.section key="research" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-white">Research</h1>
-          <p className="text-sm text-zinc-400">AI reports, daily ticker summaries, and saved ticker watchlist.</p>
+          <p className="text-sm text-zinc-400">AI reports and daily ticker summaries.</p>
         </div>
         <p className="rounded-lg border border-white/10 bg-[#121214] px-2.5 py-1 text-xs text-zinc-400">
           {loadingRows
@@ -198,13 +177,6 @@ export default function ResearchTab() {
         >
           Daily Summaries
         </button>
-        <button
-          type="button"
-          onClick={() => setActiveView('saved-tickers')}
-          className={`rounded-md px-3 py-1.5 text-xs font-medium ${activeView === 'saved-tickers' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
-        >
-          Saved Tickers
-        </button>
       </div>
 
       {activeView === 'ai-reports' ? (
@@ -220,19 +192,10 @@ export default function ResearchTab() {
               <Button
                 type="button"
                 disabled={loadingResearch}
-                onClick={() => void runResearch(false)}
+                onClick={() => void runResearch()}
                 className="bg-emerald-500 px-3 text-sm font-semibold text-black hover:bg-emerald-400"
               >
                 {loadingResearch ? 'Running...' : 'New Report'}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={loadingResearch}
-                onClick={() => void runResearch(true)}
-                className="border-white/20 bg-white/5 px-3 text-sm font-semibold text-zinc-100 hover:bg-white/10"
-              >
-                {loadingResearch ? 'Running...' : 'Refresh (Ignore Cache)'}
               </Button>
             </div>
             <p className="mt-2 text-xs text-zinc-500">Run a new report by entering a single ticker symbol.</p>
@@ -245,7 +208,19 @@ export default function ResearchTab() {
             {researchRows.map((row) => (
               <details key={row.id} className="rounded-lg border border-white/10 bg-[#121214] p-4">
                 <summary className="cursor-pointer text-sm font-medium text-zinc-200">{row.ticker} - {new Date(row.generatedAt).toLocaleString()}</summary>
-                <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-black/25 p-3 text-xs text-zinc-300">{JSON.stringify(row.reportJson, null, 2)}</pre>
+                <div className="mt-3">
+                  {isObject(row.rawData) ? (
+                    <AskEdgarRawReport
+                      ticker={row.ticker}
+                      rawData={row.rawData as Record<string, { status: string; results: unknown[]; error?: string }>}
+                      generatedAt={row.generatedAt}
+                    />
+                  ) : row.reportJson ? (
+                    <JarvisDilutionReport report={row.reportJson as DilutionResearchReport} />
+                  ) : (
+                    <p className="text-sm text-zinc-500">No data available</p>
+                  )}
+                </div>
               </details>
             ))}
           </div>
@@ -255,12 +230,24 @@ export default function ResearchTab() {
       {activeView === 'daily-summaries' ? (
         <>
           <div className="rounded-xl border border-white/10 bg-[#121214] p-4">
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
               <input
                 value={dailyTicker}
                 onChange={(event) => setDailyTicker(event.target.value.toUpperCase())}
                 placeholder="Ticker (e.g. AAPL)"
-                className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+                className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+              />
+              <input
+                type="date"
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+                className="rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-200"
+              />
+              <input
+                type="date"
+                value={endDate}
+                onChange={(event) => setEndDate(event.target.value)}
+                className="rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-200"
               />
               <Button
                 type="button"
@@ -271,7 +258,7 @@ export default function ResearchTab() {
                 {loadingDaily ? 'Saving...' : 'Get Daily Summary'}
               </Button>
             </div>
-            <p className="mt-2 text-xs text-zinc-500">Defaults to today ({todayDate()}) and stores one record per ticker/date.</p>
+            <p className="mt-2 text-xs text-zinc-500">Set start and end dates to fetch a range (max 30 days). If not set, defaults to today ({todayDate()}).</p>
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#121214] p-4">
@@ -309,56 +296,6 @@ export default function ResearchTab() {
                 </tbody>
               </table>
             ) : null}
-          </div>
-        </>
-      ) : null}
-
-      {activeView === 'saved-tickers' ? (
-        <>
-          <div className="rounded-xl border border-white/10 bg-[#121214] p-4">
-            <div className="grid gap-2 sm:grid-cols-[1fr_2fr_auto]">
-              <input
-                value={savedTicker}
-                onChange={(event) => setSavedTicker(event.target.value.toUpperCase())}
-                placeholder="Ticker"
-                className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
-              />
-              <input
-                value={savedNotes}
-                onChange={(event) => setSavedNotes(event.target.value)}
-                placeholder="Optional note"
-                className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
-              />
-              <Button
-                type="button"
-                disabled={loadingSavedTicker}
-                onClick={() => void addSavedTicker()}
-                className="bg-emerald-500 px-3 text-sm font-semibold text-black hover:bg-emerald-400"
-              >
-                {loadingSavedTicker ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          </div>
-
-          <div className="space-y-2 rounded-xl border border-white/10 bg-[#121214] p-4">
-            {loadingSavedRows ? <p className="text-sm text-zinc-500">Loading saved tickers...</p> : null}
-            {!loadingSavedRows && savedRows.length === 0 ? <p className="text-sm text-zinc-500">No saved tickers yet.</p> : null}
-
-            {savedRows.map((row) => (
-              <div key={row.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-[#121214] px-3 py-2">
-                <div>
-                  <p className="text-sm font-medium text-zinc-100">{row.ticker}</p>
-                  <p className="text-xs text-zinc-500">{row.notes?.trim() || 'No notes'}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void removeSavedTicker(row.id)}
-                  className="rounded border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-xs text-rose-300"
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
           </div>
         </>
       ) : null}

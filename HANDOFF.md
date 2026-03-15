@@ -77,6 +77,23 @@ Detailed step-by-step execution specs and checklists were removed to save space.
 
 ---
 
+---
+
+## Research Tab Redesign — Pipeline Split + UI Overhaul
+
+> Generated: 2026-03-15 | Agent: nexus-architect
+> Status: COMPLETE (IMPLEMENTED)
+
+**Summary:**
+- Split research into two paths: `fetchAndCacheRawReport()` for Research tab (no LLM) and `runResearchTldr()` for chat TLDR generation.
+- Added `buildResearchTldrPrompt()` and switched chat `/research` responses to compact TLDR payloads (`researchTldr`) with cache/warning metadata.
+- Updated Research API and Research tab to return/render AskEdgar `rawData` via new `AskEdgarRawReport` component, while preserving `reportJson` fallback for legacy records.
+- Removed Saved Tickers and force-refresh UI from Research tab; kept focus on AI Reports and Daily Summaries.
+- Added Daily Summary date-range support (GET filters + POST range fetch/upsert loop, max 30 days).
+- Validation completed: lint, TypeScript, tests.
+
+---
+
 ## Notes
 
 - `.env` and secret files were not modified.

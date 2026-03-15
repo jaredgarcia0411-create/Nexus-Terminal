@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { requireUserMock, ensureUserMock, getDbMock, runResearchPipelineMock } = vi.hoisted(() => ({
+const { requireUserMock, ensureUserMock, getDbMock, fetchAndCacheRawReportMock } = vi.hoisted(() => ({
   requireUserMock: vi.fn(),
   ensureUserMock: vi.fn(),
   getDbMock: vi.fn(),
-  runResearchPipelineMock: vi.fn(),
+  fetchAndCacheRawReportMock: vi.fn(),
 }));
 
 vi.mock('@/lib/server-db-utils', () => ({
@@ -13,7 +13,7 @@ vi.mock('@/lib/server-db-utils', () => ({
   dbUnavailable: () => Response.json({ error: 'Database not configured' }, { status: 503 }),
 }));
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
-vi.mock('@/lib/jarvis/research', () => ({ runResearchPipeline: runResearchPipelineMock }));
+vi.mock('@/lib/jarvis/research', () => ({ fetchAndCacheRawReport: fetchAndCacheRawReportMock }));
 
 import { POST } from '@/app/api/jarvis/research/route';
 
@@ -28,7 +28,7 @@ describe('jarvis research route', () => {
     requireUserMock.mockResolvedValue({ user: { id: 'u1', email: 'u@x.com', name: null, picture: null } });
     ensureUserMock.mockResolvedValue({ id: 'canonical-u1', email: 'u@x.com', name: null, picture: null });
     getDbMock.mockReturnValue({});
-    runResearchPipelineMock.mockResolvedValue({ ticker: 'AAPL' });
+    fetchAndCacheRawReportMock.mockResolvedValue({ ticker: 'AAPL', rawData: {}, warnings: [], fromCache: false, generatedAt: new Date().toISOString() });
   });
 
   it('validates ticker required', async () => {
@@ -41,7 +41,7 @@ describe('jarvis research route', () => {
     expect(ensureUserMock).toHaveBeenCalledTimes(1);
   });
 
-  it('ensures user exists before running pipeline', async () => {
+  it('ensures user exists before running raw report fetch', async () => {
     const response = await POST(new Request('http://localhost/api/jarvis/research', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -50,7 +50,7 @@ describe('jarvis research route', () => {
 
     expect(ensureResponse(response).status).toBe(200);
     expect(ensureUserMock).toHaveBeenCalledTimes(1);
-    expect(runResearchPipelineMock).toHaveBeenCalledWith('canonical-u1', 'AAPL', { forceRefresh: false });
+    expect(fetchAndCacheRawReportMock).toHaveBeenCalledWith('canonical-u1', 'AAPL');
   });
 
   it('returns 503 when database is unavailable', async () => {

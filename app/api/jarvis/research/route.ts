@@ -3,11 +3,10 @@ import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-rou
 import { getDb } from '@/lib/db';
 import { researchReports } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
-import { runResearchPipeline } from '@/lib/jarvis/research';
+import { fetchAndCacheRawReport } from '@/lib/jarvis/research';
 
 interface ResearchBody {
   ticker?: string;
-  force?: boolean;
 }
 
 export async function POST(request: Request) {
@@ -27,7 +26,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'ticker is required' }, { status: 400 });
     }
 
-    const result = await runResearchPipeline(canonicalUser.id, ticker, { forceRefresh: bodyState.data.force === true });
+    const result = await fetchAndCacheRawReport(canonicalUser.id, ticker);
     return Response.json(result);
   } catch (error) {
     logRouteError('jarvis.research.post', error);
@@ -49,6 +48,7 @@ export async function GET() {
       ticker: researchReports.ticker,
       generatedAt: researchReports.generatedAt,
       reportJson: researchReports.reportJson,
+      rawData: researchReports.rawData,
     })
       .from(researchReports)
       .where(eq(researchReports.userId, canonicalUser.id))

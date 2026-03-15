@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte, lte } from 'drizzle-orm';
 import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { dailyTickerSummaries } from '@/lib/db/schema';
@@ -8,6 +8,8 @@ import { ensureUser, requireUser } from '@/lib/server-db-utils';
 interface DailySummaryBody {
   ticker?: string;
   date?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 function todayDate() {
@@ -23,6 +25,67 @@ function normalizeDate(input: string | undefined) {
   return value.length > 0 ? value : todayDate();
 }
 
+function parseDateOnly(input: string | undefined): Date | null {
+  const value = (input ?? '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  if (parsed.toISOString().slice(0, 10) !== value) return null;
+  return parsed;
+}
+
+async function fetchAndUpsertDailySummary(input: {
+  db: NonNullable<ReturnType<typeof getDb>>;
+  userId: string;
+  ticker: string;
+  date: string;
+}) {
+  const payload = await fetchDailyTickerSummary(input.ticker, input.date);
+  const fetchedAt = new Date();
+
+  await input.db.insert(dailyTickerSummaries).values({
+    id: crypto.randomUUID(),
+    userId: input.userId,
+    ticker: input.ticker,
+    date: input.date,
+    open: payload.open ?? null,
+    high: payload.high ?? null,
+    low: payload.low ?? null,
+    close: payload.close ?? null,
+    volume: payload.volume ?? null,
+    preMarket: payload.preMarket ?? null,
+    afterHours: payload.afterHours ?? null,
+    rawData: payload,
+    fetchedAt,
+  }).onConflictDoUpdate({
+    target: [dailyTickerSummaries.userId, dailyTickerSummaries.ticker, dailyTickerSummaries.date],
+    set: {
+      open: payload.open ?? null,
+      high: payload.high ?? null,
+      low: payload.low ?? null,
+      close: payload.close ?? null,
+      volume: payload.volume ?? null,
+      preMarket: payload.preMarket ?? null,
+      afterHours: payload.afterHours ?? null,
+      rawData: payload,
+      fetchedAt,
+    },
+  });
+
+  return {
+    ticker: input.ticker,
+    date: input.date,
+    open: payload.open ?? null,
+    high: payload.high ?? null,
+    low: payload.low ?? null,
+    close: payload.close ?? null,
+    volume: payload.volume ?? null,
+    preMarket: payload.preMarket ?? null,
+    afterHours: payload.afterHours ?? null,
+    fetchedAt: fetchedAt.toISOString(),
+  };
+}
+
 export async function GET(request: Request) {
   try {
     const authState = await requireUser();
@@ -33,19 +96,27 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Database not configured' }, { status: 503 });
     }
 
-    await ensureUser(db, authState.user);
+    const canonicalUser = await ensureUser(db, authState.user);
+    const userId = canonicalUser?.id ?? authState.user.id;
 
     const { searchParams } = new URL(request.url);
     const ticker = normalizeTicker(searchParams.get('ticker') ?? undefined);
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
     const date = normalizeDate(searchParams.get('date') ?? undefined);
 
-    const whereClause = ticker
-      ? and(
-        eq(dailyTickerSummaries.userId, authState.user.id),
-        eq(dailyTickerSummaries.ticker, ticker),
-        eq(dailyTickerSummaries.date, date),
-      )
-      : eq(dailyTickerSummaries.userId, authState.user.id);
+    const conditions = [eq(dailyTickerSummaries.userId, userId)];
+
+    if (ticker) {
+      conditions.push(eq(dailyTickerSummaries.ticker, ticker));
+    }
+
+    if (startDate && endDate) {
+      conditions.push(gte(dailyTickerSummaries.date, startDate));
+      conditions.push(lte(dailyTickerSummaries.date, endDate));
+    } else if (ticker) {
+      conditions.push(eq(dailyTickerSummaries.date, date));
+    }
 
     const rows = await db
       .select({
@@ -62,7 +133,7 @@ export async function GET(request: Request) {
         fetchedAt: dailyTickerSummaries.fetchedAt,
       })
       .from(dailyTickerSummaries)
-      .where(whereClause)
+      .where(and(...conditions))
       .orderBy(desc(dailyTickerSummaries.fetchedAt))
       .limit(50);
 
@@ -83,7 +154,8 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Database not configured' }, { status: 503 });
     }
 
-    await ensureUser(db, authState.user);
+    const canonicalUser = await ensureUser(db, authState.user);
+    const userId = canonicalUser?.id ?? authState.user.id;
 
     const bodyState = await parseJsonBody<DailySummaryBody>(request);
     if (bodyState.error) return bodyState.error;
@@ -93,53 +165,50 @@ export async function POST(request: Request) {
       return Response.json({ error: 'ticker is required' }, { status: 400 });
     }
 
+    const startDate = (bodyState.data.startDate ?? '').trim();
+    const endDate = (bodyState.data.endDate ?? '').trim();
+
+    if (startDate && endDate) {
+      const start = parseDateOnly(startDate);
+      const end = parseDateOnly(endDate);
+      if (!start || !end) {
+        return Response.json({ error: 'startDate and endDate must be YYYY-MM-DD' }, { status: 400 });
+      }
+      if (end < start) {
+        return Response.json({ error: 'endDate must be on or after startDate' }, { status: 400 });
+      }
+
+      const diffDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays > 30) {
+        return Response.json({ error: 'Date range cannot exceed 30 days' }, { status: 400 });
+      }
+
+      const rows = [];
+      const current = new Date(start);
+      while (current <= end) {
+        const currentDate = current.toISOString().split('T')[0];
+        const row = await fetchAndUpsertDailySummary({
+          db,
+          userId,
+          ticker,
+          date: currentDate,
+        });
+        rows.push(row);
+        current.setUTCDate(current.getUTCDate() + 1);
+      }
+
+      return Response.json({ rows });
+    }
+
     const date = normalizeDate(bodyState.data.date);
-    const payload = await fetchDailyTickerSummary(ticker, date);
-
-    const rowId = crypto.randomUUID();
-    const fetchedAt = new Date();
-
-    await db.insert(dailyTickerSummaries).values({
-      id: rowId,
-      userId: authState.user.id,
+    const row = await fetchAndUpsertDailySummary({
+      db,
+      userId,
       ticker,
       date,
-      open: payload.open ?? null,
-      high: payload.high ?? null,
-      low: payload.low ?? null,
-      close: payload.close ?? null,
-      volume: payload.volume ?? null,
-      preMarket: payload.preMarket ?? null,
-      afterHours: payload.afterHours ?? null,
-      rawData: payload,
-      fetchedAt,
-    }).onConflictDoUpdate({
-      target: [dailyTickerSummaries.userId, dailyTickerSummaries.ticker, dailyTickerSummaries.date],
-      set: {
-        open: payload.open ?? null,
-        high: payload.high ?? null,
-        low: payload.low ?? null,
-        close: payload.close ?? null,
-        volume: payload.volume ?? null,
-        preMarket: payload.preMarket ?? null,
-        afterHours: payload.afterHours ?? null,
-        rawData: payload,
-        fetchedAt,
-      },
     });
 
-    return Response.json({
-      ticker,
-      date,
-      open: payload.open ?? null,
-      high: payload.high ?? null,
-      low: payload.low ?? null,
-      close: payload.close ?? null,
-      volume: payload.volume ?? null,
-      preMarket: payload.preMarket ?? null,
-      afterHours: payload.afterHours ?? null,
-      fetchedAt: fetchedAt.toISOString(),
-    });
+    return Response.json(row);
   } catch (error) {
     if (error instanceof Error && error.message.includes('MASSIVE_API_KEY')) {
       return Response.json({ error: 'Market data provider not configured' }, { status: 503 });
