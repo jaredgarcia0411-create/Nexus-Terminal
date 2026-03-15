@@ -30,14 +30,14 @@ describe('jarvis client', () => {
     expect(recordLlmSuccessMock).toHaveBeenCalled();
   });
 
-  it('normalizes nvidia base URL when only /v1 is configured', async () => {
-    process.env.JARVIS_API_BASE_URL = 'https://integrate.api.nvidia.com/v1';
+  it('uses the configured groq chat completions URL', async () => {
+    process.env.JARVIS_API_BASE_URL = 'https://api.groq.com/openai/v1/chat/completions';
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] })));
 
     await callJarvis('sys', 'user');
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      'https://integrate.api.nvidia.com/v1/chat/completions',
+      'https://api.groq.com/openai/v1/chat/completions',
       expect.objectContaining({ method: 'POST' }),
     );
   });

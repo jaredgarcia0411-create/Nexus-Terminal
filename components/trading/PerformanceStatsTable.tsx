@@ -297,7 +297,7 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
   const rows: StatsCell[][] = Array.from({ length: 10 }, (_, rowIndex) => stats.slice(rowIndex * 3, rowIndex * 3 + 3));
 
   return (
-    <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
+    <div className="rounded-2xl border border-white/5 bg-[#121214] p-6 tabular-nums">
       <div className="mb-6 flex items-center gap-2">
         <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Stats</h3>
         <Info className="h-3.5 w-3.5 text-zinc-600" />

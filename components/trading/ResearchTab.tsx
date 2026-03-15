@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { motion } from 'motion/react';
+import { Button } from '@/components/ui/button';
 
 interface ResearchRow {
   id: string;
@@ -168,38 +170,38 @@ export default function ResearchTab() {
   };
 
   return (
-    <section className="space-y-5">
+    <motion.section key="research" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-white">Research</h1>
           <p className="text-sm text-zinc-400">AI reports, daily ticker summaries, and saved ticker watchlist.</p>
         </div>
-        <p className="rounded-lg border border-white/10 bg-[#111113] px-2.5 py-1 text-xs text-zinc-400">
+        <p className="rounded-lg border border-white/10 bg-[#121214] px-2.5 py-1 text-xs text-zinc-400">
           {loadingRows
             ? 'Loading reports...'
             : `${researchRows.length} saved report${researchRows.length === 1 ? '' : 's'}`}
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2 rounded-xl border border-white/10 bg-[#111113] p-2">
+      <div className="flex flex-wrap gap-2 rounded-xl border border-white/10 bg-[#121214] p-2">
         <button
           type="button"
           onClick={() => setActiveView('ai-reports')}
-          className={`rounded-md px-3 py-1.5 text-xs ${activeView === 'ai-reports' ? 'bg-emerald-500/15 text-emerald-200' : 'text-zinc-300 hover:bg-white/5'}`}
+          className={`rounded-md px-3 py-1.5 text-xs font-medium ${activeView === 'ai-reports' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
         >
           AI Reports
         </button>
         <button
           type="button"
           onClick={() => setActiveView('daily-summaries')}
-          className={`rounded-md px-3 py-1.5 text-xs ${activeView === 'daily-summaries' ? 'bg-emerald-500/15 text-emerald-200' : 'text-zinc-300 hover:bg-white/5'}`}
+          className={`rounded-md px-3 py-1.5 text-xs font-medium ${activeView === 'daily-summaries' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
         >
           Daily Summaries
         </button>
         <button
           type="button"
           onClick={() => setActiveView('saved-tickers')}
-          className={`rounded-md px-3 py-1.5 text-xs ${activeView === 'saved-tickers' ? 'bg-emerald-500/15 text-emerald-200' : 'text-zinc-300 hover:bg-white/5'}`}
+          className={`rounded-md px-3 py-1.5 text-xs font-medium ${activeView === 'saved-tickers' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
         >
           Saved Tickers
         </button>
@@ -207,35 +209,36 @@ export default function ResearchTab() {
 
       {activeView === 'ai-reports' ? (
         <>
-          <div className="rounded-xl border border-white/10 bg-[#111113] p-4">
+          <div className="rounded-xl border border-white/10 bg-[#121214] p-4">
             <div className="flex flex-col gap-2 sm:flex-row">
               <input
                 value={ticker}
                 onChange={(event) => setTicker(event.target.value.toUpperCase())}
                 placeholder="Ticker (e.g. AAPL)"
-                className="flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none focus:border-emerald-500/40"
+                className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
               />
-              <button
+              <Button
                 type="button"
                 disabled={loadingResearch}
                 onClick={() => void runResearch(false)}
-                className="rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-black disabled:opacity-60"
+                className="bg-emerald-500 px-3 text-sm font-semibold text-black hover:bg-emerald-400"
               >
                 {loadingResearch ? 'Running...' : 'New Report'}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="outline"
                 disabled={loadingResearch}
                 onClick={() => void runResearch(true)}
-                className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm font-semibold text-zinc-100 disabled:opacity-60"
+                className="border-white/20 bg-white/5 px-3 text-sm font-semibold text-zinc-100 hover:bg-white/10"
               >
                 {loadingResearch ? 'Running...' : 'Refresh (Ignore Cache)'}
-              </button>
+              </Button>
             </div>
             <p className="mt-2 text-xs text-zinc-500">Run a new report by entering a single ticker symbol.</p>
           </div>
 
-          <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-5">
+          <div className="space-y-3 rounded-xl border border-white/10 bg-[#121214] p-5">
             {loadingRows ? <p className="text-sm text-zinc-500">Loading research reports...</p> : null}
             {!loadingRows && researchRows.length === 0 ? <p className="text-sm text-zinc-500">No saved research reports yet.</p> : null}
 
@@ -251,27 +254,27 @@ export default function ResearchTab() {
 
       {activeView === 'daily-summaries' ? (
         <>
-          <div className="rounded-xl border border-white/10 bg-[#111113] p-4">
+          <div className="rounded-xl border border-white/10 bg-[#121214] p-4">
             <div className="flex flex-col gap-2 sm:flex-row">
               <input
                 value={dailyTicker}
                 onChange={(event) => setDailyTicker(event.target.value.toUpperCase())}
                 placeholder="Ticker (e.g. AAPL)"
-                className="flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none focus:border-emerald-500/40"
+                className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
               />
-              <button
+              <Button
                 type="button"
                 disabled={loadingDaily}
                 onClick={() => void saveDailySummary()}
-                className="rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-black disabled:opacity-60"
+                className="bg-emerald-500 px-3 text-sm font-semibold text-black hover:bg-emerald-400"
               >
                 {loadingDaily ? 'Saving...' : 'Get Daily Summary'}
-              </button>
+              </Button>
             </div>
             <p className="mt-2 text-xs text-zinc-500">Defaults to today ({todayDate()}) and stores one record per ticker/date.</p>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/20 p-4">
+          <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#121214] p-4">
             {loadingDailyRows ? <p className="text-sm text-zinc-500">Loading daily summaries...</p> : null}
             {!loadingDailyRows && dailyRows.length === 0 ? <p className="text-sm text-zinc-500">No daily summaries saved yet.</p> : null}
             {!loadingDailyRows && dailyRows.length > 0 ? (
@@ -312,32 +315,32 @@ export default function ResearchTab() {
 
       {activeView === 'saved-tickers' ? (
         <>
-          <div className="rounded-xl border border-white/10 bg-[#111113] p-4">
+          <div className="rounded-xl border border-white/10 bg-[#121214] p-4">
             <div className="grid gap-2 sm:grid-cols-[1fr_2fr_auto]">
               <input
                 value={savedTicker}
                 onChange={(event) => setSavedTicker(event.target.value.toUpperCase())}
                 placeholder="Ticker"
-                className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none focus:border-emerald-500/40"
+                className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
               />
               <input
                 value={savedNotes}
                 onChange={(event) => setSavedNotes(event.target.value)}
                 placeholder="Optional note"
-                className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none focus:border-emerald-500/40"
+                className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
               />
-              <button
+              <Button
                 type="button"
                 disabled={loadingSavedTicker}
                 onClick={() => void addSavedTicker()}
-                className="rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-black disabled:opacity-60"
+                className="bg-emerald-500 px-3 text-sm font-semibold text-black hover:bg-emerald-400"
               >
                 {loadingSavedTicker ? 'Saving...' : 'Save'}
-              </button>
+              </Button>
             </div>
           </div>
 
-          <div className="space-y-2 rounded-xl border border-white/10 bg-black/20 p-4">
+          <div className="space-y-2 rounded-xl border border-white/10 bg-[#121214] p-4">
             {loadingSavedRows ? <p className="text-sm text-zinc-500">Loading saved tickers...</p> : null}
             {!loadingSavedRows && savedRows.length === 0 ? <p className="text-sm text-zinc-500">No saved tickers yet.</p> : null}
 
@@ -359,6 +362,6 @@ export default function ResearchTab() {
           </div>
         </>
       ) : null}
-    </section>
+    </motion.section>
   );
 }

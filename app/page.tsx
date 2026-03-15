@@ -93,19 +93,19 @@ export default function NexusTerminal() {
     return (
       <div className="min-h-screen bg-[#0A0A0B] font-sans text-[#E4E4E7]">
         <div className="mx-auto max-w-7xl p-8">
-          <div className="flex h-16 items-center justify-between border-b border-white/5 bg-[#0A0A0B]">
+          <div className="flex h-16 items-center justify-between border-b border-white/10 bg-[#0A0A0B]">
             <div className="h-6 w-44 animate-pulse rounded bg-white/10" />
             <div className="h-6 w-24 animate-pulse rounded bg-white/10" />
           </div>
 
           <div className="mt-6 space-y-4">
             <div className="h-8 w-48 animate-pulse rounded bg-white/10" />
-            <div className="h-40 animate-pulse rounded border border-white/5 bg-[#121214]" />
+            <div className="h-40 animate-pulse rounded border border-white/10 bg-[#121214]" />
             <div className="h-10 w-72 animate-pulse rounded bg-white/10" />
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="h-36 animate-pulse rounded border border-white/5 bg-[#121214]" />
-              <div className="h-36 animate-pulse rounded border border-white/5 bg-[#121214]" />
-              <div className="h-36 animate-pulse rounded border border-white/5 bg-[#121214]" />
+              <div className="h-36 animate-pulse rounded border border-white/10 bg-[#121214]" />
+              <div className="h-36 animate-pulse rounded border border-white/10 bg-[#121214]" />
+              <div className="h-36 animate-pulse rounded border border-white/10 bg-[#121214]" />
             </div>
           </div>
         </div>
@@ -269,7 +269,7 @@ export default function NexusTerminal() {
 
       {isImporting ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" role="alertdialog" aria-label="Processing trade data">
-          <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/10 bg-[#121214] p-8 shadow-2xl">
+          <div className="flex flex-col items-center gap-4 rounded-xl border border-white/10 bg-[#121214] p-8 shadow-2xl">
             <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-500/20 border-t-emerald-500" />
             <p className="text-sm font-medium" aria-live="assertive">Processing Trade Data...</p>
           </div>

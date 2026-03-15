@@ -169,7 +169,7 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
 
   if (trades.length === 0) {
     return (
-      <div className="bg-[#121214] border border-white/5 rounded-2xl p-12 flex flex-col items-center justify-center text-center">
+      <div className="bg-[#121214] border border-white/5 rounded-xl p-12 flex flex-col items-center justify-center text-center">
         <BarChart3 className="w-12 h-12 text-zinc-700 mb-4" />
         <p className="text-zinc-500 text-sm">Import trades to see performance analytics</p>
       </div>
@@ -181,7 +181,7 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[350px]">
+        <div className="bg-[#121214] border border-white/5 rounded-xl p-6 h-[350px]">
           <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Equity Curve ({metricLabel})</h3>
           <ResponsiveContainer width="100%" height="85%">
             <AreaChart data={chartData}>
@@ -204,7 +204,7 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[350px]">
+        <div className="bg-[#121214] border border-white/5 rounded-xl p-6 h-[350px]">
           <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Daily Performance ({metricLabel})</h3>
           <ResponsiveContainer width="100%" height="85%">
             <BarChart data={chartData}>
@@ -227,7 +227,7 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
       {variant === 'full' ? (
         <>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[350px]">
+            <div className="bg-[#121214] border border-white/5 rounded-xl p-6 h-[350px]">
               <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Performance by Day of Week ({metricLabel})</h3>
               <ResponsiveContainer width="100%" height="85%">
                 <BarChart data={dayOfWeekData}>
@@ -247,7 +247,7 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[350px]">
+            <div className="bg-[#121214] border border-white/5 rounded-xl p-6 h-[350px]">
               <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Performance by Time of Day ({metricLabel})</h3>
               <ResponsiveContainer width="100%" height="85%">
                 <BarChart data={timeOfDayData}>
@@ -269,7 +269,7 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[320px]">
+            <div className="bg-[#121214] border border-white/5 rounded-xl p-6 h-[320px]">
               <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Win vs Loss Days</h3>
               <ResponsiveContainer width="100%" height="85%">
                 <BarChart data={winLossDayData}>
@@ -289,7 +289,7 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[320px]">
+            <div className="bg-[#121214] border border-white/5 rounded-xl p-6 h-[320px]">
               <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Drawdown</h3>
               <ResponsiveContainer width="100%" height="85%">
                 <AreaChart data={chartData}>
@@ -312,7 +312,7 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-[#121214] border border-white/5 rounded-2xl p-6 h-[320px]">
+            <div className="bg-[#121214] border border-white/5 rounded-xl p-6 h-[320px]">
               <h3 className="text-sm font-semibold mb-6 text-zinc-400 uppercase tracking-wider">Tag Breakdown</h3>
               {tagBreakdownData.length === 0 ? (
                 <div className="h-[85%] flex items-center justify-center text-xs text-zinc-500">No tagged trades yet</div>

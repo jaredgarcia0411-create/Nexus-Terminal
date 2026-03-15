@@ -15,4 +15,14 @@ After all changes are complete, run these three commands and report the result o
 
 Do not mark the task complete until all three pass.
 
-After validation passes, update HANDOFF.md to check off completed tasks and update README.md if needed to reflect any significant changes to the project.
+After validation passes, update HANDOFF.md to check off completed tasks (including visual-check validation items when performed).
+
+If a section is fully complete, compress it to save space:
+- remove step-by-step implementation instructions,
+- remove the original Execution Checklist block,
+- keep a concise section-level summary of what was delivered,
+- set section status to complete.
+
+If a section is not complete, keep the detailed instructions and checklist intact.
+
+Update README.md if needed to reflect any significant changes to the project.

@@ -44,7 +44,7 @@ export default function TradeTable({
 
   return (
     <div className={`overflow-x-auto rounded-xl border border-white/5 bg-[#121214] ${shouldScroll ? 'max-h-[46rem] overflow-y-auto' : ''}`}>
-      <table className="w-full text-left text-sm">
+      <table className="w-full tabular-nums text-left text-sm">
         <thead className="border-b border-white/5 bg-white/5 text-zinc-500 font-medium">
           <tr>
             {!readOnly ? (

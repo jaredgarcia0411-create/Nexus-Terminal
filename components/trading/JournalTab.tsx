@@ -159,9 +159,12 @@ export default function JournalTab({
   return (
     <motion.div key="journal" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <h2 className="text-2xl font-bold">Trading Journal</h2>
+            <div>
+              <h1 className="text-2xl font-semibold text-white">Trading Journal</h1>
+              <p className="text-sm text-zinc-400">Daily trade replay with charts and notes.</p>
+            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
               <input
@@ -183,9 +186,9 @@ export default function JournalTab({
                   placeholder="$500"
                   value={riskInput}
                   onChange={(event) => onRiskInputChange(event.target.value)}
-                  className="w-16 border-b border-white/10 bg-transparent text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+                  className="w-20 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
                 />
-                <button onClick={onApplyRisk} className="text-[10px] font-bold uppercase text-emerald-500 hover:text-emerald-400">
+                <button onClick={onApplyRisk} className="rounded-md bg-emerald-500 px-2 py-1 text-[10px] font-bold uppercase text-black hover:bg-emerald-400">
                   Apply
                 </button>
               </div>
@@ -197,9 +200,9 @@ export default function JournalTab({
                   placeholder="Add Tag..."
                   value={bulkTagInput}
                   onChange={(event) => onBulkTagInputChange(event.target.value)}
-                  className="w-20 border-b border-white/10 bg-transparent text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+                  className="w-24 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
                 />
-                <button onClick={onBulkAddTag} className="text-[10px] font-bold uppercase text-emerald-500 hover:text-emerald-400">
+                <button onClick={onBulkAddTag} className="rounded-md bg-emerald-500 px-2 py-1 text-[10px] font-bold uppercase text-black hover:bg-emerald-400">
                   Add
                 </button>
               </div>
@@ -212,10 +215,10 @@ export default function JournalTab({
         {dayCards.map((day) => {
           const expanded = expandedDays.has(day.sortKey);
           return (
-            <div key={day.sortKey} className="overflow-hidden rounded-2xl border border-white/5 bg-[#121214]">
+            <div key={day.sortKey} className="overflow-hidden rounded-xl border border-white/10 bg-[#121214]">
               <button
                 onClick={() => toggleDay(day.sortKey)}
-                className="flex w-full items-center justify-between gap-4 border-b border-white/5 p-4 text-left hover:bg-white/5"
+                className="flex w-full items-center justify-between gap-4 border-b border-white/10 p-4 text-left hover:bg-white/5"
               >
                 <div className="flex items-center gap-3">
                   {expanded ? <ChevronDown className="h-4 w-4 text-zinc-500" /> : <ChevronRight className="h-4 w-4 text-zinc-500" />}
@@ -233,7 +236,7 @@ export default function JournalTab({
                 </div>
               </button>
 
-              <div className="grid grid-cols-2 gap-3 border-b border-white/5 bg-white/[0.02] p-3 text-xs sm:grid-cols-5">
+              <div className="grid grid-cols-2 gap-3 border-b border-white/10 bg-white/[0.02] p-3 text-xs sm:grid-cols-5">
                 <div>
                   <p className="text-zinc-500">Total Trades</p>
                   <p className="font-medium">{day.trades.length}</p>
@@ -272,7 +275,7 @@ export default function JournalTab({
                     globalTags={globalTags}
                   />
 
-                  <div className="space-y-3 rounded-xl border border-white/10 bg-[#0F0F10] p-3">
+                  <div className="space-y-3 rounded-xl border border-white/10 bg-[#121214] p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Trade Replay Charts</p>
                     <div className="space-y-3">
                       {day.trades.slice(0, chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH).map((trade) => (
@@ -313,7 +316,7 @@ export default function JournalTab({
         })}
 
         {dayCards.length === 0 ? (
-          <div className="rounded-2xl border border-white/5 bg-[#121214] p-10 text-center text-sm text-zinc-500">
+          <div className="rounded-2xl border border-white/10 bg-[#121214] p-10 text-center text-sm text-zinc-500">
             No trades match the current filters.
           </div>
         ) : null}

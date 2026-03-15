@@ -129,7 +129,7 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
                 <SelectTrigger className="bg-white/5 border-white/10">
                   <SelectValue placeholder="Direction" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#18181b] border-white/10 text-white">
+                <SelectContent className="bg-[#121214] border-white/10 text-white">
                   <SelectItem value="LONG">LONG</SelectItem>
                   <SelectItem value="SHORT">SHORT</SelectItem>
                 </SelectContent>

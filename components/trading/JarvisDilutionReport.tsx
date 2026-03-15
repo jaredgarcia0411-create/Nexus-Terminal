@@ -37,7 +37,7 @@ function NoData() {
 
 export default function JarvisDilutionReport({ report }: JarvisDilutionReportProps) {
   return (
-    <div className="space-y-4 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+    <div className="space-y-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
       <div className="rounded-xl border border-white/10 bg-black/20 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-lg font-semibold text-zinc-100">{report.ticker} Dilution Research</h3>

@@ -36,10 +36,10 @@ function relevanceLabel(score: number) {
 
 function sourceTypeBadge(sourceType: JarvisSourceContext['sourceType']) {
   if (sourceType === 'trade_journal') {
-    return { label: 'Journal', className: 'border-violet-500/30 bg-violet-500/10 text-violet-200' };
+    return { label: 'Journal', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' };
   }
   if (sourceType === 'api_data') {
-    return { label: 'AskEdgar', className: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-200' };
+    return { label: 'AskEdgar', className: 'border-zinc-500/30 bg-zinc-500/10 text-zinc-200' };
   }
 
   return { label: 'Web', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' };

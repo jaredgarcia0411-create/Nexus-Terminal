@@ -70,7 +70,7 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
             return (
               <div
                 key={region.region}
-                className={`rounded-xl border p-4 ${style.border} bg-black/20`}
+                className={`rounded-xl border p-4 ${style.border} bg-[#121214]`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-base font-semibold text-zinc-100">{REGION_LABELS[region.region] ?? region.region}</p>
@@ -95,7 +95,7 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
         </div>
 
         {keyRisks.length > 0 ? (
-          <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+          <div className="rounded-lg border border-white/10 bg-[#121214] p-3">
             <p className="text-xs uppercase tracking-[0.2em] text-amber-200">Key Macro Risks</p>
             <ul className="mt-2 space-y-1.5 text-base text-zinc-200">
               {keyRisks.map((risk, i) => (
@@ -108,7 +108,7 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
           </div>
         ) : null}
 
-        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+        <div className="rounded-lg border border-white/10 bg-[#121214] p-3">
           <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Reference Links</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {MACRO_LINKS.map((link) => (
@@ -137,13 +137,13 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-white/10 bg-black/20 p-4">
+      <div className="rounded-lg border border-white/10 bg-[#121214] p-4">
         <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Macro Summary</p>
         <p className="mt-2 text-base text-zinc-100">{headline}</p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+        <div className="rounded-lg border border-white/10 bg-[#121214] p-3">
           <p className="text-xs uppercase tracking-[0.2em] text-emerald-200">Key Themes</p>
           {keyThemes.length > 0 ? (
             <ul className="mt-2 space-y-1.5 text-base text-zinc-200">
@@ -157,7 +157,7 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
           ) : <p className="mt-2 text-base text-zinc-400">No key themes available.</p>}
         </div>
 
-        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+        <div className="rounded-lg border border-white/10 bg-[#121214] p-3">
           <p className="text-xs uppercase tracking-[0.2em] text-sky-200">Watchlist Notes</p>
           {watchlistNotes.length > 0 ? (
             <ul className="mt-2 space-y-1.5 text-base text-zinc-200">
@@ -173,7 +173,7 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
       </div>
 
       {riskFlags.length > 0 ? (
-        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+        <div className="rounded-lg border border-white/10 bg-[#121214] p-3">
           <p className="text-xs uppercase tracking-[0.2em] text-amber-200">Key Macro Risks</p>
           <ul className="mt-2 space-y-1.5 text-base text-zinc-200">
             {riskFlags.map((risk, i) => (
@@ -186,7 +186,7 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
         </div>
       ) : null}
 
-      <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+      <div className="rounded-lg border border-white/10 bg-[#121214] p-3">
         <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Reference Links</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {MACRO_LINKS.map((link) => (

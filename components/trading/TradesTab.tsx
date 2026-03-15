@@ -67,11 +67,14 @@ export default function TradesTab({
   onBulkAddTag,
 }: TradesTabProps) {
   return (
-    <motion.div key="filter" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
+    <motion.div key="filter" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
       <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-4">
-            <h2 className="text-2xl font-bold">Trades Management</h2>
+            <div>
+              <h1 className="text-2xl font-semibold text-white">Trades Management</h1>
+              <p className="text-sm text-zinc-400">Filter, tag, and manage all imported trades.</p>
+            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
               <input
@@ -108,7 +111,7 @@ export default function TradesTab({
               onChange={(e) => onRiskInputChange(e.target.value)}
               className="w-full md:w-48 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
             />
-            <Button onClick={onApplyRisk} className="bg-emerald-500 hover:bg-emerald-600">
+            <Button onClick={onApplyRisk} className="bg-emerald-500 hover:bg-emerald-400">
               Apply Risk
             </Button>
           </div>
@@ -120,7 +123,7 @@ export default function TradesTab({
               onChange={(event) => onDefaultRiskInputChange(event.target.value)}
               className="w-full md:w-56 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
             />
-            <Button onClick={onSetDefaultRisk} className="bg-emerald-500 hover:bg-emerald-600">
+            <Button onClick={onSetDefaultRisk} className="bg-emerald-500 hover:bg-emerald-400">
               Set Auto Risk
             </Button>
             {defaultRisk != null ? <span className="text-xs text-zinc-500">Future trades: ${defaultRisk.toLocaleString()}</span> : null}
@@ -133,7 +136,7 @@ export default function TradesTab({
               onChange={(e) => onBulkTagInputChange(e.target.value)}
               className="w-full md:w-48 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
             />
-            <Button onClick={onBulkAddTag} className="bg-emerald-500 hover:bg-emerald-600">
+            <Button onClick={onBulkAddTag} className="bg-emerald-500 hover:bg-emerald-400">
               Add Tag
             </Button>
           </div>

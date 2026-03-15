@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 import JarvisMacroSummary from '@/components/trading/JarvisMacroSummary';
+import { Button } from '@/components/ui/button';
 import type { JarvisMacroSummaryOutput } from '@/lib/jarvis/types';
 
 type MarketInstrument = {
@@ -89,7 +91,7 @@ function InstrumentCard({ item }: { item: MarketInstrument }) {
         <span className={`text-sm ${positive ? 'text-emerald-300' : 'text-rose-300'}`}>{formatPercent(item.changePercent)}</span>
       </div>
       <div className="mt-2 flex items-center gap-2">
-        <p className="text-lg font-semibold text-white">{formatNumber(item.price)}</p>
+        <p className="text-lg font-semibold tabular-nums text-white">{formatNumber(item.price)}</p>
         {item.extendedQuoteUnavailable && item.extendedUnavailableLabel ? (
           <span className="rounded border border-zinc-500/25 bg-zinc-500/10 px-1.5 py-0.5 text-[10px] text-zinc-400">{item.extendedUnavailableLabel}</span>
         ) : null}
@@ -107,13 +109,13 @@ function MoversTable({ title, rows }: { title: string; rows: MarketMoverRow[] })
   const pageRows = rows.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   return (
-    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+    <div className="rounded-xl border border-white/10 bg-[#121214] p-3">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-base font-semibold text-zinc-100">{title}</h3>
         <p className="text-sm text-zinc-500">{rows.length} symbols</p>
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
+        <table className="min-w-full tabular-nums text-left text-sm">
           <thead>
             <tr className="border-b border-white/10 text-zinc-400">
               <th className="px-2 py-2">Ticker</th>
@@ -238,23 +240,24 @@ export default function MarketsTab() {
   }, [loadSnapshot]);
 
   return (
-    <section className="space-y-5">
+    <motion.section key="markets" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-white">Markets</h1>
           <p className="text-sm text-zinc-400">Unified market snapshot with delayed pricing and market movers.</p>
         </div>
-        <button
+        <Button
           type="button"
+          variant="outline"
           onClick={() => void refreshAll()}
           disabled={loadingMacro || loadingSnapshot}
-          className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+          className="border-white/10 bg-white/5 px-3 text-xs font-medium text-zinc-200 hover:bg-white/10"
         >
           {loadingMacro || loadingSnapshot ? 'Refreshing...' : 'Refresh'}
-        </button>
+        </Button>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-[#111113] px-4 py-3 text-sm text-zinc-400">
+      <div className="rounded-xl border border-white/10 bg-[#121214] px-4 py-3 text-sm text-zinc-400">
         <p>Massive market data is delayed by approximately 15 minutes.</p>
         {lastLoadedAt ? <p className="mt-1 text-xs text-zinc-500">Last market update: {lastLoadedAt.toLocaleTimeString()}</p> : null}
         {coverage ? (
@@ -267,28 +270,28 @@ export default function MarketsTab() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+        <div className="rounded-xl border border-white/10 bg-[#121214] p-4">
           <h2 className="mb-3 text-base font-semibold text-zinc-200">Indexes</h2>
           <div className="grid gap-2 sm:grid-cols-2">
             {(snapshot?.indices ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+        <div className="rounded-xl border border-white/10 bg-[#121214] p-4">
           <h2 className="mb-3 text-base font-semibold text-zinc-200">Crypto</h2>
           <div className="grid gap-2 sm:grid-cols-2">
             {(snapshot?.crypto ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+        <div className="rounded-xl border border-white/10 bg-[#121214] p-4">
           <h2 className="mb-3 text-base font-semibold text-zinc-200">Futures</h2>
           <div className="grid gap-2 sm:grid-cols-2">
             {(snapshot?.futures ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+        <div className="rounded-xl border border-white/10 bg-[#121214] p-4">
           <h2 className="mb-3 text-base font-semibold text-zinc-200">FX</h2>
           <div className="grid gap-2 sm:grid-cols-2">
             {(snapshot?.fx ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
@@ -296,14 +299,14 @@ export default function MarketsTab() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+      <div className="rounded-xl border border-white/10 bg-[#121214] p-4">
         <h2 className="mb-3 text-base font-semibold text-zinc-200">Major Equity Components</h2>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
           {(snapshot?.equities ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
         </div>
       </div>
 
-      <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-4">
+      <div className="space-y-3 rounded-xl border border-white/10 bg-[#121214] p-4">
         <h2 className="text-base font-semibold text-zinc-100">Market Movers</h2>
         <p className="text-xs text-zinc-500 md:hidden">Swipe horizontally to switch between gainers and losers.</p>
 
@@ -324,11 +327,11 @@ export default function MarketsTab() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-black/20 p-5">
+      <div className="rounded-xl border border-white/10 bg-[#121214] p-5">
         {loadingMacro ? <p className="text-sm text-zinc-500">Loading macro summary...</p> : null}
         {!loadingMacro && macroSummary ? <JarvisMacroSummary macroSummary={macroSummary} /> : null}
         {!loadingMacro && !macroSummary ? <p className="text-sm text-zinc-500">No macro summary available yet.</p> : null}
       </div>
-    </section>
+    </motion.section>
   );
 }

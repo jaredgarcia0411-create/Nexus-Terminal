@@ -214,7 +214,7 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                     <SelectTrigger className="h-8 w-28 bg-white/5 border-white/10 text-xs">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-[#18181b] border-white/10 text-white">
+                    <SelectContent className="bg-[#121214] border-white/10 text-white">
                       {Object.entries(TRADE_CHART_TIMEFRAME_CONFIG).map(([value, cfg]) => (
                         <SelectItem key={value} value={value}>
                           {cfg.label}

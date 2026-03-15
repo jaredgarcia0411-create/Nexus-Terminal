@@ -93,9 +93,9 @@ export default function DashboardTab({
   const fmtPct = (value: number | null) => (value == null ? '-' : `${(value * 100).toFixed(1)}%`);
 
   return (
-    <motion.div key="dashboard" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
+    <motion.div key="dashboard" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
       {trades.length === 0 ? (
-        <div className="space-y-5 rounded-2xl border border-white/5 bg-[#121214] p-10 text-center">
+        <div className="space-y-5 rounded-xl border border-white/10 bg-[#121214] p-10 text-center">
           <h2 className="text-2xl font-bold">Welcome to Nexus Terminal</h2>
           <p className="mx-auto max-w-2xl text-sm text-zinc-400">Import your trading data to get started.</p>
           <div className="flex flex-col items-center gap-3">
@@ -116,8 +116,11 @@ export default function DashboardTab({
         </div>
         ) : (
           <>
-           <div className="flex flex-wrap items-center justify-between border-b border-white/10 pb-4">
-             <h2 className="text-2xl font-bold">Dashboard</h2>
+           <div className="flex flex-wrap items-center justify-between">
+             <div>
+               <h1 className="text-2xl font-semibold text-white">Dashboard</h1>
+               <p className="text-sm text-zinc-400">Overview of your trading performance.</p>
+             </div>
              <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
                <button
                  onClick={() => setPnlMode('net')}
@@ -135,39 +138,39 @@ export default function DashboardTab({
            </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
-              <div className="mb-2 text-xs font-mono uppercase text-zinc-500">Total {pnlMode === 'net' ? 'Net' : 'Gross'} PnL</div>
-              <div className={`text-3xl font-bold tracking-tight ${getPnLColor(stats.totalPnl)}`}>
+            <div className="rounded-xl border border-white/10 bg-[#121214] p-6">
+              <div className="mb-2 text-xs font-mono uppercase tracking-wider text-zinc-500">Total {pnlMode === 'net' ? 'Net' : 'Gross'} PnL</div>
+              <div className={`text-3xl font-bold tracking-tight tabular-nums ${getPnLColor(stats.totalPnl)}`}>
                 {fmtCurrency(stats.totalPnl)}
               </div>
             </div>
-            <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
-              <div className="mb-2 text-xs font-mono uppercase text-zinc-500">Win Rate</div>
-              <div className="text-3xl font-bold tracking-tight">{stats.winRate.toFixed(1)}%</div>
+            <div className="rounded-xl border border-white/10 bg-[#121214] p-6">
+              <div className="mb-2 text-xs font-mono uppercase tracking-wider text-zinc-500">Win Rate</div>
+              <div className="text-3xl font-bold tracking-tight tabular-nums">{stats.winRate.toFixed(1)}%</div>
             </div>
-            <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
-              <div className="mb-2 text-xs font-mono uppercase text-zinc-500">Profit Factor</div>
-              <div className="text-3xl font-bold tracking-tight">
+            <div className="rounded-xl border border-white/10 bg-[#121214] p-6">
+              <div className="mb-2 text-xs font-mono uppercase tracking-wider text-zinc-500">Profit Factor</div>
+              <div className="text-3xl font-bold tracking-tight tabular-nums">
                 {Number.isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : '∞'}
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl border border-white/5 bg-[#121214] p-5">
-              <p className="text-xs uppercase tracking-wider text-zinc-500">Average MFE</p>
-              <p className="mt-2 text-xl font-semibold">{fmtCurrency(stats.averageMfe)}</p>
+            <div className="rounded-xl border border-white/10 bg-[#121214] p-5">
+              <p className="text-xs font-mono uppercase tracking-wider text-zinc-500">Average MFE</p>
+              <p className="mt-2 text-xl font-semibold tabular-nums">{fmtCurrency(stats.averageMfe)}</p>
             </div>
-            <div className="rounded-2xl border border-white/5 bg-[#121214] p-5">
-              <p className="text-xs uppercase tracking-wider text-zinc-500">Average MAE</p>
-              <p className="mt-2 text-xl font-semibold">{fmtCurrency(stats.averageMae)}</p>
+            <div className="rounded-xl border border-white/10 bg-[#121214] p-5">
+              <p className="text-xs font-mono uppercase tracking-wider text-zinc-500">Average MAE</p>
+              <p className="mt-2 text-xl font-semibold tabular-nums">{fmtCurrency(stats.averageMae)}</p>
             </div>
-            <div className="rounded-2xl border border-white/5 bg-[#121214] p-5">
-              <p className="text-xs uppercase tracking-wider text-zinc-500">Average Exit Efficiency</p>
-              <p className="mt-2 text-xl font-semibold">{fmtPct(stats.averageExitEfficiency)}</p>
+            <div className="rounded-xl border border-white/10 bg-[#121214] p-5">
+              <p className="text-xs font-mono uppercase tracking-wider text-zinc-500">Average Exit Efficiency</p>
+              <p className="mt-2 text-xl font-semibold tabular-nums">{fmtPct(stats.averageExitEfficiency)}</p>
             </div>
-            <div className="rounded-2xl border border-white/5 bg-[#121214] p-5">
-              <p className="text-xs uppercase tracking-wider text-zinc-500">Largest Win / Loss</p>
+            <div className="rounded-xl border border-white/10 bg-[#121214] p-5">
+              <p className="text-xs font-mono uppercase tracking-wider text-zinc-500">Largest Win / Loss</p>
               <div className="mt-2 space-y-1 text-sm">
                 <p className="text-emerald-500">
                   {stats.largestWin ? `${stats.largestWin.symbol} ${fmtCurrency(stats.largestWin.value)}` : '-'}
