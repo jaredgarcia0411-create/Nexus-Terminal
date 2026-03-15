@@ -216,3 +216,43 @@ export const jarvisRequestLog = pgTable('jarvis_request_log', {
   index('idx_jarvis_request_log_user_created').on(table.userId, table.createdAt),
   index('idx_jarvis_request_log_created').on(table.createdAt),
 ]);
+
+export const schwabLinks = pgTable('schwab_links', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  encryptedTokens: text('encrypted_tokens').notNull(),
+  tokenIv: text('token_iv').notNull(),
+  tokenTag: text('token_tag').notNull(),
+  accountLabel: text('account_label'),
+  status: text('status', { enum: ['active', 'expired', 'revoked'] }).notNull().default('active'),
+  accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true }).notNull(),
+  refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }).notNull(),
+  linkedAt: timestamp('linked_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  unique().on(table.userId),
+  index('schwab_links_status_idx').on(table.status),
+]);
+
+export const realtimeQuotes = pgTable('realtime_quotes', {
+  symbol: text('symbol').primaryKey(),
+  assetType: text('asset_type', { enum: ['equity', 'etf', 'future', 'forex', 'index', 'crypto'] }).notNull().default('equity'),
+  lastPrice: doublePrecision('last_price'),
+  bidPrice: doublePrecision('bid_price'),
+  askPrice: doublePrecision('ask_price'),
+  openPrice: doublePrecision('open_price'),
+  highPrice: doublePrecision('high_price'),
+  lowPrice: doublePrecision('low_price'),
+  closePrice: doublePrecision('close_price'),
+  netChange: doublePrecision('net_change'),
+  netChangePercent: doublePrecision('net_change_percent'),
+  totalVolume: doublePrecision('total_volume'),
+  exchangeId: text('exchange_id'),
+  description: text('description'),
+  securityStatus: text('security_status'),
+  quoteTimeMs: doublePrecision('quote_time_ms'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('realtime_quotes_asset_type_idx').on(table.assetType),
+  index('realtime_quotes_updated_at_idx').on(table.updatedAt),
+]);
