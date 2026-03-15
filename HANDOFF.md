@@ -97,15 +97,22 @@ Detailed step-by-step execution specs and checklists were removed to save space.
 ## Schwab Real-Time Market Data (Option C Hybrid)
 
 > Generated: 2026-03-15 | Agent: nexus-architect
-> Status: IN PROGRESS (PHASE 1 COMPLETE)
+> Status: IN PROGRESS (PHASES 1-2 COMPLETE)
 
 **Full spec:** [`specs/schwab-realtime-hybrid.md`](specs/schwab-realtime-hybrid.md)
 
 **Summary:** Hybrid market data architecture — keep Massive Starter ($29/mo) for historical candle data, add Charles Schwab streaming API for real-time prices. A standalone relay service on Fly.io (~$5/mo) maintains the Schwab WebSocket and writes quotes to the DB. Schwab-linked users get live data; everyone else gets 15-min delayed Massive data.
 
+**Phase 2 Progress (2026-03-15):**
+- Created standalone relay service at `services/schwab-relay/` with TypeScript build/dev scripts and isolated dependencies.
+- Implemented relay token lifecycle management: encrypted token decrypt/load from DB, 5-minute pre-expiry access-token refresh, and expired-link status updates.
+- Implemented Schwab streaming client (userPreference bootstrap, LOGIN/SUBS flow, quote+screener parsing, reconnect loop) and batched DB writer to `realtime_quotes` + screener snapshot upsert.
+- Added Fly.io deployment config (`fly.toml`) and production Dockerfile.
+- Validation completed for relay service: `cd services/schwab-relay && npm install && npx tsc --noEmit`.
+
 **Phases:**
 1. [x] Schwab OAuth integration (7 changes — new tables, encrypted token storage, OAuth routes)
-2. [ ] Streaming relay service (10 changes — standalone Node.js service in `services/schwab-relay/`)
+2. [x] Streaming relay service (10 changes — standalone Node.js service in `services/schwab-relay/`)
 3. [ ] Frontend integration (4 changes — dual-source snapshot route, LIVE/DELAYED badges, link/unlink UI)
 4. [ ] Scanner foundation (stub only — `realtimeQuotes` table already covers scanner fields)
 
