@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import JarvisStructuredResponse from '@/components/trading/JarvisStructuredResponse';
 import type { DilutionResearchReport } from '@/lib/jarvis/types';
 
@@ -53,11 +53,46 @@ function isDilutionResearchReport(value: unknown): value is DilutionResearchRepo
   );
 }
 
+// localStorage key includes today's date so stale data auto-expires
+function todayKey(prefix: string) {
+  return `${prefix}-${new Date().toISOString().slice(0, 10)}`;
+}
+
+function loadFromStorage<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export default function JarvisChat() {
-  const [sessionId, setSessionId] = useState<string>('');
+  const [sessionId, setSessionId] = useState<string>(() =>
+    loadFromStorage(todayKey('jarvis-session'), ''),
+  );
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    loadFromStorage(todayKey('jarvis-messages'), []),
+  );
   const [loading, setLoading] = useState(false);
+
+  // Persist messages & sessionId to localStorage whenever they change
+  const isInitialMount = useRef(true);
+  const persist = useCallback(() => {
+    localStorage.setItem(todayKey('jarvis-messages'), JSON.stringify(messages));
+    localStorage.setItem(todayKey('jarvis-session'), JSON.stringify(sessionId));
+  }, [messages, sessionId]);
+
+  useEffect(() => {
+    // Skip the very first render (we just loaded from storage)
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    persist();
+  }, [persist]);
 
   const prefixHint = useMemo(() => {
     if (input.startsWith('/r')) return 'Hint: /research TICKER';

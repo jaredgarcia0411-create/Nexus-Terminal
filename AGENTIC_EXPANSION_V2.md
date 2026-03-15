@@ -19,6 +19,7 @@ The web UI migrates from the current Jarvis chat to a polling-based agent chat w
 - **The Orchestrator owns routing.** The collapsed Research Analyst logic lives inside the Orchestrator as a deterministic rules engine — no LLM call for routing decisions.
 - **Each agent has strict scope boundaries.** An agent can only read its own memory and the shared job queue. Cross-agent data access goes through the Orchestrator.
 - **Supervised by default.** Agent reports start as `pending_review`. The user approves or rejects from a review queue in the web UI.
+- **Blueprint-driven handlers.** Every job handler is a blueprint — a sequence of typed steps where each step is either `code` (deterministic, no LLM) or `llm` (reasoning/analysis). Code steps fetch data, calculate indicators, format output. LLM steps analyze and synthesize. This keeps LLM calls minimal, costs low, and results reliable. Inspired by Stripe's blueprint engine pattern.
 - **Provider-agnostic LLM.** The LLM wrapper detects provider from URL. Swapping from NVIDIA API to a local llama.cpp server is a config change.
 
 ---
@@ -306,13 +307,9 @@ Agent heartbeats every 30 seconds keep Neon warm. Cold starts take 1-3 seconds, 
 - `fact` — per-ticker dilution history, historical performance notes
 - `performance` — accuracy of past calls (predicted vs actual outcome)
 
-**Capabilities:**
-1. **Pre-market scanner.** Fetches Massive API snapshot data, filters against scan parameters, produces candidate list.
-2. **Dilution analysis.** For each candidate, queries AskEdgar for SEC filings (S-3, prospectus supplements, 8-K dilution announcements). Cross-references with historical dilution patterns in memory.
-3. **Technical analysis.** Fetches OHLCV from Massive API, applies pattern recognition (support/resistance, volume profile, gap analysis) using the LLM with structured output.
-4. **Report generation.** Produces a report with: ticker, dilution risk score, technical setup, entry/exit levels, confidence rating. Status starts as `pending_review`.
+**Blueprints:** `small-cap:pre-market-scan`, `small-cap:research` (see section 6.4 for full step-by-step breakdowns)
 
-**LLM usage:** Every analysis step after the initial scan filter. LLM receives structured data (not raw HTML) and returns structured JSON.
+**LLM usage:** Only for dilution analysis and technical analysis steps. Data fetching (Massive API, AskEdgar), indicator calculation (`lib/indicators.ts`), and report assembly are all deterministic code steps — no LLM involved.
 
 ### 6.3 Long Term Investor
 
@@ -327,13 +324,153 @@ Agent heartbeats every 30 seconds keep Neon warm. Cold starts take 1-3 seconds, 
 - `scan_param` — sector allocation targets, risk tolerance parameters
 - `performance` — thesis outcome tracking (validated, invalidated, in-progress)
 
-**Capabilities:**
-1. **Macro analysis.** Fetches economic data via Massive API and supplementary sources. Identifies macro regime (expansion, contraction, transition) and sector implications.
-2. **Sector screening.** Narrows from macro thesis to specific sectors, then to individual names using fundamental data from AskEdgar (10-K, 10-Q).
-3. **Portfolio construction.** Given user's profile (age, time horizon, goals in Orchestrator memory), recommends a portfolio with position sizing rationale and suitability assessment.
-4. **Thesis lifecycle management.** Each thesis is a living document in memory. Updates thesis status on new data, marks theses as invalidated when conditions change.
+**Blueprints:** `long-term:macro-scan`, `long-term:thesis-check` (see section 6.4 for full step-by-step breakdowns)
 
-**LLM usage:** All analysis and thesis generation. Structured financial data in, structured JSON out. Portfolio recommendations include suitability disclaimers in the output schema.
+**LLM usage:** Only for macro regime analysis and thesis generation/evaluation steps. Data fetching (Massive API, AskEdgar), memory reads/writes, and report assembly are all deterministic code steps — no LLM involved.
+
+---
+
+## 6.4 Blueprint Engine
+
+A blueprint is a named sequence of steps that defines exactly how an agent handles a job. Each step has a `type` — either `code` (deterministic, no LLM call) or `llm` (sends structured data to the LLM for reasoning). The worker executes steps in order, passing each step's output as input to the next.
+
+**Why blueprints?**
+- **Cheaper** — LLM only fires for analysis/synthesis, not data fetching or formatting
+- **More reliable** — code steps can't hallucinate ticker data or invent filing numbers
+- **More secure** — LLM never directly calls external APIs; code fetches data, hands structured results to LLM
+- **Testable** — each step can be tested independently; code steps run without an LLM, LLM steps run with mock data
+- **Debuggable** — when something fails, you know exactly which step broke and whether it was code or LLM
+
+### Blueprint Type Definitions
+
+```typescript
+type StepType = 'code' | 'llm';
+
+interface BlueprintStep {
+  name: string;                    // human-readable label, e.g. 'fetch-snapshot'
+  type: StepType;                  // 'code' = deterministic, 'llm' = LLM reasoning
+  run: (input: StepInput) => Promise<StepOutput>;
+}
+
+interface StepInput {
+  jobInput: unknown;               // original job input payload
+  previousOutput: unknown;         // output from the previous step (null for step 1)
+  memory: AgentMemoryRow[];        // agent's scoped memory
+  context: AgentContext;           // assembled context (trades, macro, etc.)
+}
+
+interface StepOutput {
+  data: unknown;                   // passed as `previousOutput` to next step
+  tokensUsed?: number;             // only set by 'llm' steps, for cost tracking
+}
+
+interface Blueprint {
+  id: string;                      // e.g. 'small-cap:pre-market-scan'
+  description: string;
+  steps: BlueprintStep[];
+}
+```
+
+### Blueprint Runner
+
+The worker's `runBlueprint()` function replaces the old monolithic `JobHandler`. It:
+
+1. Loads the agent's memory and context once (shared across all steps)
+2. Iterates through steps sequentially
+3. For `code` steps — calls `step.run()` directly, no LLM involved
+4. For `llm` steps — calls `step.run()` which internally uses `callLlm()`, tracks tokens
+5. If any step throws, the job fails with the step name in the error message
+6. Final step's output becomes the job result
+
+```typescript
+async function runBlueprint(
+  blueprint: Blueprint,
+  job: AgentJob,
+  config: AgentConfig,
+  db: DrizzleClient
+): Promise<{ result: unknown; totalTokens: number }> {
+  const memory = await readMemory(db, job.user_id, config.id);
+  const context = await buildAgentContext(db, job.user_id, config.id);
+  let previousOutput: unknown = null;
+  let totalTokens = 0;
+
+  for (const step of blueprint.steps) {
+    const output = await step.run({
+      jobInput: job.input,
+      previousOutput,
+      memory,
+      context,
+    });
+    previousOutput = output.data;
+    totalTokens += output.tokensUsed ?? 0;
+  }
+
+  return { result: previousOutput, totalTokens };
+}
+```
+
+### Small Cap Trader Blueprints
+
+**Blueprint: `small-cap:pre-market-scan`**
+
+| # | Step | Type | What it does |
+|---|------|------|-------------|
+| 1 | `fetch-snapshot` | `code` | Calls Massive API snapshot endpoint. Filters: close >= $0.75, pre-market gain >= 50%, market cap < $200M. Returns candidate ticker list. |
+| 2 | `fetch-filings` | `code` | For each candidate, calls AskEdgar API for S-3, prospectus supplements, 8-K filings. Returns structured filing data per ticker. |
+| 3 | `analyze-dilution` | `llm` | Receives structured filing data + agent's dilution history from memory. Returns dilution risk score and reasoning per ticker. |
+| 4 | `fetch-ohlcv` | `code` | Fetches OHLCV candles from Massive API for each surviving candidate. Calculates SMA, RSI, VWAP, volume profile using `lib/indicators.ts`. Returns structured technical data. |
+| 5 | `analyze-technicals` | `llm` | Receives technical data + dilution scores. Returns entry/exit levels, support/resistance, confidence rating per ticker. |
+| 6 | `assemble-report` | `code` | Merges all outputs into `agent_reports` row with `status = 'pending_review'`. No LLM call — just JSON assembly. |
+
+**Blueprint: `small-cap:research`** (on-demand user request)
+
+| # | Step | Type | What it does |
+|---|------|------|-------------|
+| 1 | `fetch-ticker-data` | `code` | Fetches snapshot + OHLCV from Massive API for the requested ticker. |
+| 2 | `fetch-filings` | `code` | Fetches relevant SEC filings from AskEdgar for the ticker. |
+| 3 | `calculate-indicators` | `code` | Runs SMA, RSI, VWAP, MACD, Bollinger from `lib/indicators.ts`. |
+| 4 | `analyze-and-report` | `llm` | Receives all structured data. Returns complete research report with dilution risk, technical setup, and trade thesis. |
+| 5 | `assemble-report` | `code` | Writes report to `agent_reports`. |
+
+### Long Term Investor Blueprints
+
+**Blueprint: `long-term:macro-scan`** (weekly Sunday evening)
+
+| # | Step | Type | What it does |
+|---|------|------|-------------|
+| 1 | `fetch-macro-data` | `code` | Fetches macro indicators via Massive API (sector ETFs, indices, commodities). Reads existing `macro_fact` memory entries. |
+| 2 | `analyze-macro-regime` | `llm` | Receives structured macro data. Identifies regime (expansion/contraction/transition), sector rotation signals, key risks. |
+| 3 | `fetch-sector-data` | `code` | Based on LLM's sector picks, fetches sector-specific data from Massive API and AskEdgar (10-K/10-Q for top holdings). |
+| 4 | `generate-theses` | `llm` | Receives sector data + existing theses from memory. Creates/updates investment theses with entry conditions, invalidation criteria, targets. |
+| 5 | `update-memory` | `code` | Writes updated theses and macro facts to `agent_memory`. Writes report to `agent_reports`. |
+
+**Blueprint: `long-term:thesis-check`** (daily 5:00 PM EST)
+
+| # | Step | Type | What it does |
+|---|------|------|-------------|
+| 1 | `load-active-theses` | `code` | Reads all `thesis` memory entries for this agent. Fetches current prices for thesis tickers from Massive API. |
+| 2 | `evaluate-theses` | `llm` | Compares current data against thesis entry/invalidation conditions. Returns status update per thesis (on-track, triggered, invalidated). |
+| 3 | `update-memory-and-alert` | `code` | Updates thesis memory entries. If any thesis triggered or invalidated, writes alert report to `agent_reports` with `pending_review`. |
+
+### Orchestrator Blueprints
+
+The Orchestrator uses simpler blueprints since its primary job is routing:
+
+**Blueprint: `orchestrator:chat`**
+
+| # | Step | Type | What it does |
+|---|------|------|-------------|
+| 1 | `route-or-handle` | `code` | Applies deterministic routing rules. If routable to a specialist agent, creates a sub-job and returns early. If simple factual lookup, fetches data directly. |
+| 2 | `synthesize-response` | `llm` | Only reached for questions that need reasoning. Receives user message + context. Returns chat response. |
+
+**Blueprint: `orchestrator:macro-summary`** (daily cron)
+
+| # | Step | Type | What it does |
+|---|------|------|-------------|
+| 1 | `scrape-headlines` | `code` | Fetches macro headlines using existing scrape-lite module. |
+| 2 | `fetch-market-snapshot` | `code` | Fetches index/sector/commodity prices from Massive API. |
+| 3 | `generate-briefing` | `llm` | Receives headlines + market data. Returns structured daily briefing. |
+| 4 | `save-summary` | `code` | Writes to `daily_ticker_summaries` / `macro_summaries` table. |
 
 ---
 
@@ -349,21 +486,17 @@ interface AgentConfig {
   temperature: number;
   capabilities: JobType[];
   systemPrompt: string;
+  blueprints: Record<string, Blueprint>;  // keyed by 'agent:job-type', e.g. 'small-cap:pre-market-scan'
 }
 
 interface WorkerConfig {
   agentId: AgentId;
   pollIntervalMs: number;     // default 5000
-  handlers: Record<JobType, JobHandler>;
-}
-
-interface JobHandler {
-  (job: AgentJob, config: AgentConfig): Promise<{
-    result: unknown;
-    report?: { title: string; summary: string; reportJson: unknown; reportType: string };
-  }>;
+  blueprintResolver: (job: AgentJob) => Blueprint;  // picks the right blueprint for a given job
 }
 ```
+
+The old `JobHandler` is replaced by blueprints. The `blueprintResolver` function maps an incoming job to the correct blueprint based on `job_type` and any input flags (e.g., a `research` job for small-cap resolves to `small-cap:research`).
 
 ### 7.2 Explicit Registration
 
@@ -457,11 +590,11 @@ All LLM config uses `AGENT_*` prefix with fallback to legacy names:
 
 ---
 
-## 9. Shared Library: `lib/agents/` (16 files)
+## 9. Shared Library: `lib/agents/` (17 files)
 
 | # | File | Purpose | Key Exports |
 |---|------|---------|-------------|
-| 1 | `types.ts` | Type definitions | `AgentId`, `JobType`, `JobStatus`, `ReportStatus`, `MemoryCategory`, `AgentJob`, `AgentReport`, `AgentConfig`, `LlmRequest`, `LlmResponse`, `JobHandler`, `WorkerConfig`, `LlmProviderConfig`, `TokenTrackingEntry` |
+| 1 | `types.ts` | Type definitions | `AgentId`, `JobType`, `JobStatus`, `ReportStatus`, `MemoryCategory`, `StepType`, `BlueprintStep`, `Blueprint`, `StepInput`, `StepOutput`, `AgentJob`, `AgentReport`, `AgentConfig`, `LlmRequest`, `LlmResponse`, `WorkerConfig`, `LlmProviderConfig`, `TokenTrackingEntry` |
 | 2 | `db.ts` | DB connection factory for Docker services | `getAgentDb(): DrizzleClient` (single pooled WebSocket connection) |
 | 3 | `llm-client.ts` | Provider-agnostic LLM wrapper | `getLlmConfig()`, `callLlm(request, config?)` |
 | 4 | `circuit-breaker.ts` | Per-agent circuit breaker (same pattern as existing) | `CircuitBreaker` class — 5 failures = open, 60s reset |
@@ -473,10 +606,11 @@ All LLM config uses `AGENT_*` prefix with fallback to legacy names:
 | 10 | `memory.ts` | Scoped memory CRUD | `readMemory()`, `writeMemory()`, `upsertMemory()` — all filtered by `agent_id` |
 | 11 | `context.ts` | Context assembly for LLM calls | `buildAgentContext(db, userId, agentId)` — trades, macro, memory |
 | 12 | `prompts.ts` | System prompts per agent | `getSystemPrompt(agentId, mode)`, loads from `prompts/*.md` |
-| 13 | `config.ts` | Agent config registry | `AGENT_CONFIGS: Record<AgentId, AgentConfig>` with handlers |
-| 14 | `worker.ts` | Poll loop runtime | `startWorker(config: WorkerConfig): Promise<void>` — infinite loop with graceful shutdown |
-| 15 | `macro-cron.ts` | Macro headline cron | `startMacroCron(): void` — setInterval, checks hour in `America/New_York` |
-| 16 | `admin.ts` | Admin utilities | `requireAgentAdmin()` — validates `x-agent-admin-key` header |
+| 13 | `config.ts` | Agent config registry | `AGENT_CONFIGS: Record<AgentId, AgentConfig>` with blueprints and resolver |
+| 14 | `blueprint-runner.ts` | Blueprint execution engine | `runBlueprint(blueprint, job, config, db)` — iterates steps, tracks tokens, handles step failures |
+| 15 | `worker.ts` | Poll loop runtime | `startWorker(config: WorkerConfig): Promise<void>` — resolves blueprint, calls `runBlueprint()`, graceful shutdown |
+| 16 | `macro-cron.ts` | Macro headline cron | `startMacroCron(): void` — setInterval, checks hour in `America/New_York` |
+| 17 | `admin.ts` | Admin utilities | `requireAgentAdmin()` — validates `x-agent-admin-key` header |
 
 ### Key Type Definitions
 
@@ -485,6 +619,7 @@ export type AgentId = 'orchestrator' | 'small-cap-trader' | 'long-term-investor'
 export type JobType = 'chat' | 'research' | 'trade-analysis' | 'macro-summary';
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed';
 export type ReportStatus = 'pending_review' | 'approved' | 'rejected' | 'archived';
+export type StepType = 'code' | 'llm';
 export type MemoryCategory = 'fact' | 'thesis' | 'watchlist' | 'scan_param' | 'performance'
   | 'trade_insight' | 'user_preference' | 'strategy_note' | 'macro_fact';
 ```
@@ -710,7 +845,7 @@ if (agentId === 'orchestrator') {
 startWorker({
   agentId,
   pollIntervalMs: Number(process.env.AGENT_POLL_INTERVAL_MS) || 5000,
-  handlers: AGENT_CONFIGS[agentId].handlers,
+  blueprintResolver: AGENT_CONFIGS[agentId].blueprintResolver,
 });
 ```
 
@@ -833,59 +968,60 @@ Sequential phases. Each phase must pass `npm run lint && npx tsc --noEmit` befor
 | 13 | `lib/agents/memory.ts` | db.ts, types.ts |
 | 14 | `lib/agents/context.ts` | memory.ts |
 | 15 | `lib/agents/prompts.ts` | types.ts |
-| 16 | `lib/agents/config.ts` | types.ts, prompts.ts |
-| 17 | `lib/agents/heartbeat.ts` | db.ts |
-| 18 | `lib/agents/worker.ts` | job-queue.ts, heartbeat.ts, config.ts |
-| 19 | `lib/agents/macro-cron.ts` | db.ts, context.ts, llm-client.ts |
+| 16 | `lib/agents/blueprint-runner.ts` | types.ts, llm-client.ts, memory.ts, context.ts |
+| 17 | `lib/agents/config.ts` | types.ts, prompts.ts, blueprint-runner.ts |
+| 18 | `lib/agents/heartbeat.ts` | db.ts |
+| 19 | `lib/agents/worker.ts` | job-queue.ts, heartbeat.ts, config.ts, blueprint-runner.ts |
+| 20 | `lib/agents/macro-cron.ts` | db.ts, context.ts, llm-client.ts |
 
 ### Phase 4: API Routes
 
 | Step | Route | Depends On |
 |------|-------|------------|
-| 20 | `app/api/agents/chat/route.ts` | Phase 3 |
-| 21 | `app/api/agents/reports/route.ts` | Phase 3 |
-| 22 | `app/api/agents/reports/[id]/route.ts` | Phase 3 |
-| 23 | `app/api/agents/research/route.ts` | Phase 3 |
-| 24 | `app/api/agents/trade-analysis/route.ts` | Phase 3 |
-| 25 | `app/api/agents/admin/stats/route.ts` | Phase 3 |
-| 26 | `app/api/agents/admin/memory/route.ts` | Phase 3 |
-| 27 | `app/api/agents/macro-summary/latest/route.ts` | Phase 3 |
+| 21 | `app/api/agents/chat/route.ts` | Phase 3 |
+| 22 | `app/api/agents/reports/route.ts` | Phase 3 |
+| 23 | `app/api/agents/reports/[id]/route.ts` | Phase 3 |
+| 24 | `app/api/agents/research/route.ts` | Phase 3 |
+| 25 | `app/api/agents/trade-analysis/route.ts` | Phase 3 |
+| 26 | `app/api/agents/admin/stats/route.ts` | Phase 3 |
+| 27 | `app/api/agents/admin/memory/route.ts` | Phase 3 |
+| 28 | `app/api/agents/macro-summary/latest/route.ts` | Phase 3 |
 
 ### Phase 5: Docker Infrastructure
 
 | Step | File | Depends On |
 |------|------|------------|
-| 28 | `services/agent.Dockerfile` | Phase 3 |
-| 29 | `services/agent-entrypoint.ts` | Phase 3 |
-| 30 | `services/docker-compose.yml` (rewrite) | Steps 28-29 |
-| 31 | `services/.env.example` | — |
+| 29 | `services/agent.Dockerfile` | Phase 3 |
+| 30 | `services/agent-entrypoint.ts` | Phase 3 |
+| 31 | `services/docker-compose.yml` (rewrite) | Steps 29-30 |
+| 32 | `services/.env.example` | — |
 
 ### Phase 6: Frontend
 
 | Step | File | Depends On |
 |------|------|------------|
-| 32 | `components/trading/AgentChat.tsx` | Phase 4 |
-| 33 | `components/trading/AgentTab.tsx` | Step 32 |
-| 34 | `components/trading/AgentReportQueue.tsx` | Phase 4 |
-| 35 | `components/trading/AgentStats.tsx` | Phase 4 |
-| 36 | Modify `Sidebar.tsx` — `'jarvis'` → `'agents'` | Steps 32-35 |
+| 33 | `components/trading/AgentChat.tsx` | Phase 4 |
+| 34 | `components/trading/AgentTab.tsx` | Step 33 |
+| 35 | `components/trading/AgentReportQueue.tsx` | Phase 4 |
+| 36 | `components/trading/AgentStats.tsx` | Phase 4 |
+| 37 | Modify `Sidebar.tsx` — `'jarvis'` → `'agents'` | Steps 33-36 |
 
 ### Phase 7: Cleanup (after full validation)
 
 | Step | Task | Depends On |
 |------|------|------------|
-| 37 | Delete `app/api/jarvis/` directory | Phase 4 verified |
-| 38 | Delete `lib/jarvis/` directory | Phase 3 verified |
-| 39 | Delete `JarvisChat.tsx`, `JarvisTab.tsx` | Phase 6 verified |
-| 40 | Remove Vercel cron config for macro-summary | Phase 5 verified |
-| 41 | Generate migration 0012 (drop `jarvis_conversations`, `jarvis_request_log`) | Phase 2 verified |
-| 42 | Run migration 0012 | Step 41 |
+| 38 | Delete `app/api/jarvis/` directory | Phase 4 verified |
+| 39 | Delete `lib/jarvis/` directory | Phase 3 verified |
+| 40 | Delete `JarvisChat.tsx`, `JarvisTab.tsx` | Phase 6 verified |
+| 41 | Remove Vercel cron config for macro-summary | Phase 5 verified |
+| 42 | Generate migration 0012 (drop `jarvis_conversations`, `jarvis_request_log`) | Phase 2 verified |
+| 43 | Run migration 0012 | Step 42 |
 
 ---
 
 ## 17. Complete File Inventory
 
-### Files to CREATE (34)
+### Files to CREATE (35)
 
 ```
 lib/agents/types.ts
@@ -900,6 +1036,7 @@ lib/agents/heartbeat.ts
 lib/agents/memory.ts
 lib/agents/context.ts
 lib/agents/prompts.ts
+lib/agents/blueprint-runner.ts
 lib/agents/config.ts
 lib/agents/worker.ts
 lib/agents/macro-cron.ts
@@ -1062,5 +1199,6 @@ No schema changes required — tables are agent-agnostic by design.
 | `askedgar.ts` | (standalone) | Move to `lib/askedgar.ts` |
 | `prompts.ts` | `prompts.ts` | Split into per-agent files |
 | `scrape-lite.ts` | (reuse as-is) | No changes needed |
-| `trade-analysis.ts` | Small Cap handler | Becomes agent job handler |
-| `research.ts` | Small Cap handler | Becomes agent job handler |
+| `trade-analysis.ts` | Small Cap blueprint steps | Logic split across `code` and `llm` steps in `small-cap:research` blueprint |
+| `research.ts` | Small Cap blueprint steps | Logic split across `code` and `llm` steps in `small-cap:pre-market-scan` blueprint |
+| (new) | `blueprint-runner.ts` | New file — executes blueprint step sequences, tracks tokens per step |
