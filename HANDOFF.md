@@ -406,3 +406,567 @@ npm test
 [x] Validation: npx tsc --noEmit
 [x] Validation: npm test
 ```
+
+---
+---
+
+# UI/UX Polish Sprint — Consistency & Refinement
+
+> Generated: 2026-03-15 | Agent: nexus-architect
+> Status: READY FOR EXECUTION
+
+## Summary
+
+Full audit of all frontend components revealed systematic inconsistencies across page headers,
+card styling, colors, border radius, spacing, animations, inputs, buttons, and toggles.
+This plan standardizes everything to a single design language.
+
+**Design decisions made:**
+- Page headers: Pattern B (semibold title + subtitle, no border)
+- Charts tab: Keeps its unique blue-tinted palette; everything else unifies
+- Dashboard stat cards: Keep the hero/secondary visual hierarchy
+- Jarvis AI colors: Emerald/zinc only (remove violet/cyan)
+- Border radius: `rounded-xl` everywhere for section cards
+- Keep hardcoded color values (no migration to CSS token classes)
+
+---
+
+## Task 17: Standardize Page Headers to Pattern B
+
+**Problem:** Dashboard, Performance, Journal, and Trades use `<h2> font-bold` with a `border-b` separator. Markets, Research, and Jarvis use `<h1> font-semibold` with a `<p>` subtitle and no border. Pick Pattern B everywhere.
+
+### 17a. `components/trading/DashboardTab.tsx`
+
+**Line 119-121** — Replace the header row (when trades exist):
+```tsx
+// OLD
+<div className="flex flex-wrap items-center justify-between border-b border-white/10 pb-4">
+  <h2 className="text-2xl font-bold">Dashboard</h2>
+
+// NEW
+<div className="flex flex-wrap items-center justify-between">
+  <div>
+    <h1 className="text-2xl font-semibold text-white">Dashboard</h1>
+    <p className="text-sm text-zinc-400">Overview of your trading performance.</p>
+  </div>
+```
+
+Keep the Net/Gross PnL toggle in the same flex row — it stays as-is on the right side. Close the `<div>` wrapper around the toggle as before.
+
+**Line 99** — Empty state title stays as-is (it's a welcome message, not a page header).
+
+### 17b. `components/trading/PerformanceTab.tsx`
+
+**Line 29-30** — Replace header:
+```tsx
+// OLD
+<div className="flex flex-wrap items-center justify-between border-b border-white/10 pb-4">
+  <h2 className="text-2xl font-bold">Performance Analytics</h2>
+
+// NEW
+<div className="flex flex-wrap items-center justify-between">
+  <div>
+    <h1 className="text-2xl font-semibold text-white">Performance Analytics</h1>
+    <p className="text-sm text-zinc-400">Detailed breakdowns of win rate, R-multiples, and symbol distribution.</p>
+  </div>
+```
+
+Keep the `$ Metrics / R Metrics` toggle on the right side.
+
+### 17c. `components/trading/JournalTab.tsx`
+
+**Line 162-175** — Replace header:
+```tsx
+// OLD
+<div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
+  <div className="flex items-center gap-4">
+    <h2 className="text-2xl font-bold">Trading Journal</h2>
+
+// NEW
+<div className="flex flex-wrap items-center justify-between gap-4">
+  <div className="flex items-center gap-4">
+    <div>
+      <h1 className="text-2xl font-semibold text-white">Trading Journal</h1>
+      <p className="text-sm text-zinc-400">Daily trade replay with charts and notes.</p>
+    </div>
+```
+
+Keep the search input in the same flex row.
+
+### 17d. `components/trading/TradesTab.tsx`
+
+**Line 72-74** — Replace header:
+```tsx
+// OLD
+<div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+  <div className="flex flex-wrap items-center gap-4">
+    <h2 className="text-2xl font-bold">Trades Management</h2>
+
+// NEW
+<div className="flex flex-wrap items-center justify-between gap-3">
+  <div className="flex flex-wrap items-center gap-4">
+    <div>
+      <h1 className="text-2xl font-semibold text-white">Trades Management</h1>
+      <p className="text-sm text-zinc-400">Filter, tag, and manage all imported trades.</p>
+    </div>
+```
+
+Keep the search input and badges in the same flex row.
+
+**Verification:** Dev server — all 8 tabs should now have the same header pattern: `text-2xl font-semibold` title + `text-sm text-zinc-400` subtitle, no bottom border.
+
+---
+
+## Task 18: Add Motion Animations to Markets, Research, Jarvis
+
+**Problem:** Dashboard/Performance/Journal/Trades/Charts all fade+slide in via `motion.div`. Markets, Research, and Jarvis use plain `<section>` with no animation, causing a jarring difference when switching tabs.
+
+### 18a. `components/trading/MarketsTab.tsx`
+
+Add import at top:
+```tsx
+import { motion } from 'motion/react';
+```
+
+**Line 241** — Replace the outer element:
+```tsx
+// OLD
+<section className="space-y-5">
+
+// NEW
+<motion.section key="markets" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+```
+
+**Also** change the closing `</section>` to `</motion.section>`.
+
+### 18b. `components/trading/ResearchTab.tsx`
+
+Add import at top:
+```tsx
+import { motion } from 'motion/react';
+```
+
+**Line 171** — Replace outer element:
+```tsx
+// OLD
+<section className="space-y-5">
+
+// NEW
+<motion.section key="research" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+```
+
+Change closing `</section>` to `</motion.section>`.
+
+### 18c. `components/trading/JarvisTab.tsx`
+
+Add import at top:
+```tsx
+import { motion } from 'motion/react';
+```
+
+**Line 7** — Replace outer element:
+```tsx
+// OLD
+<section className="space-y-5">
+
+// NEW
+<motion.section key="jarvis" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+```
+
+Change closing `</section>` to `</motion.section>`.
+
+**Verification:** Switch between all tabs in dev — every tab should now smoothly fade+slide in.
+
+---
+
+## Task 19: Standardize Section Spacing to `space-y-6`
+
+**Problem:** Tabs use `space-y-5`, `space-y-6`, or `space-y-8` inconsistently.
+
+### Changes (one-line each):
+
+| File | Line | Old | New |
+|------|------|-----|-----|
+| `DashboardTab.tsx` | 96 | `space-y-8` | `space-y-6` |
+| `PerformanceTab.tsx` | 28 | `space-y-8` | `space-y-6` |
+| `TradesTab.tsx` | 70 | `space-y-8` | `space-y-6` |
+
+Note: JournalTab already uses `space-y-6`. Markets/Research/Jarvis were changed to `space-y-6` in Task 18.
+
+**Verification:** Visual check — spacing between sections should feel uniform across all tabs.
+
+---
+
+## Task 20: Standardize Card Borders to `border-white/10`
+
+**Problem:** Some cards use `border-white/5` (barely visible) and others use `border-white/10`. Standardize to `border-white/10` everywhere.
+
+### Files to update (find-and-replace `border-white/5` → `border-white/10`):
+
+1. **`components/trading/DashboardTab.tsx`** — Lines 98, 138, 144, 148, 157, 161, 165, 169, 218, 236, 316
+2. **`components/trading/PerformanceTab.tsx`** — Lines 68, 91
+3. **`components/trading/JournalTab.tsx`** — Lines 215, 236, 259
+4. **`app/page.tsx`** — Lines 96, 103, 106-108 (loading skeleton)
+
+Use a global find-replace within each file: replace all `border-white/5` with `border-white/10`.
+
+**Do NOT touch:** `components/trading/Sidebar.tsx` (the sidebar border-right is `border-white/5` by design — it should be subtle).
+
+**Verification:** Cards across all tabs should have uniformly visible borders.
+
+---
+
+## Task 21: Standardize Card Border Radius to `rounded-xl`
+
+**Problem:** Cards use `rounded-2xl` on some tabs and `rounded-xl` on others.
+
+### Files to update (replace `rounded-2xl` → `rounded-xl` for card containers only):
+
+1. **`components/trading/DashboardTab.tsx`** — Lines 98, 138, 144, 148, 157, 161, 165, 169, 316
+2. **`components/trading/PerformanceTab.tsx`** — Lines 68, 91
+3. **`components/trading/JournalTab.tsx`** — Line 215
+4. **`components/trading/PerformanceCharts.tsx`** — Find all `rounded-2xl` on chart card containers and replace with `rounded-xl`
+5. **`app/page.tsx`** — Line 272 (import spinner modal)
+
+**Do NOT touch:** `rounded-2xl` on non-card elements (if any exist on logo containers, etc.).
+
+**Verification:** All section cards should have uniform `rounded-xl` corners.
+
+---
+
+## Task 22: Standardize Card Backgrounds
+
+**Problem:** 7+ different dark background colors are used. Unify non-Charts backgrounds to `bg-[#121214]`.
+
+### 22a. Replace `bg-black/20` with `bg-[#121214]`
+
+Files affected:
+- **`components/trading/MarketsTab.tsx`** — Lines 110, 270, 277, 284, 291, 299, 306, 327 (all `bg-black/20` → `bg-[#121214]`)
+- **`components/trading/ResearchTab.tsx`** — Lines 238, 274, 340 (`bg-black/20` → `bg-[#121214]`)
+- **`components/trading/JarvisTab.tsx`** — Line 17 (`bg-black/20` → `bg-[#121214]`)
+- **`components/trading/JarvisMacroSummary.tsx`** — Find any `bg-black/20` → `bg-[#121214]`
+
+### 22b. Replace `bg-[#111113]` with `bg-[#121214]`
+
+Files affected:
+- **`components/trading/MarketsTab.tsx`** — Line 257 (`bg-[#111113]` → `bg-[#121214]`)
+- **`components/trading/ResearchTab.tsx`** — Lines 177, 184, 210, 254, 315 (`bg-[#111113]` → `bg-[#121214]`)
+- **`components/trading/JarvisTab.tsx`** — Line 13 (`bg-[#111113]` → `bg-[#121214]`)
+
+### 22c. Replace `bg-[#0F0F10]` with `bg-[#121214]`
+
+- **`components/trading/JournalTab.tsx`** — Line 275 (`bg-[#0F0F10]` → `bg-[#121214]`)
+
+### 22d. Do NOT change Charts tab colors
+
+Leave all `bg-[#111319]`, `bg-[#0d1016]`, `bg-[#090b10]`, `bg-[#0f1219]` in `ChartsTab.tsx` as-is. The blue-tinted palette is intentional for the charting workspace.
+
+**Verification:** All non-Charts cards/sections should share the same `#121214` background.
+
+---
+
+## Task 23: Standardize Dropdown/Overlay Backgrounds
+
+**Problem:** Dropdown menus use `bg-[#121214]`, `bg-[#111319]`, or `bg-[#18181b]` depending on the file.
+
+### Changes:
+
+1. **`components/trading/Sidebar.tsx`** — Lines 73, 132: already `bg-[#121214]` ✓ no change
+2. **`components/trading/ChartsTab.tsx`** — Lines 539, 556, 573: keep `bg-[#111319]` (Charts palette exception)
+3. **`components/trading/TradeDetailSheet.tsx`** — Find any `bg-[#18181b]` → `bg-[#121214]`
+4. **`components/trading/NewTradeDialog.tsx`** — Find any `bg-[#18181b]` → `bg-[#121214]`
+5. **`components/ui/select.tsx`** — If `SelectContent` has `bg-[#18181b]`, change to `bg-[#121214]`
+
+**Verification:** All dropdown/select overlays (except Charts) should have consistent `#121214` background.
+
+---
+
+## Task 24: Fix Dashboard Stat Label Inconsistency
+
+**Problem:** Top stat row uses `text-xs font-mono uppercase text-zinc-500`, bottom row uses `text-xs uppercase tracking-wider text-zinc-500` (no `font-mono`). Standardize all to include `font-mono`.
+
+### `components/trading/DashboardTab.tsx`
+
+**Lines 158, 162, 166, 170** — The `<p>` labels in the second stats grid. Add `font-mono` class:
+```tsx
+// OLD
+<p className="text-xs uppercase tracking-wider text-zinc-500">
+
+// NEW
+<p className="text-xs font-mono uppercase tracking-wider text-zinc-500">
+```
+
+Apply to all 4 labels: "Average MFE", "Average MAE", "Average Exit Efficiency", "Largest Win / Loss".
+
+Also add `tracking-wider` to the top 3 stat labels (lines 139, 145, 149) for full consistency:
+```tsx
+// OLD
+<div className="mb-2 text-xs font-mono uppercase text-zinc-500">
+
+// NEW
+<div className="mb-2 text-xs font-mono uppercase tracking-wider text-zinc-500">
+```
+
+**Verification:** All 7 stat labels on Dashboard should now look identical in style.
+
+---
+
+## Task 25: Fix Research Tab Toggle Active Style
+
+**Problem:** Research tab uses `bg-emerald-500/15 text-emerald-200` for the active toggle state. Every other toggle in the app uses `bg-emerald-500 text-black`.
+
+### `components/trading/ResearchTab.tsx`
+
+**Lines 188, 195, 202** — Update the active state classes on all 3 tab buttons:
+```tsx
+// OLD
+className={`rounded-md px-3 py-1.5 text-xs ${activeView === 'ai-reports' ? 'bg-emerald-500/15 text-emerald-200' : 'text-zinc-300 hover:bg-white/5'}`}
+
+// NEW
+className={`rounded-md px-3 py-1.5 text-xs font-medium ${activeView === 'ai-reports' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+```
+
+Apply the same change to all 3 buttons (ai-reports, daily-summaries, saved-tickers), updating each one's conditional check accordingly.
+
+**Verification:** Research tab toggles should now look identical to Dashboard PnL and Performance metric toggles.
+
+---
+
+## Task 26: Standardize Input Styling
+
+**Problem:** Three different input patterns exist: standard (Trades tab), compact inline (Journal tab), and dark bg (Research tab).
+
+### 26a. Research Tab Inputs — `components/trading/ResearchTab.tsx`
+
+**Lines 216, 260, 321, 327** — Replace `bg-black/20` with `bg-white/5` on all `<input>` elements:
+```tsx
+// OLD
+className="flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none focus:border-emerald-500/40"
+
+// NEW
+className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+```
+
+Apply the same focus-ring pattern to all Research tab inputs for consistency with Journal/Trades inputs.
+
+### 26b. Journal Tab Inline Inputs — `components/trading/JournalTab.tsx`
+
+**Lines 181-189** — Replace the compact risk input with standard styling:
+```tsx
+// OLD
+<input
+  type="number"
+  placeholder="$500"
+  value={riskInput}
+  onChange={(event) => onRiskInputChange(event.target.value)}
+  className="w-16 border-b border-white/10 bg-transparent text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+/>
+<button onClick={onApplyRisk} className="text-[10px] font-bold uppercase text-emerald-500 hover:text-emerald-400">
+  Apply
+</button>
+
+// NEW
+<input
+  type="number"
+  placeholder="$500"
+  value={riskInput}
+  onChange={(event) => onRiskInputChange(event.target.value)}
+  className="w-20 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+/>
+<button onClick={onApplyRisk} className="rounded-md bg-emerald-500 px-2 py-1 text-[10px] font-bold uppercase text-black hover:bg-emerald-400">
+  Apply
+</button>
+```
+
+**Lines 195-203** — Same treatment for the tag input:
+```tsx
+// OLD
+<input
+  type="text"
+  placeholder="Add Tag..."
+  value={bulkTagInput}
+  onChange={(event) => onBulkTagInputChange(event.target.value)}
+  className="w-20 border-b border-white/10 bg-transparent text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+/>
+<button onClick={onBulkAddTag} className="text-[10px] font-bold uppercase text-emerald-500 hover:text-emerald-400">
+  Add
+</button>
+
+// NEW
+<input
+  type="text"
+  placeholder="Add Tag..."
+  value={bulkTagInput}
+  onChange={(event) => onBulkTagInputChange(event.target.value)}
+  className="w-24 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+/>
+<button onClick={onBulkAddTag} className="rounded-md bg-emerald-500 px-2 py-1 text-[10px] font-bold uppercase text-black hover:bg-emerald-400">
+  Add
+</button>
+```
+
+**Verification:** All inputs across the app should now have the same border, background, and focus-ring pattern.
+
+---
+
+## Task 27: Convert Raw Buttons to `<Button>` Component
+
+**Problem:** Some primary actions use raw `<button>` elements with manually applied emerald styling instead of the `<Button>` component from `components/ui/button.tsx`.
+
+### 27a. `components/trading/ResearchTab.tsx`
+
+Add import at top if not present:
+```tsx
+import { Button } from '@/components/ui/button';
+```
+
+**Line 222-225** — Replace "New Report" button:
+```tsx
+// OLD
+<button type="button" disabled={loadingResearch} onClick={() => void runResearch(false)}
+  className="rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-black disabled:opacity-60">
+  {loadingResearch ? 'Running...' : 'New Report'}
+</button>
+
+// NEW
+<Button disabled={loadingResearch} onClick={() => void runResearch(false)}
+  className="bg-emerald-500 px-3 text-sm font-semibold text-black hover:bg-emerald-400">
+  {loadingResearch ? 'Running...' : 'New Report'}
+</Button>
+```
+
+Apply same pattern to "Refresh (Ignore Cache)" button (line 228-232), "Get Daily Summary" (line 267-270), and "Save" (line 331-335).
+
+### 27b. `components/trading/MarketsTab.tsx`
+
+Add import at top:
+```tsx
+import { Button } from '@/components/ui/button';
+```
+
+**Line 247-253** — Replace "Refresh" button:
+```tsx
+// OLD
+<button type="button" onClick={...} disabled={...}
+  className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-200 ...">
+
+// NEW
+<Button variant="outline" onClick={...} disabled={...}
+  className="border-white/10 bg-white/5 px-3 text-xs font-medium text-zinc-200 hover:bg-white/10">
+```
+
+**Verification:** `npm run lint && npx tsc --noEmit`. All primary action buttons should render identically.
+
+---
+
+## Task 28: Remove Non-Standard Violet/Cyan from Jarvis
+
+**Problem:** `JarvisStructuredResponse.tsx` uses violet and cyan accent colors that don't exist elsewhere.
+
+### `components/trading/JarvisStructuredResponse.tsx`
+
+**Line ~39** — Replace violet styling:
+```tsx
+// OLD
+border-violet-500/30 bg-violet-500/10 text-violet-200
+
+// NEW
+border-emerald-500/30 bg-emerald-500/10 text-emerald-200
+```
+
+**Line ~42** — Replace cyan styling:
+```tsx
+// OLD
+border-cyan-500/30 bg-cyan-500/10 text-cyan-200
+
+// NEW
+border-zinc-500/30 bg-zinc-500/10 text-zinc-200
+```
+
+### `components/trading/JarvisDilutionReport.tsx`
+
+**Line ~40** — Replace cyan styling:
+```tsx
+// OLD
+border-cyan-500/20 ... bg-cyan-500/5
+
+// NEW
+border-emerald-500/20 ... bg-emerald-500/5
+```
+
+**Verification:** Jarvis responses should use only emerald and zinc accent colors.
+
+---
+
+## Task 29: Add `tabular-nums` to Numeric Data
+
+**Problem:** Numeric values in tables and stat cards don't use tabular (fixed-width) numbers, so columns don't align by decimal point.
+
+### 29a. `components/trading/TradeTable.tsx`
+
+Add `tabular-nums` to the `<table>` or `<tbody>` element so all numeric cells inherit it:
+```tsx
+// Find the <table> or wrapper element and add tabular-nums
+className="... tabular-nums"
+```
+
+### 29b. `components/trading/DashboardTab.tsx`
+
+**Lines 140-141, 146, 150-151** — Add `tabular-nums` to the large stat values:
+```tsx
+// The text-3xl stat value divs — add tabular-nums
+className={`text-3xl font-bold tracking-tight tabular-nums ${getPnLColor(stats.totalPnl)}`}
+```
+
+Apply to all 3 hero stats and the 4 secondary stats (`text-xl font-semibold` lines 159, 163, 167).
+
+### 29c. `components/trading/MarketsTab.tsx`
+
+Add `tabular-nums` to the `<table>` elements in `MoversTable` and to `InstrumentCard` price display.
+
+### 29d. `components/trading/PerformanceStatsTable.tsx`
+
+Add `tabular-nums` to the stats table wrapper.
+
+**Verification:** Numbers in tables and stat cards should align neatly in columns.
+
+---
+
+## Task 30: Standardize Hover on Emerald Buttons
+
+**Problem:** Some emerald buttons use `hover:bg-emerald-400` (lighter on hover) and others use `hover:bg-emerald-600` (darker on hover).
+
+### Global fix
+
+In all files, replace `hover:bg-emerald-600` with `hover:bg-emerald-400`. The pattern is: lighter on hover = feels more responsive/interactive.
+
+Files to check:
+- `components/trading/TradesTab.tsx` — Lines 111, 123, 136
+
+**Verification:** All emerald buttons should lighten on hover uniformly.
+
+---
+
+## Execution Checklist
+
+```
+[ ] Task 17: Standardize page headers to Pattern B (4 files: DashboardTab, PerformanceTab, JournalTab, TradesTab)
+[ ] Task 18: Add motion animations to Markets, Research, Jarvis (3 files)
+[ ] Task 19: Standardize section spacing to space-y-6 (3 files: DashboardTab, PerformanceTab, TradesTab)
+[ ] Task 20: Standardize card borders to border-white/10 (4 files: DashboardTab, PerformanceTab, JournalTab, page.tsx)
+[ ] Task 21: Standardize card border-radius to rounded-xl (5 files)
+[ ] Task 22: Standardize card backgrounds to bg-[#121214] (5 files, skip ChartsTab)
+[ ] Task 23: Standardize dropdown backgrounds to bg-[#121214] (3-4 files, skip ChartsTab)
+[ ] Task 24: Fix Dashboard stat label inconsistency (DashboardTab.tsx)
+[ ] Task 25: Fix Research tab toggle active style (ResearchTab.tsx)
+[ ] Task 26: Standardize input styling (ResearchTab, JournalTab)
+[ ] Task 27: Convert raw buttons to <Button> component (ResearchTab, MarketsTab)
+[ ] Task 28: Remove violet/cyan from Jarvis (JarvisStructuredResponse, JarvisDilutionReport)
+[ ] Task 29: Add tabular-nums to numeric data (TradeTable, DashboardTab, MarketsTab, PerformanceStatsTable)
+[ ] Task 30: Standardize hover:bg-emerald-400 on all emerald buttons (TradesTab)
+[ ] Validation: npm run lint
+[ ] Validation: npx tsc --noEmit
+[ ] Validation: Visual check — switch between all 8 tabs, verify uniform look
+```
+
+**Post-execution:** Run `npm run lint && npx tsc --noEmit` after every 2-3 tasks to catch issues early.
