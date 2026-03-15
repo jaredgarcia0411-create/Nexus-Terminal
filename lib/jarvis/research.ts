@@ -2,9 +2,9 @@ import { and, eq, gte } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { researchReports } from '@/lib/db/schema';
 import { fetchTickerData } from '@/lib/jarvis/askedgar';
+import type { AskEdgarResponse } from '@/lib/jarvis/askedgar';
 import { callJarvis } from '@/lib/jarvis/client';
-import { buildContext } from '@/lib/jarvis/context';
-import { JARVIS_SYSTEM_PROMPT, buildResearchPrompt } from '@/lib/jarvis/prompts';
+import { buildResearchPrompt } from '@/lib/jarvis/prompts';
 import type { DilutionResearchReport } from '@/lib/jarvis/types';
 
 interface ResearchPipelineOptions {
@@ -12,11 +12,20 @@ interface ResearchPipelineOptions {
 }
 
 function parseJson(text: string): unknown {
+  // Try raw JSON first
   try {
     return JSON.parse(text);
-  } catch {
-    return { message: text };
+  } catch { /* fall through */ }
+
+  // Strip markdown code fences (```json ... ``` or ``` ... ```)
+  const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (fenceMatch) {
+    try {
+      return JSON.parse(fenceMatch[1]);
+    } catch { /* fall through */ }
   }
+
+  return { message: text };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -46,6 +55,44 @@ function isCacheableReport(report: unknown): report is Record<string, unknown> {
     && Array.isArray(candidate.reverseSplits)
     && Array.isArray(candidate.filingTitles)
   );
+}
+
+/**
+ * Strips wrapper fields and error responses from AskEdgar data to reduce token count.
+ * Only keeps the `results` arrays from endpoints that actually returned data.
+ * Limits array sizes to keep the payload under LLM context limits.
+ */
+const MAX_ITEMS_PER_ENDPOINT = 2;
+
+// Fields that waste tokens without helping analysis (long URLs, internal IDs)
+const DROP_FIELDS = new Set(['documentUrl', 'accessionNumber', 'cik', 'fileNo']);
+
+function stripVerboseFields(obj: unknown): unknown {
+  if (Array.isArray(obj)) return obj.map(stripVerboseFields);
+  if (typeof obj === 'object' && obj !== null) {
+    const cleaned: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (!DROP_FIELDS.has(k)) cleaned[k] = v;
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
+function trimRawDataForLlm(rawData: Record<string, AskEdgarResponse<unknown>>): Record<string, unknown[]> {
+  const trimmed: Record<string, unknown[]> = {};
+
+  for (const [key, response] of Object.entries(rawData)) {
+    // Skip endpoints that returned errors or no data
+    if (!response || response.status === 'error' || !Array.isArray(response.results) || response.results.length === 0) {
+      continue;
+    }
+    // Cap results per endpoint and strip verbose fields to save tokens
+    const capped = response.results.slice(0, MAX_ITEMS_PER_ENDPOINT);
+    trimmed[key] = capped.map(item => stripVerboseFields(item)) as unknown[];
+  }
+
+  return trimmed;
 }
 
 function collectRawDataWarnings(rawData: unknown) {
@@ -116,11 +163,18 @@ export async function runResearchPipeline(userId: string, ticker: string, option
   }
 
   const askedgarData = await fetchTickerData(normalizedTicker);
-  const context = await buildContext(userId, 'research');
-  const prompt = buildResearchPrompt({ ...context, report_data: askedgarData.rawData });
+
+  // Build a minimal context for research — no user trades or memory needed,
+  // and trim the AskEdgar data to only include successful results (saves ~70% tokens)
+  const trimmedData = trimRawDataForLlm(askedgarData.rawData as Record<string, AskEdgarResponse<unknown>>);
+  const prompt = buildResearchPrompt(trimmedData);
 
   try {
-    const llm = await callJarvis(JARVIS_SYSTEM_PROMPT, prompt);
+    // Minimal system prompt for research — saves ~500 tokens vs full JARVIS_SYSTEM_PROMPT
+    const llm = await callJarvis(
+      'You are a financial analyst. Return structured JSON from SEC filing data. Never fabricate data — use null for missing values.',
+      prompt,
+    );
     const parsed = parseJson(llm.content);
 
     await db.insert(researchReports).values({

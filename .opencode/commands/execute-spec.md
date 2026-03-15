@@ -14,3 +14,5 @@ After all changes are complete, run these three commands and report the result o
 - npm test
 
 Do not mark the task complete until all three pass.
+
+After validation passes, update HANDOFF.md to check off completed tasks and update README.md if needed to reflect any significant changes to the project.

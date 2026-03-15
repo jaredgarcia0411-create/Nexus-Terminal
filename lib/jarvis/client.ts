@@ -1,26 +1,13 @@
 import { isCircuitOpen, recordLlmFailure, recordLlmSuccess } from '@/lib/jarvis/circuit-breaker';
 
-const DEFAULT_MODEL = 'deepseek-v3.2';
-const DEFAULT_BASE_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
+const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
+const DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const DEFAULT_TIMEOUT_MS = 25_000;
 
 function normalizeBaseUrl(value: string): string {
   const trimmed = value.trim();
-  if (!trimmed) {
-    return DEFAULT_BASE_URL;
-  }
-
-  const url = new URL(trimmed);
-  if (url.hostname !== 'integrate.api.nvidia.com') {
-    return url.toString();
-  }
-
-  const normalizedPath = url.pathname.replace(/\/+$/, '');
-  if (normalizedPath === '' || normalizedPath === '/v1') {
-    url.pathname = '/v1/chat/completions';
-  }
-
-  return url.toString();
+  if (!trimmed) return DEFAULT_BASE_URL;
+  return trimmed;
 }
 
 async function readFailureDetail(response: Response): Promise<string> {
@@ -60,9 +47,9 @@ export interface JarvisClientResult {
 }
 
 async function requestLlm(systemPrompt: string, userMessage: string, temperature: number): Promise<JarvisClientResult> {
-  const apiKey = process.env.JARVIS_API_KEY ?? process.env.NVIDIA_API_KEY;
+  const apiKey = process.env.JARVIS_API_KEY;
   if (!apiKey) {
-    throw new Error('JARVIS_API_KEY (or NVIDIA_API_KEY) is not configured');
+    throw new Error('JARVIS_API_KEY is not configured');
   }
 
   const model = process.env.JARVIS_MODEL || DEFAULT_MODEL;
