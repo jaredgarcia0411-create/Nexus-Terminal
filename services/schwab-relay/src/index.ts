@@ -1,9 +1,11 @@
 import 'dotenv/config';
 
+import { createServer } from 'node:http';
+
 import { getDb } from './db.js';
 import { SchwabStreamer } from './streamer.js';
 import { loadActiveTokens } from './tokens.js';
-import { QuoteWriter } from './writer.js';
+import { QuoteWriter, cleanupStaleQuotes } from './writer.js';
 
 const TOKEN_CHECK_INTERVAL_MS = Number(process.env.TOKEN_CHECK_INTERVAL_MS ?? '300000');
 
@@ -15,6 +17,8 @@ let activeAccessToken: string | null = null;
 function log(message: string): void {
   console.info(`[relay] ${new Date().toISOString()} ${message}`);
 }
+
+const HEALTH_PORT = Number(process.env.HEALTH_PORT ?? '8080');
 
 function stopStreamer(): void {
   if (!streamer) {
@@ -111,6 +115,25 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
 async function main(): Promise<void> {
   log('starting Schwab relay service');
 
+  const healthServer = createServer((req, res) => {
+    if (req.url === '/health') {
+      const status = {
+        ok: true,
+        connected: streamer?.isConnected() ?? false,
+        activeUser: activeUserId !== null,
+        uptime: process.uptime(),
+      };
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(status));
+    } else {
+      res.writeHead(404);
+      res.end();
+    }
+  });
+  healthServer.listen(HEALTH_PORT, () => {
+    log(`health check listening on :${HEALTH_PORT}`);
+  });
+
   await syncTokens();
 
   setInterval(() => {
@@ -119,6 +142,13 @@ async function main(): Promise<void> {
       log(`token sync failed: ${message}`);
     });
   }, TOKEN_CHECK_INTERVAL_MS);
+
+  setInterval(() => {
+    void cleanupStaleQuotes().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : 'unknown cleanup error';
+      log(`stale quote cleanup failed: ${message}`);
+    });
+  }, 60 * 60 * 1000);
 
   process.on('SIGINT', () => {
     void shutdown('SIGINT');

@@ -56,5 +56,25 @@ export function decryptTokens(encrypted: string, iv: string, tag: string): Schwa
     decipher.final(),
   ]).toString('utf8');
 
-  return JSON.parse(decrypted) as SchwabTokenPayload;
+  const parsed: unknown = JSON.parse(decrypted);
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw new Error('Invalid decrypted token payload');
+  }
+
+  const candidate = parsed as Partial<SchwabTokenPayload>;
+  if (
+    typeof candidate.accessToken !== 'string' ||
+    typeof candidate.refreshToken !== 'string' ||
+    typeof candidate.expiresAt !== 'string' ||
+    typeof candidate.refreshExpiresAt !== 'string'
+  ) {
+    throw new Error('Decrypted token payload missing required fields');
+  }
+
+  return {
+    accessToken: candidate.accessToken,
+    refreshToken: candidate.refreshToken,
+    expiresAt: candidate.expiresAt,
+    refreshExpiresAt: candidate.refreshExpiresAt,
+  };
 }

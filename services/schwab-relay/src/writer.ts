@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { sql } from 'drizzle-orm';
+import { lt, sql } from 'drizzle-orm';
 
 import { getDb } from './db.js';
 import { marketSnapshots, realtimeQuotes } from './schema.js';
@@ -49,51 +49,49 @@ export class QuoteWriter {
     for (let index = 0; index < pendingQuotes.length; index += UPSERT_BATCH_SIZE) {
       const batch = pendingQuotes.slice(index, index + UPSERT_BATCH_SIZE);
 
-      await Promise.all(
-        batch.map((quote) =>
-          db
-            .insert(realtimeQuotes)
-            .values({
-              symbol: quote.symbol,
-              assetType: quote.assetType,
-              lastPrice: quote.lastPrice,
-              bidPrice: quote.bidPrice,
-              askPrice: quote.askPrice,
-              openPrice: quote.openPrice,
-              highPrice: quote.highPrice,
-              lowPrice: quote.lowPrice,
-              closePrice: quote.closePrice,
-              netChange: quote.netChange,
-              netChangePercent: quote.netChangePercent,
-              totalVolume: quote.totalVolume,
-              exchangeId: quote.exchangeId,
-              description: undefined,
-              securityStatus: quote.securityStatus,
-              quoteTimeMs: quote.quoteTimeMs,
-              updatedAt: new Date(),
-            })
-            .onConflictDoUpdate({
-              target: realtimeQuotes.symbol,
-              set: {
-                assetType: quote.assetType,
-                lastPrice: quote.lastPrice,
-                bidPrice: quote.bidPrice,
-                askPrice: quote.askPrice,
-                openPrice: quote.openPrice,
-                highPrice: quote.highPrice,
-                lowPrice: quote.lowPrice,
-                closePrice: quote.closePrice,
-                netChange: quote.netChange,
-                netChangePercent: quote.netChangePercent,
-                totalVolume: quote.totalVolume,
-                exchangeId: quote.exchangeId,
-                securityStatus: quote.securityStatus,
-                quoteTimeMs: quote.quoteTimeMs,
-                updatedAt: sql`NOW()`,
-              },
-            }),
-        ),
-      );
+      const rows = batch.map((quote) => ({
+        symbol: quote.symbol,
+        assetType: quote.assetType,
+        lastPrice: quote.lastPrice,
+        bidPrice: quote.bidPrice,
+        askPrice: quote.askPrice,
+        openPrice: quote.openPrice,
+        highPrice: quote.highPrice,
+        lowPrice: quote.lowPrice,
+        closePrice: quote.closePrice,
+        netChange: quote.netChange,
+        netChangePercent: quote.netChangePercent,
+        totalVolume: quote.totalVolume,
+        exchangeId: quote.exchangeId,
+        description: undefined,
+        securityStatus: quote.securityStatus,
+        quoteTimeMs: quote.quoteTimeMs,
+        updatedAt: new Date(),
+      }));
+
+      await db
+        .insert(realtimeQuotes)
+        .values(rows)
+        .onConflictDoUpdate({
+          target: realtimeQuotes.symbol,
+          set: {
+            assetType: sql`excluded.asset_type`,
+            lastPrice: sql`excluded.last_price`,
+            bidPrice: sql`excluded.bid_price`,
+            askPrice: sql`excluded.ask_price`,
+            openPrice: sql`excluded.open_price`,
+            highPrice: sql`excluded.high_price`,
+            lowPrice: sql`excluded.low_price`,
+            closePrice: sql`excluded.close_price`,
+            netChange: sql`excluded.net_change`,
+            netChangePercent: sql`excluded.net_change_percent`,
+            totalVolume: sql`excluded.total_volume`,
+            exchangeId: sql`excluded.exchange_id`,
+            securityStatus: sql`excluded.security_status`,
+            quoteTimeMs: sql`excluded.quote_time_ms`,
+            updatedAt: sql`NOW()`,
+          },
+        });
     }
 
     console.info(`[relay] wrote ${pendingQuotes.length} realtime quote rows`);
@@ -135,5 +133,19 @@ export class QuoteWriter {
 
   stop(): void {
     clearInterval(this.flushTimer);
+  }
+}
+
+export async function cleanupStaleQuotes(): Promise<void> {
+  const db = getDb();
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+  const result = await db
+    .delete(realtimeQuotes)
+    .where(lt(realtimeQuotes.updatedAt, oneHourAgo));
+
+  const count = (result as { rowCount?: number }).rowCount ?? 0;
+  if (count > 0) {
+    console.info(`[relay] cleaned up ${count} stale quote rows`);
   }
 }

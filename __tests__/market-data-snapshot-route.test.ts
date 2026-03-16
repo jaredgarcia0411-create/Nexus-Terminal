@@ -73,7 +73,6 @@ describe('GET /api/market-data/snapshot', () => {
     expect(payload.data.indices).toBeInstanceOf(Array);
     expect(payload.data.fx[0].symbol).toBe('EURUSD');
     expect(payload.data.fx[0].price).toBe(1.08);
-    expect(payload.data.crypto[0].price).toBe(61000);
     expect(payload.data.futures[0].price).toBe(2231.2);
     expect(payload.data.indices[0].quoteSession).toBe('pre-market');
     expect(payload.data.indices[0].price).toBe(501);

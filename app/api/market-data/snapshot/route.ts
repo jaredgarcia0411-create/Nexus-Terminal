@@ -31,12 +31,12 @@ type MarketMoverRow = {
   change: number | null;
   changePercent: number | null;
   updated: number | null;
+  volume: number | null;
 };
 
 type MarketSnapshotPayload = {
   indices: MarketInstrument[];
   futures: MarketInstrument[];
-  crypto: MarketInstrument[];
   fx: MarketInstrument[];
   equities: MarketInstrument[];
   movers: {
@@ -52,7 +52,6 @@ type SnapshotCoverage = {
   missingPriceBySection: {
     indices: number;
     futures: number;
-    crypto: number;
     fx: number;
     equities: number;
   };
@@ -79,11 +78,7 @@ const FUTURE_SYMBOLS = [
   { ticker: '/ZT', label: '2Y Note' },
   { ticker: '/ZN', label: '10Y Note' },
 ];
-const CRYPTO_SYMBOLS = [
-  { ticker: 'X:BTCUSD', symbol: 'BTC' },
-  { ticker: 'X:ETHUSD', symbol: 'ETH' },
-];
-const FX_SYMBOLS = ['C:EURUSD', 'C:GBPUSD', 'C:USDJPY', 'C:USDCAD', 'C:AUDUSD', 'C:CNYUSD'];
+const FX_SYMBOLS = ['C:EURUSD', 'C:GBPUSD', 'C:USDJPY', 'C:USDCAD', 'C:AUDUSD'];
 const EQUITY_SYMBOLS = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'NVDA', 'TSLA', 'META', 'JPM', 'JNJ', 'V'];
 const EXTENDED_SESSION_SYMBOLS = [...INDEX_SYMBOLS, ...EQUITY_SYMBOLS];
 
@@ -214,6 +209,7 @@ function toMoverRows(rows: Array<{ ticker?: string; day?: { c?: number }; prevDa
       change: toNumberOrNull(row.todaysChange),
       changePercent: toNumberOrNull(row.todaysChangePerc),
       updated: toNumberOrNull(row.updated),
+      volume: null,
     }))
     .filter((row) => row.ticker.length > 0)
     .filter((row) => (row.previousClose ?? 0) >= 0.75);
@@ -223,7 +219,6 @@ async function fetchFreshSnapshot(): Promise<MarketSnapshotPayload> {
   const tickers = [
     ...INDEX_SYMBOLS,
     ...FUTURE_SYMBOLS.map((item) => item.ticker),
-    ...CRYPTO_SYMBOLS.map((item) => item.ticker),
     ...FX_SYMBOLS,
     ...EQUITY_SYMBOLS,
   ];
@@ -249,7 +244,6 @@ async function fetchFreshSnapshot(): Promise<MarketSnapshotPayload> {
   return {
     indices: INDEX_SYMBOLS.map((symbol) => toInstrument(symbol, symbol, lookup, activeSession, extendedSummaries)),
     futures: FUTURE_SYMBOLS.map((item) => toInstrument(item.ticker, item.label, lookup, activeSession)),
-    crypto: CRYPTO_SYMBOLS.map((item) => toInstrument(item.ticker, item.symbol, lookup, activeSession)),
     fx: FX_SYMBOLS.map((symbol) => toInstrument(symbol, normalizeTicker(symbol), lookup, activeSession)),
     equities: EQUITY_SYMBOLS.map((symbol) => toInstrument(symbol, symbol, lookup, activeSession, extendedSummaries)),
     movers: {
@@ -348,12 +342,14 @@ async function fetchRealtimeSnapshot(
           lastPrice?: number;
           netChange?: number;
           netChangePercent?: number;
+          totalVolume?: number;
         }>;
         losers?: Array<{
           symbol?: string;
           lastPrice?: number;
           netChange?: number;
           netChangePercent?: number;
+          totalVolume?: number;
         }>;
       };
 
@@ -363,6 +359,7 @@ async function fetchRealtimeSnapshot(
           lastPrice?: number;
           netChange?: number;
           netChangePercent?: number;
+          totalVolume?: number;
         }> | undefined,
       ): MarketMoverRow[] => {
         if (!rows) {
@@ -382,6 +379,7 @@ async function fetchRealtimeSnapshot(
               change: row.netChange ?? null,
               changePercent: row.netChangePercent ?? null,
               updated: null,
+              volume: row.totalVolume ?? null,
             };
           })
           .filter((row): row is MarketMoverRow => row !== null);
@@ -399,7 +397,6 @@ async function fetchRealtimeSnapshot(
     data: {
       indices: INDEX_SYMBOLS.map((symbol) => mapRealtimeInstrument(symbol, symbol)),
       futures: FUTURE_SYMBOLS.map((item) => mapRealtimeInstrument(item.ticker, item.label)),
-      crypto: CRYPTO_SYMBOLS.map((item) => mapRealtimeInstrument(item.symbol, item.symbol)),
       fx: FX_SYMBOLS.map((symbol) => mapRealtimeInstrument(symbol, normalizeTicker(symbol))),
       equities: EQUITY_SYMBOLS.map((symbol) => mapRealtimeInstrument(symbol, symbol)),
       movers: {
@@ -454,18 +451,16 @@ function countMissing(items: MarketInstrument[]) {
 }
 
 function buildCoverage(data: MarketSnapshotPayload): SnapshotCoverage {
-  const totalInstruments = data.indices.length + data.futures.length + data.crypto.length + data.fx.length + data.equities.length;
+  const totalInstruments = data.indices.length + data.futures.length + data.fx.length + data.equities.length;
   const missingPriceBySection = {
     indices: countMissing(data.indices),
     futures: countMissing(data.futures),
-    crypto: countMissing(data.crypto),
     fx: countMissing(data.fx),
     equities: countMissing(data.equities),
   };
   const missingPriceCount =
     missingPriceBySection.indices +
     missingPriceBySection.futures +
-    missingPriceBySection.crypto +
     missingPriceBySection.fx +
     missingPriceBySection.equities;
 

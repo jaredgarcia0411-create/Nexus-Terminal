@@ -12,3 +12,15 @@ primary_region = "iad"
   memory = "256mb"
   auto_stop_machines = false
   auto_start_machines = true
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+
+  [[services.http_checks]]
+    interval = 30000
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+    protocol = "http"
+    timeout = 5000

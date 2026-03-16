@@ -97,7 +97,7 @@ Detailed step-by-step execution specs and checklists were removed to save space.
 ## Schwab Real-Time Market Data (Option C Hybrid)
 
 > Generated: 2026-03-15 | Agent: nexus-architect
-> Status: IN PROGRESS (PHASES 1-3 COMPLETE)
+> Status: COMPLETE (ALL PHASES IMPLEMENTED)
 
 **Full spec:** [`specs/schwab-realtime-hybrid.md`](specs/schwab-realtime-hybrid.md)
 
@@ -117,11 +117,15 @@ Detailed step-by-step execution specs and checklists were removed to save space.
 - Added `/?tab=markets` URL parameter support in `app/page.tsx` for Schwab OAuth callback routing.
 - Validation completed: lint, TypeScript, tests.
 
+**Phase 4 Progress (2026-03-16):**
+- Confirmed scanner foundation is schema-complete with existing `realtime_quotes` fields (`symbol`, `asset_type`, `last_price`, `net_change_percent`, `total_volume`, OHLC, `updated_at`).
+- No additional implementation changes required for Phase 4 (stub-only scope in spec).
+
 **Phases:**
 1. [x] Schwab OAuth integration (7 changes — new tables, encrypted token storage, OAuth routes)
 2. [x] Streaming relay service (10 changes — standalone Node.js service in `services/schwab-relay/`)
 3. [x] Frontend integration (4 changes — dual-source snapshot route, LIVE/DELAYED badges, link/unlink UI)
-4. [ ] Scanner foundation (stub only — `realtimeQuotes` table already covers scanner fields)
+4. [x] Scanner foundation (stub only — `realtimeQuotes` table already covers scanner fields)
 
 ---
 
@@ -234,10 +238,17 @@ cd services/schwab-relay && npx tsc --noEmit && cd ../.. && npm run lint && npx 
 ## Schwab Phase 3.5 — Cleanup & Hardening Before Phase 4
 
 > Generated: 2026-03-15 | Agent: nexus-architect (audit), claude (spec)
-> Status: NOT STARTED
+> Status: COMPLETE (IMPLEMENTED)
 > Depends on: Phases 1-3 COMPLETE
 
 **Context:** Architecture audit of Phases 1-3 found 10 issues across code quality, missing tests, coverage gaps, and minor bugs. All should be resolved before starting Phase 4 (Scanner). Fixes are ordered by priority.
+
+**Implementation Summary (2026-03-15):**
+- Removed unsupported crypto section from Markets snapshot API/UI and removed unsupported `C:CNYUSD` FX symbol.
+- Hardened relay behavior with exponential reconnect backoff, batched multi-row quote upserts, hourly stale-quote cleanup, standardized log prefixes, and Fly health endpoint (`/health`).
+- Added stricter Schwab token decrypt payload validation and propagated screener `volume` into mover rows.
+- Added Schwab unit tests for crypto round-trip/tamper handling and realtime symbol normalization.
+- Validation completed: lint, TypeScript, tests.
 
 ---
 

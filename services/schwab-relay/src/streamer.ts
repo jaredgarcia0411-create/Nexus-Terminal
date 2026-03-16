@@ -149,6 +149,7 @@ export class SchwabStreamer {
   private manualDisconnect = false;
   private connected = false;
   private subscribed = false;
+  private reconnectAttempts = 0;
 
   constructor(config: StreamerConfig) {
     this.accessToken = config.accessToken;
@@ -186,6 +187,7 @@ export class SchwabStreamer {
 
       this.ws.on('open', () => {
         this.connected = true;
+        this.reconnectAttempts = 0;
         this.sendLogin(customerId, correlId, channel, functionId);
       });
 
@@ -350,11 +352,11 @@ export class SchwabStreamer {
         if (loginResponse) {
           const code = (loginResponse as { content?: { code?: number } }).content?.code;
           if (code === 0) {
-            console.log('[Streamer] LOGIN successful, subscribing...');
+            console.log('[relay] LOGIN successful, subscribing...');
             this.subscribe();
           } else {
             const msg = (loginResponse as { content?: { msg?: string } }).content?.msg;
-            console.error(`[Streamer] LOGIN failed: code=${code} msg=${msg}`);
+            console.error(`[relay] LOGIN failed: code=${code} msg=${msg}`);
             this.onError(new Error(`Schwab LOGIN failed: ${msg ?? `code ${code}`}`));
             this.disconnect();
           }
@@ -418,7 +420,6 @@ export class SchwabStreamer {
         };
 
         for (const [fieldNumberRaw, fieldName] of Object.entries(map)) {
-          const fieldNumber = Number(fieldNumberRaw);
           const value = item[fieldNumberRaw];
           if (fieldName === 'symbol') {
             if (typeof value === 'string' && value.length > 0) {
@@ -430,9 +431,6 @@ export class SchwabStreamer {
           const numericValue = toNumber(value);
           if (numericValue !== undefined) {
             (quote as Record<string, number | string | undefined>)[fieldName] = numericValue;
-          }
-          if (Number.isNaN(fieldNumber)) {
-            continue;
           }
         }
 
@@ -502,10 +500,15 @@ export class SchwabStreamer {
       return;
     }
 
+    const baseDelay = 5_000;
+    const maxDelay = 5 * 60 * 1000;
+    const delay = Math.min(baseDelay * Math.pow(2, this.reconnectAttempts), maxDelay);
+    this.reconnectAttempts++;
+
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       void this.connect();
-    }, 5_000);
+    }, delay);
   }
 
   private clearReconnectTimer(): void {
