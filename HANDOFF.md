@@ -777,6 +777,251 @@ cd services/schwab-relay && npx tsc --noEmit && cd ../.. && npm run lint && npx 
 
 ---
 
+## Schwab Phase 4 Review — Architecture Audit Findings
+
+> Generated: 2026-03-15 | Agent: nexus-architect (review)
+> Status: OPEN (items for future work)
+
+**Context:** Full review of Schwab phases 1-4 implementation against specs and live code. All phases verified as implemented and matching HANDOFF descriptions. The following are open items discovered during review.
+
+### Known Issues
+
+1. **Realtime `quoteSession` always `'regular'` (MEDIUM)** — `fetchRealtimeSnapshot()` in `app/api/market-data/snapshot/route.ts` line 322 hardcodes `quoteSession: 'regular'` for all realtime instruments. Schwab streams extended-hours data, so during pre-market/after-hours the LIVE badge shows but the session label is misleading. The delayed Massive path has proper session detection via `getEasternMarketSession()`. Fix: add session detection to the realtime path.
+
+2. **Relay schema drift from main app (LOW)** — `services/schwab-relay/src/schema.ts` is an intentional subset of `lib/db/schema.ts` but lacks a comment documenting this. Missing fields (`accountLabel`, `linkedAt`, `status` enum) and indexes are harmless but could confuse future work. Fix: add a header comment noting it's a subset and pointing to the source of truth.
+
+3. **Relay flush logging noise (LOW)** — `services/schwab-relay/src/writer.ts` line 97 logs every 1-second flush cycle during market hours (~23K lines/day). Fix: log every 60th flush or use `console.debug`.
+
+4. **Snapshot route uses `console.error` for non-errors (LOW)** — `logSnapshotStage` in `app/api/market-data/snapshot/route.ts` line 442 uses `console.error` for routine diagnostics, polluting Vercel error dashboards. Fix: switch to `console.info`.
+
+5. **Single-user relay limitation undocumented** — `services/schwab-relay/src/tokens.ts` `loadActiveTokens` uses `.limit(1)` with no ordering. Only one Schwab-linked user gets streaming at a time. This is intentional for the current single-user design but not documented.
+
+6. **Dead `exchangeId`/`securityStatus` writer code (LOW)** — After Phase 3.5 Fix 2 removed hardcoded field extraction, these fields in `services/schwab-relay/src/writer.ts` are always `undefined`. The upsert still maps them (harmless NULL writes). Cleanup only.
+
+### Deployment Gaps
+
+1. **No relay `.env.example`** — The relay requires `DATABASE_URL`, `SCHWAB_CLIENT_ID`, `SCHWAB_CLIENT_SECRET`, `SCHWAB_TOKEN_ENCRYPTION_KEY` and optional `HEALTH_PORT`, `TOKEN_CHECK_INTERVAL_MS`, `TRACK_EQUITIES`, `TRACK_FUTURES`, `TRACK_FOREX`. None documented in a relay-specific env example.
+
+2. **Relay `package-lock.json`** — The Dockerfile uses `npm ci` which requires a lockfile. Verify `services/schwab-relay/package-lock.json` is committed; if not, generate and commit it.
+
+### Phase 5+ Scanner Roadmap (Not Yet Specified)
+
+Phase 4 confirmed the `realtime_quotes` schema covers scanner fields. The next phase would be:
+- `/api/scanner` route with filtering/sorting on `realtime_quotes` (asset type, % change, volume thresholds)
+- Scanner UI component in Markets tab or new tab
+- No spec or timeline exists yet — create when ready to build.
+
+---
+
+## Schwab Phase 4 Review — Implementation Steps (for opencode)
+
+> Generated: 2026-03-15 | Agent: nexus-architect
+> Status: READY FOR IMPLEMENTATION
+> Depends on: All Schwab phases COMPLETE
+
+**Context:** Architecture audit found 6 code issues + 2 deployment gaps. These are ordered by priority. Each step is independent — complete and validate one at a time.
+
+---
+
+### Step 1: Fix realtime `quoteSession` accuracy (MEDIUM)
+
+**Why:** When a user has Schwab linked, `mapRealtimeInstrument()` hardcodes `quoteSession: 'regular'` for every instrument. During pre-market or after-hours, the UI shows a LIVE badge but claims "regular" session — misleading. The delayed Massive path already uses `getEasternMarketSession()` to detect the correct session. The realtime path should do the same.
+
+**File:** `app/api/market-data/snapshot/route.ts`
+
+1. Inside `fetchRealtimeSnapshot()` (line 275), add a session detection call right after the stale-data check block (after line 290, before the `const quotes` line):
+   ```typescript
+   const currentSession = getEasternMarketSession();
+   ```
+   `getEasternMarketSession` is already imported at line 9 — no new import needed.
+
+2. In `mapRealtimeInstrument()` (the inner function starting at line 299), change the hardcoded `quoteSession` on line 322 from:
+   ```typescript
+   quoteSession: 'regular',
+   ```
+   to:
+   ```typescript
+   quoteSession: currentSession,
+   ```
+   This works because `mapRealtimeInstrument` is a closure inside `fetchRealtimeSnapshot`, so it can see `currentSession`.
+
+3. Run: `npm run lint && npx tsc --noEmit`
+
+---
+
+### Step 2: Fix snapshot route logging level (LOW)
+
+**Why:** `logSnapshotStage` uses `console.error` for routine diagnostic messages like "upstream_fetch started" and "auth_check unauthorized". On Vercel, `console.error` surfaces in error dashboards and could obscure real errors.
+
+**File:** `app/api/market-data/snapshot/route.ts`
+
+1. On line 442, change:
+   ```typescript
+   console.error('[api:market-data.snapshot]', {
+   ```
+   to:
+   ```typescript
+   console.info('[api:market-data.snapshot]', {
+   ```
+
+2. Run: `npm run lint && npx tsc --noEmit`
+
+---
+
+### Step 3: Reduce relay flush logging noise (LOW)
+
+**Why:** The writer logs `[relay] wrote N realtime quote rows` every 1-second flush during market hours. With ~29 tracked symbols, that's ~23K log lines per trading day, which can overwhelm Fly.io log retention.
+
+**File:** `services/schwab-relay/src/writer.ts`
+
+1. Add a private counter to the `QuoteWriter` class, after the existing `private readonly flushTimer` field (line 15):
+   ```typescript
+   private flushCount = 0;
+   ```
+
+2. In the `flush()` method, replace the log line on line 97:
+   ```typescript
+   console.info(`[relay] wrote ${pendingQuotes.length} realtime quote rows`);
+   ```
+   with:
+   ```typescript
+   this.flushCount++;
+   if (this.flushCount % 60 === 0) {
+     console.info(`[relay] wrote ${pendingQuotes.length} realtime quote rows (flush #${this.flushCount})`);
+   }
+   ```
+   This logs once per minute instead of once per second.
+
+3. Run: `cd services/schwab-relay && npx tsc --noEmit`
+
+---
+
+### Step 4: Remove dead `exchangeId`/`securityStatus` from writer (LOW)
+
+**Why:** Phase 3.5 Fix 2 removed the hardcoded field extraction in the streamer, so `exchangeId` and `securityStatus` on incoming `QuoteUpdate` objects are always `undefined`. The writer still maps them into the upsert row and the ON CONFLICT SET clause. This is harmless (writes NULL) but is dead code.
+
+**File:** `services/schwab-relay/src/writer.ts`
+
+1. In the `rows` mapping inside `flush()` (lines 52-70), delete these two lines:
+   ```typescript
+   exchangeId: quote.exchangeId,
+   securityStatus: quote.securityStatus,
+   ```
+   Also delete:
+   ```typescript
+   description: undefined,
+   ```
+   (This was always `undefined` — never populated.)
+
+2. In the `onConflictDoUpdate` `set` clause (lines 77-93), delete these three lines:
+   ```typescript
+   exchangeId: sql`excluded.exchange_id`,
+   securityStatus: sql`excluded.security_status`,
+   ```
+   Leave all other fields in the set clause unchanged.
+
+3. Run: `cd services/schwab-relay && npx tsc --noEmit`
+
+---
+
+### Step 5: Add relay schema subset comment (LOW)
+
+**Why:** The relay's `schema.ts` is an intentional minimal subset of the main app's schema. Without a comment, someone might try to "fix" the drift by adding missing fields/indexes that the relay doesn't need.
+
+**File:** `services/schwab-relay/src/schema.ts`
+
+1. Add this comment block at the very top of the file (before the import on line 1):
+   ```typescript
+   /**
+    * Relay schema — intentional SUBSET of the main app schema.
+    * Source of truth: lib/db/schema.ts (in the main Nexus Terminal app).
+    *
+    * This file only declares the tables/columns the relay reads and writes.
+    * Missing columns (accountLabel, linkedAt, status enum) and indexes are
+    * defined by the main app's migrations and exist in the DB — they're just
+    * not needed here.
+    */
+   ```
+
+2. Run: `cd services/schwab-relay && npx tsc --noEmit`
+
+---
+
+### Step 6: Add single-user limitation comment (LOW)
+
+**Why:** The relay's `loadActiveTokens()` uses `.limit(1)` with no ordering, so if multiple users have active Schwab links, which one gets streaming is nondeterministic. This is intentional for the current single-user design but should be documented.
+
+**File:** `services/schwab-relay/src/tokens.ts`
+
+1. Find the `loadActiveTokens` function. Before the `.limit(1)` call in the query, add a comment:
+   ```typescript
+   // NOTE: Single-user relay — only one Schwab-linked user gets streaming at a time.
+   // If multiple users have active links, selection is nondeterministic.
+   // To support multi-user, remove .limit(1) and manage per-user streaming sessions.
+   ```
+
+2. Run: `cd services/schwab-relay && npx tsc --noEmit`
+
+---
+
+### Step 7: Create relay `.env.example` (DEPLOYMENT)
+
+**Why:** The relay requires several env vars but none are documented. A new deployment would require reading source code to figure out what's needed.
+
+**File:** `services/schwab-relay/.env.example` (NEW FILE)
+
+1. Create `services/schwab-relay/.env.example` with:
+   ```env
+   # === Required ===
+   DATABASE_URL=postgresql://user:pass@host/dbname?sslmode=require
+   SCHWAB_CLIENT_ID=your-schwab-app-client-id
+   SCHWAB_CLIENT_SECRET=your-schwab-app-client-secret
+   SCHWAB_TOKEN_ENCRYPTION_KEY=64-char-hex-string-for-aes-256-gcm
+
+   # === Optional ===
+   HEALTH_PORT=8080
+   TOKEN_CHECK_INTERVAL_MS=300000
+
+   # Comma-separated symbols to track (defaults shown)
+   # TRACK_EQUITIES=SPY,QQQ,DIA,IWM,AAPL,MSFT,AMZN,GOOGL,NVDA,TSLA,META,JPM,JNJ,V
+   # TRACK_FUTURES=/GC,/SI,/CL,/NG,/ZT,/ZN
+   # TRACK_FOREX=EUR/USD,GBP/USD,USD/JPY,USD/CAD,AUD/USD
+   ```
+
+2. No validation needed — this is documentation only.
+
+---
+
+### Step 8: Verify relay lockfile (DEPLOYMENT)
+
+**Why:** The relay Dockerfile uses `npm ci` which requires `package-lock.json`. If it's missing, Docker builds will fail.
+
+1. Check if `services/schwab-relay/package-lock.json` exists:
+   ```bash
+   ls services/schwab-relay/package-lock.json
+   ```
+
+2. If it does NOT exist, generate it:
+   ```bash
+   cd services/schwab-relay && npm install && cd ../..
+   ```
+   Then `git add services/schwab-relay/package-lock.json`.
+
+3. If it already exists, no action needed.
+
+---
+
+### Validation (all steps)
+
+After all steps are complete, run from project root:
+```bash
+cd services/schwab-relay && npx tsc --noEmit && cd ../.. && npm run lint && npx tsc --noEmit
+```
+
+All 8 steps must pass this validation before marking this section as COMPLETE.
+
+---
+
 ## Notes
 
 - `.env` and secret files were not modified.
