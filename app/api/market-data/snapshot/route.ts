@@ -36,8 +36,7 @@ type MarketMoverRow = {
 
 type MarketSnapshotPayload = {
   indices: MarketInstrument[];
-  futures: MarketInstrument[];
-  fx: MarketInstrument[];
+  commodities: MarketInstrument[];
   equities: MarketInstrument[];
   movers: {
     gainers: MarketMoverRow[];
@@ -51,8 +50,7 @@ type SnapshotCoverage = {
   missingPriceCount: number;
   missingPriceBySection: {
     indices: number;
-    futures: number;
-    fx: number;
+    commodities: number;
     equities: number;
   };
 };
@@ -70,17 +68,16 @@ type PgLikeError = {
 };
 
 const INDEX_SYMBOLS = ['SPY', 'QQQ', 'DIA', 'IWM'];
-const FUTURE_SYMBOLS = [
-  { ticker: '/GC', label: 'Gold' },
-  { ticker: '/SI', label: 'Silver' },
-  { ticker: '/CL', label: 'Crude Oil' },
-  { ticker: '/NG', label: 'Natural Gas' },
-  { ticker: '/ZT', label: '2Y Note' },
-  { ticker: '/ZN', label: '10Y Note' },
+const COMMODITY_SYMBOLS = [
+  { ticker: 'GLD', label: 'Gold' },
+  { ticker: 'SLV', label: 'Silver' },
+  { ticker: 'USO', label: 'Crude Oil' },
+  { ticker: 'UNG', label: 'Natural Gas' },
+  { ticker: 'TLT', label: 'Treasuries' },
+  { ticker: 'UUP', label: 'US Dollar' },
 ];
-const FX_SYMBOLS = ['C:EURUSD', 'C:GBPUSD', 'C:USDJPY', 'C:USDCAD', 'C:AUDUSD'];
 const EQUITY_SYMBOLS = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'NVDA', 'TSLA', 'META', 'JPM', 'JNJ', 'V'];
-const EXTENDED_SESSION_SYMBOLS = [...INDEX_SYMBOLS, ...EQUITY_SYMBOLS];
+const EXTENDED_SESSION_SYMBOLS = [...INDEX_SYMBOLS, ...COMMODITY_SYMBOLS.map((s) => s.ticker), ...EQUITY_SYMBOLS];
 
 function normalizeTicker(raw: string) {
   return normalizeMassiveTicker(raw);
@@ -218,8 +215,7 @@ function toMoverRows(rows: Array<{ ticker?: string; day?: { c?: number }; prevDa
 async function fetchFreshSnapshot(): Promise<MarketSnapshotPayload> {
   const tickers = [
     ...INDEX_SYMBOLS,
-    ...FUTURE_SYMBOLS.map((item) => item.ticker),
-    ...FX_SYMBOLS,
+    ...COMMODITY_SYMBOLS.map((item) => item.ticker),
     ...EQUITY_SYMBOLS,
   ];
 
@@ -243,8 +239,7 @@ async function fetchFreshSnapshot(): Promise<MarketSnapshotPayload> {
 
   return {
     indices: INDEX_SYMBOLS.map((symbol) => toInstrument(symbol, symbol, lookup, activeSession, extendedSummaries)),
-    futures: FUTURE_SYMBOLS.map((item) => toInstrument(item.ticker, item.label, lookup, activeSession)),
-    fx: FX_SYMBOLS.map((symbol) => toInstrument(symbol, normalizeTicker(symbol), lookup, activeSession)),
+    commodities: COMMODITY_SYMBOLS.map((item) => toInstrument(item.ticker, item.label, lookup, activeSession, extendedSummaries)),
     equities: EQUITY_SYMBOLS.map((symbol) => toInstrument(symbol, symbol, lookup, activeSession, extendedSummaries)),
     movers: {
       gainers: toMoverRows(gainers.tickers ?? []),
@@ -398,8 +393,7 @@ async function fetchRealtimeSnapshot(
   return {
     data: {
       indices: INDEX_SYMBOLS.map((symbol) => mapRealtimeInstrument(symbol, symbol)),
-      futures: FUTURE_SYMBOLS.map((item) => mapRealtimeInstrument(item.ticker, item.label)),
-      fx: FX_SYMBOLS.map((symbol) => mapRealtimeInstrument(symbol, normalizeTicker(symbol))),
+      commodities: COMMODITY_SYMBOLS.map((item) => mapRealtimeInstrument(item.ticker, item.label)),
       equities: EQUITY_SYMBOLS.map((symbol) => mapRealtimeInstrument(symbol, symbol)),
       movers: {
         gainers: screenerGainers,
@@ -453,17 +447,15 @@ function countMissing(items: MarketInstrument[]) {
 }
 
 function buildCoverage(data: MarketSnapshotPayload): SnapshotCoverage {
-  const totalInstruments = data.indices.length + data.futures.length + data.fx.length + data.equities.length;
+  const totalInstruments = data.indices.length + data.commodities.length + data.equities.length;
   const missingPriceBySection = {
     indices: countMissing(data.indices),
-    futures: countMissing(data.futures),
-    fx: countMissing(data.fx),
+    commodities: countMissing(data.commodities),
     equities: countMissing(data.equities),
   };
   const missingPriceCount =
     missingPriceBySection.indices +
-    missingPriceBySection.futures +
-    missingPriceBySection.fx +
+    missingPriceBySection.commodities +
     missingPriceBySection.equities;
 
   return {

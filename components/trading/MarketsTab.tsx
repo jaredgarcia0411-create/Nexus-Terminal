@@ -32,8 +32,7 @@ type MarketMoverRow = {
 
 type SnapshotPayload = {
   indices: MarketInstrument[];
-  futures: MarketInstrument[];
-  fx: MarketInstrument[];
+  commodities: MarketInstrument[];
   equities: MarketInstrument[];
   movers: {
     gainers: MarketMoverRow[];
@@ -47,8 +46,7 @@ type SnapshotCoverage = {
   missingPriceCount: number;
   missingPriceBySection: {
     indices: number;
-    futures: number;
-    fx: number;
+    commodities: number;
     equities: number;
   };
 };
@@ -366,16 +364,9 @@ export default function MarketsTab() {
         </div>
 
         <div className="rounded-xl border border-white/10 bg-[#121214] p-4">
-          <h2 className="mb-3 text-base font-semibold text-zinc-200">Futures</h2>
+          <h2 className="mb-3 text-base font-semibold text-zinc-200">Commodities, Bonds & FX</h2>
           <div className="grid gap-2 sm:grid-cols-2">
-            {(snapshot?.futures ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-white/10 bg-[#121214] p-4">
-          <h2 className="mb-3 text-base font-semibold text-zinc-200">FX</h2>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {(snapshot?.fx ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
+            {(snapshot?.commodities ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
           </div>
         </div>
       </div>

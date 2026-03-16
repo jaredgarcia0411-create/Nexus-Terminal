@@ -43,14 +43,15 @@ describe('GET /api/market-data/snapshot', () => {
     fetchUnifiedSnapshotMock.mockResolvedValue({
       results: [
         { ticker: 'SPY', session: { close: 500, change: 2, change_percent: 0.4 }, market_status: 'open' },
-        { ticker: 'EURUSD', session: { close: 1.08, change: 0.01, change_percent: 0.9 }, market_status: 'open' },
-        { ticker: 'BTCUSD', session: { close: 61000, change: 150, change_percent: 0.25 }, market_status: 'open' },
-        { ticker: 'GC', session: { close: 2231.2, change: 4.2, change_percent: 0.19 }, market_status: 'open' },
+        { ticker: 'UUP', session: { close: 28.45, change: 0.12, change_percent: 0.42 }, market_status: 'open' },
+        { ticker: 'GLD', session: { close: 223.12, change: 0.42, change_percent: 0.19 }, market_status: 'open' },
         { ticker: 'AAPL', session: { close: 200, change: 3, change_percent: 1.52 }, market_status: 'open' },
       ],
     });
     fetchBatchDailyTickerSummariesMock.mockResolvedValue(new Map([
       ['SPY', { ticker: 'SPY', close: 500, preMarket: 501, afterHours: 499 }],
+      ['GLD', { ticker: 'GLD', close: 223.12, preMarket: 223.4, afterHours: 222.8 }],
+      ['UUP', { ticker: 'UUP', close: 28.45, preMarket: 28.5, afterHours: 28.4 }],
       ['AAPL', { ticker: 'AAPL', close: 200, preMarket: 202, afterHours: 201 }],
     ]));
     getEasternMarketSessionMock.mockReturnValue('pre-market');
@@ -71,9 +72,10 @@ describe('GET /api/market-data/snapshot', () => {
 
     expect(response.status).toBe(200);
     expect(payload.data.indices).toBeInstanceOf(Array);
-    expect(payload.data.fx[0].symbol).toBe('EURUSD');
-    expect(payload.data.fx[0].price).toBe(1.08);
-    expect(payload.data.futures[0].price).toBe(2231.2);
+    expect(payload.data.commodities[0].symbol).toBe('GLD');
+    expect(payload.data.commodities[0].price).toBe(223.4);
+    expect(payload.data.commodities[5].symbol).toBe('UUP');
+    expect(payload.data.commodities[5].price).toBe(28.5);
     expect(payload.data.indices[0].quoteSession).toBe('pre-market');
     expect(payload.data.indices[0].price).toBe(501);
     expect(payload.data.indices[0].change).toBe(1);

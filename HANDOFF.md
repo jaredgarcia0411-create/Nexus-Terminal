@@ -1088,8 +1088,15 @@ Update `.claude/CLAUDE.md`:
 ## Replace Futures & FX with Correlated ETFs
 
 > Generated: 2026-03-16 | Agent: nexus-architect
-> Status: OPEN
+> Status: COMPLETE (IMPLEMENTED)
 > Depends on: Schwab OAuth COMPLETE
+
+**Implementation Summary (2026-03-16 | Agent: opencode):**
+- Replaced futures and FX snapshot groups with ETF-backed `commodities` data (`GLD`, `SLV`, `USO`, `UNG`, `TLT`, `UUP`) in both delayed Massive and realtime Schwab paths.
+- Merged the Markets tab cards into a single `Commodities, Bonds & FX` section and updated snapshot typing/coverage calculations.
+- Removed relay futures/forex field maps, subscriptions, and parsing so the streamer now handles equities-only quote updates.
+- Refreshed relay env docs and updated the snapshot route test to assert the new commodity ETF payload.
+- Validation completed: relay TypeScript check, root lint, root TypeScript check, `npm test`, and a dev-server smoke check on `/?tab=markets`.
 
 **Context:** Futures (`/GC`, `/SI`, etc.) and FX (`C:EURUSD`, etc.) symbols have format mismatches that cause null data in the realtime path. Replacing them with plain ETFs fixes this and simplifies the entire pipeline. Also removes unused LEVELONE_FUTURES and LEVELONE_FOREX streaming from the relay.
 

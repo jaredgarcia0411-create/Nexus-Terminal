@@ -64,34 +64,6 @@ const EQUITY_FIELDS: FieldMap = {
   28: 'netChangePercent',
 };
 
-const FUTURES_FIELDS: FieldMap = {
-  0: 'symbol',
-  1: 'bidPrice',
-  2: 'askPrice',
-  3: 'lastPrice',
-  8: 'totalVolume',
-  12: 'highPrice',
-  13: 'lowPrice',
-  14: 'closePrice',
-  18: 'openPrice',
-  19: 'netChange',
-  20: 'netChangePercent',
-};
-
-const FOREX_FIELDS: FieldMap = {
-  0: 'symbol',
-  1: 'bidPrice',
-  2: 'askPrice',
-  3: 'lastPrice',
-  6: 'totalVolume',
-  10: 'highPrice',
-  11: 'lowPrice',
-  12: 'closePrice',
-  15: 'openPrice',
-  16: 'netChange',
-  17: 'netChangePercent',
-};
-
 function toStringData(data: WebSocket.RawData): string {
   if (typeof data === 'string') {
     return data;
@@ -277,9 +249,6 @@ export class SchwabStreamer {
     }
 
     const equities = parseList('TRACK_EQUITIES');
-    const futures = parseList('TRACK_FUTURES');
-    const forex = parseList('TRACK_FOREX');
-
     const requests: Array<Record<string, unknown>> = [];
 
     if (equities.length > 0) {
@@ -290,30 +259,6 @@ export class SchwabStreamer {
         parameters: {
           keys: equities.join(','),
           fields: '0,1,2,3,8,10,11,12,17,18,28',
-        },
-      });
-    }
-
-    if (futures.length > 0) {
-      requests.push({
-        service: 'LEVELONE_FUTURES',
-        command: 'SUBS',
-        requestid: toRequestId(),
-        parameters: {
-          keys: futures.join(','),
-          fields: '0,1,2,3,8,12,13,14,18,19,20',
-        },
-      });
-    }
-
-    if (forex.length > 0) {
-      requests.push({
-        service: 'LEVELONE_FOREX',
-        command: 'SUBS',
-        requestid: toRequestId(),
-        parameters: {
-          keys: forex.join(','),
-          fields: '0,1,2,3,6,10,11,12,15,16,17',
         },
       });
     }
@@ -392,34 +337,18 @@ export class SchwabStreamer {
     timestamp: number | undefined,
     content: Array<Record<string, unknown>>,
   ): QuoteUpdate[] {
-    const map =
-      service === 'LEVELONE_EQUITIES'
-        ? EQUITY_FIELDS
-        : service === 'LEVELONE_FUTURES'
-          ? FUTURES_FIELDS
-          : service === 'LEVELONE_FOREX'
-            ? FOREX_FIELDS
-            : null;
-
-    if (!map) {
+    if (service !== 'LEVELONE_EQUITIES') {
       return [];
     }
-
-    const assetType =
-      service === 'LEVELONE_EQUITIES'
-        ? 'equity'
-        : service === 'LEVELONE_FUTURES'
-          ? 'future'
-          : 'forex';
 
     return content
       .map((item) => {
         const quote: Partial<QuoteUpdate> = {
-          assetType,
+          assetType: 'equity',
           quoteTimeMs: toNumber(timestamp),
         };
 
-        for (const [fieldNumberRaw, fieldName] of Object.entries(map)) {
+        for (const [fieldNumberRaw, fieldName] of Object.entries(EQUITY_FIELDS)) {
           const value = item[fieldNumberRaw];
           if (fieldName === 'symbol') {
             if (typeof value === 'string' && value.length > 0) {
