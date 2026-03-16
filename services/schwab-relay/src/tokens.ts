@@ -143,7 +143,8 @@ export async function refreshAccessToken(
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to refresh Schwab access token (${response.status})`);
+    const body = await response.text().catch(() => '(no body)');
+    throw new Error(`Failed to refresh Schwab access token (${response.status}): ${body}`);
   }
 
   const data = (await response.json()) as RefreshResponse;

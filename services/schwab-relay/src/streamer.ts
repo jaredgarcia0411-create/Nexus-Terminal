@@ -123,6 +123,8 @@ export class SchwabStreamer {
   private subscribed = false;
   private reconnectAttempts = 0;
   private readonly subscribedEquities = new Set<string>();
+  private schwabClientCustomerId: string | null = null;
+  private schwabClientCorrelId: string | null = null;
 
   constructor(config: StreamerConfig) {
     this.accessToken = config.accessToken;
@@ -158,6 +160,10 @@ export class SchwabStreamer {
       const channel = info.schwabClientChannel;
       const functionId = info.schwabClientFunctionId;
 
+      // Store for use in subscribe() and addEquitySymbols()
+      this.schwabClientCustomerId = customerId;
+      this.schwabClientCorrelId = correlId;
+
       this.ws.on('open', () => {
         this.connected = true;
         this.reconnectAttempts = 0;
@@ -172,7 +178,9 @@ export class SchwabStreamer {
         this.onError(error instanceof Error ? error : new Error('Schwab WebSocket error'));
       });
 
-      this.ws.on('close', () => {
+      this.ws.on('close', (code: number, reason: Buffer) => {
+        const reasonStr = reason.toString('utf8') || '(no reason)';
+        console.info(`[relay] WebSocket closed: code=${code} reason=${reasonStr}`);
         this.connected = false;
         this.subscribed = false;
         this.subscribedEquities.clear();
@@ -227,6 +235,8 @@ export class SchwabStreamer {
           service: 'LEVELONE_EQUITIES',
           command: 'ADD',
           requestid: toRequestId(),
+          SchwabClientCustomerId: this.schwabClientCustomerId,
+          SchwabClientCorrelId: this.schwabClientCorrelId,
           parameters: {
             keys: newSymbols.join(','),
             fields: '0,1,2,3,8,10,11,12,17,18,28',
@@ -247,7 +257,8 @@ export class SchwabStreamer {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to load Schwab user preference (${response.status})`);
+      const body = await response.text().catch(() => '(no body)');
+      throw new Error(`Failed to load Schwab user preference (${response.status}): ${body}`);
     }
 
     return (await response.json()) as StreamerPreferenceResponse;
@@ -293,6 +304,8 @@ export class SchwabStreamer {
         service: 'LEVELONE_EQUITIES',
         command: 'SUBS',
         requestid: toRequestId(),
+        SchwabClientCustomerId: this.schwabClientCustomerId,
+        SchwabClientCorrelId: this.schwabClientCorrelId,
         parameters: {
           keys: equities.join(','),
           fields: '0,1,2,3,8,10,11,12,17,18,28',
@@ -304,6 +317,8 @@ export class SchwabStreamer {
       service: 'SCREENER_EQUITY',
       command: 'SUBS',
       requestid: toRequestId(),
+      SchwabClientCustomerId: this.schwabClientCustomerId,
+      SchwabClientCorrelId: this.schwabClientCorrelId,
       parameters: {
         keys: '$SPX.X_PERCENT_CHANGE_UP_0,$SPX.X_PERCENT_CHANGE_DOWN_0',
         fields: '0,1,2,3,4',
@@ -327,20 +342,23 @@ export class SchwabStreamer {
       }
 
       if (Array.isArray(parsed.response)) {
-        const loginResponse = parsed.response.find(
-          (entry: { service?: string; command?: string }) =>
-            entry.service === 'ADMIN' && entry.command === 'LOGIN',
-        );
-        if (loginResponse) {
-          const code = (loginResponse as { content?: { code?: number } }).content?.code;
-          if (code === 0) {
-            console.log('[relay] LOGIN successful, subscribing...');
-            this.subscribe();
+        for (const entry of parsed.response) {
+          const service = (entry as { service?: string }).service;
+          const command = (entry as { command?: string }).command;
+          const content = (entry as { content?: { code?: number; msg?: string } }).content;
+
+          if (service === 'ADMIN' && command === 'LOGIN') {
+            if (content?.code === 0) {
+              console.log('[relay] LOGIN successful, subscribing...');
+              this.subscribe();
+            } else {
+              console.error(`[relay] LOGIN failed: code=${content?.code} msg=${content?.msg}`);
+              this.onError(new Error(`Schwab LOGIN failed: ${content?.msg ?? `code ${content?.code}`}`));
+              this.disconnect();
+            }
           } else {
-            const msg = (loginResponse as { content?: { msg?: string } }).content?.msg;
-            console.error(`[relay] LOGIN failed: code=${code} msg=${msg}`);
-            this.onError(new Error(`Schwab LOGIN failed: ${msg ?? `code ${code}`}`));
-            this.disconnect();
+            // Log all non-LOGIN responses (subscription confirmations/errors)
+            console.info(`[relay] response: service=${service} command=${command} code=${content?.code} msg=${content?.msg}`);
           }
         }
       }
