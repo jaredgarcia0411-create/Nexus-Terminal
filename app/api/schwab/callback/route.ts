@@ -86,8 +86,13 @@ export async function GET(request: Request) {
       },
     });
 
+    // Can't use Response.redirect() because it creates immutable headers,
+    // and we need to set a cookie. Build the redirect response manually.
     const redirectUrl = new URL('/?tab=markets', request.url);
-    return clearStateCookie(Response.redirect(redirectUrl));
+    return clearStateCookie(new Response(null, {
+      status: 302,
+      headers: { Location: redirectUrl.toString() },
+    }));
   } catch (error) {
     logRouteError('schwab.callback.get', error);
     return internalServerError();
