@@ -4,7 +4,7 @@ import { getDb } from '@/lib/db';
 import { schwabLinks } from '@/lib/db/schema';
 import { exchangeSchwabCode, getSchwabAuthConfig } from '@/lib/schwab/auth';
 import { encryptTokens } from '@/lib/schwab/crypto';
-import { dbUnavailable, requireUser } from '@/lib/server-db-utils';
+import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 
 function getCookieValue(cookieHeader: string | null, name: string) {
   if (!cookieHeader) return null;
@@ -55,6 +55,10 @@ export async function GET(request: Request) {
 
     const db = getDb();
     if (!db) return dbUnavailable();
+
+    // Ensure the user row exists in the DB before inserting into schwab_links
+    // (schwab_links.user_id has a foreign key to users.id)
+    await ensureUser(db, authState.user);
 
     const tokens = await exchangeSchwabCode(code, state);
     const encrypted = encryptTokens(tokens);
