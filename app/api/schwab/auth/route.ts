@@ -14,13 +14,16 @@ export async function GET() {
     }
 
     const { authUrl, state } = await getSchwabAuthUrl();
-    const response = Response.redirect(authUrl);
-    response.headers.append(
-      'Set-Cookie',
-      `schwab_oauth_state=${encodeURIComponent(state)}; Max-Age=600; Path=/api/schwab/callback; HttpOnly; Secure; SameSite=Lax`,
-    );
 
-    return response;
+    // Can't use Response.redirect() because it creates immutable headers,
+    // and we need to set a cookie. Build the redirect response manually.
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: authUrl,
+        'Set-Cookie': `schwab_oauth_state=${encodeURIComponent(state)}; Max-Age=600; Path=/api/schwab/callback; HttpOnly; Secure; SameSite=Lax`,
+      },
+    });
   } catch (error) {
     logRouteError('schwab.auth.get', error);
     return internalServerError();
