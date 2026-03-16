@@ -1085,6 +1085,347 @@ Update `.claude/CLAUDE.md`:
 
 ---
 
+## Replace Futures & FX with Correlated ETFs
+
+> Generated: 2026-03-16 | Agent: nexus-architect
+> Status: OPEN
+> Depends on: Schwab OAuth COMPLETE
+
+**Context:** Futures (`/GC`, `/SI`, etc.) and FX (`C:EURUSD`, etc.) symbols have format mismatches that cause null data in the realtime path. Replacing them with plain ETFs fixes this and simplifies the entire pipeline. Also removes unused LEVELONE_FUTURES and LEVELONE_FOREX streaming from the relay.
+
+### Symbol Mapping
+
+| Old | New ETF | Label |
+|-----|---------|-------|
+| /GC (Gold) | GLD | Gold |
+| /SI (Silver) | SLV | Silver |
+| /CL (Crude Oil) | USO | Crude Oil |
+| /NG (Natural Gas) | UNG | Natural Gas |
+| /ZT (2Y Note) | _(removed)_ | — |
+| /ZN (10Y Note) | TLT | Treasuries |
+| All 5 FX pairs | UUP | US Dollar |
+
+Final list: `GLD, SLV, USO, UNG, TLT, UUP`
+
+Sections "Futures" and "FX" merge into one: **"Commodities, Bonds & FX"**
+
+---
+
+### Step 1: Update symbol constants in snapshot route
+
+**File:** `app/api/market-data/snapshot/route.ts`
+
+**Lines 73-83** — Replace `FUTURE_SYMBOLS`, `FX_SYMBOLS`, and `EXTENDED_SESSION_SYMBOLS` with:
+
+```typescript
+const COMMODITY_SYMBOLS = [
+  { ticker: 'GLD', label: 'Gold' },
+  { ticker: 'SLV', label: 'Silver' },
+  { ticker: 'USO', label: 'Crude Oil' },
+  { ticker: 'UNG', label: 'Natural Gas' },
+  { ticker: 'TLT', label: 'Treasuries' },
+  { ticker: 'UUP', label: 'US Dollar' },
+];
+const EQUITY_SYMBOLS = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'NVDA', 'TSLA', 'META', 'JPM', 'JNJ', 'V'];
+const EXTENDED_SESSION_SYMBOLS = [...INDEX_SYMBOLS, ...COMMODITY_SYMBOLS.map((s) => s.ticker), ...EQUITY_SYMBOLS];
+```
+
+Delete `FUTURE_SYMBOLS` (lines 73-80) and `FX_SYMBOLS` (line 81) entirely — they are replaced by `COMMODITY_SYMBOLS`.
+
+Run: `npm run lint && npx tsc --noEmit` — expect type errors from later steps, that's fine.
+
+---
+
+### Step 2: Update `MarketSnapshotPayload` type
+
+**File:** `app/api/market-data/snapshot/route.ts`
+
+**Lines 37-46** — Replace the type:
+
+```typescript
+type MarketSnapshotPayload = {
+  indices: MarketInstrument[];
+  commodities: MarketInstrument[];
+  equities: MarketInstrument[];
+  movers: {
+    gainers: MarketMoverRow[];
+    losers: MarketMoverRow[];
+  };
+};
+```
+
+Remove `futures` and `fx` keys. Add `commodities`.
+
+---
+
+### Step 3: Update `fetchFreshSnapshot()` (Massive delayed path)
+
+**File:** `app/api/market-data/snapshot/route.ts`
+
+**Lines 218-254** — Update the function:
+
+1. **Line 219-224** — Change the tickers array:
+   ```typescript
+   const tickers = [
+     ...INDEX_SYMBOLS,
+     ...COMMODITY_SYMBOLS.map((item) => item.ticker),
+     ...EQUITY_SYMBOLS,
+   ];
+   ```
+   (Remove `FUTURE_SYMBOLS.map(...)` and `FX_SYMBOLS` from the spread.)
+
+2. **Lines 244-253** — Change the return object:
+   ```typescript
+   return {
+     indices: INDEX_SYMBOLS.map((symbol) => toInstrument(symbol, symbol, lookup, activeSession, extendedSummaries)),
+     commodities: COMMODITY_SYMBOLS.map((item) => toInstrument(item.ticker, item.label, lookup, activeSession, extendedSummaries)),
+     equities: EQUITY_SYMBOLS.map((symbol) => toInstrument(symbol, symbol, lookup, activeSession, extendedSummaries)),
+     movers: {
+       gainers: toMoverRows(gainers.tickers ?? []),
+       losers: toMoverRows(losers.tickers ?? []),
+     },
+   };
+   ```
+   Key changes:
+   - `futures:` line → `commodities:` using `COMMODITY_SYMBOLS`
+   - Delete the `fx:` line entirely
+   - Add `extendedSummaries` to the commodities call (ETFs support extended hours, futures didn't)
+
+---
+
+### Step 4: Update `fetchRealtimeSnapshot()` (Schwab realtime path)
+
+**File:** `app/api/market-data/snapshot/route.ts`
+
+**Lines 398-408** — Change the return data object:
+
+```typescript
+return {
+  data: {
+    indices: INDEX_SYMBOLS.map((symbol) => mapRealtimeInstrument(symbol, symbol)),
+    commodities: COMMODITY_SYMBOLS.map((item) => mapRealtimeInstrument(item.ticker, item.label)),
+    equities: EQUITY_SYMBOLS.map((symbol) => mapRealtimeInstrument(symbol, symbol)),
+    movers: {
+      gainers: screenerGainers,
+      losers: screenerLosers,
+    },
+  },
+  fetchedAt: latestUpdate.updatedAt,
+};
+```
+
+Same pattern: `futures:` → `commodities:`, delete `fx:`.
+
+Run: `npm run lint && npx tsc --noEmit` — should pass for the backend now.
+
+---
+
+### Step 5: Update MarketsTab frontend
+
+**File:** `components/trading/MarketsTab.tsx`
+
+**Lines 360-381** — Replace the 3-section grid (Indexes, Futures, FX) with a 2-section grid (Indexes, Commodities/Bonds/FX):
+
+```tsx
+<div className="grid gap-4 lg:grid-cols-2">
+  <div className="rounded-xl border border-white/10 bg-[#121214] p-4">
+    <h2 className="mb-3 text-base font-semibold text-zinc-200">Indexes</h2>
+    <div className="grid gap-2 sm:grid-cols-2">
+      {(snapshot?.indices ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
+    </div>
+  </div>
+
+  <div className="rounded-xl border border-white/10 bg-[#121214] p-4">
+    <h2 className="mb-3 text-base font-semibold text-zinc-200">Commodities, Bonds & FX</h2>
+    <div className="grid gap-2 sm:grid-cols-2">
+      {(snapshot?.commodities ?? []).map((item) => <InstrumentCard key={item.symbol} item={item} />)}
+    </div>
+  </div>
+</div>
+```
+
+This deletes the entire "Futures" block (lines 368-373) and "FX" block (lines 375-380). The new "Commodities, Bonds & FX" block replaces both, using `snapshot?.commodities`.
+
+Run: `npm run lint && npx tsc --noEmit`
+
+---
+
+### Step 6: Remove futures/forex field maps from relay
+
+**File:** `services/schwab-relay/src/streamer.ts`
+
+**Lines 67-93** — Delete the `FUTURES_FIELDS` and `FOREX_FIELDS` constants entirely:
+
+```typescript
+// DELETE these two blocks (lines 67-93):
+const FUTURES_FIELDS: FieldMap = { ... };
+const FOREX_FIELDS: FieldMap = { ... };
+```
+
+Keep `EQUITY_FIELDS` (lines 53-65) unchanged.
+
+---
+
+### Step 7: Remove futures/forex subscription blocks from relay
+
+**File:** `services/schwab-relay/src/streamer.ts`
+
+In the `subscribe()` method:
+
+1. **Lines 280-281** — Delete:
+   ```typescript
+   const futures = parseList('TRACK_FUTURES');
+   const forex = parseList('TRACK_FOREX');
+   ```
+
+2. **Lines 297-318** — Delete the entire `if (futures.length > 0) { ... }` block and the entire `if (forex.length > 0) { ... }` block.
+
+Keep the `equities` and `SCREENER_EQUITY` subscription blocks unchanged.
+
+---
+
+### Step 8: Simplify `mapQuoteData` in relay
+
+**File:** `services/schwab-relay/src/streamer.ts`
+
+**Lines 390-447** — Simplify `mapQuoteData` since it only handles equities now:
+
+```typescript
+private mapQuoteData(
+  service: string,
+  timestamp: number | undefined,
+  content: Array<Record<string, unknown>>,
+): QuoteUpdate[] {
+  if (service !== 'LEVELONE_EQUITIES') {
+    return [];
+  }
+
+  return content
+    .map((item) => {
+      const quote: Partial<QuoteUpdate> = {
+        assetType: 'equity',
+        quoteTimeMs: toNumber(timestamp),
+      };
+
+      for (const [fieldNumberRaw, fieldName] of Object.entries(EQUITY_FIELDS)) {
+        const value = item[fieldNumberRaw];
+        if (fieldName === 'symbol') {
+          if (typeof value === 'string' && value.length > 0) {
+            quote.symbol = value;
+          }
+          continue;
+        }
+
+        const numericValue = toNumber(value);
+        if (numericValue !== undefined) {
+          (quote as Record<string, number | string | undefined>)[fieldName] = numericValue;
+        }
+      }
+
+      if (!quote.symbol) {
+        const fallbackSymbol = typeof item.key === 'string' ? item.key : undefined;
+        if (fallbackSymbol) {
+          quote.symbol = fallbackSymbol;
+        }
+      }
+
+      return quote as QuoteUpdate;
+    })
+    .filter((quote) => typeof quote.symbol === 'string' && quote.symbol.length > 0);
+}
+```
+
+Run: `cd services/schwab-relay && npx tsc --noEmit`
+
+---
+
+### Step 9: Update relay `.env.example`
+
+**File:** `services/schwab-relay/.env.example`
+
+**Lines 11-14** — Replace:
+
+```env
+# Comma-separated symbols to track (defaults shown)
+# TRACK_EQUITIES=SPY,QQQ,DIA,IWM,AAPL,MSFT,AMZN,GOOGL,NVDA,TSLA,META,JPM,JNJ,V,GLD,SLV,USO,UNG,TLT,UUP
+```
+
+Delete the `TRACK_FUTURES` and `TRACK_FOREX` lines entirely.
+
+---
+
+### Step 10: Search for stale references
+
+Run from project root:
+
+```bash
+grep -r "FUTURE_SYMBOLS\|FX_SYMBOLS\|TRACK_FUTURES\|TRACK_FOREX\|LEVELONE_FUTURES\|LEVELONE_FOREX\|FUTURES_FIELDS\|FOREX_FIELDS" --include="*.ts" --include="*.tsx" . | grep -v node_modules | grep -v .next | grep -v HANDOFF
+```
+
+If any results appear, update those references. Common places:
+- Test files in `__tests__/`
+- Type definitions that reference `futures` or `fx` keys
+
+Also search the frontend for leftover `futures`/`fx` data references:
+
+```bash
+grep -r "\.futures\|\.fx\b" --include="*.ts" --include="*.tsx" . | grep -v node_modules | grep -v .next | grep -v HANDOFF
+```
+
+Update any matches.
+
+---
+
+### Step 11: Final validation
+
+```bash
+cd services/schwab-relay && npx tsc --noEmit && cd ../.. && npm run lint && npx tsc --noEmit
+```
+
+Then manual test:
+```bash
+npm run dev
+```
+- Open Markets tab → confirm "Indexes" and "Commodities, Bonds & FX" sections render
+- Confirm GLD, SLV, USO, UNG, TLT, UUP show data (delayed mode)
+- Confirm "Futures" and "FX" sections no longer appear
+
+---
+
+### Step 12: Update production relay env (Fly.io) — MANUAL
+
+After deploying to Vercel, update the Schwab relay env on Fly.io:
+
+```
+TRACK_EQUITIES=SPY,QQQ,DIA,IWM,AAPL,MSFT,AMZN,GOOGL,NVDA,TSLA,META,JPM,JNJ,V,GLD,SLV,USO,UNG,TLT,UUP
+```
+
+Remove `TRACK_FUTURES` and `TRACK_FOREX` env vars from Fly.io. Restart the relay service.
+
+---
+
+### Files Changed (Summary)
+
+| File | Action |
+|------|--------|
+| `app/api/market-data/snapshot/route.ts` | Replace symbol arrays, update type, update both fetch paths |
+| `components/trading/MarketsTab.tsx` | Merge Futures+FX into "Commodities, Bonds & FX", update data key |
+| `services/schwab-relay/src/streamer.ts` | Delete futures/forex field maps, subscriptions, and routing |
+| `services/schwab-relay/.env.example` | Add ETFs to equities, remove futures/forex vars |
+
+### Commit Message
+
+```
+feat: replace futures & FX with correlated ETFs in market snapshot
+
+Swap /GC, /SI, /CL, /NG, /ZT, /ZN futures and 5 FX pairs for
+GLD, SLV, USO, UNG, TLT, UUP ETFs. Merge UI sections into
+"Commodities, Bonds & FX". Remove LEVELONE_FUTURES and
+LEVELONE_FOREX streaming from Schwab relay.
+```
+
+---
+
 ## Notes
 
 - `.env` and secret files were not modified.
