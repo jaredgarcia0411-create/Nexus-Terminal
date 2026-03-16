@@ -112,6 +112,7 @@ Detailed step-by-step execution specs and checklists were removed to save space.
 
 **Phase 3 Progress (2026-03-15):**
 - Updated `/api/market-data/snapshot` to use dual-source behavior with per-user Schwab link checks, realtime DB reads, stale-data fallback, and `dataSource` response metadata.
+- Polished realtime symbol normalization to align Schwab forex keys (e.g. `EUR/USD`) with Markets snapshot tickers.
 - Added `hooks/use-schwab-status.ts` and integrated Markets UI link state, LIVE/15-MIN DELAYED badges, link/re-link flows, and unlink action.
 - Added `/?tab=markets` URL parameter support in `app/page.tsx` for Schwab OAuth callback routing.
 - Validation completed: lint, TypeScript, tests.

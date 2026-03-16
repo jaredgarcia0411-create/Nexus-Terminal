@@ -91,6 +91,10 @@ function normalizeTicker(raw: string) {
   return normalizeMassiveTicker(raw);
 }
 
+function normalizeRealtimeSymbol(raw: string) {
+  return normalizeTicker(raw).replace(/\//g, '');
+}
+
 function toNumberOrNull(value: unknown) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
@@ -296,10 +300,10 @@ async function fetchRealtimeSnapshot(
     return null;
   }
 
-  const quoteLookup = new Map(quotes.map((quote) => [normalizeTicker(quote.symbol), quote]));
+  const quoteLookup = new Map(quotes.map((quote) => [normalizeRealtimeSymbol(quote.symbol), quote]));
 
   const mapRealtimeInstrument = (symbol: string, label: string): MarketInstrument => {
-    const quote = quoteLookup.get(normalizeTicker(symbol));
+    const quote = quoteLookup.get(normalizeRealtimeSymbol(symbol));
     if (!quote) {
       return {
         symbol: normalizeTicker(symbol),
