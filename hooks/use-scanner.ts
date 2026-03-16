@@ -32,6 +32,15 @@ export type ScannerPreset = {
   updatedAt: string;
 };
 
+async function getErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const data = (await response.json()) as { error?: string };
+    return data.error ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function buildQueryString(
   filters: ScannerFilters,
   sortBy: ScannerSortKey,
@@ -72,8 +81,10 @@ export function useScanner(refreshIntervalMs: number) {
   const [sortDir, setSortDir] = useState<ScannerSortDir>('desc');
   const [results, setResults] = useState<ScannerRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [presets, setPresets] = useState<ScannerPreset[]>([]);
   const [presetsLoading, setPresetsLoading] = useState(false);
+  const [presetsError, setPresetsError] = useState<string | null>(null);
   const filtersRef = useRef(filters);
   const sortByRef = useRef(sortBy);
   const sortDirRef = useRef(sortDir);
@@ -96,12 +107,14 @@ export function useScanner(refreshIntervalMs: number) {
       const queryString = buildQueryString(filtersRef.current, sortByRef.current, sortDirRef.current, 100);
       const response = await fetch(`/api/scanner?${queryString}`);
       if (!response.ok) {
+        setError(await getErrorMessage(response, `Scanner fetch failed (HTTP ${response.status})`));
         return;
       }
       const data = (await response.json()) as { results: ScannerRow[] };
       setResults(data.results);
+      setError(null);
     } catch {
-      // Silently fail and keep stale results visible.
+      setError('Network error');
     } finally {
       setLoading(false);
     }
@@ -112,12 +125,14 @@ export function useScanner(refreshIntervalMs: number) {
     try {
       const response = await fetch('/api/scanner/presets');
       if (!response.ok) {
+        setPresetsError(await getErrorMessage(response, `Scanner presets fetch failed (HTTP ${response.status})`));
         return;
       }
       const data = (await response.json()) as { presets: ScannerPreset[] };
       setPresets(data.presets);
+      setPresetsError(null);
     } catch {
-      // Silently fail.
+      setPresetsError('Network error');
     } finally {
       setPresetsLoading(false);
     }
@@ -126,14 +141,18 @@ export function useScanner(refreshIntervalMs: number) {
   const savePreset = useCallback(
     async (name: string) => {
       try {
-        await fetch('/api/scanner/presets', {
+        const response = await fetch('/api/scanner/presets', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, filters: filtersRef.current }),
         });
+        if (!response.ok) {
+          setPresetsError('Failed to save preset');
+          return;
+        }
         await fetchPresets();
       } catch {
-        // Silently fail.
+        setPresetsError('Network error');
       }
     },
     [fetchPresets],
@@ -141,10 +160,14 @@ export function useScanner(refreshIntervalMs: number) {
 
   const deletePreset = useCallback(async (id: string) => {
     try {
-      await fetch(`/api/scanner/presets?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const response = await fetch(`/api/scanner/presets?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!response.ok) {
+        setPresetsError('Failed to delete preset');
+        return;
+      }
       setPresets((previous) => previous.filter((preset) => preset.id !== id));
     } catch {
-      // Silently fail.
+      setPresetsError('Network error');
     }
   }, []);
 
@@ -194,8 +217,10 @@ export function useScanner(refreshIntervalMs: number) {
     toggleSort,
     results,
     loading,
+    error,
     presets,
     presetsLoading,
+    presetsError,
     savePreset,
     deletePreset,
     loadPreset,

@@ -1,7 +1,7 @@
 'use client';
 
 import { AnimatePresence, motion } from 'motion/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -68,7 +68,9 @@ export default function ScannerSection({ refreshIntervalMs }: { refreshIntervalM
     toggleSort,
     results,
     loading,
+    error,
     presets,
+    presetsError,
     savePreset,
     deletePreset,
     loadPreset,
@@ -117,6 +119,11 @@ export default function ScannerSection({ refreshIntervalMs }: { refreshIntervalM
   const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageRows = results.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(1);
+  }, [filters, sortBy, sortDir]);
 
   return (
     <div className="space-y-3 rounded-xl border border-white/10 bg-[#121214] p-4">
@@ -307,10 +314,22 @@ export default function ScannerSection({ refreshIntervalMs }: { refreshIntervalM
                   </Button>
                 </div>
               </div>
+
+              {presetsError ? (
+                <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+                  {presetsError}
+                </div>
+              ) : null}
             </div>
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      {error ? (
+        <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+          {error}
+        </div>
+      ) : null}
 
       <div className="overflow-x-auto">
         <table className="min-w-full tabular-nums text-left text-sm">
@@ -350,7 +369,13 @@ export default function ScannerSection({ refreshIntervalMs }: { refreshIntervalM
             {pageRows.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-2 py-4 text-zinc-500">
-                  {loading ? 'Loading...' : 'No results. Adjust filters or wait for quote data.'}
+                  {loading
+                    ? 'Loading...'
+                    : error
+                      ? 'Scanner unavailable'
+                      : activeFilterCount > 0
+                        ? 'No results match your filters.'
+                        : 'No realtime quotes available. Scanner requires a live Schwab connection - check Markets tab for status.'}
                 </td>
               </tr>
             ) : null}
