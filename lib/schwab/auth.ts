@@ -48,9 +48,11 @@ export async function getSchwabAuthUrl(): Promise<{ authUrl: string; state: stri
   return { authUrl, state: generatedState };
 }
 
-export async function exchangeSchwabCode(code: string): Promise<SchwabTokenPayload> {
+export async function exchangeSchwabCode(code: string, state: string): Promise<SchwabTokenPayload> {
   const auth = createAuthClient();
-  const tokens = await auth.exchangeCode(code);
+  // The library embeds the PKCE code_verifier inside the state parameter.
+  // We must pass state so exchangeCode can extract it for the token request.
+  const tokens = await auth.exchangeCode(code, state);
 
   if (!tokens.accessToken || !tokens.refreshToken) {
     throw new Error('Schwab token exchange returned incomplete token set');

@@ -56,7 +56,7 @@ export async function GET(request: Request) {
     const db = getDb();
     if (!db) return dbUnavailable();
 
-    const tokens = await exchangeSchwabCode(code);
+    const tokens = await exchangeSchwabCode(code, state);
     const encrypted = encryptTokens(tokens);
 
     await db.insert(schwabLinks).values({
