@@ -125,6 +125,8 @@ export class SchwabStreamer {
   private readonly subscribedEquities = new Set<string>();
   private schwabClientCustomerId: string | null = null;
   private schwabClientCorrelId: string | null = null;
+  private messageCount = 0;
+  private dataMessageCount = 0;
 
   constructor(config: StreamerConfig) {
     this.accessToken = config.accessToken;
@@ -167,6 +169,8 @@ export class SchwabStreamer {
       this.ws.on('open', () => {
         this.connected = true;
         this.reconnectAttempts = 0;
+        this.messageCount = 0;
+        this.dataMessageCount = 0;
         this.sendLogin(customerId, correlId, channel, functionId);
       });
 
@@ -337,6 +341,14 @@ export class SchwabStreamer {
         data?: Array<{ service?: string; timestamp?: number; content?: Array<Record<string, unknown>> }>;
       };
 
+      this.messageCount++;
+      // Log first 3 messages fully, then summary every 10 messages
+      if (this.messageCount <= 3) {
+        console.info(`[relay] msg #${this.messageCount}: ${JSON.stringify(parsed).slice(0, 500)}`);
+      } else if (this.messageCount % 10 === 0) {
+        console.info(`[relay] messages received: ${this.messageCount} total, ${this.dataMessageCount} with data`);
+      }
+
       if (Array.isArray(parsed.notify) && parsed.notify.length > 0) {
         return;
       }
@@ -367,12 +379,15 @@ export class SchwabStreamer {
         return;
       }
 
+      this.dataMessageCount++;
+
       for (const entry of parsed.data) {
         if (!entry.service || !Array.isArray(entry.content)) {
           continue;
         }
 
         if (entry.service === 'SCREENER_EQUITY') {
+          console.info(`[relay] screener data: ${entry.content.length} items, keys: ${JSON.stringify(Object.keys(entry.content[0] ?? {}))}`);
           this.handleScreenerData(entry.content);
           continue;
         }
