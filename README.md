@@ -18,7 +18,7 @@ Trading journal, analytics platform, and AI-assisted research tool built with Ne
 - **Performance** — analytics charts and statistics
 - **Trades** — trade management, bulk actions, tag filters
 - **Charts** — expanded charting workspace
-- **Markets** — snapshot + movers + macro summary
+- **Markets** — snapshot + movers + scanner + macro summary
 - **Research** — AI-generated dilution reports, daily summaries, saved tickers
 - **Backtesting** — Jarvis chat workspace
 - **Real-time market data relay** — Schwab live-data hybrid integration (Phases 1-3 complete: OAuth + relay + LIVE/DELAYED frontend switching)

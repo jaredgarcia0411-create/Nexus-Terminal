@@ -1032,12 +1032,20 @@ All 8 steps must pass this validation before marking this section as COMPLETE.
 ## Scanner v1 — Markets Tab Scanner with Saved Presets
 
 > Generated: 2026-03-16 | Agent: nexus-architect
-> Status: PENDING — ready for opencode to execute
+> Status: COMPLETE (IMPLEMENTED)
 > Depends on: Schwab Phase 4 COMPLETE
 
 **Full spec:** [`specs/scanner-v1.md`](specs/scanner-v1.md)
 
 **Summary:** Add a Scanner section to the Markets tab that queries `realtime_quotes` with user-defined filters and supports DB-stored presets. No relay changes needed — works against existing streaming data. Agent-callable API (deferred to AGENTIC_EXPANSION_V2).
+
+**Implementation Summary (2026-03-16 | Agent: opencode):**
+- Added `scanner_presets` schema + migration with per-user unique preset names and user index.
+- Implemented authenticated Scanner APIs: `GET /api/scanner` (filters/sort/limit) and `GET/POST/DELETE /api/scanner/presets` (preset CRUD + upsert by name).
+- Added `useScanner` hook and `ScannerSection` Markets UI (collapsible filters, sortable table, preset save/load/delete, pagination).
+- Integrated `ScannerSection` into `MarketsTab` with realtime/delayed refresh cadence passthrough.
+- Updated `.claude/CLAUDE.md` table/API route docs for scanner coverage.
+- Smoke check completed: `npm run dev` booted successfully and served on `http://localhost:3000`.
 
 ### Architecture Decisions
 

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import JarvisMacroSummary from '@/components/trading/JarvisMacroSummary';
+import ScannerSection from '@/components/trading/ScannerSection';
 import { Button } from '@/components/ui/button';
 import { useSchwabStatus } from '@/hooks/use-schwab-status';
 import type { JarvisMacroSummaryOutput } from '@/lib/jarvis/types';
@@ -406,6 +407,8 @@ export default function MarketsTab() {
           </div>
         </div>
       </div>
+
+      <ScannerSection refreshIntervalMs={dataSource === 'realtime' ? 5_000 : 60_000} />
 
       <div className="rounded-xl border border-white/10 bg-[#121214] p-5">
         {loadingMacro ? <p className="text-sm text-zinc-500">Loading macro summary...</p> : null}

@@ -58,11 +58,12 @@ Professional trading terminal and analytics platform (SaaS). Tracks/journals tra
 - Connection: HTTP client for reads, WebSocket pool for transactions
 - Migrations output to `drizzle/` directory
 
-### Tables (17)
+### Tables (18)
 users, trades (composite PK: user_id + id), trade_executions, trade_tags, tags,
 trade_import_batches, broker_sync_log, agent_memory, research_reports,
 daily_ticker_summaries, saved_tickers, market_snapshots, macro_summaries,
-jarvis_conversations, jarvis_request_log, schwab_links, realtime_quotes
+jarvis_conversations, jarvis_request_log, schwab_links, realtime_quotes,
+scanner_presets
 
 ---
 
@@ -95,6 +96,10 @@ jarvis_conversations, jarvis_request_log, schwab_links, realtime_quotes
 - GET `/api/schwab/auth` (OAuth initiation)
 - GET `/api/schwab/callback` (OAuth callback)
 - GET/DELETE `/api/schwab/status` (link status + unlink)
+
+## Scanner
+- GET `/api/scanner` (query realtime_quotes with filters)
+- GET/POST/DELETE `/api/scanner/presets`
 
 ## System
 - GET/POST `/api/auth/[...nextauth]`

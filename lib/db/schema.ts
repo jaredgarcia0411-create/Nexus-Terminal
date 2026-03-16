@@ -256,3 +256,15 @@ export const realtimeQuotes = pgTable('realtime_quotes', {
   index('realtime_quotes_asset_type_idx').on(table.assetType),
   index('realtime_quotes_updated_at_idx').on(table.updatedAt),
 ]);
+
+export const scannerPresets = pgTable('scanner_presets', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  filtersJson: jsonb('filters_json').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique().on(table.userId, table.name),
+  index('scanner_presets_user_idx').on(table.userId),
+]);
