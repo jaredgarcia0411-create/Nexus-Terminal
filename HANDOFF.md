@@ -1029,6 +1029,54 @@ All 8 steps must pass this validation before marking this section as COMPLETE.
 
 ---
 
+## Scanner v1 — Markets Tab Scanner with Saved Presets
+
+> Generated: 2026-03-16 | Agent: nexus-architect
+> Status: PENDING — ready for opencode to execute
+> Depends on: Schwab Phase 4 COMPLETE
+
+**Full spec:** [`specs/scanner-v1.md`](specs/scanner-v1.md)
+
+**Summary:** Add a Scanner section to the Markets tab that queries `realtime_quotes` with user-defined filters and supports DB-stored presets. No relay changes needed — works against existing streaming data. Agent-callable API (deferred to AGENTIC_EXPANSION_V2).
+
+### Architecture Decisions
+
+- **Location:** Section inside Markets tab (below movers, above macro summary)
+- **Columns:** Ticker, Price, Change, Change%, Volume (OHLC available for future)
+- **Filter UI:** Collapsible panel with price range, change % range, min volume, asset type
+- **Presets:** DB table `scanner_presets` (persists across devices, agent-ready)
+- **Refresh:** 5s realtime / 60s delayed (matches existing Markets tab)
+- **Agent integration:** Deferred — `/api/scanner` accepts filter params so agents can call it later
+
+### Changes (6 steps — execute in order)
+
+| Step | File | Action | Details |
+|------|------|--------|---------|
+| 1 | `lib/db/schema.ts` | MODIFY | Add `scannerPresets` table (id, userId, name, filtersJson, timestamps). Run `npm run db:generate && npm run db:migrate`. See spec Change 1. |
+| 2 | `app/api/scanner/route.ts` | CREATE | GET endpoint — queries `realtime_quotes` with filter/sort/limit params. Returns `{ results, count, filters, sort }`. See spec Change 2. |
+| 3 | `app/api/scanner/presets/route.ts` | CREATE | GET/POST/DELETE for user presets. POST upserts by name. See spec Change 3. |
+| 4 | `hooks/use-scanner.ts` | CREATE | Client hook — manages filters, results, presets, auto-refresh interval. See spec Change 4. |
+| 5 | `components/trading/ScannerSection.tsx` | CREATE | Collapsible filter panel, sortable table (25 rows/page), preset save/load/delete UI. See spec Change 5. |
+| 6 | `components/trading/MarketsTab.tsx` | MODIFY | Add 1 import + 1 JSX line: `<ScannerSection refreshIntervalMs={dataSource === 'realtime' ? 5_000 : 60_000} />` between movers and macro summary. See spec Change 6. |
+
+### Validation
+
+After each step: `npm run lint && npx tsc --noEmit`
+
+After all steps:
+```bash
+npm run lint && npx tsc --noEmit
+npm run dev  # Manual test: filters, sorting, presets, pagination
+```
+
+### Post-Implementation
+
+Update `.claude/CLAUDE.md`:
+- Tables: `(17)` → `(18)`, add `scanner_presets`
+- API Routes: add `## Scanner` with `GET /api/scanner` and `GET/POST/DELETE /api/scanner/presets`
+
+---
+
 ## Notes
 
 - `.env` and secret files were not modified.
