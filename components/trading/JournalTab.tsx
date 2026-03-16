@@ -42,35 +42,10 @@ type DayCard = {
   totalCommissions: number;
   winRate: number;
   mfeMaeRatio: number | null;
-  sparklinePoints: number[];
 };
 
 const INITIAL_CHART_BATCH = 4;
 const CHART_BATCH_STEP = 4;
-
-function DaySparkline({ points }: { points: number[] }) {
-  if (points.length === 0) return <div className="h-8 text-[10px] text-zinc-600">-</div>;
-
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const range = max - min || 1;
-
-  const polyline = points
-    .map((point, index) => {
-      const x = points.length === 1 ? 50 : (index / (points.length - 1)) * 100;
-      const y = 30 - ((point - min) / range) * 30;
-      return `${x},${y}`;
-    })
-    .join(' ');
-
-  const color = points.at(-1)! >= 0 ? '#10b981' : '#f43f5e';
-
-  return (
-    <svg viewBox="0 0 100 30" className="h-8 w-24">
-      <polyline fill="none" stroke={color} strokeWidth="2" points={polyline} />
-    </svg>
-  );
-}
 
 export default function JournalTab({
   filteredTrades,
@@ -106,13 +81,6 @@ export default function JournalTab({
       .sort(([a], [b]) => b.localeCompare(a))
       .map(([sortKey, trades]) => {
         const sorted = [...trades].sort((a, b) => b.date.getTime() - a.date.getTime());
-        const chronological = [...trades].sort((a, b) => a.date.getTime() - b.date.getTime());
-        let cumulative = 0;
-        const sparklinePoints = chronological.map((trade) => {
-          cumulative += trade.netPnl;
-          return cumulative;
-        });
-
         const dailyNetPnl = sorted.reduce((sum, trade) => sum + trade.netPnl, 0);
         const wins = sorted.filter((trade) => trade.netPnl > 0).length;
         const totalCommissions = sorted.reduce((sum, trade) => sum + (trade.commission ?? 0) + (trade.fees ?? 0), 0);
@@ -131,7 +99,6 @@ export default function JournalTab({
           totalCommissions,
           winRate: sorted.length > 0 ? (wins / sorted.length) * 100 : 0,
           mfeMaeRatio,
-          sparklinePoints,
         };
       });
   }, [filteredTrades]);
@@ -163,7 +130,7 @@ export default function JournalTab({
           <div className="flex items-center gap-4">
             <div>
               <h1 className="text-2xl font-semibold text-white">Trading Journal</h1>
-              <p className="text-sm text-zinc-400">Daily trade replay with charts and notes.</p>
+              <p className="text-base text-zinc-400">Daily trade replay with charts and notes.</p>
             </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
@@ -223,20 +190,26 @@ export default function JournalTab({
                 <div className="flex items-center gap-3">
                   {expanded ? <ChevronDown className="h-4 w-4 text-zinc-500" /> : <ChevronRight className="h-4 w-4 text-zinc-500" />}
                   <div>
-                    <p className="text-sm font-semibold">{format(day.date, 'EEEE, MMM dd yyyy')}</p>
-                    <p className="text-xs text-zinc-500">{day.trades.length} trades</p>
+                    <p className="text-base font-semibold">{format(day.date, 'EEEE, MMM dd yyyy')}</p>
+                    <p className="text-sm text-zinc-500">{day.trades.length} trades</p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <DaySparkline points={day.sparklinePoints} />
-                  <p className={`text-sm font-semibold ${getPnLColor(day.dailyNetPnl)}`}>
+                  <div className="hidden items-center gap-1.5 sm:flex">
+                    {[...new Set(day.trades.map((t) => t.symbol))].map((sym) => (
+                      <span key={sym} className="rounded bg-white/5 px-2 py-0.5 text-xs font-medium text-zinc-400">
+                        {sym}
+                      </span>
+                    ))}
+                  </div>
+                  <p className={`text-base font-semibold ${getPnLColor(day.dailyNetPnl)}`}>
                     {formatCurrency(day.dailyNetPnl)}
                   </p>
                 </div>
               </button>
 
-              <div className="grid grid-cols-2 gap-3 border-b border-white/10 bg-white/[0.02] p-3 text-xs sm:grid-cols-5">
+              <div className="grid grid-cols-2 gap-3 border-b border-white/10 bg-white/[0.02] p-3 text-sm sm:grid-cols-5">
                 <div>
                   <p className="text-zinc-500">Total Trades</p>
                   <p className="font-medium">{day.trades.length}</p>
