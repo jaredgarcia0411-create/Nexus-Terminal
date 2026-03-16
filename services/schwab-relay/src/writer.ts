@@ -103,6 +103,18 @@ export class QuoteWriter {
       this.losers = screenerUpdate.items;
     }
 
+    // Also buffer screener items into realtime_quotes
+    for (const item of screenerUpdate.items) {
+      this.addQuote({
+        symbol: item.symbol,
+        assetType: 'equity',
+        lastPrice: item.lastPrice,
+        netChange: item.netChange,
+        netChangePercent: item.netChangePercent,
+        totalVolume: item.totalVolume,
+      });
+    }
+
     const db = getDb();
     const snapshot = {
       gainers: this.gainers,

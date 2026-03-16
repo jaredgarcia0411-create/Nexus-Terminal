@@ -52,6 +52,10 @@ async function startStreamer(accessToken: string): Promise<void> {
         const message = error instanceof Error ? error.message : 'unknown screener write error';
         log(`screener write failed: ${message}`);
       });
+
+      // Dynamically subscribe screener symbols to LEVELONE_EQUITIES for richer data
+      const symbols = update.items.map((item) => item.symbol);
+      streamer?.addEquitySymbols(symbols);
     },
     onError: (error) => {
       log(`stream error: ${error.message}`);

@@ -122,6 +122,7 @@ export class SchwabStreamer {
   private connected = false;
   private subscribed = false;
   private reconnectAttempts = 0;
+  private readonly subscribedEquities = new Set<string>();
 
   constructor(config: StreamerConfig) {
     this.accessToken = config.accessToken;
@@ -174,6 +175,7 @@ export class SchwabStreamer {
       this.ws.on('close', () => {
         this.connected = false;
         this.subscribed = false;
+        this.subscribedEquities.clear();
         this.onDisconnect();
 
         if (!this.manualDisconnect) {
@@ -198,10 +200,42 @@ export class SchwabStreamer {
 
     this.connected = false;
     this.subscribed = false;
+    this.subscribedEquities.clear();
   }
 
   isConnected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN && this.connected;
+  }
+
+  addEquitySymbols(symbols: string[]): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.subscribed) {
+      return;
+    }
+
+    const newSymbols = symbols.filter((s) => !this.subscribedEquities.has(s));
+    if (newSymbols.length === 0) {
+      return;
+    }
+
+    for (const sym of newSymbols) {
+      this.subscribedEquities.add(sym);
+    }
+
+    this.sendMessage({
+      requests: [
+        {
+          service: 'LEVELONE_EQUITIES',
+          command: 'ADD',
+          requestid: toRequestId(),
+          parameters: {
+            keys: newSymbols.join(','),
+            fields: '0,1,2,3,8,10,11,12,17,18,28',
+          },
+        },
+      ],
+    });
+
+    console.info(`[relay] dynamically subscribed ${newSymbols.length} new equity symbols`);
   }
 
   private async fetchPreference(): Promise<StreamerPreferenceResponse> {
@@ -249,6 +283,9 @@ export class SchwabStreamer {
     }
 
     const equities = parseList('TRACK_EQUITIES');
+    for (const sym of equities) {
+      this.subscribedEquities.add(sym);
+    }
     const requests: Array<Record<string, unknown>> = [];
 
     if (equities.length > 0) {

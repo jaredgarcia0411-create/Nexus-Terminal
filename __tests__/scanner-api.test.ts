@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getDbMock, requireUserMock } = vi.hoisted(() => ({
+const { ensureUserMock, getDbMock, requireUserMock } = vi.hoisted(() => ({
+  ensureUserMock: vi.fn(),
   getDbMock: vi.fn(),
   requireUserMock: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
-vi.mock('@/lib/server-db-utils', () => ({ requireUser: requireUserMock }));
+vi.mock('@/lib/server-db-utils', () => ({ ensureUser: ensureUserMock, requireUser: requireUserMock }));
 
 import { GET as getScanner } from '@/app/api/scanner/route';
 import { DELETE as deletePreset, GET as getPresets, POST as postPreset } from '@/app/api/scanner/presets/route';
@@ -60,6 +61,7 @@ function makePresetsDb(presets: Array<Record<string, unknown>> = []) {
 describe('scanner API routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    ensureUserMock.mockResolvedValue(undefined);
     requireUserMock.mockResolvedValue({ user: { id: 'user-1', email: 'u@example.com', name: null, picture: null } });
   });
 
