@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import JarvisMacroSummary from '@/components/trading/JarvisMacroSummary';
 import { Button } from '@/components/ui/button';
+import { useSchwabStatus } from '@/hooks/use-schwab-status';
 import type { JarvisMacroSummaryOutput } from '@/lib/jarvis/types';
 
 type MarketInstrument = {
@@ -185,6 +186,9 @@ export default function MarketsTab() {
   const [coverage, setCoverage] = useState<SnapshotCoverage | null>(null);
   const [isStale, setIsStale] = useState(false);
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
+  const [dataSource, setDataSource] = useState<'realtime' | 'delayed' | null>(null);
+
+  const { schwabStatus, loading: schwabLoading, refresh: refreshSchwabStatus } = useSchwabStatus();
 
   const loadMacroSummary = useCallback(async () => {
     setLoadingMacro(true);
@@ -211,14 +215,17 @@ export default function MarketsTab() {
         warning?: string | null;
         stale?: boolean;
         coverage?: SnapshotCoverage;
+        dataSource?: 'realtime' | 'delayed';
       };
       setSnapshot(payload.data ?? null);
       setWarning(payload.warning ?? null);
       setCoverage(payload.coverage ?? null);
       setIsStale(Boolean(payload.stale));
+      setDataSource(payload.dataSource ?? 'delayed');
       setLastLoadedAt(payload.fetchedAt ? new Date(payload.fetchedAt) : new Date());
     } catch {
       setWarning('Could not refresh market snapshot data.');
+      setDataSource('delayed');
     } finally {
       setLoadingSnapshot(false);
     }
@@ -233,18 +240,19 @@ export default function MarketsTab() {
   }, [refreshAll]);
 
   useEffect(() => {
+    const intervalMs = dataSource === 'realtime' ? 5_000 : 60_000;
     const interval = window.setInterval(() => {
       void loadSnapshot();
-    }, 60 * 1000);
+    }, intervalMs);
     return () => window.clearInterval(interval);
-  }, [loadSnapshot]);
+  }, [loadSnapshot, dataSource]);
 
   return (
     <motion.section key="markets" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-white">Markets</h1>
-          <p className="text-sm text-zinc-400">Unified market snapshot with delayed pricing and market movers.</p>
+          <p className="text-sm text-zinc-400">Unified market snapshot with market movers across major asset classes.</p>
         </div>
         <Button
           type="button"
@@ -258,7 +266,21 @@ export default function MarketsTab() {
       </div>
 
       <div className="rounded-xl border border-white/10 bg-[#121214] px-4 py-3 text-sm text-zinc-400">
-        <p>Massive market data is delayed by approximately 15 minutes.</p>
+        <div className="flex items-center gap-2">
+          {dataSource === 'realtime' ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-400">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+              LIVE
+            </span>
+          ) : (
+            <span className="inline-flex items-center rounded-full border border-zinc-500/30 bg-zinc-500/10 px-2 py-0.5 text-xs font-medium text-zinc-400">
+              15-MIN DELAYED
+            </span>
+          )}
+          <span className="text-xs text-zinc-500">
+            {dataSource === 'realtime' ? 'Schwab real-time streaming' : 'Massive API delayed data'}
+          </span>
+        </div>
         {lastLoadedAt ? <p className="mt-1 text-xs text-zinc-500">Last market update: {lastLoadedAt.toLocaleTimeString()}</p> : null}
         {coverage ? (
           <p className="mt-1 text-xs text-zinc-500">
@@ -268,6 +290,72 @@ export default function MarketsTab() {
         {warning ? <p className="mt-2 text-xs text-amber-300">{warning}</p> : null}
         {isStale ? <p className="mt-1 text-xs text-amber-300">Data is stale (older than 30 minutes).</p> : null}
       </div>
+
+      {!schwabLoading && !schwabStatus.linked && schwabStatus.status !== 'expired' ? (
+        <div className="rounded-xl border border-white/10 bg-[#121214] px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-zinc-200">Want real-time data?</p>
+              <p className="text-xs text-zinc-400">Link your Schwab account for live streaming prices.</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                window.location.href = '/api/schwab/auth';
+              }}
+              className="border-white/10 bg-white/5 px-3 text-xs font-medium text-zinc-200 hover:bg-white/10"
+            >
+              Link Schwab Account
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {!schwabLoading && schwabStatus.linked ? (
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-2">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-emerald-400">Schwab account linked — real-time data active</p>
+            <button
+              type="button"
+              onClick={async () => {
+                await fetch('/api/schwab/status', { method: 'DELETE' });
+                await refreshSchwabStatus();
+                await loadSnapshot();
+              }}
+              className="text-xs text-zinc-500 underline hover:text-zinc-300"
+            >
+              Unlink
+            </button>
+          </div>
+          {schwabStatus.refreshExpiresAt ? (
+            <p className="mt-1 text-[10px] text-zinc-500">
+              Re-authorization needed by {new Date(schwabStatus.refreshExpiresAt).toLocaleDateString()}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!schwabLoading && schwabStatus.status === 'expired' ? (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-amber-300">Schwab link expired</p>
+              <p className="text-xs text-zinc-400">Your Schwab refresh token has expired (7-day limit). Re-link to restore real-time data.</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                window.location.href = '/api/schwab/auth';
+              }}
+              className="border-amber-500/30 bg-amber-500/10 px-3 text-xs font-medium text-amber-300 hover:bg-amber-500/20"
+            >
+              Re-link Schwab
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-white/10 bg-[#121214] p-4">

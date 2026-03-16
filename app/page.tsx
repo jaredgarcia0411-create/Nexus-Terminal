@@ -20,12 +20,30 @@ import JarvisTab from '@/components/trading/JarvisTab';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useTrades } from '@/hooks/use-trades';
 
+const VALID_TABS: TabKey[] = ['dashboard', 'performance', 'journal', 'filter', 'charts', 'markets', 'research', 'jarvis'];
+
 export default function NexusTerminal() {
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    if (typeof window === 'undefined') {
+      return 'dashboard';
+    }
+
+    const tabParam = new URLSearchParams(window.location.search).get('tab');
+    return tabParam && VALID_TABS.includes(tabParam as TabKey) ? (tabParam as TabKey) : 'dashboard';
+  });
   const [performanceMetric, setPerformanceMetric] = useState<'$' | 'R'>('$');
   const [isManualTradeOpen, setIsManualTradeOpen] = useState(false);
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+
+    if (tabParam && VALID_TABS.includes(tabParam as TabKey)) {
+      window.history.replaceState({}, '', '/');
+    }
+  }, []);
 
   const {
     user,

@@ -97,7 +97,7 @@ Detailed step-by-step execution specs and checklists were removed to save space.
 ## Schwab Real-Time Market Data (Option C Hybrid)
 
 > Generated: 2026-03-15 | Agent: nexus-architect
-> Status: IN PROGRESS (PHASES 1-2 COMPLETE)
+> Status: IN PROGRESS (PHASES 1-3 COMPLETE)
 
 **Full spec:** [`specs/schwab-realtime-hybrid.md`](specs/schwab-realtime-hybrid.md)
 
@@ -110,10 +110,16 @@ Detailed step-by-step execution specs and checklists were removed to save space.
 - Added Fly.io deployment config (`fly.toml`) and production Dockerfile.
 - Validation completed for relay service: `cd services/schwab-relay && npm install && npx tsc --noEmit`.
 
+**Phase 3 Progress (2026-03-15):**
+- Updated `/api/market-data/snapshot` to use dual-source behavior with per-user Schwab link checks, realtime DB reads, stale-data fallback, and `dataSource` response metadata.
+- Added `hooks/use-schwab-status.ts` and integrated Markets UI link state, LIVE/15-MIN DELAYED badges, link/re-link flows, and unlink action.
+- Added `/?tab=markets` URL parameter support in `app/page.tsx` for Schwab OAuth callback routing.
+- Validation completed: lint, TypeScript, tests.
+
 **Phases:**
 1. [x] Schwab OAuth integration (7 changes — new tables, encrypted token storage, OAuth routes)
 2. [x] Streaming relay service (10 changes — standalone Node.js service in `services/schwab-relay/`)
-3. [ ] Frontend integration (4 changes — dual-source snapshot route, LIVE/DELAYED badges, link/unlink UI)
+3. [x] Frontend integration (4 changes — dual-source snapshot route, LIVE/DELAYED badges, link/unlink UI)
 4. [ ] Scanner foundation (stub only — `realtimeQuotes` table already covers scanner fields)
 
 ---
@@ -121,7 +127,7 @@ Detailed step-by-step execution specs and checklists were removed to save space.
 ## Schwab Phases 1-2: Post-Review Fixes
 
 > Generated: 2026-03-15 | Agent: nexus-architect (review), claude (spec)
-> Status: PENDING — opencode should execute before starting Phase 3
+> Status: COMPLETE (IMPLEMENTED)
 
 **Context:** Architecture review of Phases 1 & 2 found 5 actionable issues. Fix in priority order below.
 

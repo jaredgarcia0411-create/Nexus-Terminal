@@ -21,7 +21,7 @@ Trading journal, analytics platform, and AI-assisted research tool built with Ne
 - **Markets** — snapshot + movers + macro summary
 - **Research** — AI-generated dilution reports, daily summaries, saved tickers
 - **Backtesting** — Jarvis chat workspace
-- **Real-time market data relay** — standalone Schwab WebSocket relay service (Phase 2 backend complete)
+- **Real-time market data relay** — Schwab live-data hybrid integration (Phases 1-3 complete: OAuth + relay + LIVE/DELAYED frontend switching)
 
 ## Tech Stack
 

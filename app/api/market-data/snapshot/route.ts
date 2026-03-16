@@ -1,7 +1,7 @@
 import { desc, eq } from 'drizzle-orm';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
-import { marketSnapshots } from '@/lib/db/schema';
+import { marketSnapshots, realtimeQuotes, schwabLinks } from '@/lib/db/schema';
 import {
   fetchBatchDailyTickerSummaries,
   fetchTopMarketMovers,
@@ -61,6 +61,8 @@ type SnapshotCoverage = {
 const CACHE_SNAPSHOT_TYPE = 'markets_overview';
 const CACHE_TTL_MS = 2 * 60 * 1000;
 const STALE_WARNING_MS = 30 * 60 * 1000;
+const REALTIME_STALE_MS = 5 * 60 * 1000;
+const SCHWAB_SCREENER_SNAPSHOT_TYPE = 'schwab_screener';
 
 type PgLikeError = {
   code?: string;
@@ -253,6 +255,158 @@ async function fetchFreshSnapshot(): Promise<MarketSnapshotPayload> {
   };
 }
 
+async function getSchwabLinkStatus(db: ReturnType<typeof getDb>, userId: string) {
+  if (!db) return { active: false };
+  try {
+    const [link] = await db
+      .select({ status: schwabLinks.status, refreshTokenExpiresAt: schwabLinks.refreshTokenExpiresAt })
+      .from(schwabLinks)
+      .where(eq(schwabLinks.userId, userId))
+      .limit(1);
+
+    if (!link) return { active: false };
+    if (link.status !== 'active') return { active: false };
+    if (link.refreshTokenExpiresAt.getTime() < Date.now()) return { active: false };
+
+    return { active: true };
+  } catch {
+    return { active: false };
+  }
+}
+
+async function fetchRealtimeSnapshot(
+  db: NonNullable<ReturnType<typeof getDb>>,
+): Promise<{ data: MarketSnapshotPayload; fetchedAt: Date } | null> {
+  const [latestUpdate] = await db
+    .select({ updatedAt: realtimeQuotes.updatedAt })
+    .from(realtimeQuotes)
+    .orderBy(desc(realtimeQuotes.updatedAt))
+    .limit(1);
+
+  if (!latestUpdate) {
+    return null;
+  }
+
+  if (Date.now() - latestUpdate.updatedAt.getTime() > REALTIME_STALE_MS) {
+    return null;
+  }
+
+  const quotes = await db.select().from(realtimeQuotes);
+  if (quotes.length === 0) {
+    return null;
+  }
+
+  const quoteLookup = new Map(quotes.map((quote) => [normalizeTicker(quote.symbol), quote]));
+
+  const mapRealtimeInstrument = (symbol: string, label: string): MarketInstrument => {
+    const quote = quoteLookup.get(normalizeTicker(symbol));
+    if (!quote) {
+      return {
+        symbol: normalizeTicker(symbol),
+        label,
+        price: null,
+        change: null,
+        changePercent: null,
+        marketStatus: null,
+        quoteSession: 'snapshot',
+        extendedQuoteUnavailable: false,
+        extendedUnavailableLabel: null,
+      };
+    }
+
+    return {
+      symbol: normalizeTicker(symbol),
+      label,
+      price: quote.lastPrice ?? null,
+      change: quote.netChange ?? null,
+      changePercent: quote.netChangePercent ?? null,
+      marketStatus: quote.securityStatus ?? null,
+      quoteSession: 'regular',
+      extendedQuoteUnavailable: false,
+      extendedUnavailableLabel: null,
+    };
+  };
+
+  let screenerGainers: MarketMoverRow[] = [];
+  let screenerLosers: MarketMoverRow[] = [];
+
+  try {
+    const [screenerRow] = await db
+      .select({ dataJson: marketSnapshots.dataJson })
+      .from(marketSnapshots)
+      .where(eq(marketSnapshots.snapshotType, SCHWAB_SCREENER_SNAPSHOT_TYPE))
+      .limit(1);
+
+    if (screenerRow) {
+      const screenerData = screenerRow.dataJson as {
+        gainers?: Array<{
+          symbol?: string;
+          lastPrice?: number;
+          netChange?: number;
+          netChangePercent?: number;
+        }>;
+        losers?: Array<{
+          symbol?: string;
+          lastPrice?: number;
+          netChange?: number;
+          netChangePercent?: number;
+        }>;
+      };
+
+      const toMoverRows = (
+        rows: Array<{
+          symbol?: string;
+          lastPrice?: number;
+          netChange?: number;
+          netChangePercent?: number;
+        }> | undefined,
+      ): MarketMoverRow[] => {
+        if (!rows) {
+          return [];
+        }
+
+        return rows
+          .map((row): MarketMoverRow | null => {
+            if (!row.symbol || row.symbol.length === 0) {
+              return null;
+            }
+
+            return {
+              ticker: row.symbol,
+              price: row.lastPrice ?? null,
+              previousClose: null,
+              change: row.netChange ?? null,
+              changePercent: row.netChangePercent ?? null,
+              updated: null,
+            };
+          })
+          .filter((row): row is MarketMoverRow => row !== null);
+      };
+
+      screenerGainers = toMoverRows(screenerData.gainers);
+      screenerLosers = toMoverRows(screenerData.losers);
+    }
+  } catch {
+    screenerGainers = [];
+    screenerLosers = [];
+  }
+
+  return {
+    data: {
+      indices: INDEX_SYMBOLS.map((symbol) => mapRealtimeInstrument(symbol, symbol)),
+      futures: FUTURE_SYMBOLS.map((item) => mapRealtimeInstrument(item.ticker, item.label)),
+      crypto: CRYPTO_SYMBOLS.map((item) => mapRealtimeInstrument(item.symbol, item.symbol)),
+      fx: FX_SYMBOLS.map((symbol) => mapRealtimeInstrument(symbol, normalizeTicker(symbol))),
+      equities: EQUITY_SYMBOLS.map((symbol) => mapRealtimeInstrument(symbol, symbol)),
+      movers: {
+        gainers: screenerGainers,
+        losers: screenerLosers,
+      },
+    },
+    fetchedAt: latestUpdate.updatedAt,
+  };
+}
+
 function isUndefinedTableError(error: unknown) {
   return typeof error === 'object' && error !== null && (error as PgLikeError).code === '42P01';
 }
@@ -333,8 +487,33 @@ export async function GET() {
 
     const db = getDb();
     const now = new Date();
+    const schwabStatus = await getSchwabLinkStatus(db, auth.user.id);
+
+    if (db && schwabStatus.active) {
+      const realtimeSnapshot = await fetchRealtimeSnapshot(db);
+      if (realtimeSnapshot) {
+        const coverage = buildCoverage(realtimeSnapshot.data);
+        return Response.json({
+          data: realtimeSnapshot.data,
+          fetchedAt: realtimeSnapshot.fetchedAt.toISOString(),
+          warning: null,
+          stale: false,
+          source: 'realtime',
+          coverage,
+          dataSource: 'realtime',
+          requestId,
+        });
+      }
+    }
+
     let cacheAvailable = Boolean(db);
     let cacheUnavailableWarning: string | null = null;
+    let realtimeFallbackWarning: string | null = null;
+
+    if (schwabStatus.active) {
+      realtimeFallbackWarning = 'Realtime quotes are unavailable or stale. Falling back to delayed Massive data.';
+    }
+
     let cached: (typeof marketSnapshots.$inferSelect) | undefined;
 
     if (db) {
@@ -370,10 +549,11 @@ export async function GET() {
       return Response.json({
         data: cachedData,
         fetchedAt: cached.fetchedAt.toISOString(),
-        warning: cached.warning,
+        warning: cached.warning ?? realtimeFallbackWarning,
         stale: ageMs > STALE_WARNING_MS,
         source: 'cache',
         coverage: buildCoverage(cachedData),
+        dataSource: 'delayed',
       });
     }
 
@@ -425,10 +605,11 @@ export async function GET() {
       return Response.json({
         data,
         fetchedAt: fetchedAt.toISOString(),
-        warning: cacheUnavailableWarning,
+        warning: cacheUnavailableWarning ?? realtimeFallbackWarning,
         stale: false,
         source: cacheAvailable ? 'live' : 'live-no-cache',
         coverage,
+        dataSource: 'delayed',
         requestId,
       });
     } catch (error) {
@@ -449,6 +630,7 @@ export async function GET() {
           stale: ageMs > STALE_WARNING_MS,
           source: 'cache-fallback',
           coverage: buildCoverage(cachedData),
+          dataSource: 'delayed',
           requestId,
         });
       }
