@@ -2,7 +2,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { scannerPresets } from '@/lib/db/schema';
-import { requireUser } from '@/lib/server-db-utils';
+import { ensureUser, requireUser } from '@/lib/server-db-utils';
 
 interface PresetBody {
   name?: string;
@@ -20,6 +20,8 @@ export async function GET() {
     if (!db) {
       return Response.json({ error: 'Database not configured' }, { status: 503 });
     }
+
+    await ensureUser(db, authState.user);
 
     const rows = await db
       .select({
@@ -56,6 +58,8 @@ export async function POST(request: Request) {
     if (bodyState.error) {
       return bodyState.error;
     }
+
+    await ensureUser(db, authState.user);
 
     const name = (bodyState.data.name ?? '').trim();
     if (!name) {
@@ -105,6 +109,8 @@ export async function DELETE(request: Request) {
     if (!db) {
       return Response.json({ error: 'Database not configured' }, { status: 503 });
     }
+
+    await ensureUser(db, authState.user);
 
     const { searchParams } = new URL(request.url);
     const id = (searchParams.get('id') ?? '').trim();
