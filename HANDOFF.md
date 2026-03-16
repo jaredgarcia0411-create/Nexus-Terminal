@@ -5,6 +5,11 @@
 Historical completed sections were removed to keep this file focused.
 Use git history and the `specs/` directory for archived implementation detail.
 
+### Session Maintenance Checklist
+
+- [x] Refreshed `AGENTS.md` with current build/lint/test commands, single-test workflows, and coding conventions for agentic coding tools.
+- [x] Verified command set and conventions against the current repository configuration (`package.json`, `tsconfig.json`, `vitest.config.ts`, `eslint.config.mjs`).
+
 ---
 
 ## Scanner Realtime Data Pipeline

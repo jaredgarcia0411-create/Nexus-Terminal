@@ -1,25 +1,144 @@
-# Nexus Terminal
+# Nexus Terminal - Agent Guide
 
-Next.js 15, React 19, TypeScript 5.9, deployed on Vercel.
+This file is for coding agents working in this repository.
+Follow these rules to match existing architecture and coding style.
 
-## Stack
-- Database: PostgreSQL via Neon, Drizzle ORM, schema in lib/db/schema.ts
-- Auth: Google OAuth via NextAuth for login. Manual JWT (jose, HS256) for on-site sessions stored in httpOnly secure cookie
-- State: useState + useEffect in app/page.tsx, localStorage fallback when DATABASE_URL unset
-- Styling: Tailwind CSS v4, dark theme (#0A0A0B base, emerald-500 accent)
-- Testing: Jest, run with npm test
-- API routes: app/api/ — trades, tags, auth, schwab, health
+## Project Snapshot
+- Framework: Next.js 15 + React 19 + TypeScript 5.9.
+- Package manager: npm.
+- Deployment target: Vercel.
+- DB: PostgreSQL (Neon) via Drizzle ORM.
+- Auth: NextAuth (Google OAuth) + app session logic.
+- Styling: Tailwind CSS v4 + shadcn/Radix UI primitives.
+- Tests: Vitest (not Jest).
 
-## Rules
-1. Preserve existing architecture. No refactors unless explicitly requested.
-2. Run npm run lint, npx tsc --noEmit, npm test after every change.
-3. Prefer modular code. No unnecessary dependencies.
-4. Maintain TypeScript typing throughout.
-5. Never modify .env, .env.local, or any secrets. Use environment variables only.
-6. Do not log sensitive data. Do not commit secrets.
+## Required Workflow (Always)
+1. Read `HANDOFF.md` first to understand active implementation requirements.
+2. Preserve architecture; do not refactor unrelated areas.
+3. Implement changes in the exact order described by the active spec/handoff.
+4. Never modify `.env`, `.env.local`, or secret files.
+5. After code changes, run lint, type-check, and tests.
+6. If a command fails, fix the issue before finishing.
 
-## Execution Workflow
-1. Read HANDOFF.md for the current spec
-2. Confirm plan before making changes
-3. Implement in the exact order specified
-4. Run lint, type-check, tests and report results
+## Core Commands
+- Install deps: `npm install`
+- Dev server: `npm run dev`
+- Production build: `npm run build`
+- Start production server: `npm run start`
+- Lint: `npm run lint`
+- Type-check: `npx tsc --noEmit`
+- Full test suite: `npm test`
+- Watch mode tests: `npm run test:watch`
+
+## Single-Test Commands (Important)
+- Run one file: `npx vitest run __tests__/csv-parser.test.ts`
+- Run one file (alternative): `npm test -- __tests__/csv-parser.test.ts`
+- Run tests matching a name: `npx vitest run -t "stores explicit timezone timestamps"`
+- Run one file in watch mode: `npx vitest __tests__/trades-route.test.ts`
+
+## Required Validation Before Handoff
+Run in this order from repo root:
+1. `npm run lint`
+2. `npx tsc --noEmit`
+3. `npm test`
+
+Report pass/fail for each command.
+
+## Monorepo/Subproject Notes
+- Main app TypeScript excludes `services/` from root `tsconfig.json`.
+- Schwab relay service has its own TS config and build commands:
+  - `cd services/schwab-relay && npx tsc --noEmit`
+  - `cd services/schwab-relay && npm run build`
+
+## Architecture Guardrails
+- Keep page-level orchestration in `app/page.tsx`; move business logic to hooks/lib.
+- API handlers live in `app/api/**/route.ts`.
+- DB schema is centralized in `lib/db/schema.ts`.
+- Server auth/db helpers are in `lib/server-db-utils.ts`.
+- Avoid introducing new global patterns when existing modules already cover the need.
+
+## API Route Conventions
+- Use `requireUser()` for protected routes (all except explicitly public routes like health checks).
+- For DB-backed routes:
+  - `const db = getDb()`
+  - guard with `if (!db) return dbUnavailable()`
+  - call `ensureUser(db, authState.user)` when needed.
+- Parse JSON using shared helpers when available (e.g., `parseJsonBody`).
+- Return structured errors via `Response.json({ error: '...' }, { status })`.
+- In `catch`, log safely and return generic server errors (no secret leakage).
+
+## Security Rules
+- Never expose API keys, OAuth tokens, JWT secrets, or env values.
+- Never log sensitive payloads or credentials.
+- Keep `ASKEDGAR_API_KEY` and similar values server-side only.
+- Do not commit `.env*` or credentials files.
+
+## TypeScript Rules
+- `strict` mode is enabled: keep types explicit and correct.
+- Avoid `any`; use `unknown` in catch blocks and narrow safely.
+- Prefer shared domain types from `lib/types.ts` and nearby modules.
+- Use `import type` for type-only imports where appropriate.
+- Keep API input/output shapes typed (request body, response payloads).
+- Favor small helper functions for reusable normalization/parsing logic.
+
+## Import Conventions
+- Use path alias `@/*` for internal imports.
+- Typical order:
+  1) third-party packages
+  2) internal `@/` modules
+  3) type imports (or inline `type` specifiers)
+- Keep imports grouped and stable; avoid deep relative paths when alias works.
+- Match existing file style (some generated shadcn files use double quotes/no semicolons).
+
+## Naming Conventions
+- Components: PascalCase (`TradesTab.tsx`).
+- Hooks: `useX` camelCase (`useTrades`).
+- Utilities/functions/vars: camelCase.
+- Constants: UPPER_SNAKE_CASE for true constants.
+- Route files: `route.ts` within feature folders.
+- Test files: `*.test.ts` under `__tests__/`.
+
+## Formatting and Style
+- Follow existing style in each file; do not reformat unrelated code.
+- Prefer simple, readable logic over clever abstractions.
+- Keep functions focused; extract helpers when a block becomes hard to read.
+- Use early returns for validation/guard clauses.
+- Add comments only when logic is non-obvious.
+
+## Error Handling Patterns
+- Fail fast on invalid input with 4xx responses.
+- Use defaults with `??` for optional numeric fields when appropriate.
+- Preserve useful user-facing error messages without exposing internals.
+- In UI hooks/components, surface actionable errors (toast/state) and avoid crashes.
+- In server routes, prefer consistent generic 500 responses for unexpected errors.
+
+## Testing Conventions
+- Test runner: Vitest with config in `vitest.config.ts`.
+- Test include pattern: `__tests__/**/*.test.ts`.
+- Mocking style uses `vi.mock`, often with `vi.hoisted` for shared mocks.
+- Keep tests deterministic; mock DB/auth/network boundaries.
+- Co-locate route behavior coverage in `__tests__/` by endpoint/feature.
+
+## Database and Migrations
+- Drizzle commands:
+  - `npm run db:generate`
+  - `npm run db:migrate`
+  - `npm run db:push` (dev only)
+  - `npm run db:studio`
+- Do not change schema/migrations unless explicitly requested by the spec.
+
+## Docs and Handoff Updates
+- After completing session work, update checklist/status in `HANDOFF.md`.
+- Update `README.md` only if behavior or developer workflow materially changed.
+
+## Cursor and Copilot Rules
+- Checked for Cursor rules: no `.cursor/rules/` or `.cursorrules` found.
+- Checked for Copilot rules: no `.github/copilot-instructions.md` found.
+- If these files are added later, treat them as required repository instructions.
+
+## Agent Behavior Expectations
+- Be concise and practical.
+- Explain why when introducing non-obvious patterns.
+- Do not add dependencies unless required.
+- Do not run destructive git commands.
+- Do not create commits unless explicitly requested.
