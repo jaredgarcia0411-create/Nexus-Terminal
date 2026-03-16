@@ -289,6 +289,8 @@ async function fetchRealtimeSnapshot(
     return null;
   }
 
+  const currentSession = getEasternMarketSession();
+
   const quotes = await db.select().from(realtimeQuotes);
   if (quotes.length === 0) {
     return null;
@@ -319,7 +321,7 @@ async function fetchRealtimeSnapshot(
       change: quote.netChange ?? null,
       changePercent: quote.netChangePercent ?? null,
       marketStatus: quote.securityStatus ?? null,
-      quoteSession: 'regular',
+      quoteSession: currentSession,
       extendedQuoteUnavailable: false,
       extendedUnavailableLabel: null,
     };
@@ -439,7 +441,7 @@ function getErrorSummary(error: unknown) {
 }
 
 function logSnapshotStage(stage: string, requestId: string, details: Record<string, unknown>) {
-  console.error('[api:market-data.snapshot]', {
+  console.info('[api:market-data.snapshot]', {
     requestId,
     stage,
     ...details,

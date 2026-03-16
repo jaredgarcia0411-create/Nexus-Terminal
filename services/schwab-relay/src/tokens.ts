@@ -200,6 +200,9 @@ export async function loadActiveTokens(
     })
     .from(schwabLinks)
     .where(eq(schwabLinks.status, 'active'))
+    // NOTE: Single-user relay - only one Schwab-linked user gets streaming at a time.
+    // If multiple users have active links, selection is nondeterministic.
+    // To support multi-user, remove .limit(1) and manage per-user streaming sessions.
     .limit(1);
 
   if (!row) {

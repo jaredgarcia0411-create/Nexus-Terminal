@@ -1,3 +1,12 @@
+/**
+ * Relay schema - intentional SUBSET of the main app schema.
+ * Source of truth: lib/db/schema.ts (in the main Nexus Terminal app).
+ *
+ * This file only declares the tables/columns the relay reads and writes.
+ * Missing columns (accountLabel, linkedAt, status enum) and indexes are
+ * defined by the main app's migrations and exist in the DB - they're just
+ * not needed here.
+ */
 import { doublePrecision, index, jsonb, pgTable, text, timestamp, unique } from 'drizzle-orm/pg-core';
 
 export const schwabLinks = pgTable('schwab_links', {

@@ -816,10 +816,17 @@ Phase 4 confirmed the `realtime_quotes` schema covers scanner fields. The next p
 ## Schwab Phase 4 Review — Implementation Steps (for opencode)
 
 > Generated: 2026-03-15 | Agent: nexus-architect
-> Status: READY FOR IMPLEMENTATION
+> Status: COMPLETE (IMPLEMENTED)
 > Depends on: All Schwab phases COMPLETE
 
 **Context:** Architecture audit found 6 code issues + 2 deployment gaps. These are ordered by priority. Each step is independent — complete and validate one at a time.
+
+**Implementation Summary (2026-03-15 | Agent: opencode):**
+- Realtime snapshot now derives `quoteSession` from `getEasternMarketSession()` instead of hardcoding `'regular'`.
+- Snapshot diagnostics use `console.info` so normal route telemetry no longer pollutes error dashboards.
+- Relay writer logs are throttled to once per 60 flushes, and dead `exchangeId`/`securityStatus`/`description` upsert mappings were removed.
+- Added relay schema subset + single-user token loader comments; refreshed relay `.env.example`; confirmed relay lockfile is present.
+- Validation completed: relay TypeScript checks, root lint, root TypeScript checks, and full test suite.
 
 ---
 

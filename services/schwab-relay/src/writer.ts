@@ -13,6 +13,7 @@ const SCREENER_SNAPSHOT_TYPE = 'schwab_screener';
 export class QuoteWriter {
   private readonly quoteBuffer = new Map<string, QuoteUpdate>();
   private readonly flushTimer: NodeJS.Timeout;
+  private flushCount = 0;
 
   private gainers: ScreenerUpdate['items'] = [];
   private losers: ScreenerUpdate['items'] = [];
@@ -62,9 +63,6 @@ export class QuoteWriter {
         netChange: quote.netChange,
         netChangePercent: quote.netChangePercent,
         totalVolume: quote.totalVolume,
-        exchangeId: quote.exchangeId,
-        description: undefined,
-        securityStatus: quote.securityStatus,
         quoteTimeMs: quote.quoteTimeMs,
         updatedAt: new Date(),
       }));
@@ -86,15 +84,16 @@ export class QuoteWriter {
             netChange: sql`excluded.net_change`,
             netChangePercent: sql`excluded.net_change_percent`,
             totalVolume: sql`excluded.total_volume`,
-            exchangeId: sql`excluded.exchange_id`,
-            securityStatus: sql`excluded.security_status`,
             quoteTimeMs: sql`excluded.quote_time_ms`,
             updatedAt: sql`NOW()`,
           },
         });
     }
 
-    console.info(`[relay] wrote ${pendingQuotes.length} realtime quote rows`);
+    this.flushCount++;
+    if (this.flushCount % 60 === 0) {
+      console.info(`[relay] wrote ${pendingQuotes.length} realtime quote rows (flush #${this.flushCount})`);
+    }
   }
 
   async addScreenerData(screenerUpdate: ScreenerUpdate): Promise<void> {
