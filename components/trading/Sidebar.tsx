@@ -131,6 +131,25 @@ return (
         </button>
       )}
 
+      {/* Navigation Items */}
+      <div className={`flex flex-col gap-1 text-zinc-500 ${collapsed ? 'px-1' : 'px-2'}`}>
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.tab}
+              onClick={() => setActiveTab(item.tab)}
+              className={`flex items-center gap-3 rounded-lg transition-colors ${activeTab === item.tab ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-white/5 hover:text-white'} ${collapsed ? 'justify-center px-2 py-2' : 'px-3 py-2'}`}
+              title={item.title}
+              aria-label={item.title}
+            >
+              <Icon className="h-5 w-5 shrink-0" />
+              {!collapsed && <span className="text-sm font-medium">{item.title}</span>}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Action Buttons */}
       <div className={`flex flex-col gap-2 ${collapsed ? 'px-1' : 'px-2'}`}>
         <button
@@ -189,25 +208,6 @@ return (
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-      </div>
-
-      {/* Navigation Items */}
-      <div className={`flex flex-col gap-1 text-zinc-500 ${collapsed ? 'px-1' : 'px-2'}`}>
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <button
-              key={item.tab}
-              onClick={() => setActiveTab(item.tab)}
-              className={`flex items-center gap-3 rounded-lg transition-colors ${activeTab === item.tab ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-white/5 hover:text-white'} ${collapsed ? 'justify-center px-2 py-2' : 'px-3 py-2'}`}
-              title={item.title}
-              aria-label={item.title}
-            >
-              <Icon className="h-5 w-5 shrink-0" />
-              {!collapsed && <span className="text-sm font-medium">{item.title}</span>}
-            </button>
-          );
-        })}
       </div>
 
       {/* Footer */}

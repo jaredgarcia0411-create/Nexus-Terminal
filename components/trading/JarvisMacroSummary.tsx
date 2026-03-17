@@ -138,7 +138,7 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-white/10 bg-[#121214] p-4">
-        <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Macro Summary</p>
+        <h2 className="text-base font-semibold text-zinc-200">Macro summary</h2>
         <p className="mt-2 text-base text-zinc-100">{headline}</p>
       </div>
 
