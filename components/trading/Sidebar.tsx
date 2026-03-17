@@ -98,7 +98,7 @@ export default function Sidebar({
       </div>
 
       <div className="flex flex-col gap-2 text-zinc-500">
-        {navItems.map((item) => {
+        {navItems.map((item, index) => {
           const Icon = item.icon;
           return (
             <button
@@ -110,6 +110,9 @@ export default function Sidebar({
             >
               <Icon className="h-5 w-5" />
               <span className="text-sm font-medium">{item.title}</span>
+              <kbd className="ml-auto rounded bg-white/5 px-1 py-0.5 font-mono text-[10px] text-zinc-600">
+                {index + 1}
+              </kbd>
             </button>
           );
         })}

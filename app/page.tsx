@@ -17,7 +17,9 @@ import ChartsTab from '@/components/trading/ChartsTab';
 import MarketsTab from '@/components/trading/MarketsTab';
 import ResearchTab from '@/components/trading/ResearchTab';
 import JarvisTab from '@/components/trading/JarvisTab';
+import CommandPalette from '@/components/trading/CommandPalette';
 import { TabErrorBoundary } from '@/components/ui/TabErrorBoundary';
+import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useTrades } from '@/hooks/use-trades';
 
@@ -36,6 +38,7 @@ export default function NexusTerminal() {
   const [performanceMetric, setPerformanceMetric] = useState<'$' | 'R'>('$');
   const [isManualTradeOpen, setIsManualTradeOpen] = useState(false);
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -96,6 +99,8 @@ export default function NexusTerminal() {
   } = useTrades();
 
   const selectedTrade = useMemo(() => trades.find((trade) => trade.id === selectedTradeId) ?? null, [selectedTradeId, trades]);
+
+  useGlobalShortcuts({ setActiveTab, setCommandPaletteOpen });
 
   useEffect(() => {
     if (!selectedTradeId) return;
@@ -300,6 +305,13 @@ export default function NexusTerminal() {
           if (!open) setSelectedTradeId(null);
         }}
         onSaveNotes={handleSaveNotes}
+      />
+      <CommandPalette
+        open={commandPaletteOpen}
+        onOpenChange={setCommandPaletteOpen}
+        setActiveTab={setActiveTab}
+        onNewTradeClick={() => setIsManualTradeOpen(true)}
+        onImportClick={() => importInputRef.current?.click()}
       />
 
       {isImporting ? (

@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { marketSnapshots, realtimeQuotes, schwabLinks } from '@/lib/db/schema';
@@ -55,11 +55,21 @@ type SnapshotCoverage = {
   };
 };
 
+type RealtimeSnapshotResult = {
+  data: MarketSnapshotPayload;
+  fetchedAt: Date;
+};
+
 const CACHE_SNAPSHOT_TYPE = 'markets_overview';
 const CACHE_TTL_MS = 2 * 60 * 1000;
 const STALE_WARNING_MS = 30 * 60 * 1000;
 const REALTIME_STALE_MS = 5 * 60 * 1000;
 const SCHWAB_SCREENER_SNAPSHOT_TYPE = 'schwab_screener';
+const REALTIME_CACHE_TTL_MS = 3_000;
+
+// In-memory cache for realtime snapshot path.
+// Since Vercel functions may cold-start, this is best-effort and per-process.
+let realtimeCache: { payload: RealtimeSnapshotResult; cachedAt: number } | null = null;
 
 type PgLikeError = {
   code?: string;
@@ -269,7 +279,11 @@ async function getSchwabLinkStatus(db: ReturnType<typeof getDb>, userId: string)
 
 async function fetchRealtimeSnapshot(
   db: NonNullable<ReturnType<typeof getDb>>,
-): Promise<{ data: MarketSnapshotPayload; fetchedAt: Date } | null> {
+): Promise<RealtimeSnapshotResult | null> {
+  if (realtimeCache && Date.now() - realtimeCache.cachedAt < REALTIME_CACHE_TTL_MS) {
+    return realtimeCache.payload;
+  }
+
   const [latestUpdate] = await db
     .select({ updatedAt: realtimeQuotes.updatedAt })
     .from(realtimeQuotes)
@@ -285,8 +299,19 @@ async function fetchRealtimeSnapshot(
   }
 
   const currentSession = getEasternMarketSession();
+  const neededSymbols = [...INDEX_SYMBOLS, ...COMMODITY_SYMBOLS.map((item) => item.ticker), ...EQUITY_SYMBOLS];
 
-  const quotes = await db.select().from(realtimeQuotes);
+  const quotes = await db
+    .select({
+      symbol: realtimeQuotes.symbol,
+      lastPrice: realtimeQuotes.lastPrice,
+      netChange: realtimeQuotes.netChange,
+      netChangePercent: realtimeQuotes.netChangePercent,
+      securityStatus: realtimeQuotes.securityStatus,
+    })
+    .from(realtimeQuotes)
+    .where(inArray(realtimeQuotes.symbol, neededSymbols));
+
   if (quotes.length === 0) {
     return null;
   }
@@ -390,7 +415,7 @@ async function fetchRealtimeSnapshot(
     screenerLosers = [];
   }
 
-  return {
+  const result: RealtimeSnapshotResult = {
     data: {
       indices: INDEX_SYMBOLS.map((symbol) => mapRealtimeInstrument(symbol, symbol)),
       commodities: COMMODITY_SYMBOLS.map((item) => mapRealtimeInstrument(item.ticker, item.label)),
@@ -402,6 +427,9 @@ async function fetchRealtimeSnapshot(
     },
     fetchedAt: latestUpdate.updatedAt,
   };
+
+  realtimeCache = { payload: result, cachedAt: Date.now() };
+  return result;
 }
 
 function isUndefinedTableError(error: unknown) {
