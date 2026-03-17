@@ -5,6 +5,8 @@ import { motion } from 'motion/react';
 import JarvisMacroSummary from '@/components/trading/JarvisMacroSummary';
 import ScannerSection from '@/components/trading/ScannerSection';
 import { Button } from '@/components/ui/button';
+import { useMarketStream } from '@/hooks/use-market-stream';
+import type { ScannerRow } from '@/hooks/use-scanner';
 import { useSchwabStatus } from '@/hooks/use-schwab-status';
 import type { JarvisMacroSummaryOutput } from '@/lib/jarvis/types';
 
@@ -70,6 +72,30 @@ function formatChange(value: number | null) {
 
 function isBigMove(value: number | null) {
   return value != null && Number.isFinite(value) && Math.abs(value) > 30;
+}
+
+function countMissing(items: MarketInstrument[]) {
+  return items.filter((item) => item.price == null).length;
+}
+
+function buildCoverage(data: SnapshotPayload): SnapshotCoverage {
+  const totalInstruments = data.indices.length + data.commodities.length + data.equities.length;
+  const missingPriceBySection = {
+    indices: countMissing(data.indices),
+    commodities: countMissing(data.commodities),
+    equities: countMissing(data.equities),
+  };
+  const missingPriceCount =
+    missingPriceBySection.indices +
+    missingPriceBySection.commodities +
+    missingPriceBySection.equities;
+
+  return {
+    totalInstruments,
+    availablePrices: totalInstruments - missingPriceCount,
+    missingPriceCount,
+    missingPriceBySection,
+  };
 }
 
 function InstrumentCard({ item }: { item: MarketInstrument }) {
@@ -185,8 +211,40 @@ export default function MarketsTab() {
   const [isStale, setIsStale] = useState(false);
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
   const [dataSource, setDataSource] = useState<'realtime' | 'delayed' | null>(null);
+  const [streamScannerResults, setStreamScannerResults] = useState<ScannerRow[] | undefined>(undefined);
 
   const { schwabStatus, loading: schwabLoading, refresh: refreshSchwabStatus } = useSchwabStatus();
+
+  const { connected: sseConnected, fallbackToPolling } = useMarketStream({
+    enabled: dataSource === 'realtime',
+    scannerFilters: {},
+    scannerSortBy: 'netChangePercent',
+    scannerSortDir: 'desc',
+    onSnapshot: (data) => {
+      const payload = data as {
+        mappedSnapshot?: SnapshotPayload;
+        fetchedAt?: string;
+      };
+
+      if (!payload.mappedSnapshot) {
+        return;
+      }
+
+      setSnapshot(payload.mappedSnapshot);
+      setCoverage(buildCoverage(payload.mappedSnapshot));
+      setWarning(null);
+      setIsStale(false);
+      setDataSource('realtime');
+      setLastLoadedAt(payload.fetchedAt ? new Date(payload.fetchedAt) : new Date());
+      setLoadingSnapshot(false);
+    },
+    onScanner: (data) => {
+      setStreamScannerResults(data.results);
+    },
+    onError: (error) => {
+      setWarning(error);
+    },
+  });
 
   const loadMacroSummary = useCallback(async () => {
     setLoadingMacro(true);
@@ -238,12 +296,16 @@ export default function MarketsTab() {
   }, [refreshAll]);
 
   useEffect(() => {
+    if (dataSource === 'realtime' && !fallbackToPolling) {
+      return;
+    }
+
     const intervalMs = dataSource === 'realtime' ? 5_000 : 60_000;
     const interval = window.setInterval(() => {
       void loadSnapshot();
     }, intervalMs);
     return () => window.clearInterval(interval);
-  }, [loadSnapshot, dataSource]);
+  }, [loadSnapshot, dataSource, fallbackToPolling]);
 
   return (
     <motion.section key="markets" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
@@ -399,7 +461,10 @@ export default function MarketsTab() {
         </div>
       </div>
 
-      <ScannerSection refreshIntervalMs={dataSource === 'realtime' ? 5_000 : 60_000} />
+      <ScannerSection
+        refreshIntervalMs={sseConnected ? 0 : (dataSource === 'realtime' ? 5_000 : 60_000)}
+        externalResults={sseConnected ? streamScannerResults : undefined}
+      />
 
       <div className="rounded-xl border border-white/10 bg-[#121214] p-5">
         {loadingMacro ? <p className="text-sm text-zinc-500">Loading macro summary...</p> : null}

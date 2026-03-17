@@ -9,6 +9,7 @@ Trading journal, analytics platform, and AI-assisted research tool built with Ne
 - Performance analytics, replay charts, and market snapshots
 - Tagging, filtering, and bulk trade actions
 - **Jarvis AI** — chat, trade analysis, macro summaries, and dilution research reports
+- **Jarvis chat streaming** — token-by-token assistant responses over SSE with fallback to non-streaming commands
 - **Dilution research** — pulls SEC filing data via AskEdgar API, runs it through an LLM, and renders structured risk reports
 
 ## Core Product Areas

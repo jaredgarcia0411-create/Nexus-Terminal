@@ -56,6 +56,8 @@ Report pass/fail for each command.
 - DB schema is centralized in `lib/db/schema.ts`.
 - Server auth/db helpers are in `lib/server-db-utils.ts`.
 - Avoid introducing new global patterns when existing modules already cover the need.
+- **SSE endpoints** use `lib/sse.ts` (`createSSEResponse` helper). Set `export const dynamic = 'force-dynamic'` and `export const maxDuration = 60` on all SSE routes. Auth via `requireUser()` — EventSource sends cookies automatically.
+- **Keyboard shortcuts** use `react-hotkeys-hook`. Global shortcuts are registered in `hooks/use-global-shortcuts.ts` and called once from `app/page.tsx`. The command palette component lives at `components/trading/CommandPalette.tsx`.
 - **Do not add logic to `hooks/use-trades.ts`** — it is a god hook being decomposed into `hooks/trade-utils.ts` (pure functions), `hooks/use-trade-filters.ts` (filter/search state), and `hooks/use-trade-sync.ts` (persistence). If you need new trade-related state, create a separate hook in `hooks/`.
 - **In-memory state is unreliable on Vercel** — module-level `Map`s, objects, or variables reset on every cold start. Use the database or an external store (e.g., Upstash Redis) for any state that must persist across requests.
 

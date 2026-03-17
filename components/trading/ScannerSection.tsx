@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useScanner, type ScannerSortKey } from '@/hooks/use-scanner';
+import { useScanner, type ScannerRow, type ScannerSortKey } from '@/hooks/use-scanner';
 
 function formatNumber(value: number | null, digits = 2) {
   if (value == null || !Number.isFinite(value)) {
@@ -59,7 +59,13 @@ const COLUMNS: { key: ScannerSortKey; label: string; align: 'left' | 'right' }[]
 
 const PAGE_SIZE = 25;
 
-export default function ScannerSection({ refreshIntervalMs }: { refreshIntervalMs: number }) {
+export default function ScannerSection({
+  refreshIntervalMs,
+  externalResults,
+}: {
+  refreshIntervalMs: number;
+  externalResults?: ScannerRow[];
+}) {
   const {
     filters,
     setFilters,
@@ -116,9 +122,31 @@ export default function ScannerSection({ refreshIntervalMs }: { refreshIntervalM
     filters.assetType,
   ].filter((value) => value !== undefined).length;
 
-  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
+  const displayResults = externalResults
+    ? [...externalResults]
+      .filter((row) => {
+        if (filters.minPrice !== undefined && (row.lastPrice ?? 0) < filters.minPrice) return false;
+        if (filters.maxPrice !== undefined && (row.lastPrice ?? 0) > filters.maxPrice) return false;
+        if (filters.minChangePercent !== undefined && (row.netChangePercent ?? 0) < filters.minChangePercent) return false;
+        if (filters.maxChangePercent !== undefined && (row.netChangePercent ?? 0) > filters.maxChangePercent) return false;
+        if (filters.minVolume !== undefined && (row.totalVolume ?? 0) < filters.minVolume) return false;
+        if (filters.assetType && row.assetType !== filters.assetType) return false;
+        return row.lastPrice != null;
+      })
+      .sort((left, right) => {
+        const direction = sortDir === 'asc' ? 1 : -1;
+        if (sortBy === 'symbol') {
+          return left.symbol.localeCompare(right.symbol) * direction;
+        }
+        const leftValue = left[sortBy] ?? 0;
+        const rightValue = right[sortBy] ?? 0;
+        return (leftValue - rightValue) * direction;
+      })
+    : results;
+
+  const totalPages = Math.max(1, Math.ceil(displayResults.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const pageRows = results.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageRows = displayResults.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -133,7 +161,7 @@ export default function ScannerSection({ refreshIntervalMs }: { refreshIntervalM
           {loading ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" /> : null}
         </div>
         <div className="flex items-center gap-2">
-          <p className="text-sm text-zinc-500">{results.length} results</p>
+          <p className="text-sm text-zinc-500">{displayResults.length} results</p>
           <Button
             type="button"
             variant="outline"

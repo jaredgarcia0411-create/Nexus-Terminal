@@ -26,6 +26,85 @@ interface ChatMessage {
   };
 }
 
+interface StreamDonePayload {
+  fullText?: string;
+  session_id?: string;
+}
+
+async function streamChatMessage(
+  message: string,
+  sessionId: string | undefined,
+  onToken: (text: string) => void,
+  onDone: (payload: StreamDonePayload) => void,
+  onError: (error: string) => void,
+): Promise<boolean> {
+  const response = await fetch('/api/jarvis/chat/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, session_id: sessionId || undefined }),
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+    onError(payload.error ?? `Request failed (${response.status})`);
+    return true;
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    const payload = (await response.json().catch(() => ({}))) as { redirect?: boolean; error?: string };
+    if (payload.redirect) return false;
+    onError(payload.error ?? 'Jarvis unavailable');
+    return true;
+  }
+
+  if (!response.body) {
+    onError('Stream unavailable');
+    return true;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop() ?? '';
+
+    for (const part of parts) {
+      const lines = part.split('\n');
+      let eventName = '';
+      let eventData = '';
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) eventName = line.slice(7).trim();
+        if (line.startsWith('data: ')) eventData = line.slice(6);
+      }
+
+      if (!eventData) continue;
+
+      try {
+        const parsed = JSON.parse(eventData) as { text?: string; message?: string; fullText?: string; session_id?: string };
+        if (eventName === 'token' && typeof parsed.text === 'string') {
+          onToken(parsed.text);
+        } else if (eventName === 'done') {
+          onDone({ fullText: parsed.fullText, session_id: parsed.session_id });
+        } else if (eventName === 'error') {
+          onError(parsed.message ?? 'Stream interrupted');
+        }
+      } catch {
+        // Ignore malformed chunks.
+      }
+    }
+  }
+
+  return true;
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -77,6 +156,7 @@ export default function JarvisChat() {
     loadFromStorage(todayKey('jarvis-messages'), []),
   );
   const [loading, setLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
 
   // Persist messages & sessionId to localStorage whenever they change
   const isInitialMount = useRef(true);
@@ -105,10 +185,79 @@ export default function JarvisChat() {
     if (!message || loading) return;
 
     setLoading(true);
-    setMessages((prev) => [...prev, { role: 'user', text: message }]);
+    setMessages((prev) => [...prev, { role: 'user', text: message }, { role: 'assistant', text: '' }]);
     setInput('');
 
     try {
+      setIsStreaming(true);
+      let redirectToLegacy = false;
+
+      const streamed = await streamChatMessage(
+        message,
+        sessionId || undefined,
+        (token) => {
+          setMessages((prev) => {
+            const next = [...prev];
+            const index = next.length - 1;
+            if (index >= 0 && next[index].role === 'assistant') {
+              next[index] = {
+                ...next[index],
+                text: `${next[index].text}${token}`,
+              };
+            }
+            return next;
+          });
+        },
+        ({ fullText, session_id }) => {
+          if (session_id) {
+            setSessionId(session_id);
+          }
+
+          if (typeof fullText === 'string') {
+            setMessages((prev) => {
+              const next = [...prev];
+              const index = next.length - 1;
+              if (index >= 0 && next[index].role === 'assistant') {
+                next[index] = {
+                  ...next[index],
+                  text: fullText,
+                };
+              }
+              return next;
+            });
+          }
+        },
+        (errorMessage) => {
+          setMessages((prev) => {
+            const next = [...prev];
+            const index = next.length - 1;
+            if (index >= 0 && next[index].role === 'assistant') {
+              next[index] = {
+                ...next[index],
+                text: errorMessage,
+              };
+            }
+            return next;
+          });
+        },
+      );
+
+      if (!streamed) {
+        redirectToLegacy = true;
+      }
+
+      if (!redirectToLegacy) {
+        return;
+      }
+
+      setMessages((prev) => {
+        const next = [...prev];
+        if (next[next.length - 1]?.role === 'assistant' && next[next.length - 1]?.text === '') {
+          next.pop();
+        }
+        return next;
+      });
+
       const response = await fetch('/api/jarvis/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -147,8 +296,20 @@ export default function JarvisChat() {
       }]);
     } catch (error) {
       const messageText = error instanceof Error ? error.message : 'Jarvis unavailable';
-      setMessages((prev) => [...prev, { role: 'assistant', text: messageText }]);
+      setMessages((prev) => {
+        const next = [...prev];
+        const index = next.length - 1;
+        if (index >= 0 && next[index].role === 'assistant') {
+          next[index] = {
+            ...next[index],
+            text: messageText,
+          };
+          return next;
+        }
+        return [...prev, { role: 'assistant', text: messageText }];
+      });
     } finally {
+      setIsStreaming(false);
       setLoading(false);
     }
   };
@@ -236,7 +397,10 @@ export default function JarvisChat() {
                 )}
               </div>
             ) : (
-              <p className="whitespace-pre-wrap text-sm text-zinc-100">{message.text}</p>
+              <p className="whitespace-pre-wrap text-sm text-zinc-100">
+                {message.text}
+                {isStreaming && loading && index === messages.length - 1 ? <span className="animate-pulse text-emerald-500">|</span> : null}
+              </p>
             )}
           </div>
         ))}
