@@ -1,5 +1,5 @@
 ---
-description: Research any topic and create structured crash courses. Combines web search, official docs, and codebase analysis.
+description: Research any topic and create structured crash courses. Combines web search, official docs, and codebase analysis. Always codebase-specific.
 agent: build
 ---
 
@@ -7,14 +7,14 @@ Load the `research` skill and follow its workflow.
 
 When invoked, ask:
 1. "What topic would you like to research?"
-2. "Codebase-specific (how it's used here) or general concept?"
+
+**Note**: Research is always codebase-specific (analyzes how the topic is used in your codebase).
 
 Then follow the skill instructions exactly:
-1. Show research plan before delegating
+1. Show research plan before delegating (then proceed immediately without waiting for approval)
 2. Launch 4 subagents in parallel
 3. Create crash course file in `.opencode/learn/`
-4. Present summary with key takeaways
-5. Show the generated crash course in chat (full report or concise excerpt)
+4. Display the complete crash course in chat (full report, not summary)
 
 For follow-ups (user says "tell me more" or asks questions about previous research):
 1. Check `.opencode/learn/` for existing files
@@ -24,5 +24,3 @@ For follow-ups (user says "tell me more" or asks questions about previous resear
 5. Append to existing file under "## Follow-up Questions"
 
 Always save crash courses to `.opencode/learn/{topic-kebab-case}-{timestamp}.md`.
-
-Accept context shorthand variants in user commands (`-context`, `my codebase`) and normalize them to codebase/general.

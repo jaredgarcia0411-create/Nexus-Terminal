@@ -3,11 +3,7 @@ name: research
 description: Gather information on any subject and create crash courses. Automatically invokes subagents to do research from web search, official docs, and codebase analysis. Returns a structured crash course that can be saved and extended with follow-up questions.
 ---
 
-## Research Command: `/research <topic> [--context=codebase|general]`
-
-Also accept shorthand context forms used in chat:
-- `-context codebase|general`
-- `-context my codebase`
+## Research Command: `/research <topic>`
 
 **Purpose**: Research any topic and create a structured crash course with code examples, best practices, and common pitfalls.
 
@@ -22,10 +18,11 @@ Also accept shorthand context forms used in chat:
 ### Step 1: Request Topic
 When this skill is invoked, ask the user:
 - "What topic would you like to research?"
-- "Codebase-specific (how it's used here) or general concept?"
+
+**Note**: Research is always codebase-specific (analyzes how the topic is used in your codebase).
 
 ### Step 2: Show Research Plan
-Before delegating, present a brief plan:
+Before delegating, present a brief plan, then **proceed immediately without waiting for approval**:
 ```
 Research Plan for "[Topic]":
 - Search official docs and guides
@@ -33,7 +30,12 @@ Research Plan for "[Topic]":
 - Extract patterns from similar open-source repos
 - Synthesize into structured crash course
 
-Estimated: ~1000 words. Proceed? [Y/n]
+This will cover:
+- How [topic] works
+- How it's used in your codebase
+- Best practices for your stack
+
+Starting research now...
 ```
 
 ### Step 3: Delegate to Subagents (Parallel)
@@ -85,7 +87,7 @@ Wait for subagents 1-3 to complete, then:
 1. Combine all research into structured format
 2. Create crash course outline
 3. Generate code examples
-4. Keep under 1000 words, prioritize practical usage
+4. Prioritize practical usage over academic depth
 
 Structure:
 - Concept Overview (2-3 sentences)
@@ -94,6 +96,7 @@ Structure:
 - Best Practices (3-5 bullet points)
 - Common Pitfalls (2-3 with solutions)
 - Related Topics (for follow-up)
+
 Do not ask for confirmation; return final synthesized report.
 ```
 
@@ -101,15 +104,15 @@ Do not ask for confirmation; return final synthesized report.
 
 **File naming**: Convert topic to kebab-case + timestamp
 ```
-.research-2024-03-17-react-server-components.md
+.opencode/learn/react-server-components-2024-03-17.md
 ```
 
 **File structure**:
 ```markdown
 # [Topic] Crash Course
-**Researched**: [Date]  
-**Sources**: Web docs, official docs, codebase analysis  
-**Context**: [Codebase-specific | General concept]
+**Researched**: [Date]
+**Sources**: Web docs, official docs, codebase analysis
+**Context**: Codebase-specific research
 
 ---
 
@@ -137,7 +140,7 @@ From: `[file path]`
 2. ...
 
 ## Common Pitfalls
-**Pitfall**: [Description]  
+**Pitfall**: [Description]
 **Solution**: [How to avoid/fix]
 
 ## Related Topics
@@ -148,18 +151,20 @@ From: `[file path]`
 [This section grows as user asks follow-ups]
 
 ### Q: [Follow-up question 1]
-**Asked**: [Date]  
+**Asked**: [Date]
 **Answer**: [Response]
 
 ---
 *To continue learning, use: `/research more about [Topic]` or ask follow-up questions*
 ```
 
-### Step 5: Present Summary
-Show the crash course structure and say:
-- "Crash course saved to: `.opencode/learn/[filename].md`"
-- Show the full crash course (or a concise excerpt if very long) directly in chat
-- "You can ask follow-up questions to extend this research."
+### Step 5: Display Full Crash Course
+
+**Display the complete crash course in chat** (do not truncate or summarize):
+
+1. Show the filename where it was saved
+2. Display the **entire contents** of the crash course file
+3. End with: "You can ask follow-up questions to extend this research."
 
 ---
 
@@ -173,6 +178,7 @@ When user asks "tell me more about [topic from before]" or similar:
 4. **Delegate to single subagent** focused on that specific aspect
 5. **Append to file** under "## Follow-up Questions" section
 6. **Update the file** with new content
+7. **Display the full updated crash course** in chat
 
 ---
 
@@ -187,18 +193,20 @@ When user asks "tell me more about [topic from before]" or similar:
 ## Do Not
 - Do not research without showing the plan first
 - Do not exceed reasonable word limits (prioritize practical over academic)
-- Do not omit codebase analysis when `--context=codebase` is specified
+- Do not omit codebase analysis (always include it)
 - Do not create files without saving them to `.opencode/learn/`
 - Do not lose context between follow-up questions
 - Do not research blacklisted topics (security-sensitive implementations, credentials)
+- Do not show only a summary (always show full report)
+- Do not wait for user approval before starting research
 
 ---
 
 ## Example Invocation
 
-**User**: `/research React Server Components --context=codebase`
+**User**: `/research React Server Components`
 
-**You**: 
+**You**:
 ```
 Research Plan for "React Server Components":
 - Search React official docs and Next.js integration guides
@@ -211,10 +219,8 @@ This will cover:
 - How you're currently using them
 - Best practices for your stack
 
-Estimated: ~1000 words. Proceed? [Y/n]
+Starting research now...
 ```
-
-**User**: "Yes"
 
 **You**: [Launch 4 subagents in parallel]
 
@@ -224,13 +230,11 @@ Estimated: ~1000 words. Proceed? [Y/n]
 
 Crash course saved to: `.opencode/learn/react-server-components-2024-03-17.md`
 
-**Key takeaways:**
-- RSCs run exclusively on the server, reducing bundle size
-- Your codebase uses them in: app/page.tsx, app/api/**/route.ts
-- Best practice: Keep client components in separate files with 'use client'
+---
 
-**Ask follow-ups** to dive deeper into:
-- Streaming and Suspense boundaries
-- Data fetching patterns
-- Migration strategies
+# [FULL CRASH COURSE CONTENT DISPLAYED HERE - ALL SECTIONS]
+
+---
+
+You can ask follow-up questions to extend this research.
 ```
