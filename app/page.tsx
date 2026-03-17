@@ -168,7 +168,6 @@ export default function NexusTerminal() {
       <main className={isMobile ? 'pb-16' : sidebarCollapsed ? 'pl-16' : 'pl-56'}>
         <Toolbar
           error={error}
-          user={user}
           filterPreset={filterPreset}
           selectedCount={selectedIds.size}
           onDeleteSelected={handleDeleteSelected}
@@ -177,9 +176,6 @@ export default function NexusTerminal() {
           endDate={endDate}
           onStartDateChange={setStartDate}
           onEndDateChange={setEndDate}
-          onImportClick={() => importInputRef.current?.click()}
-          onFolderImportClick={() => folderInputRef.current?.click()}
-          onNewTradeClick={() => setIsManualTradeOpen(true)}
         />
         <input ref={importInputRef} type="file" accept=".csv" multiple className="hidden" onChange={handleFileUpload} />
         {/* @ts-expect-error webkitdirectory is non-standard but widely supported */}

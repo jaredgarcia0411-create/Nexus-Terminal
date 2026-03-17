@@ -1,15 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import Image from 'next/image';
-import { Calendar as CalendarIcon, Trash2, User } from 'lucide-react';
+import { Calendar as CalendarIcon, Trash2 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 
 interface ToolbarProps {
   error: string | null;
-  user: { name?: string | null; email?: string | null; image?: string | null } | undefined;
   filterPreset: 'all' | '30' | '60' | '90';
   selectedCount: number;
   onDeleteSelected: () => void;
@@ -18,14 +16,10 @@ interface ToolbarProps {
   endDate: string;
   onStartDateChange: (value: string) => void;
   onEndDateChange: (value: string) => void;
-  onImportClick: () => void;
-  onFolderImportClick: () => void;
-  onNewTradeClick: () => void;
 }
 
 export default function Toolbar({
   error,
-  user,
   filterPreset,
   selectedCount,
   onDeleteSelected,
@@ -37,7 +31,6 @@ export default function Toolbar({
 }: ToolbarProps) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const isMobile = useIsMobile();
-  const [avatarLoadError, setAvatarLoadError] = useState<string | null>(null);
 
   return (
     <>
@@ -90,33 +83,7 @@ export default function Toolbar({
           </div>
         </div>
 
-        {!isMobile ? (
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <div className="text-xs font-medium">{user?.name}</div>
-              <div className="text-[10px] text-zinc-500">{user?.email}</div>
-            </div>
-            <div>
-              {user?.image && avatarLoadError !== user.image ? (
-                <Image
-                  src={user.image}
-                  alt={user.name ?? 'User'}
-                  width={32}
-                  height={32}
-                  className="h-8 w-8 rounded-full border border-white/10"
-                  key={user.image}
-                  onError={() => setAvatarLoadError(user.image ?? null)}
-                />
-              ) : (
-                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/20">
-                  <User className="h-4 w-4 text-emerald-500" />
-                </div>
-              )}
-            </div>
-          </div>
-        ) : null}
-
-        <div className="ml-auto flex items-center gap-2 sm:gap-3">
+      <div className="ml-auto flex items-center gap-2 sm:gap-3">
           {selectedCount > 0 ? (
             <div className="animate-in slide-in-from-right-2 fade-in flex items-center gap-2 sm:gap-3">
               <span className="text-xs font-medium text-zinc-500">{selectedCount} selected</span>
