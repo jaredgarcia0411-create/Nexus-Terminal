@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { isCircuitOpenMock, recordLlmFailureMock, recordLlmSuccessMock } = vi.hoisted(() => ({
   isCircuitOpenMock: vi.fn(),
@@ -15,6 +15,10 @@ vi.mock('@/lib/jarvis/circuit-breaker', () => ({
 import { callJarvis } from '@/lib/jarvis/client';
 
 describe('jarvis client', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.JARVIS_API_KEY = 'k';

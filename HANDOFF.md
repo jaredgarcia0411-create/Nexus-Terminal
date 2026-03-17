@@ -11,6 +11,9 @@ Use git history and the `specs/` directory for archived implementation detail.
 - [x] Verified command set and conventions against the current repository configuration (`package.json`, `tsconfig.json`, `vitest.config.ts`, `eslint.config.mjs`).
 - [x] `parseJsonBody` removed from `lib/api-route-utils.ts` — all routes now use `parseAndValidate`
 - [x] Updated `AGENTS.md` after Phase 2 shipped — SSE endpoint conventions and `lib/sse.ts` utility docs are documented
+- [x] Updated research command/skill docs to always save crash courses and also present the report in chat; added context shorthand normalization guidance.
+- [x] Test-auditor follow-up completed for API routes: added Schwab route tests (`auth`, `callback`, `status`) and extended coverage for tags/trade-id/bulk; plus fixed jarvis client spy restoration.
+- [x] Added focused API route coverage for SSE endpoints (`__tests__/jarvis-chat-stream-route.test.ts` and `__tests__/market-data-stream-route.test.ts`) and validated with lint/type-check/tests.
 
 ---
 
