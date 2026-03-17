@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { tradeExecutions, trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
-import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
+import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import {
   dbUnavailable,
   ensureUser,
@@ -9,9 +9,9 @@ import {
   requireUser,
   toExecutionRowId,
   toTrade,
-  type ApiTrade,
 } from '@/lib/server-db-utils';
 import { parseAbsoluteTimestampMs } from '@/lib/time-utils';
+import { createTradeSchema } from '@/lib/validations/trades';
 
 function normalizeTimestamp(value: unknown): string | null {
   const parsed = parseAbsoluteTimestampMs(value as string | Date | null | undefined);
@@ -86,13 +86,10 @@ export async function POST(request: Request) {
     if (!db) return dbUnavailable();
     await ensureUser(db, authState.user);
 
-    const bodyState = await parseJsonBody<Partial<ApiTrade>>(request);
+    const bodyState = await parseAndValidate(request, createTradeSchema);
     if (bodyState.error) return bodyState.error;
     const body = bodyState.data;
 
-    if (!body.id || !body.symbol || !body.date || !body.sortKey || !body.direction) {
-      return Response.json({ error: 'Missing required fields' }, { status: 400 });
-    }
     const commission = body.commission ?? 0;
     const fees = body.fees ?? 0;
     const netPnl = body.netPnl ?? body.pnl ?? 0;
@@ -160,9 +157,9 @@ export async function POST(request: Request) {
 
       await db.insert(tradeExecutions).values(
         body.rawExecutions.map((execution, index) => ({
-          id: toExecutionRowId(authState.user.id, body.id!, execution.id, index),
+          id: toExecutionRowId(authState.user.id, body.id, execution.id, index),
           userId: authState.user.id,
-          tradeId: body.id!,
+          tradeId: body.id,
           side: execution.side,
           price: execution.price,
           qty: execution.qty,

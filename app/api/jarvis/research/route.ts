@@ -1,15 +1,12 @@
 import { desc, eq } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
+import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { researchReports } from '@/lib/db/schema';
 import { checkRateLimit } from '@/lib/jarvis/rate-limit';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { fetchAndCacheRawReport } from '@/lib/jarvis/research';
 import { logJarvisRequest } from '@/lib/jarvis/token-tracking';
-
-interface ResearchBody {
-  ticker?: string;
-}
+import { jarvisResearchSchema } from '@/lib/validations/jarvis';
 
 export async function POST(request: Request) {
   try {
@@ -31,13 +28,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const bodyState = await parseJsonBody<ResearchBody>(request);
+    const bodyState = await parseAndValidate(request, jarvisResearchSchema);
     if (bodyState.error) return bodyState.error;
 
-    const ticker = bodyState.data.ticker?.trim().toUpperCase() ?? '';
-    if (!ticker) {
-      return Response.json({ error: 'ticker is required' }, { status: 400 });
-    }
+    const ticker = bodyState.data.ticker;
 
     const startedAt = Date.now();
     const result = await fetchAndCacheRawReport(canonicalUser.id, ticker);

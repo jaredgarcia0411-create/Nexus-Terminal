@@ -1,5 +1,5 @@
 import { and, desc, eq } from 'drizzle-orm';
-import { logRouteError, parseJsonBody } from '@/lib/api-route-utils';
+import { logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getPoolDb } from '@/lib/db';
 import {
   tradeExecutions,
@@ -15,14 +15,9 @@ import {
   requireUser,
   toExecutionRowId,
   toTrade,
-  type ApiTrade,
 } from '@/lib/server-db-utils';
 import { parseAbsoluteTimestampMs } from '@/lib/time-utils';
-
-type ImportPayload = {
-  trades: ApiTrade[];
-  batchKey?: string;
-};
+import { importTradesSchema, type ImportTradesInput } from '@/lib/validations/trades';
 
 type NormalizedRawExecution = {
   id: string;
@@ -45,7 +40,8 @@ type ImportFailureCause = {
 };
 
 type NormalizedTradeInput = {
-  trade: ApiTrade;
+  trade: ImportTradesInput['trades'][number];
+  netPnl: number;
   rawExecutions: NormalizedRawExecution[];
   tags: string[];
 };
@@ -84,62 +80,11 @@ function toTrimmedString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function normalizeStringArray(values: unknown, label: string, index: number): string[] | string {
-  if (values === undefined) return [];
-  if (!Array.isArray(values)) {
-    return `${label} at trades[${index}] must be an array`;
-  }
-
-  const normalized = [] as string[];
-  for (const item of values) {
-    const value = toTrimmedString(item);
-    if (!value) {
-      return `${label} at trades[${index}] must contain non-empty strings`;
-    }
-    normalized.push(value);
-  }
-
-  return Array.from(new Set(normalized));
-}
-
-function validateTradePayload(trade: Partial<ApiTrade>, index: number): string | null {
-  if (!toTrimmedString(trade.id) || !toTrimmedString(trade.date) || !toTrimmedString(trade.sortKey) || !toTrimmedString(trade.symbol)) {
-    return `trades[${index}] is missing required string fields`;
-  }
-
-  if (!toTrimmedString(trade.direction) || (trade.direction !== 'LONG' && trade.direction !== 'SHORT')) {
-    return `trades[${index}] has invalid direction`;
-  }
-
-  if (!isFiniteNumber(trade.avgEntryPrice) || !isFiniteNumber(trade.avgExitPrice) || !isFiniteNumber(trade.totalQuantity)) {
-    return `trades[${index}] has invalid numeric fields`;
-  }
-
-  const netPnl = trade.netPnl ?? trade.pnl;
-  if (!isFiniteNumber(netPnl)) {
-    return `trades[${index}] must include netPnl or pnl`;
-  }
-
-  if (trade.rawExecutions !== undefined && !Array.isArray(trade.rawExecutions)) {
-    return `trades[${index}].rawExecutions must be an array`;
-  }
-
-  if (trade.tags !== undefined && !Array.isArray(trade.tags)) {
-    return `trades[${index}].tags must be an array`;
-  }
-
-  if (trade.notes !== undefined && typeof trade.notes !== 'string') {
-    return `trades[${index}].notes must be a string`;
-  }
-
-  return null;
-}
-
 function normalizeExecutionList(
   userId: string,
   tradeId: string,
   tradeIndex: number,
-  executions: ApiTrade['rawExecutions'] = [],
+  executions: ImportTradesInput['trades'][number]['rawExecutions'] = [],
 ): { data: NormalizedRawExecution[]; error: string | null } {
   const seenIds = new Set<string>();
   const normalized = [] as NormalizedRawExecution[];
@@ -257,28 +202,24 @@ export async function POST(request: Request) {
     if (!db) return dbUnavailable();
     await ensureUser(db, authState.user);
 
-    const bodyState = await parseJsonBody<ImportPayload>(request);
+    const bodyState = await parseAndValidate(request, importTradesSchema);
     if (bodyState.error) return bodyState.error;
     const body = bodyState.data;
 
-    if (!Array.isArray(body.trades)) {
-      return Response.json({ error: 'trades must be an array' }, { status: 400 });
-    }
-
     const normalizedTrades = body.trades.map((rawTrade, tradeIndex) => {
-      const trade = rawTrade as Partial<ApiTrade>;
+      const trade = rawTrade;
 
-      const validationError = validateTradePayload(trade, tradeIndex);
-      if (validationError) {
-        throw Response.json({ error: validationError }, { status: 400 });
+      const netPnl = trade.netPnl ?? trade.pnl;
+      if (netPnl === undefined) {
+        throw Response.json(
+          { error: `trades[${tradeIndex}] must include netPnl or pnl` },
+          { status: 400 },
+        );
       }
 
-      const tradeId = trade.id as string;
+      const tradeId = trade.id;
 
-      const tags = normalizeStringArray(trade.tags, 'trades.tags', tradeIndex);
-      if (typeof tags === 'string') {
-        throw Response.json({ error: tags }, { status: 400 });
-      }
+      const tags = trade.tags ? Array.from(new Set(trade.tags)) : [];
 
       const rawExecutions = normalizeExecutionList(authState.user.id, tradeId, tradeIndex, trade.rawExecutions);
       if (rawExecutions.error) {
@@ -286,17 +227,15 @@ export async function POST(request: Request) {
       }
 
       return {
-        trade: trade as ApiTrade,
+        trade,
+        netPnl,
         tradeId,
         rawExecutions: rawExecutions.data,
         tags,
       };
     });
 
-    const batchKey = typeof body.batchKey === 'string' ? body.batchKey.trim() : '';
-    if (batchKey.length > 256) {
-      return Response.json({ error: 'batchKey must be 256 characters or fewer' }, { status: 400 });
-    }
+    const batchKey = body.batchKey?.trim() ?? '';
 
     let importSkipped = false;
 
@@ -315,15 +254,14 @@ export async function POST(request: Request) {
 
       for (let tradeIndex = 0; tradeIndex < normalizedTrades.length; tradeIndex += 1) {
         const normalizedTrade = normalizedTrades[tradeIndex];
-        const trade = normalizedTrade.trade;
+          const trade = normalizedTrade.trade;
 
-        try {
-          const commission = trade.commission ?? 0;
-          const fees = trade.fees ?? 0;
-          const netPnl = trade.netPnl ?? trade.pnl ?? 0;
-          const grossPnl = trade.grossPnl ?? netPnl + commission + fees;
-          const legacyExecutionCount = (trade as unknown as Record<string, unknown>)['executions'];
-          const executionCount = trade.executionCount ?? (typeof legacyExecutionCount === 'number' ? legacyExecutionCount : 1);
+          try {
+            const commission = trade.commission ?? 0;
+            const fees = trade.fees ?? 0;
+            const netPnl = normalizedTrade.netPnl;
+            const grossPnl = trade.grossPnl ?? netPnl + commission + fees;
+            const executionCount = trade.executionCount ?? trade.executions ?? 1;
 
           const executionRows = normalizedTrade.rawExecutions;
 

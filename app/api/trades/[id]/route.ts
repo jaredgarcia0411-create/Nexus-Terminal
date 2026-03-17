@@ -1,8 +1,9 @@
 import { and, asc, eq } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
+import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { tradeExecutions, trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser, toTrade } from '@/lib/server-db-utils';
+import { updateTradeSchema } from '@/lib/validations/trades';
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -60,7 +61,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     await ensureUser(db, authState.user);
 
     const { id } = await context.params;
-    const bodyState = await parseJsonBody<{ notes?: string; initialRisk?: number | null; tags?: string[] }>(request);
+    const bodyState = await parseAndValidate(request, updateTradeSchema);
     if (bodyState.error) return bodyState.error;
     const body = bodyState.data;
 

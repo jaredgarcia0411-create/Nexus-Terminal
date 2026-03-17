@@ -1,14 +1,9 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
+import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getPoolDb } from '@/lib/db';
 import { trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
-
-type BulkPayload = {
-  action: 'delete' | 'applyRisk' | 'addTag';
-  ids: string[];
-  value?: number | string;
-};
+import { bulkTradeSchema } from '@/lib/validations/trades';
 
 export async function POST(request: Request) {
   try {
@@ -19,7 +14,7 @@ export async function POST(request: Request) {
     if (!db) return dbUnavailable();
     await ensureUser(db, authState.user);
 
-    const bodyState = await parseJsonBody<BulkPayload>(request);
+    const bodyState = await parseAndValidate(request, bulkTradeSchema);
     if (bodyState.error) return bodyState.error;
     const body = bodyState.data;
 

@@ -1,13 +1,10 @@
-import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
+import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { checkRateLimit } from '@/lib/jarvis/rate-limit';
 import { logJarvisRequest } from '@/lib/jarvis/token-tracking';
+import { jarvisTradeAnalysisSchema } from '@/lib/validations/jarvis';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { runTradeAnalysisPipeline } from '@/lib/jarvis/trade-analysis';
-
-interface TradeAnalysisBody {
-  days?: number;
-}
 
 export async function POST(request: Request) {
   try {
@@ -29,7 +26,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const bodyState = await parseJsonBody<TradeAnalysisBody>(request);
+    const bodyState = await parseAndValidate(request, jarvisTradeAnalysisSchema);
     if (bodyState.error) return bodyState.error;
 
     const startedAt = Date.now();

@@ -388,7 +388,8 @@ describe('POST /api/trades/import', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(400);
-    expect(payload.error).toContain('trades[0]');
+    expect(payload.error).toBe('Validation failed');
+    expect(payload.details).toEqual(expect.objectContaining({ fieldErrors: expect.any(Object) }));
     expect(errorSpy).not.toHaveBeenCalled();
     errorSpy.mockRestore();
   });
@@ -420,7 +421,8 @@ describe('POST /api/trades/import', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(400);
-    expect(payload.error).toContain('trades[0]');
+    expect(payload.error).toBe('Validation failed');
+    expect(payload.details).toEqual(expect.objectContaining({ fieldErrors: expect.any(Object) }));
     expect(db._mocks.tradeInsertValuesMock).not.toHaveBeenCalled();
   });
 
@@ -455,7 +457,12 @@ describe('POST /api/trades/import', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(400);
-    expect(payload).toEqual({ error: 'batchKey must be 256 characters or fewer' });
+    expect(payload.error).toBe('Validation failed');
+    expect(payload.details).toEqual(expect.objectContaining({
+      fieldErrors: expect.objectContaining({
+        batchKey: expect.any(Array),
+      }),
+    }));
     expect(db._mocks.tradeInsertValuesMock).not.toHaveBeenCalled();
   });
 

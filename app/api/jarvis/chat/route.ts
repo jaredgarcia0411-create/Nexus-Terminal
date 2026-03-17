@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
+import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { jarvisConversations } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
@@ -11,11 +11,7 @@ import { fetchAndCacheRawReport, runResearchTldr } from '@/lib/jarvis/research';
 import { estimateInputTokens, estimateOutputTokens, logJarvisRequest } from '@/lib/jarvis/token-tracking';
 import { runTradeAnalysisPipeline } from '@/lib/jarvis/trade-analysis';
 import type { JarvisMode } from '@/lib/jarvis/types';
-
-interface ChatBody {
-  message?: string;
-  session_id?: string;
-}
+import { jarvisChatSchema } from '@/lib/validations/jarvis';
 
 interface ResearchCommand {
   ticker: string;
@@ -86,15 +82,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const bodyState = await parseJsonBody<ChatBody>(request);
+    const bodyState = await parseAndValidate(request, jarvisChatSchema);
     if (bodyState.error) return bodyState.error;
 
-    const message = bodyState.data.message?.trim() ?? '';
-    if (!message) {
-      return Response.json({ error: 'message is required' }, { status: 400 });
-    }
-
-    const sessionId = bodyState.data.session_id?.trim() || crypto.randomUUID();
+    const message = bodyState.data.message;
+    const sessionId = bodyState.data.session_id || crypto.randomUUID();
     const context = await buildContext(userId, 'chat');
 
     const [firstMessage] = await db.select({ id: jarvisConversations.id })
