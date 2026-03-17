@@ -57,14 +57,7 @@ export async function POST(request: Request) {
 
     await ensureUser(db, authState.user);
 
-    const name = (bodyState.data.name ?? '').trim();
-    if (!name) {
-      return Response.json({ error: 'name is required' }, { status: 400 });
-    }
-
-    if (name.length > 100) {
-      return Response.json({ error: 'name must be 100 characters or fewer' }, { status: 400 });
-    }
+    const { name } = bodyState.data;
 
     const filters = bodyState.data.filters ?? {};
     const now = new Date();

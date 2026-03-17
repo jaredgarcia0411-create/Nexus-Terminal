@@ -1,20 +1,20 @@
 import { z } from 'zod';
 
 export const tagBodySchema = z.object({
-  name: z.string().trim().optional(),
+  name: z.string().trim().min(1, 'name is required'),
 });
 
 export type TagBody = z.infer<typeof tagBodySchema>;
 
 export const presetBodySchema = z.object({
-  name: z.string().trim().optional(),
+  name: z.string().trim().min(1, 'name is required').max(100, 'name must be 100 characters or fewer'),
   filters: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type PresetBody = z.infer<typeof presetBodySchema>;
 
 export const savedTickerBodySchema = z.object({
-  ticker: z.string().trim().optional(),
+  ticker: z.string().trim().min(1, 'ticker is required'),
   category: z.string().trim().optional(),
   notes: z.string().trim().optional(),
 });

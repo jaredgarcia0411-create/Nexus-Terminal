@@ -12,8 +12,7 @@ type UseTradeFiltersOptions = {
   requestBulkAddTag: (ids: string[], tag: string) => Promise<void>;
 };
 
-export function useTradeFilters(trades: Trade[], globalTags: string[], options?: UseTradeFiltersOptions) {
-  void globalTags;
+export function useTradeFilters(trades: Trade[], _globalTags: string[], options?: UseTradeFiltersOptions) {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [startDate, setStartDate] = useState('');

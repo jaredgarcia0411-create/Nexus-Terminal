@@ -9,7 +9,7 @@ Use git history and the `specs/` directory for archived implementation detail.
 
 - [x] Refreshed `AGENTS.md` with current build/lint/test commands, single-test workflows, and coding conventions for agentic coding tools.
 - [x] Verified command set and conventions against the current repository configuration (`package.json`, `tsconfig.json`, `vitest.config.ts`, `eslint.config.mjs`).
-- [x] After all 5 PRs: remove `parseJsonBody` from `lib/api-route-utils.ts` if no routes still use it
+- [x] `parseJsonBody` removed from `lib/api-route-utils.ts` — all routes now use `parseAndValidate`
 
 ---
 

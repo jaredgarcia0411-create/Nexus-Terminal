@@ -41,6 +41,9 @@ export const normalizeTrade = (trade: TradeLike): Trade => {
   };
 };
 
+export const sortTradesByDate = (list: Trade[]): Trade[] =>
+  [...list].sort((a, b) => b.date.getTime() - a.date.getTime());
+
 export const toApiTrade = (trade: Trade): ApiTrade => ({
   ...trade,
   pnl: trade.netPnl,

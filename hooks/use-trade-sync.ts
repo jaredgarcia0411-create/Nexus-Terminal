@@ -11,7 +11,7 @@ import {
   releaseMigrationLock,
 } from '@/lib/trade-migration';
 import type { ApiTrade, Trade } from '@/lib/types';
-import { apiRequest, fromApiTrade, normalizeTrade, toApiTrade, type TradeLike } from './trade-utils';
+import { apiRequest, fromApiTrade, normalizeTrade, sortTradesByDate, toApiTrade, type TradeLike } from './trade-utils';
 
 const LOCAL_MIGRATION_LOCK_TTL_MS = 2 * 60 * 1000;
 
@@ -27,7 +27,7 @@ export function useTradeSync() {
   const [error, setError] = useState<string | null>(null);
   const [useLocalStorage, setUseLocalStorage] = useState(true);
 
-  const sortTrades = useCallback((list: Trade[]) => [...list].sort((a, b) => b.date.getTime() - a.date.getTime()), []);
+  const sortTrades = sortTradesByDate;
 
   const loadLocal = useCallback(() => {
     const savedTrades = localStorage.getItem('nexus-trades');

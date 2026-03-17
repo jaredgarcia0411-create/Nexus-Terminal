@@ -37,10 +37,7 @@ export async function POST(request: Request) {
 
     const bodyState = await parseAndValidate(request, tagBodySchema);
     if (bodyState.error) return bodyState.error;
-    const name = bodyState.data.name;
-    if (!name) {
-      return Response.json({ error: 'name is required' }, { status: 400 });
-    }
+    const { name } = bodyState.data;
 
     await db.insert(tagsTable)
       .values({ userId: authState.user.id, name })
@@ -63,10 +60,7 @@ export async function DELETE(request: Request) {
 
     const bodyState = await parseAndValidate(request, tagBodySchema);
     if (bodyState.error) return bodyState.error;
-    const name = bodyState.data.name;
-    if (!name) {
-      return Response.json({ error: 'name is required' }, { status: 400 });
-    }
+    const { name } = bodyState.data;
 
     await db.delete(tagsTable)
       .where(and(eq(tagsTable.userId, authState.user.id), eq(tagsTable.name, name)));

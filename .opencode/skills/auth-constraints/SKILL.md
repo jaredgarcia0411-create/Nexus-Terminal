@@ -20,8 +20,8 @@ if (!db) return dbUnavailable();
 // 3. Ensure user exists in database (upsert)
 await ensureUser(db, authState.user);
 
-// 4. Parse JSON body for POST/PATCH/PUT/DELETE
-const bodyState = await parseJsonBody<YourRequestBodyType>(request);
+// 4. Parse + validate JSON body for POST/PATCH/PUT/DELETE
+const bodyState = await parseAndValidate(request, yourZodSchema);
 if (bodyState.error) return bodyState.error;
 const body = bodyState.data;
 
@@ -80,11 +80,11 @@ if (!db) return dbUnavailable(); // Returns 503 response
 - `internalServerError()` - returns standardized 500 response
 - `dbUnavailable()` - returns standardized 503 response when DB not configured
 
-**JSON parsing error handling**:
+**JSON parsing + validation**:
 ```typescript
-const bodyState = await parseJsonBody<T>(request);
-if (bodyState.error) return bodyState.error; // Returns 400 for invalid JSON
-const body = bodyState.data;
+const bodyState = await parseAndValidate(request, yourZodSchema);
+if (bodyState.error) return bodyState.error; // Returns 400 for invalid JSON or validation failure
+const body = bodyState.data; // Fully typed from the Zod schema
 ```
 
 **Common error responses**:
@@ -160,22 +160,19 @@ Response.json({ error: 'Descriptive message' }, { status: 400 });
 
 ### 8. JSON Body Validation Patterns
 
-**Parse and validate in one step**:
+**All routes use Zod schemas with `parseAndValidate`**:
 ```typescript
-const bodyState = await parseJsonBody<{ name?: string }>(request);
-if (bodyState.error) return bodyState.error;
-const name = bodyState.data.name?.trim();
-if (!name) {
-  return Response.json({ error: 'name is required' }, { status: 400 });
-}
-```
+// Define schema in lib/validations/*.ts
+import { z } from 'zod';
+export const mySchema = z.object({
+  name: z.string().trim().min(1, 'name is required'),
+  quantity: z.number().positive().finite(),
+});
 
-**Complex validation**:
-```typescript
-const { ticker, notes, quantity } = body;
-if (!ticker?.trim() || typeof quantity !== 'number' || quantity <= 0) {
-  return Response.json({ error: 'Invalid trade data' }, { status: 400 });
-}
+// Use in route handler
+const bodyState = await parseAndValidate(request, mySchema);
+if (bodyState.error) return bodyState.error; // 400 with { error, details: { fieldErrors } }
+const { name, quantity } = bodyState.data; // Fully validated + typed
 ```
 
 ### 9. Database Transaction Patterns
@@ -227,14 +224,9 @@ export async function POST(request: NextRequest) {
   if (!db) return dbUnavailable();
   await ensureUser(db, authState.user);
 
-  const bodyState = await parseJsonBody<CreateTradeRequest>(request);
+  const bodyState = await parseAndValidate(request, createTradeSchema);
   if (bodyState.error) return bodyState.error;
-  const body = bodyState.data;
-
-  // Validate required fields
-  if (!body.ticker?.trim() || typeof body.quantity !== 'number') {
-    return Response.json({ error: 'Invalid trade data' }, { status: 400 });
-  }
+  const body = bodyState.data; // Already validated by Zod
 
   try {
     const [trade] = await db.insert(trades)

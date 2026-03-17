@@ -6,7 +6,7 @@ import { detectParser, getParserById, type BrokerParserConfig } from '@/lib/pars
 import type { ApiTrade, Trade } from '@/lib/types';
 import { useTradeFilters } from './use-trade-filters';
 import { useTradeSync } from './use-trade-sync';
-import { apiRequest, collectImportedTrades, fromApiTrade, toApiTrade } from './trade-utils';
+import { apiRequest, collectImportedTrades, fromApiTrade, sortTradesByDate, toApiTrade } from './trade-utils';
 
 const IMPORT_CHUNK_SIZE = 200;
 const DEFAULT_RISK_STORAGE_KEY = 'nexus-default-risk';
@@ -29,7 +29,7 @@ export function useTrades() {
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const tradesRef = useRef<Trade[]>([]);
   const defaultRiskHydratedRef = useRef(false);
-  const sortTrades = useCallback((list: Trade[]) => [...list].sort((a, b) => b.date.getTime() - a.date.getTime()), []);
+  const sortTrades = sortTradesByDate;
   const withErrorToast = useCallback((message: string, fn: () => Promise<void>) => {
     fn().catch((opError: unknown) => toast.error(opError instanceof Error ? opError.message : message));
   }, []);

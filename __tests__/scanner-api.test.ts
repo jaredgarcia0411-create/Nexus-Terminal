@@ -167,7 +167,8 @@ describe('scanner API routes', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(400);
-    expect(payload).toEqual({ error: 'name is required' });
+    expect(payload.error).toBe('Validation failed');
+    expect(payload.details.fieldErrors.name).toBeDefined();
   });
 
   it('rejects preset POST when name is longer than 100 characters', async () => {
@@ -185,7 +186,8 @@ describe('scanner API routes', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(400);
-    expect(payload).toEqual({ error: 'name must be 100 characters or fewer' });
+    expect(payload.error).toBe('Validation failed');
+    expect(payload.details.fieldErrors.name).toContain('name must be 100 characters or fewer');
   });
 
   it('deletes a preset by id', async () => {

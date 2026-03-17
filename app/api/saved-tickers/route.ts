@@ -5,10 +5,6 @@ import { savedTickers } from '@/lib/db/schema';
 import { ensureUser, requireUser } from '@/lib/server-db-utils';
 import { savedTickerBodySchema } from '@/lib/validations/system';
 
-function normalizeTicker(value: string | undefined) {
-  return (value ?? '').trim().toUpperCase();
-}
-
 export async function GET(request: Request) {
   try {
     const authState = await requireUser();
@@ -60,10 +56,7 @@ export async function POST(request: Request) {
     const bodyState = await parseAndValidate(request, savedTickerBodySchema);
     if (bodyState.error) return bodyState.error;
 
-    const ticker = normalizeTicker(bodyState.data.ticker);
-    if (!ticker) {
-      return Response.json({ error: 'ticker is required' }, { status: 400 });
-    }
+    const ticker = bodyState.data.ticker.toUpperCase();
 
     const category = (bodyState.data.category ?? 'watchlist').trim() || 'watchlist';
     const notes = (bodyState.data.notes ?? '').trim() || null;
