@@ -41,6 +41,7 @@ export const trades = pgTable('trades', {
 }, (table) => [
   primaryKey({ columns: [table.userId, table.id] }),
   index('idx_trades_user_sort_key').on(table.userId, table.sortKey),
+  index('idx_trades_user_date').on(table.userId, table.date),
 ]);
 
 export const tradeExecutions = pgTable('trade_executions', {

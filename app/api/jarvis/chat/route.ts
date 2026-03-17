@@ -75,7 +75,7 @@ export async function POST(request: Request) {
     const canonicalUser = await ensureUser(db, authState.user);
     userId = canonicalUser.id;
 
-    const rateLimitResult = checkRateLimit(userId);
+    const rateLimitResult = await checkRateLimit(userId);
     if (!rateLimitResult.allowed) {
       return Response.json(
         { error: 'Rate limit exceeded. Try again later.' },

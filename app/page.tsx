@@ -17,6 +17,7 @@ import ChartsTab from '@/components/trading/ChartsTab';
 import MarketsTab from '@/components/trading/MarketsTab';
 import ResearchTab from '@/components/trading/ResearchTab';
 import JarvisTab from '@/components/trading/JarvisTab';
+import { TabErrorBoundary } from '@/components/ui/TabErrorBoundary';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useTrades } from '@/hooks/use-trades';
 
@@ -166,109 +167,125 @@ export default function NexusTerminal() {
         <div className={activeTab === 'charts' ? 'px-3 py-4' : 'mx-auto max-w-7xl p-8'}>
           <AnimatePresence mode="wait">
             {activeTab === 'dashboard' ? (
-              <DashboardTab
-                trades={trades}
-                filteredTrades={filteredTrades}
-                performanceMetric={performanceMetric}
-                selectedIds={selectedIds}
-                globalTags={globalTags}
-                onImportClick={() => importInputRef.current?.click()}
-                onNewTradeClick={() => setIsManualTradeOpen(true)}
-                onSetActiveTab={() => setActiveTab('journal')}
-                onToggleSelect={handleToggleSelect}
-                onSelectAll={handleSelectAll}
-                onAddTag={handleAddTag}
-                onRemoveTag={handleRemoveTag}
-                onDeleteGlobalTag={handleDeleteGlobalTag}
-                onTradeClick={(trade) => setSelectedTradeId(trade.id)}
-              />
+              <TabErrorBoundary name="Dashboard">
+                <DashboardTab
+                  trades={trades}
+                  filteredTrades={filteredTrades}
+                  performanceMetric={performanceMetric}
+                  selectedIds={selectedIds}
+                  globalTags={globalTags}
+                  onImportClick={() => importInputRef.current?.click()}
+                  onNewTradeClick={() => setIsManualTradeOpen(true)}
+                  onSetActiveTab={() => setActiveTab('journal')}
+                  onToggleSelect={handleToggleSelect}
+                  onSelectAll={handleSelectAll}
+                  onAddTag={handleAddTag}
+                  onRemoveTag={handleRemoveTag}
+                  onDeleteGlobalTag={handleDeleteGlobalTag}
+                  onTradeClick={(trade) => setSelectedTradeId(trade.id)}
+                />
+              </TabErrorBoundary>
             ) : null}
 
             {activeTab === 'journal' ? (
-              <JournalTab
-                filteredTrades={filteredTrades}
-                selectedIds={selectedIds}
-                globalTags={globalTags}
-                searchQuery={searchQuery}
-                riskInput={riskInput}
-                bulkTagInput={bulkTagInput}
-                onSearchQueryChange={setSearchQuery}
-                onRiskInputChange={setRiskInput}
-                onBulkTagInputChange={setBulkTagInput}
-                onApplyRisk={handleApplyRisk}
-                onBulkAddTag={handleBulkAddTag}
-                onToggleSelect={handleToggleSelect}
-                onSelectAll={handleSelectAll}
-                onAddTag={handleAddTag}
-                onRemoveTag={handleRemoveTag}
-                onDeleteGlobalTag={handleDeleteGlobalTag}
-                onTradeClick={(trade) => setSelectedTradeId(trade.id)}
-              />
+              <TabErrorBoundary name="Journal">
+                <JournalTab
+                  filteredTrades={filteredTrades}
+                  selectedIds={selectedIds}
+                  globalTags={globalTags}
+                  searchQuery={searchQuery}
+                  riskInput={riskInput}
+                  bulkTagInput={bulkTagInput}
+                  onSearchQueryChange={setSearchQuery}
+                  onRiskInputChange={setRiskInput}
+                  onBulkTagInputChange={setBulkTagInput}
+                  onApplyRisk={handleApplyRisk}
+                  onBulkAddTag={handleBulkAddTag}
+                  onToggleSelect={handleToggleSelect}
+                  onSelectAll={handleSelectAll}
+                  onAddTag={handleAddTag}
+                  onRemoveTag={handleRemoveTag}
+                  onDeleteGlobalTag={handleDeleteGlobalTag}
+                  onTradeClick={(trade) => setSelectedTradeId(trade.id)}
+                />
+              </TabErrorBoundary>
             ) : null}
 
             {activeTab === 'performance' ? (
-              <PerformanceTab
-                filteredTrades={filteredTrades}
-                globalTags={globalTags}
-                performanceMetric={performanceMetric}
-                onMetricChange={setPerformanceMetric}
-                onTradeClick={(trade) => setSelectedTradeId(trade.id)}
-              />
+              <TabErrorBoundary name="Performance">
+                <PerformanceTab
+                  filteredTrades={filteredTrades}
+                  globalTags={globalTags}
+                  performanceMetric={performanceMetric}
+                  onMetricChange={setPerformanceMetric}
+                  onTradeClick={(trade) => setSelectedTradeId(trade.id)}
+                />
+              </TabErrorBoundary>
             ) : null}
 
             {activeTab === 'filter' ? (
-              <TradesTab
-                filteredTrades={filteredTrades}
-                activeFilterCount={activeFilterCount}
-                selectedIds={selectedIds}
-                globalTags={globalTags}
-                selectedFilterTags={selectedFilterTags}
-                hasActiveFilters={hasActiveFilters}
-                searchQuery={searchQuery}
-                onToggleFilterTag={(tag) => {
-                  setSelectedFilterTags((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(tag)) next.delete(tag);
-                    else next.add(tag);
-                    return next;
-                  });
-                }}
-                onClearFilterTags={() => setSelectedFilterTags(new Set())}
-                onDeleteGlobalTag={handleDeleteGlobalTag}
-                onClearAllFilters={clearAllFilters}
-                onToggleSelect={handleToggleSelect}
-                onSelectAll={handleSelectAll}
-                onAddTag={handleAddTag}
-                onRemoveTag={handleRemoveTag}
-                onTradeClick={(trade) => setSelectedTradeId(trade.id)}
-                riskInput={riskInput}
-                defaultRiskInput={defaultRiskInput}
-                defaultRisk={defaultRisk}
-                bulkTagInput={bulkTagInput}
-                onSearchQueryChange={setSearchQuery}
-                onRiskInputChange={setRiskInput}
-                onDefaultRiskInputChange={setDefaultRiskInput}
-                onBulkTagInputChange={setBulkTagInput}
-                onApplyRisk={handleApplyRisk}
-                onSetDefaultRisk={handleSetDefaultRisk}
-                onBulkAddTag={handleBulkAddTag}
-              />
+              <TabErrorBoundary name="Trades">
+                <TradesTab
+                  filteredTrades={filteredTrades}
+                  activeFilterCount={activeFilterCount}
+                  selectedIds={selectedIds}
+                  globalTags={globalTags}
+                  selectedFilterTags={selectedFilterTags}
+                  hasActiveFilters={hasActiveFilters}
+                  searchQuery={searchQuery}
+                  onToggleFilterTag={(tag) => {
+                    setSelectedFilterTags((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(tag)) next.delete(tag);
+                      else next.add(tag);
+                      return next;
+                    });
+                  }}
+                  onClearFilterTags={() => setSelectedFilterTags(new Set())}
+                  onDeleteGlobalTag={handleDeleteGlobalTag}
+                  onClearAllFilters={clearAllFilters}
+                  onToggleSelect={handleToggleSelect}
+                  onSelectAll={handleSelectAll}
+                  onAddTag={handleAddTag}
+                  onRemoveTag={handleRemoveTag}
+                  onTradeClick={(trade) => setSelectedTradeId(trade.id)}
+                  riskInput={riskInput}
+                  defaultRiskInput={defaultRiskInput}
+                  defaultRisk={defaultRisk}
+                  bulkTagInput={bulkTagInput}
+                  onSearchQueryChange={setSearchQuery}
+                  onRiskInputChange={setRiskInput}
+                  onDefaultRiskInputChange={setDefaultRiskInput}
+                  onBulkTagInputChange={setBulkTagInput}
+                  onApplyRisk={handleApplyRisk}
+                  onSetDefaultRisk={handleSetDefaultRisk}
+                  onBulkAddTag={handleBulkAddTag}
+                />
+              </TabErrorBoundary>
             ) : null}
 
             {activeTab === 'charts' ? (
-              <ChartsTab trades={trades} />
+              <TabErrorBoundary name="Charts">
+                <ChartsTab trades={trades} />
+              </TabErrorBoundary>
             ) : null}
 
             {activeTab === 'markets' ? (
-              <MarketsTab />
+              <TabErrorBoundary name="Markets">
+                <MarketsTab />
+              </TabErrorBoundary>
             ) : null}
 
             {activeTab === 'research' ? (
-              <ResearchTab />
+              <TabErrorBoundary name="Research">
+                <ResearchTab />
+              </TabErrorBoundary>
             ) : null}
 
             {activeTab === 'jarvis' ? (
-              <JarvisTab />
+              <TabErrorBoundary name="Jarvis">
+                <JarvisTab />
+              </TabErrorBoundary>
             ) : null}
           </AnimatePresence>
         </div>

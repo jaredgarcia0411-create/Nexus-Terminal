@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { isAfter, isWithinInterval, parseISO, subDays } from 'date-fns';
 import Papa from 'papaparse';
 import { toast } from 'sonner';
-import type { Trade } from '@/lib/types';
+import type { ApiTrade, Trade } from '@/lib/types';
 import { parseDateFromFilename, processCsvData } from '@/lib/csv-parser';
 import { detectParser, getParserById } from '@/lib/parsers';
 import { isDatabaseAvailable } from '@/lib/storage';
@@ -16,7 +16,6 @@ import {
 } from '@/lib/trade-migration';
 import { useSession } from 'next-auth/react';
 
-type ApiTrade = Omit<Trade, 'date'> & { date: string };
 type CsvParseIssue = { row?: number; message?: string; code?: string };
 
 type TradeLike = Partial<Omit<Trade, 'date'>> & {

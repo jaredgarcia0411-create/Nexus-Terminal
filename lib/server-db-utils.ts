@@ -2,44 +2,8 @@ import { and, eq, inArray, or } from 'drizzle-orm';
 import { auth } from '@/lib/auth-config';
 import { type Db, type PoolDb } from '@/lib/db';
 import { users, trades, tradeTags } from '@/lib/db/schema';
-
-export type ApiTrade = {
-  id: string;
-  date: string;
-  sortKey: string;
-  symbol: string;
-  direction: 'LONG' | 'SHORT';
-  avgEntryPrice: number;
-  avgExitPrice: number;
-  totalQuantity: number;
-  grossPnl: number;
-  netPnl: number;
-  entryTime: string;
-  exitTime: string;
-  executionCount: number;
-  rawExecutions: Array<{
-    id: string;
-    side: 'ENTRY' | 'EXIT';
-    price: number;
-    qty: number;
-    time: string;
-    timestamp?: Date | string;
-    commission: number;
-    fees: number;
-  }>;
-  mfe?: number;
-  mae?: number;
-  bestExitPnl?: number;
-  exitEfficiency?: number;
-  // Transitional aliases kept until all consumers migrate.
-  pnl: number;
-  executions: number;
-  initialRisk?: number;
-  commission?: number;
-  fees?: number;
-  tags: string[];
-  notes?: string;
-};
+import type { ApiTrade } from '@/lib/types';
+export type { ApiTrade };
 
 type QueryDb = Db | PoolDb;
 

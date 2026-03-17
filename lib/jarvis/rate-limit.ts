@@ -1,3 +1,7 @@
+import { and, count, eq, gt } from 'drizzle-orm';
+import { getDb } from '@/lib/db';
+import { jarvisRequestLog } from '@/lib/db/schema';
+
 export interface RateLimitResult {
   allowed: boolean;
   remaining: number;
@@ -5,9 +9,6 @@ export interface RateLimitResult {
 }
 
 const DEFAULT_LIMIT_PER_HOUR = 30;
-const WINDOW_MS = 3_600_000;
-
-const requestsByUser = new Map<string, number[]>();
 
 function getLimitPerHour() {
   const parsed = Number(process.env.JARVIS_RATE_LIMIT_PER_HOUR);
@@ -15,45 +16,35 @@ function getLimitPerHour() {
   return Math.floor(parsed);
 }
 
-export function checkRateLimit(userId: string): RateLimitResult {
-  const now = Date.now();
+export async function checkRateLimit(userId: string): Promise<RateLimitResult> {
   const limit = getLimitPerHour();
-  const existing = requestsByUser.get(userId) ?? [];
-  const inWindow = existing.filter((timestamp) => now - timestamp < WINDOW_MS);
+  const db = getDb();
 
-  if (inWindow.length >= limit) {
-    const oldest = inWindow[0] ?? now;
-    requestsByUser.set(userId, inWindow);
-    return {
-      allowed: false,
-      remaining: 0,
-      resetAt: oldest + WINDOW_MS,
-    };
+  if (!db) {
+    return { allowed: true, remaining: limit, resetAt: Date.now() + 3_600_000 };
   }
 
-  inWindow.push(now);
-  requestsByUser.set(userId, inWindow);
+  const oneHourAgo = new Date(Date.now() - 3_600_000);
+
+  const [row] = await db
+    .select({ total: count() })
+    .from(jarvisRequestLog)
+    .where(
+      and(
+        eq(jarvisRequestLog.userId, userId),
+        gt(jarvisRequestLog.createdAt, oneHourAgo),
+      ),
+    );
+
+  const used = row?.total ?? 0;
+
+  if (used >= limit) {
+    return { allowed: false, remaining: 0, resetAt: Date.now() + 3_600_000 };
+  }
+
   return {
     allowed: true,
-    remaining: limit - inWindow.length,
-    resetAt: now + WINDOW_MS,
+    remaining: limit - used,
+    resetAt: Date.now() + 3_600_000,
   };
-}
-
-export function getRateLimitState(userId: string): { requestCount: number; windowMs: number; limit: number } {
-  const now = Date.now();
-  const limit = getLimitPerHour();
-  const existing = requestsByUser.get(userId) ?? [];
-  const inWindow = existing.filter((timestamp) => now - timestamp < WINDOW_MS);
-  requestsByUser.set(userId, inWindow);
-
-  return {
-    requestCount: inWindow.length,
-    windowMs: WINDOW_MS,
-    limit,
-  };
-}
-
-export function resetRateLimits(): void {
-  requestsByUser.clear();
 }

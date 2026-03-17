@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { requireUserMock, ensureUserMock, getDbMock, runTradeAnalysisPipelineMock } = vi.hoisted(() => ({
+const { requireUserMock, ensureUserMock, getDbMock, runTradeAnalysisPipelineMock, checkRateLimitMock } = vi.hoisted(() => ({
   requireUserMock: vi.fn(),
   ensureUserMock: vi.fn(),
   getDbMock: vi.fn(),
   runTradeAnalysisPipelineMock: vi.fn(),
+  checkRateLimitMock: vi.fn(),
 }));
 
 vi.mock('@/lib/server-db-utils', () => ({
@@ -14,6 +15,7 @@ vi.mock('@/lib/server-db-utils', () => ({
 }));
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
 vi.mock('@/lib/jarvis/trade-analysis', () => ({ runTradeAnalysisPipeline: runTradeAnalysisPipelineMock }));
+vi.mock('@/lib/jarvis/rate-limit', () => ({ checkRateLimit: checkRateLimitMock }));
 
 import { POST } from '@/app/api/jarvis/trade-analysis/route';
 
@@ -28,6 +30,7 @@ describe('jarvis trade analysis route', () => {
     requireUserMock.mockResolvedValue({ user: { id: 'u1', email: 'u@x.com', name: null, picture: null } });
     ensureUserMock.mockResolvedValue({ id: 'canonical-u1', email: 'u@x.com', name: null, picture: null });
     getDbMock.mockReturnValue({});
+    checkRateLimitMock.mockResolvedValue({ allowed: true, remaining: 10, resetAt: Date.now() + 1_000 });
     runTradeAnalysisPipelineMock.mockResolvedValue({
       analysis: { strengths: [], weaknesses: [], patterns: [], action_items: [] },
     });

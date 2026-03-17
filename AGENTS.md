@@ -56,6 +56,8 @@ Report pass/fail for each command.
 - DB schema is centralized in `lib/db/schema.ts`.
 - Server auth/db helpers are in `lib/server-db-utils.ts`.
 - Avoid introducing new global patterns when existing modules already cover the need.
+- **Do not add logic to `hooks/use-trades.ts`** — it is a god hook being decomposed into `hooks/trade-utils.ts` (pure functions), `hooks/use-trade-filters.ts` (filter/search state), and `hooks/use-trade-sync.ts` (persistence). If you need new trade-related state, create a separate hook in `hooks/`.
+- **In-memory state is unreliable on Vercel** — module-level `Map`s, objects, or variables reset on every cold start. Use the database or an external store (e.g., Upstash Redis) for any state that must persist across requests.
 
 ## API Route Conventions
 - Use `requireUser()` for protected routes (all except explicitly public routes like health checks).
@@ -63,7 +65,7 @@ Report pass/fail for each command.
   - `const db = getDb()`
   - guard with `if (!db) return dbUnavailable()`
   - call `ensureUser(db, authState.user)` when needed.
-- Parse JSON using shared helpers when available (e.g., `parseJsonBody`).
+- **Validate input with Zod** — Use `parseAndValidate(request, schema)` from `lib/api-route-utils.ts` with Zod schemas from `lib/validations/`. Returns `{ data }` or `{ error: Response }`. Schemas live in `lib/validations/trades.ts` and `lib/validations/jarvis.ts`. This project uses **Zod v4** — use `z.flattenError(result.error)` (standalone function), NOT `result.error.flatten()` (v3 method).
 - Return structured errors via `Response.json({ error: '...' }, { status })`.
 - In `catch`, log safely and return generic server errors (no secret leakage).
 

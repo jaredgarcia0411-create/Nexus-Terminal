@@ -1,0 +1,1 @@
+CREATE INDEX "idx_trades_user_date" ON "trades" USING btree ("user_id","date");

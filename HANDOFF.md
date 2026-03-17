@@ -2,227 +2,14 @@
 
 ## Active Handoff Only
 
-Historical completed sections were removed to keep this file focused.
+Historical completed sections (Scanner Realtime Data Pipeline, etc.) were removed to keep this file focused.
 Use git history and the `specs/` directory for archived implementation detail.
 
 ### Session Maintenance Checklist
 
 - [x] Refreshed `AGENTS.md` with current build/lint/test commands, single-test workflows, and coding conventions for agentic coding tools.
 - [x] Verified command set and conventions against the current repository configuration (`package.json`, `tsconfig.json`, `vitest.config.ts`, `eslint.config.mjs`).
-
----
-
-## Scanner Realtime Data Pipeline
-
-> Generated: 2026-03-16 | Agent: nexus-architect
-> Status: IMPLEMENTED (local validation passed; deployment verification pending)
-
-### Objective
-
-Fix the Scanner showing "0 results" by (1) writing screener symbols into `realtime_quotes` so the scanner has immediate data, and (2) dynamically subscribing screener symbols to LEVELONE_EQUITIES for richer quote fields (bid/ask/high/low/open).
-
-All changes are in the standalone relay service at `services/schwab-relay/src/`. The main Next.js app is untouched.
-
-### Problem
-
-The scanner API (`/api/scanner/route.ts`) queries `realtime_quotes`. That table is only populated by LEVELONE_EQUITIES data from the `TRACK_EQUITIES` env var. The screener stream (top gainers/losers, ~50 symbols) writes to `marketSnapshots` but NOT to `realtime_quotes`. So the scanner has no data unless `TRACK_EQUITIES` is manually set with matching symbols.
-
-Meanwhile, Top Gainers/Losers works because it reads from `marketSnapshots` (Schwab screener) or falls back to Massive API delayed data.
-
-### Relevant Files
-
-All under `services/schwab-relay/src/`:
-
-| File | Current Role |
-|------|-------------|
-| `writer.ts` | `QuoteWriter` class. `addQuote()` buffers into `quoteBuffer` Map, flushed every 1s into `realtime_quotes`. `addScreenerData()` writes to `marketSnapshots` only. |
-| `streamer.ts` | `SchwabStreamer` class. `subscribe()` (line 246) runs once after LOGIN. Sends SUBS for static `TRACK_EQUITIES` symbols + SCREENER_EQUITY. No method to add symbols dynamically. |
-| `index.ts` | Orchestrates streamer + writer. `onScreenerUpdate` callback calls `writer.addScreenerData()`. `onQuoteUpdate` callback calls `writer.addQuote()` per quote. |
-
-### Key Types (from `streamer.ts`)
-
-- `QuoteUpdate`: `{ symbol, assetType, lastPrice?, bidPrice?, askPrice?, openPrice?, highPrice?, lowPrice?, closePrice?, netChange?, netChangePercent?, totalVolume?, exchangeId?, securityStatus?, quoteTimeMs? }`
-- `ScreenerUpdate`: `{ type: 'gainers' | 'losers', items: Array<{ symbol, lastPrice, netChange, netChangePercent, totalVolume }> }`
-
-The screener item fields map directly to a subset of `QuoteUpdate` fields.
-
----
-
-### Change 1: Write screener symbols into `realtime_quotes` (Phase 1)
-
-**File:** `services/schwab-relay/src/writer.ts`
-**Action:** MODIFY the `addScreenerData()` method
-
-Inside `addScreenerData()` (lines 99-131), add a loop BEFORE the `const db = getDb();` line (before line 106). This buffers screener items into `realtime_quotes` via the existing `addQuote()` method.
-
-**Add after line 104** (after the `this.gainers`/`this.losers` assignment block, before `const db = getDb();`):
-
-```typescript
-    // Also buffer screener items into realtime_quotes
-    for (const item of screenerUpdate.items) {
-      this.addQuote({
-        symbol: item.symbol,
-        assetType: 'equity',
-        lastPrice: item.lastPrice,
-        netChange: item.netChange,
-        netChangePercent: item.netChangePercent,
-        totalVolume: item.totalVolume,
-      });
-    }
-```
-
-**Why this works:** `addQuote()` (line 27) merges into the `quoteBuffer` Map using `symbol` as key. If LEVELONE_EQUITIES later sends richer data for the same symbol, it merges on top (the spread at lines 33-38 preserves existing fields and overwrites with new ones). So screener data seeds the row, and LEVELONE data enriches it.
-
-**Acceptance criteria:**
-- [ ] After a SCREENER_EQUITY update, the symbols appear in `realtime_quotes` within ~1 second (next flush cycle)
-- [x] Each screener symbol row has `lastPrice`, `netChange`, `netChangePercent`, `totalVolume`, and `assetType = 'equity'`
-- [ ] `bid_price`, `ask_price`, `open_price`, `high_price`, `low_price` are NULL until LEVELONE data arrives (Change 2)
-- [x] The `marketSnapshots` write still happens as before (existing behavior unchanged)
-
----
-
-### Change 2: Add dynamic LEVELONE subscription method to SchwabStreamer (Phase 2a)
-
-**File:** `services/schwab-relay/src/streamer.ts`
-**Action:** MODIFY — add state tracking + new public method
-
-**Step 2a-1:** Add a private property after line 123 (after `private reconnectAttempts = 0;`):
-
-```typescript
-  private readonly subscribedEquities = new Set<string>();
-```
-
-**Step 2a-2:** In the existing `subscribe()` method (line 246), after building the equities list at line 251 (`const equities = parseList('TRACK_EQUITIES');`), seed the Set. Add after line 251:
-
-```typescript
-    for (const sym of equities) {
-      this.subscribedEquities.add(sym);
-    }
-```
-
-**Step 2a-3:** Add a new public method after the `isConnected()` method (after line 205), before the private methods:
-
-```typescript
-  addEquitySymbols(symbols: string[]): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.subscribed) {
-      return;
-    }
-
-    const newSymbols = symbols.filter((s) => !this.subscribedEquities.has(s));
-    if (newSymbols.length === 0) {
-      return;
-    }
-
-    for (const sym of newSymbols) {
-      this.subscribedEquities.add(sym);
-    }
-
-    this.sendMessage({
-      requests: [
-        {
-          service: 'LEVELONE_EQUITIES',
-          command: 'ADD',
-          requestid: toRequestId(),
-          parameters: {
-            keys: newSymbols.join(','),
-            fields: '0,1,2,3,8,10,11,12,17,18,28',
-          },
-        },
-      ],
-    });
-
-    console.info(`[relay] dynamically subscribed ${newSymbols.length} new equity symbols`);
-  }
-```
-
-**Why ADD not SUBS:** Schwab's streaming API uses `SUBS` to replace the entire subscription and `ADD` to append symbols. Using `ADD` preserves the static `TRACK_EQUITIES` symbols without re-sending them.
-
-**Step 2a-4:** Clear the Set on disconnect. Two places:
-
-1. In the `disconnect()` method (line 189), add before the closing brace:
-```typescript
-    this.subscribedEquities.clear();
-```
-
-2. In the WebSocket `close` handler (around line 176, after `this.subscribed = false;`):
-```typescript
-        this.subscribedEquities.clear();
-```
-
-**Acceptance criteria:**
-- [x] `addEquitySymbols(['AAPL', 'TSLA'])` sends an ADD command via WebSocket with those symbols
-- [x] Calling it again with the same symbols sends nothing (already tracked in Set)
-- [x] If WebSocket is not connected or not yet subscribed, the method silently returns
-- [x] On disconnect, the Set is cleared so reconnect starts fresh
-- [x] The fields string `'0,1,2,3,8,10,11,12,17,18,28'` matches the existing SUBS fields exactly
-
----
-
-### Change 3: Wire screener updates to trigger dynamic subscriptions (Phase 2b)
-
-**File:** `services/schwab-relay/src/index.ts`
-**Action:** MODIFY the `onScreenerUpdate` callback
-
-In the `onScreenerUpdate` callback in `startStreamer()` (around lines 46-55), add a call to `streamer.addEquitySymbols()` after the existing screener data write.
-
-**Replace the `onScreenerUpdate` callback with:**
-
-```typescript
-    onScreenerUpdate: (update) => {
-      if (!writer) {
-        return;
-      }
-
-      void writer.addScreenerData(update).catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : 'unknown screener write error';
-        log(`screener write failed: ${message}`);
-      });
-
-      // Dynamically subscribe screener symbols to LEVELONE_EQUITIES for richer data
-      const symbols = update.items.map((item) => item.symbol);
-      streamer?.addEquitySymbols(symbols);
-    },
-```
-
-**What happens after all 3 changes:** When a screener update arrives:
-1. `writer.addScreenerData()` writes to `marketSnapshots` AND buffers into `realtime_quotes` (Change 1)
-2. `streamer.addEquitySymbols()` sends an ADD command for any new symbols (Change 2)
-3. Future LEVELONE_EQUITIES data for those symbols flows through `onQuoteUpdate` → `writer.addQuote()`, enriching rows with bid/ask/high/low/open
-
-**Acceptance criteria:**
-- [x] When screener sends gainers with symbols `[AAPL, TSLA, NVDA]`, `addEquitySymbols` is called with those symbols
-- [x] No crash if `streamer` is null (the `?.` handles this)
-
----
-
-### Verification Steps
-
-1. `cd services/schwab-relay && npx tsc --noEmit` — type-check passes
-2. `cd services/schwab-relay && npm run build` — compiles to `dist/`
-3. After deploying to Fly.io, check logs for:
-   - `[relay] dynamically subscribed N new equity symbols` messages
-   - `[relay] wrote N realtime quote rows` with counts > 0
-4. Query DB: `SELECT count(*) FROM realtime_quotes;` — should show rows within 1-2 seconds of screener data
-5. Scanner UI should show results instead of "0 results"
-
-Local validation run (workspace root):
-- [x] `npm run lint`
-- [x] `npx tsc --noEmit`
-- [x] `npm test`
-
-Relay-local verification run (`services/schwab-relay`):
-- [x] `npx tsc --noEmit`
-- [x] `npm run build`
-
-### Files Changed Summary
-
-| File | Lines Added | Risk |
-|------|-------------|------|
-| `services/schwab-relay/src/writer.ts` | ~7 | LOW — uses existing `addQuote()` |
-| `services/schwab-relay/src/streamer.ts` | ~30 | MEDIUM — new public method + state tracking |
-| `services/schwab-relay/src/index.ts` | ~2 | LOW — 2 lines added to existing callback |
-
-No new dependencies, no schema changes, no migrations.
+- [ ] After all 5 PRs: remove `parseJsonBody` from `lib/api-route-utils.ts` if no routes still use it
 
 ---
 
@@ -232,10 +19,9 @@ No new dependencies, no schema changes, no migrations.
 
 - Relay logs show repeated `Failed to load Schwab user preference (401)`.
 - This keeps `realtime_quotes` stale or empty, which directly degrades Scanner results.
-- The pipeline changes above are correct but won't produce data if the relay can't authenticate with Schwab.
 - Schwab refresh tokens expire every **7 days** — you need to re-login via the Schwab OAuth flow weekly.
 
-### Next steps (after pipeline changes)
+### Next steps
 
 1. Re-link Schwab account in the app (Markets tab → Schwab status)
 2. After relinking, check Fly logs for `LOGIN successful, subscribing...` and quote-write activity
@@ -248,99 +34,7 @@ No new dependencies, no schema changes, no migrations.
 > Generated: 2026-03-16 | Status: PLANNED
 > Priority: HIGH — unlocks ticker auto-subscription + historical research archive
 
-### Objective
-
-Parse ~1000 historical research reports from a Discord channel, extract the ticker symbol from each, store the full report text, and feed extracted tickers into the Schwab relay's dynamic subscription pipeline. This gives the scanner real coverage of "in play" tickers and archives third-party research for future reference.
-
-### Context
-
-- Reports follow a consistent format: title line is always `"Ultimate Research Report for {TICKER}"`
-- Each report is a single Discord message containing structured sections (News, Theme, Dilution, Chart History, etc.)
-- Reports are all in one Discord channel (~1000 messages)
-- Many tickers repeat across reports on different days — dedup for subscriptions, but store each report individually
-- The extracted tickers feed into `streamer.addEquitySymbols()` for realtime quote tracking
-
-### Phase 1: Discord Message Ingestion
-
-**Approach:** Discord Bot API (paginated channel history) or one-time export via DiscordChatExporter tool.
-
-**Option A — Discord Bot (preferred for future auto-ingestion):**
-- Bot needs `READ_MESSAGE_HISTORY` permission on the target channel
-- `GET /channels/{channel_id}/messages?limit=100&before={last_message_id}` — paginate backwards
-- Rate limit: 50 req/sec, so 1000 messages = 10 requests = trivial
-
-**Option B — One-time export (faster to start):**
-- Use DiscordChatExporter CLI to dump channel as JSON
-- Parse the JSON file locally
-- No bot setup needed, but no future auto-ingestion
-
-### Phase 2: Report Parsing
-
-**Ticker extraction** (simple — title is consistent):
-```
-regex: /Ultimate Research Report for ([A-Z]{1,5})/
-```
-
-**Full report storage** — save raw message text + parsed metadata:
-- `ticker` — extracted from title
-- `reportDate` — Discord message timestamp
-- `rawText` — full message content
-- `discordMessageId` — for dedup on re-runs
-- `source` — `'discord_import'` to distinguish from our own generated reports
-
-**Structured field extraction** (optional, for richer querying later):
-- Price, Market Cap, Float/OS, Industry from header block
-- Gain % from the gain line
-- Section ratings (red/yellow/green dots → `high`/`medium`/`low` risk)
-
-### Phase 3: Storage
-
-**Option A — New table `imported_research_reports`:**
-```
-id              text PK
-userId          text FK → users
-ticker          text NOT NULL
-reportDate      timestamp NOT NULL
-source          text NOT NULL (e.g. 'discord_import', 'jmt415')
-discordMessageId text UNIQUE (nullable — only for Discord imports)
-rawText         text NOT NULL
-parsedJson      jsonb (structured extraction, nullable)
-createdAt       timestamp default now()
-```
-
-**Why a separate table from `research_reports`:** The existing `research_reports` table stores Jarvis-generated reports with `rawData` (AskEdgar API response) and `reportJson` (structured Jarvis output). Imported third-party reports have completely different shapes — raw Discord text, no `modelUsed`, no `status` lifecycle. Keeping them separate avoids schema pollution.
-
-**Option B — Reuse `research_reports` with a `source` column:**
-Add a `source` column (`'jarvis'` | `'discord_import'`) and store raw text in `rawData`. Simpler but muddies the table's purpose. Not recommended.
-
-### Phase 4: Ticker → Schwab Subscription Pipeline
-
-Once tickers are extracted and stored:
-
-1. **On relay startup:** Query `imported_research_reports` for distinct tickers, merge with `TRACK_EQUITIES`, pass to initial `SUBS` command
-2. **On new report import:** Call `streamer.addEquitySymbols([ticker])` to dynamically subscribe
-3. **Optional: staleness filter** — only subscribe tickers from reports in the last N days (e.g., 90 days) to keep subscription count manageable
-
-**Schwab subscription limit concern:** If unique tickers exceed Schwab's limit (~500 estimated), prioritize by:
-- Recency of last report
-- Frequency of appearance across reports
-- Whether the ticker is in today's screener data
-
-### Implementation Order
-
-1. Decide Bot vs Export (depends on whether you want ongoing auto-ingestion or just the backfill)
-2. Build the parser (regex ticker extraction + raw text capture)
-3. Create `imported_research_reports` table + migration
-4. Build import script/API route
-5. Wire extracted tickers into relay subscription pipeline
-6. Test with a small batch (~10 reports) before running the full ~1000
-
-### Open Questions
-
-- [ ] Which Discord channel ID contains the reports?
-- [ ] Do you have a Discord bot token already, or do we need to set one up?
-- [ ] Should we parse structured fields (price, float, dilution ratings) now or just store raw text and parse later?
-- [ ] What's the cutoff for "relevant" tickers? All-time, last 6 months, last 30 days?
+*(Full spec preserved from prior session — see git history for details. Implementation deferred until tech debt PRs are complete.)*
 
 ---
 
@@ -350,102 +44,790 @@ Once tickers are extracted and stored:
 > Priority: HIGH — replaces $200/mo third-party report
 > Depends on: Sprint 8 AskEdgar integration (partially built in `lib/jarvis/research.ts`)
 
+*(Full spec preserved from prior session — see git history for details. Implementation deferred until tech debt PRs are complete.)*
+
+---
+
+# Tech Debt Fixes — Implementation Specs
+
+> Generated: 2026-03-16 | Agent: nexus-architect
+> Status: PLANNED (5 PRs, execute in order)
+
+## Workflow Instructions for opencode
+
+**Execute these PRs in order (1 → 2 → 3 → 4 → 5).** After each PR:
+
+1. Run `npm run lint && npx tsc --noEmit && npm test`
+2. **STOP and report results.** Do not proceed to the next PR until confirmed.
+3. PRs 1+2 may be done in a single session (both LOW risk). PRs 3-5 must stop-and-verify individually.
+
+**Corrections from HANDOFF audit:**
+- Issue 4 (indexes): `jarvis_conversations_user_session_idx` already exists at schema.ts:200. Only 1 new index needed, not 3.
+- Issue 3 (rate limit): `/api/jarvis/research` and `/api/jarvis/trade-analysis` never call `checkRateLimit` — must be added.
+- Issue 5 (ApiTrade): Two definitions are structurally different — server is 37-line explicit, client is 1-line `Omit` pattern.
+
+**Routes NOT in scope for PR 4 (Zod) — to be done in a future PR:**
+- `/api/tags` — POST/DELETE
+- `/api/saved-tickers` — POST/PATCH/DELETE
+- `/api/scanner/presets` — POST/PATCH/DELETE
+- `/api/market-data/snapshot` — POST
+- `/api/market-data/daily-summary` — POST
+
+---
+
+## PR 1: ApiTrade Dedup + DB Index
+
+> Generated: 2026-03-16 | Agent: nexus-architect
+> Status: PLANNED | Risk: LOW | Est: 30 min
+
 ### Objective
 
-Build a Jarvis-powered research report that replicates the structure and depth of the jmt415 "Ultimate Research Report" using AskEdgar API data, Schwab market data, and AI synthesis. The goal is not a 1:1 clone but a report tuned to your specific trading style and needs.
+Consolidate the duplicated `ApiTrade` type into `lib/types.ts` and add a missing `(userId, date)` index to the trades table.
 
-### Current State
+### Change 1: Add `ApiTrade` to `lib/types.ts`
 
-What's already built:
-- `lib/jarvis/research.ts` — research pipeline that calls AskEdgar, feeds data to Jarvis, returns structured JSON
-- `lib/jarvis/askedgar.ts` — AskEdgar API client (`fetchTickerData`)
-- `lib/jarvis/prompts.ts` — prompt construction (`buildResearchPrompt`)
-- `lib/jarvis/types.ts` — `DilutionResearchReport` type definition
-- `research_reports` table — stores generated reports with `rawData` (AskEdgar response) and `reportJson` (Jarvis output)
-- API route: `POST /api/jarvis/research`
-- AskEdgar API docs: `docs/AE_API_DOCS.md`
+**File:** `lib/types.ts`
+**Action:** MODIFY
 
-What needs work:
-- Report template doesn't match the depth of the jmt415 format
-- Missing sections: Chart History, Offering Frequency, Offering Ability, Cash Need, Overall Offering Risk rating
-- Prompt needs tuning to produce specific quantitative analysis (e.g., "123% of O/S", "0.6 months runway")
-- No risk rating system (red/yellow/green per section)
+Add after the closing `}` of the `Trade` interface (after line 41):
 
-### Target Report Template
+```typescript
 
-Each section maps to a data source and synthesis approach:
+/**
+ * Wire format of a trade returned by / sent to API routes.
+ * Identical to Trade except `date` is an ISO string (JSON has no Date type).
+ */
+export type ApiTrade = {
+  id: string;
+  date: string;
+  sortKey: string;
+  symbol: string;
+  direction: Direction;
+  avgEntryPrice: number;
+  avgExitPrice: number;
+  totalQuantity: number;
+  grossPnl: number;
+  netPnl: number;
+  entryTime: string;
+  exitTime: string;
+  executionCount: number;
+  rawExecutions: Execution[];
+  mfe?: number;
+  mae?: number;
+  bestExitPnl?: number;
+  exitEfficiency?: number;
+  pnl: number;
+  executions: number;
+  initialRisk?: number;
+  commission?: number;
+  fees?: number;
+  tags: string[];
+  notes?: string;
+};
+```
 
-| Section | Data Source | Synthesis |
-|---------|-----------|-----------|
-| **Header** (price, mcap, float/OS, industry) | Schwab realtime quotes + AskEdgar fundamentals | Direct data, no AI needed |
-| **Gain** (today's % move) | Schwab realtime quotes | Direct data |
-| **News / Why it's running** | AskEdgar filings (8-K, S-1) + news | Jarvis summarizes recent filings + catalysts |
-| **Theme** | AskEdgar sector data + macro summary | Jarvis identifies sector narrative |
-| **Other Catalysts** | AskEdgar filings (registration dates, warrant expiry, board meetings) | Jarvis extracts upcoming dated events |
-| **Chart History** | Candle data + `lib/indicators.ts` (VWAP, SMA) | Jarvis analyzes recent gap days, squeezes, float-dependent behavior |
-| **Dilution** | AskEdgar (warrants, PIPE, ATM, shelf, preferred shares, O/S changes) | Jarvis structures raw filing data into bullet points with quantities |
-| **Offering Frequency** | AskEdgar (equity raise history) | Jarvis counts raises, calculates cadence |
-| **Offering Ability** | AskEdgar (S-3 shelf, ATM programs, warrant registration status) | Jarvis assesses structural capacity for new offerings |
-| **Cash Need** | AskEdgar (10-Q/10-K financials: cash, burn rate) | Jarvis calculates runway from latest quarterly data |
-| **Financial Condition Commentary** | AskEdgar (10-Q/10-K full text search for "going concern", "liquidity") | Jarvis pulls direct quotes from filings |
-| **Overall Offering Risk** | All of the above | Jarvis rates HIGH/MEDIUM/LOW with explanation |
-| **Historical Stats** | Market data (price history around filing dates) | Calculate post-filing price moves |
+**Why explicit instead of `Omit<Trade, 'date'>`:** The explicit version serves as documentation — you can see every field at a glance. Both produce the same TS type; explicit is more readable.
 
-### Section Risk Ratings
+**Why `Execution[]` instead of inline array:** `Execution` (lines 3-12 of same file) is structurally identical to the inline version in the old server definition. Using the named type avoids repetition.
 
-Each section gets a risk rating:
-- `high` (red) — immediate dilution threat or severe cash need
-- `medium` (yellow) — potential concern, monitoring needed
-- `low` (green) — no near-term risk in this category
+### Change 2: Update `lib/server-db-utils.ts`
 
-Jarvis assigns these based on the data in each section.
+**File:** `lib/server-db-utils.ts`
+**Action:** MODIFY
 
-### Implementation Phases
+**Step 2a:** Add import after line 4 (after the schema import):
+```typescript
+import type { ApiTrade } from '@/lib/types';
+```
 
-**Phase 1: Audit existing pipeline**
-- Review current `buildResearchPrompt()` output vs target template
-- Review what AskEdgar `fetchTickerData()` actually returns (check `docs/AE_API_DOCS.md`)
-- Identify data gaps — what does AskEdgar provide that we're not using?
-- Identify missing data — what does the target template need that AskEdgar can't provide?
+**Step 2b:** Delete lines 6-42 (the entire `export type ApiTrade = { ... };` block).
 
-**Phase 2: Enrich data collection**
-- Expand AskEdgar API calls if needed (additional endpoints for filings, financials)
-- Add Schwab realtime quote lookup for header data (price, mcap, gain)
-- Add candle data fetch for Chart History section
-- Add indicator calculations (VWAP, gap detection) for chart analysis
+**Step 2c:** Add re-export right after the new import:
+```typescript
+export type { ApiTrade };
+```
 
-**Phase 3: Prompt engineering**
-- Restructure the system prompt to output the exact template sections
-- Include examples of good output (use jmt415 reports from Discord import as reference)
-- Add section-level risk rating instructions
-- Tune for quantitative specificity ("123% of O/S" not "significant dilution")
-- Iterate with real tickers until output quality matches expectations
+After these steps, the top of the file should look like:
+```typescript
+import { and, eq, inArray, or } from 'drizzle-orm';
+import { auth } from '@/lib/auth-config';
+import { type Db, type PoolDb } from '@/lib/db';
+import { users, trades, tradeTags } from '@/lib/db/schema';
+import type { ApiTrade } from '@/lib/types';
+export type { ApiTrade };
 
-**Phase 4: UI component**
-- Build a `ResearchReport` display component matching the jmt415 visual style
-- Section headers with colored risk dots
-- Collapsible sections for long content
-- Link to source filings (AskEdgar URLs)
+type QueryDb = Db | PoolDb;
+```
 
-**Phase 5: Cross-reference with imported reports**
-- When generating a report for a ticker that has imported jmt415 reports, show "Historical Coverage" section
-- Compare your AI-generated analysis against the imported human analysis
-- Use imported reports as few-shot examples in the prompt for that ticker
+### Change 3: Update `hooks/use-trades.ts`
 
-### Key Design Decisions (TBD)
+**File:** `hooks/use-trades.ts`
+**Action:** MODIFY
 
-- [ ] Should reports auto-generate for screener movers, or only on-demand?
-- [ ] Cache duration — how long before a report is considered stale and needs regeneration?
-- [ ] Should the report be a new Jarvis mode (`dilution-research`) or enhance the existing `research` mode?
-- [ ] Token budget — a report this detailed may need a long context window. Which model? (Claude Sonnet for speed vs Opus for depth)
+**Step 3a:** Change line 7 from:
+```typescript
+import type { Trade } from '@/lib/types';
+```
+to:
+```typescript
+import type { ApiTrade, Trade } from '@/lib/types';
+```
 
-### Prompt Tuning Strategy
+**Step 3b:** Delete line 19:
+```typescript
+type ApiTrade = Omit<Trade, 'date'> & { date: string };
+```
 
-The imported Discord reports (from the extraction spec above) become your ground truth:
-1. Import 10-20 reports for well-known tickers
-2. Generate your own report for the same tickers
-3. Compare side-by-side — what's missing? What's wrong?
-4. Adjust prompt, re-generate, compare again
-5. Repeat until the output is good enough for your trading decisions
+### Change 4: Add `idx_trades_user_date` index
 
-This is the most time-intensive part but also where the real value is. The data pipeline is mechanical; the prompt is where you make it yours.
+**File:** `lib/db/schema.ts`
+**Action:** MODIFY
+
+Add after line 43 (after the existing `idx_trades_user_sort_key` index), before the closing `]);`:
+
+```typescript
+  index('idx_trades_user_date').on(table.userId, table.date),
+```
+
+Then run:
+```bash
+npm run db:generate   # generates migration
+npm run db:migrate    # applies it
+```
+
+### Acceptance Criteria
+
+- [ ] `ApiTrade` exported from `lib/types.ts` with `date: string` and `Execution[]`
+- [ ] No `ApiTrade` type definition in `server-db-utils.ts` (only import + re-export)
+- [ ] No local `ApiTrade` in `use-trades.ts` (import from `@/lib/types`)
+- [ ] `idx_trades_user_date` exists in schema
+- [ ] Migration generated and applied
+- [ ] `npm run lint && npx tsc --noEmit && npm test` all pass
+
+### Verification
+
+```bash
+npm run lint && npx tsc --noEmit && npm test
+npm run db:generate
+npm run db:migrate
+# Confirm single ApiTrade definition:
+grep -rn "export type ApiTrade" lib/
+# Should return exactly 1 result in lib/types.ts
+```
+
+### Files Changed Summary
+
+| File | Action | Risk |
+|------|--------|------|
+| `lib/types.ts` | MODIFY — add `ApiTrade` export | LOW |
+| `lib/server-db-utils.ts` | MODIFY — remove type, add import + re-export | LOW |
+| `hooks/use-trades.ts` | MODIFY — replace local type with import | LOW |
+| `lib/db/schema.ts` | MODIFY — add 1 index | LOW |
+
+---
+
+## PR 2: Error Boundaries Per Tab
+
+> Generated: 2026-03-16 | Agent: nexus-architect
+> Status: PLANNED | Risk: LOW | Est: 30 min
+
+### Objective
+
+Create a reusable `TabErrorBoundary` class component and wrap each of the 8 tabs so a crash in one tab shows an inline error + retry button instead of crashing the whole app.
+
+### Change 1: Create `components/ui/TabErrorBoundary.tsx`
+
+**File:** `components/ui/TabErrorBoundary.tsx`
+**Action:** CREATE
+
+```tsx
+'use client';
+
+import { Component, type ErrorInfo, type ReactNode } from 'react';
+
+interface TabErrorBoundaryProps {
+  /** Display name shown in the error message, e.g. "Markets" */
+  name: string;
+  children: ReactNode;
+}
+
+interface TabErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+/**
+ * Wraps a single tab so that a render crash shows an inline
+ * error message instead of taking down the entire app.
+ *
+ * This is a class component because React does not provide a
+ * hook-based API for catching render errors (componentDidCatch).
+ */
+export class TabErrorBoundary extends Component<TabErrorBoundaryProps, TabErrorBoundaryState> {
+  constructor(props: TabErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): TabErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error(`[TabErrorBoundary:${this.props.name}]`, error, info.componentStack);
+  }
+
+  private handleReset = (): void => {
+    this.setState({ hasError: false, error: null });
+  };
+
+  render(): ReactNode {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-amber-500/20 bg-[#121214] px-6 py-16 text-center">
+          <p className="mb-1 text-xs font-medium uppercase tracking-[0.2em] text-amber-400">
+            Tab Error
+          </p>
+          <h2 className="text-lg font-semibold text-[#E4E4E7]">
+            {this.props.name} encountered an error
+          </h2>
+          <p className="mt-2 max-w-md text-sm text-zinc-400">
+            Something went wrong rendering this tab. Other tabs are unaffected.
+          </p>
+
+          <button
+            onClick={this.handleReset}
+            className="mt-6 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-black transition hover:bg-emerald-400"
+            type="button"
+          >
+            Try again
+          </button>
+
+          {process.env.NODE_ENV === 'development' && this.state.error ? (
+            <p className="mt-4 max-w-lg break-all text-xs text-zinc-500">
+              {this.state.error.message}
+            </p>
+          ) : null}
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+```
+
+**Why class component:** React has no hook equivalent for `componentDidCatch`/`getDerivedStateFromError`. This is the one place where a class component is justified.
+
+**Why amber (not rose):** This is a contained, recoverable error — less alarming than the global boundary which uses rose.
+
+### Change 2: Wrap each tab in `app/page.tsx`
+
+**File:** `app/page.tsx`
+**Action:** MODIFY
+
+**Step 2a:** Add import after the existing component imports (after the `JarvisTab` import):
+```tsx
+import { TabErrorBoundary } from '@/components/ui/TabErrorBoundary';
+```
+
+**Step 2b:** Wrap each of the 8 tab components. The boundary goes INSIDE the ternary conditional, around the component. This preserves AnimatePresence exit animations.
+
+Pattern for each tab:
+```tsx
+{activeTab === 'xxx' ? (
+  <TabErrorBoundary name="DisplayName">
+    <XxxTab ... />  {/* all existing props unchanged */}
+  </TabErrorBoundary>
+) : null}
+```
+
+Tab name mapping:
+
+| activeTab key | `name` prop | Component |
+|---------------|-------------|-----------|
+| `dashboard` | `"Dashboard"` | `<DashboardTab>` |
+| `journal` | `"Journal"` | `<JournalTab>` |
+| `performance` | `"Performance"` | `<PerformanceTab>` |
+| `filter` | `"Trades"` | `<TradesTab>` |
+| `charts` | `"Charts"` | `<ChartsTab>` |
+| `markets` | `"Markets"` | `<MarketsTab>` |
+| `research` | `"Research"` | `<ResearchTab>` |
+| `jarvis` | `"Jarvis"` | `<JarvisTab>` |
+
+**Do NOT change any props on any tab component.** Only add the wrapping `<TabErrorBoundary>` tags.
+
+### Acceptance Criteria
+
+- [ ] `TabErrorBoundary` exists at `components/ui/TabErrorBoundary.tsx`
+- [ ] All 8 tabs wrapped with correct `name` prop
+- [ ] No tab props changed
+- [ ] `npm run lint && npx tsc --noEmit && npm test` all pass
+- [ ] Manual: all 8 tabs render correctly
+- [ ] Manual: add `throw new Error('test')` in one tab — only that tab shows amber error, others work, "Try again" recovers
+
+### Files Changed Summary
+
+| File | Action | Risk |
+|------|--------|------|
+| `components/ui/TabErrorBoundary.tsx` | CREATE | LOW |
+| `app/page.tsx` | MODIFY — add import + wrap 8 blocks | LOW |
+
+---
+
+## PR 3: Fix In-Memory Rate Limiting
+
+> Generated: 2026-03-16 | Agent: nexus-architect
+> Status: COMPLETE | Risk: LOW-MEDIUM | Completed: 2026-03-16
+
+### Delivered
+
+- Replaced in-memory Jarvis rate limiting with DB-backed counting from `jarvis_request_log` in `lib/jarvis/rate-limit.ts`.
+- Made `checkRateLimit` async and updated `app/api/jarvis/chat/route.ts` to await it.
+- Added rate-limit enforcement + 429 `Retry-After` handling to `app/api/jarvis/research/route.ts` and `app/api/jarvis/trade-analysis/route.ts`.
+- Added `logJarvisRequest` success logging to research and trade-analysis routes so those requests are counted toward limits.
+- Updated async rate-limit mocks in `__tests__/jarvis-chat-route.test.ts`, `__tests__/jarvis-research-route.test.ts`, and `__tests__/jarvis-trade-analysis-route.test.ts`.
+
+### Validation
+
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npm test`
+
+---
+
+## PR 4: Zod Validation (High-Risk Routes)
+
+> Generated: 2026-03-16 | Agent: nexus-architect
+> Status: PLANNED | Risk: MEDIUM | Est: 1-2 hrs
+
+### Objective
+
+Replace unsafe `as T` type casts in 7 high-risk API routes with Zod runtime validation. Zod v4.3.6 is installed. **Important:** Zod v4 uses `z.flattenError(result.error)` (standalone function), NOT `result.error.flatten()` (that was v3).
+
+### Change 1: Add `parseAndValidate` to `lib/api-route-utils.ts`
+
+**File:** `lib/api-route-utils.ts`
+**Action:** MODIFY
+
+Add import at top:
+```typescript
+import { z } from 'zod';
+```
+
+Add TODO comment above existing `parseJsonBody`:
+```typescript
+// TODO: Replace with parseAndValidate once Zod schema exists for each remaining route
+```
+
+Add new function after `parseJsonBody`:
+```typescript
+type ValidateResult<T> =
+  | { data: T; error?: never }
+  | { data?: never; error: Response };
+
+export async function parseAndValidate<T>(
+  request: Request,
+  schema: z.ZodType<T>,
+): Promise<ValidateResult<T>> {
+  let raw: unknown;
+  try {
+    raw = await request.json();
+  } catch {
+    return { error: Response.json({ error: 'Invalid JSON body' }, { status: 400 }) };
+  }
+
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    return {
+      error: Response.json(
+        { error: 'Validation failed', details: z.flattenError(result.error) },
+        { status: 400 },
+      ),
+    };
+  }
+
+  return { data: result.data };
+}
+```
+
+### Change 2: Create `lib/validations/trades.ts`
+
+**File:** `lib/validations/trades.ts`
+**Action:** CREATE
+
+```typescript
+import { z } from 'zod';
+
+// --- Shared pieces ---
+
+const executionSchema = z.object({
+  id: z.string(),
+  side: z.enum(['ENTRY', 'EXIT']),
+  price: z.number().finite(),
+  qty: z.number().finite().positive(),
+  time: z.string().min(1),
+  timestamp: z.union([z.string(), z.date()]).optional(),
+  commission: z.number().finite().optional().default(0),
+  fees: z.number().finite().optional().default(0),
+});
+
+// --- POST /api/trades ---
+
+export const createTradeSchema = z.object({
+  id: z.string().min(1),
+  date: z.string().min(1),
+  sortKey: z.string().min(1),
+  symbol: z.string().min(1),
+  direction: z.enum(['LONG', 'SHORT']),
+  avgEntryPrice: z.number().finite().optional().default(0),
+  avgExitPrice: z.number().finite().optional().default(0),
+  totalQuantity: z.number().finite().optional().default(0),
+  grossPnl: z.number().finite().optional(),
+  netPnl: z.number().finite().optional(),
+  pnl: z.number().finite().optional(),
+  entryTime: z.string().optional().default(''),
+  exitTime: z.string().optional().default(''),
+  executionCount: z.number().int().optional(),
+  executions: z.number().int().optional(),
+  rawExecutions: z.array(executionSchema).optional(),
+  mfe: z.number().finite().nullable().optional(),
+  mae: z.number().finite().nullable().optional(),
+  bestExitPnl: z.number().finite().nullable().optional(),
+  exitEfficiency: z.number().finite().nullable().optional(),
+  initialRisk: z.number().finite().nullable().optional(),
+  commission: z.number().finite().optional().default(0),
+  fees: z.number().finite().optional().default(0),
+  notes: z.string().nullable().optional(),
+  tags: z.array(z.string()).optional(),
+});
+
+export type CreateTradeInput = z.infer<typeof createTradeSchema>;
+
+// --- PATCH /api/trades/[id] ---
+
+export const updateTradeSchema = z.object({
+  notes: z.string().optional(),
+  initialRisk: z.number().finite().nullable().optional(),
+  tags: z.array(z.string()).optional(),
+});
+
+export type UpdateTradeInput = z.infer<typeof updateTradeSchema>;
+
+// --- POST /api/trades/bulk ---
+
+export const bulkTradeSchema = z.object({
+  action: z.enum(['delete', 'applyRisk', 'addTag']),
+  ids: z.array(z.string().min(1)).min(1, 'ids are required'),
+  value: z.union([z.number(), z.string()]).optional(),
+});
+
+export type BulkTradeInput = z.infer<typeof bulkTradeSchema>;
+
+// --- POST /api/trades/import ---
+
+export const importTradeItemSchema = z.object({
+  id: z.string().min(1),
+  date: z.string().min(1),
+  sortKey: z.string().min(1),
+  symbol: z.string().min(1),
+  direction: z.enum(['LONG', 'SHORT']),
+  avgEntryPrice: z.number().finite(),
+  avgExitPrice: z.number().finite(),
+  totalQuantity: z.number().finite(),
+  grossPnl: z.number().finite().optional(),
+  netPnl: z.number().finite().optional(),
+  pnl: z.number().finite().optional(),
+  entryTime: z.string().optional().default(''),
+  exitTime: z.string().optional().default(''),
+  executionCount: z.number().int().optional(),
+  executions: z.number().int().optional(),
+  rawExecutions: z.array(executionSchema).optional(),
+  mfe: z.number().finite().nullable().optional(),
+  mae: z.number().finite().nullable().optional(),
+  bestExitPnl: z.number().finite().nullable().optional(),
+  exitEfficiency: z.number().finite().nullable().optional(),
+  initialRisk: z.number().finite().nullable().optional(),
+  commission: z.number().finite().optional().default(0),
+  fees: z.number().finite().optional().default(0),
+  notes: z.string().nullable().optional(),
+  tags: z.array(z.string()).optional(),
+});
+
+export const importTradesSchema = z.object({
+  trades: z.array(importTradeItemSchema).min(1, 'trades array must not be empty'),
+  batchKey: z.string().max(256).optional(),
+});
+
+export type ImportTradesInput = z.infer<typeof importTradesSchema>;
+```
+
+### Change 3: Create `lib/validations/jarvis.ts`
+
+**File:** `lib/validations/jarvis.ts`
+**Action:** CREATE
+
+```typescript
+import { z } from 'zod';
+
+// --- POST /api/jarvis/chat ---
+
+export const jarvisChatSchema = z.object({
+  message: z.string().trim().min(1, 'message is required'),
+  session_id: z.string().trim().optional(),
+});
+
+export type JarvisChatInput = z.infer<typeof jarvisChatSchema>;
+
+// --- POST /api/jarvis/research ---
+
+export const jarvisResearchSchema = z.object({
+  ticker: z.string().trim().min(1, 'ticker is required').transform((v) => v.toUpperCase()),
+});
+
+export type JarvisResearchInput = z.infer<typeof jarvisResearchSchema>;
+
+// --- POST /api/jarvis/trade-analysis ---
+
+export const jarvisTradeAnalysisSchema = z.object({
+  days: z.number().int().positive().optional(),
+});
+
+export type JarvisTradeAnalysisInput = z.infer<typeof jarvisTradeAnalysisSchema>;
+```
+
+### Changes 4-10: Migrate each route
+
+**Execute in this order** (simplest first, highest-risk last):
+
+#### Change 4: `app/api/jarvis/trade-analysis/route.ts`
+
+Replace `parseJsonBody<TradeAnalysisBody>` → `parseAndValidate(request, jarvisTradeAnalysisSchema)`. Delete `TradeAnalysisBody` interface. Import `parseAndValidate` from `@/lib/api-route-utils` and `jarvisTradeAnalysisSchema` from `@/lib/validations/jarvis`.
+
+#### Change 5: `app/api/jarvis/research/route.ts`
+
+Replace `parseJsonBody<ResearchBody>` → `parseAndValidate(request, jarvisResearchSchema)`. Delete `ResearchBody` interface. The Zod schema trims + uppercases the ticker, so remove the manual `.trim().toUpperCase()` — `bodyState.data.ticker` is already clean.
+
+#### Change 6: `app/api/jarvis/chat/route.ts`
+
+Replace `parseJsonBody<ChatBody>` → `parseAndValidate(request, jarvisChatSchema)`. Delete `ChatBody` interface. Zod trims `message`, so remove the manual `.trim()` — use `bodyState.data.message` directly. Remove the `if (!message)` check (Zod's `.min(1)` handles it). Zod trims `session_id` too, so simplify to `bodyState.data.session_id || crypto.randomUUID()`.
+
+#### Change 7: `app/api/trades/[id]/route.ts` PATCH
+
+Replace `parseJsonBody<{ notes?: string; initialRisk?: number | null; tags?: string[] }>` → `parseAndValidate(request, updateTradeSchema)`. The `hasOwnProperty` checks on `notes`, `initialRisk`, `tags` still work — Zod `optional()` only includes keys present in input.
+
+**Verify during testing:** If Zod v4 always includes optional keys as `undefined`, the `hasOwnProperty` checks would always be true. If that happens, switch to `body.notes !== undefined` checks instead.
+
+#### Change 8: `app/api/trades/bulk/route.ts`
+
+Replace `parseJsonBody<BulkPayload>` → `parseAndValidate(request, bulkTradeSchema)`. Delete `BulkPayload` type. Keep the dedup logic (`Array.from(new Set(...))`), the `uniqueIds.length === 0` check, and the action-specific `value` validation.
+
+#### Change 9: `app/api/trades/route.ts` POST
+
+Replace `parseJsonBody<Partial<ApiTrade>>` → `parseAndValidate(request, createTradeSchema)`. Remove the manual 5-field required check (`!body.id || !body.symbol || ...`). Remove `!` non-null assertions on `body.id` (Zod guarantees it's a string).
+
+#### Change 10: `app/api/trades/import/route.ts` POST (HIGHEST RISK)
+
+Replace `parseJsonBody<ImportPayload>` → `parseAndValidate(request, importTradesSchema)`. Delete `ImportPayload` type, `validateTradePayload` function, `normalizeStringArray` function. Keep `normalizeExecutionList` (does business logic beyond validation), `isFiniteNumber`, `toTrimmedString` (used by `normalizeExecutionList`).
+
+Remove the `Array.isArray(body.trades)` check. Remove the `validateTradePayload` call in the mapping loop.
+
+Replace `normalizeStringArray` calls with:
+```typescript
+const tags = trade.tags ? Array.from(new Set(trade.tags)) : [];
+```
+
+Add post-Zod check for "netPnl or pnl required" in the mapping loop:
+```typescript
+const netPnl = trade.netPnl ?? trade.pnl;
+if (netPnl === undefined) {
+  throw Response.json(
+    { error: `trades[${tradeIndex}] must include netPnl or pnl` },
+    { status: 400 },
+  );
+}
+```
+
+Simplify batchKey handling:
+```typescript
+const batchKey = body.batchKey?.trim() ?? '';
+```
+Remove the manual length check (Zod `.max(256)` handles it).
+
+### Acceptance Criteria
+
+- [ ] `parseAndValidate` exported from `lib/api-route-utils.ts`
+- [ ] `lib/validations/trades.ts` and `lib/validations/jarvis.ts` exist with all schemas
+- [ ] All 7 routes use `parseAndValidate` instead of `parseJsonBody`
+- [ ] All inline type interfaces (`ChatBody`, `ResearchBody`, `TradeAnalysisBody`, `BulkPayload`, `ImportPayload`) deleted
+- [ ] `validateTradePayload` and `normalizeStringArray` deleted from import route
+- [ ] Sending `{}` to POST `/api/trades` returns 400 with `{ error: "Validation failed", details: {...} }`
+- [ ] `npm run lint && npx tsc --noEmit && npm test` all pass
+
+### Files Changed Summary
+
+| File | Action | Risk |
+|------|--------|------|
+| `lib/api-route-utils.ts` | MODIFY — add `parseAndValidate` | LOW |
+| `lib/validations/trades.ts` | CREATE | LOW |
+| `lib/validations/jarvis.ts` | CREATE | LOW |
+| `app/api/jarvis/trade-analysis/route.ts` | MODIFY | LOW |
+| `app/api/jarvis/research/route.ts` | MODIFY | LOW |
+| `app/api/jarvis/chat/route.ts` | MODIFY | LOW |
+| `app/api/trades/[id]/route.ts` | MODIFY | LOW |
+| `app/api/trades/bulk/route.ts` | MODIFY | MEDIUM |
+| `app/api/trades/route.ts` | MODIFY | MEDIUM |
+| `app/api/trades/import/route.ts` | MODIFY | HIGH |
+
+---
+
+## PR 5: Decompose `use-trades.ts` God Hook
+
+> Generated: 2026-03-16 | Agent: nexus-architect
+> Status: PLANNED | Risk: MEDIUM-HIGH | Est: 3 hrs (4 sub-steps)
+
+### Objective
+
+Break the 938-line `useTrades` hook into composable sub-hooks. The return type of `useTrades()` must NOT change — this is a pure refactor with zero consumer changes.
+
+### Current Structure (from audit)
+
+| Line Range | Responsibility |
+|------------|---------------|
+| 33-63 | Pure functions: `normalizeTrade()`, `toApiTrade()`, `fromApiTrade()` |
+| 71-91 | `apiRequest<T>()` — duplicates logic from `lib/api-route-utils` |
+| 93-100 | `appendCsvParseWarnings()` |
+| 102-349 | Auth, DB loading, localStorage/cloud sync, migration |
+| 351-363 | localStorage persistence effect |
+| 365-596 | Selection, filtering, tagging, bulk operations |
+| 648-887 | CSV file/folder import (~80% duplicated between handlers) |
+
+### Sub-step 5a: Extract shared utilities to `hooks/trade-utils.ts`
+
+**File:** `hooks/trade-utils.ts`
+**Action:** CREATE
+
+Move these pure functions out of `use-trades.ts`:
+- `normalizeTrade()` (lines ~33-42)
+- `toApiTrade()` (lines ~43-52)
+- `fromApiTrade()` (lines ~53-63)
+- `apiRequest<T>()` (lines ~71-91)
+- `appendCsvParseWarnings()` (lines ~93-100)
+- Types: `TradeLike`, `CsvParseIssue`
+
+Export all of them. Update `use-trades.ts` to import from `./trade-utils`.
+
+**Verify:** `npm run lint && npx tsc --noEmit && npm test`
+
+### Sub-step 5b: Deduplicate file/folder upload
+
+**File:** `hooks/use-trades.ts`
+**Action:** MODIFY
+
+`handleFileUpload` (~lines 648-770) and `handleFolderUpload` (~lines 770-887) share ~80% logic. Extract a shared function:
+
+```typescript
+async function processImportFiles(
+  files: FileList,
+  resolveParser: (files: FileList) => BrokerParserConfig | null,
+  // ... other shared deps passed as params
+): Promise<void> {
+  // Shared parsing, validation, API call logic
+}
+```
+
+Both handlers become thin wrappers that call `processImportFiles` with different parser resolution strategies.
+
+**Verify:** `npm run lint && npx tsc --noEmit && npm test`
+
+### Sub-step 5c: Extract `useTradeFilters()` to `hooks/use-trade-filters.ts`
+
+**File:** `hooks/use-trade-filters.ts`
+**Action:** CREATE
+
+Move filter/search/selection state and handlers:
+
+**State:** `selectedIds`, `startDate`, `endDate`, `searchQuery`, `filterPreset`, `selectedFilterTags`, `bulkTagInput`
+
+**Computed:** `filteredTrades` (useMemo), `hasActiveFilters`, `activeFilterCount`
+
+**Handlers:** `handleToggleSelect`, `handleSelectAll`, `handleBulkAddTag`
+
+**Interface:**
+```typescript
+export function useTradeFilters(trades: Trade[], globalTags: string[]) {
+  // ... state + handlers
+  return {
+    selectedIds, setSelectedIds,
+    startDate, setStartDate,
+    endDate, setEndDate,
+    searchQuery, setSearchQuery,
+    filterPreset, setFilterPreset,
+    selectedFilterTags, setSelectedFilterTags,
+    bulkTagInput, setBulkTagInput,
+    filteredTrades,
+    hasActiveFilters,
+    activeFilterCount,
+    handleToggleSelect,
+    handleSelectAll,
+    handleBulkAddTag,
+  };
+}
+```
+
+Update `use-trades.ts` to call `useTradeFilters(trades, globalTags)` and spread its return into the main return object.
+
+**Verify:** `npm run lint && npx tsc --noEmit && npm test`
+
+### Sub-step 5d: Extract `useTradeSync()` to `hooks/use-trade-sync.ts`
+
+**File:** `hooks/use-trade-sync.ts`
+**Action:** CREATE
+
+Move auth + persistence logic (lines ~102-363):
+
+**State:** `trades`, `globalTags`, `mounted`, `error`, `useLocalStorage`
+
+**Logic:** All the auth checking, DB loading, localStorage hydration, migration, cloud sync, localStorage persistence effect
+
+**Interface:**
+```typescript
+export function useTradeSync() {
+  // ... auth, loading, persistence
+  return {
+    trades, setTrades,
+    globalTags, setGlobalTags,
+    mounted,
+    error,
+    useLocalStorage, setUseLocalStorage,
+    refreshTrades, // re-fetch from DB
+  };
+}
+```
+
+Update `use-trades.ts` to call `useTradeSync()` and compose with `useTradeFilters`.
+
+**Final state of `use-trades.ts`:** ~350 lines. Composes `useTradeSync()` + `useTradeFilters()`, owns CRUD handlers (create, delete, risk, notes, tags, import), returns the same 37-property object.
+
+**Verify:** `npm run lint && npx tsc --noEmit && npm test`
+
+### Acceptance Criteria
+
+- [ ] `hooks/trade-utils.ts` exists with pure functions
+- [ ] `hooks/use-trade-filters.ts` exists and exports `useTradeFilters`
+- [ ] `hooks/use-trade-sync.ts` exists and exports `useTradeSync`
+- [ ] `hooks/use-trades.ts` is under 400 lines
+- [ ] File/folder upload share one code path
+- [ ] `useTrades()` return type is IDENTICAL — no consumer changes
+- [ ] `app/page.tsx` is NOT modified
+- [ ] All existing tests pass
+- [ ] `npm run lint && npx tsc --noEmit && npm test` all pass
+
+### Files Changed Summary
+
+| File | Action | Risk |
+|------|--------|------|
+| `hooks/trade-utils.ts` | CREATE | LOW |
+| `hooks/use-trade-filters.ts` | CREATE | MEDIUM |
+| `hooks/use-trade-sync.ts` | CREATE | MEDIUM |
+| `hooks/use-trades.ts` | MODIFY (shrink from 938 → ~350 lines) | HIGH |

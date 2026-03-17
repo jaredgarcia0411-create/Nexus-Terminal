@@ -39,3 +39,35 @@ export interface Trade {
   tags: string[];
   notes?: string;
 }
+
+/**
+ * Wire format of a trade returned by / sent to API routes.
+ * Identical to Trade except `date` is an ISO string (JSON has no Date type).
+ */
+export type ApiTrade = {
+  id: string;
+  date: string;
+  sortKey: string;
+  symbol: string;
+  direction: Direction;
+  avgEntryPrice: number;
+  avgExitPrice: number;
+  totalQuantity: number;
+  grossPnl: number;
+  netPnl: number;
+  entryTime: string;
+  exitTime: string;
+  executionCount: number;
+  rawExecutions: Execution[];
+  mfe?: number;
+  mae?: number;
+  bestExitPnl?: number;
+  exitEfficiency?: number;
+  pnl: number;
+  executions: number;
+  initialRisk?: number;
+  commission?: number;
+  fees?: number;
+  tags: string[];
+  notes?: string;
+};

@@ -60,7 +60,7 @@ describe('jarvis chat route', () => {
     vi.clearAllMocks();
     requireUserMock.mockResolvedValue({ user: { id: 'u1', email: 'u@x.com', name: null, picture: null } });
     ensureUserMock.mockResolvedValue({ id: 'canonical-u1', email: 'u@x.com', name: null, picture: null });
-    checkRateLimitMock.mockReturnValue({ allowed: true, remaining: 10, resetAt: Date.now() + 1000 });
+    checkRateLimitMock.mockResolvedValue({ allowed: true, remaining: 10, resetAt: Date.now() + 1000 });
     buildContextMock.mockResolvedValue({ user_trades: [], macro_summary: null, memory: [] });
     callJarvisMock.mockResolvedValue({ content: 'hello back', modelUsed: 'm' });
     runTradeAnalysisPipelineMock.mockResolvedValue({ analysis: { strengths: [], weaknesses: [], patterns: [], action_items: [] } });
