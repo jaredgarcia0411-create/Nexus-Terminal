@@ -1,13 +1,9 @@
 import { and, desc, eq } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
+import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { scannerPresets } from '@/lib/db/schema';
 import { ensureUser, requireUser } from '@/lib/server-db-utils';
-
-interface PresetBody {
-  name?: string;
-  filters?: Record<string, unknown>;
-}
+import { presetBodySchema } from '@/lib/validations/system';
 
 export async function GET() {
   try {
@@ -54,7 +50,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Database not configured' }, { status: 503 });
     }
 
-    const bodyState = await parseJsonBody<PresetBody>(request);
+    const bodyState = await parseAndValidate(request, presetBodySchema);
     if (bodyState.error) {
       return bodyState.error;
     }

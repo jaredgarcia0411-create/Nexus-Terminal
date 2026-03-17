@@ -1,14 +1,9 @@
 import { and, desc, eq } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
+import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { savedTickers } from '@/lib/db/schema';
 import { ensureUser, requireUser } from '@/lib/server-db-utils';
-
-interface SavedTickerBody {
-  ticker?: string;
-  category?: string;
-  notes?: string;
-}
+import { savedTickerBodySchema } from '@/lib/validations/system';
 
 function normalizeTicker(value: string | undefined) {
   return (value ?? '').trim().toUpperCase();
@@ -62,7 +57,7 @@ export async function POST(request: Request) {
 
     await ensureUser(db, authState.user);
 
-    const bodyState = await parseJsonBody<SavedTickerBody>(request);
+    const bodyState = await parseAndValidate(request, savedTickerBodySchema);
     if (bodyState.error) return bodyState.error;
 
     const ticker = normalizeTicker(bodyState.data.ticker);

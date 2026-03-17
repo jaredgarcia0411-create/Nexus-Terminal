@@ -1,14 +1,9 @@
 import { and, eq } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
+import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { agentMemory } from '@/lib/db/schema';
 import { requireJarvisAdmin } from '@/lib/jarvis/admin';
-
-interface DeleteBody {
-  userId?: string;
-  category?: string;
-  all?: boolean;
-}
+import { adminMemoryDeleteBodySchema } from '@/lib/validations/system';
 
 export async function GET(request: Request) {
   try {
@@ -50,7 +45,7 @@ export async function DELETE(request: Request) {
       return Response.json({ error: 'Database not configured' }, { status: 503 });
     }
 
-    const bodyState = await parseJsonBody<DeleteBody>(request);
+    const bodyState = await parseAndValidate(request, adminMemoryDeleteBodySchema);
     if (bodyState.error) return bodyState.error;
 
     const body = bodyState.data;

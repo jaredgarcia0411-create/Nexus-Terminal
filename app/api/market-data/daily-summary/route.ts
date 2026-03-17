@@ -1,16 +1,10 @@
 import { and, desc, eq, gte, lte } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
+import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { dailyTickerSummaries } from '@/lib/db/schema';
 import { fetchDailyTickerSummary } from '@/lib/massive-market';
 import { ensureUser, requireUser } from '@/lib/server-db-utils';
-
-interface DailySummaryBody {
-  ticker?: string;
-  date?: string;
-  startDate?: string;
-  endDate?: string;
-}
+import { dailySummaryBodySchema } from '@/lib/validations/system';
 
 function todayDate() {
   return new Date().toISOString().slice(0, 10);
@@ -157,7 +151,7 @@ export async function POST(request: Request) {
     const canonicalUser = await ensureUser(db, authState.user);
     const userId = canonicalUser?.id ?? authState.user.id;
 
-    const bodyState = await parseJsonBody<DailySummaryBody>(request);
+    const bodyState = await parseAndValidate(request, dailySummaryBodySchema);
     if (bodyState.error) return bodyState.error;
 
     const ticker = normalizeTicker(bodyState.data.ticker);

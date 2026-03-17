@@ -1,8 +1,9 @@
 import { and, asc, eq } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseJsonBody } from '@/lib/api-route-utils';
+import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { tags as tagsTable, tradeTags as tradeTagsTable } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
+import { tagBodySchema } from '@/lib/validations/system';
 
 export async function GET() {
   try {
@@ -34,9 +35,9 @@ export async function POST(request: Request) {
     if (!db) return dbUnavailable();
     await ensureUser(db, authState.user);
 
-    const bodyState = await parseJsonBody<{ name?: string }>(request);
+    const bodyState = await parseAndValidate(request, tagBodySchema);
     if (bodyState.error) return bodyState.error;
-    const name = bodyState.data.name?.trim();
+    const name = bodyState.data.name;
     if (!name) {
       return Response.json({ error: 'name is required' }, { status: 400 });
     }
@@ -60,9 +61,9 @@ export async function DELETE(request: Request) {
     if (!db) return dbUnavailable();
     await ensureUser(db, authState.user);
 
-    const bodyState = await parseJsonBody<{ name?: string }>(request);
+    const bodyState = await parseAndValidate(request, tagBodySchema);
     if (bodyState.error) return bodyState.error;
-    const name = bodyState.data.name?.trim();
+    const name = bodyState.data.name;
     if (!name) {
       return Response.json({ error: 'name is required' }, { status: 400 });
     }

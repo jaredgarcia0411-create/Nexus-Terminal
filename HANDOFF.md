@@ -9,7 +9,7 @@ Use git history and the `specs/` directory for archived implementation detail.
 
 - [x] Refreshed `AGENTS.md` with current build/lint/test commands, single-test workflows, and coding conventions for agentic coding tools.
 - [x] Verified command set and conventions against the current repository configuration (`package.json`, `tsconfig.json`, `vitest.config.ts`, `eslint.config.mjs`).
-- [ ] After all 5 PRs: remove `parseJsonBody` from `lib/api-route-utils.ts` if no routes still use it
+- [x] After all 5 PRs: remove `parseJsonBody` from `lib/api-route-utils.ts` if no routes still use it
 
 ---
 
@@ -427,150 +427,18 @@ Tab name mapping:
 ## PR 5: Decompose `use-trades.ts` God Hook
 
 > Generated: 2026-03-16 | Agent: nexus-architect
-> Status: PLANNED | Risk: MEDIUM-HIGH | Est: 3 hrs (4 sub-steps)
+> Status: COMPLETE | Risk: MEDIUM-HIGH | Completed: 2026-03-16
 
-### Objective
+### Delivered
 
-Break the 938-line `useTrades` hook into composable sub-hooks. The return type of `useTrades()` must NOT change — this is a pure refactor with zero consumer changes.
+- Added `hooks/trade-utils.ts` and moved shared trade utilities/types (`normalizeTrade`, `toApiTrade`, `fromApiTrade`, `apiRequest`, CSV parse warning helpers) plus shared import collection logic.
+- Added `hooks/use-trade-filters.ts` for filter/search/selection state, derived values, and bulk-tag selection behavior.
+- Added `hooks/use-trade-sync.ts` for auth-aware trade/tag hydration, local-to-cloud migration, localStorage persistence, and `refreshTrades`.
+- Refactored `hooks/use-trades.ts` to compose `useTradeSync()` + `useTradeFilters()`, preserve the existing consumer-facing return contract, deduplicate file/folder import via shared `processImportFiles`, and reduce size to under 400 lines.
+- Kept `app/page.tsx` unchanged (no consumer updates required).
 
-### Current Structure (from audit)
+### Validation
 
-| Line Range | Responsibility |
-|------------|---------------|
-| 33-63 | Pure functions: `normalizeTrade()`, `toApiTrade()`, `fromApiTrade()` |
-| 71-91 | `apiRequest<T>()` — duplicates logic from `lib/api-route-utils` |
-| 93-100 | `appendCsvParseWarnings()` |
-| 102-349 | Auth, DB loading, localStorage/cloud sync, migration |
-| 351-363 | localStorage persistence effect |
-| 365-596 | Selection, filtering, tagging, bulk operations |
-| 648-887 | CSV file/folder import (~80% duplicated between handlers) |
-
-### Sub-step 5a: Extract shared utilities to `hooks/trade-utils.ts`
-
-**File:** `hooks/trade-utils.ts`
-**Action:** CREATE
-
-Move these pure functions out of `use-trades.ts`:
-- `normalizeTrade()` (lines ~33-42)
-- `toApiTrade()` (lines ~43-52)
-- `fromApiTrade()` (lines ~53-63)
-- `apiRequest<T>()` (lines ~71-91)
-- `appendCsvParseWarnings()` (lines ~93-100)
-- Types: `TradeLike`, `CsvParseIssue`
-
-Export all of them. Update `use-trades.ts` to import from `./trade-utils`.
-
-**Verify:** `npm run lint && npx tsc --noEmit && npm test`
-
-### Sub-step 5b: Deduplicate file/folder upload
-
-**File:** `hooks/use-trades.ts`
-**Action:** MODIFY
-
-`handleFileUpload` (~lines 648-770) and `handleFolderUpload` (~lines 770-887) share ~80% logic. Extract a shared function:
-
-```typescript
-async function processImportFiles(
-  files: FileList,
-  resolveParser: (files: FileList) => BrokerParserConfig | null,
-  // ... other shared deps passed as params
-): Promise<void> {
-  // Shared parsing, validation, API call logic
-}
-```
-
-Both handlers become thin wrappers that call `processImportFiles` with different parser resolution strategies.
-
-**Verify:** `npm run lint && npx tsc --noEmit && npm test`
-
-### Sub-step 5c: Extract `useTradeFilters()` to `hooks/use-trade-filters.ts`
-
-**File:** `hooks/use-trade-filters.ts`
-**Action:** CREATE
-
-Move filter/search/selection state and handlers:
-
-**State:** `selectedIds`, `startDate`, `endDate`, `searchQuery`, `filterPreset`, `selectedFilterTags`, `bulkTagInput`
-
-**Computed:** `filteredTrades` (useMemo), `hasActiveFilters`, `activeFilterCount`
-
-**Handlers:** `handleToggleSelect`, `handleSelectAll`, `handleBulkAddTag`
-
-**Interface:**
-```typescript
-export function useTradeFilters(trades: Trade[], globalTags: string[]) {
-  // ... state + handlers
-  return {
-    selectedIds, setSelectedIds,
-    startDate, setStartDate,
-    endDate, setEndDate,
-    searchQuery, setSearchQuery,
-    filterPreset, setFilterPreset,
-    selectedFilterTags, setSelectedFilterTags,
-    bulkTagInput, setBulkTagInput,
-    filteredTrades,
-    hasActiveFilters,
-    activeFilterCount,
-    handleToggleSelect,
-    handleSelectAll,
-    handleBulkAddTag,
-  };
-}
-```
-
-Update `use-trades.ts` to call `useTradeFilters(trades, globalTags)` and spread its return into the main return object.
-
-**Verify:** `npm run lint && npx tsc --noEmit && npm test`
-
-### Sub-step 5d: Extract `useTradeSync()` to `hooks/use-trade-sync.ts`
-
-**File:** `hooks/use-trade-sync.ts`
-**Action:** CREATE
-
-Move auth + persistence logic (lines ~102-363):
-
-**State:** `trades`, `globalTags`, `mounted`, `error`, `useLocalStorage`
-
-**Logic:** All the auth checking, DB loading, localStorage hydration, migration, cloud sync, localStorage persistence effect
-
-**Interface:**
-```typescript
-export function useTradeSync() {
-  // ... auth, loading, persistence
-  return {
-    trades, setTrades,
-    globalTags, setGlobalTags,
-    mounted,
-    error,
-    useLocalStorage, setUseLocalStorage,
-    refreshTrades, // re-fetch from DB
-  };
-}
-```
-
-Update `use-trades.ts` to call `useTradeSync()` and compose with `useTradeFilters`.
-
-**Final state of `use-trades.ts`:** ~350 lines. Composes `useTradeSync()` + `useTradeFilters()`, owns CRUD handlers (create, delete, risk, notes, tags, import), returns the same 37-property object.
-
-**Verify:** `npm run lint && npx tsc --noEmit && npm test`
-
-### Acceptance Criteria
-
-- [ ] `hooks/trade-utils.ts` exists with pure functions
-- [ ] `hooks/use-trade-filters.ts` exists and exports `useTradeFilters`
-- [ ] `hooks/use-trade-sync.ts` exists and exports `useTradeSync`
-- [ ] `hooks/use-trades.ts` is under 400 lines
-- [ ] File/folder upload share one code path
-- [ ] `useTrades()` return type is IDENTICAL — no consumer changes
-- [ ] `app/page.tsx` is NOT modified
-- [ ] All existing tests pass
-- [ ] `npm run lint && npx tsc --noEmit && npm test` all pass
-
-### Files Changed Summary
-
-| File | Action | Risk |
-|------|--------|------|
-| `hooks/trade-utils.ts` | CREATE | LOW |
-| `hooks/use-trade-filters.ts` | CREATE | MEDIUM |
-| `hooks/use-trade-sync.ts` | CREATE | MEDIUM |
-| `hooks/use-trades.ts` | MODIFY (shrink from 938 → ~350 lines) | HIGH |
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npm test`
