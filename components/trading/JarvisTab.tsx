@@ -11,11 +11,7 @@ export default function JarvisTab() {
         <p className="text-sm text-zinc-400">Chat-powered trading assistant workspace.</p>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-[#121214] px-4 py-3">
-        <p className="text-xs text-zinc-500">Available commands: `/research TICKER`, `/analyze`</p>
-      </div>
-
-      <div className="h-[calc(100vh-310px)] min-h-[420px] rounded-xl border border-white/10 bg-[#121214] p-4">
+      <div className="h-[calc(100vh-240px)] min-h-[480px] rounded-xl border border-white/10 bg-[#121214] p-4">
         <JarvisChat />
       </div>
     </motion.section>

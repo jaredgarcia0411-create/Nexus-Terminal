@@ -11,9 +11,10 @@ import { Button } from '@/components/ui/button';
 interface SettingsMenuProps {
   trades: Trade[];
   onClearAllData: () => void;
+  collapsed?: boolean;
 }
 
-export default function SettingsMenu({ trades, onClearAllData }: SettingsMenuProps) {
+export default function SettingsMenu({ trades, onClearAllData, collapsed }: SettingsMenuProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const csvPayload = useMemo(() => {
@@ -74,11 +75,15 @@ export default function SettingsMenu({ trades, onClearAllData }: SettingsMenuPro
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="p-2 rounded-lg transition-colors hover:text-white text-zinc-500" title="Settings" aria-label="Settings">
+          <button 
+            className={`rounded-lg transition-colors hover:text-white text-zinc-500 ${collapsed ? 'flex items-center justify-center px-2 py-2' : 'p-2'}`}
+            title="Settings" 
+            aria-label="Settings"
+          >
             <Settings className="w-5 h-5" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-52 bg-[#121214] border-white/10 text-white">
+        <DropdownMenuContent align={collapsed ? 'start' : 'start'} side={collapsed ? 'right' : 'bottom'} className="w-52 bg-[#121214] border-white/10 text-white">
           <DropdownMenuItem
             onClick={() =>
               download(

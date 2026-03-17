@@ -1,7 +1,7 @@
 'use client';
 
-import { Activity, BarChart3, ChartCandlestick, Filter, LayoutGrid, List, MessageSquare, Newspaper, Search, User } from 'lucide-react';
-import type { Dispatch, SetStateAction } from 'react';
+import { Activity, BarChart3, ChartCandlestick, ChevronLeft, ChevronRight, File, Filter, Folder, LayoutGrid, List, MessageSquare, Newspaper, Plus, Search, Upload, User } from 'lucide-react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import SettingsMenu from '@/components/trading/SettingsMenu';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -19,6 +19,11 @@ interface SidebarProps {
   useLocalStorage: boolean;
   onClearAllData: () => void;
   onSignOut: () => void;
+  onNewTradeClick: () => void;
+  onImportClick: () => void;
+  onFolderImportClick: () => void;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 export default function Sidebar({
@@ -29,8 +34,14 @@ export default function Sidebar({
   useLocalStorage,
   onClearAllData,
   onSignOut,
+  onNewTradeClick,
+  onImportClick,
+  onFolderImportClick,
+  collapsed,
+  onToggleCollapse,
 }: SidebarProps) {
   const isMobile = useIsMobile();
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
 
   const navItems: Array<{ tab: TabKey; title: string; icon: typeof LayoutGrid }> = [
     { tab: 'dashboard', title: 'Dashboard', icon: LayoutGrid },
@@ -85,54 +96,144 @@ export default function Sidebar({
     );
   }
 
-  return (
-    <nav className="fixed left-0 top-0 z-50 flex h-full w-56 flex-col gap-6 border-r border-white/5 bg-[#0A0A0B] px-3 py-6">
-      <div className="flex items-center gap-3 px-2">
-        <div className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl bg-emerald-500 shadow-lg shadow-emerald-500/20">
-        <Activity className="h-6 w-6 text-black" />
+return (
+    <nav className={`fixed left-0 top-0 z-50 flex h-full flex-col gap-4 border-r border-white/5 bg-[#0A0A0B] transition-all duration-300 ${collapsed ? 'w-16 px-2 py-4' : 'w-56 px-3 py-6'}`}>
+      {/* Header: Logo + Collapse Toggle */}
+      <div className={`flex items-center ${collapsed ? 'justify-center px-1' : 'gap-3 px-2'}`}>
+        <div className={`flex cursor-pointer items-center justify-center rounded-xl bg-emerald-500 shadow-lg shadow-emerald-500/20 transition-all ${collapsed ? 'h-8 w-8' : 'h-12 w-12'}`}>
+          <Activity className={`text-black transition-all ${collapsed ? 'h-5 w-5' : 'h-7 w-7'}`} />
         </div>
-        <div>
-          <p className="text-sm font-semibold text-white">Nexus</p>
-          <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Terminal</p>
-        </div>
+        {!collapsed && (
+          <div className="flex flex-1 flex-col">
+            <p className="text-base font-semibold text-white">Nexus</p>
+            <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Terminal</p>
+          </div>
+        )}
+        <button
+          onClick={onToggleCollapse}
+          className={`flex items-center justify-center rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-white/5 hover:text-white ${collapsed ? 'hidden' : ''}`}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
       </div>
 
-      <div className="flex flex-col gap-2 text-zinc-500">
-        {navItems.map((item, index) => {
+      {/* Collapse toggle for collapsed state */}
+      {collapsed && (
+        <button
+          onClick={onToggleCollapse}
+          className="flex items-center justify-center rounded-lg p-2 text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
+          title="Expand sidebar"
+          aria-label="Expand sidebar"
+        >
+          <ChevronRight className="h-5 w-5" />
+        </button>
+      )}
+
+      {/* Action Buttons */}
+      <div className={`flex flex-col gap-2 ${collapsed ? 'px-1' : 'px-2'}`}>
+        <button
+          onClick={onNewTradeClick}
+          className="flex items-center gap-2 rounded-lg bg-emerald-500 px-3 py-2 text-sm font-medium text-black transition-colors hover:bg-emerald-400"
+          title="New Trade"
+          aria-label="New Trade"
+        >
+          <Plus className="h-4 w-4 shrink-0" />
+          {!collapsed && <span>New Trade</span>}
+        </button>
+
+        {!collapsed ? (
+          <DropdownMenu open={importMenuOpen} onOpenChange={setImportMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10"
+                title="Import"
+                aria-label="Import"
+              >
+                <Upload className="h-4 w-4 shrink-0" />
+                Import
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48 border-white/10 bg-[#121214] text-white">
+              <DropdownMenuItem onClick={onImportClick} className="cursor-pointer gap-2">
+                <File className="h-4 w-4" />
+                Import Files
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onFolderImportClick} className="cursor-pointer gap-2">
+                <Folder className="h-4 w-4" />
+                Import Folder
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <DropdownMenu open={importMenuOpen} onOpenChange={setImportMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="flex cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white transition-colors hover:bg-white/10"
+                title="Import"
+                aria-label="Import"
+              >
+                <Upload className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" side="right" className="w-48 border-white/10 bg-[#121214] text-white">
+              <DropdownMenuItem onClick={onImportClick} className="cursor-pointer gap-2">
+                <File className="h-4 w-4" />
+                Import Files
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onFolderImportClick} className="cursor-pointer gap-2">
+                <Folder className="h-4 w-4" />
+                Import Folder
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+
+      {/* Navigation Items */}
+      <div className={`flex flex-col gap-1 text-zinc-500 ${collapsed ? 'px-1' : 'px-2'}`}>
+        {navItems.map((item) => {
           const Icon = item.icon;
           return (
             <button
               key={item.tab}
               onClick={() => setActiveTab(item.tab)}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${activeTab === item.tab ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-white/5 hover:text-white'}`}
+              className={`flex items-center gap-3 rounded-lg transition-colors ${activeTab === item.tab ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-white/5 hover:text-white'} ${collapsed ? 'justify-center px-2 py-2' : 'px-3 py-2'}`}
               title={item.title}
               aria-label={item.title}
             >
-              <Icon className="h-5 w-5" />
-              <span className="text-sm font-medium">{item.title}</span>
-              <kbd className="ml-auto rounded bg-white/5 px-1 py-0.5 font-mono text-[10px] text-zinc-600">
-                {index + 1}
-              </kbd>
+              <Icon className="h-5 w-5 shrink-0" />
+              {!collapsed && <span className="text-sm font-medium">{item.title}</span>}
             </button>
           );
         })}
       </div>
 
-      <div className="mt-auto flex flex-col gap-2 text-zinc-500">
-        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-          <p className="text-[10px] uppercase tracking-widest text-zinc-500">{useLocalStorage ? 'Local Storage Mode' : 'Cloud Mode'}</p>
+      {/* Footer */}
+      <div className={`mt-auto flex flex-col gap-2 text-zinc-500 ${collapsed ? 'px-1' : 'px-2'}`}>
+        <div className={`rounded-lg border border-white/10 bg-white/5 ${collapsed ? 'flex items-center justify-center p-2' : 'px-3 py-2'}`} title={useLocalStorage ? 'Local Storage Mode' : 'Cloud Mode'}>
+          {collapsed ? (
+            <div className={`h-2 w-2 rounded-full ${useLocalStorage ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+          ) : (
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">{useLocalStorage ? 'Local Storage Mode' : 'Cloud Mode'}</p>
+          )}
         </div>
 
-        <SettingsMenu trades={trades} onClearAllData={onClearAllData} />
+        <SettingsMenu trades={trades} onClearAllData={onClearAllData} collapsed={collapsed} />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-white/5 hover:text-white" title="User Menu" aria-label="User Menu">
-              <User className="h-5 w-5" />
-              <span className="text-sm font-medium">Account</span>
+            <button
+              className={`flex items-center gap-3 rounded-lg transition-colors hover:bg-white/5 hover:text-white ${collapsed ? 'justify-center px-2 py-2' : 'px-3 py-2'}`}
+              title="User Menu"
+              aria-label="User Menu"
+            >
+              <User className="h-5 w-5 shrink-0" />
+              {!collapsed && <span className="text-sm font-medium">Account</span>}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64 border-white/10 bg-[#121214] text-white">
+          <DropdownMenuContent align={collapsed ? 'start' : 'start'} side={collapsed ? 'right' : 'bottom'} className="w-64 border-white/10 bg-[#121214] text-white">
             <div className="border-b border-white/10 px-3 py-2">
               <p className="text-xs text-zinc-400">{user?.name}</p>
               <p className="text-[11px] text-zinc-500">{user?.email}</p>

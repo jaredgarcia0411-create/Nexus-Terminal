@@ -39,6 +39,11 @@ export default function NexusTerminal() {
   const [isManualTradeOpen, setIsManualTradeOpen] = useState(false);
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const stored = localStorage.getItem('sidebarCollapsed');
+    return stored === 'true';
+  });
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -137,6 +142,12 @@ export default function NexusTerminal() {
     );
   }
 
+  const handleToggleSidebarCollapse = () => {
+    const newValue = !sidebarCollapsed;
+    setSidebarCollapsed(newValue);
+    localStorage.setItem('sidebarCollapsed', String(newValue));
+  };
+
   return (
     <div className="min-h-screen bg-[#0A0A0B] font-sans text-[#E4E4E7] selection:bg-emerald-500/30">
       <Sidebar
@@ -147,9 +158,14 @@ export default function NexusTerminal() {
         useLocalStorage={useLocalStorage}
         onClearAllData={handleClearAllData}
         onSignOut={handleSignOut}
+        onNewTradeClick={() => setIsManualTradeOpen(true)}
+        onImportClick={() => importInputRef.current?.click()}
+        onFolderImportClick={() => folderInputRef.current?.click()}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={handleToggleSidebarCollapse}
       />
 
-      <main className={isMobile ? 'pb-16' : 'pl-56'}>
+      <main className={isMobile ? 'pb-16' : sidebarCollapsed ? 'pl-16' : 'pl-56'}>
         <Toolbar
           error={error}
           user={user}

@@ -2,8 +2,7 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { Calendar as CalendarIcon, Plus, Trash2, User } from 'lucide-react';
-import ImportDropdown from '@/components/trading/ImportDropdown';
+import { Calendar as CalendarIcon, Trash2, User } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -35,9 +34,6 @@ export default function Toolbar({
   endDate,
   onStartDateChange,
   onEndDateChange,
-  onImportClick,
-  onFolderImportClick,
-  onNewTradeClick,
 }: ToolbarProps) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const isMobile = useIsMobile();
@@ -47,9 +43,6 @@ export default function Toolbar({
     <>
       <header className="sticky top-0 z-40 flex min-h-16 flex-wrap items-center gap-2 border-b border-white/5 bg-[#0A0A0B]/80 px-4 py-2 backdrop-blur-md sm:h-16 sm:flex-nowrap sm:justify-between sm:gap-3 sm:px-8 sm:py-0">
         <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
-          <h1 className="shrink-0 text-lg font-medium tracking-tight">Nexus Terminal</h1>
-          <div className="mx-1 hidden h-4 w-px bg-white/10 sm:mx-2 sm:block" />
-
           <div className="ml-0 flex items-center gap-1 sm:ml-2">
             {[
               { id: 'all', label: 'All' },
@@ -60,7 +53,7 @@ export default function Toolbar({
               <button
                 key={preset.id}
                 onClick={() => onFilterPresetChange(preset.id as 'all' | '30' | '60' | '90')}
-                className={`h-9 rounded-md px-3 text-xs font-semibold transition-colors ${
+                className={`h-[38px] rounded-md px-3 text-xs font-semibold transition-colors ${
                   filterPreset === preset.id
                     ? 'bg-emerald-500 text-black'
                     : 'bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
@@ -74,7 +67,7 @@ export default function Toolbar({
             {!isMobile ? (
               <>
                 <div className="mx-1 hidden h-4 w-px bg-white/10 sm:block" />
-                <div className="flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3">
+                <div className="flex h-[38px] items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3">
                   <CalendarIcon className="h-4 w-4 text-zinc-500" />
                   <input
                     type="date"
@@ -136,16 +129,6 @@ export default function Toolbar({
               </button>
             </div>
           ) : null}
-
-          <ImportDropdown onImportFiles={onImportClick} onImportFolder={onFolderImportClick} />
-
-          <Button
-            onClick={onNewTradeClick}
-            className="flex items-center gap-2 bg-emerald-500 px-4 py-1.5 text-sm font-medium text-black hover:bg-emerald-400"
-          >
-            <Plus className="h-4 w-4" />
-            New Trade
-          </Button>
         </div>
 
         {error ? (
