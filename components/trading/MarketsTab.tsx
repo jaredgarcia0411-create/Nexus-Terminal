@@ -310,10 +310,7 @@ export default function MarketsTab() {
   return (
     <motion.section key="markets" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-white">Markets</h1>
-          <p className="text-sm text-zinc-400">Unified market snapshot with market movers across major asset classes.</p>
-        </div>
+        <p className="text-sm text-zinc-400">Unified market snapshot with market movers across major asset classes.</p>
         <Button
           type="button"
           variant="outline"

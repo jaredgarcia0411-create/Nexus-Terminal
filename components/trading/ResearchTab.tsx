@@ -151,10 +151,7 @@ export default function ResearchTab() {
   return (
     <motion.section key="research" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-white">Research</h1>
-          <p className="text-sm text-zinc-400">AI reports and daily ticker summaries.</p>
-        </div>
+        <p className="text-sm text-zinc-400">AI reports and daily ticker summaries.</p>
         <p className="rounded-lg border border-white/10 bg-[#121214] px-2.5 py-1 text-xs text-zinc-400">
           {loadingRows
             ? 'Loading reports...'

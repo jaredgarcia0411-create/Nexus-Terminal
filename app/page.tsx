@@ -25,6 +25,17 @@ import { useTrades } from '@/hooks/use-trades';
 
 const VALID_TABS: TabKey[] = ['dashboard', 'performance', 'journal', 'filter', 'charts', 'markets', 'research', 'jarvis'];
 
+const TAB_TITLES: Record<TabKey, string> = {
+  dashboard: 'Dashboard',
+  performance: 'Performance Analytics',
+  journal: 'Trading Journal',
+  filter: 'Trades Management',
+  charts: 'Charts',
+  markets: 'Markets',
+  research: 'Research',
+  jarvis: 'Jarvis',
+};
+
 export default function NexusTerminal() {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
@@ -166,17 +177,18 @@ export default function NexusTerminal() {
       />
 
       <main className={isMobile ? 'pb-16' : sidebarCollapsed ? 'pl-16' : 'pl-56'}>
-        <Toolbar
-          error={error}
-          filterPreset={filterPreset}
-          selectedCount={selectedIds.size}
-          onDeleteSelected={handleDeleteSelected}
-          onFilterPresetChange={setFilterPreset}
-          startDate={startDate}
-          endDate={endDate}
-          onStartDateChange={setStartDate}
-          onEndDateChange={setEndDate}
-        />
+      <Toolbar
+        pageTitle={TAB_TITLES[activeTab]}
+        error={error}
+        filterPreset={filterPreset}
+        selectedCount={selectedIds.size}
+        onDeleteSelected={handleDeleteSelected}
+        onFilterPresetChange={setFilterPreset}
+        startDate={startDate}
+        endDate={endDate}
+        onStartDateChange={setStartDate}
+        onEndDateChange={setEndDate}
+      />
         <input ref={importInputRef} type="file" accept=".csv" multiple className="hidden" onChange={handleFileUpload} />
         {/* @ts-expect-error webkitdirectory is non-standard but widely supported */}
         <input ref={folderInputRef} type="file" accept=".csv" multiple webkitdirectory="" className="hidden" onChange={handleFolderUpload} />

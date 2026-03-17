@@ -1,12 +1,14 @@
 'use client';
 
 import { useState } from 'react';
+import { motion } from 'motion/react';
 import { Calendar as CalendarIcon, Trash2 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 
 interface ToolbarProps {
+  pageTitle: string;
   error: string | null;
   filterPreset: 'all' | '30' | '60' | '90';
   selectedCount: number;
@@ -19,6 +21,7 @@ interface ToolbarProps {
 }
 
 export default function Toolbar({
+  pageTitle,
   error,
   filterPreset,
   selectedCount,
@@ -35,8 +38,37 @@ export default function Toolbar({
   return (
     <>
       <header className="sticky top-0 z-40 flex min-h-16 flex-wrap items-center gap-2 border-b border-white/5 bg-[#0A0A0B]/80 px-4 py-2 backdrop-blur-md sm:h-16 sm:flex-nowrap sm:justify-between sm:gap-3 sm:px-8 sm:py-0">
-        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
-          <div className="ml-0 flex items-center gap-1 sm:ml-2">
+        {/* Left: Animated Page Title */}
+        <div className="flex min-w-0 flex-1 items-center">
+          <motion.h1
+            key={pageTitle}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="text-2xl font-semibold text-white"
+          >
+            {pageTitle}
+          </motion.h1>
+        </div>
+
+        {/* Right: Delete Button + Time Filters */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {selectedCount > 0 ? (
+            <div className="animate-in slide-in-from-right-2 fade-in flex items-center gap-2 sm:gap-3">
+              <span className="text-xs font-medium text-zinc-500">{selectedCount} selected</span>
+              <button
+                onClick={() => setConfirmDeleteOpen(true)}
+                className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-2 text-rose-500 transition-colors hover:bg-rose-500/20"
+                title="Delete Selected"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ) : null}
+
+          {/* Time Filters - Far Right */}
+          <div className="flex items-center gap-1">
             {[
               { id: 'all', label: 'All' },
               { id: '30', label: '30D' },
@@ -81,21 +113,6 @@ export default function Toolbar({
               </>
             ) : null}
           </div>
-        </div>
-
-      <div className="ml-auto flex items-center gap-2 sm:gap-3">
-          {selectedCount > 0 ? (
-            <div className="animate-in slide-in-from-right-2 fade-in flex items-center gap-2 sm:gap-3">
-              <span className="text-xs font-medium text-zinc-500">{selectedCount} selected</span>
-              <button
-                onClick={() => setConfirmDeleteOpen(true)}
-                className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-2 text-rose-500 transition-colors hover:bg-rose-500/20"
-                title="Delete Selected"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          ) : null}
         </div>
 
         {error ? (

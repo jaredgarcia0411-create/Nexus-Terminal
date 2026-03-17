@@ -128,10 +128,7 @@ export default function JournalTab({
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div>
-              <h1 className="text-2xl font-semibold text-white">Trading Journal</h1>
-              <p className="text-base text-zinc-400">Daily trade replay with charts and notes.</p>
-            </div>
+            <p className="text-base text-zinc-400">Daily trade replay with charts and notes.</p>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
               <input

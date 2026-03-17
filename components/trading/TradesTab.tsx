@@ -68,14 +68,11 @@ export default function TradesTab({
 }: TradesTabProps) {
   return (
     <motion.div key="filter" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
-      <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-4">
-            <div>
-              <h1 className="text-2xl font-semibold text-white">Trades Management</h1>
+        <div className="space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-4">
               <p className="text-sm text-zinc-400">Filter, tag, and manage all imported trades.</p>
-            </div>
-            <div className="relative">
+              <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
               <input
                 type="text"

@@ -96,22 +96,24 @@ export default function Sidebar({
     );
   }
 
-return (
+  return (
     <nav className={`fixed left-0 top-0 z-50 flex h-full flex-col gap-4 border-r border-white/5 bg-[#0A0A0B] transition-all duration-300 ${collapsed ? 'w-16 px-2 py-4' : 'w-56 px-3 py-6'}`}>
       {/* Header: Logo + Collapse Toggle */}
       <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3 px-2'}`}>
-        <div className="flex cursor-pointer items-center justify-center rounded-xl bg-emerald-500 shadow-lg shadow-emerald-500/20 transition-all h-12 w-12">
-          <Activity className="text-black transition-all h-7 w-7" />
-        </div>
         {!collapsed && (
-          <div className="flex flex-1 flex-col">
-            <p className="text-base font-semibold text-white">Nexus</p>
-            <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Terminal</p>
-          </div>
+          <>
+            <div className="flex cursor-pointer items-center justify-center rounded-xl bg-emerald-500 shadow-lg shadow-emerald-500/20 transition-all h-12 w-12">
+              <Activity className="text-black transition-all h-7 w-7" />
+            </div>
+            <div className="flex flex-1 flex-col">
+              <p className="text-base font-semibold text-white">Nexus</p>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Terminal</p>
+            </div>
+          </>
         )}
         <button
           onClick={onToggleCollapse}
-          className="flex items-center justify-center rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
+          className={`flex items-center justify-center rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-white/5 hover:text-white ${collapsed ? 'mx-auto' : ''}`}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >

@@ -116,11 +116,8 @@ export default function DashboardTab({
         </div>
         ) : (
           <>
-           <div className="flex flex-wrap items-center justify-between">
-             <div>
-               <h1 className="text-2xl font-semibold text-white">Dashboard</h1>
-               <p className="text-sm text-zinc-400">Overview of your trading performance.</p>
-             </div>
+      <div className="flex flex-wrap items-center justify-between">
+        <p className="text-sm text-zinc-400">Overview of your trading performance.</p>
              <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
                <button
                  onClick={() => setPnlMode('net')}

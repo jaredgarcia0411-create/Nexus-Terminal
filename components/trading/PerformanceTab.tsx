@@ -25,12 +25,9 @@ export default function PerformanceTab({ filteredTrades, globalTags, performance
   }, [filteredTrades, selectedTagFilters]);
 
   return (
-    <motion.div key="performance" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-white">Performance Analytics</h1>
-          <p className="text-sm text-zinc-400">Detailed breakdowns of win rate, R-multiples, and symbol distribution.</p>
-        </div>
+  <motion.div key="performance" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+    <div className="flex flex-wrap items-center justify-between">
+      <p className="text-sm text-zinc-400">Detailed breakdowns of win rate, R-multiples, and symbol distribution.</p>
         <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 p-1">
           <button
             onClick={() => onMetricChange('$')}
