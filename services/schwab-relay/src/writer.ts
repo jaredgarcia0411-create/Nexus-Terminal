@@ -73,18 +73,21 @@ export class QuoteWriter {
         .onConflictDoUpdate({
           target: realtimeQuotes.symbol,
           set: {
-            assetType: sql`excluded.asset_type`,
-            lastPrice: sql`excluded.last_price`,
-            bidPrice: sql`excluded.bid_price`,
-            askPrice: sql`excluded.ask_price`,
-            openPrice: sql`excluded.open_price`,
-            highPrice: sql`excluded.high_price`,
-            lowPrice: sql`excluded.low_price`,
-            closePrice: sql`excluded.close_price`,
-            netChange: sql`excluded.net_change`,
-            netChangePercent: sql`excluded.net_change_percent`,
-            totalVolume: sql`excluded.total_volume`,
-            quoteTimeMs: sql`excluded.quote_time_ms`,
+            // COALESCE keeps existing DB value when the new value is null.
+            // Schwab streaming only sends fields that changed per tick,
+            // so partial updates would otherwise null-out good data.
+            assetType: sql`COALESCE(excluded.asset_type, realtime_quotes.asset_type)`,
+            lastPrice: sql`COALESCE(excluded.last_price, realtime_quotes.last_price)`,
+            bidPrice: sql`COALESCE(excluded.bid_price, realtime_quotes.bid_price)`,
+            askPrice: sql`COALESCE(excluded.ask_price, realtime_quotes.ask_price)`,
+            openPrice: sql`COALESCE(excluded.open_price, realtime_quotes.open_price)`,
+            highPrice: sql`COALESCE(excluded.high_price, realtime_quotes.high_price)`,
+            lowPrice: sql`COALESCE(excluded.low_price, realtime_quotes.low_price)`,
+            closePrice: sql`COALESCE(excluded.close_price, realtime_quotes.close_price)`,
+            netChange: sql`COALESCE(excluded.net_change, realtime_quotes.net_change)`,
+            netChangePercent: sql`COALESCE(excluded.net_change_percent, realtime_quotes.net_change_percent)`,
+            totalVolume: sql`COALESCE(excluded.total_volume, realtime_quotes.total_volume)`,
+            quoteTimeMs: sql`COALESCE(excluded.quote_time_ms, realtime_quotes.quote_time_ms)`,
             updatedAt: sql`NOW()`,
           },
         });

@@ -154,6 +154,8 @@ backtest/, cron/, notifications/, webhooks/
 - `lib/schwab/crypto.ts` — AES-256-GCM token encrypt/decrypt
 - `lib/schwab/auth.ts` — OAuth URL generation, code exchange, token refresh
 - `services/schwab-relay/` — Standalone streaming relay service (Fly.io), auto-subscribes imported research tickers
+- **Schwab streaming sends partial updates** — only changed fields per tick. DB upserts must use `COALESCE(excluded.col, table.col)` to avoid nulling out good data.
+- **Relay deploys separately** — `cd services/schwab-relay && fly deploy`. Changes here do NOT deploy via Vercel push.
 
 ## Tests
 - All in `__tests__/` directory, run via vitest
@@ -174,6 +176,14 @@ AskEdgar API integration for on-demand dilution research reports.
 1. Empty legacy API directories remain from removed backtest features
 2. NextAuth v5 is pre-release (5.0.0-beta.30) — watch for breaking changes
 3. Vercel Hobby tier limits cron to daily; macro headlines may be stale by market close
+
+# Realtime Data Debugging
+
+When scanner shows "15-MIN DELAYED" instead of "LIVE", check in order:
+1. `/api/schwab/status` → must return `{ linked: true }` (requires `schwab_links` table + completed OAuth)
+2. `realtime_quotes` table must have rows with `updated_at` < 5 minutes old (relay must be running)
+3. `/api/market-data/snapshot` → must return `dataSource: 'realtime'` (drives SSE enable)
+4. Fly relay health: `fly logs --app nexus-schwab-relay` / `fly status --app nexus-schwab-relay`
 
 ---
 
