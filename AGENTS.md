@@ -148,3 +148,5 @@ Report pass/fail for each command.
 - Do not run destructive git commands.
 - Do not create commits unless explicitly requested.
 - For command workflows that generate docs/reports, both save the artifact and show the report in chat so users can discuss immediately.
+- When the user explicitly asks to load a skill, load it first and follow that skill workflow verbatim.
+- If a workflow requires a specific output format (for example, full report vs summary), match it exactly and do not substitute a condensed version.

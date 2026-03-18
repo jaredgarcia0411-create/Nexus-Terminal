@@ -15,9 +15,11 @@ description: Gather information on any subject and create crash courses. Automat
 
 ## Usage Workflow
 
-### Step 1: Request Topic
-When this skill is invoked, ask the user:
-- "What topic would you like to research?"
+### Step 1: Resolve Topic
+When this skill is invoked:
+- If user already provided a topic, use it directly.
+- If the prompt is `/research more about ...`, treat it as a follow-up request.
+- Only ask for topic when missing: "What topic would you like to research?"
 
 **Note**: Research is always codebase-specific (analyzes how the topic is used in your codebase).
 
@@ -38,9 +40,22 @@ This will cover:
 Starting research now...
 ```
 
-### Step 3: Delegate to Subagents (Parallel)
+### Step 3: Delegate to Subagents (Adaptive + Parallel)
 
-Launch 4 subagents simultaneously:
+Use adaptive depth based on topic complexity:
+- Simple/narrow topic: 1-2 subagents
+- Standard topic: 3 subagents
+- Complex/architectural topic: 4 subagents
+
+Run independent subagents in parallel.
+
+Required coverage across all delegated work:
+- Official docs and version-aware guidance
+- Codebase evidence (real files and patterns)
+- Practical recommendations for this stack
+- Common failure modes and mitigations
+
+Suggested subagent roles:
 
 **Subagent 1 - Web & Docs Researcher**
 ```
@@ -51,7 +66,7 @@ Tasks:
 3. Search for common patterns and best practices
 4. Search for common pitfalls and anti-patterns
 
-Return structured findings with URLs for verification.
+Return structured findings with URLs and source credibility notes.
 Do not ask for confirmation; execute immediately and return final findings.
 ```
 
@@ -81,7 +96,7 @@ Return pattern recommendations with source attribution.
 Do not ask for confirmation; execute immediately and return final findings.
 ```
 
-**Subagent 4 - Synthesizer**
+**Subagent 4 - Synthesizer (use when topic is medium/high complexity)**
 ```
 Wait for subagents 1-3 to complete, then:
 1. Combine all research into structured format
@@ -122,6 +137,13 @@ Do not ask for confirmation; return final synthesized report.
 ## How It Works
 [Mechanism explanation]
 
+## How It Applies Here
+[How this topic should be used in this repository, with rationale]
+
+## Codebase Evidence
+- `[file path]`: [what this file demonstrates]
+- `[file path]`: [what this file demonstrates]
+
 ## Code Examples
 
 ### Basic Usage
@@ -142,6 +164,16 @@ From: `[file path]`
 ## Common Pitfalls
 **Pitfall**: [Description]
 **Solution**: [How to avoid/fix]
+
+## Recommended Default Approach
+[One clear recommendation for this codebase and why]
+
+## Action Checklist
+- [ ] [Concrete next step]
+- [ ] [Concrete next step]
+
+## Known Unknowns
+- [Uncertain area or conflicting guidance, if any]
 
 ## Related Topics
 - [Topic that builds on this]
@@ -166,6 +198,12 @@ From: `[file path]`
 2. Display the **entire contents** of the crash course file
 3. End with: "You can ask follow-up questions to extend this research."
 
+Before finalizing, verify quality gates:
+- Include at least 2 official sources and 2 non-official high-quality sources when available.
+- Include at least 2 codebase file references.
+- Each recommendation references either a URL or a file path.
+- Explicitly call out uncertainty in "Known Unknowns" when sources conflict.
+
 ---
 
 ## Follow-up Workflow
@@ -174,8 +212,8 @@ When user asks "tell me more about [topic from before]" or similar:
 
 1. **Check for existing research** in `.opencode/learn/` for that topic
 2. **Load existing file** and read it
-3. **Ask clarification**: "What aspect would you like to explore further?"
-4. **Delegate to single subagent** focused on that specific aspect
+3. If the follow-up is specific, proceed directly. Ask clarification only when ambiguous.
+4. **Delegate to focused subagent(s)** for the requested aspect
 5. **Append to file** under "## Follow-up Questions" section
 6. **Update the file** with new content
 7. **Display the full updated crash course** in chat
@@ -186,17 +224,17 @@ When user asks "tell me more about [topic from before]" or similar:
 
 **Location**: `.opencode/learn/`
 **Naming**: `{topic-kebab-case}-{timestamp}.md`
-**Max size**: ~1000 words (soft limit, okay to exceed for follow-ups)
+**Size guidance**: Prefer 800-1400 words for initial report; exceed when needed for accuracy.
 
 ---
 
 ## Do Not
 - Do not research without showing the plan first
-- Do not exceed reasonable word limits (prioritize practical over academic)
+- Do not prioritize verbosity over clarity and concrete guidance
 - Do not omit codebase analysis (always include it)
 - Do not create files without saving them to `.opencode/learn/`
 - Do not lose context between follow-up questions
-- Do not research blacklisted topics (security-sensitive implementations, credentials)
+- Do not provide credentials, exploit steps, bypass guidance, or sensitive data extraction details
 - Do not show only a summary (always show full report)
 - Do not wait for user approval before starting research
 
@@ -222,7 +260,7 @@ This will cover:
 Starting research now...
 ```
 
-**You**: [Launch 4 subagents in parallel]
+**You**: [Launch adaptive subagents in parallel based on complexity]
 
 **After subagents complete**:
 ```

@@ -61,12 +61,16 @@ All code shipped (Phases 0-3). Lint, type-check, and tests pass. Manual QA items
 ## Discord Research Report Extraction
 
 > Generated: 2026-03-17 | Agent: nexus-architect
-> Status: PLANNED
+> Status: IN PROGRESS — Phases 1-3 complete, Phase 4 pending
 > Priority: HIGH — unlocks ticker auto-subscription + historical research archive
 
 ### Goal
 
 Parse ~1000 historical research reports from a Discord channel, extract ticker + structured data (price, float, dilution ratings), store in a dedicated table, and wire extracted tickers into the Schwab relay's subscription pipeline. Builds a queryable research knowledge base that future agents can use.
+
+### Critical Implementation Note
+
+> **Reports are in embeds, not message content.** The Discord bot sends research reports as rich embeds (`embeds[0].description`), NOT in the top-level `content` field (which is empty). The client module includes a `getMessageText()` helper that extracts text from embeds first, falling back to `content`. The parser's `parseMessages()` must use this helper. This was verified via live API call on 2026-03-18.
 
 ### Architecture Decisions
 
@@ -133,11 +137,11 @@ export const importedResearchReports = pgTable('imported_research_reports', {
 - Indexed on `(userId, ticker, reportDate)` for "show me all reports for MULN" queries and `(userId, reportDate)` for "show me recent imports" queries.
 
 **Acceptance Criteria:**
-- [ ] Table `imported_research_reports` defined in schema with all columns above
-- [ ] Unique constraint on `discordMessageId`
-- [ ] Two indexes created
-- [ ] Foreign key to `users.id` with cascade delete
-- [ ] `npm run lint && npx tsc --noEmit` passes
+- [x] Table `imported_research_reports` defined in schema with all columns above
+- [x] Unique constraint on `discordMessageId`
+- [x] Two indexes created
+- [x] Foreign key to `users.id` with cascade delete
+- [x] `npm run lint && npx tsc --noEmit` passes
 
 #### Change 1B: Generate and run migration
 
@@ -149,9 +153,9 @@ npm run db:migrate
 ```
 
 **Acceptance Criteria:**
-- [ ] Migration file created in `drizzle/` directory
-- [ ] Migration runs without errors
-- [ ] Table exists in database
+- [x] Migration file created in `drizzle/` directory
+- [x] Migration runs without errors
+- [x] Table exists in database
 
 #### Change 1C: Create Discord report parser module
 
@@ -308,20 +312,27 @@ export function parseReport(messageContent: string): ParseResult {
 /**
  * Parse multiple Discord messages and return only the ones that are reports.
  * Useful for bulk import where many messages may not be reports.
+ *
+ * IMPORTANT: Uses getMessageText() from the client module to extract text
+ * from embeds (where the bot puts report content), not just message.content.
  */
+import type { DiscordMessage } from './client';
+import { getMessageText } from './client';
+
 export function parseMessages(
-  messages: Array<{ id: string; content: string; timestamp: string }>,
+  messages: DiscordMessage[],
 ): Array<{ messageId: string; timestamp: string; data: ParsedReportData; rawText: string }> {
   const results: Array<{ messageId: string; timestamp: string; data: ParsedReportData; rawText: string }> = [];
 
   for (const msg of messages) {
-    const result = parseReport(msg.content);
+    const text = getMessageText(msg);
+    const result = parseReport(text);
     if (result.isReport && result.data) {
       results.push({
         messageId: msg.id,
         timestamp: msg.timestamp,
         data: result.data,
-        rawText: msg.content,
+        rawText: text,
       });
     }
   }
@@ -331,12 +342,12 @@ export function parseMessages(
 ```
 
 **Acceptance Criteria:**
-- [ ] `lib/discord/parser.ts` created with `parseReport` and `parseMessages` exports
-- [ ] `ParsedReportData` and `ParseResult` types exported
-- [ ] Ticker extraction works for "Ultimate Research Report for MULN" format
-- [ ] Risk level parsing handles emoji (🔴🟡🟢) and text ("HIGH", "LOW") indicators
-- [ ] All fields return `null` gracefully when not found (no crashes on partial data)
-- [ ] `npm run lint && npx tsc --noEmit` passes
+- [x] `lib/discord/parser.ts` created with `parseReport` and `parseMessages` exports
+- [x] `ParsedReportData` and `ParseResult` types exported
+- [x] Ticker extraction works for "Ultimate Research Report for MULN" format
+- [x] Risk level parsing handles emoji (🔴🟡🟢) and text ("HIGH", "LOW") indicators
+- [x] All fields return `null` gracefully when not found (no crashes on partial data)
+- [x] `npm run lint && npx tsc --noEmit` passes
 
 #### Change 1D: Create Discord API client module
 
@@ -357,15 +368,40 @@ This module wraps Discord REST API calls. Keeps Discord-specific logic out of th
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
+/** Shape of a Discord embed from the REST API */
+interface DiscordEmbed {
+  title?: string;
+  description?: string;
+}
+
 /** Shape of a Discord message from the REST API (only fields we use) */
 export interface DiscordMessage {
   id: string;
   content: string;
   timestamp: string;
+  embeds?: DiscordEmbed[];
   author: {
     id: string;
     username: string;
   };
+}
+
+/**
+ * Extract the text content from a Discord message.
+ *
+ * IMPORTANT: This bot sends research reports as rich embeds, not plain text.
+ * The report text is in `embeds[0].description`, while `content` is empty.
+ * This helper checks embeds first, then falls back to `content`.
+ */
+export function getMessageText(message: DiscordMessage): string {
+  // Check embeds first — research reports are sent as rich embeds
+  if (message.embeds && message.embeds.length > 0) {
+    const embedText = message.embeds
+      .map((e) => [e.title, e.description].filter(Boolean).join('\n'))
+      .join('\n\n');
+    if (embedText) return embedText;
+  }
+  return message.content;
 }
 
 /**
@@ -484,11 +520,11 @@ export async function fetchNewMessages(
 ```
 
 **Acceptance Criteria:**
-- [ ] `lib/discord/client.ts` created with `fetchMessages`, `fetchAllMessages`, `fetchNewMessages` exports
-- [ ] `DiscordMessage` type exported
-- [ ] Pagination logic uses `before` for backfill, `after` for sync
-- [ ] 200ms delay between requests to avoid rate limits
-- [ ] `npm run lint && npx tsc --noEmit` passes
+- [x] `lib/discord/client.ts` created with `fetchMessages`, `fetchAllMessages`, `fetchNewMessages` exports
+- [x] `DiscordMessage` type exported
+- [x] Pagination logic uses `before` for backfill, `after` for sync
+- [x] 200ms delay between requests to avoid rate limits
+- [x] `npm run lint && npx tsc --noEmit` passes
 
 #### Change 1E: Create parser tests
 
@@ -498,6 +534,7 @@ export async function fetchNewMessages(
 ```typescript
 import { describe, it, expect } from 'vitest';
 import { parseReport, parseMessages, type ParsedReportData } from '@/lib/discord/parser';
+import { getMessageText, type DiscordMessage } from '@/lib/discord/client';
 
 const SAMPLE_REPORT = `**Ultimate Research Report for MULN**
 
@@ -587,10 +624,11 @@ describe('Discord Report Parser', () => {
   });
 
   it('parseMessages filters and maps a batch', () => {
-    const messages = [
-      { id: '1', content: SAMPLE_REPORT, timestamp: '2026-01-15T10:00:00Z' },
-      { id: '2', content: NON_REPORT_MESSAGE, timestamp: '2026-01-15T11:00:00Z' },
-      { id: '3', content: 'Ultimate Research Report for AAPL\nPrice: $150', timestamp: '2026-01-16T09:00:00Z' },
+    const author = { id: '123', username: 'bot' };
+    const messages: DiscordMessage[] = [
+      { id: '1', content: SAMPLE_REPORT, timestamp: '2026-01-15T10:00:00Z', author },
+      { id: '2', content: NON_REPORT_MESSAGE, timestamp: '2026-01-15T11:00:00Z', author },
+      { id: '3', content: 'Ultimate Research Report for AAPL\nPrice: $150', timestamp: '2026-01-16T09:00:00Z', author },
     ];
 
     const results = parseMessages(messages);
@@ -599,6 +637,28 @@ describe('Discord Report Parser', () => {
     expect(results[0].data.ticker).toBe('MULN');
     expect(results[1].messageId).toBe('3');
     expect(results[1].data.ticker).toBe('AAPL');
+  });
+
+  it('extracts text from embed description (real bot format)', () => {
+    const embedMessage: DiscordMessage = {
+      id: '99',
+      content: '',
+      timestamp: '2026-01-20T10:00:00Z',
+      embeds: [{
+        title: 'Ultimate Research Report for ORIS',
+        description: '**Price:** $0.52\n**Market Cap:** 0.9M\n**Float / OS:** 4.2M / 5.1M\n\n**Dilution** 🔴\nClearly dilutive\n\n**Offering Ability** 🟡\nMixed signals',
+      }],
+      author: { id: '456', username: 'Research Report' },
+    };
+
+    const text = getMessageText(embedMessage);
+    expect(text).toContain('Ultimate Research Report for ORIS');
+    expect(text).toContain('$0.52');
+
+    const result = parseReport(text);
+    expect(result.isReport).toBe(true);
+    expect(result.data?.ticker).toBe('ORIS');
+    expect(result.data?.dilutionRisk).toBe('high');
   });
 
   it('handles text-based risk indicators when no emoji', () => {
@@ -618,10 +678,10 @@ MODERATE risk due to shelf registration`;
 ```
 
 **Acceptance Criteria:**
-- [ ] `__tests__/discord-parser.test.ts` created
-- [ ] All tests pass: `npx vitest run __tests__/discord-parser.test.ts`
-- [ ] Tests cover: ticker extraction, all structured fields, risk level parsing (emoji + text), non-report filtering, missing fields, batch parsing
-- [ ] `npm run lint && npx tsc --noEmit` passes
+- [x] `__tests__/discord-parser.test.ts` created
+- [x] All tests pass: `npx vitest run __tests__/discord-parser.test.ts`
+- [x] Tests cover: ticker extraction, all structured fields, risk level parsing (emoji + text), non-report filtering, missing fields, batch parsing
+- [x] `npm run lint && npx tsc --noEmit` passes
 
 #### Phase 1 Verification
 
@@ -629,10 +689,10 @@ MODERATE risk due to shelf registration`;
 npm run lint && npx tsc --noEmit && npm test
 ```
 
-- [ ] Lint passes
-- [ ] Type-check passes
-- [ ] All tests pass (including new parser tests)
-- [ ] Migration applied successfully
+- [x] Lint passes
+- [x] Type-check passes
+- [x] All tests pass (including new parser tests)
+- [x] Migration applied successfully
 
 **STOP HERE. Report results before proceeding to Phase 2.**
 
@@ -750,14 +810,14 @@ export async function POST() {
 **Why `onConflictDoNothing` instead of upsert:** Re-running the import should be safe and idempotent. If a report is already imported (same `discordMessageId`), we skip it silently. This means you can run the import multiple times without creating duplicates.
 
 **Acceptance Criteria:**
-- [ ] `app/api/discord/import/route.ts` created
-- [ ] `requireUser()` called — returns 401 if not authenticated
-- [ ] Returns 400 if env vars missing (not 500 — it's a config issue, not a server error)
-- [ ] Fetches all channel messages via Discord REST API
-- [ ] Parses reports using `parseMessages`
-- [ ] Inserts into `imported_research_reports` with `onConflictDoNothing` for idempotency
-- [ ] Returns summary: `{ imported, skipped, total, reportsFound, tickers, tickerCount }`
-- [ ] `npm run lint && npx tsc --noEmit` passes
+- [x] `app/api/discord/import/route.ts` created
+- [x] `requireUser()` called — returns 401 if not authenticated
+- [x] Returns 400 if env vars missing (not 500 — it's a config issue, not a server error)
+- [x] Fetches all channel messages via Discord REST API
+- [x] Parses reports using `parseMessages`
+- [x] Inserts into `imported_research_reports` with `onConflictDoNothing` for idempotency
+- [x] Returns summary: `{ imported, skipped, total, reportsFound, tickers, tickerCount }`
+- [x] `npm run lint && npx tsc --noEmit` passes
 
 #### Change 2B: Create GET route to list imported reports
 
@@ -817,11 +877,11 @@ export async function GET(request: Request) {
 **Note for opencode:** You'll need to add `and` to the `drizzle-orm` import at the top of the file. Make sure the `desc` import is also added.
 
 **Acceptance Criteria:**
-- [ ] GET handler added to `app/api/discord/import/route.ts`
-- [ ] Filters by ticker when `?ticker=MULN` query param provided
-- [ ] Limits results (default 50, max 200)
-- [ ] Orders by report date descending (newest first)
-- [ ] `npm run lint && npx tsc --noEmit` passes
+- [x] GET handler added to `app/api/discord/import/route.ts`
+- [x] Filters by ticker when `?ticker=MULN` query param provided
+- [x] Limits results (default 50, max 200)
+- [x] Orders by report date descending (newest first)
+- [x] `npm run lint && npx tsc --noEmit` passes
 
 #### Phase 2 Verification
 
@@ -829,9 +889,9 @@ export async function GET(request: Request) {
 npm run lint && npx tsc --noEmit && npm test
 ```
 
-- [ ] Lint passes
-- [ ] Type-check passes
-- [ ] All tests pass
+- [x] Lint passes
+- [x] Type-check passes
+- [x] All tests pass
 
 **STOP HERE. Report results before proceeding to Phase 3.**
 
@@ -949,13 +1009,13 @@ export async function POST() {
 ```
 
 **Acceptance Criteria:**
-- [ ] `app/api/discord/sync/route.ts` created
-- [ ] `requireUser()` called
-- [ ] Finds the most recent `discordMessageId` from the DB
-- [ ] Returns 400 with helpful message if no previous imports exist
-- [ ] Fetches only new messages using `after` parameter
-- [ ] Inserts new reports with dedup
-- [ ] `npm run lint && npx tsc --noEmit` passes
+- [x] `app/api/discord/sync/route.ts` created
+- [x] `requireUser()` called
+- [x] Finds the most recent `discordMessageId` from the DB
+- [x] Returns 400 with helpful message if no previous imports exist
+- [x] Fetches only new messages using `after` parameter
+- [x] Inserts new reports with dedup
+- [x] `npm run lint && npx tsc --noEmit` passes
 
 #### Phase 3 Verification
 
@@ -963,9 +1023,9 @@ export async function POST() {
 npm run lint && npx tsc --noEmit && npm test
 ```
 
-- [ ] Lint passes
-- [ ] Type-check passes
-- [ ] All tests pass
+- [x] Lint passes
+- [x] Type-check passes
+- [x] All tests pass
 
 **STOP HERE. Report results before proceeding to Phase 4.**
 
