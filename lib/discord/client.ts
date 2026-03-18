@@ -76,6 +76,16 @@ export async function fetchMessages(
     },
   });
 
+  // Handle rate limiting — Discord tells us exactly how long to wait
+  if (response.status === 429) {
+    const body = await response.json().catch(() => ({ retry_after: 1 }));
+    const waitSeconds = (body as { retry_after?: number }).retry_after ?? 1;
+    console.info(`[discord-client] Rate limited, waiting ${waitSeconds}s...`);
+    await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+    // Retry the same request
+    return fetchMessages(channelId, botToken, options);
+  }
+
   if (!response.ok) {
     const body = await response.text().catch(() => '(no body)');
     throw new Error(`Discord API error ${response.status}: ${body}`);
@@ -116,7 +126,7 @@ export async function fetchAllMessages(
     }
 
     if (batch.length === 100) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 500));
     } else {
       break;
     }
@@ -149,7 +159,7 @@ export async function fetchNewMessages(
 
     if (batch.length < 100) break;
 
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
   return allMessages;

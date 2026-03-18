@@ -58,12 +58,12 @@ Professional trading terminal and analytics platform (SaaS). Tracks/journals tra
 - Connection: HTTP client for reads, WebSocket pool for transactions
 - Migrations output to `drizzle/` directory
 
-### Tables (18)
+### Tables (19)
 users, trades (composite PK: user_id + id), trade_executions, trade_tags, tags,
 trade_import_batches, broker_sync_log, agent_memory, research_reports,
-daily_ticker_summaries, saved_tickers, market_snapshots, macro_summaries,
-jarvis_conversations, jarvis_request_log, schwab_links, realtime_quotes,
-scanner_presets
+imported_research_reports, daily_ticker_summaries, saved_tickers, market_snapshots,
+macro_summaries, jarvis_conversations, jarvis_request_log, schwab_links,
+realtime_quotes, scanner_presets
 
 ---
 
@@ -106,8 +106,13 @@ scanner_presets
 - GET `/api/health`
 - GET `/api/jarvis/cron/macro-summary` (Vercel cron, CRON_SECRET auth)
 
+## Discord
+- POST `/api/discord/import` (bulk import research reports from Discord channel)
+- GET `/api/discord/import` (list imported reports, ?ticker=X&limit=N)
+- POST `/api/discord/sync` (incremental sync — new messages since last import)
+
 ## Empty/legacy directories (do not add routes without explicit instruction)
-backtest/, cron/, discord/, notifications/, webhooks/
+backtest/, cron/, notifications/, webhooks/
 
 ---
 
@@ -141,10 +146,14 @@ backtest/, cron/, discord/, notifications/, webhooks/
 - `lib/jarvis/token-tracking.ts` — per-request token/latency logging
 - `lib/jarvis/admin.ts` — admin stats and memory management
 
+## Discord
+- `lib/discord/client.ts` — Discord REST API client (fetch channel messages, pagination)
+- `lib/discord/parser.ts` — Research report parser (extracts ticker, price, float, risk ratings from Discord embeds)
+
 ## Schwab
 - `lib/schwab/crypto.ts` — AES-256-GCM token encrypt/decrypt
 - `lib/schwab/auth.ts` — OAuth URL generation, code exchange, token refresh
-- `services/schwab-relay/` — Standalone streaming relay service (Fly.io)
+- `services/schwab-relay/` — Standalone streaming relay service (Fly.io), auto-subscribes imported research tickers
 
 ## Tests
 - All in `__tests__/` directory, run via vitest
@@ -162,7 +171,7 @@ AskEdgar API integration for on-demand dilution research reports.
 ---
 
 # Known Issues
-1. Empty legacy API directories remain from removed Discord/backtest features
+1. Empty legacy API directories remain from removed backtest features
 2. NextAuth v5 is pre-release (5.0.0-beta.30) — watch for breaking changes
 3. Vercel Hobby tier limits cron to daily; macro headlines may be stale by market close
 
