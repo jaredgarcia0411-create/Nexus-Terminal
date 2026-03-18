@@ -11,6 +11,7 @@ Trading journal, analytics platform, and AI-assisted research tool built with Ne
 - **Jarvis AI** — chat, trade analysis, macro summaries, and dilution research reports
 - **Jarvis chat streaming** — token-by-token assistant responses over SSE with fallback to non-streaming commands
 - **Dilution research** — pulls SEC filing data via AskEdgar API, runs it through an LLM, and renders structured risk reports
+- **Discord report import** — backfill/sync research reports into `imported_research_reports` with parsed ticker metadata
 
 ## Core Product Areas
 
@@ -23,6 +24,7 @@ Trading journal, analytics platform, and AI-assisted research tool built with Ne
 - **Research** — AI-generated dilution reports, daily summaries, saved tickers
 - **Backtesting** — Jarvis chat workspace
 - **Real-time market data relay** — Schwab live-data hybrid integration (Phases 1-3 complete: OAuth + relay + LIVE/DELAYED frontend switching)
+- **Relay ticker auto-subscribe** — Schwab relay loads distinct imported research tickers and subscribes them at startup (non-fatal if unavailable)
 
 ## Tech Stack
 
@@ -62,6 +64,8 @@ See `.env.example` for the full list.
 - `JARVIS_MODEL` — LLM model ID
 - `ASKEDGAR_API_KEY` — AskEdgar API for dilution research
 - `MASSIVE_API_KEY` — Market data provider
+- `DISCORD_BOT_TOKEN` — Discord bot token for research report import routes
+- `DISCORD_CHANNEL_ID` — Discord channel containing research report messages
 
 ## Local Development
 

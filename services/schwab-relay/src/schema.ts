@@ -52,3 +52,10 @@ export const marketSnapshots = pgTable('market_snapshots', {
   unique().on(table.snapshotType),
   index('market_snapshots_expires_idx').on(table.expiresAt),
 ]);
+
+export const importedResearchReports = pgTable('imported_research_reports', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull(),
+  ticker: text('ticker').notNull(),
+  reportDate: timestamp('report_date', { withTimezone: true }).notNull(),
+});

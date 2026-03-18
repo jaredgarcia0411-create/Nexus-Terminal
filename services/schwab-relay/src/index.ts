@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { createServer } from 'node:http';
 
 import { getDb } from './db.js';
+import { loadImportedTickers } from './imported-tickers.js';
 import { SchwabStreamer } from './streamer.js';
 import { loadActiveTokens } from './tokens.js';
 import { QuoteWriter, cleanupStaleQuotes } from './writer.js';
@@ -67,6 +68,18 @@ async function startStreamer(accessToken: string): Promise<void> {
 
   await streamer.connect();
   log('stream connected');
+
+  // Subscribe to tickers from imported Discord research reports
+  try {
+    const importedTickers = await loadImportedTickers();
+    if (importedTickers.length > 0) {
+      streamer.addEquitySymbols(importedTickers);
+      log(`subscribed ${importedTickers.length} imported research tickers`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown error';
+    log(`failed to load imported tickers (non-fatal): ${message}`);
+  }
 }
 
 async function syncTokens(): Promise<void> {

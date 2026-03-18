@@ -61,7 +61,7 @@ All code shipped (Phases 0-3). Lint, type-check, and tests pass. Manual QA items
 ## Discord Research Report Extraction
 
 > Generated: 2026-03-17 | Agent: nexus-architect
-> Status: IN PROGRESS — Phases 1-3 complete, Phase 4 pending
+> Status: IN PROGRESS — Phases 1-4 code complete, manual Schwab validation pending
 > Priority: HIGH — unlocks ticker auto-subscription + historical research archive
 
 ### Goal
@@ -1054,8 +1054,8 @@ export const importedResearchReports = pgTable('imported_research_reports', {
 **Why only 4 columns:** The relay only needs `ticker` for subscriptions and `userId`/`reportDate` for filtering. The full table (with `rawText`, `parsedJson`, etc.) is defined in the main app's schema. This follows the existing pattern — the relay schema is an intentional subset.
 
 **Acceptance Criteria:**
-- [ ] `importedResearchReports` added to relay schema with only `id`, `userId`, `ticker`, `reportDate`
-- [ ] No extra indexes or constraints (main app's migration already created them)
+- [x] `importedResearchReports` added to relay schema with only `id`, `userId`, `ticker`, `reportDate`
+- [x] No extra indexes or constraints (main app's migration already created them)
 
 #### Change 4B: Create helper to load imported tickers
 
@@ -1086,9 +1086,9 @@ export async function loadImportedTickers(): Promise<string[]> {
 ```
 
 **Acceptance Criteria:**
-- [ ] `services/schwab-relay/src/imported-tickers.ts` created
-- [ ] Returns deduplicated ticker array
-- [ ] Uses the relay's own DB connection
+- [x] `services/schwab-relay/src/imported-tickers.ts` created
+- [x] Returns deduplicated ticker array
+- [x] Uses the relay's own DB connection
 
 #### Change 4C: Wire imported tickers into relay startup
 
@@ -1122,11 +1122,11 @@ import { loadImportedTickers } from './imported-tickers.js';
 **Why non-fatal:** If the imported reports table doesn't exist yet (migration not run) or the query fails, the relay should still start and work normally. The imported ticker subscription is a bonus, not a requirement.
 
 **Acceptance Criteria:**
-- [ ] `loadImportedTickers` imported in `index.ts`
-- [ ] Called after `streamer.connect()` in `startStreamer`
-- [ ] Error is caught and logged, does not crash the relay
-- [ ] Logs count of subscribed tickers on success
-- [ ] Relay builds: `cd services/schwab-relay && npx tsc --noEmit`
+- [x] `loadImportedTickers` imported in `index.ts`
+- [x] Called after `streamer.connect()` in `startStreamer`
+- [x] Error is caught and logged, does not crash the relay
+- [x] Logs count of subscribed tickers on success
+- [x] Relay builds: `cd services/schwab-relay && npx tsc --noEmit`
 
 #### Phase 4 Verification
 
@@ -1138,10 +1138,10 @@ npm run lint && npx tsc --noEmit && npm test
 cd services/schwab-relay && npx tsc --noEmit
 ```
 
-- [ ] Main app lint passes
-- [ ] Main app type-check passes
-- [ ] Main app tests pass
-- [ ] Relay type-check passes
+- [x] Main app lint passes
+- [x] Main app type-check passes
+- [x] Main app tests pass
+- [x] Relay type-check passes
 
 Manual checks (after Schwab re-link):
 - [ ] Relay startup logs show `subscribed N imported research tickers`
