@@ -1,14 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import JarvisMacroSummary from '@/components/trading/JarvisMacroSummary';
 import ScannerSection from '@/components/trading/ScannerSection';
 import { Button } from '@/components/ui/button';
 import { useMarketStream } from '@/hooks/use-market-stream';
+import { useRelaySocket } from '@/hooks/use-relay-socket';
 import type { ScannerRow } from '@/hooks/use-scanner';
 import { useSchwabStatus } from '@/hooks/use-schwab-status';
 import type { JarvisMacroSummaryOutput } from '@/lib/jarvis/types';
+import type { RelayQuoteUpdate, RelayScreenerData } from '@/lib/relay-types';
 
 type MarketInstrument = {
   symbol: string;
@@ -215,8 +217,102 @@ export default function MarketsTab() {
 
   const { schwabStatus, loading: schwabLoading, refresh: refreshSchwabStatus } = useSchwabStatus();
 
-  const { connected: sseConnected, fallbackToPolling } = useMarketStream({
+  // --- Relay WebSocket (direct from Fly.io, bypasses DB) ---
+  const quoteMapRef = useRef(new Map<string, RelayQuoteUpdate>());
+
+  const buildSnapshotFromQuotes = useCallback((quotes: Map<string, RelayQuoteUpdate>): SnapshotPayload => {
+    const INDEX_SYMBOLS = ['SPY', 'QQQ', 'DIA', 'IWM'];
+    const COMMODITY_MAP = [
+      { ticker: 'GLD', label: 'Gold' },
+      { ticker: 'SLV', label: 'Silver' },
+      { ticker: 'USO', label: 'Crude Oil' },
+      { ticker: 'UNG', label: 'Natural Gas' },
+      { ticker: 'TLT', label: 'Treasuries' },
+      { ticker: 'UUP', label: 'US Dollar' },
+    ];
+    const EQUITY_SYMBOLS = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'NVDA', 'TSLA', 'META', 'JPM', 'JNJ', 'V'];
+
+    const toInstrument = (symbol: string, label: string): MarketInstrument => {
+      const q = quotes.get(symbol);
+      return {
+        symbol,
+        label,
+        price: q?.lastPrice ?? null,
+        change: q?.netChange ?? null,
+        changePercent: q?.netChangePercent ?? null,
+        marketStatus: q?.securityStatus ?? null,
+        quoteSession: q ? 'regular' : 'snapshot',
+        extendedQuoteUnavailable: false,
+        extendedUnavailableLabel: null,
+      };
+    };
+
+    return {
+      indices: INDEX_SYMBOLS.map((s) => toInstrument(s, s)),
+      commodities: COMMODITY_MAP.map((c) => toInstrument(c.ticker, c.label)),
+      equities: EQUITY_SYMBOLS.map((s) => toInstrument(s, s)),
+      movers: snapshot?.movers ?? { gainers: [], losers: [] },
+    };
+  }, [snapshot?.movers]);
+
+  const handleRelaySnapshot = useCallback((quotes: RelayQuoteUpdate[]) => {
+    const map = quoteMapRef.current;
+    for (const q of quotes) {
+      map.set(q.symbol, q);
+    }
+
+    setSnapshot(buildSnapshotFromQuotes(map));
+    setCoverage(buildCoverage(buildSnapshotFromQuotes(map)));
+    setDataSource('realtime');
+    setLastLoadedAt(new Date());
+    setLoadingSnapshot(false);
+    setWarning(null);
+    setIsStale(false);
+  }, [buildSnapshotFromQuotes]);
+
+  const handleRelayQuotes = useCallback((quotes: RelayQuoteUpdate[]) => {
+    const map = quoteMapRef.current;
+    for (const q of quotes) {
+      const existing = map.get(q.symbol);
+      map.set(q.symbol, { ...(existing ?? {}), ...q, symbol: q.symbol });
+    }
+
+    setSnapshot(buildSnapshotFromQuotes(map));
+    setLastLoadedAt(new Date());
+  }, [buildSnapshotFromQuotes]);
+
+  const handleRelayScreener = useCallback((data: RelayScreenerData) => {
+    const toMoverRow = (item: RelayScreenerData['gainers'][number]): MarketMoverRow => ({
+      ticker: item.symbol,
+      price: item.lastPrice,
+      previousClose: null,
+      change: item.netChange,
+      changePercent: item.netChangePercent,
+      updated: null,
+      volume: item.totalVolume,
+    });
+
+    setSnapshot((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        movers: {
+          gainers: data.gainers.map(toMoverRow),
+          losers: data.losers.map(toMoverRow),
+        },
+      };
+    });
+  }, []);
+
+  const { connected: relayConnected, fallbackToSSE: relayFallback } = useRelaySocket({
     enabled: dataSource === 'realtime',
+    onSnapshot: handleRelaySnapshot,
+    onQuotes: handleRelayQuotes,
+    onScreener: handleRelayScreener,
+  });
+
+  const { connected: sseConnected, fallbackToPolling } = useMarketStream({
+    enabled: dataSource === 'realtime' && relayFallback,
     scannerFilters: {},
     scannerSortBy: 'netChangePercent',
     scannerSortDir: 'desc',
@@ -334,9 +430,13 @@ export default function MarketsTab() {
               15-MIN DELAYED
             </span>
           )}
-          <span className="text-xs text-zinc-500">
-            {dataSource === 'realtime' ? 'Schwab real-time streaming' : 'Massive API delayed data'}
-          </span>
+            <span className="text-xs text-zinc-500">
+              {dataSource === 'realtime'
+                ? relayConnected
+                  ? 'Schwab real-time (direct WebSocket)'
+                  : 'Schwab real-time streaming (SSE)'
+                : 'Massive API delayed data'}
+            </span>
         </div>
         {lastLoadedAt ? <p className="mt-1 text-xs text-zinc-500">Last market update: {lastLoadedAt.toLocaleTimeString()}</p> : null}
         {coverage ? (

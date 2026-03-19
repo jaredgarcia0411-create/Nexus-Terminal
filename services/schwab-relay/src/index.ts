@@ -7,6 +7,9 @@ import { loadImportedTickers } from './imported-tickers.js';
 import { SchwabStreamer } from './streamer.js';
 import { loadActiveTokens } from './tokens.js';
 import { QuoteWriter, cleanupStaleQuotes } from './writer.js';
+import { WebSocketServer } from 'ws';
+import { QuoteBroadcaster } from './broadcast.js';
+import { validateRelayToken } from './ws-auth.js';
 
 const TOKEN_CHECK_INTERVAL_MS = Number(process.env.TOKEN_CHECK_INTERVAL_MS ?? '300000');
 
@@ -14,6 +17,7 @@ let writer: QuoteWriter | null = null;
 let streamer: SchwabStreamer | null = null;
 let activeUserId: string | null = null;
 let activeAccessToken: string | null = null;
+let broadcaster: QuoteBroadcaster | null = null;
 
 function log(message: string): void {
   console.info(`[relay] ${new Date().toISOString()} ${message}`);
@@ -43,6 +47,9 @@ async function startStreamer(accessToken: string): Promise<void> {
       for (const quote of quotes) {
         writer?.addQuote(quote);
       }
+
+      // Broadcast to WebSocket clients (bypasses DB)
+      broadcaster?.broadcast(quotes);
     },
     onScreenerUpdate: (update) => {
       if (!writer) {
@@ -53,6 +60,9 @@ async function startStreamer(accessToken: string): Promise<void> {
         const message = error instanceof Error ? error.message : 'unknown screener write error';
         log(`screener write failed: ${message}`);
       });
+
+      // Broadcast screener to WebSocket clients
+      broadcaster?.broadcastScreener(update);
 
       // Dynamically subscribe screener symbols to LEVELONE_EQUITIES for richer data
       const symbols = update.items.map((item) => item.symbol);
@@ -126,6 +136,8 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     writer = null;
   }
 
+  broadcaster?.closeAll();
+
   process.exit(0);
 }
 
@@ -138,6 +150,7 @@ async function main(): Promise<void> {
         ok: true,
         connected: streamer?.isConnected() ?? false,
         activeUser: activeUserId !== null,
+        wsClients: broadcaster?.clientCount ?? 0,
         uptime: process.uptime(),
       };
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -147,6 +160,45 @@ async function main(): Promise<void> {
       res.end();
     }
   });
+
+  // --- WebSocket server for direct browser connections ---
+  broadcaster = new QuoteBroadcaster();
+  const wss = new WebSocketServer({ noServer: true });
+
+  healthServer.on('upgrade', (req, socket, head) => {
+    const url = new URL(req.url ?? '', `http://${req.headers.host}`);
+
+    // Only accept WebSocket upgrades on /ws path
+    if (url.pathname !== '/ws') {
+      socket.destroy();
+      return;
+    }
+
+    // Validate auth token from query string
+    const token = url.searchParams.get('token');
+    if (!token) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    const result = validateRelayToken(token);
+    if (!result.valid) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      broadcaster!.addClient(ws);
+      log(`ws client connected (user=${result.userId}, clients=${broadcaster!.clientCount})`);
+
+      ws.on('close', () => {
+        log(`ws client disconnected (clients=${broadcaster!.clientCount})`);
+      });
+    });
+  });
+
   healthServer.listen(HEALTH_PORT, () => {
     log(`health check listening on :${HEALTH_PORT}`);
   });
