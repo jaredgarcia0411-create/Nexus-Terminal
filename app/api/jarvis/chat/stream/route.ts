@@ -13,7 +13,7 @@ import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { jarvisChatSchema } from '@/lib/validations/jarvis';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 interface ResearchCommand {
   ticker: string;

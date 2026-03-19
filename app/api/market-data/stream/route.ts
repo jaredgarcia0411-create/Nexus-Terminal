@@ -5,7 +5,7 @@ import { createSSEResponse } from '@/lib/sse';
 import { requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const PUSH_INTERVAL_MS = 5_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;

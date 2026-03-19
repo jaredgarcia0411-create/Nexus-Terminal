@@ -7,6 +7,7 @@ import { ensureUser, requireUser } from '@/lib/server-db-utils';
 import { desc, eq } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 /**
  * POST /api/discord/sync
