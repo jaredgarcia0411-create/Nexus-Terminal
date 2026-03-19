@@ -83,6 +83,16 @@ All 4 phases implemented and passing lint/type-check/tests. Remaining manual che
 - Validation: `npm run lint`, `npx tsc --noEmit`, `npm test` all pass (39 test files, 210 tests)
 - Validation note: runtime relay endpoint/env verification remains pending until deployment (`/ws` smoke test and Vercel + Fly env vars are required)
 
+ - Latest session checks:
+   - `npm run lint` (pass)
+   - `npx tsc --noEmit` (pass)
+   - `npm test` (pass)
+   - `cd services/schwab-relay && npx tsc --noEmit` (pass)
+   - `cd services/schwab-relay && npm run build` (pass)
+   - `fly status --app nexus-schwab-relay` (pass: machine started, health checks passing)
+   - `fly logs --app nexus-schwab-relay --no-tail` (pass: LOGIN successful, subscribed imported tickers, stream connected)
+   - `curl https://nexus-schwab-relay.fly.dev/health` (fail: `SSL_ERROR_SYSCALL` from current environment)
+
 ### Goal
 
 Add a WebSocket server to the Fly.io relay process so browsers receive real-time quotes directly, bypassing the current `Relay → DB → Vercel SSE → Browser` pipeline. The existing DB write path (`QuoteWriter`) stays intact for scanner persistence and as a fallback. The client falls back to SSE if the WebSocket is unavailable.
