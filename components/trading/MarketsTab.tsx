@@ -305,14 +305,14 @@ export default function MarketsTab() {
   }, []);
 
   const { connected: relayConnected, fallbackToSSE: relayFallback } = useRelaySocket({
-    enabled: dataSource === 'realtime',
+    enabled: dataSource === 'realtime' || (schwabStatus.linked && !schwabLoading),
     onSnapshot: handleRelaySnapshot,
     onQuotes: handleRelayQuotes,
     onScreener: handleRelayScreener,
   });
 
   const { connected: sseConnected, fallbackToPolling } = useMarketStream({
-    enabled: dataSource === 'realtime' && relayFallback,
+    enabled: (dataSource === 'realtime' || (schwabStatus.linked && !schwabLoading)) && relayFallback,
     scannerFilters: {},
     scannerSortBy: 'netChangePercent',
     scannerSortDir: 'desc',
