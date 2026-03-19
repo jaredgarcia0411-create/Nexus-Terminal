@@ -278,6 +278,7 @@ export default function MarketsTab() {
     }
 
     setSnapshot(buildSnapshotFromQuotes(map));
+    setDataSource('realtime');
     setLastLoadedAt(new Date());
   }, [buildSnapshotFromQuotes]);
 
@@ -392,7 +393,9 @@ export default function MarketsTab() {
   }, [refreshAll]);
 
   useEffect(() => {
-    if (dataSource === 'realtime' && !fallbackToPolling) {
+    // If we have a live connection (relay WebSocket or SSE), no polling needed —
+    // data arrives via push. Only poll when everything has fallen back to polling.
+    if (relayConnected || sseConnected || (dataSource === 'realtime' && !fallbackToPolling)) {
       return;
     }
 
@@ -401,7 +404,7 @@ export default function MarketsTab() {
       void loadSnapshot();
     }, intervalMs);
     return () => window.clearInterval(interval);
-  }, [loadSnapshot, dataSource, fallbackToPolling]);
+  }, [loadSnapshot, dataSource, fallbackToPolling, relayConnected, sseConnected]);
 
   return (
     <motion.section key="markets" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
