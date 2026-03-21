@@ -2,6 +2,7 @@ import { getDb } from '@/lib/db';
 import { importedResearchReports } from '@/lib/db/schema';
 import { fetchAllMessages } from '@/lib/discord/client';
 import { parseMessages } from '@/lib/discord/parser';
+import { updateTickerSummary } from '@/lib/jarvis/historical-summary';
 import { ensureUser, requireUser } from '@/lib/server-db-utils';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { and, desc, eq } from 'drizzle-orm';
@@ -65,6 +66,14 @@ export async function POST() {
       } catch (error) {
         console.error(`[discord-import] Failed to insert report ${report.messageId}:`, error);
         skipped++;
+      }
+    }
+
+    for (const ticker of tickers) {
+      try {
+        await updateTickerSummary(userId, ticker);
+      } catch (error) {
+        console.error(`[discord-import] Failed to update summary for ${ticker}:`, error);
       }
     }
 

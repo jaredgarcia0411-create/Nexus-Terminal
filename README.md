@@ -10,7 +10,7 @@ Trading journal, analytics platform, and AI-assisted research tool built with Ne
 - Tagging, filtering, and bulk trade actions
 - **Jarvis AI** — chat, trade analysis, macro summaries, and dilution research reports
 - **Jarvis chat streaming** — token-by-token assistant responses over SSE with fallback to non-streaming commands
-- **Dilution research** — pulls SEC filing data via AskEdgar API, runs it through an LLM, and renders structured risk reports
+- **Dilution research terminal** — full-page Research workspace with AskEdgar top gainers, live ticker lookup, chart, tabbed filing sections, and optional Jarvis TLDR
 - **Discord report import** — backfill/sync research reports into `imported_research_reports` with parsed ticker metadata
 
 ## Core Product Areas
@@ -21,7 +21,7 @@ Trading journal, analytics platform, and AI-assisted research tool built with Ne
 - **Trades** — trade management, bulk actions, tag filters
 - **Charts** — expanded charting workspace
 - **Markets** — snapshot + movers + scanner + macro summary
-- **Research** — AI-generated dilution reports, daily summaries, saved tickers
+- **Research** — full-page dilution terminal (gainers, chart, risk header, AskEdgar sections, Jarvis TLDR)
 - **Backtesting** — Jarvis chat workspace
 - **Real-time market data relay** — Schwab live-data hybrid integration (Phases 1-3 complete: OAuth + relay + LIVE/DELAYED frontend switching)
 - **Relay ticker auto-subscribe** — Schwab relay loads distinct imported research tickers and subscribes them at startup (non-fatal if unavailable)
@@ -43,7 +43,7 @@ Jarvis is the AI layer powering chat, trade analysis, and research reports.
 
 - **LLM provider**: Groq (OpenAI-compatible API, free tier available)
 - **Model**: `llama-3.3-70b-versatile` (configurable via `JARVIS_MODEL`)
-- **Research flow**: AskEdgar API (13 SEC endpoints) → token-trimmed payload → LLM → structured JSON report → rendered UI
+- **Research flow**: AskEdgar API (13 SEC endpoints) powers direct UI data; optional TLDR endpoint uses Jarvis with AskEdgar + Discord historical summary context
 - **Safety**: circuit breaker, per-user rate limiting (30 req/hr), request logging
 
 ## Data + Auth Model

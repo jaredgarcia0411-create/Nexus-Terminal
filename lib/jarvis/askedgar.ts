@@ -304,3 +304,11 @@ export function getAskEdgarCallCount() {
 export function getAskEdgarDailyLimit() {
   return parseDailyLimit();
 }
+
+export async function fetchTopGainers(minGainPct = 20, limit = 25) {
+  return requestAskEdgar<unknown>('/v1/screener', {
+    min_gain_1_day: minGainPct,
+    isactivelytrading: true,
+    limit,
+  });
+}
