@@ -64,13 +64,13 @@ export default function ResearchTickerView({ ticker }: Props) {
   if (!data) return null;
 
   return (
-    <div className="flex flex-col">
+    <div className="flex h-[calc(100vh-120px)] flex-col">
       {/* Top row: company info panel on the left, chart on the right */}
-      <div className="flex border-b border-white/10">
-        <div className="w-[220px] shrink-0">
+      <div className="flex min-h-0 flex-1 border-b border-white/10">
+        <div className="w-[220px] shrink-0 overflow-y-auto">
           <ResearchCompanyHeader ticker={ticker} rawData={data.rawData} />
         </div>
-        <div className="h-[300px] flex-1 bg-[#0A0A0B]">
+        <div className="min-h-0 flex-1 bg-[#0A0A0B]">
           <ResearchChart ticker={ticker} />
         </div>
       </div>

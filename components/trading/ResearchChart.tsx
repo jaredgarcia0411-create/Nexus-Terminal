@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ColorType, type CandlestickData, type HistogramData, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts';
+import { ColorType, CrosshairMode, type CandlestickData, type HistogramData, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts';
 
 import { useCandleData } from '@/hooks/use-candle-data';
 
@@ -73,6 +73,9 @@ export default function ResearchChart({ ticker }: Props) {
         grid: {
           vertLines: { color: '#ffffff08' },
           horzLines: { color: '#ffffff08' },
+        },
+        crosshair: {
+          mode: CrosshairMode.Normal,
         },
         rightPriceScale: { borderColor: '#ffffff10' },
         timeScale: {
@@ -170,8 +173,8 @@ export default function ResearchChart({ ticker }: Props) {
         ))}
       </div>
 
-      <div className="relative flex-1">
-        <div ref={containerRef} className="h-full w-full" />
+      <div className="relative min-h-0 flex-1">
+        <div ref={containerRef} className="absolute inset-0" />
         {isLoading ? (
           <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-500">Loading chart...</div>
         ) : null}

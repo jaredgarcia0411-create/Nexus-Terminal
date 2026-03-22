@@ -46,7 +46,7 @@ export default function ResearchTab() {
           <ResearchGainersList selectedTicker={selectedTicker} onSelectTicker={setSelectedTicker} />
         </div>
 
-        <div className="min-w-0 flex-1 rounded-lg border border-white/10 bg-[#121214]">
+        <div className="h-[calc(100vh-120px)] min-w-0 flex-1 overflow-y-auto rounded-lg border border-white/10 bg-[#121214]">
           {selectedTicker ? (
             <ResearchTickerView ticker={selectedTicker} />
           ) : (
