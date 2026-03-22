@@ -20,7 +20,6 @@ type TabKey =
   | 'cash'
   | 'news-filings'
   | 'offerings'
-  | 'risk'
   | 'history';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -114,7 +113,6 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'cash', label: 'Cash' },
   { key: 'news-filings', label: 'News & Filings' },
   { key: 'offerings', label: 'Offerings' },
-  { key: 'risk', label: 'Risk' },
   { key: 'history', label: 'History' },
 ];
 
@@ -321,6 +319,164 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
             ) : (
               <NoDataBadge endpointData={data.dilutionData} />
             )}
+
+            {/* Outstanding Warrants */}
+            {(() => {
+              const currentPrice = toNumberValue(getField(screenerItem, ['price']));
+              const today = new Date().toISOString().slice(0, 10);
+
+              const regularWarrants = data.dilutionData.results
+                .map((item) => toRecord(item))
+                .filter((row) => {
+                  const hasWarrants = getField(row, ['warrants_amount']) !== null;
+                  const prefunded = toNumberValue(getField(row, ['prefunded_cost']));
+                  return hasWarrants && (prefunded === null || prefunded === 0);
+                });
+
+              if (regularWarrants.length === 0) {
+                return (
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-zinc-300">Outstanding Warrants</h4>
+                    <p className="text-sm text-zinc-500">No outstanding warrants found</p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-2">
+                  <h4 className="font-medium text-zinc-300">Outstanding Warrants</h4>
+                  <div className="overflow-x-hidden">
+                    <table className="min-w-full">
+                      <thead>
+                        <tr className="border-b border-white/10 text-zinc-400">
+                          <th className="py-2 pr-3 text-left">Details</th>
+                          <th className="py-2 pr-3 text-left">Remaining</th>
+                          <th className="py-2 pr-3 text-left">Strike</th>
+                          <th className="py-2 pr-3 text-left">Registered</th>
+                          <th className="py-2 pr-3 text-left">Exercisable</th>
+                          <th className="py-2 pr-3 text-left">Expires</th>
+                          <th className="py-2 text-left">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {regularWarrants.map((row, index) => {
+                          const exercisePrice = toNumberValue(getField(row, ['warrants_exercise_price']));
+                          const exercisableDate = getField(row, ['exercisable_date']) as string | null;
+                          const expirationDate = getField(row, ['expiration_date']) as string | null;
+                          const registered = String(getField(row, ['registered']) ?? '');
+
+                          let status: string;
+                          let colorClass: string;
+
+                          if (exercisableDate === null) {
+                            status = 'Not Exercisable';
+                            colorClass = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+                          } else if (expirationDate && expirationDate < today) {
+                            status = 'Expired';
+                            colorClass = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+                          } else if (exercisableDate > today) {
+                            status = 'Not Yet Exercisable';
+                            colorClass = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+                          } else if (registered === 'Registered' && currentPrice !== null && exercisePrice !== null && currentPrice >= exercisePrice) {
+                            status = 'In the Money';
+                            colorClass = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+                          } else if (registered === 'Registered' && currentPrice !== null && exercisePrice !== null && currentPrice < exercisePrice) {
+                            status = 'Below Strike';
+                            colorClass = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+                          } else {
+                            status = 'Not Registered';
+                            colorClass = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+                          }
+
+                          return (
+                            <tr key={`warrant-${index}`} className="border-b border-white/5">
+                              <td className="py-2 pr-3 text-zinc-300">{toStringValue(getField(row, ['details']))}</td>
+                              <td className="py-2 pr-3 text-zinc-200">{formatNumber(getField(row, ['warrants_remaining']))}</td>
+                              <td className="py-2 pr-3 text-zinc-200">{formatMoney(getField(row, ['warrants_exercise_price']))}</td>
+                              <td className="py-2 pr-3 text-zinc-300">{toStringValue(getField(row, ['registered']))}</td>
+                              <td className="py-2 pr-3 text-zinc-300">{formatDate(getField(row, ['exercisable_date']))}</td>
+                              <td className="py-2 pr-3 text-zinc-300">{formatDate(getField(row, ['expiration_date']))}</td>
+                              <td className="py-2">
+                                <span className={`rounded border px-2 py-0.5 text-xs font-medium ${colorClass}`}>
+                                  {status}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Pre-funded Warrants */}
+            {(() => {
+              const prefundedWarrants = data.dilutionData.results
+                .map((item) => toRecord(item))
+                .filter((row) => {
+                  const hasWarrants = getField(row, ['warrants_amount']) !== null;
+                  const prefunded = toNumberValue(getField(row, ['prefunded_cost']));
+                  return hasWarrants && prefunded !== null && prefunded > 0;
+                });
+
+              if (prefundedWarrants.length === 0) {
+                return (
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-zinc-300">Pre-funded Warrants</h4>
+                    <p className="text-sm text-zinc-500">No pre-funded warrants found</p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-2">
+                  <h4 className="font-medium text-zinc-300">Pre-funded Warrants</h4>
+                  <div className="overflow-x-hidden">
+                    <table className="min-w-full">
+                      <thead>
+                        <tr className="border-b border-white/10 text-zinc-400">
+                          <th className="py-2 pr-3 text-left">Details</th>
+                          <th className="py-2 pr-3 text-left">Remaining</th>
+                          <th className="py-2 pr-3 text-left">Pre-funded Cost</th>
+                          <th className="py-2 pr-3 text-left">Registered</th>
+                          <th className="py-2 pr-3 text-left">Exercisable</th>
+                          <th className="py-2 pr-3 text-left">Expires</th>
+                          <th className="py-2 text-left">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {prefundedWarrants.map((row, index) => {
+                          const registered = String(getField(row, ['registered']) ?? '');
+                          const colorClass =
+                            registered === 'Registered'
+                              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                              : 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+                          const status = registered === 'Registered' ? 'Registered' : 'Not Registered';
+
+                          return (
+                            <tr key={`prefunded-${index}`} className="border-b border-white/5">
+                              <td className="py-2 pr-3 text-zinc-300">{toStringValue(getField(row, ['details']))}</td>
+                              <td className="py-2 pr-3 text-zinc-200">{formatNumber(getField(row, ['warrants_remaining']))}</td>
+                              <td className="py-2 pr-3 text-zinc-200">{formatMoney(getField(row, ['prefunded_cost']))}</td>
+                              <td className="py-2 pr-3 text-zinc-300">{toStringValue(getField(row, ['registered']))}</td>
+                              <td className="py-2 pr-3 text-zinc-300">{formatDate(getField(row, ['exercisable_date']))}</td>
+                              <td className="py-2 pr-3 text-zinc-300">{formatDate(getField(row, ['expiration_date']))}</td>
+                              <td className="py-2">
+                                <span className={`rounded border px-2 py-0.5 text-xs font-medium ${colorClass}`}>
+                                  {status}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         ) : null}
 
@@ -441,40 +597,6 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
               </div>
             ) : (
               <NoDataBadge endpointData={data.offerings} />
-            )}
-          </div>
-        ) : null}
-
-        {activeTab === 'risk' ? (
-          <div className="space-y-3">
-            {hasData(data.pumpAndDump) ? (
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                {([
-                  ['Country', getField(pumpItem, ['countryRisk', 'country_risk'])],
-                  ['Float', getField(pumpItem, ['floatRisk', 'float_risk'])],
-                  ['Underwriter', getField(pumpItem, ['underwriterRisk', 'underwriter_risk'])],
-                  ['Scam', getField(pumpItem, ['scamRisk', 'scam_risk'])],
-                ] as Array<[string, unknown]>).map(([label, value]) => (
-                  <div key={label} className={`rounded border px-2 py-2 ${riskClass(value)}`}>
-                    <p>{label}</p>
-                    <p className="capitalize">{toStringValue(value)}</p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <NoDataBadge endpointData={data.pumpAndDump} />
-            )}
-            {hasData(data.nasdaqCompliance) ? (
-              <div className="rounded border border-white/10 bg-white/5 p-3">
-                <div className="flex items-center gap-2">
-                  <span className={`rounded border px-2 py-1 text-sm ${riskClass(getField(complianceItem, ['status', 'complianceStatus', 'rating']))}`}>
-                    {toStringValue(getField(complianceItem, ['status', 'complianceStatus', 'rating']))}
-                  </span>
-                </div>
-                <p className="mt-2 text-zinc-300">{toStringValue(getField(complianceItem, ['description', 'details', 'reason']))}</p>
-              </div>
-            ) : (
-              <NoDataBadge endpointData={data.nasdaqCompliance} />
             )}
           </div>
         ) : null}

@@ -22,9 +22,10 @@ interface AskEdgarLookupData {
 
 interface Props {
   ticker: string;
+  onCompanyName?: (name: string | null) => void;
 }
 
-export default function ResearchTickerView({ ticker }: Props) {
+export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
   const [data, setData] = useState<AskEdgarLookupData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +33,7 @@ export default function ResearchTickerView({ ticker }: Props) {
   const fetchData = useCallback(async (selectedTicker: string) => {
     setLoading(true);
     setError(null);
+    onCompanyName?.(null);
     try {
       const response = await fetch(`/api/askedgar/lookup?ticker=${encodeURIComponent(selectedTicker)}`);
       if (!response.ok) throw new Error(`Lookup failed: ${response.status}`);
@@ -43,7 +45,7 @@ export default function ResearchTickerView({ ticker }: Props) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onCompanyName]);
 
   useEffect(() => {
     void fetchData(ticker);
@@ -68,7 +70,7 @@ export default function ResearchTickerView({ ticker }: Props) {
       {/* Top row: company info panel on the left, chart on the right — fixed height */}
       <div className="flex h-[500px] shrink-0 border-b border-white/10">
         <div className="w-[220px] shrink-0 overflow-y-auto">
-          <ResearchCompanyHeader ticker={ticker} rawData={data.rawData} />
+          <ResearchCompanyHeader ticker={ticker} rawData={data.rawData} onCompanyName={onCompanyName} />
         </div>
         <div className="min-h-0 flex-1 bg-[#0A0A0B]">
           <ResearchChart ticker={ticker} />

@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect } from 'react';
+
 interface AskEdgarEndpointResponse {
   status: string;
   results: unknown[];
@@ -9,6 +11,7 @@ interface AskEdgarEndpointResponse {
 interface Props {
   ticker: string;
   rawData: Record<string, AskEdgarEndpointResponse>;
+  onCompanyName?: (name: string | null) => void;
 }
 
 function toRecord(value: unknown): Record<string, unknown> {
@@ -63,7 +66,7 @@ function statRow(label: string, value: string) {
   );
 }
 
-export default function ResearchCompanyHeader({ ticker, rawData }: Props) {
+export default function ResearchCompanyHeader({ ticker, rawData, onCompanyName }: Props) {
   const screener = firstResult(rawData, 'screener');
   const dilutionRating = firstResult(rawData, 'dilution-rating');
 
@@ -80,6 +83,10 @@ export default function ResearchCompanyHeader({ ticker, rawData }: Props) {
   const offeringRisk = getField(dilutionRating, ['offeringAbility', 'offering_ability']);
   const dilutionRisk = getField(dilutionRating, ['dilution', 'dilution_rating']);
   const cashNeed = getField(dilutionRating, ['cashNeed', 'cash_need']);
+
+  useEffect(() => {
+    onCompanyName?.(companyName ? String(companyName) : null);
+  }, [companyName, onCompanyName]);
 
   return (
     <div className="flex h-full flex-col gap-3 border-r border-white/10 bg-[#0f0f11] px-4 py-3">
