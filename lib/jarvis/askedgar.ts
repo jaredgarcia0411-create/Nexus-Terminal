@@ -1,3 +1,7 @@
+import { and, eq, gt } from 'drizzle-orm';
+
+import { getDb } from '@/lib/db';
+import { askedgarCache } from '@/lib/db/schema';
 import type { DilutionDataSourceCheck } from '@/lib/jarvis/types';
 
 export interface AskEdgarResponse<T> {
@@ -11,6 +15,8 @@ const ASKEDGAR_BASE_URL = 'https://eapi.askedgar.io';
 const DEFAULT_DAILY_LIMIT = 100;
 const REQUEST_TIMEOUT_MS = 15_000;
 const TICKER_REGEX = /^[A-Z0-9.\-^]+$/;
+const TICKER_CACHE_TTL_MS = 60 * 60 * 1000;    // 1 hour
+const GAINERS_CACHE_TTL_MS = 5 * 60 * 1000;    // 5 minutes
 
 let callCount = 0;
 let resetDate = '';
@@ -319,4 +325,120 @@ export async function fetchTopGainers(minGainPct = 20, limit = 25) {
     isactivelytrading: true,
     limit,
   });
+}
+
+// --- Cache helpers: wrap the raw fetch functions with DB-backed TTL caching ---
+
+/**
+ * Cached version of fetchTickerData(). Checks DB for a fresh cached response
+ * before hitting Ask Edgar. Cache is shared across all users (same SEC data).
+ * TTL: 1 hour.
+ */
+export async function getCachedTickerData(ticker: string) {
+  const normalizedTicker = ticker.trim().toUpperCase();
+  const db = getDb();
+
+  // No DB available — fall back to live fetch
+  if (!db) return fetchTickerData(normalizedTicker);
+
+  // Check cache
+  const now = new Date();
+  const cached = await db
+    .select()
+    .from(askedgarCache)
+    .where(
+      and(
+        eq(askedgarCache.cacheType, 'ticker'),
+        eq(askedgarCache.ticker, normalizedTicker),
+        gt(askedgarCache.expiresAt, now),
+      ),
+    )
+    .limit(1);
+
+  if (cached.length > 0) {
+    // Cache hit — return stored data in the same shape as fetchTickerData()
+    return cached[0].dataJson as ReturnType<typeof fetchTickerData> extends Promise<infer T> ? T : never;
+  }
+
+  // Cache miss — fetch fresh from Ask Edgar
+  const result = await fetchTickerData(normalizedTicker);
+
+  // Write to cache (fire-and-forget, don't block the response)
+  try {
+    await db
+      .insert(askedgarCache)
+      .values({
+        id: `ticker-${normalizedTicker}`,
+        cacheType: 'ticker',
+        ticker: normalizedTicker,
+        dataJson: result,
+        fetchedAt: now,
+        expiresAt: new Date(now.getTime() + TICKER_CACHE_TTL_MS),
+      })
+      .onConflictDoUpdate({
+        target: [askedgarCache.cacheType, askedgarCache.ticker],
+        set: {
+          dataJson: result,
+          fetchedAt: now,
+          expiresAt: new Date(now.getTime() + TICKER_CACHE_TTL_MS),
+        },
+      });
+  } catch (err) {
+    console.warn('[askedgar-cache] Failed to write ticker cache:', err);
+  }
+
+  return result;
+}
+
+/**
+ * Cached version of fetchTopGainers(). Uses DB cache with 5-minute TTL.
+ * Shared across all users.
+ */
+export async function getCachedGainers(minGainPct = 20, limit = 25) {
+  const db = getDb();
+  if (!db) return fetchTopGainers(minGainPct, limit);
+
+  const now = new Date();
+  const cached = await db
+    .select()
+    .from(askedgarCache)
+    .where(
+      and(
+        eq(askedgarCache.cacheType, 'gainers'),
+        eq(askedgarCache.ticker, '__GAINERS__'),
+        gt(askedgarCache.expiresAt, now),
+      ),
+    )
+    .limit(1);
+
+  if (cached.length > 0) {
+    return cached[0].dataJson as AskEdgarResponse<unknown>;
+  }
+
+  const result = await fetchTopGainers(minGainPct, limit);
+
+  try {
+    await db
+      .insert(askedgarCache)
+      .values({
+        id: 'gainers',
+        cacheType: 'gainers',
+        ticker: '__GAINERS__',
+        dataJson: result,
+        fetchedAt: now,
+        expiresAt: new Date(now.getTime() + GAINERS_CACHE_TTL_MS),
+      })
+      .onConflictDoUpdate({
+        target: [askedgarCache.cacheType, askedgarCache.ticker],
+        set: {
+          dataJson: result,
+          fetchedAt: now,
+          expiresAt: new Date(now.getTime() + GAINERS_CACHE_TTL_MS),
+        },
+      });
+  } catch (err) {
+    console.warn('[askedgar-cache] Failed to write gainers cache:', err);
+  }
+
+  return result;
 }

@@ -1,10 +1,7 @@
-import { fetchTopGainers } from '@/lib/jarvis/askedgar';
+import { getCachedGainers } from '@/lib/jarvis/askedgar';
 import { requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';
-
-let cache: { data: unknown; expiry: number } | null = null;
-const CACHE_TTL_MS = 5 * 60 * 1000;
 
 export async function GET(request: Request) {
   const authState = await requireUser();
@@ -14,13 +11,9 @@ export async function GET(request: Request) {
   const minGain = Number(url.searchParams.get('min_gain') ?? '20');
   const limit = Math.min(Number(url.searchParams.get('limit') ?? '25'), 50);
 
-  if (cache && Date.now() < cache.expiry) {
-    return Response.json(cache.data);
-  }
-
   try {
     // Over-fetch since we'll filter some out by prior close
-    const result = await fetchTopGainers(
+    const result = await getCachedGainers(
       Number.isFinite(minGain) && minGain > 0 ? minGain : 20,
       Number.isFinite(limit) && limit > 0 ? limit * 2 : 50,
     );
@@ -41,8 +34,6 @@ export async function GET(request: Request) {
       count: filtered.length,
       fetchedAt: new Date().toISOString(),
     };
-
-    cache = { data: responseData, expiry: Date.now() + CACHE_TTL_MS };
 
     return Response.json(responseData);
   } catch (error) {

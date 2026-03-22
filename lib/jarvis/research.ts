@@ -1,7 +1,7 @@
 import { and, desc, eq, gte } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { researchReports } from '@/lib/db/schema';
-import { fetchTickerData } from '@/lib/jarvis/askedgar';
+import { getCachedTickerData } from '@/lib/jarvis/askedgar';
 import type { AskEdgarResponse } from '@/lib/jarvis/askedgar';
 import { callJarvis } from '@/lib/jarvis/client';
 import { buildResearchPrompt, buildResearchTldrPrompt } from '@/lib/jarvis/prompts';
@@ -169,7 +169,7 @@ export async function runResearchPipeline(userId: string, ticker: string, option
     };
   }
 
-  const askedgarData = await fetchTickerData(normalizedTicker);
+  const askedgarData = await getCachedTickerData(normalizedTicker);
 
   // Build a minimal context for research — no user trades or memory needed,
   // and trim the AskEdgar data to only include successful results (saves ~70% tokens)
@@ -269,7 +269,7 @@ export async function fetchAndCacheRawReport(
     };
   }
 
-  const result = await fetchTickerData(normalizedTicker);
+  const result = await getCachedTickerData(normalizedTicker);
   const generatedAt = new Date();
 
   await db.insert(researchReports).values({

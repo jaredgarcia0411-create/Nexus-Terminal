@@ -298,3 +298,16 @@ export const scannerPresets = pgTable('scanner_presets', {
   unique().on(table.userId, table.name),
   index('scanner_presets_user_idx').on(table.userId),
 ]);
+
+// Shared cache for Ask Edgar API responses — no userId, shared across all users
+export const askedgarCache = pgTable('askedgar_cache', {
+  id: text('id').primaryKey(),
+  cacheType: text('cache_type').notNull(),     // 'ticker' or 'gainers'
+  ticker: text('ticker').notNull(),             // uppercase ticker symbol or '__GAINERS__'
+  dataJson: jsonb('data_json').notNull(),
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+}, (table) => [
+  unique().on(table.cacheType, table.ticker),
+  index('askedgar_cache_expires_idx').on(table.expiresAt),
+]);

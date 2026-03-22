@@ -1,4 +1,4 @@
-import { fetchTickerData } from '@/lib/jarvis/askedgar';
+import { getCachedTickerData } from '@/lib/jarvis/askedgar';
 import { fetchUnifiedSnapshot } from '@/lib/massive-market';
 import { requireUser } from '@/lib/server-db-utils';
 
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
 
   try {
     const [result, snapshot] = await Promise.all([
-      fetchTickerData(ticker),
+      getCachedTickerData(ticker),
       fetchUnifiedSnapshot([ticker]).catch(() => ({ results: [] as unknown[] })),
     ]);
 

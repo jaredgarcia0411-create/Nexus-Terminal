@@ -2,7 +2,7 @@ import { and, desc, eq } from 'drizzle-orm';
 
 import { getDb } from '@/lib/db';
 import { importedResearchReports, tickerResearchSummaries } from '@/lib/db/schema';
-import { fetchTickerData } from '@/lib/jarvis/askedgar';
+import { getCachedTickerData } from '@/lib/jarvis/askedgar';
 import { callJarvis } from '@/lib/jarvis/client';
 import { requireUser } from '@/lib/server-db-utils';
 
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
 
   try {
     const [askEdgarData, summaryRows, discordRows] = await Promise.all([
-      fetchTickerData(ticker),
+      getCachedTickerData(ticker),
       db
         .select()
         .from(tickerResearchSummaries)
