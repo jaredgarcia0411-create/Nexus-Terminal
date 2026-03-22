@@ -157,8 +157,21 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
   const complianceItem = toRecord(data.nasdaqCompliance.results[0]);
   const pumpItem = toRecord(data.pumpAndDump.results[0]);
 
-  // Equity lines come from dedicated endpoint; regular offerings exclude equity lines
-  const equityLines = data.equityLines.results;
+  // Equity lines from the offerings endpoint
+  const offeringEquityLines = data.equityLines.results;
+
+  // Also check registrations for equity line entries (headline mentions equity line, ELOC, or purchase agreement)
+  const EQUITY_LINE_KEYWORDS = ['equity line', 'eloc', 'purchase agreement'];
+  const registrationEquityLines = data.registrations.results.filter((item) => {
+    const row = toRecord(item);
+    const headline = String(getField(row, ['headline', 'title']) ?? '').toLowerCase();
+    const isAtm = row.is_atm === true || row.isAtm === true;
+    if (isAtm) return false;
+    return EQUITY_LINE_KEYWORDS.some((kw) => headline.includes(kw));
+  });
+
+  // Combine both sources — offerings first, then registrations as fallback
+  const equityLines = [...offeringEquityLines, ...registrationEquityLines];
 
   const regularOfferings = data.offerings.results.filter((item) => {
     const row = toRecord(item);
@@ -256,7 +269,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
             {equityLines.length > 0 ? (
               <div className="space-y-2">
                 <h4 className="font-medium text-amber-300">Equity Lines</h4>
-                <div className="overflow-x-hidden">
+                <div className="overflow-x-auto">
                   <table className="min-w-full">
                     <thead>
                       <tr className="border-b border-white/10 text-zinc-400">
@@ -294,7 +307,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
             {hasData(data.registrations) ? (
               <div className="space-y-2">
                 <h4 className="font-medium text-zinc-300">Shelf Registrations</h4>
-                <div className="overflow-x-hidden">
+                <div className="overflow-x-auto">
                   <table className="min-w-full">
                     <thead>
                       <tr className="border-b border-white/10 text-zinc-400">
@@ -381,7 +394,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
               return (
                 <div className="space-y-2">
                   <h4 className="font-medium text-zinc-300">Outstanding Warrants</h4>
-                  <div className="overflow-x-hidden">
+                  <div className="overflow-x-auto">
                     <table className="min-w-full">
                       <thead>
                         <tr className="border-b border-white/10 text-zinc-400">
@@ -400,6 +413,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                           const exercisableDate = getField(row, ['exercisable_date']) as string | null;
                           const expirationDate = getField(row, ['expiration_date']) as string | null;
                           const registered = String(getField(row, ['registered']) ?? '');
+                          const warrantsRemaining = toNumberValue(getField(row, ['warrants_remaining']));
 
                           let status: string;
                           let colorClass: string;
@@ -408,7 +422,11 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                           const YELLOW = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
                           const GREEN = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
 
-                          if (exercisableDate === null) {
+                          // Fully exercised — no dilution risk
+                          if (warrantsRemaining !== null && warrantsRemaining <= 0) {
+                            status = 'Not In Play';
+                            colorClass = RED;
+                          } else if (exercisableDate === null) {
                             status = 'Not In Play';
                             colorClass = RED;
                           } else if (expirationDate && expirationDate < today) {
@@ -437,7 +455,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                               <td className="py-2 pr-3 text-zinc-300">{formatDate(getField(row, ['exercisable_date']))}</td>
                               <td className="py-2 pr-3 text-zinc-300">{formatDate(getField(row, ['expiration_date']))}</td>
                               <td className="py-2">
-                                <span className={`rounded border px-2 py-0.5 text-xs font-medium ${colorClass}`}>
+                                <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${colorClass}`}>
                                   {status}
                                 </span>
                               </td>
@@ -473,7 +491,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
               return (
                 <div className="space-y-2">
                   <h4 className="font-medium text-zinc-300">Pre-funded Warrants</h4>
-                  <div className="overflow-x-hidden">
+                  <div className="overflow-x-auto">
                     <table className="min-w-full">
                       <thead>
                         <tr className="border-b border-white/10 text-zinc-400">
@@ -488,12 +506,9 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                       </thead>
                       <tbody>
                         {prefundedWarrants.map((row, index) => {
-                          const registered = String(getField(row, ['registered']) ?? '');
-                          const colorClass =
-                            registered === 'Registered'
-                              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                              : 'border-rose-500/30 bg-rose-500/10 text-rose-300';
-                          const status = registered === 'Registered' ? 'In Play' : 'Not In Play';
+                          // Pre-funded warrants are always "Not In Play" — low exercise likelihood
+                          const colorClass = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+                          const status = 'Not In Play';
 
                           return (
                             <tr key={`prefunded-${index}`} className="border-b border-white/5">
@@ -504,7 +519,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                               <td className="py-2 pr-3 text-zinc-300">{formatDate(getField(row, ['exercisable_date']))}</td>
                               <td className="py-2 pr-3 text-zinc-300">{formatDate(getField(row, ['expiration_date']))}</td>
                               <td className="py-2">
-                                <span className={`rounded border px-2 py-0.5 text-xs font-medium ${colorClass}`}>
+                                <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${colorClass}`}>
                                   {status}
                                 </span>
                               </td>
@@ -569,7 +584,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
             {regularOfferings.length > 0 ? (
               <div className="space-y-2">
                 <h4 className="font-medium text-zinc-300">Offerings</h4>
-                <div className="overflow-x-hidden">
+                <div className="overflow-x-auto">
                   <table className="min-w-full">
                     <thead>
                       <tr className="border-b border-white/10 text-zinc-400">
@@ -606,7 +621,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
         {activeTab === 'history' ? (
           <div className="space-y-3">
             {hasData(data.historicalFloat) ? (
-              <div className="overflow-x-hidden">
+              <div className="overflow-x-auto">
                 <table className="min-w-full">
                   <thead>
                     <tr className="border-b border-white/10 text-zinc-400">
@@ -636,7 +651,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
             )}
 
             {hasData(data.reverseSplits) ? (
-              <div className="overflow-x-hidden">
+              <div className="overflow-x-auto">
                 <table className="min-w-full">
                   <thead>
                     <tr className="border-b border-white/10 text-zinc-400">
@@ -666,7 +681,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
             )}
 
             {hasData(data.agreements) ? (
-              <div className="overflow-x-hidden">
+              <div className="overflow-x-auto">
                 <table className="min-w-full">
                   <thead>
                     <tr className="border-b border-white/10 text-zinc-400">
