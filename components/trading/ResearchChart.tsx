@@ -80,7 +80,7 @@ export default function ResearchChart({ ticker }: Props) {
           secondsVisible: false,
         },
         width: containerRef.current.clientWidth,
-        height: 300,
+        height: containerRef.current.clientHeight,
       });
 
       const series = chart.addSeries(CandlestickSeries, {
@@ -99,7 +99,7 @@ export default function ResearchChart({ ticker }: Props) {
         if (!containerRef.current || !chartRef.current) return;
         chartRef.current.applyOptions({
           width: containerRef.current.clientWidth,
-          height: 300,
+          height: containerRef.current.clientHeight,
         });
       });
       resizeObserver.observe(containerRef.current);

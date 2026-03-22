@@ -195,10 +195,10 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
         </div>
       </div>
 
-      <div className="p-3">
+      <div className="p-3 text-base">
         {activeTab === 'overview' ? (
           hasData(data.screener) ? (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5 text-sm">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
               <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Ticker</p><p className="text-zinc-200">{ticker}</p></div>
               <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Price</p><p className="text-zinc-200">{formatMoney(getField(screenerItem, ['price']))}</p></div>
               <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Market Cap</p><p className="text-zinc-200">{formatMoney(getField(screenerItem, ['marketCap', 'market_cap']))}</p></div>
@@ -221,7 +221,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
             {/* ATM Programs */}
             {atmRegistrations.length > 0 ? (
               <div className="space-y-2">
-                <h4 className="text-sm font-medium text-zinc-300">ATM Programs</h4>
+                <h4 className="font-medium text-zinc-300">ATM Programs</h4>
                 {atmRegistrations.map((item, index) => {
                   const row = toRecord(item);
                   const remaining = getField(row, ['amount_remaining_atm', 'amountRemainingAtm']);
@@ -231,19 +231,19 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                   const effective = getField(row, ['effective_status', 'effectiveStatus']);
                   return (
                     <div key={`atm-${index}`} className="rounded border border-white/10 bg-white/5 p-3">
-                      <div className="flex items-center gap-2 text-sm">
+                      <div className="flex items-center gap-2">
                         <span className={`rounded border px-2 py-0.5 text-xs font-medium ${effective ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-zinc-500/30 bg-zinc-500/10 text-zinc-400'}`}>
                           {effective ? 'Active' : 'Inactive'}
                         </span>
                         <span className="text-zinc-200">{toStringValue(getField(row, ['headline', 'title']))}</span>
                       </div>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                         <div><span className="text-zinc-500">Total Registered:</span> <span className="text-zinc-200">{formatMoney(total)}</span></div>
                         <div><span className="text-zinc-500">Raised So Far:</span> <span className="text-zinc-200">{formatMoney(raised)}</span></div>
                         <div><span className="text-zinc-500">ATM Remaining:</span> <span className="font-medium text-amber-300">{formatMoney(remaining)}</span></div>
                         {bank ? <div><span className="text-zinc-500">Bank:</span> <span className="text-zinc-200">{String(bank)}</span></div> : null}
                       </div>
-                      <div className="mt-1 text-sm text-zinc-500">
+                      <div className="mt-1 text-zinc-500">
                         Filed: {formatDate(getField(row, ['filed_at', 'filedAt']))} | Expires: {formatDate(getField(row, ['expiration_date', 'expirationDate']))}
                       </div>
                     </div>
@@ -251,7 +251,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                 })}
               </div>
             ) : (
-              <div className="rounded border border-white/10 bg-white/5 p-3 text-sm text-zinc-400">
+              <div className="rounded border border-white/10 bg-white/5 p-3 text-zinc-400">
                 No active ATM programs found
               </div>
             )}
@@ -259,9 +259,9 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
             {/* All Registrations table */}
             {hasData(data.registrations) ? (
               <div className="space-y-2">
-                <h4 className="text-sm font-medium text-zinc-300">Shelf Registrations</h4>
+                <h4 className="font-medium text-zinc-300">Shelf Registrations</h4>
                 <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
+                  <table className="min-w-full">
                     <thead>
                       <tr className="border-b border-white/10 text-zinc-400">
                         <th className="py-2 pr-3 text-left">Headline</th>
@@ -296,7 +296,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
               <NoDataBadge endpointData={data.registrations} />
             )}
 
-            <div className="rounded border border-white/10 bg-white/5 p-3 text-sm text-zinc-300">
+            <div className="rounded border border-white/10 bg-white/5 p-3 text-zinc-300">
               <p className="mb-1 text-zinc-400">Management Commentary</p>
               <p>{toStringValue(getField(dilutionItem, ['mgmt_commentary', 'managementCommentary', 'commentary']))}</p>
             </div>
@@ -309,10 +309,10 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
               <span className={`rounded border px-2 py-1 text-sm ${riskClass(getField(dilutionItem, ['rating', 'dilutionRating']))}`}>
                 {toStringValue(getField(dilutionItem, ['rating', 'dilutionRating']))}
               </span>
-              <span className="text-sm text-zinc-400">Dilution Rating</span>
+              <span className="text-zinc-400">Dilution Rating</span>
             </div>
             {hasData(data.dilutionData) ? (
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Warrants</p><p className="text-zinc-200">{toStringValue(getField(dilutionDataItem, ['warrantExercise', 'warrantInfo', 'warrant_exercise']))}</p></div>
                 <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Convertibles</p><p className="text-zinc-200">{toStringValue(getField(dilutionDataItem, ['convertibles', 'convertibleNotes']))}</p></div>
                 <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Auth Shares</p><p className="text-zinc-200">{formatNumber(getField(dilutionDataItem, ['authorizedShares', 'authorized_shares']))}</p></div>
@@ -326,7 +326,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
 
         {activeTab === 'cash' ? (
           hasData(data.dilutionData) ? (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Estimated Cash</p><p className="text-zinc-200">{formatMoney(getField(dilutionDataItem, ['estimatedCash', 'cash', 'cashOnHand']))}</p></div>
               <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Burn Rate</p><p className="text-zinc-200">{formatMoney(getField(dilutionDataItem, ['cashBurn', 'burnRate']))}</p></div>
               <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Months Remaining</p><p className="text-zinc-200">{toStringValue(getField(dilutionDataItem, ['cashRemainingMonths', 'monthsRemaining']))}</p></div>
@@ -350,12 +350,12 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                       : 'border-orange-500/30 bg-orange-500/10 text-orange-300';
                 return (
                   <details key={`news-filing-${index}`} className="rounded border border-white/10 bg-white/5 p-2">
-                    <summary className="cursor-pointer text-sm text-zinc-200">
+                    <summary className="cursor-pointer text-zinc-200">
                       {toStringValue(getField(item.row, ['headline', 'title']))}
                     </summary>
-                    <div className="mt-2 space-y-2 text-sm">
+                    <div className="mt-2 space-y-2">
                       <div className="flex items-center gap-2">
-                        <span className={`rounded border px-2 py-0.5 ${sourceClass}`}>{formType}</span>
+                        <span className={`rounded border px-2 py-0.5 text-sm ${sourceClass}`}>{formType}</span>
                         <span className="text-zinc-500">{formatDate(getField(item.row, ['filedAt', 'date']))}</span>
                       </div>
                       <p className="text-zinc-300">{toStringValue(getField(item.row, ['body', 'summary', 'details']))}</p>
@@ -372,9 +372,9 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
             {/* Equity Lines section */}
             {equityLines.length > 0 ? (
               <div className="space-y-2">
-                <h4 className="text-sm font-medium text-amber-300">Equity Lines</h4>
+                <h4 className="font-medium text-amber-300">Equity Lines</h4>
                 <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
+                  <table className="min-w-full">
                     <thead>
                       <tr className="border-b border-white/10 text-zinc-400">
                         <th className="py-2 pr-3 text-left">Date</th>
@@ -402,7 +402,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                 </div>
               </div>
             ) : (
-              <div className="rounded border border-white/10 bg-white/5 p-3 text-sm text-zinc-400">
+              <div className="rounded border border-white/10 bg-white/5 p-3 text-zinc-400">
                 No equity lines found
               </div>
             )}
@@ -410,9 +410,9 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
             {/* Regular Offerings */}
             {regularOfferings.length > 0 ? (
               <div className="space-y-2">
-                <h4 className="text-sm font-medium text-zinc-300">Offerings</h4>
+                <h4 className="font-medium text-zinc-300">Offerings</h4>
                 <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
+                  <table className="min-w-full">
                     <thead>
                       <tr className="border-b border-white/10 text-zinc-400">
                         <th className="py-2 pr-3 text-left">Date</th>
@@ -448,7 +448,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
         {activeTab === 'risk' ? (
           <div className="space-y-3">
             {hasData(data.pumpAndDump) ? (
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {([
                   ['Country', getField(pumpItem, ['countryRisk', 'country_risk'])],
                   ['Float', getField(pumpItem, ['floatRisk', 'float_risk'])],
@@ -465,9 +465,9 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
               <NoDataBadge endpointData={data.pumpAndDump} />
             )}
             {hasData(data.nasdaqCompliance) ? (
-              <div className="rounded border border-white/10 bg-white/5 p-3 text-sm">
+              <div className="rounded border border-white/10 bg-white/5 p-3">
                 <div className="flex items-center gap-2">
-                  <span className={`rounded border px-2 py-1 ${riskClass(getField(complianceItem, ['status', 'complianceStatus', 'rating']))}`}>
+                  <span className={`rounded border px-2 py-1 text-sm ${riskClass(getField(complianceItem, ['status', 'complianceStatus', 'rating']))}`}>
                     {toStringValue(getField(complianceItem, ['status', 'complianceStatus', 'rating']))}
                   </span>
                 </div>
@@ -483,7 +483,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
           <div className="space-y-3">
             {hasData(data.historicalFloat) ? (
               <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
+                <table className="min-w-full">
                   <thead>
                     <tr className="border-b border-white/10 text-zinc-400">
                       <th className="py-2 pr-3 text-left">Date</th>
@@ -513,7 +513,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
 
             {hasData(data.reverseSplits) ? (
               <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
+                <table className="min-w-full">
                   <thead>
                     <tr className="border-b border-white/10 text-zinc-400">
                       <th className="py-2 pr-3 text-left">Date</th>
@@ -543,7 +543,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
 
             {hasData(data.agreements) ? (
               <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
+                <table className="min-w-full">
                   <thead>
                     <tr className="border-b border-white/10 text-zinc-400">
                       <th className="py-2 pr-3 text-left">Type</th>
