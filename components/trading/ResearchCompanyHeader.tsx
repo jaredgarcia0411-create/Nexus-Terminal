@@ -54,6 +54,15 @@ function firstResult(rawData: Record<string, AskEdgarEndpointResponse>, key: str
   return toRecord(rawData[key]?.results?.[0]);
 }
 
+function statRow(label: string, value: string) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-zinc-500">{label}</span>
+      <span className="text-zinc-200">{value}</span>
+    </div>
+  );
+}
+
 export default function ResearchCompanyHeader({ ticker, rawData }: Props) {
   const screener = firstResult(rawData, 'screener');
   const dilutionRating = firstResult(rawData, 'dilution-rating');
@@ -73,30 +82,37 @@ export default function ResearchCompanyHeader({ ticker, rawData }: Props) {
   const cashNeed = getField(dilutionRating, ['cashNeed', 'cash_need']);
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-white/10 bg-[#0f0f11] px-4 py-2.5">
-      <div className="flex items-center gap-2">
-        {country ? <span className="text-xs text-zinc-500">{String(country)}</span> : null}
-        <span className="text-sm font-semibold text-zinc-100">{ticker}</span>
-        {companyName ? <span className="text-xs text-zinc-400">{String(companyName)}</span> : null}
+    <div className="flex h-full flex-col gap-3 border-r border-white/10 bg-[#0f0f11] px-4 py-3">
+      {/* Ticker + Company Name */}
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-zinc-100">{ticker}</span>
+          {country ? <span className="text-[11px] text-zinc-500">{String(country)}</span> : null}
+        </div>
+        {companyName ? (
+          <p className="mt-0.5 text-xs leading-snug text-zinc-400">{String(companyName)}</p>
+        ) : null}
       </div>
 
-      <div className="flex items-center gap-3 text-xs text-zinc-300">
-        <span>${formatCompact(marketCap)} <span className="text-zinc-500">MCap</span></span>
-        <span>{formatCompact(outstanding)} <span className="text-zinc-500">OS</span></span>
-        <span>{formatCompact(float)} <span className="text-zinc-500">Float</span></span>
+      {/* Company Stats */}
+      <div className="flex flex-col gap-1 text-xs">
+        {statRow('MCap', `$${formatCompact(marketCap)}`)}
+        {statRow('OS', formatCompact(outstanding))}
+        {statRow('Float', formatCompact(float))}
+        {exchange ? statRow('Exchange', String(exchange)) : null}
+        {ipoDate ? statRow('IPO', String(ipoDate)) : null}
+        {industry ? statRow('Industry', String(industry)) : null}
       </div>
 
-      <div className="flex items-center gap-1.5">
-        {riskBadge('Overall', overallRisk)}
-        {riskBadge('Offering', offeringRisk)}
-        {riskBadge('Dilution', dilutionRisk)}
-        {riskBadge('Cash', cashNeed)}
-      </div>
-
-      <div className="flex items-center gap-3 text-xs text-zinc-500">
-        {exchange ? <span>{String(exchange)}</span> : null}
-        {ipoDate ? <span>{String(ipoDate)}</span> : null}
-        {industry ? <span>{String(industry)}</span> : null}
+      {/* Risk Badges */}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Risk</span>
+        <div className="flex flex-wrap gap-1.5">
+          {riskBadge('Overall', overallRisk)}
+          {riskBadge('Offering', offeringRisk)}
+          {riskBadge('Dilution', dilutionRisk)}
+          {riskBadge('Cash', cashNeed)}
+        </div>
       </div>
     </div>
   );
