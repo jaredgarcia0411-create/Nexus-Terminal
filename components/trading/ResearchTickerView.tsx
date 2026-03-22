@@ -70,7 +70,7 @@ export default function ResearchTickerView({ ticker }: Props) {
         <div className="w-[220px] shrink-0">
           <ResearchCompanyHeader ticker={ticker} rawData={data.rawData} />
         </div>
-        <div className="h-[300px] flex-1">
+        <div className="h-[300px] flex-1 bg-[#0A0A0B]">
           <ResearchChart ticker={ticker} />
         </div>
       </div>

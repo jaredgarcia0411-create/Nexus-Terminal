@@ -24,7 +24,7 @@ export default function ResearchTab() {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
-      className="flex h-[calc(100vh-80px)] flex-col gap-2"
+      className="flex flex-col gap-2"
     >
       <div className="flex items-center gap-2 px-1">
         <input
@@ -41,12 +41,12 @@ export default function ResearchTab() {
         </span>
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-2">
-        <div className="w-56 shrink-0 overflow-y-auto rounded-lg border border-white/10 bg-[#121214]">
+      <div className="flex gap-2">
+        <div className="sticky top-0 h-[calc(100vh-120px)] w-56 shrink-0 overflow-y-auto rounded-lg border border-white/10 bg-[#121214]">
           <ResearchGainersList selectedTicker={selectedTicker} onSelectTicker={setSelectedTicker} />
         </div>
 
-        <div className="min-w-0 flex-1 overflow-y-auto rounded-lg border border-white/10 bg-[#121214]">
+        <div className="min-w-0 flex-1 rounded-lg border border-white/10 bg-[#121214]">
           {selectedTicker ? (
             <ResearchTickerView ticker={selectedTicker} />
           ) : (

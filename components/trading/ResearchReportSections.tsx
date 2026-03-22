@@ -260,7 +260,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
             {hasData(data.registrations) ? (
               <div className="space-y-2">
                 <h4 className="font-medium text-zinc-300">Shelf Registrations</h4>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-hidden">
                   <table className="min-w-full">
                     <thead>
                       <tr className="border-b border-white/10 text-zinc-400">
@@ -373,7 +373,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
             {equityLines.length > 0 ? (
               <div className="space-y-2">
                 <h4 className="font-medium text-amber-300">Equity Lines</h4>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-hidden">
                   <table className="min-w-full">
                     <thead>
                       <tr className="border-b border-white/10 text-zinc-400">
@@ -411,7 +411,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
             {regularOfferings.length > 0 ? (
               <div className="space-y-2">
                 <h4 className="font-medium text-zinc-300">Offerings</h4>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-hidden">
                   <table className="min-w-full">
                     <thead>
                       <tr className="border-b border-white/10 text-zinc-400">
@@ -482,7 +482,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
         {activeTab === 'history' ? (
           <div className="space-y-3">
             {hasData(data.historicalFloat) ? (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-hidden">
                 <table className="min-w-full">
                   <thead>
                     <tr className="border-b border-white/10 text-zinc-400">
@@ -512,7 +512,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
             )}
 
             {hasData(data.reverseSplits) ? (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-hidden">
                 <table className="min-w-full">
                   <thead>
                     <tr className="border-b border-white/10 text-zinc-400">
@@ -542,7 +542,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
             )}
 
             {hasData(data.agreements) ? (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-hidden">
                 <table className="min-w-full">
                   <thead>
                     <tr className="border-b border-white/10 text-zinc-400">

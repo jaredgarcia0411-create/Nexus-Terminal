@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ColorType, type CandlestickData, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts';
+import { ColorType, type CandlestickData, type HistogramData, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts';
 
 import { useCandleData } from '@/hooks/use-candle-data';
 
@@ -54,6 +54,7 @@ export default function ResearchChart({ ticker }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -61,7 +62,7 @@ export default function ResearchChart({ ticker }: Props) {
 
     const setupChart = async () => {
       if (!containerRef.current) return;
-      const { createChart, CandlestickSeries } = await import('lightweight-charts');
+      const { createChart, CandlestickSeries, HistogramSeries } = await import('lightweight-charts');
       if (!mounted || !containerRef.current) return;
 
       const chart = createChart(containerRef.current, {
@@ -92,8 +93,18 @@ export default function ResearchChart({ ticker }: Props) {
         wickDownColor: '#3b82f6',
       });
 
+      // Volume histogram — rendered behind candles, scaled to bottom 20% of chart
+      const volume = chart.addSeries(HistogramSeries, {
+        priceFormat: { type: 'volume' },
+        priceScaleId: 'volume',
+      });
+      chart.priceScale('volume').applyOptions({
+        scaleMargins: { top: 0.8, bottom: 0 },
+      });
+
       chartRef.current = chart;
       seriesRef.current = series;
+      volumeRef.current = volume;
 
       resizeObserver = new ResizeObserver(() => {
         if (!containerRef.current || !chartRef.current) return;
@@ -113,6 +124,7 @@ export default function ResearchChart({ ticker }: Props) {
       chartRef.current?.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      volumeRef.current = null;
     };
   }, [frame.intraday]);
 
@@ -127,6 +139,17 @@ export default function ResearchChart({ ticker }: Props) {
       close: candle.close,
     }));
     seriesRef.current.setData(data);
+
+    // Volume bars — white-ish for up candles, blue-ish for down
+    if (volumeRef.current) {
+      const volumeData: HistogramData[] = sorted.map((candle) => ({
+        time: toTime(candle.datetime),
+        value: candle.volume,
+        color: candle.close >= candle.open ? '#ffffff33' : '#3b82f633',
+      }));
+      volumeRef.current.setData(volumeData);
+    }
+
     chartRef.current?.timeScale().fitContent();
   }, [candles]);
 
