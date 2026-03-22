@@ -18,6 +18,7 @@ interface AskEdgarLookupData {
   fetchedAt: string;
   rawData: Record<string, AskEdgarEndpointResponse>;
   warnings: string[];
+  companyName?: string | null;
 }
 
 interface Props {
@@ -39,6 +40,7 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
       if (!response.ok) throw new Error(`Lookup failed: ${response.status}`);
       const result = (await response.json()) as AskEdgarLookupData;
       setData(result);
+      onCompanyName?.(result.companyName ?? null);
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : 'Lookup failed');
       setData(null);
@@ -70,7 +72,7 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
       {/* Top row: company info panel on the left, chart on the right — fixed height */}
       <div className="flex h-[500px] shrink-0 border-b border-white/10">
         <div className="w-[220px] shrink-0 overflow-y-auto">
-          <ResearchCompanyHeader ticker={ticker} rawData={data.rawData} onCompanyName={onCompanyName} />
+          <ResearchCompanyHeader ticker={ticker} rawData={data.rawData} companyName={data.companyName ?? null} />
         </div>
         <div className="min-h-0 flex-1 bg-[#0A0A0B]">
           <ResearchChart ticker={ticker} />

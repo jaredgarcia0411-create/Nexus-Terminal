@@ -28,7 +28,7 @@ npm run db:studio        # Open Drizzle Studio GUI
 
 # Nexus Terminal
 
-Professional trading terminal and analytics platform (SaaS). Tracks/journals trades, analyzes performance, visualizes market data, AI-assisted analysis via Jarvis.
+Personal trading terminal for a small private team. Not SaaS — purpose-built for my coworkers and me. Tracks/journals trades, analyzes performance, visualizes market data, AI-assisted analysis via Jarvis.
 
 ---
 
@@ -37,7 +37,7 @@ Professional trading terminal and analytics platform (SaaS). Tracks/journals tra
 **Stack:** Next.js 15, React 19, TypeScript 5.9, Vercel deployment
 
 ## Frontend
-- Single-page app with tab-based layout: Dashboard, Performance, Journal, Trades, Charts, Markets, Research, Backtesting
+- Single-page app with tab-based layout — see Tab Mapping below
 - Main entry: `app/page.tsx` (client component) orchestrates all tabs
 - Styling: Tailwind CSS v4, dark theme (#0A0A0B base, emerald-500 accent)
 - Animation: motion/react v12 via AnimatePresence
@@ -45,74 +45,33 @@ Professional trading terminal and analytics platform (SaaS). Tracks/journals tra
 - Charts: recharts v3 (analytics), lightweight-charts v5 (candlestick — dynamically imported, SSR disabled)
 - Path alias: `@/*` maps to project root
 
+### Tab Mapping
+| Tab key | Component | Layout |
+|---------|-----------|--------|
+| `dashboard` | `DashboardTab` | Default, max-w-7xl |
+| `journal` | `JournalTab` | max-w-7xl |
+| `performance` | `PerformanceTab` | max-w-7xl |
+| `filter` | `TradesTab` | max-w-7xl |
+| `charts` | `ChartsTab` | Full-width |
+| `markets` | `MarketsTab` | max-w-7xl |
+| `research` | `ResearchTab` | Full-width |
+| `jarvis` | `JarvisTab` | max-w-7xl |
+
 ## Backend
-- Next.js API routes under `app/api/`
+- Next.js API routes under `app/api/` — run `find app/api -name route.ts` to list all 31 routes
 - Auth: NextAuth v5 beta (5.0.0-beta.30), Google OAuth, JWT sessions
-- All routes protected via `requireUser()` in `lib/server-db-utils.ts` except `/api/health`
+- All routes protected via `requireUser()` except `/api/health`
 - Middleware in `middleware.ts` protects all routes except `/login`, `/api/*`, static assets
+
+### requireUser()
+Import from `lib/server-db-utils.ts`. Returns `{ user: { id, email, name, picture } }` or `{ error: Response }` (401). Destructure and early-return on error in every route.
 
 ## Database
 - PostgreSQL via Neon serverless (`@neondatabase/serverless`)
-- ORM: Drizzle v0.45.1, schema at `lib/db/schema.ts`
+- ORM: Drizzle v0.45.1, schema at `lib/db/schema.ts` (20 tables — read schema directly for details)
 - Extensions: pgvector (1024-dim), tsvector full-text search
 - Connection: HTTP client for reads, WebSocket pool for transactions
 - Migrations output to `drizzle/` directory
-
-### Tables (19)
-users, trades (composite PK: user_id + id), trade_executions, trade_tags, tags,
-trade_import_batches, broker_sync_log, agent_memory, research_reports,
-imported_research_reports, daily_ticker_summaries, saved_tickers, market_snapshots,
-macro_summaries, jarvis_conversations, jarvis_request_log, schwab_links,
-realtime_quotes, scanner_presets
-
----
-
-# API Routes
-
-## Trades
-- GET/POST `/api/trades`
-- GET/PATCH/DELETE `/api/trades/[id]`
-- POST `/api/trades/bulk`
-- POST `/api/trades/import`
-
-## Tags
-- GET/POST/DELETE `/api/tags`
-
-## Saved Tickers
-- GET/POST/DELETE `/api/saved-tickers`
-
-## Market Data
-- GET `/api/market-data` (Massive API proxy)
-- GET/POST `/api/market-data/daily-summary`
-- GET `/api/market-data/snapshot`
-
-## Jarvis AI
-- POST `/api/jarvis/chat`, `/api/jarvis/research`, `/api/jarvis/trade-analysis`
-- GET/DELETE `/api/jarvis/admin/memory`
-- GET `/api/jarvis/admin/stats` (admin-only via x-jarvis-admin-key header)
-- GET `/api/jarvis/macro-summary/latest`
-
-## Schwab
-- GET `/api/schwab/auth` (OAuth initiation)
-- GET `/api/schwab/callback` (OAuth callback)
-- GET/DELETE `/api/schwab/status` (link status + unlink)
-
-## Scanner
-- GET `/api/scanner` (query realtime_quotes with filters)
-- GET/POST/DELETE `/api/scanner/presets`
-
-## System
-- GET/POST `/api/auth/[...nextauth]`
-- GET `/api/health`
-- GET `/api/jarvis/cron/macro-summary` (Vercel cron, CRON_SECRET auth)
-
-## Discord
-- POST `/api/discord/import` (bulk import research reports from Discord channel)
-- GET `/api/discord/import` (list imported reports, ?ticker=X&limit=N)
-- POST `/api/discord/sync` (incremental sync — new messages since last import)
-
-## Empty/legacy directories (do not add routes without explicit instruction)
-backtest/, cron/, notifications/, webhooks/
 
 ---
 
@@ -126,25 +85,15 @@ backtest/, cron/, notifications/, webhooks/
 - `lib/parsers/` — pluggable parser system (DAS Trader, generic)
 - `lib/indicators.ts` — SMA, EMA, RSI, MACD, VWAP, Bollinger
 
-## State Management
-- `hooks/use-trades.ts` — central trade hook: CRUD, filtering, CSV import, dual localStorage/cloud sync
-- `hooks/use-candle-data.ts` — market data fetching with cache
-- `hooks/use-mobile.ts` — responsive breakpoint detection
+## Jarvis AI Pipeline
+All modules in `lib/jarvis/` — client, types, prompts, context, memory, research, trade-analysis, askedgar, historical-summary, scrape-lite, rate-limit, circuit-breaker, token-tracking, admin.
 
-## Jarvis AI Pipeline (lib/jarvis/)
-- `lib/jarvis/client.ts` — LLM wrapper with retry + circuit breaker
-- `lib/jarvis/types.ts` — shared types (JarvisMode, JarvisRequest, JarvisResponse)
-- `lib/jarvis/prompts.ts` — system/user prompt construction
-- `lib/jarvis/context.ts` — conversation context assembly
-- `lib/jarvis/memory.ts` — persistent user memory CRUD
-- `lib/jarvis/research.ts` — research orchestration
-- `lib/jarvis/trade-analysis.ts` — trade analysis pipeline
-- `lib/jarvis/askedgar.ts` — AskEdgar API client
-- `lib/jarvis/scrape-lite.ts` — lightweight web scraping
-- `lib/jarvis/rate-limit.ts` — per-user rate limiting (30 req/hr)
-- `lib/jarvis/circuit-breaker.ts` — LLM failure circuit breaker
-- `lib/jarvis/token-tracking.ts` — per-request token/latency logging
-- `lib/jarvis/admin.ts` — admin stats and memory management
+## State Management
+10 hooks in `hooks/` — `ls hooks/` to see all. Key ones:
+- `use-trades.ts` — central trade hook: CRUD, filtering, CSV import, cloud sync
+- `use-candle-data.ts` — market data fetching with cache
+- `use-market-stream.ts` — SSE market data stream
+- `use-relay-socket.ts` — WebSocket connection to Schwab relay
 
 ## Discord
 - `lib/discord/client.ts` — Discord REST API client (fetch channel messages, pagination)
@@ -157,32 +106,46 @@ backtest/, cron/, notifications/, webhooks/
 - **Schwab streaming sends partial updates** — only changed fields per tick. DB upserts must use `COALESCE(excluded.col, table.col)` to avoid nulling out good data.
 - **Relay deploys separately** — `cd services/schwab-relay && fly deploy`. Changes here do NOT deploy via Vercel push.
 
+## AskEdgar (Dilution Research)
+- `lib/jarvis/askedgar.ts` — AskEdgar API client (`https://eapi.askedgar.io`)
+- Routes: `/api/askedgar/lookup`, `/api/askedgar/tldr`, `/api/askedgar/gainers`
+- API docs: `docs/AE_API_DOCS.md`
+
 ## Tests
 - All in `__tests__/` directory, run via vitest
 - Tests cover: parsers, indicators, API routes, Jarvis pipeline, schema isolation
 
 ---
 
-# Sprint 8 — Dilution Research Pack (Planned, Not Yet Built)
+# Environment Variables
 
-AskEdgar API integration for on-demand dilution research reports.
-- API: `https://eapi.askedgar.io` — auth via ASKEDGAR_API_KEY
-- New mode: `dilution-research` through orchestration engine
-- API docs: `docs/AE_API_DOCS.md`
+Names only — values in `.env.local` (never committed):
+
+| Category | Variables |
+|----------|-----------|
+| Auth | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ALLOWED_EMAILS`, `NEXTAUTH_SECRET` |
+| Database | `DATABASE_URL` |
+| Jarvis/LLM | `JARVIS_API_KEY`, `JARVIS_API_BASE_URL`, `JARVIS_MODEL`, `JARVIS_ADMIN_KEY` |
+| Market Data | `MASSIVE_API_KEY` |
+| Schwab | `SCHWAB_CLIENT_ID`, `SCHWAB_CLIENT_SECRET`, `SCHWAB_REDIRECT_URI`, `SCHWAB_TOKEN_ENCRYPTION_KEY` |
+| Schwab Relay | `RELAY_WS_SECRET`, `RELAY_WS_URL` (separate Fly.io env) |
+| Discord | `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID` |
+| AskEdgar | `ASKEDGAR_API_KEY` |
+| Cron | `CRON_SECRET` |
 
 ---
 
 # Known Issues
-1. Empty legacy API directories remain from removed backtest features
+1. Empty legacy API directories remain: backtest/, cron/, notifications/, webhooks/ — do not add routes without explicit instruction
 2. NextAuth v5 is pre-release (5.0.0-beta.30) — watch for breaking changes
 3. Vercel Hobby tier limits cron to daily; macro headlines may be stale by market close
 
 # Realtime Data Debugging
 
 When scanner shows "15-MIN DELAYED" instead of "LIVE", check in order:
-1. `/api/schwab/status` → must return `{ linked: true }` (requires `schwab_links` table + completed OAuth)
-2. `realtime_quotes` table must have rows with `updated_at` < 5 minutes old (relay must be running)
-3. `/api/market-data/snapshot` → must return `dataSource: 'realtime'` (drives SSE enable)
+1. `/api/schwab/status` → must return `{ linked: true }`
+2. `realtime_quotes` table must have rows with `updated_at` < 5 minutes old
+3. `/api/market-data/snapshot` → must return `dataSource: 'realtime'`
 4. Fly relay health: `fly logs --app nexus-schwab-relay` / `fly status --app nexus-schwab-relay`
 
 ---
@@ -200,13 +163,3 @@ When scanner shows "15-MIN DELAYED" instead of "LIVE", check in order:
 - Secrets via environment variables only — never expose .env, .env.local, API keys, or OAuth secrets
 - ASKEDGAR_API_KEY must only be read server-side — never in client components
 - Do not log sensitive data or commit secrets to Git
-
----
-
-# Agent Workflow
-
-**Plan agent:** Architecture planning, writing implementation specs, auditing codebase, producing prompts for opencode.
-
-**opencode:** Implements code from specs, fixes lint/type errors, writes/runs tests, runs migrations.
-
-Workflow: Plan designs → Plan writes spec → opencode implements → opencode runs lint/type-check/tests → Plan reviews architecture integrity.

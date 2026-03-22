@@ -1,7 +1,5 @@
 'use client';
 
-import { useEffect } from 'react';
-
 interface AskEdgarEndpointResponse {
   status: string;
   results: unknown[];
@@ -11,7 +9,7 @@ interface AskEdgarEndpointResponse {
 interface Props {
   ticker: string;
   rawData: Record<string, AskEdgarEndpointResponse>;
-  onCompanyName?: (name: string | null) => void;
+  companyName: string | null;
 }
 
 function toRecord(value: unknown): Record<string, unknown> {
@@ -66,11 +64,10 @@ function statRow(label: string, value: string) {
   );
 }
 
-export default function ResearchCompanyHeader({ ticker, rawData, onCompanyName }: Props) {
+export default function ResearchCompanyHeader({ ticker, rawData, companyName }: Props) {
   const screener = firstResult(rawData, 'screener');
   const dilutionRating = firstResult(rawData, 'dilution-rating');
 
-  const companyName = getField(screener, ['companyName', 'company_name', 'name']);
   const marketCap = getField(screener, ['marketCap', 'market_cap', 'market_cap_final']);
   const outstanding = getField(screener, ['outstanding', 'outstandingShares', 'outstanding_shares']);
   const float = getField(screener, ['float', 'floatShares', 'tradable_float']);
@@ -84,11 +81,6 @@ export default function ResearchCompanyHeader({ ticker, rawData, onCompanyName }
   const dilutionRisk = getField(dilutionRating, ['dilution', 'dilution_rating']);
   const cashNeed = getField(dilutionRating, ['cashNeed', 'cash_need']);
 
-  useEffect(() => {
-    // Send the company name string, or empty string if screener loaded but has no name
-    onCompanyName?.(companyName ? String(companyName) : '');
-  }, [companyName, onCompanyName]);
-
   return (
     <div className="flex h-full flex-col gap-3 border-r border-white/10 bg-[#0f0f11] px-4 py-3">
       {/* Ticker + Company Name */}
@@ -98,7 +90,7 @@ export default function ResearchCompanyHeader({ ticker, rawData, onCompanyName }
           {country ? <span className="text-[11px] text-zinc-500">{String(country)}</span> : null}
         </div>
         {companyName ? (
-          <p className="mt-0.5 text-sm leading-snug text-zinc-400">{String(companyName)}</p>
+          <p className="mt-0.5 text-sm leading-snug text-zinc-400">{companyName}</p>
         ) : null}
       </div>
 
