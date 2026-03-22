@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     if (bodyState.error) return bodyState.error;
 
     const startedAt = Date.now();
-    const result = await runTradeAnalysisPipeline(canonicalUser.id, bodyState.data.days);
+    const result = await runTradeAnalysisPipeline(canonicalUser.id);
 
     try {
       await logJarvisRequest({

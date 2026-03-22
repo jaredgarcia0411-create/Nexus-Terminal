@@ -124,7 +124,7 @@ export async function POST(request: Request) {
     }
 
     if (message.trim() === '/analyze') {
-      const result = await runTradeAnalysisPipeline(userId, 30);
+      const result = await runTradeAnalysisPipeline(userId);
       const responseText = 'Trade analysis completed.';
       await saveConversation({ db, userId, sessionId, role: 'assistant', content: responseText, mode: 'trade-analysis' });
       return Response.json({ message: responseText, session_id: sessionId, tradeAnalysis: result.analysis });
