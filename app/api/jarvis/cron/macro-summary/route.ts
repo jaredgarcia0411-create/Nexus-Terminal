@@ -7,12 +7,14 @@ import { fetchPageText } from '@/lib/jarvis/scrape-lite';
 import { desc } from 'drizzle-orm';
 
 const MACRO_URLS = [
-  'https://www.federalreserve.gov/',
-  'https://home.treasury.gov/',
-  'https://www.cboe.com/',
-  'https://www.google.com/finance/',
-  'https://www.cnn.com/business',
+  'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates',
+  'https://www.cboe.com/tradable_products/vix/',
   'https://www.reuters.com/markets/',
+  'https://www.google.com/finance/',
+  'https://www.marketwatch.com/economy-politics/calendar',
+  'https://www.marketwatch.com/tools/earningscalendar',
+  'https://www.bloomberg.com/markets',
+  'https://finance.yahoo.com/topic/stock-market-news/',
 ];
 
 const NEW_YORK_TIME_ZONE = 'America/New_York';
@@ -39,6 +41,7 @@ function parseJson(text: string): unknown {
     return {
       headline: text.slice(0, 180),
       key_themes: [],
+      economic_calendar: [],
       risk_flags: [],
       watchlist_notes: [],
     };

@@ -32,6 +32,7 @@ export interface TradeAnalysisOutput {
 export interface MacroSummaryOutput {
   headline: string;
   key_themes: string[];
+  economic_calendar?: string[];
   risk_flags: string[];
   watchlist_notes: string[];
 }
@@ -55,6 +56,7 @@ export interface JarvisMacroSummaryLegacyOutput {
 export interface JarvisMacroSummaryCronOutput {
   headline: string;
   key_themes: string[];
+  economic_calendar?: string[];
   risk_flags: string[];
   watchlist_notes: string[];
 }

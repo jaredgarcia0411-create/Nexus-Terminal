@@ -37,7 +37,7 @@ describe('jarvis cron macro-summary route', () => {
     ensureUserMock.mockResolvedValue({ id: 'u1', email: 'test@example.com', name: null, picture: null });
     fetchPageTextMock.mockResolvedValue('sample page text');
     callJarvisMock.mockResolvedValue({
-      content: '{"headline":"Markets stable","key_themes":[],"risk_flags":[],"watchlist_notes":[]}',
+      content: '{"headline":"Markets stable","key_themes":[],"economic_calendar":[],"risk_flags":[],"watchlist_notes":[]}',
       modelUsed: 'jarvis-mock',
     });
     getDbMock.mockReturnValue({
@@ -107,7 +107,7 @@ describe('jarvis cron macro-summary route', () => {
     expect(json).toMatchObject({
       error: 'Macro source fetch failed',
       stage: 'scrape',
-      attemptedSources: 6,
+      attemptedSources: 8,
     });
     expect(callJarvisMock).not.toHaveBeenCalled();
   });
@@ -145,19 +145,21 @@ describe('jarvis cron macro-summary route', () => {
     expect(json).toMatchObject({
       success: true,
       sources: [
-        'https://www.federalreserve.gov/',
-        'https://home.treasury.gov/',
-        'https://www.cboe.com/',
-        'https://www.google.com/finance/',
-        'https://www.cnn.com/business',
+        'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates',
+        'https://www.cboe.com/tradable_products/vix/',
         'https://www.reuters.com/markets/',
+        'https://www.google.com/finance/',
+        'https://www.marketwatch.com/economy-politics/calendar',
+        'https://www.marketwatch.com/tools/earningscalendar',
+        'https://www.bloomberg.com/markets',
+        'https://finance.yahoo.com/topic/stock-market-news/',
       ],
       summary: {
         headline: 'Markets stable',
       },
     });
     expect(callJarvisMock).toHaveBeenCalledTimes(1);
-    expect(fetchPageTextMock).toHaveBeenCalledTimes(6);
+    expect(fetchPageTextMock).toHaveBeenCalledTimes(8);
   });
 
   it('returns success with warnings when some sources fail', async () => {
@@ -177,7 +179,7 @@ describe('jarvis cron macro-summary route', () => {
       success: true,
       warnings: ['1 macro source fetches failed'],
     });
-    expect(json.sources).toHaveLength(5);
+    expect(json.sources).toHaveLength(7);
   });
 });
 

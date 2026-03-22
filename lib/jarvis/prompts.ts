@@ -34,8 +34,8 @@ Return: strengths[], weaknesses[], patterns[], action_items[]
 Ground every claim in the provided trade data.
 
 ### Macro Summary
-Return: headline, key_themes[], risk_flags[], watchlist_notes[]
-Max 300 words. Cite source URLs inline.
+Return: headline, key_themes[], economic_calendar[], risk_flags[], watchlist_notes[]
+Max 500 words. Cite source URLs inline.
 
 ### Chat Response
 Conversational. Reference context when relevant.
@@ -75,11 +75,12 @@ export function buildMacroPrompt(context: JarvisContext) {
     [
       'You are running macro mode.',
       'Output strict JSON with this shape only:',
-      '{"headline": string, "key_themes": string[], "risk_flags": string[], "watchlist_notes": string[]}',
+      '{"headline": string, "key_themes": string[], "economic_calendar": string[], "risk_flags": string[], "watchlist_notes": string[]}',
       'Use only the macro source pages in report_data.pages as evidence.',
       'Cite source URLs inline where relevant.',
       'Prioritize concrete, actionable information for an active trader.',
-      'Include major drivers for: index trend, rates/liquidity, volatility, commodities/energy, and risk events.',
+      'Include major drivers for: index trend, rates/liquidity, volatility, and risk events.',
+      'Include an economic_calendar array listing today\'s scheduled economic data releases and earnings, with results if available (e.g. "CPI 8:30am — 3.2% vs 3.0% expected").',
       'If a source has no useful data, skip it instead of inventing details.',
       'Keep each bullet concise and specific.',
     ].join('\n'),

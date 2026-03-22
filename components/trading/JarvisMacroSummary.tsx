@@ -10,11 +10,14 @@ interface JarvisMacroSummaryProps {
 }
 
 const MACRO_LINKS = [
-  { label: 'Federal Reserve', href: 'https://www.federalreserve.gov/' },
-  { label: 'U.S. Treasury', href: 'https://home.treasury.gov/' },
-  { label: 'CBOE', href: 'https://www.cboe.com/' },
+  { label: 'Treasury Yields', href: 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates' },
+  { label: 'CBOE VIX', href: 'https://www.cboe.com/tradable_products/vix/' },
+  { label: 'Reuters Markets', href: 'https://www.reuters.com/markets/' },
   { label: 'Google Finance', href: 'https://www.google.com/finance/' },
-  { label: 'CNN Business', href: 'https://www.cnn.com/business' },
+  { label: 'MarketWatch Economy', href: 'https://www.marketwatch.com/economy-politics/calendar' },
+  { label: 'MarketWatch Earnings', href: 'https://www.marketwatch.com/tools/earningscalendar' },
+  { label: 'Bloomberg Markets', href: 'https://www.bloomberg.com/markets' },
+  { label: 'Yahoo Finance', href: 'https://finance.yahoo.com/topic/stock-market-news/' },
 ];
 
 const REGION_LABELS: Record<MacroSummaryRegion, string> = {
@@ -134,6 +137,7 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
   const keyThemes = toStringArray(macroSummary.key_themes);
   const riskFlags = toStringArray(macroSummary.risk_flags);
   const watchlistNotes = toStringArray(macroSummary.watchlist_notes);
+  const economicCalendar = toStringArray((macroSummary as unknown as Record<string, unknown>).economic_calendar);
 
   return (
     <div className="space-y-4">
@@ -171,6 +175,20 @@ export default function JarvisMacroSummary({ macroSummary }: JarvisMacroSummaryP
           ) : <p className="mt-2 text-base text-zinc-400">No watchlist notes available.</p>}
         </div>
       </div>
+
+      {economicCalendar.length > 0 ? (
+        <div className="rounded-lg border border-white/10 bg-[#121214] p-3">
+          <p className="text-xs uppercase tracking-[0.2em] text-violet-200">Economic Calendar</p>
+          <ul className="mt-2 space-y-1.5 text-base text-zinc-200">
+            {economicCalendar.map((item, i) => (
+              <li key={`macro-econ-${i}`} className="flex gap-2">
+                <span className="text-zinc-400">-</span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {riskFlags.length > 0 ? (
         <div className="rounded-lg border border-white/10 bg-[#121214] p-3">
