@@ -73,6 +73,36 @@ function getField(record: Record<string, unknown>, keys: string[]): unknown {
   return null;
 }
 
+// Extracts SEC form type (S-1, S-3, F-3) from a registration row.
+// S-1 registrations are exempt from baby shelf limits — important for dilution tracking.
+function detectFormType(row: Record<string, unknown>): string | null {
+  const formType = getField(row, ['form_type', 'formType']);
+  if (typeof formType === 'string' && formType) return formType.toUpperCase();
+  const headline = String(getField(row, ['headline', 'title']) ?? '').toUpperCase();
+  if (headline.includes('S-1')) return 'S-1';
+  if (headline.includes('S-3')) return 'S-3';
+  if (headline.includes('F-3')) return 'F-3';
+  return null;
+}
+
+// Returns the baby shelf status badge for a registration row.
+// Baby shelf rule: companies with float < $75M can only sell 1/3 of float via S-3 in 12 months.
+// S-1 registrations bypass this entirely (how ELOCs like Yorkville work around it).
+function babyShelfBadge(row: Record<string, unknown>): { label: string; colorClass: string } | null {
+  const formType = detectFormType(row);
+  const overBabyShelf = row.over_baby_shelf === true || row.overBabyShelf === true;
+  const raisable = toNumberValue(getField(row, ['baby_shelf_raisable_amount', 'babyShelfRaisableAmount']));
+
+  const GREEN = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+  const AMBER = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+  const RED = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+
+  if (formType === 'S-1') return { label: 'S-1 Exempt', colorClass: GREEN };
+  if (!overBabyShelf) return { label: 'No Baby Shelf', colorClass: GREEN };
+  if (raisable !== null && raisable > 0) return { label: `Baby Shelf: ${formatMoney(raisable)} Left`, colorClass: AMBER };
+  return { label: 'Baby Shelf Exhausted', colorClass: RED };
+}
+
 function riskClass(value: unknown): string {
   const normalized = String(value ?? '').toLowerCase();
   if (normalized.includes('low') || normalized.includes('compliant') || normalized.includes('positive')) {
@@ -170,8 +200,16 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
     return EQUITY_LINE_KEYWORDS.some((kw) => headline.includes(kw));
   });
 
-  // Combine both sources — offerings first, then registrations as fallback
-  const equityLines = [...offeringEquityLines, ...registrationEquityLines];
+  // Combine both sources — registrations first (richer data), then offerings as fallback.
+  // Deduplicate by headline so the same equity line doesn't appear twice.
+  const seenHeadlines = new Set<string>();
+  const equityLines = [...registrationEquityLines, ...offeringEquityLines].filter((item) => {
+    const row = toRecord(item);
+    const headline = String(getField(row, ['headline', 'title']) ?? '').toLowerCase().trim();
+    if (!headline || seenHeadlines.has(headline)) return false;
+    seenHeadlines.add(headline);
+    return true;
+  });
 
   const regularOfferings = data.offerings.results.filter((item) => {
     const row = toRecord(item);
@@ -249,7 +287,15 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                       <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                         <div><span className="text-zinc-500">Total Registered:</span> <span className="text-zinc-200">{formatMoney(total)}</span></div>
                         <div><span className="text-zinc-500">Raised So Far:</span> <span className="text-zinc-200">{formatMoney(raised)}</span></div>
-                        <div><span className="text-zinc-500">ATM Remaining:</span> <span className="font-medium text-amber-300">{formatMoney(remaining)}</span></div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-zinc-500">ATM Remaining:</span>
+                          <span className="font-medium text-amber-300">{formatMoney(remaining)}</span>
+                          {(() => {
+                            const badge = babyShelfBadge(row);
+                            if (!badge) return null;
+                            return <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${badge.colorClass}`}>{badge.label}</span>;
+                          })()}
+                        </div>
                         {bank ? <div><span className="text-zinc-500">Bank:</span> <span className="text-zinc-200">{String(bank)}</span></div> : null}
                       </div>
                       <div className="mt-1 text-zinc-500">
@@ -265,37 +311,42 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
               </div>
             )}
 
-            {/* Equity Lines */}
+            {/* Equity Lines — card layout matching ATM programs */}
             {equityLines.length > 0 ? (
               <div className="space-y-2">
                 <h4 className="font-medium text-amber-300">Equity Lines</h4>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full">
-                    <thead>
-                      <tr className="border-b border-white/10 text-zinc-400">
-                        <th className="py-2 pr-3 text-left">Date</th>
-                        <th className="py-2 pr-3 text-left">Headline</th>
-                        <th className="py-2 pr-3 text-left">Shares</th>
-                        <th className="py-2 pr-3 text-left">Price</th>
-                        <th className="py-2 text-left">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {equityLines.map((item, index) => {
-                        const row = toRecord(item);
-                        return (
-                          <tr key={`el-${index}`} className="border-b border-white/5 text-zinc-300">
-                            <td className="py-2 pr-3">{formatDate(getField(row, ['filed_at', 'filedAt', 'date']))}</td>
-                            <td className="py-2 pr-3">{toStringValue(getField(row, ['headline', 'title']))}</td>
-                            <td className="py-2 pr-3">{formatNumber(getField(row, ['shares_amount', 'sharesAmount', 'shares']))}</td>
-                            <td className="py-2 pr-3">{formatMoney(getField(row, ['share_price', 'sharePrice', 'price']))}</td>
-                            <td className="py-2">{formatMoney(getField(row, ['offering_amount', 'offeringAmount', 'amount']))}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                {equityLines.map((item, index) => {
+                  const row = toRecord(item);
+                  const remaining = getField(row, ['amount_remaining_atm', 'amountRemainingAtm']);
+                  const total = getField(row, ['offering_amount', 'offeringAmount']);
+                  const raised = getField(row, ['total_raised', 'totalRaised']);
+                  const effective = getField(row, ['effective_status', 'effectiveStatus']);
+                  const badge = babyShelfBadge(row);
+
+                  return (
+                    <div key={`el-${index}`} className="rounded border border-white/10 bg-white/5 p-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${effective ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-zinc-500/30 bg-zinc-500/10 text-zinc-400'}`}>
+                          {effective ? 'Active' : 'Inactive'}
+                        </span>
+                        {badge ? (
+                          <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${badge.colorClass}`}>
+                            {badge.label}
+                          </span>
+                        ) : null}
+                        <span className="text-zinc-200">{toStringValue(getField(row, ['headline', 'title']))}</span>
+                      </div>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        <div><span className="text-zinc-500">Total Registered:</span> <span className="text-zinc-200">{formatMoney(total)}</span></div>
+                        <div><span className="text-zinc-500">Raised So Far:</span> <span className="text-zinc-200">{formatMoney(raised)}</span></div>
+                        <div><span className="text-zinc-500">Remaining:</span> <span className="font-medium text-amber-300">{formatMoney(remaining)}</span></div>
+                      </div>
+                      <div className="mt-1 text-zinc-500">
+                        Filed: {formatDate(getField(row, ['filed_at', 'filedAt']))} | Expires: {formatDate(getField(row, ['expiration_date', 'expirationDate']))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="rounded border border-white/10 bg-white/5 p-3 text-zinc-400">
