@@ -85,7 +85,8 @@ export default function ResearchCompanyHeader({ ticker, rawData, onCompanyName }
   const cashNeed = getField(dilutionRating, ['cashNeed', 'cash_need']);
 
   useEffect(() => {
-    onCompanyName?.(companyName ? String(companyName) : null);
+    // Send the company name string, or empty string if screener loaded but has no name
+    onCompanyName?.(companyName ? String(companyName) : '');
   }, [companyName, onCompanyName]);
 
   return (

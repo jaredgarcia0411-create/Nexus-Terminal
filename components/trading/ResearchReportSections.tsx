@@ -254,6 +254,44 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
               </div>
             )}
 
+            {/* Equity Lines */}
+            {equityLines.length > 0 ? (
+              <div className="space-y-2">
+                <h4 className="font-medium text-amber-300">Equity Lines</h4>
+                <div className="overflow-x-hidden">
+                  <table className="min-w-full">
+                    <thead>
+                      <tr className="border-b border-white/10 text-zinc-400">
+                        <th className="py-2 pr-3 text-left">Date</th>
+                        <th className="py-2 pr-3 text-left">Headline</th>
+                        <th className="py-2 pr-3 text-left">Shares</th>
+                        <th className="py-2 pr-3 text-left">Price</th>
+                        <th className="py-2 text-left">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {equityLines.map((item, index) => {
+                        const row = toRecord(item);
+                        return (
+                          <tr key={`el-${index}`} className="border-b border-white/5 text-zinc-300">
+                            <td className="py-2 pr-3">{formatDate(getField(row, ['filed_at', 'filedAt', 'date']))}</td>
+                            <td className="py-2 pr-3">{toStringValue(getField(row, ['headline', 'title']))}</td>
+                            <td className="py-2 pr-3">{formatNumber(getField(row, ['shares_amount', 'sharesAmount', 'shares']))}</td>
+                            <td className="py-2 pr-3">{formatMoney(getField(row, ['share_price', 'sharePrice', 'price']))}</td>
+                            <td className="py-2">{formatMoney(getField(row, ['offering_amount', 'offeringAmount', 'amount']))}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded border border-white/10 bg-white/5 p-3 text-zinc-400">
+                No equity lines found
+              </div>
+            )}
+
             {/* All Registrations table */}
             {hasData(data.registrations) ? (
               <div className="space-y-2">
@@ -525,44 +563,6 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
 
         {activeTab === 'offerings' ? (
           <div className="space-y-4">
-            {/* Equity Lines section */}
-            {equityLines.length > 0 ? (
-              <div className="space-y-2">
-                <h4 className="font-medium text-amber-300">Equity Lines</h4>
-                <div className="overflow-x-hidden">
-                  <table className="min-w-full">
-                    <thead>
-                      <tr className="border-b border-white/10 text-zinc-400">
-                        <th className="py-2 pr-3 text-left">Date</th>
-                        <th className="py-2 pr-3 text-left">Headline</th>
-                        <th className="py-2 pr-3 text-left">Shares</th>
-                        <th className="py-2 pr-3 text-left">Price</th>
-                        <th className="py-2 text-left">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {equityLines.map((item, index) => {
-                        const row = toRecord(item);
-                        return (
-                          <tr key={`el-${index}`} className="border-b border-white/5 text-zinc-300">
-                            <td className="py-2 pr-3">{formatDate(getField(row, ['filed_at', 'filedAt', 'date']))}</td>
-                            <td className="py-2 pr-3">{toStringValue(getField(row, ['headline', 'title']))}</td>
-                            <td className="py-2 pr-3">{formatNumber(getField(row, ['shares_amount', 'sharesAmount', 'shares']))}</td>
-                            <td className="py-2 pr-3">{formatMoney(getField(row, ['share_price', 'sharePrice', 'price']))}</td>
-                            <td className="py-2">{formatMoney(getField(row, ['offering_amount', 'offeringAmount', 'amount']))}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded border border-white/10 bg-white/5 p-3 text-zinc-400">
-                No equity lines found
-              </div>
-            )}
-
             {/* Regular Offerings */}
             {regularOfferings.length > 0 ? (
               <div className="space-y-2">

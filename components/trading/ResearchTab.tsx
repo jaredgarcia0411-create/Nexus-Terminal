@@ -44,7 +44,9 @@ export default function ResearchTab() {
         />
         <span className="text-xs text-zinc-500">
           {selectedTicker
-            ? companyName ?? `Loading ${selectedTicker}...`
+            ? companyName === null
+              ? `Loading ${selectedTicker}...`
+              : companyName || selectedTicker
             : 'Select a gainer or search a ticker'}
         </span>
       </div>
