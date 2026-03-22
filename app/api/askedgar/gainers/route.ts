@@ -19,14 +19,26 @@ export async function GET(request: Request) {
   }
 
   try {
+    // Over-fetch since we'll filter some out by prior close
     const result = await fetchTopGainers(
       Number.isFinite(minGain) && minGain > 0 ? minGain : 20,
-      Number.isFinite(limit) && limit > 0 ? limit : 25,
+      Number.isFinite(limit) && limit > 0 ? limit * 2 : 50,
     );
 
+    // Filter to stocks with prior close >= $0.75
+    // prior_close = current_price / (1 + gain_pct / 100)
+    const MIN_PRIOR_CLOSE = 0.75;
+    const filtered = (result.results as Array<Record<string, unknown>>).filter((gainer) => {
+      const price = Number(gainer.price);
+      const gain = Number(gainer.gain_1_day);
+      if (!Number.isFinite(price) || !Number.isFinite(gain)) return false;
+      const priorClose = price / (1 + gain / 100);
+      return priorClose >= MIN_PRIOR_CLOSE;
+    }).slice(0, limit);
+
     const responseData = {
-      gainers: result.results,
-      count: result.count,
+      gainers: filtered,
+      count: filtered.length,
       fetchedAt: new Date().toISOString(),
     };
 

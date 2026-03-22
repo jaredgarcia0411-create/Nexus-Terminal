@@ -74,7 +74,9 @@ Never fabricate data. Use null for missing values. Be direct and actionable.`;
       .join('\n');
 
     const llmResponse = await callJarvis(systemPrompt, userPrompt);
-    const parsed = JSON.parse(llmResponse.content) as Record<string, unknown>;
+    // LLMs sometimes wrap JSON in ```json ... ``` code fences — strip them
+    const cleaned = llmResponse.content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+    const parsed = JSON.parse(cleaned) as Record<string, unknown>;
 
     return Response.json({
       ticker,
