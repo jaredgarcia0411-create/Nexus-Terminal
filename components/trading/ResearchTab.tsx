@@ -42,7 +42,7 @@ export default function ResearchTab() {
           placeholder="Search ticker..."
           className="w-48 rounded-lg border border-white/10 bg-[#121214] px-3 py-1.5 text-sm text-zinc-200 transition-colors focus:border-emerald-500/50 focus:outline-none"
         />
-        <span className="text-xs text-zinc-500">
+        <span className="text-sm text-zinc-200">
           {selectedTicker
             ? companyName === null
               ? `Loading ${selectedTicker}...`

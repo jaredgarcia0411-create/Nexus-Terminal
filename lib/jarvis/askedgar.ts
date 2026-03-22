@@ -130,7 +130,8 @@ type EndpointKey =
   | 'agreements'
   | 'historical-float-pro'
   | 'reverse-splits'
-  | 'filing-titles';
+  | 'filing-titles'
+  | 'equity-lines';
 
 interface EndpointConfig {
   key: EndpointKey;
@@ -214,6 +215,12 @@ async function fetchOfferings(ticker: string, limit = 20) {
   return requestAskEdgar<unknown>('/v1/offerings', { ticker: validated, limit });
 }
 
+async function fetchEquityLines(ticker: string) {
+  const validated = validateTickerOrError<unknown>(ticker);
+  if (typeof validated !== 'string') return validated;
+  return requestAskEdgar<unknown>('/v1/offerings', { ticker: validated, offering_type: 'NEW EQUITY LINE', limit: 50 });
+}
+
 async function fetchRegistrations(ticker: string) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
@@ -271,6 +278,7 @@ export async function fetchTickerData(ticker: string) {
     { key: 'dilution-rating', label: 'Dilution Rating', run: () => fetchDilutionRating(normalizedTicker) },
     { key: 'dilution-data', label: 'Dilution Data', run: () => fetchDilutionData(normalizedTicker) },
     { key: 'offerings', label: 'Offerings', run: () => fetchOfferings(normalizedTicker, 20) },
+    { key: 'equity-lines', label: 'Equity Lines', run: () => fetchEquityLines(normalizedTicker) },
     { key: 'registrations', label: 'Registrations', run: () => fetchRegistrations(normalizedTicker) },
     { key: 'news', label: 'News', run: () => fetchNews(normalizedTicker, 20) },
     { key: 'nasdaq-compliance', label: 'Nasdaq Compliance', run: () => fetchNasdaqCompliance(normalizedTicker) },

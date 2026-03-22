@@ -132,6 +132,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
     const historicalFloat = endpoint(rawData, ['historical-float-pro', 'historicalFloatPro']);
     const reverseSplits = endpoint(rawData, ['reverse-splits', 'reverseSplits']);
     const agreements = endpoint(rawData, ['agreements']);
+    const equityLines = endpoint(rawData, ['equity-lines', 'equityLines']);
 
     return {
       screener,
@@ -146,6 +147,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
       historicalFloat,
       reverseSplits,
       agreements,
+      equityLines,
     };
   }, [rawData]);
 
@@ -155,12 +157,8 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
   const complianceItem = toRecord(data.nasdaqCompliance.results[0]);
   const pumpItem = toRecord(data.pumpAndDump.results[0]);
 
-  // Filter offerings into equity lines vs regular offerings
-  const equityLines = data.offerings.results.filter((item) => {
-    const row = toRecord(item);
-    const type = String(getField(row, ['offeringType', 'offering_type', 'type']) ?? '').toUpperCase();
-    return type.includes('EQUITY LINE');
-  });
+  // Equity lines come from dedicated endpoint; regular offerings exclude equity lines
+  const equityLines = data.equityLines.results;
 
   const regularOfferings = data.offerings.results.filter((item) => {
     const row = toRecord(item);
@@ -406,24 +404,28 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                           let status: string;
                           let colorClass: string;
 
+                          const RED = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+                          const YELLOW = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+                          const GREEN = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+
                           if (exercisableDate === null) {
-                            status = 'Not Exercisable';
-                            colorClass = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+                            status = 'Not In Play';
+                            colorClass = RED;
                           } else if (expirationDate && expirationDate < today) {
-                            status = 'Expired';
-                            colorClass = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+                            status = 'Not In Play';
+                            colorClass = RED;
                           } else if (exercisableDate > today) {
-                            status = 'Not Yet Exercisable';
-                            colorClass = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
-                          } else if (registered === 'Registered' && currentPrice !== null && exercisePrice !== null && currentPrice >= exercisePrice) {
-                            status = 'In the Money';
-                            colorClass = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
-                          } else if (registered === 'Registered' && currentPrice !== null && exercisePrice !== null && currentPrice < exercisePrice) {
-                            status = 'Below Strike';
-                            colorClass = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+                            status = 'Not In Play';
+                            colorClass = RED;
+                          } else if (registered !== 'Registered') {
+                            status = 'Not In Play';
+                            colorClass = RED;
+                          } else if (currentPrice !== null && exercisePrice !== null && currentPrice >= exercisePrice) {
+                            status = 'In Play';
+                            colorClass = GREEN;
                           } else {
-                            status = 'Not Registered';
-                            colorClass = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+                            status = 'Potentially in Play';
+                            colorClass = YELLOW;
                           }
 
                           return (
@@ -490,8 +492,8 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                           const colorClass =
                             registered === 'Registered'
                               ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                              : 'border-amber-500/30 bg-amber-500/10 text-amber-300';
-                          const status = registered === 'Registered' ? 'Registered' : 'Not Registered';
+                              : 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+                          const status = registered === 'Registered' ? 'In Play' : 'Not In Play';
 
                           return (
                             <tr key={`prefunded-${index}`} className="border-b border-white/5">

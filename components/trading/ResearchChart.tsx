@@ -34,7 +34,7 @@ interface Props {
 }
 
 export default function ResearchChart({ ticker }: Props) {
-  const [timeframe, setTimeframe] = useState<TimeframeKey>('30m');
+  const [timeframe, setTimeframe] = useState<TimeframeKey>('1D');
   const frame = FRAME_CONFIG[timeframe];
 
   const marketOptions = useMemo(
