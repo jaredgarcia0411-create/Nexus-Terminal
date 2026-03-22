@@ -44,7 +44,7 @@ function riskBadge(label: string, value: unknown) {
     colorClass = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
   }
   return (
-    <span className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${colorClass}`}>
+    <span className={`rounded-md border px-2 py-0.5 text-xs font-medium ${colorClass}`}>
       {String(value ?? 'N/A')} {label}
     </span>
   );
@@ -56,9 +56,9 @@ function firstResult(rawData: Record<string, AskEdgarEndpointResponse>, key: str
 
 function statRow(label: string, value: string) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-zinc-500">{label}</span>
-      <span className="text-zinc-200">{value}</span>
+    <div className="flex justify-between gap-2">
+      <span className="shrink-0 text-zinc-500">{label}</span>
+      <span className="text-right text-zinc-200">{value}</span>
     </div>
   );
 }
@@ -90,12 +90,12 @@ export default function ResearchCompanyHeader({ ticker, rawData }: Props) {
           {country ? <span className="text-[11px] text-zinc-500">{String(country)}</span> : null}
         </div>
         {companyName ? (
-          <p className="mt-0.5 text-xs leading-snug text-zinc-400">{String(companyName)}</p>
+          <p className="mt-0.5 text-sm leading-snug text-zinc-400">{String(companyName)}</p>
         ) : null}
       </div>
 
       {/* Company Stats */}
-      <div className="flex flex-col gap-1 text-xs">
+      <div className="flex flex-col gap-1 text-sm">
         {statRow('MCap', `$${formatCompact(marketCap)}`)}
         {statRow('OS', formatCompact(outstanding))}
         {statRow('Float', formatCompact(float))}
@@ -106,7 +106,7 @@ export default function ResearchCompanyHeader({ ticker, rawData }: Props) {
 
       {/* Risk Badges */}
       <div className="flex flex-col gap-1.5">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Risk</span>
+        <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Risk</span>
         <div className="flex flex-wrap gap-1.5">
           {riskBadge('Overall', overallRisk)}
           {riskBadge('Offering', offeringRisk)}

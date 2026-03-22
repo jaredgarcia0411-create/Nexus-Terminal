@@ -101,7 +101,7 @@ function hasData(source: AskEdgarEndpointResponse): boolean {
 
 function NoDataBadge({ endpointData }: { endpointData: AskEdgarEndpointResponse }) {
   return (
-    <span className="inline-flex rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-xs text-zinc-400">
+    <span className="inline-flex rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-sm text-zinc-400">
       No data{endpointData.error ? ` (${endpointData.error})` : ''}
     </span>
   );
@@ -157,6 +157,25 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
   const complianceItem = toRecord(data.nasdaqCompliance.results[0]);
   const pumpItem = toRecord(data.pumpAndDump.results[0]);
 
+  // Filter offerings into equity lines vs regular offerings
+  const equityLines = data.offerings.results.filter((item) => {
+    const row = toRecord(item);
+    const type = String(getField(row, ['offeringType', 'offering_type', 'type']) ?? '').toUpperCase();
+    return type.includes('EQUITY LINE');
+  });
+
+  const regularOfferings = data.offerings.results.filter((item) => {
+    const row = toRecord(item);
+    const type = String(getField(row, ['offeringType', 'offering_type', 'type']) ?? '').toUpperCase();
+    return !type.includes('EQUITY LINE');
+  });
+
+  // Find ATM registrations
+  const atmRegistrations = data.registrations.results.filter((item) => {
+    const row = toRecord(item);
+    return row.is_atm === true || row.isAtm === true;
+  });
+
   return (
     <section className="flex flex-col">
       <div className="border-b border-white/10 px-3 py-2">
@@ -166,7 +185,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
               key={tab.key}
               type="button"
               onClick={() => setActiveTab(tab.key)}
-              className={`rounded px-2.5 py-1 text-xs transition-colors ${
+              className={`rounded px-2.5 py-1 text-sm transition-colors ${
                 activeTab === tab.key ? 'bg-emerald-500 text-black' : 'text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
               }`}
             >
@@ -179,7 +198,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
       <div className="p-3">
         {activeTab === 'overview' ? (
           hasData(data.screener) ? (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5 text-xs">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5 text-sm">
               <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Ticker</p><p className="text-zinc-200">{ticker}</p></div>
               <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Price</p><p className="text-zinc-200">{formatMoney(getField(screenerItem, ['price']))}</p></div>
               <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Market Cap</p><p className="text-zinc-200">{formatMoney(getField(screenerItem, ['marketCap', 'market_cap']))}</p></div>
@@ -198,37 +217,86 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
         ) : null}
 
         {activeTab === 'offering-ability' ? (
-          <div className="space-y-3">
+          <div className="space-y-4">
+            {/* ATM Programs */}
+            {atmRegistrations.length > 0 ? (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-zinc-300">ATM Programs</h4>
+                {atmRegistrations.map((item, index) => {
+                  const row = toRecord(item);
+                  const remaining = getField(row, ['amount_remaining_atm', 'amountRemainingAtm']);
+                  const total = getField(row, ['offering_amount', 'offeringAmount']);
+                  const raised = getField(row, ['total_raised', 'totalRaised']);
+                  const bank = getField(row, ['bank']);
+                  const effective = getField(row, ['effective_status', 'effectiveStatus']);
+                  return (
+                    <div key={`atm-${index}`} className="rounded border border-white/10 bg-white/5 p-3">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className={`rounded border px-2 py-0.5 text-xs font-medium ${effective ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-zinc-500/30 bg-zinc-500/10 text-zinc-400'}`}>
+                          {effective ? 'Active' : 'Inactive'}
+                        </span>
+                        <span className="text-zinc-200">{toStringValue(getField(row, ['headline', 'title']))}</span>
+                      </div>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+                        <div><span className="text-zinc-500">Total Registered:</span> <span className="text-zinc-200">{formatMoney(total)}</span></div>
+                        <div><span className="text-zinc-500">Raised So Far:</span> <span className="text-zinc-200">{formatMoney(raised)}</span></div>
+                        <div><span className="text-zinc-500">ATM Remaining:</span> <span className="font-medium text-amber-300">{formatMoney(remaining)}</span></div>
+                        {bank ? <div><span className="text-zinc-500">Bank:</span> <span className="text-zinc-200">{String(bank)}</span></div> : null}
+                      </div>
+                      <div className="mt-1 text-sm text-zinc-500">
+                        Filed: {formatDate(getField(row, ['filed_at', 'filedAt']))} | Expires: {formatDate(getField(row, ['expiration_date', 'expirationDate']))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded border border-white/10 bg-white/5 p-3 text-sm text-zinc-400">
+                No active ATM programs found
+              </div>
+            )}
+
+            {/* All Registrations table */}
             {hasData(data.registrations) ? (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-white/10 text-zinc-400">
-                      <th className="py-2 pr-3 text-left">Headline</th>
-                      <th className="py-2 pr-3 text-left">ATM</th>
-                      <th className="py-2 pr-3 text-left">Shelf</th>
-                      <th className="py-2 text-left">Filed</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.registrations.results.map((item, index) => {
-                      const row = toRecord(item);
-                      return (
-                        <tr key={`registration-${index}`} className="border-b border-white/5 text-zinc-300">
-                          <td className="py-2 pr-3">{toStringValue(getField(row, ['headline', 'title']))}</td>
-                          <td className="py-2 pr-3">{toStringValue(getField(row, ['isAtm', 'atm']))}</td>
-                          <td className="py-2 pr-3">{toStringValue(getField(row, ['overBabyShelf', 'shelfStatus', 'effectiveStatus']))}</td>
-                          <td className="py-2">{formatDate(getField(row, ['filedAt', 'date']))}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-zinc-300">Shelf Registrations</h4>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/10 text-zinc-400">
+                        <th className="py-2 pr-3 text-left">Headline</th>
+                        <th className="py-2 pr-3 text-left">ATM</th>
+                        <th className="py-2 pr-3 text-left">Amount</th>
+                        <th className="py-2 pr-3 text-left">Remaining</th>
+                        <th className="py-2 pr-3 text-left">Baby Shelf</th>
+                        <th className="py-2 text-left">Filed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.registrations.results.map((item, index) => {
+                        const row = toRecord(item);
+                        const isAtm = row.is_atm === true || row.isAtm === true;
+                        const overBabyShelf = row.over_baby_shelf === true || row.overBabyShelf === true;
+                        return (
+                          <tr key={`registration-${index}`} className="border-b border-white/5 text-zinc-300">
+                            <td className="py-2 pr-3">{toStringValue(getField(row, ['headline', 'title']))}</td>
+                            <td className="py-2 pr-3">{isAtm ? <span className="text-amber-300">Yes</span> : 'No'}</td>
+                            <td className="py-2 pr-3">{formatMoney(getField(row, ['offering_amount', 'offeringAmount']))}</td>
+                            <td className="py-2 pr-3">{formatMoney(getField(row, ['amount_remaining_atm', 'amountRemainingAtm']))}</td>
+                            <td className="py-2 pr-3">{overBabyShelf ? <span className="text-rose-300">Over Limit</span> : 'OK'}</td>
+                            <td className="py-2">{formatDate(getField(row, ['filed_at', 'filedAt']))}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ) : (
               <NoDataBadge endpointData={data.registrations} />
             )}
-            <div className="rounded border border-white/10 bg-white/5 p-3 text-xs text-zinc-300">
+
+            <div className="rounded border border-white/10 bg-white/5 p-3 text-sm text-zinc-300">
               <p className="mb-1 text-zinc-400">Management Commentary</p>
               <p>{toStringValue(getField(dilutionItem, ['mgmt_commentary', 'managementCommentary', 'commentary']))}</p>
             </div>
@@ -238,13 +306,13 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
         {activeTab === 'dilution' ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <span className={`rounded border px-2 py-1 text-xs ${riskClass(getField(dilutionItem, ['rating', 'dilutionRating']))}`}>
+              <span className={`rounded border px-2 py-1 text-sm ${riskClass(getField(dilutionItem, ['rating', 'dilutionRating']))}`}>
                 {toStringValue(getField(dilutionItem, ['rating', 'dilutionRating']))}
               </span>
-              <span className="text-xs text-zinc-400">Dilution Rating</span>
+              <span className="text-sm text-zinc-400">Dilution Rating</span>
             </div>
             {hasData(data.dilutionData) ? (
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-xs">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
                 <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Warrants</p><p className="text-zinc-200">{toStringValue(getField(dilutionDataItem, ['warrantExercise', 'warrantInfo', 'warrant_exercise']))}</p></div>
                 <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Convertibles</p><p className="text-zinc-200">{toStringValue(getField(dilutionDataItem, ['convertibles', 'convertibleNotes']))}</p></div>
                 <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Auth Shares</p><p className="text-zinc-200">{formatNumber(getField(dilutionDataItem, ['authorizedShares', 'authorized_shares']))}</p></div>
@@ -258,7 +326,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
 
         {activeTab === 'cash' ? (
           hasData(data.dilutionData) ? (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-xs">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
               <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Estimated Cash</p><p className="text-zinc-200">{formatMoney(getField(dilutionDataItem, ['estimatedCash', 'cash', 'cashOnHand']))}</p></div>
               <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Burn Rate</p><p className="text-zinc-200">{formatMoney(getField(dilutionDataItem, ['cashBurn', 'burnRate']))}</p></div>
               <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Months Remaining</p><p className="text-zinc-200">{toStringValue(getField(dilutionDataItem, ['cashRemainingMonths', 'monthsRemaining']))}</p></div>
@@ -282,10 +350,10 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                       : 'border-orange-500/30 bg-orange-500/10 text-orange-300';
                 return (
                   <details key={`news-filing-${index}`} className="rounded border border-white/10 bg-white/5 p-2">
-                    <summary className="cursor-pointer text-xs text-zinc-200">
+                    <summary className="cursor-pointer text-sm text-zinc-200">
                       {toStringValue(getField(item.row, ['headline', 'title']))}
                     </summary>
-                    <div className="mt-2 space-y-2 text-xs">
+                    <div className="mt-2 space-y-2 text-sm">
                       <div className="flex items-center gap-2">
                         <span className={`rounded border px-2 py-0.5 ${sourceClass}`}>{formType}</span>
                         <span className="text-zinc-500">{formatDate(getField(item.row, ['filedAt', 'date']))}</span>
@@ -300,48 +368,92 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
         ) : null}
 
         {activeTab === 'offerings' ? (
-          hasData(data.offerings) ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-xs">
-                <thead>
-                  <tr className="border-b border-white/10 text-zinc-400">
-                    <th className="py-2 pr-3 text-left">Date</th>
-                    <th className="py-2 pr-3 text-left">Type</th>
-                    <th className="py-2 pr-3 text-left">Shares</th>
-                    <th className="py-2 pr-3 text-left">Price</th>
-                    <th className="py-2 text-left">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.offerings.results.map((item, index) => {
-                    const row = toRecord(item);
-                    return (
-                      <tr key={`offering-${index}`} className="border-b border-white/5 text-zinc-300">
-                        <td className="py-2 pr-3">{formatDate(getField(row, ['filedAt', 'date']))}</td>
-                        <td className="py-2 pr-3">{toStringValue(getField(row, ['offeringType', 'type', 'formType']))}</td>
-                        <td className="py-2 pr-3">{formatNumber(getField(row, ['sharesAmount', 'shares']))}</td>
-                        <td className="py-2 pr-3">{formatMoney(getField(row, ['sharePrice', 'price']))}</td>
-                        <td className="py-2">{formatMoney(getField(row, ['offeringAmount', 'amount']))}</td>
+          <div className="space-y-4">
+            {/* Equity Lines section */}
+            {equityLines.length > 0 ? (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-amber-300">Equity Lines</h4>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/10 text-zinc-400">
+                        <th className="py-2 pr-3 text-left">Date</th>
+                        <th className="py-2 pr-3 text-left">Headline</th>
+                        <th className="py-2 pr-3 text-left">Shares</th>
+                        <th className="py-2 pr-3 text-left">Price</th>
+                        <th className="py-2 text-left">Amount</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <NoDataBadge endpointData={data.offerings} />
-          )
+                    </thead>
+                    <tbody>
+                      {equityLines.map((item, index) => {
+                        const row = toRecord(item);
+                        return (
+                          <tr key={`el-${index}`} className="border-b border-white/5 text-zinc-300">
+                            <td className="py-2 pr-3">{formatDate(getField(row, ['filed_at', 'filedAt', 'date']))}</td>
+                            <td className="py-2 pr-3">{toStringValue(getField(row, ['headline', 'title']))}</td>
+                            <td className="py-2 pr-3">{formatNumber(getField(row, ['shares_amount', 'sharesAmount', 'shares']))}</td>
+                            <td className="py-2 pr-3">{formatMoney(getField(row, ['share_price', 'sharePrice', 'price']))}</td>
+                            <td className="py-2">{formatMoney(getField(row, ['offering_amount', 'offeringAmount', 'amount']))}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded border border-white/10 bg-white/5 p-3 text-sm text-zinc-400">
+                No equity lines found
+              </div>
+            )}
+
+            {/* Regular Offerings */}
+            {regularOfferings.length > 0 ? (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-zinc-300">Offerings</h4>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/10 text-zinc-400">
+                        <th className="py-2 pr-3 text-left">Date</th>
+                        <th className="py-2 pr-3 text-left">Type</th>
+                        <th className="py-2 pr-3 text-left">Shares</th>
+                        <th className="py-2 pr-3 text-left">Price</th>
+                        <th className="py-2 text-left">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {regularOfferings.map((item, index) => {
+                        const row = toRecord(item);
+                        return (
+                          <tr key={`offering-${index}`} className="border-b border-white/5 text-zinc-300">
+                            <td className="py-2 pr-3">{formatDate(getField(row, ['filed_at', 'filedAt', 'date']))}</td>
+                            <td className="py-2 pr-3">{toStringValue(getField(row, ['offeringType', 'offering_type', 'type', 'formType']))}</td>
+                            <td className="py-2 pr-3">{formatNumber(getField(row, ['shares_amount', 'sharesAmount', 'shares']))}</td>
+                            <td className="py-2 pr-3">{formatMoney(getField(row, ['share_price', 'sharePrice', 'price']))}</td>
+                            <td className="py-2">{formatMoney(getField(row, ['offering_amount', 'offeringAmount', 'amount']))}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <NoDataBadge endpointData={data.offerings} />
+            )}
+          </div>
         ) : null}
 
         {activeTab === 'risk' ? (
           <div className="space-y-3">
             {hasData(data.pumpAndDump) ? (
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-xs">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
                 {([
-                  ['Country', getField(pumpItem, ['countryRisk'])],
-                  ['Float', getField(pumpItem, ['floatRisk'])],
-                  ['Underwriter', getField(pumpItem, ['underwriterRisk'])],
-                  ['Scam', getField(pumpItem, ['scamRisk'])],
+                  ['Country', getField(pumpItem, ['countryRisk', 'country_risk'])],
+                  ['Float', getField(pumpItem, ['floatRisk', 'float_risk'])],
+                  ['Underwriter', getField(pumpItem, ['underwriterRisk', 'underwriter_risk'])],
+                  ['Scam', getField(pumpItem, ['scamRisk', 'scam_risk'])],
                 ] as Array<[string, unknown]>).map(([label, value]) => (
                   <div key={label} className={`rounded border px-2 py-2 ${riskClass(value)}`}>
                     <p>{label}</p>
@@ -353,7 +465,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
               <NoDataBadge endpointData={data.pumpAndDump} />
             )}
             {hasData(data.nasdaqCompliance) ? (
-              <div className="rounded border border-white/10 bg-white/5 p-3 text-xs">
+              <div className="rounded border border-white/10 bg-white/5 p-3 text-sm">
                 <div className="flex items-center gap-2">
                   <span className={`rounded border px-2 py-1 ${riskClass(getField(complianceItem, ['status', 'complianceStatus', 'rating']))}`}>
                     {toStringValue(getField(complianceItem, ['status', 'complianceStatus', 'rating']))}
@@ -371,7 +483,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
           <div className="space-y-3">
             {hasData(data.historicalFloat) ? (
               <div className="overflow-x-auto">
-                <table className="min-w-full text-xs">
+                <table className="min-w-full text-sm">
                   <thead>
                     <tr className="border-b border-white/10 text-zinc-400">
                       <th className="py-2 pr-3 text-left">Date</th>
@@ -385,10 +497,10 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                       const row = toRecord(item);
                       return (
                         <tr key={`historical-${index}`} className="border-b border-white/5 text-zinc-300">
-                          <td className="py-2 pr-3">{formatDate(getField(row, ['reportedDate', 'date']))}</td>
-                          <td className="py-2 pr-3">{formatNumber(getField(row, ['outstandingShares', 'outstanding']))}</td>
+                          <td className="py-2 pr-3">{formatDate(getField(row, ['reportedDate', 'reported_date', 'date']))}</td>
+                          <td className="py-2 pr-3">{formatNumber(getField(row, ['outstandingShares', 'outstanding_shares', 'outstanding']))}</td>
                           <td className="py-2 pr-3">{formatNumber(getField(row, ['float']))}</td>
-                          <td className="py-2">{formatNumber(getField(row, ['tradableFloat']))}</td>
+                          <td className="py-2">{formatNumber(getField(row, ['tradableFloat', 'tradable_float']))}</td>
                         </tr>
                       );
                     })}
@@ -401,7 +513,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
 
             {hasData(data.reverseSplits) ? (
               <div className="overflow-x-auto">
-                <table className="min-w-full text-xs">
+                <table className="min-w-full text-sm">
                   <thead>
                     <tr className="border-b border-white/10 text-zinc-400">
                       <th className="py-2 pr-3 text-left">Date</th>
@@ -413,11 +525,11 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                       const row = toRecord(item);
                       return (
                         <tr key={`split-${index}`} className="border-b border-white/5 text-zinc-300">
-                          <td className="py-2 pr-3">{formatDate(getField(row, ['executionDate', 'date']))}</td>
+                          <td className="py-2 pr-3">{formatDate(getField(row, ['executionDate', 'execution_date', 'date']))}</td>
                           <td className="py-2">
                             {toStringValue(getField(row, ['ratio'])) !== 'N/A'
                               ? toStringValue(getField(row, ['ratio']))
-                              : `${toStringValue(getField(row, ['splitFrom']))}:${toStringValue(getField(row, ['splitTo']))}`}
+                              : `${toStringValue(getField(row, ['splitFrom', 'split_from']))}:${toStringValue(getField(row, ['splitTo', 'split_to']))}`}
                           </td>
                         </tr>
                       );
@@ -431,7 +543,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
 
             {hasData(data.agreements) ? (
               <div className="overflow-x-auto">
-                <table className="min-w-full text-xs">
+                <table className="min-w-full text-sm">
                   <thead>
                     <tr className="border-b border-white/10 text-zinc-400">
                       <th className="py-2 pr-3 text-left">Type</th>
@@ -445,9 +557,9 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                       const row = toRecord(item);
                       return (
                         <tr key={`agreement-${index}`} className="border-b border-white/5 text-zinc-300">
-                          <td className="py-2 pr-3">{toStringValue(getField(row, ['agreementType', 'type']))}</td>
-                          <td className="py-2 pr-3">{toStringValue(getField(row, ['investorNames', 'investor']))}</td>
-                          <td className="py-2 pr-3">{formatDate(getField(row, ['filedAt', 'date']))}</td>
+                          <td className="py-2 pr-3">{toStringValue(getField(row, ['agreementType', 'agreement_type', 'type']))}</td>
+                          <td className="py-2 pr-3">{toStringValue(getField(row, ['investorNames', 'investor_names', 'investor']))}</td>
+                          <td className="py-2 pr-3">{formatDate(getField(row, ['filedAt', 'filed_at', 'date']))}</td>
                           <td className="py-2">{toStringValue(getField(row, ['details', 'summary']))}</td>
                         </tr>
                       );

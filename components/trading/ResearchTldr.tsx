@@ -52,13 +52,13 @@ export default function ResearchTldr({ ticker }: Props) {
           onClick={() => {
             void generateTldr();
           }}
-          className="bg-emerald-500 px-3 py-1 text-xs font-semibold text-black hover:bg-emerald-400"
+          className="bg-emerald-500 px-3 py-1 text-sm font-semibold text-black hover:bg-emerald-400"
         >
           {loading ? 'Generating...' : 'Generate TLDR'}
         </Button>
       </div>
 
-      {error ? <p className="mt-2 text-xs text-rose-400">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-rose-400">{error}</p> : null}
 
       {data ? (
         <div className="mt-3 space-y-3">
@@ -68,10 +68,10 @@ export default function ResearchTldr({ ticker }: Props) {
 
           {data.findings.length > 0 ? (
             <div>
-              <p className="text-xs font-medium text-zinc-400">Key Findings</p>
+              <p className="text-sm font-medium text-zinc-400">Key Findings</p>
               <ul className="mt-1 space-y-1">
                 {data.findings.map((finding, index) => (
-                  <li key={index} className="text-xs text-zinc-300">- {finding}</li>
+                  <li key={index} className="text-sm text-zinc-300">- {finding}</li>
                 ))}
               </ul>
             </div>
@@ -79,10 +79,10 @@ export default function ResearchTldr({ ticker }: Props) {
 
           {data.actionSteps.length > 0 ? (
             <div>
-              <p className="text-xs font-medium text-zinc-400">Watch For</p>
+              <p className="text-sm font-medium text-zinc-400">Watch For</p>
               <ul className="mt-1 space-y-1">
                 {data.actionSteps.map((step, index) => (
-                  <li key={index} className="text-xs text-amber-300">- {step}</li>
+                  <li key={index} className="text-sm text-amber-300">- {step}</li>
                 ))}
               </ul>
             </div>
@@ -90,10 +90,10 @@ export default function ResearchTldr({ ticker }: Props) {
 
           {data.risks.length > 0 ? (
             <div>
-              <p className="text-xs font-medium text-zinc-400">Risks</p>
+              <p className="text-sm font-medium text-zinc-400">Risks</p>
               <ul className="mt-1 space-y-1">
                 {data.risks.map((risk, index) => (
-                  <li key={index} className="text-xs text-rose-300">- {risk}</li>
+                  <li key={index} className="text-sm text-rose-300">- {risk}</li>
                 ))}
               </ul>
             </div>
@@ -101,15 +101,15 @@ export default function ResearchTldr({ ticker }: Props) {
 
           {data.historicalContext ? (
             <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-              <p className="text-xs font-medium text-zinc-400">Historical Context</p>
-              <p className="mt-1 text-xs text-zinc-300">{data.historicalContext}</p>
+              <p className="text-sm font-medium text-zinc-400">Historical Context</p>
+              <p className="mt-1 text-sm text-zinc-300">{data.historicalContext}</p>
             </div>
           ) : !data.hasHistoricalData ? (
-            <p className="text-xs text-zinc-500">No historical data — import Discord reports to enable historical tracking</p>
+            <p className="text-sm text-zinc-500">No historical data — import Discord reports to enable historical tracking</p>
           ) : null}
         </div>
       ) : !loading ? (
-        <p className="mt-2 text-xs text-zinc-500">Click &quot;Generate TLDR&quot; for an AI-powered dilution risk summary</p>
+        <p className="mt-2 text-sm text-zinc-500">Click &quot;Generate TLDR&quot; for an AI-powered dilution risk summary</p>
       ) : null}
     </div>
   );

@@ -53,13 +53,13 @@ export default function ResearchGainersList({ selectedTicker, onSelectTicker }: 
   return (
     <div className="flex flex-col">
       <div className="sticky top-0 border-b border-white/10 bg-[#121214] px-3 py-2">
-        <h3 className="text-xs font-medium text-zinc-400">Top Gainers</h3>
+        <h3 className="text-sm font-medium text-zinc-400">Top Gainers</h3>
       </div>
 
       {loading ? (
-        <p className="px-3 py-4 text-xs text-zinc-500">Loading gainers...</p>
+        <p className="px-3 py-4 text-sm text-zinc-500">Loading gainers...</p>
       ) : gainers.length === 0 ? (
-        <p className="px-3 py-4 text-xs text-zinc-500">No gainers found</p>
+        <p className="px-3 py-4 text-sm text-zinc-500">No gainers found</p>
       ) : (
         <div className="flex flex-col">
           {gainers.map((gainer) => (
@@ -67,7 +67,7 @@ export default function ResearchGainersList({ selectedTicker, onSelectTicker }: 
               key={gainer.ticker}
               type="button"
               onClick={() => onSelectTicker(gainer.ticker)}
-              className={`flex items-center justify-between border-b border-white/5 px-3 py-2 text-left text-xs transition-colors hover:bg-white/5 ${
+              className={`flex items-center justify-between border-b border-white/5 px-3 py-2 text-left text-sm transition-colors hover:bg-white/5 ${
                 selectedTicker === gainer.ticker ? 'border-l-2 border-l-emerald-500 bg-emerald-500/5' : ''
               }`}
             >

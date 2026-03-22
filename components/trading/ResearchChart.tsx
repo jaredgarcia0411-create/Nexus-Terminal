@@ -138,7 +138,7 @@ export default function ResearchChart({ ticker }: Props) {
             key={key}
             type="button"
             onClick={() => setTimeframe(key)}
-            className={`rounded px-2 py-1 text-[11px] transition-colors ${
+            className={`rounded px-2 py-1 text-xs transition-colors ${
               timeframe === key ? 'bg-emerald-500 text-black' : 'text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
             }`}
           >
