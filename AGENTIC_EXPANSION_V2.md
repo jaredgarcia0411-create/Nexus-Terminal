@@ -1202,3 +1202,309 @@ No schema changes required — tables are agent-agnostic by design.
 | `trade-analysis.ts` | Small Cap blueprint steps | Logic split across `code` and `llm` steps in `small-cap:research` blueprint |
 | `research.ts` | Small Cap blueprint steps | Logic split across `code` and `llm` steps in `small-cap:pre-market-scan` blueprint |
 | (new) | `blueprint-runner.ts` | New file — executes blueprint step sequences, tracks tokens per step |
+
+---
+
+## REVISION 1 — Decisions & Fixes (2026-03-22)
+
+> Review session identified gaps in triggers, communication, permissions, blueprint engine, and deployment. Several architecture decisions were made that change the spec.
+
+### R1.1 Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| OS / Server | Keep Windows + WSL2, install Docker Engine natively in WSL2 | Laptop IS the server. 16GB RAM is plenty for 3x512MB containers. WSL2 with systemd=true auto-starts Docker. No wipe needed. |
+| Local LLM | No — API only | API costs ~$10-15/mo. Local 7B model saves nothing meaningful, takes 4-5GB RAM, worse quality. |
+| LLM Provider | Compare Groq (Llama 3.3 70B) vs DeepSeek direct, then commit | Already running Groq for Jarvis. Both OpenAI-compatible. Possible hybrid: Groq for Orchestrator chat (speed), DeepSeek for background agents (quality + cost). |
+| Report delivery | Discord-first via per-channel webhooks | Specialist agents post to Discord channels. Only Orchestrator has web chat. Eliminates AgentReportQueue.tsx, AgentStats.tsx, in-app approval flow. |
+| Orchestrator Discord | Bidirectional via bot in #orchestrator | Promoted from Section 19 "deferred" to V1. Bot listens in #orchestrator, creates jobs, polls, posts response. |
+| Opening bell trigger | Deferred to V2 | 7 AM pre-market scan is enough for V1. |
+| Supervised mode | Level 1.5 — reports posted as FYI, no approval gate | Reports go to Discord. User reads and acts (or doesn't). Approval via Discord reactions deferred to V2+. |
+
+---
+
+### R1.2 Discord-First Architecture (replaces Section 12 supervised mode + Section 14 frontend)
+
+#### Channel Layout
+
+| Channel | Method | Posts from | Content |
+|---------|--------|-----------|---------|
+| `#orchestrator` | Bot (listener) + Webhook (responses) | Orchestrator | Two-way chat: user types, Orchestrator responds |
+| `#small-cap-scans` | Webhook | Small Cap Trader | Pre-market scan results, dilution analysis |
+| `#small-cap-research` | Webhook | Small Cap Trader | On-demand ticker research reports |
+| `#macro-updates` | Webhook | Long Term Investor | Daily macro briefings, weekly macro scans |
+| `#thesis-tracking` | Webhook | Long Term Investor | Thesis status updates, triggered/invalidated alerts |
+| `#agent-system` | Webhook | Orchestrator | Agent health alerts, budget warnings, errors |
+
+#### Bidirectional Orchestrator (replaces deferred Section 19)
+
+Bot listens for messages in `#orchestrator`:
+1. Maps Discord user → Nexus user (via `discord_user_links` or hardcoded)
+2. Creates `agent_jobs` row (same as web chat POST)
+3. Polls for completion
+4. Posts response as Discord embed
+
+Same routing rules as web chat:
+- `/research TICKER` → Small Cap (report to #small-cap-research)
+- `/analyze TICKER` → Small Cap
+- `/macro` → Long Term (report to #macro-updates)
+- `/thesis` → Long Term
+- Anything else → Orchestrator (response in #orchestrator)
+
+#### Webhook Delivery
+
+Each agent's final blueprint step (`assemble-report`) does two things:
+1. Writes report to `agent_reports` table (DB history)
+2. POSTs formatted Discord embed to channel webhook URL
+
+New env vars:
+```
+DISCORD_WEBHOOK_SCANS=https://discord.com/api/webhooks/...
+DISCORD_WEBHOOK_RESEARCH=https://discord.com/api/webhooks/...
+DISCORD_WEBHOOK_MACRO=https://discord.com/api/webhooks/...
+DISCORD_WEBHOOK_THESIS=https://discord.com/api/webhooks/...
+DISCORD_WEBHOOK_SYSTEM=https://discord.com/api/webhooks/...
+```
+
+New files:
+- `lib/agents/discord-embed.ts` — Embed builder functions per report type
+- `lib/agents/discord-delivery.ts` — Webhook POST utility
+
+#### Discord Embed Format (TODO: finalize visual design)
+
+**Small Cap Scan:** Ticker, pre-market gain %, price, market cap, dilution risk (color-coded), filing summary, technical levels, confidence, timestamp.
+
+**Long Term Macro:** Regime assessment, key indicators with direction, sector rotation signals, top 3 risks, timestamp.
+
+**Thesis Update:** Title, ticker(s), status (ON-TRACK/TRIGGERED/INVALIDATED), what changed, recommended action, color by status.
+
+**System Alert:** Type, severity color, details, suggested action.
+
+All embeds use emerald-500 (`0x10B981`) as base color to match Nexus theme.
+
+#### Frontend Simplification
+
+**Remove from build plan (Section 16):**
+- `AgentReportQueue.tsx` (was step 35)
+- `AgentStats.tsx` (was step 36)
+- Report badge count on sidebar
+- Report approve/reject flow
+
+**Simplify:**
+- `AgentTab.tsx` — just Chat, no Reports/Stats sub-tabs in V1
+- `AgentChat.tsx` — add agent name display, progress notes
+
+---
+
+### R1.3 LLM Provider Update (replaces Section 8)
+
+Replace NVIDIA API references with provider-agnostic config. Current candidate providers:
+
+**Groq (Llama 3.3 70B):** ~$0.59/M input, $0.79/M output. Blazing fast (~500 tok/s). Free tier: 30 req/min, 6k tokens/min. Already working for Jarvis.
+
+**DeepSeek direct (v3):** ~$0.27/M input, $1.10/M output. Input caching at $0.07/M. Slightly better reasoning. Slower inference.
+
+**Possible hybrid:** Groq for Orchestrator (chat speed matters), DeepSeek for background agents (async, quality + cost matter). Per-agent config already supports different models.
+
+Updated env vars (Section 18):
+```
+AGENT_API_KEY          — Groq or DeepSeek API key (falls back to JARVIS_API_KEY)
+AGENT_API_BASE_URL     — https://api.groq.com/openai/v1 or https://api.deepseek.com/v1
+AGENT_MODEL            — llama-3.3-70b-versatile (Groq) or deepseek-chat (DeepSeek)
+```
+
+---
+
+### R1.4 Trigger Fixes (amends Section 6)
+
+#### Catch-up Logic (CRITICAL)
+
+All cron triggers must check "has today's output been generated?" instead of "is it the right hour?" If the laptop was off during the scheduled time, agents should catch up when they come online.
+
+```
+ORCHESTRATOR:
+  macro_cron: "if today's macro summary missing AND hour < 14 → run"
+  stale_job_reaper: every 5 min, reset jobs in 'processing' > 5 min to 'queued'
+
+SMALL CAP:
+  pre_market_scan: 7 AM EST target
+    catch-up: if today's scan missing AND hour < 9:30 → run
+    gate: check Massive API /v1/marketstatus/now (no-op on weekends/holidays)
+
+LONG TERM:
+  macro_scan: Sunday evening target
+    catch-up: if this week's scan missing → run on next boot (up to Monday)
+  thesis_check: 5 PM EST target
+    catch-up: if today's check missing AND hour < 20 → run
+    gate: same market status check
+```
+
+#### Stale Job Reaper (NEW — Orchestrator responsibility)
+
+Every 5 minutes, the Orchestrator runs:
+```sql
+UPDATE agent_jobs
+SET status = 'queued', started_at = NULL
+WHERE status = 'processing'
+  AND started_at < now() - interval '5 minutes';
+```
+
+Prevents orphaned jobs from container crashes.
+
+#### Market Holiday Gate
+
+All autonomous triggers check `GET /v1/marketstatus/now` from Massive API before running. No-op on weekends and market holidays. Simple boolean: if market is closed, skip.
+
+---
+
+### R1.5 Blueprint Engine Fixes (amends Section 6.4)
+
+#### Step Data Accumulation
+
+Each step receives `previousOutput` from step N-1. Convention: **every step must spread previous output into its return value.**
+
+```typescript
+// Step 1 returns: { candidates: [...] }
+// Step 2 returns: { ...previousOutput, filings: [...] }
+// Step 3 returns: { ...previousOutput, dilutionScores: [...] }
+// ...
+// Step 6 receives: { candidates, filings, dilutionScores, technicalData, analysis }
+```
+
+This is the accumulator pattern. Document as a required convention for all blueprint steps.
+
+#### Dockerfile Fix
+
+**Replace tsc compilation (Option A) with tsx runtime (Option B):**
+
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package.json package-lock.json tsconfig.json ./
+RUN npm ci --production
+COPY lib/ ./lib/
+COPY services/agent-entrypoint.ts ./services/
+CMD ["npx", "tsx", "services/agent-entrypoint.ts"]
+```
+
+Why: `@/lib/...` path aliases require tsconfig. `tsx` reads it automatically. No compilation step needed.
+
+#### Internal Parallelism
+
+Blueprint steps run sequentially, but code steps can use `Promise.all` internally. The existing `askedgar.ts` already does parallel `Promise.allSettled` for multi-ticker fetches. Document: "code steps manage their own parallelism within a single step."
+
+#### Job Progress Notes
+
+Add `progress_note TEXT` column to `agent_jobs` schema (Section 3.2). The blueprint runner updates this before each step:
+
+```typescript
+await db.update(agentJobs)
+  .set({ progressNote: `Step ${i+1}/${total}: ${step.name}` })
+  .where(eq(agentJobs.id, job.id));
+```
+
+Polling endpoint returns `progress_note` so the web UI and Discord bot can show progress.
+
+---
+
+### R1.6 Migration Window Fix (amends Section 4)
+
+**Problem:** Migration 0011 changes `agent_memory` unique constraint. Old `lib/jarvis/memory.ts` targets the old constraint via `onConflictDoUpdate`. Between Phase 2 and Phase 7, old code breaks.
+
+**Fix:** Clean cutover — do these in the same deploy:
+1. Run Migration 0011 (new tables + altered constraint)
+2. Deploy new agent API routes (Phase 4)
+3. Update sidebar tab `jarvis` → `agents`
+4. Delete old Jarvis routes and modules
+5. Run Migration 0012 (drop old tables)
+
+No window where old code runs against new schema.
+
+---
+
+### R1.7 Docker Compose Fixes (amends Section 15)
+
+Add to every service in `docker-compose.yml`:
+
+```yaml
+logging:
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+healthcheck:
+  test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+```
+
+Note: Agent containers don't run a web server, so healthcheck should instead check heartbeat freshness by querying the DB. Simpler alternative: write a `/tmp/healthy` file on each heartbeat, check with `test -f /tmp/healthy && find /tmp/healthy -mmin -2`.
+
+---
+
+### R1.8 Routing Rules Update (amends Section 13)
+
+```typescript
+function routeToAgent(message: string, explicitAgentId?: string): AgentId {
+  if (explicitAgentId && isValidAgentId(explicitAgentId)) return explicitAgentId;
+  if (message.startsWith('/research ')) return 'small-cap-trader';
+  if (message.startsWith('/analyze')) return 'small-cap-trader';
+  if (message.startsWith('/macro')) return 'long-term-investor';    // NEW
+  if (message.startsWith('/thesis')) return 'long-term-investor';   // NEW
+  return 'orchestrator';
+}
+```
+
+---
+
+### R1.9 Deployment Procedure (NEW section)
+
+#### Initial Setup
+1. Install Docker Engine in WSL2 (`curl -fsSL https://get.docker.com | sh`)
+2. `sudo systemctl enable docker`
+3. Create `services/.env` from `services/.env.example`
+4. Set up Discord channels + webhooks, copy URLs to `.env`
+5. Run database migrations
+6. `docker compose build && docker compose up -d`
+7. Verify: `docker compose ps`, check Discord #agent-system for startup message
+
+#### Updating Agents
+```bash
+cd ~/Nexus-Terminal && git pull
+cd services && docker compose build && docker compose up -d
+```
+Graceful shutdown handles in-progress jobs. ~30 sec downtime.
+
+#### Keeping Laptop Running
+- Disable Windows sleep: Settings → System → Power → Never
+- Use ethernet, not Wi-Fi
+- `restart: unless-stopped` in compose auto-recovers from Docker/WSL restarts
+
+---
+
+### R1.10 Updated File Inventory
+
+**New files to CREATE (add to Section 17):**
+```
+lib/agents/discord-embed.ts        — Embed builders per report type
+lib/agents/discord-delivery.ts     — Webhook POST utility
+```
+
+**Files to REMOVE from Section 17 (deferred/eliminated):**
+```
+components/trading/AgentReportQueue.tsx    — REMOVED (Discord replaces)
+components/trading/AgentStats.tsx          — DEFERRED to V2
+```
+
+**Updated build phase count:** 35 files to create (was 35, -2 removed, +2 Discord added).
+
+---
+
+### R1.11 Open Items (resolve before implementation)
+
+1. **Discord embed visual design** — Build test webhooks and iterate on format in real Discord channels.
+2. **Groq vs DeepSeek comparison** — Run identical prompts through both, compare quality/latency/cost.
+3. **Discord bot for #orchestrator** — Reuse existing `services/discord-bot/` or build new?
+4. **Deployment automation** — Manual `docker compose build && up` or auto-deploy script?
+5. **AskEdgar call counter** — Per-process counter wrong with 3 containers. Rely on DB cache or move counter to DB row.
