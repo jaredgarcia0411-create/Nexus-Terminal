@@ -231,7 +231,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
               type="button"
               onClick={() => setActiveTab(tab.key)}
               className={`rounded px-2.5 py-1 text-sm transition-colors ${
-                activeTab === tab.key ? 'bg-emerald-500 text-black' : 'text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
+                activeTab === tab.key ? 'bg-emerald-500 text-black' : 'text-white hover:bg-white/10'
               }`}
             >
               {tab.label}
@@ -242,7 +242,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
 
       <div className="p-3 text-base">
         {activeTab === 'overview' ? (
-          <div className="space-y-5">
+          <div className="space-y-5 divide-y divide-white/5">
             {/* Risk Ratings — 6 inline badges in 3-col grid */}
             {hasData(data.dilutionRating) ? (
               <div>
@@ -265,7 +265,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                       : 'bg-zinc-500';
                     return (
                       <div key={item.label} className="flex items-center gap-2 py-1">
-                        <span className="text-zinc-400">{item.label}</span>
+                        <span className="text-white">{item.label}</span>
                         <span className={`h-2 w-2 rounded-full ${dotColor}`} />
                         <span className={`rounded border px-2 py-0.5 text-sm font-medium ${colorClass}`}>
                           {toStringValue(value)}
@@ -289,7 +289,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                 ?? getField(dilutionDataItem, ['estimatedCash', 'cash', 'cashOnHand']);
               if (!months && !burn && !cash) return null;
               return (
-                <div>
+                <div className="pt-5">
                   <h4 className="mb-2 text-lg font-semibold text-zinc-200">Cash Position</h4>
                   <p className="text-zinc-300">
                     The company has ~<span className="font-bold text-zinc-100">{toStringValue(months)}</span> months of cash left
@@ -307,7 +307,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
               const filedAt = getField(dilutionItem, ['filed_at', 'filedAt', 'lastUpdated']);
               if (!commentary && !cashDesc) return null;
               return (
-                <div>
+                <div className="pt-5">
                   <h4 className="mb-2 text-lg font-semibold text-zinc-200">Commentary on Financial Condition</h4>
                   <div className="space-y-2">
                     {cashDesc ? <p className="text-zinc-300">{toStringValue(cashDesc)}</p> : null}
@@ -320,7 +320,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
 
             {/* Market Stats — compact reference row */}
             {hasData(data.screener) ? (
-              <div>
+              <div className="pt-5">
                 <h4 className="mb-2 text-sm font-medium uppercase tracking-wider text-zinc-500">Market Stats</h4>
                 <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
                   <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Price</p><p className="text-sm text-zinc-200">{formatMoney(getField(screenerItem, ['price']))}</p></div>
@@ -339,8 +339,8 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
           <div className="space-y-4">
             {/* ATM Programs */}
             {atmRegistrations.length > 0 ? (
-              <div className="space-y-2">
-                <h4 className="font-medium text-zinc-300">ATM Programs</h4>
+              <div className="divide-y divide-white/5">
+                <h4 className="pb-2 font-medium text-white">ATM Programs</h4>
                 {atmRegistrations.map((item, index) => {
                   const row = toRecord(item);
                   const remaining = getField(row, ['amount_remaining_atm', 'amountRemainingAtm']);
@@ -349,7 +349,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                   const bank = getField(row, ['bank']);
                   const effective = getField(row, ['effective_status', 'effectiveStatus']);
                   return (
-                    <div key={`atm-${index}`} className="rounded border border-white/10 bg-white/5 p-3">
+                    <div key={`atm-${index}`} className="py-2">
                       <div className="flex items-center gap-2">
                         <span className={`rounded border px-2 py-0.5 text-xs font-medium ${effective ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-zinc-500/30 bg-zinc-500/10 text-zinc-400'}`}>
                           {effective ? 'Active' : 'Inactive'}
@@ -382,15 +382,13 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                 })}
               </div>
             ) : (
-              <div className="rounded border border-white/10 bg-white/5 p-3 text-zinc-400">
-                No active ATM programs found
-              </div>
+              <p className="py-2 text-zinc-400">No active ATM programs found</p>
             )}
 
             {/* Equity Lines — card layout matching ATM programs */}
             {equityLines.length > 0 ? (
-              <div className="space-y-2">
-                <h4 className="font-medium text-amber-300">Equity Lines</h4>
+              <div className="divide-y divide-white/5">
+                <h4 className="pb-2 font-medium text-white">Equity Lines</h4>
                 {equityLines.map((item, index) => {
                   const row = toRecord(item);
                   const remaining = getField(row, ['amount_remaining_atm', 'amountRemainingAtm']);
@@ -400,7 +398,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                   const badge = babyShelfBadge(row);
 
                   return (
-                    <div key={`el-${index}`} className="rounded border border-white/10 bg-white/5 p-3">
+                    <div key={`el-${index}`} className="py-2">
                       <div className="flex items-center gap-2">
                         <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${effective ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-zinc-500/30 bg-zinc-500/10 text-zinc-400'}`}>
                           {effective ? 'Active' : 'Inactive'}
@@ -425,9 +423,7 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                 })}
               </div>
             ) : (
-              <div className="rounded border border-white/10 bg-white/5 p-3 text-zinc-400">
-                No equity lines found
-              </div>
+              <p className="py-2 text-zinc-400">No equity lines found</p>
             )}
 
             {/* All Registrations table */}
@@ -470,9 +466,9 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
               <NoDataBadge endpointData={data.registrations} />
             )}
 
-            <div className="rounded border border-white/10 bg-white/5 p-3 text-zinc-300">
-              <p className="mb-1 text-zinc-400">Management Commentary</p>
-              <p>{toStringValue(getField(dilutionItem, ['mgmt_commentary', 'managementCommentary', 'commentary']))}</p>
+            <div className="space-y-1">
+              <h4 className="font-medium text-white">Management Commentary</h4>
+              <p className="text-sm text-zinc-200">{toStringValue(getField(dilutionItem, ['mgmt_commentary', 'managementCommentary', 'commentary']))}</p>
             </div>
           </div>
         ) : null}

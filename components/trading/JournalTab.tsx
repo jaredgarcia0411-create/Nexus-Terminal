@@ -6,7 +6,12 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, ChevronRight, Search, Tag as TagIcon } from 'lucide-react';
 import TradeTable from '@/components/trading/TradeTable';
 import JournalTradeChart from '@/components/trading/JournalTradeChart';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatCurrency, getPnLColor } from '@/lib/trading-utils';
+import {
+  TRADE_CHART_TIMEFRAME_CONFIG,
+  type TradeChartTimeframeKey,
+} from '@/lib/chart-timeframes';
 import {
   resolveInitialChartCount,
   resolveLoadMoreCount,
@@ -68,6 +73,7 @@ export default function JournalTab({
 }: JournalTabProps) {
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [chartCountByDay, setChartCountByDay] = useState<Record<string, number>>({});
+  const [chartTimeframes, setChartTimeframes] = useState<Record<string, TradeChartTimeframeKey>>({});
 
   const dayCards = useMemo<DayCard[]>(() => {
     const dayMap = new Map<string, Trade[]>();
@@ -257,12 +263,27 @@ export default function JournalTab({
                       <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Trade Replay Charts</p>
                       <div className="space-y-3">
                         {day.trades.slice(0, chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH).map((trade) => (
-                          <div key={`chart-${trade.id}`} className="space-y-2 rounded-xl border border-white/10 bg-[#121214] p-3">
+                          <div key={`chart-${trade.id}`} className="space-y-2">
                             <div className="flex items-center justify-between gap-2 text-xs">
-                              <p className="font-semibold text-zinc-200">{trade.symbol} ({trade.direction})</p>
+                              <p className="font-semibold text-white">{trade.symbol} ({trade.direction})</p>
                               <p className="font-mono text-zinc-500">{trade.entryTime || '--:--'} - {trade.exitTime || '--:--'}</p>
+                              <Select
+                                value={chartTimeframes[trade.id] ?? '5m'}
+                                onValueChange={(value) => setChartTimeframes((prev) => ({ ...prev, [trade.id]: value as TradeChartTimeframeKey }))}
+                              >
+                                <SelectTrigger className="h-7 w-24 bg-white/5 border-white/10 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="bg-[#18181b] border-white/10 text-white">
+                                  {Object.entries(TRADE_CHART_TIMEFRAME_CONFIG).map(([value, cfg]) => (
+                                    <SelectItem key={value} value={value}>
+                                      {cfg.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
-                            <JournalTradeChart trade={trade} />
+                            <JournalTradeChart trade={trade} timeframe={chartTimeframes[trade.id] ?? '5m'} />
                           </div>
                         ))}
 
