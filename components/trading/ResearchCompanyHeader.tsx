@@ -34,22 +34,6 @@ function formatCompact(value: unknown): string {
   return num.toFixed(2);
 }
 
-function riskBadge(label: string, value: unknown) {
-  const normalized = String(value ?? '').toLowerCase();
-  let colorClass = 'border-zinc-500/30 bg-zinc-500/10 text-zinc-300';
-  if (normalized.includes('low') || normalized.includes('compliant')) {
-    colorClass = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
-  } else if (normalized.includes('medium') || normalized.includes('moderate')) {
-    colorClass = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
-  } else if (normalized.includes('high') || normalized.includes('non-compliant')) {
-    colorClass = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
-  }
-  return (
-    <span className={`rounded-md border px-2 py-0.5 text-xs font-medium ${colorClass}`}>
-      {String(value ?? 'N/A')} {label}
-    </span>
-  );
-}
 
 function firstResult(rawData: Record<string, AskEdgarEndpointResponse>, key: string) {
   return toRecord(rawData[key]?.results?.[0]);
@@ -66,7 +50,6 @@ function statRow(label: string, value: string) {
 
 export default function ResearchCompanyHeader({ ticker, rawData, companyName }: Props) {
   const screener = firstResult(rawData, 'screener');
-  const dilutionRating = firstResult(rawData, 'dilution-rating');
 
   const marketCap = getField(screener, ['marketCap', 'market_cap', 'market_cap_final']);
   const outstanding = getField(screener, ['outstanding', 'outstandingShares', 'outstanding_shares']);
@@ -76,21 +59,16 @@ export default function ResearchCompanyHeader({ ticker, rawData, companyName }: 
   const industry = getField(screener, ['industry']);
   const country = getField(screener, ['country']);
 
-  const overallRisk = getField(dilutionRating, ['rating', 'dilutionRating', 'overall_risk']);
-  const offeringRisk = getField(dilutionRating, ['offeringAbility', 'offering_ability']);
-  const dilutionRisk = getField(dilutionRating, ['dilution', 'dilution_rating']);
-  const cashNeed = getField(dilutionRating, ['cashNeed', 'cash_need']);
-
   return (
     <div className="flex h-full flex-col gap-3 border-r border-white/10 bg-[#0f0f11] px-4 py-3">
       {/* Ticker + Company Name */}
       <div>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-zinc-100">{ticker}</span>
+          <span className="text-base font-bold text-zinc-100">{ticker}</span>
           {country ? <span className="text-[11px] text-zinc-500">{String(country)}</span> : null}
         </div>
         {companyName ? (
-          <p className="mt-0.5 text-sm leading-snug text-zinc-400">{companyName}</p>
+          <p className="mt-0.5 text-base font-bold leading-snug text-zinc-200">{companyName}</p>
         ) : null}
       </div>
 
@@ -104,16 +82,6 @@ export default function ResearchCompanyHeader({ ticker, rawData, companyName }: 
         {industry ? statRow('Industry', String(industry)) : null}
       </div>
 
-      {/* Risk Badges */}
-      <div className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Risk</span>
-        <div className="flex flex-wrap gap-1.5">
-          {riskBadge('Overall', overallRisk)}
-          {riskBadge('Offering', offeringRisk)}
-          {riskBadge('Dilution', dilutionRisk)}
-          {riskBadge('Cash', cashNeed)}
-        </div>
-      </div>
     </div>
   );
 }

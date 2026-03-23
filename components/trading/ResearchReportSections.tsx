@@ -17,7 +17,6 @@ type TabKey =
   | 'overview'
   | 'offering-ability'
   | 'dilution'
-  | 'cash'
   | 'news-filings'
   | 'offerings'
   | 'history';
@@ -140,8 +139,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'overview', label: 'Overview' },
   { key: 'offering-ability', label: 'Offering Ability' },
   { key: 'dilution', label: 'Dilution' },
-  { key: 'cash', label: 'Cash' },
-  { key: 'news-filings', label: 'News & Filings' },
+{ key: 'news-filings', label: 'News & Filings' },
   { key: 'offerings', label: 'Offerings' },
   { key: 'history', label: 'History' },
 ];
@@ -244,23 +242,97 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
 
       <div className="p-3 text-base">
         {activeTab === 'overview' ? (
-          hasData(data.screener) ? (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-              <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Ticker</p><p className="text-zinc-200">{ticker}</p></div>
-              <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Price</p><p className="text-zinc-200">{formatMoney(getField(screenerItem, ['price']))}</p></div>
-              <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Market Cap</p><p className="text-zinc-200">{formatMoney(getField(screenerItem, ['marketCap', 'market_cap']))}</p></div>
-              <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Float</p><p className="text-zinc-200">{formatNumber(getField(screenerItem, ['float', 'floatShares', 'float_shares']))}</p></div>
-              <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">OS</p><p className="text-zinc-200">{formatNumber(getField(screenerItem, ['outstanding', 'outstandingShares', 'sharesOutstanding']))}</p></div>
-              <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Short Interest</p><p className="text-zinc-200">{formatNumber(getField(screenerItem, ['shortInterest', 'short_interest']))}</p></div>
-              <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Fee Rate</p><p className="text-zinc-200">{toStringValue(getField(screenerItem, ['feeRate', 'fee_rate']))}</p></div>
-              <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Country</p><p className="text-zinc-200">{toStringValue(getField(screenerItem, ['country']))}</p></div>
-              <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Industry</p><p className="text-zinc-200">{toStringValue(getField(screenerItem, ['industry']))}</p></div>
-              <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Sector</p><p className="text-zinc-200">{toStringValue(getField(screenerItem, ['sector']))}</p></div>
-              <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Volume</p><p className="text-zinc-200">{formatNumber(getField(screenerItem, ['today_volume', 'volume', 'totalVolume']))}</p></div>
-            </div>
-          ) : (
-            <NoDataBadge endpointData={data.screener} />
-          )
+          <div className="space-y-5">
+            {/* Risk Ratings — 6 inline badges in 3-col grid */}
+            {hasData(data.dilutionRating) ? (
+              <div>
+                <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {[
+                    { label: 'Offering Ability', keys: ['offering_ability', 'offeringAbility'] },
+                    { label: 'Dilution', keys: ['dilution', 'dilution_rating'] },
+                    { label: 'Offering Frequency', keys: ['offering_frequency', 'offeringFrequency'] },
+                    { label: 'Cash Need', keys: ['cash_need', 'cashNeed'] },
+                    { label: 'Warrant Exercise', keys: ['warrant_exercise', 'warrantExercise'] },
+                    { label: 'Nasdaq Compliance', keys: ['nasdaq_compliance', 'nasdaqCompliance'] },
+                  ].map((item) => {
+                    const value = getField(dilutionItem, item.keys)
+                      || (item.label === 'Nasdaq Compliance' ? getField(complianceItem, ['status', 'complianceStatus', 'rating']) : null);
+                    const colorClass = riskClass(value);
+                    // Extract dot color from the badge color class
+                    const dotColor = colorClass.includes('emerald') ? 'bg-emerald-500'
+                      : colorClass.includes('amber') ? 'bg-amber-500'
+                      : colorClass.includes('rose') ? 'bg-rose-500'
+                      : 'bg-zinc-500';
+                    return (
+                      <div key={item.label} className="flex items-center gap-2 py-1">
+                        <span className="text-zinc-400">{item.label}</span>
+                        <span className={`h-2 w-2 rounded-full ${dotColor}`} />
+                        <span className={`rounded border px-2 py-0.5 text-sm font-medium ${colorClass}`}>
+                          {toStringValue(value)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <NoDataBadge endpointData={data.dilutionRating} />
+            )}
+
+            {/* Cash Position — narrative sentence style */}
+            {(() => {
+              const months = getField(dilutionItem, ['cash_remaining_months', 'cashRemainingMonths'])
+                ?? getField(dilutionDataItem, ['cashRemainingMonths', 'monthsRemaining']);
+              const burn = getField(dilutionItem, ['cash_burn', 'cashBurn'])
+                ?? getField(dilutionDataItem, ['cashBurn', 'burnRate']);
+              const cash = getField(dilutionItem, ['estimated_cash', 'estimatedCash'])
+                ?? getField(dilutionDataItem, ['estimatedCash', 'cash', 'cashOnHand']);
+              if (!months && !burn && !cash) return null;
+              return (
+                <div>
+                  <h4 className="mb-2 text-lg font-semibold text-zinc-200">Cash Position</h4>
+                  <p className="text-zinc-300">
+                    The company has ~<span className="font-bold text-zinc-100">{toStringValue(months)}</span> months of cash left
+                    based on the quarterly cash burn of <span className="font-bold text-zinc-100">{formatMoney(burn)}</span>
+                    {' '}and estimated current cash of <span className="font-bold text-zinc-100">{formatMoney(cash)}</span>
+                  </p>
+                </div>
+              );
+            })()}
+
+            {/* Commentary on Financial Condition */}
+            {(() => {
+              const commentary = getField(dilutionItem, ['mgmt_commentary', 'managementCommentary', 'commentary']);
+              const cashDesc = getField(dilutionItem, ['cash_need_desc', 'cashNeedDesc']);
+              const filedAt = getField(dilutionItem, ['filed_at', 'filedAt', 'lastUpdated']);
+              if (!commentary && !cashDesc) return null;
+              return (
+                <div>
+                  <h4 className="mb-2 text-lg font-semibold text-zinc-200">Commentary on Financial Condition</h4>
+                  <div className="space-y-2">
+                    {cashDesc ? <p className="text-zinc-300">{toStringValue(cashDesc)}</p> : null}
+                    {commentary ? <p className="text-zinc-300">{toStringValue(commentary)}</p> : null}
+                    {filedAt ? <p className="text-sm text-zinc-500">Filed At: {formatDate(filedAt)}</p> : null}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Market Stats — compact reference row */}
+            {hasData(data.screener) ? (
+              <div>
+                <h4 className="mb-2 text-sm font-medium uppercase tracking-wider text-zinc-500">Market Stats</h4>
+                <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Price</p><p className="text-sm text-zinc-200">{formatMoney(getField(screenerItem, ['price']))}</p></div>
+                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Market Cap</p><p className="text-sm text-zinc-200">{formatMoney(getField(screenerItem, ['marketCap', 'market_cap']))}</p></div>
+                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Float</p><p className="text-sm text-zinc-200">{formatNumber(getField(screenerItem, ['float', 'floatShares', 'float_shares']))}</p></div>
+                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">OS</p><p className="text-sm text-zinc-200">{formatNumber(getField(screenerItem, ['outstanding', 'outstandingShares', 'sharesOutstanding']))}</p></div>
+                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Short Interest</p><p className="text-sm text-zinc-200">{formatNumber(getField(screenerItem, ['shortInterest', 'short_interest']))}</p></div>
+                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Volume</p><p className="text-sm text-zinc-200">{formatNumber(getField(screenerItem, ['today_volume', 'volume', 'totalVolume']))}</p></div>
+                </div>
+              </div>
+            ) : null}
+          </div>
         ) : null}
 
         {activeTab === 'offering-ability' ? (
@@ -290,12 +362,16 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                         <div className="flex items-center gap-2">
                           <span className="text-zinc-500">ATM Remaining:</span>
                           <span className="font-medium text-amber-300">{formatMoney(remaining)}</span>
-                          {(() => {
-                            const badge = babyShelfBadge(row);
-                            if (!badge) return null;
-                            return <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${badge.colorClass}`}>{badge.label}</span>;
-                          })()}
                         </div>
+                        {(() => {
+                          const badge = babyShelfBadge(row);
+                          if (!badge) return null;
+                          return (
+                            <div className="flex justify-end">
+                              <span className={`rounded border px-2 py-0.5 text-sm font-medium whitespace-nowrap ${badge.colorClass}`}>{badge.label}</span>
+                            </div>
+                          );
+                        })()}
                         {bank ? <div><span className="text-zinc-500">Bank:</span> <span className="text-zinc-200">{String(bank)}</span></div> : null}
                       </div>
                       <div className="mt-1 text-zinc-500">
@@ -329,12 +405,12 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                         <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${effective ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-zinc-500/30 bg-zinc-500/10 text-zinc-400'}`}>
                           {effective ? 'Active' : 'Inactive'}
                         </span>
+                        <span className="text-zinc-200">{toStringValue(getField(row, ['headline', 'title']))}</span>
                         {badge ? (
-                          <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${badge.colorClass}`}>
+                          <span className={`ml-auto rounded border px-2 py-0.5 text-sm font-medium whitespace-nowrap ${badge.colorClass}`}>
                             {badge.label}
                           </span>
                         ) : null}
-                        <span className="text-zinc-200">{toStringValue(getField(row, ['headline', 'title']))}</span>
                       </div>
                       <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                         <div><span className="text-zinc-500">Total Registered:</span> <span className="text-zinc-200">{formatMoney(total)}</span></div>
@@ -584,19 +660,6 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
               );
             })()}
           </div>
-        ) : null}
-
-        {activeTab === 'cash' ? (
-          hasData(data.dilutionData) ? (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Estimated Cash</p><p className="text-zinc-200">{formatMoney(getField(dilutionDataItem, ['estimatedCash', 'cash', 'cashOnHand']))}</p></div>
-              <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Burn Rate</p><p className="text-zinc-200">{formatMoney(getField(dilutionDataItem, ['cashBurn', 'burnRate']))}</p></div>
-              <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Months Remaining</p><p className="text-zinc-200">{toStringValue(getField(dilutionDataItem, ['cashRemainingMonths', 'monthsRemaining']))}</p></div>
-              <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Debt</p><p className="text-zinc-200">{formatMoney(getField(dilutionDataItem, ['totalDebt', 'debt']))}</p></div>
-            </div>
-          ) : (
-            <NoDataBadge endpointData={data.dilutionData} />
-          )
         ) : null}
 
         {activeTab === 'news-filings' ? (
