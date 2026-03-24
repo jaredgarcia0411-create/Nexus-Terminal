@@ -42,9 +42,9 @@ describe('jarvis trade analysis route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     }));
-    expect(ensureResponse(response).status).toBe(200);
-    expect(ensureUserMock).toHaveBeenCalledTimes(1);
-    expect(runTradeAnalysisPipelineMock).toHaveBeenCalledWith('canonical-u1', undefined);
+	expect(ensureResponse(response).status).toBe(200);
+	expect(ensureUserMock).toHaveBeenCalledTimes(1);
+	expect(runTradeAnalysisPipelineMock).toHaveBeenCalledWith('canonical-u1');
   });
 
   it('returns 503 when database is unavailable', async () => {

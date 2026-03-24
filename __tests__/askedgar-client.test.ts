@@ -19,16 +19,16 @@ describe('jarvis askedgar client', () => {
 
     const result = await client.fetchTickerData('AAPL');
 
-    expect(result.ticker).toBe('AAPL');
-    expect(Object.keys(result.rawData)).toHaveLength(13);
-    expect(result.dataSources).toHaveLength(13);
+	expect(result.ticker).toBe('AAPL');
+	expect(Object.keys(result.rawData)).toHaveLength(14);
+	expect(result.dataSources).toHaveLength(14);
   });
 
   it('tracks daily call count', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ status: 'success', count: 1, results: [{}] })));
     const client = await import('@/lib/jarvis/askedgar');
 
-    await client.fetchTickerData('MSFT');
-    expect(client.getAskEdgarCallCount()).toBe(13);
+	await client.fetchTickerData('MSFT');
+	expect(client.getAskEdgarCallCount()).toBe(14);
   });
 });

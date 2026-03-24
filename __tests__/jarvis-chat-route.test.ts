@@ -96,8 +96,8 @@ describe('jarvis chat route', () => {
       body: JSON.stringify({ message: '/analyze' }),
     }));
 
-    expect(ensureResponse(response).status).toBe(200);
-    expect(runTradeAnalysisPipelineMock).toHaveBeenCalledWith('canonical-u1', 30);
+	expect(ensureResponse(response).status).toBe(200);
+	expect(runTradeAnalysisPipelineMock).toHaveBeenCalledWith('canonical-u1');
     const firstInsertPayload = insertPayloadAt(0, insertValuesMock.mock.calls as unknown[][]);
     const secondInsertPayload = insertPayloadAt(1, insertValuesMock.mock.calls as unknown[][]);
     expect(firstInsertPayload.userId).toBe('canonical-u1');
