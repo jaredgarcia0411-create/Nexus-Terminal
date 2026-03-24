@@ -40,7 +40,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useCandleData } from '@/hooks/use-candle-data';
-import { bollingerBands, ema, sma, vwap } from '@/lib/indicators';
+import { atr, bollingerBands, ema, rsi, sma, vwap } from '@/lib/indicators';
 import { epochToNySortKey, nyDateTimeToEpoch } from '@/lib/time-utils';
 
 type SeriesType = 'candles' | 'bars' | 'line' | 'area' | 'baseline';
@@ -165,6 +165,8 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
   const [showEma21, setShowEma21] = useState(false);
   const [showVwap, setShowVwap] = useState(false);
   const [showBollinger, setShowBollinger] = useState(false);
+  const [showRsi, setShowRsi] = useState(false);
+  const [showAtr, setShowAtr] = useState(false);
   const [sessionRects, setSessionRects] = useState<Array<{ key: string; left: number; width: number }>>([]);
 
   const frame = FRAME_CONFIG[timeframe];
@@ -380,6 +382,64 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
       }));
     }
 
+    // RSI on separate pane
+    if (showRsi && sortedCandles.length > 0) {
+      const rsiValues = rsi(closePrices, 14);
+      const rsiPane = chart.addPane();
+      rsiPane.setHeight(80);
+      rsiPane.setStretchFactor(0.25);
+      const rsiSeries = rsiPane.addSeries(LineSeries, {
+        color: '#8b5cf6',
+        lineWidth: 1,
+        priceLineVisible: false,
+      });
+      rsiSeries.setData(sortedCandles.flatMap((candle, index) => {
+        const value = rsiValues[index];
+        if (value == null) return [];
+        return [{ time: toTime(candle.datetime), value }];
+      }));
+      // Add overbought/oversold lines
+      rsiSeries.createPriceLine({
+        price: 70,
+        color: '#ef4444',
+        lineWidth: 1,
+        lineStyle: 2,
+        title: 'OB',
+      });
+      rsiSeries.createPriceLine({
+        price: 30,
+        color: '#22c55e',
+        lineWidth: 1,
+        lineStyle: 2,
+        title: 'OS',
+      });
+    }
+
+    // ATR on separate pane
+    if (showAtr && sortedCandles.length > 0) {
+      const atrValues = atr(sortedCandles.map((candle) => ({
+        time: candle.datetime,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume,
+      })), 14);
+      const atrPane = chart.addPane();
+      atrPane.setHeight(60);
+      atrPane.setStretchFactor(0.2);
+      const atrSeries = atrPane.addSeries(LineSeries, {
+        color: '#f59e0b',
+        lineWidth: 1,
+        priceLineVisible: false,
+      });
+      atrSeries.setData(sortedCandles.flatMap((candle, index) => {
+        const value = atrValues[index];
+        if (value == null) return [];
+        return [{ time: toTime(candle.datetime), value }];
+      }));
+    }
+
     chart.timeScale().fitContent();
 
       const recalcSessionRects = () => {
@@ -474,9 +534,11 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
     crosshairMagnet,
     frame.intraday,
     seriesType,
+    showAtr,
     showBollinger,
     showEma21,
     showGrid,
+    showRsi,
     showSma20,
     showVolume,
     showVwap,
@@ -583,10 +645,16 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
                 <DropdownMenuCheckboxItem checked={showVwap} onCheckedChange={(checked) => setShowVwap(Boolean(checked))} className="cursor-pointer text-xs">
                   VWAP
                 </DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem checked={showBollinger} onCheckedChange={(checked) => setShowBollinger(Boolean(checked))} className="cursor-pointer text-xs">
-                  Bollinger
-                </DropdownMenuCheckboxItem>
-              </DropdownMenuContent>
+<DropdownMenuCheckboxItem checked={showBollinger} onCheckedChange={(checked) => setShowBollinger(Boolean(checked))} className="cursor-pointer text-xs">
+                      Bollinger
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem checked={showRsi} onCheckedChange={(checked) => setShowRsi(Boolean(checked))} className="cursor-pointer text-xs">
+                      RSI 14
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem checked={showAtr} onCheckedChange={(checked) => setShowAtr(Boolean(checked))} className="cursor-pointer text-xs">
+                      ATR 14
+                    </DropdownMenuCheckboxItem>
+                  </DropdownMenuContent>
             </DropdownMenu>
 
             <button

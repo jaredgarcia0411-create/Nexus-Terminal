@@ -241,3 +241,57 @@ export function macd(
 
   return { macd: macdWithNulls, signal, histogram };
 }
+
+export function atr(candles: OHLCData[], period: number = 14): (number | null)[] {
+  const safePeriod = Math.trunc(period);
+  if (!Number.isFinite(safePeriod) || safePeriod <= 0) {
+    return candles.map(() => null);
+  }
+
+  const trueRanges: number[] = [];
+  const result: (number | null)[] = [];
+
+  // Calculate True Range for each candle
+  for (let i = 0; i < candles.length; i++) {
+    const high = Number(candles[i].high);
+    const low = Number(candles[i].low);
+    const close = Number(candles[i].close);
+
+    if (![high, low, close].every(Number.isFinite)) {
+      trueRanges.push(0);
+      continue;
+    }
+
+    if (i === 0) {
+      trueRanges.push(high - low);
+    } else {
+      const prevClose = Number(candles[i - 1].close);
+      const tr1 = high - low;
+      const tr2 = Math.abs(high - prevClose);
+      const tr3 = Math.abs(low - prevClose);
+      trueRanges.push(Math.max(tr1, tr2, tr3));
+    }
+  }
+
+  // Not enough data
+  if (trueRanges.length < safePeriod) {
+    return candles.map(() => null);
+  }
+
+  // Initial ATR (simple average)
+  let atrValue = trueRanges.slice(0, safePeriod).reduce((a, b) => a + b, 0) / safePeriod;
+
+  // Fill nulls for initial period
+  for (let i = 0; i < safePeriod; i++) {
+    result.push(null);
+  }
+  result.push(atrValue);
+
+  // Smoothed ATR using Wilder's method
+  for (let i = safePeriod; i < trueRanges.length; i++) {
+    atrValue = (atrValue * (safePeriod - 1) + trueRanges[i]) / safePeriod;
+    result.push(atrValue);
+  }
+
+  return result;
+}
