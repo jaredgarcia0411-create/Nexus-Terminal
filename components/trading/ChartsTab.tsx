@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AreaSeries,
   BarSeries,
@@ -21,10 +21,10 @@ import {
 import {
   Camera,
   ChartCandlestick,
-  Clock3,
   Grid3X3,
   Magnet,
   Search,
+  Trash2,
   TrendingUp,
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -42,9 +42,13 @@ import {
 import { useCandleData } from '@/hooks/use-candle-data';
 import { atr, bollingerBands, ema, rsi, sma, vwap } from '@/lib/indicators';
 import { epochToNySortKey, nyDateTimeToEpoch } from '@/lib/time-utils';
+import ChartDrawings from './ChartDrawings';
+import DrawingToolbar from './DrawingToolbar';
+import type { DrawingTool } from '@/hooks/use-chart-drawings';
 
 type SeriesType = 'candles' | 'bars' | 'line' | 'area' | 'baseline';
 type TimeframeKey = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d' | '1w' | '1M';
+type TimeRangeKey = '1D' | '5D' | '1M' | '3M' | '6M' | 'YTD' | '1Y' | '5Y' | 'ALL';
 
 type FrameConfig = {
   label: string;
@@ -65,6 +69,20 @@ const FRAME_CONFIG: Record<TimeframeKey, FrameConfig> = {
   '1d': { label: '1D', periodType: 'year', period: '2', frequencyType: 'daily', frequency: '1', intraday: false },
   '1w': { label: '1W', periodType: 'year', period: '5', frequencyType: 'weekly', frequency: '1', intraday: false },
   '1M': { label: '1M', periodType: 'year', period: '10', frequencyType: 'monthly', frequency: '1', intraday: false },
+};
+
+type TimeRangeConfig = { label: string; periodType: string; period: string; defaultTimeframe: TimeframeKey };
+
+const TIME_RANGE_CONFIG: Record<TimeRangeKey, TimeRangeConfig> = {
+  '1D': { label: '1D', periodType: 'day', period: '1', defaultTimeframe: '5m' },
+  '5D': { label: '5D', periodType: 'day', period: '5', defaultTimeframe: '15m' },
+  '1M': { label: '1M', periodType: 'month', period: '1', defaultTimeframe: '1h' },
+  '3M': { label: '3M', periodType: 'month', period: '3', defaultTimeframe: '4h' },
+  '6M': { label: '6M', periodType: 'month', period: '6', defaultTimeframe: '4h' },
+  'YTD': { label: 'YTD', periodType: 'year', period: '1', defaultTimeframe: '1d' },
+  '1Y': { label: '1Y', periodType: 'year', period: '1', defaultTimeframe: '1d' },
+  '5Y': { label: '5Y', periodType: 'year', period: '5', defaultTimeframe: '1w' },
+  'ALL': { label: 'All', periodType: 'year', period: '10', defaultTimeframe: '1M' },
 };
 
 const UP_COLOR = '#ffffff';
@@ -153,14 +171,15 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
     }
     return fallback;
   });
-  const [timeframe, setTimeframe] = useState<TimeframeKey>('30m');
+  const [timeframe, setTimeframe] = useState<TimeframeKey>('5m');
+  const [timeRange, setTimeRange] = useState<TimeRangeKey>('1D');
   const [seriesType, setSeriesType] = useState<SeriesType>('candles');
   const [compareEnabled, setCompareEnabled] = useState(false);
   const [compareInput, setCompareInput] = useState('QQQ');
   const [compareSymbol, setCompareSymbol] = useState('QQQ');
-  const [showVolume, setShowVolume] = useState(true);
+  const [showVolume, setShowVolume] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
-  const [crosshairMagnet, setCrosshairMagnet] = useState(true);
+  const [crosshairMagnet, setCrosshairMagnet] = useState(false);
   const [showSma20, setShowSma20] = useState(false);
   const [showEma21, setShowEma21] = useState(false);
   const [showVwap, setShowVwap] = useState(false);
@@ -168,15 +187,25 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
   const [showRsi, setShowRsi] = useState(false);
   const [showAtr, setShowAtr] = useState(false);
   const [sessionRects, setSessionRects] = useState<Array<{ key: string; left: number; width: number }>>([]);
+  const [chartInstance, setChartInstance] = useState<IChartApi | null>(null);
+  const [seriesInstance, setSeriesInstance] = useState<ISeriesApi<'Candlestick' | 'Bar'> | null>(null);
+
+  // Drawing tools state
+  const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingTool>(null);
+  const [drawingColor] = useState('#ffffff');
+  const [drawingLineWidth, setDrawingLineWidth] = useState(2);
+  const [drawingsCount, setDrawingsCount] = useState(0);
+  const clearAllDrawingsRef = useRef<(() => void) | null>(null);
 
   const frame = FRAME_CONFIG[timeframe];
+  const rangeConfig = TIME_RANGE_CONFIG[timeRange];
   const marketOptions = useMemo(() => ({
-    periodType: frame.periodType,
-    period: frame.period,
+    periodType: rangeConfig.periodType,
+    period: rangeConfig.period,
     frequencyType: frame.frequencyType,
     frequency: frame.frequency,
     includePrePost: frame.intraday,
-  }), [frame.frequency, frame.frequencyType, frame.intraday, frame.period, frame.periodType]);
+  }), [rangeConfig.periodType, rangeConfig.period, frame.frequencyType, frame.frequency, frame.intraday]);
 
   const { candles, isLoading, error } = useCandleData(symbol, { ...marketOptions, refreshIntervalMs: 60_000 });
   const compareState = useCandleData(compareEnabled ? compareSymbol : null, { ...marketOptions, refreshIntervalMs: 60_000 });
@@ -212,6 +241,7 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartWrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const seriesRef = useRef<ISeriesApi<'Candlestick' | 'Bar'> | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -229,7 +259,7 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
         horzLines: { color: showGrid ? '#ffffff08' : 'transparent' },
       },
       crosshair: {
-        mode: crosshairMagnet ? CrosshairMode.Magnet : CrosshairMode.Normal,
+        mode: CrosshairMode.Normal,
       },
       rightPriceScale: {
         borderColor: '#ffffff10',
@@ -280,6 +310,22 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
         wickDownColor: DOWN_COLOR,
       });
     }
+
+    // Store series reference for drawing tools
+    if (seriesType === 'candles' || seriesType === 'bars') {
+      seriesRef.current = baseSeries as ISeriesApi<'Candlestick'>;
+    } else {
+      seriesRef.current = null;
+    }
+    // Use queueMicrotask to avoid synchronous setState in effect
+    queueMicrotask(() => {
+      if (seriesType === 'candles' || seriesType === 'bars') {
+        setSeriesInstance(baseSeries as ISeriesApi<'Candlestick' | 'Bar'>);
+      } else {
+        setSeriesInstance(null);
+      }
+      setChartInstance(chart);
+    });
 
     const sortedCandles = [...candles].sort((a, b) => a.datetime - b.datetime);
     const closePrices = sortedCandles.map((c) => c.close);
@@ -552,29 +598,23 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
       exit={{ opacity: 0, y: -10 }}
       className="flex h-[calc(100dvh-6.5rem)] min-h-[420px] flex-col"
     >
-      <div className="flex min-h-0 flex-1 flex-col bg-[#090b10] px-1 py-2">
-        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-white/10 bg-[#121214] px-2.5 py-1.5 xl:flex-nowrap xl:gap-2 xl:px-3">
-          <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-[#111319] px-1.5 py-0.5 xl:gap-2 xl:px-2 xl:py-1">
-            <Search className="h-3.5 w-3.5 text-zinc-500" />
-            <Input
-              value={symbolInput}
-              onChange={(event) => setSymbolInput(event.target.value.toUpperCase())}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  applySymbolInput();
-                }
-              }}
-              placeholder={symbol}
-              className="h-6 w-20 border-0 bg-transparent px-1 text-[11px] xl:h-7 xl:w-24 xl:text-xs"
-            />
-            <Button
-              onClick={applySymbolInput}
-              size="sm"
-              className="h-6 bg-emerald-500 px-1.5 text-[11px] text-black hover:bg-emerald-400 xl:h-7 xl:px-2 xl:text-xs"
-            >
-              Go
-            </Button>
-          </div>
+<div className="flex min-h-0 flex-1 flex-col bg-[#090b10]">
+{/* Header - 32px height */}
+<div className="flex h-8 items-center gap-2 border-b border-white/10 bg-[#090b10] px-2">
+<div className="flex items-center gap-1.5">
+<Search className="h-3.5 w-3.5 text-zinc-500" />
+<Input
+value={symbolInput}
+onChange={(event) => setSymbolInput(event.target.value.toUpperCase())}
+onKeyDown={(event) => {
+if (event.key === 'Enter') {
+applySymbolInput();
+}
+}}
+placeholder={symbol}
+className="h-6 w-16 border-0 bg-transparent px-1 text-[11px]"
+/>
+</div>
 
           <div className="mr-2 flex items-center gap-1.5 xl:gap-2 xl:border-r xl:border-white/10 xl:pr-3">
             <span className="text-xs font-semibold text-white xl:text-sm">{symbol}</span>
@@ -586,28 +626,24 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
             ) : null}
           </div>
 
-          <div className="ml-auto flex w-full items-center justify-end gap-1.5 xl:w-auto xl:gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="rounded-md p-1.5 text-zinc-300 hover:bg-white/10 xl:p-2"
-                  title={`Timeframe (${FRAME_CONFIG[timeframe].label})`}
-                  aria-label={`Timeframe ${FRAME_CONFIG[timeframe].label}`}
-                >
-                  <Clock3 className="h-4 w-4" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="border-white/10 bg-[#111319] text-white">
-                <DropdownMenuRadioGroup value={timeframe} onValueChange={(value) => setTimeframe(value as TimeframeKey)}>
-                  {Object.entries(FRAME_CONFIG).map(([key, cfg]) => (
-                    <DropdownMenuRadioItem key={key} value={key} className="cursor-pointer text-xs">
-                      {cfg.label}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+        <div className="ml-auto flex w-full items-center justify-end gap-1.5 xl:w-auto xl:gap-2">
+          {/* Timeframe buttons */}
+          <div className="flex items-center gap-0.5 rounded-lg bg-[#0d1016] p-0.5">
+            {(Object.entries(FRAME_CONFIG) as Array<[TimeframeKey, FrameConfig]>).map(([key, cfg]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setTimeframe(key)}
+                className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                  timeframe === key
+                    ? 'bg-zinc-600 text-white'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                {cfg.label}
+              </button>
+            ))}
+          </div>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -674,22 +710,43 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[56px_minmax(0,1fr)]">
-          <div className="flex flex-col items-center gap-2 rounded-xl border border-white/10 bg-[#0d1016] py-2">
-            <button onClick={() => setCrosshairMagnet((prev) => !prev)} className={`rounded p-2 ${crosshairMagnet ? 'bg-emerald-500/20 text-emerald-400' : 'text-zinc-400 hover:bg-white/5'}`} title="Crosshair Magnet">
-              <Magnet className="h-4 w-4" />
-            </button>
-            <button onClick={() => setShowGrid((prev) => !prev)} className={`rounded p-2 ${showGrid ? 'bg-emerald-500/20 text-emerald-400' : 'text-zinc-400 hover:bg-white/5'}`} title="Grid">
-              <Grid3X3 className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setCompareEnabled((prev) => !prev)}
-              className={`rounded p-2 ${compareEnabled ? 'bg-amber-500/20 text-amber-300' : 'text-zinc-400 hover:bg-white/5'}`}
-              title="Compare Symbol"
-            >
-              <TrendingUp className="h-4 w-4" />
-            </button>
-          </div>
+{/* Main content area with sidebar */}
+<div className="grid min-h-0 flex-1 lg:grid-cols-[32px_minmax(0,1fr)]">
+{/* Sidebar - 32px width */}
+<div className="flex flex-col items-center justify-between border-r border-white/10 bg-[#090b10] py-2">
+<div className="flex flex-col items-center gap-1">
+<DrawingToolbar
+activeTool={activeDrawingTool}
+onToolSelect={setActiveDrawingTool}
+lineWidth={drawingLineWidth}
+onLineWidthChange={setDrawingLineWidth}
+/>
+<div className="h-px w-5 bg-white/10" />
+<button onClick={() => setCrosshairMagnet((prev) => !prev)} className={`rounded p-1 ${crosshairMagnet ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:bg-white/5'}`} title="Crosshair Magnet">
+<Magnet className="h-4 w-4" />
+</button>
+<button onClick={() => setShowGrid((prev) => !prev)} className={`rounded p-1 ${showGrid ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:bg-white/5'}`} title="Grid">
+<Grid3X3 className="h-4 w-4" />
+</button>
+<button
+onClick={() => setCompareEnabled((prev) => !prev)}
+className={`rounded p-1 ${compareEnabled ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:bg-white/5'}`}
+title="Compare Symbol"
+>
+<TrendingUp className="h-4 w-4" />
+</button>
+</div>
+{/* Trash icon at bottom */}
+{drawingsCount > 0 && (
+<button
+onClick={() => clearAllDrawingsRef.current?.()}
+className="rounded p-1 text-zinc-400 hover:bg-red-500/20 hover:text-red-400"
+title="Clear all drawings"
+>
+<Trash2 className="h-4 w-4" />
+</button>
+)}
+</div>
 
           <div className="flex min-h-0 flex-col gap-2">
             {compareEnabled ? (
@@ -714,27 +771,57 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
 
             {isLoading ? <div className="flex min-h-[420px] flex-1 items-center justify-center rounded-xl border border-white/10 bg-[#121214] text-sm text-zinc-400">Loading chart...</div> : null}
             {error ? <div className="flex min-h-[420px] flex-1 items-center justify-center rounded-xl border border-white/10 bg-[#121214] text-sm text-zinc-400">{error}</div> : null}
-            {!isLoading && !error ? (
-              <div ref={chartWrapRef} className="relative min-h-[420px] flex-1 border border-white/10 bg-[#121214]">
-                <div ref={containerRef} className="h-full w-full" />
-                {frame.intraday && sessionRects.length > 0 ? (
-                  <div className="pointer-events-none absolute inset-0">
-                    {sessionRects.map((rect) => (
-                      <div
-                        key={rect.key}
-                        className="absolute bottom-0 top-0"
-                        style={{ left: `${rect.left}px`, width: `${rect.width}px`, backgroundColor: SESSION_SHADE }}
-                      />
-                    ))}
-                  </div>
-                ) : null}
+{!isLoading && !error ? (
+          <div ref={chartWrapRef} className="relative min-h-[420px] flex-1 border border-white/10 bg-[#121214]">
+            <div ref={containerRef} className="h-full w-full" />
+            {frame.intraday && sessionRects.length > 0 ? (
+              <div className="pointer-events-none absolute inset-0">
+                {sessionRects.map((rect) => (
+                  <div
+                    key={rect.key}
+                    className="absolute bottom-0 top-0"
+                    style={{ left: `${rect.left}px`, width: `${rect.width}px`, backgroundColor: SESSION_SHADE }}
+                  />
+                ))}
               </div>
             ) : null}
+{/* Drawing Tools Overlay */}
+<ChartDrawings
+symbol={symbol}
+chart={chartInstance}
+series={seriesInstance}
+activeTool={activeDrawingTool}
+onToolChange={setActiveDrawingTool}
+selectedColor={drawingColor}
+lineWidth={drawingLineWidth}
+onDrawingsChange={(count, clearFn) => {
+setDrawingsCount(count);
+clearAllDrawingsRef.current = clearFn;
+}}
+/>
+          </div>
+        ) : null}
 
-            <div className="flex items-center justify-between rounded-lg border border-white/10 bg-[#0f1219] px-3 py-1 text-[11px] text-zinc-500">
-              <span>{symbol} • {FRAME_CONFIG[timeframe].label}</span>
-              <span>{compareEnabled ? `Comparing ${compareSymbol}` : 'No comparison symbol'}</span>
-            </div>
+{/* Bottom bar - 32px height with time range shortcuts */}
+<div className="flex h-8 items-center justify-center gap-0.5 border-t border-white/10 bg-[#090b10] px-2">
+{(Object.entries(TIME_RANGE_CONFIG) as Array<[TimeRangeKey, TimeRangeConfig]>).map(([key, cfg]) => (
+<button
+key={key}
+type="button"
+onClick={() => {
+setTimeRange(key);
+setTimeframe(cfg.defaultTimeframe);
+}}
+className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
+timeRange === key
+? 'bg-zinc-600 text-white'
+: 'text-zinc-400 hover:text-zinc-200'
+}`}
+>
+{cfg.label}
+</button>
+))}
+</div>
           </div>
         </div>
       </div>

@@ -29,7 +29,8 @@ describe('ChartsTab', () => {
     }));
 
     expect(html).toContain('Capture chart screenshot');
-    expect(html).toContain('Timeframe');
+    // Timeframe buttons are now individual buttons, check for one of them
+    expect(html).toContain('5m');
     expect(html).not.toContain('Screenshot</');
     expect(html).toContain('SPY');
   });
