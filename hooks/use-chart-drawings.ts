@@ -52,6 +52,8 @@ export interface DrawingState {
 const DEFAULT_COLORS = ['#f59e0b', '#22c55e', '#ef4444', '#3b82f6', '#a855f7', '#ffffff'];
 const DEFAULT_LINE_WIDTH = 2;
 const STORAGE_KEY_PREFIX = 'nexus-chart-drawings';
+const FIB_LEVELS_STORAGE_KEY = 'nexus-chart-fib-levels';
+const DEFAULT_FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 
 export function useChartDrawings(
   symbol: string,
@@ -74,29 +76,51 @@ export function useChartDrawings(
   const setSelectedColor = externalColor !== undefined ? () => {} : setInternalColor;
   const setLineWidth = externalLineWidth !== undefined ? () => {} : setInternalLineWidth;
 
-  // Load drawings from localStorage on mount using lazy state initialization
-  const [drawings, setDrawings] = useState<Drawing[]>(() => {
-    if (!symbol) return [];
-    try {
-      const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}-${symbol}`);
-      if (saved) {
-        return JSON.parse(saved) as Drawing[];
-      }
-    } catch {
-      // Ignore parse errors
-    }
-    return [];
-  });
+	// Load drawings from localStorage on mount using lazy state initialization
+	const [drawings, setDrawings] = useState<Drawing[]>(() => {
+		if (!symbol) return [];
+		try {
+			const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}-${symbol}`);
+			if (saved) {
+				return JSON.parse(saved) as Drawing[];
+			}
+		} catch {
+			// Ignore parse errors
+		}
+		return [];
+	});
 
-  // Save drawings to localStorage when they change
-  useEffect(() => {
-    if (!symbol) return;
-    try {
-      localStorage.setItem(`${STORAGE_KEY_PREFIX}-${symbol}`, JSON.stringify(drawings));
-    } catch {
-      // Ignore storage errors
-    }
-  }, [drawings, symbol]);
+	// Load last-used fib levels from localStorage
+	const [lastFibLevels, setLastFibLevels] = useState<number[]>(() => {
+		try {
+			const saved = localStorage.getItem(FIB_LEVELS_STORAGE_KEY);
+			if (saved) {
+				return JSON.parse(saved) as number[];
+			}
+		} catch {
+			// Ignore parse errors
+		}
+		return DEFAULT_FIB_LEVELS;
+	});
+
+	// Save drawings to localStorage when they change
+	useEffect(() => {
+		if (!symbol) return;
+		try {
+			localStorage.setItem(`${STORAGE_KEY_PREFIX}-${symbol}`, JSON.stringify(drawings));
+		} catch {
+			// Ignore storage errors
+		}
+	}, [drawings, symbol]);
+
+	// Save last fib levels to localStorage when they change
+	useEffect(() => {
+		try {
+			localStorage.setItem(FIB_LEVELS_STORAGE_KEY, JSON.stringify(lastFibLevels));
+		} catch {
+			// Ignore storage errors
+		}
+	}, [lastFibLevels]);
 
   const startDrawing = useCallback((point: DrawingPoint) => {
     if (!activeTool) return;
@@ -142,32 +166,32 @@ export function useChartDrawings(
     });
   }, [isDrawing, tempDrawing]);
 
-  const finishDrawing = useCallback(() => {
-    if (!isDrawing || !tempDrawing) return;
+	const finishDrawing = useCallback(() => {
+		if (!isDrawing || !tempDrawing) return;
 
-    // Only add if the drawing has meaningful dimensions
-    if (tempDrawing.type === 'horizontal') {
-      setDrawings((prev) => [...prev, tempDrawing as HorizontalLineDrawing]);
-    } else if (tempDrawing.type === 'trendline' || tempDrawing.type === 'rectangle') {
-      const { start, end } = tempDrawing as TrendLineDrawing | RectangleDrawing;
-      if (start.time !== end.time || start.price !== end.price) {
-        setDrawings((prev) => [...prev, tempDrawing as Drawing]);
-      }
-    } else if (tempDrawing.type === 'fibonacci') {
-      const { start, end } = tempDrawing as FibonacciDrawing;
-      if (start.time !== end.time || start.price !== end.price) {
-        // Add default fibonacci levels if not set
-        const fibDrawing: FibonacciDrawing = {
-          ...(tempDrawing as FibonacciDrawing),
-          levels: (tempDrawing as FibonacciDrawing).levels || [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1],
-        };
-        setDrawings((prev) => [...prev, fibDrawing]);
-      }
-    }
+		// Only add if the drawing has meaningful dimensions
+		if (tempDrawing.type === 'horizontal') {
+			setDrawings((prev) => [...prev, tempDrawing as HorizontalLineDrawing]);
+		} else if (tempDrawing.type === 'trendline' || tempDrawing.type === 'rectangle') {
+			const { start, end } = tempDrawing as TrendLineDrawing | RectangleDrawing;
+			if (start.time !== end.time || start.price !== end.price) {
+				setDrawings((prev) => [...prev, tempDrawing as Drawing]);
+			}
+		} else if (tempDrawing.type === 'fibonacci') {
+			const { start, end } = tempDrawing as FibonacciDrawing;
+			if (start.time !== end.time || start.price !== end.price) {
+				// Use last saved fib levels for new drawings
+				const fibDrawing: FibonacciDrawing = {
+					...(tempDrawing as FibonacciDrawing),
+					levels: lastFibLevels,
+				};
+				setDrawings((prev) => [...prev, fibDrawing]);
+			}
+		}
 
-    setIsDrawing(false);
-    setTempDrawing(null);
-  }, [isDrawing, tempDrawing]);
+		setIsDrawing(false);
+		setTempDrawing(null);
+	}, [isDrawing, tempDrawing, lastFibLevels]);
 
   const cancelDrawing = useCallback(() => {
     setIsDrawing(false);
@@ -184,39 +208,42 @@ export function useChartDrawings(
     setIsDrawing(false);
   }, []);
 
-  const updateDrawingLevels = useCallback((id: string, levels: number[]) => {
-    setDrawings((prev) =>
-      prev.map((d) => {
-        if (d.id === id && d.type === 'fibonacci') {
-          return { ...d, levels } as FibonacciDrawing;
-        }
-        return d;
-      })
-    );
-  }, []);
+	const updateDrawingLevels = useCallback((id: string, levels: number[]) => {
+		setDrawings((prev) =>
+			prev.map((d) => {
+				if (d.id === id && d.type === 'fibonacci') {
+					return { ...d, levels } as FibonacciDrawing;
+				}
+				return d;
+			})
+		);
+		// Save as last-used levels for future drawings
+		setLastFibLevels(levels);
+	}, []);
 
-  return {
-    // State
-    activeTool,
-    isDrawing,
-    tempDrawing,
-    drawings,
-    selectedColor,
-    lineWidth,
+	return {
+		// State
+		activeTool,
+		isDrawing,
+		tempDrawing,
+		drawings,
+		selectedColor,
+		lineWidth,
+		lastFibLevels,
 
-    // Actions
-    setActiveTool,
-    setSelectedColor,
-    setLineWidth,
-    startDrawing,
-    updateDrawing,
-    finishDrawing,
-    cancelDrawing,
-    removeDrawing,
-    clearAllDrawings,
-    updateDrawingLevels,
+		// Actions
+		setActiveTool,
+		setSelectedColor,
+		setLineWidth,
+		startDrawing,
+		updateDrawing,
+		finishDrawing,
+		cancelDrawing,
+		removeDrawing,
+		clearAllDrawings,
+		updateDrawingLevels,
 
-    // Constants
-    availableColors: DEFAULT_COLORS,
-  };
+		// Constants
+		availableColors: DEFAULT_COLORS,
+	};
 }

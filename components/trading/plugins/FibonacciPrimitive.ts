@@ -74,17 +74,17 @@ export function createFibonacciRenderer(options: FibonacciOptions): FibonacciRen
         context.stroke();
         context.setLineDash([]);
 
-    // Draw label with price on the left side
-    if (showLabels) {
-      const pctLabel = `${(level * 100).toFixed(1)}%`;
-      const priceLabel = `$${levelPrice.toFixed(2)}`;
-      const label = `${priceLabel} | ${pctLabel}`;
-      context.font = '11px sans-serif';
-      context.fillStyle = color;
-      context.textAlign = 'right';
-      context.textBaseline = 'middle';
-      context.fillText(label, left - 5, y);
-    }
+		// Draw label with price on the right side
+		if (showLabels) {
+			const pctLabel = `${(level * 100).toFixed(1)}%`;
+			const priceLabel = `$${levelPrice.toFixed(2)}`;
+			const label = `${pctLabel} | ${priceLabel}`;
+			context.font = '11px sans-serif';
+			context.fillStyle = color;
+			context.textAlign = 'left';
+			context.textBaseline = 'middle';
+			context.fillText(label, right + 8, y);
+		}
       });
 
       // Draw endpoints

@@ -710,10 +710,10 @@ className="h-6 w-16 border-0 bg-transparent px-1 text-[11px]"
           </div>
         </div>
 
-{/* Main content area with sidebar */}
-<div className="grid min-h-0 flex-1 lg:grid-cols-[32px_minmax(0,1fr)]">
-{/* Sidebar - 32px width */}
-<div className="flex flex-col items-center justify-between border-r border-white/10 bg-[#090b10] py-2">
+			{/* Main content area with sidebar */}
+			<div className="grid min-h-0 flex-1 grid-cols-[32px_minmax(0,1fr)]">
+				{/* Sidebar - 32px width */}
+				<div className="flex flex-col items-center justify-between border-r border-white/10 bg-[#090b10] py-2">
 <div className="flex flex-col items-center gap-1">
 <DrawingToolbar
 activeTool={activeDrawingTool}

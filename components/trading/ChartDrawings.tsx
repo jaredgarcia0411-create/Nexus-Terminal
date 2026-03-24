@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Settings } from 'lucide-react';
+import { Settings, Trash2 } from 'lucide-react';
 import type { IChartApi, ISeriesApi, Time, IPriceLine } from 'lightweight-charts';
 import { useChartDrawings, type Drawing, type DrawingTool } from '@/hooks/use-chart-drawings';
 import FibonacciSettings from './FibonacciSettings';
@@ -105,25 +105,27 @@ function distanceToLineSegment(px: number, py: number, x1: number, y1: number, x
 }
 
 interface ChartDrawingsProps {
-  symbol: string;
-  chart: IChartApi | null;
-  series: ISeriesApi<'Candlestick' | 'Bar'> | null;
-  activeTool: DrawingTool;
-  onToolChange?: (tool: DrawingTool) => void;
-  selectedColor: string;
-  lineWidth: number;
-  onDrawingsChange?: (count: number, clearAll: () => void) => void;
+	symbol: string;
+	chart: IChartApi | null;
+	series: ISeriesApi<'Candlestick' | 'Bar'> | null;
+	activeTool: DrawingTool;
+	onToolChange?: (tool: DrawingTool) => void;
+	selectedColor: string;
+	lineWidth: number;
+	onDrawingsChange?: (count: number, clearAll: () => void) => void;
+	onDeleteDrawing?: (id: string) => void;
 }
 
 export default function ChartDrawings({
-  symbol,
-  chart,
-  series,
-  activeTool,
-  onToolChange,
-  selectedColor,
-  lineWidth,
-  onDrawingsChange,
+	symbol,
+	chart,
+	series,
+	activeTool,
+	onToolChange,
+	selectedColor,
+	lineWidth,
+	onDrawingsChange,
+	onDeleteDrawing,
 }: ChartDrawingsProps) {
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [showFibSettings, setShowFibSettings] = useState(false);
@@ -131,17 +133,18 @@ export default function ChartDrawings({
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
 
-  const {
-    isDrawing,
-    tempDrawing,
-    drawings,
-    startDrawing,
-    updateDrawing,
-    finishDrawing,
-    cancelDrawing,
-    clearAllDrawings,
-    updateDrawingLevels,
-  } = useChartDrawings(symbol, activeTool, selectedColor, lineWidth);
+	const {
+		isDrawing,
+		tempDrawing,
+		drawings,
+		startDrawing,
+		updateDrawing,
+		finishDrawing,
+		cancelDrawing,
+		clearAllDrawings,
+		updateDrawingLevels,
+		removeDrawing,
+	} = useChartDrawings(symbol, activeTool, selectedColor, lineWidth);
 
   // Get coordinate converters
   const priceToCoordinate = useCallback(
@@ -473,46 +476,145 @@ export default function ChartDrawings({
       : DEFAULT_FIBONACCI_LEVELS)
     : DEFAULT_FIBONACCI_LEVELS;
 
-  // Get selected drawing for showing settings button
-  const selectedDrawing = selectedDrawingId ? drawings.find((d) => d.id === selectedDrawingId) : null;
-  const isSelectedFibonacci = selectedDrawing?.type === 'fibonacci';
+	// Get selected drawing for showing settings button
+	const selectedDrawing = selectedDrawingId ? drawings.find((d) => d.id === selectedDrawingId) : null;
+	const isSelectedFibonacci = selectedDrawing?.type === 'fibonacci';
 
-  // Calculate position for settings button (near the end point of the drawing)
-  const settingsButtonPosition = useMemo(() => {
-    if (!selectedDrawing || !isSelectedFibonacci) return null;
-    const x2 = timeToCoordinate(selectedDrawing.end.time);
-    const y2 = priceToCoordinate(selectedDrawing.end.price);
-    if (x2 === null || y2 === null) return null;
-    return { x: x2 + 10, y: y2 - 12 };
-  }, [selectedDrawing, isSelectedFibonacci, timeToCoordinate, priceToCoordinate]);
+	// Calculate position for action buttons (near the end point of the drawing)
+	const actionButtonPosition = useMemo(() => {
+		if (!selectedDrawing) return null;
+		// Get position based on drawing type
+		let x: number | null = null;
+		let y: number | null = null;
+		
+		if (selectedDrawing.type === 'horizontal') {
+			// For horizontal lines, position at the right edge
+			x = chart ? chart.timeScale().getVisibleRange()?.to ? chart.timeScale().timeToCoordinate(chart.timeScale().getVisibleRange()!.to as Time) : null : null;
+			y = priceToCoordinate(selectedDrawing.price);
+		} else {
+			// For trendline, rectangle, fibonacci - use end point
+			const drawing = selectedDrawing as { end: { time: number; price: number } };
+			x = timeToCoordinate(drawing.end.time);
+			y = priceToCoordinate(drawing.end.price);
+		}
+		
+		if (x === null || y === null) return null;
+		return { x: x + 10, y: y - 12 };
+	}, [selectedDrawing, timeToCoordinate, priceToCoordinate, chart]);
 
-  return (
-    <>
-      {/* Drawing Overlay Canvas */}
-      <canvas
-        ref={overlayRef}
-        className={`absolute inset-0 z-20 ${activeTool ? 'cursor-crosshair' : 'pointer-events-none'}`}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
-      />
+	// Handle deleting selected drawing
+	const handleDeleteSelected = useCallback(() => {
+		if (selectedDrawingId) {
+			if (onDeleteDrawing) {
+				onDeleteDrawing(selectedDrawingId);
+			} else {
+				removeDrawing(selectedDrawingId);
+			}
+			setSelectedDrawingId(null);
+		}
+	}, [selectedDrawingId, onDeleteDrawing, removeDrawing]);
 
-      {/* Settings button for selected fibonacci */}
-      {isSelectedFibonacci && settingsButtonPosition && (
-        <button
-          onClick={() => {
-            if (selectedDrawingId) {
-              handleFibSettingsOpen(selectedDrawingId);
-            }
-          }}
-          className="absolute z-30 rounded bg-zinc-700 p-1 text-white hover:bg-zinc-600"
-          style={{ left: settingsButtonPosition.x, top: settingsButtonPosition.y }}
-          title="Edit Fibonacci levels"
-        >
-          <Settings className="h-4 w-4" />
-        </button>
-      )}
+	// Keyboard shortcuts for selected drawing
+	useEffect(() => {
+		const handleKeyDown = (e: KeyboardEvent) => {
+			// Don't handle if user is typing in an input
+			if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+			
+			if (e.key === 'Delete' || e.key === 'Backspace') {
+				if (selectedDrawingId) {
+					e.preventDefault();
+					handleDeleteSelected();
+				}
+			} else if (e.key === 'Escape') {
+				if (selectedDrawingId) {
+					e.preventDefault();
+					setSelectedDrawingId(null);
+				}
+			}
+		};
+
+		window.addEventListener('keydown', handleKeyDown);
+		return () => window.removeEventListener('keydown', handleKeyDown);
+	}, [selectedDrawingId, handleDeleteSelected]);
+
+	// Handle double-click for drawing selection (when canvas has pointer-events-none)
+	useEffect(() => {
+		if (activeTool) return; // Only needed when no tool is active
+
+		const handleDoubleClick = (e: MouseEvent) => {
+			// Don't handle if clicking on a button or input
+			if (e.target instanceof HTMLButtonElement || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+			const canvas = overlayRef.current;
+			if (!canvas) return;
+
+			const rect = canvas.getBoundingClientRect();
+
+			// Check if click is within the canvas area
+			if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) return;
+
+			const x = e.clientX - rect.left;
+			const y = e.clientY - rect.top;
+
+			// Check if clicking on a drawing (reverse order to get top-most first)
+			for (let i = drawings.length - 1; i >= 0; i--) {
+				const drawing = drawings[i];
+				if (isPointNearDrawing(x, y, drawing, priceToCoordinate, timeToCoordinate)) {
+					e.preventDefault();
+					setSelectedDrawingId(drawing.id);
+					return;
+				}
+			}
+			// Clicked on empty space, deselect
+			setSelectedDrawingId(null);
+		};
+
+		window.addEventListener('dblclick', handleDoubleClick, true); // Use capture phase
+		return () => window.removeEventListener('dblclick', handleDoubleClick, true);
+	}, [activeTool, drawings, priceToCoordinate, timeToCoordinate]);
+
+	return (
+		<>
+			{/* Drawing Overlay Canvas */}
+			<canvas
+				ref={overlayRef}
+				className={`absolute inset-0 z-20 ${activeTool ? 'cursor-crosshair' : 'pointer-events-none'}`}
+				onMouseDown={handleMouseDown}
+				onMouseMove={handleMouseMove}
+				onMouseUp={handleMouseUp}
+				onMouseLeave={handleMouseLeave}
+			/>
+
+		{/* Action buttons for selected drawing */}
+		{selectedDrawing && actionButtonPosition && (
+			<>
+				{/* Delete button - shown for all drawing types */}
+				<button
+					onClick={handleDeleteSelected}
+					className="absolute z-30 rounded bg-red-600/80 p-1 text-white hover:bg-red-500"
+					style={{ left: actionButtonPosition.x + (isSelectedFibonacci ? 56 : 0), top: actionButtonPosition.y }}
+					title="Delete drawing (Delete key)"
+				>
+					<Trash2 className="h-4 w-4" />
+				</button>
+				
+				{/* Settings button - only for fibonacci */}
+				{isSelectedFibonacci && (
+					<button
+						onClick={() => {
+							if (selectedDrawingId) {
+								handleFibSettingsOpen(selectedDrawingId);
+							}
+						}}
+						className="absolute z-30 rounded bg-zinc-700 p-1 text-white hover:bg-zinc-600"
+						style={{ left: actionButtonPosition.x, top: actionButtonPosition.y }}
+						title="Edit Fibonacci levels"
+					>
+						<Settings className="h-4 w-4" />
+					</button>
+				)}
+			</>
+		)}
 
       {/* Fibonacci Settings Dialog */}
       <FibonacciSettings
