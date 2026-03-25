@@ -157,12 +157,12 @@ describe('ensureUser', () => {
 
     expect(db.select).toHaveBeenCalledTimes(2);
     expect(db.insert).toHaveBeenCalledTimes(1);
-    expect(authUser.id).toBe('canonical-user');
-    expect(db.update).not.toHaveBeenCalled();
-    expect(ensured.id).toBe('canonical-user');
+    // New behavior: DB row ID is updated to match session ID (not the other way around)
+    expect(db.update).toHaveBeenCalledTimes(1);
+    expect(ensured.id).toBe('nextauth-id');
   });
 
-  it('reuses matching email row and updates auth user id', async () => {
+  it('reuses matching email row and updates DB id to match session', async () => {
     const db = createDb({
       selectRows: [
         [
@@ -180,10 +180,10 @@ describe('ensureUser', () => {
 
     const ensured = await ensureUser(db as any, authUser);
 
-    expect(authUser.id).toBe('canonical-user');
     expect(db.select).toHaveBeenCalledTimes(1);
     expect(db.insert).not.toHaveBeenCalled();
-    expect(db.update).not.toHaveBeenCalled();
-    expect(ensured.id).toBe('canonical-user');
+    // DB row ID gets updated to match the session's ID
+    expect(db.update).toHaveBeenCalledTimes(1);
+    expect(ensured.id).toBe('nextauth-id');
   });
 });

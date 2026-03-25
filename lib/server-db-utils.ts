@@ -51,12 +51,12 @@ export async function ensureUser(db: QueryDb, user: AuthUserIdentity): Promise<A
 
   const userByEmail = existingUsers.find((row) => row.email === user.email);
   if (userByEmail) {
-    user.id = userByEmail.id;
-    if (userByEmail.name !== user.name || userByEmail.picture !== user.picture) {
-      await db.update(users)
-        .set({ name: user.name, picture: user.picture })
-        .where(eq(users.id, user.id));
-    }
+    // Update the DB row's ID to match the session ID so all routes stay consistent.
+    // The old code silently remapped user.id to the DB's ID, which caused mismatches
+    // between the session and DB (e.g., schwab links saved under the wrong user).
+    await db.update(users)
+      .set({ id: user.id, name: user.name, picture: user.picture })
+      .where(eq(users.id, userByEmail.id));
     return {
       id: user.id,
       email: userByEmail.email,
@@ -83,12 +83,9 @@ export async function ensureUser(db: QueryDb, user: AuthUserIdentity): Promise<A
         throw error;
       }
 
-      user.id = canonicalUser.id;
-      if (canonicalUser.name !== user.name || canonicalUser.picture !== user.picture) {
-        await db.update(users)
-          .set({ name: user.name, picture: user.picture })
-          .where(eq(users.id, user.id));
-      }
+      await db.update(users)
+        .set({ id: user.id, name: user.name, picture: user.picture })
+        .where(eq(users.id, canonicalUser.id));
       return {
         id: user.id,
         email: user.email,
