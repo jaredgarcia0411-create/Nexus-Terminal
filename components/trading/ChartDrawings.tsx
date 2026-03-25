@@ -142,13 +142,14 @@ function isPointNearEndpoint(
 interface ChartDrawingsProps {
 	symbol: string;
 	chart: IChartApi | null;
-	series: ISeriesApi<'Candlestick' | 'Bar'> | null;
+	series: ISeriesApi<'Candlestick' | 'Bar' | 'Line' | 'Area' | 'Baseline'> | null;
 	activeTool: DrawingTool;
 	onToolChange?: (tool: DrawingTool) => void;
 	selectedColor: string;
 	lineWidth: number;
 	onDrawingsChange?: (count: number, clearAll: () => void) => void;
 	onDeleteDrawing?: (id: string) => void;
+	onInteractionChange?: (isInteracting: boolean) => void;
 }
 
 export default function ChartDrawings({
@@ -161,6 +162,7 @@ export default function ChartDrawings({
 	lineWidth,
 	onDrawingsChange,
 	onDeleteDrawing,
+	onInteractionChange,
 }: ChartDrawingsProps) {
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [showFibSettings, setShowFibSettings] = useState(false);
@@ -182,6 +184,7 @@ export default function ChartDrawings({
     updateDrawingEndpoint,
     removeDrawing,
   } = useChartDrawings(symbol, activeTool, selectedColor, lineWidth);
+  const isInteracting = isDrawing || dragState !== null;
 
   // Get coordinate converters
   const priceToCoordinate = useCallback(
@@ -222,6 +225,12 @@ export default function ChartDrawings({
     [chart]
   );
 
+  useEffect(() => {
+    if (onInteractionChange) {
+      onInteractionChange(isInteracting);
+    }
+  }, [isInteracting, onInteractionChange]);
+
   // Use chart click subscription instead of canvas mouse events to keep native crosshair visible
   useEffect(() => {
     if (!chart) return;
@@ -246,10 +255,19 @@ export default function ChartDrawings({
       const x = param.point.x;
       const y = param.point.y;
 
-      // If we're currently dragging an endpoint, finish the drag
       if (dragState) {
-        updateDrawingEndpoint(dragState.drawingId, { time: timeMs, price }, dragState.point);
-        setDragState(null);
+        return;
+      }
+
+      if (activeTool) {
+        if (isDrawing) {
+          updateDrawing({ time: timeMs, price });
+          finishDrawing();
+          onToolChange?.(null);
+          return;
+        }
+
+        startDrawing({ time: timeMs, price });
         return;
       }
 
@@ -271,14 +289,24 @@ export default function ChartDrawings({
         setSelectedDrawingId(null);
         return;
       }
-
-      // Start drawing
-      startDrawing({ time: timeMs, price });
     };
 
     chart.subscribeClick(handleClick);
     return () => chart.unsubscribeClick(handleClick);
-  }, [chart, activeTool, drawings, priceToCoordinate, timeToCoordinate, coordinateToPrice, startDrawing, dragState, updateDrawingEndpoint]);
+  }, [
+    chart,
+    activeTool,
+    drawings,
+    priceToCoordinate,
+    timeToCoordinate,
+    coordinateToPrice,
+    dragState,
+    finishDrawing,
+    isDrawing,
+    onToolChange,
+    startDrawing,
+    updateDrawing,
+  ]);
 
   // Track mouse movement for drawing updates and dragging
   useEffect(() => {
@@ -315,20 +343,17 @@ export default function ChartDrawings({
     return () => chart.unsubscribeCrosshairMove(handleCrosshairMove);
   }, [chart, isDrawing, dragState, coordinateToPrice, updateDrawing, updateDrawingEndpoint]);
 
-  // Handle mouse up to finish drawing (not needed for drag, only for new drawings)
+  // End endpoint drag on mouseup
   useEffect(() => {
-    if (!isDrawing) return;
+    if (!dragState) return;
 
     const handleMouseUp = () => {
-      finishDrawing();
-      if (onToolChange) {
-        onToolChange(null);
-      }
+      setDragState(null);
     };
 
     window.addEventListener('mouseup', handleMouseUp);
     return () => window.removeEventListener('mouseup', handleMouseUp);
-  }, [isDrawing, finishDrawing, onToolChange]);
+  }, [dragState]);
 
   // Render a single drawing
   const renderDrawing = useCallback(
@@ -604,16 +629,36 @@ export default function ChartDrawings({
 					handleDeleteSelected();
 				}
 			} else if (e.key === 'Escape') {
+				if (tempDrawing) {
+					e.preventDefault();
+					cancelDrawing();
+					setDragState(null);
+					onToolChange?.(null);
+					return;
+				}
+
+				if (dragState) {
+					e.preventDefault();
+					setDragState(null);
+					return;
+				}
+
 				if (selectedDrawingId) {
 					e.preventDefault();
 					setSelectedDrawingId(null);
+					return;
+				}
+
+				if (activeTool) {
+					e.preventDefault();
+					onToolChange?.(null);
 				}
 			}
 		};
 
 		window.addEventListener('keydown', handleKeyDown);
 		return () => window.removeEventListener('keydown', handleKeyDown);
-	}, [selectedDrawingId, handleDeleteSelected]);
+	}, [activeTool, cancelDrawing, dragState, handleDeleteSelected, onToolChange, selectedDrawingId, tempDrawing]);
 
 	// Handle double-click for drawing selection (when canvas has pointer-events-none)
 	useEffect(() => {

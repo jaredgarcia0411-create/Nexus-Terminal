@@ -188,13 +188,14 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
   const [showAtr, setShowAtr] = useState(false);
   const [sessionRects, setSessionRects] = useState<Array<{ key: string; left: number; width: number }>>([]);
   const [chartInstance, setChartInstance] = useState<IChartApi | null>(null);
-  const [seriesInstance, setSeriesInstance] = useState<ISeriesApi<'Candlestick' | 'Bar'> | null>(null);
+  const [seriesInstance, setSeriesInstance] = useState<ISeriesApi<'Candlestick' | 'Bar' | 'Line' | 'Area' | 'Baseline'> | null>(null);
 
   // Drawing tools state
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingTool>(null);
   const [drawingColor] = useState('#ffffff');
   const [drawingLineWidth, setDrawingLineWidth] = useState(2);
   const [drawingsCount, setDrawingsCount] = useState(0);
+  const [isDrawingInteractionActive, setIsDrawingInteractionActive] = useState(false);
   const clearAllDrawingsRef = useRef<(() => void) | null>(null);
 
   const frame = FRAME_CONFIG[timeframe];
@@ -270,7 +271,7 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartWrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<'Candlestick' | 'Bar'> | null>(null);
+  const seriesRef = useRef<ISeriesApi<'Candlestick' | 'Bar' | 'Line' | 'Area' | 'Baseline'> | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -302,9 +303,8 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
         timeVisible: frame.intraday,
         secondsVisible: false,
       },
-      // Disable chart interactions when drawing tool is active
-      handleScroll: !activeDrawingTool,
-      handleScale: !activeDrawingTool,
+      handleScroll: true,
+      handleScale: true,
       width: initialWidth,
       height: Math.max(initialHeight, 420),
     });
@@ -344,18 +344,10 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
     }
 
     // Store series reference for drawing tools
-    if (seriesType === 'candles' || seriesType === 'bars') {
-      seriesRef.current = baseSeries as ISeriesApi<'Candlestick'>;
-    } else {
-      seriesRef.current = null;
-    }
+    seriesRef.current = baseSeries;
     // Use queueMicrotask to avoid synchronous setState in effect
     queueMicrotask(() => {
-      if (seriesType === 'candles' || seriesType === 'bars') {
-        setSeriesInstance(baseSeries as ISeriesApi<'Candlestick' | 'Bar'>);
-      } else {
-        setSeriesInstance(null);
-      }
+      setSeriesInstance(baseSeries);
       setChartInstance(chart);
     });
 
@@ -602,8 +594,12 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
       chart.timeScale().unsubscribeVisibleTimeRangeChange(onVisibleRange);
       resizeObserver.disconnect();
       setSessionRects([]);
+      setSeriesInstance(null);
+      setChartInstance(null);
+      setIsDrawingInteractionActive(false);
       chart.remove();
       chartRef.current = null;
+      seriesRef.current = null;
     };
   }, [
     candles,
@@ -620,8 +616,17 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
     showSma20,
     showVolume,
     showVwap,
-    activeDrawingTool,
   ]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    chart.applyOptions({
+      handleScroll: !isDrawingInteractionActive,
+      handleScale: !isDrawingInteractionActive,
+    });
+  }, [isDrawingInteractionActive]);
 
   return (
     <motion.div
@@ -827,6 +832,7 @@ activeTool={activeDrawingTool}
 onToolChange={setActiveDrawingTool}
 selectedColor={drawingColor}
 lineWidth={drawingLineWidth}
+onInteractionChange={setIsDrawingInteractionActive}
 onDrawingsChange={(count, clearFn) => {
 setDrawingsCount(count);
 clearAllDrawingsRef.current = clearFn;
