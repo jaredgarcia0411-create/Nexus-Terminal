@@ -34,7 +34,7 @@ export default function DrawingToolbar({
           variant="ghost"
           size="icon-xs"
           onClick={() => onToolSelect(activeTool === tool.id ? null : tool.id)}
-          className={`rounded p-1 ${
+          className={`rounded-sm p-1 ${
             activeTool === tool.id
               ? 'bg-zinc-600 text-white'
               : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
@@ -52,20 +52,20 @@ export default function DrawingToolbar({
         <button
           key={w}
           onClick={() => onLineWidthChange(w)}
-          className={`flex h-6 w-6 items-center justify-center rounded transition-all ${
+          className={`flex h-6 w-6 items-center justify-center rounded-sm transition-all ${
             lineWidth === w
               ? 'bg-zinc-600 text-white'
               : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'
           }`}
           title={`Line width: ${w}px`}
         >
-          <div
-            className="rounded-full bg-current"
-            style={{
-              width: '16px',
-              height: `${w}px`,
-            }}
-          />
+      <div
+        className="rounded-sm bg-current"
+        style={{
+          width: '16px',
+          height: `${w}px`,
+        }}
+      />
         </button>
       ))}
     </>

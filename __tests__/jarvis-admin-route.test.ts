@@ -5,6 +5,9 @@ const { getDbMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
+vi.mock('@/lib/server-db-utils', () => ({
+  dbUnavailable: () => Response.json({ error: 'Database not configured' }, { status: 503 }),
+}));
 
 import { DELETE as memoryDelete, GET as memoryGet } from '@/app/api/jarvis/admin/memory/route';
 import { GET as statsGet } from '@/app/api/jarvis/admin/stats/route';

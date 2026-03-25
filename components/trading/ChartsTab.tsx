@@ -41,7 +41,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useCandleData } from '@/hooks/use-candle-data';
 import { atr, bollingerBands, ema, rsi, sma, vwap } from '@/lib/indicators';
-import { epochToNySortKey, nyDateTimeToEpoch } from '@/lib/time-utils';
+import { epochToNySortKey, nyDateTimeToEpoch, getPreviousTradingSession } from '@/lib/time-utils';
 import ChartDrawings from './ChartDrawings';
 import DrawingToolbar from './DrawingToolbar';
 import type { DrawingTool } from '@/hooks/use-chart-drawings';
@@ -199,13 +199,42 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
 
   const frame = FRAME_CONFIG[timeframe];
   const rangeConfig = TIME_RANGE_CONFIG[timeRange];
-  const marketOptions = useMemo(() => ({
-    periodType: rangeConfig.periodType,
-    period: rangeConfig.period,
-    frequencyType: frame.frequencyType,
-    frequency: frame.frequency,
-    includePrePost: frame.intraday,
-  }), [rangeConfig.periodType, rangeConfig.period, frame.frequencyType, frame.frequency, frame.intraday]);
+  
+  // Store the initial time for 1D range calculation to avoid impure function in render
+  const [initialTime] = useState(() => Date.now());
+
+  // Calculate market options with special handling for 1D (current + previous session)
+  const marketOptions = useMemo(() => {
+    // For 1D range, show current session + previous session (including pre/post)
+    if (timeRange === '1D') {
+      const currentSessionKey = epochToNySortKey(initialTime);
+      const previousSessionKey = getPreviousTradingSession(currentSessionKey);
+      
+      // Start from previous session 04:00 (pre-market start)
+      const startDateKey = previousSessionKey ?? currentSessionKey;
+      const startDate = nyDateTimeToEpoch(startDateKey, '04:00:00');
+      // End at current session 20:00 (post-market end)
+      const endDate = nyDateTimeToEpoch(currentSessionKey, '20:00:00');
+      
+      return {
+        periodType: 'day',
+        period: '2', // 2 days worth of data
+        frequencyType: frame.frequencyType,
+        frequency: frame.frequency,
+        includePrePost: true,
+        startDate: startDate ? String(startDate) : undefined,
+        endDate: endDate ? String(endDate) : undefined,
+      };
+    }
+    
+    return {
+      periodType: rangeConfig.periodType,
+      period: rangeConfig.period,
+      frequencyType: frame.frequencyType,
+      frequency: frame.frequency,
+      includePrePost: frame.intraday,
+    };
+  }, [timeRange, initialTime, rangeConfig.periodType, rangeConfig.period, frame.frequencyType, frame.frequency, frame.intraday]);
 
   const { candles, isLoading, error } = useCandleData(symbol, { ...marketOptions, refreshIntervalMs: 60_000 });
   const compareState = useCandleData(compareEnabled ? compareSymbol : null, { ...marketOptions, refreshIntervalMs: 60_000 });
@@ -273,6 +302,9 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
         timeVisible: frame.intraday,
         secondsVisible: false,
       },
+      // Disable chart interactions when drawing tool is active
+      handleScroll: !activeDrawingTool,
+      handleScale: !activeDrawingTool,
       width: initialWidth,
       height: Math.max(initialHeight, 420),
     });
@@ -588,6 +620,7 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
     showSma20,
     showVolume,
     showVwap,
+    activeDrawingTool,
   ]);
 
   return (
@@ -722,17 +755,17 @@ lineWidth={drawingLineWidth}
 onLineWidthChange={setDrawingLineWidth}
 />
 <div className="h-px w-5 bg-white/10" />
-<button onClick={() => setCrosshairMagnet((prev) => !prev)} className={`rounded p-1 ${crosshairMagnet ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:bg-white/5'}`} title="Crosshair Magnet">
+              <button onClick={() => setCrosshairMagnet((prev) => !prev)} className={`rounded-sm p-1 ${crosshairMagnet ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:bg-white/5'}`} title="Crosshair Magnet">
 <Magnet className="h-4 w-4" />
 </button>
-<button onClick={() => setShowGrid((prev) => !prev)} className={`rounded p-1 ${showGrid ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:bg-white/5'}`} title="Grid">
+              <button onClick={() => setShowGrid((prev) => !prev)} className={`rounded-sm p-1 ${showGrid ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:bg-white/5'}`} title="Grid">
 <Grid3X3 className="h-4 w-4" />
 </button>
-<button
-onClick={() => setCompareEnabled((prev) => !prev)}
-className={`rounded p-1 ${compareEnabled ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:bg-white/5'}`}
-title="Compare Symbol"
->
+              <button
+                onClick={() => setCompareEnabled((prev) => !prev)}
+                className={`rounded-sm p-1 ${compareEnabled ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:bg-white/5'}`}
+                title="Compare Symbol"
+              >
 <TrendingUp className="h-4 w-4" />
 </button>
 </div>
@@ -771,8 +804,8 @@ title="Clear all drawings"
 
             {isLoading ? <div className="flex min-h-[420px] flex-1 items-center justify-center rounded-xl border border-white/10 bg-[#121214] text-sm text-zinc-400">Loading chart...</div> : null}
             {error ? <div className="flex min-h-[420px] flex-1 items-center justify-center rounded-xl border border-white/10 bg-[#121214] text-sm text-zinc-400">{error}</div> : null}
-{!isLoading && !error ? (
-          <div ref={chartWrapRef} className="relative min-h-[420px] flex-1 border border-white/10 bg-[#121214]">
+          {!isLoading && !error ? (
+            <div ref={chartWrapRef} className={`relative min-h-[420px] flex-1 border border-white/10 bg-[#121214] ${activeDrawingTool ? 'cursor-crosshair' : ''}`}>
             <div ref={containerRef} className="h-full w-full" />
             {frame.intraday && sessionRects.length > 0 ? (
               <div className="pointer-events-none absolute inset-0">

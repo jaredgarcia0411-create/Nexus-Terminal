@@ -201,42 +201,58 @@ export function useChartDrawings(
     setIsDrawing(false);
   }, []);
 
-	const updateDrawingLevels = useCallback((id: string, levels: number[]) => {
-		setDrawings((prev) =>
-			prev.map((d) => {
-				if (d.id === id && d.type === 'fibonacci') {
-					return { ...d, levels } as FibonacciDrawing;
-				}
-				return d;
-			})
-		);
-		// Save as last-used levels for future drawings
-		setLastFibLevels(levels);
-	}, []);
+  const updateDrawingLevels = useCallback((id: string, levels: number[]) => {
+    setDrawings((prev) =>
+      prev.map((d) => {
+        if (d.id === id && d.type === 'fibonacci') {
+          return { ...d, levels } as FibonacciDrawing;
+        }
+        return d;
+      })
+    );
+    // Save as last-used levels for future drawings
+    setLastFibLevels(levels);
+  }, []);
 
-	return {
-		// State
-		activeTool,
-		isDrawing,
-		tempDrawing,
-		drawings,
-		selectedColor,
-		lineWidth,
-		lastFibLevels,
+  // Update a specific endpoint of a drawing (for dragging)
+  const updateDrawingEndpoint = useCallback((id: string, point: DrawingPoint, which: 'start' | 'end') => {
+    setDrawings((prev) =>
+      prev.map((d) => {
+        if (d.id !== id) return d;
+        
+        if (d.type === 'trendline' || d.type === 'rectangle' || d.type === 'fibonacci') {
+          const drawing = d as TrendLineDrawing | RectangleDrawing | FibonacciDrawing;
+          return { ...drawing, [which]: point } as Drawing;
+        }
+        return d;
+      })
+    );
+  }, []);
 
-		// Actions
-		setActiveTool,
-		setSelectedColor,
-		setLineWidth,
-		startDrawing,
-		updateDrawing,
-		finishDrawing,
-		cancelDrawing,
-		removeDrawing,
-		clearAllDrawings,
-		updateDrawingLevels,
+  return {
+    // State
+    activeTool,
+    isDrawing,
+    tempDrawing,
+    drawings,
+    selectedColor,
+    lineWidth,
+    lastFibLevels,
 
-		// Constants
-		availableColors: DEFAULT_COLORS,
-	};
+    // Actions
+    setActiveTool,
+    setSelectedColor,
+    setLineWidth,
+    startDrawing,
+    updateDrawing,
+    finishDrawing,
+    cancelDrawing,
+    removeDrawing,
+    clearAllDrawings,
+    updateDrawingLevels,
+    updateDrawingEndpoint,
+
+    // Constants
+    availableColors: DEFAULT_COLORS,
+  };
 }

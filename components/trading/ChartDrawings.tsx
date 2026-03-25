@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Settings, Trash2 } from 'lucide-react';
 import type { IChartApi, ISeriesApi, Time, IPriceLine } from 'lightweight-charts';
-import { useChartDrawings, type Drawing, type DrawingTool } from '@/hooks/use-chart-drawings';
+import { useChartDrawings, type Drawing, type DrawingTool, type TrendLineDrawing, type RectangleDrawing, type FibonacciDrawing } from '@/hooks/use-chart-drawings';
 import FibonacciSettings from './FibonacciSettings';
 import { createTrendLineRenderer } from './plugins/TrendLinePrimitive';
 import { createRectangleRenderer } from './plugins/RectanglePrimitive';
@@ -104,6 +104,41 @@ function distanceToLineSegment(px: number, py: number, x1: number, y1: number, x
   return Math.sqrt(dx * dx + dy * dy);
 }
 
+// Check if point is near a specific endpoint of a drawing
+function isPointNearEndpoint(
+  x: number,
+  y: number,
+  drawing: Drawing,
+  priceToCoordinate: (price: number) => number | null,
+  timeToCoordinate: (time: number) => number | null
+): { isNear: boolean; which: 'start' | 'end' | null } {
+  if (drawing.type === 'horizontal') {
+    return { isNear: false, which: null };
+  }
+
+  const d = drawing as TrendLineDrawing | RectangleDrawing | FibonacciDrawing;
+  const x1 = timeToCoordinate(d.start.time);
+  const y1 = priceToCoordinate(d.start.price);
+  const x2 = timeToCoordinate(d.end.time);
+  const y2 = priceToCoordinate(d.end.price);
+
+  if (x1 === null || y1 === null || x2 === null || y2 === null) {
+    return { isNear: false, which: null };
+  }
+
+  const distToStart = Math.sqrt((x - x1) ** 2 + (y - y1) ** 2);
+  const distToEnd = Math.sqrt((x - x2) ** 2 + (y - y2) ** 2);
+
+  if (distToStart < HIT_TOLERANCE) {
+    return { isNear: true, which: 'start' };
+  }
+  if (distToEnd < HIT_TOLERANCE) {
+    return { isNear: true, which: 'end' };
+  }
+
+  return { isNear: false, which: null };
+}
+
 interface ChartDrawingsProps {
 	symbol: string;
 	chart: IChartApi | null;
@@ -131,20 +166,22 @@ export default function ChartDrawings({
   const [showFibSettings, setShowFibSettings] = useState(false);
   const [editingFibId, setEditingFibId] = useState<string | null>(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
+  const [dragState, setDragState] = useState<{ drawingId: string; point: 'start' | 'end' } | null>(null);
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
 
-	const {
-		isDrawing,
-		tempDrawing,
-		drawings,
-		startDrawing,
-		updateDrawing,
-		finishDrawing,
-		cancelDrawing,
-		clearAllDrawings,
-		updateDrawingLevels,
-		removeDrawing,
-	} = useChartDrawings(symbol, activeTool, selectedColor, lineWidth);
+  const {
+    isDrawing,
+    tempDrawing,
+    drawings,
+    startDrawing,
+    updateDrawing,
+    finishDrawing,
+    cancelDrawing,
+    clearAllDrawings,
+    updateDrawingLevels,
+    updateDrawingEndpoint,
+    removeDrawing,
+  } = useChartDrawings(symbol, activeTool, selectedColor, lineWidth);
 
   // Get coordinate converters
   const priceToCoordinate = useCallback(
@@ -185,72 +222,113 @@ export default function ChartDrawings({
     [chart]
   );
 
-  // Handle mouse events for drawing
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (!chart) return;
+  // Use chart click subscription instead of canvas mouse events to keep native crosshair visible
+  useEffect(() => {
+    if (!chart) return;
 
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+    const handleClick = (param: { time?: Time; point?: { x: number; y: number } }) => {
+      if (!param.time || !param.point) return;
 
-      const time = coordinateToTime(x);
-      const price = coordinateToPrice(y);
+      // Convert chart time to milliseconds
+      let timeMs: number;
+      if (typeof param.time === 'number') {
+        timeMs = param.time * 1000;
+      } else if (typeof param.time === 'string') {
+        timeMs = Date.parse(param.time);
+      } else {
+        return;
+      }
 
-      if (time === null || price === null) return;
+      // Get price from the series at this point
+      const price = coordinateToPrice(param.point.y);
+      if (price === null) return;
 
-      // If no tool is active, check for click on existing drawings
+      const x = param.point.x;
+      const y = param.point.y;
+
+      // If we're currently dragging an endpoint, finish the drag
+      if (dragState) {
+        updateDrawingEndpoint(dragState.drawingId, { time: timeMs, price }, dragState.point);
+        setDragState(null);
+        return;
+      }
+
       if (!activeTool) {
-        // Check if clicking on a drawing (reverse order to get top-most first)
+        // Check if clicking on an existing drawing
         for (let i = drawings.length - 1; i >= 0; i--) {
           const drawing = drawings[i];
           if (isPointNearDrawing(x, y, drawing, priceToCoordinate, timeToCoordinate)) {
             setSelectedDrawingId(drawing.id);
+            
+            // Check if clicking near an endpoint to start dragging
+            const endpointCheck = isPointNearEndpoint(x, y, drawing, priceToCoordinate, timeToCoordinate);
+            if (endpointCheck.isNear && endpointCheck.which) {
+              setDragState({ drawingId: drawing.id, point: endpointCheck.which });
+            }
             return;
           }
         }
-        // Clicked on empty space, deselect
         setSelectedDrawingId(null);
         return;
       }
 
-      startDrawing({ time, price });
-    },
-    [activeTool, chart, coordinateToTime, coordinateToPrice, startDrawing, drawings, priceToCoordinate, timeToCoordinate]
-  );
+      // Start drawing
+      startDrawing({ time: timeMs, price });
+    };
 
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (!isDrawing || !chart) return;
+    chart.subscribeClick(handleClick);
+    return () => chart.unsubscribeClick(handleClick);
+  }, [chart, activeTool, drawings, priceToCoordinate, timeToCoordinate, coordinateToPrice, startDrawing, dragState, updateDrawingEndpoint]);
 
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+  // Track mouse movement for drawing updates and dragging
+  useEffect(() => {
+    if (!chart) return;
 
-      const time = coordinateToTime(x);
-      const price = coordinateToPrice(y);
+    const handleCrosshairMove = (param: { time?: Time; point?: { x: number; y: number } }) => {
+      if (!param.time || !param.point) return;
 
-      if (time === null || price === null) return;
+      let timeMs: number;
+      if (typeof param.time === 'number') {
+        timeMs = param.time * 1000;
+      } else if (typeof param.time === 'string') {
+        timeMs = Date.parse(param.time);
+      } else {
+        return;
+      }
 
-      updateDrawing({ time, price });
-    },
-    [isDrawing, chart, coordinateToTime, coordinateToPrice, updateDrawing]
-  );
+      const price = coordinateToPrice(param.point.y);
+      if (price === null) return;
 
-  const handleMouseUp = useCallback(() => {
+      // Handle active drawing (placing a new drawing)
+      if (isDrawing) {
+        updateDrawing({ time: timeMs, price });
+        return;
+      }
+
+      // Handle dragging an endpoint
+      if (dragState) {
+        updateDrawingEndpoint(dragState.drawingId, { time: timeMs, price }, dragState.point);
+      }
+    };
+
+    chart.subscribeCrosshairMove(handleCrosshairMove);
+    return () => chart.unsubscribeCrosshairMove(handleCrosshairMove);
+  }, [chart, isDrawing, dragState, coordinateToPrice, updateDrawing, updateDrawingEndpoint]);
+
+  // Handle mouse up to finish drawing (not needed for drag, only for new drawings)
+  useEffect(() => {
     if (!isDrawing) return;
-    finishDrawing();
-    // Auto-deselect tool after drawing is placed
-    if (onToolChange) {
-      onToolChange(null);
-    }
-  }, [isDrawing, finishDrawing, onToolChange]);
 
-  const handleMouseLeave = useCallback(() => {
-    if (isDrawing) {
-      cancelDrawing();
-    }
-  }, [isDrawing, cancelDrawing]);
+    const handleMouseUp = () => {
+      finishDrawing();
+      if (onToolChange) {
+        onToolChange(null);
+      }
+    };
+
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => window.removeEventListener('mouseup', handleMouseUp);
+  }, [isDrawing, finishDrawing, onToolChange]);
 
   // Render a single drawing
   const renderDrawing = useCallback(
@@ -573,17 +651,13 @@ export default function ChartDrawings({
 		return () => window.removeEventListener('dblclick', handleDoubleClick, true);
 	}, [activeTool, drawings, priceToCoordinate, timeToCoordinate]);
 
-	return (
-		<>
-			{/* Drawing Overlay Canvas */}
-			<canvas
-				ref={overlayRef}
-				className={`absolute inset-0 z-20 ${activeTool ? 'cursor-crosshair' : 'pointer-events-none'}`}
-				onMouseDown={handleMouseDown}
-				onMouseMove={handleMouseMove}
-				onMouseUp={handleMouseUp}
-				onMouseLeave={handleMouseLeave}
-			/>
+  return (
+    <>
+      {/* Drawing Overlay Canvas - captures events when tool is active */}
+      <canvas
+        ref={overlayRef}
+        className={`absolute inset-0 z-20 ${activeTool ? 'cursor-crosshair' : 'pointer-events-none'}`}
+      />
 
 		{/* Action buttons for selected drawing */}
 		{selectedDrawing && actionButtonPosition && (

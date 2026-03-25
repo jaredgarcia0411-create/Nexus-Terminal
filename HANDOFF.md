@@ -10,6 +10,7 @@ Use git history and the `specs/` directory for archived implementation detail.
 - [x] Refreshed `AGENTS.md` with current build/lint/test commands, single-test workflows, and coding conventions for agentic coding tools.
 - [x] Verified command set and conventions against the current repository configuration (`package.json`, `tsconfig.json`, `vitest.config.ts`, `eslint.config.mjs`).
 - [x] Updated Charts tab drawing UX: left-aligned toolbar, double-click selection, per-drawing delete, and persisted Fibonacci levels.
+- [x] Updated Charts tab interactions: square sidebar controls, 1D previous+current pre/post session window, active-tool chart lock, and draggable drawing endpoints.
 - [ ] Update `AGENTS.md` after Discord import feature ships — document new tables, API routes, parser module, env vars
 
 ---
