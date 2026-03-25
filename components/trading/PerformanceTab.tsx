@@ -105,7 +105,7 @@ export default function PerformanceTab({ filteredTrades, globalTags, performance
               <span className="font-mono text-sm text-emerald-500">
                 {performanceTrades
                   .filter((trade) => trade.initialRisk)
-                  .reduce((acc, trade) => acc + trade.pnl / (trade.initialRisk || 1), 0)
+                  .reduce((acc, trade) => acc + trade.netPnl / (trade.initialRisk || 1), 0)
                   .toFixed(2)}
                 R
               </span>

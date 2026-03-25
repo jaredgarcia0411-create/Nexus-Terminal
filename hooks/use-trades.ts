@@ -55,7 +55,7 @@ export function useTrades() {
     handleToggleSelect,
     handleSelectAll,
     handleBulkAddTag,
-  } = useTradeFilters(trades, globalTags, {
+  } = useTradeFilters(trades, {
     useLocalStorage,
     setTrades,
     setGlobalTags,

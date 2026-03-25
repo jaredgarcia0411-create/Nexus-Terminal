@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useMarketStream } from '@/hooks/use-market-stream';
 import { useRelaySocket } from '@/hooks/use-relay-socket';
 import type { ScannerRow } from '@/hooks/use-scanner';
+import { INDEX_SYMBOLS, COMMODITY_SYMBOLS, EQUITY_SYMBOLS } from '@/lib/market-symbols';
 import { useSchwabStatus } from '@/hooks/use-schwab-status';
 import type { JarvisMacroSummaryOutput } from '@/lib/jarvis/types';
 import type { RelayQuoteUpdate, RelayScreenerData } from '@/lib/relay-types';
@@ -221,16 +222,6 @@ export default function MarketsTab() {
   const quoteMapRef = useRef(new Map<string, RelayQuoteUpdate>());
 
   const buildSnapshotFromQuotes = useCallback((quotes: Map<string, RelayQuoteUpdate>): SnapshotPayload => {
-    const INDEX_SYMBOLS = ['SPY', 'QQQ', 'DIA', 'IWM'];
-    const COMMODITY_MAP = [
-      { ticker: 'GLD', label: 'Gold' },
-      { ticker: 'SLV', label: 'Silver' },
-      { ticker: 'USO', label: 'Crude Oil' },
-      { ticker: 'UNG', label: 'Natural Gas' },
-      { ticker: 'TLT', label: 'Treasuries' },
-      { ticker: 'UUP', label: 'US Dollar' },
-    ];
-    const EQUITY_SYMBOLS = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'NVDA', 'TSLA', 'META', 'JPM', 'JNJ', 'V'];
 
     const toInstrument = (symbol: string, label: string): MarketInstrument => {
       const q = quotes.get(symbol);
@@ -249,7 +240,7 @@ export default function MarketsTab() {
 
     return {
       indices: INDEX_SYMBOLS.map((s) => toInstrument(s, s)),
-      commodities: COMMODITY_MAP.map((c) => toInstrument(c.ticker, c.label)),
+      commodities: COMMODITY_SYMBOLS.map((c) => toInstrument(c.ticker, c.label)),
       equities: EQUITY_SYMBOLS.map((s) => toInstrument(s, s)),
       movers: snapshot?.movers ?? { gainers: [], losers: [] },
     };

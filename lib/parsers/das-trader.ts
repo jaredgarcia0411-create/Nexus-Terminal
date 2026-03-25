@@ -1,4 +1,5 @@
 import type { BrokerParserConfig, NormalizedExecution } from './types';
+import { parseTimeToSeconds } from './utils';
 
 type DasContext = {
   resolvedSideByRow: Record<number, NormalizedExecution['side']>;
@@ -20,18 +21,6 @@ function cleanString(value: unknown): string {
 function parseNumber(value: unknown): number {
   const parsed = parseFloat(String(value ?? ''));
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function parseTimeToSeconds(time: string): number | null {
-  const match = cleanString(time).match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (!match) return null;
-
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  const seconds = Number(match[3] ?? 0);
-  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) return null;
-
-  return hours * 3600 + minutes * 60 + seconds;
 }
 
 export const dasTraderParser: BrokerParserConfig = {

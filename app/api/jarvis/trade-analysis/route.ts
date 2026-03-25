@@ -1,6 +1,6 @@
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
-import { checkRateLimit } from '@/lib/jarvis/rate-limit';
+import { checkRateLimit, rateLimitExceededResponse } from '@/lib/jarvis/rate-limit';
 import { logJarvisRequest } from '@/lib/jarvis/token-tracking';
 import { jarvisTradeAnalysisSchema } from '@/lib/validations/jarvis';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
@@ -16,15 +16,7 @@ export async function POST(request: Request) {
     const canonicalUser = await ensureUser(db, authState.user);
 
     const rateLimitResult = await checkRateLimit(canonicalUser.id);
-    if (!rateLimitResult.allowed) {
-      return Response.json(
-        { error: 'Rate limit exceeded. Try again later.' },
-        {
-          status: 429,
-          headers: { 'Retry-After': String(Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000)) },
-        },
-      );
-    }
+    if (!rateLimitResult.allowed) return rateLimitExceededResponse(rateLimitResult);
 
     const bodyState = await parseAndValidate(request, jarvisTradeAnalysisSchema);
     if (bodyState.error) return bodyState.error;

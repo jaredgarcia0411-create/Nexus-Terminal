@@ -27,7 +27,10 @@ vi.mock('@/lib/server-db-utils', () => ({
   ensureUser: ensureUserMock,
   dbUnavailable: () => Response.json({ error: 'Database not configured' }, { status: 503 }),
 }));
-vi.mock('@/lib/jarvis/rate-limit', () => ({ checkRateLimit: checkRateLimitMock }));
+vi.mock('@/lib/jarvis/rate-limit', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/jarvis/rate-limit')>();
+  return { ...actual, checkRateLimit: checkRateLimitMock };
+});
 vi.mock('@/lib/jarvis/context', () => ({ buildContext: buildContextMock }));
 vi.mock('@/lib/jarvis/client', () => ({ callJarvis: callJarvisMock }));
 vi.mock('@/lib/jarvis/trade-analysis', () => ({ runTradeAnalysisPipeline: runTradeAnalysisPipelineMock }));
@@ -65,7 +68,7 @@ describe('jarvis chat route', () => {
     callJarvisMock.mockResolvedValue({ content: 'hello back', modelUsed: 'm' });
     runTradeAnalysisPipelineMock.mockResolvedValue({ analysis: { strengths: [], weaknesses: [], patterns: [], action_items: [] } });
     fetchAndCacheRawReportMock.mockResolvedValue({ ticker: 'AAPL', rawData: { screener: { status: 'success', results: [] } }, warnings: [], fromCache: false, generatedAt: new Date().toISOString() });
-    runResearchTldrMock.mockResolvedValue({ tldr: 'summary', findings: [], actionSteps: [], risks: [] });
+    runResearchTldrMock.mockResolvedValue({ tldr: 'summary', findings: [], actionSteps: [], risks: [], historicalContext: null });
     selectLimitMock.mockResolvedValue([]);
     insertValuesMock.mockResolvedValue(undefined);
     getDbMock.mockReturnValue({

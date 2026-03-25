@@ -1,28 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ScannerFilters, ScannerRow, ScannerSortDir, ScannerSortKey } from '@/lib/types';
 
-export type ScannerFilters = {
-  minPrice?: number;
-  maxPrice?: number;
-  minChangePercent?: number;
-  maxChangePercent?: number;
-  minVolume?: number;
-  assetType?: string;
-};
-
-export type ScannerSortKey = 'symbol' | 'lastPrice' | 'netChange' | 'netChangePercent' | 'totalVolume';
-export type ScannerSortDir = 'asc' | 'desc';
-
-export type ScannerRow = {
-  symbol: string;
-  assetType: string;
-  lastPrice: number | null;
-  netChange: number | null;
-  netChangePercent: number | null;
-  totalVolume: number | null;
-  updatedAt: string;
-};
+export type { ScannerFilters, ScannerRow, ScannerSortDir, ScannerSortKey };
 
 export type ScannerPreset = {
   id: string;

@@ -2,6 +2,7 @@ import { desc, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { agentMemory, jarvisConversations, jarvisRequestLog, macroSummaries, researchReports } from '@/lib/db/schema';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
+import { dbUnavailable } from '@/lib/server-db-utils';
 import { requireJarvisAdmin } from '@/lib/jarvis/admin';
 import { getCircuitBreakerState } from '@/lib/jarvis/circuit-breaker';
 
@@ -12,7 +13,7 @@ export async function GET(request: Request) {
 
     const db = getDb();
     if (!db) {
-      return Response.json({ error: 'Database not configured' }, { status: 503 });
+      return dbUnavailable();
     }
 
     const now = new Date();

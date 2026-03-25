@@ -12,11 +12,6 @@ import {
   TRADE_CHART_TIMEFRAME_CONFIG,
   type TradeChartTimeframeKey,
 } from '@/lib/chart-timeframes';
-import {
-  resolveInitialChartCount,
-  resolveLoadMoreCount,
-  resolveNextChartCount,
-} from '@/lib/journal-chart-batching';
 import type { Trade } from '@/lib/types';
 
 interface JournalTabProps {
@@ -114,7 +109,7 @@ export default function JournalTab({
     if (!isCurrentlyExpanded) {
       setChartCountByDay((counts) => ({
         ...counts,
-        [sortKey]: resolveInitialChartCount(counts[sortKey], INITIAL_CHART_BATCH),
+        [sortKey]: counts[sortKey] ?? INITIAL_CHART_BATCH,
       }));
     }
 
@@ -293,16 +288,12 @@ export default function JournalTab({
                               onClick={() => {
                                 setChartCountByDay((counts) => ({
                                   ...counts,
-                                  [day.sortKey]: resolveNextChartCount(
-                                    day.trades.length,
-                                    counts[day.sortKey] ?? INITIAL_CHART_BATCH,
-                                    CHART_BATCH_STEP,
-                                  ),
+                                  [day.sortKey]: Math.min(day.trades.length, (counts[day.sortKey] ?? INITIAL_CHART_BATCH) + CHART_BATCH_STEP),
                                 }));
                               }}
                               className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/10"
                             >
-                              Load {resolveLoadMoreCount(day.trades.length, chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH, CHART_BATCH_STEP)} more charts
+                              Load {Math.min(CHART_BATCH_STEP, Math.max(0, day.trades.length - (chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH)))} more charts
                             </button>
                           </div>
                         ) : null}

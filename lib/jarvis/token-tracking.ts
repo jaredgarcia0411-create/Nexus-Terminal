@@ -36,10 +36,6 @@ export async function logJarvisRequest(entry: TokenTrackingEntry): Promise<void>
   }
 }
 
-export function estimateInputTokens(text: string): number {
-  return text.trim().split(/\s+/).filter(Boolean).length;
-}
-
-export function estimateOutputTokens(text: string): number {
+export function estimateTokens(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }

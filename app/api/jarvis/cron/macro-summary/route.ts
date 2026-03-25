@@ -1,5 +1,6 @@
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
+import { requireCronSecret } from '@/lib/server-db-utils';
 import { macroSummaries } from '@/lib/db/schema';
 import { callJarvis } from '@/lib/jarvis/client';
 import { JARVIS_SYSTEM_PROMPT, buildMacroPrompt } from '@/lib/jarvis/prompts';
@@ -18,21 +19,6 @@ const MACRO_URLS = [
 ];
 
 const NEW_YORK_TIME_ZONE = 'America/New_York';
-
-function requireCronSecret(request: Request) {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) {
-    return Response.json({ error: 'CRON_SECRET is not configured.' }, { status: 503 });
-  }
-
-  const authHeader = request.headers.get('authorization');
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
-  if (!token || token !== secret) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  return null;
-}
 
 function parseJson(text: string): unknown {
   try {

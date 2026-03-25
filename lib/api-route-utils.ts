@@ -35,3 +35,15 @@ export function logRouteError(route: string, error: unknown) {
 export function internalServerError() {
   return Response.json({ error: 'Internal server error' }, { status: 500 });
 }
+
+export const TICKER_REGEX = /^[A-Z0-9.\-^]{1,10}$/;
+
+export function normalizeTicker(input: string | undefined): string {
+  return (input ?? '').trim().toUpperCase();
+}
+
+export function toNumberOrUndefined(value: string | null): number | undefined {
+  if (value == null) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}

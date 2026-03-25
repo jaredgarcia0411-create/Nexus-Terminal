@@ -15,7 +15,10 @@ vi.mock('@/lib/server-db-utils', () => ({
 }));
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
 vi.mock('@/lib/jarvis/trade-analysis', () => ({ runTradeAnalysisPipeline: runTradeAnalysisPipelineMock }));
-vi.mock('@/lib/jarvis/rate-limit', () => ({ checkRateLimit: checkRateLimitMock }));
+vi.mock('@/lib/jarvis/rate-limit', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/jarvis/rate-limit')>();
+  return { ...actual, checkRateLimit: checkRateLimitMock };
+});
 
 import { POST } from '@/app/api/jarvis/trade-analysis/route';
 

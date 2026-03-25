@@ -15,6 +15,14 @@ vi.mock('@/lib/server-db-utils', () => ({
   requireUser: requireUserMock,
   ensureUser: ensureUserMock,
   dbUnavailable: () => Response.json({ error: 'Database not configured' }, { status: 503 }),
+  requireCronSecret: (request: Request) => {
+    const secret = process.env.CRON_SECRET?.trim();
+    if (!secret) return Response.json({ error: 'CRON_SECRET is not configured.' }, { status: 503 });
+    const authHeader = request.headers.get('authorization');
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+    if (!token || token !== secret) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    return null;
+  },
 }));
 
 import { GET as cronGet } from '@/app/api/jarvis/cron/macro-summary/route';

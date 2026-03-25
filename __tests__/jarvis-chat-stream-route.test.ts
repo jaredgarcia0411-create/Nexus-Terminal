@@ -5,8 +5,7 @@ const {
   checkRateLimitMock,
   buildContextMock,
   ensureUserMock,
-  estimateInputTokensMock,
-  estimateOutputTokensMock,
+  estimateTokensMock,
   getDbMock,
   logJarvisRequestMock,
   requireUserMock,
@@ -15,8 +14,7 @@ const {
   checkRateLimitMock: vi.fn(),
   buildContextMock: vi.fn(),
   ensureUserMock: vi.fn(),
-  estimateInputTokensMock: vi.fn(),
-  estimateOutputTokensMock: vi.fn(),
+  estimateTokensMock: vi.fn(),
   getDbMock: vi.fn(),
   logJarvisRequestMock: vi.fn(),
   requireUserMock: vi.fn(),
@@ -25,10 +23,12 @@ const {
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
 vi.mock('@/lib/jarvis/client', () => ({ callJarvisStreaming: callJarvisStreamingMock }));
 vi.mock('@/lib/jarvis/context', () => ({ buildContext: buildContextMock }));
-vi.mock('@/lib/jarvis/rate-limit', () => ({ checkRateLimit: checkRateLimitMock }));
+vi.mock('@/lib/jarvis/rate-limit', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/jarvis/rate-limit')>();
+  return { ...actual, checkRateLimit: checkRateLimitMock };
+});
 vi.mock('@/lib/jarvis/token-tracking', () => ({
-  estimateInputTokens: estimateInputTokensMock,
-  estimateOutputTokens: estimateOutputTokensMock,
+  estimateTokens: estimateTokensMock,
   logJarvisRequest: logJarvisRequestMock,
 }));
 vi.mock('@/lib/server-db-utils', () => ({
@@ -145,8 +145,7 @@ describe('jarvis chat stream route', () => {
       macro_summary: null,
       memory: [],
     });
-    estimateInputTokensMock.mockReturnValue(5);
-    estimateOutputTokensMock.mockReturnValue(2);
+    estimateTokensMock.mockReturnValue(0);
     callJarvisStreamingMock.mockResolvedValue(createStreamingResponse(['Hello', ' world']));
   });
 
@@ -197,6 +196,7 @@ describe('jarvis chat stream route', () => {
   });
 
   it('streams chat response tokens and final text', async () => {
+    estimateTokensMock.mockReturnValueOnce(5).mockReturnValue(2);
     const db = makeDbMock();
     getDbMock.mockReturnValue(db);
 

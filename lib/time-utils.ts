@@ -44,6 +44,11 @@ export function parseAbsoluteTimestampMs(input: string | Date | null | undefined
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+export function normalizeTimestamp(value: unknown): string | null {
+  const parsed = parseAbsoluteTimestampMs(value as string | Date | null | undefined);
+  return parsed == null ? null : new Date(parsed).toISOString();
+}
+
 export function parseSortKey(sortKey: string): { year: number; month: number; day: number } | null {
   const match = sortKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return null;

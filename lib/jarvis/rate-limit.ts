@@ -16,6 +16,16 @@ function getLimitPerHour() {
   return Math.floor(parsed);
 }
 
+export function rateLimitExceededResponse(result: RateLimitResult): Response {
+  return Response.json(
+    { error: 'Rate limit exceeded. Try again later.' },
+    {
+      status: 429,
+      headers: { 'Retry-After': String(Math.ceil((result.resetAt - Date.now()) / 1000)) },
+    },
+  );
+}
+
 export async function checkRateLimit(userId: string): Promise<RateLimitResult> {
   const limit = getLimitPerHour();
   const db = getDb();

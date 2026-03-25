@@ -9,7 +9,7 @@ import { buildContext } from '@/lib/jarvis/context';
 describe('jarvis context', () => {
   it('returns empty context when db missing', async () => {
     getDbMock.mockReturnValue(null);
-    const context = await buildContext('u1', 'chat');
+    const context = await buildContext('u1');
     expect(context).toEqual({ user_trades: [], macro_summary: null, memory: [] });
   });
 });

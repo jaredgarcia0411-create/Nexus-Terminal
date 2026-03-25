@@ -1,44 +1,6 @@
-import { and, eq, gte, isNull, lte, or } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { agentMemory } from '@/lib/db/schema';
 import type { JarvisMemoryCategory, TradeAnalysisOutput } from '@/lib/jarvis/types';
-
-export async function readMemory(userId: string, category?: JarvisMemoryCategory) {
-  const db = getDb();
-  if (!db) return [];
-
-  const filters = [
-    eq(agentMemory.userId, userId),
-    or(isNull(agentMemory.expiresAt), gte(agentMemory.expiresAt, new Date())) ?? undefined,
-    category ? eq(agentMemory.category, category) : undefined,
-  ].filter((value): value is NonNullable<typeof value> => Boolean(value));
-
-  if (filters.length === 0) return [];
-
-  return db.select().from(agentMemory).where(and(...filters));
-}
-
-export async function writeMemory(
-  userId: string,
-  category: JarvisMemoryCategory,
-  key: string,
-  value: string,
-  valueJson?: unknown,
-) {
-  const db = getDb();
-  if (!db) return;
-
-  await db.insert(agentMemory).values({
-    id: crypto.randomUUID(),
-    userId,
-    category,
-    key,
-    value,
-    valueJson: valueJson ?? null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-}
 
 export async function upsertMemory(
   userId: string,
@@ -67,17 +29,6 @@ export async function upsertMemory(
       updatedAt: new Date(),
     },
   });
-}
-
-export async function deleteExpired() {
-  const db = getDb();
-  if (!db) return 0;
-
-  const deleted = await db.delete(agentMemory)
-    .where(lte(agentMemory.expiresAt, new Date()))
-    .returning({ id: agentMemory.id });
-
-  return deleted.length;
 }
 
 export async function extractTradeInsights(userId: string, analysisResult: TradeAnalysisOutput) {

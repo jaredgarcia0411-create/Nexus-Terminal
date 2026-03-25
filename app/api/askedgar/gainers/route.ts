@@ -1,3 +1,4 @@
+import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getCachedGainers } from '@/lib/jarvis/askedgar';
 import { requireUser } from '@/lib/server-db-utils';
 
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
 
     return Response.json(responseData);
   } catch (error) {
-    console.error('[askedgar-gainers]', error);
-    return Response.json({ error: 'Failed to fetch gainers' }, { status: 500 });
+    logRouteError('askedgar-gainers', error);
+    return internalServerError();
   }
 }

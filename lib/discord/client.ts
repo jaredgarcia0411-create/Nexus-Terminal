@@ -9,6 +9,18 @@
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
+export function requireDiscordConfig(): { botToken: string; channelId: string } | Response {
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  const channelId = process.env.DISCORD_CHANNEL_ID;
+  if (!botToken || !channelId) {
+    return Response.json(
+      { error: 'DISCORD_BOT_TOKEN and DISCORD_CHANNEL_ID must be set' },
+      { status: 503 },
+    );
+  }
+  return { botToken, channelId };
+}
+
 /** Shape of a Discord embed from the REST API */
 interface DiscordEmbed {
   title?: string;
@@ -163,4 +175,53 @@ export async function fetchNewMessages(
   }
 
   return allMessages;
+}
+
+/**
+ * Save parsed Discord reports to the database and update ticker summaries.
+ *
+ * Shared by all 3 Discord sync routes (import, sync, cron/sync).
+ * Returns the number of successfully inserted reports and the set of tickers touched.
+ */
+export async function saveDiscordReports(
+  db: any,
+  userId: string,
+  parsed: Array<{ messageId: string; timestamp: string; data: { ticker: string }; rawText: string }>,
+  routeLabel: string,
+): Promise<{ imported: number; tickers: Set<string> }> {
+  const { importedResearchReports } = await import('@/lib/db/schema');
+  const { updateTickerSummary } = await import('@/lib/jarvis/historical-summary');
+
+  let imported = 0;
+  const tickers = new Set<string>();
+
+  for (const report of parsed) {
+    try {
+      await db.insert(importedResearchReports).values({
+        id: crypto.randomUUID(),
+        userId,
+        ticker: report.data.ticker,
+        reportDate: new Date(report.timestamp),
+        source: 'discord_import',
+        discordMessageId: report.messageId,
+        rawText: report.rawText,
+        parsedJson: report.data,
+      }).onConflictDoNothing();
+
+      imported++;
+      tickers.add(report.data.ticker);
+    } catch (error) {
+      console.error(`[${routeLabel}] Failed to insert report ${report.messageId}:`, error);
+    }
+  }
+
+  for (const ticker of tickers) {
+    try {
+      await updateTickerSummary(userId, ticker);
+    } catch (error) {
+      console.error(`[${routeLabel}] Failed to update summary for ${ticker}:`, error);
+    }
+  }
+
+  return { imported, tickers };
 }

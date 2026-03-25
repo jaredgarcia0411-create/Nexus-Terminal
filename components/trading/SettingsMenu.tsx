@@ -45,7 +45,7 @@ export default function SettingsMenu({ trades, onClearAllData, collapsed }: Sett
       trade.avgEntryPrice,
       trade.avgExitPrice,
       trade.totalQuantity,
-      trade.pnl,
+      trade.netPnl,
       trade.executionCount,
       trade.initialRisk ?? '',
       trade.commission ?? 0,

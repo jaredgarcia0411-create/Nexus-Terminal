@@ -4,60 +4,14 @@ import { getDb } from '@/lib/db';
 import { jarvisConversations } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { callJarvis } from '@/lib/jarvis/client';
+import { parseResearchCommand, saveConversation } from '@/lib/jarvis/chat-helpers';
 import { buildContext } from '@/lib/jarvis/context';
 import { JARVIS_SYSTEM_PROMPT, buildChatPrompt } from '@/lib/jarvis/prompts';
-import { checkRateLimit } from '@/lib/jarvis/rate-limit';
+import { checkRateLimit, rateLimitExceededResponse } from '@/lib/jarvis/rate-limit';
 import { fetchAndCacheRawReport, runResearchTldr } from '@/lib/jarvis/research';
-import { estimateInputTokens, estimateOutputTokens, logJarvisRequest } from '@/lib/jarvis/token-tracking';
+import { estimateTokens, logJarvisRequest } from '@/lib/jarvis/token-tracking';
 import { runTradeAnalysisPipeline } from '@/lib/jarvis/trade-analysis';
-import type { JarvisMode } from '@/lib/jarvis/types';
 import { jarvisChatSchema } from '@/lib/validations/jarvis';
-
-interface ResearchCommand {
-  ticker: string;
-}
-
-function parseResearchCommand(message: string): ResearchCommand | null {
-  const trimmed = message.trim();
-  if (trimmed === '/research') {
-    return { ticker: '' };
-  }
-
-  if (!trimmed.startsWith('/research ')) {
-    return null;
-  }
-
-  const remainder = trimmed.slice('/research '.length).trim();
-
-  if (!remainder) {
-    return { ticker: '' };
-  }
-
-  return {
-    ticker: (remainder.split(/\s+/)[0] ?? '').toUpperCase(),
-  };
-}
-
-async function saveConversation(input: {
-  db: NonNullable<ReturnType<typeof getDb>>;
-  userId: string;
-  sessionId: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  mode: JarvisMode;
-  contextSnapshot?: unknown;
-}) {
-  await input.db.insert(jarvisConversations).values({
-    id: crypto.randomUUID(),
-    userId: input.userId,
-    sessionId: input.sessionId,
-    role: input.role,
-    content: input.content,
-    mode: input.mode,
-    contextSnapshot: input.contextSnapshot ?? null,
-    createdAt: new Date(),
-  });
-}
 
 export async function POST(request: Request) {
   const startedAt = Date.now();
@@ -72,22 +26,14 @@ export async function POST(request: Request) {
     userId = canonicalUser.id;
 
     const rateLimitResult = await checkRateLimit(userId);
-    if (!rateLimitResult.allowed) {
-      return Response.json(
-        { error: 'Rate limit exceeded. Try again later.' },
-        {
-          status: 429,
-          headers: { 'Retry-After': String(Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000)) },
-        },
-      );
-    }
+    if (!rateLimitResult.allowed) return rateLimitExceededResponse(rateLimitResult);
 
     const bodyState = await parseAndValidate(request, jarvisChatSchema);
     if (bodyState.error) return bodyState.error;
 
     const message = bodyState.data.message;
     const sessionId = bodyState.data.session_id || crypto.randomUUID();
-    const context = await buildContext(userId, 'chat');
+    const context = await buildContext(userId);
 
     const [firstMessage] = await db.select({ id: jarvisConversations.id })
       .from(jarvisConversations)
@@ -138,8 +84,8 @@ export async function POST(request: Request) {
       await logJarvisRequest({
         userId,
         mode: 'chat',
-        inputTokens: estimateInputTokens(prompt),
-        outputTokens: estimateOutputTokens(llm.content),
+        inputTokens: estimateTokens(prompt),
+        outputTokens: estimateTokens(llm.content),
         durationMs: Date.now() - startedAt,
         success: true,
         sourceCount: 0,

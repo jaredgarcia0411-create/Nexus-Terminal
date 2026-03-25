@@ -53,15 +53,7 @@ export interface JarvisMacroSummaryLegacyOutput {
   keyRisks: string[];
 }
 
-export interface JarvisMacroSummaryCronOutput {
-  headline: string;
-  key_themes: string[];
-  economic_calendar?: string[];
-  risk_flags: string[];
-  watchlist_notes: string[];
-}
-
-export type JarvisMacroSummaryOutput = JarvisMacroSummaryLegacyOutput | JarvisMacroSummaryCronOutput;
+export type JarvisMacroSummaryOutput = JarvisMacroSummaryLegacyOutput | MacroSummaryOutput;
 
 export interface JarvisSourceContext {
   url: string;
@@ -71,18 +63,6 @@ export interface JarvisSourceContext {
   excerpt: string;
   relevance: number;
   tickers: string[];
-}
-
-export interface JarvisMemoryRow {
-  id: string;
-  userId: string;
-  category: JarvisMemoryCategory;
-  key: string;
-  value: string;
-  valueJson: unknown;
-  createdAt: Date | null;
-  updatedAt: Date | null;
-  expiresAt: Date | null;
 }
 
 export interface JarvisContext {
@@ -103,24 +83,6 @@ export interface JarvisContext {
     value_json: unknown;
   }>;
   report_data?: unknown;
-}
-
-export interface JarvisRequest {
-  message?: string;
-  ticker?: string;
-  session_id?: string;
-  days?: number;
-}
-
-export interface JarvisResponse {
-  message: string;
-  structured?: JarvisStructuredResponse;
-  tradeAnalysis?: TradeAnalysisOutput;
-  macroSummary?: JarvisMacroSummaryOutput;
-  reportJson?: unknown;
-  warnings?: string[];
-  fromCache?: boolean;
-  session_id?: string;
 }
 
 export type RiskRating = 'High' | 'Medium' | 'Low' | '';

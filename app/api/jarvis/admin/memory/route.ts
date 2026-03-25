@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
+import { dbUnavailable } from '@/lib/server-db-utils';
 import { getDb } from '@/lib/db';
 import { agentMemory } from '@/lib/db/schema';
 import { requireJarvisAdmin } from '@/lib/jarvis/admin';
@@ -12,7 +13,7 @@ export async function GET(request: Request) {
 
     const db = getDb();
     if (!db) {
-      return Response.json({ error: 'Database not configured' }, { status: 503 });
+      return dbUnavailable();
     }
 
     const url = new URL(request.url);
@@ -42,7 +43,7 @@ export async function DELETE(request: Request) {
 
     const db = getDb();
     if (!db) {
-      return Response.json({ error: 'Database not configured' }, { status: 503 });
+      return dbUnavailable();
     }
 
     const bodyState = await parseAndValidate(request, adminMemoryDeleteBodySchema);

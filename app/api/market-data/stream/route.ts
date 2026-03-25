@@ -1,4 +1,5 @@
 import { desc, eq } from 'drizzle-orm';
+import { internalServerError, logRouteError, toNumberOrUndefined } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { marketSnapshots, realtimeQuotes, schwabLinks } from '@/lib/db/schema';
 import { createSSEResponse } from '@/lib/sse';
@@ -11,19 +12,8 @@ const PUSH_INTERVAL_MS = 5_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const SCHWAB_SCREENER_SNAPSHOT_TYPE = 'schwab_screener';
 
-const INDEX_SYMBOLS = ['SPY', 'QQQ', 'DIA', 'IWM'] as const;
-const COMMODITY_SYMBOLS = [
-  { ticker: 'GLD', label: 'Gold' },
-  { ticker: 'SLV', label: 'Silver' },
-  { ticker: 'USO', label: 'Crude Oil' },
-  { ticker: 'UNG', label: 'Natural Gas' },
-  { ticker: 'TLT', label: 'Treasuries' },
-  { ticker: 'UUP', label: 'US Dollar' },
-] as const;
-const EQUITY_SYMBOLS = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'NVDA', 'TSLA', 'META', 'JPM', 'JNJ', 'V'] as const;
-
-type ScannerSortKey = 'symbol' | 'lastPrice' | 'netChange' | 'netChangePercent' | 'totalVolume';
-type ScannerSortDir = 'asc' | 'desc';
+import { INDEX_SYMBOLS, COMMODITY_SYMBOLS, EQUITY_SYMBOLS } from '@/lib/market-symbols';
+import type { ScannerSortDir, ScannerSortKey } from '@/lib/types';
 
 type QuoteRow = {
   symbol: string;
@@ -57,12 +47,6 @@ type MoverRow = {
   updated: number | null;
   volume: number | null;
 };
-
-function toNumberOrUndefined(value: string | null): number | undefined {
-  if (value == null) return undefined;
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : undefined;
-}
 
 function normalizeSymbol(value: string): string {
   return value.trim().toUpperCase().replace(/\//g, '');
@@ -221,6 +205,7 @@ export async function GET(request: Request) {
     return authState.error;
   }
 
+  try {
   const db = getDb();
   if (!db) {
     return Response.json({ error: 'Database unavailable' }, { status: 503 });
@@ -307,4 +292,8 @@ export async function GET(request: Request) {
       clearInterval(heartbeatInterval);
     };
   });
+  } catch (error) {
+    logRouteError('market-data-stream', error);
+    return internalServerError();
+  }
 }

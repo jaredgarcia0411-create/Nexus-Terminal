@@ -1,14 +1,14 @@
 import { and, desc, eq, gte, isNull, or } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { agentMemory, macroSummaries, trades } from '@/lib/db/schema';
-import type { JarvisContext, JarvisMode } from '@/lib/jarvis/types';
+import type { JarvisContext } from '@/lib/jarvis/types';
 
 function toIsoDate(value: Date | string) {
   const date = value instanceof Date ? value : new Date(value);
   return Number.isFinite(date.getTime()) ? date.toISOString() : new Date().toISOString();
 }
 
-export async function buildContext(userId: string, _mode: JarvisMode): Promise<JarvisContext> {
+export async function buildContext(userId: string): Promise<JarvisContext> {
   const db = getDb();
   if (!db) {
     return { user_trades: [], macro_summary: null, memory: [] };

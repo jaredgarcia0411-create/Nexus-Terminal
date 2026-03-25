@@ -42,13 +42,6 @@ export interface FibonacciDrawing extends BaseDrawing {
 
 export type Drawing = TrendLineDrawing | HorizontalLineDrawing | RectangleDrawing | FibonacciDrawing;
 
-export interface DrawingState {
-  activeTool: DrawingTool;
-  isDrawing: boolean;
-  tempDrawing: Drawing | null;
-  drawings: Drawing[];
-}
-
 const DEFAULT_COLORS = ['#f59e0b', '#22c55e', '#ef4444', '#3b82f6', '#a855f7', '#ffffff'];
 const DEFAULT_LINE_WIDTH = 2;
 const STORAGE_KEY_PREFIX = 'nexus-chart-drawings';

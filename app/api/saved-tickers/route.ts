@@ -2,7 +2,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { savedTickers } from '@/lib/db/schema';
-import { ensureUser, requireUser } from '@/lib/server-db-utils';
+import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { savedTickerBodySchema } from '@/lib/validations/system';
 
 export async function GET(request: Request) {
@@ -12,7 +12,7 @@ export async function GET(request: Request) {
 
     const db = getDb();
     if (!db) {
-      return Response.json({ error: 'Database not configured' }, { status: 503 });
+      return dbUnavailable();
     }
 
     await ensureUser(db, authState.user);
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
     const db = getDb();
     if (!db) {
-      return Response.json({ error: 'Database not configured' }, { status: 503 });
+      return dbUnavailable();
     }
 
     await ensureUser(db, authState.user);
@@ -91,7 +91,7 @@ export async function DELETE(request: Request) {
 
     const db = getDb();
     if (!db) {
-      return Response.json({ error: 'Database not configured' }, { status: 503 });
+      return dbUnavailable();
     }
 
     await ensureUser(db, authState.user);

@@ -1,9 +1,8 @@
 import { getDb } from '@/lib/db';
 import { importedResearchReports } from '@/lib/db/schema';
-import { fetchAllMessages } from '@/lib/discord/client';
+import { fetchAllMessages, requireDiscordConfig, saveDiscordReports } from '@/lib/discord/client';
 import { parseMessages } from '@/lib/discord/parser';
-import { updateTickerSummary } from '@/lib/jarvis/historical-summary';
-import { ensureUser, requireUser } from '@/lib/server-db-utils';
+import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { and, desc, eq } from 'drizzle-orm';
 
@@ -22,20 +21,14 @@ export async function POST() {
   if ('error' in authState) return authState.error;
 
   const db = getDb();
-  if (!db) return Response.json({ error: 'Database not configured' }, { status: 503 });
+  if (!db) return dbUnavailable();
 
   await ensureUser(db, authState.user);
   const userId = authState.user.id;
 
-  const botToken = process.env.DISCORD_BOT_TOKEN;
-  const channelId = process.env.DISCORD_CHANNEL_ID;
-
-  if (!botToken || !channelId) {
-    return Response.json(
-      { error: 'DISCORD_BOT_TOKEN and DISCORD_CHANNEL_ID must be set' },
-      { status: 400 },
-    );
-  }
+  const discordConfig = requireDiscordConfig();
+  if (discordConfig instanceof Response) return discordConfig;
+  const { botToken, channelId } = discordConfig;
 
   try {
     const messages = await fetchAllMessages(channelId, botToken, (batchSize, total) => {
@@ -43,39 +36,8 @@ export async function POST() {
     });
 
     const parsed = parseMessages(messages);
-
-    let imported = 0;
-    let skipped = 0;
-    const tickers = new Set<string>();
-
-    for (const report of parsed) {
-      try {
-        await db.insert(importedResearchReports).values({
-          id: crypto.randomUUID(),
-          userId,
-          ticker: report.data.ticker,
-          reportDate: new Date(report.timestamp),
-          source: 'discord_import',
-          discordMessageId: report.messageId,
-          rawText: report.rawText,
-          parsedJson: report.data,
-        }).onConflictDoNothing();
-
-        imported++;
-        tickers.add(report.data.ticker);
-      } catch (error) {
-        console.error(`[discord-import] Failed to insert report ${report.messageId}:`, error);
-        skipped++;
-      }
-    }
-
-    for (const ticker of tickers) {
-      try {
-        await updateTickerSummary(userId, ticker);
-      } catch (error) {
-        console.error(`[discord-import] Failed to update summary for ${ticker}:`, error);
-      }
-    }
+    const { imported, tickers } = await saveDiscordReports(db, userId, parsed, 'discord-import');
+    const skipped = parsed.length - imported;
 
     return Response.json({
       imported,
@@ -103,7 +65,7 @@ export async function GET(request: Request) {
   if ('error' in authState) return authState.error;
 
   const db = getDb();
-  if (!db) return Response.json({ error: 'Database not configured' }, { status: 503 });
+  if (!db) return dbUnavailable();
 
   const url = new URL(request.url);
   const ticker = url.searchParams.get('ticker')?.toUpperCase();

@@ -55,12 +55,12 @@ export default function TradingCalendar({ trades }: TradingCalendarProps) {
       if (!stats[dateKey]) {
         stats[dateKey] = { pnl: 0, r: 0, trades: [] };
       }
-      stats[dateKey].pnl += trade.pnl;
+      stats[dateKey].pnl += trade.netPnl;
       stats[dateKey].trades.push(trade);
       // Ensure trades for the day are sorted descending
       stats[dateKey].trades.sort((a, b) => b.date.getTime() - a.date.getTime());
       if (trade.initialRisk) {
-        stats[dateKey].r += trade.pnl / trade.initialRisk;
+        stats[dateKey].r += trade.netPnl / trade.initialRisk;
       }
     });
     return stats;
@@ -217,12 +217,12 @@ export default function TradingCalendar({ trades }: TradingCalendarProps) {
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className={`text-sm font-bold ${getPnLColor(trade.pnl)}`}>
-                          {formatCurrency(trade.pnl)}
+                        <div className={`text-sm font-bold ${getPnLColor(trade.netPnl)}`}>
+                          {formatCurrency(trade.netPnl)}
                         </div>
                         {trade.initialRisk && (
                           <div className="text-[10px] text-zinc-500 font-mono">
-                            {formatR(trade.pnl / trade.initialRisk)}
+                            {formatR(trade.netPnl / trade.initialRisk)}
                           </div>
                         )}
                       </div>

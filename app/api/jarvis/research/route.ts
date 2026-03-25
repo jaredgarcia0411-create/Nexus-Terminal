@@ -2,7 +2,7 @@ import { desc, eq } from 'drizzle-orm';
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { researchReports } from '@/lib/db/schema';
-import { checkRateLimit } from '@/lib/jarvis/rate-limit';
+import { checkRateLimit, rateLimitExceededResponse } from '@/lib/jarvis/rate-limit';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { fetchAndCacheRawReport } from '@/lib/jarvis/research';
 import { logJarvisRequest } from '@/lib/jarvis/token-tracking';
@@ -18,15 +18,7 @@ export async function POST(request: Request) {
     const canonicalUser = await ensureUser(db, authState.user);
 
     const rateLimitResult = await checkRateLimit(canonicalUser.id);
-    if (!rateLimitResult.allowed) {
-      return Response.json(
-        { error: 'Rate limit exceeded. Try again later.' },
-        {
-          status: 429,
-          headers: { 'Retry-After': String(Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000)) },
-        },
-      );
-    }
+    if (!rateLimitResult.allowed) return rateLimitExceededResponse(rateLimitResult);
 
     const bodyState = await parseAndValidate(request, jarvisResearchSchema);
     if (bodyState.error) return bodyState.error;

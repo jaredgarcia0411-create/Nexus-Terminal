@@ -4,18 +4,14 @@ import { researchReports } from '@/lib/db/schema';
 import { getCachedTickerData } from '@/lib/jarvis/askedgar';
 import type { AskEdgarResponse } from '@/lib/jarvis/askedgar';
 import { callJarvis } from '@/lib/jarvis/client';
-import { buildResearchPrompt, buildResearchTldrPrompt } from '@/lib/jarvis/prompts';
-import type { DilutionResearchReport } from '@/lib/jarvis/types';
-
-interface ResearchPipelineOptions {
-  forceRefresh?: boolean;
-}
+import { buildResearchTldrPrompt } from '@/lib/jarvis/prompts';
 
 export interface ResearchTldr {
   tldr: string;
   findings: string[];
   actionSteps: string[];
   risks: string[];
+  historicalContext: string | null;
 }
 
 function parseJson(text: string): unknown {
@@ -37,31 +33,6 @@ function parseJson(text: string): unknown {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-
-function isCacheableReport(report: unknown): report is Record<string, unknown> {
-  if (!isObject(report)) return false;
-
-  const candidate = report as Partial<DilutionResearchReport>;
-  return (
-    typeof candidate.ticker === 'string'
-    && typeof candidate.generatedAt === 'string'
-    && isObject(candidate.header)
-    && Array.isArray(candidate.dataSources)
-    && Array.isArray(candidate.news)
-    && Array.isArray(candidate.catalysts)
-    && isObject(candidate.dilution)
-    && isObject(candidate.offeringFrequency)
-    && isObject(candidate.offeringAbility)
-    && isObject(candidate.cashNeed)
-    && typeof candidate.managementCommentary === 'string'
-    && isObject(candidate.overallOfferingRisk)
-    && isObject(candidate.scamRisk)
-    && Array.isArray(candidate.agreements)
-    && Array.isArray(candidate.historicalFloat)
-    && Array.isArray(candidate.reverseSplits)
-    && Array.isArray(candidate.filingTitles)
-  );
 }
 
 /**
@@ -121,101 +92,6 @@ function collectRawDataWarnings(rawData: unknown) {
   }
 
   return warnings;
-}
-
-function canReuseCachedReport(input: {
-  status: string;
-  reportJson: unknown;
-  rawData: unknown;
-}) {
-  if (input.status !== 'complete') return false;
-  if (!isCacheableReport(input.reportJson)) return false;
-  return collectRawDataWarnings(input.rawData).length === 0;
-}
-
-export async function runResearchPipeline(userId: string, ticker: string, options: ResearchPipelineOptions = {}) {
-  const db = getDb();
-  if (!db) {
-    throw new Error('Database not configured');
-  }
-
-  const normalizedTicker = ticker.trim().toUpperCase();
-  if (!/^[A-Z0-9.\-^]+$/.test(normalizedTicker)) {
-    throw new Error('Invalid ticker');
-  }
-
-  const startOfTodayUtc = new Date();
-  startOfTodayUtc.setUTCHours(0, 0, 0, 0);
-
-  const [cached] = options.forceRefresh
-    ? []
-    : await db.select()
-      .from(researchReports)
-      .where(and(
-        eq(researchReports.userId, userId),
-        eq(researchReports.ticker, normalizedTicker),
-        gte(researchReports.generatedAt, startOfTodayUtc),
-      ))
-      .limit(1);
-
-  if (cached && canReuseCachedReport({ status: cached.status, reportJson: cached.reportJson, rawData: cached.rawData })) {
-    return {
-      fromCache: true,
-      ticker: normalizedTicker,
-      report: cached.reportJson,
-      rawData: cached.rawData,
-      modelUsed: cached.modelUsed ?? '',
-      warnings: collectRawDataWarnings(cached.rawData),
-    };
-  }
-
-  const askedgarData = await getCachedTickerData(normalizedTicker);
-
-  // Build a minimal context for research — no user trades or memory needed,
-  // and trim the AskEdgar data to only include successful results (saves ~70% tokens)
-  const trimmedData = trimRawDataForLlm(askedgarData.rawData as Record<string, AskEdgarResponse<unknown>>);
-  const prompt = buildResearchPrompt(trimmedData);
-
-  try {
-    // Minimal system prompt for research — saves ~500 tokens vs full JARVIS_SYSTEM_PROMPT
-    const llm = await callJarvis(
-      'You are a financial analyst. Return structured JSON from SEC filing data. Never fabricate data — use null for missing values.',
-      prompt,
-    );
-    const parsed = parseJson(llm.content);
-
-    await db.insert(researchReports).values({
-      id: crypto.randomUUID(),
-      userId,
-      ticker: normalizedTicker,
-      status: 'complete',
-      rawData: askedgarData.rawData,
-      reportJson: parsed,
-      modelUsed: llm.modelUsed,
-      generatedAt: new Date(),
-    });
-
-    return {
-      fromCache: false,
-      ticker: normalizedTicker,
-      report: parsed,
-      rawData: askedgarData.rawData,
-      modelUsed: llm.modelUsed,
-      warnings: askedgarData.warnings,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Research generation failed';
-    await db.insert(researchReports).values({
-      id: crypto.randomUUID(),
-      userId,
-      ticker: normalizedTicker,
-      status: 'failed',
-      rawData: askedgarData.rawData,
-      errorMessage: message,
-      generatedAt: new Date(),
-    });
-    throw error;
-  }
 }
 
 /**
@@ -299,11 +175,16 @@ export async function fetchAndCacheRawReport(
 export async function runResearchTldr(
   rawData: Record<string, AskEdgarResponse<unknown>>,
   ticker: string,
+  context?: { historicalSummary?: unknown; discordReport?: { date: string; text: string } },
 ): Promise<ResearchTldr> {
   const trimmed = trimRawDataForLlm(rawData);
-  const userPrompt = buildResearchTldrPrompt(trimmed);
+  const userPrompt = buildResearchTldrPrompt(trimmed, {
+    ticker,
+    historicalSummary: context?.historicalSummary,
+    discordReport: context?.discordReport,
+  });
   const reply = await callJarvis(
-    'You are a trading research analyst. Return JSON only.',
+    'You are a financial analyst specializing in small-cap dilution risk assessment. Return JSON only.',
     userPrompt,
   );
 
@@ -314,15 +195,14 @@ export async function runResearchTldr(
     ? parsedObj.tldr
     : `Research data fetched for ${ticker} but TLDR generation failed.`;
 
-  const findings = Array.isArray(parsedObj.findings)
-    ? parsedObj.findings.filter((item): item is string => typeof item === 'string')
-    : [];
-  const actionSteps = Array.isArray(parsedObj.actionSteps)
-    ? parsedObj.actionSteps.filter((item): item is string => typeof item === 'string')
-    : [];
-  const risks = Array.isArray(parsedObj.risks)
-    ? parsedObj.risks.filter((item): item is string => typeof item === 'string')
-    : [];
+  const toStringArray = (val: unknown) =>
+    Array.isArray(val) ? val.filter((item): item is string => typeof item === 'string') : [];
 
-  return { tldr, findings, actionSteps, risks };
+  return {
+    tldr,
+    findings: toStringArray(parsedObj.findings),
+    actionSteps: toStringArray(parsedObj.actionSteps),
+    risks: toStringArray(parsedObj.risks),
+    historicalContext: typeof parsedObj.historicalContext === 'string' ? parsedObj.historicalContext : null,
+  };
 }

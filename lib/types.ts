@@ -26,7 +26,8 @@ export interface Trade {
   exitTime: string;
   executionCount: number;
   rawExecutions: Execution[];
-  // Transitional aliases kept until all consumers migrate.
+  // DB-compat aliases — always mirrored from netPnl/executionCount by normalizeTrade().
+  // Use netPnl and executionCount in all new code.
   pnl: number;
   executions: number;
   mfe?: number;
@@ -70,4 +71,27 @@ export type ApiTrade = {
   fees?: number;
   tags: string[];
   notes?: string;
+};
+
+// Scanner types — shared between hooks/use-scanner.ts, hooks/use-market-stream.ts, and server routes
+export type ScannerSortKey = 'symbol' | 'lastPrice' | 'netChange' | 'netChangePercent' | 'totalVolume';
+export type ScannerSortDir = 'asc' | 'desc';
+
+export type ScannerFilters = {
+  minPrice?: number;
+  maxPrice?: number;
+  minChangePercent?: number;
+  maxChangePercent?: number;
+  minVolume?: number;
+  assetType?: string;
+};
+
+export type ScannerRow = {
+  symbol: string;
+  assetType: string;
+  lastPrice: number | null;
+  netChange: number | null;
+  netChangePercent: number | null;
+  totalVolume: number | null;
+  updatedAt: string;
 };

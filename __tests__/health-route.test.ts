@@ -42,7 +42,7 @@ describe('GET /api/health', () => {
     const response = await GET();
     const payload = await response.json();
 
-    expect(executeMock).toHaveBeenCalledWith({ sql: 'select 1' });
+    expect(executeMock).toHaveBeenCalledTimes(1);
     expect(response.status).toBe(200);
     expect(payload).toEqual({ db: true });
   });

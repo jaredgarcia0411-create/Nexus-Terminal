@@ -10,13 +10,8 @@ import {
   toExecutionRowId,
   toTrade,
 } from '@/lib/server-db-utils';
-import { parseAbsoluteTimestampMs } from '@/lib/time-utils';
+import { normalizeTimestamp } from '@/lib/time-utils';
 import { createTradeSchema } from '@/lib/validations/trades';
-
-function normalizeTimestamp(value: unknown): string | null {
-  const parsed = parseAbsoluteTimestampMs(value as string | Date | null | undefined);
-  return parsed == null ? null : new Date(parsed).toISOString();
-}
 
 export async function GET(request: Request) {
   void request;

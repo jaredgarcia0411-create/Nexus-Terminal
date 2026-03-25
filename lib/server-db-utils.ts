@@ -3,7 +3,6 @@ import { auth } from '@/lib/auth-config';
 import { type Db, type PoolDb } from '@/lib/db';
 import { users, trades, tradeTags } from '@/lib/db/schema';
 import type { ApiTrade } from '@/lib/types';
-export type { ApiTrade };
 
 type QueryDb = Db | PoolDb;
 
@@ -111,6 +110,21 @@ export async function ensureUser(db: QueryDb, user: AuthUserIdentity): Promise<A
 
 export function dbUnavailable() {
   return Response.json({ error: 'Database not configured' }, { status: 503 });
+}
+
+export function requireCronSecret(request: Request): Response | null {
+  const secret = process.env.CRON_SECRET?.trim();
+  if (!secret) {
+    return Response.json({ error: 'CRON_SECRET is not configured.' }, { status: 503 });
+  }
+
+  const authHeader = request.headers.get('authorization');
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+  if (!token || token !== secret) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  return null;
 }
 
 export function toTrade(

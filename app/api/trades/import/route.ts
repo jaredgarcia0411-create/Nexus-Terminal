@@ -16,7 +16,7 @@ import {
   toExecutionRowId,
   toTrade,
 } from '@/lib/server-db-utils';
-import { parseAbsoluteTimestampMs } from '@/lib/time-utils';
+import { normalizeTimestamp } from '@/lib/time-utils';
 import { importTradesSchema, type ImportTradesInput } from '@/lib/validations/trades';
 
 type NormalizedRawExecution = {
@@ -186,11 +186,6 @@ function importFailure(error: unknown) {
     ...(constraint ? { constraint } : {}),
     ...(importContext ? { tradeIndex: importContext.tradeIndex, tradeId: importContext.tradeId } : {}),
   }, { status });
-}
-
-function normalizeTimestamp(value: unknown): string | null {
-  const parsed = parseAbsoluteTimestampMs(value as string | Date | null | undefined);
-  return parsed == null ? null : new Date(parsed).toISOString();
 }
 
 export async function POST(request: Request) {

@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 
 export async function GET() {
@@ -7,7 +8,7 @@ export async function GET() {
   }
 
   try {
-    await db.execute({ sql: 'select 1' });
+    await db.execute(sql`select 1`);
   } catch {
     return Response.json({ db: false }, { status: 503 });
   }

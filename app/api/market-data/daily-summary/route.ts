@@ -1,18 +1,15 @@
 import { and, desc, eq, gte, lte } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
+import { internalServerError, logRouteError, normalizeTicker, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { dailyTickerSummaries } from '@/lib/db/schema';
 import { fetchDailyTickerSummary } from '@/lib/massive-market';
-import { ensureUser, requireUser } from '@/lib/server-db-utils';
+import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { dailySummaryBodySchema } from '@/lib/validations/system';
 
 function todayDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function normalizeTicker(input: string | undefined) {
-  return (input ?? '').trim().toUpperCase();
-}
 
 function normalizeDate(input: string | undefined) {
   const value = (input ?? '').trim();
@@ -87,7 +84,7 @@ export async function GET(request: Request) {
 
     const db = getDb();
     if (!db) {
-      return Response.json({ error: 'Database not configured' }, { status: 503 });
+      return dbUnavailable();
     }
 
     const canonicalUser = await ensureUser(db, authState.user);
@@ -145,7 +142,7 @@ export async function POST(request: Request) {
 
     const db = getDb();
     if (!db) {
-      return Response.json({ error: 'Database not configured' }, { status: 503 });
+      return dbUnavailable();
     }
 
     const canonicalUser = await ensureUser(db, authState.user);

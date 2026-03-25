@@ -2,6 +2,7 @@ import { Trade, Direction } from './types';
 import { parsePrice } from './trading-utils';
 import { format } from 'date-fns';
 import type { BrokerParserConfig, NormalizedExecution } from './parsers/types';
+import { SIDE_ALIASES, normalizeColumnNames, parseCost, parseTimeToSeconds } from './parsers/utils';
 
 export interface RawExecution {
   qty: number;
@@ -35,18 +36,6 @@ interface MatchedPair {
   netPnl: number;
   entryTime: string;
   exitTime: string;
-}
-
-function parseTimeToSeconds(value: string): number | null {
-  const match = String(value ?? '').trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (!match) return null;
-
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  const seconds = Number(match[3] ?? 0);
-  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) return null;
-
-  return hours * 3600 + minutes * 60 + seconds;
 }
 
 function compareTimes(a: string, b: string): number {
@@ -116,76 +105,6 @@ export const parseDateFromFilename = (filename: string) => {
   };
 };
 
-// Side alias map for the built-in parser path
-const SIDE_ALIASES: Record<string, string> = {
-  SS: 'SS',
-  'SELL SHORT': 'SS',
-  SHORT: 'SS',
-  'SHORT SELL': 'SS',
-  B: 'B',
-  BUY: 'B',
-  'BUY TO COVER': 'B',
-  BTC: 'B',
-  MARGIN: 'MARGIN',
-  LONG: 'MARGIN',
-  'BUY TO OPEN': 'MARGIN',
-  BTO: 'MARGIN',
-  S: 'S',
-  SELL: 'S',
-  'SELL TO CLOSE': 'S',
-  STC: 'S',
-};
-
-const COLUMN_ALIASES: Record<string, string> = {
-  SYMBOL: 'Symbol',
-  TICKER: 'Symbol',
-  SYM: 'Symbol',
-  SIDE: 'Side',
-  ACTION: 'Side',
-  INSTRUCTION: 'Side',
-  QTY: 'Qty',
-  QUANTITY: 'Qty',
-  SHARES: 'Qty',
-  SIZE: 'Qty',
-  AMOUNT: 'Qty',
-  PRICE: 'Price',
-  'FILL PRICE': 'Price',
-  'AVG PRICE': 'Price',
-  COMMISSION: 'Commission',
-  COMM: 'Commission',
-  COMMISSIONS: 'Commission',
-  FEES: 'Fees',
-  FEE: 'Fees',
-  TIME: 'Time',
-  'FILL TIME': 'Time',
-};
-
-function normalizeRow(row: Record<string, unknown>): Record<string, unknown> {
-  const normalized: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(row)) {
-    const trimmedKey = key.trim();
-    const upperKey = trimmedKey.toUpperCase();
-    const mappedKey = COLUMN_ALIASES[upperKey] ?? trimmedKey;
-    normalized[mappedKey] = value;
-  }
-  return normalized;
-}
-
-function normalizeSide(rawSide: string): string | null {
-  const cleaned = rawSide.toUpperCase().trim();
-  return SIDE_ALIASES[cleaned] ?? null;
-}
-
-function parseCost(value: unknown): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return Math.abs(value);
-  if (typeof value !== 'string') return 0;
-  const cleaned = value.replace(/[$,\s]/g, '').trim();
-  if (!cleaned) return 0;
-  const norm = cleaned.startsWith('(') && cleaned.endsWith(')') ? `-${cleaned.slice(1, -1)}` : cleaned;
-  const parsed = parseFloat(norm);
-  return Number.isFinite(parsed) ? Math.abs(parsed) : 0;
-}
-
 function consolidateExecutions(
   tradeId: string,
   executions: Trade['rawExecutions'],
@@ -219,10 +138,10 @@ function consolidateExecutions(
 
 /** Built-in row normalization (used when no parser plugin is provided) */
 function builtinNormalizeRow(rawRow: Record<string, unknown>, rowIndex: number, warnings: string[]): NormalizedExecution | null {
-  const row = normalizeRow(rawRow);
+  const row = normalizeColumnNames(rawRow);
   const sym = String(row.Symbol ?? '').toUpperCase().trim();
   const rawSide = String(row.Side ?? row.Action ?? row.Type ?? '').trim();
-  const side = normalizeSide(rawSide);
+  const side = SIDE_ALIASES[rawSide.toUpperCase()] ?? null;
   const qty = parseFloat(String(row.Qty ?? row.Quantity ?? '')) || 0;
   const price = parsePrice(row.Price);
   const time = String(row.Time ?? '');

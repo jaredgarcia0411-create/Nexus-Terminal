@@ -1,6 +1,7 @@
 import { desc, eq, inArray } from 'drizzle-orm';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
+import { INDEX_SYMBOLS, COMMODITY_SYMBOLS, EQUITY_SYMBOLS } from '@/lib/market-symbols';
 import { marketSnapshots, realtimeQuotes, schwabLinks } from '@/lib/db/schema';
 import {
   fetchBatchDailyTickerSummaries,
@@ -77,16 +78,6 @@ type PgLikeError = {
   name?: string;
 };
 
-const INDEX_SYMBOLS = ['SPY', 'QQQ', 'DIA', 'IWM'];
-const COMMODITY_SYMBOLS = [
-  { ticker: 'GLD', label: 'Gold' },
-  { ticker: 'SLV', label: 'Silver' },
-  { ticker: 'USO', label: 'Crude Oil' },
-  { ticker: 'UNG', label: 'Natural Gas' },
-  { ticker: 'TLT', label: 'Treasuries' },
-  { ticker: 'UUP', label: 'US Dollar' },
-];
-const EQUITY_SYMBOLS = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'NVDA', 'TSLA', 'META', 'JPM', 'JNJ', 'V'];
 const EXTENDED_SESSION_SYMBOLS = [...INDEX_SYMBOLS, ...COMMODITY_SYMBOLS.map((s) => s.ticker), ...EQUITY_SYMBOLS];
 
 function normalizeTicker(raw: string) {

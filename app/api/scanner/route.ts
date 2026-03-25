@@ -1,8 +1,8 @@
 import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
-import { internalServerError, logRouteError } from '@/lib/api-route-utils';
+import { internalServerError, logRouteError, toNumberOrUndefined } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { realtimeQuotes } from '@/lib/db/schema';
-import { requireUser } from '@/lib/server-db-utils';
+import { dbUnavailable, requireUser } from '@/lib/server-db-utils';
 
 const SORTABLE_COLUMNS = {
   symbol: realtimeQuotes.symbol,
@@ -20,13 +20,6 @@ function isSortableKey(value: string): value is SortableKey {
 
 const VALID_ASSET_TYPES = ['equity', 'etf', 'future', 'forex', 'index', 'crypto'] as const;
 
-function toNumberOrUndefined(value: string | null): number | undefined {
-  if (value == null) {
-    return undefined;
-  }
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : undefined;
-}
 
 export async function GET(request: Request) {
   try {
@@ -37,7 +30,7 @@ export async function GET(request: Request) {
 
     const db = getDb();
     if (!db) {
-      return Response.json({ error: 'Database not configured' }, { status: 503 });
+      return dbUnavailable();
     }
 
     const { searchParams } = new URL(request.url);
