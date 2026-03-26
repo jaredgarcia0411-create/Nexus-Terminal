@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { schwabLinks } from '@/lib/db/schema';
-import { dbUnavailable, requireUser } from '@/lib/server-db-utils';
+import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 
 export async function GET() {
   try {
@@ -11,6 +11,8 @@ export async function GET() {
 
     const db = getDb();
     if (!db) return dbUnavailable();
+
+    await ensureUser(db, authState.user);
 
     const [row] = await db.select({
       status: schwabLinks.status,
@@ -62,6 +64,8 @@ export async function DELETE() {
 
     const db = getDb();
     if (!db) return dbUnavailable();
+
+    await ensureUser(db, authState.user);
 
     await db.delete(schwabLinks)
       .where(eq(schwabLinks.userId, authState.user.id));

@@ -157,12 +157,13 @@ describe('ensureUser', () => {
 
     expect(db.select).toHaveBeenCalledTimes(2);
     expect(db.insert).toHaveBeenCalledTimes(1);
-    // New behavior: DB row ID is updated to match session ID (not the other way around)
-    expect(db.update).toHaveBeenCalledTimes(1);
-    expect(ensured.id).toBe('nextauth-id');
+    // Session ID was remapped to canonical DB ID (no PK update)
+    expect(db.update).not.toHaveBeenCalled();
+    expect(authUser.id).toBe('canonical-user');
+    expect(ensured.id).toBe('canonical-user');
   });
 
-  it('reuses matching email row and updates DB id to match session', async () => {
+  it('reuses matching email row and remaps session id to canonical', async () => {
     const db = createDb({
       selectRows: [
         [
@@ -182,8 +183,10 @@ describe('ensureUser', () => {
 
     expect(db.select).toHaveBeenCalledTimes(1);
     expect(db.insert).not.toHaveBeenCalled();
-    // DB row ID gets updated to match the session's ID
-    expect(db.update).toHaveBeenCalledTimes(1);
-    expect(ensured.id).toBe('nextauth-id');
+    // No update needed — name and picture haven't changed
+    expect(db.update).not.toHaveBeenCalled();
+    // Session ID was remapped to canonical DB ID
+    expect(authUser.id).toBe('canonical-user');
+    expect(ensured.id).toBe('canonical-user');
   });
 });
