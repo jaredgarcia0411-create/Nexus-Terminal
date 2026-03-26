@@ -5,14 +5,14 @@ If no specific focus is given, scan the entire project.
 ## Scan Categories
 
 ### 1. Authentication & Authorization
-- Verify all API routes (`app/api/**`) call `auth()` from `@/lib/auth-config` and reject unauthenticated requests
+- Verify all API routes (`app/api/**`) call `requireUser()` from `@/lib/server-db-utils` and reject unauthenticated requests
 - Check that middleware protects all non-public routes
 - Ensure JWT tokens are not exposed to client-side code
 - Verify `ALLOWED_EMAILS` env var is respected in all auth flows
 - Check for session fixation or token reuse vulnerabilities
 
 ### 2. Injection Attacks
-- **SQL Injection**: All database queries in `lib/db.ts` and API routes must use parameterized queries (`args: [...]`), never string interpolation
+- **SQL Injection**: All database queries in `lib/db.ts` and API routes must use parameterized queries via Drizzle ORM, never raw string interpolation
 - **XSS**: Check for `dangerouslySetInnerHTML`, unescaped user input rendered in JSX, or raw HTML responses
 - **Command Injection**: Check for `exec()`, `spawn()`, or shell commands using user input
 - Look at the Schwab OAuth callback for HTML injection in the popup response

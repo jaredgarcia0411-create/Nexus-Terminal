@@ -11,7 +11,7 @@ Debug the following issue: $ARGUMENTS
 
 3. **Check Common Pitfalls in This Codebase**:
    - `useTrades` hook manages all trade state — check if the issue is in the hook vs the consuming component
-   - Dual persistence: is the bug localStorage-specific or Turso-specific? Check `/api/health` response
+   - Dual persistence: is the bug localStorage-only or cloud (Neon/PostgreSQL) specific? Check `/api/health` response
    - CSV import: `processCsvData()` silently drops unmatched executions — could data be missing?
    - Schwab OAuth: tokens stored server-side only — check expiration and refresh logic
    - NextAuth v5: session available via `auth()` server-side or `useSession()` client-side
@@ -21,6 +21,6 @@ Debug the following issue: $ARGUMENTS
 5. **Propose Fix**: Provide the minimal code change that resolves the issue without side effects. Verify the fix doesn't break:
    - Type safety (`npm run build` should pass)
    - Existing functionality (no behavioral changes beyond the fix)
-   - Both storage modes (localStorage and Turso)
+   - Both storage modes (localStorage and Neon/PostgreSQL)
 
 6. **Verify**: Suggest how to confirm the fix works (manual test steps or checks).

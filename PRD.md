@@ -60,26 +60,24 @@ On-demand dilution research using AskEdgar API for SEC filings.
 
 **Status:** AskEdgar integration in progress. Filing titles endpoint working. Full report pipeline being built.
 
-### 4. Agent Team (Planned — Next 2-3 Months)
-Specialized AI agents that work autonomously to support trading decisions.
+### 4. Agent Team (Architecture Designed — Implementation Next)
+Autonomous AI agents running as Docker Compose services on a home server, coordinated via Postgres job queue.
 
-**Planned agents:**
+**V1 agents:**
 
 | Agent | Role | Description |
 |-------|------|-------------|
-| Research Analyst | Deep dives | Pulls filings, news, and data to build comprehensive ticker reports |
-| Strategy Backtester | Strategy refinement | Tests trading strategies against historical data, suggests improvements |
-| Opportunity Scanner | Find trades | Monitors market for setups matching our criteria |
-| Market Analyst | Trend analysis | Tracks sector rotation, momentum shifts, macro themes |
-| Risk Monitor | Portfolio guard | Watches open positions, flags concentration or overexposure |
+| Orchestrator | Coordination | Routes requests, runs macro cron, cross-agent synthesis, Discord bot |
+| Small Cap Trader | Dilution research | Pre-market scans, dilution analysis, technical analysis via AskEdgar + Massive API |
+| Swing Trader | Momentum plays | MDR pattern recognition, daily momentum scans, parabolic setup alerts |
 
-**Key principles for agents:**
-- Each agent has a clear, narrow responsibility
-- Agents report findings — they don't execute trades
-- Agents should refine strategies over time based on our actual trade results
-- Agents should be able to work together (e.g., Scanner finds ticker → Research Analyst digs in)
+**Key principles:**
+- Each agent has strict scope boundaries — cross-agent data goes through the Orchestrator
+- Level 1 supervised mode — all agent reports require user approval before action
+- Blueprint-driven handlers — typed step sequences (code vs LLM) keep costs low and results reliable
+- Provider-agnostic LLM wrapper — interchangeable providers (NVIDIA API, Groq, local llama.cpp)
 
-**Status:** Architecture not yet designed. This is the next major initiative after research reports.
+**Status:** Architecture spec at `AGENTIC_EXPANSION_V2.md` (DRAFT R2). Nothing built yet.
 
 ---
 
@@ -93,7 +91,7 @@ Specialized AI agents that work autonomously to support trading decisions.
 ## Technical Constraints
 
 - Vercel Hobby tier (cron limited to daily, serverless function limits)
-- Neon free/starter tier PostgreSQL
+- Neon Launch plan for agent workloads
 - Must stay within reasonable API costs (AskEdgar, Massive API, LLM calls)
 - Solo developer — complexity must stay manageable
 
@@ -102,10 +100,10 @@ Specialized AI agents that work autonomously to support trading decisions.
 ## Priority Order
 
 1. **Finish research reports** (Sprint 8 — active)
-2. **Design agent architecture** (next)
-3. **Build first agent** (Research Analyst — natural extension of research reports)
+2. **Build agent framework** (architecture designed in AGENTIC_EXPANSION_V2.md)
+3. **Launch Orchestrator + Small Cap Trader** (first two agents, validate before adding Swing Trader)
 4. **Polish trade logging & performance** (ongoing)
-5. **Build remaining agents** (one at a time, validate each before starting next)
+5. **Launch Swing Trader** (after first two agents prove stable)
 6. **Market overview improvements** (alongside agent work)
 
 ---

@@ -49,8 +49,8 @@ Personal trading terminal for a small private team. Not SaaS — purpose-built f
 | Tab key | Component | Layout |
 |---------|-----------|--------|
 | `dashboard` | `DashboardTab` | Default, max-w-7xl |
-| `journal` | `JournalTab` | max-w-7xl |
 | `performance` | `PerformanceTab` | max-w-7xl |
+| `journal` | `JournalTab` | max-w-7xl |
 | `filter` | `TradesTab` | max-w-7xl |
 | `charts` | `ChartsTab` | Full-width |
 | `markets` | `MarketsTab` | max-w-7xl |
@@ -58,7 +58,7 @@ Personal trading terminal for a small private team. Not SaaS — purpose-built f
 | `jarvis` | `JarvisTab` | max-w-7xl |
 
 ## Backend
-- Next.js API routes under `app/api/` — run `find app/api -name route.ts` to list all 31 routes
+- Next.js API routes under `app/api/` — run `find app/api -name route.ts` to list all 32 routes
 - Auth: NextAuth v5 beta (5.0.0-beta.30), Google OAuth, JWT sessions
 - All routes protected via `requireUser()` except `/api/health`
 - Middleware in `middleware.ts` protects all routes except `/login`, `/api/*`, static assets
@@ -68,8 +68,7 @@ Import from `lib/server-db-utils.ts`. Returns `{ user: { id, email, name, pictur
 
 ## Database
 - PostgreSQL via Neon serverless (`@neondatabase/serverless`)
-- ORM: Drizzle v0.45.1, schema at `lib/db/schema.ts` (20 tables — read schema directly for details)
-- Extensions: pgvector (1024-dim), tsvector full-text search
+- ORM: Drizzle v0.45.1, schema at `lib/db/schema.ts` (21 tables — read schema directly for details)
 - Connection: HTTP client for reads, WebSocket pool for transactions
 - Migrations output to `drizzle/` directory
 
@@ -83,13 +82,13 @@ Import from `lib/server-db-utils.ts`. Returns `{ user: { id, email, name, pictur
 - `lib/trading-utils.ts` — formatCurrency, formatR, calculatePnL
 - `lib/csv-parser.ts` — CSV parsing with broker auto-detection
 - `lib/parsers/` — pluggable parser system (DAS Trader, generic)
-- `lib/indicators.ts` — SMA, EMA, RSI, MACD, VWAP, Bollinger
+- `lib/indicators.ts` — SMA, EMA, RSI, MACD, VWAP, Bollinger, ATR
 
 ## Jarvis AI Pipeline
-All modules in `lib/jarvis/` — client, types, prompts, context, memory, research, trade-analysis, askedgar, historical-summary, scrape-lite, rate-limit, circuit-breaker, token-tracking, admin.
+All modules in `lib/jarvis/` — client, types, prompts, context, memory, research, trade-analysis, askedgar, historical-summary, scrape-lite, rate-limit, circuit-breaker, token-tracking, admin, chat-helpers.
 
 ## State Management
-10 hooks in `hooks/` — `ls hooks/` to see all. Key ones:
+Hooks in `hooks/` — `ls hooks/` to see all. Key ones:
 - `use-trades.ts` — central trade hook: CRUD, filtering, CSV import, cloud sync
 - `use-candle-data.ts` — market data fetching with cache
 - `use-market-stream.ts` — SSE market data stream
@@ -132,11 +131,12 @@ Names only — values in `.env.local` (never committed):
 | Discord | `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID` |
 | AskEdgar | `ASKEDGAR_API_KEY` |
 | Cron | `CRON_SECRET` |
+| Tuning (optional) | `ASKEDGAR_DAILY_LIMIT`, `JARVIS_CIRCUIT_BREAKER_THRESHOLD`, `JARVIS_CIRCUIT_BREAKER_RESET_MS`, `JARVIS_RATE_LIMIT_PER_HOUR`, `JARVIS_TIMEOUT_MS` |
 
 ---
 
 # Known Issues
-1. Empty legacy API directories remain: backtest/, cron/, notifications/, webhooks/ — do not add routes without explicit instruction
+1. Legacy API stubs with empty subdirectories: app/api/backtest/, app/api/cron/alerts/, app/api/notifications/process/, app/api/webhooks/trade-event/ — do not add routes without explicit instruction
 2. NextAuth v5 is pre-release (5.0.0-beta.30) — watch for breaking changes
 3. Vercel Hobby tier limits cron to daily; macro headlines may be stale by market close
 
@@ -158,6 +158,7 @@ When scanner shows "15-MIN DELAYED" instead of "LIVE", check in order:
 5. Prefer modular code — no logic in `page.tsx` or `layout.tsx`
 6. Run lint and type-check after every change: `npm run lint && npx tsc --noEmit`
 7. Avoid unnecessary dependencies
+8. When adding/removing API routes, DB tables, hooks, or Jarvis modules, update the corresponding counts and lists in this file. Run `/audit` periodically to catch drift.
 
 # Security Rules
 - Secrets via environment variables only — never expose .env, .env.local, API keys, or OAuth secrets

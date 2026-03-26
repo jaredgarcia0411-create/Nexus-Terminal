@@ -24,7 +24,7 @@ Analyze the performance of the specified file or component: $ARGUMENTS
 ### 4. Memory
 - Event listeners added in `useEffect` must be cleaned up in the return function
 - Large datasets (trades array) shouldn't be duplicated across state
-- File uploads (`contextFiles` in backtesting) — are files held in memory unnecessarily?
+- CSV uploads in the import flow — are PapaParse results held in state longer than needed?
 - Check for closures capturing large scopes
 
 ### 5. Specific to This Codebase

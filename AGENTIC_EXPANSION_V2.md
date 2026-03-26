@@ -8,7 +8,7 @@
 
 This document specifies a multi-agent system for Nexus Terminal consisting of three runtime components: an **Orchestrator** (with built-in research routing pipeline and macro cron), a **Dilutionary Small Cap Trader** agent, and a **Swing Trader** agent.
 
-Agents run as Docker Compose services on a home server (16GB RAM laptop). They communicate via a Postgres-backed job queue (Neon free tier). The LLM provider is NVIDIA API (OpenAI-compatible endpoint, currently running `deepseek-v3.2`) with support for local models via llama.cpp. Market data comes from Massive API (Polygon-compatible, unlimited rate limit on stock starter kit). Ticker research comes from AskEdgar API.
+Agents run as Docker Compose services on a home server (16GB RAM laptop). They communicate via a Postgres-backed job queue (Neon Launch plan). The LLM provider is NVIDIA API (OpenAI-compatible endpoint, currently running `deepseek-v3.2`) with support for local models via llama.cpp. Market data comes from Massive API (Polygon-compatible, unlimited rate limit on stock starter kit). Ticker research comes from AskEdgar API.
 
 The web UI migrates from the current Jarvis chat to a polling-based agent chat with a supervised report review queue (Level 1 autonomy — all agent reports require user approval before action).
 
@@ -40,7 +40,7 @@ The web UI migrates from the current Jarvis chat to a polling-based agent chat w
 │                                              ▼           │
 │                                     ┌──────────────┐     │
 │                                     │ Neon Postgres │     │
-│                                     │  (free tier)  │     │
+│                                     │ (Launch plan) │     │
 │                                     └──────────────┘     │
 └──────────────────────────────────────────────────────────┘
                                             │
