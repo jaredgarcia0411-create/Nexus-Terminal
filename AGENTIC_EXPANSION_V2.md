@@ -1,6 +1,6 @@
 # Nexus Terminal — Autonomous Agent Framework Architecture
 
-> Generated: 2026-03-13 | Updated: 2026-03-26 | Status: DRAFT R2 — Requires approval before implementation
+> Generated: 2026-03-13 | Updated: 2026-03-27 | Status: DRAFT R3 — Requires approval before implementation
 
 ---
 
@@ -8,9 +8,9 @@
 
 This document specifies a multi-agent system for Nexus Terminal consisting of three runtime components: an **Orchestrator** (with built-in research routing pipeline and macro cron), a **Dilutionary Small Cap Trader** agent, and a **Swing Trader** agent.
 
-Agents run as Docker Compose services on a home server (16GB RAM laptop). They communicate via a Postgres-backed job queue (Neon Launch plan). The LLM provider is NVIDIA API (OpenAI-compatible endpoint, currently running `deepseek-v3.2`) with support for local models via llama.cpp. Market data comes from Massive API (Polygon-compatible, unlimited rate limit on stock starter kit). Ticker research comes from AskEdgar API.
+Agents run as Docker Compose services on a home server (16GB RAM laptop). They communicate via a Postgres-backed job queue (Neon Launch plan). The LLM provider is configurable via two deterministic lanes: INTERACTIVE_LLM (Orchestrator chat — optimized for speed) and BACKGROUND_LLM (specialist agent scans — optimized for cost/quality). Both use OpenAI-compatible endpoints. Testing uses Groq free tier with `llama-3.3-70b-versatile`. Production uses NVIDIA API. Local llama.cpp is supported as a fallback for either lane. Market data comes from Massive API (Polygon-compatible, unlimited rate limit on stock starter kit). Ticker research comes from AskEdgar API.
 
-The web UI migrates from the current Jarvis chat to a polling-based agent chat with a supervised report review queue (Level 1 autonomy — all agent reports require user approval before action).
+The web UI migrates from the current Jarvis chat to a polling-based agent chat for the Orchestrator. Specialist-agent reports are Discord-first, published to channel webhooks, and persisted in `agent_reports` for history. V1 has no in-app approval queue.
 
 ### Design Principles
 
@@ -18,9 +18,9 @@ The web UI migrates from the current Jarvis chat to a polling-based agent chat w
 - **Agents are long-running Docker services.** They poll for work, execute, and write results back. They do not run on Vercel.
 - **The Orchestrator owns routing.** The collapsed Research Analyst logic lives inside the Orchestrator as a deterministic rules engine — no LLM call for routing decisions.
 - **Each agent has strict scope boundaries.** An agent can only read its own memory and the shared job queue. Cross-agent data access goes through the Orchestrator.
-- **Supervised by default.** Agent reports start as `pending_review`. The user approves or rejects from a review queue in the web UI.
+- **Discord-first publish flow.** Specialist reports post to Discord webhooks and are persisted in `agent_reports` for history. V1 has no in-app approval gate; delivery status is tracked in the database and surfaced via admin observability.
 - **Blueprint-driven handlers.** Every job handler is a blueprint — a sequence of typed steps where each step is either `code` (deterministic, no LLM) or `llm` (reasoning/analysis). Code steps fetch data, calculate indicators, format output. LLM steps analyze and synthesize. This keeps LLM calls minimal, costs low, and results reliable. Inspired by Stripe's blueprint engine pattern.
-- **Provider-agnostic LLM.** The LLM wrapper detects provider from URL. Swapping from NVIDIA API to a local llama.cpp server is a config change.
+- **Provider-agnostic, dual-lane LLM.** The LLM wrapper uses two named config lanes — INTERACTIVE (Orchestrator chat) and BACKGROUND (specialist scans and macro jobs) — each with its own API key, base URL, model, and timeout. Lane assignment is deterministic per blueprint step, not URL-detected. Swapping providers per lane is a config-only change.
 - **Three-layer prompt stack.** Every LLM call uses a layered prompt: (1) global orchestrator policy, (2) per-agent role prompt, (3) per-blueprint-step contract prompt. Policy is stable; each judgment step is narrow and testable.
 - **Code owns truth, LLM owns judgment.** Routing, thresholds, ticker normalization, calculations, filtering, freshness checks, and persistence validation are deterministic code. LLM steps only synthesize, explain tradeoffs, or write summaries from validated evidence.
 - **No vector RAG in V1.** Retrieval uses SQL queries, API tool calls (Massive, AskEdgar), and structured memory. Document RAG is deferred until a large unstructured corpus justifies it.
@@ -36,7 +36,7 @@ The web UI migrates from the current Jarvis chat to a polling-based agent chat w
 │  Web UI ─── POST /api/agents/chat ──┐                    │
 │  Web UI ─── GET  /api/agents/chat ──┤  (polls for result)│
 │  Web UI ─── GET  /api/agents/reports ──┤                 │
-│  Web UI ─── PATCH /api/agents/reports/[id] ──┤           │
+│  Web UI ─── GET  /api/agents/admin/stats ──┤             │
 │                                              ▼           │
 │                                     ┌──────────────┐     │
 │                                     │ Neon Postgres │     │
@@ -84,7 +84,7 @@ agent_registry
 ├── description         TEXT NOT NULL
 ├── status              TEXT NOT NULL DEFAULT 'offline'  -- 'online' | 'offline' | 'degraded'
 ├── capabilities        JSONB NOT NULL DEFAULT '[]'      -- ["chat", "research", "trade-analysis", "macro"]
-├── config              JSONB NOT NULL DEFAULT '{}'      -- agent-specific config (model, temperature, etc.)
+├── config              JSONB NOT NULL DEFAULT '{}'      -- agent-specific config (lane, model override, temperature, etc.)
 ├── last_heartbeat      TIMESTAMPTZ
 ├── created_at          TIMESTAMPTZ DEFAULT now()
 └── updated_at          TIMESTAMPTZ DEFAULT now()
@@ -135,7 +135,7 @@ WHERE id = (
 RETURNING *;
 ```
 
-### 3.3 `agent_reports` — Published research output (supervised)
+### 3.3 `agent_reports` — Published research output history (Discord-first)
 
 ```
 agent_reports
@@ -147,9 +147,10 @@ agent_reports
 ├── title               TEXT NOT NULL
 ├── summary             TEXT
 ├── report_json         JSONB NOT NULL
-├── status              TEXT NOT NULL DEFAULT 'pending_review'  -- 'pending_review' | 'approved' | 'rejected' | 'archived'
-├── reviewed_at         TIMESTAMPTZ
-├── review_notes        TEXT
+├── status              TEXT NOT NULL DEFAULT 'published'       -- 'published' | 'delivery_failed' | 'archived'
+├── delivery_channel    TEXT NOT NULL DEFAULT 'discord'         -- 'discord' | 'web'
+├── delivered_at        TIMESTAMPTZ
+├── delivery_error      TEXT
 ├── created_at          TIMESTAMPTZ DEFAULT now()
 └── INDEXES
     ├── idx_agent_reports_user_status ON (user_id, status, created_at DESC)
@@ -166,7 +167,7 @@ agent_conversations
 ├── session_id          TEXT NOT NULL
 ├── role                TEXT NOT NULL                 -- 'user' | 'assistant' | 'system'
 ├── content             TEXT NOT NULL
-├── channel             TEXT NOT NULL DEFAULT 'web'  -- 'web' (future: 'discord', 'api')
+├── channel             TEXT NOT NULL DEFAULT 'web'  -- 'web' | 'discord' | 'api'
 ├── context_snapshot    JSONB
 ├── created_at          TIMESTAMPTZ DEFAULT now()
 └── INDEXES
@@ -182,6 +183,7 @@ agent_request_log
 ├── user_id              TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
 ├── agent_id             TEXT NOT NULL
 ├── mode                 TEXT NOT NULL
+├── lane                 TEXT NOT NULL DEFAULT 'background'  -- 'interactive' | 'background'
 ├── model_used           TEXT                         -- tracks which model was used
 ├── input_tokens         INTEGER NOT NULL DEFAULT 0
 ├── output_tokens        INTEGER NOT NULL DEFAULT 0
@@ -240,7 +242,7 @@ Two separate migrations to allow rollback between them.
 9. UPDATE `agent_memory` SET `agent_id = 'orchestrator'` WHERE `agent_id = 'jarvis'`
 10. INSERT seed rows into `agent_registry` for 3 agents: `'orchestrator'`, `'small-cap-trader'`, `'swing-trader'`
 11. Copy data from `jarvis_conversations` → `agent_conversations` (map columns)
-12. Copy data from `jarvis_request_log` → `agent_request_log` (map columns, set `estimated_cost_cents = 0` for historical rows)
+12. Copy data from `jarvis_request_log` → `agent_request_log` (map columns, set `estimated_cost_cents = 0`, `lane = 'background'` for historical rows)
 
 ### Migration 0012 — Drop legacy tables (after confirming 0011 works)
 
@@ -296,9 +298,9 @@ Agent heartbeats every 30 seconds keep Neon warm. Cold starts take 1-3 seconds, 
 
 2. **Memory oversight.** Reads all agents' memory rows. Detects contradictions (e.g., Small Cap is bullish on a ticker that Swing Trader flagged as losing momentum) and injects context when routing.
 
-3. **Report aggregation.** Receives completion events, optionally adds cross-agent context, writes final report to `agent_reports` with `status = 'pending_review'`.
+3. **Report aggregation.** Receives completion events, optionally adds cross-agent context, writes final report to `agent_reports`, and publishes to the appropriate Discord webhook with `status = 'published'` or `status = 'delivery_failed'`.
 
-4. **Macro cron.** Runs the daily macro headline scraping pipeline that was previously a Vercel cron job. Uses `setInterval` inside the container.
+4. **Macro cron.** Runs the daily macro headline scraping pipeline that was previously a Vercel cron job. Uses `setInterval` inside the container and posts the final briefing to `#macro-daily`.
 
 **LLM usage:** Only for synthesizing cross-agent summaries, answering user chat queries that require reasoning, and generating the daily briefing.
 
@@ -365,6 +367,7 @@ A blueprint is a named sequence of steps that defines exactly how an agent handl
 
 ```typescript
 type StepType = 'code' | 'llm';
+type LlmLane = 'interactive' | 'background';
 
 // Failure classification for retry/escalation decisions
 type FailureClass = 'transient' | 'input-quality' | 'contract' | 'dependency' | 'policy';
@@ -378,6 +381,7 @@ interface StepMetadata {
   maxRepairAttempts: number;            // for 'llm' steps: how many repair retries (default 1)
   sideEffect: boolean;                 // does this step write to DB, call webhooks, etc.?
   idempotencyKey?: string;             // for side-effecting steps: prevents double-writes on retry
+  lane?: LlmLane;                      // for 'llm' steps: override the agent default lane
 }
 
 interface StepProvenance {
@@ -435,7 +439,7 @@ The worker's `runBlueprint()` function replaces the old monolithic `JobHandler`.
 1. Loads the agent's memory and context once (shared across all steps)
 2. Iterates through steps sequentially
 3. For `code` steps — calls `step.run()` directly, no LLM involved
-4. For `llm` steps — calls `step.run()` which internally uses `callLlm()`, tracks tokens
+4. For `llm` steps — calls `step.run()` which internally uses `callLlm()` with `step.metadata.lane ?? config.llmLane`, then tracks tokens
 5. Validates input/output via Zod schemas if declared on the step
 6. Persists step-level progress to `step_log` JSONB after each step
 7. Supports checkpoint/resume from a specific step index on retry
@@ -522,7 +526,7 @@ async function runBlueprint(
 | 3 | `analyze-dilution` | `llm` | `canRetry: false, timeoutMs: 60000, maxRepairAttempts: 1, sideEffect: false` | Receives structured filing data + agent's dilution history from memory. Returns dilution risk score and reasoning per ticker. Output must include `confidence`, `evidenceIds`, `insufficientEvidence`. |
 | 4 | `fetch-ohlcv` | `code` | `canRetry: true, timeoutMs: 30000, sideEffect: false` | Fetches OHLCV candles from Massive API for each surviving candidate. Calculates SMA, RSI, VWAP, volume profile using `lib/indicators.ts`. Returns structured technical data. |
 | 5 | `analyze-technicals` | `llm` | `canRetry: false, timeoutMs: 60000, maxRepairAttempts: 1, sideEffect: false` | Receives technical data + dilution scores. Returns entry/exit levels, support/resistance, confidence rating per ticker. Output must include `confidence`, `evidenceIds`, `insufficientEvidence`. |
-| 6 | `assemble-report` | `code` | `canRetry: true, timeoutMs: 15000, sideEffect: true, idempotencyKey: 'scan-{date}'` | Merges all outputs into `agent_reports` row with `status = 'pending_review'`. Adds output validation gate. No LLM call — just JSON assembly. |
+| 6 | `assemble-report` | `code` | `canRetry: true, timeoutMs: 15000, sideEffect: true, idempotencyKey: 'scan-{date}'` | Merges all outputs into a validated `agent_reports` row, POSTs the embed to `#small-cap-scans`, and stores `status = 'published'` on success or `status = 'delivery_failed'` if webhook delivery fails. No LLM call — just JSON assembly + delivery. |
 
 **Blueprint: `small-cap:research`** (on-demand user request)
 
@@ -533,7 +537,7 @@ async function runBlueprint(
 | 3 | `calculate-indicators` | `code` | Runs SMA, RSI, VWAP, MACD, Bollinger from `lib/indicators.ts`. |
 | 4 | `fetch-theme-context` | `code` | Fetches AskEdgar `/v1/market-strength?latest=true` for current themes narrative. Fetches AskEdgar `/v1/screener` with `min_gain_7_day=30&max_market_cap=500000000&limit=20` for recent top-performing small caps. Returns `{ marketThemes, topPerformers }`. |
 | 5 | `analyze-and-report` | `llm` | Receives all structured data from steps 1-4. Uses the AskEdgar Research Prompt (Section 25) as output formatting template. Returns structured research report with all rated sections. |
-| 6 | `assemble-report` | `code` | Validates report completeness (all required sections present, all ratings valid enum values). Writes report to `agent_reports`. POSTs Discord embed to `#small-cap-research` webhook. |
+| 6 | `assemble-report` | `code` | Validates report completeness (all required sections present, all ratings valid enum values). Writes report to `agent_reports`. POSTs Discord embed to `#small-cap-research` and stores `published` or `delivery_failed` based on webhook outcome. |
 
 ### Swing Trader Blueprints
 
@@ -546,7 +550,7 @@ async function runBlueprint(
 | 3 | `calculate-momentum-indicators` | `code` | `canRetry: false, timeoutMs: 5000, sideEffect: false` | Calculates from `lib/indicators.ts`: RSI, EMA(9), EMA(21), VWAP, volume surge ratio (today vs 20-day avg). Flags tickers with RSI > 70 and rising, volume surge > 3x, price above both EMAs. Returns structured technical data. |
 | 4 | `load-pattern-history` | `code` | `canRetry: true, timeoutMs: 10000, sideEffect: false` | Reads `agent_memory` entries with `category = 'pattern'` for this agent. Returns historical MDR setups for similarity comparison. |
 | 5 | `analyze-mdr-patterns` | `llm` | `canRetry: false, timeoutMs: 60000, maxRepairAttempts: 1, sideEffect: false` | Receives all structured data + historical patterns. For each candidate, scores MDR similarity (0-100) against known patterns. Identifies: continuation probability, expected move magnitude, key levels to watch, catalyst strength. Returns ranked candidates with MDR scores and long entry theses. Output must include `confidence`, `evidenceIds`, `insufficientEvidence`. |
-| 6 | `assemble-report` | `code` | `canRetry: true, timeoutMs: 15000, sideEffect: true, idempotencyKey: 'swing-scan-{date}'` | Validates: at least one candidate has MDR score >= 60, all required fields present. Writes report to `agent_reports`. POSTs Discord embed to `#swing-setups` webhook. Proposes memory write candidates for new pattern entries (validated and persisted by this step). |
+| 6 | `assemble-report` | `code` | `canRetry: true, timeoutMs: 15000, sideEffect: true, idempotencyKey: 'swing-scan-{date}'` | Validates: at least one candidate has MDR score >= 60, all required fields present. Writes report to `agent_reports`. POSTs Discord embed to `#swing-setups`, stores `published` or `delivery_failed`, and proposes memory write candidates for new pattern entries (validated and persisted by this step). |
 
 **Blueprint: `swing:research`** (on-demand user request via `/swing TICKER`)
 
@@ -557,7 +561,7 @@ async function runBlueprint(
 | 3 | `calculate-indicators` | `code` | `canRetry: false, timeoutMs: 5000, sideEffect: false` | Runs EMA(9), EMA(21), RSI, VWAP, volume surge ratio from `lib/indicators.ts`. Identifies key support/resistance levels. |
 | 4 | `load-pattern-history` | `code` | `canRetry: true, timeoutMs: 10000, sideEffect: false` | Reads historical MDR patterns from `agent_memory`. Filters to patterns with similar float/price/catalyst characteristics. |
 | 5 | `analyze-momentum-thesis` | `llm` | `canRetry: false, timeoutMs: 60000, maxRepairAttempts: 1, sideEffect: false` | Receives all data. Produces: MDR similarity score, momentum thesis (bull case for long entry), key levels (entry, stop, targets), risk factors, historical pattern comparisons, continuation probability. Output schema includes `confidence`, `evidenceIds`, `insufficientEvidence`. |
-| 6 | `assemble-report` | `code` | `canRetry: true, timeoutMs: 15000, sideEffect: true` | Validates report completeness. Writes to `agent_reports`. POSTs Discord embed to `#swing-setups`. |
+| 6 | `assemble-report` | `code` | `canRetry: true, timeoutMs: 15000, sideEffect: true` | Validates report completeness. Writes to `agent_reports`. POSTs Discord embed to `#swing-setups` and stores `published` or `delivery_failed` based on webhook outcome. |
 
 ### Orchestrator Blueprints
 
@@ -576,8 +580,8 @@ The Orchestrator uses simpler blueprints since its primary job is routing:
 |---|------|------|-------------|
 | 1 | `scrape-headlines` | `code` | Fetches macro headlines using existing scrape-lite module. |
 | 2 | `fetch-market-snapshot` | `code` | Fetches index/sector/commodity prices from Massive API. |
-| 3 | `generate-briefing` | `llm` | Receives headlines + market data. Returns structured daily briefing. |
-| 4 | `save-summary` | `code` | Writes to `daily_ticker_summaries` / `macro_summaries` table. |
+| 3 | `generate-briefing` | `llm` | Receives headlines + market data. Returns structured daily briefing. Uses `lane: 'background'` instead of the Orchestrator's default interactive lane. |
+| 4 | `save-summary` | `code` | Writes to `daily_ticker_summaries` / `macro_summaries` table and POSTs the final briefing embed to `#macro-daily`. |
 
 ---
 
@@ -589,7 +593,8 @@ The Orchestrator uses simpler blueprints since its primary job is routing:
 interface AgentConfig {
   id: AgentId;
   displayName: string;
-  model: string;              // e.g. 'deepseek-v3.2' or 'local/mistral-7b'
+  llmLane: LlmLane;          // 'interactive' for Orchestrator chat, 'background' for specialist scans
+  modelOverride?: string;    // optional override within the lane
   temperature: number;
   capabilities: JobType[];
   rolePromptPath: string;               // path to per-agent role prompt markdown
@@ -603,7 +608,7 @@ interface WorkerConfig {
 }
 ```
 
-(Note: `systemPrompt` is removed from per-agent config. The global orchestrator policy prompt is loaded separately by the blueprint runner and prepended to all LLM calls. The `rolePromptPath` points to the per-agent role prompt file, which is the second layer of the three-layer stack.)
+(Note: `systemPrompt` is removed from per-agent config. The global orchestrator policy prompt is loaded separately by the blueprint runner and prepended to all LLM calls. The `rolePromptPath` points to the per-agent role prompt file, which is the second layer of the three-layer stack. Default lane assignments: Orchestrator = `interactive`, Small Cap = `background`, Swing Trader = `background`. The Orchestrator's macro blueprint overrides its LLM step to `background`.)
 
 The old `JobHandler` is replaced by blueprints. The `blueprintResolver` function maps an incoming job to the correct blueprint based on `job_type` and any input flags (e.g., a `research` job for small-cap resolves to `small-cap:research`).
 
@@ -630,7 +635,7 @@ On `SIGTERM` / `SIGINT`:
 
 ## 8. LLM Integration
 
-### 8.1 Provider-Agnostic Wrapper
+### 8.1 Dual-Lane Wrapper
 
 All LLM calls go through `lib/agents/llm-client.ts`. No agent calls any API directly.
 
@@ -650,31 +655,53 @@ interface LlmResponse {
   durationMs: number;
 }
 
-interface LlmProviderConfig {
-  apiKey: string;              // AGENT_API_KEY env var
-  baseUrl: string;             // AGENT_API_BASE_URL env var
-  model: string;               // AGENT_MODEL, can be overridden per-agent
-  timeoutMs: number;           // AGENT_LLM_TIMEOUT_MS, default 30000
+interface LlmLaneConfig {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  timeoutMs: number;
 }
 
-function getLlmConfig(): LlmProviderConfig;
-async function callLlm(request: LlmRequest, config?: Partial<LlmProviderConfig>): Promise<LlmResponse>;
+type LlmLane = 'interactive' | 'background';
+
+interface LlmBudgetConfig {
+  dailyBudgetCents: number;        // AGENT_DAILY_BUDGET_CENTS, default 500
+  monthlyBudgetCents: number;      // AGENT_MONTHLY_BUDGET_CENTS, default 10000
+  maxContextTokens: number;        // AGENT_MAX_CONTEXT_TOKENS, default 32000
+  maxScanCandidates: number;       // AGENT_MAX_SCAN_CANDIDATES, default 20
+  maxPatternHistoryItems: number;  // AGENT_MAX_PATTERN_HISTORY, default 50
+  maxRetriesPerStep: number;       // AGENT_MAX_RETRIES_PER_STEP, default 2
+}
+
+function getInteractiveLlmConfig(): LlmLaneConfig;
+function getBackgroundLlmConfig(): LlmLaneConfig;
+function getLlmBudgetConfig(): LlmBudgetConfig;
+async function callLlm(
+  request: LlmRequest,
+  lane: LlmLane,
+  overrides?: Partial<LlmLaneConfig>
+): Promise<LlmResponse>;
 ```
 
-### 8.2 Provider Detection
+### 8.2 Provider Detection (for cost estimation only)
 
-The wrapper detects provider from the base URL:
-- `https://integrate.api.nvidia.com/*` → NVIDIA API (current provider)
-- `http://localhost:*` or `http://127.0.0.1:*` → local llama.cpp server (OpenAI-compatible)
-- Any other URL → treated as generic OpenAI-compatible API
+Provider detection is used only for cost estimation — it does **not** control lane assignment. Lane assignment is deterministic and set by the caller passing `lane: 'interactive' | 'background'` to `callLlm()`.
 
-All providers use the `/v1/chat/completions` format. Swapping providers is a config change (env vars only).
+The wrapper detects provider from the base URL for pricing lookups:
+- `https://api.groq.com/*` → Groq
+- `https://integrate.api.nvidia.com/*` → NVIDIA
+- `https://api.deepseek.com/*` → DeepSeek direct
+- `http://localhost:*` or `http://127.0.0.1:*` → local model (cost = 0)
+- Any other URL → generic OpenAI-compatible API (use model name for pricing lookup, fallback to 0)
+
+All providers use the `/v1/chat/completions` format. Swapping providers per lane is a config change (env vars only).
 
 ### 8.3 Local Model Support
 
 For running on the home server without API costs:
 - llama.cpp with a 7B quantized model fits in 16GB RAM alongside the Docker agents
-- Set `AGENT_API_BASE_URL=http://host.docker.internal:8080/v1/chat/completions` and `AGENT_API_KEY=not-needed`
+- To use a local model for the background lane: set `BACKGROUND_LLM_API_BASE_URL=http://host.docker.internal:8080/v1/chat/completions` and `BACKGROUND_LLM_API_KEY=not-needed`
+- To use a local model for everything: set both `INTERACTIVE_LLM_API_BASE_URL` and `BACKGROUND_LLM_API_BASE_URL` to the local endpoint
 - Cost tracking records `estimated_cost_cents = 0` for local models
 
 ### 8.4 System Prompts
@@ -689,14 +716,25 @@ lib/agents/prompts/
 
 ### 8.5 Env Var Unification
 
-All LLM config uses `AGENT_*` prefix with fallback to legacy names:
+### Interactive Lane
 
-| New Name | Fallback | Default |
-|----------|----------|---------|
-| `AGENT_API_KEY` | `JARVIS_API_KEY` | (required) |
-| `AGENT_API_BASE_URL` | `JARVIS_API_BASE_URL` | `https://integrate.api.nvidia.com/v1/chat/completions` |
-| `AGENT_MODEL` | `JARVIS_MODEL` | `deepseek-v3.2` |
-| `AGENT_LLM_TIMEOUT_MS` | `JARVIS_TIMEOUT_MS` | `30000` |
+| Name | Fallback Chain | Default |
+|------|---------------|---------|
+| `INTERACTIVE_LLM_API_KEY` | → `AGENT_API_KEY` → `JARVIS_API_KEY` | (required) |
+| `INTERACTIVE_LLM_API_BASE_URL` | → `AGENT_API_BASE_URL` → `JARVIS_API_BASE_URL` | `https://api.groq.com/openai/v1/chat/completions` |
+| `INTERACTIVE_LLM_MODEL` | → `AGENT_MODEL` → `JARVIS_MODEL` | `llama-3.3-70b-versatile` |
+| `INTERACTIVE_LLM_TIMEOUT_MS` | → `AGENT_LLM_TIMEOUT_MS` → `JARVIS_TIMEOUT_MS` | `30000` |
+
+### Background Lane
+
+| Name | Fallback Chain | Default |
+|------|---------------|---------|
+| `BACKGROUND_LLM_API_KEY` | → `AGENT_API_KEY` → `JARVIS_API_KEY` | (required) |
+| `BACKGROUND_LLM_API_BASE_URL` | → `AGENT_API_BASE_URL` → `JARVIS_API_BASE_URL` | `https://api.groq.com/openai/v1/chat/completions` |
+| `BACKGROUND_LLM_MODEL` | → `AGENT_MODEL` → `JARVIS_MODEL` | `llama-3.3-70b-versatile` |
+| `BACKGROUND_LLM_TIMEOUT_MS` | → `AGENT_LLM_TIMEOUT_MS` → `JARVIS_TIMEOUT_MS` | `60000` |
+
+**Fallback behavior:** If only legacy `JARVIS_*` values are set, both lanes use them and startup logs a warning to split keys before production. `BACKGROUND_LLM_TIMEOUT_MS` defaults to `60000` because scan and research steps already allow longer LLM execution windows.
 
 ---
 
@@ -704,13 +742,13 @@ All LLM config uses `AGENT_*` prefix with fallback to legacy names:
 
 | # | File | Purpose | Key Exports |
 |---|------|---------|-------------|
-| 1 | `types.ts` | Type definitions | `AgentId`, `JobType`, `JobStatus`, `ReportStatus`, `MemoryCategory`, `StepType`, `FailureClass`, `StepStatus`, `StepMetadata`, `StepProvenance`, `StepResult`, `BlueprintStep`, `Blueprint`, `StepInput`, `AgentJob`, `AgentReport`, `AgentConfig`, `LlmRequest`, `LlmResponse`, `WorkerConfig`, `LlmProviderConfig`, `TokenTrackingEntry` |
+| 1 | `types.ts` | Type definitions | `AgentId`, `JobType`, `JobStatus`, `ReportStatus`, `MemoryCategory`, `StepType`, `FailureClass`, `StepStatus`, `StepMetadata`, `StepProvenance`, `StepResult`, `BlueprintStep`, `Blueprint`, `StepInput`, `AgentJob`, `AgentReport`, `AgentConfig`, `LlmRequest`, `LlmResponse`, `WorkerConfig`, `LlmLaneConfig`, `LlmLane`, `LlmBudgetConfig`, `TokenTrackingEntry` |
 | 2 | `db.ts` | DB connection factory for Docker services | `getAgentDb(): DrizzleClient` (single pooled WebSocket connection) |
-| 3 | `llm-client.ts` | Provider-agnostic LLM wrapper | `getLlmConfig()`, `callLlm(request, config?)` |
+| 3 | `llm-client.ts` | Dual-lane LLM wrapper with budget enforcement | `getInteractiveLlmConfig()`, `getBackgroundLlmConfig()`, `getLlmBudgetConfig()`, `callLlm(request, lane, overrides?)` |
 | 4 | `circuit-breaker.ts` | Per-agent circuit breaker (same pattern as existing) | `CircuitBreaker` class — 5 failures = open, 60s reset |
 | 5 | `rate-limit.ts` | Per-user rate limiting | 30 req/hr, in-memory |
 | 6 | `retry.ts` | Backoff calculation | `calculateBackoffMs(attempt)`, `shouldRetry(attempt, maxAttempts)` |
-| 7 | `token-tracking.ts` | Cost estimation + request logging | `estimateCostCents(model, inputTokens, outputTokens)`, `logAgentRequest(db, entry)` |
+| 7 | `token-tracking.ts` | Cost estimation + request logging | `estimateCostCents(model, inputTokens, outputTokens)`, `logAgentRequest(db, entry)` — includes `lane` |
 | 8 | `job-queue.ts` | Job CRUD with FOR UPDATE SKIP LOCKED | `createJob()`, `pollForJob()`, `completeJob()`, `failJob()`, `getJobStatus()` |
 | 9 | `heartbeat.ts` | Agent heartbeat updater | `startHeartbeat(db, agentId, intervalMs)` |
 | 10 | `memory.ts` | Scoped memory CRUD | `readMemory()`, `writeMemory()`, `upsertMemory()` — all filtered by `agent_id` |
@@ -730,8 +768,9 @@ All LLM config uses `AGENT_*` prefix with fallback to legacy names:
 export type AgentId = 'orchestrator' | 'small-cap-trader' | 'swing-trader';
 export type JobType = 'chat' | 'research' | 'trade-analysis' | 'macro-summary' | 'momentum-scan' | 'swing-research';
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed';
-export type ReportStatus = 'pending_review' | 'approved' | 'rejected' | 'archived';
+export type ReportStatus = 'published' | 'delivery_failed' | 'archived';
 export type StepType = 'code' | 'llm';
+export type LlmLane = 'interactive' | 'background';
 export type FailureClass = 'transient' | 'input-quality' | 'contract' | 'dependency' | 'policy';
 export type StepStatus = 'queued' | 'running' | 'validated' | 'retrying' | 'blocked' | 'failed' | 'escalated' | 'completed';
 export type MemoryCategory = 'fact' | 'thesis' | 'watchlist' | 'scan_param' | 'performance'
@@ -789,23 +828,35 @@ When a job fails and is retried, the blueprint runner checks the `step_log` JSON
 
 Every LLM call writes to `agent_request_log` with:
 - `agent_id` — which agent made the call
-- `model_used` — actual model string (e.g., `deepseek-v3.2`)
+- `model_used` — actual model string (e.g., `llama-3.3-70b-versatile`)
+- `lane` — which config lane was used: `'interactive'` or `'background'`
 - `estimated_cost_cents` — calculated from pricing table
 
 ### Cost Estimation
 
 ```typescript
-const MODEL_PRICING: Record<string, { inputPer1k: number; outputPer1k: number }> = {
-  'deepseek-v3.2': { inputPer1k: 0.014, outputPer1k: 0.014 },
-  'local/*': { inputPer1k: 0, outputPer1k: 0 },
+const MODEL_PRICING: Record<string, { inputPer1kCents: number; outputPer1kCents: number }> = {
+  'llama-3.3-70b-versatile': { inputPer1kCents: 0.059, outputPer1kCents: 0.079 },
+  'nvidia/llama-3.3-70b-instruct': { inputPer1kCents: 0.040, outputPer1kCents: 0.040 },
+  'deepseek-chat': { inputPer1kCents: 0.027, outputPer1kCents: 0.110 },
+  'local/*': { inputPer1kCents: 0, outputPer1kCents: 0 },
 };
 ```
 
-### Monthly Budget
+### Budget Enforcement
 
-- Default: `AGENT_MONTHLY_BUDGET_CENTS=10000` ($100/month)
-- **Observability only in v1** — no hard enforcement, just dashboard tracking
-- UI warning at >80% used, critical alert at >100%
+Hard limits are checked by `callLlm()` before every LLM call. Budget is per-agent — each agent checks its own spend against `agent_request_log`.
+
+| Limit | Env Var | Default | What Happens When Hit |
+|-------|---------|---------|----------------------|
+| Daily spend cap | `AGENT_DAILY_BUDGET_CENTS` | `500` ($5/day per agent) | `BudgetExceededError` thrown, step fails with `failureClass: 'policy'`, no retry. Warning posted to `#agent-system`. |
+| Monthly spend cap | `AGENT_MONTHLY_BUDGET_CENTS` | `10000` ($100/mo per agent) | Same as daily — hard stop + Discord alert. |
+| Max context tokens per LLM call | `AGENT_MAX_CONTEXT_TOKENS` | `32000` | Input is truncated to fit. Warning logged. |
+| Max scan candidates sent to LLM | `AGENT_MAX_SCAN_CANDIDATES` | `20` | Code step slices candidate list before the LLM step. |
+| Max pattern history items loaded | `AGENT_MAX_PATTERN_HISTORY` | `50` | Code step slices pattern history before the LLM step. |
+| Max retries per LLM step | `AGENT_MAX_RETRIES_PER_STEP` | `2` | After N repair attempts, step fails with `failureClass: 'contract'`. |
+
+**Observability on top of enforcement:** dashboard/admin warning at 80% of daily/monthly cap, critical at 100%, plus Discord alerts to `#agent-system`.
 
 ### Admin Stats Endpoint
 
@@ -820,6 +871,9 @@ const MODEL_PRICING: Record<string, { inputPer1k: number; outputPer1k: number }>
     "estimatedCostCents": 180,
     "successRate": 0.95,
     "avgDurationMs": 2300,
+    "validationFailureRate": 0.03,
+    "retryRate": 0.07,
+    "byLane": { "interactive": { ... }, "background": { ... } },
     "byAgent": { "orchestrator": { ... }, "small-cap-trader": { ... } }
   },
   "thisMonth": {
@@ -831,37 +885,38 @@ const MODEL_PRICING: Record<string, { inputPer1k: number; outputPer1k: number }>
   "agents": [
     { "id": "orchestrator", "displayName": "Orchestrator", "status": "online", "lastHeartbeat": "..." }
   ],
-  "pendingReports": 3,
+  "delivery": { "publishedToday": 8, "deliveryFailures": 1 },
   "memory": { "total": 156, "byCategory": { "fact": 89, "thesis": 12, ... } },
   "macroSummaries": { "latestGeneratedAt": "..." }
 }
 ```
 
+V1 does **not** ship an `AgentStats.tsx` UI. Cost/performance tracking comes from this admin endpoint, `agent_request_log`, `agent_jobs.step_log`, `agent_registry`, and Discord `#agent-system` alerts.
+
 ---
 
-## 12. Supervised Mode (Level 1 Autonomy)
+## 12. Discord-First Publish Mode (V1)
 
 ### Flow
 
-1. Agent produces report → writes to `agent_reports` with `status = 'pending_review'`
-2. `AgentReportQueue.tsx` displays pending reports as cards
-3. Each card shows: agent name, report type, title, summary, timestamp
-4. User clicks **Approve** or **Reject**
-5. `PATCH /api/agents/reports/[id]` updates `status`, `reviewed_at`, `review_notes`
+1. Agent completes a report blueprint and writes the validated payload to `agent_reports`
+2. Final code step POSTs the formatted embed to the channel webhook (`#small-cap-scans`, `#small-cap-research`, `#swing-setups`, `#swing-alerts`, or `#macro-daily`)
+3. On success, the row is stored with `status = 'published'` and `delivered_at = now()`
+4. On webhook failure, the row is stored with `status = 'delivery_failed'` and `delivery_error`
+5. Delivery failures trigger a system alert in `#agent-system`
 
 ### Status Transitions
 
 ```
-pending_review → approved    (user approves)
-pending_review → rejected    (user rejects with notes)
-approved       → archived    (user archives old report)
-rejected       → archived    (user archives old report)
+published       → archived
+delivery_failed → archived
 ```
 
 ### UI Integration
 
-- Badge count on sidebar "Agents" tab shows number of `pending_review` reports
-- Report queue is a sub-tab within the Agents tab
+- `AgentTab.tsx` is chat-only in V1
+- Report history remains queryable via `/api/agents/reports`
+- Cost/performance tracking lives in `/api/agents/admin/stats` and `#agent-system`, not a dedicated V1 stats tab
 
 ---
 
@@ -875,13 +930,12 @@ All routes under `/api/jarvis/*` are replaced by `/api/agents/*`.
 |-------|--------|---------|
 | `/api/agents/chat` | POST | Create chat job → returns `{ job_id }` |
 | `/api/agents/chat` | GET | Poll for result `?job_id=X` → returns `{ status, result?, error? }` |
-| `/api/agents/reports` | GET | List reports `?status=pending_review` |
+| `/api/agents/reports` | GET | List report history `?status=published|delivery_failed|archived` |
 | `/api/agents/reports/[id]` | GET | Get single report |
-| `/api/agents/reports/[id]` | PATCH | Approve/reject: `{ status, review_notes? }` |
 | `/api/agents/research` | POST | Create research job |
 | `/api/agents/research` | GET | List past research reports |
 | `/api/agents/trade-analysis` | POST | Create trade analysis job |
-| `/api/agents/admin/stats` | GET | Admin dashboard data |
+| `/api/agents/admin/stats` | GET | Admin ops data: cost, latency, retries, validation failures, health |
 | `/api/agents/admin/memory` | GET/DELETE | Admin memory management |
 | `/api/agents/macro-summary/latest` | GET | Latest macro summary |
 
@@ -917,15 +971,13 @@ function routeToAgent(message: string, explicitAgentId?: string): AgentId {
 | Component | Replaces | Purpose |
 |-----------|----------|---------|
 | `AgentChat.tsx` | `JarvisChat.tsx` | Polling-based chat with "Thinking..." indicator, agent selector dropdown |
-| `AgentTab.tsx` | `JarvisTab.tsx` | Wraps AgentChat, adds sub-tabs: Chat, Reports, Stats |
-| `AgentReportQueue.tsx` | (new) | Lists `pending_review` reports as cards with Approve/Reject buttons |
-| `AgentStats.tsx` | (new) | Per-agent token usage, cost, latency charts. Budget tracking display. |
+| `AgentTab.tsx` | `JarvisTab.tsx` | Wraps `AgentChat.tsx`; V1 is chat-only with progress notes and current agent display |
 
 ### Sidebar Change
 
 - Tab key `'jarvis'` → `'agents'`
 - Label "Jarvis" → "Agents"
-- Badge count shows pending report count
+- No report badge count in V1
 
 ### Kept Renderers (no functional changes)
 
@@ -992,12 +1044,25 @@ services:
     environment:
       - AGENT_ID=orchestrator
       - DATABASE_URL=${DATABASE_URL}
-      - AGENT_API_KEY=${AGENT_API_KEY}
-      - AGENT_API_BASE_URL=${AGENT_API_BASE_URL}
-      - AGENT_MODEL=${AGENT_MODEL}
+      - INTERACTIVE_LLM_API_KEY=${INTERACTIVE_LLM_API_KEY}
+      - INTERACTIVE_LLM_API_BASE_URL=${INTERACTIVE_LLM_API_BASE_URL}
+      - INTERACTIVE_LLM_MODEL=${INTERACTIVE_LLM_MODEL:-llama-3.3-70b-versatile}
+      - INTERACTIVE_LLM_TIMEOUT_MS=${INTERACTIVE_LLM_TIMEOUT_MS:-30000}
+      - BACKGROUND_LLM_API_KEY=${BACKGROUND_LLM_API_KEY}
+      - BACKGROUND_LLM_API_BASE_URL=${BACKGROUND_LLM_API_BASE_URL}
+      - BACKGROUND_LLM_MODEL=${BACKGROUND_LLM_MODEL:-llama-3.3-70b-versatile}
+      - BACKGROUND_LLM_TIMEOUT_MS=${BACKGROUND_LLM_TIMEOUT_MS:-60000}
+      - AGENT_DAILY_BUDGET_CENTS=${AGENT_DAILY_BUDGET_CENTS:-500}
+      - AGENT_MONTHLY_BUDGET_CENTS=${AGENT_MONTHLY_BUDGET_CENTS:-10000}
+      - AGENT_MAX_CONTEXT_TOKENS=${AGENT_MAX_CONTEXT_TOKENS:-32000}
+      - AGENT_MAX_SCAN_CANDIDATES=${AGENT_MAX_SCAN_CANDIDATES:-20}
+      - AGENT_MAX_PATTERN_HISTORY=${AGENT_MAX_PATTERN_HISTORY:-50}
+      - AGENT_MAX_RETRIES_PER_STEP=${AGENT_MAX_RETRIES_PER_STEP:-2}
       - AGENT_POLL_INTERVAL_MS=${AGENT_POLL_INTERVAL_MS:-5000}
       - ASKEDGAR_API_KEY=${ASKEDGAR_API_KEY}
       - MASSIVE_API_KEY=${MASSIVE_API_KEY}
+      - DISCORD_WEBHOOK_MACRO_DAILY=${DISCORD_WEBHOOK_MACRO_DAILY}
+      - DISCORD_WEBHOOK_SYSTEM=${DISCORD_WEBHOOK_SYSTEM}
       - MACRO_CRON_HOUR=6
       - TZ=America/New_York
     deploy:
@@ -1012,6 +1077,11 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/healthy && find /tmp/healthy -mmin -2 >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   small-cap-trader:
     build:
@@ -1020,12 +1090,25 @@ services:
     environment:
       - AGENT_ID=small-cap-trader
       - DATABASE_URL=${DATABASE_URL}
-      - AGENT_API_KEY=${AGENT_API_KEY}
-      - AGENT_API_BASE_URL=${AGENT_API_BASE_URL}
-      - AGENT_MODEL=${AGENT_MODEL}
+      - INTERACTIVE_LLM_API_KEY=${INTERACTIVE_LLM_API_KEY}
+      - INTERACTIVE_LLM_API_BASE_URL=${INTERACTIVE_LLM_API_BASE_URL}
+      - INTERACTIVE_LLM_MODEL=${INTERACTIVE_LLM_MODEL:-llama-3.3-70b-versatile}
+      - INTERACTIVE_LLM_TIMEOUT_MS=${INTERACTIVE_LLM_TIMEOUT_MS:-30000}
+      - BACKGROUND_LLM_API_KEY=${BACKGROUND_LLM_API_KEY}
+      - BACKGROUND_LLM_API_BASE_URL=${BACKGROUND_LLM_API_BASE_URL}
+      - BACKGROUND_LLM_MODEL=${BACKGROUND_LLM_MODEL:-llama-3.3-70b-versatile}
+      - BACKGROUND_LLM_TIMEOUT_MS=${BACKGROUND_LLM_TIMEOUT_MS:-60000}
+      - AGENT_DAILY_BUDGET_CENTS=${AGENT_DAILY_BUDGET_CENTS:-500}
+      - AGENT_MONTHLY_BUDGET_CENTS=${AGENT_MONTHLY_BUDGET_CENTS:-10000}
+      - AGENT_MAX_CONTEXT_TOKENS=${AGENT_MAX_CONTEXT_TOKENS:-32000}
+      - AGENT_MAX_SCAN_CANDIDATES=${AGENT_MAX_SCAN_CANDIDATES:-20}
+      - AGENT_MAX_PATTERN_HISTORY=${AGENT_MAX_PATTERN_HISTORY:-50}
+      - AGENT_MAX_RETRIES_PER_STEP=${AGENT_MAX_RETRIES_PER_STEP:-2}
       - AGENT_POLL_INTERVAL_MS=${AGENT_POLL_INTERVAL_MS:-5000}
       - ASKEDGAR_API_KEY=${ASKEDGAR_API_KEY}
       - MASSIVE_API_KEY=${MASSIVE_API_KEY}
+      - DISCORD_WEBHOOK_SCANS=${DISCORD_WEBHOOK_SCANS}
+      - DISCORD_WEBHOOK_RESEARCH=${DISCORD_WEBHOOK_RESEARCH}
       - TZ=America/New_York
     deploy:
       resources:
@@ -1039,6 +1122,11 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/healthy && find /tmp/healthy -mmin -2 >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   swing-trader:
     build:
@@ -1047,9 +1135,20 @@ services:
     environment:
       - AGENT_ID=swing-trader
       - DATABASE_URL=${DATABASE_URL}
-      - AGENT_API_KEY=${AGENT_API_KEY}
-      - AGENT_API_BASE_URL=${AGENT_API_BASE_URL}
-      - AGENT_MODEL=${AGENT_MODEL}
+      - INTERACTIVE_LLM_API_KEY=${INTERACTIVE_LLM_API_KEY}
+      - INTERACTIVE_LLM_API_BASE_URL=${INTERACTIVE_LLM_API_BASE_URL}
+      - INTERACTIVE_LLM_MODEL=${INTERACTIVE_LLM_MODEL:-llama-3.3-70b-versatile}
+      - INTERACTIVE_LLM_TIMEOUT_MS=${INTERACTIVE_LLM_TIMEOUT_MS:-30000}
+      - BACKGROUND_LLM_API_KEY=${BACKGROUND_LLM_API_KEY}
+      - BACKGROUND_LLM_API_BASE_URL=${BACKGROUND_LLM_API_BASE_URL}
+      - BACKGROUND_LLM_MODEL=${BACKGROUND_LLM_MODEL:-llama-3.3-70b-versatile}
+      - BACKGROUND_LLM_TIMEOUT_MS=${BACKGROUND_LLM_TIMEOUT_MS:-60000}
+      - AGENT_DAILY_BUDGET_CENTS=${AGENT_DAILY_BUDGET_CENTS:-500}
+      - AGENT_MONTHLY_BUDGET_CENTS=${AGENT_MONTHLY_BUDGET_CENTS:-10000}
+      - AGENT_MAX_CONTEXT_TOKENS=${AGENT_MAX_CONTEXT_TOKENS:-32000}
+      - AGENT_MAX_SCAN_CANDIDATES=${AGENT_MAX_SCAN_CANDIDATES:-20}
+      - AGENT_MAX_PATTERN_HISTORY=${AGENT_MAX_PATTERN_HISTORY:-50}
+      - AGENT_MAX_RETRIES_PER_STEP=${AGENT_MAX_RETRIES_PER_STEP:-2}
       - AGENT_POLL_INTERVAL_MS=${AGENT_POLL_INTERVAL_MS:-5000}
       - ASKEDGAR_API_KEY=${ASKEDGAR_API_KEY}
       - MASSIVE_API_KEY=${MASSIVE_API_KEY}
@@ -1068,9 +1167,16 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/healthy && find /tmp/healthy -mmin -2 >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 ```
 
 **Total resource usage:** ~1.5GB RAM for 3 agents. Fits comfortably on a 16GB laptop.
+
+Agent containers do not expose an HTTP server, so healthchecks use a heartbeat-touched `/tmp/healthy` file instead of `/api/health`.
 
 ### Home Server Notes
 
@@ -1149,20 +1255,18 @@ Sequential phases. Each phase must pass `npm run lint && npx tsc --noEmit` befor
 |------|------|------------|
 | 33 | `components/trading/AgentChat.tsx` | Phase 4 |
 | 34 | `components/trading/AgentTab.tsx` | Step 33 |
-| 35 | `components/trading/AgentReportQueue.tsx` | Phase 4 |
-| 36 | `components/trading/AgentStats.tsx` | Phase 4 |
-| 37 | Modify `Sidebar.tsx` — `'jarvis'` → `'agents'` | Steps 33-36 |
+| 35 | Modify `Sidebar.tsx` — `'jarvis'` → `'agents'` | Steps 33-34 |
 
 ### Phase 7: Cleanup (after full validation)
 
 | Step | Task | Depends On |
 |------|------|------------|
-| 38 | Delete `app/api/jarvis/` directory | Phase 4 verified |
-| 39 | Delete `lib/jarvis/` directory | Phase 3 verified |
-| 40 | Delete `JarvisChat.tsx`, `JarvisTab.tsx` | Phase 6 verified |
-| 41 | Remove Vercel cron config for macro-summary | Phase 5 verified |
-| 42 | Generate migration 0012 (drop `jarvis_conversations`, `jarvis_request_log`) | Phase 2 verified |
-| 43 | Run migration 0012 | Step 42 |
+| 36 | Delete `app/api/jarvis/` directory | Phase 4 verified |
+| 37 | Delete `lib/jarvis/` directory | Phase 3 verified |
+| 38 | Delete `JarvisChat.tsx`, `JarvisTab.tsx` | Phase 6 verified |
+| 39 | Remove Vercel cron config for macro-summary | Phase 5 verified |
+| 40 | Generate migration 0012 (drop `jarvis_conversations`, `jarvis_request_log`) | Phase 2 verified |
+| 41 | Run migration 0012 | Step 40 |
 
 ---
 
@@ -1210,13 +1314,12 @@ services/docker-compose.yml
 services/.env.example
 ```
 
-### Files to MODIFY (4)
+### Files to MODIFY (3)
 
 ```
 lib/db/schema.ts                  -- add 5 tables + step_log/progress_note on agent_jobs + source/confidence on agent_memory, alter agent_memory
 services/docker-compose.yml       -- rewrite (3 agent services: orchestrator, small-cap-trader, swing-trader)
 components/trading/Sidebar.tsx    -- 'jarvis' → 'agents' tab
-package.json                      -- add zod dependency (if not already present)
 ```
 
 ### Files REMOVED from R1 plan (confirmed)
@@ -1258,50 +1361,95 @@ components/trading/JarvisTab.tsx
 
 ## 18. Environment Variables
 
-### New Variables
+### Agent LLM Config — Two-Lane
+
+| Variable | Default | Used By | Purpose |
+|----------|---------|---------|---------|
+| `INTERACTIVE_LLM_API_KEY` | (required, falls back to `JARVIS_API_KEY`) | Orchestrator (chat) | API key for user-facing chat lane |
+| `INTERACTIVE_LLM_API_BASE_URL` | `https://api.groq.com/openai/v1/chat/completions` | Orchestrator (chat) | LLM endpoint for interactive lane |
+| `INTERACTIVE_LLM_MODEL` | `llama-3.3-70b-versatile` | Orchestrator (chat) | Model for interactive lane |
+| `INTERACTIVE_LLM_TIMEOUT_MS` | `30000` | Orchestrator (chat) | Timeout for interactive lane (30s) |
+| `BACKGROUND_LLM_API_KEY` | (required, falls back to `JARVIS_API_KEY`) | Small Cap, Swing, Orchestrator (cron) | API key for background lane |
+| `BACKGROUND_LLM_API_BASE_URL` | `https://api.groq.com/openai/v1/chat/completions` | Small Cap, Swing, Orchestrator (cron) | LLM endpoint for background lane |
+| `BACKGROUND_LLM_MODEL` | `llama-3.3-70b-versatile` | Small Cap, Swing, Orchestrator (cron) | Model for background lane |
+| `BACKGROUND_LLM_TIMEOUT_MS` | `60000` | Small Cap, Swing, Orchestrator (cron) | Timeout for background lane (60s) |
+
+### Agent Budget Limits — Hard Enforcement
+
+| Variable | Default | Used By | Purpose |
+|----------|---------|---------|---------|
+| `AGENT_DAILY_BUDGET_CENTS` | `500` | All agents (per-agent) | Hard daily spend cap ($5/day). Enforced in `callLlm()`. |
+| `AGENT_MONTHLY_BUDGET_CENTS` | `10000` | All agents (per-agent) | Hard monthly spend cap ($100/mo). Enforced in `callLlm()`. |
+| `AGENT_MAX_CONTEXT_TOKENS` | `32000` | All agents | Max tokens per LLM call input. Truncates if exceeded. |
+| `AGENT_MAX_SCAN_CANDIDATES` | `20` | Small Cap, Swing Trader | Max tickers per scan passed to LLM step. |
+| `AGENT_MAX_PATTERN_HISTORY` | `50` | Swing Trader | Max pattern history items loaded per LLM call. |
+| `AGENT_MAX_RETRIES_PER_STEP` | `2` | All agents | Max repair retries per LLM step. |
+
+### Agent Infrastructure
 
 | Variable | Default | Used By | Purpose |
 |----------|---------|---------|---------|
 | `DATABASE_URL` | (existing, required) | All agents + Next.js | Neon Postgres connection string |
-| `AGENT_API_KEY` | (falls back to `NVIDIA_API_KEY`) | All agents | LLM API authentication |
-| `AGENT_API_BASE_URL` | `https://integrate.api.nvidia.com/v1/chat/completions` | All agents | LLM endpoint |
-| `AGENT_MODEL` | `deepseek-v3.2` | All agents | Default model |
-| `AGENT_LLM_TIMEOUT_MS` | `30000` | All agents | LLM request timeout |
 | `AGENT_POLL_INTERVAL_MS` | `5000` | All agents | Job queue poll interval |
 | `AGENT_ID` | (required per service) | Each Docker service | Agent identity |
 | `AGENT_ADMIN_KEY` | (falls back to `JARVIS_ADMIN_KEY`) | Next.js app | Admin API auth |
-| `AGENT_MONTHLY_BUDGET_CENTS` | `10000` | Next.js app | $100 budget tracking |
 | `MACRO_CRON_HOUR` | `6` | Orchestrator | Hour (ET) to run macro summary |
 | `MASSIVE_API_KEY` | (existing) | All agents | Market data API |
 | `ASKEDGAR_API_KEY` | (existing) | All agents | SEC filings API |
 | `TZ` | `America/New_York` | All agents | Timezone for cron/schedule alignment |
 
-### Deprecated (still read as fallback)
+### Discord Webhooks
 
-| Old Name | Replaced By |
-|----------|-------------|
-| `NVIDIA_API_KEY` | `AGENT_API_KEY` |
-| `JARVIS_API_BASE_URL` | `AGENT_API_BASE_URL` |
-| `JARVIS_MODEL` | `AGENT_MODEL` |
-| `JARVIS_TIMEOUT_MS` | `AGENT_LLM_TIMEOUT_MS` |
-| `JARVIS_ADMIN_KEY` | `AGENT_ADMIN_KEY` |
-| `CRON_SECRET` | (removed — macro cron is now in-process) |
+| Variable | Purpose |
+|----------|---------|
+| `DISCORD_WEBHOOK_SCANS` | Small Cap pre-market scan results |
+| `DISCORD_WEBHOOK_RESEARCH` | Small Cap on-demand research |
+| `DISCORD_WEBHOOK_SWING_SETUPS` | Swing Trader MDR candidates |
+| `DISCORD_WEBHOOK_SWING_ALERTS` | Swing Trader real-time alerts |
+| `DISCORD_WEBHOOK_MACRO_DAILY` | Orchestrator daily macro briefing |
+| `DISCORD_WEBHOOK_SYSTEM` | Agent health, budget warnings, errors |
+
+### API Key Split by Purpose (Recommended Practice)
+
+| Key Slot | Which Env Vars to Set | Purpose |
+|----------|-----------------------|---------|
+| Dev/test | Both `INTERACTIVE_LLM_API_KEY` and `BACKGROUND_LLM_API_KEY` → same Groq free-tier key | One key, same model for both lanes during testing. |
+| Prod interactive | `INTERACTIVE_LLM_API_KEY` → NVIDIA or paid Groq key | Orchestrator chat. Speed-optimized. |
+| Prod background | `BACKGROUND_LLM_API_KEY` → NVIDIA or DeepSeek key | Specialist scans. Quality/cost-optimized. |
+| Eval/batch (optional) | Separate key for offline evaluation runs | Prevents eval cost from eating production budget. |
+
+**Why split by purpose, not per agent:** Interactive vs background gives budget isolation and rate-limit separation without creating one key per tiny workflow. Agents in the same lane share a key.
+
+### Deprecated (read as fallback, log warning when used)
+
+| Old Name | New Replacement | Notes |
+|----------|----------------|-------|
+| `JARVIS_API_KEY` | `INTERACTIVE_LLM_API_KEY` / `BACKGROUND_LLM_API_KEY` | Legacy fallback for both lanes during migration |
+| `JARVIS_API_BASE_URL` | `INTERACTIVE_LLM_API_BASE_URL` / `BACKGROUND_LLM_API_BASE_URL` | Same |
+| `JARVIS_MODEL` | `INTERACTIVE_LLM_MODEL` / `BACKGROUND_LLM_MODEL` | Same |
+| `JARVIS_TIMEOUT_MS` | `INTERACTIVE_LLM_TIMEOUT_MS` / `BACKGROUND_LLM_TIMEOUT_MS` | Same |
+| `JARVIS_ADMIN_KEY` | `AGENT_ADMIN_KEY` | Legacy admin fallback |
+| `AGENT_API_KEY` | Split into lane-specific vars | R1/R2 single-lane var, now superseded |
+| `AGENT_API_BASE_URL` | Split into lane-specific vars | Same |
+| `AGENT_MODEL` | Split into lane-specific vars | Same |
+| `NVIDIA_API_KEY` | No direct replacement | Historical fallback removed |
+| `CRON_SECRET` | (removed) | Macro cron is now in-process |
 
 ---
 
-## 19. Deferred: Discord Channel Adapter
+## 19. V1 Discord Orchestrator Adapter
 
-Discord integration is deferred to a future sprint. When implemented:
+Discord is promoted into V1 for the `#orchestrator` channel.
 
-1. The existing Discord bot gets a `/ask <query>` slash command
-2. The command resolves Discord user → Nexus user via `discord_user_links`
-3. Writes an `agent_job` with `channel = 'discord'`
-4. Polls for completion, formats result as Discord embed
-5. Outbound: Orchestrator writes reports → `notification_jobs` (existing pattern) → Discord delivery
+1. The existing Discord bot listens in `#orchestrator`
+2. The message resolves Discord user → Nexus user via `discord_user_links` (or a temporary hardcoded mapping during early testing)
+3. The bot writes an `agent_job` with `channel = 'discord'`
+4. It polls for completion and formats the response as a Discord embed
+5. Specialist reports remain one-way via webhooks; only Orchestrator chat is bidirectional in V1
 
-**No schema changes required.** The `agent_conversations.channel` column already supports `'discord'`. The `agent_reports` table is channel-agnostic.
+**No schema changes required.** The `agent_conversations.channel` column already supports `'discord'`. The `agent_reports` table stores delivery status separately from the chat channel.
 
-**Prerequisites:** Discord bot service must be running, `discord_user_links` table populated.
+**Prerequisites:** Discord bot service must be running, `discord_user_links` table populated or temporarily stubbed.
 
 ---
 
@@ -1357,10 +1505,10 @@ No schema changes required — tables are agent-agnostic by design.
 
 | Jarvis Module | Agent Equivalent | Notes |
 |---------------|-----------------|-------|
-| `client.ts` | `llm-client.ts` | Rewrite with provider detection |
+| `client.ts` | `llm-client.ts` | Rewrite with dual-lane config + budget enforcement |
 | `circuit-breaker.ts` | `circuit-breaker.ts` | Same pattern, per-agent state |
 | `rate-limit.ts` | `rate-limit.ts` | Same 30 req/hr |
-| `token-tracking.ts` | `token-tracking.ts` | Extend with agent_id + cost |
+| `token-tracking.ts` | `token-tracking.ts` | Extend with agent_id + lane + cost |
 | `memory.ts` | `memory.ts` | Rewrite with agent_id scope |
 | `context.ts` | `context.ts` | Extend with agent-specific context |
 | `askedgar.ts` | (standalone) | Move to `lib/askedgar.ts` |
@@ -1382,7 +1530,7 @@ No schema changes required — tables are agent-agnostic by design.
 |----------|--------|-----------|
 | OS / Server | Keep Windows + WSL2, install Docker Engine natively in WSL2 | Laptop IS the server. 16GB RAM is plenty for 3x512MB containers. WSL2 with systemd=true auto-starts Docker. No wipe needed. |
 | Local LLM | No — API only | API costs ~$10-15/mo. Local 7B model saves nothing meaningful, takes 4-5GB RAM, worse quality. |
-| LLM Provider | Compare Groq (Llama 3.3 70B) vs DeepSeek direct, then commit | Already running Groq for Jarvis. Both OpenAI-compatible. Possible hybrid: Groq for Orchestrator chat (speed), DeepSeek for background agents (quality + cost). |
+| LLM Provider | Groq free tier for testing, NVIDIA API for production | Same model in both lanes keeps early testing simpler. DeepSeek remains a future background-lane option if later evals justify it. |
 | Report delivery | Discord-first via per-channel webhooks | Specialist agents post to Discord channels. Only Orchestrator has web chat. Eliminates AgentReportQueue.tsx, AgentStats.tsx, in-app approval flow. |
 | Orchestrator Discord | Bidirectional via bot in #orchestrator | Promoted from Section 19 "deferred" to V1. Bot listens in #orchestrator, creates jobs, polls, posts response. |
 | Opening bell trigger | Deferred to V2 | 7 AM pre-market scan is enough for V1. |
@@ -1396,11 +1544,12 @@ No schema changes required — tables are agent-agnostic by design.
 
 | Channel | Method | Posts from | Content |
 |---------|--------|-----------|---------|
-| `#orchestrator` | Bot (listener) + Webhook (responses) | Orchestrator | Two-way chat, daily macro briefing |
+| `#orchestrator` | Bot (listener) + Webhook (responses) | Orchestrator | Two-way chat |
 | `#small-cap-scans` | Webhook | Small Cap Trader | Pre-market scan results, dilution analysis |
 | `#small-cap-research` | Webhook | Small Cap Trader | On-demand ticker research reports |
 | `#swing-setups` | Webhook | Swing Trader | Daily momentum scan results, MDR candidates |
 | `#swing-alerts` | Webhook | Swing Trader | Real-time parabolic setup alerts, breakout triggers |
+| `#macro-daily` | Webhook | Orchestrator | Daily macro briefing |
 | `#agent-system` | Webhook | Orchestrator | Agent health alerts, budget warnings, errors |
 
 #### Bidirectional Orchestrator (replaces deferred Section 19)
@@ -1430,6 +1579,7 @@ DISCORD_WEBHOOK_SCANS=https://discord.com/api/webhooks/...
 DISCORD_WEBHOOK_RESEARCH=https://discord.com/api/webhooks/...
 DISCORD_WEBHOOK_SWING_SETUPS=https://discord.com/api/webhooks/...
 DISCORD_WEBHOOK_SWING_ALERTS=https://discord.com/api/webhooks/...
+DISCORD_WEBHOOK_MACRO_DAILY=https://discord.com/api/webhooks/...
 DISCORD_WEBHOOK_SYSTEM=https://discord.com/api/webhooks/...
 ```
 
@@ -1464,6 +1614,10 @@ All embeds use emerald-500 (`0x10B981`) as base color to match Nexus theme.
 ---
 
 ### R1.3 LLM Provider Update (replaces Section 8)
+
+> **SUPERSEDED** — R1.3's single-lane `AGENT_API_*` env vars are replaced by the dual-lane
+> `INTERACTIVE_LLM_*` / `BACKGROUND_LLM_*` config in the R3 amendment. The provider analysis
+> remains useful context. See revised Section 8.5 and Section 18 for the current env var table.
 
 Replace NVIDIA API references with provider-agnostic config. Current candidate providers:
 
@@ -1675,7 +1829,7 @@ lib/agents/prompts/long-term.md           — REMOVED (replaced by swing-trader.
 ### R1.11 Open Items (resolve before implementation)
 
 1. **Discord embed visual design** — Build test webhooks and iterate on format in real Discord channels.
-2. **Groq vs DeepSeek comparison** — Run identical prompts through both, compare quality/latency/cost.
+2. **RESOLVED BY R3** — Testing defaults to Groq free tier; production defaults to NVIDIA API for both lanes. DeepSeek remains a future background-lane option if later evals justify it.
 3. **Discord bot for #orchestrator** — Reuse existing `services/discord-bot/` or build new?
 4. **Deployment automation** — Manual `docker compose build && up` or auto-deploy script?
 5. **AskEdgar call counter** — Per-process counter wrong with 3 containers. Rely on DB cache or move counter to DB row.
