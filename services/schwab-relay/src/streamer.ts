@@ -110,7 +110,7 @@ function toRequestId(): string {
 }
 
 export class SchwabStreamer {
-  private readonly accessToken: string;
+  private accessToken: string;
   private readonly onQuoteUpdate: StreamerConfig['onQuoteUpdate'];
   private readonly onScreenerUpdate: StreamerConfig['onScreenerUpdate'];
   private readonly onError: StreamerConfig['onError'];
@@ -127,6 +127,8 @@ export class SchwabStreamer {
   private schwabClientCorrelId: string | null = null;
   private messageCount = 0;
   private dataMessageCount = 0;
+  private lastMessageAt: number = Date.now();
+  private heartbeatTimer: NodeJS.Timeout | null = null;
 
   constructor(config: StreamerConfig) {
     this.accessToken = config.accessToken;
@@ -169,6 +171,8 @@ export class SchwabStreamer {
       this.ws.on('open', () => {
         this.connected = true;
         this.reconnectAttempts = 0;
+        this.lastMessageAt = Date.now();
+        this.startHeartbeatWatchdog();
         this.messageCount = 0;
         this.dataMessageCount = 0;
         this.sendLogin(customerId, correlId, channel, functionId);
@@ -188,6 +192,7 @@ export class SchwabStreamer {
         this.connected = false;
         this.subscribed = false;
         this.subscribedEquities.clear();
+        this.stopHeartbeatWatchdog();
         this.onDisconnect();
 
         if (!this.manualDisconnect) {
@@ -203,6 +208,7 @@ export class SchwabStreamer {
   disconnect(): void {
     this.manualDisconnect = true;
     this.clearReconnectTimer();
+    this.stopHeartbeatWatchdog();
 
     if (this.ws) {
       this.ws.removeAllListeners();
@@ -217,6 +223,10 @@ export class SchwabStreamer {
 
   isConnected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN && this.connected;
+  }
+
+  updateAccessToken(token: string): void {
+    this.accessToken = token;
   }
 
   addEquitySymbols(symbols: string[]): void {
@@ -342,6 +352,7 @@ export class SchwabStreamer {
       };
 
       this.messageCount++;
+      this.lastMessageAt = Date.now();
       // Log first 3 messages fully, then summary every 10 messages
       if (this.messageCount <= 3) {
         console.info(`[relay] msg #${this.messageCount}: ${JSON.stringify(parsed).slice(0, 500)}`);
@@ -517,5 +528,23 @@ export class SchwabStreamer {
 
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+  }
+
+  private startHeartbeatWatchdog(): void {
+    this.stopHeartbeatWatchdog();
+    const HEARTBEAT_TIMEOUT_MS = 60_000;
+    this.heartbeatTimer = setInterval(() => {
+      if (Date.now() - this.lastMessageAt > HEARTBEAT_TIMEOUT_MS) {
+        console.warn('[relay] no message received in 60s, triggering reconnect');
+        this.ws?.close();
+      }
+    }, HEARTBEAT_TIMEOUT_MS);
+  }
+
+  private stopHeartbeatWatchdog(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
   }
 }

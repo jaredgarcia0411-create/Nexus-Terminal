@@ -50,52 +50,85 @@ export function useMarketStream(options: {
       return;
     }
 
-    esRef.current?.close();
+    const MAX_RETRIES = 5;
+    const BASE_RETRY_DELAY_MS = 3_000;
+    let retryCount = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
 
-    const es = new EventSource(buildUrl());
-    esRef.current = es;
-
-    es.addEventListener('snapshot', (event) => {
-      try {
-        const payload = JSON.parse((event as MessageEvent).data);
-        onSnapshotRef.current(payload);
-        setConnected(true);
-        setFallbackToPolling(false);
-      } catch {
-        // Ignore malformed events.
+    function clearRetryTimer() {
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
       }
-    });
+    }
 
-    es.addEventListener('scanner', (event) => {
-      try {
-        const payload = JSON.parse((event as MessageEvent).data) as { results: ScannerRow[] };
-        onScannerRef.current(payload);
-      } catch {
-        // Ignore malformed events.
-      }
-    });
+    function openStream() {
+      if (disposed) return;
+      esRef.current?.close();
+      const es = new EventSource(buildUrl());
+      esRef.current = es;
 
-    es.addEventListener('error', (event) => {
-      try {
-        const payload = JSON.parse((event as MessageEvent).data) as { message?: string };
-        if (payload.message) {
-          onErrorRef.current?.(payload.message);
+      es.addEventListener('snapshot', (event) => {
+        try {
+          const payload = JSON.parse((event as MessageEvent).data);
+          onSnapshotRef.current(payload);
+          setConnected(true);
+          setFallbackToPolling(false);
+          retryCount = 0;
+        } catch {
+          // Ignore malformed events.
         }
-      } catch {
-        // Not every error event has JSON payload.
-      }
-    });
+      });
 
-    es.onerror = () => {
-      if (es.readyState === EventSource.CLOSED) {
-        setConnected(false);
-        setFallbackToPolling(true);
-        onErrorRef.current?.('Realtime stream disconnected; falling back to polling.');
-      }
-    };
+      es.addEventListener('scanner', (event) => {
+        try {
+          const payload = JSON.parse((event as MessageEvent).data) as { results: ScannerRow[] };
+          onScannerRef.current(payload);
+        } catch {
+          // Ignore malformed events.
+        }
+      });
+
+      es.addEventListener('error', (event) => {
+        try {
+          const payload = JSON.parse((event as MessageEvent).data) as { message?: string };
+          if (payload.message) {
+            onErrorRef.current?.(payload.message);
+          }
+        } catch {
+          // Not every error event has JSON payload.
+        }
+      });
+
+      es.onerror = () => {
+        if (es.readyState === EventSource.CLOSED) {
+          setConnected(false);
+          es.close();
+          esRef.current = null;
+
+          if (retryCount >= MAX_RETRIES) {
+            setFallbackToPolling(true);
+            onErrorRef.current?.('Realtime stream disconnected after 5 retries; falling back to polling.');
+            return;
+          }
+
+          const delay = BASE_RETRY_DELAY_MS * Math.pow(2, retryCount);
+          retryCount += 1;
+          onErrorRef.current?.(
+            `SSE disconnected. Retrying in ${delay / 1000}s (attempt ${retryCount}/${MAX_RETRIES})...`
+          );
+          retryTimer = setTimeout(openStream, delay);
+        }
+      };
+    }
+
+    openStream();
 
     return () => {
-      es.close();
+      disposed = true;
+      clearRetryTimer();
+      esRef.current?.close();
       esRef.current = null;
       setConnected(false);
       setFallbackToPolling(false);

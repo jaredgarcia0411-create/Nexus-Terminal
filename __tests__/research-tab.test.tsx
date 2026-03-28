@@ -8,9 +8,9 @@ describe('ResearchTab', () => {
   it('renders research sub-tabs', () => {
     const html = renderToStaticMarkup(createElement(ResearchTab));
 
-    expect(html).toContain('Research');
-    expect(html).toContain('AI Reports');
-    expect(html).toContain('Daily Summaries');
-    expect(html).toContain('Saved Tickers');
+    expect(html).toContain('Search ticker...');
+    expect(html).toContain('Select a gainer or search a ticker');
+    expect(html).toContain('Top Gainers');
+    expect(html).toContain('Loading gainers...');
   });
 });

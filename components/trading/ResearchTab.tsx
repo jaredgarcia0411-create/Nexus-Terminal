@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { motion } from 'motion/react';
 
 import ResearchGainersList from '@/components/trading/ResearchGainersList';

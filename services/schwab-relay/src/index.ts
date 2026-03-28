@@ -11,7 +11,7 @@ import { WebSocketServer } from 'ws';
 import { QuoteBroadcaster } from './broadcast.js';
 import { validateRelayToken } from './ws-auth.js';
 
-const TOKEN_CHECK_INTERVAL_MS = Number(process.env.TOKEN_CHECK_INTERVAL_MS ?? '300000');
+const TOKEN_CHECK_INTERVAL_MS = Number(process.env.TOKEN_CHECK_INTERVAL_MS ?? '60000');
 
 let writer: QuoteWriter | null = null;
 let streamer: SchwabStreamer | null = null;
@@ -106,23 +106,38 @@ async function syncTokens(): Promise<void> {
     return;
   }
 
-  const shouldReconnect =
-    active.userId !== activeUserId || active.tokens.accessToken !== activeAccessToken || !streamer;
+  const tokenChanged = active.tokens.accessToken !== activeAccessToken;
+  const userChanged = active.userId !== activeUserId;
+  const noStreamer = !streamer;
 
-  if (!shouldReconnect) {
+  if (userChanged || noStreamer) {
+    if (streamer) {
+      log('user changed, restarting stream');
+      stopStreamer();
+    } else {
+      log(`active Schwab link found for user ${active.userId}`);
+    }
+    activeUserId = active.userId;
+    activeAccessToken = active.tokens.accessToken;
+    await startStreamer(active.tokens.accessToken);
     return;
   }
 
-  if (streamer) {
-    log('access token updated, reconnecting stream');
-    stopStreamer();
-  } else {
-    log(`active Schwab link found for user ${active.userId}`);
-  }
+  if (tokenChanged) {
+    const currentStreamer = streamer;
+    if (!currentStreamer) {
+      return;
+    }
 
-  activeUserId = active.userId;
-  activeAccessToken = active.tokens.accessToken;
-  await startStreamer(active.tokens.accessToken);
+    log('access token rotated, updating streamer in place');
+    activeAccessToken = active.tokens.accessToken;
+    currentStreamer.updateAccessToken(active.tokens.accessToken);
+    if (!currentStreamer.isConnected()) {
+      log('streamer not connected after token update, forcing reconnect');
+      stopStreamer();
+      await startStreamer(active.tokens.accessToken);
+    }
+  }
 }
 
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
