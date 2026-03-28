@@ -1,6 +1,6 @@
 # Nexus Terminal — Autonomous Agent Framework Architecture
 
-> Generated: 2026-03-13 | Updated: 2026-03-28 | Status: DRAFT R4 — Requires approval before implementation
+> Generated: 2026-03-13 | Updated: 2026-03-28 | Status: DRAFT R5 — Sprint-ready pending approval
 
 ---
 
@@ -73,7 +73,7 @@ The web UI migrates from the current Jarvis chat to a polling-based agent chat f
 
 ## 3. Database Schema
 
-6 objects total: 5 new tables + 1 modified table. All live in `lib/db/schema.ts`.
+8 objects total: 7 new tables + 1 modified table. All live in `lib/db/schema.ts`.
 
 ### 3.1 `agent_registry` — Agent health tracking
 
@@ -97,7 +97,7 @@ agent_registry
 ```
 agent_jobs
 ├── id                  TEXT PRIMARY KEY              -- uuid
-├── agent_id            TEXT NOT NULL                 -- target agent (soft FK to agent_registry.id)
+├── agent_id            TEXT NOT NULL REFERENCES agent_registry(id)  -- target agent
 ├── user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
 ├── job_type            TEXT NOT NULL                 -- 'chat' | 'research' | 'trade-analysis' | 'macro-summary'
 ├── status              TEXT NOT NULL DEFAULT 'queued'  -- 'queued' | 'processing' | 'completed' | 'failed'
@@ -110,19 +110,28 @@ agent_jobs
 ├── attempt             INTEGER NOT NULL DEFAULT 0   -- current attempt number
 ├── max_attempts        INTEGER NOT NULL DEFAULT 3
 ├── next_retry_at       TIMESTAMPTZ                  -- null = ready now; set for backoff
+├── locked_by           TEXT                         -- worker identity (hostname:pid or container name)
+├── lock_expires_at     TIMESTAMPTZ                  -- lease expiry; null when not locked
+├── last_heartbeat_at   TIMESTAMPTZ                  -- updated by worker during long steps
 ├── created_at          TIMESTAMPTZ DEFAULT now()
 ├── started_at          TIMESTAMPTZ
 ├── completed_at        TIMESTAMPTZ
 └── INDEXES
-    ├── idx_agent_jobs_poll ON (agent_id, status, next_retry_at, priority DESC, created_at)
-    └── idx_agent_jobs_user_status ON (user_id, status, created_at)
+    ├── idx_agent_jobs_poll ON (agent_id, priority DESC, created_at) WHERE status = 'queued'
+    ├── idx_agent_jobs_user_status ON (user_id, status, created_at)
+    └── idx_agent_jobs_stale ON (status, lock_expires_at) WHERE status = 'processing'
 ```
 
 **Poll query (FOR UPDATE SKIP LOCKED):**
 
 ```sql
 UPDATE agent_jobs
-SET status = 'processing', started_at = now(), attempt = attempt + 1
+SET status = 'processing',
+    started_at = now(),
+    attempt = attempt + 1,
+    locked_by = $2,
+    lock_expires_at = now() + interval '5 minutes',
+    last_heartbeat_at = now()
 WHERE id = (
   SELECT id FROM agent_jobs
   WHERE agent_id = $1
@@ -140,9 +149,9 @@ RETURNING *;
 ```
 agent_reports
 ├── id                  TEXT PRIMARY KEY              -- uuid
-├── agent_id            TEXT NOT NULL
+├── agent_id            TEXT NOT NULL REFERENCES agent_registry(id)
 ├── user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
-├── job_id              TEXT                          -- optional FK to agent_jobs.id
+├── job_id              TEXT REFERENCES agent_jobs(id) ON DELETE SET NULL
 ├── report_type         TEXT NOT NULL                 -- 'trade-analysis' | 'research' | 'macro-summary' | 'scan'
 ├── title               TEXT NOT NULL
 ├── summary             TEXT
@@ -154,7 +163,8 @@ agent_reports
 ├── created_at          TIMESTAMPTZ DEFAULT now()
 └── INDEXES
     ├── idx_agent_reports_user_status ON (user_id, status, created_at DESC)
-    └── idx_agent_reports_agent ON (agent_id, created_at DESC)
+    ├── idx_agent_reports_agent ON (agent_id, created_at DESC)
+    └── idx_agent_reports_job ON (job_id) WHERE job_id IS NOT NULL
 ```
 
 ### 3.4 `agent_conversations` — Chat history (replaces `jarvis_conversations`)
@@ -163,7 +173,7 @@ agent_reports
 agent_conversations
 ├── id                  TEXT PRIMARY KEY
 ├── user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
-├── agent_id            TEXT NOT NULL
+├── agent_id            TEXT NOT NULL REFERENCES agent_registry(id)
 ├── session_id          TEXT NOT NULL
 ├── role                TEXT NOT NULL                 -- 'user' | 'assistant' | 'system'
 ├── content             TEXT NOT NULL
@@ -181,7 +191,7 @@ agent_conversations
 agent_request_log
 ├── id                   TEXT PRIMARY KEY
 ├── user_id              TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
-├── agent_id             TEXT NOT NULL
+├── agent_id             TEXT NOT NULL REFERENCES agent_registry(id)
 ├── mode                 TEXT NOT NULL
 ├── lane                 TEXT NOT NULL DEFAULT 'background'  -- 'interactive' | 'background'
 ├── model_used           TEXT                         -- tracks which model was used
@@ -206,7 +216,7 @@ agent_request_log
 agent_memory (MODIFIED)
 ├── id                  TEXT PRIMARY KEY
 ├── user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
-├── agent_id            TEXT NOT NULL DEFAULT 'orchestrator'   -- NEW COLUMN
+├── agent_id            TEXT NOT NULL DEFAULT 'orchestrator' REFERENCES agent_registry(id)  -- NEW COLUMN
 ├── category            TEXT NOT NULL   -- expanded: 'fact' | 'thesis' | 'watchlist' | 'scan_param' | 'performance' | 'trade_insight' | 'user_preference' | 'strategy_note' | 'macro_fact' | 'pattern' | 'sentiment'
 ├── key                 TEXT NOT NULL
 ├── value               TEXT NOT NULL
@@ -221,33 +231,79 @@ agent_memory (MODIFIED)
     └── INDEX agent_memory_user_agent_category_idx ON (user_id, agent_id, category)
 ```
 
-**Migration strategy:** Add column `agent_id` with default `'jarvis'`. Drop old unique constraint. Add new unique constraint. Update all existing rows to `agent_id = 'orchestrator'`.
+**Migration strategy (two-phase):**
+- **Migration 0017:** Add column `agent_id TEXT NOT NULL DEFAULT 'orchestrator'`, add columns `source TEXT` and `confidence TEXT`, add new index on `(user_id, agent_id, category)`. **Keep old unique constraint intact.** Both old Jarvis code (writes with `user_id, category, key`) and new Agent code (writes with `user_id, agent_id, category, key`) can coexist because all existing rows default to `agent_id = 'orchestrator'` and the old constraint is still satisfied.
+- **Migration 0018:** After all Jarvis code is deleted (Phase 7 complete), drop old unique constraint `UNIQUE(user_id, category, key)` and add new unique constraint `UNIQUE(user_id, agent_id, category, key)`. Drop legacy tables.
+
+No maintenance window required. Old and new code coexist safely between the two migrations.
+
+### 3.7 `agent_scheduled_runs` — Cron trigger tracking
+
+```
+agent_scheduled_runs
+├── id                  TEXT PRIMARY KEY
+├── agent_id            TEXT NOT NULL REFERENCES agent_registry(id)
+├── trigger_type        TEXT NOT NULL              -- 'pre-market-scan' | 'momentum-scan' | 'pattern-check' | 'macro-summary'
+├── trading_date        DATE NOT NULL              -- the market date this run covers
+├── status              TEXT NOT NULL DEFAULT 'pending'  -- 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
+├── job_id              TEXT REFERENCES agent_jobs(id)   -- links to the actual job, if one was created
+├── started_at          TIMESTAMPTZ
+├── completed_at        TIMESTAMPTZ
+├── skip_reason         TEXT                       -- e.g., 'weekend', 'holiday', 'already_completed'
+├── created_at          TIMESTAMPTZ DEFAULT now()
+└── CONSTRAINTS
+    ├── UNIQUE(agent_id, trigger_type, trading_date)
+    └── INDEX idx_scheduled_runs_status ON (agent_id, status, trading_date)
+```
+
+**Purpose:** Single source of truth for "did this scheduled trigger run today?" Used for dedupe, catch-up after laptop downtime, and observability. Replaces ad-hoc "is today's output missing?" checks.
+
+**Catch-up flow:** When an agent starts, it checks for today's date. If a trigger has no row or has `status = 'failed'`, it runs. If `status = 'completed'`, it skips. If `status = 'skipped'`, it was a non-trading day.
+
+### 3.8 `agent_step_effects` — Durable idempotency for side effects
+
+```
+agent_step_effects
+├── id                  TEXT PRIMARY KEY
+├── job_id              TEXT NOT NULL REFERENCES agent_jobs(id) ON DELETE CASCADE
+├── step_name           TEXT NOT NULL
+├── effect_type         TEXT NOT NULL              -- 'discord_post' | 'report_write' | 'memory_write'
+├── idempotency_key     TEXT NOT NULL              -- e.g., 'scan-2026-03-28' or 'report-{job_id}'
+├── completed_at        TIMESTAMPTZ DEFAULT now()
+└── CONSTRAINTS
+    └── UNIQUE(idempotency_key)
+```
+
+**Purpose:** Before executing a side-effecting blueprint step (Discord webhook POST, report write, memory write), the runner checks for an existing row with the same `idempotency_key`. If found, the step is skipped. If not, the step executes and inserts the row in the same transaction as the side effect. Prevents duplicate Discord posts on job retry.
 
 ---
 
 ## 4. Data Migration Plan
 
-Two separate migrations to allow rollback between them.
+Two separate migrations to allow rollback between them. The repo already has migrations through `0016_acoustic_spencer_smythe.sql`.
 
-### Migration 0011 — Add new tables, alter agent_memory
+### Migration 0017 — Add new tables, alter agent_memory
 
 1. CREATE TABLE `agent_registry`
-2. CREATE TABLE `agent_jobs`
-3. CREATE TABLE `agent_reports`
-4. CREATE TABLE `agent_conversations`
-5. CREATE TABLE `agent_request_log`
-6. ALTER TABLE `agent_memory` — add `agent_id` column (default `'jarvis'`)
-7. DROP old unique constraint on `agent_memory`
-8. ADD new unique constraint `UNIQUE(user_id, agent_id, category, key)`
-9. UPDATE `agent_memory` SET `agent_id = 'orchestrator'` WHERE `agent_id = 'jarvis'`
-10. INSERT seed rows into `agent_registry` for 3 agents: `'orchestrator'`, `'small-cap-trader'`, `'swing-trader'`
-11. Copy data from `jarvis_conversations` → `agent_conversations` (map columns)
-12. Copy data from `jarvis_request_log` → `agent_request_log` (map columns, set `estimated_cost_cents = 0`, `lane = 'background'` for historical rows)
+2. INSERT seed rows into `agent_registry`: `'orchestrator'`, `'small-cap-trader'`, `'swing-trader'` (must precede FK-constrained inserts)
+3. CREATE TABLE `agent_jobs` (includes queue lease fields: `locked_by`, `lock_expires_at`, `last_heartbeat_at`)
+4. CREATE TABLE `agent_reports`
+5. CREATE TABLE `agent_conversations`
+6. CREATE TABLE `agent_request_log`
+7. CREATE TABLE `agent_scheduled_runs` (see Section 3.7)
+8. CREATE TABLE `agent_step_effects` (see Section 3.8)
+9. ALTER TABLE `agent_memory` — add `agent_id TEXT NOT NULL DEFAULT 'orchestrator' REFERENCES agent_registry(id)`, add `source TEXT`, add `confidence TEXT`
+10. ADD new index `agent_memory_user_agent_category_idx` on `(user_id, agent_id, category)` — **keep old unique constraint intact**
+11. Copy data: `jarvis_conversations` → `agent_conversations` (see R5.1 for exact column mapping)
+12. Copy data: `jarvis_request_log` → `agent_request_log` (see R5.1 for exact column mapping)
+13. ADD CHECK constraints on text state fields (see R5.8)
 
-### Migration 0012 — Drop legacy tables (after confirming 0011 works)
+### Migration 0018 — Constraint swap + legacy table drop (after Phase 7 verified)
 
-1. DROP TABLE `jarvis_conversations`
-2. DROP TABLE `jarvis_request_log`
+1. DROP old unique constraint `UNIQUE(user_id, category, key)` on `agent_memory`
+2. ADD new unique constraint `UNIQUE(user_id, agent_id, category, key)` on `agent_memory`
+3. DROP TABLE `jarvis_conversations`
+4. DROP TABLE `jarvis_request_log`
 
 ---
 
@@ -262,8 +318,9 @@ Neon free tier: 20 connections max, 750 compute-hours/month.
 | Orchestrator | WebSocket Pool | 1 | `max: 1` |
 | Small Cap Trader | WebSocket Pool | 1 | `max: 1` |
 | Swing Trader | WebSocket Pool | 1 | `max: 1` |
+| Discord Bot | WebSocket Pool | 1 | `max: 1`, for job creation + polling |
 
-**Steady state: 3-6 connections.** Well within the 20-connection limit.
+**Steady state: 4-7 connections.** Well within the 20-connection Neon Launch limit.
 
 Pool config per agent:
 
@@ -298,7 +355,7 @@ Agent heartbeats every 30 seconds keep Neon warm. Cold starts take 1-3 seconds, 
 
 2. **Memory oversight.** Reads all agents' memory rows. Detects contradictions (e.g., Small Cap is bullish on a ticker that Swing Trader flagged as losing momentum) and injects context when routing.
 
-3. **Report aggregation.** Receives completion events, optionally adds cross-agent context, writes final report to `agent_reports`, and publishes to the appropriate Discord webhook with `status = 'published'` or `status = 'delivery_failed'`.
+3. **Cross-agent synthesis.** When specialists complete jobs, the Orchestrator can optionally read the results and inject cross-agent context into future routing decisions. Specialists publish their own reports directly (see R5.2). The Orchestrator only publishes its own outputs (chat responses, macro briefings, system alerts).
 
 4. **Macro cron.** Runs the daily macro headline scraping pipeline that was previously a Vercel cron job. Uses `setInterval` inside the container and posts the final briefing to `#macro-daily`.
 
@@ -769,11 +826,11 @@ lib/agents/prompts/
 | 1 | `types.ts` | Type definitions | `AgentId`, `JobType`, `JobStatus`, `ReportStatus`, `MemoryCategory`, `StepType`, `FailureClass`, `StepStatus`, `StepMetadata`, `StepProvenance`, `StepResult`, `BlueprintStep`, `Blueprint`, `StepInput`, `AgentJob`, `AgentReport`, `AgentConfig`, `LlmRequest`, `LlmResponse`, `WorkerConfig`, `LlmLaneConfig`, `LlmLane`, `LlmBudgetConfig`, `TokenTrackingEntry` |
 | 2 | `db.ts` | DB connection factory for Docker services | `getAgentDb(): DrizzleClient` (single pooled WebSocket connection) |
 | 3 | `llm-client.ts` | Dual-lane LLM wrapper with budget enforcement | `getInteractiveLlmConfig()`, `getBackgroundLlmConfig()`, `getLlmBudgetConfig()`, `callLlm(request, lane, overrides?)` |
-| 4 | `circuit-breaker.ts` | Per-agent circuit breaker (same pattern as existing) | `CircuitBreaker` class — 5 failures = open, 60s reset |
-| 5 | `rate-limit.ts` | Per-user rate limiting | 30 req/hr, in-memory |
+| 4 | `circuit-breaker.ts` | Per-agent circuit breaker with DB-backed state | `CircuitBreaker` class — 5 failures = open, 60s reset. State persisted to `agent_registry.config` JSONB (not in-memory). |
+| 5 | `rate-limit.ts` | Per-user rate limiting | 30 req/hr, DB-backed (queries `agent_request_log`) |
 | 6 | `retry.ts` | Backoff calculation | `calculateBackoffMs(attempt)`, `shouldRetry(attempt, maxAttempts)` |
 | 7 | `token-tracking.ts` | Cost estimation + request logging | `estimateCostCents(model, inputTokens, outputTokens)`, `logAgentRequest(db, entry)` — includes `lane` |
-| 8 | `job-queue.ts` | Job CRUD with FOR UPDATE SKIP LOCKED | `createJob()`, `pollForJob()`, `completeJob()`, `failJob()`, `getJobStatus()` |
+| 8 | `job-queue.ts` | Job CRUD with FOR UPDATE SKIP LOCKED + lease management | `createJob()`, `pollForJob()`, `completeJob()`, `failJob()`, `getJobStatus()`, `renewLease()` |
 | 9 | `heartbeat.ts` | Agent heartbeat updater | `startHeartbeat(db, agentId, intervalMs)` |
 | 10 | `memory.ts` | Scoped memory CRUD | `readMemory()`, `writeMemory()`, `upsertMemory()` — all filtered by `agent_id` |
 | 11 | `context.ts` | Context assembly for LLM calls | `buildAgentContext(db, userId, agentId)` — trades, macro, memory |
@@ -835,10 +892,12 @@ Every step failure must be classified before the retry decision:
 
 ### Circuit Breaker
 
-Per-agent, in-memory state:
+Per-agent, DB-backed state (stored in `agent_registry.config -> 'circuitBreaker'` JSONB):
 - **Threshold:** 5 consecutive failures → circuit opens
 - **Reset:** 60 seconds after opening
 - **When open:** Jobs are immediately failed without attempting LLM call
+
+Workers read/write circuit breaker state to `agent_registry.config` on each LLM call result. This allows the admin stats endpoint on Vercel to observe actual breaker state since it queries `agent_registry` directly — no worker memory introspection needed.
 
 ### Blueprint Resume
 
@@ -888,7 +947,7 @@ Hard limits are checked by `callLlm()` before every LLM call. Budget is per-agen
 
 ```json
 {
-  "circuitBreakers": { "orchestrator": "closed", ... },
+  "circuitBreakers": { "orchestrator": { "status": "closed", "consecutiveFailures": 0, "lastFailureAt": null }, ... },
   "today": {
     "totalRequests": 42,
     "totalTokens": 128000,
@@ -914,6 +973,8 @@ Hard limits are checked by `callLlm()` before every LLM call. Budget is per-agen
   "macroSummaries": { "latestGeneratedAt": "..." }
 }
 ```
+
+Circuit breaker state is read from `agent_registry.config -> 'circuitBreaker'` — DB-backed, observable from any Vercel route. No worker memory introspection required.
 
 V1 does **not** ship an `AgentStats.tsx` UI. Cost/performance tracking comes from this admin endpoint, `agent_request_log`, `agent_jobs.step_log`, `agent_registry`, and Discord `#agent-system` alerts.
 
@@ -966,9 +1027,13 @@ All routes under `/api/jarvis/*` are replaced by `/api/agents/*`.
 ### Chat Polling Flow
 
 1. Client POSTs `{ message, session_id?, agent_id? }` to `/api/agents/chat`
-2. Server saves user message to `agent_conversations`, routes to agent via deterministic rules, creates `agent_jobs` row, returns `{ job_id }`
+2. Server saves user message to `agent_conversations`, routes to agent via deterministic rules, creates `agent_jobs` row, returns `{ job_id, session_id, agent_id }`
 3. Client polls `GET /api/agents/chat?job_id=X` every **2 seconds**
-4. Returns `{ status: 'completed', result: { message, session_id } }` or `{ status: 'failed', error }` or `{ status: 'queued' | 'processing' }`
+4. Returns one of:
+   - `{ status: 'queued', job_id, agent_id, progress_note: null }`
+   - `{ status: 'processing', job_id, agent_id, progress_note: 'Step 2/6: fetch-filings' }`
+   - `{ status: 'completed', job_id, agent_id, session_id, result: { message } }`
+   - `{ status: 'failed', job_id, agent_id, error: { message, failureClass? } }`
 
 **Pros of polling vs SSE:** Simpler to implement, works through all proxies/CDNs, stateless server.
 **Cons:** 2s latency floor, unnecessary requests while waiting. SSE can be added later as an optimization.
@@ -986,6 +1051,56 @@ function routeToAgent(message: string, explicitAgentId?: string): AgentId {
 }
 ```
 
+### Routing Precedence
+
+When a user selects an agent in the UI dropdown AND types a slash command, the slash command wins. Rationale: explicit commands are more specific than a dropdown selection. The dropdown is a default, not an override.
+
+Precedence order:
+1. Slash command in message (`/research`, `/swing`, etc.) → deterministic agent
+2. Explicit `agent_id` from UI selector → that agent
+3. No command, no selector → `'orchestrator'`
+
+### Mandatory Ownership Checks
+
+All user-facing read routes must scope queries by the authenticated `user_id`:
+
+- `GET /api/agents/chat?job_id=...` — verify `agent_jobs.user_id = authenticated user`
+- `GET /api/agents/reports` — filter by `user_id`
+- `GET /api/agents/reports/[id]` — verify `agent_reports.user_id = authenticated user`
+
+Admin routes (`/api/agents/admin/*`) use `requireAgentAdmin()` instead.
+
+### Route Implementation Conventions
+
+All `/api/agents/*` routes must follow existing app patterns:
+
+- `requireUser()` for user-facing routes (returns 401 on failure)
+- `requireAgentAdmin()` for admin routes (validates `x-agent-admin-key` header)
+- `getDb()` / `dbUnavailable()` for database access
+- Input validation via Zod schemas with `parseAndValidate()` where applicable
+- Standard error responses: `{ error: string }` with appropriate HTTP status codes
+
+### Endpoint Role Clarification
+
+| Route | Role | Relationship to Chat |
+|-------|------|---------------------|
+| `POST /api/agents/chat` | Primary entry point for all user requests | Handles routing internally |
+| `POST /api/agents/research` | Convenience wrapper | Creates a `research` job for `small-cap-trader` directly, skipping routing. Equivalent to chat with `/research TICKER`. |
+| `POST /api/agents/trade-analysis` | Convenience wrapper | Creates a `trade-analysis` job for `small-cap-trader` directly. Equivalent to chat with `/analyze TICKER`. |
+
+These convenience endpoints exist for programmatic callers (e.g., MarketsTab triggering research on a ticker). They create the same `agent_jobs` rows as chat routing would.
+
+### Offline Agent Behavior
+
+If the target agent has `status = 'degraded'` or `status = 'offline'` in `agent_registry`:
+
+- `POST /api/agents/chat` → still creates the job (it will be picked up when the agent comes back online). Returns `{ job_id, session_id, agent_id, warning: 'Agent is currently offline — job queued for when it comes back online' }`.
+- The UI displays the warning. No rerouting in V1 — jobs wait.
+
+Rationale: Rerouting to the wrong specialist is worse than waiting. The job queue is durable; the agent will process it when it restarts.
+
+**V1 scope decision:** All routes create exactly one job targeting exactly one agent. Multi-agent fanout (splitting a request into sub-jobs for multiple specialists) is deferred to V2. The routing function returns a single `AgentId`, not an array.
+
 ---
 
 ## 14. Frontend Migration
@@ -997,17 +1112,48 @@ function routeToAgent(message: string, explicitAgentId?: string): AgentId {
 | `AgentChat.tsx` | `JarvisChat.tsx` | Polling-based chat with "Thinking..." indicator, agent selector dropdown |
 | `AgentTab.tsx` | `JarvisTab.tsx` | Wraps `AgentChat.tsx`; V1 is chat-only with progress notes and current agent display |
 
-### Sidebar Change
+### Frontend File Migration
 
-- Tab key `'jarvis'` → `'agents'`
-- Label "Jarvis" → "Agents"
-- No report badge count in V1
+Files that reference Jarvis and must be updated:
 
-### Kept Renderers (no functional changes)
+| File | Change Required |
+|------|----------------|
+| `components/trading/Sidebar.tsx` | Tab key `'jarvis'` → `'agents'`, label "Jarvis" → "Agents" |
+| `app/page.tsx` | Import `AgentTab` instead of `JarvisTab`, update `VALID_TABS`, `TAB_TITLES`, and render block |
+| `components/trading/CommandPalette.tsx` | Update `jarvis` nav item to `agents`, update command labels and shortcuts |
+| `hooks/use-global-shortcuts.ts` | Update `TAB_KEYS` array (`'jarvis'` → `'agents'`), update hotkey handler |
+| `components/trading/MarketsTab.tsx` | Import types from `@/lib/shared-types` instead of `@/lib/jarvis/types`, update fetch URL from `/api/jarvis/macro-summary/latest` to `/api/agents/macro-summary/latest` |
 
-- `JarvisStructuredResponse.tsx` — rename to `AgentStructuredResponse.tsx`
-- `JarvisDilutionReport.tsx` — rename to `AgentDilutionReport.tsx`
-- `JarvisMacroSummary.tsx` — rename to `AgentMacroSummary.tsx`
+No report badge count in V1.
+
+### Shared Type Extraction (prerequisite for Phase 7 cleanup)
+
+Before deleting `lib/jarvis/`, extract types and utilities that are used outside the Jarvis chat flow:
+
+**Create `lib/shared-types.ts`** with types moved from `lib/jarvis/types.ts`:
+- `JarvisMacroSummaryOutput` → rename to `MacroSummaryOutput`
+- `DilutionResearchReport`
+- `RiskLevel`, `RiskRating`
+- Any other types imported by components outside `lib/jarvis/`
+
+**Create `lib/askedgar.ts`** — move `getCachedTickerData`, `getCachedGainers` from `lib/jarvis/askedgar.ts`. These are used by `/api/askedgar/*` routes which have nothing to do with the agent system.
+
+**Update consumers:**
+- `MarketsTab.tsx` → import from `@/lib/shared-types`
+- `JarvisMacroSummary.tsx` (→ `AgentMacroSummary.tsx`) → import from `@/lib/shared-types`
+- `JarvisStructuredResponse.tsx` (→ `AgentStructuredResponse.tsx`) → import from `@/lib/shared-types`
+- `JarvisDilutionReport.tsx` (→ `AgentDilutionReport.tsx`) → import from `@/lib/shared-types`
+- `/api/askedgar/tldr/route.ts` → import from `@/lib/askedgar`
+- `/api/askedgar/lookup/route.ts` → import from `@/lib/askedgar`
+- `/api/askedgar/gainers/route.ts` → import from `@/lib/askedgar`
+
+This extraction happens in **Phase 6** (frontend migration), before Phase 7 cleanup.
+
+### Kept Renderers (renamed, no functional changes)
+
+- `JarvisStructuredResponse.tsx` → `AgentStructuredResponse.tsx`
+- `JarvisDilutionReport.tsx` → `AgentDilutionReport.tsx`
+- `JarvisMacroSummary.tsx` → `AgentMacroSummary.tsx`
 
 ---
 
@@ -1020,13 +1166,13 @@ function routeToAgent(message: string, explicitAgentId?: string): AgentId {
 FROM node:20-alpine
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
-RUN npm ci --production
+RUN npm ci --production && npm install tsx
 COPY lib/ ./lib/
 COPY services/agent-entrypoint.ts ./services/
 CMD ["npx", "tsx", "services/agent-entrypoint.ts"]
 ```
 
-Only copies `lib/` and the entrypoint — NOT the Next.js app or components.
+Only copies `lib/` and the entrypoint — NOT the Next.js app or components. `tsx` is installed explicitly in the Dockerfile rather than added to `package.json` production dependencies, since it is only needed by the Docker agent runtime, not the Next.js app on Vercel.
 
 ### Entrypoint
 
@@ -1061,6 +1207,26 @@ startWorker({
 version: '3.8'
 
 services:
+  # --- Existing service (keep from current compose) ---
+
+  discord-bot:
+    build:
+      context: ./discord-bot
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
+      - DATABASE_URL=${DATABASE_URL}
+      - AGENT_SERVICE_KEY=${AGENT_SERVICE_KEY}
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # --- Agent services ---
+
   orchestrator:
     build:
       context: ..
@@ -1198,9 +1364,11 @@ services:
       retries: 3
 ```
 
-**Total resource usage:** ~1.5GB RAM for 3 agents. Fits comfortably on a 16GB laptop.
+**Total resource usage:** ~1.5GB RAM for 3 agents + Discord bot. Fits comfortably on a 16GB laptop.
 
-Agent containers do not expose an HTTP server, so healthchecks use a heartbeat-touched `/tmp/healthy` file instead of `/api/health`.
+**Note:** `deploy.resources.limits` in Docker Compose is only enforced in Swarm mode. In standalone `docker compose` mode, memory limits are advisory only. The actual memory guard is the Node.js `--max-old-space-size` flag, set via `NODE_OPTIONS` env var if needed. For V1, the 512M limits serve as documentation of expected usage rather than hard enforcement.
+
+Agent containers do not expose an HTTP server, so healthchecks use a heartbeat-touched `/tmp/healthy` file instead of `/api/health`. The existing `discord-bot` service is preserved for bidirectional `#orchestrator` chat. The `redis` service from the old compose is removed — it is not used by the agent system.
 
 ### Home Server Notes
 
@@ -1312,9 +1480,9 @@ All items in this phase are human actions, not code changes. Complete every item
 
 | Step | Task | Depends On |
 |------|------|------------|
-| 7 | Update `lib/db/schema.ts` — add 5 new tables, modify `agent_memory`, add `step_log`/`progress_note` on `agent_jobs`, add `source`/`confidence` on `agent_memory` | Phase 1 |
-| 8 | `npm run db:generate` — generate migration 0011 | Step 7 |
-| 9 | `npm run db:migrate` — run migration 0011 | Step 8 |
+| 7 | Update `lib/db/schema.ts` — add 7 new tables, modify `agent_memory`, add lease/progress fields on `agent_jobs`, add `source`/`confidence` on `agent_memory`, add CHECK constraints | Phase 1 |
+| 8 | `npm run db:generate` — generate migration 0017 | Step 7 |
+| 9 | `npm run db:migrate` — run migration 0017 | Step 8 |
 
 ### Phase 3: Shared Agent Logic
 
@@ -1352,33 +1520,34 @@ All items in this phase are human actions, not code changes. Complete every item
 |------|------|------------|
 | 29 | `services/agent.Dockerfile` | Phase 3 |
 | 30 | `services/agent-entrypoint.ts` | Phase 3 |
-| 31 | `services/docker-compose.yml` (rewrite — 3 services: orchestrator, small-cap-trader, swing-trader) | Steps 29-30 |
+| 31 | `services/docker-compose.yml` (rewrite — keep discord-bot, add 3 agent services, remove redis) | Steps 29-30 |
 | 32 | `services/.env.example` | — |
 
 ### Phase 6: Frontend
 
 | Step | File | Depends On |
 |------|------|------------|
+| 32b | Extract shared types: create `lib/shared-types.ts` and `lib/askedgar.ts`, update all consumers (MarketsTab, AskEdgar routes, renderer components) | Phase 4 |
 | 33 | `components/trading/AgentChat.tsx` | Phase 4 |
 | 34 | `components/trading/AgentTab.tsx` | Step 33 |
-| 35 | Modify `Sidebar.tsx` — `'jarvis'` → `'agents'` | Steps 33-34 |
+| 35 | Modify `Sidebar.tsx`, `app/page.tsx`, `CommandPalette.tsx`, `use-global-shortcuts.ts` — `'jarvis'` → `'agents'` | Steps 32b, 33-34 |
 
 ### Phase 7: Cleanup (after full validation)
 
 | Step | Task | Depends On |
 |------|------|------------|
 | 36 | Delete `app/api/jarvis/` directory | Phase 4 verified |
-| 37 | Delete `lib/jarvis/` directory | Phase 3 verified |
+| 37 | Delete `lib/jarvis/` directory (safe — shared types already extracted in Step 32b) | Phase 6 verified |
 | 38 | Delete `JarvisChat.tsx`, `JarvisTab.tsx` | Phase 6 verified |
 | 39 | Remove Vercel cron config for macro-summary | Phase 5 verified |
-| 40 | Generate migration 0012 (drop `jarvis_conversations`, `jarvis_request_log`) | Phase 2 verified |
-| 41 | Run migration 0012 | Step 40 |
+| 40 | Generate migration 0018 (swap `agent_memory` constraint, drop `jarvis_conversations`, `jarvis_request_log`) | Phase 6 verified |
+| 41 | Run migration 0018 | Step 40 |
 
 ---
 
 ## 17. Complete File Inventory
 
-### Files to CREATE (39 total)
+### Files to CREATE (41 total)
 
 ```
 lib/agents/types.ts
@@ -1404,6 +1573,8 @@ lib/agents/prompts/global-policy.md
 lib/agents/prompts/orchestrator.md
 lib/agents/prompts/small-cap.md
 lib/agents/prompts/swing-trader.md
+lib/shared-types.ts
+lib/askedgar.ts
 app/api/agents/chat/route.ts
 app/api/agents/reports/route.ts
 app/api/agents/reports/[id]/route.ts
@@ -1422,12 +1593,16 @@ scripts/generate-trade-template.ts
 scripts/seed-trade-examples.ts
 ```
 
-### Files to MODIFY (3)
+### Files to MODIFY (7)
 
 ```
-lib/db/schema.ts                  -- add 5 tables + step_log/progress_note on agent_jobs + source/confidence on agent_memory, alter agent_memory
-services/docker-compose.yml       -- rewrite (3 agent services: orchestrator, small-cap-trader, swing-trader)
-components/trading/Sidebar.tsx    -- 'jarvis' → 'agents' tab
+lib/db/schema.ts                      -- add 7 tables + modify agent_memory + CHECK constraints
+components/trading/Sidebar.tsx         -- 'jarvis' → 'agents' tab
+app/page.tsx                           -- JarvisTab → AgentTab import, VALID_TABS, TAB_TITLES
+components/trading/CommandPalette.tsx   -- jarvis → agents nav item + commands
+hooks/use-global-shortcuts.ts          -- jarvis → agents in TAB_KEYS + hotkey
+components/trading/MarketsTab.tsx       -- import from shared-types, update fetch URL
+services/docker-compose.yml            -- keep discord-bot, add 3 agent services, remove redis
 ```
 
 ### Files REMOVED from R1 plan (confirmed)
@@ -1500,6 +1675,7 @@ components/trading/JarvisTab.tsx
 | `AGENT_POLL_INTERVAL_MS` | `5000` | All agents | Job queue poll interval |
 | `AGENT_ID` | (required per service) | Each Docker service | Agent identity |
 | `AGENT_ADMIN_KEY` | (falls back to `JARVIS_ADMIN_KEY`) | Next.js app | Admin API auth |
+| `AGENT_SERVICE_KEY` | (required) | Discord bot + Next.js app | Bot-to-app service auth (see R5.4) |
 | `MACRO_CRON_HOUR` | `6` | Orchestrator | Hour (ET) to run macro summary |
 | `MASSIVE_API_KEY` | (existing) | All agents | Market data API |
 | `ASKEDGAR_API_KEY` | (existing) | All agents | SEC filings API |
@@ -1557,14 +1733,14 @@ components/trading/JarvisTab.tsx
 Discord is promoted into V1 for the `#orchestrator` channel.
 
 1. The existing Discord bot listens in `#orchestrator`
-2. The message resolves Discord user → Nexus user via `discord_user_links` (or a temporary hardcoded mapping during early testing)
+2. The message resolves Discord user → Nexus user via hardcoded mapping (V1) or `discord_user_links` table (V2)
 3. The bot writes an `agent_job` with `channel = 'discord'`
 4. It polls for completion and formats the response as a Discord embed
 5. Specialist reports remain one-way via webhooks; only Orchestrator chat is bidirectional in V1
 
-**No schema changes required.** The `agent_conversations.channel` column already supports `'discord'`. The `agent_reports` table stores delivery status separately from the chat channel.
+**Schema note:** `agent_conversations.channel` supports `'discord'` in the new schema. The Discord bot also needs to resolve Discord users to Nexus users. For V1, use a hardcoded mapping object in the bot code (e.g., `{ 'discord-user-id-1': 'nexus-user-id-1' }`). A `discord_user_links` table is deferred to V2 when more users join.
 
-**Prerequisites:** Discord bot service must be running, `discord_user_links` table populated or temporarily stubbed.
+**Prerequisites:** Discord bot service must be running, hardcoded user mapping configured.
 
 ---
 
@@ -1645,7 +1821,7 @@ Discord is promoted into V1 for the `#orchestrator` channel.
 #### Bidirectional Orchestrator (replaces deferred Section 19)
 
 Bot listens for messages in `#orchestrator`:
-1. Maps Discord user → Nexus user (via `discord_user_links` or hardcoded)
+1. Maps Discord user → Nexus user (via hardcoded mapping in V1)
 2. Creates `agent_jobs` row (same as web chat POST)
 3. Polls for completion
 4. Posts response as Discord embed
@@ -1732,40 +1908,70 @@ AGENT_MODEL            — llama-3.3-70b-versatile (Groq) or deepseek-chat (Deep
 
 All cron triggers must check "has today's output been generated?" instead of "is it the right hour?" If the laptop was off during the scheduled time, agents should catch up when they come online.
 
+All catch-up checks now use `agent_scheduled_runs` (Section 3.7) instead of inferring from report existence.
+
 ```
 ORCHESTRATOR:
-  macro_cron: "if today's macro summary missing AND hour < 14 → run"
-  stale_job_reaper: every 5 min, reset jobs in 'processing' > 5 min to 'queued'
+  macro_cron: "if agent_scheduled_runs has no 'completed' row for today + 'macro-summary' AND hour < 14 → run"
+  stale_job_reaper: every 5 min, requeue jobs with expired leases (see below)
 
 SMALL CAP:
   pre_market_scan: 7 AM EST target
-    catch-up: if today's scan missing AND hour < 9:30 → run
-    gate: check Massive API /v1/marketstatus/now (no-op on weekends/holidays)
+    catch-up: if agent_scheduled_runs has no 'completed' row for today + 'pre-market-scan' AND hour < 9:30 → run
+    gate: check isTradingDay via Massive API (no-op on weekends/holidays)
 
 SWING TRADER:
   momentum_scan: 7:30 AM EST target (runs after Small Cap's 7:00 AM scan)
-    catch-up: if today's scan missing AND hour < 9:30 → run
-    gate: check Massive API /v1/marketstatus/now (no-op on weekends/holidays)
+    catch-up: if agent_scheduled_runs has no 'completed' row for today + 'momentum-scan' AND hour < 9:30 → run
+    gate: check isTradingDay via Massive API (no-op on weekends/holidays)
   pattern_check: 4:30 PM EST target (after market close)
-    catch-up: if today's check missing AND hour < 20 → run
-    gate: same market status check
+    catch-up: if agent_scheduled_runs has no 'completed' row for today + 'pattern-check' AND hour < 20 → run
+    gate: check isTradingDay via Massive API
 ```
 
-#### Stale Job Reaper (NEW — Orchestrator responsibility)
+#### Stale Job Reaper (Orchestrator responsibility)
 
-Every 5 minutes, the Orchestrator runs:
+Every 5 minutes, the Orchestrator checks for jobs with expired leases:
 ```sql
 UPDATE agent_jobs
-SET status = 'queued', started_at = NULL
+SET status = 'queued',
+    started_at = NULL,
+    locked_by = NULL,
+    lock_expires_at = NULL,
+    last_heartbeat_at = NULL
 WHERE status = 'processing'
-  AND started_at < now() - interval '5 minutes';
+  AND lock_expires_at < now();
 ```
 
-Prevents orphaned jobs from container crashes.
+Workers renew their lease every 60 seconds during long-running steps:
+```sql
+UPDATE agent_jobs
+SET lock_expires_at = now() + interval '5 minutes',
+    last_heartbeat_at = now()
+WHERE id = $1 AND locked_by = $2;
+```
 
-#### Market Holiday Gate
+This prevents orphaned jobs from container crashes while avoiding false reaping of jobs that are legitimately running long steps (e.g., a 60-second LLM call).
 
-All autonomous triggers check `GET /v1/marketstatus/now` from Massive API before running. No-op on weekends and market holidays. Simple boolean: if market is closed, skip.
+#### Market Session Gate
+
+Autonomous triggers use session-aware logic, not a simple "is market open?" check:
+
+```typescript
+interface MarketSessionCheck {
+  isTradingDay: boolean;     // false on weekends + market holidays
+  isPreMarket: boolean;      // 4:00 AM – 9:30 AM ET
+  isPostMarket: boolean;     // 4:00 PM – 8:00 PM ET
+  isMarketOpen: boolean;     // 9:30 AM – 4:00 PM ET
+}
+```
+
+Trigger gates:
+- **Pre-market scans** (Small Cap 7:00 AM, Swing 7:30 AM): require `isTradingDay && isPreMarket`. "Market is closed" is expected at 7 AM — that does NOT mean skip.
+- **Post-market checks** (Swing 4:30 PM): require `isTradingDay && isPostMarket`.
+- **Macro cron** (6:00 AM): require `isTradingDay`. Runs before market opens.
+
+The `isTradingDay` check uses Massive API `/v1/marketstatus/now`. Session windows are calculated from Eastern Time clock.
 
 ---
 
@@ -1787,19 +1993,19 @@ This is the accumulator pattern. Document as a required convention for all bluep
 
 #### Dockerfile Fix
 
-**Replace tsc compilation (Option A) with tsx runtime (Option B):**
+**Use tsx runtime (installed explicitly in Docker build):**
 
 ```dockerfile
 FROM node:20-alpine
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
-RUN npm ci --production
+RUN npm ci --production && npm install tsx
 COPY lib/ ./lib/
 COPY services/agent-entrypoint.ts ./services/
 CMD ["npx", "tsx", "services/agent-entrypoint.ts"]
 ```
 
-Why: `@/lib/...` path aliases require tsconfig. `tsx` reads it automatically. No compilation step needed.
+Why: `@/lib/...` path aliases require tsconfig. `tsx` reads it automatically. No compilation step needed. `tsx` is installed in the Dockerfile (not in `package.json` prod deps) since it's only needed by the Docker agent runtime.
 
 #### Internal Parallelism
 
@@ -1821,16 +2027,13 @@ Polling endpoint returns `progress_note` so the web UI and Discord bot can show 
 
 ### R1.6 Migration Window Fix (amends Section 4)
 
-**Problem:** Migration 0011 changes `agent_memory` unique constraint. Old `lib/jarvis/memory.ts` targets the old constraint via `onConflictDoUpdate`. Between Phase 2 and Phase 7, old code breaks.
+**Problem:** Changing the `agent_memory` unique constraint in the same migration as adding new tables creates a risk window where old Jarvis code writes against a constraint it doesn't expect.
 
-**Fix:** Clean cutover — do these in the same deploy:
-1. Run Migration 0011 (new tables + altered constraint)
-2. Deploy new agent API routes (Phase 4)
-3. Update sidebar tab `jarvis` → `agents`
-4. Delete old Jarvis routes and modules
-5. Run Migration 0012 (drop old tables)
+**Fix:** Two-phase migration strategy:
+- **Migration 0017** adds new tables and adds the `agent_id` column to `agent_memory` with `DEFAULT 'orchestrator'`, but **keeps the old unique constraint intact**. Old Jarvis `onConflictDoUpdate` on `(user_id, category, key)` still works because all rows have the same `agent_id` default.
+- **Migration 0018** (run after Phase 7 cleanup) drops the old constraint and adds the new `UNIQUE(user_id, agent_id, category, key)`.
 
-No window where old code runs against new schema.
+No simultaneous deploy required. No maintenance window. Old and new code coexist safely.
 
 ---
 
@@ -1911,7 +2114,7 @@ components/trading/AgentReportQueue.tsx    — REMOVED (Discord replaces)
 components/trading/AgentStats.tsx          — DEFERRED to V2
 ```
 
-**Updated build phase count:** 39 files to create (was 37, +2 trade example scripts added in R4).
+**Updated build phase count:** 41 files to create (was 39 in R4, +`lib/shared-types.ts`, +`lib/askedgar.ts` added in R5). 7 files to modify (was 3 in R4, expanded in R5).
 
 ---
 
@@ -2371,3 +2574,151 @@ scripts/trade-examples-reviewed.json    -- gitignored, human-annotated final ver
 
 - **Phase 0, Step 0-H:** Unzip screenshots, generate template, annotate trades
 - **Phase 3, after Step 20:** Run `scripts/seed-trade-examples.ts` to populate `agent_memory`
+
+---
+
+## REVISION 5 — Sprint Readiness Fixes (2026-03-28)
+
+> This revision addresses the redline review in `AEV2_REVISIONS.md`. It fixes migration numbering, adds durable queue semantics, adds idempotency and scheduled-run tables, fixes market-status gating, clarifies the frontend migration scope, adds shared-type extraction, expands API contracts, and makes several simplifying decisions for V1. All inline patches have been applied to the sections above.
+
+### R5.1 Historical Backfill Mappings (exact column maps)
+
+#### `jarvis_conversations` → `agent_conversations`
+
+| Source column | Target column | Mapping |
+|---------------|---------------|---------|
+| `id` | `id` | Copy as-is |
+| `user_id` | `user_id` | Copy as-is |
+| (none) | `agent_id` | Hard-code `'orchestrator'` |
+| `session_id` | `session_id` | Copy as-is |
+| `role` | `role` | Copy as-is |
+| `content` | `content` | Copy as-is |
+| `mode` | `channel` | Map: any value → `'web'` (all historical Jarvis conversations were web-based) |
+| `context_snapshot` | `context_snapshot` | Copy as-is |
+| `created_at` | `created_at` | Copy as-is |
+
+#### `jarvis_request_log` → `agent_request_log`
+
+| Source column | Target column | Mapping |
+|---------------|---------------|---------|
+| `id` | `id` | Copy as-is |
+| `user_id` | `user_id` | Copy as-is |
+| (none) | `agent_id` | Hard-code `'orchestrator'` |
+| `mode` | `mode` | Copy as-is |
+| (none) | `lane` | Hard-code `'background'` (historical Jarvis had no lane concept) |
+| (none) | `model_used` | `NULL` (unknown for historical rows) |
+| `input_tokens` | `input_tokens` | Copy as-is |
+| `output_tokens` | `output_tokens` | Copy as-is |
+| `total_tokens` | `total_tokens` | Copy as-is |
+| (none) | `estimated_cost_cents` | Hard-code `0` (not tracked historically) |
+| `duration_ms` | `duration_ms` | Copy as-is |
+| `success` | `success` | Copy as-is |
+| `source_count` | `source_count` | Copy as-is |
+| `chunk_count` | `chunk_count` | Copy as-is |
+| `created_at` | `created_at` | Copy as-is |
+
+#### `agent_memory` backfill
+
+No data copy needed — existing rows stay in place. The new `agent_id` column defaults to `'orchestrator'`, which is correct for all historical Jarvis memory. Do **not** use a temporary `'jarvis'` value at any point.
+
+### R5.2 Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Migration numbering | 0017 / 0018 (was 0011 / 0012) | Repo already has migrations through 0016 |
+| agent_memory cutover | Two-phase: 0017 adds column + keeps old constraint; 0018 swaps after cleanup | Eliminates maintenance window, old + new code coexist safely |
+| Multi-agent fanout | Deferred to V2 — V1 routes to exactly one agent per request | Routing returns single `AgentId`, no parent/child job semantics needed |
+| Discord user mapping | Hardcoded mapping in V1 — `discord_user_links` table deferred to V2 | Only 2-3 users in V1; config object in bot code is simpler than a new table |
+| Report publish ownership | Specialists publish directly — Orchestrator only publishes its own outputs | Single publisher per report eliminates delivery status ambiguity |
+| Rate limiting | DB-backed (queries `agent_request_log`), not in-memory | Matches existing Jarvis pattern, safe for Vercel stateless routes |
+| Circuit breaker state | DB-backed (stored in `agent_registry.config` JSONB) | Allows admin stats endpoint on Vercel to observe real breaker state |
+| Report redelivery | Manual via `POST /api/agents/admin/redeliver?report_id=X` in V1 | Re-POSTs stored `report_json` to webhook; automated retry deferred to V2 |
+| In-app report viewer | Deferred to V2 — reports are Discord-first | `GET /api/agents/reports` provides API access for debugging |
+| tsx dependency | Installed in Dockerfile (`npm install tsx`), not in package.json | Only needed by Docker agent runtime, not the Next.js app on Vercel |
+| Docker Compose | Keep discord-bot, add 3 agent services, remove redis | Discord bot needed for bidirectional #orchestrator chat; redis unused by agent system |
+
+### R5.3 DB-Level Checks for Text State Fields
+
+Add CHECK constraints in migration 0017:
+
+```sql
+-- agent_registry
+ALTER TABLE agent_registry ADD CONSTRAINT chk_registry_status
+  CHECK (status IN ('online', 'offline', 'degraded'));
+
+-- agent_jobs
+ALTER TABLE agent_jobs ADD CONSTRAINT chk_jobs_status
+  CHECK (status IN ('queued', 'processing', 'completed', 'failed'));
+
+-- agent_reports
+ALTER TABLE agent_reports ADD CONSTRAINT chk_reports_status
+  CHECK (status IN ('published', 'delivery_failed', 'archived'));
+ALTER TABLE agent_reports ADD CONSTRAINT chk_reports_channel
+  CHECK (delivery_channel IN ('discord', 'web'));
+
+-- agent_conversations
+ALTER TABLE agent_conversations ADD CONSTRAINT chk_conversations_role
+  CHECK (role IN ('user', 'assistant', 'system'));
+ALTER TABLE agent_conversations ADD CONSTRAINT chk_conversations_channel
+  CHECK (channel IN ('web', 'discord', 'api'));
+
+-- agent_request_log
+ALTER TABLE agent_request_log ADD CONSTRAINT chk_request_log_lane
+  CHECK (lane IN ('interactive', 'background'));
+
+-- agent_scheduled_runs
+ALTER TABLE agent_scheduled_runs ADD CONSTRAINT chk_scheduled_status
+  CHECK (status IN ('pending', 'running', 'completed', 'failed', 'skipped'));
+```
+
+Prevents silent invalid values from breaking routing or reporting.
+
+### R5.4 Discord Bot Auth Contract
+
+The Discord bot calls Next.js API routes to create jobs and poll results. It authenticates using a service key pattern:
+
+```
+Header: x-agent-service-key: <AGENT_SERVICE_KEY>
+```
+
+A new helper `requireServiceAuth()` in `lib/agents/admin.ts` validates this key. It returns a synthetic user context based on the Discord user mapping (hardcoded in V1).
+
+**Why this can't reuse `requireUser()`:** The bot is not a browser with a NextAuth session. It needs a simpler auth path. Using the same `x-agent-admin-key` as admin routes would conflate "admin" with "service caller." A separate key keeps the concerns clean.
+
+**New env var:** `AGENT_SERVICE_KEY` — shared between Docker bot service and Vercel app.
+
+### R5.5 step_log JSONB Bloat Guidance
+
+The `step_log` JSONB on `agent_jobs` should contain **metadata only**, not raw payloads:
+
+```typescript
+// Good — small, fixed-size per step
+{ step: 'fetch-filings', status: 'completed', durationMs: 2340, tokensUsed: 0, attempt: 1 }
+
+// Bad — unbounded raw data
+{ step: 'fetch-filings', status: 'completed', data: { /* 50KB of filing JSON */ } }
+```
+
+Raw step artifacts (API responses, filing documents, LLM full responses) should be stored in `StepResult.artifacts` during execution but **not persisted to step_log**. If an audit trail is needed for raw data, log it to the container's JSON log file.
+
+### R5.6 Delivery Recovery
+
+For `delivery_failed` reports in V1:
+
+1. **Detection:** `#agent-system` webhook receives an alert when delivery fails (already specified).
+2. **Diagnosis:** Check `agent_reports.delivery_error` for the failure reason.
+3. **Manual retry:** `POST /api/agents/admin/redeliver` with `{ report_id }`. Reads stored `report_json` from `agent_reports`, re-POSTs to the webhook, updates `status` to `'published'` or keeps `'delivery_failed'`.
+4. **Automated retry:** Deferred to V2.
+
+### R5.7 Updated Counts Summary
+
+| Category | Count | Notes |
+|----------|-------|-------|
+| New tables (migration 0017) | 7 | `agent_registry`, `agent_jobs`, `agent_reports`, `agent_conversations`, `agent_request_log`, `agent_scheduled_runs`, `agent_step_effects` |
+| Modified tables | 1 | `agent_memory` (+`agent_id`, +`source`, +`confidence`) |
+| Files to CREATE | 41 | +2 from R4 (`lib/shared-types.ts`, `lib/askedgar.ts`) |
+| Files to MODIFY | 7 | +4 from R4 (`app/page.tsx`, `CommandPalette.tsx`, `use-global-shortcuts.ts`, `MarketsTab.tsx`) |
+| lib/agents/ files | 19 | Unchanged count — descriptions updated for rate-limit.ts and circuit-breaker.ts |
+| Build phases | 8 | Phase 0-7 — unchanged structure, updated step details |
+| DB connections (steady state) | 4-7 | +1 for Discord bot |
+| New env vars | 1 | `AGENT_SERVICE_KEY` (bot-to-app auth) |

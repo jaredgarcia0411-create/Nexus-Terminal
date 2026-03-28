@@ -1,634 +1,376 @@
-# AGENTIC_EXPANSION_V2.md — Revision 3: Dual-Lane LLM Config, Budget Enforcement & Provider Update
+# AEV2_REVISIONS.md — Redline Checklist for `AGENTIC_EXPANSION_V2.md`
 
-> Generated: 2026-03-27 | Status: SPEC — Apply these changes to AGENTIC_EXPANSION_V2.md before implementation begins
-
----
-
-## Why This Revision Exists
-
-The R2 plan has three weaknesses that were identified during architecture review:
-
-1. **Single generic LLM config path.** `AGENT_API_KEY`, `AGENT_API_BASE_URL`, `AGENT_MODEL` treat all agents the same. The Orchestrator chat needs speed (user is waiting). Background scans need quality/cost efficiency (async, nobody waiting). One config lane can't optimize for both.
-
-2. **Budget is observability-only.** The plan says "no hard enforcement, just dashboard tracking" (line 806). A bad loop or prompt regression can burn through budget with no guardrails.
-
-3. **Stale provider references.** The live codebase already uses Groq + `llama-3.3-70b-versatile`, but the plan still defaults to NVIDIA API + `deepseek-v3.2` in 13 places. R1.3 partially fixed this but never propagated upstream.
+> Generated: 2026-03-28 | Status: REVIEW — apply these revisions before turning AEV2 into the implementation springboard
 
 ---
 
-## Decisions (Confirmed)
+## 1. Review Summary
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| LLM lane architecture | Two deterministic lanes: INTERACTIVE + BACKGROUND | Speed for chat, cost/quality for scans. Simple, no dynamic routing. |
-| Model for both lanes | `llama-3.3-70b-versatile` everywhere for now | Same model removes variables during testing. Differentiate later based on real usage. |
-| Testing provider | Groq free tier (`https://api.groq.com/openai/v1/chat/completions`) | Already working for Jarvis. Free. Fast. |
-| Production provider | NVIDIA API key for both lanes | Upgrade path: paid Groq or DeepSeek when needed. No need for Google/OpenAI. |
-| Budget scope | Per-agent (not global) | Each agent has independent daily/monthly caps. One runaway can't starve others. $5/day x 3 agents = $15/day max. |
-| Step lane override | Yes — `lane?: LlmLane` on `StepMetadata` | Orchestrator needs interactive lane for chat, background lane for macro cron. |
-| API key split | By purpose: dev/test, prod interactive, prod background | Easier budget tracking, rate-limit isolation, safer key rotation. |
+### Overall verdict
 
----
+`AGENTIC_EXPANSION_V2.md` is strong at the vision/system-design level, but it is **not springboard-ready yet**.
 
-## Change 1 of 13 — Executive Summary (Line 11)
+The biggest remaining cracks are in:
 
-### Current
-```
-The LLM provider is NVIDIA API (OpenAI-compatible endpoint, currently running `deepseek-v3.2`) with support for local models via llama.cpp.
-```
+1. **cutover mechanics**
+2. **job durability / retry semantics**
+3. **Discord/runtime integration**
+4. **repo-specific migration details**
+5. **frontend/API contract completeness**
 
-### Replace with
-```
-The LLM provider is configurable via two deterministic lanes: INTERACTIVE_LLM (Orchestrator chat — optimized for speed) and BACKGROUND_LLM (specialist agent scans — optimized for cost/quality). Both use OpenAI-compatible endpoints. Testing uses Groq free tier with `llama-3.3-70b-versatile`. Production uses NVIDIA API. Local llama.cpp is supported as a fallback for either lane.
-```
+If those are tightened now, implementation risk drops a lot.
 
----
+### Review method
 
-## Change 2 of 13 — Design Principle (Line 23)
+This review used three parallel sub-reviews focused on:
 
-### Current
-```
-- **Provider-agnostic LLM.** The LLM wrapper detects provider from URL. Swapping from NVIDIA API to a local llama.cpp server is a config change.
-```
+- **Schema / migrations / DB compatibility**
+- **Runtime / Docker / queue / cron / Discord ops**
+- **API / frontend / auth / UX compatibility**
 
-### Replace with
-```
-- **Provider-agnostic, dual-lane LLM.** The LLM wrapper uses two named config lanes — INTERACTIVE (Orchestrator chat) and BACKGROUND (specialist agent scans) — each with its own API key, base URL, model, and timeout. Lane assignment is deterministic per blueprint step, not URL-detected. Swapping providers per lane is a config-only change.
-```
+The findings below synthesize those reviews into one redline checklist plus reasoning.
 
 ---
 
-## Change 3 of 13 — `AgentConfig` Interface (Lines 588-596, Section 7.1)
+## 2. Redline Checklist
 
-### Current
-```typescript
-interface AgentConfig {
-  id: AgentId;
-  displayName: string;
-  model: string;              // e.g. 'deepseek-v3.2' or 'local/mistral-7b'
-  temperature: number;
-  capabilities: JobType[];
-  rolePromptPath: string;
-  blueprints: Record<string, Blueprint>;
-}
-```
+Use this as the patch list for the next AEV2 revision.
 
-### Replace with
-```typescript
-interface AgentConfig {
-  id: AgentId;
-  displayName: string;
-  llmLane: LlmLane;          // 'interactive' (orchestrator chat) or 'background' (specialist scans)
-  modelOverride?: string;    // optional override within the lane (e.g. use a different model than lane default)
-  temperature: number;
-  capabilities: JobType[];
-  rolePromptPath: string;
-  blueprints: Record<string, Blueprint>;
-}
-```
+### A. Must-fix before implementation
 
-**What changed:** `model` → `llmLane` + optional `modelOverride`. The agent declares which lane it uses by default. The model comes from the lane's env var config unless overridden.
+- [ ] **Renumber the migration plan.**
+  - AEV2 still refers to migrations `0011` and `0012`, but the repo already has migrations through `0016`.
+  - Update all references to use the next real migration numbers.
 
-**Lane assignments:**
-- Orchestrator: `llmLane: 'interactive'` (but its macro cron blueprint steps override to `'background'`)
-- Small Cap Trader: `llmLane: 'background'`
-- Swing Trader: `llmLane: 'background'`
+- [ ] **Replace the current `agent_memory` cutover plan with a real zero-break or maintenance-window plan.**
+  - Old Jarvis code currently writes against the existing unique key `(user_id, category, key)`.
+  - AEV2 changes it to `(user_id, agent_id, category, key)`.
+  - “Same deploy” is not truly atomic across Vercel + Docker workers.
+  - Add either:
+    - a maintenance window with old writers fully disabled before the constraint swap, or
+    - a shadow/swap migration strategy.
 
----
+- [ ] **Write exact historical backfill mappings.**
+  - Explicitly specify:
+    - `jarvis_conversations -> agent_conversations`
+      - `agent_id = 'orchestrator'`
+      - `channel = 'web'`
+    - `jarvis_request_log -> agent_request_log`
+      - `agent_id = 'orchestrator'`
+      - `lane = 'background'`
+      - `estimated_cost_cents = 0` for historical rows
+    - `agent_memory`
+      - backfill directly to `agent_id = 'orchestrator'`
+      - do **not** use temporary `'jarvis'` if the system is converging on strict agent IDs
 
-## Change 4 of 13 — `StepMetadata` Interface (Lines 375-381, Section 6.4)
+- [ ] **Choose one report publish ownership model and remove the other.**
+  - AEV2 currently says both:
+    - specialists publish directly in `assemble-report`, and
+    - Orchestrator receives completions and publishes
+  - Pick one. For V1, the simplest path is: **specialists publish directly** unless cross-agent synthesis is required.
 
-### Current
-```typescript
-interface StepMetadata {
-  canRetry: boolean;
-  timeoutMs: number;
-  maxRepairAttempts: number;
-  sideEffect: boolean;
-  idempotencyKey?: string;
-}
-```
+- [ ] **Add durable queue lease fields to `agent_jobs`.**
+  - Add fields such as:
+    - `locked_by`
+    - `lock_expires_at`
+    - `last_heartbeat_at`
+  - Workers should renew the lease during long-running steps.
+  - The stale-job reaper should only requeue jobs with expired leases, not anything older than 5 minutes.
 
-### Replace with
-```typescript
-interface StepMetadata {
-  canRetry: boolean;
-  timeoutMs: number;
-  maxRepairAttempts: number;
-  sideEffect: boolean;
-  idempotencyKey?: string;
-  lane?: LlmLane;            // only for 'llm' steps — overrides the agent's default llmLane
-}
-```
+- [ ] **Add real idempotency storage for side effects.**
+  - `StepMetadata.idempotencyKey` is not enough by itself.
+  - Add a durable DB-backed mechanism, e.g.:
+    - `agent_step_effects` table, or
+    - a delivery outbox table
+  - Required for safe retries and to prevent duplicate Discord posts.
 
-**What changed:** Added optional `lane` field. Only relevant for `llm` type steps. If omitted, the step uses the agent's default `llmLane` from `AgentConfig`. This lets the Orchestrator's `synthesize-response` (chat) use `interactive` while `generate-briefing` (macro cron) uses `background`.
+- [ ] **Add a durable scheduled-run model for cron/catch-up jobs.**
+  - Current spec relies on “has today’s output been generated?” but does not define a durable source of truth.
+  - Add a table like `agent_scheduled_runs` with a unique key on `(agent_id, trigger_type, trading_date)`.
+  - Use it for:
+    - dedupe
+    - catch-up logic
+    - observability
+    - replay/debugging
 
-**Blueprint step lane assignments:**
+- [ ] **Fix the market-status gating rules.**
+  - Pre-market scans should not use “if market is closed, skip.”
+  - Replace with trading-day/session-aware logic:
+    - valid trading day?
+    - pre-market window?
+    - post-market window?
+    - holiday/weekend skip?
 
-| Blueprint | Step | Lane |
-|-----------|------|------|
-| `orchestrator:chat` | `synthesize-response` | `interactive` (agent default) |
-| `orchestrator:macro-summary` | `generate-briefing` | `background` (step override) |
-| `small-cap:pre-market-scan` | `analyze-dilution` | `background` (agent default) |
-| `small-cap:pre-market-scan` | `analyze-technicals` | `background` (agent default) |
-| `small-cap:research` | `analyze-and-report` | `background` (agent default) |
-| `swing:momentum-scan` | `analyze-mdr-patterns` | `background` (agent default) |
-| `swing:research` | `analyze-momentum-thesis` | `background` (agent default) |
+- [ ] **Add `discord_user_links` to the schema plan or explicitly defer Discord identity mapping.**
+  - AEV2 depends on Discord user -> Nexus user resolution.
+  - That table is not in the current schema plan.
+  - “No schema changes required” is not true as written.
 
----
+- [ ] **Keep the Discord bot in the runtime topology if `#orchestrator` is V1.**
+  - Current repo `services/docker-compose.yml` already has `discord-bot`.
+  - AEV2’s compose rewrite removes it while still requiring bidirectional Discord chat.
+  - Add explicit runtime ownership for the bot service.
 
-## Change 5 of 13 — `LlmProviderConfig` Interface & Functions (Lines 653-661, Section 8.1)
+- [ ] **Fix the container runtime story.**
+  - The proposed Dockerfile runs `npx tsx`, but `tsx` is not currently in `package.json`.
+  - Add a decision:
+    - either include `tsx`, or
+    - compile the agent code and run built JS.
 
-### Current
-```typescript
-interface LlmProviderConfig {
-  apiKey: string;              // AGENT_API_KEY env var
-  baseUrl: string;             // AGENT_API_BASE_URL env var
-  model: string;               // AGENT_MODEL, can be overridden per-agent
-  timeoutMs: number;           // AGENT_LLM_TIMEOUT_MS, default 30000
-}
+- [ ] **Define admin observability using DB-backed truth only, or persist breaker state.**
+  - AEV2 promises circuit breaker status in `/api/agents/admin/stats`.
+  - But circuit breakers are described as in-memory per worker, which Vercel routes cannot inspect.
+  - Either persist state or reduce the endpoint to data that is actually observable from DB rows.
 
-function getLlmConfig(): LlmProviderConfig;
-async function callLlm(request: LlmRequest, config?: Partial<LlmProviderConfig>): Promise<LlmResponse>;
-```
+### B. High-priority spec additions
 
-### Replace with
-```typescript
-// --- Lane Config ---
-// Each lane has its own credentials, endpoint, model, and timeout.
-// Both lanes use OpenAI-compatible /v1/chat/completions format.
+- [ ] **Add foreign keys for `agent_id` references.**
+  - `agent_jobs.agent_id -> agent_registry.id`
+  - `agent_reports.agent_id -> agent_registry.id`
+  - `agent_conversations.agent_id -> agent_registry.id`
+  - `agent_request_log.agent_id -> agent_registry.id`
+  - `agent_memory.agent_id -> agent_registry.id`
+  - `agent_reports.job_id -> agent_jobs.id` (`ON DELETE SET NULL` is probably the right behavior)
 
-interface LlmLaneConfig {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-  timeoutMs: number;
-}
+- [ ] **Add DB-level checks/enums for text state fields.**
+  - `status`
+  - `lane`
+  - `role`
+  - `channel`
+  - `confidence`
+  - This prevents silent invalid values from breaking routing or reporting.
 
-// Lane discriminator — forces callers to be explicit, no default fallback.
-type LlmLane = 'interactive' | 'background';
+- [ ] **Tighten queue indexes to match actual poll queries.**
+  - Add a more queue-specific ready-job index / partial index rather than relying only on the current broad index proposal.
 
-// --- Budget Config ---
-// Hard limits enforced by callLlm() before every LLM call.
-// Budget is per-agent — each agent checks its own spend.
+- [ ] **Add uniqueness / indexing for report delivery safety.**
+  - If one report should map to one job, add at least an index on `agent_reports.job_id` and likely a uniqueness rule.
 
-interface LlmBudgetConfig {
-  dailyBudgetCents: number;        // AGENT_DAILY_BUDGET_CENTS, default 500 ($5/day)
-  monthlyBudgetCents: number;      // AGENT_MONTHLY_BUDGET_CENTS, default 10000 ($100/mo)
-  maxContextTokens: number;        // AGENT_MAX_CONTEXT_TOKENS, default 32000
-  maxScanCandidates: number;       // AGENT_MAX_SCAN_CANDIDATES, default 20
-  maxPatternHistoryItems: number;  // AGENT_MAX_PATTERN_HISTORY, default 50
-  maxRetriesPerStep: number;       // AGENT_MAX_RETRIES_PER_STEP, default 2
-}
+- [ ] **Define the bot-to-app auth contract.**
+  - Reuse one clear service auth pattern.
+  - Do not leave Discord bot -> Next.js API auth implicit.
 
-// --- Functions ---
+- [ ] **Add explicit offline-agent behavior to the API contract.**
+  - If a target agent is offline/degraded, define whether the API:
+    - returns `503`,
+    - reroutes to Orchestrator, or
+    - rejects immediately with a typed error.
 
-function getInteractiveLlmConfig(): LlmLaneConfig;   // reads INTERACTIVE_LLM_* env vars
-function getBackgroundLlmConfig(): LlmLaneConfig;    // reads BACKGROUND_LLM_* env vars
-function getLlmBudgetConfig(): LlmBudgetConfig;       // reads AGENT_* budget env vars
+- [ ] **Decide whether V1 supports multi-agent fanout.**
+  - Current public route contract looks single-job / single-result.
+  - Current routing narrative allows split sub-jobs.
+  - Pick one:
+    - **V1 single-agent only** (recommended), or
+    - add parent/child jobs + aggregation rules now.
 
-// lane is REQUIRED — no default. Forces every callsite to be explicit about which
-// lane it's using. This prevents background agents from accidentally using the
-// interactive key (or vice versa).
-async function callLlm(
-  request: LlmRequest,
-  lane: LlmLane,
-  overrides?: Partial<LlmLaneConfig>
-): Promise<LlmResponse>;
-```
+- [ ] **Replace in-memory rate limiting anywhere it touches Vercel routes.**
+  - Repo guidance already says in-memory state is unreliable on Vercel.
+  - If rate limiting only applies in Docker workers, say that explicitly.
 
-**What changed:**
-- `LlmProviderConfig` → `LlmLaneConfig` (same fields, new name)
-- Single `getLlmConfig()` → two lane-specific getters + budget getter
-- `callLlm()` now requires a `lane` parameter — callers must be explicit
-- New `LlmBudgetConfig` interface for hard enforcement limits
+### C. Frontend / API completeness fixes
 
----
+- [ ] **Expand the frontend migration inventory beyond `Sidebar.tsx`.**
+  - The current `jarvis` tab is also wired in:
+    - `app/page.tsx`
+    - `components/trading/CommandPalette.tsx`
+    - `hooks/use-global-shortcuts.ts`
+    - `components/trading/MarketsTab.tsx`
+  - Add these files to the migration plan.
 
-## Change 6 of 13 — Provider Detection (Lines 666-669, Section 8.2)
+- [ ] **Add a shared extraction step before deleting `lib/jarvis/`.**
+  - The repo still uses Jarvis modules outside Jarvis chat.
+  - Example: `MarketsTab.tsx` imports `@/lib/jarvis/types` and fetches `/api/jarvis/macro-summary/latest`.
+  - Move shared report types/helpers to a neutral module first.
 
-### Current
-```
-The wrapper detects provider from the base URL:
-- `https://integrate.api.nvidia.com/*` → NVIDIA API (current provider)
-- `http://localhost:*` or `http://127.0.0.1:*` → local llama.cpp server (OpenAI-compatible)
-- Any other URL → treated as generic OpenAI-compatible API
+- [ ] **Expand `/api/agents/chat` contract.**
+  - `POST` should return at least:
+    - `job_id`
+    - `session_id`
+    - `agent_id`
+  - `GET` should return at least:
+    - `status`
+    - `agent_id`
+    - `progress_note`
+    - `result?`
+    - `error?`
 
-All providers use the `/v1/chat/completions` format. Swapping providers is a config change (env vars only).
-```
+- [ ] **Add mandatory ownership checks on all user-facing read routes.**
+  - `GET /api/agents/chat?job_id=...`
+  - `GET /api/agents/reports`
+  - `GET /api/agents/reports/[id]`
+  - All must scope by authenticated `user_id`.
 
-### Replace with
-```
-### 8.2 Provider Detection (for cost estimation only)
+- [ ] **Add explicit route-convention language for all `/api/agents/*` routes.**
+  - Use:
+    - `requireUser()` for normal routes
+    - `ensureUser()` where needed
+    - `getDb()` / `dbUnavailable()`
+    - `parseAndValidate()` with Zod schemas
+  - Add this to the spec so implementation matches the existing app.
 
-Provider detection is used ONLY for cost estimation — it does NOT control lane assignment. Lane assignment is deterministic, set by the caller passing `lane: 'interactive' | 'background'` to `callLlm()`.
+- [ ] **Clarify `/api/agents/research` and `/api/agents/trade-analysis` vs chat commands.**
+  - Right now they overlap with slash-command routing.
+  - Define whether they are:
+    - first-class programmatic endpoints, or
+    - convenience wrappers, or
+    - out of scope for V1.
 
-The wrapper detects provider from the base URL for pricing lookups:
-- `https://api.groq.com/*` → Groq (apply Groq pricing)
-- `https://integrate.api.nvidia.com/*` → NVIDIA (apply NVIDIA pricing)
-- `https://api.deepseek.com/*` → DeepSeek direct (apply DeepSeek pricing)
-- `http://localhost:*` or `http://127.0.0.1:*` → local model (cost = 0)
-- Any other URL → generic OpenAI-compatible (use model name for pricing lookup, fallback to 0)
+- [ ] **Define selector-vs-command precedence in the UI.**
+  - If a user selects “Swing Trader” but types `/research`, which wins?
+  - Add a simple deterministic rule.
 
-All providers use the `/v1/chat/completions` format. Swapping providers per lane is a config change (env vars only).
-```
+### D. Lower-risk but worthwhile cleanups
 
----
+- [ ] **Clarify Compose memory-limit expectations.**
+  - `deploy.resources` is not reliably enforced in normal `docker compose` mode.
+  - Either use settings that actually apply in your environment or remove the overly-confident memory guarantees from the doc.
 
-## Change 7 of 13 — Local Model Support (Line 677, Section 8.3)
+- [ ] **Reduce hot-row bloat on `agent_jobs`.**
+  - `step_log` JSONB on the job row is okay early, but large step artifacts do not belong on the hot queue row.
+  - Add guidance that artifacts/raw payloads should stay out of the queue table or move to a child table if needed.
 
-### Current
-```
-- Set `AGENT_API_BASE_URL=http://host.docker.internal:8080/v1/chat/completions` and `AGENT_API_KEY=not-needed`
-```
-
-### Replace with
-```
-- To use a local model for the background lane: set `BACKGROUND_LLM_API_BASE_URL=http://host.docker.internal:8080/v1/chat/completions` and `BACKGROUND_LLM_API_KEY=not-needed`. The interactive lane can remain on Groq/NVIDIA independently.
-- To use a local model for everything: set both `INTERACTIVE_LLM_API_BASE_URL` and `BACKGROUND_LLM_API_BASE_URL` to the local endpoint.
-```
-
----
-
-## Change 8 of 13 — Env Var Unification Table (Lines 690-699, Section 8.5)
-
-### Current
-```
-| New Name | Fallback | Default |
-|----------|----------|---------|
-| `AGENT_API_KEY` | `JARVIS_API_KEY` | (required) |
-| `AGENT_API_BASE_URL` | `JARVIS_API_BASE_URL` | `https://integrate.api.nvidia.com/v1/chat/completions` |
-| `AGENT_MODEL` | `JARVIS_MODEL` | `deepseek-v3.2` |
-| `AGENT_LLM_TIMEOUT_MS` | `JARVIS_TIMEOUT_MS` | `30000` |
-```
-
-### Replace with
-```
-### Interactive Lane
-
-| Name | Fallback Chain | Default |
-|------|---------------|---------|
-| `INTERACTIVE_LLM_API_KEY` | → `AGENT_API_KEY` → `JARVIS_API_KEY` | (required) |
-| `INTERACTIVE_LLM_API_BASE_URL` | → `AGENT_API_BASE_URL` → `JARVIS_API_BASE_URL` | `https://api.groq.com/openai/v1/chat/completions` |
-| `INTERACTIVE_LLM_MODEL` | → `AGENT_MODEL` → `JARVIS_MODEL` | `llama-3.3-70b-versatile` |
-| `INTERACTIVE_LLM_TIMEOUT_MS` | → `AGENT_LLM_TIMEOUT_MS` → `JARVIS_TIMEOUT_MS` | `30000` |
-
-### Background Lane
-
-| Name | Fallback Chain | Default |
-|------|---------------|---------|
-| `BACKGROUND_LLM_API_KEY` | → `AGENT_API_KEY` → `JARVIS_API_KEY` | (required) |
-| `BACKGROUND_LLM_API_BASE_URL` | → `AGENT_API_BASE_URL` → `JARVIS_API_BASE_URL` | `https://api.groq.com/openai/v1/chat/completions` |
-| `BACKGROUND_LLM_MODEL` | → `AGENT_MODEL` → `JARVIS_MODEL` | `llama-3.3-70b-versatile` |
-| `BACKGROUND_LLM_TIMEOUT_MS` | → `AGENT_LLM_TIMEOUT_MS` → `JARVIS_TIMEOUT_MS` | `60000` |
-
-**Fallback behavior:** If only `JARVIS_API_KEY` is set (legacy), both lanes use it. A startup warning is logged: "Using legacy JARVIS_API_KEY for both lanes — set INTERACTIVE_LLM_API_KEY and BACKGROUND_LLM_API_KEY for production." This makes the migration smooth — existing `.env.local` files work without changes during development.
-
-**Note:** `BACKGROUND_LLM_TIMEOUT_MS` defaults to `60000` (60s), not 30s. Background scans have heavier LLM steps (up to 60s timeout already declared in blueprint step metadata).
-```
+- [ ] **Add a delivery recovery / replay section.**
+  - What happens to `delivery_failed` reports?
+  - Can they be retried without re-running analysis?
+  - Who/what triggers redelivery?
 
 ---
 
-## Change 9 of 13 — types.ts Export List (Line 707, Section 9)
+## 3. Detailed Review / Reasoning
 
-### Current (excerpt)
-```
-`LlmProviderConfig`, `TokenTrackingEntry`
-```
+## 3.1 Schema and migration reasoning
 
-### Replace with
-```
-`LlmLaneConfig`, `LlmLane`, `LlmBudgetConfig`, `TokenTrackingEntry`
-```
+### Critical cracks
 
----
+1. **Migration numbering is stale.**
+   - The repo already contains migrations through `0016`.
+   - Reusing `0011` / `0012` would break ordering and snapshots.
 
-## Change 10 of 13 — Cost Estimation & MODEL_PRICING (Lines 792-801, Section 11)
+2. **`agent_memory` cutover is not safe as written.**
+   - Existing Jarvis writers target the old uniqueness model.
+   - Changing the unique key before fully removing old code creates immediate compatibility risk.
 
-### Current
-```
-- `model_used` — actual model string (e.g., `deepseek-v3.2`)
+3. **Historical data copy rules are incomplete.**
+   - New tables require fields like `agent_id` and `channel` that old rows do not have.
+   - The mapping must be explicitly written, not implied.
 
-const MODEL_PRICING: Record<string, { inputPer1k: number; outputPer1k: number }> = {
-  'deepseek-v3.2': { inputPer1k: 0.014, outputPer1k: 0.014 },
-  'local/*': { inputPer1k: 0, outputPer1k: 0 },
-};
-```
+4. **Discord schema statement is internally inconsistent.**
+   - AEV2 says `agent_conversations.channel` already supports Discord, but that table does not exist yet in the current schema.
+   - Current `jarvis_conversations` uses `mode`, not `channel`.
 
-### Replace with
-```
-- `model_used` — actual model string (e.g., `llama-3.3-70b-versatile`)
-- `lane` — which config lane was used: `'interactive'` or `'background'`
+5. **Temporary `'jarvis'` agent IDs create future integrity problems.**
+   - If `agent_id` becomes a proper FK, `'jarvis'` is an invalid long-term value.
 
-const MODEL_PRICING: Record<string, { inputPer1kCents: number; outputPer1kCents: number }> = {
-  // Groq — testing default + possible prod interactive
-  'llama-3.3-70b-versatile':        { inputPer1kCents: 0.059, outputPer1kCents: 0.079 },
-  // NVIDIA API — prod (placeholder pricing, confirm with actual tier)
-  'nvidia/llama-3.3-70b-instruct':  { inputPer1kCents: 0.040, outputPer1kCents: 0.040 },
-  // DeepSeek direct — future upgrade path for background lane
-  'deepseek-chat':                   { inputPer1kCents: 0.027, outputPer1kCents: 0.110 },
-  // Local models — zero cost
-  'local/*':                         { inputPer1kCents: 0, outputPer1kCents: 0 },
-};
-```
+### Medium-risk gaps
 
-### Also: Add `lane` column to `agent_request_log` schema (Section 3.5, line ~185)
-
-Add after the `mode` field:
-```
-├── lane                 TEXT NOT NULL DEFAULT 'background'  -- 'interactive' | 'background'
-```
+- Most `agent_id` references are described as soft FKs, which is weak for a queue-driven system.
+- Queue indexing is not yet tailored tightly enough to the actual polling query.
+- `discord_user_links` is referenced but not planned.
+- Status/enum-like text fields need DB checks.
+- Report/job relationships need better uniqueness/indexing.
 
 ---
 
-## Change 11 of 13 — Budget: Observability → Enforcement (Lines 804-808, Section 11)
+## 3.2 Runtime / queue / Docker / Discord reasoning
 
-### Current
-```
-### Monthly Budget
+### Critical cracks
 
-- Default: `AGENT_MONTHLY_BUDGET_CENTS=10000` ($100/month)
-- **Observability only in v1** — no hard enforcement, just dashboard tracking
-- UI warning at >80% used, critical alert at >100%
-```
+1. **Dockerfile is not runnable as written.**
+   - It uses `npx tsx` after `npm ci --production`, but `tsx` is not currently installed.
 
-### Replace with
-```
-### Budget Enforcement
+2. **Retry/recovery semantics are unsafe.**
+   - Without leases, the stale-job reaper can create duplicate processing.
 
-Hard limits checked by `callLlm()` before every LLM call. Budget is per-agent — each agent checks its own spend against `agent_request_log`.
+3. **Idempotency is specified but not enforced.**
+   - A string key in step metadata is not a durable dedupe mechanism.
 
-| Limit | Env Var | Default | What Happens When Hit |
-|-------|---------|---------|----------------------|
-| Daily spend cap | `AGENT_DAILY_BUDGET_CENTS` | `500` ($5/day per agent) | `BudgetExceededError` thrown, step fails with `failureClass: 'policy'`, no retry. Warning posted to `#agent-system` Discord. |
-| Monthly spend cap | `AGENT_MONTHLY_BUDGET_CENTS` | `10000` ($100/mo per agent) | Same as daily — hard stop + Discord alert. |
-| Max context tokens per LLM call | `AGENT_MAX_CONTEXT_TOKENS` | `32000` | Input is truncated to fit. Warning logged. LLM call still proceeds. |
-| Max scan candidates sent to LLM | `AGENT_MAX_SCAN_CANDIDATES` | `20` | Code step slices candidate list before passing to LLM step. Excess candidates dropped with log. |
-| Max pattern history items loaded | `AGENT_MAX_PATTERN_HISTORY` | `50` | Code step slices pattern list before passing to LLM step. Oldest patterns dropped first. |
-| Max retries per LLM step | `AGENT_MAX_RETRIES_PER_STEP` | `2` | After N repair attempts, step fails with `failureClass: 'contract'`. Overrides `maxRepairAttempts` on step metadata if lower. |
+4. **Publish flow is contradictory.**
+   - The spec currently gives publish ownership to both specialists and Orchestrator.
 
-**How budget check works inside `callLlm()`:**
-1. Read `agent_request_log` WHERE `agent_id = current agent` AND `created_at > now() - 24h` → sum `estimated_cost_cents` → compare to daily cap
-2. Read `agent_request_log` WHERE `agent_id = current agent` AND `created_at > now() - 30d` → sum `estimated_cost_cents` → compare to monthly cap
-3. If either cap exceeded → throw `BudgetExceededError` (no LLM call made)
-4. These are fast queries — `idx_agent_request_log_agent_created` index covers them
+5. **Catch-up logic has no durable run identity.**
+   - “Did today’s output happen?” needs a dedicated record, not an inferred answer.
 
-**Per-agent, not global:** With 3 agents at $5/day default, the total system max is $15/day ($450/month). To reduce total system spend, lower the per-agent cap. A global budget pool is intentionally avoided — one runaway agent should not be able to starve another agent's budget.
+6. **Market-status gate is wrong for pre-market jobs.**
+   - Pre-market scans happen when the market is closed.
 
-**Observability layer (on top of enforcement):**
-- Dashboard warning at 80% of daily cap
-- Dashboard critical at 100% (already blocked by enforcement)
-- Same thresholds for monthly cap
-- All budget events posted to `#agent-system` Discord webhook
-```
+7. **Discord bot runtime is unresolved.**
+   - Current compose file includes `discord-bot`; the AEV2 rewrite drops it despite V1 still depending on it.
+
+8. **Admin stats overreach current observability reality.**
+   - Vercel can query DB state, not worker memory.
+
+### Operational risks
+
+- Laptop/server fragility makes durable scheduling even more important.
+- A 5-minute generic stale-job timeout is too blunt.
+- Polling from both web and Discord is fine, but only if queue semantics are clean.
+- `step_log` on the job row can become a performance drag if overloaded.
 
 ---
 
-## Change 12 of 13 — Docker Compose Env Blocks (Lines 993-1070, Section 15)
+## 3.3 API / frontend / auth reasoning
 
-### Current (same pattern in all 3 services)
-```yaml
-      - AGENT_API_KEY=${AGENT_API_KEY}
-      - AGENT_API_BASE_URL=${AGENT_API_BASE_URL}
-      - AGENT_MODEL=${AGENT_MODEL}
-```
+### Critical cracks
 
-### Replace with (in ALL 3 services — orchestrator, small-cap-trader, swing-trader)
-```yaml
-      # LLM — Interactive lane (Orchestrator chat)
-      - INTERACTIVE_LLM_API_KEY=${INTERACTIVE_LLM_API_KEY}
-      - INTERACTIVE_LLM_API_BASE_URL=${INTERACTIVE_LLM_API_BASE_URL}
-      - INTERACTIVE_LLM_MODEL=${INTERACTIVE_LLM_MODEL:-llama-3.3-70b-versatile}
-      - INTERACTIVE_LLM_TIMEOUT_MS=${INTERACTIVE_LLM_TIMEOUT_MS:-30000}
-      # LLM — Background lane (specialist scans/research)
-      - BACKGROUND_LLM_API_KEY=${BACKGROUND_LLM_API_KEY}
-      - BACKGROUND_LLM_API_BASE_URL=${BACKGROUND_LLM_API_BASE_URL}
-      - BACKGROUND_LLM_MODEL=${BACKGROUND_LLM_MODEL:-llama-3.3-70b-versatile}
-      - BACKGROUND_LLM_TIMEOUT_MS=${BACKGROUND_LLM_TIMEOUT_MS:-60000}
-      # Budget enforcement
-      - AGENT_DAILY_BUDGET_CENTS=${AGENT_DAILY_BUDGET_CENTS:-500}
-      - AGENT_MONTHLY_BUDGET_CENTS=${AGENT_MONTHLY_BUDGET_CENTS:-10000}
-      - AGENT_MAX_CONTEXT_TOKENS=${AGENT_MAX_CONTEXT_TOKENS:-32000}
-      - AGENT_MAX_SCAN_CANDIDATES=${AGENT_MAX_SCAN_CANDIDATES:-20}
-      - AGENT_MAX_PATTERN_HISTORY=${AGENT_MAX_PATTERN_HISTORY:-50}
-      - AGENT_MAX_RETRIES_PER_STEP=${AGENT_MAX_RETRIES_PER_STEP:-2}
-```
+1. **Frontend migration scope is understated.**
+   - The `jarvis` tab is wired in several places beyond the sidebar.
 
-**Why all 3 services get both lanes:** Every container receives both lane configs even if it only uses one. This prevents Docker compose failures from undefined variables, and allows flipping an agent's lane without changing the compose file. The agent's `AgentConfig.llmLane` (or the step's `StepMetadata.lane`) picks which lane config to read at runtime — unused lane vars are simply ignored.
+2. **Deleting `lib/jarvis/` too early will break non-Agent screens.**
+   - Some current UI paths still depend on Jarvis types/routes.
 
----
+3. **Macro summary consumer still points at `/api/jarvis/macro-summary/latest`.**
+   - That must be migrated before cleanup.
 
-## Change 13 of 13 — Section 18 Environment Variables (Lines 1259-1288)
+4. **Polling read routes need explicit ownership checks.**
+   - `job_id` lookup without `user_id` scoping is a security hole.
 
-### Replace the entire section with:
+5. **The chat polling contract is too thin for the promised UI.**
+   - `AgentChat` needs `agent_id` and `progress_note`.
 
-```
-## 18. Environment Variables
+6. **Fanout behavior is underspecified.**
+   - Split sub-jobs require parent/child semantics that the current route contract does not define.
 
-### Agent LLM Config — Two-Lane
+7. **In-memory rate limiting conflicts with repo rules if used on Vercel.**
 
-| Variable | Default | Used By | Purpose |
-|----------|---------|---------|---------|
-| `INTERACTIVE_LLM_API_KEY` | (required, falls back to JARVIS_API_KEY) | Orchestrator (chat) | API key for user-facing chat lane |
-| `INTERACTIVE_LLM_API_BASE_URL` | `https://api.groq.com/openai/v1/chat/completions` | Orchestrator (chat) | LLM endpoint for interactive lane |
-| `INTERACTIVE_LLM_MODEL` | `llama-3.3-70b-versatile` | Orchestrator (chat) | Model for interactive lane |
-| `INTERACTIVE_LLM_TIMEOUT_MS` | `30000` | Orchestrator (chat) | Timeout for interactive lane (30s) |
-| `BACKGROUND_LLM_API_KEY` | (required, falls back to JARVIS_API_KEY) | Small Cap, Swing, Orchestrator (cron) | API key for background scan lane |
-| `BACKGROUND_LLM_API_BASE_URL` | `https://api.groq.com/openai/v1/chat/completions` | Small Cap, Swing, Orchestrator (cron) | LLM endpoint for background lane |
-| `BACKGROUND_LLM_MODEL` | `llama-3.3-70b-versatile` | Small Cap, Swing, Orchestrator (cron) | Model for background lane |
-| `BACKGROUND_LLM_TIMEOUT_MS` | `60000` | Small Cap, Swing, Orchestrator (cron) | Timeout for background lane (60s) |
+### Missing details worth adding
 
-### Agent Budget Limits — Hard Enforcement
-
-| Variable | Default | Used By | Purpose |
-|----------|---------|---------|---------|
-| `AGENT_DAILY_BUDGET_CENTS` | `500` | All agents (per-agent) | Hard daily spend cap ($5/day). Enforced in `callLlm()`. |
-| `AGENT_MONTHLY_BUDGET_CENTS` | `10000` | All agents (per-agent) | Hard monthly spend cap ($100/mo). Enforced in `callLlm()`. |
-| `AGENT_MAX_CONTEXT_TOKENS` | `32000` | All agents | Max tokens per LLM call input. Truncates if exceeded. |
-| `AGENT_MAX_SCAN_CANDIDATES` | `20` | Small Cap, Swing Trader | Max tickers per scan passed to LLM step. |
-| `AGENT_MAX_PATTERN_HISTORY` | `50` | Swing Trader | Max pattern history items loaded per LLM call. |
-| `AGENT_MAX_RETRIES_PER_STEP` | `2` | All agents | Max repair retries per LLM step. |
-
-### Agent Infrastructure (unchanged from R2)
-
-| Variable | Default | Used By | Purpose |
-|----------|---------|---------|---------|
-| `DATABASE_URL` | (existing, required) | All agents + Next.js | Neon Postgres connection string |
-| `AGENT_POLL_INTERVAL_MS` | `5000` | All agents | Job queue poll interval |
-| `AGENT_ID` | (required per service) | Each Docker service | Agent identity |
-| `AGENT_ADMIN_KEY` | (falls back to `JARVIS_ADMIN_KEY`) | Next.js app | Admin API auth |
-| `MACRO_CRON_HOUR` | `6` | Orchestrator | Hour (ET) to run macro summary |
-| `MASSIVE_API_KEY` | (existing) | All agents | Market data API |
-| `ASKEDGAR_API_KEY` | (existing) | All agents | SEC filings API |
-| `TZ` | `America/New_York` | All agents | Timezone for cron/schedule alignment |
-
-### Discord Webhooks (unchanged from R1.2)
-
-| Variable | Purpose |
-|----------|---------|
-| `DISCORD_WEBHOOK_SCANS` | Small Cap pre-market scan results |
-| `DISCORD_WEBHOOK_RESEARCH` | Small Cap on-demand research |
-| `DISCORD_WEBHOOK_SWING_SETUPS` | Swing Trader MDR candidates |
-| `DISCORD_WEBHOOK_SWING_ALERTS` | Swing Trader real-time alerts |
-| `DISCORD_WEBHOOK_SYSTEM` | Agent health, budget warnings, errors |
-
-### API Key Split by Purpose (Recommended Practice)
-
-| Key Slot | Which Env Vars to Set | Purpose |
-|----------|-----------------------|---------|
-| Dev/test | Both `INTERACTIVE_LLM_API_KEY` and `BACKGROUND_LLM_API_KEY` → same Groq free-tier key | One key, same model for both lanes. Zero cost during development. |
-| Prod interactive | `INTERACTIVE_LLM_API_KEY` → NVIDIA or paid Groq key | Orchestrator chat. Speed-optimized. |
-| Prod background | `BACKGROUND_LLM_API_KEY` → NVIDIA or DeepSeek key | Specialist scans. Quality/cost-optimized. |
-| Eval/batch (optional) | Separate key for offline evaluation runs | Prevents eval cost from eating production budget. |
-
-**Why split by purpose, not per agent:** Per the review feedback — one key per tiny workflow is overkill. Per-agent keys would mean 3 keys minimum, growing with each new agent. Splitting by purpose (interactive vs background) gives you budget isolation and rate-limit separation without complexity. Agents in the same lane share a key.
-
-### Deprecated (read as fallback, log warning when used)
-
-| Old Name | New Replacement | Notes |
-|----------|----------------|-------|
-| `JARVIS_API_KEY` | `INTERACTIVE_LLM_API_KEY` / `BACKGROUND_LLM_API_KEY` | Legacy fallback for both lanes during migration |
-| `JARVIS_API_BASE_URL` | `INTERACTIVE_LLM_API_BASE_URL` / `BACKGROUND_LLM_API_BASE_URL` | Same |
-| `JARVIS_MODEL` | `INTERACTIVE_LLM_MODEL` / `BACKGROUND_LLM_MODEL` | Same |
-| `JARVIS_TIMEOUT_MS` | `INTERACTIVE_LLM_TIMEOUT_MS` / `BACKGROUND_LLM_TIMEOUT_MS` | Same |
-| `JARVIS_ADMIN_KEY` | `AGENT_ADMIN_KEY` | Unchanged from R1 |
-| `AGENT_API_KEY` | Split into lane-specific vars | R1/R2 single-lane var, now superseded |
-| `AGENT_API_BASE_URL` | Split into lane-specific vars | Same |
-| `AGENT_MODEL` | Split into lane-specific vars | Same |
-| `NVIDIA_API_KEY` | No direct replacement | Was a fallback in R1; fully removed |
-| `CRON_SECRET` | (removed) | Macro cron is now in-process |
-```
+- Mandatory use of existing route helpers / validation helpers
+- session ID generation/return behavior
+- target-agent offline behavior
+- endpoint role separation between chat vs research vs trade-analysis
+- selector precedence vs slash command precedence
 
 ---
 
-## Change 13b — R1.3 Superseded Annotation (Lines 1466-1481)
+## 4. Recommended simplification decisions
 
-### Add at the top of Section R1.3
-```
-> **SUPERSEDED** — R1.3's single-lane `AGENT_API_*` env vars are replaced by the dual-lane
-> `INTERACTIVE_LLM_*` / `BACKGROUND_LLM_*` config in the R3 amendment. The provider analysis
-> (Groq vs DeepSeek) remains valid context. See revised Section 8.5 and Section 18 for the
-> current env var table.
-```
+If you want the cleanest V1 springboard, these are the best simplifying choices:
 
----
+1. **V1 routes to exactly one agent per user request.**
+   - Defer multi-agent fanout.
 
-## services/.env.example Template
+2. **Specialists publish directly to Discord.**
+   - Orchestrator only publishes its own chat/macro outputs in V1.
 
-This file should be written out in full as part of Phase 5 (Docker Infrastructure). Contents:
+3. **Use DB-backed truth for all admin stats.**
+   - Avoid promising live worker memory introspection.
 
-```bash
-# Nexus Terminal — Agent Services Environment
-# Copy to .env and fill in your values.
+4. **Add one dedicated scheduled-runs table.**
+   - It simplifies catch-up, dedupe, and operator visibility.
 
-# ─── Database ───
-DATABASE_URL=postgresql://user:pass@host/nexus?sslmode=require
-
-# ─── LLM: Interactive Lane (Orchestrator chat — needs speed) ───
-# Testing: use Groq free tier key for both lanes
-# Production: use NVIDIA or paid Groq key
-INTERACTIVE_LLM_API_KEY=gsk_your_groq_key_here
-INTERACTIVE_LLM_API_BASE_URL=https://api.groq.com/openai/v1/chat/completions
-INTERACTIVE_LLM_MODEL=llama-3.3-70b-versatile
-INTERACTIVE_LLM_TIMEOUT_MS=30000
-
-# ─── LLM: Background Lane (specialist scans — needs quality/cost) ───
-# Testing: same Groq free key as interactive
-# Production: NVIDIA, DeepSeek, or paid Groq key
-BACKGROUND_LLM_API_KEY=gsk_your_groq_key_here
-BACKGROUND_LLM_API_BASE_URL=https://api.groq.com/openai/v1/chat/completions
-BACKGROUND_LLM_MODEL=llama-3.3-70b-versatile
-BACKGROUND_LLM_TIMEOUT_MS=60000
-
-# ─── Budget Limits (per-agent, hard enforcement) ───
-AGENT_DAILY_BUDGET_CENTS=500           # $5/day per agent ($15/day total for 3 agents)
-AGENT_MONTHLY_BUDGET_CENTS=10000       # $100/mo per agent ($300/mo total for 3 agents)
-AGENT_MAX_CONTEXT_TOKENS=32000         # Truncate LLM input above this
-AGENT_MAX_SCAN_CANDIDATES=20           # Max tickers per scan to LLM
-AGENT_MAX_PATTERN_HISTORY=50           # Max pattern items loaded per LLM call
-AGENT_MAX_RETRIES_PER_STEP=2           # Max repair retries per LLM step
-
-# ─── Agent Infrastructure ───
-AGENT_POLL_INTERVAL_MS=5000
-AGENT_ADMIN_KEY=your_admin_key_here
-MACRO_CRON_HOUR=6
-
-# ─── External APIs ───
-MASSIVE_API_KEY=your_massive_key
-ASKEDGAR_API_KEY=your_askedgar_key
-
-# ─── Discord Webhooks ───
-DISCORD_WEBHOOK_SCANS=https://discord.com/api/webhooks/...
-DISCORD_WEBHOOK_RESEARCH=https://discord.com/api/webhooks/...
-DISCORD_WEBHOOK_SWING_SETUPS=https://discord.com/api/webhooks/...
-DISCORD_WEBHOOK_SWING_ALERTS=https://discord.com/api/webhooks/...
-DISCORD_WEBHOOK_SYSTEM=https://discord.com/api/webhooks/...
-```
+5. **Extract shared Jarvis artifacts before deleting `lib/jarvis/`.**
+   - Don’t force cleanup to fight unrelated runtime regressions.
 
 ---
 
-## `callLlm()` Flow with Budget Check (Reference Implementation)
+## 5. Bottom line
 
-This is the updated flow inside `lib/agents/llm-client.ts`:
+AEV2 is close, but the next revision should focus less on high-level architecture and more on:
 
-```
-callLlm(request, lane, overrides?)
-  │
-  ├─ 1. Resolve lane config
-  │     if lane === 'interactive' → getInteractiveLlmConfig()
-  │     if lane === 'background'  → getBackgroundLlmConfig()
-  │     Apply overrides if provided
-  │
-  ├─ 2. Budget check (BEFORE making the LLM call)
-  │     budgetConfig = getLlmBudgetConfig()
-  │     todaySpend = SUM(estimated_cost_cents) FROM agent_request_log
-  │                  WHERE agent_id = current AND created_at > now() - 24h
-  │     monthSpend = SUM(estimated_cost_cents) FROM agent_request_log
-  │                  WHERE agent_id = current AND created_at > now() - 30d
-  │     if todaySpend >= budgetConfig.dailyBudgetCents → throw BudgetExceededError('daily')
-  │     if monthSpend >= budgetConfig.monthlyBudgetCents → throw BudgetExceededError('monthly')
-  │
-  ├─ 3. Context token check
-  │     if estimateTokens(request.systemPrompt + request.userMessage) > budgetConfig.maxContextTokens
-  │       → truncate input, log warning
-  │
-  ├─ 4. Make the LLM call
-  │     fetch(laneConfig.baseUrl, { model, messages, temperature, ... })
-  │     timeout: laneConfig.timeoutMs
-  │
-  ├─ 5. Log to agent_request_log
-  │     { agent_id, lane, model_used, input_tokens, output_tokens, estimated_cost_cents, ... }
-  │
-  └─ 6. Return LlmResponse
-```
+- exact migration mechanics
+- exact queue semantics
+- exact runtime topology
+- exact API contracts
+- exact cleanup boundaries
 
----
-
-## Summary: What This Revision Does NOT Change
-
-These parts of the plan are unaffected:
-
-- Database schema (except adding `lane` column to `agent_request_log`)
-- Blueprint engine (steps, runner, validation, checkpoint/resume)
-- Job queue (poll, SKIP LOCKED, retry, dead letter)
-- Agent registry and heartbeat
-- Three-layer prompt architecture
-- Evidence and citation rules
-- Code vs LLM boundary rules
-- Anti-pattern ban list
-- Discord-first report delivery
-- Routing rules
-- Build order phases (same 7 phases)
-- File inventory (same files, just updated contents in llm-client.ts and types.ts)
-- Frontend components
-- Migration plan
-
----
-
-## How to Apply This Revision
-
-1. Read this document alongside AGENTIC_EXPANSION_V2.md
-2. Apply each of the 13 changes in order (they don't depend on each other)
-3. Add `> SUPERSEDED` to R1.3
-4. Add the `.env.example` template to the Phase 5 file inventory
-5. Verify: search the updated document for `NVIDIA`, `deepseek-v3.2`, `AGENT_API_KEY`, `AGENT_API_BASE_URL`, `AGENT_MODEL` — none should appear outside the Deprecated table or "future upgrade" context
+Once those are patched, it should be strong enough to promote into a real implementation springboard.
