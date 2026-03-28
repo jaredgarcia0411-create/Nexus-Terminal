@@ -1,376 +1,329 @@
-# AEV2_REVISIONS.md — Redline Checklist for `AGENTIC_EXPANSION_V2.md`
-
-> Generated: 2026-03-28 | Status: REVIEW — apply these revisions before turning AEV2 into the implementation springboard
-
----
-
-## 1. Review Summary
-
-### Overall verdict
-
-`AGENTIC_EXPANSION_V2.md` is strong at the vision/system-design level, but it is **not springboard-ready yet**.
-
-The biggest remaining cracks are in:
-
-1. **cutover mechanics**
-2. **job durability / retry semantics**
-3. **Discord/runtime integration**
-4. **repo-specific migration details**
-5. **frontend/API contract completeness**
-
-If those are tightened now, implementation risk drops a lot.
-
-### Review method
-
-This review used three parallel sub-reviews focused on:
-
-- **Schema / migrations / DB compatibility**
-- **Runtime / Docker / queue / cron / Discord ops**
-- **API / frontend / auth / UX compatibility**
-
-The findings below synthesize those reviews into one redline checklist plus reasoning.
-
----
-
-## 2. Redline Checklist
-
-Use this as the patch list for the next AEV2 revision.
-
-### A. Must-fix before implementation
-
-- [ ] **Renumber the migration plan.**
-  - AEV2 still refers to migrations `0011` and `0012`, but the repo already has migrations through `0016`.
-  - Update all references to use the next real migration numbers.
-
-- [ ] **Replace the current `agent_memory` cutover plan with a real zero-break or maintenance-window plan.**
-  - Old Jarvis code currently writes against the existing unique key `(user_id, category, key)`.
-  - AEV2 changes it to `(user_id, agent_id, category, key)`.
-  - “Same deploy” is not truly atomic across Vercel + Docker workers.
-  - Add either:
-    - a maintenance window with old writers fully disabled before the constraint swap, or
-    - a shadow/swap migration strategy.
-
-- [ ] **Write exact historical backfill mappings.**
-  - Explicitly specify:
-    - `jarvis_conversations -> agent_conversations`
-      - `agent_id = 'orchestrator'`
-      - `channel = 'web'`
-    - `jarvis_request_log -> agent_request_log`
-      - `agent_id = 'orchestrator'`
-      - `lane = 'background'`
-      - `estimated_cost_cents = 0` for historical rows
-    - `agent_memory`
-      - backfill directly to `agent_id = 'orchestrator'`
-      - do **not** use temporary `'jarvis'` if the system is converging on strict agent IDs
-
-- [ ] **Choose one report publish ownership model and remove the other.**
-  - AEV2 currently says both:
-    - specialists publish directly in `assemble-report`, and
-    - Orchestrator receives completions and publishes
-  - Pick one. For V1, the simplest path is: **specialists publish directly** unless cross-agent synthesis is required.
-
-- [ ] **Add durable queue lease fields to `agent_jobs`.**
-  - Add fields such as:
-    - `locked_by`
-    - `lock_expires_at`
-    - `last_heartbeat_at`
-  - Workers should renew the lease during long-running steps.
-  - The stale-job reaper should only requeue jobs with expired leases, not anything older than 5 minutes.
-
-- [ ] **Add real idempotency storage for side effects.**
-  - `StepMetadata.idempotencyKey` is not enough by itself.
-  - Add a durable DB-backed mechanism, e.g.:
-    - `agent_step_effects` table, or
-    - a delivery outbox table
-  - Required for safe retries and to prevent duplicate Discord posts.
-
-- [ ] **Add a durable scheduled-run model for cron/catch-up jobs.**
-  - Current spec relies on “has today’s output been generated?” but does not define a durable source of truth.
-  - Add a table like `agent_scheduled_runs` with a unique key on `(agent_id, trigger_type, trading_date)`.
-  - Use it for:
-    - dedupe
-    - catch-up logic
-    - observability
-    - replay/debugging
-
-- [ ] **Fix the market-status gating rules.**
-  - Pre-market scans should not use “if market is closed, skip.”
-  - Replace with trading-day/session-aware logic:
-    - valid trading day?
-    - pre-market window?
-    - post-market window?
-    - holiday/weekend skip?
-
-- [ ] **Add `discord_user_links` to the schema plan or explicitly defer Discord identity mapping.**
-  - AEV2 depends on Discord user -> Nexus user resolution.
-  - That table is not in the current schema plan.
-  - “No schema changes required” is not true as written.
-
-- [ ] **Keep the Discord bot in the runtime topology if `#orchestrator` is V1.**
-  - Current repo `services/docker-compose.yml` already has `discord-bot`.
-  - AEV2’s compose rewrite removes it while still requiring bidirectional Discord chat.
-  - Add explicit runtime ownership for the bot service.
-
-- [ ] **Fix the container runtime story.**
-  - The proposed Dockerfile runs `npx tsx`, but `tsx` is not currently in `package.json`.
-  - Add a decision:
-    - either include `tsx`, or
-    - compile the agent code and run built JS.
-
-- [ ] **Define admin observability using DB-backed truth only, or persist breaker state.**
-  - AEV2 promises circuit breaker status in `/api/agents/admin/stats`.
-  - But circuit breakers are described as in-memory per worker, which Vercel routes cannot inspect.
-  - Either persist state or reduce the endpoint to data that is actually observable from DB rows.
-
-### B. High-priority spec additions
-
-- [ ] **Add foreign keys for `agent_id` references.**
-  - `agent_jobs.agent_id -> agent_registry.id`
-  - `agent_reports.agent_id -> agent_registry.id`
-  - `agent_conversations.agent_id -> agent_registry.id`
-  - `agent_request_log.agent_id -> agent_registry.id`
-  - `agent_memory.agent_id -> agent_registry.id`
-  - `agent_reports.job_id -> agent_jobs.id` (`ON DELETE SET NULL` is probably the right behavior)
-
-- [ ] **Add DB-level checks/enums for text state fields.**
-  - `status`
-  - `lane`
-  - `role`
-  - `channel`
-  - `confidence`
-  - This prevents silent invalid values from breaking routing or reporting.
-
-- [ ] **Tighten queue indexes to match actual poll queries.**
-  - Add a more queue-specific ready-job index / partial index rather than relying only on the current broad index proposal.
-
-- [ ] **Add uniqueness / indexing for report delivery safety.**
-  - If one report should map to one job, add at least an index on `agent_reports.job_id` and likely a uniqueness rule.
-
-- [ ] **Define the bot-to-app auth contract.**
-  - Reuse one clear service auth pattern.
-  - Do not leave Discord bot -> Next.js API auth implicit.
-
-- [ ] **Add explicit offline-agent behavior to the API contract.**
-  - If a target agent is offline/degraded, define whether the API:
-    - returns `503`,
-    - reroutes to Orchestrator, or
-    - rejects immediately with a typed error.
-
-- [ ] **Decide whether V1 supports multi-agent fanout.**
-  - Current public route contract looks single-job / single-result.
-  - Current routing narrative allows split sub-jobs.
-  - Pick one:
-    - **V1 single-agent only** (recommended), or
-    - add parent/child jobs + aggregation rules now.
-
-- [ ] **Replace in-memory rate limiting anywhere it touches Vercel routes.**
-  - Repo guidance already says in-memory state is unreliable on Vercel.
-  - If rate limiting only applies in Docker workers, say that explicitly.
-
-### C. Frontend / API completeness fixes
-
-- [ ] **Expand the frontend migration inventory beyond `Sidebar.tsx`.**
-  - The current `jarvis` tab is also wired in:
-    - `app/page.tsx`
-    - `components/trading/CommandPalette.tsx`
-    - `hooks/use-global-shortcuts.ts`
-    - `components/trading/MarketsTab.tsx`
-  - Add these files to the migration plan.
-
-- [ ] **Add a shared extraction step before deleting `lib/jarvis/`.**
-  - The repo still uses Jarvis modules outside Jarvis chat.
-  - Example: `MarketsTab.tsx` imports `@/lib/jarvis/types` and fetches `/api/jarvis/macro-summary/latest`.
-  - Move shared report types/helpers to a neutral module first.
-
-- [ ] **Expand `/api/agents/chat` contract.**
-  - `POST` should return at least:
-    - `job_id`
-    - `session_id`
-    - `agent_id`
-  - `GET` should return at least:
-    - `status`
-    - `agent_id`
-    - `progress_note`
-    - `result?`
-    - `error?`
-
-- [ ] **Add mandatory ownership checks on all user-facing read routes.**
-  - `GET /api/agents/chat?job_id=...`
-  - `GET /api/agents/reports`
-  - `GET /api/agents/reports/[id]`
-  - All must scope by authenticated `user_id`.
-
-- [ ] **Add explicit route-convention language for all `/api/agents/*` routes.**
-  - Use:
-    - `requireUser()` for normal routes
-    - `ensureUser()` where needed
-    - `getDb()` / `dbUnavailable()`
-    - `parseAndValidate()` with Zod schemas
-  - Add this to the spec so implementation matches the existing app.
-
-- [ ] **Clarify `/api/agents/research` and `/api/agents/trade-analysis` vs chat commands.**
-  - Right now they overlap with slash-command routing.
-  - Define whether they are:
-    - first-class programmatic endpoints, or
-    - convenience wrappers, or
-    - out of scope for V1.
-
-- [ ] **Define selector-vs-command precedence in the UI.**
-  - If a user selects “Swing Trader” but types `/research`, which wins?
-  - Add a simple deterministic rule.
-
-### D. Lower-risk but worthwhile cleanups
-
-- [ ] **Clarify Compose memory-limit expectations.**
-  - `deploy.resources` is not reliably enforced in normal `docker compose` mode.
-  - Either use settings that actually apply in your environment or remove the overly-confident memory guarantees from the doc.
-
-- [ ] **Reduce hot-row bloat on `agent_jobs`.**
-  - `step_log` JSONB on the job row is okay early, but large step artifacts do not belong on the hot queue row.
-  - Add guidance that artifacts/raw payloads should stay out of the queue table or move to a child table if needed.
-
-- [ ] **Add a delivery recovery / replay section.**
-  - What happens to `delivery_failed` reports?
-  - Can they be retried without re-running analysis?
-  - Who/what triggers redelivery?
-
----
-
-## 3. Detailed Review / Reasoning
-
-## 3.1 Schema and migration reasoning
-
-### Critical cracks
-
-1. **Migration numbering is stale.**
-   - The repo already contains migrations through `0016`.
-   - Reusing `0011` / `0012` would break ordering and snapshots.
-
-2. **`agent_memory` cutover is not safe as written.**
-   - Existing Jarvis writers target the old uniqueness model.
-   - Changing the unique key before fully removing old code creates immediate compatibility risk.
-
-3. **Historical data copy rules are incomplete.**
-   - New tables require fields like `agent_id` and `channel` that old rows do not have.
-   - The mapping must be explicitly written, not implied.
-
-4. **Discord schema statement is internally inconsistent.**
-   - AEV2 says `agent_conversations.channel` already supports Discord, but that table does not exist yet in the current schema.
-   - Current `jarvis_conversations` uses `mode`, not `channel`.
-
-5. **Temporary `'jarvis'` agent IDs create future integrity problems.**
-   - If `agent_id` becomes a proper FK, `'jarvis'` is an invalid long-term value.
-
-### Medium-risk gaps
-
-- Most `agent_id` references are described as soft FKs, which is weak for a queue-driven system.
-- Queue indexing is not yet tailored tightly enough to the actual polling query.
-- `discord_user_links` is referenced but not planned.
-- Status/enum-like text fields need DB checks.
-- Report/job relationships need better uniqueness/indexing.
-
----
-
-## 3.2 Runtime / queue / Docker / Discord reasoning
-
-### Critical cracks
-
-1. **Dockerfile is not runnable as written.**
-   - It uses `npx tsx` after `npm ci --production`, but `tsx` is not currently installed.
-
-2. **Retry/recovery semantics are unsafe.**
-   - Without leases, the stale-job reaper can create duplicate processing.
-
-3. **Idempotency is specified but not enforced.**
-   - A string key in step metadata is not a durable dedupe mechanism.
-
-4. **Publish flow is contradictory.**
-   - The spec currently gives publish ownership to both specialists and Orchestrator.
-
-5. **Catch-up logic has no durable run identity.**
-   - “Did today’s output happen?” needs a dedicated record, not an inferred answer.
-
-6. **Market-status gate is wrong for pre-market jobs.**
-   - Pre-market scans happen when the market is closed.
-
-7. **Discord bot runtime is unresolved.**
-   - Current compose file includes `discord-bot`; the AEV2 rewrite drops it despite V1 still depending on it.
-
-8. **Admin stats overreach current observability reality.**
-   - Vercel can query DB state, not worker memory.
-
-### Operational risks
-
-- Laptop/server fragility makes durable scheduling even more important.
-- A 5-minute generic stale-job timeout is too blunt.
-- Polling from both web and Discord is fine, but only if queue semantics are clean.
-- `step_log` on the job row can become a performance drag if overloaded.
-
----
-
-## 3.3 API / frontend / auth reasoning
-
-### Critical cracks
-
-1. **Frontend migration scope is understated.**
-   - The `jarvis` tab is wired in several places beyond the sidebar.
-
-2. **Deleting `lib/jarvis/` too early will break non-Agent screens.**
-   - Some current UI paths still depend on Jarvis types/routes.
-
-3. **Macro summary consumer still points at `/api/jarvis/macro-summary/latest`.**
-   - That must be migrated before cleanup.
-
-4. **Polling read routes need explicit ownership checks.**
-   - `job_id` lookup without `user_id` scoping is a security hole.
-
-5. **The chat polling contract is too thin for the promised UI.**
-   - `AgentChat` needs `agent_id` and `progress_note`.
-
-6. **Fanout behavior is underspecified.**
-   - Split sub-jobs require parent/child semantics that the current route contract does not define.
-
-7. **In-memory rate limiting conflicts with repo rules if used on Vercel.**
-
-### Missing details worth adding
-
-- Mandatory use of existing route helpers / validation helpers
-- session ID generation/return behavior
-- target-agent offline behavior
-- endpoint role separation between chat vs research vs trade-analysis
-- selector precedence vs slash command precedence
-
----
-
-## 4. Recommended simplification decisions
-
-If you want the cleanest V1 springboard, these are the best simplifying choices:
-
-1. **V1 routes to exactly one agent per user request.**
-   - Defer multi-agent fanout.
-
-2. **Specialists publish directly to Discord.**
-   - Orchestrator only publishes its own chat/macro outputs in V1.
-
-3. **Use DB-backed truth for all admin stats.**
-   - Avoid promising live worker memory introspection.
-
-4. **Add one dedicated scheduled-runs table.**
-   - It simplifies catch-up, dedupe, and operator visibility.
-
-5. **Extract shared Jarvis artifacts before deleting `lib/jarvis/`.**
-   - Don’t force cleanup to fight unrelated runtime regressions.
-
----
-
-## 5. Bottom line
-
-AEV2 is close, but the next revision should focus less on high-level architecture and more on:
-
-- exact migration mechanics
-- exact queue semantics
-- exact runtime topology
-- exact API contracts
-- exact cleanup boundaries
-
-Once those are patched, it should be strong enough to promote into a real implementation springboard.
+# AEV2_REVISIONS.md — Literal Edit Script for `AGENTIC_EXPANSION_V2.md`
+
+> Generated: 2026-03-28 | Status: APPLY THESE EDITS BEFORE FINAL SPEC PASS
+
+## Locked Decisions
+
+- Use **`agent_memory_v2`** instead of modifying legacy `agent_memory` in place.
+- Keep **resume support**, but move resumable payloads into **`agent_job_checkpoints`**.
+- Keep **V1 single-agent routing only**.
+- Remove **`/api/agents/trade-analysis`** from V1 to avoid collision with the repo's existing Jarvis trade-history analysis meaning.
+
+## Literal Edit Script
+
+### 1. Executive Summary
+
+- In Section 1, keep the high-level architecture, but remove any wording that implies V1 supports multi-agent fanout for a single user request.
+- If the summary mentions `trade-analysis` as a first-class V1 agent route, remove it.
+
+### 2. Database Schema
+
+#### Section 3.2 `agent_jobs`
+
+- Keep the lease fields already added.
+- Add a **lease fencing field**:
+  - `lease_version INTEGER NOT NULL DEFAULT 0`
+- Update the poll/claim semantics so the worker increments `lease_version` when it acquires the lease.
+- Add a note that all lease renewal, completion, and failure writes must match:
+  - `id`
+  - `locked_by`
+  - `lease_version`
+
+#### Section 3.6
+
+- Delete the entire current section titled:
+  - ``### 3.6 `agent_memory` — Modified (add `agent_id` column)``
+- Replace it with a new section titled:
+  - ``### 3.6 `agent_memory_v2` — Agent-scoped memory``
+- The replacement section should define a **new table**, not a modification of legacy `agent_memory`.
+- Use this table shape:
+  - `id TEXT PRIMARY KEY`
+  - `user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE`
+  - `agent_id TEXT NOT NULL REFERENCES agent_registry(id)`
+  - `category TEXT NOT NULL`
+  - `key TEXT NOT NULL`
+  - `value TEXT NOT NULL`
+  - `value_json JSONB`
+  - `source TEXT`
+  - `confidence TEXT`
+  - `created_at TIMESTAMPTZ DEFAULT now()`
+  - `updated_at TIMESTAMPTZ DEFAULT now()`
+  - `expires_at TIMESTAMPTZ`
+- Constraints/indexes:
+  - `UNIQUE(user_id, agent_id, category, key)`
+  - `INDEX agent_memory_v2_user_agent_category_idx ON (user_id, agent_id, category)`
+- Add explicit text:
+  - legacy `agent_memory` remains in place during rollout
+  - all new `/api/agents/*` code and Docker workers read/write `agent_memory_v2` only
+  - old Jarvis code continues using legacy `agent_memory` until cleanup
+
+#### Section 3.7 `agent_scheduled_runs`
+
+- Keep the table.
+- Replace the current purpose/catch-up wording with explicit **claim semantics**:
+  - scheduled runs are deduped by `UNIQUE(agent_id, trigger_type, trading_date)`
+  - the scheduler must first attempt `INSERT ... ON CONFLICT DO NOTHING`
+  - only the insert winner is allowed to create the corresponding `agent_jobs` row
+  - this table is both observability and the atomic dedupe/claim mechanism
+- Add one sentence documenting manual replay for a supplied `trading_date`.
+
+#### Section 3.8 `agent_step_effects`
+
+- Keep the table.
+- Delete the sentence that says the idempotency row is inserted "in the same transaction as the side effect."
+- Replace it with:
+  - `agent_step_effects` dedupes **DB-side effects and delivery attempts**, but does not make external webhook POSTs transactionally atomic
+  - Discord/webhook publishing uses the report delivery state model in Section 12
+
+#### Add New Section 3.9
+
+- Insert a new section immediately after `agent_step_effects`:
+  - ``### 3.9 `agent_job_checkpoints` — Resume payload store``
+- Define this table:
+  - `id TEXT PRIMARY KEY`
+  - `job_id TEXT NOT NULL REFERENCES agent_jobs(id) ON DELETE CASCADE`
+  - `step_index INTEGER NOT NULL`
+  - `step_name TEXT NOT NULL`
+  - `checkpoint_json JSONB NOT NULL`
+  - `created_at TIMESTAMPTZ DEFAULT now()`
+  - `updated_at TIMESTAMPTZ DEFAULT now()`
+- Constraints/indexes:
+  - `UNIQUE(job_id, step_index)`
+  - `INDEX idx_agent_job_checkpoints_job_step ON (job_id, step_index DESC)`
+- Add explicit text:
+  - checkpoints store the accumulated normalized output needed for resume
+  - checkpoints do not store raw API payloads or large artifacts
+
+### 3. Data Migration Plan
+
+#### Section 4
+
+- Replace the migration plan so it no longer alters `agent_memory` in place.
+
+- Rewrite **Migration 0017** to do this:
+  1. create `agent_registry`
+  2. seed `agent_registry`
+  3. create `agent_jobs` including lease fields and `lease_version`
+  4. create `agent_reports`
+  5. create `agent_conversations`
+  6. create `agent_request_log`
+  7. create `agent_scheduled_runs`
+  8. create `agent_step_effects`
+  9. create `agent_memory_v2`
+  10. create `agent_job_checkpoints`
+  11. copy `jarvis_conversations -> agent_conversations`
+  12. copy `jarvis_request_log -> agent_request_log`
+  13. copy legacy `agent_memory -> agent_memory_v2` with `agent_id = 'orchestrator'`
+  14. add CHECK constraints for all enum-like text fields
+
+- Rewrite **Migration 0018** to do this:
+  1. drop `jarvis_conversations`
+  2. drop `jarvis_request_log`
+  3. optionally drop legacy `agent_memory` after validation
+  4. do **not** describe any unique-constraint swap on `agent_memory`
+
+- Delete all language claiming old and new code can safely coexist because of an in-place `agent_memory` constraint strategy.
+
+### 4. Connection Pooling Strategy
+
+#### Section 5
+
+- Change the intro sentence from free-tier wording to **Neon Launch plan** wording so it matches the rest of the doc.
+
+### 5. Agent Specifications
+
+#### Section 6.1 Orchestrator
+
+- Find the routing responsibility bullets.
+- Delete any wording that says ambiguous or multi-domain requests are split into sub-jobs in V1.
+- Replace with:
+  - ambiguous or mixed-domain requests stay with `orchestrator`
+  - multi-agent fanout is deferred to V2
+
+#### Section 6.4 Blueprint Runner
+
+- Keep the blueprint engine design.
+- Replace the bullet list under `runBlueprint()` so it says:
+  - `step_log` stores step metadata only
+  - successful step outputs needed for resume are persisted to `agent_job_checkpoints`
+  - retries resume from the latest completed checkpoint
+- In the sample code:
+  - remove the block that loads `lastGood.data` from `job.step_log`
+  - replace it with checkpoint lookup logic from `agent_job_checkpoints`
+  - add a note that checkpoints contain normalized accumulated output only
+- Keep the accumulator pattern from the revision notes.
+
+### 6. Error Handling & Retry
+
+#### Section 10
+
+- Keep the retry model.
+- Add lease fencing language:
+  - stale-job reaper only requeues jobs whose lease is expired **and** whose heartbeat is stale
+  - `completeJob`, `failJob`, and `renewLease` must match `locked_by` and `lease_version`
+- Add one explicit sentence that this prevents a stale worker from completing a job after ownership has already moved.
+
+### 7. Discord Publish Flow
+
+#### Sections 11 and 12
+
+- Keep V1 manual redelivery.
+- Add a clear delivery state sequence:
+  1. write `agent_reports` row
+  2. attempt webhook delivery
+  3. on success: set `status = 'published'`, `delivered_at`
+  4. on failure: set `status = 'delivery_failed'`, `delivery_error`
+  5. manual redelivery reads stored `report_json` and retries publish by `report_id`
+- Add a sentence that `agent_step_effects` supports dedupe markers, but cannot make external Discord posting atomic.
+
+### 8. API Route Migration
+
+#### Section 13 route table
+
+- Update the route table to exactly this V1 set:
+  - `/api/agents/chat` `POST`
+  - `/api/agents/chat` `GET`
+  - `/api/agents/reports` `GET`
+  - `/api/agents/reports/[id]` `GET`
+  - `/api/agents/research` `POST`
+  - `/api/agents/research` `GET`
+  - `/api/agents/admin/stats` `GET`
+  - `/api/agents/admin/memory` `GET/DELETE`
+  - `/api/agents/admin/redeliver` `POST`
+  - `/api/agents/macro-summary/latest` `GET`
+- Remove `/api/agents/trade-analysis` from the route table.
+
+#### Section 13 contracts
+
+- Keep the detailed `/api/agents/chat` polling contract.
+- Add equivalent request/response contract blocks for:
+  - `/api/agents/reports`
+  - `/api/agents/reports/[id]`
+  - `/api/agents/research`
+  - `/api/agents/admin/memory`
+  - `/api/agents/admin/redeliver`
+  - `/api/agents/macro-summary/latest`
+- For `admin/redeliver`, define:
+  - request body: `{ report_id: string }`
+  - success response: `{ report_id, status: 'published' | 'delivery_failed' }`
+
+#### Section 13 taxonomy
+
+- Replace the current `job_type` language with one canonical V1 set:
+  - `chat`
+  - `research`
+  - `macro-summary`
+  - `pre-market-scan`
+  - `momentum-scan`
+  - `pattern-check`
+- Remove `trade-analysis` and `swing-research` from the canonical V1 taxonomy.
+- Add a note that swing on-demand analysis uses `job_type = 'research'` with `agent_id = 'swing-trader'`.
+
+#### Section 13 endpoint role clarification
+
+- Replace the current endpoint-role table so it no longer mentions `POST /api/agents/trade-analysis`.
+- Keep `POST /api/agents/research` as the programmatic convenience wrapper.
+
+#### Section 13 auth
+
+- Expand the conventions section to include:
+  - `requireServiceAuth()` for the Discord bot integration
+  - service auth is limited to bot-safe routes only
+  - the bot must not use admin routes
+
+### 9. Frontend Migration
+
+#### Section 14
+
+- Keep the current frontend migration list.
+- Add one line clarifying that programmatic ticker-triggered analysis from UI surfaces should use `/api/agents/research`.
+- Remove any implied dependency on a V1 `/api/agents/trade-analysis` route.
+
+### 10. Docker Infrastructure
+
+#### Section 15
+
+- Keep the Docker layout.
+- Add one sentence that the heartbeat loop is responsible for touching `/tmp/healthy` for the healthcheck.
+- Keep the note that `deploy.resources` is not enforced in normal `docker compose` mode.
+
+### 11. Build Order
+
+#### Section 16
+
+- Reorder the phase plan so schema-dependent code is not scheduled before the schema exists.
+- Update the phases so the actual dependency flow is:
+  1. core contracts and prompts
+  2. schema and migrations
+  3. DB runtime, queue, checkpoints, memory, worker internals
+  4. API routes
+  5. Docker runtime and Discord bot
+  6. frontend
+  7. cleanup
+
+- Make these explicit step changes:
+  - add a step for `agent_job_checkpoints` support in schema and runtime
+  - add a step for `app/api/agents/admin/redeliver/route.ts`
+  - add steps for actual Discord bot implementation work
+  - add a validation step for service-side TypeScript because root `tsconfig.json` excludes `services/`
+
+### 12. Complete File Inventory
+
+#### Section 17
+
+- Update the create list to add:
+  - `app/api/agents/admin/redeliver/route.ts`
+  - `lib/agents/checkpoints.ts` if checkpoint persistence is factored out of `blueprint-runner.ts`
+  - any real Discord bot source/runtime files needed for V1 if they are part of this repo
+- Update the schema modify description so it says:
+  - add new tables including `agent_memory_v2` and `agent_job_checkpoints`
+  - do not describe `agent_memory` as an in-place modification for V1
+- Remove `app/api/agents/trade-analysis/route.ts` from the create list.
+
+### 13. Environment Variables
+
+#### Section 18
+
+- Keep current env vars.
+- Add one sentence under infrastructure/auth clarifying:
+  - `AGENT_SERVICE_KEY` is for Discord bot service calls only
+  - `AGENT_ADMIN_KEY` is for admin routes only
+
+### 14. Discord Orchestrator Adapter
+
+#### Section 19
+
+- Keep the V1 Discord adapter.
+- Remove any remaining ambiguity about reuse-vs-rebuild.
+- Replace it with one explicit statement of implementation intent:
+  - either "restore and modify in-repo Discord bot source" or
+  - "build a minimal V1 Discord bot runtime in `services/discord-bot/`"
+- Add acceptance criteria:
+  - receives message in `#orchestrator`
+  - resolves Discord user to Nexus user
+  - calls the app with `requireServiceAuth()`
+  - polls for completion
+  - posts the final response back into Discord
+
+### 15. Revision Notes
+
+#### Revision 5 and any earlier revision notes
+
+- Update revision summaries so they no longer claim:
+  - in-place `agent_memory` coexistence
+  - checkpoint resume from `step_log`
+  - V1 `trade-analysis` route/job type if that wording still exists
+
+### 16. Final Consistency Sweep
+
+- After all edits above, run one manual consistency pass across the whole document and fix every stale reference to:
+  - `agent_memory` as a modified table instead of `agent_memory_v2`
+  - `trade-analysis` as a V1 route/job type
+  - `swing-research` as a canonical V1 type
+  - multi-agent fanout in V1
+  - checkpoint data living in `step_log`
+  - free-tier Neon wording where Launch plan is intended
+
+## Done Condition
+
+- Do not mark `AGENTIC_EXPANSION_V2.md` sprint-board ready until every edit above is applied and the file reads consistently front-to-back without contradictory V1 behavior.
