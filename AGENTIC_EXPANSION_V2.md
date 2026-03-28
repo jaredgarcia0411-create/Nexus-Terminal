@@ -1,12 +1,12 @@
 # Nexus Terminal — Autonomous Agent Framework Architecture
 
-> Generated: 2026-03-13 | Updated: 2026-03-27 | Status: DRAFT R3 — Requires approval before implementation
+> Generated: 2026-03-13 | Updated: 2026-03-28 | Status: DRAFT R4 — Requires approval before implementation
 
 ---
 
 ## 1. Executive Summary
 
-This document specifies a multi-agent system for Nexus Terminal consisting of three runtime components: an **Orchestrator** (with built-in research routing pipeline and macro cron), a **Dilutionary Small Cap Trader** agent, and a **Swing Trader** agent.
+This document specifies a multi-agent system for Nexus Terminal consisting of three runtime components: an **Orchestrator** (with built-in research routing pipeline and macro cron), a **Small Cap Trader (Short-Selling Specialist)** agent, and a **Swing Trader** agent.
 
 Agents run as Docker Compose services on a home server (16GB RAM laptop). They communicate via a Postgres-backed job queue (Neon Launch plan). The LLM provider is configurable via two deterministic lanes: INTERACTIVE_LLM (Orchestrator chat — optimized for speed) and BACKGROUND_LLM (specialist agent scans — optimized for cost/quality). Both use OpenAI-compatible endpoints. Testing uses Groq free tier with `llama-3.3-70b-versatile`. Production uses NVIDIA API. Local llama.cpp is supported as a fallback for either lane. Market data comes from Massive API (Polygon-compatible, unlimited rate limit on stock starter kit). Ticker research comes from AskEdgar API.
 
@@ -56,10 +56,10 @@ The web UI migrates from the current Jarvis chat to a polling-based agent chat f
 │  │ - Routes jobs│  │              │  │                │  │
 │  │ - Macro cron │  │ - Pre-market │  │ - MDR pattern  │  │
 │  │ - Memory     │  │   scans      │  │   recognition  │  │
-│  │   oversight  │  │ - Dilution   │  │ - Momentum     │  │
-│  │ - Cross-agent│  │   analysis   │  │   scans        │  │
-│  │   synthesis  │  │ - Technical  │  │ - Parabolic    │  │
-│  │              │  │   analysis   │  │   setup alerts │  │
+│  │   oversight  │  │ - Short-sell │  │ - Momentum     │  │
+│  │ - Cross-agent│  │   research   │  │   scans        │  │
+│  │   synthesis  │  │ - Dilution   │  │ - Parabolic    │  │
+│  │              │  │   risk eval  │  │   setup alerts │  │
 │  └──────┬───────┘  └──────┬───────┘  └──────┬─────────┘  │
 │         │                 │                 │             │
 │         └────────┬────────┴─────────────────┘             │
@@ -304,17 +304,41 @@ Agent heartbeats every 30 seconds keep Neon warm. Cold starts take 1-3 seconds, 
 
 **LLM usage:** Only for synthesizing cross-agent summaries, answering user chat queries that require reasoning, and generating the daily briefing.
 
-### 6.2 Dilutionary Small Cap Trader
+### 6.2 Small Cap Trader (Short-Selling Specialist)
 
 **Runtime:** Long-running Node.js process in Docker Compose (512M memory limit).
 **Poll interval:** 5 seconds on `agent_jobs` where `agent_id = 'small-cap-trader'`.
 **Autonomous trigger:** Pre-market scan at 7:00 AM EST. Checks Massive API for stocks matching: close >= $0.75, pre-market gain >= 50%, market cap < $200M.
 
+**Core identity:** This agent is a professional short seller and research analyst specializing in small-cap dilution plays. Its primary job is to answer two questions about every stock it touches:
+
+1. **Has this company issued shares frequently in the past?**
+2. **Can they issue today?**
+
+These two questions, answered with evidence from SEC filings, drive every analysis and recommendation. The agent does not evaluate long-side merit, does not opine on macro factors, and does not recommend specific execution prices. It analyzes the short side of small-cap stocks through the lens of dilution risk — period.
+
+**Key pattern insight:** Companies with dilutionary agendas tend to raise capital on days when the stock is already "in play" — meaning unusual volume, a meaningful pre-market gap, or heightened retail attention creates an opportunity to offer new shares at elevated prices. The pre-market scan is specifically designed to catch stocks that are in play AND simultaneously have the SEC filing infrastructure to dilute today.
+
+**Filing signal hierarchy (what to weigh):**
+
+| Risk Level | Signal | Meaning |
+|------------|--------|---------|
+| **Highest** | Active ATM program + recent 424B prospectus supplements | Company is currently selling shares into the market |
+| **Very High** | Active S-3 shelf with remaining capacity + stock at/above shelf price | Company has loaded gun and price is in range |
+| **High** | Recent 8-K announcing new offering or private placement | Active capital raise in progress |
+| **Medium** | Expired shelf (S-3 filed but no remaining capacity) | Must re-register before diluting — delay, not safety |
+| **Lower** | No active registration | Needs S-1 or new S-3 (4–6 week delay) before a public offering |
+
+**Volume spike + offering correlation:** When a small-cap has unusual pre-market volume AND has a history of filing 424B supplements on high-volume days, the probability of an offering attempt that session is substantially elevated. Flag this pattern explicitly when it matches.
+
+**Voice and output style:** The agent writes research notes like a seasoned short seller, not a chatbot. Its output is direct, data-driven, and confident. It makes a call — either this stock is a short candidate because of dilution risk, or it is not — and it backs the call with evidence from filings. It does not hedge with phrases like "you might consider" or "it could potentially." It writes in the second person ("This company has filed three prospectus supplements in the past 90 days. ATM program active. Float is 12M shares. They will sell into this move."). It treats every report like a piece of research that a trader is going to act on in the next 30 minutes.
+
 **Private state (in `agent_memory`):**
 - `scan_param` — threshold values (price floor, gain %, market cap ceiling)
-- `watchlist` — tickers currently being tracked with entry/exit levels
-- `fact` — per-ticker dilution history, historical performance notes
-- `performance` — accuracy of past calls (predicted vs actual outcome)
+- `watchlist` — tickers currently being tracked with short entry/exit levels
+- `fact` — per-ticker dilution history, past offering patterns, historical behavior on high-volume days
+- `performance` — accuracy of past dilution calls (predicted offering vs actual outcome)
+- `trade_insight` — seeded trade examples from historical short plays (see Section 27)
 
 **Blueprints:** `small-cap:pre-market-scan`, `small-cap:research` (see section 6.4 for full step-by-step breakdowns)
 
@@ -710,7 +734,7 @@ For running on the home server without API costs:
 lib/agents/prompts/
 ├── global-policy.md          -- Layer 1: authority, safety, evidence, citation, handoff rules (shared by all agents)
 ├── orchestrator.md           -- Layer 2: routing context, cross-agent synthesis rules
-├── small-cap.md              -- Layer 2: dilution analysis framework, technical patterns
+├── small-cap.md              -- Layer 2: short-selling analyst identity, filing signal hierarchy, dilution risk framework, volume-offering correlation, output tone rules
 └── swing-trader.md           -- Layer 2: MDR pattern recognition, momentum analysis, parabolic setup identification
 ```
 
@@ -1187,9 +1211,91 @@ Agent containers do not expose an HTTP server, so healthchecks use a heartbeat-t
 
 ---
 
-## 16. Build Order (7 Phases)
+## 16. Build Order (8 Phases)
 
-Sequential phases. Each phase must pass `npm run lint && npx tsc --noEmit` before proceeding.
+Sequential phases. Each phase must pass `npm run lint && npx tsc --noEmit` before proceeding (except Phase 0, which is all human actions).
+
+### Phase 0: Pre-Implementation Prerequisites
+
+All items in this phase are human actions, not code changes. Complete every item and verify before writing any Phase 1 code.
+
+**0-A. Docker Engine on WSL2**
+
+- [ ] Install Docker Engine: `curl -fsSL https://get.docker.com | sh`
+- [ ] Add user to docker group: `sudo usermod -aG docker $USER` (log out and back in)
+- [ ] Enable Docker to start with WSL2: `sudo systemctl enable docker && sudo systemctl start docker`
+- [ ] Verify: `docker run hello-world` exits cleanly
+- [ ] Verify Docker Compose V2: `docker compose version` (must be >= 2.0)
+- [ ] Disable Windows sleep: Settings → System → Power & Sleep → Screen: Never, Sleep: Never
+- [ ] Connect via ethernet (not Wi-Fi) for reliable uptime
+
+**0-B. Discord Server Setup**
+
+- [ ] Create a private Discord server (or use existing)
+- [ ] Create text channels:
+
+| Channel | Purpose | Webhook Env Var |
+|---------|---------|-----------------|
+| `#orchestrator` | Bidirectional Orchestrator chat (bot listener) | Bot channel — no webhook |
+| `#small-cap-scans` | Small Cap pre-market scan results | `DISCORD_WEBHOOK_SCANS` |
+| `#small-cap-research` | Small Cap on-demand research | `DISCORD_WEBHOOK_RESEARCH` |
+| `#swing-setups` | Swing Trader MDR candidates | `DISCORD_WEBHOOK_SWING_SETUPS` |
+| `#swing-alerts` | Swing Trader real-time alerts | `DISCORD_WEBHOOK_SWING_ALERTS` |
+| `#macro-daily` | Orchestrator daily macro briefing | `DISCORD_WEBHOOK_MACRO_DAILY` |
+| `#agent-system` | Agent health, budget warnings, errors | `DISCORD_WEBHOOK_SYSTEM` |
+
+- [ ] For each channel with a webhook var: Channel Settings → Integrations → Webhooks → New Webhook → copy URL
+
+**0-C. Discord Bot**
+
+- [ ] Go to https://discord.com/developers/applications → Create New Application (name: "Nexus Agent")
+- [ ] Bot tab: enable "Message Content Intent" and "Server Members Intent"
+- [ ] Copy bot token → `DISCORD_BOT_TOKEN`
+- [ ] Copy application (client) ID → `DISCORD_CLIENT_ID`
+- [ ] OAuth2 → URL Generator → scopes: `bot`, permissions: Send Messages, Read Message History, View Channels → invite bot to server
+- [ ] Right-click server icon → Copy Server ID → `DISCORD_GUILD_ID`
+
+**0-D. Create `services/.env`**
+
+- [ ] Copy `services/.env.example` to `services/.env` (verify `.gitignore` covers it)
+- [ ] Fill in all values:
+  - `DATABASE_URL` — Neon pooled connection string (`?sslmode=require`)
+  - `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`
+  - All `DISCORD_WEBHOOK_*` URLs from step 0-B
+  - `MASSIVE_API_KEY`, `ASKEDGAR_API_KEY`
+  - `AGENT_ADMIN_KEY` — generate with `openssl rand -hex 32`
+
+**0-E. Dual-Lane LLM API Keys**
+
+- [ ] Register Groq free tier at https://console.groq.com (for dev/testing — zero cost)
+- [ ] Create API key → use for both `INTERACTIVE_LLM_API_KEY` and `BACKGROUND_LLM_API_KEY` during development
+- [ ] Verify key works: `curl https://api.groq.com/openai/v1/chat/completions -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{"model":"llama-3.3-70b-versatile","messages":[{"role":"user","content":"ping"}]}'`
+- [ ] Production keys (fill in later): NVIDIA API for interactive lane, NVIDIA or DeepSeek for background lane
+
+**0-F. Neon Database**
+
+- [ ] Confirm Neon Launch plan project exists (not free tier — free tier doesn't support `FOR UPDATE SKIP LOCKED` reliably)
+- [ ] Copy pooled connection string → `DATABASE_URL`
+- [ ] Test from WSL2: `psql $DATABASE_URL -c "SELECT 1"`
+- [ ] Confirm migrations 0001–0010 applied
+
+**0-G. Baseline Health Check**
+
+- [ ] `npm run dev` starts without TypeScript errors
+- [ ] `npm run lint && npx tsc --noEmit` passes clean
+- [ ] If either fails, resolve before continuing — Phase 1 cannot build on a broken baseline
+
+**0-H. Trade Example Seed Prep**
+
+- [ ] Unzip Mike's trade screenshots to `scripts/trade-screenshots/`
+- [ ] Run `scripts/generate-trade-template.ts` to create annotation template
+- [ ] Annotate trades in `scripts/trade-examples-template.json` (see Section 27)
+- [ ] Save reviewed file as `scripts/trade-examples-reviewed.json`
+- [ ] Decide minimum seed count for MDR patterns (minimum 3–5)
+
+**Phase 0 Gate: Do not start Phase 1 until all boxes above are checked.**
+
+---
 
 ### Phase 1: Foundation (no breaking changes)
 
@@ -1272,7 +1378,7 @@ Sequential phases. Each phase must pass `npm run lint && npx tsc --noEmit` befor
 
 ## 17. Complete File Inventory
 
-### Files to CREATE (37 total)
+### Files to CREATE (39 total)
 
 ```
 lib/agents/types.ts
@@ -1312,6 +1418,8 @@ services/agent.Dockerfile
 services/agent-entrypoint.ts
 services/docker-compose.yml
 services/.env.example
+scripts/generate-trade-template.ts
+scripts/seed-trade-examples.ts
 ```
 
 ### Files to MODIFY (3)
@@ -1327,7 +1435,6 @@ components/trading/Sidebar.tsx    -- 'jarvis' → 'agents' tab
 ```
 components/trading/AgentReportQueue.tsx    -- REMOVED (Discord replaces)
 components/trading/AgentStats.tsx          -- DEFERRED to V2
-lib/agents/prompts/long-term.md           -- REMOVED (replaced by swing-trader.md)
 ```
 
 ### Files to DELETE (Phase 7) (~22)
@@ -1398,6 +1505,14 @@ components/trading/JarvisTab.tsx
 | `ASKEDGAR_API_KEY` | (existing) | All agents | SEC filings API |
 | `TZ` | `America/New_York` | All agents | Timezone for cron/schedule alignment |
 
+### Discord Bot
+
+| Variable | Purpose |
+|----------|---------|
+| `DISCORD_BOT_TOKEN` | Bot authentication token for bidirectional `#orchestrator` chat |
+| `DISCORD_CLIENT_ID` | Bot application (client) ID |
+| `DISCORD_GUILD_ID` | Server (guild) ID for the Nexus Terminal Discord server |
+
 ### Discord Webhooks
 
 | Variable | Purpose |
@@ -1453,34 +1568,9 @@ Discord is promoted into V1 for the `#orchestrator` channel.
 
 ---
 
-## 20. Deferred: Long Term Investor Agent
+## 20. Open Questions
 
-A long term investor agent (macro analysis, portfolio construction, thesis tracking) is architecturally supported but not in the current build. To add later:
-
-1. Add `'long-term-investor'` to the `AgentId` type union
-2. Add `'macro-scan' | 'thesis-check'` to the `JobType` union
-3. Add config entry in `lib/agents/config.ts`
-4. Add routing rules in the Orchestrator: macro/sector/commodity/interest rate topics route to `long-term-investor`
-5. Add `lib/agents/prompts/long-term.md` (Layer 2 role prompt)
-6. Define blueprints: `long-term:macro-scan` (weekly) and `long-term:thesis-check` (daily)
-7. Add service to `docker-compose.yml`
-8. Seed `agent_registry` row
-9. Add Discord channels: `#macro-analysis` and `#thesis-tracking`
-10. Add Open Question: User profile storage (age, time horizon, goals) for suitability rules
-
-No schema changes required — tables are agent-agnostic by design.
-
-**Private state would include:** `thesis` (investment theses with invalidation criteria), `watchlist` (sectors and names), `macro_fact` (Fed funds rate, CPI, PMI, yield curve), `scan_param` (sector allocation, risk tolerance), `performance` (thesis outcome tracking).
-
-**Blueprints would include:**
-- `long-term:macro-scan` — weekly Sunday evening: fetch macro indicators, analyze regime, fetch sector data, generate theses, update memory
-- `long-term:thesis-check` — daily 5 PM EST: load active theses, evaluate against current data, update memory and alert on triggered/invalidated theses
-
----
-
-## 21. Open Questions
-
-1. **Historical research import format.** What format are existing research reports in? (PDF, markdown, spreadsheet, plain text?) This determines the import script format.
+1. **Historical research import format.** Partially resolved in R4: trade examples are DAS Trader screenshots (PNG/JPG) processed via manual annotation into structured JSON (see Section 27). Remaining question: are there additional research reports in other formats (PDF, markdown, spreadsheet) that need separate import scripts?
 
 2. **Social sentiment data source.** The Swing Trader may benefit from social sentiment API data (Twitter/X trending tickers, StockTwits, Reddit). Defer specific API choice to V2. For V1, the Swing Trader relies on Massive API price/volume momentum data and AskEdgar market-strength narrative.
 
@@ -1819,10 +1909,9 @@ lib/agents/prompts/global-policy.md — Layer 1 global policy (shared by all age
 ```
 components/trading/AgentReportQueue.tsx    — REMOVED (Discord replaces)
 components/trading/AgentStats.tsx          — DEFERRED to V2
-lib/agents/prompts/long-term.md           — REMOVED (replaced by swing-trader.md)
 ```
 
-**Updated build phase count:** 37 files to create (was 35, -2 removed, +4 added).
+**Updated build phase count:** 39 files to create (was 37, +2 trade example scripts added in R4).
 
 ---
 
@@ -1838,18 +1927,35 @@ lib/agents/prompts/long-term.md           — REMOVED (replaced by swing-trader.
 
 ## REVISION 2 — Determinism, Guardrails & Agent Swap (2026-03-26)
 
-> This revision promotes the Swing Trader to the V1 starting lineup, defers the Long Term Investor to Section 20, hardens the blueprint engine with typed schemas and validation, adds a three-layer prompt architecture, formalizes evidence and citation rules, and adds explicit code-vs-LLM boundary rules.
+> This revision promotes the Swing Trader to the V1 starting lineup, removes the Long Term Investor concept entirely (3-agent lineup is final), hardens the blueprint engine with typed schemas and validation, adds a three-layer prompt architecture, formalizes evidence and citation rules, and adds explicit code-vs-LLM boundary rules.
 
 ### R2.1 Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Agent lineup swap | Swing Trader replaces Long Term Investor in V1 | MDR pattern recognition is a higher-value, more actionable use case for the current trading style |
+| Agent lineup swap | Swing Trader replaces Long Term Investor (removed entirely) | MDR pattern recognition is a higher-value, more actionable use case for the current trading style. 3-agent lineup is final. |
 | Zod dependency | Already present (v4.3.6) | No new dependency needed; use existing Zod for blueprint step schemas |
 | Discord delivery | Native Discord embeds via webhook (no bot for report delivery) | Simpler than bot-based delivery; webhooks are sufficient for one-way report posting |
 | MDR pattern seed data | Seed with handful of examples (UGRO etc.) | Gives agent comparison data from day one without building a full import pipeline |
 | Macro briefing channel | Dedicated `#macro-daily` channel | Cleaner separation from `#orchestrator` chat; Orchestrator macro cron posts there |
 | AskEdgar caching | Smarter per-agent cache strategy | Agent version should cache per ticker+endpoint with 1-hour TTL, stored in `agent_memory` |
+
+---
+
+## REVISION 4 — Short-Selling Identity, Phase 0 & Trade Examples (2026-03-28)
+
+> This revision reframes the Small Cap Trader as a short-selling specialist (not a generic dilution analyzer), adds Phase 0 pre-implementation prerequisites, removes the deferred Long Term Investor section entirely, adds Section 27 (Trade Example Seed Strategy) for ingesting 57 historical trade screenshots, and adds Discord bot env vars to the environment spec.
+
+### R4.1 Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Small Cap Trader identity | Professional short seller, not generic analyst | Primary strategy is shorting small caps with dilutionary agendas; agent voice must match |
+| Phase 0 | Pre-implementation human action checklist | Docker, Discord, env vars, LLM keys must exist before any code is written |
+| Long Term Investor | Removed entirely (was deferred in R2) | 3-agent lineup is final — no need to maintain placeholder |
+| Trade example format | Manual annotation with JSON template | 57 screenshots have no structured data; manual review ensures quality over automated extraction |
+| Trade example storage | `agent_memory` rows with `category = 'pattern'` | Plugs directly into existing blueprint steps that read memory |
+| Build phases | 7 → 8 (Phase 0 added) | Prevents "Phase 1 fails because Docker isn't installed" scenarios |
 
 ---
 
@@ -1897,8 +2003,24 @@ Contents (reference — final wording written during implementation):
 Loaded from the agent's `rolePromptPath` in `AgentConfig`. Contains domain heuristics only — no step-specific formatting.
 
 - `orchestrator.md` — routing context, cross-agent synthesis rules, macro analysis framework
-- `small-cap.md` — dilution analysis framework, technical patterns, pre-market scan heuristics
+- `small-cap.md` — short-selling analyst identity, filing signal hierarchy, dilution risk framework, volume-offering correlation, output tone rules (see below)
 - `swing-trader.md` — MDR pattern recognition, momentum analysis, parabolic setup identification
+
+#### `small-cap.md` Content Spec
+
+The Layer 2 prompt for the Small Cap Trader must include these sections:
+
+**Identity block (first paragraph):** You are a short-selling research analyst specializing in small-cap dilution plays. You work at a prop trading desk focused exclusively on the short side of micro-cap and small-cap stocks. Your job is to identify when a company that is "in play" (high volume, pre-market gap) also has the filing infrastructure and behavioral history to dilute — and to write a research note that makes the short thesis unambiguous.
+
+**The two core questions:** For every ticker, you must answer: (1) Has this company diluted before, and how recently? (2) Do they have the legal ability to dilute today (active S-3, ATM program, available shelf capacity)?
+
+**Filing signal hierarchy:** Highest risk (active ATM + recent 424B), very high (active S-3 shelf with capacity), high (recent 8-K offering/placement), medium (expired shelf — must re-register), lower (no registration — needs S-1/S-3, 4-6 week delay). See Section 6.2 for the full table.
+
+**Volume spike + offering correlation:** When a small-cap has unusual pre-market volume AND has a history of filing 424B supplements on high-volume days, the probability of an offering attempt that session is substantially elevated. Flag this pattern explicitly when it matches.
+
+**Output tone rules:** Write in present tense. Be direct. Lead with the verdict: "Short candidate" or "No short thesis here." Follow with evidence. Use the filing IDs provided. Do not speculate on prices or execution details. Do not hedge with "you might consider" or "it could potentially."
+
+**Limitations:** You only have filing data and price/volume data. You do not have Level 2 order book data, dark pool data, or borrow availability. State these limitations only if they are relevant to a specific question asked. Do not preface every response with caveats.
 
 ### 22.3 Layer 3: Per-Blueprint-Step Contract Prompt
 
@@ -1995,7 +2117,7 @@ This is the reference prompt for the `small-cap:research` blueprint's `analyze-a
 ### Reference Prompt (verbatim)
 
 ```
-You are an expert at analyzing small-cap stocks for day traders. You will receive pre-analyzed data including news, catalysts, chart ratings, dilution/offering metrics, and analysis of recent top-performing small-cap tickers and themes. Your task is to format this information into a brief, scannable rating summary.
+You are a short-selling research analyst specializing in small-cap dilution plays. Your primary lens is the short side: you are evaluating whether this stock is a short candidate based on its dilution risk, offering history, and ability to raise capital today. You will receive pre-analyzed data including news, catalysts, chart ratings, dilution/offering metrics, and analysis of recent top-performing small-cap tickers and themes. Your task is to format this information into a brief, scannable rating summary that helps a trader decide within minutes whether this stock has a short thesis via dilution.
 
 RATING CRITERIA:
 
@@ -2111,3 +2233,141 @@ The `assemble-report` code step converts this structured JSON back into the emoj
 | Scoring dilution risk from filing data | **LLM** | Contextual interpretation |
 | Writing user-facing summaries | **LLM** | Natural language |
 | MDR pattern similarity scoring | **LLM** | Pattern recognition beyond simple metrics |
+
+---
+
+## 27. Trade Example Seed Strategy
+
+This section defines how historical trade screenshots are processed into structured data that the Small Cap Trader and Swing Trader agents can learn from.
+
+### Source Data
+
+57 DAS Trader screenshots from a teammate ("Mike"). Each image shows a dual-pane layout: 1-minute intraday chart (top) with entry/exit markers, and daily chart (bottom) with volume. The trades are a **mix of long and short** plays spanning June 2025 – March 2026. Some tickers repeat across multiple dates (e.g., BMNR appears 5 times).
+
+File naming convention: `M-DD-YY TICKER.ext` (e.g., `3-26-26 VCX.jpg`). Stored in `scripts/trade-screenshots/` (gitignored).
+
+### Processing Pipeline
+
+**Step 1 — Extract screenshots to working directory**
+
+Unzip source archive to `scripts/trade-screenshots/`. This directory is gitignored — images are reference material, not committed.
+
+**Step 2 — Generate blank annotation template**
+
+Run `scripts/generate-trade-template.ts`. This script:
+- Reads filenames from `scripts/trade-screenshots/`
+- Parses ticker and date from each filename using regex: `(\d{1,2}-\d{1,2}-\d{2})\s+([A-Z]+)\s*\d*\.(png|jpg)`
+- Generates `scripts/trade-examples-template.json` with one entry per image, pre-filled with `ticker` and `tradeDate`, all other fields blank
+
+**Step 3 — Manual annotation**
+
+Open `scripts/trade-examples-template.json` alongside the screenshots. For each trade, fill in:
+
+```json
+{
+  "filename": "3-26-26 VCX.jpg",
+  "ticker": "VCX",
+  "tradeDate": "2026-03-26",
+  "direction": "short",
+  "agentTarget": "small-cap",
+  "entryPrice": 4.20,
+  "exitPrice": 2.80,
+  "outcome": "win",
+  "patternCategory": "gap-and-go-short",
+  "intradayNotes": "Gapped 60% pre-market on no catalyst, opened at $4.20, steady fade to $2.80 by 10:30 AM",
+  "dailyNotes": "First significant volume day in weeks, no prior support at this level",
+  "volumeNotes": "Pre-market volume 3x average, volume dried up after first 30 min",
+  "exclude": false
+}
+```
+
+Field definitions:
+- `direction` — `"short"` or `"long"`
+- `agentTarget` — `"small-cap"` (short/dilution plays), `"swing"` (MDR/momentum plays), or `"both"`
+- `entryPrice` / `exitPrice` — approximate from chart markers
+- `outcome` — `"win"`, `"loss"`, or `"breakeven"`
+- `patternCategory` — short label describing the setup type. Examples: `"gap-and-go-short"`, `"mdr-continuation"`, `"atm-offering-fade"`, `"parabolic-breakdown"`, `"first-red-day"`, `"momentum-continuation"`, `"squeeze-breakout"`
+- `intradayNotes` — 1–2 sentences describing the 1-min chart action
+- `dailyNotes` — 1–2 sentences describing the daily chart context
+- `volumeNotes` — anything notable about volume behavior
+- `exclude` — set to `true` to skip this trade during seeding
+
+Save reviewed file as `scripts/trade-examples-reviewed.json`.
+
+### Storage Format (`agent_memory` rows)
+
+Each reviewed trade becomes a `pattern` row in `agent_memory`:
+
+```json
+{
+  "agent_id": "small-cap-trader",
+  "category": "pattern",
+  "key": "trade_example_BMNR_2025-08-14",
+  "value": "Short play on BMNR, Aug 14 2025. Gap-and-go-short. Active ATM program. Gapped 60% pre-market on no catalyst, opened $4.20, faded to $2.80 by 10:30 AM.",
+  "value_json": {
+    "ticker": "BMNR",
+    "tradeDate": "2025-08-14",
+    "direction": "short",
+    "entryPrice": 4.20,
+    "exitPrice": 2.80,
+    "patternCategory": "gap-and-go-short",
+    "intradayPattern": "Gapped 60% pre-market...",
+    "dailyPattern": "First significant volume day in weeks...",
+    "volumeCharacteristics": "Pre-market volume 3x average...",
+    "outcome": "win",
+    "source": "mike_das_screenshot",
+    "imagePath": "trade-screenshots/8-14-25 BMNR.png"
+  },
+  "source": "mike_das_screenshot",
+  "confidence": "high"
+}
+```
+
+The `agent_id` is set based on the `agentTarget` field:
+- `"small-cap"` → one row with `agent_id = 'small-cap-trader'`
+- `"swing"` → one row with `agent_id = 'swing-trader'`
+- `"both"` → two rows, one per agent
+
+For tickers with multiple appearances (e.g., BMNR at 5x), also create an aggregated `trade_insight` row:
+
+```json
+{
+  "agent_id": "small-cap-trader",
+  "category": "trade_insight",
+  "key": "bmnr_recurring_pattern",
+  "value": "BMNR has appeared 5 times in trade history (June 2025 – March 2026). Each time the company was running on high volume, it subsequently faded. Pattern: gap up on volume → fade within first 2 hours.",
+  "source": "mike_das_screenshot_aggregated",
+  "confidence": "high"
+}
+```
+
+### Seed Script
+
+`scripts/seed-trade-examples.ts`:
+1. Reads `scripts/trade-examples-reviewed.json`
+2. Skips entries with `"exclude": true`
+3. For each entry, inserts a `pattern` row into `agent_memory` (keyed by `trade_example_{TICKER}_{DATE}`)
+4. For tickers with 2+ appearances, inserts an aggregated `trade_insight` row
+5. Uses `onConflictDoNothing` on key — idempotent, safe to re-run
+6. Prints summary: "Inserted N pattern rows, M insight rows, skipped K duplicates"
+
+### How Agents Consume These Examples
+
+**Small Cap Trader (`small-cap:research` blueprint):** Add a code step between `fetch-filings` and `analyze-and-report` that queries `agent_memory WHERE agent_id = 'small-cap-trader' AND category IN ('pattern', 'trade_insight')` filtered by similar tickers or pattern categories. These become additional context for the LLM step — "Here are past trades on similar setups."
+
+**Swing Trader (`swing:momentum-scan` blueprint):** Step 4 (`load-pattern-history`) already reads `category = 'pattern'` from memory. The seeded trade examples plug directly into this existing step with no blueprint changes needed.
+
+### File Inventory Additions
+
+```
+scripts/generate-trade-template.ts      -- one-time template generator (Phase 0)
+scripts/seed-trade-examples.ts          -- idempotent seeder (Phase 3, after Step 20)
+scripts/trade-screenshots/              -- gitignored directory for reference images
+scripts/trade-examples-template.json    -- gitignored, auto-generated blank template
+scripts/trade-examples-reviewed.json    -- gitignored, human-annotated final version
+```
+
+### Build Order Integration
+
+- **Phase 0, Step 0-H:** Unzip screenshots, generate template, annotate trades
+- **Phase 3, after Step 20:** Run `scripts/seed-trade-examples.ts` to populate `agent_memory`
