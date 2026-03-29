@@ -2,8 +2,7 @@
 
 ## Active Handoff Only
 
-Historical completed sections (Scanner Realtime Data Pipeline, Tech Debt PRs 1-5, SSE Phases 0-2, Keyboard Shortcuts, Discord Research Report Extraction Phases 1-4, SSE Jarvis Streaming, Discord Research Schwab Validation, Research Tab Full Redesign, Direct Relay WebSocket, Macro Summary Upgrade, Charts Tab Drawing Tools, Schwab Relay Auth) were removed to keep this file focused.
-Use git history and the `specs/` directory for archived implementation detail.
+Historical completed sections removed — use git history and `specs/` for archived detail.
 
 ### Session Maintenance Checklist
 
@@ -13,6 +12,25 @@ Use git history and the `specs/` directory for archived implementation detail.
 - [x] Run the post-patch cleanup sweep on `AGENTIC_EXPANSIONV2.md`
 - [x] Refresh `AEV2_REVISIONS.md` with sprint-board blockers, launch blockers, and locked routing/service-route decisions from the latest review
 - [x] Convert `AEV2_REVISIONS.md` from redline checklist into a literal section-by-section patch plan for the next spec pass
+- [x] **Execute R6 consolidation pass on AGENTIC_EXPANSIONV2.md** (this handoff)
+
+---
+
+## R6 Consolidation Pass — AGENTIC_EXPANSIONV2.md
+
+> Generated: 2026-03-28 | Status: COMPLETE
+
+### Summary
+
+- Consolidated `AGENTIC_EXPANSIONV2.md` into a single-pass spec: merged R1/R2/R4/R5 content into the main body, deleted revision appendices, added a concise revision-history section, and renumbered sections sequentially.
+- Resolved the handoff blockers called out for routing, migration atomicity, AskEdgar fallback/caching/budgeting, Discord delivery/runtime details, worker shutdown, API contracts, build-order numbering, and file inventory cleanup.
+- Added `services/.env` to `.gitignore`.
+
+### Validation
+
+- `npm run lint` ✅
+- `npx tsc --noEmit` ✅
+- `npm test` ✅
 
 ---
 

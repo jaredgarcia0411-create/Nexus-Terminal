@@ -149,6 +149,8 @@ RETURNING *;
 
 **Lease fencing:** All lease renewal, completion, and failure writes must match `id`, `locked_by`, and `lease_version`. This prevents a stale worker from mutating a job after ownership has moved.
 
+**`step_log` guidance:** `step_log` stores step-level metadata only: `{ step, status, startedAt, completedAt, attempt, validatorResult, tokensUsed, errorClass }`. Must NOT contain raw API payloads, filing docs, or full LLM responses. Raw artifacts go to container JSON log. Checkpoints (`agent_job_checkpoints`) store normalized accumulated output only.
+
 ### 3.3 `agent_reports` — Published research output history (Discord-first)
 
 ```
@@ -311,10 +313,190 @@ Two separate migrations to allow rollback between them. The repo already has mig
 8. CREATE TABLE `agent_step_effects`
 9. CREATE TABLE `agent_memory_v2`
 10. CREATE TABLE `agent_job_checkpoints`
-11. Copy data: `jarvis_conversations` → `agent_conversations` (see R5.1 for exact column mapping)
-12. Copy data: `jarvis_request_log` → `agent_request_log` (see R5.1 for exact column mapping)
+11. Copy data: `jarvis_conversations` → `agent_conversations`
+12. Copy data: `jarvis_request_log` → `agent_request_log`
 13. Copy legacy `agent_memory` → `agent_memory_v2` with `agent_id = 'orchestrator'`
+
+### Migration 0017 — Backfill Column Mappings
+
+#### `jarvis_conversations` → `agent_conversations`
+
+| Source column | Target column | Mapping |
+|---------------|---------------|---------|
+| `id` | `id` | Copy as-is |
+| `user_id` | `user_id` | Copy as-is |
+| (none) | `agent_id` | Hard-code `'orchestrator'` |
+| `session_id` | `session_id` | Copy as-is |
+| `role` | `role` | Copy as-is |
+| `content` | `content` | Copy as-is |
+| `mode` | `channel` | Map: any value → `'web'` (all historical Jarvis conversations were web-based) |
+| `context_snapshot` | `context_snapshot` | Copy as-is |
+| `created_at` | `created_at` | Copy as-is |
+
+```sql
+INSERT INTO agent_conversations (
+  id,
+  user_id,
+  agent_id,
+  session_id,
+  role,
+  content,
+  channel,
+  context_snapshot,
+  created_at
+)
+SELECT
+  id,
+  user_id,
+  'orchestrator',
+  session_id,
+  role,
+  content,
+  'web',
+  context_snapshot,
+  created_at
+FROM jarvis_conversations;
+```
+
+#### `jarvis_request_log` → `agent_request_log`
+
+| Source column | Target column | Mapping |
+|---------------|---------------|---------|
+| `id` | `id` | Copy as-is |
+| `user_id` | `user_id` | Copy as-is |
+| (none) | `agent_id` | Hard-code `'orchestrator'` |
+| `mode` | `mode` | Copy as-is |
+| (none) | `lane` | Hard-code `'background'` (historical Jarvis had no lane concept) |
+| (none) | `model_used` | `NULL` (unknown for historical rows) |
+| `input_tokens` | `input_tokens` | Copy as-is |
+| `output_tokens` | `output_tokens` | Copy as-is |
+| `total_tokens` | `total_tokens` | Copy as-is |
+| (none) | `estimated_cost_cents` | Hard-code `0` (not tracked historically) |
+| `duration_ms` | `duration_ms` | Copy as-is |
+| `success` | `success` | Copy as-is |
+| `source_count` | `source_count` | Copy as-is |
+| `chunk_count` | `chunk_count` | Copy as-is |
+| `created_at` | `created_at` | Copy as-is |
+
+```sql
+INSERT INTO agent_request_log (
+  id,
+  user_id,
+  agent_id,
+  mode,
+  lane,
+  model_used,
+  input_tokens,
+  output_tokens,
+  total_tokens,
+  estimated_cost_cents,
+  duration_ms,
+  success,
+  source_count,
+  chunk_count,
+  created_at
+)
+SELECT
+  id,
+  user_id,
+  'orchestrator',
+  mode,
+  'background',
+  NULL,
+  input_tokens,
+  output_tokens,
+  total_tokens,
+  0,
+  duration_ms,
+  success,
+  source_count,
+  chunk_count,
+  created_at
+FROM jarvis_request_log;
+```
+
+#### `agent_memory` → `agent_memory_v2`
+
+| Source column | Target column | Mapping |
+|---------------|---------------|---------|
+| `id` | `id` | Copy as-is |
+| `user_id` | `user_id` | Copy as-is |
+| (none) | `agent_id` | Hard-code `'orchestrator'` |
+| `category` | `category` | Copy as-is |
+| `key` | `key` | Copy as-is |
+| `value` | `value` | Copy as-is |
+| `value_json` | `value_json` | Copy as-is |
+| (none) | `source` | `NULL` unless a safe legacy source can be inferred |
+| (none) | `confidence` | `NULL` |
+| `created_at` | `created_at` | Copy as-is |
+| `updated_at` | `updated_at` | Copy as-is |
+| `expires_at` | `expires_at` | Copy as-is |
+
+```sql
+INSERT INTO agent_memory_v2 (
+  id,
+  user_id,
+  agent_id,
+  category,
+  key,
+  value,
+  value_json,
+  source,
+  confidence,
+  created_at,
+  updated_at,
+  expires_at
+)
+SELECT
+  id,
+  user_id,
+  'orchestrator',
+  category,
+  key,
+  value,
+  value_json,
+  NULL,
+  NULL,
+  created_at,
+  updated_at,
+  expires_at
+FROM agent_memory
+ON CONFLICT DO NOTHING;
+```
+
 14. ADD CHECK constraints on enum-like text fields
+
+Concrete SQL for step 14:
+
+```sql
+-- agent_registry
+ALTER TABLE agent_registry ADD CONSTRAINT chk_registry_status
+  CHECK (status IN ('online', 'offline', 'degraded'));
+
+-- agent_jobs
+ALTER TABLE agent_jobs ADD CONSTRAINT chk_jobs_status
+  CHECK (status IN ('queued', 'processing', 'completed', 'failed'));
+
+-- agent_reports
+ALTER TABLE agent_reports ADD CONSTRAINT chk_reports_status
+  CHECK (status IN ('published', 'delivery_failed', 'archived'));
+ALTER TABLE agent_reports ADD CONSTRAINT chk_reports_channel
+  CHECK (delivery_channel IN ('discord', 'web'));
+
+-- agent_conversations
+ALTER TABLE agent_conversations ADD CONSTRAINT chk_conversations_role
+  CHECK (role IN ('user', 'assistant', 'system'));
+ALTER TABLE agent_conversations ADD CONSTRAINT chk_conversations_channel
+  CHECK (channel IN ('web', 'discord', 'api'));
+
+-- agent_request_log
+ALTER TABLE agent_request_log ADD CONSTRAINT chk_request_log_lane
+  CHECK (lane IN ('interactive', 'background'));
+
+-- agent_scheduled_runs
+ALTER TABLE agent_scheduled_runs ADD CONSTRAINT chk_scheduled_status
+  CHECK (status IN ('pending', 'running', 'completed', 'failed', 'skipped'));
+```
 
 ### Migration 0018 — Legacy table cleanup (after Phase 7 verified)
 
@@ -322,6 +504,8 @@ Two separate migrations to allow rollback between them. The repo already has mig
 2. DROP TABLE `jarvis_request_log`
 3. Optionally DROP legacy `agent_memory` after validation
 4. No unique-constraint swap is needed on legacy `agent_memory`
+
+**Atomicity requirement:** Migration 0017 must be a single file executed atomically. Do not split into multiple migration files. The FK from `agent_jobs.agent_id` → `agent_registry.id` requires the seed INSERT to exist in the same transaction.
 
 ---
 
@@ -376,9 +560,19 @@ Agent heartbeats every 30 seconds keep Neon warm. Cold starts take 1-3 seconds, 
 
 For V1 sprint scope, “route to specialist workflow” means the Orchestrator chooses the specialist path after the Orchestrator job already exists; the API layer is not the source of truth for standard chat routing.
 
+**Canonical Routing Decision Tree (evaluation order):**
+
+1. **Slash command prefix** — if the message starts with `/research `, route to `small-cap-trader`. If `/swing` or `/momentum`, route to `swing-trader`. Slash commands always win.
+2. **Explicit agent_id from UI selector** — if the user selected a specific agent in the dropdown and no slash command is present, route to that agent.
+3. **Data-signal rules** — if the message contains a ticker: market cap < $200M AND pre-market gain >= 50% routes to `small-cap-trader`; momentum/trending/MDR/parabolic/swing topic routes to `swing-trader`.
+4. **Simple factual lookup** — handle directly via Massive API/AskEdgar without specialist delegation.
+5. **Fallback** — ambiguous or mixed-domain stays with `orchestrator`.
+
+If the target specialist is `offline` or `degraded`, the Orchestrator does not delegate and handles in fallback mode (see Offline Agent Behavior in Section 13).
+
 2. **Memory oversight.** Reads all agents' memory rows. Detects contradictions (e.g., Small Cap is bullish on a ticker that Swing Trader flagged as losing momentum) and injects context when routing.
 
-3. **Cross-agent synthesis.** When specialists complete jobs, the Orchestrator can optionally read the results and inject cross-agent context into future routing decisions. Specialists publish their own reports directly (see R5.2). The Orchestrator only publishes its own outputs (chat responses, macro briefings, system alerts).
+3. **Cross-agent synthesis.** When specialists complete jobs, the Orchestrator can optionally read the results and inject cross-agent context into future routing decisions. Specialists publish their own reports directly (see Section 12). The Orchestrator only publishes its own outputs (chat responses, macro briefings, system alerts).
 
 4. **Macro cron.** Runs the daily macro headline scraping pipeline that was previously a Vercel cron job. Uses `setInterval` inside the container and posts the final briefing to `#macro-daily`.
 
@@ -645,7 +839,7 @@ async function runBlueprint(
 | # | Step | Type | What it does |
 |---|------|------|-------------|
 | 1 | `fetch-ticker-data` | `code` | Fetches snapshot + OHLCV from Massive API for the requested ticker. |
-| 2 | `fetch-filings` | `code` | Fetches relevant SEC filings from AskEdgar: dilution-data, dilution-rating, offerings, offerings-advanced, ai-chart-analysis, news, registrations. |
+| 2 | `fetch-filings` | `code` | Fetches relevant SEC filings from AskEdgar: dilution-data, dilution-rating, offerings, offerings-advanced, ai-chart-analysis, news, registrations. If advanced endpoints (`offerings-advanced`, `dilution-data-advanced`) return HTTP 403, fall back to the non-advanced equivalents (`offerings`, `dilution-data`). Mark affected report sections with `insufficientEvidence: true` and `reason: 'advanced endpoint unavailable'`. Runtime availability must be checked per-call, not assumed at config time. |
 | 3 | `calculate-indicators` | `code` | Runs SMA, RSI, VWAP, MACD, Bollinger from `lib/indicators.ts`. |
 | 4 | `fetch-theme-context` | `code` | Fetches AskEdgar `/v1/market-strength?latest=true` for current themes narrative. Fetches AskEdgar `/v1/screener` with `min_gain_7_day=30&max_market_cap=500000000&limit=20` for recent top-performing small caps. Returns `{ marketThemes, topPerformers }`. |
 | 5 | `load-trade-example-context` | `code` | Reads `agent_memory_v2` where `agent_id = 'small-cap-trader'` and `category IN ('pattern', 'trade_insight')`, filtered by similar tickers and/or pattern categories, and returns structured historical examples for the LLM step. |
@@ -684,8 +878,10 @@ The Orchestrator uses a narrow V1 chat blueprint: every standard chat request st
 
 | # | Step | Type | What it does |
 |---|------|------|-------------|
-| 1 | `classify-and-route` | `code` | Parses the user message, applies deterministic routing rules, checks specialist availability, and chooses one of three paths: direct Orchestrator handling, specialist workflow handoff inside the Orchestrator flow, or Orchestrator fallback when the specialist is unavailable. Emits warning/log/alert metadata when fallback is used. |
+| 1 | `classify-and-route` | `code` | Parses the user message, applies the canonical routing decision tree (Section 6.1), checks specialist availability via `agent_registry`. Chooses one of three paths: **(A) Direct Orchestrator handling** — proceeds to step 2. **(B) Specialist handoff** — creates a new `agent_jobs` row for the target specialist with the appropriate `job_type`, and the Orchestrator job completes immediately with `{ routed: true, specialistJobId }`. The API response returns the specialist's `job_id` for the client to poll via the same `GET /api/agents/chat?job_id=...` endpoint. **(C) Orchestrator fallback** — when the specialist is unavailable (`offline`/`degraded`), emits warning/log/alert metadata and proceeds to step 2. The Orchestrator routes but does not aggregate specialist results in V1. |
 | 2 | `synthesize-response` | `llm` | Reached when the Orchestrator itself needs to answer the request. Receives the user message + context and returns the final chat response. |
+
+**Step Data Accumulation Convention:** Every blueprint step receives `previousOutput` from the prior step. Convention: each step must spread previous output into its return value (accumulator pattern). Example: step 1 returns `{ candidates: [...] }`, step 2 returns `{ ...previousOutput, filings: [...] }`, and so on. The final step receives the complete accumulated payload. This pattern is enforced by `runBlueprint()` in `blueprint-runner.ts`.
 
 **Blueprint: `orchestrator:macro-summary`** (daily cron)
 
@@ -694,7 +890,7 @@ The Orchestrator uses a narrow V1 chat blueprint: every standard chat request st
 | 1 | `scrape-headlines` | `code` | Fetches macro headlines using existing scrape-lite module. |
 | 2 | `fetch-market-snapshot` | `code` | Fetches index/sector/commodity prices from Massive API. |
 | 3 | `generate-briefing` | `llm` | Receives headlines + market data. Returns structured daily briefing. Uses `lane: 'background'` instead of the Orchestrator's default interactive lane. |
-| 4 | `save-summary` | `code` | Writes to `daily_ticker_summaries` / `macro_summaries` table and POSTs the final briefing embed to `#macro-daily`. |
+| 4 | `save-summary` | `code` | Writes to the existing `macro_summaries` table (same table used by `GET /api/agents/macro-summary/latest`). The Vercel cron at `/api/jarvis/cron/macro-summary` is disabled in Phase 7 once the Docker-based macro cron is verified working. |
 
 ---
 
@@ -743,6 +939,8 @@ On `SIGTERM` / `SIGINT`:
 3. Update `agent_registry` status to `'offline'`
 4. Close database pool
 5. Exit
+
+**`worker.ts` specifics:** On SIGTERM, the worker completes the current blueprint step (does not abort mid-step), does not dequeue or start a new step, then runs steps 3-5 above. If the worker is killed before completing the current step, the job remains `status = 'processing'` with `locked_by` set. The stale-job reaper (Section 10) will detect the expired lease and stale heartbeat after `lock_expires_at` passes and re-queue the job. The worker must also touch `/tmp/healthy` on each heartbeat tick; on shutdown, the file is not refreshed, causing the Docker healthcheck to fail and signal the container as unhealthy.
 
 ---
 
@@ -853,7 +1051,7 @@ lib/agents/prompts/
 
 ---
 
-## 9. Shared Library: `lib/agents/` (19 files)
+## 9. Shared Library: `lib/agents/` (20 files)
 
 | # | File | Purpose | Key Exports |
 |---|------|---------|-------------|
@@ -869,13 +1067,16 @@ lib/agents/prompts/
 | 10 | `memory.ts` | Scoped memory CRUD | `readMemory()`, `writeMemory()`, `upsertMemory()` — all read/write `agent_memory_v2`, filtered by `agent_id` |
 | 11 | `context.ts` | Context assembly for LLM calls | `buildAgentContext(db, userId, agentId)` — trades, macro, memory |
 | 12 | `prompts.ts` | System prompts per agent — loads from three-layer stack | `getSystemPrompt(agentId, mode)`, loads from `prompts/*.md` |
-| 13 | `config.ts` | Agent config registry | `AGENT_CONFIGS: Record<AgentId, AgentConfig>` with blueprints and resolver |
+| 13 | `config.ts` | Agent config registry | `AGENT_CONFIGS: Record<AgentId, AgentConfig>` using the `AgentConfig` interface defined below, plus blueprint wiring and resolver |
 | 14 | `blueprint-runner.ts` | Blueprint execution engine with validation hooks, checkpoint/resume, step-log persistence | `runBlueprint(blueprint, job, config, db)` — iterates steps, tracks tokens, stores resume payloads in `agent_job_checkpoints`, handles step failures |
 | 15 | `worker.ts` | Poll loop runtime | `startWorker(config: WorkerConfig): Promise<void>` — resolves blueprint, calls `runBlueprint()`, graceful shutdown |
 | 16 | `macro-cron.ts` | Macro headline cron | `startMacroCron(): void` — setInterval, checks hour in `America/New_York` |
-| 17 | `admin.ts` | Admin utilities | `requireAgentAdmin()` — validates `x-agent-admin-key` header |
-| 18 | `discord-embed.ts` | Embed builders per report type | `buildScanEmbed()`, `buildResearchEmbed()`, `buildSwingSetupEmbed()`, `buildSwingAlertEmbed()`, `buildSystemEmbed()` |
-| 19 | `discord-delivery.ts` | Webhook POST utility | `postToDiscord(webhookUrl, embed)` |
+| 17 | `scrape-lite.ts` | Macro headline scraper reused from Jarvis | Existing scrape-lite helpers copied into `lib/agents/` for the Orchestrator macro blueprint |
+| 18 | `admin.ts` | Admin utilities | `requireAgentAdmin()`, `requireServiceAuth()` — validates `x-agent-admin-key` and service-key auth |
+| 19 | `discord-embed.ts` | Embed builders per report type | `buildScanEmbed()`, `buildResearchEmbed()`, `buildSwingSetupEmbed()`, `buildSwingAlertEmbed()`, `buildSystemEmbed()` |
+| 20 | `discord-delivery.ts` | Webhook POST utility | `postToDiscord(webhookUrl, embed)` |
+
+**AskEdgar caching strategy:** Agent code caches AskEdgar responses per ticker+endpoint with a 1-hour TTL, stored in `agent_memory_v2` with `category = 'fact'` and a composite key like `askedgar:{endpoint}:{ticker}`. The `fetch-filings` code step checks memory first and only calls AskEdgar if the cached value is absent or expired. This replaces the in-process cache from `lib/jarvis/askedgar.ts` with a DB-backed, cross-restart-safe cache.
 
 ### Key Type Definitions
 
@@ -891,6 +1092,31 @@ export type StepStatus = 'queued' | 'running' | 'validated' | 'retrying' | 'bloc
 export type MemoryCategory = 'fact' | 'thesis' | 'watchlist' | 'scan_param' | 'performance'
   | 'trade_insight' | 'user_preference' | 'strategy_note' | 'macro_fact'
   | 'pattern' | 'sentiment';
+
+export interface AgentConfig {
+  id: AgentId;
+  displayName: string;
+  llmLane: LlmLane;
+  modelOverride?: string;
+  temperature: number;
+  capabilities: JobType[];
+  rolePromptPath: string;
+  blueprints: Record<string, Blueprint>;
+}
+
+// Registration example:
+// AGENT_CONFIGS['orchestrator'] = {
+//   id: 'orchestrator',
+//   displayName: 'Orchestrator',
+//   llmLane: 'interactive',
+//   temperature: 0.3,
+//   capabilities: ['chat', 'macro-summary'],
+//   rolePromptPath: 'lib/agents/prompts/orchestrator.md',
+//   blueprints: {
+//     'orchestrator:chat': orchestratorChatBlueprint,
+//     'orchestrator:macro-summary': macroSummaryBlueprint,
+//   },
+// };
 ```
 
 ---
@@ -939,6 +1165,48 @@ Workers read/write circuit breaker state to `agent_registry.config` on each LLM 
 
 When a job fails and is retried, the blueprint runner loads the latest normalized accumulated output from `agent_job_checkpoints` and resumes from the failed step rather than replaying the entire blueprint. `step_log` remains metadata-only. This saves API calls and LLM tokens and prevents a stale worker from completing a job after ownership has already moved.
 
+### Stale Job Reaper
+
+The reaper runs every 5 minutes in the Orchestrator process. It only touches jobs with BOTH an expired lease AND a stale heartbeat older than 2 minutes. Workers renew their lease every 60 seconds during long-running steps.
+
+```sql
+UPDATE agent_jobs
+SET status = 'queued',
+    started_at = NULL,
+    locked_by = NULL,
+    lock_expires_at = NULL,
+    last_heartbeat_at = NULL
+WHERE status = 'processing'
+  AND lock_expires_at < now()
+  AND last_heartbeat_at < now() - interval '2 minutes';
+```
+
+```sql
+UPDATE agent_jobs
+SET lock_expires_at = now() + interval '5 minutes',
+    last_heartbeat_at = now()
+WHERE id = $1 AND locked_by = $2 AND lease_version = $3;
+```
+
+### Market Session Gate
+
+Autonomous triggers use session-aware logic, not a simple “is market open?” check.
+
+```typescript
+interface MarketSessionCheck {
+  isTradingDay: boolean;     // false on weekends + market holidays
+  isPreMarket: boolean;      // 4:00 AM – 9:30 AM ET
+  isPostMarket: boolean;     // 4:00 PM – 8:00 PM ET
+  isMarketOpen: boolean;     // 9:30 AM – 4:00 PM ET
+}
+```
+
+Trigger gates:
+- Pre-market scans (Small Cap 7:00 AM, Swing 7:30 AM): require `isTradingDay && isPreMarket`
+- Post-market checks (Swing 4:30 PM): require `isTradingDay && isPostMarket`
+- Macro cron (6:00 AM): require `isTradingDay`
+- `isTradingDay` via Massive API `/v1/marketstatus/now`. Session windows in Eastern Time.
+
 ---
 
 ## 11. Token Observability & Budget
@@ -972,6 +1240,7 @@ Hard limits are checked by `callLlm()` before every LLM call. Budget is per-agen
 | Monthly spend cap | `AGENT_MONTHLY_BUDGET_CENTS` | `10000` ($100/mo per agent) | Same as daily — hard stop + Discord alert. |
 | Max context tokens per LLM call | `AGENT_MAX_CONTEXT_TOKENS` | `32000` | Input is truncated to fit. Warning logged. |
 | Max scan candidates sent to LLM | `AGENT_MAX_SCAN_CANDIDATES` | `20` | Code step slices candidate list before the LLM step. |
+| `AGENT_MAX_ASKEDGAR_CALLS_PER_SCAN` | `60` | Per-scan AskEdgar call limit. If a scan generates more than 60 AskEdgar calls, truncate the candidate list to stay within budget. Enforced in the `fetch-filings` code step. |
 | Max pattern history items loaded | `AGENT_MAX_PATTERN_HISTORY` | `50` | Code step slices pattern history before the LLM step. |
 | Max retries per LLM step | `AGENT_MAX_RETRIES_PER_STEP` | `2` | After N repair attempts, step fails with `failureClass: 'contract'`. |
 
@@ -1036,6 +1305,35 @@ published       → archived
 delivery_failed → archived
 ```
 
+### Channel Layout
+
+| Channel | Method | Posts from | Content |
+|---------|--------|-----------|---------|
+| `#orchestrator` | Bot (listener) + Webhook (responses) | Orchestrator | Two-way chat |
+| `#small-cap-scans` | Webhook | Small Cap Trader | Pre-market scan results |
+| `#small-cap-research` | Webhook | Small Cap Trader | On-demand research reports |
+| `#swing-setups` | Webhook | Swing Trader | Daily momentum scan results, MDR candidates |
+| `#swing-alerts` | Webhook | Swing Trader | Real-time parabolic setup alerts |
+| `#macro-daily` | Webhook | Orchestrator | Daily macro briefing |
+| `#agent-system` | Webhook | Orchestrator | Health alerts, budget warnings, errors |
+
+### Discord Embed Schemas
+
+All embeds use emerald-500 (`0x10B981`) as base color.
+
+- **Small Cap Scan embed:** Ticker, pre-market gain %, price, market cap, dilution risk rating (color-coded), filing summary, technical levels, confidence, timestamp.
+- **Small Cap Research embed:** All fields from `ResearchReportSchema` (Section 25). Ticker, news/theme ratings, catalyst list, chart history, dilution, offering frequency/ability, cash need, overall offering risk, confidence, evidence count.
+- **Swing Setup embed:** Ticker, multi-day gain %, current price, MDR similarity score (color-coded), volume surge ratio, key levels (entry/stop/targets), catalyst summary, pattern comparisons, confidence.
+- **Swing Alert embed:** Ticker, alert type (BREAKOUT/EXHAUSTION/CONTINUATION), trigger description, current price vs thesis levels, recommended action context.
+- **System Alert embed:** Type, severity color, details, suggested action.
+
+### Delivery Recovery (V1)
+
+1. Detection: `#agent-system` webhook receives an alert when delivery fails.
+2. Diagnosis: Check `agent_reports.delivery_error` for the failure reason.
+3. Manual retry: `POST /api/agents/admin/redeliver` with `{ report_id }`. Reads stored `report_json`, re-POSTs to webhook, updates status.
+4. Automated retry: Deferred to V2.
+
 ### UI Integration
 
 - `AgentTab.tsx` is chat-only in V1
@@ -1047,6 +1345,21 @@ delivery_failed → archived
 ## 13. API Route Migration
 
 All routes under `/api/jarvis/*` are replaced by `/api/agents/*`.
+
+### Deprecated Jarvis Routes
+
+| Jarvis Route | Method | Fate | Replaced By | Deleted In |
+|-------------|--------|------|-------------|------------|
+| `/api/jarvis/chat` | POST | Replaced | `POST /api/agents/chat` | Phase 7 |
+| `/api/jarvis/chat/stream` | GET (SSE) | Kept alive through Phase 6, then deleted | `GET /api/agents/chat?job_id=...` (polling) | Phase 7 |
+| `/api/jarvis/research` | POST | Replaced | `POST /api/agents/research` | Phase 7 |
+| `/api/jarvis/trade-analysis` | POST | Replaced | `POST /api/agents/research` | Phase 7 |
+| `/api/jarvis/admin/memory` | GET/DELETE | Replaced | `GET/DELETE /api/agents/admin/memory` | Phase 7 |
+| `/api/jarvis/admin/stats` | GET | Replaced | `GET /api/agents/admin/stats` | Phase 7 |
+| `/api/jarvis/macro-summary/latest` | GET | Replaced | `GET /api/agents/macro-summary/latest` | Phase 7 |
+| `/api/jarvis/cron/macro-summary` | POST | Deleted (cron moves to Docker) | `orchestrator:macro-summary` blueprint | Phase 7 |
+
+**SSE migration note:** `/api/jarvis/chat/stream` remains the active chat endpoint for the Jarvis UI throughout Phases 1-6. It is NOT deleted until Phase 7, after the polling-based `AgentChat.tsx` is verified working. During the transition, both endpoints coexist.
 
 ### New Routes
 
@@ -1099,7 +1412,10 @@ All routes under `/api/jarvis/*` are replaced by `/api/agents/*`.
    - `{ status: 'queued', job_id, agent_id, progress_note: null }`
    - `{ status: 'processing', job_id, agent_id, progress_note: 'Step 1/2: classify-and-route' }`
    - `{ status: 'completed', job_id, agent_id, session_id, result: { message }, warning?: '...' }`
+   - `{ status: 'completed', job_id, agent_id, result: { routed: true, specialistJobId: 'job_456' } }` — the Orchestrator routed to a specialist. Client should begin polling `GET /api/agents/chat?job_id=job_456` for the specialist's result.
    - `{ status: 'failed', job_id, agent_id, error: { message, failureClass? } }`
+
+**Client polling timeout:** The client must stop polling after 120 seconds (60 poll attempts at 2-second intervals). If the job is still not `completed` or `failed` after 120s, display a timeout message. The job continues processing server-side; the user can refresh to check again.
 
 **Pros of polling vs SSE:** Simpler to implement, works through all proxies/CDNs, stateless server.
 **Cons:** 2s latency floor, unnecessary requests while waiting. SSE can be added later as an optimization.
@@ -1154,6 +1470,7 @@ x-agent-service-key: <AGENT_SERVICE_KEY>
 - `{ status: 'queued', job_id, agent_id, progress_note: null }`
 - `{ status: 'processing', job_id, agent_id, progress_note: '...' }`
 - `{ status: 'completed', job_id, agent_id, session_id, result: { message }, warning?: '...' }`
+- `{ status: 'completed', job_id, agent_id, result: { routed: true, specialistJobId: 'job_456' } }`
 - `{ status: 'failed', job_id, agent_id, error: { message, failureClass? } }`
 
 #### `GET /api/agents/reports`
@@ -1372,6 +1689,8 @@ Swing on-demand analysis uses `job_type = 'research'` with `agent_id = 'swing-tr
 - Input validation via Zod schemas with `parseAndValidate()` where applicable
 - Standard error responses: `{ error: string }` with appropriate HTTP status codes
 
+**`requireServiceAuth()` return type:** Returns `{ user: { id: string, email: string, name: string, picture: string | null } }` — the same shape as `requireUser()`. The user is resolved from a hardcoded Discord-to-Nexus user mapping object in `lib/agents/admin.ts`. If the service key is invalid, returns 401. If the Discord user ID cannot be mapped to a Nexus user, returns 403 with `{ error: 'Unknown Discord user' }`.
+
 Service auth is limited to `/api/agents/service/*` routes only. User routes remain session-authenticated. Admin routes remain admin-key protected. The Discord bot must not use user routes or admin routes.
 
 ### Endpoint Role Clarification
@@ -1409,7 +1728,7 @@ For direct specialist research created through `POST /api/agents/research`, the 
 
 | Component | Replaces | Purpose |
 |-----------|----------|---------|
-| `AgentChat.tsx` | `JarvisChat.tsx` | Polling-based chat with "Thinking..." indicator, agent selector dropdown |
+| `AgentChat.tsx` | `JarvisChat.tsx` | Polling-based chat with progress indicator and agent selector dropdown (options: Orchestrator, Small Cap Trader, Swing Trader; default: Orchestrator). Handles specialist handoff: when polling returns `result.routed === true`, the component switches to polling the `specialistJobId` returned in the result and displays the specialist agent name. Session persistence: follows current `JarvisChat.tsx` localStorage pattern with daily TTL key. |
 | `AgentTab.tsx` | `JarvisTab.tsx` | Wraps `AgentChat.tsx`; V1 is chat-only with progress notes and current agent display |
 
 ### Frontend File Migration
@@ -1679,7 +1998,7 @@ Agent containers do not expose an HTTP server, so healthchecks use a heartbeat-t
 - `TZ=America/New_York` ensures cron schedules align with market hours
 - Future option: migrate to a VPS (Hetzner $4/mo, Oracle Cloud free tier with 4 ARM cores / 24GB RAM)
 
-## 15.1 Operational Readiness / Runbooks
+## 16. Operational Readiness / Runbooks
 
 These items are launch blockers for V1 even if the implementation is functionally complete.
 
@@ -1730,9 +2049,20 @@ These items are launch blockers for V1 even if the implementation is functionall
 - Validate Discord webhook URLs.
 - Validate lane keys, base URLs, and models before launch.
 
+### Phase Assignment
+
+| Item | Phase | Notes |
+|------|-------|-------|
+| Neon backup before migration 0017 | Phase 2 pre-flight | Must complete before `npm run db:migrate` |
+| Rollback procedure documentation | Phase 5 | Before Docker deploy |
+| Home-server recovery checklist | Phase 5 | Verify after first `docker compose up` |
+| Minimum observability (query scripts) | Phase 5 | SQL queries; no UI needed |
+| Deploy smoke checklist | Phase 5 gate | All items must pass before Phase 6 |
+| Config and secret validation | Phase 0 + Phase 5 | Initial check in Phase 0; re-verify in Phase 5 |
+
 ---
 
-## 16. Build Order (8 Phases)
+## 17. Build Order (8 Phases)
 
 Sequential phases. Each phase must pass `npm run lint && npx tsc --noEmit` before proceeding (except Phase 0, which is all human actions). Service-side TypeScript must also be validated explicitly where root `tsconfig.json` excludes service code.
 
@@ -1779,6 +2109,7 @@ All items in this phase are human actions, not code changes. Complete every item
 **0-D. Create `services/.env`**
 
 - [ ] Copy `services/.env.example` to `services/.env` (verify `.gitignore` covers it)
+- [ ] Verify `.gitignore` includes `services/.env` — add it if missing
 - [ ] Fill in all values:
   - `DATABASE_URL` — Neon pooled connection string (`?sslmode=require`)
   - `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`
@@ -1820,6 +2151,11 @@ All items in this phase are human actions, not code changes. Complete every item
 
 ### Phase 1: Core Contracts & Prompts
 
+**Phase 1 DoD:**
+- `npm run lint && npx tsc --noEmit` passes
+- All type definitions compile with no `any` casts
+- `callLlm()` successfully calls Groq free tier and returns structured response
+
 | Step | File | Depends On |
 |------|------|------------|
 | 1 | `lib/agents/types.ts` (canonical V1 `job_type`, lease-fencing types, checkpoint types) | — |
@@ -1841,87 +2177,112 @@ All items in this phase are human actions, not code changes. Complete every item
 
 ### Phase 3: DB Runtime, Queue, Checkpoints, Memory, Worker Internals
 
+**Phase 3 DoD:**
+- `pollForJob()` + `completeJob()` round-trip works with lease fencing
+- Blueprint runner executes a 2-step test blueprint with checkpoint/resume
+- Heartbeat touches `/tmp/healthy`
+- `npm run lint && npx tsc --noEmit` passes
+
 | Step | File | Depends On |
 |------|------|------------|
 | 12 | `lib/agents/db.ts` | Phase 2 |
-| 13 | `lib/agents/job-queue.ts` (poll/claim, `lease_version`, fenced renew/complete/fail) | db.ts, types.ts |
+| 13 | `lib/agents/job-queue.ts` | db.ts, types.ts |
 | 14 | `lib/agents/token-tracking.ts` | db.ts, types.ts |
 | 15 | `lib/agents/circuit-breaker.ts` | db.ts, types.ts |
 | 16 | `lib/agents/rate-limit.ts` | db.ts, types.ts |
-| 17 | `lib/agents/memory.ts` (`agent_memory_v2` only) | db.ts, types.ts |
+| 17 | `lib/agents/memory.ts` | db.ts, types.ts |
 | 18 | `lib/agents/context.ts` | memory.ts |
-| 19 | `lib/agents/prompts.ts` (loads three-layer stack) | types.ts |
-| 20 | `lib/agents/blueprint-runner.ts` (step-log metadata + checkpoint resume via `agent_job_checkpoints`) | types.ts, llm-client.ts, memory.ts, context.ts |
-| 21 | `lib/agents/config.ts` | types.ts, prompts.ts, blueprint-runner.ts |
-| 22 | `lib/agents/heartbeat.ts` (touches `/tmp/healthy`) | db.ts |
-| 23 | `lib/agents/worker.ts` | job-queue.ts, heartbeat.ts, config.ts, blueprint-runner.ts |
-| 24 | `lib/agents/macro-cron.ts` | db.ts, context.ts, llm-client.ts |
-| X | `lib/agents/discord-embed.ts` | types.ts |
-| X | `lib/agents/discord-delivery.ts` | types.ts |
-| X | Blueprint definitions/config wiring for Orchestrator, Small Cap, Swing | blueprint-runner.ts, prompts.ts |
-| X | `scripts/seed-trade-examples.ts` | Phase 2 |
+| 19 | `lib/agents/prompts.ts` | types.ts |
+| 20 | `lib/agents/llm-client.ts` | types.ts |
+| 21 | `lib/agents/blueprint-runner.ts` | types.ts, llm-client.ts, memory.ts, context.ts |
+| 22 | `lib/agents/discord-embed.ts` | types.ts |
+| 23 | `lib/agents/discord-delivery.ts` | types.ts |
+| 24 | `lib/agents/config.ts` (blueprint defs + wiring) | blueprint-runner.ts, prompts.ts |
+| 25 | `lib/agents/scrape-lite.ts` (copy from `lib/jarvis/`) | — |
+| 26 | `lib/agents/heartbeat.ts` | db.ts |
+| 27 | `lib/agents/worker.ts` | job-queue.ts, heartbeat.ts, config.ts, blueprint-runner.ts |
+| 28 | `lib/agents/macro-cron.ts` | db.ts, context.ts, llm-client.ts, scrape-lite.ts |
+| 29 | `scripts/seed-trade-examples.ts` | Phase 2 |
 
 ### Phase 4: API Routes
 
+**Phase 4 DoD:**
+- `POST /api/agents/chat` creates orchestrator job, `GET` returns status
+- `POST /api/agents/service/chat` creates job with service key auth
+- Admin stats endpoint returns valid JSON
+- `npm run lint && npx tsc --noEmit` passes
+
 | Step | Route | Depends On |
 |------|-------|------------|
-| 25 | `app/api/agents/chat/route.ts` (`POST`) | Phase 3 |
-| 26 | `app/api/agents/chat/route.ts` (`GET`) | Phase 3 |
-| 27 | `app/api/agents/service/chat/route.ts` (`POST` + `GET`) | Phase 3 |
-| 28 | `app/api/agents/reports/route.ts` | Phase 3 |
-| 29 | `app/api/agents/reports/[id]/route.ts` | Phase 3 |
-| 30 | `app/api/agents/research/route.ts` | Phase 3 |
-| 31 | `app/api/agents/admin/stats/route.ts` | Phase 3 |
-| 32 | `app/api/agents/admin/memory/route.ts` | Phase 3 |
-| 33 | `app/api/agents/admin/redeliver/route.ts` | Phase 3 |
-| 34 | `app/api/agents/macro-summary/latest/route.ts` | Phase 3 |
+| 30 | `app/api/agents/chat/route.ts` (`POST`) | Phase 3 |
+| 31 | `app/api/agents/chat/route.ts` (`GET`) | Phase 3 |
+| 32 | `app/api/agents/service/chat/route.ts` (`POST` + `GET`) | Phase 3 |
+| 33 | `app/api/agents/reports/route.ts` | Phase 3 |
+| 34 | `app/api/agents/reports/[id]/route.ts` | Phase 3 |
+| 35 | `app/api/agents/research/route.ts` | Phase 3 |
+| 36 | `app/api/agents/admin/stats/route.ts` | Phase 3 |
+| 37 | `app/api/agents/admin/memory/route.ts` | Phase 3 |
+| 38 | `app/api/agents/admin/redeliver/route.ts` | Phase 3 |
+| 39 | `app/api/agents/macro-summary/latest/route.ts` | Phase 3 |
 
 ### Phase 5: Docker Runtime & Discord Bot
 
+**Phase 5 DoD:**
+- `docker compose up` starts all 4 services (3 agents + Discord bot)
+- Each agent registers in `agent_registry` with `status = 'online'`
+- Discord bot receives message in `#orchestrator`, creates job, polls, replies
+- All smoke checklist items from Section 16 pass
+
 | Step | File | Depends On |
 |------|------|------------|
-| 35 | `services/agent.Dockerfile` | Phase 3 |
-| 36 | `services/agent-entrypoint.ts` | Phase 3 |
-| 37 | `services/docker-compose.yml` (rewrite — keep discord-bot, add 3 agent services, remove redis) | Steps 35-36 |
-| 38 | `services/.env.example` | — |
-| 39 | Build minimal V1 Discord bot runtime in `services/discord-bot/` | Phase 4 |
-| 40 | Implement bot message → `/api/agents/service/chat` → poll → reply flow | Step 39 |
-| 41 | Validate service TypeScript explicitly (example: `cd services/discord-bot && npx tsc --noEmit`) | Step 39 |
+| 40 | `services/agent.Dockerfile` | Phase 3 |
+| 41 | `services/agent-entrypoint.ts` | Phase 3 |
+| 42 | `services/docker-compose.yml` (rewrite — keep discord-bot, add 3 agent services, remove redis) | Steps 40-41 |
+| 43 | `services/.env.example` | — |
+| 44 | Build minimal V1 Discord bot runtime in `services/discord-bot/` | Phase 4 |
+| 45 | Implement bot message → `/api/agents/service/chat` → poll → reply flow | Step 44 |
+| 46 | Validate service TypeScript explicitly (example: `cd services/discord-bot && npx tsc --noEmit`) | Step 44 |
 
 ### Phase 6: Frontend
 
 | Step | File | Depends On |
 |------|------|------------|
-| 42 | Extract shared types: create `lib/shared-types.ts` and `lib/askedgar.ts`, update all consumers (MarketsTab, AskEdgar routes, renderer components) | Phase 4 |
-| 43 | `components/trading/AgentChat.tsx` | Phase 4 |
-| 44 | `components/trading/AgentTab.tsx` | Step 43 |
-| 45 | Modify `Sidebar.tsx`, `app/page.tsx`, `CommandPalette.tsx`, `use-global-shortcuts.ts` — `'jarvis'` → `'agents'` | Steps 42-44 |
-| 46 | Update UI surfaces that trigger ticker analysis to call `POST /api/agents/research` | Steps 30, 45 |
+| 47 | Extract shared types: create `lib/shared-types.ts` and `lib/askedgar.ts`, update all consumers (MarketsTab, AskEdgar routes, renderer components) | Phase 4 |
+| 48 | `components/trading/AgentChat.tsx` | Phase 4 |
+| 49 | `components/trading/AgentTab.tsx` | Step 48 |
+| 50 | Modify `Sidebar.tsx`, `app/page.tsx`, `CommandPalette.tsx`, `use-global-shortcuts.ts` — `'jarvis'` → `'agents'` | Steps 47-49 |
+| 51 | Update UI surfaces that trigger ticker analysis to call `POST /api/agents/research` | Steps 35, 50 |
 
 ### Phase 7: Cleanup (after full validation)
 
+**Phase 7 Pre-Flight (before migration 0018):**
+- [ ] Run `grep -r 'jarvis_conversations\|jarvis_request_log' app/ lib/` — must return zero hits
+- [ ] Confirm no code path reads from `agent_memory` (legacy table)
+- [ ] Verify `AgentChat.tsx` is live and `JarvisChat.tsx` is unused
+- [ ] Only then execute migration 0018
+
 | Step | Task | Depends On |
 |------|------|------------|
-| 47 | Delete `app/api/jarvis/` directory | Phase 4 verified |
-| 48 | Delete `lib/jarvis/` directory (safe — shared types already extracted in Step 42) | Phase 6 verified |
-| 49 | Delete `JarvisChat.tsx`, `JarvisTab.tsx` | Phase 6 verified |
-| 50 | Remove Vercel cron config for macro-summary | Phase 5 verified |
-| 51 | Generate migration 0018 (drop `jarvis_conversations`, `jarvis_request_log`, optionally legacy `agent_memory`) | Phase 6 verified |
-| 52 | Run migration 0018 | Step 51 |
+| 52 | Delete `app/api/jarvis/` directory | Phase 4 verified |
+| 53 | Delete `lib/jarvis/` directory (safe — shared types already extracted in Step 47) | Phase 6 verified |
+| 54 | Delete `JarvisChat.tsx`, `JarvisTab.tsx` | Phase 6 verified |
+| 55 | Remove Vercel cron config for macro-summary | Phase 5 verified |
+| 56 | Generate migration 0018 (drop `jarvis_conversations`, `jarvis_request_log`, optionally legacy `agent_memory`) | Phase 6 verified |
+| 57 | Run migration 0018 | Step 56 |
 
-### Phase-Level Acceptance Criteria That Must Exist Before Sprint Import
+### Phase-Level Acceptance Criteria (must exist before sprint import)
 
-- queue lease fencing prevents stale workers from completing jobs after lease ownership changes
-- scheduled-run dedupe prevents duplicate daily jobs for the same `agent_id + trigger_type + trading_date`
-- checkpoint resume starts from the latest saved checkpoint instead of replaying the blueprint from step 1
+- Queue lease fencing prevents stale workers from completing jobs after lease ownership changes
+- Scheduled-run dedupe prevents duplicate daily jobs for the same `agent_id + trigger_type + trading_date`
+- Checkpoint resume starts from the latest saved checkpoint instead of replaying from step 1
 - `delivery_failed` reports can be manually redelivered via `POST /api/agents/admin/redeliver`
-- offline specialist fallback emits a warning, a server log entry, and a Discord `#agent-system` alert
+- Offline specialist fallback emits a warning, a server log entry, and a Discord `#agent-system` alert
 
 ---
 
-## 17. Complete File Inventory
+## 18. Complete File Inventory
 
-### Files to CREATE (45 total)
+### Files to CREATE (46 total)
 
 ```
 lib/agents/types.ts
@@ -1940,6 +2301,7 @@ lib/agents/blueprint-runner.ts
 lib/agents/config.ts
 lib/agents/worker.ts
 lib/agents/macro-cron.ts
+lib/agents/scrape-lite.ts
 lib/agents/admin.ts
 lib/agents/discord-embed.ts
 lib/agents/discord-delivery.ts
@@ -1985,7 +2347,7 @@ services/docker-compose.yml            -- keep discord-bot, add 3 agent services
 
 If blueprint definitions remain embedded only implicitly in `config.ts`, note that the implementation still requires explicit blueprint/config wiring work even if it does not create additional files.
 
-### Files REMOVED from R1 plan (confirmed)
+### Files REMOVED from earlier plan (confirmed)
 
 ```
 components/trading/AgentReportQueue.tsx    -- REMOVED (Discord replaces)
@@ -2010,7 +2372,7 @@ lib/jarvis/memory.ts
 lib/jarvis/research.ts
 lib/jarvis/trade-analysis.ts
 lib/jarvis/askedgar.ts
-lib/jarvis/scrape-lite.ts
+lib/jarvis/scrape-lite.ts            -- Deleted in Phase 7 after copy to `lib/agents/` is verified in Phase 3
 lib/jarvis/rate-limit.ts
 lib/jarvis/circuit-breaker.ts
 lib/jarvis/token-tracking.ts
@@ -2021,7 +2383,7 @@ components/trading/JarvisTab.tsx
 
 ---
 
-## 18. Environment Variables
+## 19. Environment Variables
 
 ### Agent LLM Config — Two-Lane
 
@@ -2057,7 +2419,7 @@ Groq and NVIDIA are the default testing/provider roots in this spec. The backgro
 | `AGENT_POLL_INTERVAL_MS` | `5000` | All agents | Job queue poll interval |
 | `AGENT_ID` | (required per service) | Each Docker service | Agent identity |
 | `AGENT_ADMIN_KEY` | (falls back to `JARVIS_ADMIN_KEY`) | Next.js app | Admin API auth |
-| `AGENT_SERVICE_KEY` | (required) | Discord bot + Next.js app | Bot-to-app service auth (see R5.4) |
+| `AGENT_SERVICE_KEY` | (required) | Discord bot + Next.js app | Bot-to-app service auth (see Section 13) |
 | `MACRO_CRON_HOUR` | `6` | Orchestrator | Hour (ET) to run macro summary |
 | `MASSIVE_API_KEY` | (existing) | All agents | Market data API |
 | `ASKEDGAR_API_KEY` | (existing) | All agents | SEC filings API |
@@ -2104,7 +2466,7 @@ Groq and NVIDIA are the default testing/provider roots in this spec. The backgro
 | `JARVIS_MODEL` | `INTERACTIVE_LLM_MODEL` / `BACKGROUND_LLM_MODEL` | Same |
 | `JARVIS_TIMEOUT_MS` | `INTERACTIVE_LLM_TIMEOUT_MS` / `BACKGROUND_LLM_TIMEOUT_MS` | Same |
 | `JARVIS_ADMIN_KEY` | `AGENT_ADMIN_KEY` | Legacy admin fallback |
-| `AGENT_API_KEY` | Split into lane-specific vars | R1/R2 single-lane var, now superseded |
+| `AGENT_API_KEY` | Split into lane-specific vars | Earlier single-lane var, now superseded |
 | `AGENT_API_BASE_URL` | Split into lane-specific vars | Same |
 | `AGENT_MODEL` | Split into lane-specific vars | Same |
 | `NVIDIA_API_KEY` | No direct replacement | Historical fallback removed |
@@ -2112,7 +2474,7 @@ Groq and NVIDIA are the default testing/provider roots in this spec. The backgro
 
 ---
 
-## 19. V1 Discord Orchestrator Adapter
+## 20. V1 Discord Orchestrator Adapter
 
 Discord is promoted into V1 for the `#orchestrator` channel.
 
@@ -2128,6 +2490,13 @@ Discord is promoted into V1 for the `#orchestrator` channel.
 
 **Prerequisites:** Discord bot service must be running, hardcoded user mapping configured.
 
+**Runtime details:**
+- Library: `discord.js` v14
+- Runtime: Node 20 (matches agent Dockerfile base image)
+- Polling interval: 2 seconds, with 120-second timeout (60 attempts). If the job is not complete after 120s, reply with a timeout message.
+- Package dependencies: `discord.js`, `tsx` (TypeScript execution)
+- `services/discord-bot/package.json` must include `discord.js` and `tsx` as production dependencies
+
 The Discord bot does not call `/api/agents/chat` or `/api/agents/admin/*`; it only uses `/api/agents/service/*`.
 
 **Acceptance criteria:**
@@ -2139,9 +2508,9 @@ The Discord bot does not call `/api/agents/chat` or `/api/agents/admin/*`; it on
 
 ---
 
-## 20. Open Questions
+## 21. Open Questions
 
-1. **Historical research import format.** Partially resolved in R4: trade examples are DAS Trader screenshots (PNG/JPG) processed via manual annotation into structured JSON (see Section 27). Remaining question: are there additional research reports in other formats (PDF, markdown, spreadsheet) that need separate import scripts?
+1. **Historical research import format.** Trade examples are DAS Trader screenshots (PNG/JPG) processed via manual annotation into structured JSON (see Section 27). Remaining question: are there additional research reports in other formats (PDF, markdown, spreadsheet) that need separate import scripts?
 
 2. **Social sentiment data source.** The Swing Trader may benefit from social sentiment API data (Twitter/X trending tickers, StockTwits, Reddit). Defer specific API choice to V2. For V1, the Swing Trader relies on Massive API price/volume momentum data and AskEdgar market-strength narrative.
 
@@ -2174,385 +2543,10 @@ The Discord bot does not call `/api/agents/chat` or `/api/agents/admin/*`; it on
 | `context.ts` | `context.ts` | Extend with agent-specific context |
 | `askedgar.ts` | (standalone) | Move to `lib/askedgar.ts` |
 | `prompts.ts` | `prompts.ts` | Split into per-agent files |
-| `scrape-lite.ts` | (reuse as-is) | No changes needed |
+| `scrape-lite.ts` | `lib/agents/scrape-lite.ts` | Copied to `lib/agents/` in Phase 3 (step 25). Original deleted in Phase 7. |
 | `legacy trade-analysis.ts` | Small Cap blueprint steps | Logic split across `code` and `llm` steps in `small-cap:research` blueprint |
 | `research.ts` | Small Cap blueprint steps | Logic split across `code` and `llm` steps in `small-cap:pre-market-scan` blueprint |
 | (new) | `blueprint-runner.ts` | New file — executes blueprint step sequences, tracks tokens per step |
-
----
-
-## REVISION 1 — Decisions & Fixes (2026-03-22)
-
-> Review session identified gaps in triggers, communication, permissions, blueprint engine, and deployment. Several architecture decisions were made that change the spec.
-
-### R1.1 Decisions
-
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| OS / Server | Keep Windows + WSL2, install Docker Engine natively in WSL2 | Laptop IS the server. 16GB RAM is plenty for 3x512MB containers. WSL2 with systemd=true auto-starts Docker. No wipe needed. |
-| Local LLM | No — API only | API costs ~$10-15/mo. Local 7B model saves nothing meaningful, takes 4-5GB RAM, worse quality. |
-| LLM Provider | Groq free tier for testing, NVIDIA API for production | Same model in both lanes keeps early testing simpler. DeepSeek remains a future background-lane option if later evals justify it. |
-| Report delivery | Discord-first via per-channel webhooks | Specialist agents post to Discord channels. Only Orchestrator has web chat. Eliminates AgentReportQueue.tsx, AgentStats.tsx, in-app approval flow. |
-| Orchestrator Discord | Bidirectional via bot in #orchestrator | Promoted from Section 19 "deferred" to V1. Bot listens in #orchestrator, creates jobs, polls, posts response. |
-| Opening bell trigger | Deferred to V2 | 7 AM pre-market scan is enough for V1. |
-| Supervised mode | Level 1.5 — reports posted as FYI, no approval gate | Reports go to Discord. User reads and acts (or doesn't). Approval via Discord reactions deferred to V2+. |
-
----
-
-### R1.2 Discord-First Architecture (replaces Section 12 supervised mode + Section 14 frontend)
-
-#### Channel Layout
-
-| Channel | Method | Posts from | Content |
-|---------|--------|-----------|---------|
-| `#orchestrator` | Bot (listener) + Webhook (responses) | Orchestrator | Two-way chat |
-| `#small-cap-scans` | Webhook | Small Cap Trader | Pre-market scan results, dilution analysis |
-| `#small-cap-research` | Webhook | Small Cap Trader | On-demand ticker research reports |
-| `#swing-setups` | Webhook | Swing Trader | Daily momentum scan results, MDR candidates |
-| `#swing-alerts` | Webhook | Swing Trader | Real-time parabolic setup alerts, breakout triggers |
-| `#macro-daily` | Webhook | Orchestrator | Daily macro briefing |
-| `#agent-system` | Webhook | Orchestrator | Agent health alerts, budget warnings, errors |
-
-#### Bidirectional Orchestrator (replaces deferred Section 19)
-
-Bot listens for messages in `#orchestrator`:
-1. Maps Discord user → Nexus user (via hardcoded mapping in V1)
-2. Creates `agent_jobs` row (same as web chat POST)
-3. Polls for completion
-4. Posts response as Discord embed
-
-Same routing rules as web chat:
-- `/research TICKER` → Small Cap (report to #small-cap-research)
-- `/swing TICKER` → Swing Trader (report to #swing-setups)
-- `/momentum` → Swing Trader
-- Anything else → Orchestrator (response in #orchestrator)
-
-#### Webhook Delivery
-
-Each agent's final blueprint step (`assemble-report`) does two things:
-1. Writes report to `agent_reports` table (DB history)
-2. POSTs formatted Discord embed to channel webhook URL
-
-New env vars:
-```
-DISCORD_WEBHOOK_SCANS=https://discord.com/api/webhooks/...
-DISCORD_WEBHOOK_RESEARCH=https://discord.com/api/webhooks/...
-DISCORD_WEBHOOK_SWING_SETUPS=https://discord.com/api/webhooks/...
-DISCORD_WEBHOOK_SWING_ALERTS=https://discord.com/api/webhooks/...
-DISCORD_WEBHOOK_MACRO_DAILY=https://discord.com/api/webhooks/...
-DISCORD_WEBHOOK_SYSTEM=https://discord.com/api/webhooks/...
-```
-
-New files:
-- `lib/agents/discord-embed.ts` — Embed builder functions per report type
-- `lib/agents/discord-delivery.ts` — Webhook POST utility
-
-#### Discord Embed Format (TODO: finalize visual design)
-
-**Small Cap Scan:** Ticker, pre-market gain %, price, market cap, dilution risk (color-coded), filing summary, technical levels, confidence, timestamp.
-
-**Swing Setup:** Ticker, multi-day gain %, current price, MDR similarity score (color-coded), volume surge ratio, key levels (entry/stop/targets), catalyst summary, pattern comparisons, confidence.
-
-**Swing Alert:** Ticker, alert type (BREAKOUT/EXHAUSTION/CONTINUATION), what triggered, current price vs thesis levels, recommended action context.
-
-**System Alert:** Type, severity color, details, suggested action.
-
-All embeds use emerald-500 (`0x10B981`) as base color to match Nexus theme.
-
-#### Frontend Simplification
-
-**Remove from build plan (Section 16):**
-- `AgentReportQueue.tsx` (was step 35)
-- `AgentStats.tsx` (was step 36)
-- Report badge count on sidebar
-- Report approve/reject flow
-
-**Simplify:**
-- `AgentTab.tsx` — just Chat, no Reports/Stats sub-tabs in V1
-- `AgentChat.tsx` — add agent name display, progress notes
-
----
-
-### R1.3 LLM Provider Update (replaces Section 8)
-
-> **SUPERSEDED** — R1.3's single-lane `AGENT_API_*` env vars are replaced by the dual-lane
-> `INTERACTIVE_LLM_*` / `BACKGROUND_LLM_*` config in the R3 amendment. The provider analysis
-> remains useful context. See revised Section 8.5 and Section 18 for the current env var table.
-
-Replace NVIDIA API references with provider-agnostic config. Current candidate providers:
-
-**Groq (Llama 3.3 70B):** ~$0.59/M input, $0.79/M output. Blazing fast (~500 tok/s). Free tier: 30 req/min, 6k tokens/min. Already working for Jarvis.
-
-**DeepSeek direct (v3):** ~$0.27/M input, $1.10/M output. Input caching at $0.07/M. Slightly better reasoning. Slower inference.
-
-**Possible hybrid:** Groq for Orchestrator (chat speed matters), DeepSeek for background agents (async, quality + cost matter). Per-agent config already supports different models.
-
-Updated env vars (Section 18):
-```
-AGENT_API_KEY          — Groq or DeepSeek API key (falls back to JARVIS_API_KEY)
-AGENT_API_BASE_URL     — https://api.groq.com/openai/v1 or https://api.deepseek.com/v1
-AGENT_MODEL            — llama-3.3-70b-versatile (Groq) or deepseek-chat (DeepSeek)
-```
-
----
-
-### R1.4 Trigger Fixes (amends Section 6)
-
-#### Catch-up Logic (CRITICAL)
-
-All cron triggers must check "has today's output been generated?" instead of "is it the right hour?" If the laptop was off during the scheduled time, agents should catch up when they come online.
-
-All catch-up checks now use `agent_scheduled_runs` (Section 3.7) instead of inferring from report existence.
-
-```
-ORCHESTRATOR:
-  macro_cron: "if agent_scheduled_runs has no 'completed' row for today + 'macro-summary' AND hour < 14 → run"
-  stale_job_reaper: every 5 min, requeue jobs with expired leases AND stale heartbeats (see below)
-
-SMALL CAP:
-  pre_market_scan: 7 AM EST target
-    catch-up: if agent_scheduled_runs has no 'completed' row for today + 'pre-market-scan' AND hour < 9:30 → run
-    gate: check isTradingDay via Massive API (no-op on weekends/holidays)
-
-SWING TRADER:
-  momentum_scan: 7:30 AM EST target (runs after Small Cap's 7:00 AM scan)
-    catch-up: if agent_scheduled_runs has no 'completed' row for today + 'momentum-scan' AND hour < 9:30 → run
-    gate: check isTradingDay via Massive API (no-op on weekends/holidays)
-  pattern_check: 4:30 PM EST target (after market close)
-    catch-up: if agent_scheduled_runs has no 'completed' row for today + 'pattern-check' AND hour < 20 → run
-    gate: check isTradingDay via Massive API
-```
-
-#### Stale Job Reaper (Orchestrator responsibility)
-
-Every 5 minutes, the Orchestrator checks for jobs with expired leases and stale heartbeats:
-```sql
-UPDATE agent_jobs
-SET status = 'queued',
-    started_at = NULL,
-    locked_by = NULL,
-    lock_expires_at = NULL,
-    last_heartbeat_at = NULL
-WHERE status = 'processing'
-  AND lock_expires_at < now()
-  AND last_heartbeat_at < now() - interval '2 minutes';
-```
-
-Workers renew their lease every 60 seconds during long-running steps:
-```sql
-UPDATE agent_jobs
-SET lock_expires_at = now() + interval '5 minutes',
-    last_heartbeat_at = now()
-WHERE id = $1 AND locked_by = $2 AND lease_version = $3;
-```
-
-Completion and failure writes use the same fenced match on `id`, `locked_by`, and `lease_version`. This prevents orphaned jobs from container crashes while avoiding false reaping of jobs that are legitimately running long steps (e.g., a 60-second LLM call), and it prevents a stale worker from completing a job after ownership has already moved.
-
-#### Market Session Gate
-
-Autonomous triggers use session-aware logic, not a simple "is market open?" check:
-
-```typescript
-interface MarketSessionCheck {
-  isTradingDay: boolean;     // false on weekends + market holidays
-  isPreMarket: boolean;      // 4:00 AM – 9:30 AM ET
-  isPostMarket: boolean;     // 4:00 PM – 8:00 PM ET
-  isMarketOpen: boolean;     // 9:30 AM – 4:00 PM ET
-}
-```
-
-Trigger gates:
-- **Pre-market scans** (Small Cap 7:00 AM, Swing 7:30 AM): require `isTradingDay && isPreMarket`. "Market is closed" is expected at 7 AM — that does NOT mean skip.
-- **Post-market checks** (Swing 4:30 PM): require `isTradingDay && isPostMarket`.
-- **Macro cron** (6:00 AM): require `isTradingDay`. Runs before market opens.
-
-The `isTradingDay` check uses Massive API `/v1/marketstatus/now`. Session windows are calculated from Eastern Time clock.
-
----
-
-### R1.5 Blueprint Engine Fixes (amends Section 6.4)
-
-#### Step Data Accumulation
-
-Each step receives `previousOutput` from step N-1. Convention: **every step must spread previous output into its return value.**
-
-```typescript
-// Step 1 returns: { candidates: [...] }
-// Step 2 returns: { ...previousOutput, filings: [...] }
-// Step 3 returns: { ...previousOutput, dilutionScores: [...] }
-// ...
-// Step 6 receives: { candidates, filings, dilutionScores, technicalData, analysis }
-```
-
-This is the accumulator pattern. Document as a required convention for all blueprint steps.
-
-#### Dockerfile Fix
-
-**Use tsx runtime (installed explicitly in Docker build):**
-
-```dockerfile
-FROM node:20-alpine
-WORKDIR /app
-COPY package.json package-lock.json tsconfig.json ./
-RUN npm ci --production && npm install tsx
-COPY lib/ ./lib/
-COPY services/agent-entrypoint.ts ./services/
-CMD ["npx", "tsx", "services/agent-entrypoint.ts"]
-```
-
-Why: `@/lib/...` path aliases require tsconfig. `tsx` reads it automatically. No compilation step needed. `tsx` is installed in the Dockerfile (not in `package.json` prod deps) since it's only needed by the Docker agent runtime.
-
-#### Internal Parallelism
-
-Blueprint steps run sequentially, but code steps can use `Promise.all` internally. The existing `askedgar.ts` already does parallel `Promise.allSettled` for multi-ticker fetches. Document: "code steps manage their own parallelism within a single step."
-
-#### Job Progress Notes
-
-Add `progress_note TEXT` column to `agent_jobs` schema (Section 3.2). The blueprint runner updates this before each step:
-
-```typescript
-await db.update(agentJobs)
-  .set({ progressNote: `Step ${i+1}/${total}: ${step.name}` })
-  .where(eq(agentJobs.id, job.id));
-```
-
-Polling endpoint returns `progress_note` so the web UI and Discord bot can show progress.
-
----
-
-### R1.6 Migration Window Fix (amends Section 4)
-
-**Problem:** Reworking long-term memory in place creates unnecessary rollout risk while old Jarvis code still depends on legacy `agent_memory`.
-
-**Fix:** Two-phase migration strategy:
-- **Migration 0017** creates `agent_memory_v2` and copies legacy `agent_memory` rows into it with `agent_id = 'orchestrator'`.
-- **Migration 0018** (run after Phase 7 cleanup) drops old Jarvis tables and can optionally drop legacy `agent_memory` after validation.
-
-No simultaneous deploy required. No maintenance window. Old and new code coexist safely because they write to separate tables during rollout.
-
----
-
-### R1.7 Docker Compose Fixes (amends Section 15)
-
-Add to every service in `docker-compose.yml`:
-
-```yaml
-logging:
-  driver: json-file
-  options:
-    max-size: "50m"
-    max-file: "3"
-healthcheck:
-  test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
-  interval: 30s
-  timeout: 10s
-  retries: 3
-```
-
-Note: Agent containers don't run a web server, so healthcheck should instead check heartbeat freshness by querying the DB. Simpler alternative: have the heartbeat loop write `/tmp/healthy` on each successful tick, then check with `test -f /tmp/healthy && find /tmp/healthy -mmin -2`.
-
----
-
-### R1.8 Routing Rules Update (amends Section 13)
-
-```typescript
-function routeToAgent(message: string, explicitAgentId?: string): AgentId {
-  if (explicitAgentId && isValidAgentId(explicitAgentId)) return explicitAgentId;
-  if (message.startsWith('/research ')) return 'small-cap-trader';
-  if (message.startsWith('/swing')) return 'swing-trader';
-  if (message.startsWith('/momentum')) return 'swing-trader';
-  return 'orchestrator';
-}
-```
-
----
-
-### R1.9 Deployment Procedure (NEW section)
-
-#### Initial Setup
-1. Install Docker Engine in WSL2 (`curl -fsSL https://get.docker.com | sh`)
-2. `sudo systemctl enable docker`
-3. Create `services/.env` from `services/.env.example`
-4. Set up Discord channels + webhooks, copy URLs to `.env`
-5. Run database migrations
-6. `docker compose build && docker compose up -d`
-7. Verify: `docker compose ps`, check Discord #agent-system for startup message
-
-#### Updating Agents
-```bash
-cd ~/Nexus-Terminal && git pull
-cd services && docker compose build && docker compose up -d
-```
-Graceful shutdown handles in-progress jobs. ~30 sec downtime.
-
-#### Keeping Laptop Running
-- Disable Windows sleep: Settings → System → Power → Never
-- Use ethernet, not Wi-Fi
-- `restart: unless-stopped` in compose auto-recovers from Docker/WSL restarts
-
----
-
-### R1.10 Updated File Inventory
-
-**New files to CREATE (add to Section 17):**
-```
-lib/agents/discord-embed.ts        — Embed builders per report type
-lib/agents/discord-delivery.ts     — Webhook POST utility
-lib/agents/prompts/swing-trader.md — Layer 2 role prompt for Swing Trader agent
-lib/agents/prompts/global-policy.md — Layer 1 global policy (shared by all agents)
-```
-
-**Files to REMOVE from Section 17 (deferred/eliminated):**
-```
-components/trading/AgentReportQueue.tsx    — REMOVED (Discord replaces)
-components/trading/AgentStats.tsx          — DEFERRED to V2
-```
-
-**Updated build phase count:** 45 files to create. 7 files to modify.
-
----
-
-### R1.11 Open Items (resolve before implementation)
-
-1. **Discord embed visual design** — Build test webhooks and iterate on format in real Discord channels.
-2. **RESOLVED BY R3** — Testing defaults to Groq free tier; production defaults to NVIDIA API for both lanes. DeepSeek remains a future background-lane option if later evals justify it.
-3. **RESOLVED IN R6** — Build a minimal V1 Discord bot runtime in `services/discord-bot/`.
-4. **Deployment automation** — Manual `docker compose build && up` or auto-deploy script?
-5. **AskEdgar call counter** — Per-process counter wrong with 3 containers. Rely on DB cache or move counter to DB row.
-
----
-
-## REVISION 2 — Determinism, Guardrails & Agent Swap (2026-03-26)
-
-> This revision promotes the Swing Trader to the V1 starting lineup, removes the Long Term Investor concept entirely (3-agent lineup is final), hardens the blueprint engine with typed schemas and validation, adds a three-layer prompt architecture, formalizes evidence and citation rules, and adds explicit code-vs-LLM boundary rules.
-
-### R2.1 Decisions
-
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Agent lineup swap | Swing Trader replaces Long Term Investor (removed entirely) | MDR pattern recognition is a higher-value, more actionable use case for the current trading style. 3-agent lineup is final. |
-| Zod dependency | Already present (v4.3.6) | No new dependency needed; use existing Zod for blueprint step schemas |
-| Discord delivery | Native Discord embeds via webhook (no bot for report delivery) | Simpler than bot-based delivery; webhooks are sufficient for one-way report posting |
-| MDR pattern seed data | Seed with handful of examples (UGRO etc.) | Gives agent comparison data from day one without building a full import pipeline |
-| Macro briefing channel | Dedicated `#macro-daily` channel | Cleaner separation from `#orchestrator` chat; Orchestrator macro cron posts there |
-| AskEdgar caching | Smarter per-agent cache strategy | Agent version should cache per ticker+endpoint with 1-hour TTL, stored in `agent_memory_v2` |
-
----
-
-## REVISION 4 — Short-Selling Identity, Phase 0 & Trade Examples (2026-03-28)
-
-> This revision reframes the Small Cap Trader as a short-selling specialist (not a generic dilution analyzer), adds Phase 0 pre-implementation prerequisites, removes the deferred Long Term Investor section entirely, adds Section 27 (Trade Example Seed Strategy) for ingesting 57 historical trade screenshots, and adds Discord bot env vars to the environment spec.
-
-### R4.1 Decisions
-
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Small Cap Trader identity | Professional short seller, not generic analyst | Primary strategy is shorting small caps with dilutionary agendas; agent voice must match |
-| Phase 0 | Pre-implementation human action checklist | Docker, Discord, env vars, LLM keys must exist before any code is written |
-| Long Term Investor | Removed entirely (was deferred in R2) | 3-agent lineup is final — no need to maintain placeholder |
-| Trade example format | Manual annotation with JSON template | 57 screenshots have no structured data; manual review ensures quality over automated extraction |
-| Trade example storage | `agent_memory_v2` rows with `category = 'pattern'` | Plugs directly into existing blueprint steps that read memory |
-| Build phases | 7 → 8 (Phase 0 added) | Prevents "Phase 1 fails because Docker isn't installed" scenarios |
 
 ---
 
@@ -2618,6 +2612,34 @@ The Layer 2 prompt for the Small Cap Trader must include these sections:
 **Output tone rules:** Write in present tense. Be direct. Lead with the verdict: "Short candidate" or "No short thesis here." Follow with evidence. Use the filing IDs provided. Do not speculate on prices or execution details. Do not hedge with "you might consider" or "it could potentially."
 
 **Limitations:** You only have filing data and price/volume data. You do not have Level 2 order book data, dark pool data, or borrow availability. State these limitations only if they are relevant to a specific question asked. Do not preface every response with caveats.
+
+#### `orchestrator.md` Content Spec
+
+**Identity block:** You are the Nexus Terminal Orchestrator. You coordinate a team of specialist trading agents. Your primary jobs are: (1) route user requests to the right specialist or handle them directly, (2) synthesize cross-agent context, (3) produce daily macro briefings.
+
+**Routing context:** You have access to agent registry status. When a specialist is offline, you handle the request in fallback mode and note the limitation. You never fabricate specialist-grade analysis in fallback mode — you provide what you can from available data and flag the gap.
+
+**Cross-agent synthesis rules:** When user asks about a topic that spans multiple agents (e.g., "Is BMNR a better short or swing trade?"), provide high-level context from both domains using available memory, but do not attempt specialist-grade analysis. Note which specialist could provide deeper analysis.
+
+**Macro analysis framework:** For daily briefings, focus on market-moving headlines, index levels, sector rotation, and key economic data. Lead with "what changed since yesterday" framing.
+
+**Output tone rules:** Be direct and concise. Lead with the answer. Use bullet points for multi-item responses. Do not hedge with vague language.
+
+**Limitations:** You are not a specialist. When asked for deep dilution analysis or MDR pattern recognition, route to the appropriate specialist rather than attempting it yourself.
+
+#### `swing-trader.md` Content Spec
+
+**Identity block:** You are a momentum and pattern recognition specialist focused on multi-day runners (MDR) and parabolic setups. You identify stocks going parabolic over 2-10 days and extract LONG entry strategies from momentum patterns.
+
+**MDR pattern recognition framework:** Define what qualifies as an MDR: multi-day gain >= 50% over 3-5 days, increasing volume profile, price above key EMAs. Explain the lifecycle: ignition day, continuation days, exhaustion signals.
+
+**Momentum analysis rules:** RSI > 70 and rising is bullish (not overbought) in momentum context. Volume surge > 3x average confirms institutional/retail interest. Price above both EMA(9) and EMA(21) is the basic trend filter.
+
+**Historical pattern comparison:** When analyzing a new candidate, always compare against your pattern database. Score similarity 0-100 and explain which historical patterns match and why.
+
+**Output tone rules:** Be direct about conviction level. Lead with the MDR score and whether this is actionable. Provide specific levels (entry, stop, targets). Do not hedge with vague language.
+
+**Limitations:** You do not analyze dilution, SEC filings, or short-selling setups. If asked, route to the Small Cap Trader.
 
 ### 22.3 Layer 3: Per-Blueprint-Step Contract Prompt
 
@@ -2693,7 +2715,7 @@ These patterns are explicitly banned in the implementation:
 
 ## 25. AskEdgar Research Prompt Spec
 
-This is the reference prompt for the `small-cap:research` blueprint's `analyze-and-report` LLM step (step 5). It defines the output format for the `#small-cap-research` Discord channel.
+This is the reference prompt for the `small-cap:research` blueprint's `analyze-and-report` LLM step (step 6). It defines the output format for the `#small-cap-research` Discord channel.
 
 **This prompt is used as the Layer 3 (per-step contract) prompt for the `analyze-and-report` step.** The preceding code steps provide all the "pre-analyzed data" referenced in the prompt.
 
@@ -2960,7 +2982,7 @@ This is part of the canonical V1 blueprint, not a later enhancement.
 
 ```
 scripts/generate-trade-template.ts      -- one-time template generator (Phase 0)
-scripts/seed-trade-examples.ts          -- idempotent seeder (Phase 3, after Step 24)
+scripts/seed-trade-examples.ts          -- idempotent seeder (Phase 3, after Step 29)
 scripts/trade-screenshots/              -- gitignored directory for reference images
 scripts/trade-examples-template.json    -- gitignored, auto-generated blank template
 scripts/trade-examples-reviewed.json    -- gitignored, human-annotated final version
@@ -2973,163 +2995,12 @@ scripts/trade-examples-reviewed.json    -- gitignored, human-annotated final ver
 
 ---
 
-## REVISION 5 — Sprint Readiness Fixes (2026-03-28)
+## Revision History
 
-> This revision addressed the first-wave consistency pass from `AEV2_REVISIONS.md`, including migration numbering, durable queue semantics, idempotency, scheduled-run tables, market-status gating, frontend migration scope, shared-type extraction, broader API contracts, routing entry semantics, service-route separation, offline specialist fallback behavior, blueprint consistency, provider-root URL conventions, and launch-readiness runbooks.
+This spec underwent six revision passes (R1-R6). All revision content has been consolidated into the main body sections above.
 
-### R5.1 Historical Backfill Mappings (exact column maps)
-
-#### `jarvis_conversations` → `agent_conversations`
-
-| Source column | Target column | Mapping |
-|---------------|---------------|---------|
-| `id` | `id` | Copy as-is |
-| `user_id` | `user_id` | Copy as-is |
-| (none) | `agent_id` | Hard-code `'orchestrator'` |
-| `session_id` | `session_id` | Copy as-is |
-| `role` | `role` | Copy as-is |
-| `content` | `content` | Copy as-is |
-| `mode` | `channel` | Map: any value → `'web'` (all historical Jarvis conversations were web-based) |
-| `context_snapshot` | `context_snapshot` | Copy as-is |
-| `created_at` | `created_at` | Copy as-is |
-
-#### `jarvis_request_log` → `agent_request_log`
-
-| Source column | Target column | Mapping |
-|---------------|---------------|---------|
-| `id` | `id` | Copy as-is |
-| `user_id` | `user_id` | Copy as-is |
-| (none) | `agent_id` | Hard-code `'orchestrator'` |
-| `mode` | `mode` | Copy as-is |
-| (none) | `lane` | Hard-code `'background'` (historical Jarvis had no lane concept) |
-| (none) | `model_used` | `NULL` (unknown for historical rows) |
-| `input_tokens` | `input_tokens` | Copy as-is |
-| `output_tokens` | `output_tokens` | Copy as-is |
-| `total_tokens` | `total_tokens` | Copy as-is |
-| (none) | `estimated_cost_cents` | Hard-code `0` (not tracked historically) |
-| `duration_ms` | `duration_ms` | Copy as-is |
-| `success` | `success` | Copy as-is |
-| `source_count` | `source_count` | Copy as-is |
-| `chunk_count` | `chunk_count` | Copy as-is |
-| `created_at` | `created_at` | Copy as-is |
-
-#### `agent_memory` → `agent_memory_v2` backfill
-
-Copy legacy `agent_memory` rows into `agent_memory_v2` with:
-
-| Source column | Target column | Mapping |
-|---------------|---------------|---------|
-| `id` | `id` | Copy as-is |
-| `user_id` | `user_id` | Copy as-is |
-| (none) | `agent_id` | Hard-code `'orchestrator'` |
-| `category` | `category` | Copy as-is |
-| `key` | `key` | Copy as-is |
-| `value` | `value` | Copy as-is |
-| `value_json` | `value_json` | Copy as-is |
-| (none) | `source` | `NULL` unless a safe legacy source can be inferred |
-| (none) | `confidence` | `NULL` |
-| `created_at` | `created_at` | Copy as-is |
-| `updated_at` | `updated_at` | Copy as-is |
-| `expires_at` | `expires_at` | Copy as-is |
-
-### R5.2 Decisions
-
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Migration numbering | 0017 / 0018 (was 0011 / 0012) | Repo already has migrations through 0016 |
-| agent_memory cutover | Use new `agent_memory_v2`; keep legacy `agent_memory` until cleanup | Eliminates maintenance window and avoids in-place constraint swaps |
-| Multi-agent fanout | Deferred to V2 — V1 routes to exactly one agent per request | Routing returns single `AgentId`, no parent/child job semantics needed |
-| Discord user mapping | Hardcoded mapping in V1 — `discord_user_links` table deferred to V2 | Only 2-3 users in V1; config object in bot code is simpler than a new table |
-| Report publish ownership | Specialists publish directly — Orchestrator only publishes its own outputs | Single publisher per report eliminates delivery status ambiguity |
-| Rate limiting | DB-backed (queries `agent_request_log`), not in-memory | Matches existing Jarvis pattern, safe for Vercel stateless routes |
-| Circuit breaker state | DB-backed (stored in `agent_registry.config` JSONB) | Allows admin stats endpoint on Vercel to observe real breaker state |
-| Report redelivery | Manual via `POST /api/agents/admin/redeliver` in V1 | Re-POSTs stored `report_json` to webhook; automated retry deferred to V2 |
-| In-app report viewer | Deferred to V2 — reports are Discord-first | `GET /api/agents/reports` provides API access for debugging |
-| tsx dependency | Installed in Dockerfile (`npm install tsx`), not in package.json | Only needed by Docker agent runtime, not the Next.js app on Vercel |
-| Docker Compose | Keep discord-bot, add 3 agent services, remove redis | Discord bot needed for bidirectional #orchestrator chat; redis unused by agent system |
-
-### R5.3 DB-Level Checks for Text State Fields
-
-Add CHECK constraints in migration 0017:
-
-```sql
--- agent_registry
-ALTER TABLE agent_registry ADD CONSTRAINT chk_registry_status
-  CHECK (status IN ('online', 'offline', 'degraded'));
-
--- agent_jobs
-ALTER TABLE agent_jobs ADD CONSTRAINT chk_jobs_status
-  CHECK (status IN ('queued', 'processing', 'completed', 'failed'));
-
--- agent_reports
-ALTER TABLE agent_reports ADD CONSTRAINT chk_reports_status
-  CHECK (status IN ('published', 'delivery_failed', 'archived'));
-ALTER TABLE agent_reports ADD CONSTRAINT chk_reports_channel
-  CHECK (delivery_channel IN ('discord', 'web'));
-
--- agent_conversations
-ALTER TABLE agent_conversations ADD CONSTRAINT chk_conversations_role
-  CHECK (role IN ('user', 'assistant', 'system'));
-ALTER TABLE agent_conversations ADD CONSTRAINT chk_conversations_channel
-  CHECK (channel IN ('web', 'discord', 'api'));
-
--- agent_request_log
-ALTER TABLE agent_request_log ADD CONSTRAINT chk_request_log_lane
-  CHECK (lane IN ('interactive', 'background'));
-
--- agent_scheduled_runs
-ALTER TABLE agent_scheduled_runs ADD CONSTRAINT chk_scheduled_status
-  CHECK (status IN ('pending', 'running', 'completed', 'failed', 'skipped'));
-```
-
-Prevents silent invalid values from breaking routing or reporting.
-
-### R5.4 Discord Bot Auth Contract
-
-The Discord bot calls Next.js API routes to create jobs and poll results. It authenticates using a service key pattern:
-
-```
-Header: x-agent-service-key: <AGENT_SERVICE_KEY>
-```
-
-A new helper `requireServiceAuth()` in `lib/agents/admin.ts` validates this key. It returns a synthetic user context based on the Discord user mapping (hardcoded in V1).
-
-**Why this can't reuse `requireUser()`:** The bot is not a browser with a NextAuth session. It needs a simpler auth path. Using the same `x-agent-admin-key` as admin routes would conflate "admin" with "service caller." A separate key keeps the concerns clean.
-
-**New env var:** `AGENT_SERVICE_KEY` — shared between Docker bot service and Vercel app.
-
-### R5.5 step_log JSONB Bloat Guidance
-
-The `step_log` JSONB on `agent_jobs` should contain **metadata only**, not raw payloads:
-
-```typescript
-// Good — small, fixed-size per step
-{ step: 'fetch-filings', status: 'completed', durationMs: 2340, tokensUsed: 0, attempt: 1 }
-
-// Bad — unbounded raw data
-{ step: 'fetch-filings', status: 'completed', data: { /* 50KB of filing JSON */ } }
-```
-
-Raw step artifacts (API responses, filing documents, LLM full responses) should be stored in `StepResult.artifacts` during execution but **not persisted to step_log**. If an audit trail is needed for raw data, log it to the container's JSON log file.
-
-### R5.6 Delivery Recovery
-
-For `delivery_failed` reports in V1:
-
-1. **Detection:** `#agent-system` webhook receives an alert when delivery fails (already specified).
-2. **Diagnosis:** Check `agent_reports.delivery_error` for the failure reason.
-3. **Manual retry:** `POST /api/agents/admin/redeliver` with `{ report_id }`. Reads stored `report_json` from `agent_reports`, re-POSTs to the webhook, updates `status` to `'published'` or keeps `'delivery_failed'`.
-4. **Automated retry:** Deferred to V2.
-
-### R5.7 Updated Counts Summary
-
-| Category | Count | Notes |
-|----------|-------|-------|
-| New tables (migration 0017) | 9 | `agent_registry`, `agent_jobs`, `agent_reports`, `agent_conversations`, `agent_request_log`, `agent_scheduled_runs`, `agent_step_effects`, `agent_memory_v2`, `agent_job_checkpoints` |
-| Modified tables | 0 | Legacy `agent_memory` stays untouched during rollout |
-| Files to CREATE | 45 | Includes `service/chat`, `admin/redeliver`, and minimal Discord bot runtime files |
-| Files to MODIFY | 7 | +4 from R4 (`app/page.tsx`, `CommandPalette.tsx`, `use-global-shortcuts.ts`, `MarketsTab.tsx`) |
-| lib/agents/ files | 19 | Unchanged count — descriptions updated for rate-limit.ts and circuit-breaker.ts |
-| Build phases | 8 | Phase 0-7 — unchanged structure, updated step details |
-| DB connections (steady state) | 4-7 | +1 for Discord bot |
-| New env vars | 1 | `AGENT_SERVICE_KEY` (bot-to-app auth) |
+- **R1 (2026-03-22):** OS/server decision, Discord-first architecture, stale job reaper, blueprint engine fixes, deployment procedure, routing rules.
+- **R2 (2026-03-26):** Agent lineup swap (Swing Trader replaces Long Term Investor), AskEdgar caching, three-layer prompt architecture.
+- **R4 (2026-03-28):** Short-selling specialist identity, Phase 0 checklist, trade example seed strategy.
+- **R5 (2026-03-28):** Backfill mappings, CHECK constraints, service auth contract, delivery recovery, step_log guidance.
+- **R6 (2026-03-28):** Consolidation pass — resolved 10 blockers, merged all revision content into main body, added per-phase DoD, reconciled routing rules, added deprecated route table, specified Discord bot runtime.
