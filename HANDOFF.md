@@ -13,6 +13,27 @@ Historical completed sections removed — use git history and `specs/` for archi
 - [x] Refresh `AEV2_REVISIONS.md` with sprint-board blockers, launch blockers, and locked routing/service-route decisions from the latest review
 - [x] Convert `AEV2_REVISIONS.md` from redline checklist into a literal section-by-section patch plan for the next spec pass
 - [x] **Execute R6 consolidation pass on AGENTIC_EXPANSIONV2.md** (this handoff)
+- [x] Draft a tight pre-sprint blocker patch checklist in `HANDOFF.md` from the latest AGENTIC_EXPANSIONV2 review
+- [x] Expand the blocker checklist into an exact section-by-section patch plan with replacement targets
+- [x] Execute the pre-sprint blocker patch plan on `AGENTIC_EXPANSIONV2.md`
+
+---
+
+## Pre-Sprint Section-by-Section Patch Plan — AGENTIC_EXPANSIONV2.md
+
+> Generated: 2026-03-29 | Status: COMPLETE
+
+### Summary
+
+- Applied the pre-sprint blocker patch pass to `AGENTIC_EXPANSIONV2.md` only.
+- Locked V1 chat/service contracts around `/api/agents/service/chat`, moved Discord identity resolution to `requireServiceAuth()` with `discord_user_id`, and clarified autonomous ownership via `system-agent-user`.
+- Made the Orchestrator the sole scheduler/enqueuer, defined report-write vs delivery idempotency ordering, and converted Section 16 ops blockers into concrete deliverables/artifacts with Phase 17/19 env-template updates.
+
+### Validation
+
+- `npm run lint` ✅
+- `npx tsc --noEmit` ✅
+- `npm test` ✅
 
 ---
 

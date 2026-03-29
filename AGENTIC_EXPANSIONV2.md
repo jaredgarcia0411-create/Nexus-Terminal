@@ -6,7 +6,7 @@
 
 ## 1. Executive Summary
 
-This document specifies a multi-agent system for Nexus Terminal consisting of three runtime components: an **Orchestrator** (with built-in research routing pipeline and macro cron), a **Small Cap Trader (Short-Selling Specialist)** agent, and a **Swing Trader** agent. In V1, all user chat enters through `POST /api/agents/chat`, which always creates exactly one `orchestrator` `chat` job first. The Orchestrator then decides whether to handle the request directly or use specialist workflows according to deterministic routing rules. Multi-agent fanout for a single request is deferred to V2.
+This document specifies a multi-agent system for Nexus Terminal consisting of three runtime components: an **Orchestrator** (with built-in research routing pipeline and macro cron), a **Small Cap Trader (Short-Selling Specialist)** agent, and a **Swing Trader** agent. In V1, all agent chat enters through `POST /api/agents/service/chat`, which always creates exactly one `orchestrator` `chat` job first. The Orchestrator then decides whether to handle the request directly or use specialist workflows according to deterministic routing rules. Multi-agent fanout for a single request is deferred to V2.
 
 Agents run as Docker Compose services on a home server (16GB RAM laptop). They communicate via a Postgres-backed job queue (Neon Launch plan). The LLM provider is configurable via two deterministic lanes: INTERACTIVE_LLM (Orchestrator chat — optimized for speed) and BACKGROUND_LLM (specialist agent scans — optimized for cost/quality). Both use OpenAI-compatible endpoints. Testing uses Groq free tier with `llama-3.3-70b-versatile`. Production defaults to NVIDIA API during initial rollout, with the background lane allowed to switch to DeepSeek later without changing the lane contract. Market data comes from Massive API (Polygon-compatible, unlimited rate limit on stock starter kit). Ticker research comes from AskEdgar API.
 
@@ -123,6 +123,8 @@ agent_jobs
     └── idx_agent_jobs_stale ON (status, lock_expires_at) WHERE status = 'processing'
 ```
 
+**Autonomous ownership rule:** `job_type IN ('macro-summary', 'pre-market-scan', 'momentum-scan', 'pattern-check')` always uses a single system-owned user row, `system-agent-user`, in `users.id`. V1 does not use `NULL` for autonomous jobs.
+
 **Poll query (FOR UPDATE SKIP LOCKED):**
 
 ```sql
@@ -172,6 +174,8 @@ agent_reports
     ├── idx_agent_reports_agent ON (agent_id, created_at DESC)
     └── idx_agent_reports_job ON (job_id) WHERE job_id IS NOT NULL
 ```
+
+**Autonomous ownership rule:** Reports generated from autonomous jobs inherit the same `system-agent-user` value in `user_id`. User-triggered chat/research reports continue using the requesting user's ID.
 
 ### 3.4 `agent_conversations` — Chat history (replaces `jarvis_conversations`)
 
@@ -258,7 +262,7 @@ agent_scheduled_runs
     └── INDEX idx_scheduled_runs_status ON (agent_id, status, trading_date)
 ```
 
-**Claim semantics:** Scheduled runs are deduped by `UNIQUE(agent_id, trigger_type, trading_date)`. The scheduler must first attempt `INSERT ... ON CONFLICT DO NOTHING`. Only the insert winner is allowed to create the corresponding `agent_jobs` row. This table is both observability and the atomic dedupe/claim mechanism. Manual replay is supported by supplying a specific `trading_date` and repeating the same insert-first claim flow.
+**Claim semantics:** Scheduled runs are deduped by `UNIQUE(agent_id, trigger_type, trading_date)`. In V1, the Orchestrator scheduler is the only runtime allowed to claim `agent_scheduled_runs` rows and enqueue autonomous jobs. It must first attempt `INSERT ... ON CONFLICT DO NOTHING`. Only the insert winner is allowed to create the corresponding `agent_jobs` row. This table is both observability and the atomic dedupe/claim mechanism. Manual replay is supported by supplying a specific `trading_date` and repeating the same insert-first claim flow.
 
 ### 3.8 `agent_step_effects` — Durable idempotency for side effects
 
@@ -274,7 +278,7 @@ agent_step_effects
     └── UNIQUE(idempotency_key)
 ```
 
-**Purpose:** `agent_step_effects` dedupes DB-side effects and delivery attempts, but does not make external webhook POSTs transactionally atomic. Discord/webhook publishing uses the report delivery state model in Section 12.
+**Purpose:** `agent_step_effects` dedupes DB-side effects and delivery attempts, but does not make external webhook POSTs transactionally atomic. In V1, report persistence and Discord delivery must use separate idempotency keys (for example, `report-write-{job_id}-{step_name}` and `discord-post-{report_id}`) so retries cannot create duplicate `agent_reports` rows or duplicate successful webhook posts. Discord/webhook publishing uses the report delivery state model in Section 12.
 
 ### 3.9 `agent_job_checkpoints` — Resume payload store
 
@@ -581,7 +585,7 @@ If the target specialist is `offline` or `degraded`, the Orchestrator does not d
 
 **Runtime:** Long-running Node.js process in Docker Compose (512M memory limit).
 **Poll interval:** 5 seconds on `agent_jobs` where `agent_id = 'small-cap-trader'`.
-**Autonomous trigger:** Pre-market scan at 7:00 AM EST. Checks Massive API for stocks matching: close >= $0.75, pre-market gain >= 50%, market cap < $200M.
+**Autonomous trigger:** The Orchestrator scheduler creates the `pre-market-scan` job at 7:00 AM ET. The Small Cap Trader does not self-schedule; it polls for the queued job and then checks Massive API for stocks matching: close >= $0.75, pre-market gain >= 50%, market cap < $200M.
 
 **Core identity:** This agent is a professional short seller and research analyst specializing in small-cap dilution plays. Its primary job is to answer two questions about every stock it touches:
 
@@ -622,8 +626,9 @@ These two questions, answered with evidence from SEC filings, drive every analys
 **Runtime:** Long-running Node.js process in Docker Compose (512M memory limit).
 **Poll interval:** 5 seconds on `agent_jobs` where `agent_id = 'swing-trader'`.
 **Autonomous triggers:**
-- Daily momentum scan at 7:30 AM EST (30 min after Small Cap's pre-market scan)
-- Daily pattern check at 4:30 PM EST (after market close)
+- The Orchestrator scheduler creates the daily `momentum-scan` job at 7:30 AM ET (30 min after Small Cap's pre-market scan)
+- The Orchestrator scheduler creates the daily `pattern-check` job at 4:30 PM ET (after market close)
+- The Swing Trader does not self-schedule; it polls for these queued jobs and executes them
 
 **Primary focus:** Trending companies, multi-day runners (MDR), parabolic setups. Identifies stocks going parabolic over multiple days and extracts LONG entry strategies from momentum/parabolic patterns.
 
@@ -741,6 +746,7 @@ The worker's `runBlueprint()` function replaces the old monolithic `JobHandler`.
 6. Persists step-level progress metadata to `step_log` JSONB after each step
 7. Persists successful normalized accumulated output needed for resume to `agent_job_checkpoints`
 8. Retries resume from the latest completed checkpoint
+9. Side-effecting steps must call a shared publish helper that implements the Section 12 idempotency/delivery ordering; they must not inline ad hoc report-write + webhook logic.
 
 ```typescript
 async function runBlueprint(
@@ -824,6 +830,8 @@ async function runBlueprint(
 
 `step_log` stores step metadata only. Checkpoints contain normalized accumulated output only — never raw API payloads or large artifacts.
 
+For side-effecting steps, retry/resume must reuse the same idempotency keys so a retried blueprint cannot create duplicate `agent_reports` rows or duplicate successful Discord posts.
+
 ### Massive API Endpoints (Polygon-Compatible)
 
 | Operation | Endpoint | Used By |
@@ -903,7 +911,7 @@ The Orchestrator uses a narrow V1 chat blueprint: every standard chat request st
 
 | # | Step | Type | What it does |
 |---|------|------|-------------|
-| 1 | `classify-and-route` | `code` | Parses the user message, applies the canonical routing decision tree (Section 6.1), checks specialist availability via `agent_registry`. Chooses one of three paths: **(A) Direct Orchestrator handling** — proceeds to step 2. **(B) Specialist handoff** — creates a new `agent_jobs` row for the target specialist with the appropriate `job_type`, and the Orchestrator job completes immediately with `{ routed: true, specialistJobId }`. The API response returns the specialist's `job_id` for the client to poll via the same `GET /api/agents/chat?job_id=...` endpoint. **(C) Orchestrator fallback** — when the specialist is unavailable (`offline`/`degraded`), emits warning/log/alert metadata and proceeds to step 2. The Orchestrator routes but does not aggregate specialist results in V1. |
+| 1 | `classify-and-route` | `code` | Parses the user message, applies the canonical routing decision tree (Section 6.1), checks specialist availability via `agent_registry`. Chooses one of three paths: **(A) Direct Orchestrator handling** — proceeds to step 2. **(B) Specialist handoff** — creates a new `agent_jobs` row for the target specialist with the appropriate `job_type`, and the Orchestrator job completes immediately with `{ routed: true, specialistJobId }`. The API response returns the specialist's `job_id` for the Discord bot to poll via `GET /api/agents/service/chat?job_id=...`. **(C) Orchestrator fallback** — when the specialist is unavailable (`offline`/`degraded`), emits warning/log/alert metadata and proceeds to step 2. The Orchestrator routes but does not aggregate specialist results in V1. |
 | 2 | `synthesize-response` | `llm` | Reached when the Orchestrator itself needs to answer the request. Receives the user message + context and returns the final chat response. |
 
 **Step Data Accumulation Convention:** Every blueprint step receives `previousOutput` from the prior step. Convention: each step must spread previous output into its return value (accumulator pattern). Example: step 1 returns `{ candidates: [...] }`, step 2 returns `{ ...previousOutput, filings: [...] }`, and so on. The final step receives the complete accumulated payload. This pattern is enforced by `runBlueprint()` in `blueprint-runner.ts`.
@@ -952,7 +960,7 @@ At startup, each agent service:
 1. Writes/updates its row in `agent_registry` (status → `'online'`, heartbeat → `now()`)
 2. Begins its poll loop (`worker.ts`)
 3. Starts a 30-second heartbeat interval (`heartbeat.ts`)
-4. If Orchestrator, also starts the macro cron (`macro-cron.ts`)
+4. If Orchestrator, also starts the scheduler/cron loop (`macro-cron.ts`) that claims `agent_scheduled_runs` rows and enqueues all autonomous jobs in V1
 
 The Orchestrator checks `agent_registry` heartbeats before routing jobs. If an agent has not heartbeated in 3× its heartbeat interval (90 seconds), the Orchestrator marks it `status = 'degraded'` and stops routing new work to it.
 
@@ -1306,14 +1314,16 @@ V1 does **not** ship an `AgentStats.tsx` UI. Cost/performance tracking comes fro
 
 ### Flow
 
-1. Write the validated payload to `agent_reports`
-2. Attempt webhook delivery to the target channel (`#small-cap-scans`, `#small-cap-research`, `#swing-setups`, `#swing-alerts`, or `#macro-daily`)
-3. On success, set `status = 'published'` and `delivered_at = now()`
-4. On failure, set `status = 'delivery_failed'` and `delivery_error`
-5. Delivery failures trigger a system alert in `#agent-system`
-6. Manual redelivery reads stored `report_json` by `report_id` and retries the publish path
+1. Check for the report-write idempotency marker for the current job/step.
+2. If the marker does not exist, write or upsert the validated payload into `agent_reports`.
+3. Commit the DB transaction for the report write before any external webhook call.
+4. Check for the delivery-attempt idempotency marker for that report.
+5. If a successful delivery marker does not already exist, attempt webhook delivery to the target channel (`#small-cap-scans`, `#small-cap-research`, `#swing-setups`, `#swing-alerts`, or `#macro-daily`).
+6. On success, set `status = 'published'`, set `delivered_at = now()`, and persist the successful delivery marker.
+7. On failure, set `status = 'delivery_failed'`, store `delivery_error`, and trigger a system alert in `#agent-system`.
+8. Manual redelivery reads stored `report_json` by `report_id` and retries only the delivery portion of the publish path.
 
-`agent_step_effects` supports dedupe markers for report writes and delivery attempts, but it cannot make external Discord posting atomic.
+`agent_step_effects` supports separate dedupe markers for report writes and delivery attempts, but it cannot make external Discord posting atomic. The required V1 ordering is: persist report first, then attempt delivery, then persist final delivery state.
 
 ### Status Transitions
 
@@ -1382,7 +1392,7 @@ All routes under `/api/jarvis/*` are replaced by `/api/agents/*`.
 
 | Route | Method | Purpose |
 |-------|--------|---------|
-| `/api/agents/service/chat` | POST | Discord-bot/service entrypoint. Creates the same `orchestrator` `chat` job shape as the user chat route. |
+| `/api/agents/service/chat` | POST | Canonical V1 Discord-bot/service chat entrypoint. Creates one `orchestrator` `chat` job. |
 | `/api/agents/service/chat` | GET | Discord-bot/service polling endpoint for chat jobs. |
 | `/api/agents/reports` | GET | List report history `?status=published|delivery_failed|archived` |
 | `/api/agents/reports/[id]` | GET | Get single report |
@@ -1415,7 +1425,7 @@ x-agent-service-key: <AGENT_SERVICE_KEY>
 {
   "message": "Research BMNR",
   "session_id": "optional-session-id",
-  "user_id": "resolved-nexus-user-id",
+  "discord_user_id": "discord-user-id-1",
   "channel": "discord"
 }
 ```
@@ -1430,7 +1440,7 @@ x-agent-service-key: <AGENT_SERVICE_KEY>
 }
 ```
 
-This route creates the same Orchestrator chat job shape as `POST /api/agents/chat`, but it uses service auth instead of browser session auth.
+This route is the canonical V1 chat entrypoint. It creates one Orchestrator chat job using service auth; there is no user-facing `/api/agents/chat` route in V1.
 
 #### `GET /api/agents/service/chat?job_id=...`
 
@@ -1649,6 +1659,8 @@ All user-facing read routes must scope queries by the authenticated `user_id`:
 - `GET /api/agents/reports` — filter by `user_id`
 - `GET /api/agents/reports/[id]` — verify `agent_reports.user_id = authenticated user`
 
+System-owned autonomous reports (`user_id = 'system-agent-user'`) are excluded from user-facing report history routes in V1 unless a future UI explicitly adds a separate system-report view.
+
 Admin routes (`/api/agents/admin/*`) use `requireAgentAdmin()` instead.
 
 ### Canonical V1 Job Taxonomy
@@ -1673,7 +1685,7 @@ Swing on-demand analysis uses `job_type = 'research'` with `agent_id = 'swing-tr
 - Input validation via Zod schemas with `parseAndValidate()` where applicable
 - Standard error responses: `{ error: string }` with appropriate HTTP status codes
 
-**`requireServiceAuth()` return type:** Returns `{ user: { id: string, email: string, name: string, picture: string | null } }` — the same shape as `requireUser()`. The user is resolved from a hardcoded Discord-to-Nexus user mapping object in `lib/agents/admin.ts`. If the service key is invalid, returns 401. If the Discord user ID cannot be mapped to a Nexus user, returns 403 with `{ error: 'Unknown Discord user' }`.
+**`requireServiceAuth()` return type:** Returns `{ user: { id: string, email: string, name: string, picture: string | null } }` — the same shape as `requireUser()`. It validates `x-agent-service-key`, reads `discord_user_id` from the service request body, resolves the Nexus user from the hardcoded Discord-to-Nexus mapping in `lib/agents/admin.ts`, and returns the mapped Nexus user. If the service key is invalid, returns 401. If `discord_user_id` is missing, returns 400 with `{ error: 'discord_user_id is required' }`. If the Discord user ID cannot be mapped to a Nexus user, returns 403 with `{ error: 'Unknown Discord user' }`.
 
 Service auth is limited to `/api/agents/service/*` routes only. Admin routes remain admin-key protected. The Discord bot must not use admin routes.
 
@@ -1967,39 +1979,32 @@ These items are launch blockers for V1 even if the implementation is functionall
 
 ### Backup and Restore Before Migration 0017
 
-- Take a Neon backup/snapshot/export before running migration 0017.
-- Document the restore procedure.
-- Do not call the system launch-ready without a tested restore path.
+- Deliverable: `docs/ops/agents-backup-restore.md`
+- Owner: implementation pass for Phase 2 pre-flight
+- Pass condition: document the exact Neon backup/export step, the exact restore step, and record one tested restore verification before migration 0017 is treated as launch-ready
 
 ### Rollback Procedure
 
-- Document app code rollback.
-- Document Docker service rollback.
-- Document migration 0017 partial-failure recovery.
-- Document migration 0018 rollback caution separately because destructive cleanup is not equivalent to additive rollout.
+- Deliverable: `docs/ops/agents-rollback.md`
+- Owner: implementation pass for Phase 5
+- Pass condition: includes step-by-step app rollback, Docker service rollback, migration 0017 partial-failure recovery, and a separate migration 0018 rollback caution section for destructive cleanup
 
 ### Home-Server Recovery Checklist
 
-- Verify laptop reboot recovery.
-- Verify WSL startup.
-- Verify Docker daemon startup.
-- Verify `docker compose` restart behavior.
-- Define expected recovery steps after ISP outage or power loss.
+- Deliverable: `docs/ops/home-server-recovery.md`
+- Owner: implementation pass for Phase 5
+- Pass condition: documents reboot recovery, WSL startup, Docker daemon startup, `docker compose` restart behavior, and the exact recovery sequence after ISP outage or power loss
 
 ### Minimum Observability
 
-- queue depth
-- oldest queued job age
-- jobs stuck in `processing`
-- missed scheduled runs
-- delivery failure count
-- agent heartbeat freshness
-- container restart loops
+- Deliverable: `scripts/ops/agent-observability.sql` plus any required admin endpoint fields in `/api/agents/admin/stats`
+- Owner: implementation pass for Phase 5
+- Pass condition: reviewer can query or inspect queue depth, oldest queued job age, jobs stuck in `processing`, missed scheduled runs, delivery failure count, agent heartbeat freshness, and container restart loops without ad hoc investigation
 
 ### Deploy Smoke Checklist
 
-- web chat end-to-end
-- Discord bot end-to-end
+- Discord `#orchestrator` chat end-to-end
+- Discord bot service → `/api/agents/service/chat` → poll → reply end-to-end
 - report delivery webhook path
 - macro-summary latest route
 - admin stats route
@@ -2014,14 +2019,14 @@ These items are launch blockers for V1 even if the implementation is functionall
 
 ### Phase Assignment
 
-| Item | Phase | Notes |
-|------|-------|-------|
-| Neon backup before migration 0017 | Phase 2 pre-flight | Must complete before `npm run db:migrate` |
-| Rollback procedure documentation | Phase 5 | Before Docker deploy |
-| Home-server recovery checklist | Phase 5 | Verify after first `docker compose up` |
-| Minimum observability (query scripts) | Phase 5 | SQL queries; no UI needed |
-| Deploy smoke checklist | Phase 5 gate | All items must pass before Phase 6 |
-| Config and secret validation | Phase 0 + Phase 5 | Initial check in Phase 0; re-verify in Phase 5 |
+| Item | Phase | Artifact / Gate |
+|------|-------|-----------------|
+| Neon backup before migration 0017 | Phase 2 pre-flight | `docs/ops/agents-backup-restore.md` completed before `npm run db:migrate` |
+| Rollback procedure documentation | Phase 5 | `docs/ops/agents-rollback.md` completed before Docker deploy |
+| Home-server recovery checklist | Phase 5 | `docs/ops/home-server-recovery.md` verified after first `docker compose up` |
+| Minimum observability | Phase 5 | `scripts/ops/agent-observability.sql` + admin stats coverage |
+| Deploy smoke checklist | Phase 5 gate | All smoke items pass before Phase 6 |
+| Config and secret validation | Phase 0 + Phase 5 | Initial validation in Phase 0; re-verified before launch |
 
 ---
 
@@ -2068,6 +2073,7 @@ All items in this phase are human actions, not code changes. Complete every item
   - All `DISCORD_WEBHOOK_*` URLs from step 0-B
   - `MASSIVE_API_KEY`, `ASKEDGAR_API_KEY`
   - `AGENT_ADMIN_KEY` — generate with `openssl rand -hex 32`
+  - `AGENT_SERVICE_KEY` — generate with `openssl rand -hex 32`
 
 **0-E. Dual-Lane LLM API Keys**
 
@@ -2127,6 +2133,8 @@ All items in this phase are human actions, not code changes. Complete every item
 | 10 | `npm run db:generate` — generate migration 0017 | Step 9 |
 | 11 | `npm run db:migrate` — run migration 0017 | Step 10 |
 
+**Phase 2 note:** before scheduled jobs ship, verify that the `system-agent-user` row already exists in `users` or add an explicit migration/backfill step that creates it.
+
 ### Phase 3: DB Runtime, Queue, Checkpoints, Memory, Worker Internals
 
 **Phase 3 DoD:**
@@ -2180,13 +2188,14 @@ All items in this phase are human actions, not code changes. Complete every item
 - Each agent registers in `agent_registry` with `status = 'online'`
 - Discord bot receives message in `#orchestrator`, creates job, polls, replies
 - All smoke checklist items from Section 16 pass
+- With all services online, each scheduled run creates exactly one autonomous job (no duplicate specialist jobs)
 
 | Step | File | Depends On |
 |------|------|------------|
 | 38 | `services/agent.Dockerfile` | Phase 3 |
 | 39 | `services/agent-entrypoint.ts` | Phase 3 |
 | 40 | `services/docker-compose.yml` (rewrite — keep discord-bot, add 3 agent services, remove redis) | Steps 38-39 |
-| 41 | `services/.env.example` | — |
+| 41 | `services/.env.example` (must include every required service/runtime key from Section 19) | — |
 | 42 | Build minimal V1 Discord bot runtime in `services/discord-bot/` | Phase 4 |
 | 43 | Implement bot message → `/api/agents/service/chat` → poll → reply flow | Step 42 |
 | 44 | Validate service TypeScript explicitly (example: `cd services/discord-bot && npx tsc --noEmit`) | Step 42 |
@@ -2247,7 +2256,7 @@ components/trading/AgentReportQueue.tsx    -- REMOVED (Discord replaces)
 components/trading/AgentStats.tsx          -- DEFERRED to V2
 components/trading/AgentChat.tsx           -- REMOVED (Discord-only in V1; no in-app agent chat)
 components/trading/AgentTab.tsx            -- REMOVED (Discord-only in V1; no in-app agent chat)
-app/api/agents/chat/route.ts               -- REMOVED (user-facing chat route not needed; Discord bot uses service/chat)
+app/api/agents/service/chat/route.ts       -- service-only chat route retained for Discord bot polling/request flow
 ```
 
 ### Files to DELETE (Phase 7) (~22)
@@ -2325,6 +2334,8 @@ Groq and NVIDIA are the default testing/provider roots in this spec. The backgro
 
 `AGENT_SERVICE_KEY` is for Discord bot service calls only. `AGENT_ADMIN_KEY` is for admin routes only.
 
+`services/.env.example` must include, at minimum: `DATABASE_URL`, `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`, every `DISCORD_WEBHOOK_*` variable, `INTERACTIVE_LLM_API_KEY`, `INTERACTIVE_LLM_API_BASE_URL`, `INTERACTIVE_LLM_MODEL`, `BACKGROUND_LLM_API_KEY`, `BACKGROUND_LLM_API_BASE_URL`, `BACKGROUND_LLM_MODEL`, `MASSIVE_API_KEY`, `ASKEDGAR_API_KEY`, `AGENT_ADMIN_KEY`, `AGENT_SERVICE_KEY`, `AGENT_POLL_INTERVAL_MS`, `MACRO_CRON_HOUR`, and `TZ`.
+
 ### Discord Bot
 
 | Variable | Purpose |
@@ -2379,12 +2390,12 @@ Discord is promoted into V1 for the `#orchestrator` channel.
 **Implementation intent:** build a minimal V1 Discord bot runtime in `services/discord-bot/`.
 
 1. The bot listens in `#orchestrator`
-2. The message resolves Discord user → Nexus user via hardcoded mapping (V1) or `discord_user_links` table (V2)
-3. The bot calls `/api/agents/service/chat` using `requireServiceAuth()` semantics and creates the corresponding Orchestrator chat job with `channel = 'discord'`
+2. The bot sends the Discord author ID as `discord_user_id` to `/api/agents/service/chat`
+3. `requireServiceAuth()` validates the service key, resolves Discord user → Nexus user via the hardcoded V1 mapping in `lib/agents/admin.ts`, and creates the corresponding Orchestrator chat job with `channel = 'discord'`
 4. It polls for completion and formats the response as a Discord embed
 5. Specialist reports remain one-way via webhooks; only Orchestrator chat is bidirectional in V1
 
-**Schema note:** `agent_conversations.channel` supports `'discord'` in the new schema. The Discord bot also needs to resolve Discord users to Nexus users. For V1, use the hardcoded mapping in `lib/agents/admin.ts` (same mapping used by `requireServiceAuth()` on the server side) (e.g., `{ 'discord-user-id-1': 'nexus-user-id-1' }`). A `discord_user_links` table is deferred to V2 when more users join.
+**Schema note:** `agent_conversations.channel` supports `'discord'` in the new schema. In V1, the hardcoded Discord-to-Nexus mapping lives in `lib/agents/admin.ts` and is used only on the server side by `requireServiceAuth()`. The bot does not resolve Nexus users itself; it only sends `discord_user_id`. A `discord_user_links` table is deferred to V2 when more users join.
 
 **Prerequisites:** Discord bot service must be running, hardcoded user mapping configured.
 
@@ -2395,12 +2406,12 @@ Discord is promoted into V1 for the `#orchestrator` channel.
 - Package dependencies: `discord.js`, `tsx` (TypeScript execution)
 - `services/discord-bot/package.json` must include `discord.js` and `tsx` as production dependencies
 
-The Discord bot does not call `/api/agents/chat` or `/api/agents/admin/*`; it only uses `/api/agents/service/*`.
+The Discord bot does not call user-facing chat routes or `/api/agents/admin/*`; it only uses `/api/agents/service/*`.
 
 **Acceptance criteria:**
 - receives a message in `#orchestrator`
-- resolves Discord user to Nexus user
-- calls `/api/agents/service/chat` with `requireServiceAuth()`
+- sends `discord_user_id` to `/api/agents/service/chat`
+- relies on `requireServiceAuth()` to resolve the Nexus user server-side
 - polls for completion
 - posts the final response back into Discord
 
