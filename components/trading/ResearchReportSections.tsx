@@ -19,7 +19,8 @@ type TabKey =
   | 'dilution'
   | 'news-filings'
   | 'offerings'
-  | 'history';
+  | 'history'
+  | 'gap-stats';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -139,9 +140,10 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'overview', label: 'Overview' },
   { key: 'offering-ability', label: 'Offering Ability' },
   { key: 'dilution', label: 'Dilution' },
-{ key: 'news-filings', label: 'News & Filings' },
+  { key: 'news-filings', label: 'News & Filings' },
   { key: 'offerings', label: 'Offerings' },
   { key: 'history', label: 'History' },
+  { key: 'gap-stats', label: 'Gap Stats' },
 ];
 
 export default function ResearchReportSections({ ticker, rawData }: Props) {
@@ -161,6 +163,8 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
     const reverseSplits = endpoint(rawData, ['reverse-splits', 'reverseSplits']);
     const agreements = endpoint(rawData, ['agreements']);
     const equityLines = endpoint(rawData, ['equity-lines', 'equityLines']);
+    const gapStats = endpoint(rawData, ['gap-stats', 'gapStats']);
+    const ownership = endpoint(rawData, ['ownership']);
 
     return {
       screener,
@@ -176,6 +180,8 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
       reverseSplits,
       agreements,
       equityLines,
+      gapStats,
+      ownership,
     };
   }, [rawData]);
 
@@ -317,6 +323,55 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                 </div>
               );
             })()}
+
+            {/* Ownership — insiders, directors, large investors */}
+            {hasData(data.ownership) ? (
+              <div className="pt-5">
+                <h4 className="mb-2 text-lg font-semibold text-zinc-200">Ownership</h4>
+                {data.ownership.results.map((group, groupIndex) => {
+                  const groupRecord = toRecord(group);
+                  const reportedDate = getField(groupRecord, ['reported_date', 'reportedDate']);
+                  const owners = Array.isArray(groupRecord.owners) ? groupRecord.owners : [];
+                  if (owners.length === 0) return null;
+                  return (
+                    <div key={groupIndex} className="mb-3">
+                      {reportedDate ? (
+                        <p className="mb-1 text-sm text-zinc-500">Reported: {formatDate(reportedDate)}</p>
+                      ) : null}
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full">
+                          <thead>
+                            <tr className="border-b border-white/10 text-zinc-400">
+                              <th className="py-1.5 pr-3 text-left text-sm">Name</th>
+                              <th className="py-1.5 pr-3 text-left text-sm">Role</th>
+                              <th className="py-1.5 pr-3 text-right text-sm">Common</th>
+                              <th className="py-1.5 pr-3 text-right text-sm">Preferred</th>
+                              <th className="py-1.5 pr-3 text-right text-sm">Options</th>
+                              <th className="py-1.5 text-right text-sm">Warrants</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {owners.map((owner, ownerIndex) => {
+                              const o = toRecord(owner);
+                              return (
+                                <tr key={ownerIndex} className="border-b border-white/5">
+                                  <td className="py-1.5 pr-3 text-sm text-zinc-200">{toStringValue(getField(o, ['owner_name', 'ownerName']))}</td>
+                                  <td className="py-1.5 pr-3 text-sm text-zinc-400">{toStringValue(getField(o, ['title', 'owner_type', 'ownerType']))}</td>
+                                  <td className="py-1.5 pr-3 text-right text-sm text-zinc-300">{formatNumber(getField(o, ['common_shares_amount', 'commonSharesAmount']))}</td>
+                                  <td className="py-1.5 pr-3 text-right text-sm text-zinc-300">{formatNumber(getField(o, ['preferred_shares_amount', 'preferredSharesAmount']))}</td>
+                                  <td className="py-1.5 pr-3 text-right text-sm text-zinc-300">{formatNumber(getField(o, ['options_amount', 'optionsAmount']))}</td>
+                                  <td className="py-1.5 text-right text-sm text-zinc-300">{formatNumber(getField(o, ['warrants_amount', 'warrantsAmount']))}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
 
             {/* Market Stats — compact reference row */}
             {hasData(data.screener) ? (
@@ -818,6 +873,74 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
               </div>
             ) : (
               <NoDataBadge endpointData={data.agreements} />
+            )}
+          </div>
+        ) : null}
+
+        {activeTab === 'gap-stats' ? (
+          <div className="space-y-3">
+            {hasData(data.gapStats) ? (
+              <>
+                <p className="text-sm text-zinc-500">
+                  Historical day-1 gap-ups only (excludes multi-day runs). Most recent first.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full">
+                    <thead>
+                      <tr className="border-b border-white/10 text-zinc-400">
+                        <th className="py-2 pr-3 text-left">Date</th>
+                        <th className="py-2 pr-3 text-right">Gap %</th>
+                        <th className="py-2 pr-3 text-right">Open</th>
+                        <th className="py-2 pr-3 text-right">Close</th>
+                        <th className="py-2 pr-3 text-right">High</th>
+                        <th className="py-2 pr-3 text-right">Low</th>
+                        <th className="py-2 pr-3 text-right">VWAP</th>
+                        <th className="py-2 pr-3 text-right">PM High</th>
+                        <th className="py-2 pr-3 text-right">Volume</th>
+                        <th className="py-2 text-left">Tags</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.gapStats.results.map((item, index) => {
+                        const row = toRecord(item);
+                        const gapPct = toNumberValue(getField(row, ['gap_percentage', 'gapPercentage']));
+                        return (
+                          <tr key={index} className="border-b border-white/5">
+                            <td className="py-2 pr-3 text-zinc-300">{formatDate(getField(row, ['date']))}</td>
+                            <td className="py-2 pr-3 text-right font-medium text-emerald-400">
+                              {gapPct !== null ? `+${gapPct.toFixed(0)}%` : 'N/A'}
+                            </td>
+                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['market_open', 'marketOpen']))}</td>
+                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['market_close', 'marketClose']))}</td>
+                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['intraday_high', 'intradayHigh']))}</td>
+                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['intraday_low', 'intradayLow']))}</td>
+                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['vwap']))}</td>
+                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['premarket_high', 'premarketHigh']))}</td>
+                            <td className="py-2 pr-3 text-right text-zinc-300">{formatNumber(getField(row, ['volume']))}</td>
+                            <td className="py-2 text-zinc-400">
+                              {(() => {
+                                const tags = getField(row, ['tags']) as string[] | null;
+                                const forms = getField(row, ['form_types', 'formTypes']) as string[] | null;
+                                const all = [...(tags ?? []), ...(forms ?? [])];
+                                if (all.length === 0) return '--';
+                                return (
+                                  <div className="flex flex-wrap gap-1">
+                                    {all.map((tag, i) => (
+                                      <span key={i} className="rounded border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-xs text-zinc-400">{tag}</span>
+                                    ))}
+                                  </div>
+                                );
+                              })()}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <NoDataBadge endpointData={data.gapStats} />
             )}
           </div>
         ) : null}

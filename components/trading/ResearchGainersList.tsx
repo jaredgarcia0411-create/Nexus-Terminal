@@ -34,7 +34,8 @@ export default function ResearchGainersList({ selectedTicker, onSelectTicker }: 
       const response = await fetch('/api/askedgar/gainers');
       if (!response.ok) return;
       const data = (await response.json()) as { gainers: GainerRow[] };
-      setGainers(data.gainers ?? []);
+      const sorted = (data.gainers ?? []).slice().sort((a, b) => (b.gain_1_day ?? 0) - (a.gain_1_day ?? 0));
+      setGainers(sorted);
     } catch {
       // Silently fail; list remains empty.
     } finally {
@@ -76,8 +77,8 @@ export default function ResearchGainersList({ selectedTicker, onSelectTicker }: 
                 <span className="ml-2 text-zinc-500">${gainer.price?.toFixed(2) ?? '--'}</span>
               </div>
               <div className="text-right">
-                <span className="text-emerald-400">+{gainer.gain_1_day?.toFixed(0) ?? '0'}%</span>
-                <span className="ml-2 text-zinc-500">{formatCompact(gainer.today_volume)}</span>
+                <span className="text-zinc-500">{formatCompact(gainer.today_volume)}</span>
+                <span className="ml-2 text-emerald-400">+{gainer.gain_1_day?.toFixed(0) ?? '0'}%</span>
               </div>
             </button>
           ))}

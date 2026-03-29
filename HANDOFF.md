@@ -20,6 +20,377 @@ Historical completed sections removed — use git history and `specs/` for archi
 
 ---
 
+## AskEdgar Gap Stats, Ownership, Gainers Sort, Docs Update
+
+> Generated: 2026-03-29 | Status: IN PROGRESS (implementation complete, manual verification pending)
+> Context: AskEdgar API has two new/undocumented endpoints (`/v1/gap-stats`, `/v1/ownership`). Gap Stats is brand new. Ownership was documented but never implemented in the client. Also fixing gainers list sort order and column layout.
+> Session update (2026-03-29): Steps 1-5 were implemented locally. `npm run lint`, `npx tsc --noEmit`, and `npm test` all pass. `docs/AE_API_DOCS.md` was replaced with the updated AskEdgar docs source. Manual UI verification items below remain open.
+
+### Overview
+
+Four changes:
+1. **Gap Stats tab** in Research — new tab in `ResearchReportSections` showing historical gap-up data
+2. **Ownership section** in Research Overview — inserted between Commentary and Market Stats
+3. **Gainers list fixes** — sort by % gain descending (not alphabetical), swap % gain and volume column positions
+4. **Docs update** — replace `AE_API_DOCS.md` with updated version that includes gap-stats endpoint
+
+### Files to Modify
+
+| # | File | Changes |
+|---|------|---------|
+| 1 | `lib/jarvis/askedgar.ts` | Add `fetchGapStats()`, `fetchOwnership()`, wire into `EndpointKey` + `fetchTickerData()` |
+| 2 | `components/trading/ResearchReportSections.tsx` | Add 'gap-stats' tab, add Ownership section in Overview |
+| 3 | `components/trading/ResearchGainersList.tsx` | Sort gainers by gain descending, swap % gain / volume columns |
+| 4 | `docs/AE_API_DOCS.md` | Replace with updated docs |
+
+No new files. No new API routes needed — gap stats and ownership data flows through the existing `/api/askedgar/lookup` → `fetchTickerData()` → `rawData` prop pipeline.
+
+---
+
+### Step 1: Add `fetchGapStats()` and `fetchOwnership()` to the AskEdgar client
+
+**File:** `lib/jarvis/askedgar.ts`
+
+**1a.** Line 126 — add two keys to the `EndpointKey` union:
+
+```typescript
+// BEFORE (line 126-140):
+type EndpointKey =
+  | 'float-outstanding'
+  | 'screener'
+  | 'dilution-rating'
+  | 'dilution-data'
+  | 'offerings'
+  | 'registrations'
+  | 'news'
+  | 'nasdaq-compliance'
+  | 'pump-and-dump-tracker'
+  | 'agreements'
+  | 'historical-float-pro'
+  | 'reverse-splits'
+  | 'filing-titles'
+  | 'equity-lines';
+
+// AFTER:
+type EndpointKey =
+  | 'float-outstanding'
+  | 'screener'
+  | 'dilution-rating'
+  | 'dilution-data'
+  | 'offerings'
+  | 'registrations'
+  | 'news'
+  | 'nasdaq-compliance'
+  | 'pump-and-dump-tracker'
+  | 'agreements'
+  | 'historical-float-pro'
+  | 'reverse-splits'
+  | 'filing-titles'
+  | 'equity-lines'
+  | 'gap-stats'
+  | 'ownership';
+```
+
+**1b.** After `fetchFilingTitles()` (after line 276), add two new fetch functions:
+
+```typescript
+async function fetchGapStats(ticker: string, limit = 50) {
+  const validated = validateTickerOrError<unknown>(ticker);
+  if (typeof validated !== 'string') return validated;
+  return requestAskEdgar<unknown>('/v1/gap-stats', { ticker: validated, limit });
+}
+
+async function fetchOwnership(ticker: string) {
+  const validated = validateTickerOrError<unknown>(ticker);
+  if (typeof validated !== 'string') return validated;
+  return requestAskEdgar<unknown>('/v1/ownership', { ticker: validated });
+}
+```
+
+**1c.** In `fetchTickerData()` — add two entries to the `endpointConfigs` array (line 281-296). Add after the `filing-titles` entry (line 295):
+
+```typescript
+    { key: 'gap-stats', label: 'Gap Stats', run: () => fetchGapStats(normalizedTicker, 50) },
+    { key: 'ownership', label: 'Ownership', run: () => fetchOwnership(normalizedTicker) },
+```
+
+**Why:** These functions follow the exact same pattern as every other fetch function in the file. Adding them to `endpointConfigs` means they get called in parallel with all other endpoints during `fetchTickerData()`, and the results land in `rawData['gap-stats']` and `rawData['ownership']` — which is already passed to `ResearchReportSections` via the existing data flow. No new API routes or frontend fetches required.
+
+---
+
+### Step 2: Add Gap Stats tab to `ResearchReportSections`
+
+**File:** `components/trading/ResearchReportSections.tsx`
+
+**2a.** Line 16 — add `'gap-stats'` to the `TabKey` union:
+
+```typescript
+// BEFORE:
+type TabKey =
+  | 'overview'
+  | 'offering-ability'
+  | 'dilution'
+  | 'news-filings'
+  | 'offerings'
+  | 'history';
+
+// AFTER:
+type TabKey =
+  | 'overview'
+  | 'offering-ability'
+  | 'dilution'
+  | 'news-filings'
+  | 'offerings'
+  | 'history'
+  | 'gap-stats';
+```
+
+**2b.** Line 138-145 — add the new tab to the `TABS` array. Insert after `history`:
+
+```typescript
+const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'offering-ability', label: 'Offering Ability' },
+  { key: 'dilution', label: 'Dilution' },
+  { key: 'news-filings', label: 'News & Filings' },
+  { key: 'offerings', label: 'Offerings' },
+  { key: 'history', label: 'History' },
+  { key: 'gap-stats', label: 'Gap Stats' },
+];
+```
+
+**2c.** In the `useMemo` block (around line 150-180), add the gap-stats endpoint extraction:
+
+After `const equityLines = ...` (line 163), add:
+
+```typescript
+    const gapStats = endpoint(rawData, ['gap-stats', 'gapStats']);
+```
+
+And include it in the return object (after `equityLines`):
+
+```typescript
+      gapStats,
+```
+
+**2d.** Add the Gap Stats tab panel. Find the closing `null}` for the last tab panel (the `history` tab). After that closing block, before the final `</div>` of the `p-3 text-base` div, add:
+
+```tsx
+        {activeTab === 'gap-stats' ? (
+          <div className="space-y-3">
+            {hasData(data.gapStats) ? (
+              <>
+                <p className="text-sm text-zinc-500">
+                  Historical day-1 gap-ups only (excludes multi-day runs). Most recent first.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full">
+                    <thead>
+                      <tr className="border-b border-white/10 text-zinc-400">
+                        <th className="py-2 pr-3 text-left">Date</th>
+                        <th className="py-2 pr-3 text-right">Gap %</th>
+                        <th className="py-2 pr-3 text-right">Open</th>
+                        <th className="py-2 pr-3 text-right">Close</th>
+                        <th className="py-2 pr-3 text-right">High</th>
+                        <th className="py-2 pr-3 text-right">Low</th>
+                        <th className="py-2 pr-3 text-right">VWAP</th>
+                        <th className="py-2 pr-3 text-right">PM High</th>
+                        <th className="py-2 pr-3 text-right">Volume</th>
+                        <th className="py-2 text-left">Tags</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.gapStats.results.map((item, index) => {
+                        const row = toRecord(item);
+                        const gapPct = toNumberValue(getField(row, ['gap_percentage', 'gapPercentage']));
+                        return (
+                          <tr key={index} className="border-b border-white/5">
+                            <td className="py-2 pr-3 text-zinc-300">{formatDate(getField(row, ['date']))}</td>
+                            <td className="py-2 pr-3 text-right font-medium text-emerald-400">
+                              {gapPct !== null ? `+${gapPct.toFixed(0)}%` : 'N/A'}
+                            </td>
+                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['market_open', 'marketOpen']))}</td>
+                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['market_close', 'marketClose']))}</td>
+                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['intraday_high', 'intradayHigh']))}</td>
+                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['intraday_low', 'intradayLow']))}</td>
+                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['vwap']))}</td>
+                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['premarket_high', 'premarketHigh']))}</td>
+                            <td className="py-2 pr-3 text-right text-zinc-300">{formatNumber(getField(row, ['volume']))}</td>
+                            <td className="py-2 text-zinc-400">
+                              {(() => {
+                                const tags = getField(row, ['tags']) as string[] | null;
+                                const forms = getField(row, ['form_types', 'formTypes']) as string[] | null;
+                                const all = [...(tags ?? []), ...(forms ?? [])];
+                                if (all.length === 0) return '--';
+                                return (
+                                  <div className="flex flex-wrap gap-1">
+                                    {all.map((tag, i) => (
+                                      <span key={i} className="rounded border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-xs text-zinc-400">{tag}</span>
+                                    ))}
+                                  </div>
+                                );
+                              })()}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <NoDataBadge endpointData={data.gapStats} />
+            )}
+          </div>
+        ) : null}
+```
+
+**Why:** Gap stats gets its own tab (not crammed into Overview) because it's a data-dense table. The table shows the most actionable columns: gap %, open/close/high/low for price action, VWAP for institutional reference, premarket high for PM setup context, volume, and tags/form_types for catalyst identification.
+
+---
+
+### Step 3: Add Ownership section to Overview tab
+
+**File:** `components/trading/ResearchReportSections.tsx`
+
+**3a.** In the `useMemo` block, add the ownership endpoint extraction (same area as step 2c):
+
+```typescript
+    const ownership = endpoint(rawData, ['ownership']);
+```
+
+And include in the return object:
+
+```typescript
+      ownership,
+```
+
+**3b.** Insert the Ownership section between the Commentary block and Market Stats. The Commentary block ends at line 319 (closing `})()}`), and Market Stats starts at line 321 (`{/* Market Stats`). Insert this between them:
+
+```tsx
+            {/* Ownership — insiders, directors, large investors */}
+            {hasData(data.ownership) ? (
+              <div className="pt-5">
+                <h4 className="mb-2 text-lg font-semibold text-zinc-200">Ownership</h4>
+                {data.ownership.results.map((group, groupIndex) => {
+                  const groupRecord = toRecord(group);
+                  const reportedDate = getField(groupRecord, ['reported_date', 'reportedDate']);
+                  const owners = Array.isArray(groupRecord.owners) ? groupRecord.owners : [];
+                  if (owners.length === 0) return null;
+                  return (
+                    <div key={groupIndex} className="mb-3">
+                      {reportedDate ? (
+                        <p className="mb-1 text-sm text-zinc-500">Reported: {formatDate(reportedDate)}</p>
+                      ) : null}
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full">
+                          <thead>
+                            <tr className="border-b border-white/10 text-zinc-400">
+                              <th className="py-1.5 pr-3 text-left text-sm">Name</th>
+                              <th className="py-1.5 pr-3 text-left text-sm">Role</th>
+                              <th className="py-1.5 pr-3 text-right text-sm">Common</th>
+                              <th className="py-1.5 pr-3 text-right text-sm">Preferred</th>
+                              <th className="py-1.5 pr-3 text-right text-sm">Options</th>
+                              <th className="py-1.5 text-right text-sm">Warrants</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {owners.map((owner, ownerIndex) => {
+                              const o = toRecord(owner);
+                              return (
+                                <tr key={ownerIndex} className="border-b border-white/5">
+                                  <td className="py-1.5 pr-3 text-sm text-zinc-200">{toStringValue(getField(o, ['owner_name', 'ownerName']))}</td>
+                                  <td className="py-1.5 pr-3 text-sm text-zinc-400">{toStringValue(getField(o, ['title', 'owner_type', 'ownerType']))}</td>
+                                  <td className="py-1.5 pr-3 text-right text-sm text-zinc-300">{formatNumber(getField(o, ['common_shares_amount', 'commonSharesAmount']))}</td>
+                                  <td className="py-1.5 pr-3 text-right text-sm text-zinc-300">{formatNumber(getField(o, ['preferred_shares_amount', 'preferredSharesAmount']))}</td>
+                                  <td className="py-1.5 pr-3 text-right text-sm text-zinc-300">{formatNumber(getField(o, ['options_amount', 'optionsAmount']))}</td>
+                                  <td className="py-1.5 text-right text-sm text-zinc-300">{formatNumber(getField(o, ['warrants_amount', 'warrantsAmount']))}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+```
+
+**Why:** Ownership goes between Commentary and Market Stats because it's contextually related — you see the company's financial health (commentary), then who's holding shares (ownership), then the raw market numbers (stats). The table shows common/preferred/options/warrants per owner, which tells you how locked up the float really is.
+
+---
+
+### Step 4: Fix gainers list sort order and column layout
+
+**File:** `components/trading/ResearchGainersList.tsx`
+
+**4a.** Line 37 — sort gainers by % gain descending before setting state. Change:
+
+```typescript
+// BEFORE:
+      setGainers(data.gainers ?? []);
+
+// AFTER:
+      const sorted = (data.gainers ?? []).slice().sort((a, b) => (b.gain_1_day ?? 0) - (a.gain_1_day ?? 0));
+      setGainers(sorted);
+```
+
+**Why:** `.slice()` creates a copy so we don't mutate the original array. `.sort()` sorts in place on the copy. `b - a` = descending (highest gain first).
+
+**4b.** Lines 78-81 — swap the % gain and volume positions. Currently it's `+XX% volume`. Swap to `volume +XX%`:
+
+```tsx
+// BEFORE (lines 78-81):
+              <div className="text-right">
+                <span className="text-emerald-400">+{gainer.gain_1_day?.toFixed(0) ?? '0'}%</span>
+                <span className="ml-2 text-zinc-500">{formatCompact(gainer.today_volume)}</span>
+              </div>
+
+// AFTER:
+              <div className="text-right">
+                <span className="text-zinc-500">{formatCompact(gainer.today_volume)}</span>
+                <span className="ml-2 text-emerald-400">+{gainer.gain_1_day?.toFixed(0) ?? '0'}%</span>
+              </div>
+```
+
+**Why:** Puts the % gain on the far right where it's most visible and serves as the natural sort indicator. Volume moves left as secondary info.
+
+---
+
+### Step 5: Update API docs
+
+Copy the contents of `/mnt/c/Users/jared/Downloads/Ask Edgar API Docs Updated.md` and replace the entire contents of `docs/AE_API_DOCS.md` with it.
+
+---
+
+### Step 6: Validate
+
+```bash
+npm run lint && npx tsc --noEmit
+```
+
+Fix any errors before committing.
+
+---
+
+### Validation Checklist
+
+- [x] `npm run lint` passes
+- [x] `npx tsc --noEmit` passes
+- [x] `npm test` passes
+- [ ] Research tab shows 7 tabs (Overview, Offering Ability, Dilution, News & Filings, Offerings, History, Gap Stats)
+- [ ] Gap Stats tab shows table with historical gap-up data when a ticker is selected
+- [ ] Gap Stats tab shows "No data" badge when endpoint returns empty
+- [ ] Overview tab shows Ownership section between Commentary and Market Stats
+- [ ] Ownership table shows owner names, roles, and share breakdowns
+- [ ] Gainers list is sorted by % gain descending (highest gainer first)
+- [ ] Gainers list shows volume on left, % gain on right
+- [x] `docs/AE_API_DOCS.md` includes the `/v1/gap-stats` endpoint documentation
+
+---
+
 ## Pre-Sprint Section-by-Section Patch Plan — AGENTIC_EXPANSIONV2.md
 
 > Generated: 2026-03-29 | Status: COMPLETE

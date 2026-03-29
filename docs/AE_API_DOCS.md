@@ -847,12 +847,17 @@ Get SEC registration filings — these are the legal documents companies file be
 
 A company needs an effective registration before it can sell new shares to the public. Tracking registrations helps you anticipate future offerings and potential dilution.
 
-#### **Key concepts**
+#### **Registration types (used in the `type` filter parameter)**
 
-* **Shelf registration** — Lets a company sell shares over time (up to 3 years) without filing a new registration each time.  
-* **ATM (At-The-Market)** — A program that lets a company sell shares gradually at market prices.  
-* **Baby shelf limit** — Companies with public float under $75M can only sell up to 1/3 of their public float in a 12-month period.  
-* **Equity line** — An arrangement where an investor commits to buying shares over time.
+* **`SHELF`** — Shelf registration. Lets a company sell shares over time (up to 3 years) without filing a new registration each time.  
+* **`SPA`** — Equity line. The company sells shares to a single institutional investor on a continuous basis at varying prices.  
+* **`OFFERING`** — A new primary offering of shares.  
+* **`SHARE RESALE`** — Registers previously issued shares (e.g., shares from a private placement) so they can be resold publicly.
+
+#### **Other key concepts**
+
+* **ATM (At-The-Market)** — A program where shares are sold gradually at market prices through a sales agent. Use the `is_atm` parameter to filter for these.  
+* **Baby shelf limit** — Companies with public float under $75M can only sell up to 1/3 of their public float in a 12-month period.
 
 #### **Parameters**
 
@@ -879,7 +884,7 @@ A company needs an effective registration before it can sell new shares to the p
 | `over_baby_shelf` | boolean | No | `true` \= company is over the baby shelf limit (public float under $75M), meaning they're limited in how much they can sell |
 | `is_atm` | boolean | No | `true` \= this is an ATM program |
 | `form_type` | string | No | SEC form type (e.g., `"S-3"`, `"S-1"`, `"F-3"`) |
-| `type` | string | No | Registration type |
+| `type` | string | No | Registration type. Valid values: `"SPA"` (equity line — shares sold to a single institutional investor at varying prices), `"SHELF"` (shelf registration), `"OFFERING"` (new primary offering), `"SHARE RESALE"` (registering previously issued shares for public resale) |
 | `page` | integer | No | Page number (default: `0`) |
 | `limit` | integer | No | Results per page (default: `100`) |
 
@@ -994,6 +999,7 @@ curl "https://eapi.askedgar.io/v1/agreements?ticker=AAPL" \\
 | `duration_in_days` | integer | Duration of restriction/lock-up in days |
 | `exempt_issuances` | string | Issuances exempt from the agreement |
 | `participation_percentage` | string | Participation right percentage |
+| `equity_restriction_end_date` | date | Date that any equity issuance restriction ends |
 | `askedgar_url` | string | Link to view on AskEdgar |
 
 ---
@@ -1715,6 +1721,52 @@ curl "https://eapi.askedgar.io/v1/filing-titles?ticker=AAPL\&form\_type=10-K" \\
 
 ---
 
+### **21\. Gap Stats**
+
+**GET** `/v1/gap-stats`
+
+Get historical gap-up statistics for a specific ticker. Returns detailed data for each day the stock gapped up, including market open/close prices, gap percentage, intraday high/low with timestamps, VWAP data, premarket activity, volume, market cap, and associated filing types and tags. Results are ordered by date descending.
+
+**`ticker` is required for this endpoint.**
+
+**Note:** These stats intentionally exclude gappers that are part of a multi-day run, to isolate pure "day 1" gap-ups only.
+
+#### **Parameters**
+
+| Parameter | Type | Required | Description |
+| ----- | ----- | ----- | ----- |
+| `ticker` | string | **Yes** | Stock ticker (required) |
+| `page` | integer | No | Page number (default: 1\) |
+| `limit` | integer | No | Results per page (default: 100\) |
+
+#### **Example request**
+
+curl "https://eapi.askedgar.io/v1/gap-stats?ticker=AAPL" \\  
+  \-H "API-KEY: your\_api\_key\_here"
+
+#### **Response fields**
+
+| Field | Type | Description |
+| ----- | ----- | ----- |
+| `ticker` | string | Stock ticker |
+| `date` | date | Date of the gap-up |
+| `market_open` | number | Market open price |
+| `market_close` | number | Market close price |
+| `gap_percentage` | number | Gap-up percentage at open vs previous close |
+| `intraday_high` | number | Highest price during the trading day |
+| `intraday_high_time` | string | Timestamp of the intraday high |
+| `intraday_low` | number | Lowest price during the trading day |
+| `intraday_low_time` | string | Timestamp of the intraday low |
+| `vwap` | number | Volume-weighted average price |
+| `premarket_high` | number | Highest price during premarket |
+| `premarket_volume` | integer | Premarket trading volume |
+| `volume` | integer | Total trading volume for the day |
+| `market_cap` | integer | Market capitalization |
+| `form_types` | array | SEC form types associated with the gap (e.g., catalysts) |
+| `tags` | array | Tags associated with the gap event |
+
+---
+
 ## **Common Use Cases (Recipes)**
 
 Here are typical workflows a developer might want to build:
@@ -1785,4 +1837,5 @@ Here are typical workflows a developer might want to build:
 | `/v1/research-reports-tldr` | GET | API-KEY | TLDR AI research report — generated within minutes of \+40% (ticker required) |
 | `/v1/market-strength` | GET | API-KEY | AI analysis of small-cap market strength (generated daily 2:30 AM CST) |
 | `/v1/filing-titles` | GET | API-KEY | AI-generated human-readable filing headlines |
+| `/v1/gap-stats` | GET | API-KEY | Historical gap-up statistics per ticker — day 1 gaps only (ticker required) |
 

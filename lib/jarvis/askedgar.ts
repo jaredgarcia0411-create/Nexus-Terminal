@@ -137,7 +137,9 @@ type EndpointKey =
   | 'historical-float-pro'
   | 'reverse-splits'
   | 'filing-titles'
-  | 'equity-lines';
+  | 'equity-lines'
+  | 'gap-stats'
+  | 'ownership';
 
 interface EndpointConfig {
   key: EndpointKey;
@@ -275,6 +277,18 @@ async function fetchFilingTitles(ticker: string, limit = 20) {
   return requestAskEdgar<unknown>('/v1/filing-titles', { ticker: validated, limit });
 }
 
+async function fetchGapStats(ticker: string, limit = 50) {
+  const validated = validateTickerOrError<unknown>(ticker);
+  if (typeof validated !== 'string') return validated;
+  return requestAskEdgar<unknown>('/v1/gap-stats', { ticker: validated, limit });
+}
+
+async function fetchOwnership(ticker: string) {
+  const validated = validateTickerOrError<unknown>(ticker);
+  if (typeof validated !== 'string') return validated;
+  return requestAskEdgar<unknown>('/v1/ownership', { ticker: validated });
+}
+
 export async function fetchTickerData(ticker: string) {
   const normalizedTicker = ticker.trim().toUpperCase();
 
@@ -293,6 +307,8 @@ export async function fetchTickerData(ticker: string) {
     { key: 'historical-float-pro', label: 'Historical Float', run: () => fetchHistoricalFloatPro(normalizedTicker, 20) },
     { key: 'reverse-splits', label: 'Reverse Splits', run: () => fetchReverseSplits(normalizedTicker) },
     { key: 'filing-titles', label: 'Filing Titles', run: () => fetchFilingTitles(normalizedTicker, 20) },
+    { key: 'gap-stats', label: 'Gap Stats', run: () => fetchGapStats(normalizedTicker, 50) },
+    { key: 'ownership', label: 'Ownership', run: () => fetchOwnership(normalizedTicker) },
   ];
 
   const settledResults = await Promise.allSettled(endpointConfigs.map((config) => config.run()));
