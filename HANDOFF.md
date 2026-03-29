@@ -8,8 +8,11 @@ Use git history and the `specs/` directory for archived implementation detail.
 ### Session Maintenance Checklist
 
 - [ ] Update `AGENTS.md` after Discord import feature ships — document new tables, API routes, parser module, env vars
-- [x] Review `AGENTIC_EXPANSION_V2.md` and replace `AEV2_REVISIONS.md` with a literal pre-sprint edit script for the next spec pass
-- [x] Apply `AEV2_REVISIONS.md` to `AGENTIC_EXPANSION_V2.md` and complete a full consistency sweep
+- [x] Review `AGENTIC_EXPANSIONV2.md` and replace `AEV2_REVISIONS.md` with a literal pre-sprint edit script for the next spec pass
+- [x] Apply `AEV2_REVISIONS.md` to `AGENTIC_EXPANSIONV2.md` and rename the spec file from `AGENTIC_EXPANSION_V2.md`
+- [x] Run the post-patch cleanup sweep on `AGENTIC_EXPANSIONV2.md`
+- [x] Refresh `AEV2_REVISIONS.md` with sprint-board blockers, launch blockers, and locked routing/service-route decisions from the latest review
+- [x] Convert `AEV2_REVISIONS.md` from redline checklist into a literal section-by-section patch plan for the next spec pass
 
 ---
 
