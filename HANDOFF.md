@@ -16,6 +16,7 @@ Historical completed sections removed — use git history and `specs/` for archi
 - [x] Draft a tight pre-sprint blocker patch checklist in `HANDOFF.md` from the latest AGENTIC_EXPANSIONV2 review
 - [x] Expand the blocker checklist into an exact section-by-section patch plan with replacement targets
 - [x] Execute the pre-sprint blocker patch plan on `AGENTIC_EXPANSIONV2.md`
+- [x] Draft `AEV2_DRAFT.md` with initiative/epic/story/sprint breakdown for `AGENTIC_EXPANSIONV2.md`
 
 ---
 
