@@ -509,3 +509,19 @@ Fix any errors, then push to deploy via Vercel.
 - Jarvis research/trade-analysis routes — redundant with chat but functional
 - `hooks/trade-utils.ts` → `lib/trade-utils.ts` rename — low priority
 - `buildResearchPrompt` in prompts.ts — now dead but harmless
+
+---
+
+## Low-Priority Spec Cleanup (AGENTIC_EXPANSIONV2.md)
+
+These are minor issues found during the 2026-03-29 spec review. None block sprint import, but should be cleaned up when convenient.
+
+- **R8 — `step_log` guidance stated twice.** Line ~822 repeats the same `step_log` content rules from Section 3.2. Replace with a cross-reference: "See Section 3.2 for `step_log` content rules."
+- **R9 — "Multi-agent fanout deferred to V2" stated 4 times.** Keep in Executive Summary + Section 13 closing note. Trim the other two instances (Section 6.1 ~line 557 and Section 13 ~line 1649) to short cross-references.
+- **R10 — Polling timeout (120s/60 attempts) stated twice.** Section 20 Discord Adapter should reference Section 13 for timeout details instead of restating them.
+- **M2 — Budget is per-agent but env var name doesn't clarify.** Add note to Section 19: "Each agent enforces its own budget independently — $5/day default means $15/day total across 3 agents."
+- **M3 — `swing:research` step 6 missing `idempotencyKey`.** Add `idempotencyKey: 'swing-research-{ticker}-{date}'` to the metadata.
+- **M4 — `getDb()` vs `getAgentDb()` distinction never stated.** Add note: "Vercel routes use `getDb()` from `lib/server-db-utils.ts` (HTTP client). Docker agent workers use `getAgentDb()` from `lib/agents/db.ts` (WebSocket pool). Never mix them."
+- **B11 — Two `lib/jarvis/` files missing from Phase 7 delete list.** Add `chat-helpers.ts` and `historical-summary.ts` to the Phase 7 delete list in Section 18.
+- **B15 — `services/discord-bot/` already exists with a `dist/` directory.** Audit existing contents before Phase 5 Step 44 — the spec treats it as a fresh creation but files may already be there.
+- **B18 — `services/.env.example` contents never specified.** Generate from Docker Compose `environment:` blocks or include a template in Section 15.
