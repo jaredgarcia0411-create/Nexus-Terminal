@@ -68,7 +68,7 @@ Import from `lib/server-db-utils.ts`. Returns `{ user: { id, email, name, pictur
 
 ## Database
 - PostgreSQL via Neon serverless (`@neondatabase/serverless`)
-- ORM: Drizzle v0.45.1, schema at `lib/db/schema.ts` (21 tables — read schema directly for details)
+- ORM: Drizzle v0.45.1, schema at `lib/db/schema.ts` (22 tables — read schema directly for details)
 - Connection: HTTP client for reads, WebSocket pool for transactions
 - Migrations output to `drizzle/` directory
 
@@ -88,11 +88,13 @@ Import from `lib/server-db-utils.ts`. Returns `{ user: { id, email, name, pictur
 All modules in `lib/jarvis/` — client, types, prompts, context, memory, research, trade-analysis, askedgar, historical-summary, scrape-lite, rate-limit, circuit-breaker, token-tracking, admin, chat-helpers.
 
 ## State Management
-Hooks in `hooks/` — `ls hooks/` to see all. Key ones:
+Hooks in `hooks/` (12 files). Key ones:
 - `use-trades.ts` — central trade hook: CRUD, filtering, CSV import, cloud sync
 - `use-candle-data.ts` — market data fetching with cache
 - `use-market-stream.ts` — SSE market data stream
 - `use-relay-socket.ts` — WebSocket connection to Schwab relay
+- `use-scanner.ts` — scanner state and filters
+- `use-schwab-status.ts` — Schwab link status polling
 
 ## Discord
 - `lib/discord/client.ts` — Discord REST API client (fetch channel messages, pagination)
@@ -132,6 +134,22 @@ Names only — values in `.env.local` (never committed):
 | AskEdgar | `ASKEDGAR_API_KEY` |
 | Cron | `CRON_SECRET` |
 | Tuning (optional) | `ASKEDGAR_DAILY_LIMIT`, `JARVIS_CIRCUIT_BREAKER_THRESHOLD`, `JARVIS_CIRCUIT_BREAKER_RESET_MS`, `JARVIS_RATE_LIMIT_PER_HOUR`, `JARVIS_TIMEOUT_MS` |
+
+---
+
+## Services (Docker / Home Server)
+- `services/schwab-relay/` — Schwab streaming relay (deployed on Fly.io)
+- `services/discord-bot/` — Discord bot for agent chat (AEV2, not yet built)
+- `services/.env.example` — All agent service env vars (copy to `services/.env`)
+- `services/docker-compose.yml` — Agent container topology (AEV2, not yet built)
+- Services deploy independently from Vercel — they run on a home server via Docker Compose
+
+## Trade Example Seed System
+- `scripts/generate-trade-template.ts` — Parses screenshot filenames → blank annotation JSON
+- `scripts/trade-screenshots/` — Reference images (gitignored)
+- `scripts/trade-examples-template.json` — Auto-generated template (gitignored)
+- `scripts/trade-examples-reviewed.json` — Human-annotated final version (gitignored)
+- `scripts/seed-trade-examples.ts` — Loads reviewed trades into `agent_memory_v2` (not yet built)
 
 ---
 
