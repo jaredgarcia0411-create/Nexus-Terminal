@@ -307,26 +307,36 @@ export class SchwabStreamer {
       return;
     }
 
-    const equities = parseList('TRACK_EQUITIES');
-    for (const sym of equities) {
+    // Merge env-configured equities with the hardcoded market overview symbols
+    // so the Markets page always has full coverage without Fly.io env changes.
+    const MARKET_SYMBOLS = [
+      'SPY', 'QQQ', 'DIA', 'IWM',
+      'GLD', 'SLV', 'USO', 'UNG', 'TLT', 'UUP',
+      'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'NVDA', 'TSLA', 'META', 'JPM', 'JNJ', 'V',
+    ];
+    const envEquities = parseList('TRACK_EQUITIES');
+    const allEquities = [...new Set([...MARKET_SYMBOLS, ...envEquities])];
+
+    for (const sym of allEquities) {
       this.subscribedEquities.add(sym);
     }
     const requests: Array<Record<string, unknown>> = [];
 
-    if (equities.length > 0) {
-      requests.push({
-        service: 'LEVELONE_EQUITIES',
-        command: 'SUBS',
-        requestid: toRequestId(),
-        SchwabClientCustomerId: this.schwabClientCustomerId,
-        SchwabClientCorrelId: this.schwabClientCorrelId,
-        parameters: {
-          keys: equities.join(','),
-          fields: '0,1,2,3,8,10,11,12,17,18,28',
-        },
-      });
-    }
+    requests.push({
+      service: 'LEVELONE_EQUITIES',
+      command: 'SUBS',
+      requestid: toRequestId(),
+      SchwabClientCustomerId: this.schwabClientCustomerId,
+      SchwabClientCorrelId: this.schwabClientCorrelId,
+      parameters: {
+        keys: allEquities.join(','),
+        fields: '0,1,2,3,8,10,11,12,17,18,28',
+      },
+    });
 
+    // Subscribe to screeners across multiple exchanges for broad coverage.
+    // $COMPX = Nasdaq Composite (includes small caps), NYSE = NYSE exchange,
+    // $SPX.X = S&P 500. This gives us top gainers/losers across all equities.
     requests.push({
       service: 'SCREENER_EQUITY',
       command: 'SUBS',
@@ -334,7 +344,11 @@ export class SchwabStreamer {
       SchwabClientCustomerId: this.schwabClientCustomerId,
       SchwabClientCorrelId: this.schwabClientCorrelId,
       parameters: {
-        keys: '$SPX.X_PERCENT_CHANGE_UP_0,$SPX.X_PERCENT_CHANGE_DOWN_0',
+        keys: [
+          '$COMPX_PERCENT_CHANGE_UP_0', '$COMPX_PERCENT_CHANGE_DOWN_0',
+          'NYSE_PERCENT_CHANGE_UP_0', 'NYSE_PERCENT_CHANGE_DOWN_0',
+          '$SPX.X_PERCENT_CHANGE_UP_0', '$SPX.X_PERCENT_CHANGE_DOWN_0',
+        ].join(','),
         fields: '0,1,2,3,4',
       },
     });
@@ -398,7 +412,6 @@ export class SchwabStreamer {
         }
 
         if (entry.service === 'SCREENER_EQUITY') {
-          console.info(`[relay] screener data: ${entry.content.length} items, keys: ${JSON.stringify(Object.keys(entry.content[0] ?? {}))}`);
           this.handleScreenerData(entry.content);
           continue;
         }
@@ -461,40 +474,40 @@ export class SchwabStreamer {
       return;
     }
 
-    const firstKey = typeof content[0].key === 'string' ? content[0].key : '';
-    const type: ScreenerUpdate['type'] = firstKey.includes('DOWN') ? 'losers' : 'gainers';
+    // Schwab SCREENER_EQUITY data format (each content item = one screener key):
+    //   field 2 = sort type ("PERCENT_CHANGE_UP" or "PERCENT_CHANGE_DOWN")
+    //   field 4 = array of stock objects with { symbol, lastPrice, netChange, netPercentChange, totalVolume, ... }
+    for (const entry of content) {
+      const sortType = typeof entry['2'] === 'string' ? entry['2'] : '';
+      const type: ScreenerUpdate['type'] = sortType.includes('DOWN') ? 'losers' : 'gainers';
+      const stocks = Array.isArray(entry['4']) ? (entry['4'] as Array<Record<string, unknown>>) : [];
 
-    const items = content
-      .map((item) => {
-        const symbol =
-          (typeof item['0'] === 'string' ? item['0'] : undefined) ??
-          (typeof item.key === 'string' ? item.key : undefined);
-        const lastPrice = toNumber(item['1']);
-        const netChange = toNumber(item['2']);
-        const netChangePercent = toNumber(item['3']);
-        const totalVolume = toNumber(item['4']);
+      const items = stocks
+        .map((stock) => {
+          const symbol = typeof stock.symbol === 'string' ? stock.symbol : undefined;
+          const lastPrice = toNumber(stock.lastPrice);
+          const netChange = toNumber(stock.netChange);
+          const netChangePercent = toNumber(stock.netPercentChange);
+          const totalVolume = toNumber(stock.totalVolume);
 
-        if (
-          !symbol ||
-          lastPrice === undefined ||
-          netChange === undefined ||
-          netChangePercent === undefined ||
-          totalVolume === undefined
-        ) {
-          return null;
-        }
+          if (!symbol || lastPrice === undefined || netChangePercent === undefined) {
+            return null;
+          }
 
-        return {
-          symbol,
-          lastPrice,
-          netChange,
-          netChangePercent,
-          totalVolume,
-        };
-      })
-      .filter((value): value is ScreenerUpdate['items'][number] => value !== null);
+          return {
+            symbol,
+            lastPrice,
+            netChange: netChange ?? 0,
+            netChangePercent,
+            totalVolume: totalVolume ?? 0,
+          };
+        })
+        .filter((value): value is ScreenerUpdate['items'][number] => value !== null);
 
-    this.onScreenerUpdate({ type, items });
+      if (items.length > 0) {
+        this.onScreenerUpdate({ type, items });
+      }
+    }
   }
 
   private sendMessage(payload: unknown): void {

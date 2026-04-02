@@ -16,7 +16,7 @@ const DEFAULT_DAILY_LIMIT = 100;
 const REQUEST_TIMEOUT_MS = 15_000;
 const TICKER_REGEX = /^[A-Z0-9.\-^]+$/;
 const TICKER_CACHE_TTL_MS = 60 * 60 * 1000;    // 1 hour
-const GAINERS_CACHE_TTL_MS = 5 * 60 * 1000;    // 5 minutes
+const GAINERS_CACHE_TTL_MS = 15 * 60 * 1000;   // 15 minutes
 
 let callCount = 0;
 let resetDate = '';

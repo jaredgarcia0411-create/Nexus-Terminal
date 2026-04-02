@@ -214,8 +214,8 @@ async function main(): Promise<void> {
     });
   });
 
-  healthServer.listen(HEALTH_PORT, () => {
-    log(`health check listening on :${HEALTH_PORT}`);
+  healthServer.listen(HEALTH_PORT, '0.0.0.0', () => {
+    log(`health check listening on 0.0.0.0:${HEALTH_PORT}`);
   });
 
   await syncTokens();

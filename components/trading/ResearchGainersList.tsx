@@ -6,8 +6,6 @@ interface GainerRow {
   ticker: string;
   price: number;
   gain_1_day: number;
-  market_cap: number;
-  float: number;
   today_volume: number;
   [key: string]: unknown;
 }
@@ -37,7 +35,7 @@ export default function ResearchGainersList({ selectedTicker, onSelectTicker }: 
       const sorted = (data.gainers ?? []).slice().sort((a, b) => (b.gain_1_day ?? 0) - (a.gain_1_day ?? 0));
       setGainers(sorted);
     } catch {
-      // Silently fail; list remains empty.
+      // Silently fail; list remains as-is.
     } finally {
       setLoading(false);
     }
@@ -45,9 +43,11 @@ export default function ResearchGainersList({ selectedTicker, onSelectTicker }: 
 
   useEffect(() => {
     void fetchGainers();
+    // Poll every 15 minutes — AskEdgar data is cached server-side with
+    // a 15-minute TTL so more frequent polls just hit the cache.
     const interval = setInterval(() => {
       void fetchGainers();
-    }, 5 * 60 * 1000);
+    }, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchGainers]);
 

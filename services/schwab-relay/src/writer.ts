@@ -100,10 +100,20 @@ export class QuoteWriter {
   }
 
   async addScreenerData(screenerUpdate: ScreenerUpdate): Promise<void> {
+    // Merge items from multiple exchange screeners into a single deduplicated list
+    const existing = screenerUpdate.type === 'gainers' ? this.gainers : this.losers;
+    const merged = new Map(existing.map((item) => [item.symbol, item]));
+    for (const item of screenerUpdate.items) {
+      merged.set(item.symbol, item);
+    }
+    const sorted = Array.from(merged.values()).sort(
+      (a, b) => Math.abs(b.netChangePercent) - Math.abs(a.netChangePercent),
+    );
+
     if (screenerUpdate.type === 'gainers') {
-      this.gainers = screenerUpdate.items;
+      this.gainers = sorted;
     } else {
-      this.losers = screenerUpdate.items;
+      this.losers = sorted;
     }
 
     // Also buffer screener items into realtime_quotes

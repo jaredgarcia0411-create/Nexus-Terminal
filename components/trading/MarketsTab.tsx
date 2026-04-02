@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import JarvisMacroSummary from '@/components/trading/JarvisMacroSummary';
-import ScannerSection from '@/components/trading/ScannerSection';
 import { Button } from '@/components/ui/button';
 import { useMarketStream } from '@/hooks/use-market-stream';
 import { useRelaySocket } from '@/hooks/use-relay-socket';
@@ -11,7 +10,6 @@ import { INDEX_SYMBOLS, COMMODITY_SYMBOLS, EQUITY_SYMBOLS } from '@/lib/market-s
 import { useSchwabStatus } from '@/hooks/use-schwab-status';
 import type { JarvisMacroSummaryOutput } from '@/lib/jarvis/types';
 import type { RelayQuoteUpdate, RelayScreenerData } from '@/lib/relay-types';
-import type { ScannerRow } from '@/lib/types';
 
 type MarketInstrument = {
   symbol: string;
@@ -214,7 +212,6 @@ export default function MarketsTab() {
   const [isStale, setIsStale] = useState(false);
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
   const [dataSource, setDataSource] = useState<'realtime' | 'delayed' | null>(null);
-  const [streamScannerResults, setStreamScannerResults] = useState<ScannerRow[] | undefined>(undefined);
 
   const { schwabStatus, loading: schwabLoading, refresh: refreshSchwabStatus } = useSchwabStatus();
 
@@ -272,18 +269,6 @@ export default function MarketsTab() {
     setDataSource('realtime');
     setLastLoadedAt(new Date());
 
-    const scannerRows: ScannerRow[] = Array.from(map.values())
-      .filter((q) => q.lastPrice != null && q.netChangePercent != null)
-      .map((q) => ({
-        symbol: q.symbol,
-        assetType: q.assetType ?? 'equity',
-        lastPrice: q.lastPrice ?? null,
-        netChange: q.netChange ?? null,
-        netChangePercent: q.netChangePercent ?? null,
-        totalVolume: q.totalVolume ?? null,
-        updatedAt: new Date().toISOString(),
-      }));
-    setStreamScannerResults(scannerRows);
   }, [buildSnapshotFromQuotes]);
 
   const handleRelayScreener = useCallback((data: RelayScreenerData) => {
@@ -308,23 +293,6 @@ export default function MarketsTab() {
       };
     });
 
-    const toScannerRow = (item: RelayScreenerData['gainers'][number]): ScannerRow => ({
-      symbol: item.symbol,
-      assetType: 'equity',
-      lastPrice: item.lastPrice,
-      netChange: item.netChange,
-      netChangePercent: item.netChangePercent,
-      totalVolume: item.totalVolume,
-      updatedAt: new Date().toISOString(),
-    });
-
-    setStreamScannerResults((prev) => {
-      const existing = new Map((prev ?? []).map((r) => [r.symbol, r]));
-      for (const item of [...data.gainers, ...data.losers]) {
-        existing.set(item.symbol, toScannerRow(item));
-      }
-      return Array.from(existing.values());
-    });
   }, []);
 
   const { connected: relayConnected, fallbackToSSE: relayFallback } = useRelaySocket({
@@ -336,9 +304,9 @@ export default function MarketsTab() {
 
   const { connected: sseConnected, fallbackToPolling } = useMarketStream({
     enabled: (dataSource === 'realtime' || (schwabStatus.linked && !schwabLoading)) && relayFallback,
-    scannerFilters: {},
-    scannerSortBy: 'netChangePercent',
-    scannerSortDir: 'desc',
+    scannerFilters: {} as Record<string, never>,
+    scannerSortBy: 'netChangePercent' as const,
+    scannerSortDir: 'desc' as const,
     onSnapshot: (data) => {
       const payload = data as {
         mappedSnapshot?: SnapshotPayload;
@@ -357,9 +325,7 @@ export default function MarketsTab() {
       setLastLoadedAt(payload.fetchedAt ? new Date(payload.fetchedAt) : new Date());
       setLoadingSnapshot(false);
     },
-    onScanner: (data) => {
-      setStreamScannerResults(data.results);
-    },
+    onScanner: () => {},
     onError: (error) => {
       setWarning(error);
     },
@@ -582,11 +548,6 @@ export default function MarketsTab() {
           </div>
         </div>
       </div>
-
-      <ScannerSection
-        refreshIntervalMs={(sseConnected || relayConnected) ? 0 : (dataSource === 'realtime' ? 5_000 : 60_000)}
-        externalResults={(sseConnected || relayConnected) ? streamScannerResults : undefined}
-      />
 
       <div className="rounded-xl border border-white/10 bg-[#121214] p-5">
         {loadingMacro ? <p className="text-sm text-zinc-500">Loading macro summary...</p> : null}

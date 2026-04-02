@@ -73,12 +73,24 @@ export class QuoteBroadcaster {
 
   /**
    * Broadcast screener (gainers/losers) data to all clients.
+   *
+   * Merges items from multiple exchange screeners (e.g. $COMPX, NYSE, $SPX.X)
+   * into a single deduplicated list sorted by % change.
    */
   broadcastScreener(update: ScreenerUpdate): void {
+    const list = update.type === 'gainers' ? this.lastScreener.gainers : this.lastScreener.losers;
+    const merged = new Map(list.map((item) => [item.symbol, item]));
+    for (const item of update.items) {
+      merged.set(item.symbol, item);
+    }
+    const sorted = Array.from(merged.values()).sort(
+      (a, b) => Math.abs(b.netChangePercent) - Math.abs(a.netChangePercent),
+    );
+
     if (update.type === 'gainers') {
-      this.lastScreener.gainers = update.items;
+      this.lastScreener.gainers = sorted;
     } else {
-      this.lastScreener.losers = update.items;
+      this.lastScreener.losers = sorted;
     }
 
     const message = { type: 'screener', data: this.lastScreener };
