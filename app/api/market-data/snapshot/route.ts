@@ -4,6 +4,15 @@ import { getDb } from '@/lib/db';
 import { INDEX_SYMBOLS, COMMODITY_SYMBOLS, EQUITY_SYMBOLS } from '@/lib/market-symbols';
 import { marketSnapshots, realtimeQuotes, schwabLinks } from '@/lib/db/schema';
 import {
+  normalizeQuoteSymbol,
+  quotesToSnapshot,
+  schwabScreenerToMoverRows,
+  type MarketInstrument,
+  type MarketMoverRow,
+  type MarketSnapshotPayload,
+  type SchwabScreenerItem,
+} from '@/lib/quote-mappers';
+import {
   fetchBatchDailyTickerSummaries,
   fetchTopMarketMovers,
   fetchUnifiedSnapshot,
@@ -13,37 +22,6 @@ import {
 } from '@/lib/massive-market';
 import { requireUser } from '@/lib/server-db-utils';
 
-type MarketInstrument = {
-  symbol: string;
-  label: string;
-  price: number | null;
-  change: number | null;
-  changePercent: number | null;
-  marketStatus: string | null;
-  quoteSession: EasternMarketSession | 'snapshot';
-  extendedQuoteUnavailable: boolean;
-  extendedUnavailableLabel: string | null;
-};
-
-type MarketMoverRow = {
-  ticker: string;
-  price: number | null;
-  previousClose: number | null;
-  change: number | null;
-  changePercent: number | null;
-  updated: number | null;
-  volume: number | null;
-};
-
-type MarketSnapshotPayload = {
-  indices: MarketInstrument[];
-  commodities: MarketInstrument[];
-  equities: MarketInstrument[];
-  movers: {
-    gainers: MarketMoverRow[];
-    losers: MarketMoverRow[];
-  };
-};
 
 type SnapshotCoverage = {
   totalInstruments: number;
@@ -85,7 +63,7 @@ function normalizeTicker(raw: string) {
 }
 
 function normalizeRealtimeSymbol(raw: string) {
-  return normalizeTicker(raw).replace(/\//g, '');
+  return normalizeQuoteSymbol(normalizeTicker(raw));
 }
 
 function toNumberOrNull(value: unknown) {
@@ -308,35 +286,7 @@ async function fetchRealtimeSnapshot(
   }
 
   const quoteLookup = new Map(quotes.map((quote) => [normalizeRealtimeSymbol(quote.symbol), quote]));
-
-  const mapRealtimeInstrument = (symbol: string, label: string): MarketInstrument => {
-    const quote = quoteLookup.get(normalizeRealtimeSymbol(symbol));
-    if (!quote) {
-      return {
-        symbol: normalizeTicker(symbol),
-        label,
-        price: null,
-        change: null,
-        changePercent: null,
-        marketStatus: null,
-        quoteSession: 'snapshot',
-        extendedQuoteUnavailable: false,
-        extendedUnavailableLabel: null,
-      };
-    }
-
-    return {
-      symbol: normalizeTicker(symbol),
-      label,
-      price: quote.lastPrice ?? null,
-      change: quote.netChange ?? null,
-      changePercent: quote.netChangePercent ?? null,
-      marketStatus: quote.securityStatus ?? null,
-      quoteSession: currentSession,
-      extendedQuoteUnavailable: false,
-      extendedUnavailableLabel: null,
-    };
-  };
+  const { indices, commodities, equities } = quotesToSnapshot(quoteLookup, currentSession);
 
   let screenerGainers: MarketMoverRow[] = [];
   let screenerLosers: MarketMoverRow[] = [];
@@ -350,56 +300,12 @@ async function fetchRealtimeSnapshot(
 
     if (screenerRow) {
       const screenerData = screenerRow.dataJson as {
-        gainers?: Array<{
-          symbol?: string;
-          lastPrice?: number;
-          netChange?: number;
-          netChangePercent?: number;
-          totalVolume?: number;
-        }>;
-        losers?: Array<{
-          symbol?: string;
-          lastPrice?: number;
-          netChange?: number;
-          netChangePercent?: number;
-          totalVolume?: number;
-        }>;
+        gainers?: SchwabScreenerItem[];
+        losers?: SchwabScreenerItem[];
       };
 
-      const toMoverRows = (
-        rows: Array<{
-          symbol?: string;
-          lastPrice?: number;
-          netChange?: number;
-          netChangePercent?: number;
-          totalVolume?: number;
-        }> | undefined,
-      ): MarketMoverRow[] => {
-        if (!rows) {
-          return [];
-        }
-
-        return rows
-          .map((row): MarketMoverRow | null => {
-            if (!row.symbol || row.symbol.length === 0) {
-              return null;
-            }
-
-            return {
-              ticker: row.symbol,
-              price: row.lastPrice ?? null,
-              previousClose: null,
-              change: row.netChange ?? null,
-              changePercent: row.netChangePercent ?? null,
-              updated: null,
-              volume: row.totalVolume ?? null,
-            };
-          })
-          .filter((row): row is MarketMoverRow => row !== null);
-      };
-
-      screenerGainers = toMoverRows(screenerData.gainers);
-      screenerLosers = toMoverRows(screenerData.losers);
+      screenerGainers = schwabScreenerToMoverRows(screenerData.gainers);
+      screenerLosers = schwabScreenerToMoverRows(screenerData.losers);
     }
   } catch {
     screenerGainers = [];
@@ -408,9 +314,9 @@ async function fetchRealtimeSnapshot(
 
   const result: RealtimeSnapshotResult = {
     data: {
-      indices: INDEX_SYMBOLS.map((symbol) => mapRealtimeInstrument(symbol, symbol)),
-      commodities: COMMODITY_SYMBOLS.map((item) => mapRealtimeInstrument(item.ticker, item.label)),
-      equities: EQUITY_SYMBOLS.map((symbol) => mapRealtimeInstrument(symbol, symbol)),
+      indices,
+      commodities,
+      equities,
       movers: {
         gainers: screenerGainers,
         losers: screenerLosers,

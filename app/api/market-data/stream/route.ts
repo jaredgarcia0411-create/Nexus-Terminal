@@ -12,8 +12,14 @@ const PUSH_INTERVAL_MS = 5_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const SCHWAB_SCREENER_SNAPSHOT_TYPE = 'schwab_screener';
 
-import { INDEX_SYMBOLS, COMMODITY_SYMBOLS, EQUITY_SYMBOLS } from '@/lib/market-symbols';
 import type { ScannerSortDir, ScannerSortKey } from '@/lib/types';
+import {
+  normalizeQuoteSymbol,
+  quotesToSnapshot,
+  schwabScreenerToMoverRows,
+  type MarketMoverRow,
+  type SchwabScreenerItem,
+} from '@/lib/quote-mappers';
 
 type QuoteRow = {
   symbol: string;
@@ -37,20 +43,6 @@ type ScannerParams = {
   sortDir: ScannerSortDir;
   limit: number;
 };
-
-type MoverRow = {
-  ticker: string;
-  price: number | null;
-  previousClose: number | null;
-  change: number | null;
-  changePercent: number | null;
-  updated: number | null;
-  volume: number | null;
-};
-
-function normalizeSymbol(value: string): string {
-  return value.trim().toUpperCase().replace(/\//g, '');
-}
 
 function parseScannerParams(request: Request): ScannerParams {
   const { searchParams } = new URL(request.url);
@@ -93,84 +85,19 @@ function parseScannerParams(request: Request): ScannerParams {
 }
 
 function mapSnapshotFromQuotes(quotes: QuoteRow[]) {
-  const quoteLookup = new Map(quotes.map((quote) => [normalizeSymbol(quote.symbol), quote]));
-
-  const toInstrument = (symbol: string, label: string) => {
-    const quote = quoteLookup.get(normalizeSymbol(symbol));
-    if (!quote) {
-      return {
-        symbol,
-        label,
-        price: null,
-        change: null,
-        changePercent: null,
-        marketStatus: null,
-        quoteSession: 'snapshot' as const,
-        extendedQuoteUnavailable: false,
-        extendedUnavailableLabel: null,
-      };
-    }
-
-    return {
-      symbol,
-      label,
-      price: quote.lastPrice,
-      change: quote.netChange,
-      changePercent: quote.netChangePercent,
-      marketStatus: quote.securityStatus,
-      quoteSession: 'regular' as const,
-      extendedQuoteUnavailable: false,
-      extendedUnavailableLabel: null,
-    };
-  };
-
-  return {
-    indices: INDEX_SYMBOLS.map((symbol) => toInstrument(symbol, symbol)),
-    commodities: COMMODITY_SYMBOLS.map((item) => toInstrument(item.ticker, item.label)),
-    equities: EQUITY_SYMBOLS.map((symbol) => toInstrument(symbol, symbol)),
-  };
+  const quoteLookup = new Map(quotes.map((quote) => [normalizeQuoteSymbol(quote.symbol), quote]));
+  return quotesToSnapshot(quoteLookup);
 }
 
-function mapMovers(dataJson: unknown): { gainers: MoverRow[]; losers: MoverRow[] } {
+function mapMovers(dataJson: unknown): { gainers: MarketMoverRow[]; losers: MarketMoverRow[] } {
   const data = dataJson as {
-    gainers?: Array<{
-      symbol?: string;
-      lastPrice?: number;
-      netChange?: number;
-      netChangePercent?: number;
-      totalVolume?: number;
-    }>;
-    losers?: Array<{
-      symbol?: string;
-      lastPrice?: number;
-      netChange?: number;
-      netChangePercent?: number;
-      totalVolume?: number;
-    }>;
-  };
-
-  const toRows = (rows: typeof data.gainers): MoverRow[] => {
-    if (!rows) return [];
-
-    return rows
-      .map((row): MoverRow | null => {
-        if (!row.symbol) return null;
-        return {
-          ticker: row.symbol,
-          price: row.lastPrice ?? null,
-          previousClose: null,
-          change: row.netChange ?? null,
-          changePercent: row.netChangePercent ?? null,
-          updated: null,
-          volume: row.totalVolume ?? null,
-        };
-      })
-      .filter((row): row is MoverRow => row !== null);
+    gainers?: SchwabScreenerItem[];
+    losers?: SchwabScreenerItem[];
   };
 
   return {
-    gainers: toRows(data.gainers),
-    losers: toRows(data.losers),
+    gainers: schwabScreenerToMoverRows(data.gainers),
+    losers: schwabScreenerToMoverRows(data.losers),
   };
 }
 

@@ -6,42 +6,15 @@ import JarvisMacroSummary from '@/components/trading/JarvisMacroSummary';
 import { Button } from '@/components/ui/button';
 import { useMarketStream } from '@/hooks/use-market-stream';
 import { useRelaySocket } from '@/hooks/use-relay-socket';
-import { INDEX_SYMBOLS, COMMODITY_SYMBOLS, EQUITY_SYMBOLS } from '@/lib/market-symbols';
 import { useSchwabStatus } from '@/hooks/use-schwab-status';
 import type { JarvisMacroSummaryOutput } from '@/lib/jarvis/types';
+import {
+  quotesToSnapshot,
+  type MarketInstrument,
+  type MarketMoverRow,
+  type MarketSnapshotPayload,
+} from '@/lib/quote-mappers';
 import type { RelayQuoteUpdate, RelayScreenerData } from '@/lib/relay-types';
-
-type MarketInstrument = {
-  symbol: string;
-  label: string;
-  price: number | null;
-  change: number | null;
-  changePercent: number | null;
-  marketStatus: string | null;
-  quoteSession: 'pre-market' | 'regular' | 'after-hours' | 'closed' | 'snapshot';
-  extendedQuoteUnavailable: boolean;
-  extendedUnavailableLabel: string | null;
-};
-
-type MarketMoverRow = {
-  ticker: string;
-  price: number | null;
-  previousClose: number | null;
-  change: number | null;
-  changePercent: number | null;
-  updated: number | null;
-  volume: number | null;
-};
-
-type SnapshotPayload = {
-  indices: MarketInstrument[];
-  commodities: MarketInstrument[];
-  equities: MarketInstrument[];
-  movers: {
-    gainers: MarketMoverRow[];
-    losers: MarketMoverRow[];
-  };
-};
 
 type SnapshotCoverage = {
   totalInstruments: number;
@@ -79,7 +52,7 @@ function countMissing(items: MarketInstrument[]) {
   return items.filter((item) => item.price == null).length;
 }
 
-function buildCoverage(data: SnapshotPayload): SnapshotCoverage {
+function buildCoverage(data: MarketSnapshotPayload): SnapshotCoverage {
   const totalInstruments = data.indices.length + data.commodities.length + data.equities.length;
   const missingPriceBySection = {
     indices: countMissing(data.indices),
@@ -204,7 +177,7 @@ function MoversTable({ title, rows }: { title: string; rows: MarketMoverRow[] })
 
 export default function MarketsTab() {
   const [macroSummary, setMacroSummary] = useState<JarvisMacroSummaryOutput | null>(null);
-  const [snapshot, setSnapshot] = useState<SnapshotPayload | null>(null);
+  const [snapshot, setSnapshot] = useState<MarketSnapshotPayload | null>(null);
   const [loadingMacro, setLoadingMacro] = useState(true);
   const [loadingSnapshot, setLoadingSnapshot] = useState(true);
   const [warning, setWarning] = useState<string | null>(null);
@@ -218,27 +191,12 @@ export default function MarketsTab() {
   // --- Relay WebSocket (direct from Fly.io, bypasses DB) ---
   const quoteMapRef = useRef(new Map<string, RelayQuoteUpdate>());
 
-  const buildSnapshotFromQuotes = useCallback((quotes: Map<string, RelayQuoteUpdate>): SnapshotPayload => {
-
-    const toInstrument = (symbol: string, label: string): MarketInstrument => {
-      const q = quotes.get(symbol);
-      return {
-        symbol,
-        label,
-        price: q?.lastPrice ?? null,
-        change: q?.netChange ?? null,
-        changePercent: q?.netChangePercent ?? null,
-        marketStatus: q?.securityStatus ?? null,
-        quoteSession: q ? 'regular' : 'snapshot',
-        extendedQuoteUnavailable: false,
-        extendedUnavailableLabel: null,
-      };
-    };
-
+  const buildSnapshotFromQuotes = useCallback((quotes: Map<string, RelayQuoteUpdate>): MarketSnapshotPayload => {
+    const { indices, commodities, equities } = quotesToSnapshot(quotes);
     return {
-      indices: INDEX_SYMBOLS.map((s) => toInstrument(s, s)),
-      commodities: COMMODITY_SYMBOLS.map((c) => toInstrument(c.ticker, c.label)),
-      equities: EQUITY_SYMBOLS.map((s) => toInstrument(s, s)),
+      indices,
+      commodities,
+      equities,
       movers: snapshot?.movers ?? { gainers: [], losers: [] },
     };
   }, [snapshot?.movers]);
@@ -309,7 +267,7 @@ export default function MarketsTab() {
     scannerSortDir: 'desc' as const,
     onSnapshot: (data) => {
       const payload = data as {
-        mappedSnapshot?: SnapshotPayload;
+        mappedSnapshot?: MarketSnapshotPayload;
         fetchedAt?: string;
       };
 
@@ -351,7 +309,7 @@ export default function MarketsTab() {
       const response = await fetch('/api/market-data/snapshot');
       if (!response.ok) throw new Error('Failed to load market snapshot');
       const payload = (await response.json()) as {
-        data?: SnapshotPayload;
+        data?: MarketSnapshotPayload;
         fetchedAt?: string;
         warning?: string | null;
         stale?: boolean;

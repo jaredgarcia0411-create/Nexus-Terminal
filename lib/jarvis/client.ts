@@ -1,5 +1,3 @@
-import { isCircuitOpen, recordLlmFailure, recordLlmSuccess } from '@/lib/jarvis/circuit-breaker';
-
 const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
 const DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const DEFAULT_TIMEOUT_MS = 25_000;
@@ -103,28 +101,11 @@ async function requestLlm(systemPrompt: string, userMessage: string, temperature
 }
 
 export async function callJarvis(systemPrompt: string, userMessage: string, temperature = 0.2): Promise<JarvisClientResult> {
-  if (isCircuitOpen()) {
-    throw new Error('Jarvis circuit breaker is open');
-  }
-
   try {
-    const result = await requestLlm(systemPrompt, userMessage, temperature);
-    recordLlmSuccess();
-    return result;
-  } catch (firstError) {
-    recordLlmFailure();
-    if (isCircuitOpen()) {
-      throw firstError;
-    }
-
-    try {
-      const retryResult = await requestLlm(systemPrompt, userMessage, temperature);
-      recordLlmSuccess();
-      return retryResult;
-    } catch (retryError) {
-      recordLlmFailure();
-      throw retryError;
-    }
+    return await requestLlm(systemPrompt, userMessage, temperature);
+  } catch {
+    // One retry on failure
+    return await requestLlm(systemPrompt, userMessage, temperature);
   }
 }
 
@@ -133,10 +114,6 @@ export async function callJarvisStreaming(
   userMessage: string,
   temperature = 0.2,
 ): Promise<{ stream: ReadableStream<string>; modelUsed: string }> {
-  if (isCircuitOpen()) {
-    throw new Error('Jarvis circuit breaker is open');
-  }
-
   const apiKey = process.env.JARVIS_API_KEY;
   if (!apiKey) {
     throw new Error('JARVIS_API_KEY is not configured');
@@ -169,7 +146,6 @@ export async function callJarvisStreaming(
     });
   } catch (error) {
     clearTimeout(timeout);
-    recordLlmFailure();
     if ((error as { name?: string }).name === 'AbortError') {
       throw new Error(`LLM request timed out after ${timeoutMs}ms`);
     }
@@ -178,7 +154,6 @@ export async function callJarvisStreaming(
 
   if (!response.ok || !response.body) {
     clearTimeout(timeout);
-    recordLlmFailure();
     const detail = await readFailureDetail(response);
     throw new Error(`LLM request failed with status ${response.status}${detail}`);
   }
@@ -186,7 +161,6 @@ export async function callJarvisStreaming(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
-  let settled = false;
 
   const stream = new ReadableStream<string>({
     async pull(streamController) {
@@ -194,11 +168,7 @@ export async function callJarvisStreaming(
         const { done, value } = await reader.read();
 
         if (done) {
-          if (!settled) {
-            settled = true;
-            clearTimeout(timeout);
-            recordLlmSuccess();
-          }
+          clearTimeout(timeout);
           streamController.close();
           return;
         }
@@ -213,11 +183,7 @@ export async function callJarvisStreaming(
           const payload = trimmed.slice(6);
 
           if (payload === '[DONE]') {
-            if (!settled) {
-              settled = true;
-              clearTimeout(timeout);
-              recordLlmSuccess();
-            }
+            clearTimeout(timeout);
             streamController.close();
             return;
           }
@@ -235,19 +201,12 @@ export async function callJarvisStreaming(
           }
         }
       } catch (error) {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timeout);
-          recordLlmFailure();
-        }
+        clearTimeout(timeout);
         streamController.error(error);
       }
     },
     cancel() {
-      if (!settled) {
-        settled = true;
-        clearTimeout(timeout);
-      }
+      clearTimeout(timeout);
       reader.cancel().catch(() => {});
     },
   });

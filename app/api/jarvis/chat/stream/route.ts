@@ -7,7 +7,7 @@ import { parseResearchCommand, saveConversation } from '@/lib/jarvis/chat-helper
 import { buildContext } from '@/lib/jarvis/context';
 import { JARVIS_SYSTEM_PROMPT, buildChatPrompt } from '@/lib/jarvis/prompts';
 import { checkRateLimit, rateLimitExceededResponse } from '@/lib/jarvis/rate-limit';
-import { estimateTokens, logJarvisRequest } from '@/lib/jarvis/token-tracking';
+import { logJarvisRequest } from '@/lib/jarvis/token-tracking';
 import { createSSEResponse } from '@/lib/sse';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { jarvisChatSchema } from '@/lib/validations/jarvis';
@@ -65,7 +65,6 @@ export async function POST(request: Request) {
 
     return createSSEResponse(request.signal, (send) => {
       let fullText = '';
-      let chunkCount = 0;
       let closed = false;
 
       const closeReader = () => {
@@ -80,7 +79,6 @@ export async function POST(request: Request) {
             const { done, value } = await reader.read();
             if (done) break;
             fullText += value;
-            chunkCount += 1;
             send('token', { text: value });
           }
 
@@ -95,29 +93,11 @@ export async function POST(request: Request) {
               content: fullText,
               mode: 'chat',
             }),
-            logJarvisRequest({
-              userId,
-              mode: 'chat',
-              inputTokens: estimateTokens(prompt),
-              outputTokens: estimateTokens(fullText),
-              durationMs: Date.now() - startedAt,
-              success: true,
-              sourceCount: 0,
-              chunkCount,
-            }),
+            logJarvisRequest({ userId, mode: 'chat', durationMs: Date.now() - startedAt, success: true }),
           ]);
         } catch {
           send('error', { message: 'Stream interrupted' });
-          await logJarvisRequest({
-            userId,
-            mode: 'chat',
-            inputTokens: estimateTokens(prompt),
-            outputTokens: estimateTokens(fullText),
-            durationMs: Date.now() - startedAt,
-            success: false,
-            sourceCount: 0,
-            chunkCount,
-          });
+          await logJarvisRequest({ userId, mode: 'chat', durationMs: Date.now() - startedAt, success: false });
         }
       })();
 
@@ -126,16 +106,7 @@ export async function POST(request: Request) {
       };
     });
   } catch {
-    await logJarvisRequest({
-      userId,
-      mode: 'chat',
-      inputTokens: estimateTokens(prompt),
-      outputTokens: 0,
-      durationMs: Date.now() - startedAt,
-      success: false,
-      sourceCount: 0,
-      chunkCount: 0,
-    });
+    await logJarvisRequest({ userId, mode: 'chat', durationMs: Date.now() - startedAt, success: false });
     return Response.json({ error: 'Failed to start stream' }, { status: 500 });
   }
 }

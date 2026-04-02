@@ -9,7 +9,7 @@ import { buildContext } from '@/lib/jarvis/context';
 import { JARVIS_SYSTEM_PROMPT, buildChatPrompt } from '@/lib/jarvis/prompts';
 import { checkRateLimit, rateLimitExceededResponse } from '@/lib/jarvis/rate-limit';
 import { fetchAndCacheRawReport, runResearchTldr } from '@/lib/jarvis/research';
-import { estimateTokens, logJarvisRequest } from '@/lib/jarvis/token-tracking';
+import { logJarvisRequest } from '@/lib/jarvis/token-tracking';
 import { runTradeAnalysisPipeline } from '@/lib/jarvis/trade-analysis';
 import { jarvisChatSchema } from '@/lib/validations/jarvis';
 
@@ -80,38 +80,12 @@ export async function POST(request: Request) {
     const llm = await callJarvis(JARVIS_SYSTEM_PROMPT, prompt);
     await saveConversation({ db, userId, sessionId, role: 'assistant', content: llm.content, mode: 'chat' });
 
-    try {
-      await logJarvisRequest({
-        userId,
-        mode: 'chat',
-        inputTokens: estimateTokens(prompt),
-        outputTokens: estimateTokens(llm.content),
-        durationMs: Date.now() - startedAt,
-        success: true,
-        sourceCount: 0,
-        chunkCount: 0,
-      });
-    } catch (logError) {
-      logRouteError('jarvis.chat.post.token-tracking', logError);
-    }
+    await logJarvisRequest({ userId, mode: 'chat', durationMs: Date.now() - startedAt, success: true });
 
     return Response.json({ message: llm.content, session_id: sessionId });
   } catch (error) {
     if (userId) {
-      try {
-        await logJarvisRequest({
-          userId,
-          mode: 'chat',
-          inputTokens: 0,
-          outputTokens: 0,
-          durationMs: Date.now() - startedAt,
-          success: false,
-          sourceCount: 0,
-          chunkCount: 0,
-        });
-      } catch (logError) {
-        logRouteError('jarvis.chat.post.token-tracking', logError);
-      }
+      await logJarvisRequest({ userId, mode: 'chat', durationMs: Date.now() - startedAt, success: false });
     }
     logRouteError('jarvis.chat.post', error);
     return internalServerError();

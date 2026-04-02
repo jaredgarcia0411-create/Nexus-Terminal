@@ -5,7 +5,6 @@ const {
   checkRateLimitMock,
   buildContextMock,
   ensureUserMock,
-  estimateTokensMock,
   getDbMock,
   logJarvisRequestMock,
   requireUserMock,
@@ -14,7 +13,6 @@ const {
   checkRateLimitMock: vi.fn(),
   buildContextMock: vi.fn(),
   ensureUserMock: vi.fn(),
-  estimateTokensMock: vi.fn(),
   getDbMock: vi.fn(),
   logJarvisRequestMock: vi.fn(),
   requireUserMock: vi.fn(),
@@ -28,7 +26,6 @@ vi.mock('@/lib/jarvis/rate-limit', async (importOriginal) => {
   return { ...actual, checkRateLimit: checkRateLimitMock };
 });
 vi.mock('@/lib/jarvis/token-tracking', () => ({
-  estimateTokens: estimateTokensMock,
   logJarvisRequest: logJarvisRequestMock,
 }));
 vi.mock('@/lib/server-db-utils', () => ({
@@ -145,7 +142,6 @@ describe('jarvis chat stream route', () => {
       macro_summary: null,
       memory: [],
     });
-    estimateTokensMock.mockReturnValue(0);
     callJarvisStreamingMock.mockResolvedValue(createStreamingResponse(['Hello', ' world']));
   });
 
@@ -196,7 +192,6 @@ describe('jarvis chat stream route', () => {
   });
 
   it('streams chat response tokens and final text', async () => {
-    estimateTokensMock.mockReturnValueOnce(5).mockReturnValue(2);
     const db = makeDbMock();
     getDbMock.mockReturnValue(db);
 
@@ -236,12 +231,8 @@ describe('jarvis chat stream route', () => {
     expect(logJarvisRequestMock).toHaveBeenCalledWith({
       userId: 'canonical-u1',
       mode: 'chat',
-      inputTokens: 5,
-      outputTokens: 2,
       durationMs: expect.any(Number),
       success: true,
-      sourceCount: 0,
-      chunkCount: 2,
     });
   });
 
@@ -283,7 +274,6 @@ describe('jarvis chat stream route', () => {
       userId: 'canonical-u1',
       mode: 'chat',
       success: false,
-      chunkCount: 0,
     }));
   });
 });

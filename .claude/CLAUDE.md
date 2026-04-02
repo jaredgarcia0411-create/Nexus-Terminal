@@ -85,7 +85,7 @@ Import from `lib/server-db-utils.ts`. Returns `{ user: { id, email, name, pictur
 - `lib/indicators.ts` — SMA, EMA, RSI, MACD, VWAP, Bollinger, ATR
 
 ## Jarvis AI Pipeline
-All modules in `lib/jarvis/` — client, types, prompts, context, memory, research, trade-analysis, askedgar, historical-summary, scrape-lite, rate-limit, circuit-breaker, token-tracking, admin, chat-helpers.
+All modules in `lib/jarvis/` — client, types, prompts, context, memory, research, trade-analysis, askedgar, historical-summary, scrape-lite, rate-limit, token-tracking, admin, chat-helpers.
 
 ## State Management
 Hooks in `hooks/` (12 files). Key ones:

@@ -10,7 +10,6 @@ vi.mock('@/lib/server-db-utils', () => ({
 }));
 
 import { DELETE as memoryDelete, GET as memoryGet } from '@/app/api/jarvis/admin/memory/route';
-import { GET as statsGet } from '@/app/api/jarvis/admin/stats/route';
 
 function ensureResponse(response: Response | undefined): Response {
   if (!response) {
@@ -25,19 +24,6 @@ describe('jarvis admin routes', () => {
     vi.clearAllMocks();
     process.env.JARVIS_ADMIN_KEY = 'admin-secret';
     getDbMock.mockReturnValue(null);
-  });
-
-  it('rejects jarvis stats when admin key is missing', async () => {
-    const response = await statsGet(new Request('http://localhost/api/jarvis/admin/stats', { method: 'GET' }));
-    expect(ensureResponse(response).status).toBe(401);
-  });
-
-  it('returns db unavailable for jarvis stats when authorized but db missing', async () => {
-    const response = await statsGet(new Request('http://localhost/api/jarvis/admin/stats', {
-      method: 'GET',
-      headers: { 'x-jarvis-admin-key': 'admin-secret' },
-    }));
-    expect(ensureResponse(response).status).toBe(503);
   });
 
   it('rejects jarvis memory routes when admin key is missing', async () => {

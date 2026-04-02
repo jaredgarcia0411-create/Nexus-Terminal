@@ -20,6 +20,57 @@ Historical completed sections removed — use git history and `specs/` for archi
 
 ---
 
+## Codebase Simplification — Deferred Items
+
+> Generated: 2026-04-02 | Status: PENDING
+> Context: Simplification pass removed circuit breaker, token tracking overhead, admin stats, empty scaffolding, and extracted shared quote mappers. These items remain as follow-up work.
+
+### 1. Normalize AskEdgar research data on the server (Medium risk)
+
+**Problem:** `ResearchReportSections.tsx` is 950 lines with 148 instances of `getField()` doing multi-key fallback resolution. The `/api/askedgar/lookup` endpoint returns raw AskEdgar data untouched — all field normalization, filtering (equity line dedup, warrant status calc, baby shelf classification) happens client-side.
+
+**Target:**
+- Create `/api/askedgar/snapshot` endpoint that returns a normalized `ResearchSnapshot` shape
+- Move field fallback logic (`getField(row, ['snake_case', 'camelCase'])`) into server-side normalizer
+- Move filtering (equity line dedup, warrant classification) to server
+- Reduce `ResearchReportSections.tsx` from ~950 to ~600 lines (render-only)
+
+**Files:**
+- `lib/jarvis/askedgar.ts` — add `normalizeAskEdgarResponse()` function
+- `app/api/askedgar/snapshot/route.ts` — new endpoint (or extend `/lookup`)
+- `components/trading/ResearchReportSections.tsx` — strip transformation logic, keep rendering
+
+### 2. Break up snapshot route (Medium risk)
+
+**Problem:** `app/api/market-data/snapshot/route.ts` is 701 lines — the largest API route. Contains 3 data source fallbacks (realtime DB, cached snapshot, Massive API), extended session logic, and inline instrument mapping.
+
+**Target:**
+- Extract `fetchFreshSnapshot()` + `toInstrument()` (Massive API path) into `lib/massive-snapshot.ts`
+- Extract `fetchRealtimeSnapshot()` into `lib/realtime-snapshot.ts`
+- Leave route as thin orchestrator (~150 lines) that picks the right data source
+
+**Files:**
+- `app/api/market-data/snapshot/route.ts` — shrink to orchestrator
+- `lib/massive-snapshot.ts` — new, Massive API snapshot builder
+- `lib/realtime-snapshot.ts` — new, realtime DB snapshot builder
+
+### 3. Merge Jarvis chat + stream routes (Low risk)
+
+**Problem:** `app/api/jarvis/chat/route.ts` (non-streaming) and `app/api/jarvis/chat/stream/route.ts` (streaming) duplicate ~60 lines of auth, rate limiting, context building, and conversation saving logic.
+
+**Target:**
+- Merge into single route with `?stream=1` param
+- Commands (`/research`, `/analyze`) always return JSON
+- Normal chat streams by default
+- Requires frontend update to call unified endpoint
+
+**Files:**
+- `app/api/jarvis/chat/route.ts` — merge stream logic in
+- `app/api/jarvis/chat/stream/route.ts` — delete after merge
+- Frontend Jarvis component — update endpoint URL
+
+---
+
 ## AskEdgar Gap Stats, Ownership, Gainers Sort, Docs Update
 
 > Generated: 2026-03-29 | Status: IN PROGRESS (implementation complete, manual verification pending)

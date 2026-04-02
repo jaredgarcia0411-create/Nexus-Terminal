@@ -24,20 +24,7 @@ export async function POST(request: Request) {
     const startedAt = Date.now();
     const result = await runTradeAnalysisPipeline(canonicalUser.id);
 
-    try {
-      await logJarvisRequest({
-        userId: canonicalUser.id,
-        mode: 'trade-analysis',
-        inputTokens: 0,
-        outputTokens: 0,
-        durationMs: Date.now() - startedAt,
-        success: true,
-        sourceCount: 0,
-        chunkCount: 0,
-      });
-    } catch (logError) {
-      logRouteError('jarvis.trade-analysis.post.token-tracking', logError);
-    }
+    await logJarvisRequest({ userId: canonicalUser.id, mode: 'trade-analysis', durationMs: Date.now() - startedAt, success: true });
 
     return Response.json(result.analysis);
   } catch (error) {

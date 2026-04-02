@@ -3,18 +3,15 @@ import { getDb } from '@/lib/db';
 import { jarvisRequestLog } from '@/lib/db/schema';
 import type { JarvisMode } from '@/lib/jarvis/types';
 
-export interface TokenTrackingEntry {
+export interface RequestLogEntry {
   userId: string;
   mode: JarvisMode;
-  inputTokens: number;
-  outputTokens: number;
   durationMs: number;
   success: boolean;
-  sourceCount: number;
-  chunkCount: number;
 }
 
-export async function logJarvisRequest(entry: TokenTrackingEntry): Promise<void> {
+/** Minimal request log — records enough for rate limiting and basic diagnostics. */
+export async function logJarvisRequest(entry: RequestLogEntry): Promise<void> {
   const db = getDb();
   if (!db) return;
 
@@ -23,19 +20,10 @@ export async function logJarvisRequest(entry: TokenTrackingEntry): Promise<void>
       id: crypto.randomUUID(),
       userId: entry.userId,
       mode: entry.mode,
-      inputTokens: entry.inputTokens,
-      outputTokens: entry.outputTokens,
-      totalTokens: entry.inputTokens + entry.outputTokens,
       durationMs: entry.durationMs,
       success: entry.success ? 1 : 0,
-      sourceCount: entry.sourceCount,
-      chunkCount: entry.chunkCount,
     });
   } catch (error) {
-    logRouteError('jarvis.token_tracking', error);
+    logRouteError('jarvis.request_log', error);
   }
-}
-
-export function estimateTokens(text: string): number {
-  return text.trim().split(/\s+/).filter(Boolean).length;
 }
