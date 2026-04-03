@@ -226,6 +226,8 @@ export interface ResearchSnapshotGapStat {
   tags: string[];
 }
 
+// Client-safe shape — sent to the browser via /api/askedgar/snapshot.
+// Does NOT include rawData (full 16-endpoint payload). That lives in ResearchSnapshotFull.
 export interface ResearchSnapshot {
   ticker: string;
   fetchedAt: string;
@@ -251,5 +253,10 @@ export interface ResearchSnapshot {
   reverseSplits: ResearchSnapshotReverseSplit[];
   agreements: ResearchSnapshotAgreement[];
   gapStats: ResearchSnapshotGapStat[];
+}
+
+// Server-side full shape — includes the raw per-endpoint API payloads used by
+// the Jarvis LLM pipeline (lib/jarvis/research.ts). Never sent to the browser.
+export interface ResearchSnapshotFull extends ResearchSnapshot {
   rawData: Record<string, { status: string; results: unknown[]; error?: string }>;
 }

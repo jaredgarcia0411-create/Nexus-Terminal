@@ -73,7 +73,6 @@ export default function NexusTerminal() {
     isImporting,
     mounted,
     error,
-    useLocalStorage,
     importInputRef,
     folderInputRef,
     selectedIds,
@@ -166,7 +165,6 @@ export default function NexusTerminal() {
         setActiveTab={setActiveTab}
         user={user}
         trades={trades}
-        useLocalStorage={useLocalStorage}
         onClearAllData={handleClearAllData}
         onSignOut={handleSignOut}
         onNewTradeClick={() => setIsManualTradeOpen(true)}

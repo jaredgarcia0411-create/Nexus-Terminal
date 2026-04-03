@@ -79,7 +79,10 @@ Import from `lib/server-db-utils.ts`. Returns `{ user: { id, email, name, pictur
 ## Core
 - `lib/server-db-utils.ts` — `requireUser()`, `ensureUser()` — all API routes must use these
 - `lib/auth-config.ts` — NextAuth config
-- `lib/trading-utils.ts` — formatCurrency, formatR, calculatePnL
+- `lib/types.ts` — Centralized type definitions (Trade, ScannerRow, ResearchSnapshot, etc.)
+- `lib/trading-utils.ts` — formatCurrency, formatR, calculatePnL, buildTradeMarkers, getPnLColor, getPnLHex
+- `lib/trade-utils.ts` — Trade-specific utilities (normalizeTrade, sortTradesByDate, toApiTrade, fromApiTrade, collectImportedTrades, apiRequest)
+- `lib/chart-timeframes.ts` — Chart timeframe configs shared across all chart components
 - `lib/csv-parser.ts` — CSV parsing with broker auto-detection
 - `lib/parsers/` — pluggable parser system (DAS Trader, generic)
 - `lib/indicators.ts` — SMA, EMA, RSI, MACD, VWAP, Bollinger, ATR
@@ -88,7 +91,7 @@ Import from `lib/server-db-utils.ts`. Returns `{ user: { id, email, name, pictur
 All modules in `lib/jarvis/` — client, types, prompts, context, memory, research, trade-analysis, askedgar, historical-summary, scrape-lite, rate-limit, token-tracking, admin, chat-helpers.
 
 ## State Management
-Hooks in `hooks/` (12 files). Key ones:
+Hooks in `hooks/` (11 files). Key ones:
 - `use-trades.ts` — central trade hook: CRUD, filtering, CSV import, cloud sync
 - `use-candle-data.ts` — market data fetching with cache
 - `use-market-stream.ts` — SSE market data stream
@@ -149,7 +152,7 @@ Names only — values in `.env.local` (never committed):
 - `scripts/trade-screenshots/` — Reference images (gitignored)
 - `scripts/trade-examples-template.json` — Auto-generated template (gitignored)
 - `scripts/trade-examples-reviewed.json` — Human-annotated final version (gitignored)
-- `scripts/seed-trade-examples.ts` — Loads reviewed trades into `agent_memory_v2` (not yet built)
+- `scripts/seed-trade-examples.ts` — Loads reviewed trades into `agent_memory` (not yet built)
 
 ---
 

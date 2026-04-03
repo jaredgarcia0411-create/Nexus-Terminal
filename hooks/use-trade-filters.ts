@@ -5,7 +5,6 @@ import type { Trade } from '@/lib/types';
 type FilterPreset = 'all' | '30' | '60' | '90';
 
 type UseTradeFiltersOptions = {
-  useLocalStorage: boolean;
   setTrades: Dispatch<SetStateAction<Trade[]>>;
   setGlobalTags: Dispatch<SetStateAction<string[]>>;
   runWithErrorToast: (message: string, fn: () => Promise<void>) => void;
@@ -79,23 +78,6 @@ export function useTradeFilters(trades: Trade[], options?: UseTradeFiltersOption
     if (!cleanTag || selectedIds.size === 0) return;
 
     const ids = Array.from(selectedIds);
-
-    if (options.useLocalStorage) {
-      options.setTrades((prev) =>
-        prev.map((trade) =>
-          selectedIds.has(trade.id)
-            ? {
-                ...trade,
-                tags: Array.from(new Set([...(trade.tags ?? []), cleanTag])),
-              }
-            : trade,
-        ),
-      );
-      options.setGlobalTags((prev) => (prev.includes(cleanTag) ? prev : [...prev, cleanTag]));
-      setBulkTagInput('');
-      setSelectedIds(new Set());
-      return;
-    }
 
     options.runWithErrorToast('Failed to add bulk tag', async () => {
       await options.requestBulkAddTag(ids, cleanTag);

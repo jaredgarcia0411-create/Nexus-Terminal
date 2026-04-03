@@ -19,7 +19,7 @@ type ImportOptions = {
 };
 
 export function useTrades() {
-  const { status, user, trades, setTrades, globalTags, setGlobalTags, mounted, error, setError, useLocalStorage, refreshTrades } =
+  const { status, user, trades, setTrades, globalTags, setGlobalTags, mounted, error, setError, refreshTrades } =
     useTradeSync();
   const [isImporting, setIsImporting] = useState(false);
   const [riskInput, setRiskInput] = useState('');
@@ -56,7 +56,6 @@ export function useTrades() {
     handleSelectAll,
     handleBulkAddTag,
   } = useTradeFilters(trades, {
-    useLocalStorage,
     setTrades,
     setGlobalTags,
     runWithErrorToast: withErrorToast,
@@ -110,21 +109,17 @@ export function useTrades() {
     async (tradeId: string) => {
       const current = tradesRef.current.find((trade) => trade.id === tradeId);
       if (!current) return null;
-      if (useLocalStorage || current.rawExecutions.length > 0) return current;
+      if (current.rawExecutions.length > 0) return current;
       const result = await apiRequest<{ trade: ApiTrade }>(`/api/trades/${encodeURIComponent(tradeId)}`);
       const detailed = fromApiTrade(result.trade);
       setTrades((prev) => prev.map((trade) => (trade.id === tradeId ? detailed : trade)));
       return detailed;
     },
-    [setTrades, useLocalStorage],
+    [setTrades],
   );
 
   const handleCreateManualTrade = async (trade: Trade) => {
     const nextTrade = withDefaultRisk(trade);
-    if (useLocalStorage) {
-      setTrades((prev) => sortTrades([nextTrade, ...prev]));
-      return;
-    }
     const result = await apiRequest<{ trade: ApiTrade }>('/api/trades', {
       method: 'POST',
       body: JSON.stringify(toApiTrade(nextTrade)),
@@ -135,11 +130,6 @@ export function useTrades() {
   const handleDeleteSelected = () => {
     if (selectedIds.size === 0) return;
     const ids = Array.from(selectedIds);
-    if (useLocalStorage) {
-      setTrades((prev) => prev.filter((trade) => !selectedIds.has(trade.id)));
-      setSelectedIds(new Set());
-      return;
-    }
     withErrorToast('Failed to delete selected trades', async () => {
       await apiRequest('/api/trades/bulk', { method: 'POST', body: JSON.stringify({ action: 'delete', ids }) });
       setTrades((prev) => prev.filter((trade) => !selectedIds.has(trade.id)));
@@ -151,12 +141,6 @@ export function useTrades() {
     const risk = parseFloat(riskInput);
     if (!Number.isFinite(risk) || risk <= 0 || selectedIds.size === 0) return;
     const ids = Array.from(selectedIds);
-    if (useLocalStorage) {
-      setTrades((prev) => prev.map((trade) => (selectedIds.has(trade.id) ? { ...trade, initialRisk: risk } : trade)));
-      setRiskInput('');
-      setSelectedIds(new Set());
-      return;
-    }
     withErrorToast('Failed to apply risk', async () => {
       await apiRequest('/api/trades/bulk', { method: 'POST', body: JSON.stringify({ action: 'applyRisk', ids, value: risk }) });
       setTrades((prev) => prev.map((trade) => (selectedIds.has(trade.id) ? { ...trade, initialRisk: risk } : trade)));
@@ -166,10 +150,6 @@ export function useTrades() {
   };
 
   const handleSaveNotes = async (tradeId: string, notes: string) => {
-    if (useLocalStorage) {
-      setTrades((prev) => prev.map((trade) => (trade.id === tradeId ? { ...trade, notes } : trade)));
-      return;
-    }
     const result = await apiRequest<{ trade: ApiTrade }>(`/api/trades/${encodeURIComponent(tradeId)}`, {
       method: 'PATCH',
       body: JSON.stringify({ notes }),
@@ -183,11 +163,6 @@ export function useTrades() {
     const target = trades.find((trade) => trade.id === tradeId);
     if (!target) return;
     const nextTags = Array.from(new Set([...(target.tags ?? []), cleanTag]));
-    if (useLocalStorage) {
-      setTrades((prev) => prev.map((trade) => (trade.id === tradeId ? { ...trade, tags: nextTags } : trade)));
-      setGlobalTags((prev) => (prev.includes(cleanTag) ? prev : [...prev, cleanTag]));
-      return;
-    }
     withErrorToast('Failed to add tag', async () => {
       await apiRequest<{ trade: ApiTrade }>(`/api/trades/${encodeURIComponent(tradeId)}`, {
         method: 'PATCH',
@@ -202,10 +177,6 @@ export function useTrades() {
     const target = trades.find((trade) => trade.id === tradeId);
     if (!target) return;
     const nextTags = (target.tags ?? []).filter((tag) => tag !== tagName);
-    if (useLocalStorage) {
-      setTrades((prev) => prev.map((trade) => (trade.id === tradeId ? { ...trade, tags: nextTags } : trade)));
-      return;
-    }
     withErrorToast('Failed to remove tag', async () => {
       await apiRequest<{ trade: ApiTrade }>(`/api/trades/${encodeURIComponent(tradeId)}`, {
         method: 'PATCH',
@@ -221,13 +192,6 @@ export function useTrades() {
       next.delete(tagName);
       return next;
     };
-
-    if (useLocalStorage) {
-      setGlobalTags((prev) => prev.filter((tag) => tag !== tagName));
-      setTrades((prev) => prev.map((trade) => ({ ...trade, tags: (trade.tags ?? []).filter((tag) => tag !== tagName) })));
-      setSelectedFilterTags(removeFromSelected);
-      return;
-    }
 
     withErrorToast('Failed to delete tag', async () => {
       await apiRequest('/api/tags', { method: 'DELETE', body: JSON.stringify({ name: tagName }) });
@@ -245,15 +209,6 @@ export function useTrades() {
       setStartDate('');
       setEndDate('');
     };
-
-    if (useLocalStorage) {
-      setTrades([]);
-      setGlobalTags([]);
-      resetFiltersAndSelection();
-      localStorage.removeItem('nexus-trades');
-      localStorage.removeItem('nexus-tags');
-      return;
-    }
 
     withErrorToast('Failed to clear cloud data', async () => {
       if (trades.length > 0) {
@@ -284,7 +239,7 @@ export function useTrades() {
     setError(null);
 
     try {
-      const { trades: allNewTrades, processedDates, warnings } = await collectImportedTrades(files, {
+      const { trades: allNewTrades, warnings } = await collectImportedTrades(files, {
         includeFile: options.includeFile,
         resolveParser: options.resolveParser,
       });
@@ -296,35 +251,15 @@ export function useTrades() {
       }
 
       const importedTrades = allNewTrades.map((trade) => withDefaultRisk(trade));
-      if (useLocalStorage) {
-        setTrades((prev) => {
-          const existingMeta = new Map(
-            prev
-              .filter((trade) => processedDates.has(trade.sortKey))
-              .map((trade) => [trade.id, { tags: trade.tags, notes: trade.notes, initialRisk: trade.initialRisk }] as const),
-          );
-
-          const mergedNewTrades = importedTrades.map((trade) => {
-            const preserved = existingMeta.get(trade.id);
-            return preserved
-              ? { ...trade, tags: preserved.tags ?? [], notes: preserved.notes, initialRisk: preserved.initialRisk }
-              : trade;
-          });
-
-          const filtered = prev.filter((trade) => !processedDates.has(trade.sortKey));
-          return sortTrades([...mergedNewTrades, ...filtered]);
+      const apiTrades = importedTrades.map(toApiTrade);
+      for (let offset = 0; offset < apiTrades.length; offset += IMPORT_CHUNK_SIZE) {
+        const chunk = apiTrades.slice(offset, offset + IMPORT_CHUNK_SIZE);
+        await apiRequest<{ trades: ApiTrade[] }>('/api/trades/import', {
+          method: 'POST',
+          body: JSON.stringify({ trades: chunk }),
         });
-      } else {
-        const apiTrades = importedTrades.map(toApiTrade);
-        for (let offset = 0; offset < apiTrades.length; offset += IMPORT_CHUNK_SIZE) {
-          const chunk = apiTrades.slice(offset, offset + IMPORT_CHUNK_SIZE);
-          await apiRequest<{ trades: ApiTrade[] }>('/api/trades/import', {
-            method: 'POST',
-            body: JSON.stringify({ trades: chunk }),
-          });
-        }
-        await refreshTrades();
       }
+      await refreshTrades();
     } catch (uploadError) {
       const msg = uploadError instanceof Error ? uploadError.message : 'Processing error';
       setError(msg);
@@ -365,7 +300,7 @@ export function useTrades() {
   };
 
   return {
-    status, user, trades, globalTags, filteredTrades, isImporting, mounted, error, useLocalStorage, importInputRef, folderInputRef,
+    status, user, trades, globalTags, filteredTrades, isImporting, mounted, error, importInputRef, folderInputRef,
     selectedIds, startDate, endDate, riskInput, defaultRiskInput, defaultRisk, filterPreset, selectedFilterTags, bulkTagInput,
     searchQuery, hasActiveFilters, activeFilterCount, clearAllFilters, setStartDate, setEndDate, setRiskInput, setDefaultRiskInput,
     setFilterPreset, setSelectedFilterTags, setBulkTagInput, setSearchQuery, handleToggleSelect, handleSelectAll,

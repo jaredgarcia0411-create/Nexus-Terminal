@@ -2,7 +2,8 @@
 
 import { memo, useMemo } from 'react';
 import type { Trade } from '@/lib/types';
-import CandlestickChart, { type TradeMarker } from '@/components/trading/CandlestickChart';
+import CandlestickChart from '@/components/trading/CandlestickChart';
+import type { TradeMarker } from '@/lib/types';
 import {
   buildTradeChartOptions,
   type TradeChartTimeframeKey,

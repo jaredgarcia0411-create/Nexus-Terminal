@@ -2,7 +2,17 @@
 
 import { useState } from 'react';
 
-import { formatMoney, formatNumber, riskClass } from '@/lib/askedgar-utils';
+import {
+  babyShelfBadge,
+  detectFormType,
+  formatDate,
+  formatMoney,
+  formatNumber,
+  getWarrantStatus,
+  riskClass,
+  riskDotClass,
+  toStringValue,
+} from '@/lib/askedgar-utils';
 import type {
   ResearchSnapshot,
   ResearchSnapshotGapStat,
@@ -16,84 +26,6 @@ interface Props {
 }
 
 type TabKey = 'overview' | 'offering-ability' | 'dilution' | 'news-filings' | 'offerings' | 'history' | 'gap-stats';
-
-function toStringValue(value: string | number | boolean | null | undefined): string {
-  if (typeof value === 'string') return value || 'N/A';
-  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
-  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-  return 'N/A';
-}
-
-function formatDate(value: string | null | undefined): string {
-  if (!value) return 'N/A';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString();
-}
-
-function riskDotClass(colorClass: string) {
-  if (colorClass.includes('emerald')) return 'bg-emerald-500';
-  if (colorClass.includes('amber')) return 'bg-amber-500';
-  if (colorClass.includes('rose')) return 'bg-rose-500';
-  return 'bg-zinc-500';
-}
-
-function detectFormType(row: ResearchSnapshotRegistration): string | null {
-  if (row.formType) return row.formType.toUpperCase();
-  const headline = row.headline.toUpperCase();
-  if (headline.includes('S-1')) return 'S-1';
-  if (headline.includes('S-3')) return 'S-3';
-  if (headline.includes('F-3')) return 'F-3';
-  return null;
-}
-
-function babyShelfBadge(row: ResearchSnapshotRegistration): { label: string; colorClass: string } | null {
-  const formType = detectFormType(row);
-  const raisable = row.babyShelfRaisableAmount;
-
-  const GREEN = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
-  const AMBER = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
-  const RED = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
-
-  if (formType === 'S-1') return { label: 'S-1 Exempt', colorClass: GREEN };
-  if (!row.overBabyShelf) return { label: 'No Baby Shelf', colorClass: GREEN };
-  if (raisable !== null && raisable > 0) return { label: `Baby Shelf: ${formatMoney(raisable)} Left`, colorClass: AMBER };
-  return { label: 'Baby Shelf Exhausted', colorClass: RED };
-}
-
-function getWarrantStatus(warrant: ResearchSnapshotWarrant, currentPrice: number | null) {
-  const today = new Date().toISOString().slice(0, 10);
-  const registered = warrant.registered ?? '';
-  const exercisePrice = warrant.exercisePrice;
-  const remaining = warrant.remaining;
-
-  const RED = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
-  const YELLOW = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
-  const GREEN = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
-
-  if (warrant.isPrefunded) {
-    return { label: 'Not In Play', colorClass: RED };
-  }
-  if (remaining !== null && remaining <= 0) {
-    return { label: 'Not In Play', colorClass: RED };
-  }
-  if (!warrant.exercisableDate) {
-    return { label: 'Not In Play', colorClass: RED };
-  }
-  if (warrant.expirationDate && warrant.expirationDate < today) {
-    return { label: 'Not In Play', colorClass: RED };
-  }
-  if (warrant.exercisableDate > today) {
-    return { label: 'Not In Play', colorClass: RED };
-  }
-  if (registered !== 'Registered') {
-    return { label: 'Not In Play', colorClass: RED };
-  }
-  if (currentPrice !== null && exercisePrice !== null && currentPrice >= exercisePrice) {
-    return { label: 'In Play', colorClass: GREEN };
-  }
-  return { label: 'Potentially in Play', colorClass: YELLOW };
-}
 
 function NoDataBadge({ label = 'No data' }: { label?: string }) {
   return (

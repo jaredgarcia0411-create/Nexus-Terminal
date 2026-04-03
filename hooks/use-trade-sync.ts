@@ -15,12 +15,10 @@ export function useTradeSync() {
   const [globalTags, setGlobalTags] = useState<string[]>([]);
   const [mounted, setMounted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [useLocalStorage, setUseLocalStorage] = useState(false);
 
   const sortTrades = sortTradesByDate;
 
   const refreshTrades = useCallback(async () => {
-    if (useLocalStorage) return;
     const [tradesRes, tagsRes] = await Promise.all([
       apiRequest<{ trades: ApiTrade[] }>('/api/trades'),
       apiRequest<{ tags: string[] }>('/api/tags'),
@@ -28,13 +26,12 @@ export function useTradeSync() {
 
     setTrades(sortTrades(tradesRes.trades.map(fromApiTrade)));
     setGlobalTags(tagsRes.tags);
-  }, [sortTrades, useLocalStorage]);
+  }, [sortTrades]);
 
   useEffect(() => {
     if (status === 'loading') return;
 
     if (status === 'unauthenticated') {
-      setUseLocalStorage(false);
       setError('Authentication required');
       setMounted(true);
       return;
@@ -43,12 +40,10 @@ export function useTradeSync() {
     const loadRemote = async () => {
       try {
         if (!user?.id) {
-          setUseLocalStorage(false);
           setError('Authentication required');
           return;
         }
 
-        setUseLocalStorage(false);
         setError(null);
 
         await refreshTrades();
@@ -63,7 +58,6 @@ export function useTradeSync() {
         }
 
         console.error(loadError);
-        setUseLocalStorage(false);
         setError(loadError instanceof Error ? loadError.message : 'Could not load cloud data');
       } finally {
         setMounted(true);
@@ -83,8 +77,6 @@ export function useTradeSync() {
     mounted,
     error,
     setError,
-    useLocalStorage,
-    setUseLocalStorage,
     refreshTrades,
   };
 }

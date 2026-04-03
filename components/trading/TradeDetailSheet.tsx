@@ -10,7 +10,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import CandlestickChart, { type TradeMarker } from '@/components/trading/CandlestickChart';
+import CandlestickChart from '@/components/trading/CandlestickChart';
+import type { TradeMarker } from '@/lib/types';
 import { useCandleData } from '@/hooks/use-candle-data';
 import {
   buildTradeChartOptions,

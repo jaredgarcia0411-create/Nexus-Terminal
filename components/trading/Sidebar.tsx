@@ -16,7 +16,6 @@ interface SidebarProps {
   setActiveTab: Dispatch<SetStateAction<TabKey>>;
   user: UserSession;
   trades: Trade[];
-  useLocalStorage: boolean;
   onClearAllData: () => void;
   onSignOut: () => void;
   onNewTradeClick: () => void;
@@ -31,7 +30,6 @@ export default function Sidebar({
   setActiveTab,
   user,
   trades,
-  useLocalStorage,
   onClearAllData,
   onSignOut,
   onNewTradeClick,
@@ -200,15 +198,6 @@ export default function Sidebar({
         </DropdownMenuContent>
       </DropdownMenu>
     )}
-
-    {/* Cloud/Local Storage Mode */}
-    <div className={`rounded-lg border border-white/10 bg-white/5 ${collapsed ? 'flex items-center justify-center p-2' : 'px-3 py-2'}`} title={useLocalStorage ? 'Local Storage Mode' : 'Cloud Mode'}>
-      {collapsed ? (
-        <div className={`h-2 w-2 rounded-full ${useLocalStorage ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-      ) : (
-        <p className="text-[10px] uppercase tracking-widest text-zinc-500">{useLocalStorage ? 'Local Storage Mode' : 'Cloud Mode'}</p>
-      )}
-    </div>
 
     {/* Settings */}
     <SettingsMenu trades={trades} onClearAllData={onClearAllData} collapsed={collapsed} />

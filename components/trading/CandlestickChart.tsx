@@ -81,8 +81,6 @@ export interface CandlestickChartOptions {
   showCrosshairLegend?: boolean;
 }
 
-export type { TradeMarker };
-
 const NY_TIME_ZONE = 'America/New_York';
 
 const NY_INTRADAY_FORMATTER = new Intl.DateTimeFormat('en-US', {

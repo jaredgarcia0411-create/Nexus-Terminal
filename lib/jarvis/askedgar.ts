@@ -5,7 +5,7 @@ import { getDb } from '@/lib/db';
 import { askedgarCache } from '@/lib/db/schema';
 import type { DilutionDataSourceCheck } from '@/lib/jarvis/types';
 import type {
-  ResearchSnapshot,
+  ResearchSnapshotFull,
   ResearchSnapshotAgreement,
   ResearchSnapshotGapStat,
   ResearchSnapshotHistoricalFloatRow,
@@ -425,7 +425,7 @@ interface NormalizeAskEdgarOptions {
 export function normalizeAskEdgarResponse(
   rawData: Record<string, AskEdgarResponse<unknown>>,
   options: NormalizeAskEdgarOptions,
-): ResearchSnapshot {
+): ResearchSnapshotFull {
   const screener = firstResult(rawData, ['screener']);
   const dilutionRating = firstResult(rawData, ['dilution-rating', 'dilutionRating']);
   const dilutionData = getEndpointResponse(rawData, ['dilution-data', 'dilutionData']);
