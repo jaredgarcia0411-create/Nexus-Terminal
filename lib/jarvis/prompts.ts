@@ -88,37 +88,6 @@ export function buildMacroPrompt(context: JarvisContext) {
   );
 }
 
-// Compact schema — keeps token count low while giving the LLM the exact shape it must return.
-// Each top-level key maps to a type shorthand: s=string, n=number|null, b=boolean, []= array of objects.
-const RESEARCH_SCHEMA = `
-Return ONLY valid JSON. null for missing numbers, "" for missing strings, [] for missing arrays. Ratings: "High"|"Medium"|"Low"|"".
-{
-  "ticker":"s","generatedAt":"s (ISO 8601)",
-  "header":{"price":n,"marketCap":n,"float":n,"outstanding":n,"country":"s","industry":"s","sector":"s","isAdr":b,"gain1d":n,"gain7d":n,"gain30d":n,"volume":n,"avgVolume":n,"shortFloat":n,"shortInterest":n,"feeRate":n,"insiderPercent":n,"affiliatePercent":n,"institutionsPercent":n},
-  "dataSources":[{"endpoint":"s","label":"s","hasData":b,"error":"s?"}],
-  "news":[{"title":"s","summary":"s","body":"s","filedAt":"s","formType":"s","author":"s","tags":["s"],"isNews":b}],
-  "catalysts":[{"type":"s","description":"s","date":"s","risk":"s?","source":"news|compliance"}],
-  "dilution":{"rating":"s","description":"s","warrantExercise":"s","warrantExerciseDesc":"s","warrants":[{"details":"s","amount":n,"remaining":n,"exercisePrice":n,"registered":"s","exercisableDate":"s","expirationDate":"s","filedAt":"s"}],"convertibles":[{"details":"s","conversionPrice":n,"registered":"s","convertibleDate":"s","maturityDate":"s","offeringAmount":n,"debtRemaining":n,"sharesRemaining":n,"filedAt":"s"}]},
-  "offeringFrequency":{"rating":"s","description":"s","offerings":[{"headline":"s","filedAt":"s","formType":"s","offeringType":"s","sharesAmount":n,"warrantsAmount":n,"sharePrice":n,"offeringAmount":n,"conversionPrice":n}]},
-  "offeringAbility":{"rating":"s","description":"s","registrations":[{"headline":"s","filedAt":"s","effectiveDate":"s","expirationDate":"s","effectiveStatus":b,"offeringAmount":n,"isAtm":b,"bank":"s","amountRemainingAtm":n,"totalRaised":n,"overBabyShelf":b}]},
-  "cashNeed":{"rating":"s","description":"s","estimatedCash":n,"cashBurn":n,"cashRemainingMonths":n,"totalDebt":n},
-  "managementCommentary":"s",
-  "overallOfferingRisk":{"rating":"s","regsho":b,"nasdaqCompliance":"s","nasdaqComplianceDesc":"s"},
-  "scamRisk":{"countryRisk":"s","floatRisk":"s","underwriterRisk":"s","scamRisk":"s","scamDescription":"s","liquidationHistory":"s","numberOfLiquidations":n,"lastLiquidationDate":"s","ipoDate":"s","lockUpExpiration":"s","underwriters":"s"},
-  "agreements":[{"agreementType":"s","investorNames":"s","filedAt":"s","registrationDeadline":n,"effectiveDeadline":n,"penalties":"s","restrictionDate":"s","durationInDays":n,"participationPercentage":"s","details":"s"}],
-  "historicalFloat":[{"reportedDate":"s","outstandingShares":n,"float":n,"tradableFloat":n,"affiliatePercent":n,"insiderPercent":n,"institutionsPercent":n,"formType":"s"}],
-  "reverseSplits":[{"executionDate":"s","splitFrom":n,"splitTo":n}],
-  "filingTitles":[{"ticker":"s","headline":"s","filedAt":"s","formType":"s"}]
-}
-
-`;
-
-export function buildResearchPrompt(reportData: Record<string, unknown[]>) {
-  // Skip the full JarvisContext wrapper — research only needs report_data.
-  // Using compact JSON (no indentation) to minimize token count.
-  return `You are running research mode.\n${RESEARCH_SCHEMA}\n\n<report_data>\n${JSON.stringify(reportData)}\n</report_data>`;
-}
-
 /**
  * Build a prompt that asks the LLM for a compact research TLDR.
  * Output schema: { tldr: string, findings: string[], actionSteps: string[], risks: string[] }

@@ -6,7 +6,7 @@ import { detectParser, getParserById, type BrokerParserConfig } from '@/lib/pars
 import type { ApiTrade, Trade } from '@/lib/types';
 import { useTradeFilters } from './use-trade-filters';
 import { useTradeSync } from './use-trade-sync';
-import { apiRequest, collectImportedTrades, fromApiTrade, sortTradesByDate, toApiTrade } from './trade-utils';
+import { apiRequest, collectImportedTrades, fromApiTrade, sortTradesByDate, toApiTrade } from '@/lib/trade-utils';
 
 const IMPORT_CHUNK_SIZE = 200;
 const DEFAULT_RISK_STORAGE_KEY = 'nexus-default-risk';

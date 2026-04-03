@@ -24,6 +24,19 @@ export default function PerformanceTab({ filteredTrades, globalTags, performance
     return filteredTrades.filter((trade) => (trade.tags ?? []).some((tag) => selectedTagFilters.has(tag)));
   }, [filteredTrades, selectedTagFilters]);
 
+  const symbolDistribution = useMemo(
+    () =>
+      Object.entries(
+        performanceTrades.reduce<Record<string, number>>((acc, trade) => {
+          acc[trade.symbol] = (acc[trade.symbol] || 0) + 1;
+          return acc;
+        }, {}),
+      )
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5),
+    [performanceTrades],
+  );
+
   return (
   <motion.div key="performance" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
     <div className="flex flex-wrap items-center justify-between">
@@ -68,15 +81,7 @@ export default function PerformanceTab({ filteredTrades, globalTags, performance
         <div className="rounded-xl border border-white/10 bg-[#121214] p-6">
           <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-zinc-400">Symbol Distribution</h3>
           <div className="space-y-3">
-            {Object.entries(
-              performanceTrades.reduce<Record<string, number>>((acc, trade) => {
-                acc[trade.symbol] = (acc[trade.symbol] || 0) + 1;
-                return acc;
-              }, {}),
-            )
-              .sort((a, b) => b[1] - a[1])
-              .slice(0, 5)
-              .map(([symbol, count]) => (
+            {symbolDistribution.map(([symbol, count]) => (
                 <div key={symbol} className="flex items-center justify-between">
                   <span className="font-mono text-sm">{symbol}</span>
                   <div className="mx-4 h-1.5 flex-1 overflow-hidden rounded-full bg-white/5">
