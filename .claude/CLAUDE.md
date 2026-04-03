@@ -109,7 +109,7 @@ Hooks in `hooks/` (12 files). Key ones:
 
 ## AskEdgar (Dilution Research)
 - `lib/jarvis/askedgar.ts` — AskEdgar API client (`https://eapi.askedgar.io`)
-- Routes: `/api/askedgar/lookup`, `/api/askedgar/tldr`, `/api/askedgar/gainers`
+- Routes: `/api/askedgar/lookup`, `/api/askedgar/snapshot`, `/api/askedgar/tldr`, `/api/askedgar/gainers`
 - API docs: `docs/AE_API_DOCS.md`
 
 ## Tests
