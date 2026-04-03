@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import type { Trade } from '@/lib/types';
-import { formatCurrency, formatR, getPnLColor } from '@/lib/trading-utils';
+import { buildTradeMarkers, formatCurrency, formatR, getPnLColor } from '@/lib/trading-utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -77,47 +77,8 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
 
   const tradeMarkers = useMemo<TradeMarker[]>(() => {
     if (!trade) return [];
-    if (sortedExecutions.length > 0) {
-      return sortedExecutions.map((execution) => {
-        const direction = execution.side === 'ENTRY'
-          ? trade.direction
-          : trade.direction === 'LONG'
-            ? 'SHORT'
-            : 'LONG';
-
-        return {
-          time: timeValue(trade.sortKey, execution.time, execution.timestamp),
-          direction,
-          price: execution.price,
-          label: execution.side,
-        };
-      });
-    }
-
-    const markers: TradeMarker[] = [];
-    const entry = nyDateTimeToEpoch(trade.sortKey, trade.entryTime);
-    const exit = nyDateTimeToEpoch(trade.sortKey, trade.exitTime);
-
-    if (entry != null) {
-      markers.push({
-        time: entry,
-        direction: trade.direction,
-        price: trade.avgEntryPrice,
-        label: 'ENTRY',
-      });
-    }
-
-    if (exit != null) {
-      markers.push({
-        time: exit,
-        direction: trade.direction === 'LONG' ? 'SHORT' : 'LONG',
-        price: trade.avgExitPrice,
-        label: 'EXIT',
-      });
-    }
-
-    return markers;
-  }, [trade, sortedExecutions]);
+    return buildTradeMarkers(trade);
+  }, [trade]);
 
   const handleSave = async () => {
     if (!trade) return;

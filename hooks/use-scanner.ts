@@ -69,6 +69,7 @@ export function useScanner(refreshIntervalMs: number) {
   const filtersRef = useRef(filters);
   const sortByRef = useRef(sortBy);
   const sortDirRef = useRef(sortDir);
+  const hasInitialFetchRef = useRef(false);
 
   useEffect(() => {
     filtersRef.current = filters;
@@ -177,6 +178,10 @@ export function useScanner(refreshIntervalMs: number) {
   }, [fetchResults, fetchPresets]);
 
   useEffect(() => {
+    if (!hasInitialFetchRef.current) {
+      hasInitialFetchRef.current = true;
+      return;
+    }
     void fetchResults();
   }, [filters, sortBy, sortDir, fetchResults]);
 

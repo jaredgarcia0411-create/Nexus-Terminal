@@ -23,6 +23,7 @@ import {
   type SeriesMarkerPrice,
   type Time,
 } from 'lightweight-charts';
+import type { TradeMarker } from '@/lib/types';
 import { epochToNySortKey, nyDateTimeToEpoch } from '@/lib/time-utils';
 
 export interface CandleData {
@@ -32,13 +33,6 @@ export interface CandleData {
   low: number;
   close: number;
   volume: number;
-}
-
-export interface TradeMarker {
-  time: number;
-  direction: 'LONG' | 'SHORT';
-  price: number;
-  label: string;
 }
 
 const UP_COLOR = '#ffffff';
@@ -86,6 +80,8 @@ export interface CandlestickChartOptions {
   priceLines?: NativePriceLine[];
   showCrosshairLegend?: boolean;
 }
+
+export type { TradeMarker };
 
 const NY_TIME_ZONE = 'America/New_York';
 

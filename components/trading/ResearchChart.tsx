@@ -4,26 +4,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ColorType, CrosshairMode, type CandlestickData, type HistogramData, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts';
 
 import { useCandleData } from '@/hooks/use-candle-data';
-
-type TimeframeKey = '1m' | '5m' | '15m' | '30m' | '1h' | '1D';
-
-type FrameConfig = {
-  label: string;
-  periodType: string;
-  period: string;
-  frequencyType: string;
-  frequency: string;
-  intraday: boolean;
-};
-
-const FRAME_CONFIG: Record<TimeframeKey, FrameConfig> = {
-  '1m': { label: '1m', periodType: 'day', period: '5', frequencyType: 'minute', frequency: '1', intraday: true },
-  '5m': { label: '5m', periodType: 'day', period: '10', frequencyType: 'minute', frequency: '5', intraday: true },
-  '15m': { label: '15m', periodType: 'month', period: '1', frequencyType: 'minute', frequency: '15', intraday: true },
-  '30m': { label: '30m', periodType: 'month', period: '2', frequencyType: 'minute', frequency: '30', intraday: true },
-  '1h': { label: '1h', periodType: 'month', period: '3', frequencyType: 'minute', frequency: '60', intraday: true },
-  '1D': { label: '1D', periodType: 'year', period: '2', frequencyType: 'daily', frequency: '1', intraday: false },
-};
+import {
+  RESEARCH_CHART_FRAME_CONFIG,
+  type ResearchChartTimeframeKey,
+} from '@/lib/chart-timeframes';
 
 function toTime(ms: number): Time {
   return Math.floor(ms / 1000) as unknown as Time;
@@ -34,8 +18,8 @@ interface Props {
 }
 
 export default function ResearchChart({ ticker }: Props) {
-  const [timeframe, setTimeframe] = useState<TimeframeKey>('1D');
-  const frame = FRAME_CONFIG[timeframe];
+  const [timeframe, setTimeframe] = useState<ResearchChartTimeframeKey>('1D');
+  const frame = RESEARCH_CHART_FRAME_CONFIG[timeframe];
 
   const marketOptions = useMemo(
     () => ({
@@ -159,7 +143,7 @@ export default function ResearchChart({ ticker }: Props) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-1 border-b border-white/10 px-3 py-2">
-        {(Object.keys(FRAME_CONFIG) as TimeframeKey[]).map((key) => (
+        {(Object.keys(RESEARCH_CHART_FRAME_CONFIG) as ResearchChartTimeframeKey[]).map((key) => (
           <button
             key={key}
             type="button"
@@ -168,7 +152,7 @@ export default function ResearchChart({ ticker }: Props) {
               timeframe === key ? 'bg-emerald-500 text-black' : 'text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
             }`}
           >
-            {FRAME_CONFIG[key].label}
+            {RESEARCH_CHART_FRAME_CONFIG[key].label}
           </button>
         ))}
       </div>

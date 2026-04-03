@@ -1,333 +1,24 @@
-import { desc, eq, inArray } from 'drizzle-orm';
-import { internalServerError, logRouteError } from '@/lib/api-route-utils';
+import { desc, eq } from 'drizzle-orm';
+import { logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
-import { INDEX_SYMBOLS, COMMODITY_SYMBOLS, EQUITY_SYMBOLS } from '@/lib/market-symbols';
-import { marketSnapshots, realtimeQuotes, schwabLinks } from '@/lib/db/schema';
-import {
-  normalizeQuoteSymbol,
-  quotesToSnapshot,
-  schwabScreenerToMoverRows,
-  type MarketInstrument,
-  type MarketMoverRow,
-  type MarketSnapshotPayload,
-  type SchwabScreenerItem,
-} from '@/lib/quote-mappers';
-import {
-  fetchBatchDailyTickerSummaries,
-  fetchTopMarketMovers,
-  fetchUnifiedSnapshot,
-  getEasternMarketSession,
-  normalizeMassiveTicker,
-  type EasternMarketSession,
-} from '@/lib/massive-market';
+import { marketSnapshots } from '@/lib/db/schema';
+import { fetchFreshSnapshot } from '@/lib/massive-snapshot';
+import { fetchRealtimeSnapshot, getSchwabLinkStatus, type RealtimeSnapshotResult } from '@/lib/realtime-snapshot';
+import { type MarketInstrument, type MarketSnapshotPayload } from '@/lib/quote-mappers';
 import { requireUser } from '@/lib/server-db-utils';
-
 
 type SnapshotCoverage = {
   totalInstruments: number;
   availablePrices: number;
   missingPriceCount: number;
-  missingPriceBySection: {
-    indices: number;
-    commodities: number;
-    equities: number;
-  };
+  missingPriceBySection: { indices: number; commodities: number; equities: number };
 };
 
-type RealtimeSnapshotResult = {
-  data: MarketSnapshotPayload;
-  fetchedAt: Date;
-};
+type PgLikeError = { code?: string; message?: string; name?: string };
 
 const CACHE_SNAPSHOT_TYPE = 'markets_overview';
 const CACHE_TTL_MS = 2 * 60 * 1000;
 const STALE_WARNING_MS = 30 * 60 * 1000;
-const REALTIME_STALE_MS = 5 * 60 * 1000;
-const SCHWAB_SCREENER_SNAPSHOT_TYPE = 'schwab_screener';
-const REALTIME_CACHE_TTL_MS = 3_000;
-
-// In-memory cache for realtime snapshot path.
-// Since Vercel functions may cold-start, this is best-effort and per-process.
-let realtimeCache: { payload: RealtimeSnapshotResult; cachedAt: number } | null = null;
-
-type PgLikeError = {
-  code?: string;
-  message?: string;
-  name?: string;
-};
-
-const EXTENDED_SESSION_SYMBOLS = [...INDEX_SYMBOLS, ...COMMODITY_SYMBOLS.map((s) => s.ticker), ...EQUITY_SYMBOLS];
-
-function normalizeTicker(raw: string) {
-  return normalizeMassiveTicker(raw);
-}
-
-function normalizeRealtimeSymbol(raw: string) {
-  return normalizeQuoteSymbol(normalizeTicker(raw));
-}
-
-function toNumberOrNull(value: unknown) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : null;
-}
-
-function getNyIsoDate(now = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(now);
-}
-
-function calculateExtendedChange(price: number | null, close: number | null) {
-  if (price == null || close == null || close === 0) {
-    return { change: null, changePercent: null };
-  }
-  const change = price - close;
-  return {
-    change,
-    changePercent: (change / close) * 100,
-  };
-}
-
-function toInstrument(
-  ticker: string,
-  label: string,
-  lookup: Map<string, { session?: Record<string, unknown>; market_status?: string }>,
-  activeSession: EasternMarketSession,
-  extendedSummaries?: Map<string, { close: number | null; preMarket: number | null; afterHours: number | null }>
-): MarketInstrument {
-  const symbol = normalizeTicker(ticker);
-  const entry = lookup.get(normalizeTicker(ticker));
-  const session = entry?.session ?? {};
-
-  const defaultInstrument: MarketInstrument = {
-    symbol,
-    label,
-    price: toNumberOrNull(session.close),
-    change: toNumberOrNull(session.change),
-    changePercent: toNumberOrNull(session.change_percent),
-    marketStatus: typeof entry?.market_status === 'string' ? entry.market_status : null,
-    quoteSession: 'snapshot',
-    extendedQuoteUnavailable: false,
-    extendedUnavailableLabel: null,
-  };
-
-  if (!extendedSummaries) {
-    return defaultInstrument;
-  }
-
-  const extended = extendedSummaries.get(symbol);
-  if (!extended) {
-    return defaultInstrument;
-  }
-
-  if (activeSession === 'pre-market') {
-    if (extended.preMarket != null) {
-      const calculated = calculateExtendedChange(extended.preMarket, extended.close);
-      return {
-        ...defaultInstrument,
-        price: extended.preMarket,
-        change: calculated.change,
-        changePercent: calculated.changePercent,
-        quoteSession: 'pre-market',
-      };
-    }
-
-    return {
-      ...defaultInstrument,
-      quoteSession: 'pre-market',
-      extendedQuoteUnavailable: true,
-      extendedUnavailableLabel: 'Pre-market unavailable',
-    };
-  }
-
-  if (activeSession === 'after-hours' || activeSession === 'closed') {
-    if (extended.afterHours != null) {
-      const calculated = calculateExtendedChange(extended.afterHours, extended.close);
-      return {
-        ...defaultInstrument,
-        price: extended.afterHours,
-        change: calculated.change,
-        changePercent: calculated.changePercent,
-        quoteSession: 'after-hours',
-      };
-    }
-
-    if (activeSession === 'after-hours') {
-      return {
-        ...defaultInstrument,
-        quoteSession: 'after-hours',
-        extendedQuoteUnavailable: true,
-        extendedUnavailableLabel: 'After-hours unavailable',
-      };
-    }
-
-    return {
-      ...defaultInstrument,
-      quoteSession: 'closed',
-    };
-  }
-
-  return {
-    ...defaultInstrument,
-    quoteSession: 'regular',
-  };
-}
-
-function toMoverRows(rows: Array<{ ticker?: string; day?: { c?: number }; prevDay?: { c?: number }; todaysChange?: number; todaysChangePerc?: number; updated?: number }>) {
-  return rows
-    .map((row) => ({
-      ticker: row.ticker ?? '',
-      price: toNumberOrNull(row.day?.c),
-      previousClose: toNumberOrNull(row.prevDay?.c),
-      change: toNumberOrNull(row.todaysChange),
-      changePercent: toNumberOrNull(row.todaysChangePerc),
-      updated: toNumberOrNull(row.updated),
-      volume: null,
-    }))
-    .filter((row) => row.ticker.length > 0)
-    .filter((row) => (row.previousClose ?? 0) >= 0.75);
-}
-
-async function fetchFreshSnapshot(): Promise<MarketSnapshotPayload> {
-  const tickers = [
-    ...INDEX_SYMBOLS,
-    ...COMMODITY_SYMBOLS.map((item) => item.ticker),
-    ...EQUITY_SYMBOLS,
-  ];
-
-  const activeSession = getEasternMarketSession();
-  const [snapshot, gainers, losers, extendedSummaries] = await Promise.all([
-    fetchUnifiedSnapshot(tickers),
-    fetchTopMarketMovers('gainers'),
-    fetchTopMarketMovers('losers'),
-    fetchBatchDailyTickerSummaries(EXTENDED_SESSION_SYMBOLS, getNyIsoDate()),
-  ]);
-
-  const lookup = new Map<string, { session?: Record<string, unknown>; market_status?: string }>();
-  for (const row of snapshot.results ?? []) {
-    const ticker = typeof row.ticker === 'string' ? row.ticker : '';
-    if (!ticker) continue;
-    lookup.set(normalizeTicker(ticker), {
-      session: (row.session ?? {}) as Record<string, unknown>,
-      market_status: row.market_status,
-    });
-  }
-
-  return {
-    indices: INDEX_SYMBOLS.map((symbol) => toInstrument(symbol, symbol, lookup, activeSession, extendedSummaries)),
-    commodities: COMMODITY_SYMBOLS.map((item) => toInstrument(item.ticker, item.label, lookup, activeSession, extendedSummaries)),
-    equities: EQUITY_SYMBOLS.map((symbol) => toInstrument(symbol, symbol, lookup, activeSession, extendedSummaries)),
-    movers: {
-      gainers: toMoverRows(gainers.tickers ?? []),
-      losers: toMoverRows(losers.tickers ?? []),
-    },
-  };
-}
-
-async function getSchwabLinkStatus(db: ReturnType<typeof getDb>, userId: string) {
-  if (!db) return { active: false };
-  try {
-    const [link] = await db
-      .select({ status: schwabLinks.status, refreshTokenExpiresAt: schwabLinks.refreshTokenExpiresAt })
-      .from(schwabLinks)
-      .where(eq(schwabLinks.userId, userId))
-      .limit(1);
-
-    if (!link) return { active: false };
-    if (link.status !== 'active') return { active: false };
-    if (link.refreshTokenExpiresAt.getTime() < Date.now()) return { active: false };
-
-    return { active: true };
-  } catch {
-    return { active: false };
-  }
-}
-
-async function fetchRealtimeSnapshot(
-  db: NonNullable<ReturnType<typeof getDb>>,
-): Promise<RealtimeSnapshotResult | null> {
-  if (realtimeCache && Date.now() - realtimeCache.cachedAt < REALTIME_CACHE_TTL_MS) {
-    return realtimeCache.payload;
-  }
-
-  const [latestUpdate] = await db
-    .select({ updatedAt: realtimeQuotes.updatedAt })
-    .from(realtimeQuotes)
-    .orderBy(desc(realtimeQuotes.updatedAt))
-    .limit(1);
-
-  if (!latestUpdate) {
-    return null;
-  }
-
-  if (Date.now() - latestUpdate.updatedAt.getTime() > REALTIME_STALE_MS) {
-    return null;
-  }
-
-  const currentSession = getEasternMarketSession();
-  const neededSymbols = [...INDEX_SYMBOLS, ...COMMODITY_SYMBOLS.map((item) => item.ticker), ...EQUITY_SYMBOLS];
-
-  const quotes = await db
-    .select({
-      symbol: realtimeQuotes.symbol,
-      lastPrice: realtimeQuotes.lastPrice,
-      netChange: realtimeQuotes.netChange,
-      netChangePercent: realtimeQuotes.netChangePercent,
-      securityStatus: realtimeQuotes.securityStatus,
-    })
-    .from(realtimeQuotes)
-    .where(inArray(realtimeQuotes.symbol, neededSymbols));
-
-  if (quotes.length === 0) {
-    return null;
-  }
-
-  const quoteLookup = new Map(quotes.map((quote) => [normalizeRealtimeSymbol(quote.symbol), quote]));
-  const { indices, commodities, equities } = quotesToSnapshot(quoteLookup, currentSession);
-
-  let screenerGainers: MarketMoverRow[] = [];
-  let screenerLosers: MarketMoverRow[] = [];
-
-  try {
-    const [screenerRow] = await db
-      .select({ dataJson: marketSnapshots.dataJson })
-      .from(marketSnapshots)
-      .where(eq(marketSnapshots.snapshotType, SCHWAB_SCREENER_SNAPSHOT_TYPE))
-      .limit(1);
-
-    if (screenerRow) {
-      const screenerData = screenerRow.dataJson as {
-        gainers?: SchwabScreenerItem[];
-        losers?: SchwabScreenerItem[];
-      };
-
-      screenerGainers = schwabScreenerToMoverRows(screenerData.gainers);
-      screenerLosers = schwabScreenerToMoverRows(screenerData.losers);
-    }
-  } catch {
-    screenerGainers = [];
-    screenerLosers = [];
-  }
-
-  const result: RealtimeSnapshotResult = {
-    data: {
-      indices,
-      commodities,
-      equities,
-      movers: {
-        gainers: screenerGainers,
-        losers: screenerLosers,
-      },
-    },
-    fetchedAt: latestUpdate.updatedAt,
-  };
-
-  realtimeCache = { payload: result, cachedAt: Date.now() };
-  return result;
-}
 
 function isUndefinedTableError(error: unknown) {
   return typeof error === 'object' && error !== null && (error as PgLikeError).code === '42P01';
@@ -336,35 +27,17 @@ function isUndefinedTableError(error: unknown) {
 function getErrorSummary(error: unknown) {
   if (error instanceof Error) {
     const pgError = error as Error & PgLikeError;
-    return {
-      name: pgError.name,
-      message: pgError.message,
-      code: pgError.code,
-    };
+    return { name: pgError.name, message: pgError.message, code: pgError.code };
   }
-
   if (typeof error === 'object' && error !== null) {
     const pgError = error as PgLikeError;
-    return {
-      name: pgError.name ?? 'UnknownError',
-      message: pgError.message ?? 'Unknown error object',
-      code: pgError.code,
-    };
+    return { name: pgError.name ?? 'UnknownError', message: pgError.message ?? 'Unknown error object', code: pgError.code };
   }
-
-  return {
-    name: 'UnknownError',
-    message: String(error),
-    code: undefined,
-  };
+  return { name: 'UnknownError', message: String(error), code: undefined };
 }
 
 function logSnapshotStage(stage: string, requestId: string, details: Record<string, unknown>) {
-  console.info('[api:market-data.snapshot]', {
-    requestId,
-    stage,
-    ...details,
-  });
+  console.info('[api:market-data.snapshot]', { requestId, stage, ...details });
 }
 
 function countMissing(items: MarketInstrument[]) {
@@ -378,17 +51,8 @@ function buildCoverage(data: MarketSnapshotPayload): SnapshotCoverage {
     commodities: countMissing(data.commodities),
     equities: countMissing(data.equities),
   };
-  const missingPriceCount =
-    missingPriceBySection.indices +
-    missingPriceBySection.commodities +
-    missingPriceBySection.equities;
-
-  return {
-    totalInstruments,
-    availablePrices: totalInstruments - missingPriceCount,
-    missingPriceCount,
-    missingPriceBySection,
-  };
+  const missingPriceCount = missingPriceBySection.indices + missingPriceBySection.commodities + missingPriceBySection.equities;
+  return { totalInstruments, availablePrices: totalInstruments - missingPriceCount, missingPriceCount, missingPriceBySection };
 }
 
 export async function GET() {
@@ -396,28 +60,23 @@ export async function GET() {
   try {
     const auth = await requireUser();
     if ('error' in auth && auth.error) {
-      logSnapshotStage('auth_check', requestId, {
-        result: 'unauthorized',
-        status: auth.error.status,
-      });
+      logSnapshotStage('auth_check', requestId, { result: 'unauthorized', status: auth.error.status });
       return auth.error;
     }
 
     const db = getDb();
     const now = new Date();
     const schwabStatus = await getSchwabLinkStatus(db, auth.user.id);
-
     if (db && schwabStatus.active) {
-      const realtimeSnapshot = await fetchRealtimeSnapshot(db);
+      const realtimeSnapshot: RealtimeSnapshotResult | null = await fetchRealtimeSnapshot(db);
       if (realtimeSnapshot) {
-        const coverage = buildCoverage(realtimeSnapshot.data);
         return Response.json({
           data: realtimeSnapshot.data,
           fetchedAt: realtimeSnapshot.fetchedAt.toISOString(),
           warning: null,
           stale: false,
           source: 'realtime',
-          coverage,
+          coverage: buildCoverage(realtimeSnapshot.data),
           dataSource: 'realtime',
           requestId,
         });
@@ -427,30 +86,19 @@ export async function GET() {
     let cacheAvailable = Boolean(db);
     let cacheUnavailableWarning: string | null = null;
     let realtimeFallbackWarning: string | null = null;
-
     if (schwabStatus.active) {
       realtimeFallbackWarning = 'Realtime quotes are unavailable or stale. Falling back to delayed Massive data.';
     }
 
     let cached: (typeof marketSnapshots.$inferSelect) | undefined;
-
     if (db) {
       try {
-        [cached] = await db
-          .select()
-          .from(marketSnapshots)
-          .where(eq(marketSnapshots.snapshotType, CACHE_SNAPSHOT_TYPE))
-          .orderBy(desc(marketSnapshots.fetchedAt))
-          .limit(1);
+        [cached] = await db.select().from(marketSnapshots).where(eq(marketSnapshots.snapshotType, CACHE_SNAPSHOT_TYPE)).orderBy(desc(marketSnapshots.fetchedAt)).limit(1);
       } catch (error) {
         if (isUndefinedTableError(error)) {
           cacheAvailable = false;
           cacheUnavailableWarning = 'Market snapshot cache unavailable (table missing). Returning live data without cache.';
-          logSnapshotStage('cache_read', requestId, {
-            result: 'cache_unavailable',
-            cacheTableMissing: true,
-            error: getErrorSummary(error),
-          });
+          logSnapshotStage('cache_read', requestId, { result: 'cache_unavailable', cacheTableMissing: true, error: getErrorSummary(error) });
         } else {
           logRouteError('market-data.snapshot.get.cache-read', error);
           throw error;
@@ -476,44 +124,29 @@ export async function GET() {
     }
 
     try {
-      logSnapshotStage('upstream_fetch', requestId, {
-        result: 'started',
-        hasCachedData: Boolean(cached),
-        cacheAvailable,
-      });
+      logSnapshotStage('upstream_fetch', requestId, { result: 'started', hasCachedData: Boolean(cached), cacheAvailable });
       const data = await fetchFreshSnapshot();
       const coverage = buildCoverage(data);
       const fetchedAt = new Date();
+
       if (db && cacheAvailable) {
         try {
-          await db
-            .insert(marketSnapshots)
-            .values({
-              id: cached?.id ?? crypto.randomUUID(),
-              snapshotType: CACHE_SNAPSHOT_TYPE,
-              dataJson: data,
-              warning: null,
-              fetchedAt,
-              expiresAt: new Date(fetchedAt.getTime() + CACHE_TTL_MS),
-            })
-            .onConflictDoUpdate({
-              target: marketSnapshots.snapshotType,
-              set: {
-                dataJson: data,
-                warning: null,
-                fetchedAt,
-                expiresAt: new Date(fetchedAt.getTime() + CACHE_TTL_MS),
-              },
-            });
+          await db.insert(marketSnapshots).values({
+            id: cached?.id ?? crypto.randomUUID(),
+            snapshotType: CACHE_SNAPSHOT_TYPE,
+            dataJson: data,
+            warning: null,
+            fetchedAt,
+            expiresAt: new Date(fetchedAt.getTime() + CACHE_TTL_MS),
+          }).onConflictDoUpdate({
+            target: marketSnapshots.snapshotType,
+            set: { dataJson: data, warning: null, fetchedAt, expiresAt: new Date(fetchedAt.getTime() + CACHE_TTL_MS) },
+          });
         } catch (error) {
           if (isUndefinedTableError(error)) {
             cacheAvailable = false;
             cacheUnavailableWarning = 'Market snapshot cache unavailable (table missing). Returning live data without cache.';
-            logSnapshotStage('cache_write', requestId, {
-              result: 'cache_unavailable',
-              cacheTableMissing: true,
-              error: getErrorSummary(error),
-            });
+            logSnapshotStage('cache_write', requestId, { result: 'cache_unavailable', cacheTableMissing: true, error: getErrorSummary(error) });
           } else {
             logRouteError('market-data.snapshot.get.cache-write', error);
           }
@@ -532,6 +165,8 @@ export async function GET() {
       });
     } catch (error) {
       if (cached) {
+        const ageMs = now.getTime() - cached.fetchedAt.getTime();
+        const cachedData = cached.dataJson as MarketSnapshotPayload;
         logSnapshotStage('fallback_response', requestId, {
           result: 'served_cached_data',
           reason: 'upstream_fetch_failed',
@@ -539,8 +174,6 @@ export async function GET() {
           cacheAvailable,
           error: getErrorSummary(error),
         });
-        const ageMs = now.getTime() - cached.fetchedAt.getTime();
-        const cachedData = cached.dataJson as MarketSnapshotPayload;
         return Response.json({
           data: cachedData,
           fetchedAt: cached.fetchedAt.toISOString(),
@@ -554,54 +187,17 @@ export async function GET() {
       }
 
       if (error instanceof Error && error.message.includes('MASSIVE_API_KEY')) {
-        logSnapshotStage('upstream_fetch', requestId, {
-          result: 'failed',
-          reason: 'provider_not_configured',
-          hasCachedData: false,
-          error: getErrorSummary(error),
-        });
-        return Response.json(
-          {
-            error: 'Market data provider not configured',
-            code: 'provider_not_configured',
-            stage: 'upstream_fetch',
-            requestId,
-          },
-          { status: 503 }
-        );
+        logSnapshotStage('upstream_fetch', requestId, { result: 'failed', reason: 'provider_not_configured', hasCachedData: false, error: getErrorSummary(error) });
+        return Response.json({ error: 'Market data provider not configured', code: 'provider_not_configured', stage: 'upstream_fetch', requestId }, { status: 503 });
       }
 
-      logSnapshotStage('upstream_fetch', requestId, {
-        result: 'failed',
-        reason: 'upstream_or_network_error',
-        hasCachedData: false,
-        error: getErrorSummary(error),
-      });
+      logSnapshotStage('upstream_fetch', requestId, { result: 'failed', reason: 'upstream_or_network_error', hasCachedData: false, error: getErrorSummary(error) });
       logRouteError('market-data.snapshot.get.fetch', error);
-      return Response.json(
-        {
-          error: 'Failed to fetch market snapshot',
-          code: 'upstream_fetch_failed',
-          stage: 'upstream_fetch',
-          requestId,
-        },
-        { status: 502 }
-      );
+      return Response.json({ error: 'Failed to fetch market snapshot', code: 'upstream_fetch_failed', stage: 'upstream_fetch', requestId }, { status: 502 });
     }
   } catch (error) {
-    logSnapshotStage('route_handler', requestId, {
-      result: 'failed',
-      error: getErrorSummary(error),
-    });
+    logSnapshotStage('route_handler', requestId, { result: 'failed', error: getErrorSummary(error) });
     logRouteError('market-data.snapshot.get', error);
-    return Response.json(
-      {
-        error: 'Internal server error',
-        code: 'internal_error',
-        stage: 'route_handler',
-        requestId,
-      },
-      { status: 500 }
-    );
+    return Response.json({ error: 'Internal server error', code: 'internal_error', stage: 'route_handler', requestId }, { status: 500 });
   }
 }

@@ -59,6 +59,10 @@ Validation:
 
 ## Group 2: Medium Complexity (run in parallel)
 
+**Status:** implementation complete — manual validation pending before Group 3.
+
+Note: `.claude/CLAUDE.md` route-count update is deferred until all groups are complete per user instruction.
+
 ### Step 6 — Extract `buildTradeMarkers()` to `lib/trading-utils.ts`
 
 **Background:** Marker-building logic is duplicated in `JournalTradeChart.tsx` (lines 28-73) and `TradeDetailSheet.tsx` (lines 78-120). Both convert a trade's raw executions (or fallback entry/exit times) into `TradeMarker[]` for the candlestick chart.
@@ -158,11 +162,11 @@ export function buildTradeMarkers(trade: Trade): TradeMarker[] {
   The dependency can be just `[trade]` since `buildTradeMarkers` reads `trade.rawExecutions` directly.
 
 **Acceptance Criteria:**
-- [ ] `TradeMarker` is defined in `lib/types.ts` and re-exported from `CandlestickChart.tsx`
-- [ ] `buildTradeMarkers` is exported from `lib/trading-utils.ts`
-- [ ] `JournalTradeChart.tsx` uses `buildTradeMarkers` — no inline flatMap/marker logic
-- [ ] `TradeDetailSheet.tsx` uses `buildTradeMarkers` — no inline marker logic
-- [ ] `npx tsc --noEmit` passes
+- [x] `TradeMarker` is defined in `lib/types.ts` and re-exported from `CandlestickChart.tsx`
+- [x] `buildTradeMarkers` is exported from `lib/trading-utils.ts`
+- [x] `JournalTradeChart.tsx` uses `buildTradeMarkers` — no inline flatMap/marker logic
+- [x] `TradeDetailSheet.tsx` uses `buildTradeMarkers` — no inline marker logic
+- [x] `npx tsc --noEmit` passes
 
 ---
 
@@ -234,9 +238,9 @@ export const RESEARCH_CHART_FRAME_CONFIG: Record<ResearchChartTimeframeKey, Fram
 - Replace `TimeframeKey` with `ResearchChartTimeframeKey`
 
 **Acceptance Criteria:**
-- [ ] `lib/chart-timeframes.ts` exports `FrameConfig`, `CHARTS_TAB_FRAME_CONFIG`, `ChartsTabTimeframeKey`, `RESEARCH_CHART_FRAME_CONFIG`, `ResearchChartTimeframeKey`
-- [ ] No local `FRAME_CONFIG` or `FrameConfig` in `ChartsTab.tsx` or `ResearchChart.tsx`
-- [ ] `npx tsc --noEmit` passes
+- [x] `lib/chart-timeframes.ts` exports `FrameConfig`, `CHARTS_TAB_FRAME_CONFIG`, `ChartsTabTimeframeKey`, `RESEARCH_CHART_FRAME_CONFIG`, `ResearchChartTimeframeKey`
+- [x] No local `FRAME_CONFIG` or `FrameConfig` in `ChartsTab.tsx` or `ResearchChart.tsx`
+- [x] `npx tsc --noEmit` passes
 
 ---
 
@@ -277,7 +281,7 @@ Result: `fetchResults` is called twice immediately on mount. Effect B should ski
 **Acceptance Criteria:**
 - [ ] `fetchResults` is called once on mount (not twice)
 - [ ] Filter/sort changes after mount still trigger `fetchResults`
-- [ ] `npx tsc --noEmit` passes
+- [x] `npx tsc --noEmit` passes
 
 **Note:** The `sortTrades` alias in `use-trade-sync.ts` and `use-trades.ts` (`const sortTrades = sortTradesByDate`) is intentionally left — removing it would be a noisy diff for zero gain.
 
@@ -370,11 +374,11 @@ Keep: `CACHE_SNAPSHOT_TYPE`, `CACHE_TTL_MS`, `STALE_WARNING_MS`, `SCHWAB_SCREENE
 Target: route under 250 lines.
 
 **Acceptance Criteria:**
-- [ ] `lib/massive-snapshot.ts` exists and exports `fetchFreshSnapshot`
-- [ ] `lib/realtime-snapshot.ts` exists and exports `fetchRealtimeSnapshot`, `getSchwabLinkStatus`, `RealtimeSnapshotResult`
-- [ ] `app/api/market-data/snapshot/route.ts` is under 250 lines
+- [x] `lib/massive-snapshot.ts` exists and exports `fetchFreshSnapshot`
+- [x] `lib/realtime-snapshot.ts` exists and exports `fetchRealtimeSnapshot`, `getSchwabLinkStatus`, `RealtimeSnapshotResult`
+- [x] `app/api/market-data/snapshot/route.ts` is under 250 lines
 - [ ] Markets tab still loads correctly
-- [ ] `npx tsc --noEmit` passes
+- [x] `npx tsc --noEmit` passes
 
 ---
 
@@ -466,15 +470,17 @@ const response = await fetch('/api/jarvis/chat?stream=1', {
 # After: "to list all 31 routes"
 ```
 
+Deferred for later: do not update `.claude/CLAUDE.md` until all groups are complete.
+
 **Security:** Merged route still calls `requireUser()` first. No auth regression.
 
 **Acceptance Criteria:**
-- [ ] `app/api/jarvis/chat/stream/route.ts` is deleted
-- [ ] `app/api/jarvis/chat/route.ts` handles `?stream=1` (SSE) and normal (JSON) requests
-- [ ] `JarvisChat.tsx` calls `/api/jarvis/chat?stream=1` for streaming
-- [ ] Commands (`/research`, `/analyze`) still return JSON
+- [x] `app/api/jarvis/chat/stream/route.ts` is deleted
+- [x] `app/api/jarvis/chat/route.ts` handles `?stream=1` (SSE) and normal (JSON) requests
+- [x] `JarvisChat.tsx` calls `/api/jarvis/chat?stream=1` for streaming
+- [x] Commands (`/research`, `/analyze`) still return JSON
 - [ ] Streaming chat works end-to-end
-- [ ] `npx tsc --noEmit` passes
+- [x] `npx tsc --noEmit` passes
 
 ---
 
@@ -483,6 +489,11 @@ const response = await fetch('/api/jarvis/chat?stream=1', {
 ```bash
 npm run lint && npx tsc --noEmit
 ```
+
+Automated validation completed:
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npm test`
 
 Then manually test: open Jarvis tab, send a chat message (verify streaming), send `/research AAPL` (verify JSON response), send `/analyze` (verify JSON response).
 

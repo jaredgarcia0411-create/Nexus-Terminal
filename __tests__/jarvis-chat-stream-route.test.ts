@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
+  callJarvisMock,
   callJarvisStreamingMock,
   checkRateLimitMock,
   buildContextMock,
@@ -9,6 +10,7 @@ const {
   logJarvisRequestMock,
   requireUserMock,
 } = vi.hoisted(() => ({
+  callJarvisMock: vi.fn(),
   callJarvisStreamingMock: vi.fn(),
   checkRateLimitMock: vi.fn(),
   buildContextMock: vi.fn(),
@@ -19,7 +21,7 @@ const {
 }));
 
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
-vi.mock('@/lib/jarvis/client', () => ({ callJarvisStreaming: callJarvisStreamingMock }));
+vi.mock('@/lib/jarvis/client', () => ({ callJarvis: callJarvisMock, callJarvisStreaming: callJarvisStreamingMock }));
 vi.mock('@/lib/jarvis/context', () => ({ buildContext: buildContextMock }));
 vi.mock('@/lib/jarvis/rate-limit', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/jarvis/rate-limit')>();
@@ -34,7 +36,7 @@ vi.mock('@/lib/server-db-utils', () => ({
   requireUser: requireUserMock,
 }));
 
-import { POST } from '@/app/api/jarvis/chat/stream/route';
+import { POST } from '@/app/api/jarvis/chat/route';
 
 function ensureResponse(response: Response | undefined): Response {
   if (!response) throw new Error('Expected response');
@@ -123,7 +125,7 @@ function makeDbMock() {
   };
 }
 
-describe('jarvis chat stream route', () => {
+describe('jarvis chat stream mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
@@ -151,7 +153,7 @@ describe('jarvis chat stream route', () => {
     const db = makeDbMock();
     getDbMock.mockReturnValue(db);
 
-    const response = ensureResponse(await POST(new Request('http://localhost/api/jarvis/chat/stream', {
+    const response = ensureResponse(await POST(new Request('http://localhost/api/jarvis/chat?stream=1', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: 'Hello' }),
@@ -164,7 +166,7 @@ describe('jarvis chat stream route', () => {
   it('returns 503 when database is unavailable', async () => {
     getDbMock.mockReturnValue(null);
 
-    const response = ensureResponse(await POST(new Request('http://localhost/api/jarvis/chat/stream', {
+    const response = ensureResponse(await POST(new Request('http://localhost/api/jarvis/chat?stream=1', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: 'Hello' }),
@@ -178,7 +180,7 @@ describe('jarvis chat stream route', () => {
     const db = makeDbMock();
     getDbMock.mockReturnValue(db);
 
-    const response = ensureResponse(await POST(new Request('http://localhost/api/jarvis/chat/stream', {
+    const response = ensureResponse(await POST(new Request('http://localhost/api/jarvis/chat?stream=1', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: '/research AAPL' }),
@@ -196,7 +198,7 @@ describe('jarvis chat stream route', () => {
     getDbMock.mockReturnValue(db);
 
     const abortController = new AbortController();
-    const response = ensureResponse(await POST(new Request('http://localhost/api/jarvis/chat/stream', {
+    const response = ensureResponse(await POST(new Request('http://localhost/api/jarvis/chat?stream=1', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: 'Hello', session_id: 'session-1' }),
@@ -242,7 +244,7 @@ describe('jarvis chat stream route', () => {
     const db = makeDbMock();
     getDbMock.mockReturnValue(db);
 
-    const response = ensureResponse(await POST(new Request('http://localhost/api/jarvis/chat/stream', {
+    const response = ensureResponse(await POST(new Request('http://localhost/api/jarvis/chat?stream=1', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: 'Hello' }),
@@ -261,7 +263,7 @@ describe('jarvis chat stream route', () => {
     const db = makeDbMock();
     getDbMock.mockReturnValue(db);
 
-    const response = ensureResponse(await POST(new Request('http://localhost/api/jarvis/chat/stream', {
+    const response = ensureResponse(await POST(new Request('http://localhost/api/jarvis/chat?stream=1', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: 'Hello' }),

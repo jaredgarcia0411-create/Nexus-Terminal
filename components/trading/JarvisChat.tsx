@@ -38,7 +38,7 @@ async function streamChatMessage(
   onDone: (payload: StreamDonePayload) => void,
   onError: (error: string) => void,
 ): Promise<boolean> {
-  const response = await fetch('/api/jarvis/chat/stream', {
+  const response = await fetch('/api/jarvis/chat?stream=1', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message, session_id: sessionId || undefined }),

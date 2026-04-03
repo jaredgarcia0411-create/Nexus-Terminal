@@ -29,6 +29,11 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { Trade } from '@/lib/types';
+import {
+  CHARTS_TAB_FRAME_CONFIG,
+  type ChartsTabTimeframeKey,
+  type FrameConfig,
+} from '@/lib/chart-timeframes';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -47,31 +52,9 @@ import DrawingToolbar from './DrawingToolbar';
 import type { DrawingTool } from '@/hooks/use-chart-drawings';
 
 type SeriesType = 'candles' | 'bars' | 'line' | 'area' | 'baseline';
-type TimeframeKey = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d' | '1w' | '1M';
 type TimeRangeKey = '1D' | '5D' | '1M' | '3M' | '6M' | 'YTD' | '1Y' | '5Y' | 'ALL';
 
-type FrameConfig = {
-  label: string;
-  periodType: string;
-  period: string;
-  frequencyType: string;
-  frequency: string;
-  intraday: boolean;
-};
-
-const FRAME_CONFIG: Record<TimeframeKey, FrameConfig> = {
-  '1m': { label: '1m', periodType: 'day', period: '5', frequencyType: 'minute', frequency: '1', intraday: true },
-  '5m': { label: '5m', periodType: 'day', period: '10', frequencyType: 'minute', frequency: '5', intraday: true },
-  '15m': { label: '15m', periodType: 'month', period: '1', frequencyType: 'minute', frequency: '15', intraday: true },
-  '30m': { label: '30m', periodType: 'month', period: '2', frequencyType: 'minute', frequency: '30', intraday: true },
-  '1h': { label: '1h', periodType: 'month', period: '3', frequencyType: 'minute', frequency: '60', intraday: true },
-  '4h': { label: '4h', periodType: 'month', period: '6', frequencyType: 'minute', frequency: '240', intraday: true },
-  '1d': { label: '1D', periodType: 'year', period: '2', frequencyType: 'daily', frequency: '1', intraday: false },
-  '1w': { label: '1W', periodType: 'year', period: '5', frequencyType: 'weekly', frequency: '1', intraday: false },
-  '1M': { label: '1M', periodType: 'year', period: '10', frequencyType: 'monthly', frequency: '1', intraday: false },
-};
-
-type TimeRangeConfig = { label: string; periodType: string; period: string; defaultTimeframe: TimeframeKey };
+type TimeRangeConfig = { label: string; periodType: string; period: string; defaultTimeframe: ChartsTabTimeframeKey };
 
 const TIME_RANGE_CONFIG: Record<TimeRangeKey, TimeRangeConfig> = {
   '1D': { label: '1D', periodType: 'day', period: '1', defaultTimeframe: '5m' },
@@ -171,7 +154,7 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
     }
     return fallback;
   });
-  const [timeframe, setTimeframe] = useState<TimeframeKey>('5m');
+  const [timeframe, setTimeframe] = useState<ChartsTabTimeframeKey>('5m');
   const [timeRange, setTimeRange] = useState<TimeRangeKey>('1D');
   const [seriesType, setSeriesType] = useState<SeriesType>('candles');
   const [compareEnabled, setCompareEnabled] = useState(false);
@@ -198,7 +181,7 @@ export default function ChartsTab({ trades }: ChartsTabProps) {
   const [isDrawingInteractionActive, setIsDrawingInteractionActive] = useState(false);
   const clearAllDrawingsRef = useRef<(() => void) | null>(null);
 
-  const frame = FRAME_CONFIG[timeframe];
+  const frame = CHARTS_TAB_FRAME_CONFIG[timeframe];
   const rangeConfig = TIME_RANGE_CONFIG[timeRange];
   
   // Store the initial time for 1D range calculation to avoid impure function in render
@@ -667,7 +650,7 @@ className="h-6 w-16 border-0 bg-transparent px-1 text-[11px]"
         <div className="ml-auto flex w-full items-center justify-end gap-1.5 xl:w-auto xl:gap-2">
           {/* Timeframe buttons */}
           <div className="flex items-center gap-0.5 rounded-lg bg-[#0d1016] p-0.5">
-            {(Object.entries(FRAME_CONFIG) as Array<[TimeframeKey, FrameConfig]>).map(([key, cfg]) => (
+            {(Object.entries(CHARTS_TAB_FRAME_CONFIG) as Array<[ChartsTabTimeframeKey, FrameConfig]>).map(([key, cfg]) => (
               <button
                 key={key}
                 type="button"

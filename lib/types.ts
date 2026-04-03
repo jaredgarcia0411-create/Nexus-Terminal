@@ -95,3 +95,10 @@ export type ScannerRow = {
   totalVolume: number | null;
   updatedAt: string;
 };
+
+export interface TradeMarker {
+  time: number;
+  direction: 'LONG' | 'SHORT';
+  price: number;
+  label: string;
+}

@@ -8,7 +8,7 @@ import {
   type TradeChartTimeframeKey,
 } from '@/lib/chart-timeframes';
 import { useCandleData } from '@/hooks/use-candle-data';
-import { nyDateTimeToEpoch, parseAbsoluteTimestampMs } from '@/lib/time-utils';
+import { buildTradeMarkers } from '@/lib/trading-utils';
 
 interface JournalTradeChartProps {
   trade: Trade;
@@ -25,52 +25,7 @@ function JournalTradeChart({ trade, timeframe }: JournalTradeChartProps) {
     chartOptions,
   );
 
-  const tradeMarkers = useMemo<TradeMarker[]>(() => {
-    if (trade.rawExecutions.length > 0) {
-      return trade.rawExecutions.flatMap((execution) => {
-        const fromTimestamp = parseAbsoluteTimestampMs(execution.timestamp);
-        const parsed = fromTimestamp ?? nyDateTimeToEpoch(trade.sortKey, execution.time);
-        if (parsed == null || !Number.isFinite(parsed)) return [];
-
-        const direction = execution.side === 'ENTRY'
-          ? trade.direction
-          : trade.direction === 'LONG'
-            ? 'SHORT'
-            : 'LONG';
-
-        return [{
-          time: parsed,
-          direction,
-          price: execution.price,
-          label: execution.side,
-        }];
-      });
-    }
-
-    const entry = nyDateTimeToEpoch(trade.sortKey, trade.entryTime);
-    const exit = nyDateTimeToEpoch(trade.sortKey, trade.exitTime);
-    const markers: TradeMarker[] = [];
-
-    if (entry != null) {
-      markers.push({
-        time: entry,
-        direction: trade.direction,
-        price: trade.avgEntryPrice,
-        label: 'ENTRY',
-      });
-    }
-
-    if (exit != null) {
-      markers.push({
-        time: exit,
-        direction: trade.direction === 'LONG' ? 'SHORT' : 'LONG',
-        price: trade.avgExitPrice,
-        label: 'EXIT',
-      });
-    }
-
-    return markers;
-  }, [trade]);
+  const tradeMarkers = useMemo<TradeMarker[]>(() => buildTradeMarkers(trade), [trade]);
 
   if (isLoading) {
     return <div className="flex h-[612px] items-center justify-center text-sm text-zinc-400">Loading chart...</div>;

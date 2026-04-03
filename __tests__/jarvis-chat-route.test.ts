@@ -6,6 +6,7 @@ const {
   checkRateLimitMock,
   buildContextMock,
   callJarvisMock,
+  callJarvisStreamingMock,
   getDbMock,
   runTradeAnalysisPipelineMock,
   fetchAndCacheRawReportMock,
@@ -16,6 +17,7 @@ const {
   checkRateLimitMock: vi.fn(),
   buildContextMock: vi.fn(),
   callJarvisMock: vi.fn(),
+  callJarvisStreamingMock: vi.fn(),
   getDbMock: vi.fn(),
   runTradeAnalysisPipelineMock: vi.fn(),
   fetchAndCacheRawReportMock: vi.fn(),
@@ -32,7 +34,7 @@ vi.mock('@/lib/jarvis/rate-limit', async (importOriginal) => {
   return { ...actual, checkRateLimit: checkRateLimitMock };
 });
 vi.mock('@/lib/jarvis/context', () => ({ buildContext: buildContextMock }));
-vi.mock('@/lib/jarvis/client', () => ({ callJarvis: callJarvisMock }));
+vi.mock('@/lib/jarvis/client', () => ({ callJarvis: callJarvisMock, callJarvisStreaming: callJarvisStreamingMock }));
 vi.mock('@/lib/jarvis/trade-analysis', () => ({ runTradeAnalysisPipeline: runTradeAnalysisPipelineMock }));
 vi.mock('@/lib/jarvis/research', () => ({
   fetchAndCacheRawReport: fetchAndCacheRawReportMock,
