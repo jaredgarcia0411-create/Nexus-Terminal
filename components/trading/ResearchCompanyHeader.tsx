@@ -1,28 +1,11 @@
 'use client';
 
-interface AskEdgarEndpointResponse {
-  status: string;
-  results: unknown[];
-  error?: string;
-}
+import type { ResearchSnapshotHeader } from '@/lib/types';
 
 interface Props {
   ticker: string;
-  rawData: Record<string, AskEdgarEndpointResponse>;
   companyName: string | null;
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
-}
-
-function getField(record: Record<string, unknown>, keys: string[]): unknown {
-  for (const key of keys) {
-    if (key in record && record[key] !== null && record[key] !== undefined && record[key] !== '') {
-      return record[key];
-    }
-  }
-  return null;
+  header: ResearchSnapshotHeader;
 }
 
 function formatCompact(value: unknown): string {
@@ -34,11 +17,6 @@ function formatCompact(value: unknown): string {
   return num.toFixed(2);
 }
 
-
-function firstResult(rawData: Record<string, AskEdgarEndpointResponse>, key: string) {
-  return toRecord(rawData[key]?.results?.[0]);
-}
-
 function statRow(label: string, value: string) {
   return (
     <div className="flex justify-between gap-2">
@@ -48,16 +26,14 @@ function statRow(label: string, value: string) {
   );
 }
 
-export default function ResearchCompanyHeader({ ticker, rawData, companyName }: Props) {
-  const screener = firstResult(rawData, 'screener');
-
-  const marketCap = getField(screener, ['marketCap', 'market_cap', 'market_cap_final']);
-  const outstanding = getField(screener, ['outstanding', 'outstandingShares', 'outstanding_shares']);
-  const float = getField(screener, ['float', 'floatShares', 'tradable_float']);
-  const exchange = getField(screener, ['exchange']);
-  const ipoDate = getField(screener, ['ipodate', 'ipo_date', 'ipoDate']);
-  const industry = getField(screener, ['industry']);
-  const country = getField(screener, ['country']);
+export default function ResearchCompanyHeader({ ticker, companyName, header }: Props) {
+  const marketCap = header.marketCap;
+  const outstanding = header.outstandingShares;
+  const float = header.float;
+  const exchange = header.exchange;
+  const ipoDate = header.ipoDate;
+  const industry = header.industry;
+  const country = header.country;
 
   return (
     <div className="flex h-full flex-col gap-3 border-r border-white/10 bg-[#0f0f11] px-4 py-3">

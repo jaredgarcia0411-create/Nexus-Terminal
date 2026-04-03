@@ -102,3 +102,154 @@ export interface TradeMarker {
   price: number;
   label: string;
 }
+
+// Normalized server-side shape returned by /api/askedgar/snapshot.
+// All field resolution (snake_case/camelCase, equity dedup, warrant classification)
+// is done server-side in normalizeAskEdgarResponse().
+
+export interface ResearchSnapshotHeader {
+  marketCap: number | null;
+  outstandingShares: number | null;
+  float: number | null;
+  exchange: string | null;
+  ipoDate: string | null;
+  industry: string | null;
+  country: string | null;
+  price: number | null;
+  shortInterest: number | null;
+  volume: number | null;
+}
+
+export interface ResearchSnapshotWarrant {
+  details: string;
+  amount: number | null;
+  remaining: number | null;
+  exercisePrice: number | null;
+  prefundedCost: number | null;
+  registered: string | null;
+  exercisableDate: string | null;
+  expirationDate: string | null;
+  filedAt: string | null;
+  isPrefunded: boolean;
+}
+
+export interface ResearchSnapshotRegistration {
+  headline: string;
+  filedAt: string | null;
+  effectiveDate: string | null;
+  expirationDate: string | null;
+  isEffective: boolean;
+  offeringAmount: number | null;
+  isAtm: boolean;
+  bank: string | null;
+  amountRemainingAtm: number | null;
+  totalRaised: number | null;
+  overBabyShelf: boolean;
+  babyShelfRaisableAmount: number | null;
+  formType: string | null;
+}
+
+export interface ResearchSnapshotOffering {
+  headline: string;
+  filedAt: string | null;
+  offeringType: string | null;
+  sharesAmount: number | null;
+  warrantsAmount: number | null;
+  sharePrice: number | null;
+  offeringAmount: number | null;
+}
+
+export interface ResearchSnapshotNewsItem {
+  title: string;
+  summary: string;
+  filedAt: string | null;
+  formType: string | null;
+  isNews: boolean;
+}
+
+export interface ResearchSnapshotDilutionDetails {
+  cashRemainingMonths: number | null;
+  cashBurn: number | null;
+  estimatedCash: number | null;
+  managementCommentary: string | null;
+  cashNeedDescription: string | null;
+  filedAt: string | null;
+  warrantInfo: string | null;
+  convertibles: string | null;
+  authorizedShares: number | null;
+  sharesAvailable: number | null;
+}
+
+export interface ResearchSnapshotOwner {
+  name: string;
+  role: string;
+  common: number | null;
+  preferred: number | null;
+  options: number | null;
+  warrants: number | null;
+}
+
+export interface ResearchSnapshotOwnershipGroup {
+  reportedDate: string | null;
+  owners: ResearchSnapshotOwner[];
+}
+
+export interface ResearchSnapshotHistoricalFloatRow {
+  date: string | null;
+  outstanding: number | null;
+  float: number | null;
+  tradableFloat: number | null;
+}
+
+export interface ResearchSnapshotReverseSplit {
+  date: string | null;
+  ratio: string | null;
+}
+
+export interface ResearchSnapshotAgreement {
+  type: string | null;
+  investor: string | null;
+  date: string | null;
+  details: string | null;
+}
+
+export interface ResearchSnapshotGapStat {
+  date: string | null;
+  gapPercentage: number | null;
+  marketOpen: number | null;
+  marketClose: number | null;
+  intradayHigh: number | null;
+  intradayLow: number | null;
+  vwap: number | null;
+  premarketHigh: number | null;
+  volume: number | null;
+  tags: string[];
+}
+
+export interface ResearchSnapshot {
+  ticker: string;
+  fetchedAt: string;
+  companyName: string | null;
+  warnings: string[];
+  header: ResearchSnapshotHeader;
+  dilutionRating: string | null;
+  cashNeedRating: string | null;
+  offeringFrequencyRating: string | null;
+  offeringAbilityRating: string | null;
+  warrantExerciseRating: string | null;
+  overallRisk: string | null;
+  regsho: boolean;
+  nasdaqCompliance: string | null;
+  dilutionDetails: ResearchSnapshotDilutionDetails;
+  warrants: ResearchSnapshotWarrant[];
+  registrations: ResearchSnapshotRegistration[];
+  equityLines: ResearchSnapshotRegistration[];
+  offerings: ResearchSnapshotOffering[];
+  news: ResearchSnapshotNewsItem[];
+  ownershipGroups: ResearchSnapshotOwnershipGroup[];
+  historicalFloat: ResearchSnapshotHistoricalFloatRow[];
+  reverseSplits: ResearchSnapshotReverseSplit[];
+  agreements: ResearchSnapshotAgreement[];
+  gapStats: ResearchSnapshotGapStat[];
+  rawData: Record<string, { status: string; results: unknown[]; error?: string }>;
+}

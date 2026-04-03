@@ -6,20 +6,7 @@ import ResearchChart from '@/components/trading/ResearchChart';
 import ResearchCompanyHeader from '@/components/trading/ResearchCompanyHeader';
 import ResearchReportSections from '@/components/trading/ResearchReportSections';
 import ResearchTldr from '@/components/trading/ResearchTldr';
-
-interface AskEdgarEndpointResponse {
-  status: string;
-  results: unknown[];
-  error?: string;
-}
-
-interface AskEdgarLookupData {
-  ticker: string;
-  fetchedAt: string;
-  rawData: Record<string, AskEdgarEndpointResponse>;
-  warnings: string[];
-  companyName?: string | null;
-}
+import type { ResearchSnapshot } from '@/lib/types';
 
 interface Props {
   ticker: string;
@@ -27,7 +14,7 @@ interface Props {
 }
 
 export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
-  const [data, setData] = useState<AskEdgarLookupData | null>(null);
+  const [data, setData] = useState<ResearchSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,9 +23,9 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
     setError(null);
     onCompanyName?.(null);
     try {
-      const response = await fetch(`/api/askedgar/lookup?ticker=${encodeURIComponent(selectedTicker)}`);
+      const response = await fetch(`/api/askedgar/snapshot?ticker=${encodeURIComponent(selectedTicker)}`);
       if (!response.ok) throw new Error(`Lookup failed: ${response.status}`);
-      const result = (await response.json()) as AskEdgarLookupData;
+      const result = (await response.json()) as ResearchSnapshot;
       setData(result);
       onCompanyName?.(result.companyName ?? null);
     } catch (fetchError) {
@@ -72,7 +59,7 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
       {/* Top row: company info panel on the left, chart on the right — fixed height */}
       <div className="flex h-[500px] shrink-0 border-b border-white/10">
         <div className="w-[220px] shrink-0 overflow-y-auto">
-          <ResearchCompanyHeader ticker={ticker} rawData={data.rawData} companyName={data.companyName ?? null} />
+          <ResearchCompanyHeader ticker={ticker} companyName={data.companyName ?? null} header={data.header} />
         </div>
         <div className="min-h-0 flex-1 bg-[#0A0A0B]">
           <ResearchChart ticker={ticker} />
@@ -80,7 +67,7 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
       </div>
 
       {/* Report sections below chart — always visible */}
-      <ResearchReportSections ticker={ticker} rawData={data.rawData} />
+      <ResearchReportSections ticker={ticker} data={data} />
 
       <div className="border-t border-white/10">
         <ResearchTldr ticker={ticker} />

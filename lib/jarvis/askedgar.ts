@@ -1,8 +1,22 @@
 import { and, eq, gt } from 'drizzle-orm';
 
+import { getField, toNumberValue, toRecord } from '@/lib/askedgar-utils';
 import { getDb } from '@/lib/db';
 import { askedgarCache } from '@/lib/db/schema';
 import type { DilutionDataSourceCheck } from '@/lib/jarvis/types';
+import type {
+  ResearchSnapshot,
+  ResearchSnapshotAgreement,
+  ResearchSnapshotGapStat,
+  ResearchSnapshotHistoricalFloatRow,
+  ResearchSnapshotNewsItem,
+  ResearchSnapshotOffering,
+  ResearchSnapshotOwnershipGroup,
+  ResearchSnapshotOwner,
+  ResearchSnapshotRegistration,
+  ResearchSnapshotReverseSplit,
+  ResearchSnapshotWarrant,
+} from '@/lib/types';
 
 export interface AskEdgarResponse<T> {
   status: string;
@@ -323,6 +337,307 @@ export async function fetchTickerData(ticker: string) {
     rawData,
     dataSources: endpointStates.map(toDataSource),
     warnings,
+  };
+}
+
+function getEndpointResponse(rawData: Record<string, AskEdgarResponse<unknown>>, keys: string[]): AskEdgarResponse<unknown> {
+  for (const key of keys) {
+    if (rawData[key]) return rawData[key];
+  }
+  return { status: 'error', count: 0, results: [], error: 'Endpoint not returned' };
+}
+
+function firstResult(rawData: Record<string, AskEdgarResponse<unknown>>, keys: string[]) {
+  return toRecord(getEndpointResponse(rawData, keys).results[0]);
+}
+
+function getStringField(record: Record<string, unknown>, keys: string[]): string | null {
+  const value = getField(record, keys);
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  return null;
+}
+
+function getBooleanField(record: Record<string, unknown>, keys: string[]): boolean {
+  const value = getField(record, keys);
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === 'yes' || normalized === 'y' || normalized === '1';
+  }
+  return false;
+}
+
+function detectFormType(row: Record<string, unknown>): string | null {
+  const formType = getStringField(row, ['form_type', 'formType']);
+  if (formType) return formType.toUpperCase();
+  const headline = (getStringField(row, ['headline', 'title']) ?? '').toUpperCase();
+  if (headline.includes('S-1')) return 'S-1';
+  if (headline.includes('S-3')) return 'S-3';
+  if (headline.includes('F-3')) return 'F-3';
+  return null;
+}
+
+function normalizeHeadline(row: Record<string, unknown>, fallback: string): string {
+  return getStringField(row, ['headline', 'title']) ?? fallback;
+}
+
+function dedupeByHeadline<T extends { headline: string }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const headline = row.headline.trim().toLowerCase();
+    if (!headline || seen.has(headline)) return false;
+    seen.add(headline);
+    return true;
+  });
+}
+
+function toRegistrationRow(row: Record<string, unknown>, fallback: string): ResearchSnapshotRegistration {
+  return {
+    headline: normalizeHeadline(row, fallback),
+    filedAt: getStringField(row, ['filed_at', 'filedAt', 'date']),
+    effectiveDate: getStringField(row, ['effective_date', 'effectiveDate']),
+    expirationDate: getStringField(row, ['expiration_date', 'expirationDate']),
+    isEffective: getBooleanField(row, ['effective_status', 'effectiveStatus']),
+    offeringAmount: toNumberValue(getField(row, ['offering_amount', 'offeringAmount', 'amount'])),
+    isAtm: getBooleanField(row, ['is_atm', 'isAtm']),
+    bank: getStringField(row, ['bank']),
+    amountRemainingAtm: toNumberValue(getField(row, ['amount_remaining_atm', 'amountRemainingAtm'])),
+    totalRaised: toNumberValue(getField(row, ['total_raised', 'totalRaised'])),
+    overBabyShelf: getBooleanField(row, ['over_baby_shelf', 'overBabyShelf']),
+    babyShelfRaisableAmount: toNumberValue(getField(row, ['baby_shelf_raisable_amount', 'babyShelfRaisableAmount'])),
+    formType: detectFormType(row),
+  };
+}
+
+interface NormalizeAskEdgarOptions {
+  ticker: string;
+  companyName: string | null;
+  fetchedAt: string;
+  warnings: string[];
+}
+
+export function normalizeAskEdgarResponse(
+  rawData: Record<string, AskEdgarResponse<unknown>>,
+  options: NormalizeAskEdgarOptions,
+): ResearchSnapshot {
+  const screener = firstResult(rawData, ['screener']);
+  const dilutionRating = firstResult(rawData, ['dilution-rating', 'dilutionRating']);
+  const dilutionData = getEndpointResponse(rawData, ['dilution-data', 'dilutionData']);
+  const dilutionDataFirst = toRecord(dilutionData.results[0]);
+  const compliance = firstResult(rawData, ['nasdaq-compliance', 'nasdaqCompliance']);
+  const pumpAndDump = firstResult(rawData, ['pump-and-dump-tracker', 'pumpAndDumpTracker']);
+
+  const registrations = getEndpointResponse(rawData, ['registrations']).results.map((item, index) => (
+    toRegistrationRow(toRecord(item), `Registration ${index + 1}`)
+  ));
+
+  const offeringEquityLines = getEndpointResponse(rawData, ['equity-lines', 'equityLines']).results.map((item, index) => {
+    const row = toRecord(item);
+    return toRegistrationRow(row, `Equity line ${index + 1}`);
+  });
+
+  const registrationEquityLines = registrations.filter((row) => {
+    if (row.isAtm) return false;
+    const headline = row.headline.toLowerCase();
+    return headline.includes('equity line') || headline.includes('eloc') || headline.includes('purchase agreement');
+  });
+
+  const offerings = dedupeByHeadline(
+    getEndpointResponse(rawData, ['offerings']).results
+      .map((item, index) => {
+        const row = toRecord(item);
+        return {
+          headline: normalizeHeadline(row, `Offering ${index + 1}`),
+          filedAt: getStringField(row, ['filed_at', 'filedAt', 'date']),
+          offeringType: getStringField(row, ['offeringType', 'offering_type', 'type', 'formType']),
+          sharesAmount: toNumberValue(getField(row, ['shares_amount', 'sharesAmount', 'shares'])),
+          warrantsAmount: toNumberValue(getField(row, ['warrants_amount', 'warrantsAmount'])),
+          sharePrice: toNumberValue(getField(row, ['share_price', 'sharePrice', 'price'])),
+          offeringAmount: toNumberValue(getField(row, ['offering_amount', 'offeringAmount', 'amount'])),
+        } satisfies ResearchSnapshotOffering;
+      })
+      .filter((row) => !String(row.offeringType ?? '').toUpperCase().includes('EQUITY LINE')),
+  );
+
+  const equityLines = dedupeByHeadline([
+    ...registrationEquityLines,
+    ...offeringEquityLines,
+  ]);
+
+  const news: ResearchSnapshotNewsItem[] = [
+    ...getEndpointResponse(rawData, ['news']).results.map((item, index) => {
+      const row = toRecord(item);
+      return {
+        title: normalizeHeadline(row, `News item ${index + 1}`),
+        summary: getStringField(row, ['body', 'summary', 'details']) ?? '',
+        filedAt: getStringField(row, ['filedAt', 'filed_at', 'date']),
+        formType: getStringField(row, ['formType', 'form', 'source']) ?? 'News',
+        isNews: true,
+      } satisfies ResearchSnapshotNewsItem;
+    }),
+    ...getEndpointResponse(rawData, ['filing-titles', 'filingTitles']).results.map((item, index) => {
+      const row = toRecord(item);
+      return {
+        title: normalizeHeadline(row, `Filing ${index + 1}`),
+        summary: getStringField(row, ['body', 'summary', 'details']) ?? '',
+        filedAt: getStringField(row, ['filedAt', 'filed_at', 'date']),
+        formType: getStringField(row, ['formType', 'form', 'source']) ?? 'Filing',
+        isNews: false,
+      } satisfies ResearchSnapshotNewsItem;
+    }),
+  ];
+
+  const currentPrice = toNumberValue(getField(screener, ['price']));
+  const warrants: ResearchSnapshotWarrant[] = dilutionData.results.reduce<ResearchSnapshotWarrant[]>((rows, item, index) => {
+    const row = toRecord(item);
+    const amount = toNumberValue(getField(row, ['warrants_amount']));
+    if (amount === null) return rows;
+
+    const prefundedCost = toNumberValue(getField(row, ['prefunded_cost']));
+    rows.push({
+      details: getStringField(row, ['details']) ?? `Warrant ${index + 1}`,
+      amount,
+      remaining: toNumberValue(getField(row, ['warrants_remaining'])),
+      exercisePrice: toNumberValue(getField(row, ['warrants_exercise_price'])),
+      prefundedCost,
+      registered: getStringField(row, ['registered']),
+      exercisableDate: getStringField(row, ['exercisable_date']),
+      expirationDate: getStringField(row, ['expiration_date']),
+      filedAt: getStringField(row, ['filed_at', 'filedAt', 'date']),
+      isPrefunded: prefundedCost !== null && prefundedCost > 0,
+    });
+    return rows;
+  }, []);
+
+  const ownershipGroups: ResearchSnapshotOwnershipGroup[] = getEndpointResponse(rawData, ['ownership']).results
+    .map((group) => {
+      const groupRecord = toRecord(group);
+      const owners = (Array.isArray(groupRecord.owners) ? groupRecord.owners : [])
+        .map((owner) => {
+          const row = toRecord(owner);
+          return {
+            name: getStringField(row, ['owner_name', 'ownerName']) ?? 'Unknown owner',
+            role: getStringField(row, ['title', 'owner_type', 'ownerType']) ?? 'N/A',
+            common: toNumberValue(getField(row, ['common_shares_amount', 'commonSharesAmount'])),
+            preferred: toNumberValue(getField(row, ['preferred_shares_amount', 'preferredSharesAmount'])),
+            options: toNumberValue(getField(row, ['options_amount', 'optionsAmount'])),
+            warrants: toNumberValue(getField(row, ['warrants_amount', 'warrantsAmount'])),
+          } satisfies ResearchSnapshotOwner;
+        })
+        .filter((owner) => owner.name !== 'Unknown owner' || owner.role !== 'N/A');
+
+      return {
+        reportedDate: getStringField(groupRecord, ['reported_date', 'reportedDate']),
+        owners,
+      } satisfies ResearchSnapshotOwnershipGroup;
+    })
+    .filter((group) => group.owners.length > 0);
+
+  const historicalFloat: ResearchSnapshotHistoricalFloatRow[] = getEndpointResponse(rawData, ['historical-float-pro', 'historicalFloatPro']).results.map((item) => {
+    const row = toRecord(item);
+    return {
+      date: getStringField(row, ['reportedDate', 'reported_date', 'date']),
+      outstanding: toNumberValue(getField(row, ['outstandingShares', 'outstanding_shares', 'outstanding'])),
+      float: toNumberValue(getField(row, ['float'])),
+      tradableFloat: toNumberValue(getField(row, ['tradableFloat', 'tradable_float'])),
+    } satisfies ResearchSnapshotHistoricalFloatRow;
+  });
+
+  const reverseSplits: ResearchSnapshotReverseSplit[] = getEndpointResponse(rawData, ['reverse-splits', 'reverseSplits']).results.map((item) => {
+    const row = toRecord(item);
+    const ratio = getStringField(row, ['ratio'])
+      ?? `${getStringField(row, ['splitFrom', 'split_from']) ?? 'N/A'}:${getStringField(row, ['splitTo', 'split_to']) ?? 'N/A'}`;
+    return {
+      date: getStringField(row, ['executionDate', 'execution_date', 'date']),
+      ratio,
+    } satisfies ResearchSnapshotReverseSplit;
+  });
+
+  const agreements: ResearchSnapshotAgreement[] = getEndpointResponse(rawData, ['agreements']).results.map((item) => {
+    const row = toRecord(item);
+    return {
+      type: getStringField(row, ['agreementType', 'agreement_type', 'type']),
+      investor: getStringField(row, ['investorNames', 'investor_names', 'investor']),
+      date: getStringField(row, ['filedAt', 'filed_at', 'date']),
+      details: getStringField(row, ['details', 'summary']),
+    } satisfies ResearchSnapshotAgreement;
+  });
+
+  const gapStats: ResearchSnapshotGapStat[] = getEndpointResponse(rawData, ['gap-stats', 'gapStats']).results.map((item) => {
+    const row = toRecord(item);
+    const tags = Array.isArray(getField(row, ['tags'])) ? (getField(row, ['tags']) as string[]) : [];
+    const formTypes = Array.isArray(getField(row, ['form_types', 'formTypes'])) ? (getField(row, ['form_types', 'formTypes']) as string[]) : [];
+    return {
+      date: getStringField(row, ['date']),
+      gapPercentage: toNumberValue(getField(row, ['gap_percentage', 'gapPercentage'])),
+      marketOpen: toNumberValue(getField(row, ['market_open', 'marketOpen'])),
+      marketClose: toNumberValue(getField(row, ['market_close', 'marketClose'])),
+      intradayHigh: toNumberValue(getField(row, ['intraday_high', 'intradayHigh'])),
+      intradayLow: toNumberValue(getField(row, ['intraday_low', 'intradayLow'])),
+      vwap: toNumberValue(getField(row, ['vwap'])),
+      premarketHigh: toNumberValue(getField(row, ['premarket_high', 'premarketHigh'])),
+      volume: toNumberValue(getField(row, ['volume'])),
+      tags: [...tags, ...formTypes],
+    } satisfies ResearchSnapshotGapStat;
+  });
+
+  return {
+    ticker: options.ticker,
+    fetchedAt: options.fetchedAt,
+    companyName: options.companyName,
+    warnings: options.warnings,
+    header: {
+      marketCap: toNumberValue(getField(screener, ['marketCap', 'market_cap', 'market_cap_final'])),
+      outstandingShares: toNumberValue(getField(screener, ['outstanding', 'outstandingShares', 'outstanding_shares', 'sharesOutstanding'])),
+      float: toNumberValue(getField(screener, ['float', 'floatShares', 'tradable_float', 'float_shares'])),
+      exchange: getStringField(screener, ['exchange']),
+      ipoDate: getStringField(screener, ['ipodate', 'ipo_date', 'ipoDate']),
+      industry: getStringField(screener, ['industry']),
+      country: getStringField(screener, ['country']),
+      price: currentPrice,
+      shortInterest: toNumberValue(getField(screener, ['shortInterest', 'short_interest'])),
+      volume: toNumberValue(getField(screener, ['today_volume', 'volume', 'totalVolume'])),
+    },
+    dilutionRating: getStringField(dilutionRating, ['dilution', 'dilution_rating', 'rating', 'dilutionRating']),
+    cashNeedRating: getStringField(dilutionRating, ['cash_need', 'cashNeed']),
+    offeringFrequencyRating: getStringField(dilutionRating, ['offering_frequency', 'offeringFrequency']),
+    offeringAbilityRating: getStringField(dilutionRating, ['offering_ability', 'offeringAbility']),
+    warrantExerciseRating: getStringField(dilutionRating, ['warrant_exercise', 'warrantExercise']),
+    overallRisk: getStringField(pumpAndDump, ['overall_risk', 'overallRisk', 'scam_risk', 'scamRisk']),
+    regsho: getBooleanField(compliance, ['regsho']) || getBooleanField(pumpAndDump, ['regsho']),
+    nasdaqCompliance: getStringField(compliance, ['status', 'complianceStatus', 'rating', 'nasdaq_compliance', 'nasdaqCompliance']),
+    dilutionDetails: {
+      cashRemainingMonths: toNumberValue(getField(dilutionRating, ['cash_remaining_months', 'cashRemainingMonths']))
+        ?? toNumberValue(getField(dilutionDataFirst, ['cashRemainingMonths', 'monthsRemaining'])),
+      cashBurn: toNumberValue(getField(dilutionRating, ['cash_burn', 'cashBurn']))
+        ?? toNumberValue(getField(dilutionDataFirst, ['cashBurn', 'burnRate'])),
+      estimatedCash: toNumberValue(getField(dilutionRating, ['estimated_cash', 'estimatedCash']))
+        ?? toNumberValue(getField(dilutionDataFirst, ['estimatedCash', 'cash', 'cashOnHand'])),
+      managementCommentary: getStringField(dilutionRating, ['mgmt_commentary', 'managementCommentary', 'commentary']),
+      cashNeedDescription: getStringField(dilutionRating, ['cash_need_desc', 'cashNeedDesc']),
+      filedAt: getStringField(dilutionRating, ['filed_at', 'filedAt', 'lastUpdated']),
+      warrantInfo: getStringField(dilutionDataFirst, ['warrantExercise', 'warrantInfo', 'warrant_exercise']),
+      convertibles: getStringField(dilutionDataFirst, ['convertibles', 'convertibleNotes']),
+      authorizedShares: toNumberValue(getField(dilutionDataFirst, ['authorizedShares', 'authorized_shares'])),
+      sharesAvailable: toNumberValue(getField(dilutionDataFirst, ['sharesAvailable', 'availableShares'])),
+    },
+    warrants,
+    registrations,
+    equityLines,
+    offerings,
+    news,
+    ownershipGroups,
+    historicalFloat,
+    reverseSplits,
+    agreements,
+    gapStats,
+    rawData,
   };
 }
 

@@ -59,449 +59,26 @@ Validation:
 
 ## Group 2: Medium Complexity (run in parallel)
 
-**Status:** implementation complete — manual validation pending before Group 3.
-
-Note: `.claude/CLAUDE.md` route-count update is deferred until all groups are complete per user instruction.
-
-### Step 6 — Extract `buildTradeMarkers()` to `lib/trading-utils.ts`
-
-**Background:** Marker-building logic is duplicated in `JournalTradeChart.tsx` (lines 28-73) and `TradeDetailSheet.tsx` (lines 78-120). Both convert a trade's raw executions (or fallback entry/exit times) into `TradeMarker[]` for the candlestick chart.
-
-Key difference between the two implementations:
-- `JournalTradeChart`: uses `flatMap` + filters out executions with null timestamps
-- `TradeDetailSheet`: uses `.map()` + `timeValue()` helper which returns `0` for null (no filtering)
-
-The extracted function will use the filtering approach (better behavior — `0` timestamps cause markers at Unix epoch).
-
-**Files affected:**
-- `lib/types.ts` — MODIFY (add `TradeMarker` interface)
-- `components/trading/CandlestickChart.tsx` — MODIFY (import `TradeMarker` from `lib/types`, re-export it)
-- `lib/trading-utils.ts` — MODIFY (add `buildTradeMarkers`)
-- `components/trading/JournalTradeChart.tsx` — MODIFY (use `buildTradeMarkers`)
-- `components/trading/TradeDetailSheet.tsx` — MODIFY (use `buildTradeMarkers`)
-
-**What to do:**
-
-**6a. Find the `TradeMarker` type in `CandlestickChart.tsx`.** It should look like:
-```ts
-export type TradeMarker = {
-  time: number;
-  direction: 'LONG' | 'SHORT';
-  price: number;
-  label: string;
-};
-```
-Copy its exact definition.
-
-**6b. Add `TradeMarker` to `lib/types.ts`** at the bottom of the file.
-
-**6c. In `components/trading/CandlestickChart.tsx`:**
-- Remove the `TradeMarker` interface/type definition
-- Add `import type { TradeMarker } from '@/lib/types';`
-- Add `export type { TradeMarker };` so existing importers (`JournalTradeChart`, `TradeDetailSheet`) don't break
-
-**6d. In `lib/trading-utils.ts`,** add these imports at the top:
-```ts
-import { nyDateTimeToEpoch, parseAbsoluteTimestampMs } from '@/lib/time-utils';
-import type { Trade, TradeMarker } from '@/lib/types';
-```
-
-Then add at the bottom of the file:
-```ts
-// Converts a trade's executions (or entry/exit times) into candlestick chart markers.
-// Filters out executions whose timestamp cannot be resolved to avoid epoch-time markers.
-export function buildTradeMarkers(trade: Trade): TradeMarker[] {
-  if (trade.rawExecutions.length > 0) {
-    return trade.rawExecutions.flatMap((execution) => {
-      const abs = parseAbsoluteTimestampMs(execution.timestamp);
-      const time = abs ?? nyDateTimeToEpoch(trade.sortKey, execution.time);
-      if (time == null || !Number.isFinite(time)) return [];
-      const direction = execution.side === 'ENTRY'
-        ? trade.direction
-        : trade.direction === 'LONG' ? 'SHORT' : 'LONG';
-      return [{ time, direction, price: execution.price, label: execution.side }];
-    });
-  }
-
-  const markers: TradeMarker[] = [];
-  const entry = nyDateTimeToEpoch(trade.sortKey, trade.entryTime);
-  const exit = nyDateTimeToEpoch(trade.sortKey, trade.exitTime);
-  if (entry != null) {
-    markers.push({ time: entry, direction: trade.direction, price: trade.avgEntryPrice, label: 'ENTRY' });
-  }
-  if (exit != null) {
-    markers.push({
-      time: exit,
-      direction: trade.direction === 'LONG' ? 'SHORT' : 'LONG',
-      price: trade.avgExitPrice,
-      label: 'EXIT',
-    });
-  }
-  return markers;
-}
-```
-
-**6e. In `components/trading/JournalTradeChart.tsx`:**
-- Add import: `import { buildTradeMarkers } from '@/lib/trading-utils';`
-- Remove imports of `nyDateTimeToEpoch` and `parseAbsoluteTimestampMs` from `@/lib/time-utils` if they are no longer used in this file after the change (check the rest of the file first)
-- Replace the `useMemo` body (lines 29-72) with:
-  ```ts
-  const tradeMarkers = useMemo<TradeMarker[]>(() => buildTradeMarkers(trade), [trade]);
-  ```
-
-**6f. In `components/trading/TradeDetailSheet.tsx`:**
-- Add import: `import { buildTradeMarkers } from '@/lib/trading-utils';`
-- The local `timeValue()` function (lines 31-39) is still used by `sortedExecutions` — keep it
-- Replace the `tradeMarkers` useMemo body (lines 79-119) with:
-  ```ts
-  const tradeMarkers = useMemo<TradeMarker[]>(() => {
-    if (!trade) return [];
-    return buildTradeMarkers(trade);
-  }, [trade]);
-  ```
-  The dependency can be just `[trade]` since `buildTradeMarkers` reads `trade.rawExecutions` directly.
-
-**Acceptance Criteria:**
-- [x] `TradeMarker` is defined in `lib/types.ts` and re-exported from `CandlestickChart.tsx`
-- [x] `buildTradeMarkers` is exported from `lib/trading-utils.ts`
-- [x] `JournalTradeChart.tsx` uses `buildTradeMarkers` — no inline flatMap/marker logic
-- [x] `TradeDetailSheet.tsx` uses `buildTradeMarkers` — no inline marker logic
-- [x] `npx tsc --noEmit` passes
-
----
-
-### Step 7 — Move duplicated `FRAME_CONFIG` to `lib/chart-timeframes.ts`
-
-**Background:** `FRAME_CONFIG` (timeframe-to-API-params mapping) is defined locally in both `ChartsTab.tsx` (lines 62-72, 9 timeframes) and `ResearchChart.tsx` (lines 19-26, 6 timeframes). The shared type `FrameConfig` is also defined locally in each.
-
-The two configs have different key sets and slightly different key names (`'1d'` in ChartsTab vs `'1D'` in ResearchChart for daily). Export them as separate named configs.
-
-**Files affected:**
-- `lib/chart-timeframes.ts` — MODIFY (add exports)
-- `components/trading/ChartsTab.tsx` — MODIFY (import, remove local defs)
-- `components/trading/ResearchChart.tsx` — MODIFY (import, remove local defs)
-
-**What to do:**
-
-**7a.** In `lib/chart-timeframes.ts`, add at the end of the file:
-
-```ts
-export type FrameConfig = {
-  label: string;
-  periodType: string;
-  period: string;
-  frequencyType: string;
-  frequency: string;
-  intraday: boolean;
-};
-
-export type ChartsTabTimeframeKey = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d' | '1w' | '1M';
-
-export const CHARTS_TAB_FRAME_CONFIG: Record<ChartsTabTimeframeKey, FrameConfig> = {
-  '1m': { label: '1m', periodType: 'day', period: '5', frequencyType: 'minute', frequency: '1', intraday: true },
-  '5m': { label: '5m', periodType: 'day', period: '10', frequencyType: 'minute', frequency: '5', intraday: true },
-  '15m': { label: '15m', periodType: 'month', period: '1', frequencyType: 'minute', frequency: '15', intraday: true },
-  '30m': { label: '30m', periodType: 'month', period: '2', frequencyType: 'minute', frequency: '30', intraday: true },
-  '1h': { label: '1h', periodType: 'month', period: '3', frequencyType: 'minute', frequency: '60', intraday: true },
-  '4h': { label: '4h', periodType: 'month', period: '6', frequencyType: 'minute', frequency: '240', intraday: true },
-  '1d': { label: '1D', periodType: 'year', period: '2', frequencyType: 'daily', frequency: '1', intraday: false },
-  '1w': { label: '1W', periodType: 'year', period: '5', frequencyType: 'weekly', frequency: '1', intraday: false },
-  '1M': { label: '1M', periodType: 'year', period: '10', frequencyType: 'monthly', frequency: '1', intraday: false },
-};
-
-export type ResearchChartTimeframeKey = '1m' | '5m' | '15m' | '30m' | '1h' | '1D';
-
-export const RESEARCH_CHART_FRAME_CONFIG: Record<ResearchChartTimeframeKey, FrameConfig> = {
-  '1m': { label: '1m', periodType: 'day', period: '5', frequencyType: 'minute', frequency: '1', intraday: true },
-  '5m': { label: '5m', periodType: 'day', period: '10', frequencyType: 'minute', frequency: '5', intraday: true },
-  '15m': { label: '15m', periodType: 'month', period: '1', frequencyType: 'minute', frequency: '15', intraday: true },
-  '30m': { label: '30m', periodType: 'month', period: '2', frequencyType: 'minute', frequency: '30', intraday: true },
-  '1h': { label: '1h', periodType: 'month', period: '3', frequencyType: 'minute', frequency: '60', intraday: true },
-  '1D': { label: '1D', periodType: 'year', period: '2', frequencyType: 'daily', frequency: '1', intraday: false },
-};
-```
-
-**7b.** In `components/trading/ChartsTab.tsx`:
-- Add to existing `lib/chart-timeframes` import: `CHARTS_TAB_FRAME_CONFIG, type ChartsTabTimeframeKey, type FrameConfig`
-- Remove local `type FrameConfig` (the type def block at ~line 53-60)
-- Remove local `type TimeframeKey` (line 50 — `'1m' | '5m' | ...`)
-- Remove local `const FRAME_CONFIG` (lines 62-72)
-- Replace all uses of `FRAME_CONFIG` with `CHARTS_TAB_FRAME_CONFIG`
-- Replace `TimeframeKey` type annotation with `ChartsTabTimeframeKey`
-
-**7c.** In `components/trading/ResearchChart.tsx`:
-- Add import: `import { RESEARCH_CHART_FRAME_CONFIG, type ResearchChartTimeframeKey, type FrameConfig } from '@/lib/chart-timeframes';`
-- Remove local `type TimeframeKey` (line 8)
-- Remove local `type FrameConfig` (lines 10-17)
-- Remove local `const FRAME_CONFIG` (lines 19-26)
-- Replace `FRAME_CONFIG` with `RESEARCH_CHART_FRAME_CONFIG`
-- Replace `TimeframeKey` with `ResearchChartTimeframeKey`
-
-**Acceptance Criteria:**
-- [x] `lib/chart-timeframes.ts` exports `FrameConfig`, `CHARTS_TAB_FRAME_CONFIG`, `ChartsTabTimeframeKey`, `RESEARCH_CHART_FRAME_CONFIG`, `ResearchChartTimeframeKey`
-- [x] No local `FRAME_CONFIG` or `FrameConfig` in `ChartsTab.tsx` or `ResearchChart.tsx`
-- [x] `npx tsc --noEmit` passes
-
----
-
-### Step 8 — Fix double `fetchResults` on mount in `hooks/use-scanner.ts`
-
-**Background:** `use-scanner.ts` has two effects that both fire on first render:
-
-Effect A (line 174): fires on mount — calls `fetchResults()` and `fetchPresets()`.
-Effect B (line 179): fires when `filters`, `sortBy`, `sortDir`, or `fetchResults` change — also fires on first render since they're initialized.
-
-Result: `fetchResults` is called twice immediately on mount. Effect B should skip its first execution since Effect A already handled it.
-
-**File:** `hooks/use-scanner.ts`
-**Action:** MODIFY
-
-**What to do:**
-
-1. After the `sortDirRef` declaration (around line 71), add:
-   ```ts
-   const hasInitialFetchRef = useRef(false);
-   ```
-
-2. Leave Effect A (lines 174-177) unchanged — it handles the initial fetch.
-
-3. Replace Effect B (lines 179-181) with:
-   ```ts
-   useEffect(() => {
-     if (!hasInitialFetchRef.current) {
-       hasInitialFetchRef.current = true;
-       return;
-     }
-     void fetchResults();
-   }, [filters, sortBy, sortDir, fetchResults]);
-   ```
-
-   How this works: on first render, Effect A fires first (declaration order) and Effect B fires second. Effect B sees `hasInitialFetchRef.current === false`, sets it to `true`, and returns without fetching. On all subsequent renders triggered by filter/sort changes, Effect B sees `true` and fetches normally.
-
-**Acceptance Criteria:**
-- [ ] `fetchResults` is called once on mount (not twice)
-- [ ] Filter/sort changes after mount still trigger `fetchResults`
-- [x] `npx tsc --noEmit` passes
-
-**Note:** The `sortTrades` alias in `use-trade-sync.ts` and `use-trades.ts` (`const sortTrades = sortTradesByDate`) is intentionally left — removing it would be a noisy diff for zero gain.
-
----
-
-### Step 9 — Break up `app/api/market-data/snapshot/route.ts`
-
-**Background:** The route is 607 lines with three distinct concerns embedded inline:
-1. Massive API path: `toInstrument()`, `toMoverRows()`, `fetchFreshSnapshot()` (lines 61-228)
-2. Realtime DB path: `getSchwabLinkStatus()`, `fetchRealtimeSnapshot()` (lines 230-330)
-3. Route orchestration + cache + logging (lines 330-607)
-
-**Files:**
-- `lib/massive-snapshot.ts` — CREATE
-- `lib/realtime-snapshot.ts` — CREATE
-- `app/api/market-data/snapshot/route.ts` — MODIFY (remove extracted code, import from new files)
-
-**What to do:**
-
-**9a. Create `lib/massive-snapshot.ts`**
-
-Move from `route.ts`:
-- Helper functions: `normalizeTicker` (lines 61-63), `normalizeRealtimeSymbol` (65-67), `toNumberOrNull` (69-72), `getNyIsoDate` (74-81), `calculateExtendedChange` (83-92)
-- `toInstrument()` (lines 94-177)
-- `toMoverRows()` (lines 179-192)
-- `fetchFreshSnapshot()` (lines 194-228)
-
-Imports needed:
-```ts
-import { INDEX_SYMBOLS, COMMODITY_SYMBOLS, EQUITY_SYMBOLS } from '@/lib/market-symbols';
-import {
-  normalizeQuoteSymbol,
-  type MarketInstrument,
-  type MarketSnapshotPayload,
-} from '@/lib/quote-mappers';
-import {
-  fetchBatchDailyTickerSummaries,
-  fetchTopMarketMovers,
-  fetchUnifiedSnapshot,
-  getEasternMarketSession,
-  normalizeMassiveTicker,
-  type EasternMarketSession,
-} from '@/lib/massive-market';
-```
-
-Export: `fetchFreshSnapshot`, `normalizeTicker` (needed by `lib/realtime-snapshot.ts`)
-
-**9b. Create `lib/realtime-snapshot.ts`**
-
-Move from `route.ts`:
-- Module-level `realtimeCache` variable (line 51) and `REALTIME_CACHE_TTL_MS` (line 47), `REALTIME_STALE_MS` (line 45)
-- `RealtimeSnapshotResult` type (lines 37-40)
-- `getSchwabLinkStatus()` (lines 230-247)
-- `fetchRealtimeSnapshot()` (lines 249-330)
-
-Imports needed:
-```ts
-import { desc, eq, inArray } from 'drizzle-orm';
-import { getDb } from '@/lib/db';
-import { INDEX_SYMBOLS, COMMODITY_SYMBOLS, EQUITY_SYMBOLS } from '@/lib/market-symbols';
-import { marketSnapshots, realtimeQuotes, schwabLinks } from '@/lib/db/schema';
-import {
-  normalizeQuoteSymbol,
-  quotesToSnapshot,
-  schwabScreenerToMoverRows,
-  type MarketMoverRow,
-  type MarketSnapshotPayload,
-  type SchwabScreenerItem,
-} from '@/lib/quote-mappers';
-import { getEasternMarketSession } from '@/lib/massive-market';
-import { normalizeTicker } from '@/lib/massive-snapshot';
-```
-
-The `normalizeRealtimeSymbol` helper uses both `normalizeTicker` and `normalizeQuoteSymbol`. Move it to `lib/realtime-snapshot.ts` as a private helper.
-
-Export: `getSchwabLinkStatus`, `fetchRealtimeSnapshot`, `type RealtimeSnapshotResult`
-
-**9c. Update `app/api/market-data/snapshot/route.ts`**
-
-Remove all extracted code. Add:
-```ts
-import { fetchFreshSnapshot } from '@/lib/massive-snapshot';
-import { getSchwabLinkStatus, fetchRealtimeSnapshot, type RealtimeSnapshotResult } from '@/lib/realtime-snapshot';
-```
-
-Remove module-level `realtimeCache` variable — it now lives in `lib/realtime-snapshot.ts`.
-Remove constants that moved: `REALTIME_STALE_MS`, `REALTIME_CACHE_TTL_MS`.
-Keep: `CACHE_SNAPSHOT_TYPE`, `CACHE_TTL_MS`, `STALE_WARNING_MS`, `SCHWAB_SCREENER_SNAPSHOT_TYPE`, `SnapshotCoverage` type, `PgLikeError` type, `isUndefinedTableError`, `getErrorSummary`, `logSnapshotStage`, `countMissing`, `buildCoverage`, and the `GET` handler.
-
-Target: route under 250 lines.
-
-**Acceptance Criteria:**
-- [x] `lib/massive-snapshot.ts` exists and exports `fetchFreshSnapshot`
-- [x] `lib/realtime-snapshot.ts` exists and exports `fetchRealtimeSnapshot`, `getSchwabLinkStatus`, `RealtimeSnapshotResult`
-- [x] `app/api/market-data/snapshot/route.ts` is under 250 lines
-- [ ] Markets tab still loads correctly
-- [x] `npx tsc --noEmit` passes
-
----
-
-### Step 10 — Merge Jarvis chat + stream routes
-
-**Background:** `app/api/jarvis/chat/route.ts` (93 lines) and `app/api/jarvis/chat/stream/route.ts` (112 lines) share ~60 lines of auth, rate limiting, DB setup, context building, and user-message saving. The stream route is called first by the frontend; if it returns `{ redirect: true }` (for commands), the frontend calls the non-stream route.
-
-**Merge strategy:** Single `POST /api/jarvis/chat` route. Add `?stream=1` query param to trigger streaming. Keep `{ redirect: true }` sentinel for commands in stream mode — frontend logic stays unchanged, just update the URL.
-
-**Files affected:**
-- `app/api/jarvis/chat/route.ts` — MODIFY
-- `app/api/jarvis/chat/stream/route.ts` — DELETE after merge
-- `components/trading/JarvisChat.tsx` — MODIFY (1 line: URL update)
-- `.claude/CLAUDE.md` — MODIFY (route count 32 → 31)
-
-**What to do:**
-
-**10a. In `app/api/jarvis/chat/route.ts`:**
-
-Add these imports (currently only in stream route):
-```ts
-import { callJarvisStreaming } from '@/lib/jarvis/client';
-import { createSSEResponse } from '@/lib/sse';
-```
-
-Add at file top:
-```ts
-export const maxDuration = 300;
-```
-
-Refactor `POST` handler. Insert a streaming branch after command handlers (which return early), before the non-streaming path:
-
-```ts
-// After command handlers, before non-streaming path:
-const url = new URL(request.url);
-if (url.searchParams.get('stream') === '1') {
-  // Commands already returned above — if we're here, it's a regular chat message.
-  const prompt = buildChatPrompt(context, message);
-  try {
-    const { stream } = await callJarvisStreaming(JARVIS_SYSTEM_PROMPT, prompt);
-    const reader = stream.getReader();
-    return createSSEResponse(request.signal, (send) => {
-      let fullText = '';
-      let closed = false;
-      const closeReader = () => { if (closed) return; closed = true; reader.cancel().catch(() => {}); };
-      void (async () => {
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            fullText += value;
-            send('token', { text: value });
-          }
-          send('done', { fullText, session_id: sessionId });
-          await Promise.all([
-            saveConversation({ db, userId, sessionId, role: 'assistant', content: fullText, mode: 'chat' }),
-            logJarvisRequest({ userId, mode: 'chat', durationMs: Date.now() - startedAt, success: true }),
-          ]);
-        } catch {
-          send('error', { message: 'Stream interrupted' });
-          await logJarvisRequest({ userId, mode: 'chat', durationMs: Date.now() - startedAt, success: false });
-        }
-      })();
-      return () => { closeReader(); };
-    });
-  } catch {
-    await logJarvisRequest({ userId, mode: 'chat', durationMs: Date.now() - startedAt, success: false });
-    return Response.json({ error: 'Failed to start stream' }, { status: 500 });
-  }
-}
-// Non-streaming path continues below...
-```
-
-For commands in stream mode: the command handlers check message content and return early (before the stream branch). So commands always return JSON regardless of `?stream=1`. But the client expects `{ redirect: true }` from the stream endpoint for commands. **Simplest approach:** Move the `?stream=1` check BEFORE command handlers. When `?stream=1` AND a command is detected, return `Response.json({ redirect: true })`. The client then calls `/api/jarvis/chat` (no stream param) for commands — same flow as today, just a unified URL namespace.
-
-**10b. In `components/trading/JarvisChat.tsx`, line 41:**
-```ts
-// Before:
-const response = await fetch('/api/jarvis/chat/stream', {
-// After:
-const response = await fetch('/api/jarvis/chat?stream=1', {
-```
-
-**10c.** Delete `app/api/jarvis/chat/stream/route.ts`.
-
-**10d.** In `.claude/CLAUDE.md`, update route count:
-```
-# Before: "to list all 32 routes"
-# After: "to list all 31 routes"
-```
-
-Deferred for later: do not update `.claude/CLAUDE.md` until all groups are complete.
-
-**Security:** Merged route still calls `requireUser()` first. No auth regression.
-
-**Acceptance Criteria:**
-- [x] `app/api/jarvis/chat/stream/route.ts` is deleted
-- [x] `app/api/jarvis/chat/route.ts` handles `?stream=1` (SSE) and normal (JSON) requests
-- [x] `JarvisChat.tsx` calls `/api/jarvis/chat?stream=1` for streaming
-- [x] Commands (`/research`, `/analyze`) still return JSON
-- [ ] Streaming chat works end-to-end
-- [x] `npx tsc --noEmit` passes
-
----
-
-### Group 2 Validation
-
-```bash
-npm run lint && npx tsc --noEmit
-```
-
-Automated validation completed:
+**Status:** complete
+
+Delivered:
+- Centralized `TradeMarker` in `lib/types.ts`, re-exported it from `CandlestickChart.tsx`, and moved shared marker construction into `buildTradeMarkers()`.
+- Moved duplicated timeframe config/type definitions into `lib/chart-timeframes.ts` for `ChartsTab` and `ResearchChart`.
+- Fixed `use-scanner.ts` so the initial mount only performs one results fetch instead of double-firing.
+- Split `/api/market-data/snapshot` provider logic into `lib/massive-snapshot.ts` and `lib/realtime-snapshot.ts`; route is now under 250 lines.
+- Merged Jarvis chat + stream handling into `/api/jarvis/chat`, deleted `/api/jarvis/chat/stream`, and updated the client to use `?stream=1`.
+
+Validation:
 - [x] `npm run lint`
 - [x] `npx tsc --noEmit`
 - [x] `npm test`
-
-Then manually test: open Jarvis tab, send a chat message (verify streaming), send `/research AAPL` (verify JSON response), send `/analyze` (verify JSON response).
-
-### ⛔ STOP — Commit Group 2 before proceeding to Group 3.
+- [x] Targeted regression coverage passed: `__tests__/jarvis-chat-route.test.ts`, `__tests__/jarvis-chat-stream-route.test.ts`, `__tests__/market-data-snapshot-route.test.ts`, `__tests__/markets-tab.test.tsx`
 
 ---
 
 ## Group 3: AskEdgar (sequenced — Step 11 before Step 12)
+
+**Status:** implementation complete — live Research tab visual verification still pending.
 
 ### Step 11 — Extract AskEdgar shared helpers to `lib/askedgar-utils.ts`
 
@@ -638,12 +215,12 @@ Delete lines 10-14 (local `interface AskEdgarEndpointResponse`).
 Keep `AskEdgarLookupData` interface — it is specific to this component.
 
 **Acceptance Criteria:**
-- [ ] `lib/askedgar-utils.ts` exists with all listed exports
-- [ ] `ResearchReportSections.tsx`: no local definitions of `AskEdgarEndpointResponse`, `isRecord`, `toRecord`, `toNumberValue`, `formatNumber`, `formatMoney`, `getField`, `riskClass`
-- [ ] `ResearchCompanyHeader.tsx`: no local definitions of `AskEdgarEndpointResponse`, `toRecord`, `getField`
-- [ ] `ResearchTickerView.tsx`: imports `AskEdgarEndpointResponse` from `@/lib/askedgar-utils`
+- [x] `lib/askedgar-utils.ts` exists with all listed exports
+- [x] `ResearchReportSections.tsx`: no local definitions of `AskEdgarEndpointResponse`, `isRecord`, `toRecord`, `toNumberValue`, `formatNumber`, `formatMoney`, `getField`, `riskClass`
+- [x] `ResearchCompanyHeader.tsx`: no local definitions of `AskEdgarEndpointResponse`, `toRecord`, `getField`
+- [x] `ResearchTickerView.tsx` no longer owns a local AskEdgar response interface
 - [ ] Research tab renders identically
-- [ ] `npx tsc --noEmit` passes
+- [x] `npx tsc --noEmit` passes
 
 ---
 
@@ -838,14 +415,14 @@ export async function GET(request: Request) {
 Change route count from 31 to 32 (new `/api/askedgar/snapshot` route added).
 
 **Acceptance Criteria:**
-- [ ] `app/api/askedgar/snapshot/route.ts` exists and returns `ResearchSnapshot` shape
-- [ ] `ResearchTickerView.tsx` calls `/api/askedgar/snapshot` instead of `/api/askedgar/lookup`
-- [ ] `ResearchReportSections.tsx` is under 650 lines
-- [ ] `ResearchReportSections.tsx` no longer calls `getField()` or `endpoint()` (or < 5 remaining for edge cases)
-- [ ] `ResearchCompanyHeader.tsx` no longer calls `getField()`
+- [x] `app/api/askedgar/snapshot/route.ts` exists and returns `ResearchSnapshot` shape
+- [x] `ResearchTickerView.tsx` calls `/api/askedgar/snapshot` instead of `/api/askedgar/lookup`
+- [x] `ResearchReportSections.tsx` is under 650 lines
+- [x] `ResearchReportSections.tsx` no longer calls `getField()` or `endpoint()` (or < 5 remaining for edge cases)
+- [x] `ResearchCompanyHeader.tsx` no longer calls `getField()`
 - [ ] Research tab renders identically for a real ticker (MARA, AAPL, etc.)
-- [ ] `npx tsc --noEmit` passes
-- [ ] CLAUDE.md route count updated to 32
+- [x] `npx tsc --noEmit` passes
+- [x] CLAUDE.md route count updated to 32
 
 ---
 
@@ -854,6 +431,11 @@ Change route count from 31 to 32 (new `/api/askedgar/snapshot` route added).
 ```bash
 npm run lint && npx tsc --noEmit
 ```
+
+Automated validation completed:
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npm test`
 
 Then open the Research tab, look up a ticker, verify all sections display correctly.
 

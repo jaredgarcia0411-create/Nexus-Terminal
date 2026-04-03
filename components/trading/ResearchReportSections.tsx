@@ -1,231 +1,267 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 
-interface AskEdgarEndpointResponse {
-  status: string;
-  results: unknown[];
-  error?: string;
-}
+import { formatMoney, formatNumber, riskClass } from '@/lib/askedgar-utils';
+import type {
+  ResearchSnapshot,
+  ResearchSnapshotGapStat,
+  ResearchSnapshotRegistration,
+  ResearchSnapshotWarrant,
+} from '@/lib/types';
 
 interface Props {
   ticker: string;
-  rawData: Record<string, AskEdgarEndpointResponse>;
+  data: ResearchSnapshot;
 }
 
-type TabKey =
-  | 'overview'
-  | 'offering-ability'
-  | 'dilution'
-  | 'news-filings'
-  | 'offerings'
-  | 'history'
-  | 'gap-stats';
+type TabKey = 'overview' | 'offering-ability' | 'dilution' | 'news-filings' | 'offerings' | 'history' | 'gap-stats';
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-  return isRecord(value) ? value : {};
-}
-
-function toStringValue(value: unknown): string {
-  if (typeof value === 'string') return value;
+function toStringValue(value: string | number | boolean | null | undefined): string {
+  if (typeof value === 'string') return value || 'N/A';
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   return 'N/A';
 }
 
-function toNumberValue(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const parsed = Number(value.replace(/[$,%]/g, '').replace(/,/g, ''));
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function formatNumber(value: unknown): string {
-  const numeric = toNumberValue(value);
-  return numeric === null ? 'N/A' : numeric.toLocaleString();
-}
-
-function formatMoney(value: unknown): string {
-  const numeric = toNumberValue(value);
-  if (numeric === null) return 'N/A';
-  return `$${numeric.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-}
-
-function formatDate(value: unknown): string {
-  if (typeof value !== 'string' || !value) return 'N/A';
+function formatDate(value: string | null | undefined): string {
+  if (!value) return 'N/A';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString();
 }
 
-function getField(record: Record<string, unknown>, keys: string[]): unknown {
-  for (const key of keys) {
-    if (key in record && record[key] !== null && record[key] !== undefined && record[key] !== '') {
-      return record[key];
-    }
-  }
-  return null;
+function riskDotClass(colorClass: string) {
+  if (colorClass.includes('emerald')) return 'bg-emerald-500';
+  if (colorClass.includes('amber')) return 'bg-amber-500';
+  if (colorClass.includes('rose')) return 'bg-rose-500';
+  return 'bg-zinc-500';
 }
 
-// Extracts SEC form type (S-1, S-3, F-3) from a registration row.
-// S-1 registrations are exempt from baby shelf limits — important for dilution tracking.
-function detectFormType(row: Record<string, unknown>): string | null {
-  const formType = getField(row, ['form_type', 'formType']);
-  if (typeof formType === 'string' && formType) return formType.toUpperCase();
-  const headline = String(getField(row, ['headline', 'title']) ?? '').toUpperCase();
+function detectFormType(row: ResearchSnapshotRegistration): string | null {
+  if (row.formType) return row.formType.toUpperCase();
+  const headline = row.headline.toUpperCase();
   if (headline.includes('S-1')) return 'S-1';
   if (headline.includes('S-3')) return 'S-3';
   if (headline.includes('F-3')) return 'F-3';
   return null;
 }
 
-// Returns the baby shelf status badge for a registration row.
-// Baby shelf rule: companies with float < $75M can only sell 1/3 of float via S-3 in 12 months.
-// S-1 registrations bypass this entirely (how ELOCs like Yorkville work around it).
-function babyShelfBadge(row: Record<string, unknown>): { label: string; colorClass: string } | null {
+function babyShelfBadge(row: ResearchSnapshotRegistration): { label: string; colorClass: string } | null {
   const formType = detectFormType(row);
-  const overBabyShelf = row.over_baby_shelf === true || row.overBabyShelf === true;
-  const raisable = toNumberValue(getField(row, ['baby_shelf_raisable_amount', 'babyShelfRaisableAmount']));
+  const raisable = row.babyShelfRaisableAmount;
 
   const GREEN = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
   const AMBER = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
   const RED = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
 
   if (formType === 'S-1') return { label: 'S-1 Exempt', colorClass: GREEN };
-  if (!overBabyShelf) return { label: 'No Baby Shelf', colorClass: GREEN };
+  if (!row.overBabyShelf) return { label: 'No Baby Shelf', colorClass: GREEN };
   if (raisable !== null && raisable > 0) return { label: `Baby Shelf: ${formatMoney(raisable)} Left`, colorClass: AMBER };
   return { label: 'Baby Shelf Exhausted', colorClass: RED };
 }
 
-function riskClass(value: unknown): string {
-  const normalized = String(value ?? '').toLowerCase();
-  if (normalized.includes('low') || normalized.includes('compliant') || normalized.includes('positive')) {
-    return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+function getWarrantStatus(warrant: ResearchSnapshotWarrant, currentPrice: number | null) {
+  const today = new Date().toISOString().slice(0, 10);
+  const registered = warrant.registered ?? '';
+  const exercisePrice = warrant.exercisePrice;
+  const remaining = warrant.remaining;
+
+  const RED = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+  const YELLOW = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+  const GREEN = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+
+  if (warrant.isPrefunded) {
+    return { label: 'Not In Play', colorClass: RED };
   }
-  if (normalized.includes('medium') || normalized.includes('watch') || normalized.includes('warning')) {
-    return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+  if (remaining !== null && remaining <= 0) {
+    return { label: 'Not In Play', colorClass: RED };
   }
-  if (normalized.includes('high') || normalized.includes('risk') || normalized.includes('non-compliant') || normalized.includes('negative')) {
-    return 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+  if (!warrant.exercisableDate) {
+    return { label: 'Not In Play', colorClass: RED };
   }
-  return 'border-zinc-500/30 bg-zinc-500/10 text-zinc-300';
+  if (warrant.expirationDate && warrant.expirationDate < today) {
+    return { label: 'Not In Play', colorClass: RED };
+  }
+  if (warrant.exercisableDate > today) {
+    return { label: 'Not In Play', colorClass: RED };
+  }
+  if (registered !== 'Registered') {
+    return { label: 'Not In Play', colorClass: RED };
+  }
+  if (currentPrice !== null && exercisePrice !== null && currentPrice >= exercisePrice) {
+    return { label: 'In Play', colorClass: GREEN };
+  }
+  return { label: 'Potentially in Play', colorClass: YELLOW };
 }
 
-function endpoint(rawData: Record<string, AskEdgarEndpointResponse>, keys: string[]): AskEdgarEndpointResponse {
-  for (const key of keys) {
-    if (rawData[key]) return rawData[key];
-  }
-  return { status: 'error', results: [], error: 'Endpoint not returned' };
-}
-
-function hasData(source: AskEdgarEndpointResponse): boolean {
-  return source.status !== 'error' && Array.isArray(source.results) && source.results.length > 0;
-}
-
-function NoDataBadge({ endpointData }: { endpointData: AskEdgarEndpointResponse }) {
+function NoDataBadge({ label = 'No data' }: { label?: string }) {
   return (
     <span className="inline-flex rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-sm text-zinc-400">
-      No data{endpointData.error ? ` (${endpointData.error})` : ''}
+      {label}
     </span>
   );
 }
 
-const TABS: Array<{ key: TabKey; label: string }> = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'offering-ability', label: 'Offering Ability' },
-  { key: 'dilution', label: 'Dilution' },
-  { key: 'news-filings', label: 'News & Filings' },
-  { key: 'offerings', label: 'Offerings' },
-  { key: 'history', label: 'History' },
-  { key: 'gap-stats', label: 'Gap Stats' },
-];
+function ProgramSection({
+  title,
+  rows,
+  emptyLabel,
+  remainingLabel,
+}: {
+  title: string;
+  rows: ResearchSnapshotRegistration[];
+  emptyLabel: string;
+  remainingLabel: string;
+}) {
+  if (rows.length === 0) {
+    return <p className="py-2 text-zinc-400">{emptyLabel}</p>;
+  }
 
-export default function ResearchReportSections({ ticker, rawData }: Props) {
+  return (
+    <div className="divide-y divide-white/5">
+      <h4 className="pb-2 font-medium text-white">{title}</h4>
+      {rows.map((row, index) => {
+        const badge = babyShelfBadge(row);
+        return (
+          <div key={`${title}-${index}`} className="py-2">
+            <div className="flex items-center gap-2">
+              <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${row.isEffective ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-zinc-500/30 bg-zinc-500/10 text-zinc-400'}`}>
+                {row.isEffective ? 'Active' : 'Inactive'}
+              </span>
+              <span className="text-zinc-200">{row.headline}</span>
+              {badge ? <span className={`ml-auto rounded border px-2 py-0.5 text-sm font-medium whitespace-nowrap ${badge.colorClass}`}>{badge.label}</span> : null}
+            </div>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <div><span className="text-zinc-500">Total Registered:</span> <span className="text-zinc-200">{formatMoney(row.offeringAmount)}</span></div>
+              <div><span className="text-zinc-500">Raised So Far:</span> <span className="text-zinc-200">{formatMoney(row.totalRaised)}</span></div>
+              <div><span className="text-zinc-500">{remainingLabel}:</span> <span className="font-medium text-amber-300">{formatMoney(row.amountRemainingAtm)}</span></div>
+              {row.bank ? <div><span className="text-zinc-500">Bank:</span> <span className="text-zinc-200">{row.bank}</span></div> : null}
+            </div>
+            <div className="mt-1 text-zinc-500">Filed: {formatDate(row.filedAt)} | Expires: {formatDate(row.expirationDate)}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function WarrantSection({
+  title,
+  warrants,
+  currentPrice,
+  priceLabel,
+  emptyLabel,
+}: {
+  title: string;
+  warrants: ResearchSnapshotWarrant[];
+  currentPrice: number | null;
+  priceLabel: string;
+  emptyLabel: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <h4 className="font-medium text-zinc-300">{title}</h4>
+      {warrants.length === 0 ? (
+        <p className="text-sm text-zinc-500">{emptyLabel}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full">
+            <thead>
+              <tr className="border-b border-white/10 text-zinc-400">
+                <th className="py-2 pr-3 text-left">Details</th>
+                <th className="py-2 pr-3 text-left">Remaining</th>
+                <th className="py-2 pr-3 text-left">{priceLabel}</th>
+                <th className="py-2 pr-3 text-left">Registered</th>
+                <th className="py-2 pr-3 text-left">Exercisable</th>
+                <th className="py-2 pr-3 text-left">Expires</th>
+                <th className="py-2 text-left">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {warrants.map((warrant, index) => {
+                const status = getWarrantStatus(warrant, currentPrice);
+                const priceValue = warrant.isPrefunded ? warrant.prefundedCost : warrant.exercisePrice;
+                return (
+                  <tr key={`${title}-${index}`} className="border-b border-white/5">
+                    <td className="py-2 pr-3 text-zinc-300">{warrant.details}</td>
+                    <td className="py-2 pr-3 text-zinc-200">{formatNumber(warrant.remaining)}</td>
+                    <td className="py-2 pr-3 text-zinc-200">{formatMoney(priceValue)}</td>
+                    <td className="py-2 pr-3 text-zinc-300">{toStringValue(warrant.registered)}</td>
+                    <td className="py-2 pr-3 text-zinc-300">{formatDate(warrant.exercisableDate)}</td>
+                    <td className="py-2 pr-3 text-zinc-300">{formatDate(warrant.expirationDate)}</td>
+                    <td className="py-2"><span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${status.colorClass}`}>{status.label}</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TABS: Array<{ key: TabKey; label: string }> = [{ key: 'overview', label: 'Overview' }, { key: 'offering-ability', label: 'Offering Ability' }, { key: 'dilution', label: 'Dilution' }, { key: 'news-filings', label: 'News & Filings' }, { key: 'offerings', label: 'Offerings' }, { key: 'history', label: 'History' }, { key: 'gap-stats', label: 'Gap Stats' }];
+
+function GapStatRow({ row }: { row: ResearchSnapshotGapStat }) {
+  return (
+    <tr className="border-b border-white/5">
+      <td className="py-2 pr-3 text-zinc-300">{formatDate(row.date)}</td>
+      <td className="py-2 pr-3 text-right font-medium text-emerald-400">
+        {row.gapPercentage !== null ? `+${row.gapPercentage.toFixed(0)}%` : 'N/A'}
+      </td>
+      <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(row.marketOpen)}</td>
+      <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(row.marketClose)}</td>
+      <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(row.intradayHigh)}</td>
+      <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(row.intradayLow)}</td>
+      <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(row.vwap)}</td>
+      <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(row.premarketHigh)}</td>
+      <td className="py-2 pr-3 text-right text-zinc-300">{formatNumber(row.volume)}</td>
+      <td className="py-2 text-zinc-400">
+        {row.tags.length === 0 ? '--' : (
+          <div className="flex flex-wrap gap-1">
+            {row.tags.map((tag, index) => (
+              <span key={`${tag}-${index}`} className="rounded border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-xs text-zinc-400">
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+export default function ResearchReportSections({ data }: Props) {
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
 
-  const data = useMemo(() => {
-    const screener = endpoint(rawData, ['screener']);
-    const dilutionRating = endpoint(rawData, ['dilution-rating', 'dilutionRating']);
-    const dilutionData = endpoint(rawData, ['dilution-data', 'dilutionData']);
-    const offerings = endpoint(rawData, ['offerings']);
-    const registrations = endpoint(rawData, ['registrations']);
-    const news = endpoint(rawData, ['news']);
-    const filingTitles = endpoint(rawData, ['filing-titles', 'filingTitles']);
-    const nasdaqCompliance = endpoint(rawData, ['nasdaq-compliance', 'nasdaqCompliance']);
-    const pumpAndDump = endpoint(rawData, ['pump-and-dump-tracker', 'pumpAndDumpTracker']);
-    const historicalFloat = endpoint(rawData, ['historical-float-pro', 'historicalFloatPro']);
-    const reverseSplits = endpoint(rawData, ['reverse-splits', 'reverseSplits']);
-    const agreements = endpoint(rawData, ['agreements']);
-    const equityLines = endpoint(rawData, ['equity-lines', 'equityLines']);
-    const gapStats = endpoint(rawData, ['gap-stats', 'gapStats']);
-    const ownership = endpoint(rawData, ['ownership']);
+  const atmRegistrations = data.registrations.filter((row) => row.isAtm);
+  const regularWarrants = data.warrants.filter((row) => !row.isPrefunded);
+  const prefundedWarrants = data.warrants.filter((row) => row.isPrefunded);
 
-    return {
-      screener,
-      dilutionRating,
-      dilutionData,
-      offerings,
-      registrations,
-      news,
-      filingTitles,
-      nasdaqCompliance,
-      pumpAndDump,
-      historicalFloat,
-      reverseSplits,
-      agreements,
-      equityLines,
-      gapStats,
-      ownership,
-    };
-  }, [rawData]);
-
-  const screenerItem = toRecord(data.screener.results[0]);
-  const dilutionItem = toRecord(data.dilutionRating.results[0]);
-  const dilutionDataItem = toRecord(data.dilutionData.results[0]);
-  const complianceItem = toRecord(data.nasdaqCompliance.results[0]);
-  const pumpItem = toRecord(data.pumpAndDump.results[0]);
-
-  // Equity lines from the offerings endpoint
-  const offeringEquityLines = data.equityLines.results;
-
-  // Also check registrations for equity line entries (headline mentions equity line, ELOC, or purchase agreement)
-  const EQUITY_LINE_KEYWORDS = ['equity line', 'eloc', 'purchase agreement'];
-  const registrationEquityLines = data.registrations.results.filter((item) => {
-    const row = toRecord(item);
-    const headline = String(getField(row, ['headline', 'title']) ?? '').toLowerCase();
-    const isAtm = row.is_atm === true || row.isAtm === true;
-    if (isAtm) return false;
-    return EQUITY_LINE_KEYWORDS.some((kw) => headline.includes(kw));
-  });
-
-  // Combine both sources — registrations first (richer data), then offerings as fallback.
-  // Deduplicate by headline so the same equity line doesn't appear twice.
-  const seenHeadlines = new Set<string>();
-  const equityLines = [...registrationEquityLines, ...offeringEquityLines].filter((item) => {
-    const row = toRecord(item);
-    const headline = String(getField(row, ['headline', 'title']) ?? '').toLowerCase().trim();
-    if (!headline || seenHeadlines.has(headline)) return false;
-    seenHeadlines.add(headline);
-    return true;
-  });
-
-  const regularOfferings = data.offerings.results.filter((item) => {
-    const row = toRecord(item);
-    const type = String(getField(row, ['offeringType', 'offering_type', 'type']) ?? '').toUpperCase();
-    return !type.includes('EQUITY LINE');
-  });
-
-  // Find ATM registrations
-  const atmRegistrations = data.registrations.results.filter((item) => {
-    const row = toRecord(item);
-    return row.is_atm === true || row.isAtm === true;
-  });
+  const ratings = [
+    { label: 'Offering Ability', value: data.offeringAbilityRating },
+    { label: 'Dilution', value: data.dilutionRating },
+    { label: 'Offering Frequency', value: data.offeringFrequencyRating },
+    { label: 'Cash Need', value: data.cashNeedRating },
+    { label: 'Warrant Exercise', value: data.warrantExerciseRating },
+    { label: 'Nasdaq Compliance', value: data.nasdaqCompliance },
+  ];
+  const hasRatings = ratings.some((item) => item.value);
+  const hasCashPosition = [
+    data.dilutionDetails.cashRemainingMonths,
+    data.dilutionDetails.cashBurn,
+    data.dilutionDetails.estimatedCash,
+  ].some((value) => value !== null);
+  const hasMarketStats = [
+    data.header.price,
+    data.header.marketCap,
+    data.header.float,
+    data.header.outstandingShares,
+    data.header.shortInterest,
+    data.header.volume,
+  ].some((value) => value !== null);
 
   return (
     <section className="flex flex-col">
@@ -249,32 +285,17 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
       <div className="p-3 text-base">
         {activeTab === 'overview' ? (
           <div className="space-y-5 divide-y divide-white/5">
-            {/* Risk Ratings — 6 inline badges in 3-col grid */}
-            {hasData(data.dilutionRating) ? (
+            {hasRatings ? (
               <div>
                 <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {[
-                    { label: 'Offering Ability', keys: ['offering_ability', 'offeringAbility'] },
-                    { label: 'Dilution', keys: ['dilution', 'dilution_rating'] },
-                    { label: 'Offering Frequency', keys: ['offering_frequency', 'offeringFrequency'] },
-                    { label: 'Cash Need', keys: ['cash_need', 'cashNeed'] },
-                    { label: 'Warrant Exercise', keys: ['warrant_exercise', 'warrantExercise'] },
-                    { label: 'Nasdaq Compliance', keys: ['nasdaq_compliance', 'nasdaqCompliance'] },
-                  ].map((item) => {
-                    const value = getField(dilutionItem, item.keys)
-                      || (item.label === 'Nasdaq Compliance' ? getField(complianceItem, ['status', 'complianceStatus', 'rating']) : null);
-                    const colorClass = riskClass(value);
-                    // Extract dot color from the badge color class
-                    const dotColor = colorClass.includes('emerald') ? 'bg-emerald-500'
-                      : colorClass.includes('amber') ? 'bg-amber-500'
-                      : colorClass.includes('rose') ? 'bg-rose-500'
-                      : 'bg-zinc-500';
+                  {ratings.map((item) => {
+                    const colorClass = riskClass(item.value);
                     return (
                       <div key={item.label} className="flex items-center gap-2 py-1">
                         <span className="text-white">{item.label}</span>
-                        <span className={`h-2 w-2 rounded-full ${dotColor}`} />
+                        <span className={`h-2 w-2 rounded-full ${riskDotClass(colorClass)}`} />
                         <span className={`rounded border px-2 py-0.5 text-sm font-medium ${colorClass}`}>
-                          {toStringValue(value)}
+                          {toStringValue(item.value)}
                         </span>
                       </div>
                     );
@@ -282,108 +303,78 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                 </div>
               </div>
             ) : (
-              <NoDataBadge endpointData={data.dilutionRating} />
+              <NoDataBadge />
             )}
 
-            {/* Cash Position — narrative sentence style */}
-            {(() => {
-              const months = getField(dilutionItem, ['cash_remaining_months', 'cashRemainingMonths'])
-                ?? getField(dilutionDataItem, ['cashRemainingMonths', 'monthsRemaining']);
-              const burn = getField(dilutionItem, ['cash_burn', 'cashBurn'])
-                ?? getField(dilutionDataItem, ['cashBurn', 'burnRate']);
-              const cash = getField(dilutionItem, ['estimated_cash', 'estimatedCash'])
-                ?? getField(dilutionDataItem, ['estimatedCash', 'cash', 'cashOnHand']);
-              if (!months && !burn && !cash) return null;
-              return (
-                <div className="pt-5">
-                  <h4 className="mb-2 text-lg font-semibold text-zinc-200">Cash Position</h4>
-                  <p className="text-zinc-300">
-                    The company has ~<span className="font-bold text-zinc-100">{toStringValue(months)}</span> months of cash left
-                    based on the quarterly cash burn of <span className="font-bold text-zinc-100">{formatMoney(burn)}</span>
-                    {' '}and estimated current cash of <span className="font-bold text-zinc-100">{formatMoney(cash)}</span>
-                  </p>
-                </div>
-              );
-            })()}
-
-            {/* Commentary on Financial Condition */}
-            {(() => {
-              const commentary = getField(dilutionItem, ['mgmt_commentary', 'managementCommentary', 'commentary']);
-              const cashDesc = getField(dilutionItem, ['cash_need_desc', 'cashNeedDesc']);
-              const filedAt = getField(dilutionItem, ['filed_at', 'filedAt', 'lastUpdated']);
-              if (!commentary && !cashDesc) return null;
-              return (
-                <div className="pt-5">
-                  <h4 className="mb-2 text-lg font-semibold text-zinc-200">Commentary on Financial Condition</h4>
-                  <div className="space-y-2">
-                    {cashDesc ? <p className="text-zinc-300">{toStringValue(cashDesc)}</p> : null}
-                    {commentary ? <p className="text-zinc-300">{toStringValue(commentary)}</p> : null}
-                    {filedAt ? <p className="text-sm text-zinc-500">Filed At: {formatDate(filedAt)}</p> : null}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Ownership — insiders, directors, large investors */}
-            {hasData(data.ownership) ? (
+            {hasCashPosition ? (
               <div className="pt-5">
-                <h4 className="mb-2 text-lg font-semibold text-zinc-200">Ownership</h4>
-                {data.ownership.results.map((group, groupIndex) => {
-                  const groupRecord = toRecord(group);
-                  const reportedDate = getField(groupRecord, ['reported_date', 'reportedDate']);
-                  const owners = Array.isArray(groupRecord.owners) ? groupRecord.owners : [];
-                  if (owners.length === 0) return null;
-                  return (
-                    <div key={groupIndex} className="mb-3">
-                      {reportedDate ? (
-                        <p className="mb-1 text-sm text-zinc-500">Reported: {formatDate(reportedDate)}</p>
-                      ) : null}
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full">
-                          <thead>
-                            <tr className="border-b border-white/10 text-zinc-400">
-                              <th className="py-1.5 pr-3 text-left text-sm">Name</th>
-                              <th className="py-1.5 pr-3 text-left text-sm">Role</th>
-                              <th className="py-1.5 pr-3 text-right text-sm">Common</th>
-                              <th className="py-1.5 pr-3 text-right text-sm">Preferred</th>
-                              <th className="py-1.5 pr-3 text-right text-sm">Options</th>
-                              <th className="py-1.5 text-right text-sm">Warrants</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {owners.map((owner, ownerIndex) => {
-                              const o = toRecord(owner);
-                              return (
-                                <tr key={ownerIndex} className="border-b border-white/5">
-                                  <td className="py-1.5 pr-3 text-sm text-zinc-200">{toStringValue(getField(o, ['owner_name', 'ownerName']))}</td>
-                                  <td className="py-1.5 pr-3 text-sm text-zinc-400">{toStringValue(getField(o, ['title', 'owner_type', 'ownerType']))}</td>
-                                  <td className="py-1.5 pr-3 text-right text-sm text-zinc-300">{formatNumber(getField(o, ['common_shares_amount', 'commonSharesAmount']))}</td>
-                                  <td className="py-1.5 pr-3 text-right text-sm text-zinc-300">{formatNumber(getField(o, ['preferred_shares_amount', 'preferredSharesAmount']))}</td>
-                                  <td className="py-1.5 pr-3 text-right text-sm text-zinc-300">{formatNumber(getField(o, ['options_amount', 'optionsAmount']))}</td>
-                                  <td className="py-1.5 text-right text-sm text-zinc-300">{formatNumber(getField(o, ['warrants_amount', 'warrantsAmount']))}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  );
-                })}
+                <h4 className="mb-2 text-lg font-semibold text-zinc-200">Cash Position</h4>
+                <p className="text-zinc-300">
+                  The company has ~<span className="font-bold text-zinc-100">{toStringValue(data.dilutionDetails.cashRemainingMonths)}</span> months of cash left
+                  based on the quarterly cash burn of <span className="font-bold text-zinc-100">{formatMoney(data.dilutionDetails.cashBurn)}</span>
+                  {' '}and estimated current cash of <span className="font-bold text-zinc-100">{formatMoney(data.dilutionDetails.estimatedCash)}</span>
+                </p>
               </div>
             ) : null}
 
-            {/* Market Stats — compact reference row */}
-            {hasData(data.screener) ? (
+            {data.dilutionDetails.managementCommentary || data.dilutionDetails.cashNeedDescription ? (
+              <div className="pt-5">
+                <h4 className="mb-2 text-lg font-semibold text-zinc-200">Commentary on Financial Condition</h4>
+                <div className="space-y-2">
+                  {data.dilutionDetails.cashNeedDescription ? <p className="text-zinc-300">{data.dilutionDetails.cashNeedDescription}</p> : null}
+                  {data.dilutionDetails.managementCommentary ? <p className="text-zinc-300">{data.dilutionDetails.managementCommentary}</p> : null}
+                  {data.dilutionDetails.filedAt ? <p className="text-sm text-zinc-500">Filed At: {formatDate(data.dilutionDetails.filedAt)}</p> : null}
+                </div>
+              </div>
+            ) : null}
+
+            {data.ownershipGroups.length > 0 ? (
+              <div className="pt-5">
+                <h4 className="mb-2 text-lg font-semibold text-zinc-200">Ownership</h4>
+                {data.ownershipGroups.map((group, groupIndex) => (
+                  <div key={groupIndex} className="mb-3">
+                    {group.reportedDate ? <p className="mb-1 text-sm text-zinc-500">Reported: {formatDate(group.reportedDate)}</p> : null}
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full">
+                        <thead>
+                          <tr className="border-b border-white/10 text-zinc-400">
+                            <th className="py-1.5 pr-3 text-left text-sm">Name</th>
+                            <th className="py-1.5 pr-3 text-left text-sm">Role</th>
+                            <th className="py-1.5 pr-3 text-right text-sm">Common</th>
+                            <th className="py-1.5 pr-3 text-right text-sm">Preferred</th>
+                            <th className="py-1.5 pr-3 text-right text-sm">Options</th>
+                            <th className="py-1.5 text-right text-sm">Warrants</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.owners.map((owner, ownerIndex) => (
+                            <tr key={ownerIndex} className="border-b border-white/5">
+                              <td className="py-1.5 pr-3 text-sm text-zinc-200">{owner.name}</td>
+                              <td className="py-1.5 pr-3 text-sm text-zinc-400">{owner.role}</td>
+                              <td className="py-1.5 pr-3 text-right text-sm text-zinc-300">{formatNumber(owner.common)}</td>
+                              <td className="py-1.5 pr-3 text-right text-sm text-zinc-300">{formatNumber(owner.preferred)}</td>
+                              <td className="py-1.5 pr-3 text-right text-sm text-zinc-300">{formatNumber(owner.options)}</td>
+                              <td className="py-1.5 text-right text-sm text-zinc-300">{formatNumber(owner.warrants)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {hasMarketStats ? (
               <div className="pt-5">
                 <h4 className="mb-2 text-sm font-medium uppercase tracking-wider text-zinc-500">Market Stats</h4>
                 <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Price</p><p className="text-sm text-zinc-200">{formatMoney(getField(screenerItem, ['price']))}</p></div>
-                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Market Cap</p><p className="text-sm text-zinc-200">{formatMoney(getField(screenerItem, ['marketCap', 'market_cap']))}</p></div>
-                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Float</p><p className="text-sm text-zinc-200">{formatNumber(getField(screenerItem, ['float', 'floatShares', 'float_shares']))}</p></div>
-                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">OS</p><p className="text-sm text-zinc-200">{formatNumber(getField(screenerItem, ['outstanding', 'outstandingShares', 'sharesOutstanding']))}</p></div>
-                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Short Interest</p><p className="text-sm text-zinc-200">{formatNumber(getField(screenerItem, ['shortInterest', 'short_interest']))}</p></div>
-                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Volume</p><p className="text-sm text-zinc-200">{formatNumber(getField(screenerItem, ['today_volume', 'volume', 'totalVolume']))}</p></div>
+                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Price</p><p className="text-sm text-zinc-200">{formatMoney(data.header.price)}</p></div>
+                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Market Cap</p><p className="text-sm text-zinc-200">{formatMoney(data.header.marketCap)}</p></div>
+                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Float</p><p className="text-sm text-zinc-200">{formatNumber(data.header.float)}</p></div>
+                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">OS</p><p className="text-sm text-zinc-200">{formatNumber(data.header.outstandingShares)}</p></div>
+                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Short Interest</p><p className="text-sm text-zinc-200">{formatNumber(data.header.shortInterest)}</p></div>
+                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-xs text-zinc-500">Volume</p><p className="text-sm text-zinc-200">{formatNumber(data.header.volume)}</p></div>
                 </div>
               </div>
             ) : null}
@@ -392,97 +383,11 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
 
         {activeTab === 'offering-ability' ? (
           <div className="space-y-4">
-            {/* ATM Programs */}
-            {atmRegistrations.length > 0 ? (
-              <div className="divide-y divide-white/5">
-                <h4 className="pb-2 font-medium text-white">ATM Programs</h4>
-                {atmRegistrations.map((item, index) => {
-                  const row = toRecord(item);
-                  const remaining = getField(row, ['amount_remaining_atm', 'amountRemainingAtm']);
-                  const total = getField(row, ['offering_amount', 'offeringAmount']);
-                  const raised = getField(row, ['total_raised', 'totalRaised']);
-                  const bank = getField(row, ['bank']);
-                  const effective = getField(row, ['effective_status', 'effectiveStatus']);
-                  return (
-                    <div key={`atm-${index}`} className="py-2">
-                      <div className="flex items-center gap-2">
-                        <span className={`rounded border px-2 py-0.5 text-xs font-medium ${effective ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-zinc-500/30 bg-zinc-500/10 text-zinc-400'}`}>
-                          {effective ? 'Active' : 'Inactive'}
-                        </span>
-                        <span className="text-zinc-200">{toStringValue(getField(row, ['headline', 'title']))}</span>
-                      </div>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                        <div><span className="text-zinc-500">Total Registered:</span> <span className="text-zinc-200">{formatMoney(total)}</span></div>
-                        <div><span className="text-zinc-500">Raised So Far:</span> <span className="text-zinc-200">{formatMoney(raised)}</span></div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-zinc-500">ATM Remaining:</span>
-                          <span className="font-medium text-amber-300">{formatMoney(remaining)}</span>
-                        </div>
-                        {(() => {
-                          const badge = babyShelfBadge(row);
-                          if (!badge) return null;
-                          return (
-                            <div className="flex justify-end">
-                              <span className={`rounded border px-2 py-0.5 text-sm font-medium whitespace-nowrap ${badge.colorClass}`}>{badge.label}</span>
-                            </div>
-                          );
-                        })()}
-                        {bank ? <div><span className="text-zinc-500">Bank:</span> <span className="text-zinc-200">{String(bank)}</span></div> : null}
-                      </div>
-                      <div className="mt-1 text-zinc-500">
-                        Filed: {formatDate(getField(row, ['filed_at', 'filedAt']))} | Expires: {formatDate(getField(row, ['expiration_date', 'expirationDate']))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="py-2 text-zinc-400">No active ATM programs found</p>
-            )}
+            <ProgramSection title="ATM Programs" rows={atmRegistrations} emptyLabel="No active ATM programs found" remainingLabel="ATM Remaining" />
 
-            {/* Equity Lines — card layout matching ATM programs */}
-            {equityLines.length > 0 ? (
-              <div className="divide-y divide-white/5">
-                <h4 className="pb-2 font-medium text-white">Equity Lines</h4>
-                {equityLines.map((item, index) => {
-                  const row = toRecord(item);
-                  const remaining = getField(row, ['amount_remaining_atm', 'amountRemainingAtm']);
-                  const total = getField(row, ['offering_amount', 'offeringAmount']);
-                  const raised = getField(row, ['total_raised', 'totalRaised']);
-                  const effective = getField(row, ['effective_status', 'effectiveStatus']);
-                  const badge = babyShelfBadge(row);
+            <ProgramSection title="Equity Lines" rows={data.equityLines} emptyLabel="No equity lines found" remainingLabel="Remaining" />
 
-                  return (
-                    <div key={`el-${index}`} className="py-2">
-                      <div className="flex items-center gap-2">
-                        <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${effective ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-zinc-500/30 bg-zinc-500/10 text-zinc-400'}`}>
-                          {effective ? 'Active' : 'Inactive'}
-                        </span>
-                        <span className="text-zinc-200">{toStringValue(getField(row, ['headline', 'title']))}</span>
-                        {badge ? (
-                          <span className={`ml-auto rounded border px-2 py-0.5 text-sm font-medium whitespace-nowrap ${badge.colorClass}`}>
-                            {badge.label}
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                        <div><span className="text-zinc-500">Total Registered:</span> <span className="text-zinc-200">{formatMoney(total)}</span></div>
-                        <div><span className="text-zinc-500">Raised So Far:</span> <span className="text-zinc-200">{formatMoney(raised)}</span></div>
-                        <div><span className="text-zinc-500">Remaining:</span> <span className="font-medium text-amber-300">{formatMoney(remaining)}</span></div>
-                      </div>
-                      <div className="mt-1 text-zinc-500">
-                        Filed: {formatDate(getField(row, ['filed_at', 'filedAt']))} | Expires: {formatDate(getField(row, ['expiration_date', 'expirationDate']))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="py-2 text-zinc-400">No equity lines found</p>
-            )}
-
-            {/* All Registrations table */}
-            {hasData(data.registrations) ? (
+            {data.registrations.length > 0 ? (
               <div className="space-y-2">
                 <h4 className="font-medium text-zinc-300">Shelf Registrations</h4>
                 <div className="overflow-x-auto">
@@ -498,32 +403,27 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                       </tr>
                     </thead>
                     <tbody>
-                      {data.registrations.results.map((item, index) => {
-                        const row = toRecord(item);
-                        const isAtm = row.is_atm === true || row.isAtm === true;
-                        const overBabyShelf = row.over_baby_shelf === true || row.overBabyShelf === true;
-                        return (
-                          <tr key={`registration-${index}`} className="border-b border-white/5 text-zinc-300">
-                            <td className="py-2 pr-3">{toStringValue(getField(row, ['headline', 'title']))}</td>
-                            <td className="py-2 pr-3">{isAtm ? <span className="text-amber-300">Yes</span> : 'No'}</td>
-                            <td className="py-2 pr-3">{formatMoney(getField(row, ['offering_amount', 'offeringAmount']))}</td>
-                            <td className="py-2 pr-3">{formatMoney(getField(row, ['amount_remaining_atm', 'amountRemainingAtm']))}</td>
-                            <td className="py-2 pr-3">{overBabyShelf ? <span className="text-rose-300">Over Limit</span> : 'OK'}</td>
-                            <td className="py-2">{formatDate(getField(row, ['filed_at', 'filedAt']))}</td>
-                          </tr>
-                        );
-                      })}
+                      {data.registrations.map((row, index) => (
+                        <tr key={`registration-${index}`} className="border-b border-white/5 text-zinc-300">
+                          <td className="py-2 pr-3">{row.headline}</td>
+                          <td className="py-2 pr-3">{row.isAtm ? <span className="text-amber-300">Yes</span> : 'No'}</td>
+                          <td className="py-2 pr-3">{formatMoney(row.offeringAmount)}</td>
+                          <td className="py-2 pr-3">{formatMoney(row.amountRemainingAtm)}</td>
+                          <td className="py-2 pr-3">{row.overBabyShelf ? <span className="text-rose-300">Over Limit</span> : 'OK'}</td>
+                          <td className="py-2">{formatDate(row.filedAt)}</td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
               </div>
             ) : (
-              <NoDataBadge endpointData={data.registrations} />
+              <NoDataBadge />
             )}
 
             <div className="space-y-1">
               <h4 className="font-medium text-white">Management Commentary</h4>
-              <p className="text-sm text-zinc-200">{toStringValue(getField(dilutionItem, ['mgmt_commentary', 'managementCommentary', 'commentary']))}</p>
+              <p className="text-sm text-zinc-200">{toStringValue(data.dilutionDetails.managementCommentary)}</p>
             </div>
           </div>
         ) : null}
@@ -531,222 +431,64 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
         {activeTab === 'dilution' ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <span className={`rounded border px-2 py-1 text-sm ${riskClass(getField(dilutionItem, ['rating', 'dilutionRating']))}`}>
-                {toStringValue(getField(dilutionItem, ['rating', 'dilutionRating']))}
+              <span className={`rounded border px-2 py-1 text-sm ${riskClass(data.dilutionRating)}`}>
+                {toStringValue(data.dilutionRating)}
               </span>
               <span className="text-zinc-400">Dilution Rating</span>
             </div>
-            {hasData(data.dilutionData) ? (
+
+            {[
+              data.dilutionDetails.warrantInfo,
+              data.dilutionDetails.convertibles,
+              data.dilutionDetails.authorizedShares,
+              data.dilutionDetails.sharesAvailable,
+            ].some((value) => value !== null) ? (
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Warrants</p><p className="text-zinc-200">{toStringValue(getField(dilutionDataItem, ['warrantExercise', 'warrantInfo', 'warrant_exercise']))}</p></div>
-                <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Convertibles</p><p className="text-zinc-200">{toStringValue(getField(dilutionDataItem, ['convertibles', 'convertibleNotes']))}</p></div>
-                <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Auth Shares</p><p className="text-zinc-200">{formatNumber(getField(dilutionDataItem, ['authorizedShares', 'authorized_shares']))}</p></div>
-                <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Available</p><p className="text-zinc-200">{formatNumber(getField(dilutionDataItem, ['sharesAvailable', 'availableShares']))}</p></div>
+                <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Warrants</p><p className="text-zinc-200">{toStringValue(data.dilutionDetails.warrantInfo)}</p></div>
+                <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Convertibles</p><p className="text-zinc-200">{toStringValue(data.dilutionDetails.convertibles)}</p></div>
+                <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Auth Shares</p><p className="text-zinc-200">{formatNumber(data.dilutionDetails.authorizedShares)}</p></div>
+                <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Available</p><p className="text-zinc-200">{formatNumber(data.dilutionDetails.sharesAvailable)}</p></div>
               </div>
             ) : (
-              <NoDataBadge endpointData={data.dilutionData} />
+              <NoDataBadge />
             )}
 
-            {/* Outstanding Warrants */}
-            {(() => {
-              const currentPrice = toNumberValue(getField(screenerItem, ['price']));
-              const today = new Date().toISOString().slice(0, 10);
+            <WarrantSection title="Outstanding Warrants" warrants={regularWarrants} currentPrice={data.header.price} priceLabel="Strike" emptyLabel="No outstanding warrants found" />
 
-              const regularWarrants = data.dilutionData.results
-                .map((item) => toRecord(item))
-                .filter((row) => {
-                  const hasWarrants = getField(row, ['warrants_amount']) !== null;
-                  const prefunded = toNumberValue(getField(row, ['prefunded_cost']));
-                  return hasWarrants && (prefunded === null || prefunded === 0);
-                });
-
-              if (regularWarrants.length === 0) {
-                return (
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-zinc-300">Outstanding Warrants</h4>
-                    <p className="text-sm text-zinc-500">No outstanding warrants found</p>
-                  </div>
-                );
-              }
-
-              return (
-                <div className="space-y-2">
-                  <h4 className="font-medium text-zinc-300">Outstanding Warrants</h4>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full">
-                      <thead>
-                        <tr className="border-b border-white/10 text-zinc-400">
-                          <th className="py-2 pr-3 text-left">Details</th>
-                          <th className="py-2 pr-3 text-left">Remaining</th>
-                          <th className="py-2 pr-3 text-left">Strike</th>
-                          <th className="py-2 pr-3 text-left">Registered</th>
-                          <th className="py-2 pr-3 text-left">Exercisable</th>
-                          <th className="py-2 pr-3 text-left">Expires</th>
-                          <th className="py-2 text-left">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {regularWarrants.map((row, index) => {
-                          const exercisePrice = toNumberValue(getField(row, ['warrants_exercise_price']));
-                          const exercisableDate = getField(row, ['exercisable_date']) as string | null;
-                          const expirationDate = getField(row, ['expiration_date']) as string | null;
-                          const registered = String(getField(row, ['registered']) ?? '');
-                          const warrantsRemaining = toNumberValue(getField(row, ['warrants_remaining']));
-
-                          let status: string;
-                          let colorClass: string;
-
-                          const RED = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
-                          const YELLOW = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
-                          const GREEN = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
-
-                          // Fully exercised — no dilution risk
-                          if (warrantsRemaining !== null && warrantsRemaining <= 0) {
-                            status = 'Not In Play';
-                            colorClass = RED;
-                          } else if (exercisableDate === null) {
-                            status = 'Not In Play';
-                            colorClass = RED;
-                          } else if (expirationDate && expirationDate < today) {
-                            status = 'Not In Play';
-                            colorClass = RED;
-                          } else if (exercisableDate > today) {
-                            status = 'Not In Play';
-                            colorClass = RED;
-                          } else if (registered !== 'Registered') {
-                            status = 'Not In Play';
-                            colorClass = RED;
-                          } else if (currentPrice !== null && exercisePrice !== null && currentPrice >= exercisePrice) {
-                            status = 'In Play';
-                            colorClass = GREEN;
-                          } else {
-                            status = 'Potentially in Play';
-                            colorClass = YELLOW;
-                          }
-
-                          return (
-                            <tr key={`warrant-${index}`} className="border-b border-white/5">
-                              <td className="py-2 pr-3 text-zinc-300">{toStringValue(getField(row, ['details']))}</td>
-                              <td className="py-2 pr-3 text-zinc-200">{formatNumber(getField(row, ['warrants_remaining']))}</td>
-                              <td className="py-2 pr-3 text-zinc-200">{formatMoney(getField(row, ['warrants_exercise_price']))}</td>
-                              <td className="py-2 pr-3 text-zinc-300">{toStringValue(getField(row, ['registered']))}</td>
-                              <td className="py-2 pr-3 text-zinc-300">{formatDate(getField(row, ['exercisable_date']))}</td>
-                              <td className="py-2 pr-3 text-zinc-300">{formatDate(getField(row, ['expiration_date']))}</td>
-                              <td className="py-2">
-                                <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${colorClass}`}>
-                                  {status}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Pre-funded Warrants */}
-            {(() => {
-              const prefundedWarrants = data.dilutionData.results
-                .map((item) => toRecord(item))
-                .filter((row) => {
-                  const hasWarrants = getField(row, ['warrants_amount']) !== null;
-                  const prefunded = toNumberValue(getField(row, ['prefunded_cost']));
-                  return hasWarrants && prefunded !== null && prefunded > 0;
-                });
-
-              if (prefundedWarrants.length === 0) {
-                return (
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-zinc-300">Pre-funded Warrants</h4>
-                    <p className="text-sm text-zinc-500">No pre-funded warrants found</p>
-                  </div>
-                );
-              }
-
-              return (
-                <div className="space-y-2">
-                  <h4 className="font-medium text-zinc-300">Pre-funded Warrants</h4>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full">
-                      <thead>
-                        <tr className="border-b border-white/10 text-zinc-400">
-                          <th className="py-2 pr-3 text-left">Details</th>
-                          <th className="py-2 pr-3 text-left">Remaining</th>
-                          <th className="py-2 pr-3 text-left">Pre-funded Cost</th>
-                          <th className="py-2 pr-3 text-left">Registered</th>
-                          <th className="py-2 pr-3 text-left">Exercisable</th>
-                          <th className="py-2 pr-3 text-left">Expires</th>
-                          <th className="py-2 text-left">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {prefundedWarrants.map((row, index) => {
-                          // Pre-funded warrants are always "Not In Play" — low exercise likelihood
-                          const colorClass = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
-                          const status = 'Not In Play';
-
-                          return (
-                            <tr key={`prefunded-${index}`} className="border-b border-white/5">
-                              <td className="py-2 pr-3 text-zinc-300">{toStringValue(getField(row, ['details']))}</td>
-                              <td className="py-2 pr-3 text-zinc-200">{formatNumber(getField(row, ['warrants_remaining']))}</td>
-                              <td className="py-2 pr-3 text-zinc-200">{formatMoney(getField(row, ['prefunded_cost']))}</td>
-                              <td className="py-2 pr-3 text-zinc-300">{toStringValue(getField(row, ['registered']))}</td>
-                              <td className="py-2 pr-3 text-zinc-300">{formatDate(getField(row, ['exercisable_date']))}</td>
-                              <td className="py-2 pr-3 text-zinc-300">{formatDate(getField(row, ['expiration_date']))}</td>
-                              <td className="py-2">
-                                <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${colorClass}`}>
-                                  {status}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })()}
+            <WarrantSection title="Pre-funded Warrants" warrants={prefundedWarrants} currentPrice={data.header.price} priceLabel="Pre-funded Cost" emptyLabel="No pre-funded warrants found" />
           </div>
         ) : null}
 
         {activeTab === 'news-filings' ? (
           <div className="space-y-2">
-            {[...data.news.results.map((item) => ({ source: 'news', row: toRecord(item) })), ...data.filingTitles.results.map((item) => ({ source: 'filing', row: toRecord(item) }))]
-              .map((item, index) => {
-                const formType = toStringValue(getField(item.row, ['formType', 'form', 'source']));
-                const sourceClass =
-                  item.source === 'news'
-                    ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300'
-                    : formType.toLowerCase().includes('grok')
-                      ? 'border-violet-500/30 bg-violet-500/10 text-violet-300'
-                      : 'border-orange-500/30 bg-orange-500/10 text-orange-300';
-                return (
-                  <details key={`news-filing-${index}`} className="rounded border border-white/10 bg-white/5 p-2">
-                    <summary className="cursor-pointer text-zinc-200">
-                      {toStringValue(getField(item.row, ['headline', 'title']))}
-                    </summary>
-                    <div className="mt-2 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className={`rounded border px-2 py-0.5 text-sm ${sourceClass}`}>{formType}</span>
-                        <span className="text-zinc-500">{formatDate(getField(item.row, ['filedAt', 'date']))}</span>
-                      </div>
-                      <p className="text-zinc-300">{toStringValue(getField(item.row, ['body', 'summary', 'details']))}</p>
+            {data.news.map((item, index) => {
+              const formType = item.formType ?? (item.isNews ? 'News' : 'Filing');
+              const sourceClass = item.isNews
+                ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300'
+                : formType.toLowerCase().includes('grok')
+                  ? 'border-violet-500/30 bg-violet-500/10 text-violet-300'
+                  : 'border-orange-500/30 bg-orange-500/10 text-orange-300';
+
+              return (
+                <details key={`news-filing-${index}`} className="rounded border border-white/10 bg-white/5 p-2">
+                  <summary className="cursor-pointer text-zinc-200">{item.title}</summary>
+                  <div className="mt-2 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded border px-2 py-0.5 text-sm ${sourceClass}`}>{formType}</span>
+                      <span className="text-zinc-500">{formatDate(item.filedAt)}</span>
                     </div>
-                  </details>
-                );
-              })}
-            {data.news.results.length === 0 && data.filingTitles.results.length === 0 ? <NoDataBadge endpointData={data.news} /> : null}
+                    <p className="text-zinc-300">{item.summary || 'N/A'}</p>
+                  </div>
+                </details>
+              );
+            })}
+            {data.news.length === 0 ? <NoDataBadge /> : null}
           </div>
         ) : null}
 
         {activeTab === 'offerings' ? (
           <div className="space-y-4">
-            {/* Regular Offerings */}
-            {regularOfferings.length > 0 ? (
+            {data.offerings.length > 0 ? (
               <div className="space-y-2">
                 <h4 className="font-medium text-zinc-300">Offerings</h4>
                 <div className="overflow-x-auto">
@@ -761,31 +503,28 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                       </tr>
                     </thead>
                     <tbody>
-                      {regularOfferings.map((item, index) => {
-                        const row = toRecord(item);
-                        return (
-                          <tr key={`offering-${index}`} className="border-b border-white/5 text-zinc-300">
-                            <td className="py-2 pr-3">{formatDate(getField(row, ['filed_at', 'filedAt', 'date']))}</td>
-                            <td className="py-2 pr-3">{toStringValue(getField(row, ['offeringType', 'offering_type', 'type', 'formType']))}</td>
-                            <td className="py-2 pr-3">{formatNumber(getField(row, ['shares_amount', 'sharesAmount', 'shares']))}</td>
-                            <td className="py-2 pr-3">{formatMoney(getField(row, ['share_price', 'sharePrice', 'price']))}</td>
-                            <td className="py-2">{formatMoney(getField(row, ['offering_amount', 'offeringAmount', 'amount']))}</td>
-                          </tr>
-                        );
-                      })}
+                      {data.offerings.map((row, index) => (
+                        <tr key={`offering-${index}`} className="border-b border-white/5 text-zinc-300">
+                          <td className="py-2 pr-3">{formatDate(row.filedAt)}</td>
+                          <td className="py-2 pr-3">{toStringValue(row.offeringType)}</td>
+                          <td className="py-2 pr-3">{formatNumber(row.sharesAmount)}</td>
+                          <td className="py-2 pr-3">{formatMoney(row.sharePrice)}</td>
+                          <td className="py-2">{formatMoney(row.offeringAmount)}</td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
               </div>
             ) : (
-              <NoDataBadge endpointData={data.offerings} />
+              <NoDataBadge />
             )}
           </div>
         ) : null}
 
         {activeTab === 'history' ? (
           <div className="space-y-3">
-            {hasData(data.historicalFloat) ? (
+            {data.historicalFloat.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="min-w-full">
                   <thead>
@@ -797,25 +536,22 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.historicalFloat.results.map((item, index) => {
-                      const row = toRecord(item);
-                      return (
-                        <tr key={`historical-${index}`} className="border-b border-white/5 text-zinc-300">
-                          <td className="py-2 pr-3">{formatDate(getField(row, ['reportedDate', 'reported_date', 'date']))}</td>
-                          <td className="py-2 pr-3">{formatNumber(getField(row, ['outstandingShares', 'outstanding_shares', 'outstanding']))}</td>
-                          <td className="py-2 pr-3">{formatNumber(getField(row, ['float']))}</td>
-                          <td className="py-2">{formatNumber(getField(row, ['tradableFloat', 'tradable_float']))}</td>
-                        </tr>
-                      );
-                    })}
+                    {data.historicalFloat.map((row, index) => (
+                      <tr key={`historical-${index}`} className="border-b border-white/5 text-zinc-300">
+                        <td className="py-2 pr-3">{formatDate(row.date)}</td>
+                        <td className="py-2 pr-3">{formatNumber(row.outstanding)}</td>
+                        <td className="py-2 pr-3">{formatNumber(row.float)}</td>
+                        <td className="py-2">{formatNumber(row.tradableFloat)}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <NoDataBadge endpointData={data.historicalFloat} />
+              <NoDataBadge />
             )}
 
-            {hasData(data.reverseSplits) ? (
+            {data.reverseSplits.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="min-w-full">
                   <thead>
@@ -825,27 +561,20 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.reverseSplits.results.map((item, index) => {
-                      const row = toRecord(item);
-                      return (
-                        <tr key={`split-${index}`} className="border-b border-white/5 text-zinc-300">
-                          <td className="py-2 pr-3">{formatDate(getField(row, ['executionDate', 'execution_date', 'date']))}</td>
-                          <td className="py-2">
-                            {toStringValue(getField(row, ['ratio'])) !== 'N/A'
-                              ? toStringValue(getField(row, ['ratio']))
-                              : `${toStringValue(getField(row, ['splitFrom', 'split_from']))}:${toStringValue(getField(row, ['splitTo', 'split_to']))}`}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {data.reverseSplits.map((row, index) => (
+                      <tr key={`split-${index}`} className="border-b border-white/5 text-zinc-300">
+                        <td className="py-2 pr-3">{formatDate(row.date)}</td>
+                        <td className="py-2">{toStringValue(row.ratio)}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <NoDataBadge endpointData={data.reverseSplits} />
+              <NoDataBadge />
             )}
 
-            {hasData(data.agreements) ? (
+            {data.agreements.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="min-w-full">
                   <thead>
@@ -857,29 +586,26 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.agreements.results.map((item, index) => {
-                      const row = toRecord(item);
-                      return (
-                        <tr key={`agreement-${index}`} className="border-b border-white/5 text-zinc-300">
-                          <td className="py-2 pr-3">{toStringValue(getField(row, ['agreementType', 'agreement_type', 'type']))}</td>
-                          <td className="py-2 pr-3">{toStringValue(getField(row, ['investorNames', 'investor_names', 'investor']))}</td>
-                          <td className="py-2 pr-3">{formatDate(getField(row, ['filedAt', 'filed_at', 'date']))}</td>
-                          <td className="py-2">{toStringValue(getField(row, ['details', 'summary']))}</td>
-                        </tr>
-                      );
-                    })}
+                    {data.agreements.map((row, index) => (
+                      <tr key={`agreement-${index}`} className="border-b border-white/5 text-zinc-300">
+                        <td className="py-2 pr-3">{toStringValue(row.type)}</td>
+                        <td className="py-2 pr-3">{toStringValue(row.investor)}</td>
+                        <td className="py-2 pr-3">{formatDate(row.date)}</td>
+                        <td className="py-2">{toStringValue(row.details)}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <NoDataBadge endpointData={data.agreements} />
+              <NoDataBadge />
             )}
           </div>
         ) : null}
 
         {activeTab === 'gap-stats' ? (
           <div className="space-y-3">
-            {hasData(data.gapStats) ? (
+            {data.gapStats.length > 0 ? (
               <>
                 <p className="text-sm text-zinc-500">
                   Historical day-1 gap-ups only (excludes multi-day runs). Most recent first.
@@ -901,46 +627,15 @@ export default function ResearchReportSections({ ticker, rawData }: Props) {
                       </tr>
                     </thead>
                     <tbody>
-                      {data.gapStats.results.map((item, index) => {
-                        const row = toRecord(item);
-                        const gapPct = toNumberValue(getField(row, ['gap_percentage', 'gapPercentage']));
-                        return (
-                          <tr key={index} className="border-b border-white/5">
-                            <td className="py-2 pr-3 text-zinc-300">{formatDate(getField(row, ['date']))}</td>
-                            <td className="py-2 pr-3 text-right font-medium text-emerald-400">
-                              {gapPct !== null ? `+${gapPct.toFixed(0)}%` : 'N/A'}
-                            </td>
-                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['market_open', 'marketOpen']))}</td>
-                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['market_close', 'marketClose']))}</td>
-                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['intraday_high', 'intradayHigh']))}</td>
-                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['intraday_low', 'intradayLow']))}</td>
-                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['vwap']))}</td>
-                            <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(getField(row, ['premarket_high', 'premarketHigh']))}</td>
-                            <td className="py-2 pr-3 text-right text-zinc-300">{formatNumber(getField(row, ['volume']))}</td>
-                            <td className="py-2 text-zinc-400">
-                              {(() => {
-                                const tags = getField(row, ['tags']) as string[] | null;
-                                const forms = getField(row, ['form_types', 'formTypes']) as string[] | null;
-                                const all = [...(tags ?? []), ...(forms ?? [])];
-                                if (all.length === 0) return '--';
-                                return (
-                                  <div className="flex flex-wrap gap-1">
-                                    {all.map((tag, i) => (
-                                      <span key={i} className="rounded border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-xs text-zinc-400">{tag}</span>
-                                    ))}
-                                  </div>
-                                );
-                              })()}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {data.gapStats.map((row, index) => (
+                        <GapStatRow key={index} row={row} />
+                      ))}
                     </tbody>
                   </table>
                 </div>
               </>
             ) : (
-              <NoDataBadge endpointData={data.gapStats} />
+              <NoDataBadge />
             )}
           </div>
         ) : null}
