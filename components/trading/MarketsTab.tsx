@@ -2,12 +2,10 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import JarvisMacroSummary from '@/components/trading/JarvisMacroSummary';
 import { Button } from '@/components/ui/button';
 import { useMarketStream } from '@/hooks/use-market-stream';
 import { useRelaySocket } from '@/hooks/use-relay-socket';
 import { useSchwabStatus } from '@/hooks/use-schwab-status';
-import type { JarvisMacroSummaryOutput } from '@/lib/jarvis/types';
 import {
   quotesToSnapshot,
   type MarketInstrument,
@@ -15,6 +13,32 @@ import {
   type MarketSnapshotPayload,
 } from '@/lib/quote-mappers';
 import type { RelayQuoteUpdate, RelayScreenerData } from '@/lib/relay-types';
+
+type MacroSummaryRegion = 'us' | 'eu' | 'asia' | 'global';
+
+interface MacroSummaryOutput {
+  headline: string;
+  key_themes: string[];
+  economic_calendar?: string[];
+  risk_flags: string[];
+  watchlist_notes: string[];
+}
+
+interface JarvisMacroRegionSummary {
+  region: MacroSummaryRegion;
+  headline: string;
+  details: string[];
+  sentiment: 'bullish' | 'bearish' | 'neutral' | 'mixed';
+}
+
+interface JarvisMacroSummaryLegacyOutput {
+  date: string;
+  overallSentiment: 'bullish' | 'bearish' | 'neutral' | 'mixed';
+  regions: JarvisMacroRegionSummary[];
+  keyRisks: string[];
+}
+
+type JarvisMacroSummaryOutput = JarvisMacroSummaryLegacyOutput | MacroSummaryOutput;
 
 type SnapshotCoverage = {
   totalInstruments: number;
@@ -171,6 +195,85 @@ function MoversTable({ title, rows }: { title: string; rows: MarketMoverRow[] })
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function MacroSummaryPanel({ macroSummary }: { macroSummary: JarvisMacroSummaryOutput }) {
+  if ('regions' in macroSummary) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <p className="text-sm font-medium text-zinc-200">Macro Summary</p>
+          <p className="text-xs text-zinc-500">{macroSummary.date} • {macroSummary.overallSentiment}</p>
+        </div>
+
+        <div className="space-y-3">
+          {macroSummary.regions.map((region) => (
+            <div key={region.region} className="rounded-lg border border-white/10 bg-white/5 p-3">
+              <p className="text-sm font-medium capitalize text-zinc-200">{region.region}</p>
+              <p className="mt-1 text-sm text-zinc-300">{region.headline}</p>
+              <ul className="mt-2 space-y-1 text-xs text-zinc-400">
+                {region.details.map((detail) => <li key={detail}>• {detail}</li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        {macroSummary.keyRisks.length > 0 ? (
+          <div>
+            <p className="text-sm font-medium text-zinc-200">Key Risks</p>
+            <ul className="mt-2 space-y-1 text-xs text-zinc-400">
+              {macroSummary.keyRisks.map((risk) => <li key={risk}>• {risk}</li>)}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-sm font-medium text-zinc-200">Macro Summary</p>
+        <p className="mt-1 text-sm text-zinc-300">{macroSummary.headline}</p>
+      </div>
+
+      {macroSummary.key_themes.length > 0 ? (
+        <div>
+          <p className="text-sm font-medium text-zinc-200">Key Themes</p>
+          <ul className="mt-2 space-y-1 text-xs text-zinc-400">
+            {macroSummary.key_themes.map((theme) => <li key={theme}>• {theme}</li>)}
+          </ul>
+        </div>
+      ) : null}
+
+      {macroSummary.economic_calendar && macroSummary.economic_calendar.length > 0 ? (
+        <div>
+          <p className="text-sm font-medium text-zinc-200">Economic Calendar</p>
+          <ul className="mt-2 space-y-1 text-xs text-zinc-400">
+            {macroSummary.economic_calendar.map((item) => <li key={item}>• {item}</li>)}
+          </ul>
+        </div>
+      ) : null}
+
+      {macroSummary.risk_flags.length > 0 ? (
+        <div>
+          <p className="text-sm font-medium text-zinc-200">Risk Flags</p>
+          <ul className="mt-2 space-y-1 text-xs text-zinc-400">
+            {macroSummary.risk_flags.map((risk) => <li key={risk}>• {risk}</li>)}
+          </ul>
+        </div>
+      ) : null}
+
+      {macroSummary.watchlist_notes.length > 0 ? (
+        <div>
+          <p className="text-sm font-medium text-zinc-200">Watchlist Notes</p>
+          <ul className="mt-2 space-y-1 text-xs text-zinc-400">
+            {macroSummary.watchlist_notes.map((note) => <li key={note}>• {note}</li>)}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -509,7 +612,7 @@ export default function MarketsTab() {
 
       <div className="rounded-xl border border-white/10 bg-[#121214] p-5">
         {loadingMacro ? <p className="text-sm text-zinc-500">Loading macro summary...</p> : null}
-        {!loadingMacro && macroSummary ? <JarvisMacroSummary macroSummary={macroSummary} /> : null}
+        {!loadingMacro && macroSummary ? <MacroSummaryPanel macroSummary={macroSummary} /> : null}
         {!loadingMacro && !macroSummary ? <p className="text-sm text-zinc-500">No macro summary available yet.</p> : null}
       </div>
     </motion.section>

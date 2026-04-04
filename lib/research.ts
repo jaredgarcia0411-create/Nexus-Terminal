@@ -1,10 +1,10 @@
 import { and, desc, eq, gte } from 'drizzle-orm';
+
 import { getDb } from '@/lib/db';
 import { researchReports } from '@/lib/db/schema';
-import { getCachedTickerData } from '@/lib/jarvis/askedgar';
-import type { AskEdgarResponse } from '@/lib/jarvis/askedgar';
-import { callJarvis } from '@/lib/jarvis/client';
-import { buildResearchTldrPrompt } from '@/lib/jarvis/prompts';
+import { getCachedTickerData } from '@/lib/askedgar';
+import type { AskEdgarResponse } from '@/lib/askedgar';
+import { callJarvis } from '@/lib/llm-client';
 
 export interface ResearchTldr {
   tldr: string;
@@ -33,6 +33,44 @@ function parseJson(text: string): unknown {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function buildResearchTldrPrompt(
+  reportData: Record<string, unknown[]>,
+  options?: { ticker?: string; historicalSummary?: unknown; discordReport?: { date: string; text: string } },
+): string {
+  const parts = [
+    `Analyze this AskEdgar data and return a compact JSON research summary.`,
+    options?.ticker ? `\nTicker: ${options.ticker}` : '',
+    `
+OUTPUT FORMAT (strict JSON, no markdown):
+{
+  "tldr": "2-3 sentence executive summary of the ticker's dilution risk and outlook",
+  "findings": ["key fact 1", "key fact 2", ...],
+  "actionSteps": ["what to watch or do 1", "what to watch or do 2", ...],
+  "risks": ["risk flag 1", "risk flag 2", ...],
+  "historicalContext": "1-2 sentences on how the risk profile has evolved, or null if no history"
+}
+
+RULES:
+- findings: 5-8 bullets, focus on dilution, offerings, cash position, compliance
+- actionSteps: 3-5 bullets, actionable next steps for a trader
+- risks: 3-5 bullets, biggest risk flags
+- Be specific with numbers (prices, dates, percentages) when available
+- Never fabricate data. Use null for missing values.
+- JSON only, no explanation
+
+<report_data>
+${JSON.stringify(reportData)}
+</report_data>`,
+    options?.historicalSummary
+      ? `\n<historical_summary>\n${JSON.stringify(options.historicalSummary, null, 1)}\n</historical_summary>`
+      : '',
+    options?.discordReport
+      ? `\n<latest_discord_report date="${options.discordReport.date}">\n${options.discordReport.text.slice(0, 2000)}\n</latest_discord_report>`
+      : '',
+  ];
+  return parts.filter(Boolean).join('\n');
 }
 
 /**

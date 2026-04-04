@@ -4,8 +4,8 @@ import { z } from 'zod';
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { importedResearchReports, tickerResearchSummaries } from '@/lib/db/schema';
-import { getCachedTickerData } from '@/lib/jarvis/askedgar';
-import { runResearchTldr } from '@/lib/jarvis/research';
+import { getCachedTickerData } from '@/lib/askedgar';
+import { runResearchTldr } from '@/lib/research';
 import { dbUnavailable, requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';

@@ -1,5 +1,5 @@
 import { internalServerError, logRouteError, normalizeTicker, TICKER_REGEX } from '@/lib/api-route-utils';
-import { getCachedTickerData, normalizeAskEdgarResponse } from '@/lib/jarvis/askedgar';
+import { getCachedTickerData, normalizeAskEdgarResponse } from '@/lib/askedgar';
 import { fetchUnifiedSnapshot } from '@/lib/massive-market';
 import { requireUser } from '@/lib/server-db-utils';
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-describe('jarvis askedgar client', () => {
+describe('askedgar client', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.resetModules();
@@ -15,7 +15,7 @@ describe('jarvis askedgar client', () => {
 
   it('returns endpoint payload map from fetchTickerData', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ status: 'success', count: 1, results: [{ ticker: 'AAPL' }] })));
-    const client = await import('@/lib/jarvis/askedgar');
+    const client = await import('@/lib/askedgar');
 
     const result = await client.fetchTickerData('AAPL');
 
@@ -26,7 +26,7 @@ describe('jarvis askedgar client', () => {
 
   it('tracks daily call count', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ status: 'success', count: 1, results: [{}] })));
-    const client = await import('@/lib/jarvis/askedgar');
+    const client = await import('@/lib/askedgar');
 
 	await client.fetchTickerData('MSFT');
 	expect(client.getAskEdgarCallCount()).toBe(16);

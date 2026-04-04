@@ -207,46 +207,6 @@ export const marketSnapshots = pgTable('market_snapshots', {
   index('market_snapshots_expires_idx').on(table.expiresAt),
 ]);
 
-export const macroSummaries = pgTable('macro_summaries', {
-  id: text('id').primaryKey(),
-  summaryJson: jsonb('summary_json').notNull(),
-  sourcesJson: jsonb('sources_json'),
-  modelUsed: text('model_used'),
-  generatedAt: timestamp('generated_at', { withTimezone: true }).defaultNow(),
-}, (table) => [
-  index('macro_summaries_generated_at_idx').on(table.generatedAt),
-]);
-
-export const jarvisConversations = pgTable('jarvis_conversations', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  sessionId: text('session_id').notNull(),
-  role: text('role').notNull(),
-  content: text('content').notNull(),
-  mode: text('mode'),
-  contextSnapshot: jsonb('context_snapshot'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-}, (table) => [
-  index('jarvis_conversations_user_session_idx').on(table.userId, table.sessionId, table.createdAt),
-]);
-
-export const jarvisRequestLog = pgTable('jarvis_request_log', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  mode: text('mode').notNull(),
-  inputTokens: integer('input_tokens').notNull().default(0),
-  outputTokens: integer('output_tokens').notNull().default(0),
-  totalTokens: integer('total_tokens').notNull().default(0),
-  durationMs: integer('duration_ms').notNull().default(0),
-  success: integer('success').notNull().default(1),
-  sourceCount: integer('source_count').notNull().default(0),
-  chunkCount: integer('chunk_count').notNull().default(0),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-}, (table) => [
-  index('idx_jarvis_request_log_user_created').on(table.userId, table.createdAt),
-  index('idx_jarvis_request_log_created').on(table.createdAt),
-]);
-
 export const schwabLinks = pgTable('schwab_links', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

@@ -14,16 +14,14 @@ import JournalTab from '@/components/trading/JournalTab';
 import PerformanceTab from '@/components/trading/PerformanceTab';
 import TradesTab from '@/components/trading/TradesTab';
 import ChartsTab from '@/components/trading/ChartsTab';
-import MarketsTab from '@/components/trading/MarketsTab';
 import ResearchTab from '@/components/trading/ResearchTab';
-import JarvisTab from '@/components/trading/JarvisTab';
 import CommandPalette from '@/components/trading/CommandPalette';
 import { TabErrorBoundary } from '@/components/ui/TabErrorBoundary';
 import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useTrades } from '@/hooks/use-trades';
 
-const VALID_TABS: TabKey[] = ['dashboard', 'performance', 'journal', 'filter', 'charts', 'markets', 'research', 'jarvis'];
+const VALID_TABS: TabKey[] = ['dashboard', 'performance', 'journal', 'filter', 'charts', 'research'];
 
 const TAB_TITLES: Record<TabKey, string> = {
   dashboard: 'Dashboard',
@@ -31,9 +29,7 @@ const TAB_TITLES: Record<TabKey, string> = {
   journal: 'Trading Journal',
   filter: 'Trades Management',
   charts: 'Charts',
-  markets: 'Markets',
   research: 'Research',
-  jarvis: 'Jarvis',
 };
 
 export default function NexusTerminal() {
@@ -297,21 +293,9 @@ export default function NexusTerminal() {
               </TabErrorBoundary>
             ) : null}
 
-            {activeTab === 'markets' ? (
-              <TabErrorBoundary name="Markets">
-                <MarketsTab />
-              </TabErrorBoundary>
-            ) : null}
-
             {activeTab === 'research' ? (
               <TabErrorBoundary name="Research">
                 <ResearchTab />
-              </TabErrorBoundary>
-            ) : null}
-
-            {activeTab === 'jarvis' ? (
-              <TabErrorBoundary name="Jarvis">
-                <JarvisTab />
               </TabErrorBoundary>
             ) : null}
           </AnimatePresence>

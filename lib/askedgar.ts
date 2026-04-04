@@ -3,7 +3,6 @@ import { and, eq, gt } from 'drizzle-orm';
 import { getField, toNumberValue, toRecord } from '@/lib/askedgar-utils';
 import { getDb } from '@/lib/db';
 import { askedgarCache } from '@/lib/db/schema';
-import type { DilutionDataSourceCheck } from '@/lib/jarvis/types';
 import type {
   ResearchSnapshotFull,
   ResearchSnapshotAgreement,
@@ -17,6 +16,13 @@ import type {
   ResearchSnapshotReverseSplit,
   ResearchSnapshotWarrant,
 } from '@/lib/types';
+
+interface DilutionDataSourceCheck {
+  endpoint: string;
+  label: string;
+  hasData: boolean;
+  error?: string;
+}
 
 export interface AskEdgarResponse<T> {
   status: string;

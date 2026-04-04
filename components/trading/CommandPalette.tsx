@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { BarChart3, ChartCandlestick, Filter, LayoutGrid, List, MessageSquare, Newspaper, Plus, Search, Upload } from 'lucide-react';
+import { BarChart3, ChartCandlestick, Filter, LayoutGrid, List, Plus, Search, Upload } from 'lucide-react';
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from '@/components/ui/command';
 import type { TabKey } from '@/components/trading/Sidebar';
 
@@ -24,9 +24,7 @@ const NAV_ITEMS: Array<{
   { tab: 'journal', label: 'Journal', icon: List, shortcut: '3' },
   { tab: 'filter', label: 'Trades', icon: Filter, shortcut: '4' },
   { tab: 'charts', label: 'Charts', icon: ChartCandlestick, shortcut: '5' },
-  { tab: 'markets', label: 'Markets', icon: Newspaper, shortcut: '6' },
-  { tab: 'research', label: 'Research', icon: Search, shortcut: '7' },
-  { tab: 'jarvis', label: 'Jarvis', icon: MessageSquare, shortcut: '8' },
+  { tab: 'research', label: 'Research', icon: Search, shortcut: '6' },
 ];
 
 export default function CommandPalette({
@@ -88,33 +86,6 @@ export default function CommandPalette({
           >
             <Upload className="mr-2 h-4 w-4 text-zinc-400" />
             Import CSV
-          </CommandItem>
-        </CommandGroup>
-
-        <CommandGroup heading="Jarvis">
-          <CommandItem
-            onSelect={() => runCommand(() => setActiveTab('jarvis'))}
-            className="data-[selected=true]:bg-white/10"
-          >
-            <MessageSquare className="mr-2 h-4 w-4 text-zinc-400" />
-            Chat with Jarvis
-            <CommandShortcut>Ctrl+J</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            keywords={['research', 'dilution', 'edgar']}
-            onSelect={() => runCommand(() => setActiveTab('research'))}
-            className="data-[selected=true]:bg-white/10"
-          >
-            <Search className="mr-2 h-4 w-4 text-zinc-400" />
-            /research TICKER - Dilution research report
-          </CommandItem>
-          <CommandItem
-            keywords={['analyze', 'trades', 'performance']}
-            onSelect={() => runCommand(() => setActiveTab('jarvis'))}
-            className="data-[selected=true]:bg-white/10"
-          >
-            <BarChart3 className="mr-2 h-4 w-4 text-zinc-400" />
-            /analyze - Analyze last 30 days of trades
           </CommandItem>
         </CommandGroup>
       </CommandList>

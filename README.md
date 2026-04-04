@@ -1,16 +1,14 @@
 # Nexus Terminal
 
-Trading journal, analytics platform, and AI-assisted research tool built with Next.js, React, and TypeScript.
+Trading journal, analytics platform, and research tool built with Next.js, React, and TypeScript.
 
 ## What It Does
 
 - Tracks and journals trades with execution-level detail
 - Imports broker CSV data (single files or folder batches)
-- Performance analytics, replay charts, and market snapshots
+- Performance analytics, replay charts, and charting tools
 - Tagging, filtering, and bulk trade actions
-- **Jarvis AI** — chat, trade analysis, macro summaries, and dilution research reports
-- **Jarvis chat streaming** — token-by-token assistant responses over SSE with fallback to non-streaming commands
-- **Dilution research terminal** — full-page Research workspace with AskEdgar top gainers, live ticker lookup, chart, tabbed filing sections (including ownership + gap stats), and optional Jarvis TLDR
+- **Dilution research terminal** — full-page Research workspace with TradingView top gainers, live ticker lookup, chart, tabbed filing sections (including ownership + gap stats), and optional TLDR generation
 - **Discord report import** — backfill/sync research reports into `imported_research_reports` with parsed ticker metadata
 
 ## Core Product Areas
@@ -20,11 +18,7 @@ Trading journal, analytics platform, and AI-assisted research tool built with Ne
 - **Performance** — analytics charts and statistics
 - **Trades** — trade management, bulk actions, tag filters
 - **Charts** — expanded charting workspace
-- **Markets** — snapshot + movers + scanner + macro summary
-- **Research** — full-page dilution terminal (gainers, chart, risk header, AskEdgar sections, Jarvis TLDR)
-- **Backtesting** — Jarvis chat workspace
-- **Real-time market data relay** — Schwab live-data hybrid integration (Phases 1-3 complete: OAuth + relay + LIVE/DELAYED frontend switching)
-- **Relay ticker auto-subscribe** — Schwab relay loads distinct imported research tickers and subscribes them at startup (non-fatal if unavailable)
+- **Research** — full-page dilution terminal (TradingView gainers, chart, risk header, AskEdgar sections, optional TLDR)
 
 ## Tech Stack
 
@@ -37,14 +31,11 @@ Trading journal, analytics platform, and AI-assisted research tool built with Ne
 - Recharts + lightweight-charts
 - Vitest test runner (`npm test`)
 
-## Jarvis AI Pipeline
+## Research TLDR Pipeline
 
-Jarvis is the AI layer powering chat, trade analysis, and research reports.
-
-- **LLM provider**: Groq (OpenAI-compatible API, free tier available)
-- **Model**: `llama-3.3-70b-versatile` (configurable via `JARVIS_MODEL`)
-- **Research flow**: AskEdgar API (15 direct research endpoints in the ticker lookup flow) powers direct UI data; optional TLDR endpoint uses Jarvis with AskEdgar + Discord historical summary context
-- **Safety**: circuit breaker, per-user rate limiting (30 req/hr), request logging
+- **LLM provider**: Groq-compatible OpenAI chat completion API
+- **Model**: `llama-3.3-70b-versatile` by default (configurable via `JARVIS_MODEL`)
+- **Research flow**: AskEdgar API powers the structured research UI; the optional TLDR endpoint combines AskEdgar data with Discord historical summary context
 
 ## Data + Auth Model
 
@@ -59,9 +50,10 @@ See `.env.example` for the full list.
 - `DATABASE_URL` — PostgreSQL connection string (Neon)
 - `NEXTAUTH_URL`, `NEXTAUTH_SECRET` — NextAuth config
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — OAuth provider
-- `JARVIS_API_KEY` — LLM provider API key (Groq)
-- `JARVIS_API_BASE_URL` — LLM endpoint (default: Groq)
+- `JARVIS_API_KEY` — LLM provider API key for research TLDR generation
+- `JARVIS_API_BASE_URL` — LLM endpoint override
 - `JARVIS_MODEL` — LLM model ID
+- `TRADINGVIEW_SESSION_ID` — enables live TradingView screener data for Research gainers (optional)
 - `ASKEDGAR_API_KEY` — AskEdgar API for dilution research
 - `MASSIVE_API_KEY` — Market data provider
 - `DISCORD_BOT_TOKEN` — Discord bot token for research report import routes
@@ -90,8 +82,6 @@ app/                 # App router pages + API routes
 components/trading/  # Trading feature UI components
 hooks/               # Client-side hooks (including trade state)
 lib/                 # Services, utilities, db schema, auth config
-lib/jarvis/          # Jarvis AI pipeline (client, prompts, research, etc.)
 drizzle/             # SQL migrations
 __tests__/           # Route, utility, and component test coverage
-services/schwab-relay/ # Standalone Schwab streaming relay service
 ```
