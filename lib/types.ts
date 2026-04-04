@@ -73,7 +73,7 @@ export type ApiTrade = {
   notes?: string;
 };
 
-// Scanner types — shared between hooks/use-scanner.ts, hooks/use-market-stream.ts, and server routes
+// Scanner types shared between the research UI and server routes
 export type ScannerSortKey = 'symbol' | 'lastPrice' | 'netChange' | 'netChangePercent' | 'totalVolume';
 export type ScannerSortDir = 'asc' | 'desc';
 

@@ -46,9 +46,6 @@ Report pass/fail for each command.
 
 ## Monorepo/Subproject Notes
 - Main app TypeScript excludes `services/` from root `tsconfig.json`.
-- Schwab relay service has its own TS config and build commands:
-  - `cd services/schwab-relay && npx tsc --noEmit`
-  - `cd services/schwab-relay && npm run build`
 
 ## Architecture Guardrails
 - Keep page-level orchestration in `app/page.tsx`; move business logic to hooks/lib.
@@ -57,9 +54,8 @@ Report pass/fail for each command.
 - Server auth/db helpers are in `lib/server-db-utils.ts`.
 - Avoid introducing new global patterns when existing modules already cover the need.
 - **SSE endpoints** use `lib/sse.ts` (`createSSEResponse` helper). Set `export const dynamic = 'force-dynamic'` and `export const maxDuration = 60` on all SSE routes. Auth via `requireUser()` — EventSource sends cookies automatically.
-- **Relay WebSocket** — The Schwab relay (`services/schwab-relay/`) exposes a WebSocket at `/ws` on port 8080 alongside the `/health` HTTP endpoint. Auth uses a short-lived HMAC JWT from `GET /api/relay-token`. Client hook: `hooks/use-relay-socket.ts`. Types: `lib/relay-types.ts`. Falls back to SSE if relay is unavailable.
 - **Keyboard shortcuts** use `react-hotkeys-hook`. Global shortcuts are registered in `hooks/use-global-shortcuts.ts` and called once from `app/page.tsx`. The command palette component lives at `components/trading/CommandPalette.tsx`.
-- **Ask Edgar API is usage-billed** — always use `getCachedTickerData` and `getCachedGainers` from `lib/jarvis/askedgar.ts` instead of the raw `fetchTickerData`/`fetchTopGainers`. The cached versions use DB-backed TTL (1hr for tickers, 5min for gainers) via the `askedgar_cache` table, shared across all users. Only call the raw functions if you have an explicit reason to bypass the cache.
+- **Ask Edgar API is usage-billed** — always use `getCachedTickerData` and `getCachedGainers` from `lib/askedgar.ts` instead of the raw `fetchTickerData`/`fetchTopGainers`. The cached versions use DB-backed TTL (1hr for tickers, 5min for gainers) via the `askedgar_cache` table, shared across all users. Only call the raw functions if you have an explicit reason to bypass the cache.
 - **Do not add logic to `hooks/use-trades.ts`** — it is a god hook being decomposed into `hooks/trade-utils.ts` (pure functions), `hooks/use-trade-filters.ts` (filter/search state), and `hooks/use-trade-sync.ts` (persistence). If you need new trade-related state, create a separate hook in `hooks/`.
 - **In-memory state is unreliable on Vercel** — module-level `Map`s, objects, or variables reset on every cold start. Use the database or an external store (e.g., Upstash Redis) for any state that must persist across requests.
 
@@ -69,7 +65,7 @@ Report pass/fail for each command.
   - `const db = getDb()`
   - guard with `if (!db) return dbUnavailable()`
   - call `ensureUser(db, authState.user)` when needed.
-- **Validate input with Zod** — Use `parseAndValidate(request, schema)` from `lib/api-route-utils.ts` with Zod schemas from `lib/validations/`. Returns `{ data }` or `{ error: Response }`. Schemas live in `lib/validations/trades.ts`, `lib/validations/jarvis.ts`, and `lib/validations/system.ts`. This project uses **Zod v4** — use `z.flattenError(result.error)` (standalone function), NOT `result.error.flatten()` (v3 method).
+- **Validate input with Zod** — Use `parseAndValidate(request, schema)` from `lib/api-route-utils.ts` with Zod schemas from `lib/validations/`. Returns `{ data }` or `{ error: Response }`. Schemas live in `lib/validations/trades.ts` and `lib/validations/system.ts`. This project uses **Zod v4** — use `z.flattenError(result.error)` (standalone function), NOT `result.error.flatten()` (v3 method).
 - Return structured errors via `Response.json({ error: '...' }, { status })`.
 - In `catch`, log safely and return generic server errors (no secret leakage).
 
