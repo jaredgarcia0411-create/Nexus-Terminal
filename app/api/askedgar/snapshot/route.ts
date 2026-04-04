@@ -32,7 +32,7 @@ export async function GET(request: Request) {
       warnings: result.warnings,
     });
 
-    // Strip rawData — it's the full 16-endpoint payload used server-side by Jarvis.
+    // Strip rawData — it's the full 16-endpoint payload used server-side by the research pipeline.
     // Components only need the normalized fields, so we don't send it to the browser.
     const { rawData: _, ...clientSafe } = normalized;
     return Response.json(clientSafe);

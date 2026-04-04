@@ -32,26 +32,26 @@ async function readFailureDetail(response: Response): Promise<string> {
 }
 
 function getTimeoutMs() {
-  const parsed = Number(process.env.JARVIS_TIMEOUT_MS);
+  const parsed = Number(process.env.LLM_TIMEOUT_MS);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return DEFAULT_TIMEOUT_MS;
   }
   return Math.floor(parsed);
 }
 
-export interface JarvisClientResult {
+export interface LlmClientResult {
   content: string;
   modelUsed: string;
 }
 
-async function requestLlm(systemPrompt: string, userMessage: string, temperature: number): Promise<JarvisClientResult> {
-  const apiKey = process.env.JARVIS_API_KEY;
+async function requestLlm(systemPrompt: string, userMessage: string, temperature: number): Promise<LlmClientResult> {
+  const apiKey = process.env.LLM_API_KEY;
   if (!apiKey) {
-    throw new Error('JARVIS_API_KEY is not configured');
+    throw new Error('LLM_API_KEY is not configured');
   }
 
-  const model = process.env.JARVIS_MODEL || DEFAULT_MODEL;
-  const baseUrl = normalizeBaseUrl(process.env.JARVIS_API_BASE_URL || DEFAULT_BASE_URL);
+  const model = process.env.LLM_MODEL || DEFAULT_MODEL;
+  const baseUrl = normalizeBaseUrl(process.env.LLM_API_BASE_URL || DEFAULT_BASE_URL);
   const timeoutMs = getTimeoutMs();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -100,7 +100,7 @@ async function requestLlm(systemPrompt: string, userMessage: string, temperature
   return { content, modelUsed: model };
 }
 
-export async function callJarvis(systemPrompt: string, userMessage: string, temperature = 0.2): Promise<JarvisClientResult> {
+export async function callLlm(systemPrompt: string, userMessage: string, temperature = 0.2): Promise<LlmClientResult> {
   try {
     return await requestLlm(systemPrompt, userMessage, temperature);
   } catch {
@@ -109,18 +109,18 @@ export async function callJarvis(systemPrompt: string, userMessage: string, temp
   }
 }
 
-export async function callJarvisStreaming(
+export async function callLlmStreaming(
   systemPrompt: string,
   userMessage: string,
   temperature = 0.2,
 ): Promise<{ stream: ReadableStream<string>; modelUsed: string }> {
-  const apiKey = process.env.JARVIS_API_KEY;
+  const apiKey = process.env.LLM_API_KEY;
   if (!apiKey) {
-    throw new Error('JARVIS_API_KEY is not configured');
+    throw new Error('LLM_API_KEY is not configured');
   }
 
-  const model = process.env.JARVIS_MODEL || DEFAULT_MODEL;
-  const baseUrl = normalizeBaseUrl(process.env.JARVIS_API_BASE_URL || DEFAULT_BASE_URL);
+  const model = process.env.LLM_MODEL || DEFAULT_MODEL;
+  const baseUrl = normalizeBaseUrl(process.env.LLM_API_BASE_URL || DEFAULT_BASE_URL);
   const timeoutMs = getTimeoutMs();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);

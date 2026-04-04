@@ -1,26 +1,23 @@
-Scaffold a new Jarvis AI agent named: $ARGUMENTS
+Scaffold a new AI agent named: $ARGUMENTS
 
 This creates the foundational files for a new specialized agent in the Nexus Terminal agent team. The scaffold is a starting point — we'll refine the agent's behavior after it's created.
 
 ## Before You Start
 
-1. Read `lib/jarvis/types.ts` to understand existing types (JarvisMode, JarvisRequest, JarvisResponse)
-2. Read `lib/jarvis/prompts.ts` to see how other modes construct prompts
-3. Read `lib/jarvis/client.ts` to understand the LLM client interface
-4. Read `lib/jarvis/research.ts` and `lib/jarvis/trade-analysis.ts` as examples of existing pipelines
-5. Check `app/api/jarvis/` for existing API route patterns
+1. Read `lib/llm-client.ts` to understand the LLM client interface (`callLlm`, `callLlmStreaming`)
+2. Read `lib/research.ts` as an example of an existing LLM pipeline
+3. Check `app/api/` for existing API route patterns
 
 ## What to Create
 
-### 1. Agent Pipeline (`lib/jarvis/<agent-name>.ts`)
+### 1. Agent Pipeline (`lib/<agent-name>.ts`)
 - Export a main function that takes a request and returns a structured response
-- Use the existing `callLLM()` client from `lib/jarvis/client.ts`
+- Use the existing `callLlm()` client from `lib/llm-client.ts`
 - Include proper error handling with try/catch
-- Add token tracking via `lib/jarvis/token-tracking.ts`
 - Keep it simple — start with a single LLM call, we can add multi-step orchestration later
 
-### 2. System Prompt (add to `lib/jarvis/prompts.ts`)
-- Add a new prompt builder function for this agent's mode
+### 2. System Prompt
+- Define the prompt inline or in a dedicated helper in the pipeline file
 - The prompt should clearly define:
   - Who the agent is (role and expertise)
   - What data it will receive
@@ -28,13 +25,12 @@ This creates the foundational files for a new specialized agent in the Nexus Ter
   - What it should NOT do (constraints)
 - Keep the prompt under 500 tokens to start
 
-### 3. Types (add to `lib/jarvis/types.ts`)
-- Add the new mode to the JarvisMode union type
-- Add request/response types if they differ from the base types
+### 3. Types (add to `lib/types.ts` if needed)
+- Add request/response types if they differ from existing types
 - Keep types minimal — only add what's needed
 
-### 4. API Route (`app/api/jarvis/<agent-name>/route.ts`)
-- POST handler following existing patterns
+### 4. API Route (`app/api/<agent-name>/route.ts`)
+- POST handler following existing patterns in `app/api/`
 - Must call `requireUser()` for auth
 - Validate request body
 - Call the agent pipeline

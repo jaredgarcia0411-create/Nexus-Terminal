@@ -5,14 +5,14 @@ If no specific issue is given, run a full diagnostic of the pipeline.
 ## Diagnostic Steps
 
 ### 1. Check API Integration
-- Read `lib/jarvis/askedgar.ts` — verify API client is correctly configured
+- Read `lib/askedgar.ts` — verify API client is correctly configured
 - Read API docs at `docs/AE_API_DOCS.md` for expected endpoints and response formats
 - Check that `ASKEDGAR_API_KEY` is referenced only server-side (never in client components)
 - Verify base URL is `https://eapi.askedgar.io`
 
 ### 2. Check Research Pipeline
-- Read `lib/jarvis/research.ts` — trace how research requests flow from API route to LLM
-- Read `app/api/jarvis/research/route.ts` — verify the API route handles requests correctly
+- Read `lib/research.ts` — trace how research requests flow from API route to LLM
+- Read `app/api/askedgar/tldr/route.ts` — verify the API route handles requests correctly
 - Check error handling — what happens when AskEdgar API is down or returns errors?
 - Check caching — are research_reports being stored and retrieved from the database?
 
@@ -39,7 +39,6 @@ If possible, trace a single request end-to-end:
 - Response parsing — are we correctly parsing the AskEdgar JSON response?
 - Token limits — is the filing data too large for the LLM context window?
 - Timeout — are research requests timing out on Vercel (10s limit on Hobby tier)?
-- Circuit breaker — is `lib/jarvis/circuit-breaker.ts` tripping due to errors?
 
 ## Output
 Report findings as:

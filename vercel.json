@@ -1,14 +1,6 @@
 {
   "crons": [
     {
-      "path": "/api/jarvis/cron/macro-summary",
-      "schedule": "0 10 * * 1-5"
-    },
-    {
-      "path": "/api/jarvis/cron/macro-summary",
-      "schedule": "0 11 * * 1-5"
-    },
-    {
       "path": "/api/discord/cron/sync",
       "schedule": "0 10 * * 1-5"
     }

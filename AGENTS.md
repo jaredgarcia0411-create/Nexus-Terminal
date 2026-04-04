@@ -132,7 +132,7 @@ Report pass/fail for each command.
 
 ## Docs and Handoff Updates
 - After completing session work, update checklist/status in `HANDOFF.md`.
-- Update `README.md` only if behavior or developer workflow materially changed.
+- There is no project README.md — do not create one unless explicitly instructed.
 
 ## Cursor and Copilot Rules
 - Checked for Cursor rules: no `.cursor/rules/` or `.cursorrules` found.

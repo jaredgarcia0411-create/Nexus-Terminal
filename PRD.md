@@ -47,7 +47,7 @@ Clean view of what's happening in the market right now.
 - Macro summary (Fed, economic data, earnings calendar)
 - Data freshness — stale data is worse than no data
 
-**Status:** Macro summary exists via cron. Daily ticker summaries exist. Needs better presentation and real-time freshness.
+**Status:** Macro summary planned via Orchestrator agent (not yet built). Daily ticker summaries exist. Needs better presentation and real-time freshness.
 
 ### 3. Research Reports (Active Development — Sprint 8)
 On-demand dilution research using AskEdgar API for SEC filings.
@@ -110,7 +110,7 @@ Autonomous AI agents running as Docker Compose services on a home server, coordi
 
 ## Metrics I Care About
 
-- Jarvis response speed (< 3 seconds for chat, < 10 seconds for research)
+- Research generation time (< 10 seconds for AskEdgar snapshot)
 - Data freshness (filings and market data < 1 hour stale during market hours)
 - My own usage — if I stop opening it, something's wrong
 - Agent signal quality — are they finding things I wouldn't have found myself?

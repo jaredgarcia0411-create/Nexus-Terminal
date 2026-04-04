@@ -73,29 +73,6 @@ export type ApiTrade = {
   notes?: string;
 };
 
-// Scanner types shared between the research UI and server routes
-export type ScannerSortKey = 'symbol' | 'lastPrice' | 'netChange' | 'netChangePercent' | 'totalVolume';
-export type ScannerSortDir = 'asc' | 'desc';
-
-export type ScannerFilters = {
-  minPrice?: number;
-  maxPrice?: number;
-  minChangePercent?: number;
-  maxChangePercent?: number;
-  minVolume?: number;
-  assetType?: string;
-};
-
-export type ScannerRow = {
-  symbol: string;
-  assetType: string;
-  lastPrice: number | null;
-  netChange: number | null;
-  netChangePercent: number | null;
-  totalVolume: number | null;
-  updatedAt: string;
-};
-
 export interface TradeMarker {
   time: number;
   direction: 'LONG' | 'SHORT';
@@ -256,7 +233,7 @@ export interface ResearchSnapshot {
 }
 
 // Server-side full shape — includes the raw per-endpoint API payloads used by
-// the Jarvis LLM pipeline (lib/jarvis/research.ts). Never sent to the browser.
+// the LLM research pipeline (lib/research.ts). Never sent to the browser.
 export interface ResearchSnapshotFull extends ResearchSnapshot {
   rawData: Record<string, { status: string; results: unknown[]; error?: string }>;
 }

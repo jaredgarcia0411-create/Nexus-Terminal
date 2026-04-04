@@ -77,14 +77,20 @@ Import from `lib/server-db-utils.ts`. Returns `{ user: { id, email, name, pictur
 ## Core
 - `lib/server-db-utils.ts` — `requireUser()`, `ensureUser()` — all API routes must use these
 - `lib/auth-config.ts` — NextAuth config
-- `lib/types.ts` — Centralized type definitions (Trade, ScannerRow, ResearchSnapshot, etc.)
+- `lib/types.ts` — Centralized type definitions (Trade, ResearchSnapshot, etc.)
+- `lib/db.ts` — Database connection bootstrapping (HTTP + WebSocket pool)
+- `lib/sse.ts` — `createSSEResponse` helper for Server-Sent Events routes
+- `lib/api-route-utils.ts` — `parseAndValidate()` Zod request parsing helper
+- `lib/askedgar-utils.ts` — AskEdgar response normalization utilities
+- `lib/time-utils.ts` — Shared date/time formatting utilities
+- `lib/validations/trades.ts`, `lib/validations/system.ts` — Zod schemas for API input validation
 - `lib/trading-utils.ts` — formatCurrency, formatR, calculatePnL, buildTradeMarkers, getPnLColor, getPnLHex
 - `lib/trade-utils.ts` — Trade-specific utilities (normalizeTrade, sortTradesByDate, toApiTrade, fromApiTrade, collectImportedTrades, apiRequest)
 - `lib/chart-timeframes.ts` — Chart timeframe configs shared across all chart components
 - `lib/csv-parser.ts` — CSV parsing with broker auto-detection
 - `lib/parsers/` — pluggable parser system (DAS Trader, generic)
 - `lib/indicators.ts` — SMA, EMA, RSI, MACD, VWAP, Bollinger, ATR
-- `lib/llm-client.ts` — shared LLM client for research generation
+- `lib/llm-client.ts` — shared LLM client for research generation (`callLlm`, `callLlmStreaming`)
 - `lib/research.ts` — research report assembly and TLDR helpers
 - `lib/askedgar.ts` — AskEdgar client with shared cache helpers
 
@@ -123,7 +129,7 @@ Names only — values in `.env.local` (never committed):
 
 | Category | Variables |
 |----------|-----------|
-| Auth | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ALLOWED_EMAILS`, `NEXTAUTH_SECRET` |
+| Auth | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ALLOWED_EMAILS`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL` |
 | Database | `DATABASE_URL` |
 | Market Data | `MASSIVE_API_KEY`, `TRADINGVIEW_SESSION_ID` |
 | Discord | `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID` |
@@ -149,8 +155,7 @@ Names only — values in `.env.local` (never committed):
 ---
 
 # Known Issues
-1. Legacy API stubs with empty subdirectories: app/api/backtest/, app/api/cron/alerts/, app/api/notifications/process/, app/api/webhooks/trade-event/ — do not add routes without explicit instruction
-2. NextAuth v5 is pre-release (5.0.0-beta.30) — watch for breaking changes
+1. NextAuth v5 is pre-release (5.0.0-beta.30) — watch for breaking changes
 
 ---
 

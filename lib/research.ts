@@ -4,7 +4,7 @@ import { getDb } from '@/lib/db';
 import { researchReports } from '@/lib/db/schema';
 import { getCachedTickerData } from '@/lib/askedgar';
 import type { AskEdgarResponse } from '@/lib/askedgar';
-import { callJarvis } from '@/lib/llm-client';
+import { callLlm } from '@/lib/llm-client';
 
 export interface ResearchTldr {
   tldr: string;
@@ -207,7 +207,7 @@ export async function fetchAndCacheRawReport(
 }
 
 /**
- * Generate a compact TLDR from AskEdgar data for Jarvis chat display.
+ * Generate a compact TLDR from AskEdgar data for the research tab display.
  * Expects rawData from fetchAndCacheRawReport() or fetchTickerData().
  */
 export async function runResearchTldr(
@@ -221,7 +221,7 @@ export async function runResearchTldr(
     historicalSummary: context?.historicalSummary,
     discordReport: context?.discordReport,
   });
-  const reply = await callJarvis(
+  const reply = await callLlm(
     'You are a financial analyst specializing in small-cap dilution risk assessment. Return JSON only.',
     userPrompt,
   );
