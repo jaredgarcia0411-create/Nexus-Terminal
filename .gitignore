@@ -12,5 +12,3 @@ services/*/dist/
 services/**/__pycache__/
 .vercel
 scripts/trade-screenshots/
-scripts/trade-examples-template.json
-scripts/trade-examples-reviewed.json
