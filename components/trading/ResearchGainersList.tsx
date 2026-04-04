@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-interface GainerRow {
+// Shape returned by /api/tradingview/gainers
+interface TradingViewGainer {
   ticker: string;
   price: number;
-  gain_1_day: number;
-  today_volume: number;
-  [key: string]: unknown;
+  change: number;
+  volume: number;
+  avgVolume90d: number | null;
+  marketCap: number | null;
+  sector: string | null;
 }
 
 interface Props {
@@ -24,16 +27,20 @@ function formatCompact(value: number | null | undefined): string {
 }
 
 export default function ResearchGainersList({ selectedTicker, onSelectTicker }: Props) {
-  const [gainers, setGainers] = useState<GainerRow[]>([]);
+  const [gainers, setGainers] = useState<TradingViewGainer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRealtime, setIsRealtime] = useState(false);
 
   const fetchGainers = useCallback(async () => {
     try {
-      const response = await fetch('/api/askedgar/gainers');
+      const response = await fetch('/api/tradingview/gainers');
       if (!response.ok) return;
-      const data = (await response.json()) as { gainers: GainerRow[] };
-      const sorted = (data.gainers ?? []).slice().sort((a, b) => (b.gain_1_day ?? 0) - (a.gain_1_day ?? 0));
-      setGainers(sorted);
+      const data = (await response.json()) as {
+        gainers: TradingViewGainer[];
+        isRealtime: boolean;
+      };
+      setGainers(data.gainers ?? []);
+      setIsRealtime(data.isRealtime ?? false);
     } catch {
       // Silently fail; list remains as-is.
     } finally {
@@ -43,18 +50,25 @@ export default function ResearchGainersList({ selectedTicker, onSelectTicker }: 
 
   useEffect(() => {
     void fetchGainers();
-    // Poll every 15 minutes — AskEdgar data is cached server-side with
-    // a 15-minute TTL so more frequent polls just hit the cache.
+    // Poll every 60 seconds — TradingView data refreshes in near real-time
     const interval = setInterval(() => {
       void fetchGainers();
-    }, 15 * 60 * 1000);
+    }, 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchGainers]);
 
   return (
     <div className="flex flex-col">
       <div className="sticky top-0 border-b border-white/10 bg-[#121214] px-3 py-2">
-        <h3 className="text-sm font-medium text-zinc-400">Top Gainers</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium text-zinc-400">Top Gainers</h3>
+          {!loading && (
+            <span className={`text-[10px] font-medium ${isRealtime ? 'text-emerald-500' : 'text-yellow-500'}`}>
+              {isRealtime ? 'LIVE' : '15-MIN DELAY'}
+            </span>
+          )}
+        </div>
+        <p className="mt-0.5 text-[10px] text-zinc-600">+30% &bull; &lt;$300M mcap &bull; price &gt;$1.12</p>
       </div>
 
       {loading ? (
@@ -74,11 +88,11 @@ export default function ResearchGainersList({ selectedTicker, onSelectTicker }: 
             >
               <div>
                 <span className="font-medium text-zinc-200">{gainer.ticker}</span>
-                <span className="ml-2 text-zinc-500">${gainer.price?.toFixed(2) ?? '--'}</span>
+                <span className="ml-2 text-zinc-500">${gainer.price.toFixed(2)}</span>
               </div>
               <div className="text-right">
-                <span className="text-zinc-500">{formatCompact(gainer.today_volume)}</span>
-                <span className="ml-2 text-emerald-400">+{gainer.gain_1_day?.toFixed(0) ?? '0'}%</span>
+                <span className="text-zinc-500">{formatCompact(gainer.volume)}</span>
+                <span className="ml-2 text-emerald-400">+{gainer.change.toFixed(0)}%</span>
               </div>
             </button>
           ))}
