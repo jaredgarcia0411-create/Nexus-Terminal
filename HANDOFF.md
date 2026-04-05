@@ -95,3 +95,26 @@ Replace the AskEdgar gainers list in Research tab with TradingView screener data
 - [ ] Destroy Fly.io relay: `fly apps destroy nexus-schwab-relay`
 - [ ] Remove Schwab OAuth app credentials (revoke at developer.schwab.com)
 - [ ] Remove Jarvis/LLM env vars from Vercel (`JARVIS_API_KEY`, `JARVIS_API_BASE_URL`, `JARVIS_MODEL`, `JARVIS_ADMIN_KEY`)
+
+---
+
+## Condense intradayNotes
+
+These entries in `scripts/trade-examples-template.json` have intradayNotes that are too long (~500-630 chars). Target ~350-400 chars max. Keep the key entries, adds, stops, and covers but cut the play-by-play detail.
+
+Work through these one at a time, reviewing the screenshot alongside each entry.
+
+### Must condense (~550-630 chars)
+
+1. **PAVM 1-21-26** (~630 chars) — 3 separate entry attempts, lots of price detail
+2. **KLTO 6-10-25** (~600 chars) — 3 entry attempts with many adds, very granular price tracking
+3. **BNAI 1-26-26** (~600 chars) — long entry sequence + re-entry attempt at the end
+4. **USO 3-9-26** (~570 chars) — multiple entry/re-entry cycles with detailed price levels
+5. **NAMM 1-28-26** (~560 chars) — many small adds across PM, open, and AH
+6. **EVTV 1-13-26** (~530 chars) — detailed stop/re-entry sequence
+7. **AMCI 12-15-25** (~530 chars) — includes SPAC context explanation that could be moved to dailyNotes
+
+### Borderline (~500-520 chars, condense if possible)
+
+8. **GITS 1-27-26** (~520 chars)
+9. **ROLR 1-14-26** (~510 chars)

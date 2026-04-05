@@ -39,13 +39,13 @@ Personal operator tasks — not code stories. Must be complete before Sprint 0 c
 
 | Task | Detail |
 |------|--------|
-| Docker Engine + Compose v2 on Dell | `docker run hello-world` passes, Compose v2 verified |
+| ~~Docker Engine + Compose v2 on Dell~~ | DONE — Docker Engine and Compose v2 verified on Dell |
 | ~~Discord server, channels, bot credentials~~ | DONE — all channel IDs, webhook URLs, bot token, guild ID, intents recorded |
-| `services/.env.example` → `services/.env` | Copy file, fill all values, confirm `.gitignore` covers `services/.env` |
-| Validate LLM lane keys and Neon connectivity | Groq/NVIDIA key test succeeds; `psql $DATABASE_URL -c "SELECT 1"` works |
+| ~~`services/.env.example` → `services/.env`~~ | DONE — copied, filled, `.gitignore` covers `services/.env` |
+| ~~Validate LLM lane keys and Neon connectivity~~ | DONE — Groq/NVIDIA keys and Neon `SELECT 1` verified |
 | ~~Fix `services/.env.example` values~~ | DONE — `MACRO_CRON_HOUR=6`, `AGENT_POLL_INTERVAL_MS=5000` |
 | ~~Rename `JARVIS_*` env vars to `LLM_*`~~ | DONE — `lib/llm-client.ts` and `.env.example` updated. Remember to update `.env.local` on Vercel and any local machines |
-| Annotate trade screenshots | Manual annotation for seed data — blocks AEV2-311 |
+| Annotate trade screenshots | IN PROGRESS — manual annotation for seed data, blocks AEV2-311 (Sprint 3) |
 
 ---
 
