@@ -20,13 +20,16 @@ Fix the Research page so valid ticker lookups do not silently render misleading 
 - Unusable AskEdgar snapshots now stay server-side errors instead of being normalized into misleading empty `No data` Research views.
 - Partial AskEdgar success still returns `200` and now keeps warnings visible in the Research UI.
 - Company header share-structure stats now fall back to `float-outstanding` when screener data is sparse.
+- AskEdgar `429` parsing now reads nested upstream retry metadata (`error.details.retry_after`) and preserves upstream rate-limit message/code in warnings.
+- Full ticker-wide AskEdgar `429` failures now cache in `askedgar_cache` for the retry window instead of immediately hammering the API again.
+- Concurrent same-ticker `getCachedTickerData()` requests now dedupe in-flight work per process so one cache miss does not trigger duplicate 16-endpoint fanouts.
 - Added regression coverage in `__tests__/askedgar-client.test.ts` and `__tests__/askedgar-snapshot-route.test.ts` for unusable snapshots, route error handling, partial warnings, and header fallback.
 - Validation passed: `npm run lint`, `npx tsc --noEmit`, `npm test`.
 - Manual result: Research page data is loading again.
 
 ### Follow-Up Next Session
 
-- Review AskEdgar rate limiting behavior and `429` error handling/UX in more detail now that data is flowing again.
+- If AskEdgar `429`s still show up in production bursts, add cross-instance/shared locking or shared negative-cache coordination so Vercel instances do not stampede the same ticker.
 
 ### Non-Goals / Guardrails
 

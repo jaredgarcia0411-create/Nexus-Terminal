@@ -1,9 +1,73 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { getDbMock } = vi.hoisted(() => ({
+  getDbMock: vi.fn(),
+}));
+
+vi.mock('@/lib/db', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/db')>('@/lib/db');
+  return {
+    ...actual,
+    getDb: getDbMock,
+  };
+});
+
+interface AskedgarCacheRow {
+  id: string;
+  cacheType: string;
+  ticker: string;
+  dataJson: unknown;
+  fetchedAt: Date;
+  expiresAt: Date;
+}
+
+function createAskedgarCacheDb(initialRows: AskedgarCacheRow[] = []) {
+  const rows = [...initialRows];
+
+  return {
+    select() {
+      return {
+        from() {
+          return {
+            where() {
+              return {
+                limit: async (limit: number) => rows.slice(0, limit),
+              };
+            },
+          };
+        },
+      };
+    },
+    insert() {
+      return {
+        values(value: AskedgarCacheRow) {
+          return {
+            onConflictDoUpdate: async ({ set }: { set: Partial<AskedgarCacheRow> }) => {
+              const nextRow = { ...value, ...set } as AskedgarCacheRow;
+              const index = rows.findIndex((row) => row.cacheType === value.cacheType && row.ticker === value.ticker);
+              if (index >= 0) {
+                rows[index] = nextRow;
+                return;
+              }
+
+              rows.push(nextRow);
+            },
+          };
+        },
+      };
+    },
+    getRows() {
+      return rows;
+    },
+  };
+}
+
 describe('askedgar client', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.resetModules();
+    getDbMock.mockReset();
+    getDbMock.mockReturnValue(undefined);
     process.env.ASKEDGAR_API_KEY = 'test-key';
     process.env.ASKEDGAR_DAILY_LIMIT = '100';
   });
@@ -14,7 +78,7 @@ describe('askedgar client', () => {
   });
 
   it('returns endpoint payload map from fetchTickerData', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ status: 'success', count: 1, results: [{ ticker: 'AAPL' }] })));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ status: 'success', count: 1, results: [{ ticker: 'AAPL' }] })));
     const client = await import('@/lib/askedgar');
 
     const result = await client.fetchTickerData('AAPL');
@@ -25,7 +89,7 @@ describe('askedgar client', () => {
   });
 
   it('tracks daily call count', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ status: 'success', count: 1, results: [{}] })));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ status: 'success', count: 1, results: [{}] })));
     const client = await import('@/lib/askedgar');
 
     await client.fetchTickerData('MSFT');
@@ -33,7 +97,13 @@ describe('askedgar client', () => {
   });
 
   it('marks fully rate-limited AskEdgar snapshots as unusable', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ error: { retry_after: 42 } }), { status: 429 }));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
+      error: {
+        code: 'rate_limit_exceeded',
+        message: 'AskEdgar rate limit exceeded',
+        details: { retry_after: 42 },
+      },
+    }), { status: 429 }));
     const client = await import('@/lib/askedgar');
 
     const result = await client.fetchTickerData('AAPL');
@@ -46,6 +116,51 @@ describe('askedgar client', () => {
       failureKind: 'rate-limited',
       retryAfterSeconds: 42,
     });
+    expect(result.warnings.some((warning) => warning.includes('AskEdgar rate limit exceeded') && warning.includes('code=rate_limit_exceeded'))).toBe(true);
+  });
+
+  it('caches fully rate-limited ticker results for the retry window', async () => {
+    const cacheDb = createAskedgarCacheDb();
+    getDbMock.mockReturnValue(cacheDb);
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
+      error: {
+        code: 'rate_limit_exceeded',
+        message: 'AskEdgar rate limit exceeded',
+        details: { retry_after: 42 },
+      },
+    }), { status: 429 }));
+
+    const client = await import('@/lib/askedgar');
+    await client.getCachedTickerData('AAPL');
+
+    expect(fetchSpy).toHaveBeenCalledTimes(5);
+    expect(cacheDb.getRows()).toHaveLength(1);
+
+    vi.resetModules();
+    fetchSpy.mockClear();
+
+    const reloadedClient = await import('@/lib/askedgar');
+    const cachedResult = await reloadedClient.getCachedTickerData('AAPL');
+    const availability = reloadedClient.getAskEdgarSnapshotAvailability(cachedResult.rawData);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(availability.failureKind).toBe('rate-limited');
+    expect(availability.retryAfterSeconds).toBeGreaterThan(0);
+    expect(availability.retryAfterSeconds).toBeLessThanOrEqual(42);
+  });
+
+  it('dedupes concurrent getCachedTickerData requests for the same ticker', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ status: 'success', count: 1, results: [{ ticker: 'MSFT' }] })));
+    const client = await import('@/lib/askedgar');
+
+    const [first, second] = await Promise.all([
+      client.getCachedTickerData('MSFT'),
+      client.getCachedTickerData('MSFT'),
+    ]);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(16);
+    expect(first).toEqual(second);
   });
 
   it('falls back to float-outstanding header stats when screener data is sparse', async () => {

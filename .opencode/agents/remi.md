@@ -1,7 +1,8 @@
 ---
 description: WZRD.dev Enhanced Remi - Agentic framework with 37 skills, 7-layer memory, PIV orchestration
 mode: primary
-model: nvidia/moonshotai/kimi-k2.5
+model: openai/gpt-5.4
+variant: xhigh
 temperature: 0.3
 color: "#ef4444"
 ---

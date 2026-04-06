@@ -52,6 +52,8 @@ let resetDate = '';
 // until the retry window expires. This prevents wasting calls.
 let rateLimitedUntil = 0; // Unix timestamp (ms) when we can resume
 
+const inFlightTickerRequests = new Map<string, Promise<TickerDataResult>>();
+
 function isRateLimited(): boolean {
   return Date.now() < rateLimitedUntil;
 }
@@ -146,6 +148,67 @@ function ensureTicker(ticker: string): string | null {
   return ticker;
 }
 
+function getStringValue(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function getPositiveNumberValue(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  return null;
+}
+
+interface AskEdgarRateLimitDetails {
+  retryAfterSeconds: number;
+  code: string | null;
+  message: string | null;
+}
+
+function extractRateLimitDetails(payload: unknown): AskEdgarRateLimitDetails | null {
+  const error = toRecord(toRecord(payload).error);
+  if (Object.keys(error).length === 0) return null;
+
+  const details = toRecord(error.details);
+
+  return {
+    retryAfterSeconds: getPositiveNumberValue(error.retry_after)
+      ?? getPositiveNumberValue(details.retry_after)
+      ?? 60,
+    code: getStringValue(error.code),
+    message: getStringValue(error.message),
+  };
+}
+
+function formatRateLimitError(details: AskEdgarRateLimitDetails): string {
+  const metadata = [details.message, details.code ? `code=${details.code}` : null]
+    .filter((value): value is string => Boolean(value));
+
+  return metadata.length > 0
+    ? `Rate limited — retry after ${details.retryAfterSeconds}s (${metadata.join(', ')})`
+    : `Rate limited — retry after ${details.retryAfterSeconds}s`;
+}
+
+function replaceRetryAfterSeconds(message: string, retryAfterSeconds: number): string {
+  if (/retry after\s+\d+s/i.test(message)) {
+    return message.replace(/retry after\s+\d+s/i, `retry after ${retryAfterSeconds}s`);
+  }
+
+  if (/waiting for retry window/i.test(message) || isRateLimitError(message)) {
+    return `Rate limited — retry after ${retryAfterSeconds}s`;
+  }
+
+  return message;
+}
+
 function toErrorMessage(payload: unknown, status: number): string {
   if (payload && typeof payload === 'object') {
     const rec = payload as Record<string, unknown>;
@@ -193,12 +256,14 @@ async function requestAskEdgar<T>(path: string, query: Record<string, string | n
     // Handle rate limiting: record the retry window so other in-flight
     // and future requests fail fast instead of wasting API calls
     if (response.status === 429) {
-      const details = (payload as Record<string, unknown>)?.error;
-      const retryAfter = typeof details === 'object' && details !== null
-        ? Number((details as Record<string, unknown>).retry_after) || 60
-        : 60;
-      setRateLimited(retryAfter);
-      return toErrorResponse<T>(`Rate limited — retry after ${retryAfter}s`);
+      const details = extractRateLimitDetails(payload) ?? {
+        retryAfterSeconds: 60,
+        code: null,
+        message: null,
+      };
+
+      setRateLimited(details.retryAfterSeconds);
+      return toErrorResponse<T>(formatRateLimitError(details));
     }
 
     if (!response.ok) return toErrorResponse<T>(toErrorMessage(payload, response.status));
@@ -441,6 +506,61 @@ export async function fetchTickerData(ticker: string) {
     dataSources: endpointStates.map(toDataSource),
     warnings,
     hasAnyData,
+  };
+}
+
+type TickerDataResult = Awaited<ReturnType<typeof fetchTickerData>>;
+
+function getTickerCacheExpiry(result: TickerDataResult, fetchedAt: Date): Date | null {
+  if (result.hasAnyData) {
+    return new Date(fetchedAt.getTime() + TICKER_CACHE_TTL_MS);
+  }
+
+  const availability = getAskEdgarSnapshotAvailability(result.rawData);
+  if (availability.failureKind !== 'rate-limited') {
+    return null;
+  }
+
+  const retryAfterSeconds = availability.retryAfterSeconds ?? 60;
+  return new Date(fetchedAt.getTime() + retryAfterSeconds * 1000);
+}
+
+function hydrateCachedTickerDataResult(result: TickerDataResult, expiresAt: Date): TickerDataResult {
+  const availability = getAskEdgarSnapshotAvailability(result.rawData);
+  if (result.hasAnyData || availability.failureKind !== 'rate-limited') {
+    return result;
+  }
+
+  const remainingSeconds = Math.max(1, Math.ceil((expiresAt.getTime() - Date.now()) / 1000));
+  const rawData = Object.fromEntries(
+    Object.entries(result.rawData).map(([key, response]) => {
+      if (!isRateLimitError(response.error)) {
+        return [key, response];
+      }
+
+      return [
+        key,
+        {
+          ...response,
+          error: replaceRetryAfterSeconds(response.error ?? 'Rate limited — waiting for retry window', remainingSeconds),
+        },
+      ];
+    }),
+  ) as TickerDataResult['rawData'];
+
+  return {
+    ...result,
+    rawData,
+    dataSources: result.dataSources.map((source) => (
+      source.error && isRateLimitError(source.error)
+        ? { ...source, error: replaceRetryAfterSeconds(source.error, remainingSeconds) }
+        : source
+    )),
+    warnings: result.warnings.map((warning) => (
+      isRateLimitError(warning)
+        ? replaceRetryAfterSeconds(warning, remainingSeconds)
+        : warning
+    )),
   };
 }
 
@@ -779,61 +899,76 @@ export async function getCachedTickerData(ticker: string) {
   const normalizedTicker = ticker.trim().toUpperCase();
   const db = getDb();
 
-  // No DB available — fall back to live fetch
-  if (!db) return fetchTickerData(normalizedTicker);
+  if (db) {
+    const now = new Date();
+    const cached = await db
+      .select()
+      .from(askedgarCache)
+      .where(
+        and(
+          eq(askedgarCache.cacheType, 'ticker'),
+          eq(askedgarCache.ticker, normalizedTicker),
+          gt(askedgarCache.expiresAt, now),
+        ),
+      )
+      .limit(1);
 
-  // Check cache
-  const now = new Date();
-  const cached = await db
-    .select()
-    .from(askedgarCache)
-    .where(
-      and(
-        eq(askedgarCache.cacheType, 'ticker'),
-        eq(askedgarCache.ticker, normalizedTicker),
-        gt(askedgarCache.expiresAt, now),
-      ),
-    )
-    .limit(1);
-
-  if (cached.length > 0) {
-    // Cache hit — return stored data in the same shape as fetchTickerData()
-    return cached[0].dataJson as ReturnType<typeof fetchTickerData> extends Promise<infer T> ? T : never;
+    if (cached.length > 0) {
+      return hydrateCachedTickerDataResult(cached[0].dataJson as TickerDataResult, cached[0].expiresAt);
+    }
   }
 
-  // Cache miss — fetch fresh from Ask Edgar
-  const result = await fetchTickerData(normalizedTicker);
+  const inFlight = inFlightTickerRequests.get(normalizedTicker);
+  if (inFlight) {
+    return inFlight;
+  }
 
-  // Only cache if at least one endpoint returned real data.
-  // This prevents caching error responses (bad API key, timeouts, etc.)
-  // that would otherwise stick around for an hour.
-  if (!result.hasAnyData) return result;
+  const request = (async () => {
+    const result = await fetchTickerData(normalizedTicker);
 
-  // Write to cache (fire-and-forget, don't block the response)
-  try {
-    await db
-      .insert(askedgarCache)
-      .values({
-        id: `ticker-${normalizedTicker}`,
-        cacheType: 'ticker',
-        ticker: normalizedTicker,
-        dataJson: result,
-        fetchedAt: now,
-        expiresAt: new Date(now.getTime() + TICKER_CACHE_TTL_MS),
-      })
-      .onConflictDoUpdate({
-        target: [askedgarCache.cacheType, askedgarCache.ticker],
-        set: {
+    if (!db) {
+      return result;
+    }
+
+    const fetchedAt = new Date();
+    const expiresAt = getTickerCacheExpiry(result, fetchedAt);
+    if (!expiresAt) {
+      return result;
+    }
+
+    try {
+      await db
+        .insert(askedgarCache)
+        .values({
+          id: `ticker-${normalizedTicker}`,
+          cacheType: 'ticker',
+          ticker: normalizedTicker,
           dataJson: result,
-          fetchedAt: now,
-          expiresAt: new Date(now.getTime() + TICKER_CACHE_TTL_MS),
-        },
-      });
-  } catch (err) {
-    console.warn('[askedgar-cache] Failed to write ticker cache:', err);
-  }
+          fetchedAt,
+          expiresAt,
+        })
+        .onConflictDoUpdate({
+          target: [askedgarCache.cacheType, askedgarCache.ticker],
+          set: {
+            dataJson: result,
+            fetchedAt,
+            expiresAt,
+          },
+        });
+    } catch (err) {
+      console.warn('[askedgar-cache] Failed to write ticker cache:', err);
+    }
 
-  return result;
+    return result;
+  })();
+
+  inFlightTickerRequests.set(normalizedTicker, request);
+
+  try {
+    return await request;
+  } finally {
+    inFlightTickerRequests.delete(normalizedTicker);
+  }
 }
 
 /**
