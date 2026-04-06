@@ -82,7 +82,7 @@ Personal operator tasks — not code stories. Done items reflect current repo an
 
 | Story ID | Story | Acceptance Criteria | Size |
 |----------|-------|---------------------|------|
-| AEV2-101 | Create canonical agent types in `lib/agents/types.ts` | Imports shared types from `lib/types.ts` (no duplication), defines V1 agent IDs, job types, lease/checkpoint contracts, no `any` casts | M |
+| AEV2-101 | Create canonical agent types in `lib/agents/types.ts` | Defines V1 agent IDs, job types, and lease/checkpoint contracts without duplicating existing shared repo types; keep Sprint 1 self-contained unless a real overlap with `lib/types.ts` appears | M |
 | AEV2-102 | Implement dual-lane LLM client in `lib/agents/llm-client.ts` | Separate from `lib/llm-client.ts` (Vercel-side); uses `INTERACTIVE_LLM_*` and `BACKGROUND_LLM_*` env vars; `callLlm()` returns a structured response | M |
 | AEV2-103 | Implement agent auth helpers in `lib/agents/admin.ts` | `requireAgentAdmin()` and `requireServiceAuth()` compile with V1 service-key flow; hardcoded Discord→Nexus mapping lives in `lib/agents/admin.ts`; consumers can distinguish 400 missing `discord_user_id`, 401 invalid service key, and 403 unknown Discord user | M |
 | AEV2-104 | Add prompt stack files | Global policy + orchestrator + small-cap + swing prompts exist and match V1 contracts | S |
@@ -164,7 +164,34 @@ Note: no backfill SQL needed. `jarvis_conversations` and `jarvis_request_log` we
 
 **Deliverables:** agent types, dual-lane LLM client, auth helpers, prompt stack, migration 0019, ownership model.
 
-**Execution approach:** one worktree branch. Merge to main after exit gate passes.
+**Execution approach:** one worktree branch, but break Sprint 1 into three reviewable commits. Merge to main only after the Sprint 1 exit gate passes.
+
+#### Recommended Commit Phases
+
+This sprint is safer as three commit-sized phases. The branch stays linear, but each checkpoint keeps review scope tight and avoids mixing pure contract work with generated migration output.
+
+| Phase | Stories | Purpose | Files touched | Commit gate |
+|------|---------|---------|---------------|-------------|
+| Phase 1 — Contract Surface | AEV2-101 to AEV2-105 | Create the new `lib/agents` contract layer without touching the database | `lib/agents/types.ts`, `lib/agents/llm-client.ts`, `lib/agents/admin.ts`, `lib/agents/prompts/*.md` | `npm run lint` + `npx tsc --noEmit` |
+| Phase 2 — Schema + Migration Artifacts | AEV2-201 to AEV2-202 | Add the new tables and generate the Drizzle artifacts while the diff is still schema-only | `lib/db/schema.ts`, `drizzle/0019_*.sql`, `drizzle/meta/0019_snapshot.json`, `drizzle/meta/_journal.json` | Review generated SQL, then `npm run lint` + `npx tsc --noEmit` |
+| Phase 3 — Seed + Apply + Verify | AEV2-203 to AEV2-204 | Append seed SQL, apply the migration, verify foundational rows, and run the full repo validation bar | `drizzle/0019_*.sql` (seed block only), `HANDOFF.md` | `npm run lint` + `npx tsc --noEmit` + `npm test` |
+
+If you only want two commits, collapse Phase 2 and Phase 3 into one schema/migration commit. I would not keep Sprint 1 as a single unbroken implementation chunk.
+
+#### Step-by-Step Implementation Guide
+
+1. Phase 1 — scaffold the new agent contract surface.
+   Create `lib/agents/` and `lib/agents/prompts/`, then land `types.ts`, `llm-client.ts`, `admin.ts`, and the four prompt files before touching `lib/db/schema.ts`.
+2. Phase 1 — validate the runtime-free surface area.
+   Run `npm run lint` and `npx tsc --noEmit` after the contract files exist so any bad imports or env-contract mistakes are caught before Drizzle generation muddies the diff.
+3. Phase 2 — add the schema in one additive block.
+   Append all nine new tables to the end of `lib/db/schema.ts`; do not intermingle them with existing trade/research tables.
+4. Phase 2 — generate and review migration artifacts immediately.
+   Run `npm run db:generate`, then review the new SQL plus `drizzle/meta/0019_snapshot.json` and `_journal.json` before making any manual edits.
+5. Phase 3 — append the seed rows after generation, not before.
+   Add the `system-agent-user` and `agent_registry` seed inserts to `drizzle/0019_*.sql` only after Drizzle has written the DDL, so the handwritten block stays isolated and easy to review.
+6. Phase 3 — apply and verify.
+   Run `npm run db:migrate`, confirm the foundational rows exist, then finish with `npm run lint`, `npx tsc --noEmit`, and `npm test`.
 
 #### Story Execution Order
 
@@ -175,16 +202,18 @@ Stories must be implemented in this exact order — each depends on the one befo
 3. AEV2-103 (auth — imports types)
 4. AEV2-104 (prompt files — standalone markdown)
 5. AEV2-105 (validation pass — confirms 101-104 compile together)
-6. AEV2-201 (schema tables — imports types for enum values)
+6. AEV2-201 (schema tables and DB contracts)
 7. AEV2-202 (generate migration)
 8. AEV2-203 (apply migration)
-9. AEV2-204 (system-agent-user seed — in migration SQL)
+9. AEV2-204 (append foundational seed rows to the generated migration SQL)
 
 ---
 
 #### AEV2-101 — Agent types (`lib/agents/types.ts`)
 
 **Create** `lib/agents/types.ts`. This is the single source of truth for all agent framework types. Sprint 2+ modules import from here — nothing else defines these types.
+
+Current repo reality: `lib/types.ts` covers trades and research payloads. It does not currently define overlapping agent/runtime contracts, so Sprint 1 should keep `lib/agents/types.ts` self-contained instead of introducing synthetic cross-file imports.
 
 ```typescript
 // --- Enums & Unions ---
@@ -486,7 +515,7 @@ export class BudgetExceededError extends Error {
 **Acceptance criteria:**
 - File compiles: `npx tsc --noEmit`
 - No `any` casts
-- Imports nothing from `lib/types.ts` (agent types are self-contained)
+- Does not duplicate existing shared repo types; Sprint 1 remains self-contained because `lib/types.ts` has no overlapping agent/runtime contracts today
 - Does not import Drizzle, Zod, or any runtime dependency — pure type definitions + two error classes
 
 **Validation:** `npx tsc --noEmit`
@@ -555,13 +584,20 @@ import type { LlmRequest, LlmResponse, LlmLane, LlmLaneConfig, LlmBudgetConfig }
 **Create** `lib/agents/admin.ts`. Two auth functions for the API routes.
 
 ```typescript
-import type { AgentId } from './types';
+interface AgentServiceUser {
+  id: string;
+  email: string;
+  name: string | null;
+  picture: string | null;
+}
 ```
 
 **Exports:**
 
 1. `requireAgentAdmin(request: Request): Response | null`
-2. `requireServiceAuth(request: Request): { userId: string; discordUserId: string } | Response`
+2. `requireServiceAuth(request: Request, body: { discord_user_id?: string }): { user: AgentServiceUser; discordUserId: string } | Response`
+
+**Important contract choice:** keep body parsing in the route and keep service auth pure. `requireServiceAuth()` should validate headers plus the already-parsed body object. That avoids double-reading `request.json()` and keeps the helper aligned with the V1 service-route contract in `AGENTIC_EXPANSIONV2.md`.
 
 **`requireAgentAdmin` behavior:**
 
@@ -577,32 +613,47 @@ import type { AgentId } from './types';
 2. Compare against `process.env.AGENT_SERVICE_KEY`
 3. If missing env var: return `Response.json({ error: 'Service auth not configured' }, { status: 500 })`
 4. If header missing or mismatch: return `Response.json({ error: 'Unauthorized' }, { status: 401 })`
-5. Parse request body, extract `discord_user_id`
+5. Read `discord_user_id` from the passed `body`
 6. If `discord_user_id` missing: return `Response.json({ error: 'discord_user_id is required' }, { status: 400 })`
 7. Look up `discord_user_id` in the hardcoded V1 mapping (see below)
 8. If not found: return `Response.json({ error: 'Unknown Discord user' }, { status: 403 })`
-9. If found: return `{ userId, discordUserId }`
+9. If found: return `{ user, discordUserId }`, where `user` matches the shape returned by `requireUser()`
 
 **Hardcoded V1 Discord→Nexus mapping:**
 
 ```typescript
-// V1 hardcoded mapping — replace placeholder values with real IDs.
-// This avoids a DB table for 2-3 users in V1.
-const DISCORD_USER_MAP: Record<string, string> = {
-  // 'discord-user-id-1': 'nexus-user-id-1',
-  // 'discord-user-id-2': 'nexus-user-id-2',
+// V1 hardcoded mapping — replace placeholder values with real identities.
+// This avoids a DB table for 2-3 users in V1 while still matching requireUser().
+const DISCORD_USER_MAP: Record<string, AgentServiceUser> = {
+  // 'discord-user-id-1': {
+  //   id: 'nexus-user-id-1',
+  //   email: 'user1@example.com',
+  //   name: 'User One',
+  //   picture: null,
+  // },
 };
 ```
 
 Leave the map empty with commented examples. You'll fill it in before Sprint 4 (Discord bot).
 
+**Route-call example for Sprint 3:**
+
+```typescript
+const parsed = await parseAndValidate(request, serviceChatSchema);
+if ('error' in parsed) return parsed.error;
+
+const authState = requireServiceAuth(request, parsed.data);
+if (authState instanceof Response) return authState;
+
+const user = authState.user;
+```
+
 **Acceptance criteria:**
 - Compiles with `npx tsc --noEmit`
 - 400 for missing `discord_user_id`, 401 for invalid key, 403 for unknown Discord user
+- Returns the same user-shape contract as `requireUser()`, plus `discordUserId`
 - Does not import NextAuth, Drizzle, or any DB code — pure header/body validation
-- `requireServiceAuth` reads the request body — note this means the body can only be read once. Document this: callers must use the returned parsed body, not re-read `request.json()`.
-
-**Important implementation note:** Since `requireServiceAuth` needs to read the request body to extract `discord_user_id`, it should accept either `Request` or a pre-parsed body object. The recommended approach: accept `(request: Request, body: { discord_user_id?: string })` so the caller parses the body first and passes it in. This avoids double-reading the body stream.
+- The hardcoded mapping stores full user identity objects, not just user IDs, so callers do not need a DB lookup to build a user payload
 
 **Validation:** `npx tsc --noEmit && npm run lint`
 
@@ -970,9 +1021,9 @@ This produces `drizzle/0019_*.sql`. Review the generated SQL before proceeding:
 4. Verify unique constraints are created
 5. No `DROP TABLE` or `ALTER TABLE` statements for existing tables — this migration only adds new tables
 
-**Do not modify the generated migration SQL** unless Drizzle produces incorrect output.
+**Do not modify the generated DDL blocks** unless Drizzle produces incorrect output. The one planned manual edit in Sprint 1 is the AEV2-204 seed block appended after generation.
 
-**Validation:** `ls drizzle/0019_*` shows exactly one new file
+**Validation:** `ls drizzle/0019_*` shows exactly one new SQL file, `drizzle/meta/0019_snapshot.json` exists, and `drizzle/meta/_journal.json` is updated
 
 ---
 
@@ -1044,8 +1095,10 @@ npm test               # All existing tests still pass
 | `lib/agents/prompts/swing-trader.md` | NEW |
 | `lib/db/schema.ts` | MODIFIED (9 tables added) |
 | `drizzle/0019_*.sql` | NEW (generated + seed SQL appended) |
+| `drizzle/meta/0019_snapshot.json` | NEW (generated) |
+| `drizzle/meta/_journal.json` | MODIFIED (generated) |
 
-**What did NOT change:** No existing files were modified except `lib/db/schema.ts` (additive only). No existing tests were changed. No new dependencies added.
+**What did NOT change:** No existing application routes were modified. No existing tests were changed. No new dependencies added.
 
 ---
 

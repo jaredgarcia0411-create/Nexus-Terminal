@@ -6,6 +6,84 @@ Historical completed sections removed — use git history and `specs/` for archi
 
 ---
 
+## AEV2 Sprint 1 Phase 1 — Contract Surface
+
+> Generated: 2026-04-06 | Agent: Codex
+> Status: COMPLETE
+
+### Objective
+
+Implement the Sprint 1 Phase 1 contract surface only, then stop for review before schema and migration work.
+
+### Delivered
+
+- Added [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts) as the pure V1 agent contract module:
+  - agent/job/report/step unions
+  - LLM, blueprint, memory, worker, and token-tracking interfaces
+  - `BlueprintValidationError` and `BudgetExceededError`
+- Added [`lib/agents/llm-client.ts`](/home/jared/Nexus-Terminal/lib/agents/llm-client.ts) as the Docker-side dual-lane LLM wrapper:
+  - `getInteractiveLlmConfig()`
+  - `getBackgroundLlmConfig()`
+  - `getLlmBudgetConfig()`
+  - `callLlm(request, lane, overrides)`
+- Added [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts) with pure header/body auth helpers:
+  - `requireAgentAdmin()`
+  - `requireServiceAuth()`
+  - empty hardcoded Discord-to-Nexus mapping scaffold with full user-shape examples
+- Added the Phase 1 prompt stack under [`lib/agents/prompts/`](/home/jared/Nexus-Terminal/lib/agents/prompts):
+  - [`global-policy.md`](/home/jared/Nexus-Terminal/lib/agents/prompts/global-policy.md)
+  - [`orchestrator.md`](/home/jared/Nexus-Terminal/lib/agents/prompts/orchestrator.md)
+  - [`small-cap.md`](/home/jared/Nexus-Terminal/lib/agents/prompts/small-cap.md)
+  - [`swing-trader.md`](/home/jared/Nexus-Terminal/lib/agents/prompts/swing-trader.md)
+- Stopped at the Phase 1 boundary. No schema, migration, or database-apply work has started.
+
+### Validation
+
+- `npm run lint` ✅
+- `npx tsc --noEmit` ✅
+- `npm test` ✅
+
+### Next Step
+
+- Review Phase 1 contract choices, then proceed to Sprint 1 Phase 2: schema + generated migration artifacts.
+
+---
+
+## AEV2 Sprint 1 Implementation Guide
+
+> Generated: 2026-04-06 | Agent: Codex
+> Status: COMPLETE
+
+### Objective
+
+Review the Sprint 1 draft in `AEV2_PLAN.md`, resolve the contract ambiguities, and turn it into a commit-friendly implementation guide that names the exact files and order of operations.
+
+### Delivered
+
+- Reworked Sprint 1 in `AEV2_PLAN.md` into a three-phase implementation plan:
+  - Phase 1: `lib/agents` contract surface
+  - Phase 2: schema + generated Drizzle artifacts
+  - Phase 3: seed SQL + migration apply + final verification
+- Fixed the `AEV2-101` guidance so it no longer contradicts itself about whether `lib/agents/types.ts` should import from `lib/types.ts`.
+- Fixed the `AEV2-103` service-auth contract so it now matches `AGENTIC_EXPANSIONV2.md`:
+  - `requireServiceAuth(request, body)`
+  - returns `{ user, discordUserId }`
+  - hardcoded Discord mapping stores full user identities rather than only user IDs
+- Corrected the migration guidance to reflect real Drizzle outputs:
+  - `drizzle/0019_*.sql`
+  - `drizzle/meta/0019_snapshot.json`
+  - `drizzle/meta/_journal.json`
+- Clarified that the only intentional manual edit to the generated migration is the appended AEV2-204 seed block.
+
+### Validation
+
+- Final validation passed:
+  - `npm run lint` ✅
+  - `npx tsc --noEmit` ✅
+  - `npm test` ✅
+
+---
+
 ## Auth Skill Port
 
 > Generated: 2026-04-06 | Agent: Codex
