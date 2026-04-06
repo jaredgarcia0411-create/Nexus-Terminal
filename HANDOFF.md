@@ -6,6 +6,41 @@ Historical completed sections removed — use git history and `specs/` for archi
 
 ---
 
+## Codex Workflow Skill Ports
+
+> Generated: 2026-04-06 | Agent: Codex
+> Status: COMPLETE
+
+### Objective
+
+Review the repo's existing agent, skill, and custom-command assets, then port the repo-specific workflows that are worth preserving into Codex-friendly skill sources.
+
+### Delivered
+
+- Audited `.claude/agents/`, `.claude/commands/`, `.claude/skills/`, and `.opencode/agents/` for value and drift.
+- Chose not to port the generic executor-style agents because they duplicate Codex's built-in execution behavior.
+- Chose not to port stale command text that still references deleted Jarvis/Schwab systems or older auth/hook patterns.
+- Added repo-maintained Codex skill sources:
+  - `codex-skills/nexus-frontend-design/SKILL.md`
+  - `codex-skills/nexus-frontend-design/references/design-system.md`
+  - `codex-skills/nexus-handoff/SKILL.md`
+  - `codex-skills/nexus-workflow-audit/SKILL.md`
+- Copied the reviewed skill directories into `/home/jared/.codex/skills/` so future Codex sessions can auto-discover them.
+- Updated `AGENTS.md` so future sessions know where the repo-maintained Codex skill sources live.
+
+### Validation
+
+- Verified installed skill paths:
+  - `/home/jared/.codex/skills/nexus-frontend-design`
+  - `/home/jared/.codex/skills/nexus-handoff`
+  - `/home/jared/.codex/skills/nexus-workflow-audit`
+- Validation passed:
+  - `npm run lint` ✅
+  - `npx tsc --noEmit` ✅
+  - `npm test` ✅
+
+---
+
 ## AEV2 Sprint Doc Sync
 
 > Generated: 2026-04-06 | Agent: Codex

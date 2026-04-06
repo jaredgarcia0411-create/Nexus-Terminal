@@ -164,6 +164,889 @@ Note: no backfill SQL needed. `jarvis_conversations` and `jarvis_request_log` we
 
 **Deliverables:** agent types, dual-lane LLM client, auth helpers, prompt stack, migration 0019, ownership model.
 
+**Execution approach:** one worktree branch. Merge to main after exit gate passes.
+
+#### Story Execution Order
+
+Stories must be implemented in this exact order — each depends on the one before it.
+
+1. AEV2-101 (types)
+2. AEV2-102 (LLM client — imports types)
+3. AEV2-103 (auth — imports types)
+4. AEV2-104 (prompt files — standalone markdown)
+5. AEV2-105 (validation pass — confirms 101-104 compile together)
+6. AEV2-201 (schema tables — imports types for enum values)
+7. AEV2-202 (generate migration)
+8. AEV2-203 (apply migration)
+9. AEV2-204 (system-agent-user seed — in migration SQL)
+
+---
+
+#### AEV2-101 — Agent types (`lib/agents/types.ts`)
+
+**Create** `lib/agents/types.ts`. This is the single source of truth for all agent framework types. Sprint 2+ modules import from here — nothing else defines these types.
+
+```typescript
+// --- Enums & Unions ---
+
+export type AgentId = 'orchestrator' | 'small-cap-trader' | 'swing-trader';
+
+export type JobType =
+  | 'chat'
+  | 'research'
+  | 'macro-summary'
+  | 'pre-market-scan'
+  | 'momentum-scan'
+  | 'pattern-check';
+
+export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed';
+
+export type ReportStatus = 'published' | 'delivery_failed' | 'archived';
+
+export type StepType = 'code' | 'llm';
+
+export type LlmLane = 'interactive' | 'background';
+
+export type FailureClass =
+  | 'transient'
+  | 'input-quality'
+  | 'contract'
+  | 'dependency'
+  | 'policy';
+
+export type StepStatus =
+  | 'queued'
+  | 'running'
+  | 'validated'
+  | 'retrying'
+  | 'blocked'
+  | 'failed'
+  | 'escalated'
+  | 'completed';
+
+export type MemoryCategory =
+  | 'fact'
+  | 'thesis'
+  | 'watchlist'
+  | 'scan_param'
+  | 'performance'
+  | 'trade_insight'
+  | 'user_preference'
+  | 'strategy_note'
+  | 'macro_fact'
+  | 'pattern'
+  | 'sentiment';
+
+// --- V1 Agent IDs ---
+// Used to validate agent_id values at runtime.
+export const V1_AGENT_IDS: AgentId[] = [
+  'orchestrator',
+  'small-cap-trader',
+  'swing-trader',
+];
+
+// --- LLM Contracts ---
+
+export interface LlmRequest {
+  systemPrompt: string;
+  userMessage: string;
+  temperature?: number;
+  model?: string;
+}
+
+export interface LlmResponse {
+  content: string;
+  modelUsed: string;
+  inputTokens: number;
+  outputTokens: number;
+  durationMs: number;
+}
+
+export interface LlmLaneConfig {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  timeoutMs: number;
+}
+
+export interface LlmBudgetConfig {
+  dailyBudgetCents: number;
+  monthlyBudgetCents: number;
+  maxContextTokens: number;
+  maxScanCandidates: number;
+  maxPatternHistoryItems: number;
+  maxRetriesPerStep: number;
+}
+
+// --- Step & Blueprint Contracts ---
+
+export interface StepMetadata {
+  canRetry: boolean;
+  timeoutMs: number;
+  maxRepairAttempts: number;
+  sideEffect: boolean;
+  idempotencyKey?: string;
+  lane?: LlmLane;
+}
+
+export interface StepProvenance {
+  sourceIds: string[];
+  model?: string;
+  promptVersion?: string;
+  upstreamStepIds: string[];
+  timestamp: string;
+}
+
+export interface StepResult<T = unknown> {
+  status: StepStatus;
+  data: T;
+  artifacts?: Record<string, unknown>;
+  metrics: {
+    durationMs: number;
+    tokensUsed?: number;
+    attempt: number;
+  };
+  provenance: StepProvenance;
+  validator?: {
+    passed: boolean;
+    errors?: string[];
+    failureClass?: FailureClass;
+  };
+}
+
+export interface StepInput {
+  jobInput: unknown;
+  previousOutput: unknown;
+  memory: AgentMemoryRow[];
+  context: AgentContext;
+}
+
+export interface BlueprintStep {
+  name: string;
+  type: StepType;
+  metadata: StepMetadata;
+  // inputSchema and outputSchema are Zod schemas — typed as `unknown`
+  // here to avoid coupling types.ts to Zod. Concrete blueprints
+  // (Sprint 2+) cast these to ZodSchema at the call site.
+  inputSchema?: unknown;
+  outputSchema?: unknown;
+  run: (input: StepInput) => Promise<StepResult>;
+}
+
+export interface Blueprint {
+  id: string;
+  description: string;
+  steps: BlueprintStep[];
+}
+
+// --- Step Log ---
+
+export interface StepLogEntry {
+  step: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  startedAt: string;
+  completedAt?: string;
+  attempt: number;
+  validatorResult?: 'pass' | 'fail';
+  tokensUsed?: number;
+  errorClass?: string;
+}
+
+// --- Job & Report Row Shapes ---
+// These mirror the DB schema columns for in-code usage.
+// They are NOT Drizzle select types — those come from the schema.
+// These exist so queue/runtime code can pass typed objects without
+// importing Drizzle internals.
+
+export interface AgentJob {
+  id: string;
+  agentId: AgentId;
+  userId: string;
+  jobType: JobType;
+  status: JobStatus;
+  priority: number;
+  input: unknown;
+  result: unknown | null;
+  errorMessage: string | null;
+  progressNote: string | null;
+  stepLog: StepLogEntry[];
+  attempt: number;
+  maxAttempts: number;
+  nextRetryAt: Date | null;
+  lockedBy: string | null;
+  lockExpiresAt: Date | null;
+  lastHeartbeatAt: Date | null;
+  leaseVersion: number;
+  createdAt: Date;
+  startedAt: Date | null;
+  completedAt: Date | null;
+}
+
+export interface AgentReport {
+  id: string;
+  agentId: AgentId;
+  userId: string;
+  jobId: string | null;
+  reportType: string;
+  title: string;
+  summary: string | null;
+  reportJson: unknown;
+  status: ReportStatus;
+  deliveryChannel: string;
+  deliveredAt: Date | null;
+  deliveryError: string | null;
+  createdAt: Date;
+}
+
+// --- Memory ---
+
+export interface AgentMemoryRow {
+  id: string;
+  userId: string;
+  agentId: AgentId;
+  category: MemoryCategory;
+  key: string;
+  value: string;
+  valueJson: unknown | null;
+  source: string | null;
+  confidence: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  expiresAt: Date | null;
+}
+
+// --- Context ---
+
+export interface AgentContext {
+  recentTrades: unknown[];
+  macroSummary: unknown | null;
+  memory: AgentMemoryRow[];
+  conversationHistory: unknown[];
+}
+
+// --- Config ---
+
+export interface AgentConfig {
+  id: AgentId;
+  displayName: string;
+  llmLane: LlmLane;
+  modelOverride?: string;
+  temperature?: number;
+  capabilities: JobType[];
+  rolePromptPath: string;
+  blueprints: Record<string, Blueprint>;
+  blueprintResolver: (job: AgentJob) => Blueprint;
+}
+
+// --- Worker ---
+
+export interface WorkerConfig {
+  agentId: AgentId;
+  pollIntervalMs: number;
+}
+
+// --- Token Tracking ---
+
+export interface TokenTrackingEntry {
+  userId: string;
+  agentId: AgentId;
+  mode: string;
+  lane: LlmLane;
+  modelUsed: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  estimatedCostCents: number;
+  durationMs: number;
+  success: boolean;
+}
+
+// --- Errors ---
+
+export class BlueprintValidationError extends Error {
+  constructor(
+    public stepName: string,
+    public location: 'input' | 'output',
+    public zodError: unknown,
+  ) {
+    super(`Validation failed at ${stepName} (${location})`);
+  }
+}
+
+export class BudgetExceededError extends Error {
+  constructor(
+    public agentId: AgentId,
+    public limitType: 'daily' | 'monthly',
+  ) {
+    super(`${limitType} budget exceeded for ${agentId}`);
+  }
+}
+```
+
+**Acceptance criteria:**
+- File compiles: `npx tsc --noEmit`
+- No `any` casts
+- Imports nothing from `lib/types.ts` (agent types are self-contained)
+- Does not import Drizzle, Zod, or any runtime dependency — pure type definitions + two error classes
+
+**Validation:** `npx tsc --noEmit`
+
+---
+
+#### AEV2-102 — Dual-lane LLM client (`lib/agents/llm-client.ts`)
+
+**Create** `lib/agents/llm-client.ts`. This is the Docker-side LLM wrapper. It must NEVER import from `lib/llm-client.ts` (Vercel-side). They serve different runtimes with different env vars.
+
+The implementation mirrors the fetch/timeout/error pattern in `lib/llm-client.ts` but with two named lanes and token tracking in the response.
+
+```typescript
+import type { LlmRequest, LlmResponse, LlmLane, LlmLaneConfig, LlmBudgetConfig } from './types';
+```
+
+**Env vars consumed (Docker-side only):**
+
+| Variable | Default | Lane |
+|----------|---------|------|
+| `INTERACTIVE_LLM_API_KEY` | (required) | interactive |
+| `INTERACTIVE_LLM_API_BASE_URL` | `https://api.groq.com/openai/v1` | interactive |
+| `INTERACTIVE_LLM_MODEL` | `llama-3.3-70b-versatile` | interactive |
+| `INTERACTIVE_LLM_TIMEOUT_MS` | `30000` | interactive |
+| `BACKGROUND_LLM_API_KEY` | (required) | background |
+| `BACKGROUND_LLM_API_BASE_URL` | `https://api.groq.com/openai/v1` | background |
+| `BACKGROUND_LLM_MODEL` | `llama-3.3-70b-versatile` | background |
+| `BACKGROUND_LLM_TIMEOUT_MS` | `60000` | background |
+| `AGENT_DAILY_BUDGET_CENTS` | `500` | — |
+| `AGENT_MONTHLY_BUDGET_CENTS` | `10000` | — |
+| `AGENT_MAX_CONTEXT_TOKENS` | `32000` | — |
+| `AGENT_MAX_SCAN_CANDIDATES` | `20` | — |
+| `AGENT_MAX_PATTERN_HISTORY` | `50` | — |
+| `AGENT_MAX_RETRIES_PER_STEP` | `2` | — |
+
+**Exports:**
+
+1. `getInteractiveLlmConfig(): LlmLaneConfig` — reads `INTERACTIVE_LLM_*` env vars
+2. `getBackgroundLlmConfig(): LlmLaneConfig` — reads `BACKGROUND_LLM_*` env vars
+3. `getLlmBudgetConfig(): LlmBudgetConfig` — reads `AGENT_*` budget env vars
+4. `callLlm(request: LlmRequest, lane: LlmLane, overrides?: Partial<LlmLaneConfig>): Promise<LlmResponse>` — makes the API call
+
+**`callLlm` behavior:**
+
+1. Resolve config: lane determines which `get*LlmConfig()` to call, `overrides` merge on top, `request.model` overrides the resolved model
+2. Build URL: `${config.baseUrl}/chat/completions` (base URL ends at `/v1`, function appends the path)
+3. `fetch()` with `AbortController` timeout (same pattern as `lib/llm-client.ts`)
+4. Parse response: extract `choices[0].message.content`, `usage.prompt_tokens`, `usage.completion_tokens`
+5. Return `LlmResponse` with `content`, `modelUsed`, `inputTokens`, `outputTokens`, `durationMs`
+6. On failure: throw with status code and truncated error detail (same `readFailureDetail` pattern)
+7. No automatic retry in this client — retry logic lives in the blueprint runner (Sprint 2)
+
+**Acceptance criteria:**
+- Compiles with `npx tsc --noEmit`
+- Only imports from `./types` (no Drizzle, no `lib/llm-client.ts`)
+- Does not export streaming — Docker agents don't stream
+- Throws if required API key env var is missing
+- `callLlm()` returns token counts from the API response `usage` field
+
+**Validation:** `npx tsc --noEmit && npm run lint`
+
+---
+
+#### AEV2-103 — Auth helpers (`lib/agents/admin.ts`)
+
+**Create** `lib/agents/admin.ts`. Two auth functions for the API routes.
+
+```typescript
+import type { AgentId } from './types';
+```
+
+**Exports:**
+
+1. `requireAgentAdmin(request: Request): Response | null`
+2. `requireServiceAuth(request: Request): { userId: string; discordUserId: string } | Response`
+
+**`requireAgentAdmin` behavior:**
+
+1. Read `x-agent-admin-key` header from request
+2. Compare against `process.env.AGENT_ADMIN_KEY`
+3. If missing env var: return `Response.json({ error: 'Admin auth not configured' }, { status: 500 })`
+4. If header missing or mismatch: return `Response.json({ error: 'Unauthorized' }, { status: 401 })`
+5. If match: return `null` (success — caller proceeds)
+
+**`requireServiceAuth` behavior:**
+
+1. Read `x-agent-service-key` header from request
+2. Compare against `process.env.AGENT_SERVICE_KEY`
+3. If missing env var: return `Response.json({ error: 'Service auth not configured' }, { status: 500 })`
+4. If header missing or mismatch: return `Response.json({ error: 'Unauthorized' }, { status: 401 })`
+5. Parse request body, extract `discord_user_id`
+6. If `discord_user_id` missing: return `Response.json({ error: 'discord_user_id is required' }, { status: 400 })`
+7. Look up `discord_user_id` in the hardcoded V1 mapping (see below)
+8. If not found: return `Response.json({ error: 'Unknown Discord user' }, { status: 403 })`
+9. If found: return `{ userId, discordUserId }`
+
+**Hardcoded V1 Discord→Nexus mapping:**
+
+```typescript
+// V1 hardcoded mapping — replace placeholder values with real IDs.
+// This avoids a DB table for 2-3 users in V1.
+const DISCORD_USER_MAP: Record<string, string> = {
+  // 'discord-user-id-1': 'nexus-user-id-1',
+  // 'discord-user-id-2': 'nexus-user-id-2',
+};
+```
+
+Leave the map empty with commented examples. You'll fill it in before Sprint 4 (Discord bot).
+
+**Acceptance criteria:**
+- Compiles with `npx tsc --noEmit`
+- 400 for missing `discord_user_id`, 401 for invalid key, 403 for unknown Discord user
+- Does not import NextAuth, Drizzle, or any DB code — pure header/body validation
+- `requireServiceAuth` reads the request body — note this means the body can only be read once. Document this: callers must use the returned parsed body, not re-read `request.json()`.
+
+**Important implementation note:** Since `requireServiceAuth` needs to read the request body to extract `discord_user_id`, it should accept either `Request` or a pre-parsed body object. The recommended approach: accept `(request: Request, body: { discord_user_id?: string })` so the caller parses the body first and passes it in. This avoids double-reading the body stream.
+
+**Validation:** `npx tsc --noEmit && npm run lint`
+
+---
+
+#### AEV2-104 — Prompt stack files
+
+**Create** four markdown files under `lib/agents/prompts/`:
+
+1. **`lib/agents/prompts/global-policy.md`** — Layer 1 (shared by all agents)
+
+Content skeleton:
+
+```markdown
+# Global Agent Policy
+
+## Authority Order
+1. This policy overrides all other instructions.
+2. The Orchestrator owns all routing decisions.
+3. Specialists only process — they never route or delegate.
+
+## Evidence Rules
+- Every factual claim must cite its source (Massive API timestamp, AskEdgar filing ID, etc.).
+- LLM steps must include `confidence`, `evidenceIds`, and `insufficientEvidence` in output.
+- If evidence is insufficient, say so — do not fabricate data.
+
+## Output Rules
+- Respond in structured JSON matching the step's output schema.
+- Do not include markdown formatting in JSON string values.
+- Do not include conversational filler ("Sure!", "Great question!", etc.).
+
+## Memory Rules
+- LLM steps may propose memory write candidates but never write directly.
+- All memory writes are validated and persisted by a subsequent code step.
+
+## Safety
+- Never execute trades or place orders.
+- Never access external systems beyond declared API endpoints.
+- Never expose API keys, tokens, or internal system details in output.
+```
+
+2. **`lib/agents/prompts/orchestrator.md`** — Layer 2
+
+```markdown
+# Orchestrator
+
+You are the Orchestrator for Nexus Terminal. You route user requests to the appropriate specialist agent or handle them directly.
+
+## Routing Rules
+- `/research TICKER` → Small Cap Trader
+- `/swing TICKER` or `/momentum TICKER` → Swing Trader
+- Market cap < $200M AND pre-market gain >= 50% → Small Cap Trader
+- Momentum/trending/MDR/parabolic topic → Swing Trader
+- Simple factual lookup → handle directly
+- Ambiguous or mixed-domain → handle directly
+
+## Fallback Behavior
+- If the target specialist is offline or degraded, handle the request yourself and note the limitation.
+
+## Macro Briefing
+- Daily macro summaries synthesize headline data into a structured briefing.
+- Focus on market-moving events, sector rotation, and key economic data.
+- Keep it concise — traders read this before the bell.
+```
+
+3. **`lib/agents/prompts/small-cap.md`** — Layer 2
+
+```markdown
+# Small Cap Trader (Short-Selling Specialist)
+
+You are a professional short seller and research analyst specializing in small-cap dilution plays.
+
+## Core Questions
+For every stock you analyze, answer:
+1. Has this company issued shares frequently in the past?
+2. Can they issue today?
+
+## Filing Signal Hierarchy
+- **Highest risk:** Active ATM + recent 424B supplements = currently selling shares
+- **Very high risk:** Active S-3 shelf with remaining capacity + price at/above shelf price
+- **High risk:** Recent 8-K announcing new offering or private placement
+- **Medium risk:** Expired shelf (must re-register — delay, not safety)
+- **Lower risk:** No active registration (needs S-1 or new S-3, 4-6 week delay)
+
+## Volume-Offering Correlation
+When a small-cap has unusual pre-market volume AND a history of filing 424B supplements on high-volume days, the probability of an offering attempt that session is substantially elevated. Flag this explicitly.
+
+## Voice
+Write like a seasoned short seller, not a chatbot. Be direct, data-driven, and confident. Make a call and back it with evidence. No hedging ("you might consider"), no filler. Use second person ("This company has filed three prospectus supplements in 90 days. They will sell into this move.").
+```
+
+4. **`lib/agents/prompts/swing-trader.md`** — Layer 2
+
+```markdown
+# Swing Trader
+
+You specialize in multi-day runners (MDR), parabolic setups, and momentum patterns. Your job is to identify stocks going parabolic over multiple days and extract LONG entry strategies.
+
+## MDR Pattern Recognition
+- Look for 50%+ multi-day gains over 3-5 days
+- Compare volume profile, float, and catalyst type against historical patterns
+- Score MDR similarity (0-100) against known setups
+- Identify continuation probability, expected move magnitude, key levels
+
+## Momentum Indicators
+- RSI > 70 and rising = momentum confirmation
+- Volume surge > 3x 20-day average = institutional interest
+- Price above EMA(9) and EMA(21) = trend intact
+- Breakout above prior day's high on volume = continuation signal
+
+## Pattern Check Rules
+- Compare current price action against entry/stop/target levels
+- Classify as BREAKOUT / EXHAUSTION / CONTINUATION / STOPPED
+- Recommend HOLD / ADD / TRIM / EXIT / WATCH with reasoning
+
+## Voice
+Write like a momentum trader. Focus on levels, patterns, and catalysts. Be specific about entry/exit prices and invalidation points.
+```
+
+**Acceptance criteria:**
+- All four files exist at the specified paths
+- Content covers the domain knowledge from AGENTIC_EXPANSIONV2.md sections 6, 22, 23, 24
+- No code in these files — they are pure prompt text for the LLM
+
+**Validation:** Verify files exist: `ls lib/agents/prompts/`
+
+---
+
+#### AEV2-105 — Lock prompt/policy rules
+
+**This is a validation-only story.** No new code — just confirm everything from 101-104 works together.
+
+**Steps:**
+
+1. Run `npx tsc --noEmit` — must pass with the new files
+2. Run `npm run lint` — must pass
+3. Verify imports work: the LLM client imports from types, admin imports from types
+4. Verify prompt files exist and are non-empty
+5. Spot-check: `lib/agents/types.ts` has no `any` casts, no Drizzle imports, no cross-imports to `lib/llm-client.ts`
+
+**Validation:** `npm run lint && npx tsc --noEmit`
+
+---
+
+#### AEV2-201 — Agent framework tables (`lib/db/schema.ts`)
+
+**Add** 9 new tables to the bottom of `lib/db/schema.ts`, after the existing `askedgarCache` table. Follow the existing patterns exactly (use `pgTable`, same timestamp style, same index style).
+
+**Table 1: `agent_registry`**
+
+```typescript
+export const agentRegistry = pgTable('agent_registry', {
+  id: text('id').primaryKey(),
+  displayName: text('display_name').notNull(),
+  description: text('description').notNull(),
+  status: text('status').notNull().default('offline'),
+  capabilities: jsonb('capabilities').notNull().default([]),
+  config: jsonb('config').notNull().default({}),
+  lastHeartbeat: timestamp('last_heartbeat', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+```
+
+No extra indexes — max 3 rows.
+
+**Table 2: `agent_jobs`**
+
+```typescript
+export const agentJobs = pgTable('agent_jobs', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agentRegistry.id),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  jobType: text('job_type').notNull(),
+  status: text('status').notNull().default('queued'),
+  priority: integer('priority').notNull().default(0),
+  input: jsonb('input').notNull(),
+  result: jsonb('result'),
+  errorMessage: text('error_message'),
+  progressNote: text('progress_note'),
+  stepLog: jsonb('step_log').default([]),
+  attempt: integer('attempt').notNull().default(0),
+  maxAttempts: integer('max_attempts').notNull().default(3),
+  nextRetryAt: timestamp('next_retry_at', { withTimezone: true }),
+  lockedBy: text('locked_by'),
+  lockExpiresAt: timestamp('lock_expires_at', { withTimezone: true }),
+  lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
+  leaseVersion: integer('lease_version').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+}, (table) => [
+  index('idx_agent_jobs_poll').on(table.agentId, table.priority, table.createdAt),
+  index('idx_agent_jobs_user_status').on(table.userId, table.status, table.createdAt),
+  index('idx_agent_jobs_stale').on(table.status, table.lockExpiresAt),
+]);
+```
+
+Note: Drizzle does not support partial indexes (`WHERE status = 'queued'`) natively. The indexes above are full indexes on those columns. The `WHERE` clause filtering happens at query time via `FOR UPDATE SKIP LOCKED`. This is acceptable for V1 volume.
+
+**Table 3: `agent_reports`**
+
+```typescript
+export const agentReports = pgTable('agent_reports', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agentRegistry.id),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  jobId: text('job_id').references(() => agentJobs.id, { onDelete: 'set null' }),
+  reportType: text('report_type').notNull(),
+  title: text('title').notNull(),
+  summary: text('summary'),
+  reportJson: jsonb('report_json').notNull(),
+  status: text('status').notNull().default('published'),
+  deliveryChannel: text('delivery_channel').notNull().default('discord'),
+  deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+  deliveryError: text('delivery_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('idx_agent_reports_user_status').on(table.userId, table.status, table.createdAt),
+  index('idx_agent_reports_agent').on(table.agentId, table.createdAt),
+  index('idx_agent_reports_job').on(table.jobId),
+]);
+```
+
+**Table 4: `agent_conversations`**
+
+```typescript
+export const agentConversations = pgTable('agent_conversations', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  agentId: text('agent_id').notNull().references(() => agentRegistry.id),
+  sessionId: text('session_id').notNull(),
+  role: text('role').notNull(),
+  content: text('content').notNull(),
+  channel: text('channel').notNull().default('web'),
+  contextSnapshot: jsonb('context_snapshot'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('idx_agent_conversations_user_session').on(table.userId, table.sessionId, table.createdAt),
+  index('idx_agent_conversations_agent').on(table.agentId, table.createdAt),
+]);
+```
+
+**Table 5: `agent_request_log`**
+
+```typescript
+export const agentRequestLog = pgTable('agent_request_log', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  agentId: text('agent_id').notNull().references(() => agentRegistry.id),
+  mode: text('mode').notNull(),
+  lane: text('lane').notNull().default('background'),
+  modelUsed: text('model_used'),
+  inputTokens: integer('input_tokens').notNull().default(0),
+  outputTokens: integer('output_tokens').notNull().default(0),
+  totalTokens: integer('total_tokens').notNull().default(0),
+  estimatedCostCents: integer('estimated_cost_cents').default(0),
+  durationMs: integer('duration_ms').notNull().default(0),
+  success: integer('success').notNull().default(1),
+  sourceCount: integer('source_count').notNull().default(0),
+  chunkCount: integer('chunk_count').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('idx_agent_request_log_user_created').on(table.userId, table.createdAt),
+  index('idx_agent_request_log_agent_created').on(table.agentId, table.createdAt),
+  index('idx_agent_request_log_created').on(table.createdAt),
+]);
+```
+
+**Table 6: `agent_memory_v2`**
+
+```typescript
+export const agentMemoryV2 = pgTable('agent_memory_v2', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  agentId: text('agent_id').notNull().references(() => agentRegistry.id),
+  category: text('category').notNull(),
+  key: text('key').notNull(),
+  value: text('value').notNull(),
+  valueJson: jsonb('value_json'),
+  source: text('source'),
+  confidence: text('confidence'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+}, (table) => [
+  unique('agent_memory_v2_user_agent_category_key').on(table.userId, table.agentId, table.category, table.key),
+  index('agent_memory_v2_user_agent_category_idx').on(table.userId, table.agentId, table.category),
+]);
+```
+
+**Table 7: `agent_scheduled_runs`**
+
+```typescript
+export const agentScheduledRuns = pgTable('agent_scheduled_runs', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agentRegistry.id),
+  triggerType: text('trigger_type').notNull(),
+  tradingDate: text('trading_date').notNull(),
+  status: text('status').notNull().default('pending'),
+  jobId: text('job_id').references(() => agentJobs.id),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  skipReason: text('skip_reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  unique('agent_scheduled_runs_agent_trigger_date').on(table.agentId, table.triggerType, table.tradingDate),
+  index('idx_scheduled_runs_status').on(table.agentId, table.status, table.tradingDate),
+]);
+```
+
+Note: `tradingDate` uses `text` type (not `date`) to match the existing repo pattern where dates are stored as `'YYYY-MM-DD'` strings (see `trades.date`).
+
+**Table 8: `agent_step_effects`**
+
+```typescript
+export const agentStepEffects = pgTable('agent_step_effects', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id').notNull().references(() => agentJobs.id, { onDelete: 'cascade' }),
+  stepName: text('step_name').notNull(),
+  effectType: text('effect_type').notNull(),
+  idempotencyKey: text('idempotency_key').notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  unique('agent_step_effects_idempotency').on(table.idempotencyKey),
+]);
+```
+
+**Table 9: `agent_job_checkpoints`**
+
+```typescript
+export const agentJobCheckpoints = pgTable('agent_job_checkpoints', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id').notNull().references(() => agentJobs.id, { onDelete: 'cascade' }),
+  stepIndex: integer('step_index').notNull(),
+  stepName: text('step_name').notNull(),
+  checkpointJson: jsonb('checkpoint_json').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  unique('agent_job_checkpoints_job_step').on(table.jobId, table.stepIndex),
+  index('idx_agent_job_checkpoints_job_step').on(table.jobId, table.stepIndex),
+]);
+```
+
+**Acceptance criteria:**
+- All 9 tables added to `lib/db/schema.ts`
+- All FK references resolve (agent_registry → users, agent_jobs → agent_registry + users, etc.)
+- `npx tsc --noEmit` passes
+- `npm run lint` passes
+
+**Validation:** `npm run lint && npx tsc --noEmit`
+
+---
+
+#### AEV2-202 — Generate migration 0019
+
+**Run:** `npm run db:generate`
+
+This produces `drizzle/0019_*.sql`. Review the generated SQL before proceeding:
+
+1. Verify all 9 `CREATE TABLE` statements are present
+2. Verify foreign key constraints match the schema
+3. Verify indexes are created
+4. Verify unique constraints are created
+5. No `DROP TABLE` or `ALTER TABLE` statements for existing tables — this migration only adds new tables
+
+**Do not modify the generated migration SQL** unless Drizzle produces incorrect output.
+
+**Validation:** `ls drizzle/0019_*` shows exactly one new file
+
+---
+
+#### AEV2-203 — Apply migration 0019
+
+**Run:** `npm run db:migrate`
+
+After migration completes, verify:
+
+1. Migration exits cleanly (exit code 0)
+2. Run `npm run db:generate` again — it should report no changes needed (schema in sync)
+
+**Validation:** `npm run db:migrate` exits 0, then `npm run db:generate` reports no pending changes
+
+---
+
+#### AEV2-204 — Establish system-agent-user ownership
+
+The migration (0019) should include an `INSERT` for the system agent user. Since Drizzle's `db:generate` only produces DDL (not DML), we need to append the seed data manually to the migration file.
+
+**After AEV2-202 generates the migration file,** append this SQL to the end of `drizzle/0019_*.sql`:
+
+```sql
+-- Seed: system-agent-user for autonomous job/report ownership
+INSERT INTO users (id, email, name)
+VALUES ('system-agent-user', 'system@nexus.internal', 'System Agent')
+ON CONFLICT (id) DO NOTHING;
+
+-- Seed: V1 agent registry rows
+INSERT INTO agent_registry (id, display_name, description, status, capabilities)
+VALUES
+  ('orchestrator', 'Orchestrator', 'Routes requests, runs macro cron, oversees memory', 'offline', '["chat", "macro-summary"]'),
+  ('small-cap-trader', 'Small Cap Trader', 'Short-selling specialist — dilution analysis and pre-market scans', 'offline', '["research", "pre-market-scan"]'),
+  ('swing-trader', 'Swing Trader', 'MDR pattern recognition, momentum scans, parabolic setup alerts', 'offline', '["research", "momentum-scan", "pattern-check"]')
+ON CONFLICT (id) DO NOTHING;
+```
+
+**Why in the migration:** These are foundational rows that the entire system depends on. The `agent_jobs.agent_id` FK references `agent_registry.id`, so the registry rows must exist before any job can be created. The `system-agent-user` row must exist before any autonomous job can set `user_id = 'system-agent-user'`. Putting them in the migration guarantees they exist the moment the schema is applied — no startup race condition.
+
+**Acceptance criteria:**
+- `system-agent-user` row exists in `users` after migration
+- Three agent registry rows exist after migration
+- `ON CONFLICT DO NOTHING` makes re-running safe
+
+**Validation:** After `npm run db:migrate`, verify with Drizzle Studio (`npm run db:studio`) or a direct query that the rows exist.
+
+---
+
+#### Sprint 1 Exit Gate
+
+All of the following must pass before merging to main:
+
+```bash
+npm run lint           # ESLint clean
+npx tsc --noEmit       # TypeScript clean
+npm test               # All existing tests still pass
+```
+
+**File inventory after Sprint 1:**
+
+| File | Status |
+|------|--------|
+| `lib/agents/types.ts` | NEW |
+| `lib/agents/llm-client.ts` | NEW |
+| `lib/agents/admin.ts` | NEW |
+| `lib/agents/prompts/global-policy.md` | NEW |
+| `lib/agents/prompts/orchestrator.md` | NEW |
+| `lib/agents/prompts/small-cap.md` | NEW |
+| `lib/agents/prompts/swing-trader.md` | NEW |
+| `lib/db/schema.ts` | MODIFIED (9 tables added) |
+| `drizzle/0019_*.sql` | NEW (generated + seed SQL appended) |
+
+**What did NOT change:** No existing files were modified except `lib/db/schema.ts` (additive only). No existing tests were changed. No new dependencies added.
+
 ---
 
 ### Sprint 2 — Queue and Worker Core
