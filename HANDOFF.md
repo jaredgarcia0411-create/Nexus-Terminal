@@ -6,6 +6,35 @@ Historical completed sections removed — use git history and `specs/` for archi
 
 ---
 
+## AEV2 Sprint Doc Sync
+
+> Generated: 2026-04-06 | Agent: Codex
+> Status: COMPLETE
+
+### Objective
+
+Make `AEV2_PLAN.md` the authoritative sprint-execution document, synchronize `AGENTIC_EXPANSIONV2.md` to current repo reality, and trim stale execution detail so both docs are safe to use for worktree planning.
+
+### Delivered
+
+- Declared `AEV2_PLAN.md` the source of truth for sprint execution, sequencing, and launch gates.
+- Tightened the sprint plan so the initial worktree critical path is EPIC-1 through EPIC-4, with `AEV2-007` and `AEV2-311` explicitly moved to a parallel seed-data track.
+- Strengthened key acceptance criteria for agent auth, lease fencing, checkpoints, idempotent Discord delivery, service-route contracts, and launch-hardening work.
+- Raised the baseline validation bar in the plan to match repo expectations: `npm run lint`, `npx tsc --noEmit`, and `npm test`.
+- Converted `AGENTIC_EXPANSIONV2.md` into an architecture/reference document synced to current repo reality.
+- Removed stale migration/backfill guidance, old Jarvis/Markets cleanup phases, duplicate build-order/file-inventory sections, and volatile prompt/seed workflow detail that now belongs in `AEV2_PLAN.md` or implementation files.
+- Added clear current-reality notes to `AGENTIC_EXPANSIONV2.md` so planned `lib/agents/*`, `/api/agents/*`, and service runtime files are distinguished from code that already exists today.
+
+### Validation
+
+- Documentation review completed against current repo state, `HANDOFF.md`, and active service/env files.
+- Validation passed:
+  - `npm run lint` ✅
+  - `npx tsc --noEmit` ✅
+  - `npm test` ✅
+
+---
+
 ## Test Quality Quick Wins
 
 > Generated: 2026-04-06 | Agent: Remi
