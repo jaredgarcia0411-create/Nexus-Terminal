@@ -74,20 +74,12 @@ describe('GET /api/market-data', () => {
   });
 
   it('returns parsed candle payload on success', async () => {
-    mockFetchResponse(MASSIVE_RESPONSE);
+    const fetchSpy = mockFetchResponse(MASSIVE_RESPONSE);
 
     const response = await GET(
       new Request('http://localhost/api/market-data?symbol=aapl&startDate=1700000000000&endDate=1700000300000'),
     );
     const payload = await response.json();
-
-    const calledUrl = new URL((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
-    expect(calledUrl.origin).toBe('https://api.massive.com');
-    expect(calledUrl.pathname).toContain('/v2/aggs/ticker/AAPL/range/');
-    expect(calledUrl.searchParams.get('apiKey')).toBe('test-key');
-    expect(calledUrl.searchParams.get('adjusted')).toBe('true');
-    expect(calledUrl.searchParams.get('sort')).toBe('asc');
-    expect(calledUrl.searchParams.get('limit')).toBe('50000');
 
     expect(response.status).toBe(200);
     expect(payload).toEqual({
@@ -111,6 +103,7 @@ describe('GET /api/market-data', () => {
         },
       ],
     });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
   it('accepts includePrePost without forwarding it upstream', async () => {

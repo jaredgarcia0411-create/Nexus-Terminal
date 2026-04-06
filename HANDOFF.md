@@ -6,38 +6,43 @@ Historical completed sections removed — use git history and `specs/` for archi
 
 ---
 
-## Research Page Debug — AskEdgar Empty Snapshot Handling
+## Test Quality Quick Wins
 
 > Generated: 2026-04-06 | Agent: Remi
 > Status: COMPLETE
 
 ### Objective
 
-Fix the Research page so valid ticker lookups do not silently render misleading `No data` states when AskEdgar returns full-failure or rate-limited responses. Surface the real failure to the user, preserve partial data when available, and restore company header stats from the correct endpoint when screener data is sparse.
+Implement the critical test-isolation fix and all audit quick wins: add DOM test support with `@testing-library/react` + `jsdom`, replace brittle component smoke tests with behavior tests, add direct coverage for the untested AskEdgar/TradingView routes, and reduce implementation-detail assertions in the existing server/route tests.
 
 ### Delivered
 
-- Unusable AskEdgar snapshots now stay server-side errors instead of being normalized into misleading empty `No data` Research views.
-- Partial AskEdgar success still returns `200` and now keeps warnings visible in the Research UI.
-- Company header share-structure stats now fall back to `float-outstanding` when screener data is sparse.
-- AskEdgar `429` parsing now reads nested upstream retry metadata (`error.details.retry_after`) and preserves upstream rate-limit message/code in warnings.
-- Full ticker-wide AskEdgar `429` failures now cache in `askedgar_cache` for the retry window instead of immediately hammering the API again.
-- Concurrent same-ticker `getCachedTickerData()` requests now dedupe in-flight work per process so one cache miss does not trigger duplicate 16-endpoint fanouts.
-- Added regression coverage in `__tests__/askedgar-client.test.ts` and `__tests__/askedgar-snapshot-route.test.ts` for unusable snapshots, route error handling, partial warnings, and header fallback.
-- Validation passed: `npm run lint`, `npx tsc --noEmit`, `npm test`.
-- Manual result: Research page data is loading again.
+- Added `@testing-library/react` and `jsdom`, updated `package-lock.json`, and enabled conditional Testing Library cleanup in `vitest.setup.ts` without switching the global Vitest environment to jsdom.
+- Fixed the AskEdgar client mock-isolation issue by clearing mocks before module restore/reset in `__tests__/askedgar-client.test.ts`.
+- Added direct route coverage for:
+  - `GET /api/askedgar/lookup`
+  - `POST /api/askedgar/tldr`
+  - `GET /api/tradingview/gainers`
+- Replaced the static markup smoke tests for `ResearchTab` and `ChartsTab` with jsdom behavior tests focused on visible user interactions.
+- Reduced implementation-detail coupling in `__tests__/server-db-utils.test.ts` and simplified the success-path assertions in `__tests__/market-data-route.test.ts`.
+- Ran focused Vitest coverage for every touched test file while building.
 
-### Follow-Up Next Session
+### Validation
 
-- If AskEdgar `429`s still show up in production bursts, add cross-instance/shared locking or shared negative-cache coordination so Vercel instances do not stampede the same ticker.
-
-### Non-Goals / Guardrails
-
-- Do not move AskEdgar calls client-side.
-- Do not bypass `getCachedTickerData()`.
-- Do not change TradingView gainers logic as part of this fix.
-- Do not cache all-error AskEdgar responses.
-- Do not refactor `ResearchReportSections.tsx` beyond consuming better upstream data.
+- Focused test runs completed for:
+  - `__tests__/askedgar-client.test.ts`
+  - `__tests__/askedgar-lookup-route.test.ts`
+  - `__tests__/askedgar-tldr-route.test.ts`
+  - `__tests__/tradingview-gainers-route.test.ts`
+  - `__tests__/research-tab.test.tsx`
+  - `__tests__/charts-tab.test.ts`
+  - `__tests__/server-db-utils.test.ts`
+  - `__tests__/market-data-route.test.ts`
+- Final validation passed:
+  - `npm run lint` ✅
+  - `npx tsc --noEmit` ✅
+  - `npm test` ✅
+- Manual visual-check items: none performed; this was a test-only spec.
 
 ---
 

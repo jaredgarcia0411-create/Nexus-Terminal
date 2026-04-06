@@ -64,6 +64,7 @@ function createAskedgarCacheDb(initialRows: AskedgarCacheRow[] = []) {
 
 describe('askedgar client', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.restoreAllMocks();
     vi.resetModules();
     getDbMock.mockReset();

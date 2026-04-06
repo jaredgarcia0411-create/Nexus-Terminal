@@ -30,23 +30,36 @@ function createDb({
     from: selectFrom,
   }));
 
+  const state = {
+    lastUpdatedUser: null as Partial<DbRow> | null,
+    lastInsertedUser: null as DbRow | null,
+    lastConflictUpdateArgs: null as { target: unknown; set: Partial<DbRow> } | null,
+  };
+
   const updateWhere = vi.fn().mockResolvedValue(undefined);
-  const updateSet = vi.fn(() => ({
-    where: updateWhere,
-  }));
+  const updateSet = vi.fn((value: Partial<DbRow>) => {
+    state.lastUpdatedUser = value;
+    return {
+      where: updateWhere,
+    };
+  });
   const update = vi.fn(() => ({
     set: updateSet,
   }));
 
-  const conflictUpdate = vi.fn(async () => {
+  const conflictUpdate = vi.fn(async (value: { target: unknown; set: Partial<DbRow> }) => {
+    state.lastConflictUpdateArgs = value;
     if (insertError) {
       throw insertError;
     }
     return undefined;
   });
-  const insertValues = vi.fn(() => ({
-    onConflictDoUpdate: conflictUpdate,
-  }));
+  const insertValues = vi.fn((value: DbRow) => {
+    state.lastInsertedUser = value;
+    return {
+      onConflictDoUpdate: conflictUpdate,
+    };
+  });
   const insert = vi.fn(() => ({
     values: insertValues,
   }));
@@ -55,23 +68,19 @@ function createDb({
     select,
     update,
     insert,
+    _state: state,
     _mocks: {
       whereSelect,
-      updateSet,
       updateWhere,
-      insertValues,
-      conflictUpdate,
     },
   } as unknown as {
     select: typeof select;
     update: typeof update;
     insert: typeof insert;
+    _state: typeof state;
     _mocks: {
       whereSelect: typeof whereSelect;
-      updateSet: typeof updateSet;
       updateWhere: typeof updateWhere;
-      insertValues: typeof insertValues;
-      conflictUpdate: typeof conflictUpdate;
     };
   };
 }
@@ -96,12 +105,17 @@ describe('ensureUser', () => {
     expect(db.select).toHaveBeenCalledTimes(1);
     expect(db.insert).not.toHaveBeenCalled();
     expect(db.update).toHaveBeenCalledTimes(1);
-    expect(db._mocks.updateSet).toHaveBeenCalledWith({
+    expect(db._state.lastUpdatedUser).toEqual({
       name: authUser.name,
       picture: authUser.picture,
     });
     expect(authUser.id).toBe('user-1');
-    expect(ensured.id).toBe('user-1');
+    expect(ensured).toEqual({
+      id: 'user-1',
+      email: authUser.email,
+      name: authUser.name,
+      picture: authUser.picture,
+    });
   });
 
   it('inserts a user when no match exists', async () => {
@@ -113,13 +127,13 @@ describe('ensureUser', () => {
 
     expect(db.select).toHaveBeenCalledTimes(1);
     expect(db.insert).toHaveBeenCalledTimes(1);
-    expect(db._mocks.insertValues).toHaveBeenCalledWith({
+    expect(db._state.lastInsertedUser).toEqual({
       id: authUser.id,
       email: authUser.email,
       name: authUser.name,
       picture: authUser.picture,
     });
-    expect(db._mocks.conflictUpdate).toHaveBeenCalledWith({
+    expect(db._state.lastConflictUpdateArgs).toEqual({
       target: users.id,
       set: {
         name: authUser.name,
@@ -127,7 +141,7 @@ describe('ensureUser', () => {
       },
     });
     expect(db.update).not.toHaveBeenCalled();
-    expect(ensured.id).toBe('user-1');
+    expect(ensured).toEqual(authUser);
   });
 
   it('falls back to canonical row if insert races on unique email', async () => {

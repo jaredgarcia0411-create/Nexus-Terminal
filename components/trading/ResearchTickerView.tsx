@@ -23,10 +23,12 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
   const [data, setData] = useState<ResearchSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const fetchData = useCallback(async (selectedTicker: string) => {
     setLoading(true);
     setError(null);
+    setStatusMessage(null);
     onCompanyName?.(null);
     try {
       const response = await fetch(`/api/askedgar/snapshot?ticker=${encodeURIComponent(selectedTicker)}`);
@@ -35,6 +37,19 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
         const payload = await response.json().catch(() => null) as SnapshotErrorResponse | null;
         const message = payload?.error?.trim() || `Lookup failed: ${response.status}`;
         const retryHint = payload?.retryHint?.trim();
+
+        if (response.status === 429) {
+          setData(null);
+          setStatusMessage(retryHint ? `AskEdgar is rate limited right now. ${retryHint}` : 'AskEdgar is rate limited right now. Please retry shortly.');
+          return;
+        }
+
+        if (response.status === 503) {
+          setData(null);
+          setStatusMessage('AskEdgar data is not available for this ticker right now.');
+          return;
+        }
+
         throw new Error(retryHint ? `${message} ${retryHint}` : message);
       }
 
@@ -43,6 +58,7 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
       onCompanyName?.(result.companyName ?? null);
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : 'Lookup failed');
+      setStatusMessage(null);
       setData(null);
     } finally {
       setLoading(false);
@@ -65,6 +81,10 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
     return <div className="flex h-full items-center justify-center text-sm text-rose-400">{error}</div>;
   }
 
+  if (statusMessage) {
+    return <div className="flex h-full items-center justify-center text-sm text-zinc-500">{statusMessage}</div>;
+  }
+
   if (!data) return null;
 
   return (
@@ -78,18 +98,6 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
           <ResearchChart ticker={ticker} />
         </div>
       </div>
-
-      {/* Report sections below chart — always visible */}
-      {data.warnings.length > 0 ? (
-        <div className="border-b border-amber-500/20 bg-amber-500/5 px-3 py-2 text-sm text-amber-200">
-          <p className="font-medium">AskEdgar warnings</p>
-          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-amber-100/90">
-            {data.warnings.map((warning) => (
-              <li key={warning}>{warning}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
 
       <ResearchReportSections ticker={ticker} data={data} />
 
