@@ -8,6 +8,12 @@ import ResearchReportSections from '@/components/trading/ResearchReportSections'
 import ResearchTldr from '@/components/trading/ResearchTldr';
 import type { ResearchSnapshot } from '@/lib/types';
 
+interface SnapshotErrorResponse {
+  error?: string;
+  warnings?: string[];
+  retryHint?: string;
+}
+
 interface Props {
   ticker: string;
   onCompanyName?: (name: string | null) => void;
@@ -24,7 +30,14 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
     onCompanyName?.(null);
     try {
       const response = await fetch(`/api/askedgar/snapshot?ticker=${encodeURIComponent(selectedTicker)}`);
-      if (!response.ok) throw new Error(`Lookup failed: ${response.status}`);
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as SnapshotErrorResponse | null;
+        const message = payload?.error?.trim() || `Lookup failed: ${response.status}`;
+        const retryHint = payload?.retryHint?.trim();
+        throw new Error(retryHint ? `${message} ${retryHint}` : message);
+      }
+
       const result = (await response.json()) as ResearchSnapshot;
       setData(result);
       onCompanyName?.(result.companyName ?? null);
@@ -67,6 +80,17 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
       </div>
 
       {/* Report sections below chart — always visible */}
+      {data.warnings.length > 0 ? (
+        <div className="border-b border-amber-500/20 bg-amber-500/5 px-3 py-2 text-sm text-amber-200">
+          <p className="font-medium">AskEdgar warnings</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-amber-100/90">
+            {data.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <ResearchReportSections ticker={ticker} data={data} />
 
       <div className="border-t border-white/10">

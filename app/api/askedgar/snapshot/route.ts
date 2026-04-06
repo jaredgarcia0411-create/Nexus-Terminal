@@ -1,5 +1,9 @@
 import { internalServerError, logRouteError, normalizeTicker, TICKER_REGEX } from '@/lib/api-route-utils';
-import { getCachedTickerData, normalizeAskEdgarResponse } from '@/lib/askedgar';
+import {
+  getAskEdgarSnapshotAvailability,
+  getCachedTickerData,
+  normalizeAskEdgarResponse,
+} from '@/lib/askedgar';
 import { fetchUnifiedSnapshot } from '@/lib/massive-market';
 import { requireUser } from '@/lib/server-db-utils';
 
@@ -22,6 +26,25 @@ export async function GET(request: Request) {
       getCachedTickerData(ticker),
       fetchUnifiedSnapshot([ticker]).catch(() => ({ results: [] as unknown[] })),
     ]);
+
+    const availability = getAskEdgarSnapshotAvailability(result.rawData);
+    if (!availability.hasUsableSnapshotData) {
+      const isRateLimited = availability.failureKind === 'rate-limited';
+      const retryHint = isRateLimited
+        ? `Retry in about ${availability.retryAfterSeconds ?? 60} seconds.`
+        : undefined;
+
+      return Response.json(
+        {
+          error: isRateLimited
+            ? 'AskEdgar is temporarily rate limited. Please retry this ticker shortly.'
+            : 'AskEdgar did not return usable research data for this ticker right now.',
+          warnings: result.warnings,
+          ...(retryHint ? { retryHint } : {}),
+        },
+        { status: isRateLimited ? 429 : 503 },
+      );
+    }
 
     const companyName =
       (snapshot.results?.[0] as Record<string, unknown> | undefined)?.name as string | undefined ?? null;

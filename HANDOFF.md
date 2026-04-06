@@ -6,6 +6,38 @@ Historical completed sections removed — use git history and `specs/` for archi
 
 ---
 
+## Research Page Debug — AskEdgar Empty Snapshot Handling
+
+> Generated: 2026-04-06 | Agent: Remi
+> Status: COMPLETE
+
+### Objective
+
+Fix the Research page so valid ticker lookups do not silently render misleading `No data` states when AskEdgar returns full-failure or rate-limited responses. Surface the real failure to the user, preserve partial data when available, and restore company header stats from the correct endpoint when screener data is sparse.
+
+### Delivered
+
+- Unusable AskEdgar snapshots now stay server-side errors instead of being normalized into misleading empty `No data` Research views.
+- Partial AskEdgar success still returns `200` and now keeps warnings visible in the Research UI.
+- Company header share-structure stats now fall back to `float-outstanding` when screener data is sparse.
+- Added regression coverage in `__tests__/askedgar-client.test.ts` and `__tests__/askedgar-snapshot-route.test.ts` for unusable snapshots, route error handling, partial warnings, and header fallback.
+- Validation passed: `npm run lint`, `npx tsc --noEmit`, `npm test`.
+- Manual result: Research page data is loading again.
+
+### Follow-Up Next Session
+
+- Review AskEdgar rate limiting behavior and `429` error handling/UX in more detail now that data is flowing again.
+
+### Non-Goals / Guardrails
+
+- Do not move AskEdgar calls client-side.
+- Do not bypass `getCachedTickerData()`.
+- Do not change TradingView gainers logic as part of this fix.
+- Do not cache all-error AskEdgar responses.
+- Do not refactor `ResearchReportSections.tsx` beyond consuming better upstream data.
+
+---
+
 ## Low-Priority Spec Cleanup (AGENTIC_EXPANSIONV2.md)
 
 Minor follow-ups from the 2026-03-29 review; none block sprint import.

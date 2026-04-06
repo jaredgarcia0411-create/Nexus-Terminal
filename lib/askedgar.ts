@@ -31,6 +31,13 @@ export interface AskEdgarResponse<T> {
   error?: string;
 }
 
+export interface AskEdgarSnapshotAvailability {
+  hasAnyData: boolean;
+  hasUsableSnapshotData: boolean;
+  failureKind: 'rate-limited' | 'upstream-unavailable' | null;
+  retryAfterSeconds: number | null;
+}
+
 const ASKEDGAR_BASE_URL = 'https://eapi.askedgar.io';
 const DEFAULT_DAILY_LIMIT = 100;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -71,6 +78,57 @@ function getApiKey() {
 
 function toErrorResponse<T>(error: string): AskEdgarResponse<T> {
   return { status: 'error', count: 0, results: [], error };
+}
+
+function responseHasData(response: AskEdgarResponse<unknown>): boolean {
+  return response.status !== 'error' && Array.isArray(response.results) && response.results.length > 0;
+}
+
+function isRateLimitError(error?: string): boolean {
+  return typeof error === 'string' && error.toLowerCase().includes('rate limited');
+}
+
+function extractRetryAfterSeconds(error?: string): number | null {
+  if (!error) return null;
+
+  const retryAfterMatch = error.match(/retry after\s+(\d+)s/i);
+  if (retryAfterMatch) {
+    const parsed = Number.parseInt(retryAfterMatch[1], 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  if (/waiting for retry window/i.test(error) && isRateLimited()) {
+    return Math.max(1, Math.ceil((rateLimitedUntil - Date.now()) / 1000));
+  }
+
+  return null;
+}
+
+export function getAskEdgarSnapshotAvailability(
+  rawData: Record<string, AskEdgarResponse<unknown>>,
+): AskEdgarSnapshotAvailability {
+  const responses = Object.values(rawData);
+  const hasAnyData = responses.some((response) => responseHasData(response));
+
+  if (hasAnyData) {
+    return {
+      hasAnyData,
+      hasUsableSnapshotData: true,
+      failureKind: null,
+      retryAfterSeconds: null,
+    };
+  }
+
+  const rateLimitErrors = responses
+    .map((response) => response.error)
+    .filter((error): error is string => isRateLimitError(error));
+
+  return {
+    hasAnyData,
+    hasUsableSnapshotData: false,
+    failureKind: rateLimitErrors.length > 0 ? 'rate-limited' : 'upstream-unavailable',
+    retryAfterSeconds: rateLimitErrors.map((error) => extractRetryAfterSeconds(error)).find((value): value is number => value !== null) ?? null,
+  };
 }
 
 function parseDailyLimit() {
@@ -203,7 +261,7 @@ interface EndpointState {
 
 function asEndpointState(result: PromiseSettledResult<AskEdgarResponse<unknown>>, config: EndpointConfig): EndpointState {
   if (result.status === 'fulfilled') {
-    const hasData = result.value.status !== 'error' && Array.isArray(result.value.results) && result.value.results.length > 0;
+    const hasData = responseHasData(result.value);
     return {
       key: config.key,
       label: config.label,
@@ -473,6 +531,7 @@ export function normalizeAskEdgarResponse(
   options: NormalizeAskEdgarOptions,
 ): ResearchSnapshotFull {
   const screener = firstResult(rawData, ['screener']);
+  const floatOutstanding = firstResult(rawData, ['float-outstanding', 'floatOutstanding']);
   const dilutionRating = firstResult(rawData, ['dilution-rating', 'dilutionRating']);
   const dilutionData = getEndpointResponse(rawData, ['dilution-data', 'dilutionData']);
   const dilutionDataFirst = toRecord(dilutionData.results[0]);
@@ -639,13 +698,18 @@ export function normalizeAskEdgarResponse(
     companyName: options.companyName,
     warnings: options.warnings,
     header: {
-      marketCap: toNumberValue(getField(screener, ['marketCap', 'market_cap', 'market_cap_final'])),
-      outstandingShares: toNumberValue(getField(screener, ['outstanding', 'outstandingShares', 'outstanding_shares', 'sharesOutstanding'])),
-      float: toNumberValue(getField(screener, ['float', 'floatShares', 'tradable_float', 'float_shares'])),
+      marketCap: toNumberValue(getField(screener, ['marketCap', 'market_cap', 'market_cap_final']))
+        ?? toNumberValue(getField(floatOutstanding, ['marketCap', 'market_cap', 'market_cap_final'])),
+      outstandingShares: toNumberValue(getField(screener, ['outstanding', 'outstandingShares', 'outstanding_shares', 'sharesOutstanding']))
+        ?? toNumberValue(getField(floatOutstanding, ['outstanding', 'outstandingShares', 'outstanding_shares', 'outstanding_shares_final', 'sharesOutstanding'])),
+      float: toNumberValue(getField(screener, ['float', 'floatShares', 'tradable_float', 'float_shares']))
+        ?? toNumberValue(getField(floatOutstanding, ['float', 'tradableFloat', 'tradable_float', 'floatShares', 'float_shares'])),
       exchange: getStringField(screener, ['exchange']),
       ipoDate: getStringField(screener, ['ipodate', 'ipo_date', 'ipoDate']),
-      industry: getStringField(screener, ['industry']),
-      country: getStringField(screener, ['country']),
+      industry: getStringField(screener, ['industry'])
+        ?? getStringField(floatOutstanding, ['industry', 'sector']),
+      country: getStringField(screener, ['country'])
+        ?? getStringField(floatOutstanding, ['country']),
       price: currentPrice,
       shortInterest: toNumberValue(getField(screener, ['shortInterest', 'short_interest'])),
       volume: toNumberValue(getField(screener, ['today_volume', 'volume', 'totalVolume'])),
