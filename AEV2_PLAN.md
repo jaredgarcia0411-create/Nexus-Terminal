@@ -164,6 +164,8 @@ Note: no backfill SQL needed. `jarvis_conversations` and `jarvis_request_log` we
 
 **Deliverables:** agent types, dual-lane LLM client, auth helpers, prompt stack, migration 0019, ownership model.
 
+**Status:** COMPLETE — 2026-04-06. Phase 1 through Phase 3 landed, migration `0019` was applied, foundational seed rows were verified, and the Sprint 1 exit gate passed.
+
 **Execution approach:** one worktree branch, but break Sprint 1 into three reviewable commits. Merge to main only after the Sprint 1 exit gate passes.
 
 #### Recommended Commit Phases

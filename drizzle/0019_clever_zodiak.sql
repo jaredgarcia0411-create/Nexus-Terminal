@@ -160,3 +160,16 @@ CREATE INDEX "idx_agent_request_log_user_created" ON "agent_request_log" USING b
 CREATE INDEX "idx_agent_request_log_agent_created" ON "agent_request_log" USING btree ("agent_id","created_at");--> statement-breakpoint
 CREATE INDEX "idx_agent_request_log_created" ON "agent_request_log" USING btree ("created_at");--> statement-breakpoint
 CREATE INDEX "idx_scheduled_runs_status" ON "agent_scheduled_runs" USING btree ("agent_id","status","trading_date");
+--> statement-breakpoint
+-- Seed: system-agent-user for autonomous job/report ownership
+INSERT INTO "users" ("id", "email", "name")
+VALUES ('system-agent-user', 'system@nexus.internal', 'System Agent')
+ON CONFLICT ("id") DO NOTHING;
+--> statement-breakpoint
+-- Seed: V1 agent registry rows
+INSERT INTO "agent_registry" ("id", "display_name", "description", "status", "capabilities")
+VALUES
+  ('orchestrator', 'Orchestrator', 'Routes requests, runs macro cron, oversees memory', 'offline', '["chat", "macro-summary"]'::jsonb),
+  ('small-cap-trader', 'Small Cap Trader', 'Short-selling specialist - dilution analysis and pre-market scans', 'offline', '["research", "pre-market-scan"]'::jsonb),
+  ('swing-trader', 'Swing Trader', 'MDR pattern recognition, momentum scans, parabolic setup alerts', 'offline', '["research", "momentum-scan", "pattern-check"]'::jsonb)
+ON CONFLICT ("id") DO NOTHING;

@@ -94,6 +94,43 @@ Implement the Sprint 1 Phase 2 schema-only work, generate the Drizzle migration 
 
 ---
 
+## AEV2 Sprint 1 Phase 3 — Seed + Apply + Verify
+
+> Generated: 2026-04-06 | Agent: Codex
+> Status: COMPLETE
+
+### Objective
+
+Append the manual foundational seed block to migration `0019`, apply the migration, verify the seeded ownership rows, and complete the full Sprint 1 validation gate.
+
+### Delivered
+
+- Appended the manual AEV2-204 seed block to [`drizzle/0019_clever_zodiak.sql`](/home/jared/Nexus-Terminal/drizzle/0019_clever_zodiak.sql) after the generated DDL/index statements only:
+  - inserts `users.id = 'system-agent-user'`
+  - inserts the three V1 `agent_registry` rows for `orchestrator`, `small-cap-trader`, and `swing-trader`
+  - uses `ON CONFLICT (id) DO NOTHING` for rerun safety
+- Applied the migration with `npm run db:migrate`.
+- Verified the foundational rows exist in the live database after migration:
+  - `users`: `system-agent-user`, `system@nexus.internal`, `System Agent`
+  - `agent_registry`: `orchestrator`, `small-cap-trader`, `swing-trader`
+- Re-ran `npm run db:generate` after migrate and confirmed there are no pending schema changes.
+- Stopped at the Phase 3 boundary. Sprint 1 is now complete.
+
+### Validation
+
+- `npm run db:migrate` ✅
+- seeded-row verification query ✅
+- `npm run db:generate` ✅ (`No schema changes, nothing to migrate`)
+- `npm run lint` ✅
+- `npx tsc --noEmit` ✅
+- `npm test` ✅
+
+### Next Step
+
+- Review the completed Sprint 1 foundation/schema work, then proceed to EPIC-3 queue runtime work when ready.
+
+---
+
 ## AEV2 Sprint 1 Implementation Guide
 
 > Generated: 2026-04-06 | Agent: Codex
