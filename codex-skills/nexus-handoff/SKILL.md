@@ -1,0 +1,49 @@
+---
+name: nexus-handoff
+description: >
+  Prepare or refresh Nexus Terminal HANDOFF.md implementation specs. Use when planning a feature,
+  turning an approved plan into an executable spec, cleaning stale handoff sections, or syncing
+  AGENTS.md and HANDOFF.md to live repo reality.
+---
+
+# Nexus Terminal Handoff
+
+This skill exists to produce self-contained implementation plans that another execution agent can follow without guessing.
+
+## Before Writing
+
+1. Read `AGENTS.md` and `HANDOFF.md`.
+2. Read the actual source files relevant to the requested change.
+3. Verify every file path, function name, export, route, and dependency you mention against the live codebase.
+4. Separate observed current state from proposed changes.
+
+## What Good Output Looks Like
+
+Write or update a section in `HANDOFF.md` with:
+
+- A clear section title
+- Generated date and current status
+- Objective
+- Current state with exact file paths
+- Required changes grouped into ordered steps
+- Per-file actions: create, modify, or delete
+- Acceptance criteria that are concrete and testable
+- Testing requirements: `npm run lint`, `npx tsc --noEmit`, `npm test`
+- Security notes when auth, secrets, or external integrations are involved
+- Order of operations
+- Complexity estimate
+
+## Maintenance Rules
+
+- Keep `HANDOFF.md` focused on active or recently completed work that still matters.
+- When asked to clean it up, compress or remove stale completed sections and keep a brief note that older detail lives in git history.
+- Update `AGENTS.md` only for durable workflow or architecture guidance, not one-off task trivia.
+
+## Spec Rules
+
+- Assume the next execution agent has no project memory.
+- Name the exact files to touch.
+- State why the order matters when there are dependencies.
+- Call out risks, especially around auth, SSE routes, database access, or expensive third-party APIs.
+- Do not invent missing files or abstractions to make a plan look cleaner.
+

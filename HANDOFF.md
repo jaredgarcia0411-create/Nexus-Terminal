@@ -6,6 +6,122 @@ Historical completed sections removed — use git history and `specs/` for archi
 
 ---
 
+## Auth Skill Port
+
+> Generated: 2026-04-06 | Agent: Codex
+> Status: COMPLETE
+
+### Objective
+
+Port the remaining high-value auth workflow guidance into `codex-skills/` so Codex sessions can load the current protected-route and NextAuth patterns directly.
+
+### Delivered
+
+- Added `codex-skills/auth-constraints/SKILL.md` as a Codex-native port of the existing auth guidance.
+- Rewrote the source material around the live repo reality:
+  - NextAuth JWT sessions in `lib/auth-config.ts`
+  - `requireUser()` / `ensureUser()` in `lib/server-db-utils.ts`
+  - `parseAndValidate()` plus Zod v4 error formatting in `lib/api-route-utils.ts`
+  - middleware protection in `middleware.ts`
+- Dropped stale guidance from the OpenCode version that no longer matches the repo, including the incorrect note about avoiding NextAuth.
+- Copied the installed skill into `/home/jared/.codex/skills/` so future Codex sessions can auto-discover it.
+
+### Validation
+
+- Reviewed against:
+  - `.opencode/skills/auth-constraints/SKILL.md`
+  - `lib/auth-config.ts`
+  - `lib/server-db-utils.ts`
+  - `lib/api-route-utils.ts`
+  - `middleware.ts`
+- Verified installed skill path:
+  - `/home/jared/.codex/skills/auth-constraints`
+- Final validation passed:
+  - `npm run lint` ✅
+  - `npx tsc --noEmit` ✅
+  - `npm test` ✅
+
+---
+
+## Additional Codex Skill Ports
+
+> Generated: 2026-04-06 | Agent: Codex
+> Status: COMPLETE
+
+### Objective
+
+Port the remaining high-value workflow skills into `codex-skills/` so future Codex sessions can grab them directly for DB work, test audits, and Vercel operations.
+
+### Delivered
+
+- Added `codex-skills/drizzle-conventions/SKILL.md` as a Codex-native port of the existing Drizzle guidance, rewritten around the live repo files:
+  - `lib/db.ts`
+  - `lib/db/schema.ts`
+  - `lib/server-db-utils.ts`
+  - current bulk-write route patterns
+- Added `codex-skills/test-auditor/SKILL.md` as a Codex-native test audit skill, replacing the OpenCode-specific subagent workflow with a local Codex audit process that matches current Vitest patterns in `__tests__/`.
+- Added `codex-skills/nexus-vercel-ops/SKILL.md` as a repo-specific Vercel operations skill for this linked Vercel project, centered on:
+  - `.vercel/project.json`
+  - `vercel.json`
+  - the existing Vercel plugin skills and MCP tools
+- Copied the installed skills into `/home/jared/.codex/skills/` so future Codex sessions can auto-discover them.
+
+### Validation
+
+- Reviewed against:
+  - `.opencode/skills/drizzle-conventions/SKILL.md`
+  - `.opencode/skills/test-auditor/SKILL.md`
+  - live DB helpers and schema files
+  - current `__tests__/` patterns
+  - `.vercel/project.json`
+  - `vercel.json`
+- Verified installed skill paths:
+  - `/home/jared/.codex/skills/drizzle-conventions`
+  - `/home/jared/.codex/skills/test-auditor`
+  - `/home/jared/.codex/skills/nexus-vercel-ops`
+- Final validation passed:
+  - `npm run lint` ✅
+  - `npx tsc --noEmit` ✅
+  - `npm test` ✅
+
+---
+
+## Commit Workflow Skill Port
+
+> Generated: 2026-04-06 | Agent: Codex
+> Status: COMPLETE
+
+### Objective
+
+Port the repo's existing custom commit command into a Codex-native skill and tighten it for mixed worktrees and repo-specific artifact handling.
+
+### Delivered
+
+- Added `codex-skills/nexus-commit/SKILL.md` as the Codex-native port of the existing commit workflow.
+- Kept the core stage/commit/push flow from `.claude/commands/commit.md` and `.opencode/commands/commit.md`, but tightened it with:
+  - required validation before commit for code changes
+  - path-scoped staging guidance for dirty worktrees
+  - explicit treatment of `.opencode/learn/` and `.opencode/reports/` as opt-in commit material
+  - support for stopping after a local commit when push is not requested
+- Updated `AGENTS.md` so future command ports from `.claude/commands/` and `.opencode/commands/` are expected to land in `codex-skills/` and stay aligned.
+- Copied the installed skill to `/home/jared/.codex/skills/nexus-commit/SKILL.md` so future Codex sessions can auto-discover it.
+
+### Validation
+
+- Reviewed against:
+  - `.claude/commands/commit.md`
+  - `.opencode/commands/commit.md`
+  - `codex-skills/nexus-handoff/SKILL.md`
+  - `codex-skills/nexus-workflow-audit/SKILL.md`
+- Verified installed skill path:
+  - `/home/jared/.codex/skills/nexus-commit`
+- Final validation passed:
+  - `npm run lint` ✅
+  - `npx tsc --noEmit` ✅
+  - `npm test` ✅
+
+---
+
 ## Codex Workflow Skill Ports
 
 > Generated: 2026-04-06 | Agent: Codex

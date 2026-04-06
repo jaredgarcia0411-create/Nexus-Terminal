@@ -132,7 +132,7 @@ Report pass/fail for each command.
 
 ## Docs and Handoff Updates
 - After completing session work, update checklist/status in `HANDOFF.md`.
-- Repo-maintained Codex skill sources live in `codex-skills/`; keep them aligned with any workflow prompts they replace or mirror.
+- Repo-maintained Codex skill sources live in `codex-skills/`; when a `.claude/commands/` or `.opencode/commands/` workflow is worth preserving for Codex, port it there and keep the variants aligned.
 - There is no project README.md — do not create one unless explicitly instructed.
 
 ## Cursor and Copilot Rules
