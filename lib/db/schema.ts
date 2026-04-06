@@ -207,3 +207,158 @@ export const askedgarCache = pgTable('askedgar_cache', {
   unique().on(table.cacheType, table.ticker),
   index('askedgar_cache_expires_idx').on(table.expiresAt),
 ]);
+
+export const agentRegistry = pgTable('agent_registry', {
+  id: text('id').primaryKey(),
+  displayName: text('display_name').notNull(),
+  description: text('description').notNull(),
+  status: text('status').notNull().default('offline'),
+  capabilities: jsonb('capabilities').notNull().default([]),
+  config: jsonb('config').notNull().default({}),
+  lastHeartbeat: timestamp('last_heartbeat', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
+export const agentJobs = pgTable('agent_jobs', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agentRegistry.id),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  jobType: text('job_type').notNull(),
+  status: text('status').notNull().default('queued'),
+  priority: integer('priority').notNull().default(0),
+  input: jsonb('input').notNull(),
+  result: jsonb('result'),
+  errorMessage: text('error_message'),
+  progressNote: text('progress_note'),
+  stepLog: jsonb('step_log').default([]),
+  attempt: integer('attempt').notNull().default(0),
+  maxAttempts: integer('max_attempts').notNull().default(3),
+  nextRetryAt: timestamp('next_retry_at', { withTimezone: true }),
+  lockedBy: text('locked_by'),
+  lockExpiresAt: timestamp('lock_expires_at', { withTimezone: true }),
+  lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
+  leaseVersion: integer('lease_version').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+}, (table) => [
+  index('idx_agent_jobs_poll').on(table.agentId, table.priority, table.createdAt),
+  index('idx_agent_jobs_user_status').on(table.userId, table.status, table.createdAt),
+  index('idx_agent_jobs_stale').on(table.status, table.lockExpiresAt),
+]);
+
+export const agentReports = pgTable('agent_reports', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agentRegistry.id),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  jobId: text('job_id').references(() => agentJobs.id, { onDelete: 'set null' }),
+  reportType: text('report_type').notNull(),
+  title: text('title').notNull(),
+  summary: text('summary'),
+  reportJson: jsonb('report_json').notNull(),
+  status: text('status').notNull().default('published'),
+  deliveryChannel: text('delivery_channel').notNull().default('discord'),
+  deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+  deliveryError: text('delivery_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('idx_agent_reports_user_status').on(table.userId, table.status, table.createdAt),
+  index('idx_agent_reports_agent').on(table.agentId, table.createdAt),
+  index('idx_agent_reports_job').on(table.jobId),
+]);
+
+export const agentConversations = pgTable('agent_conversations', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  agentId: text('agent_id').notNull().references(() => agentRegistry.id),
+  sessionId: text('session_id').notNull(),
+  role: text('role').notNull(),
+  content: text('content').notNull(),
+  channel: text('channel').notNull().default('web'),
+  contextSnapshot: jsonb('context_snapshot'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('idx_agent_conversations_user_session').on(table.userId, table.sessionId, table.createdAt),
+  index('idx_agent_conversations_agent').on(table.agentId, table.createdAt),
+]);
+
+export const agentRequestLog = pgTable('agent_request_log', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  agentId: text('agent_id').notNull().references(() => agentRegistry.id),
+  mode: text('mode').notNull(),
+  lane: text('lane').notNull().default('background'),
+  modelUsed: text('model_used'),
+  inputTokens: integer('input_tokens').notNull().default(0),
+  outputTokens: integer('output_tokens').notNull().default(0),
+  totalTokens: integer('total_tokens').notNull().default(0),
+  estimatedCostCents: integer('estimated_cost_cents').default(0),
+  durationMs: integer('duration_ms').notNull().default(0),
+  success: integer('success').notNull().default(1),
+  sourceCount: integer('source_count').notNull().default(0),
+  chunkCount: integer('chunk_count').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index('idx_agent_request_log_user_created').on(table.userId, table.createdAt),
+  index('idx_agent_request_log_agent_created').on(table.agentId, table.createdAt),
+  index('idx_agent_request_log_created').on(table.createdAt),
+]);
+
+export const agentMemoryV2 = pgTable('agent_memory_v2', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  agentId: text('agent_id').notNull().references(() => agentRegistry.id),
+  category: text('category').notNull(),
+  key: text('key').notNull(),
+  value: text('value').notNull(),
+  valueJson: jsonb('value_json'),
+  source: text('source'),
+  confidence: text('confidence'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+}, (table) => [
+  unique('agent_memory_v2_user_agent_category_key').on(table.userId, table.agentId, table.category, table.key),
+  index('agent_memory_v2_user_agent_category_idx').on(table.userId, table.agentId, table.category),
+]);
+
+export const agentScheduledRuns = pgTable('agent_scheduled_runs', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agentRegistry.id),
+  triggerType: text('trigger_type').notNull(),
+  tradingDate: text('trading_date').notNull(),
+  status: text('status').notNull().default('pending'),
+  jobId: text('job_id').references(() => agentJobs.id),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  skipReason: text('skip_reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  unique('agent_scheduled_runs_agent_trigger_date').on(table.agentId, table.triggerType, table.tradingDate),
+  index('idx_scheduled_runs_status').on(table.agentId, table.status, table.tradingDate),
+]);
+
+export const agentStepEffects = pgTable('agent_step_effects', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id').notNull().references(() => agentJobs.id, { onDelete: 'cascade' }),
+  stepName: text('step_name').notNull(),
+  effectType: text('effect_type').notNull(),
+  idempotencyKey: text('idempotency_key').notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  unique('agent_step_effects_idempotency').on(table.idempotencyKey),
+]);
+
+export const agentJobCheckpoints = pgTable('agent_job_checkpoints', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id').notNull().references(() => agentJobs.id, { onDelete: 'cascade' }),
+  stepIndex: integer('step_index').notNull(),
+  stepName: text('step_name').notNull(),
+  checkpointJson: jsonb('checkpoint_json').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  unique('agent_job_checkpoints_job_step').on(table.jobId, table.stepIndex),
+  index('idx_agent_job_checkpoints_job_step').on(table.jobId, table.stepIndex),
+]);

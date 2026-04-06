@@ -49,6 +49,51 @@ Implement the Sprint 1 Phase 1 contract surface only, then stop for review befor
 
 ---
 
+## AEV2 Sprint 1 Phase 2 — Schema + Migration Artifacts
+
+> Generated: 2026-04-06 | Agent: Codex
+> Status: COMPLETE
+
+### Objective
+
+Implement the Sprint 1 Phase 2 schema-only work, generate the Drizzle migration artifacts, and stop for review before seed SQL or migration apply work.
+
+### Delivered
+
+- Updated [`lib/db/schema.ts`](/home/jared/Nexus-Terminal/lib/db/schema.ts) with the nine Phase 2 V1 agent tables appended after `askedgar_cache`:
+  - `agent_registry`
+  - `agent_jobs`
+  - `agent_reports`
+  - `agent_conversations`
+  - `agent_request_log`
+  - `agent_memory_v2`
+  - `agent_scheduled_runs`
+  - `agent_step_effects`
+  - `agent_job_checkpoints`
+- Generated the Drizzle migration artifacts for Phase 2:
+  - [`drizzle/0019_clever_zodiak.sql`](/home/jared/Nexus-Terminal/drizzle/0019_clever_zodiak.sql)
+  - [`drizzle/meta/0019_snapshot.json`](/home/jared/Nexus-Terminal/drizzle/meta/0019_snapshot.json)
+  - updated [`drizzle/meta/_journal.json`](/home/jared/Nexus-Terminal/drizzle/meta/_journal.json)
+- Reviewed the generated SQL and confirmed:
+  - all nine `CREATE TABLE` statements exist
+  - required foreign keys, indexes, and unique constraints were emitted
+  - JSONB defaults serialized correctly for `agent_registry.capabilities`, `agent_registry.config`, and `agent_jobs.step_log`
+  - the migration is additive only for the new agent tables; no unrelated existing-table churn was introduced
+- Stopped at the Phase 2 boundary. No Phase 3 seed SQL has been appended, and `npm run db:migrate` has not been run.
+
+### Validation
+
+- `npm run db:generate` ✅
+- `npm run lint` ✅
+- `npx tsc --noEmit` ✅
+- `npm test` ✅
+
+### Next Step
+
+- Review the Phase 2 schema and generated migration artifacts, then proceed to Sprint 1 Phase 3: append the AEV2-204 seed block to `drizzle/0019_clever_zodiak.sql`, run `npm run db:migrate`, verify foundational rows, and stop again if desired.
+
+---
+
 ## AEV2 Sprint 1 Implementation Guide
 
 > Generated: 2026-04-06 | Agent: Codex

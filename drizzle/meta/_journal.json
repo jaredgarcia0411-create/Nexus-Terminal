@@ -134,6 +134,13 @@
       "when": 1775263210568,
       "tag": "0018_nasty_warbird",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1775516042313,
+      "tag": "0019_clever_zodiak",
+      "breakpoints": true
     }
   ]
 }
