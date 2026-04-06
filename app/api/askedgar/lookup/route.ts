@@ -4,6 +4,7 @@ import { fetchUnifiedSnapshot } from '@/lib/massive-market';
 import { requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
 
 export async function GET(request: Request) {
   const authState = await requireUser();

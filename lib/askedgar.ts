@@ -41,6 +41,18 @@ const GAINERS_CACHE_TTL_MS = 15 * 60 * 1000;   // 15 minutes
 let callCount = 0;
 let resetDate = '';
 
+// Rate limit tracking — when AskEdgar returns 429, we stop making requests
+// until the retry window expires. This prevents wasting calls.
+let rateLimitedUntil = 0; // Unix timestamp (ms) when we can resume
+
+function isRateLimited(): boolean {
+  return Date.now() < rateLimitedUntil;
+}
+
+function setRateLimited(retryAfterSeconds: number) {
+  rateLimitedUntil = Date.now() + retryAfterSeconds * 1000;
+}
+
 function getCurrentUtcDate() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -93,6 +105,9 @@ async function requestAskEdgar<T>(path: string, query: Record<string, string | n
   const apiKey = getApiKey();
   if (!apiKey) return toErrorResponse<T>('ASKEDGAR_API_KEY not configured');
 
+  // If we recently got a 429, don't waste a call — fail fast
+  if (isRateLimited()) return toErrorResponse<T>('Rate limited — waiting for retry window');
+
   resetCounterIfNeeded();
   const dailyLimit = parseDailyLimit();
   if (callCount >= dailyLimit) return toErrorResponse<T>(`AskEdgar daily limit reached (${dailyLimit})`);
@@ -116,6 +131,18 @@ async function requestAskEdgar<T>(path: string, query: Record<string, string | n
     });
 
     const payload = await response.json().catch(() => ({}));
+
+    // Handle rate limiting: record the retry window so other in-flight
+    // and future requests fail fast instead of wasting API calls
+    if (response.status === 429) {
+      const details = (payload as Record<string, unknown>)?.error;
+      const retryAfter = typeof details === 'object' && details !== null
+        ? Number((details as Record<string, unknown>).retry_after) || 60
+        : 60;
+      setRateLimited(retryAfter);
+      return toErrorResponse<T>(`Rate limited — retry after ${retryAfter}s`);
+    }
+
     if (!response.ok) return toErrorResponse<T>(toErrorMessage(payload, response.status));
     if (!payload || typeof payload !== 'object') return toErrorResponse<T>('Invalid AskEdgar response payload');
 
@@ -331,11 +358,23 @@ export async function fetchTickerData(ticker: string) {
     { key: 'ownership', label: 'Ownership', run: () => fetchOwnership(normalizedTicker) },
   ];
 
-  const settledResults = await Promise.allSettled(endpointConfigs.map((config) => config.run()));
+  // Run endpoints in batches of 5 to avoid blowing through the 50/min rate limit.
+  // 16 parallel requests would use 32% of the limit in one shot; batching spreads
+  // the load and lets the rate-limit guard kick in between batches if needed.
+  const BATCH_SIZE = 5;
+  const settledResults: PromiseSettledResult<AskEdgarResponse<unknown>>[] = [];
+  for (let i = 0; i < endpointConfigs.length; i += BATCH_SIZE) {
+    const batch = endpointConfigs.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.allSettled(batch.map((config) => config.run()));
+    settledResults.push(...batchResults);
+  }
   const endpointStates = settledResults.map((result, index) => asEndpointState(result, endpointConfigs[index]));
   const warnings = endpointStates.map(endpointWarning).filter((warning): warning is string => Boolean(warning));
 
   const rawData = Object.fromEntries(endpointStates.map((state) => [state.key, state.response]));
+
+  // Flag when every single endpoint failed — callers use this to skip caching bad data
+  const hasAnyData = endpointStates.some((state) => state.hasData);
 
   return {
     ticker: normalizedTicker,
@@ -343,6 +382,7 @@ export async function fetchTickerData(ticker: string) {
     rawData,
     dataSources: endpointStates.map(toDataSource),
     warnings,
+    hasAnyData,
   };
 }
 
@@ -699,6 +739,11 @@ export async function getCachedTickerData(ticker: string) {
 
   // Cache miss — fetch fresh from Ask Edgar
   const result = await fetchTickerData(normalizedTicker);
+
+  // Only cache if at least one endpoint returned real data.
+  // This prevents caching error responses (bad API key, timeouts, etc.)
+  // that would otherwise stick around for an hour.
+  if (!result.hasAnyData) return result;
 
   // Write to cache (fire-and-forget, don't block the response)
   try {

@@ -14,14 +14,15 @@ const COLUMNS = [
   'sector', // 6 — sector
 ];
 
-// Jared's preset filters: price > $1.12, change > 30%, market cap < $300M, major exchanges only
+// Jared's preset filters: price > $1.12, change > 30%, PM chg > 30%, market cap < $300M, NASDAQ + NYSE only
 const SCAN_BODY = {
   columns: COLUMNS,
   filter: [
     { left: 'close', operation: 'greater', right: 1.12 },
     { left: 'change', operation: 'greater', right: 30 },
+    { left: 'premarket_change', operation: 'greater', right: 30 },
     { left: 'market_cap_basic', operation: 'less', right: 300_000_000 },
-    { left: 'exchange', operation: 'in_range', right: ['NASDAQ', 'NYSE', 'NYSE ARCA'] },
+    { left: 'exchange', operation: 'in_range', right: ['NASDAQ', 'NYSE'] },
   ],
   sort: { sortBy: 'change', sortOrder: 'desc' },
   range: [0, 30],

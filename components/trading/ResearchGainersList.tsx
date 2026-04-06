@@ -50,10 +50,10 @@ export default function ResearchGainersList({ selectedTicker, onSelectTicker }: 
 
   useEffect(() => {
     void fetchGainers();
-    // Poll every 60 seconds — TradingView data refreshes in near real-time
+    // Poll every 10 seconds — TradingView Essential plan supports 10s refresh
     const interval = setInterval(() => {
       void fetchGainers();
-    }, 60 * 1000);
+    }, 10 * 1000);
     return () => clearInterval(interval);
   }, [fetchGainers]);
 
@@ -68,7 +68,7 @@ export default function ResearchGainersList({ selectedTicker, onSelectTicker }: 
             </span>
           )}
         </div>
-        <p className="mt-0.5 text-[10px] text-zinc-600">+30% &bull; &lt;$300M mcap &bull; price &gt;$1.12</p>
+        <p className="mt-0.5 text-[10px] text-zinc-600">+30% &bull; PM +30% &bull; &lt;$300M mcap &bull; &gt;$1.12</p>
       </div>
 
       {loading ? (
