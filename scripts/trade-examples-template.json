@@ -45,7 +45,7 @@
       "exitPrice": 3.5,
       "outcome": "win",
       "patternCategory": "Small Cap Day 2 Short (SC D2)",
-      "intradayNotes": "First entry was on the PMH swipe up around 3.75, added on the breakdown from 3.60 to 3.30 & got stopped at 3.88, re-entered after made new HOD around 4.88 & had no follow through to the upside, re-entered first around 4.35, added on trendline break & moving average tests until 15:15 & started covering around 3.5 at 15:45, PR came out & wasn't positive, but not super negative so covered remaining shares",
+      "intradayNotes": "Shorted PMH swipe near 3.75, added on breakdown from 3.60 to 3.30, stopped at 3.88. Re-entered at 4.35 after new HOD at 4.88 had no follow through, added on trendline break & MA tests until 15:15. Started covering around 3.50 at 15:45, PR came out (not positive but not super negative) so covered remaining",
       "dailyNotes": "One decent volume day prior to D1 & D2 but no follow through & overall growing share count, had big volume on D1 with close near HOD & a decent gap up PM on D2",
       "volumeNotes": "Almost 1 billion shares traded D1 with a close near HOD, volume dried up after the first PMH clearout but sustained strength even on low volume intraday until 13:30",
       "exclude": false
@@ -75,7 +75,7 @@
       "exitPrice": 28.75,
       "outcome": "win",
       "patternCategory": "Long Intraday (LI)",
-      "intradayNotes": "Huge PM gap from 4 to 20, pulled back to 12.50 after the open & when it held that level I entered long near 15.50 with risk near LOD around 12.50, added when it started working with risk near 13, added again after broke PMH with risk at 16.25, added again on new HOD & started selling on the big push over 30, sold the rest when failed to follow through to new highs around 27.50",
+      "intradayNotes": "PM gap from 4 to 20, pulled back to 12.50 after open & held. Entered long at 15.50 (risk near LOD 12.50), added as it worked raising risk from 13 to 16.25, added after PMH break & on new HOD. Started selling on push over 30, sold rest on failed follow through near 27.50",
       "dailyNotes": "Popped on partnership news with Crypto.com to enter the prediction markets space, ROLR didn't end up offering shares until the following week & kept pushing higher until 13:30 with marked HOD",
       "volumeNotes": "Large PM gap up with a ton of volume, sustained decent volume all day until the big HOD push around 30 which signaled the exit for the remaining shares",
       "exclude": false
@@ -135,7 +135,7 @@
       "exitPrice": 11.5,
       "outcome": "win",
       "patternCategory": "Small Cap Day 1 Short (SC D1)",
-      "intradayNotes": "Entered short on the swipe up near PMH & got stopped on the next swipe up near 22, re-entered on the next swipe up near 22.50, added on the breakdown under 21, took a small loss & got stopped out near 23, re-entered a final time after the failed HOD push around 28.50, started re-entering from 21 to 22 after failed to follow through with new highs, added more on the next breakdown under 19 & VWAP, added on pops down to 15, covered most near 11.50",
+      "intradayNotes": "Shorted near PMH, stopped twice in 22-23 range on swipe-ups. Re-entered after failed HOD push at 28.50 — built position from 21-22 on no follow through to new highs, added on breakdown under 19 & VWAP, added on pops down to 15, covered most near 11.50",
       "dailyNotes": "Trending down even before the big gap up pre-market, no real sustained moves up intraday with constant pops, then fades & overall growing share count, so it was a good candidate for a short on the first day of the move",
       "volumeNotes": "Big PM volume with volume sustaining through the final push up to 28.50, volume dried up after that & faded the rest of the day with follow through on each breakdown level",
       "exclude": false
@@ -180,7 +180,7 @@
       "exitPrice": 35,
       "outcome": "win",
       "patternCategory": "Small Cap Short First Red Day (SC FRD)",
-      "intradayNotes": "Was running for a week already with a big gap up pre-market, entered short near 71.50 with risk near 82, added on the flush below 60 with new risk at 75, added 62, 61 & 58 after a big pop to 70 with no follow through, covered 25% on the opening flush under 50, covered another 25% under 40 & covered the rest near 30, tried to re-enter short on pops at 40 & 35 with risk near 45 for more of an ADF but didn't work out, grinded higher the rest of the day from 30 to 70",
+      "intradayNotes": "Entered short near 71.50 with risk at 82, added on flush below 60 (risk 75), added 62-58 after pop to 70 with no follow through. Covered 25% under 50, 25% under 40, rest near 30. Tried ADF re-entry on pops at 40 & 35 (risk 45) but didn't work — grinded from 30 to 70 rest of day",
       "dailyNotes": "Big volume in run up from 2 to 15, but much lower volume on the day of the big gap up from 15 to 75 which is unusual, it was a good candidate for a short on the first red day after a big run up with no real follow through to the upside, especially with it being a small cap stock that had been running for a while so it had a lot of room to fall if it was going to pull back",
       "volumeNotes": "Large volume leading up to the gap up, but lower volume the day of the parabolic gap up",
       "exclude": false
@@ -210,7 +210,7 @@
       "exitPrice": 3.65,
       "outcome": "win",
       "patternCategory": "Small Cap Short First Red Day (SC FRD)",
-      "intradayNotes": "No PM gap but went parabolic after the open, entered short near 6.50 with risk at 7.00 which was HOD, added on no follow through higher near 6, added on another breakdown near 5.10 & sold pops over 5.00, added on the next flush around 4.50 & again around 4.00, added near 3.75 then one last time after a big flush to 3.25 & pop back to 3.75, covered the rest EOD near 3.65",
+      "intradayNotes": "No PM gap, went parabolic after open. Shorted near 6.50 (risk at HOD 7.00), added at 6.00 on no follow through, added on breakdowns at 5.10, 4.50, 4.00 & 3.75 selling pops between. Final add after flush to 3.25 & pop to 3.75, covered rest EOD near 3.65",
       "dailyNotes": "Ran from 0.50 to 3 on D1 & trended higher for the next few days before the big gap up from 2 to 7 after the open",
       "volumeNotes": "Big volume on D1 with not a strong close, but the next few days trended higher on lower volume & the next day it went parabolic on the open with big volume, volume peaked around the HOD push around 10:15, some pops throughout the day but all got sold into EOD with a solid trend down the rest of the day for an ADF",
       "exclude": false
@@ -240,8 +240,8 @@
       "exitPrice": 6.5,
       "outcome": "win",
       "patternCategory": "Long Swing (LS)",
-      "intradayNotes": "Playing the metals, specifically Gold parabolic theme, so entered long PM at 4.30 trying to soak up the dip looking for a bounce with risk at 4.00, started to work so added before the open near 4.60 with new risk at 4.20, added again on the open near 5.00 with risk at 4.50, added again on the next dip near 5.00 with risk at 4.75, added the last few times at 4.85, 5.30 & in the AH near 6.40 looking for a gap up the next day, but sold off on the open the next day with no follow through to the upside, so covered the rest near 6.50",
-      "dailyNotes": "Sustained selling most days, D1 of the move was from 0.90 to 2.90, D2 there was not gap, just more strength & buying on the open & throughout the rest of the day with the next two days being red days there was still evidence in the lack of selling there was more room for this to go higher, especially with metals starting to show signs of euphoria",
+      "intradayNotes": "Entered long PM at 4.30 (risk 4.00), added pre-open at 4.60 & on open at 5.00, raising risk from 4.20 to 4.75 as it worked. Added at 4.85 & 5.30 intraday, added AH near 6.40 looking for gap up next day. Sold off on next day's open with no follow through, covered rest near 6.50",
+      "dailyNotes": "Sustained selling most days, D1 of the move was from 0.90 to 2.90, D2 there was not gap, just more strength & buying on the open & throughout the rest of the day with the next two days being red days there was still evidence in the lack of selling there was more room for this to go higher, especially with metals starting to show signs of euphoria. Playing the Gold parabolic theme",
       "volumeNotes": "Grinding higher on lower volume for a few days, but was holding steady with not much selling or buying on either side for the previous few days, then followed through with strength for the rest of the day & faded the next day when sellers stepped in after the open",
       "exclude": false
     },
@@ -420,8 +420,8 @@
       "exitPrice": 13.75,
       "outcome": "loss",
       "patternCategory": "Small Cap Day 2 Short (SC D2)",
-      "intradayNotes": "Gapped up almost $5 from 7.00 on a D2 move, but SPACs are tough to trade in general, this was more playing off the robotics theme, with not an apparent dilutionary agenda in place, more of a mean reversion trade, swiped up on the open & halted, flushed down, crept back up & made a new HOD, faded again to 11 then grinded back up the rest of the day to 13.75, the sudden jam up around 11:45 should have set off warnings to cover the entire position ",
-      "dailyNotes": "Went from 10, to 2.50, to 15 all in 5 days, not on a ton of volume either so that was definitely a factor to the range bound action that took place all day",
+      "intradayNotes": "Swiped up on the open & halted, flushed down, crept back up & made new HOD, faded to 11 then grinded back to 13.75 rest of day. The sudden jam up around 11:45 should have set off warnings to cover entire position",
+      "dailyNotes": "Went from 10, to 2.50, to 15 all in 5 days, not on a ton of volume either so that was definitely a factor to the range bound action that took place all day. SPAC with no apparent dilutionary agenda — more of a mean reversion trade playing the robotics theme, SPACs are tough to trade in general",
       "volumeNotes": "Steadily declining volume all day, usual volume spike on the open, then slowly faded as the sessions went on",
       "exclude": false
     },
@@ -585,7 +585,7 @@
       "exitPrice": 111.5,
       "outcome": "win",
       "patternCategory": "Large Cap First Red Day (LC FRD)",
-      "intradayNotes": "Entered short on the open at 118 & 116 wanting to add higher with risk at 121, added around 119, got stopped out at 121 & re-entered short on the swipe up over 124, entered short 123.50 with risk at 125.50, started working so adding at 121.50 with risk at 125, added more on pops with risk at 124.50, covered 25% into the flush to 112, re-entered short at 115, sold 25% into 115.50, re-entered more at 114.50 then covered the remaining shares at 111, ended up flushing violently towards 98, but was not worth the risk with the gains made on the day",
+      "intradayNotes": "First short at 118-116 with risk at 121, added at 119, stopped at 121. Re-entered on swipe over 124 at 123.50 (risk 125.50), added at 121.50 on pops. Covered 25% into flush to 112, re-entered at 115, covered remaining at 111. Flushed violently to 98 after but not worth the risk with gains already booked",
       "dailyNotes": "Oil in an uptrend rather than rangebound as it normally is, gapped up a few times in the prior days but only a few percentage points, day prior oil gapped up but not a very good FRD setup, todays session was much better & it showed in the way the product behaved the entire session",
       "volumeNotes": "Gapping up on larger than normal volume, with volume drying out intraday, heavy selling came in towards EOD for the flush from 115 to 98",
       "exclude": false
@@ -600,7 +600,7 @@
       "exitPrice": 1.9,
       "outcome": "win",
       "patternCategory": "Small Cap Day 2 Short (SC D2)",
-      "intradayNotes": "Entered short on the opening swipe above HOD at 2.80 with risk at 3.15, got stopped & immediately re-entered at 3.15 with risk at HOD which was 3.25, started working so added at 3.00 with risk at 3.20, got stopped out & waited for the name to show weakness, after consolidating below the highs with no follow through, re-entered short at 3.30 vs HOD which was 3.75, added at 3.20 & my new risk was 3.60, added again on lower lows near 3.15 with new risk at 3.50, added on pops from 3.75 down through 2.13, lowering risk every time with final covers at 15:00 for an average cover of 1.90",
+      "intradayNotes": "Shorted opening swipe at 2.80 vs 3.15 risk, stopped. Re-entered at 3.15, added at 3.00, stopped again. Waited for weakness — after consolidating below highs with no follow through, entered at 3.30 vs HOD 3.75, added at 3.20 & 3.15, lowering risk on each add. Added on pops from 3.75 down through 2.13, final covers at 15:00 avg 1.90",
       "dailyNotes": "Over-extended daily, made a move from 0.20 to 3.80 in 2 days, made a big PM push from 1.75 to 3.00, prior day move was 0.20 to 1.75 & closed at HOD",
       "volumeNotes": "Big volume day seemed to be D1 & much lesser volume the next day, volume dried up the rest of the day after the couple swipe ups that made new HOD's",
       "exclude": false
