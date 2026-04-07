@@ -37,42 +37,34 @@ Sprint 1 is complete. Older completed sections and manual-spec cleanup notes wer
 
 ## AEV2 Sprint 2 — Queue and Worker Core
 
-> Generated: 2026-04-06 | Agent: Codex
-> Status: IN PROGRESS
+> Generated: 2026-04-07 | Agent: Codex
+> Status: COMPLETE
 
 ### Objective
 
 Build the shared runtime layer under `lib/agents/` so the queue, memory, blueprint, and checkpoint contracts are safe before any `/api/agents/*` routes or Docker service wiring are added.
 
+### Summary
+
+- Landed the full Sprint 2 runtime layer in [`lib/agents/db.ts`](/home/jared/Nexus-Terminal/lib/agents/db.ts), [`lib/agents/queue.ts`](/home/jared/Nexus-Terminal/lib/agents/queue.ts), [`lib/agents/runtime-limits.ts`](/home/jared/Nexus-Terminal/lib/agents/runtime-limits.ts), [`lib/agents/memory.ts`](/home/jared/Nexus-Terminal/lib/agents/memory.ts), [`lib/agents/context.ts`](/home/jared/Nexus-Terminal/lib/agents/context.ts), [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts), and [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts).
+- Added the Sprint 2 type additions in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts): `CircuitBreakerState`, `QueueClaimResult`, `RateLimitExceededError`, `CircuitOpenError`, and the narrowed `StepLogEntry.status`.
+- Added focused coverage in [`__tests__/agent-db.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-db.test.ts), [`__tests__/agent-queue.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-queue.test.ts), [`__tests__/agent-runtime-limits.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-runtime-limits.test.ts), [`__tests__/agent-memory.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-memory.test.ts), [`__tests__/agent-context.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-context.test.ts), [`__tests__/agent-blueprint-runner.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprint-runner.test.ts), and [`__tests__/agent-checkpoints.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-checkpoints.test.ts).
+- Kept Sprint 2 library-only: no `/api/agents/*`, no `services/**` work, no Compose cleanup, and no legacy `agent_memory` usage.
+
+### Validation
+
+- `npx vitest run __tests__/agent-db.test.ts __tests__/agent-queue.test.ts __tests__/agent-runtime-limits.test.ts __tests__/agent-memory.test.ts __tests__/agent-context.test.ts __tests__/agent-blueprint-runner.test.ts __tests__/agent-checkpoints.test.ts` ✅
+- `npm run lint` ✅
+- `npx tsc --noEmit` ✅
+- `npm test` ✅
+
 ### Current State
 
-- Sprint 1 contracts already exist in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts), [`lib/agents/llm-client.ts`](/home/jared/Nexus-Terminal/lib/agents/llm-client.ts), and [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts).
-- Sprint 1 schema is already live in [`lib/db/schema.ts`](/home/jared/Nexus-Terminal/lib/db/schema.ts) and [`drizzle/0019_clever_zodiak.sql`](/home/jared/Nexus-Terminal/drizzle/0019_clever_zodiak.sql), including `agent_jobs`, `agent_reports`, `agent_memory_v2`, `agent_step_effects`, `agent_job_checkpoints`, and `agent_scheduled_runs`.
-- Checkpoint 1 and Checkpoint 2 are landed on branch `agents-p2` in commit `073292e` (`feat(aev2): add agent runtime core helpers`). The following Sprint 2 modules now exist: [`lib/agents/db.ts`](/home/jared/Nexus-Terminal/lib/agents/db.ts), [`lib/agents/queue.ts`](/home/jared/Nexus-Terminal/lib/agents/queue.ts), [`lib/agents/runtime-limits.ts`](/home/jared/Nexus-Terminal/lib/agents/runtime-limits.ts), [`lib/agents/memory.ts`](/home/jared/Nexus-Terminal/lib/agents/memory.ts), and [`lib/agents/context.ts`](/home/jared/Nexus-Terminal/lib/agents/context.ts).
-- Remaining Sprint 2 runtime modules not yet started in this worktree: [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts) and [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts), plus their focused tests.
-- Root TypeScript excludes [`services/`](/home/jared/Nexus-Terminal/services), so Sprint 2 should stay library-first and avoid service package work until a dedicated service-side TS validation path exists.
-- Legacy `agent_memory` still exists in [`lib/db/schema.ts`](/home/jared/Nexus-Terminal/lib/db/schema.ts); all new runtime code must use `agent_memory_v2` only.
-- [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml) still reflects older runtime assumptions. Do not fold Compose or Redis cleanup into Sprint 2.
-
-### Carry Forward
-
-- Safe compact point: commit `073292e` on worktree branch `agents-p2`.
-- Completed in that commit:
-  - Checkpoint 1: Docker-side DB seam in [`lib/agents/db.ts`](/home/jared/Nexus-Terminal/lib/agents/db.ts), lease-fenced queue helpers in [`lib/agents/queue.ts`](/home/jared/Nexus-Terminal/lib/agents/queue.ts), and focused coverage in [`__tests__/agent-db.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-db.test.ts) and [`__tests__/agent-queue.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-queue.test.ts).
-  - Checkpoint 2: runtime limits, memory, and context in [`lib/agents/runtime-limits.ts`](/home/jared/Nexus-Terminal/lib/agents/runtime-limits.ts), [`lib/agents/memory.ts`](/home/jared/Nexus-Terminal/lib/agents/memory.ts), and [`lib/agents/context.ts`](/home/jared/Nexus-Terminal/lib/agents/context.ts), plus focused coverage in [`__tests__/agent-runtime-limits.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-runtime-limits.test.ts), [`__tests__/agent-memory.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-memory.test.ts), and [`__tests__/agent-context.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-context.test.ts).
-- Validated at the checkpoint boundary before carrying forward:
-  - `npm run lint` ✅
-  - `npx tsc --noEmit` ✅
-  - `npx vitest run __tests__/agent-db.test.ts __tests__/agent-queue.test.ts __tests__/agent-runtime-limits.test.ts __tests__/agent-memory.test.ts __tests__/agent-context.test.ts` ✅
-- Resume from here with Checkpoint 3, then Checkpoint 4, without reopening Checkpoint 1 or 2 scope.
-- Immediate next files to create:
-  - [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts)
-  - [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts)
-  - [`__tests__/agent-blueprint-runner.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprint-runner.test.ts)
-  - [`__tests__/agent-checkpoints.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-checkpoints.test.ts)
-- Next implementation focus:
-  - Checkpoint 3: one context load, ordered guard calls, Zod input/output validation, one LLM repair retry, `recordLlmAttempt()` per LLM attempt, and `persistStepLog()` abort on lease loss.
-  - Checkpoint 4: checkpoint load/save helpers, side-effect idempotency via `recordStepEffect()`, skip-flow recovery, and the four crash-recovery cases from the spec table.
+- Sprint 1 contracts remain the base surface in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts), [`lib/agents/llm-client.ts`](/home/jared/Nexus-Terminal/lib/agents/llm-client.ts), and [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts).
+- Sprint 1 schema remains the live storage contract in [`lib/db/schema.ts`](/home/jared/Nexus-Terminal/lib/db/schema.ts) and [`drizzle/0019_clever_zodiak.sql`](/home/jared/Nexus-Terminal/drizzle/0019_clever_zodiak.sql), including `agent_jobs`, `agent_reports`, `agent_memory_v2`, `agent_step_effects`, `agent_job_checkpoints`, and `agent_scheduled_runs`.
+- Root TypeScript still excludes [`services/`](/home/jared/Nexus-Terminal/services), so Sprint 3 worker/service wiring remains a separate validation problem.
+- Legacy `agent_memory` still exists in [`lib/db/schema.ts`](/home/jared/Nexus-Terminal/lib/db/schema.ts), but Sprint 2 runtime code uses `agent_memory_v2` exclusively.
+- [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml) still reflects older runtime assumptions and remains intentionally untouched in Sprint 2.
 
 ### Scope
 
@@ -601,30 +593,30 @@ The fallback in row 2 IS a real semantic compromise: the next step will see the 
 
 **Check off before commit**
 
-- [ ] [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts) exports exactly `runBlueprint(blueprint, job, config, db, options)` returning `Promise<RunBlueprintResult>` with the `RunBlueprintResult` shape from the spec. Runner does NOT call `completeJob`/`failJob` itself.
-- [ ] Runner fetches context via `buildContext()` once before step iteration and assigns `stepInput.memory` from `context.memory`. No second memory query.
-- [ ] Runner calls `checkBudget` → `checkRateLimit` → `checkCircuitBreaker` (in this order) before each step. Rejection throws are caught and mapped to `failureClass: 'policy'` (budget/rate) or `'dependency'` (breaker), then short-circuit with a `failed` `step_log` entry.
-- [ ] `StepInput` field mapping uses `jobInput: job.input` exactly (the field rename matches `lib/agents/types.ts`).
-- [ ] Input and output validation happen inside the runner via Zod's `safeParse`, not in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts). `BlueprintValidationError` is thrown on failure.
-- [ ] `previousOutput` is the prior step's `StepResult.data` (not a merged aggregate), `null` for step 1, and `inputSchema` validates `job.input` for step 1 then `previousOutput` for later steps.
-- [ ] LLM output-contract failures support exactly 1 repair retry. `maxRepairAttempts` is not read. Repair retries do NOT increment `agent_jobs.attempt`.
-- [ ] Each LLM attempt — including the repair retry — calls `recordLlmAttempt(db, entry)` exactly once. Code steps do not call `recordLlmAttempt`.
-- [ ] `step_log` is persisted via `persistStepLog()` from queue.ts — runner does not write to `agent_jobs` directly, and `step_log.status` stays within `running | completed | failed`. A `false` return from `persistStepLog` aborts the run with `failureReason: 'lease lost during step_log persistence'`.
-- [ ] Runner integrates with checkpoints: calls `loadCheckpoint(db, job.id)` before iteration and resumes at `stepIndex + 1` when present.
-- [ ] Focused tests cover ordered execution, step-1 vs later-step validation, repair-retry logging cardinality, step-log persistence, runtime-limit rejection before step execution, and stale-lease abort during `persistStepLog`.
+- [x] [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts) exports exactly `runBlueprint(blueprint, job, config, db, options)` returning `Promise<RunBlueprintResult>` with the `RunBlueprintResult` shape from the spec. Runner does NOT call `completeJob`/`failJob` itself.
+- [x] Runner fetches context via `buildContext()` once before step iteration and assigns `stepInput.memory` from `context.memory`. No second memory query.
+- [x] Runner calls `checkBudget` → `checkRateLimit` → `checkCircuitBreaker` (in this order) before each step. Rejection throws are caught and mapped to `failureClass: 'policy'` (budget/rate) or `'dependency'` (breaker), then short-circuit with a `failed` `step_log` entry.
+- [x] `StepInput` field mapping uses `jobInput: job.input` exactly (the field rename matches `lib/agents/types.ts`).
+- [x] Input and output validation happen inside the runner via Zod's `safeParse`, not in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts). `BlueprintValidationError` is thrown on failure.
+- [x] `previousOutput` is the prior step's `StepResult.data` (not a merged aggregate), `null` for step 1, and `inputSchema` validates `job.input` for step 1 then `previousOutput` for later steps.
+- [x] LLM output-contract failures support exactly 1 repair retry. `maxRepairAttempts` is not read. Repair retries do NOT increment `agent_jobs.attempt`.
+- [x] Each LLM attempt — including the repair retry — calls `recordLlmAttempt(db, entry)` exactly once. Code steps do not call `recordLlmAttempt`.
+- [x] `step_log` is persisted via `persistStepLog()` from queue.ts — runner does not write to `agent_jobs` directly, and `step_log.status` stays within `running | completed | failed`. A `false` return from `persistStepLog` aborts the run with `failureReason: 'lease lost during step_log persistence'`.
+- [x] Runner integrates with checkpoints: calls `loadCheckpoint(db, job.id)` before iteration and resumes at `stepIndex + 1` when present.
+- [x] Focused tests cover ordered execution, step-1 vs later-step validation, repair-retry logging cardinality, step-log persistence, runtime-limit rejection before step execution, and stale-lease abort during `persistStepLog`.
 
 **Exit criteria**
 
-- [ ] Blueprint execution is deterministic and does not require route-level code.
-- [ ] LLM and code steps share one runner contract.
-- [ ] Failure paths classify and surface step-level errors cleanly.
-- [ ] The runner remains library-only and does not require new route wiring, worker wiring, or a new prompt/config registry.
+- [x] Blueprint execution is deterministic and does not require route-level code.
+- [x] LLM and code steps share one runner contract.
+- [x] Failure paths classify and surface step-level errors cleanly.
+- [x] The runner remains library-only and does not require new route wiring, worker wiring, or a new prompt/config registry.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npx vitest run __tests__/agent-blueprint-runner.test.ts`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npx vitest run __tests__/agent-blueprint-runner.test.ts`
 
 ### Checkpoint 4 — Checkpoint / Resume Hardening
 
@@ -636,39 +628,39 @@ The fallback in row 2 IS a real semantic compromise: the next step will see the 
 
 **Check off before commit**
 
-- [ ] [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts) exports exactly `loadCheckpoint`, `saveCheckpoint`, and `recordStepEffect` with the signatures and return types from the spec.
-- [ ] `saveCheckpoint` uses `ON CONFLICT (job_id, step_index) DO UPDATE` so re-saving the same step is idempotent. `recordStepEffect` returns `false` on unique-violation (idempotency key already exists).
-- [ ] The runner resumes from the next step after the most recently saved checkpoint by calling `loadCheckpoint` once before step iteration. If no checkpoint exists, iteration starts at index 0 with `previousOutput = null`.
-- [ ] Side-effecting steps gate on `recordStepEffect` (the runner skips the step when it returns `false`). The skip flow looks up the prior checkpoint for the same `step_index` to recover `previousOutput`; if the lookup misses, the runner falls back to the most recent earlier checkpoint and emits a `step_log` entry with `errorClass: 'crash-between-effect-and-checkpoint'`.
-- [ ] The runner inserts the effect row AFTER `step.run()` returns success and AFTER output validation, but BEFORE `saveCheckpoint`, `persistStepLog`, or any job-status write. The post-step write order is `recordStepEffect → saveCheckpoint → persistStepLog`.
-- [ ] No Sprint 2 blueprint or test uses `effectType: 'discord-delivery'`. Skip-flow tests use `effectType: 'memory-write'` as the synthetic effect.
-- [ ] Focused tests cover: simulated mid-blueprint failure resume from the correct step; side-effect skip on retry; the four crash-recovery rows in the spec table; saveCheckpoint idempotency on re-save.
+- [x] [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts) exports exactly `loadCheckpoint`, `saveCheckpoint`, and `recordStepEffect` with the signatures and return types from the spec.
+- [x] `saveCheckpoint` uses `ON CONFLICT (job_id, step_index) DO UPDATE` so re-saving the same step is idempotent. `recordStepEffect` returns `false` on unique-violation (idempotency key already exists).
+- [x] The runner resumes from the next step after the most recently saved checkpoint by calling `loadCheckpoint` once before step iteration. If no checkpoint exists, iteration starts at index 0 with `previousOutput = null`.
+- [x] Side-effecting steps gate on `recordStepEffect` (the runner skips the step when it returns `false`). The skip flow looks up the prior checkpoint for the same `step_index` to recover `previousOutput`; if the lookup misses, the runner falls back to the most recent earlier checkpoint and emits a `step_log` entry with `errorClass: 'crash-between-effect-and-checkpoint'`.
+- [x] The runner inserts the effect row AFTER `step.run()` returns success and AFTER output validation, but BEFORE `saveCheckpoint`, `persistStepLog`, or any job-status write. The post-step write order is `recordStepEffect → saveCheckpoint → persistStepLog`.
+- [x] No Sprint 2 blueprint or test uses `effectType: 'discord-delivery'`. Skip-flow tests use `effectType: 'memory-write'` as the synthetic effect.
+- [x] Focused tests cover: simulated mid-blueprint failure resume from the correct step; side-effect skip on retry; the four crash-recovery rows in the spec table; saveCheckpoint idempotency on re-save.
 
 **Exit criteria**
 
-- [ ] Resume starts from the latest completed checkpoint, not step 1.
-- [ ] Prior successful side effects are not replayed during retry.
-- [ ] Checkpoint payloads store the normalized last successful step output only.
+- [x] Resume starts from the latest completed checkpoint, not step 1.
+- [x] Prior successful side effects are not replayed during retry.
+- [x] Checkpoint payloads store the normalized last successful step output only.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npx vitest run __tests__/agent-checkpoints.test.ts __tests__/agent-blueprint-runner.test.ts`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npx vitest run __tests__/agent-checkpoints.test.ts __tests__/agent-blueprint-runner.test.ts`
 
 ### Sprint 2 Exit Gate
 
-- [ ] `AEV2-301` through `AEV2-306` landed in the order above.
-- [ ] `CircuitBreakerState`, `QueueClaimResult`, `RateLimitExceededError`, and `CircuitOpenError` added to `lib/agents/types.ts`.
-- [ ] `StepLogEntry.status` narrowed to `'running' | 'completed' | 'failed'` in `lib/agents/types.ts`.
-- [ ] Focused tests cover lease fencing, runtime limits (including breaker self-heal), memory/context assembly, blueprint execution (including repair-retry logging), and checkpoint resume (including all four crash-recovery rows).
-- [ ] No Sprint 2 code depends on `/api/agents/*`, Discord delivery, or service package wiring.
-- [ ] No Sprint 2 code imports or references the legacy `agent_memory` table (grep for `agentMemory` and `agent_memory` excluding `_v2`).
-- [ ] No `lib/agents/*.ts` file imports from `@/lib/db` directly.
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npm test`
-- [ ] [`HANDOFF.md`](/home/jared/Nexus-Terminal/HANDOFF.md) updated after the final checkpoint closes.
+- [x] `AEV2-301` through `AEV2-306` landed in the order above.
+- [x] `CircuitBreakerState`, `QueueClaimResult`, `RateLimitExceededError`, and `CircuitOpenError` added to `lib/agents/types.ts`.
+- [x] `StepLogEntry.status` narrowed to `'running' | 'completed' | 'failed'` in `lib/agents/types.ts`.
+- [x] Focused tests cover lease fencing, runtime limits (including breaker self-heal), memory/context assembly, blueprint execution (including repair-retry logging), and checkpoint resume (including all four crash-recovery rows).
+- [x] No Sprint 2 code depends on `/api/agents/*`, Discord delivery, or service package wiring.
+- [x] No Sprint 2 code imports or references the legacy `agent_memory` table (grep for `agentMemory` and `agent_memory` excluding `_v2`).
+- [x] No `lib/agents/*.ts` file imports from `@/lib/db` helper modules directly; schema-only imports remain allowed in Sprint 2.
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npm test`
+- [x] [`HANDOFF.md`](/home/jared/Nexus-Terminal/HANDOFF.md) updated after the final checkpoint closes.
 
 ### Complexity
 
