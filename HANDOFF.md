@@ -177,7 +177,7 @@ These six decisions remove ambiguity before Codex starts. If any of them is wron
 - Automatic publish dedupe uses a deterministic `reportId = ${jobId}:${reportType}` row plus a successful-delivery marker `discord-delivery:${reportId}`. The row write must commit before any webhook POST. Exact-once external delivery is not claimed across the narrow crash window after Discord accepts a POST and before the DB update/marker write completes.
 - `POST /api/agents/admin/redeliver` re-reads the stored `report_json` from `agent_reports` and retries ONLY the delivery portion. It must not regenerate the report via the LLM.
 - Worker code paths route every lease-fenced mutation through Sprint 2 queue helpers (`claimNextQueuedJob`, `completeJob`, `failJob`, `scheduleJobRetry`, etc.). Job creators such as API routes, blueprint handoff steps, and macro cron may insert new queued jobs directly via `db.insert(agentJobs)` because they are creating work, not mutating a claimed lease-owned job.
-- Research blueprints use [`getCachedTickerData()`](/home/jared/Nexus-Terminal/lib/askedgar.ts) as the canonical AskEdgar cache. `agent_memory_v2` may store derived agent facts if a blueprint needs them, but Sprint 3 does not introduce a second raw AskEdgar cache.
+- Research blueprints use [`getCachedTickerData(ticker)`](/home/jared/Nexus-Terminal/lib/askedgar.ts) (signature: `getCachedTickerData(ticker: string)`) as the canonical AskEdgar cache. `agent_memory_v2` may store derived agent facts if a blueprint needs them, but Sprint 3 does not introduce a second raw AskEdgar cache.
 - `/tmp/healthy` file touch is library-level only. Sprint 4 wires the Docker healthcheck; Sprint 3 just writes the file so tests can verify the touch happens.
 - Do not introduce any new npm dependency. The repo already has `zod`, `drizzle-orm`, `@neondatabase/serverless`, and Next.js 15's built-in `fetch` / `Response` — that is everything Sprint 3 needs.
 - Do not touch `.env`, `.env.local`, or `services/.env`. Document any new env vars in `services/.env.example` ONLY if Sprint 3 must run without them; otherwise leave `.env.example` changes to Sprint 4.
@@ -470,8 +470,15 @@ export const orchestratorMacroSummaryBlueprint: Blueprint = {
       name: 'fetch-market-snapshot',
       type: 'code',
       metadata: { canRetry: true, timeoutMs: 15000, maxRepairAttempts: 0, sideEffect: false },
-      // Fetches index/sector/commodity prices from Massive API using MASSIVE_API_KEY.
-      // If MASSIVE_API_KEY is unset, return { snapshot: null, note: 'no massive api key' }.
+      // Fetches index/sector/commodity prices via the canonical Massive client at
+      // lib/massive-market.ts. Use `fetchUnifiedSnapshot(tickers)` (signature:
+      // `fetchUnifiedSnapshot(tickers: string[])`) with a fixed list of macro-relevant
+      // tickers — at minimum: ['SPY', 'QQQ', 'IWM', 'DIA', 'XLE', 'XLF', 'XLK', 'GLD', 'USO', 'TLT'].
+      // Do NOT build a fresh fetcher — reuse the existing client so it inherits auth, retry,
+      // and error handling from the rest of the app.
+      // If MASSIVE_API_KEY is unset (check via process.env before calling), return
+      // { snapshot: null, note: 'no massive api key' }. The client throws on missing key,
+      // so the env-var guard avoids surfacing that as a step failure in dev.
       run: async () => { /* ... */ },
     },
     {
@@ -522,7 +529,7 @@ export const smallCapResearchBlueprint: Blueprint = {
       inputSchema: z.object({ ticker: z.string().regex(/^[A-Z]{1,5}$/) }),
       outputSchema: z.object({ ticker: z.string(), filings: z.array(z.unknown()), cashPosition: z.unknown().nullable() }),
       metadata: { canRetry: true, timeoutMs: 30000, maxRepairAttempts: 0, sideEffect: false },
-      // Uses getCachedTickerData() as the canonical upstream AskEdgar cache, then
+      // Uses getCachedTickerData(ticker) as the canonical upstream AskEdgar cache, then
       // shapes the response into the step output required by the blueprint.
       run: async () => { /* ... */ },
     },
@@ -559,7 +566,7 @@ export const smallCapResearchBlueprint: Blueprint = {
 
 Contract notes:
 
-- **AskEdgar caching.** Step 1 uses `getCachedTickerData()` as the canonical shared cache for raw AskEdgar data. If the blueprint wants to persist derived facts in `agent_memory_v2`, that write is additive and must not replace the shared cache.
+- **AskEdgar caching.** Step 1 calls `getCachedTickerData(ticker)` (signature: `getCachedTickerData(ticker: string)` from `lib/askedgar.ts`) as the canonical shared cache for raw AskEdgar data. The ticker arg is required — pass the normalized ticker from the step input. If the blueprint wants to persist derived facts in `agent_memory_v2`, that write is additive and must not replace the shared cache.
 - **Ticker normalization.** Step 1 uppercases and trims the incoming ticker before any external call. The step input schema should be tightened to `z.object({ ticker: z.string().regex(/^[A-Z]{1,5}$/) })` so invalid or missing tickers fail as non-retriable contract errors.
 - **Report ownership.** `userId = job.userId` — research reports belong to the user who requested them, never to `system-agent-user`.
 
@@ -735,8 +742,11 @@ Each route below lists path, method, auth, request shape, response shape, and er
 
 **GET** — `requireUser()`.
 
-1. `SELECT * FROM agent_reports WHERE id = ${params.id} AND user_id = ${user.id} LIMIT 1`.
-2. If no row, 404. If row, return `{ report: { id, agent_id, report_type, status, report_json } }`.
+> **Next.js 15 dynamic params are async.** Match the existing repo pattern in [`app/api/trades/[id]/route.ts`](/home/jared/Nexus-Terminal/app/api/trades/[id]/route.ts): the handler signature is `export async function GET(_request: Request, context: { params: Promise<{ id: string }> })`, and the id is unpacked via `const { id } = await context.params;` before any DB call. Do NOT read `params.id` synchronously — it will fail to compile under Next.js 15.
+
+1. Unpack `const { id } = await context.params;`.
+2. `SELECT * FROM agent_reports WHERE id = ${id} AND user_id = ${user.id} LIMIT 1`.
+3. If no row, 404. If row, return `{ report: { id, agent_id, report_type, status, report_json } }`.
 
 ##### `app/api/agents/research/route.ts`
 
@@ -957,7 +967,7 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 
 - [ ] `lib/agents/blueprints/orchestrator-chat.ts` exports `orchestratorChatBlueprint` with two steps. Step 1 `classify-and-route` is deterministic (no LLM call), enforces the five routing rules verbatim, checks `agent_registry.status`, and enqueues the specialist handoff when needed. Step 2 `synthesize-response` uses `callLlm(..., 'interactive')` with `buildLlmSystemPrompt('orchestrator')`.
 - [ ] `lib/agents/blueprints/orchestrator-macro-summary.ts` exports four steps matching the contract. Step 1 reads `MACRO_HEADLINES_URLS` env with the documented default. Step 3 uses `lane: 'background'`. Step 4 uses `writeAndDeliverReport` with `userId = 'system-agent-user'`.
-- [ ] `lib/agents/blueprints/small-cap-research.ts` exports four steps. Step 1 uses `getCachedTickerData()` as the upstream AskEdgar cache, Step 2 uses a direct TradingView scanner call instead of an HTTP call into `/api/tradingview/gainers`, Step 3 uses `lane: 'background'`, and Step 4 uses `writeAndDeliverReport` with `userId = job.userId` and `reportType = 'research'`.
+- [ ] `lib/agents/blueprints/small-cap-research.ts` exports four steps. Step 1 calls `getCachedTickerData(ticker)` as the upstream AskEdgar cache (passing the normalized ticker arg — the function signature requires it), Step 2 uses a direct TradingView scanner call instead of an HTTP call into `/api/tradingview/gainers`, Step 3 uses `lane: 'background'`, and Step 4 uses `writeAndDeliverReport` with `userId = job.userId` and `reportType = 'research'`.
 - [ ] `lib/agents/blueprints/swing-trader-research.ts` exports four steps with the MDR-focused output schema. Same save-research contract.
 - [ ] `lib/agents/blueprint-runner.ts` is extended (additive only) to inject `job` / `db` / `agentConfig` into step input, support `skipWhenRouted`, and return `failureClass` on failed runs.
 - [ ] `__tests__/agent-blueprints.test.ts` covers: orchestrator routing (each rule branches correctly), orchestrator offline-specialist fallback, macro-summary step 3 using the background lane, small-cap AskEdgar cache hit/miss, research save step using `writeAndDeliverReport`.
