@@ -86,79 +86,123 @@ Build the shared runtime layer under `lib/agents/` so the queue, memory, bluepri
 
 ### Execution Contracts
 
-These rules are part of the Sprint 2 implementation contract. Another execution agent should be able to build the runtime from this section plus the live repo without consulting `AGENTIC_EXPANSIONV2.md`.
+These rules are part of the Sprint 2 implementation contract. Codex should be able to build the runtime from this section plus the live repo without consulting `AGENTIC_EXPANSIONV2.md`.
+
+#### Additive Type Contracts (`lib/agents/types.ts`)
+
+Sprint 2 requires these type additions to `lib/agents/types.ts`. Add them at the end of the file, before the error classes.
+
+```ts
+export interface CircuitBreakerState {
+  consecutiveFailures: number;
+  openedAt: string | null; // ISO timestamp when breaker opened, null when closed
+}
+
+export interface QueueClaimResult {
+  job: AgentJob;
+  leaseVersion: number;
+}
+```
+
+No other type additions are needed in Sprint 2. Do not modify existing types.
+
+#### Test Strategy
+
+All Sprint 2 tests use hand-rolled Drizzle mock objects following the pattern in `__tests__/server-db-utils.test.ts`. No real database connection. Mock the `db` argument directly in each test by building fluent-chain objects with `vi.fn()`.
+
+For queue tests, the mock's `.returning()` call should return `[]` (zero rows updated) to simulate stale-worker rejection, and `[updatedRow]` to simulate successful claim. For runtime-limits and context tests, mock the Drizzle `.select().from().where()` chain to return controlled rows.
 
 #### `lib/agents/db.ts`
 
-- Export `getAgentDb()` as the Docker/runtime DB seam. It should mirror the pooled WebSocket Drizzle shape used by [`lib/db.ts`](/home/jared/Nexus-Terminal/lib/db.ts) without importing `getDb()` or `getPoolDb()`.
-- Import schema directly from [`lib/db/schema.ts`](/home/jared/Nexus-Terminal/lib/db/schema.ts) and expose additive agent-DB type aliases from this file so the rest of Sprint 2 depends on one runtime seam.
-- Return `null` when `DATABASE_URL` is missing, matching the repo's existing DB-helper pattern.
+- Export `getAgentDb()` as the Docker/runtime DB seam. It returns a singleton `NeonDatabase<typeof schema>` (WebSocket pool only — Docker runtime does not need a separate HTTP read path). Mirror the singleton pattern in [`lib/db.ts`](/home/jared/Nexus-Terminal/lib/db.ts) without importing `getDb()` or `getPoolDb()`.
+- Export `type AgentDb = NeonDatabase<typeof schema>` as the only type alias. All other Sprint 2 modules import `AgentDb` from this file.
+- Import schema directly from [`lib/db/schema.ts`](/home/jared/Nexus-Terminal/lib/db/schema.ts).
+- Return `null` when `DATABASE_URL` is missing, matching the repo's existing DB-helper pattern. (Docker crash-fast on null is deferred to the Sprint 3 worker loop — Sprint 2 callers must handle null.)
 
 #### `lib/agents/queue.ts`
 
 - Claim exactly one eligible queued job for a target `agent_id`, ordered by `priority DESC, created_at ASC`.
 - A job is eligible to claim only when `status = 'queued'` and `next_retry_at IS NULL OR next_retry_at <= now()`.
+- Claim must be a single `UPDATE...WHERE...RETURNING` statement, not a SELECT followed by UPDATE. Use Drizzle's ORM builder (`db.update().set().where()`) with `and()` / `or()` / `lte()` / `isNull()` / `sql` helpers from `drizzle-orm`. Use raw `sql` template literals only for expressions Drizzle helpers cannot express (e.g., `sql\`${table.attempt} + 1\``).
 - Claim semantics must atomically set:
   - `status = 'processing'`
   - `started_at = now()`
   - `attempt = attempt + 1`
-  - `locked_by = worker identity`
+  - `locked_by = workerId` (a stable string passed in by the caller, format `${agentId}:${process.pid}` — queue helpers accept `workerId: string` as a parameter, they do not generate identity internally)
   - `lock_expires_at = now() + interval '5 minutes'`
   - `last_heartbeat_at = now()`
   - `lease_version = lease_version + 1`
+- Return type: `QueueClaimResult | null` (defined in `types.ts`). Return `null` when no eligible job exists (zero rows returned from the UPDATE).
 - Renew, complete, fail, heartbeat, and retry-scheduling writes must all match on `id + locked_by + lease_version`.
-- `schedule retry` means: leave the existing job row in place, clear lease ownership fields, preserve prior `step_log`, set `status = 'queued'`, and move the retry delay into `next_retry_at`.
+- Heartbeat updates `last_heartbeat_at = now()` and extends `lock_expires_at` by 5 minutes (same duration as claim).
+- `schedule retry` means: set `status = 'queued'`, set `next_retry_at` to the computed delay, null out `locked_by`, `lock_expires_at`, and `last_heartbeat_at`. Preserve `started_at` (records when the job first began processing) and preserve prior `step_log`.
+- Export a `persistStepLog(db, jobId, lockedBy, leaseVersion, stepLog)` helper that writes to `agent_jobs.step_log` fenced on `id + locked_by + lease_version`. The blueprint runner calls this — it does not write to `agent_jobs` directly.
 - Stale-job reaper wiring remains out of scope for Sprint 2, but the queue helpers must be written so Sprint 3 can call them without changing lease semantics.
 
 #### `lib/agents/runtime-limits.ts`
 
+The blueprint runner is the primary caller of all functions in this module. Each exported function must accept `(db: AgentDb, userId: string, agentId: AgentId)` as its first three parameters so the runner can forward job context without re-reading from the DB.
+
 - Keep Sprint 2 runtime limits consolidated in this file even though the reference architecture later splits them.
-- Budget checks must read [`getLlmBudgetConfig()`](/home/jared/Nexus-Terminal/lib/agents/llm-client.ts) defaults and fail fast before expensive downstream work.
-- Token logging writes to `agent_request_log`; do not invent a second token ledger.
-- Rate limiting is DB-backed and queries `agent_request_log` for the requesting user. The V1 limit is 30 requests per rolling hour.
-- Circuit-breaker state is DB-backed in `agent_registry.config.circuitBreaker`, not module memory.
+- **Token logging:** Writes to `agent_request_log`; do not invent a second token ledger. When mapping `TokenTrackingEntry` to the DB insert, convert `success` to an integer: `success: entry.success ? 1 : 0` (the schema column is `integer`, the TS type is `boolean`). Call `Math.round()` on `estimatedCostCents` before insert (schema is `integer`; fractional values will be silently truncated by Postgres).
+- **Budget checks:** Read [`getLlmBudgetConfig()`](/home/jared/Nexus-Terminal/lib/agents/llm-client.ts) defaults and fail fast before expensive downstream work. Daily budget check sums `estimated_cost_cents` in `agent_request_log` where `user_id = ?` AND `created_at >= start of current UTC calendar day`. Monthly budget check uses `created_at >= first of the current UTC calendar month`. Both checks are scoped per `userId` only, not per `userId + agentId`. Throw `BudgetExceededError` from `types.ts` on violation.
+- **Rate limiting:** DB-backed, queries `agent_request_log` for the requesting user. The V1 limit is 30 requests per rolling hour (`created_at >= now() - interval '1 hour'`). Scoped per `userId` only, not per `userId + agentId`.
+- **Circuit breaker:** State is DB-backed in `agent_registry.config.circuitBreaker` using the `CircuitBreakerState` type from `types.ts`, not module memory.
 - Circuit-breaker policy for Sprint 2:
-  - open after 5 consecutive failures
-  - reset window is 60 seconds
-  - when open, reject the work before any LLM call runs
+  - A failure is any `agent_request_log` row where `success = 0` for the given `agentId`. Consecutive means no `success = 1` row for the same `agentId` intervenes (query by `created_at DESC`).
+  - Open after 5 consecutive failures.
+  - Reset window is 60 seconds from `openedAt`.
+  - When open, reject the work before any LLM call runs.
+  - Failure counter increments must use a single UPDATE with a SQL expression (e.g., `jsonb_set` with cast increment on `agent_registry.config`), not a read-modify-write cycle in application code. This prevents lost counter increments when two workers fail concurrently.
 
 #### `lib/agents/memory.ts`
 
-- All reads and writes use [`agent_memory_v2`](/home/jared/Nexus-Terminal/lib/db/schema.ts) only.
+- All reads and writes use [`agent_memory_v2`](/home/jared/Nexus-Terminal/lib/db/schema.ts) only. Do not import or reference the legacy `agent_memory` table.
 - Memory helpers must always scope by both `user_id` and `agent_id`.
 - Upserts must honor the live unique key on `(user_id, agent_id, category, key)`.
+- Export two functions:
+  - `getMemory(db: AgentDb, userId: string, agentId: AgentId, category?: MemoryCategory): Promise<AgentMemoryRow[]>`
+  - `upsertMemory(db: AgentDb, row: Omit<AgentMemoryRow, 'id' | 'createdAt' | 'updatedAt'>): Promise<void>`
+- No other exports are needed in Sprint 2.
 
 #### `lib/agents/context.ts`
 
+Export a single function: `buildContext(db: AgentDb, userId: string, agentId: AgentId): Promise<AgentContext>`. No additional exports needed.
+
 - Build context from live repo tables only:
-  - memory from `agent_memory_v2`
-  - macro summary from the latest published `agent_reports` row with `report_type = 'macro-summary'`
+  - memory from `agent_memory_v2` (call `getMemory` from `lib/agents/memory.ts`)
+  - macro summary from the latest published `agent_reports` row with `report_type = 'macro-summary'` AND `status = 'published'`, ordered by `created_at DESC LIMIT 1`. Return `null` if no row exists.
   - conversation history from `agent_conversations`
   - trade context from `trades`
 - Default query scope for Sprint 2:
   - latest 20 conversation rows for `user_id + agent_id`, ordered by `created_at DESC`
   - latest 20 trades for `user_id`, ordered by `sort_key DESC`
+- Empty-state behavior: when no rows exist for any source, return the corresponding empty value (`[]` for arrays, `null` for macroSummary). The runner must not crash on empty context.
 - Route-level session narrowing is deferred to Sprint 3 API work. Sprint 2 context assembly should stay deterministic and library-only.
 
 #### `lib/agents/blueprint-runner.ts`
 
-- The runner contract is `runBlueprint(blueprint, job, config, db, options?)`; it executes ordered steps without importing route code or service entrypoints.
-- `previousOutput` is `null` for step 1 and the full accumulated normalized output thereafter.
-- The accumulator contract is mandatory: each later step receives the full prior payload through `previousOutput`.
+- The runner contract is `runBlueprint(blueprint: Blueprint, job: AgentJob, config: AgentConfig, db: AgentDb, options?: { signal?: AbortSignal })`; it executes ordered steps without importing route code or service entrypoints.
+- The runner fetches context once before step iteration by calling `buildContext(db, job.userId, job.agentId)` from `lib/agents/context.ts` and `getMemory(db, job.userId, job.agentId)` from `lib/agents/memory.ts`. These are not passed in via `options` — the runner owns the context fetch.
+- Before executing any step, the runner calls the budget check, rate-limit check, and circuit-breaker check from `lib/agents/runtime-limits.ts`. If any check rejects, the runner fails the job without running the step.
+- The runner calls `step.run(stepInput)` to execute any step type (`code` or `llm`). It constructs `StepInput` from the job, accumulated output, fetched memory, and fetched context.
+- `previousOutput` is `null` for step 1 and the `StepResult.data` from the immediately preceding step thereafter. It is NOT a merged aggregate of all prior steps — each step is responsible for forwarding what downstream steps need.
 - Input validation runs against `previousOutput` when `inputSchema` exists.
 - Output validation runs against `result.data` when `outputSchema` exists.
-- For `llm` steps, one repair retry is allowed only for output-contract failures and only within the step's configured repair-attempt budget. Repair retries do not increment `agent_jobs.attempt`.
-- Persist `step_log` after each meaningful state transition using metadata only. The allowed persisted fields are: `step`, `status`, `startedAt`, `completedAt`, `attempt`, `validatorResult`, `tokensUsed`, and `errorClass`.
-- Sprint 2 runner work must not require a new prompt loader or agent-config registry. Use the existing `Blueprint` / `AgentConfig` contracts from [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts); broader wiring belongs to later stories.
+- For `llm` steps with output-contract failures, the runner calls `step.run(stepInput)` a second time (repair retry). Sprint 2 enforces a hard cap of 1 repair retry per step regardless of `StepMetadata.maxRepairAttempts`. `maxRepairAttempts` is reserved for future use and must not be read by the Sprint 2 runner. Repair retries do not increment `agent_jobs.attempt`.
+- Persist `step_log` after each meaningful state transition by calling `persistStepLog()` from `lib/agents/queue.ts` (which fences on `id + locked_by + lease_version`). The runner does not write to `agent_jobs` directly. The allowed persisted fields are: `step`, `status`, `startedAt`, `completedAt`, `attempt`, `validatorResult`, `tokensUsed`, and `errorClass`. Token usage is read from `StepResult.metrics.tokensUsed`.
+- The "prompt loading" half of story AEV2-305 is deferred to AEV2-308. Sprint 2 runner work must not require a new prompt loader or agent-config registry. Use the existing `Blueprint` / `AgentConfig` contracts from [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts); broader wiring belongs to later stories.
 
 #### `lib/agents/checkpoints.ts`
 
+The blueprint runner imports and calls `saveCheckpoint()` and `loadCheckpoint()` directly. The checkpoint module has no dependency on the runner.
+
 - Checkpoints store normalized accumulated output only in `agent_job_checkpoints.checkpoint_json`.
 - Resume semantics are:
-  - load the latest completed checkpoint for the job
-  - restore `previousOutput` from that checkpoint
+  - load the latest completed checkpoint for the job: `ORDER BY step_index DESC LIMIT 1`
+  - restore `previousOutput` from that checkpoint's `checkpoint_json`
   - restart at `checkpoint.step_index + 1`, not step 1
-- Retry/resume must preserve the no-replay rule for prior successful side effects. If a completed step had a durable side effect, retries must detect that through `agent_step_effects` before re-running it.
+- Retry/resume must preserve the no-replay rule for prior successful side effects. Before executing any step where `metadata.sideEffect = true` and `metadata.idempotencyKey` is set, query `agent_step_effects` for that `idempotencyKey`. If a row exists, skip the step and treat it as already completed. Insert the `agent_step_effects` row after the step completes successfully but before any other downstream state mutations in the same step. This ordering guarantees that a crash-and-resume cycle finds the effect marker before re-attempting the side effect.
 
 #### Explicit Deferrals
 
@@ -184,12 +228,14 @@ These rules are part of the Sprint 2 implementation contract. Another execution 
 
 **Check off before commit**
 
-- [ ] [`lib/agents/db.ts`](/home/jared/Nexus-Terminal/lib/agents/db.ts) exists and provides `getAgentDb()` plus agent DB types for runtime modules.
-- [ ] [`lib/agents/queue.ts`](/home/jared/Nexus-Terminal/lib/agents/queue.ts) can claim, renew, complete, fail, and schedule retry for `agent_jobs`.
-- [ ] Claim order and eligibility are locked to `priority DESC, created_at ASC` over queued jobs whose `next_retry_at` is null-or-due.
-- [ ] Claiming a job sets a 5-minute lease and increments `lease_version`.
+- [ ] [`lib/agents/db.ts`](/home/jared/Nexus-Terminal/lib/agents/db.ts) exists and provides `getAgentDb()` returning a WebSocket pool singleton plus `type AgentDb`.
+- [ ] [`lib/agents/queue.ts`](/home/jared/Nexus-Terminal/lib/agents/queue.ts) can claim, renew, complete, fail, heartbeat, persistStepLog, and schedule retry for `agent_jobs`.
+- [ ] Claim is a single `UPDATE...WHERE...RETURNING` (not SELECT then UPDATE). Order and eligibility locked to `priority DESC, created_at ASC` over queued jobs whose `next_retry_at` is null-or-due.
+- [ ] Claiming a job sets a 5-minute lease, increments `lease_version`, and returns `QueueClaimResult | null`.
 - [ ] Queue writes fence on `id + locked_by + lease_version`.
-- [ ] Focused tests cover stale-worker rejection paths and happy-path lease renewal/completion.
+- [ ] Retry scheduling nulls `locked_by`, `lock_expires_at`, `last_heartbeat_at` while preserving `started_at`.
+- [ ] No `lib/agents/*.ts` file imports from `@/lib/db` directly (use `lib/agents/db.ts` only).
+- [ ] Focused tests cover stale-worker rejection paths, happy-path lease renewal/completion, and `next_retry_at` boundary (future vs past).
 
 **Exit criteria**
 
@@ -213,12 +259,15 @@ These rules are part of the Sprint 2 implementation contract. Another execution 
 
 **Check off before commit**
 
-- [ ] [`lib/agents/runtime-limits.ts`](/home/jared/Nexus-Terminal/lib/agents/runtime-limits.ts) tracks tokens, budget checks, breaker state, and rate-limit decisions.
-- [ ] Runtime limits log requests in `agent_request_log`, enforce 30 requests/hour, and persist circuit-breaker state in `agent_registry.config`.
-- [ ] [`lib/agents/memory.ts`](/home/jared/Nexus-Terminal/lib/agents/memory.ts) reads and writes `agent_memory_v2` only.
-- [ ] [`lib/agents/context.ts`](/home/jared/Nexus-Terminal/lib/agents/context.ts) assembles memory, recent trades, conversation history, and latest macro summary context.
-- [ ] Context queries use the Sprint 2 default scope: latest 20 trades, latest 20 conversation rows, latest published macro summary.
-- [ ] Focused tests cover breaker open/reset behavior, rate-limit rejection, agent-scoped memory reads, context query scoping, and macro-summary lookup without `macro_summaries`.
+- [ ] [`lib/agents/runtime-limits.ts`](/home/jared/Nexus-Terminal/lib/agents/runtime-limits.ts) tracks tokens, budget checks, breaker state, and rate-limit decisions. All exports accept `(db, userId, agentId)` as first params.
+- [ ] Token logging converts `success` to `0 | 1` on insert and calls `Math.round()` on `estimatedCostCents`.
+- [ ] Budget checks sum `estimated_cost_cents` from `agent_request_log` using UTC calendar day/month boundaries, scoped per userId only.
+- [ ] Rate limit enforces 30 req/hr per userId using rolling 1-hour window.
+- [ ] Circuit-breaker state uses the `CircuitBreakerState` type and writes via SQL expression (not read-modify-write).
+- [ ] [`lib/agents/memory.ts`](/home/jared/Nexus-Terminal/lib/agents/memory.ts) exports `getMemory()` and `upsertMemory()`, reads and writes `agent_memory_v2` only.
+- [ ] [`lib/agents/context.ts`](/home/jared/Nexus-Terminal/lib/agents/context.ts) exports `buildContext()` returning `AgentContext`. Assembles memory, recent trades, conversation history, and latest macro summary.
+- [ ] Context queries use the Sprint 2 default scope: latest 20 trades, latest 20 conversation rows, latest published macro summary. Returns empty values (not errors) when no rows exist.
+- [ ] Focused tests cover breaker open/reset behavior, rate-limit rejection, agent-scoped memory reads, context query scoping, empty-state behavior (no memory, no macro, no trades), and macro-summary lookup without `macro_summaries`.
 
 **Exit criteria**
 
@@ -244,11 +293,13 @@ These rules are part of the Sprint 2 implementation contract. Another execution 
 **Check off before commit**
 
 - [ ] [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts) executes ordered `code` and `llm` steps.
-- [ ] Input and output validation happen inside runtime modules, not in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts).
-- [ ] `previousOutput` is preserved across steps using the accumulator pattern.
-- [ ] LLM output-contract failures support at most one in-step repair retry when the step metadata allows it.
-- [ ] `step_log` writes status, attempt, validator result, tokens, and error class only.
-- [ ] Focused tests cover ordered execution, validation failure, and step-log persistence.
+- [ ] Runner fetches context via `buildContext()` and memory via `getMemory()` once before step iteration.
+- [ ] Runner calls runtime-limits checks (budget, rate, breaker) before each step.
+- [ ] Input and output validation happen inside the runner, not in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts).
+- [ ] `previousOutput` is the prior step's `StepResult.data` (not a merged aggregate), `null` for step 1.
+- [ ] LLM output-contract failures support exactly 1 repair retry. `maxRepairAttempts` is not read.
+- [ ] `step_log` is persisted via `persistStepLog()` from queue.ts — runner does not write to `agent_jobs` directly.
+- [ ] Focused tests cover ordered execution, validation failure, step-log persistence, and runtime-limit rejection before step execution.
 
 **Exit criteria**
 
@@ -273,11 +324,11 @@ These rules are part of the Sprint 2 implementation contract. Another execution 
 
 **Check off before commit**
 
-- [ ] [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts) can save and load the latest normalized checkpoint payload for a job.
+- [ ] [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts) can save and load the latest normalized checkpoint payload for a job (`ORDER BY step_index DESC LIMIT 1`).
 - [ ] The runner can resume from the failed step using `agent_job_checkpoints`.
 - [ ] Retry/resume paths preserve the same idempotency assumptions established earlier in the sprint.
-- [ ] Durable side effects use `agent_step_effects` so completed work is not replayed during retry.
-- [ ] Focused tests cover simulated mid-blueprint failure and resume from the correct step.
+- [ ] Side-effecting steps check `agent_step_effects` for existing `idempotencyKey` BEFORE execution (skip if exists). Effect row is inserted AFTER step success but BEFORE any downstream mutations.
+- [ ] Focused tests cover simulated mid-blueprint failure, resume from the correct step, and side-effect skip on retry.
 
 **Exit criteria**
 
@@ -294,8 +345,11 @@ These rules are part of the Sprint 2 implementation contract. Another execution 
 ### Sprint 2 Exit Gate
 
 - [ ] `AEV2-301` through `AEV2-306` landed in the order above.
+- [ ] `CircuitBreakerState` and `QueueClaimResult` types added to `lib/agents/types.ts`.
 - [ ] Focused tests cover lease fencing, runtime limits, memory/context assembly, blueprint execution, and checkpoint resume.
 - [ ] No Sprint 2 code depends on `/api/agents/*`, Discord delivery, or service package wiring.
+- [ ] No Sprint 2 code imports or references the legacy `agent_memory` table (grep for `agentMemory` and `agent_memory` excluding `_v2`).
+- [ ] No `lib/agents/*.ts` file imports from `@/lib/db` directly.
 - [ ] `npm run lint`
 - [ ] `npx tsc --noEmit`
 - [ ] `npm test`
