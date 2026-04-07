@@ -127,20 +127,31 @@ For queue tests, the mock's `.returning()` call should return `[]` (zero rows up
 
 - Claim exactly one eligible queued job for a target `agent_id`, ordered by `priority DESC, created_at ASC`.
 - A job is eligible to claim only when `status = 'queued'` and `next_retry_at IS NULL OR next_retry_at <= now()`.
-- Claim must be a single `UPDATE...WHERE...RETURNING` statement, not a SELECT followed by UPDATE. Use Drizzle's ORM builder (`db.update().set().where()`) with `and()` / `or()` / `lte()` / `isNull()` / `sql` helpers from `drizzle-orm`. Use raw `sql` template literals only for expressions Drizzle helpers cannot express (e.g., `sql\`${table.attempt} + 1\``).
+- Claim must be a single `UPDATE...WHERE...RETURNING` statement, not a SELECT followed by UPDATE. A subquery or CTE is allowed to preserve `priority DESC, created_at ASC` ordering safely, but the final UPDATE must still re-check `status = 'queued'` and `next_retry_at` eligibility so concurrent claimers get zero rows. Do not use `SELECT ... FOR UPDATE SKIP LOCKED` for Sprint 2 job claiming.
 - Claim semantics must atomically set:
   - `status = 'processing'`
-  - `started_at = now()`
+  - `started_at = COALESCE(started_at, now())`
   - `attempt = attempt + 1`
   - `locked_by = workerId` (a stable string passed in by the caller, format `${agentId}:${process.pid}` — queue helpers accept `workerId: string` as a parameter, they do not generate identity internally)
   - `lock_expires_at = now() + interval '5 minutes'`
   - `last_heartbeat_at = now()`
   - `lease_version = lease_version + 1`
 - Return type: `QueueClaimResult | null` (defined in `types.ts`). Return `null` when no eligible job exists (zero rows returned from the UPDATE).
+- Export exactly these helpers:
+  - `claimNextQueuedJob(db, agentId, workerId): Promise<QueueClaimResult | null>`
+  - `renewJobLease(db, jobId, lockedBy, leaseVersion): Promise<boolean>`
+  - `heartbeatJob(db, jobId, lockedBy, leaseVersion): Promise<boolean>`
+  - `completeJob(db, jobId, lockedBy, leaseVersion, result): Promise<boolean>`
+  - `failJob(db, jobId, lockedBy, leaseVersion, errorMessage): Promise<boolean>`
+  - `scheduleJobRetry(db, jobId, lockedBy, leaseVersion, nextRetryAt, errorMessage?): Promise<boolean>`
+  - `persistStepLog(db, jobId, lockedBy, leaseVersion, stepLog): Promise<boolean>`
 - Renew, complete, fail, heartbeat, and retry-scheduling writes must all match on `id + locked_by + lease_version`.
+- Renew, complete, fail, heartbeat, schedule-retry, and `persistStepLog` return `true` when one row was updated and `false` when zero rows matched because lease ownership changed. Zero-row stale-lease results are expected control flow, not thrown errors.
 - Heartbeat updates `last_heartbeat_at = now()` and extends `lock_expires_at` by 5 minutes (same duration as claim).
+- `complete job` means: set `status = 'completed'`, set `result`, set `completed_at = now()`, clear `locked_by`, `lock_expires_at`, `last_heartbeat_at`, `next_retry_at`, and `error_message`.
+- `fail job` means: set `status = 'failed'`, set `error_message`, set `completed_at = now()`, clear `locked_by`, `lock_expires_at`, `last_heartbeat_at`, and `next_retry_at`. Preserve `result` as-is.
 - `schedule retry` means: set `status = 'queued'`, set `next_retry_at` to the computed delay, null out `locked_by`, `lock_expires_at`, and `last_heartbeat_at`. Preserve `started_at` (records when the job first began processing) and preserve prior `step_log`.
-- Export a `persistStepLog(db, jobId, lockedBy, leaseVersion, stepLog)` helper that writes to `agent_jobs.step_log` fenced on `id + locked_by + lease_version`. The blueprint runner calls this — it does not write to `agent_jobs` directly.
+- `persistStepLog(db, jobId, lockedBy, leaseVersion, stepLog)` writes to `agent_jobs.step_log` fenced on `id + locked_by + lease_version`. The blueprint runner calls this — it does not write to `agent_jobs` directly.
 - Stale-job reaper wiring remains out of scope for Sprint 2, but the queue helpers must be written so Sprint 3 can call them without changing lease semantics.
 
 #### `lib/agents/runtime-limits.ts`
@@ -151,13 +162,13 @@ The blueprint runner is the primary caller of all functions in this module. Each
 - **Token logging:** Writes to `agent_request_log`; do not invent a second token ledger. When mapping `TokenTrackingEntry` to the DB insert, convert `success` to an integer: `success: entry.success ? 1 : 0` (the schema column is `integer`, the TS type is `boolean`). Call `Math.round()` on `estimatedCostCents` before insert (schema is `integer`; fractional values will be silently truncated by Postgres).
 - **Budget checks:** Read [`getLlmBudgetConfig()`](/home/jared/Nexus-Terminal/lib/agents/llm-client.ts) defaults and fail fast before expensive downstream work. Daily budget check sums `estimated_cost_cents` in `agent_request_log` where `user_id = ?` AND `created_at >= start of current UTC calendar day`. Monthly budget check uses `created_at >= first of the current UTC calendar month`. Both checks are scoped per `userId` only, not per `userId + agentId`. Throw `BudgetExceededError` from `types.ts` on violation.
 - **Rate limiting:** DB-backed, queries `agent_request_log` for the requesting user. The V1 limit is 30 requests per rolling hour (`created_at >= now() - interval '1 hour'`). Scoped per `userId` only, not per `userId + agentId`.
-- **Circuit breaker:** State is DB-backed in `agent_registry.config.circuitBreaker` using the `CircuitBreakerState` type from `types.ts`, not module memory.
+- **Circuit breaker:** `agent_registry.config.circuitBreaker` is the only authoritative breaker state. `agent_request_log` remains telemetry only and must not be scanned to recompute breaker state.
 - Circuit-breaker policy for Sprint 2:
-  - A failure is any `agent_request_log` row where `success = 0` for the given `agentId`. Consecutive means no `success = 1` row for the same `agentId` intervenes (query by `created_at DESC`).
-  - Open after 5 consecutive failures.
-  - Reset window is 60 seconds from `openedAt`.
-  - When open, reject the work before any LLM call runs.
-  - Failure counter increments must use a single UPDATE with a SQL expression (e.g., `jsonb_set` with cast increment on `agent_registry.config`), not a read-modify-write cycle in application code. This prevents lost counter increments when two workers fail concurrently.
+  - Scope is per `agentId` (one breaker per `agent_registry` row), not per user.
+  - Open after 5 consecutive failed LLM requests for that agent.
+  - On each failed LLM request, increment `consecutiveFailures` with a single SQL UPDATE against `agent_registry.config`. Set `openedAt = now()` only when the counter reaches 5.
+  - On each successful LLM request, reset breaker state to `{ consecutiveFailures: 0, openedAt: null }` with a single SQL UPDATE.
+  - When checking the breaker: if `openedAt` is `null`, allow work; if `openedAt` is less than 60 seconds old, reject the work before any LLM call runs; if `openedAt` is 60 or more seconds old, clear the breaker to `{ consecutiveFailures: 0, openedAt: null }` and allow the next attempt. Sprint 2 has no half-open mode.
 
 #### `lib/agents/memory.ts`
 
@@ -175,7 +186,7 @@ Export a single function: `buildContext(db: AgentDb, userId: string, agentId: Ag
 
 - Build context from live repo tables only:
   - memory from `agent_memory_v2` (call `getMemory` from `lib/agents/memory.ts`)
-  - macro summary from the latest published `agent_reports` row with `report_type = 'macro-summary'` AND `status = 'published'`, ordered by `created_at DESC LIMIT 1`. Return `null` if no row exists.
+  - macro summary from the latest published `agent_reports` row where `user_id = 'system-agent-user'`, `agent_id = 'orchestrator'`, `report_type = 'macro-summary'`, and `status = 'published'`, ordered by `created_at DESC LIMIT 1`. Return `null` if no row exists.
   - conversation history from `agent_conversations`
   - trade context from `trades`
 - Default query scope for Sprint 2:
@@ -187,26 +198,31 @@ Export a single function: `buildContext(db: AgentDb, userId: string, agentId: Ag
 #### `lib/agents/blueprint-runner.ts`
 
 - The runner contract is `runBlueprint(blueprint: Blueprint, job: AgentJob, config: AgentConfig, db: AgentDb, options?: { signal?: AbortSignal })`; it executes ordered steps without importing route code or service entrypoints.
-- The runner fetches context once before step iteration by calling `buildContext(db, job.userId, job.agentId)` from `lib/agents/context.ts` and `getMemory(db, job.userId, job.agentId)` from `lib/agents/memory.ts`. These are not passed in via `options` — the runner owns the context fetch.
+- The runner fetches context once before step iteration by calling `buildContext(db, job.userId, job.agentId)` from `lib/agents/context.ts`. It must not issue a second memory query; `stepInput.memory` is assigned from `context.memory`.
 - Before executing any step, the runner calls the budget check, rate-limit check, and circuit-breaker check from `lib/agents/runtime-limits.ts`. If any check rejects, the runner fails the job without running the step.
-- The runner calls `step.run(stepInput)` to execute any step type (`code` or `llm`). It constructs `StepInput` from the job, accumulated output, fetched memory, and fetched context.
+- The runner calls `step.run(stepInput)` to execute any step type (`code` or `llm`). It constructs `StepInput` from `job.input`, `previousOutput`, `context.memory`, and fetched context.
 - `previousOutput` is `null` for step 1 and the `StepResult.data` from the immediately preceding step thereafter. It is NOT a merged aggregate of all prior steps — each step is responsible for forwarding what downstream steps need.
-- Input validation runs against `previousOutput` when `inputSchema` exists.
+- Input validation uses the handoff payload for the current step: validate `job.input` for step 1, and validate `previousOutput` for step 2+. `inputSchema` does not validate the full `StepInput` object.
 - Output validation runs against `result.data` when `outputSchema` exists.
 - For `llm` steps with output-contract failures, the runner calls `step.run(stepInput)` a second time (repair retry). Sprint 2 enforces a hard cap of 1 repair retry per step regardless of `StepMetadata.maxRepairAttempts`. `maxRepairAttempts` is reserved for future use and must not be read by the Sprint 2 runner. Repair retries do not increment `agent_jobs.attempt`.
-- Persist `step_log` after each meaningful state transition by calling `persistStepLog()` from `lib/agents/queue.ts` (which fences on `id + locked_by + lease_version`). The runner does not write to `agent_jobs` directly. The allowed persisted fields are: `step`, `status`, `startedAt`, `completedAt`, `attempt`, `validatorResult`, `tokensUsed`, and `errorClass`. Token usage is read from `StepResult.metrics.tokensUsed`.
-- The "prompt loading" half of story AEV2-305 is deferred to AEV2-308. Sprint 2 runner work must not require a new prompt loader or agent-config registry. Use the existing `Blueprint` / `AgentConfig` contracts from [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts); broader wiring belongs to later stories.
+- After every `llm` attempt, the runner calls the runtime-limits bookkeeping path to insert the `agent_request_log` row and apply the corresponding breaker success/reset update for that same attempt.
+- Persist `step_log` after each meaningful state transition by calling `persistStepLog()` from `lib/agents/queue.ts` (which fences on `id + locked_by + lease_version`). The runner does not write to `agent_jobs` directly. Persist only the metadata fields `step`, `status`, `startedAt`, `completedAt`, `attempt`, `validatorResult`, `tokensUsed`, and `errorClass`. `step_log.status` uses the existing `StepLogEntry` subset only: `running`, `completed`, or `failed`.
+- AEV2-305 covers runner core only. Prompt loading, prompt file resolution, and blueprint/config registry wiring are deferred to AEV2-308. Sprint 2 runner work must use the existing `Blueprint` / `AgentConfig` contracts from [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts); broader wiring belongs to later stories.
 
 #### `lib/agents/checkpoints.ts`
 
 The blueprint runner imports and calls `saveCheckpoint()` and `loadCheckpoint()` directly. The checkpoint module has no dependency on the runner.
 
-- Checkpoints store normalized accumulated output only in `agent_job_checkpoints.checkpoint_json`.
+- Checkpoints store the normalized last successful step output only in `agent_job_checkpoints.checkpoint_json`. `checkpoint_json` is exactly the value that becomes `previousOutput` for the next step. Sprint 2 does not maintain a second accumulator object.
 - Resume semantics are:
   - load the latest completed checkpoint for the job: `ORDER BY step_index DESC LIMIT 1`
   - restore `previousOutput` from that checkpoint's `checkpoint_json`
-  - restart at `checkpoint.step_index + 1`, not step 1
-- Retry/resume must preserve the no-replay rule for prior successful side effects. Before executing any step where `metadata.sideEffect = true` and `metadata.idempotencyKey` is set, query `agent_step_effects` for that `idempotencyKey`. If a row exists, skip the step and treat it as already completed. Insert the `agent_step_effects` row after the step completes successfully but before any other downstream state mutations in the same step. This ordering guarantees that a crash-and-resume cycle finds the effect marker before re-attempting the side effect.
+  - restart at `checkpoint.step_index + 1`, not step 1 and not the failed step
+  - if no checkpoint exists, start at step 1 with `previousOutput = null`
+- Retry/resume must preserve the no-replay rule for prior successful side effects. Before executing any step where `metadata.sideEffect = true` and `metadata.idempotencyKey` is set, query `agent_step_effects` for that exact key. If a row exists, skip the step and treat it as already completed.
+- `metadata.idempotencyKey` must already be a fully qualified final key for the logical effect, for example `${job.id}:${step.name}:discord-delivery` or an equivalent stable business key. Bare step names are invalid because `agent_step_effects.idempotency_key` is globally unique.
+- Sprint 2 does not permit an out-of-process side effect to happen inside `step.run()`. Discord/webhook delivery remains deferred to Sprint 3.
+- For Sprint 2, the runner owns effect-marker persistence. After `step.run()` returns success, the runner inserts the `agent_step_effects` row before writing checkpoints, `step_log`, or job status/result updates.
 
 #### Explicit Deferrals
 
@@ -267,11 +283,11 @@ The blueprint runner imports and calls `saveCheckpoint()` and `loadCheckpoint()`
 - [ ] Token logging converts `success` to `0 | 1` on insert and calls `Math.round()` on `estimatedCostCents`.
 - [ ] Budget checks sum `estimated_cost_cents` from `agent_request_log` using UTC calendar day/month boundaries, scoped per userId only.
 - [ ] Rate limit enforces 30 req/hr per userId using rolling 1-hour window.
-- [ ] Circuit-breaker state uses the `CircuitBreakerState` type and writes via SQL expression (not read-modify-write).
+- [ ] Circuit-breaker state uses the `CircuitBreakerState` type as the single source of truth in `agent_registry.config` and writes via SQL expression (not read-modify-write).
 - [ ] [`lib/agents/memory.ts`](/home/jared/Nexus-Terminal/lib/agents/memory.ts) exports `getMemory()` and `upsertMemory()`, reads and writes `agent_memory_v2` only.
 - [ ] [`lib/agents/context.ts`](/home/jared/Nexus-Terminal/lib/agents/context.ts) exports `buildContext()` returning `AgentContext`. Assembles memory, recent trades, conversation history, and latest macro summary.
-- [ ] Context queries use the Sprint 2 default scope: latest 20 trades, latest 20 conversation rows, latest published macro summary. Returns empty values (not errors) when no rows exist.
-- [ ] Focused tests cover breaker open/reset behavior, rate-limit rejection, agent-scoped memory reads, context query scoping, empty-state behavior (no memory, no macro, no trades), and macro-summary lookup without `macro_summaries`.
+- [ ] Context queries use the Sprint 2 default scope: latest 20 trades, latest 20 conversation rows, latest published orchestrator macro summary owned by `system-agent-user`. Returns empty values (not errors) when no rows exist.
+- [ ] Focused tests cover budget rejection, breaker open/reset behavior, rate-limit rejection, agent-scoped memory reads, context query scoping, empty-state behavior (no memory, no macro, no trades), and macro-summary lookup without `macro_summaries`.
 
 **Exit criteria**
 
@@ -290,20 +306,20 @@ The blueprint runner imports and calls `saveCheckpoint()` and `loadCheckpoint()`
 
 **Stories:** `AEV2-305`
 
-**Review focus:** lock the accumulator contract before resume work lands. Every step should receive `previousOutput`, validate input/output, and persist step metadata without leaking raw artifacts.
+**Review focus:** lock the `previousOutput` contract before resume work lands. Every step should receive the prior step output, validate the correct handoff payload, and persist step metadata without leaking raw artifacts.
 
 **Suggested commit:** `feat(aev2): add agent blueprint runner`
 
 **Check off before commit**
 
 - [ ] [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts) executes ordered `code` and `llm` steps.
-- [ ] Runner fetches context via `buildContext()` and memory via `getMemory()` once before step iteration.
+- [ ] Runner fetches context via `buildContext()` once before step iteration and assigns `stepInput.memory` from `context.memory`.
 - [ ] Runner calls runtime-limits checks (budget, rate, breaker) before each step.
 - [ ] Input and output validation happen inside the runner, not in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts).
-- [ ] `previousOutput` is the prior step's `StepResult.data` (not a merged aggregate), `null` for step 1.
+- [ ] `previousOutput` is the prior step's `StepResult.data` (not a merged aggregate), `null` for step 1, and `inputSchema` validates `job.input` for step 1 then `previousOutput` for later steps.
 - [ ] LLM output-contract failures support exactly 1 repair retry. `maxRepairAttempts` is not read.
-- [ ] `step_log` is persisted via `persistStepLog()` from queue.ts — runner does not write to `agent_jobs` directly.
-- [ ] Focused tests cover ordered execution, validation failure, step-log persistence, and runtime-limit rejection before step execution.
+- [ ] `step_log` is persisted via `persistStepLog()` from queue.ts — runner does not write to `agent_jobs` directly, and `step_log.status` stays within `running | completed | failed`.
+- [ ] Focused tests cover ordered execution, step-1 vs later-step validation, step-log persistence, and runtime-limit rejection before step execution.
 
 **Exit criteria**
 
@@ -328,17 +344,17 @@ The blueprint runner imports and calls `saveCheckpoint()` and `loadCheckpoint()`
 
 **Check off before commit**
 
-- [ ] [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts) can save and load the latest normalized checkpoint payload for a job (`ORDER BY step_index DESC LIMIT 1`).
-- [ ] The runner can resume from the failed step using `agent_job_checkpoints`.
+- [ ] [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts) can save and load the latest normalized `previousOutput` payload for a job (`ORDER BY step_index DESC LIMIT 1`).
+- [ ] The runner resumes from the next step after the latest completed checkpoint using `agent_job_checkpoints`.
 - [ ] Retry/resume paths preserve the same idempotency assumptions established earlier in the sprint.
-- [ ] Side-effecting steps check `agent_step_effects` for existing `idempotencyKey` BEFORE execution (skip if exists). Effect row is inserted AFTER step success but BEFORE any downstream mutations.
+- [ ] Side-effecting steps check `agent_step_effects` for existing fully qualified `idempotencyKey` BEFORE execution (skip if exists). The runner inserts the effect row AFTER `step.run()` returns success but BEFORE checkpoint, `step_log`, or job-status writes.
 - [ ] Focused tests cover simulated mid-blueprint failure, resume from the correct step, and side-effect skip on retry.
 
 **Exit criteria**
 
 - [ ] Resume starts from the latest completed checkpoint, not step 1.
 - [ ] Prior successful side effects are not replayed during retry.
-- [ ] Checkpoint payloads store normalized accumulated output only.
+- [ ] Checkpoint payloads store the normalized last successful step output only.
 
 **Validation**
 

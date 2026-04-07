@@ -10,6 +10,7 @@ Ship the V1 Autonomous Agent Framework for Nexus Terminal: an Orchestrator, a Sm
 
 > `AEV2_PLAN.md` is the source of truth for sprint execution, sequencing, and launch gates.
 > `AGENTIC_EXPANSIONV2.md` is the supporting architecture/reference document.
+> `HANDOFF.md` may add executable implementation detail for the active sprint, but it must stay within the story scope and sequencing defined here.
 > For the initial implementation worktree, EPIC-1 through EPIC-4 are the core build path. EPIC-5 is launch hardening. `AEV2-007` and `AEV2-311` remain parallel seed-data work and do not block the core runtime build.
 
 ---
@@ -105,10 +106,10 @@ Note: no backfill SQL needed. `jarvis_conversations` and `jarvis_request_log` we
 |----------|-------|---------------------|------|
 | AEV2-301 | Build DB runtime helpers (`lib/agents/db.ts`) | Introduces Docker-side `getAgentDb()` helper for queue/runtime modules; Vercel-side code continues using `getDb()`/`getPoolDb()`; no cross-imports between Docker and Vercel DB helpers | M |
 | AEV2-302 | Implement lease-fenced job queue | Tests prove lease fencing: stale workers cannot renew or complete a job after lease ownership changes, and completion/failure writes require matching `id + locked_by + lease_version` | L |
-| AEV2-303 | Add token tracking, circuit breaker, and rate limits | Runtime boundaries call token logging, breaker checks, and rate-limit checks; focused tests cover breaker open/reset behavior and rate-limit rejection paths | M |
-| AEV2-304 | Implement agent memory and context assembly | Memory reads/writes use `agent_memory_v2`; macro summary context reads from `agent_reports WHERE report_type = 'macro-summary'`; focused tests cover agent-scoped reads and no legacy `macro_summaries` dependency | M |
-| AEV2-305 | Implement prompt loading and blueprint runner | Blueprint runner executes ordered `code`/`llm` steps, preserves accumulated `previousOutput`, validates step I/O, and records step-log metadata/checkpoints | L |
-| AEV2-306 | Add checkpoint and resume support | Latest checkpoint resumes mid-blueprint instead of replaying from step 1; test covers simulated mid-blueprint failure and resume | L |
+| AEV2-303 | Add token tracking, budget checks, circuit breaker, and rate limits | Runtime boundaries call token logging, enforce daily/monthly per-user budgets, breaker checks, and rate-limit checks; breaker state is authoritative in `agent_registry.config.circuitBreaker`; focused tests cover breaker open/reset behavior and rate-limit rejection paths | M |
+| AEV2-304 | Implement agent memory and context assembly | Memory reads/writes use `agent_memory_v2`; macro summary context reads the latest published `agent_reports` row where `user_id = 'system-agent-user'`, `agent_id = 'orchestrator'`, and `report_type = 'macro-summary'`; focused tests cover agent-scoped reads and no legacy `macro_summaries` dependency | M |
+| AEV2-305 | Implement blueprint runner core | Blueprint runner executes ordered `code`/`llm` steps, validates `job.input` for step 1 and the immediately preceding step's `StepResult.data` thereafter, and records metadata-only `step_log`; prompt loading/config wiring stays deferred to `AEV2-308` and checkpoint/resume stays in `AEV2-306` | L |
+| AEV2-306 | Add checkpoint and resume support | Checkpoints store the normalized last successful step output that becomes the next step's `previousOutput`; resume loads the latest completed checkpoint and restarts at `step_index + 1`, preserving side-effect idempotency via `agent_step_effects` | L |
 | AEV2-307 | Add Discord embed and delivery utilities | Report formatting and delivery helpers use separate idempotency keys for report writes vs Discord delivery so retries cannot duplicate `agent_reports` rows or webhook posts | M |
 | AEV2-308 | Wire agent configs and shared utilities | Blueprint/config registry in place; `scrape-lite.ts` written from scratch (original deleted with Jarvis removal — check `git log --all --diff-filter=D -- 'lib/jarvis/scrape-lite.ts'` to recover logic); agent scans use TradingView screener for gainers/top movers, Massive API only for historical/snapshot data when needed | M |
 | AEV2-309 | Add worker heartbeat and generic worker loop | Worker updates `/tmp/healthy`, renews DB heartbeat during long jobs, respects graceful shutdown, and processes jobs continuously | L |
@@ -854,7 +855,7 @@ export const agentJobs = pgTable('agent_jobs', {
 ]);
 ```
 
-Note: Drizzle does not support partial indexes (`WHERE status = 'queued'`) natively. The indexes above are full indexes on those columns. The `WHERE` clause filtering happens at query time via `FOR UPDATE SKIP LOCKED`. This is acceptable for V1 volume.
+Note: Drizzle does not support partial indexes (`WHERE status = 'queued'`) natively. The indexes above are full indexes on those columns. Sprint 2 job claiming must use a single `UPDATE ... WHERE ... RETURNING` statement; a subquery or CTE is allowed to preserve ordered selection safely, but do not use `SELECT ... FOR UPDATE SKIP LOCKED` for the claim flow. This is acceptable for V1 volume.
 
 **Table 3: `agent_reports`**
 
