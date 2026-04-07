@@ -141,7 +141,7 @@ export interface Blueprint {
 
 export interface StepLogEntry {
   step: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'running' | 'completed' | 'failed';
   startedAt: string;
   completedAt?: string;
   attempt: number;
@@ -243,6 +243,16 @@ export interface TokenTrackingEntry {
   success: boolean;
 }
 
+export interface CircuitBreakerState {
+  consecutiveFailures: number;
+  openedAt: string | null;
+}
+
+export interface QueueClaimResult {
+  job: AgentJob;
+  leaseVersion: number;
+}
+
 export class BlueprintValidationError extends Error {
   constructor(
     public stepName: string,
@@ -259,5 +269,19 @@ export class BudgetExceededError extends Error {
     public limitType: 'daily' | 'monthly',
   ) {
     super(`${limitType} budget exceeded for ${agentId}`);
+  }
+}
+
+export class RateLimitExceededError extends Error {
+  constructor(public agentId: AgentId, public userId: string) {
+    super(`rate limit exceeded for user ${userId}`);
+    this.name = 'RateLimitExceededError';
+  }
+}
+
+export class CircuitOpenError extends Error {
+  constructor(public agentId: AgentId, public openedAt: string) {
+    super(`circuit breaker open for ${agentId} since ${openedAt}`);
+    this.name = 'CircuitOpenError';
   }
 }
