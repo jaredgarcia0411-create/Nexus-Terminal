@@ -181,3 +181,50 @@ Use different models for different tasks based on complexity:
 - **Simple parsing/structured output** -> cheap/fast model (Gemma 12B via Groq, free)
 - **Research summaries/TLDRs** -> mid-tier model (Gemini Flash via Google AI Studio, free)
 - **Complex reasoning/analysis** -> Claude API (existing `lib/llm-client.ts`)
+
+---
+
+## Agent Memory — Investigate Graphiti & Letta (2026-04-07)
+
+**Context:** AEV2 already has a working memory layer in `agent_memory_v2` (Postgres KV scoped by user+agent+category, see `lib/agents/memory.ts` and `lib/agents/types.ts:36-47`). For most trading-agent needs this is the right call — simple, queryable, auditable. Surveyed the broader landscape (mem0, Letta, Zep/Graphiti, Cognee, mempalace) and identified two systems worth revisiting **only when a specific limitation is hit**, not preemptively.
+
+### Trigger 1: Temporal pattern queries -> investigate Graphiti
+
+**When to revisit:** When an agent (Small Cap or Swing) needs to answer questions like *"did the MDR runner setup work in Q1 but stop working after April?"* or *"what did I think about TSLA's float in February vs now?"* — questions where the **time validity of a fact** matters, not just its current value.
+
+**Why Graphiti specifically:**
+- Bitemporal knowledge graph — every edge has `valid_from` / `valid_to` timestamps, so old facts aren't overwritten, they're superseded
+- OSS core of Zep (note: Zep Community Edition was deprecated in 2025 — Graphiti is the path forward)
+- Backend options: Neo4j or FalkorDB (FalkorDB is lighter, better for sidecar deployment)
+- Repo: https://github.com/getzep/graphiti
+
+**Integration shape:** Run as a sidecar container in `services/docker-compose.yml`. One graph namespace per agent. Agents call it via REST. Would coexist with `agent_memory_v2`, not replace it — KV for current facts, graph for "facts over time."
+
+**Don't add until:** You write a SQL query against `agent_memory_v2` and realize you can't express the temporal dimension cleanly.
+
+### Trigger 2: Agent self-editing memory -> investigate Letta
+
+**When to revisit:** When you want agents to **autonomously decide what to remember** rather than having `context.ts` and blueprint code do all the writes. Today, memory writes happen in code paths you control. Letta's pitch is that the agent itself calls memory tools mid-conversation to update its own state.
+
+**Why Letta specifically:**
+- Built on the MemGPT paper — OS-style memory hierarchy: *core memory* (always in context, agent-editable), *recall memory* (conversation history, searchable), *archival memory* (long-term external store, searchable)
+- Agents are first-class REST services with Postgres persistence — matches the Neon stack
+- Docker-native, has an Agent Development Environment (ADE) GUI for inspecting memory state
+- Repo: https://github.com/letta-ai/letta
+
+**Integration shape:** Bigger lift than Graphiti — Letta wants to *be* the agent runtime, not just a memory store. Likely means rewriting one blueprint as a Letta agent to evaluate, not a drop-in addition.
+
+**Don't add until:** You hit a case where the deterministic "code writes memory" pattern is too rigid — e.g., the orchestrator needs to dynamically promote a `trade_insight` to `core memory` based on conversation flow, and hardcoding that logic feels wrong.
+
+### What NOT to do
+
+- **Don't replace `agent_memory_v2`** with either system. The Postgres KV is the right primitive for structured trading facts (thesis, watchlist, scan_param, performance). Graphiti and Letta are *additions* for specific scenarios, not replacements.
+- **Don't adopt mempalace** — repo was 2 days old as of 2026-04-07, single dominant maintainer, Python+MCP only. Watch for 3-6 months and revisit if it stabilizes.
+- **Don't adopt mem0 or Cognee** — mem0 overlaps too much with what you already have, and Cognee is RAG-doc-heavy, wrong shape for trading agents.
+
+### Action when triggered
+
+1. Re-read this note and the original `/learn` conversation
+2. Spike Graphiti/Letta in a branch — one agent, one use case, no production wiring
+3. Measure: does it actually answer the question that `agent_memory_v2` couldn't?
+4. Only then write an AEV2 sprint spec to integrate
