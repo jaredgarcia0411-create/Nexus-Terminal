@@ -2,7 +2,7 @@
 
 ## Active Handoff Only
 
-Sprint 1 is complete. Older completed sections and manual-spec cleanup notes were removed from this file; use git history and `AEV2_PLAN.md` for archived detail.
+Sprint 1 and Sprint 2 are complete. Older detail was removed from this file; use git history and `AEV2_PLAN.md` for archived context.
 
 ### Workflow Tooling Note
 
@@ -23,11 +23,11 @@ Sprint 1 is complete. Older completed sections and manual-spec cleanup notes wer
 
 ### Validation
 
-- `npm run db:migrate` ✅
-- `npm run db:generate` ✅
-- `npm run lint` ✅
-- `npx tsc --noEmit` ✅
-- `npm test` ✅
+- `npm run db:migrate` OK
+- `npm run db:generate` OK
+- `npm run lint` OK
+- `npx tsc --noEmit` OK
+- `npm test` OK
 
 ### Archive Note
 
@@ -40,629 +40,996 @@ Sprint 1 is complete. Older completed sections and manual-spec cleanup notes wer
 > Generated: 2026-04-07 | Agent: Codex
 > Status: COMPLETE
 
-### Objective
-
-Build the shared runtime layer under `lib/agents/` so the queue, memory, blueprint, and checkpoint contracts are safe before any `/api/agents/*` routes or Docker service wiring are added.
-
 ### Summary
 
-- Landed the full Sprint 2 runtime layer in [`lib/agents/db.ts`](/home/jared/Nexus-Terminal/lib/agents/db.ts), [`lib/agents/queue.ts`](/home/jared/Nexus-Terminal/lib/agents/queue.ts), [`lib/agents/runtime-limits.ts`](/home/jared/Nexus-Terminal/lib/agents/runtime-limits.ts), [`lib/agents/memory.ts`](/home/jared/Nexus-Terminal/lib/agents/memory.ts), [`lib/agents/context.ts`](/home/jared/Nexus-Terminal/lib/agents/context.ts), [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts), and [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts).
+- Landed the Sprint 2 runtime layer in [`lib/agents/db.ts`](/home/jared/Nexus-Terminal/lib/agents/db.ts), [`lib/agents/queue.ts`](/home/jared/Nexus-Terminal/lib/agents/queue.ts), [`lib/agents/runtime-limits.ts`](/home/jared/Nexus-Terminal/lib/agents/runtime-limits.ts), [`lib/agents/memory.ts`](/home/jared/Nexus-Terminal/lib/agents/memory.ts), [`lib/agents/context.ts`](/home/jared/Nexus-Terminal/lib/agents/context.ts), [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts), and [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts).
 - Added the Sprint 2 type additions in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts): `CircuitBreakerState`, `QueueClaimResult`, `RateLimitExceededError`, `CircuitOpenError`, and the narrowed `StepLogEntry.status`.
-- Added focused coverage in [`__tests__/agent-db.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-db.test.ts), [`__tests__/agent-queue.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-queue.test.ts), [`__tests__/agent-runtime-limits.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-runtime-limits.test.ts), [`__tests__/agent-memory.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-memory.test.ts), [`__tests__/agent-context.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-context.test.ts), [`__tests__/agent-blueprint-runner.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprint-runner.test.ts), and [`__tests__/agent-checkpoints.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-checkpoints.test.ts).
+- Added focused coverage in `__tests__/agent-db.test.ts`, `__tests__/agent-queue.test.ts`, `__tests__/agent-runtime-limits.test.ts`, `__tests__/agent-memory.test.ts`, `__tests__/agent-context.test.ts`, `__tests__/agent-blueprint-runner.test.ts`, and `__tests__/agent-checkpoints.test.ts`.
 - Kept Sprint 2 library-only: no `/api/agents/*`, no `services/**` work, no Compose cleanup, and no legacy `agent_memory` usage.
 
 ### Validation
 
-- `npx vitest run __tests__/agent-db.test.ts __tests__/agent-queue.test.ts __tests__/agent-runtime-limits.test.ts __tests__/agent-memory.test.ts __tests__/agent-context.test.ts __tests__/agent-blueprint-runner.test.ts __tests__/agent-checkpoints.test.ts` ✅
-- `npm run lint` ✅
-- `npx tsc --noEmit` ✅
-- `npm test` ✅
+- `npm run lint` OK
+- `npx tsc --noEmit` OK
+- `npm test` OK
+
+### Archive Note
+
+- The detailed Checkpoint 1-4 execution contracts, canonical SQL shapes, repair-retry policy, and crash-recovery tables were intentionally removed from `HANDOFF.md` now that Sprint 2 is closed. Recover via `git log -- HANDOFF.md` if needed.
+
+---
+
+## AEV2 Sprint 3 — Runtime Wiring + API Surface
+
+> Generated: 2026-04-07 | Agent: Claude (Plan)
+> Status: READY FOR CODEX
+
+### Objective
+
+Connect the Sprint 2 library runtime to stable app contracts. Sprint 3 lands Discord delivery helpers, the agent config/blueprint registry, the generic worker loop + heartbeat + macro cron, and every `/api/agents/*` route with contract test coverage. After Sprint 3, Sprint 4 can focus purely on Docker containerization and launch hardening — no library or API work should bleed into it.
+
+### Stories
+
+- AEV2-307 — Discord embed and delivery utilities
+- AEV2-308 — Wire agent configs, prompt loader, scrape-lite, and blueprints
+- AEV2-309 — Worker heartbeat and generic worker loop
+- AEV2-310 — Orchestrator macro cron
+- AEV2-401 — `POST/GET /api/agents/service/chat`
+- AEV2-402 — `GET /api/agents/reports` and `GET /api/agents/reports/[id]`
+- AEV2-403 — `POST/GET /api/agents/research`
+- AEV2-404 — `GET /api/agents/admin/stats` and `GET/DELETE /api/agents/admin/memory`
+- AEV2-405 — `POST /api/agents/admin/redeliver`
+- AEV2-406 — `GET /api/agents/macro-summary/latest`
+- AEV2-407 — Route test coverage
 
 ### Current State
 
-- Sprint 1 contracts remain the base surface in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts), [`lib/agents/llm-client.ts`](/home/jared/Nexus-Terminal/lib/agents/llm-client.ts), and [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts).
-- Sprint 1 schema remains the live storage contract in [`lib/db/schema.ts`](/home/jared/Nexus-Terminal/lib/db/schema.ts) and [`drizzle/0019_clever_zodiak.sql`](/home/jared/Nexus-Terminal/drizzle/0019_clever_zodiak.sql), including `agent_jobs`, `agent_reports`, `agent_memory_v2`, `agent_step_effects`, `agent_job_checkpoints`, and `agent_scheduled_runs`.
-- Root TypeScript still excludes [`services/`](/home/jared/Nexus-Terminal/services), so Sprint 3 worker/service wiring remains a separate validation problem.
-- Legacy `agent_memory` still exists in [`lib/db/schema.ts`](/home/jared/Nexus-Terminal/lib/db/schema.ts), but Sprint 2 runtime code uses `agent_memory_v2` exclusively.
-- [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml) still reflects older runtime assumptions and remains intentionally untouched in Sprint 2.
+- Sprint 2 runtime is in place and validated. Every module listed in Sprint 2 Summary is library-only and does not import from `@/app` or `services/`.
+- No `/api/agents/*` route exists yet. Sprint 3 creates all of them.
+- `lib/agents/config.ts`, `lib/agents/discord.ts`, `lib/agents/scrape-lite.ts`, `lib/agents/worker.ts`, `lib/agents/heartbeat.ts`, `lib/agents/macro-cron.ts`, and `lib/agents/blueprints/` do not exist yet. Sprint 3 creates them.
+- `lib/agents/prompts/global-policy.md`, `orchestrator.md`, `small-cap.md`, and `swing-trader.md` already exist from Sprint 1. Sprint 3 adds a loader, not new prompt files.
+- [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml), [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example), and the `services/discord-bot/` tree still reflect pre-AEV2 state. Sprint 3 does NOT touch them — Sprint 4 owns the Compose rewrite and the service container wiring.
+- Root `tsconfig.json` still excludes `services/`. Sprint 3 must stay runnable under the existing root `tsc --noEmit` with no config changes.
+- `lib/agents/llm-client.ts` exports `getInteractiveLlmConfig`, `getBackgroundLlmConfig`, `getLlmBudgetConfig`, and `callLlm(request, lane, overrides?)`. Sprint 3 consumes these directly.
 
 ### Scope
 
-- In scope: `AEV2-301` through `AEV2-306`, shared runtime helpers under `lib/agents/`, and focused Vitest coverage under [`__tests__/`](/home/jared/Nexus-Terminal/__tests__).
-- Out of scope: `/api/agents/*` routes, Discord delivery, Compose changes, service folders, `/tmp/healthy` heartbeat file wiring, and seed-data import work.
+- **In scope:** `AEV2-307` through `AEV2-407`. New files under `lib/agents/`, new routes under `app/api/agents/`, new Zod schemas under `lib/validations/agents.ts`, and new route/test coverage under `__tests__/`.
+- **Out of scope:** `services/**` files, `services/docker-compose.yml`, `services/agent.Dockerfile`, `services/agent-entrypoint.ts`, `services/discord-bot/` rewrites, `/tmp/healthy` real proof (library writes the file but Docker healthcheck wiring waits for Sprint 4), real webhook POSTs to Discord in tests, additional DB migrations, additional schema tables, seed data imports (`AEV2-311`), and any new npm dependency unless explicitly called out below.
+
+### Decisions Locked For Sprint 3
+
+These four decisions remove ambiguity before Codex starts. If any of them is wrong, update this section before execution — do NOT let Codex discover the ambiguity mid-sprint.
+
+- **D1. Blueprint scope.** Sprint 3 implements exactly four blueprints: `orchestrator:chat`, `orchestrator:macro-summary`, `small-cap-trader:research`, and `swing-trader:research`. The scan blueprints (`small-cap-trader:pre-market-scan`, `swing-trader:momentum-scan`, `swing-trader:pattern-check`) are declared in `AGENT_CAPABILITIES` but their blueprint objects throw `new Error('blueprint not implemented in Sprint 3')` at registry lookup time. Sprint 4 or a follow-up sprint adds the scan bodies.
+- **D2. Discord delivery proof.** Sprint 3 tests the delivery helpers with a mocked global `fetch`. Real webhook POSTs wait for Sprint 4 smoke runs when the Docker container actually boots. No manual REPL proof step in Sprint 3.
+- **D3. Admin stats shape.** `GET /api/agents/admin/stats` returns the full JSON shape from `AGENTIC_EXPANSIONV2.md` §11 (circuitBreakers, today, thisMonth, agents, delivery, memory, macroSummaries). Stubbed subset is not acceptable — Sprint 4 launch hardening expects the full shape to already exist.
+- **D4. `scrape-headlines` URL source.** The macro-summary blueprint reads a new env var `MACRO_HEADLINES_URLS` (comma-separated URL list). Default when unset: `https://www.marketwatch.com/latest-news,https://finance.yahoo.com/topic/stock-market-news/`. The URL list is NOT hardcoded inside `scrape-lite.ts` — scrape-lite is a pure fetcher, the blueprint chooses what to fetch.
 
 ### Planned File Actions
 
-- Create [`lib/agents/db.ts`](/home/jared/Nexus-Terminal/lib/agents/db.ts) for Docker-side DB access and agent DB type aliases.
-- Create [`lib/agents/queue.ts`](/home/jared/Nexus-Terminal/lib/agents/queue.ts) for claim / renew / complete / fail / retry helpers with lease fencing.
-- Create [`lib/agents/runtime-limits.ts`](/home/jared/Nexus-Terminal/lib/agents/runtime-limits.ts) for token logging, budget checks, circuit-breaker logic, and rate-limit checks.
-- Create [`lib/agents/memory.ts`](/home/jared/Nexus-Terminal/lib/agents/memory.ts) for `agent_memory_v2` reads and writes.
-- Create [`lib/agents/context.ts`](/home/jared/Nexus-Terminal/lib/agents/context.ts) for context assembly from memory, macro reports, conversation history, and recent trades.
-- Create [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts) for ordered step execution, validation, `previousOutput`, and `step_log` persistence.
-- Create [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts) for save/load resume payloads from `agent_job_checkpoints`.
-- Keep the Sprint 2 library split exactly as listed above. Do not introduce the reference-doc module split (`circuit-breaker.ts`, `rate-limit.ts`, `retry.ts`, `token-tracking.ts`, `prompts.ts`, `config.ts`, `worker.ts`) yet unless a tiny additive helper is unavoidable for types or tests.
-- Create focused tests:
-  - [`__tests__/agent-db.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-db.test.ts)
-  - [`__tests__/agent-queue.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-queue.test.ts)
-  - [`__tests__/agent-runtime-limits.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-runtime-limits.test.ts)
-  - [`__tests__/agent-memory.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-memory.test.ts)
-  - [`__tests__/agent-context.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-context.test.ts)
-  - [`__tests__/agent-blueprint-runner.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprint-runner.test.ts)
-  - [`__tests__/agent-checkpoints.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-checkpoints.test.ts)
-- Modify [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts) only if additive helper contracts are truly missing.
-- Update [`HANDOFF.md`](/home/jared/Nexus-Terminal/HANDOFF.md) as each checkpoint closes.
+**New library files (lib/agents/):**
+
+- [`lib/agents/discord.ts`](/home/jared/Nexus-Terminal/lib/agents/discord.ts) — embed builders, webhook delivery, report-write + delivery idempotency helpers
+- [`lib/agents/scrape-lite.ts`](/home/jared/Nexus-Terminal/lib/agents/scrape-lite.ts) — `fetchPageText(url)` HTML->text fetcher
+- [`lib/agents/prompts-loader.ts`](/home/jared/Nexus-Terminal/lib/agents/prompts-loader.ts) — reads `lib/agents/prompts/*.md` at process start
+- [`lib/agents/config.ts`](/home/jared/Nexus-Terminal/lib/agents/config.ts) — `AGENT_CONFIGS: Record<AgentId, AgentConfig>` registry + `resolveBlueprint(job)` helper
+- [`lib/agents/blueprints/orchestrator-chat.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/orchestrator-chat.ts)
+- [`lib/agents/blueprints/orchestrator-macro-summary.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/orchestrator-macro-summary.ts)
+- [`lib/agents/blueprints/small-cap-research.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/small-cap-research.ts)
+- [`lib/agents/blueprints/swing-trader-research.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/swing-trader-research.ts)
+- [`lib/agents/heartbeat.ts`](/home/jared/Nexus-Terminal/lib/agents/heartbeat.ts) — `startHeartbeat(db, agentId)` + `/tmp/healthy` touch
+- [`lib/agents/worker.ts`](/home/jared/Nexus-Terminal/lib/agents/worker.ts) — `startWorker(config)` poll loop
+- [`lib/agents/macro-cron.ts`](/home/jared/Nexus-Terminal/lib/agents/macro-cron.ts) — `startMacroCron(db)` scheduler
+- [`lib/validations/agents.ts`](/home/jared/Nexus-Terminal/lib/validations/agents.ts) — Zod schemas for every new route body/query
+
+**New API routes (app/api/agents/):**
+
+- [`app/api/agents/service/chat/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/service/chat/route.ts) — POST + GET
+- [`app/api/agents/reports/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/reports/route.ts) — GET
+- [`app/api/agents/reports/[id]/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/reports/[id]/route.ts) — GET
+- [`app/api/agents/research/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/research/route.ts) — POST + GET
+- [`app/api/agents/admin/stats/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/admin/stats/route.ts) — GET
+- [`app/api/agents/admin/memory/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/admin/memory/route.ts) — GET + DELETE
+- [`app/api/agents/admin/redeliver/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/admin/redeliver/route.ts) — POST
+- [`app/api/agents/macro-summary/latest/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/macro-summary/latest/route.ts) — GET
+
+**New test files (__tests__/):**
+
+- `__tests__/agent-discord.test.ts`
+- `__tests__/agent-scrape-lite.test.ts`
+- `__tests__/agent-config.test.ts`
+- `__tests__/agent-blueprints.test.ts`
+- `__tests__/agent-worker.test.ts`
+- `__tests__/agent-macro-cron.test.ts`
+- `__tests__/agent-service-chat-route.test.ts`
+- `__tests__/agent-reports-route.test.ts`
+- `__tests__/agent-research-route.test.ts`
+- `__tests__/agent-admin-stats-route.test.ts`
+- `__tests__/agent-admin-memory-route.test.ts`
+- `__tests__/agent-admin-redeliver-route.test.ts`
+- `__tests__/agent-macro-summary-route.test.ts`
+
+**Existing files modified:**
+
+- [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts) — add `AdminStatsResponse`, `DiscordEmbed`, `DiscordWebhookPayload`, and `ServiceChatResponse` interfaces only if the new code cannot express them without duplication. No behavioral changes to existing types.
+- [`HANDOFF.md`](/home/jared/Nexus-Terminal/HANDOFF.md) — updated after each checkpoint closes.
+
+**Explicitly NOT modified:**
+
+- `lib/db/schema.ts` (no new tables, no column changes)
+- Any file under `services/`
+- Any file under `app/api/` outside `app/api/agents/`
+- `lib/llm-client.ts` (Vercel-side — do not cross-import)
+- `middleware.ts` (agent service/admin routes are already covered because `middleware.ts` skips `/api/*`)
 
 ### Security And Correctness Notes
 
-- Do not reuse [`lib/db.ts`](/home/jared/Nexus-Terminal/lib/db.ts) directly for Docker runtime work. Mirror its shape in [`lib/agents/db.ts`](/home/jared/Nexus-Terminal/lib/agents/db.ts) so Vercel and Docker boundaries stay explicit.
-- Every queue mutation after claim must match on `id + locked_by + lease_version`. Matching on `id` alone is a bug.
-- `step_log` stays metadata-only. Do not store raw LLM payloads, prompts, or external API documents there.
-- Macro context must query [`agent_reports`](/home/jared/Nexus-Terminal/lib/db/schema.ts) with `report_type = 'macro-summary'`. Do not recreate `macro_summaries`.
-- Resume safety in Sprint 2 depends on both checkpoints and durable side-effect markers. Use [`agent_step_effects`](/home/jared/Nexus-Terminal/lib/db/schema.ts) for any side-effecting step that can be retried; do not postpone all idempotency work to the Discord-delivery sprint.
-- Do not touch `.env`, `.env.local`, or secret values while implementing Sprint 2.
+- `/api/agents/service/*` routes use `requireServiceAuth()` from [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts). `/api/agents/admin/*` routes use `requireAgentAdmin()`. User-facing routes (`/api/agents/reports`, `/api/agents/research`, `/api/agents/macro-summary/latest`) use `requireUser()` from [`lib/server-db-utils.ts`](/home/jared/Nexus-Terminal/lib/server-db-utils.ts). Never mix the three.
+- `requireServiceAuth(request, body)` reads the already-parsed body; parse with `parseAndValidate()` first, then pass `parsed.data` into the auth call. Do not call `request.json()` twice.
+- Every user-facing reports/research query must filter by `user_id = authenticatedUser.id` AND exclude `user_id = 'system-agent-user'` (system-owned autonomous reports never leak into user history).
+- Discord webhook URLs live in env vars only. Never log the URL. Never accept a webhook URL from a request body.
+- Delivery idempotency uses TWO separate markers per report: `report-write:${jobId}:${stepName}` for the DB row and `discord-delivery:${reportId}` for the webhook POST. `recordStepEffect()` enforces uniqueness on the idempotency key; re-running a step with the same key must NOT duplicate the `agent_reports` row or re-POST to Discord.
+- `POST /api/agents/admin/redeliver` re-reads the stored `report_json` from `agent_reports` and retries ONLY the delivery portion. It must not regenerate the report via the LLM.
+- Worker and macro cron code paths write to DB only via Sprint 2 helpers (`claimNextQueuedJob`, `completeJob`, `failJob`, etc.). No Sprint 3 file issues raw `db.update(agentJobs)...` calls — all mutations go through `lib/agents/queue.ts`.
+- `/tmp/healthy` file touch is library-level only. Sprint 4 wires the Docker healthcheck; Sprint 3 just writes the file so tests can verify the touch happens.
+- Do not introduce any new npm dependency. The repo already has `zod`, `drizzle-orm`, `@neondatabase/serverless`, and Next.js 15's built-in `fetch` / `Response` — that is everything Sprint 3 needs.
+- Do not touch `.env`, `.env.local`, or `services/.env`. Document any new env vars in `services/.env.example` ONLY if Sprint 3 must run without them; otherwise leave `.env.example` changes to Sprint 4.
 
 ### Execution Contracts
 
-These rules are part of the Sprint 2 implementation contract. Codex should be able to build the runtime from this section plus the live repo without consulting `AGENTIC_EXPANSIONV2.md`.
+These rules are part of the Sprint 3 implementation contract. Codex should be able to build the runtime wiring and API surface from this section plus the live repo without consulting `AGENTIC_EXPANSIONV2.md`.
 
-#### Additive Type Contracts (`lib/agents/types.ts`)
+#### `lib/agents/discord.ts`
 
-Sprint 2 makes the following targeted changes to `lib/agents/types.ts`. Add the new interfaces immediately above `export class BlueprintValidationError` (the first error class in the file).
-
-```ts
-export interface CircuitBreakerState {
-  consecutiveFailures: number;
-  openedAt: string | null; // ISO timestamp when breaker opened, null when closed
-}
-
-export interface QueueClaimResult {
-  job: AgentJob;
-  leaseVersion: number;
-}
-```
-
-Sprint 2 also adds two error classes immediately after `BudgetExceededError` (matching its style — extend `Error`, set `name`, accept the offending agent for diagnostics):
+Exports exactly these symbols:
 
 ```ts
-export class RateLimitExceededError extends Error {
-  constructor(public agentId: AgentId, public userId: string) {
-    super(`rate limit exceeded for user ${userId}`);
-    this.name = 'RateLimitExceededError';
-  }
+import type { AgentId, AgentReport } from './types';
+import type { AgentDb } from './db';
+
+export interface DiscordEmbedField { name: string; value: string; inline?: boolean }
+export interface DiscordEmbed {
+  title: string;
+  description?: string;
+  color: number;         // 0x10B981 (emerald-500) for V1
+  fields?: DiscordEmbedField[];
+  footer?: { text: string };
+  timestamp?: string;    // ISO
+}
+export interface DiscordWebhookPayload {
+  username?: string;
+  embeds: DiscordEmbed[];
 }
 
-export class CircuitOpenError extends Error {
-  constructor(public agentId: AgentId, public openedAt: string) {
-    super(`circuit breaker open for ${agentId} since ${openedAt}`);
-    this.name = 'CircuitOpenError';
-  }
-}
-```
+// Report formatting — one builder per report_type.
+export function buildScanEmbed(report: AgentReport): DiscordEmbed;
+export function buildResearchEmbed(report: AgentReport): DiscordEmbed;
+export function buildSwingSetupEmbed(report: AgentReport): DiscordEmbed;
+export function buildSwingAlertEmbed(report: AgentReport): DiscordEmbed;
+export function buildMacroSummaryEmbed(report: AgentReport): DiscordEmbed;
+export function buildSystemEmbed(title: string, detail: string, severity: 'info' | 'warn' | 'error'): DiscordEmbed;
 
-Sprint 2 also narrows one existing type:
+// Channel resolver — maps (agentId, report_type) to webhook env var name.
+export function resolveWebhookUrl(agentId: AgentId, reportType: string): string | null;
 
-- In `StepLogEntry`, change `status: 'pending' | 'running' | 'completed' | 'failed'` to `status: 'running' | 'completed' | 'failed'`. `'pending'` was speculative — Sprint 2 never writes it. There are no Sprint 1 callers of `StepLogEntry`, so narrowing is safe and stops opencode from inadvertently emitting `'pending'`.
-
-No other type additions or modifications are permitted in Sprint 2. In particular, do not change `Blueprint`, `BlueprintStep`, `StepInput`, `StepResult`, `StepMetadata`, `AgentJob`, `AgentContext`, `AgentMemoryRow`, `BudgetExceededError`, or `BlueprintValidationError`.
-
-**Validation framework lock-in.** `BlueprintStep.inputSchema` and `BlueprintStep.outputSchema` are typed as `unknown` in `types.ts`, but Sprint 2 must treat them as **Zod schemas only** (`import { ZodSchema } from 'zod'`). The runner calls `schema.safeParse(payload)` and, on failure, throws `new BlueprintValidationError(step.name, 'input' | 'output', parseResult.error)`. Do not introduce a second validation framework. Steps that have no schema must leave the field `undefined`; an `undefined` schema means "skip validation for this hop."
-
-#### Test Strategy
-
-All Sprint 2 tests use hand-rolled Drizzle mock objects following the pattern in `__tests__/server-db-utils.test.ts`. No real database connection. Mock the `db` argument directly in each test by building fluent-chain objects with `vi.fn()`.
-
-For queue tests, the mock's `.returning()` call should return `[]` (zero rows updated) to simulate stale-worker rejection, and `[updatedRow]` to simulate successful claim. For runtime-limits and context tests, mock the Drizzle `.select().from().where()` chain to return controlled rows.
-
-#### `lib/agents/db.ts`
-
-- Export `getAgentDb()` as the Docker/runtime DB seam. It returns a singleton `NeonDatabase<typeof schema>` (WebSocket pool only — Docker runtime does not need a separate HTTP read path). Mirror the singleton pattern in [`lib/db.ts`](/home/jared/Nexus-Terminal/lib/db.ts) without importing `getDb()` or `getPoolDb()`.
-- Export `type AgentDb = NeonDatabase<typeof schema>` as the only type alias. All other Sprint 2 modules import `AgentDb` from this file.
-- Import schema directly from [`lib/db/schema.ts`](/home/jared/Nexus-Terminal/lib/db/schema.ts).
-- Return `null` when `DATABASE_URL` is missing, matching the repo's existing DB-helper pattern. (Docker crash-fast on null is deferred to the Sprint 3 worker loop — Sprint 2 callers must handle null.)
-
-#### `lib/agents/queue.ts`
-
-- Claim exactly one eligible queued job for a target `agent_id`, ordered by `priority DESC, created_at ASC`.
-- A job is eligible to claim only when `status = 'queued'` and `next_retry_at IS NULL OR next_retry_at <= now()`.
-- Claim must be a single `UPDATE...WHERE...RETURNING` statement, not a SELECT followed by UPDATE. A subquery or CTE is allowed to preserve `priority DESC, created_at ASC` ordering safely, but the final UPDATE must still re-check `status = 'queued'` and `next_retry_at` eligibility so concurrent claimers get zero rows. Do not use `SELECT ... FOR UPDATE SKIP LOCKED` for Sprint 2 job claiming.
-- Claim semantics must atomically set:
-  - `status = 'processing'`
-  - `started_at = COALESCE(started_at, now())`
-  - `attempt = attempt + 1`
-  - `locked_by = workerId` (a stable string passed in by the caller, format `${agentId}:${process.pid}` — queue helpers accept `workerId: string` as a parameter, they do not generate identity internally)
-  - `lock_expires_at = now() + interval '5 minutes'`
-  - `last_heartbeat_at = now()`
-  - `lease_version = lease_version + 1`
-- Return type: `QueueClaimResult | null` (defined in `types.ts`). Return `null` when no eligible job exists (zero rows returned from the UPDATE).
-- Export exactly these helpers:
-  - `claimNextQueuedJob(db, agentId, workerId): Promise<QueueClaimResult | null>`
-  - `renewJobLease(db, jobId, lockedBy, leaseVersion): Promise<boolean>`
-  - `heartbeatJob(db, jobId, lockedBy, leaseVersion): Promise<boolean>`
-  - `completeJob(db, jobId, lockedBy, leaseVersion, result): Promise<boolean>`
-  - `failJob(db, jobId, lockedBy, leaseVersion, errorMessage): Promise<boolean>`
-  - `scheduleJobRetry(db, jobId, lockedBy, leaseVersion, nextRetryAt, errorMessage?): Promise<boolean>`
-  - `persistStepLog(db, jobId, lockedBy, leaseVersion, stepLog): Promise<boolean>`
-- Renew, complete, fail, heartbeat, and retry-scheduling writes must all match on `id + locked_by + lease_version`.
-- Renew, complete, fail, heartbeat, schedule-retry, and `persistStepLog` return `true` when one row was updated and `false` when zero rows matched because lease ownership changed. Zero-row stale-lease results are expected control flow, not thrown errors.
-- Heartbeat updates `last_heartbeat_at = now()` and extends `lock_expires_at` by 5 minutes (same duration as claim).
-- `complete job` means: set `status = 'completed'`, set `result`, set `completed_at = now()`, clear `locked_by`, `lock_expires_at`, `last_heartbeat_at`, `next_retry_at`, and `error_message`.
-- `fail job` means: set `status = 'failed'`, set `error_message`, set `completed_at = now()`, clear `locked_by`, `lock_expires_at`, `last_heartbeat_at`, and `next_retry_at`. Preserve `result` as-is.
-- `schedule retry` means: set `status = 'queued'`, set `next_retry_at` to the computed delay, null out `locked_by`, `lock_expires_at`, and `last_heartbeat_at`. Preserve `started_at` (records when the job first began processing) and preserve prior `step_log`.
-- `persistStepLog(db, jobId, lockedBy, leaseVersion, stepLog)` writes to `agent_jobs.step_log` fenced on `id + locked_by + lease_version`. The blueprint runner calls this — it does not write to `agent_jobs` directly.
-- **Columns the queue helpers must NEVER touch.** `progress_note` is reserved for future runner-driven user-visible status writes and is not in scope for Sprint 2 — every queue helper must leave `progress_note` unchanged (do not include it in any `set()` clause). `max_attempts` is configuration set at job creation time only — it is read by the caller deciding whether to call `failJob` vs `scheduleJobRetry`, but no queue helper writes to it. `created_at` is database-managed and is never set by helpers.
-- **Canonical claim SQL shape.** Codex must implement the claim using a CTE that selects exactly one candidate job ID and an UPDATE that re-checks eligibility on the matched row. Use `drizzle-orm`'s `sql` template literal for the CTE, since Drizzle's query builder does not express CTE-driven UPDATE in a single statement. The shape is:
-
-  ```ts
-  // Inside claimNextQueuedJob(db, agentId, workerId):
-  const rows = await db.execute(sql`
-    WITH candidate AS (
-      SELECT id
-      FROM agent_jobs
-      WHERE agent_id = ${agentId}
-        AND status = 'queued'
-        AND (next_retry_at IS NULL OR next_retry_at <= now())
-      ORDER BY priority DESC, created_at ASC
-      LIMIT 1
-    )
-    UPDATE agent_jobs
-    SET status = 'processing',
-        started_at = COALESCE(started_at, now()),
-        attempt = attempt + 1,
-        locked_by = ${workerId},
-        lock_expires_at = now() + interval '5 minutes',
-        last_heartbeat_at = now(),
-        lease_version = lease_version + 1
-    WHERE id = (SELECT id FROM candidate)
-      AND status = 'queued'
-      AND (next_retry_at IS NULL OR next_retry_at <= now())
-    RETURNING *;
-  `);
-  ```
-
-  The trailing `WHERE status = 'queued' AND (next_retry_at IS NULL OR ...)` clause is required, not stylistic — it makes concurrent claimers race-safe by guaranteeing zero rows for losers.
-
-- **Result shape for `claimNextQueuedJob`.** Map the returned row into `QueueClaimResult { job, leaseVersion }` where `leaseVersion` is the post-increment value (i.e., the value that the worker now owns and must use for every subsequent fenced write). Return `null` when `rows.length === 0`.
-- All other helpers (`renewJobLease`, `heartbeatJob`, `completeJob`, `failJob`, `scheduleJobRetry`, `persistStepLog`) may use the Drizzle ORM builder (`db.update().set().where()`) with `and()` / `eq()` / `sql` helpers from `drizzle-orm`, since their UPDATE shape does not need a CTE.
-- Stale-job reaper wiring remains out of scope for Sprint 2, but the queue helpers must be written so Sprint 3 can call them without changing lease semantics.
-
-#### `lib/agents/runtime-limits.ts`
-
-The blueprint runner is the primary caller of all functions in this module. Each exported guard function must accept `(db: AgentDb, userId: string, agentId: AgentId)` as its first three parameters so the runner can forward job context without re-reading from the DB.
-
-**Exported function signatures.** The module must export exactly these five functions and no others:
-
-```ts
-// Pre-step guards. Each throws on rejection (BudgetExceededError, RateLimitExceededError,
-// CircuitOpenError) and resolves with no value when allowed. Never returns a boolean — the
-// throw path is the rejection signal.
-export function checkBudget(db: AgentDb, userId: string, agentId: AgentId): Promise<void>;
-export function checkRateLimit(db: AgentDb, userId: string, agentId: AgentId): Promise<void>;
-export function checkCircuitBreaker(db: AgentDb, userId: string, agentId: AgentId): Promise<void>;
-
-// Post-LLM bookkeeping. Called by the runner once per LLM attempt (including each repair
-// retry). This is ONE atomic-ish helper that does two things in sequence: inserts the
-// agent_request_log row, then applies the success/failure breaker update for the same
-// attempt. The two writes do not need to share a DB transaction — order matters but partial
-// success is acceptable (telemetry row may exist without breaker update on crash; the next
-// attempt simply re-evaluates breaker state from agent_registry.config).
-export function recordLlmAttempt(
+// Write-then-deliver flow.
+export async function writeAndDeliverReport(
   db: AgentDb,
-  entry: TokenTrackingEntry,
-): Promise<void>;
-
-// Direct breaker mutators, exported for tests. The runner does NOT call these directly —
-// it calls recordLlmAttempt, which calls these internally. They are exported so
-// agent-runtime-limits.test.ts can verify open/reset behavior without faking an LLM call.
-export function recordBreakerFailure(db: AgentDb, agentId: AgentId): Promise<void>;
-export function recordBreakerSuccess(db: AgentDb, agentId: AgentId): Promise<void>;
-```
-
-`recordLlmAttempt` derives the agent and user from the `entry` argument (`entry.userId`, `entry.agentId`), so it does not take them as separate parameters. The three guard functions take them explicitly because they run before any `entry` exists.
-
-- Keep Sprint 2 runtime limits consolidated in this file even though the reference architecture later splits them.
-- **Token logging:** Writes to `agent_request_log`; do not invent a second token ledger. When mapping `TokenTrackingEntry` to the DB insert, convert `success` to an integer: `success: entry.success ? 1 : 0` (the schema column is `integer`, the TS type is `boolean`). Call `Math.round()` on `estimatedCostCents` before insert (schema is `integer`; fractional values will be silently truncated by Postgres). One `agent_request_log` row is inserted per LLM attempt; repair retries get their own row with the same `userId + agentId + mode + lane` so daily/monthly budget math counts them.
-- **Budget checks (`checkBudget`):** Call `getLlmBudgetConfig()` from [`lib/agents/llm-client.ts`](/home/jared/Nexus-Terminal/lib/agents/llm-client.ts) — read `dailyBudgetCents` and `monthlyBudgetCents` from the returned `LlmBudgetConfig`. Daily check sums `estimated_cost_cents` in `agent_request_log` where `user_id = ?` AND `created_at >= start of current UTC calendar day`. Monthly check uses `created_at >= first of the current UTC calendar month`. Both checks are scoped per `userId` only, not per `userId + agentId`. Throw `new BudgetExceededError(agentId, 'daily')` or `new BudgetExceededError(agentId, 'monthly')` on violation. The check fails fast — it runs before any LLM call so no token is wasted on a doomed request.
-- **Rate limiting (`checkRateLimit`):** DB-backed, queries `agent_request_log` for the requesting user. The V1 limit is 30 requests per rolling hour: count rows where `user_id = ?` AND `created_at >= now() - interval '1 hour'`. Scoped per `userId` only. Throw `new RateLimitExceededError(agentId, userId)` when the count is `>= 30`.
-- **Circuit breaker (`checkCircuitBreaker`):** `agent_registry.config.circuitBreaker` is the only authoritative breaker state. `agent_request_log` remains telemetry only and must not be scanned to recompute breaker state. Throw `new CircuitOpenError(agentId, openedAt)` when the breaker is open and within the 60s reset window. See breaker policy below for the open/reset state machine.
-- Circuit-breaker policy for Sprint 2:
-  - Scope is per `agentId` (one breaker per `agent_registry` row), not per user.
-  - Open after 5 consecutive failed LLM requests for that agent.
-  - `recordBreakerFailure(db, agentId)` increments `consecutiveFailures` with a single SQL UPDATE against `agent_registry.config` and sets `openedAt = now()` only when the post-increment counter reaches 5. Use Postgres `jsonb_set` so the increment is atomic — no read-modify-write in TypeScript. Canonical shape:
-
-    ```ts
-    // Inside recordBreakerFailure(db, agentId):
-    await db.execute(sql`
-      UPDATE agent_registry
-      SET config = jsonb_set(
-        jsonb_set(
-          config,
-          '{circuitBreaker,consecutiveFailures}',
-          to_jsonb(COALESCE((config #>> '{circuitBreaker,consecutiveFailures}')::int, 0) + 1)
-        ),
-        '{circuitBreaker,openedAt}',
-        CASE
-          WHEN COALESCE((config #>> '{circuitBreaker,consecutiveFailures}')::int, 0) + 1 >= 5
-            THEN to_jsonb(now()::text)
-          ELSE config #> '{circuitBreaker,openedAt}'
-        END
-      )
-      WHERE id = ${agentId};
-    `);
-    ```
-
-  - `recordBreakerSuccess(db, agentId)` resets breaker state to `{ consecutiveFailures: 0, openedAt: null }` with a single SQL UPDATE that overwrites the `circuitBreaker` key directly.
-  - `checkCircuitBreaker(db, userId, agentId)` reads `agent_registry.config.circuitBreaker` for the agent. If `openedAt` is `null`, allow work. If `openedAt` is less than 60 seconds old, throw `CircuitOpenError`. If `openedAt` is 60 or more seconds old, the function MUST first call `recordBreakerSuccess(db, agentId)` to clear the breaker, then return (allow). Sprint 2 has no half-open mode.
-  - If `agent_registry.config` does not yet contain a `circuitBreaker` key for an agent, treat the breaker as closed (`{ consecutiveFailures: 0, openedAt: null }`). The first failure or success write will create the key via `jsonb_set`.
-
-#### `lib/agents/memory.ts`
-
-- All reads and writes use [`agent_memory_v2`](/home/jared/Nexus-Terminal/lib/db/schema.ts) only. Do not import or reference the legacy `agent_memory` table.
-- Memory helpers must always scope by both `user_id` and `agent_id`.
-- Upserts must honor the live unique key on `(user_id, agent_id, category, key)`.
-- Export two functions:
-  - `getMemory(db: AgentDb, userId: string, agentId: AgentId, category?: MemoryCategory): Promise<AgentMemoryRow[]>`
-  - `upsertMemory(db: AgentDb, row: Omit<AgentMemoryRow, 'id' | 'createdAt' | 'updatedAt'>): Promise<void>`
-- No other exports are needed in Sprint 2.
-
-#### `lib/agents/context.ts`
-
-Export a single function: `buildContext(db: AgentDb, userId: string, agentId: AgentId): Promise<AgentContext>`. No additional exports needed.
-
-- Build context from live repo tables only:
-  - memory from `agent_memory_v2` (call `getMemory` from `lib/agents/memory.ts`)
-  - macro summary from the latest published `agent_reports` row where `user_id = 'system-agent-user'`, `agent_id = 'orchestrator'`, `report_type = 'macro-summary'`, and `status = 'published'`, ordered by `created_at DESC LIMIT 1`. Return `null` if no row exists.
-  - conversation history from `agent_conversations`
-  - trade context from `trades`
-- Default query scope for Sprint 2:
-  - latest 20 conversation rows for `user_id + agent_id`, ordered by `created_at DESC`
-  - latest 20 trades for `user_id`, ordered by `sort_key DESC` (the existing index `idx_trades_user_sort_key` makes this cheap)
-- Empty-state behavior: when no rows exist for any source, `buildContext` must return the literal shape below. The runner relies on this exact contract — never throw, never return `null` at the top level.
-
-  ```ts
-  // Empty-state return value when every source query returns zero rows:
-  {
-    recentTrades: [],
-    macroSummary: null,
-    memory: [],
-    conversationHistory: [],
-  } satisfies AgentContext
-  ```
-
-  When some sources return rows and others don't, populate the ones that have rows and use the empty values above for the rest. Each source query is independent — a missing macro summary must not block trade or memory loading.
-- Route-level session narrowing is deferred to Sprint 3 API work. Sprint 2 context assembly should stay deterministic and library-only.
-
-#### `lib/agents/blueprint-runner.ts`
-
-**Exported function signature.** Exactly one export:
-
-```ts
-export interface RunBlueprintOptions {
-  signal?: AbortSignal;
-  // Optional caller-supplied lockedBy / leaseVersion override. Sprint 2 callers
-  // (tests + Sprint 3 worker) pass the values returned from claimNextQueuedJob.
-  lockedBy: string;
-  leaseVersion: number;
-}
-
-export interface RunBlueprintResult {
-  status: 'completed' | 'failed';
-  finalOutput: unknown;       // last successful step's StepResult.data, or null on failure
-  failureReason?: string;     // human-readable error class + message when status === 'failed'
-  stepsExecuted: number;      // number of steps the runner actually invoked (after resume skip)
-}
-
-export function runBlueprint(
-  blueprint: Blueprint,
-  job: AgentJob,
-  config: AgentConfig,
-  db: AgentDb,
-  options: RunBlueprintOptions,
-): Promise<RunBlueprintResult>;
-```
-
-The runner does NOT call `completeJob` / `failJob` itself — it returns `RunBlueprintResult` and lets the caller (Sprint 3 worker loop) decide whether to call `completeJob`, `failJob`, or `scheduleJobRetry` based on the failure class. Sprint 2 tests can call `completeJob` directly after `runBlueprint` returns.
-
-**Behavior contract:**
-
-- Executes ordered steps without importing route code (`app/api/**`) or service entrypoints (`services/**`). The runner is library-only.
-- The runner fetches context once before step iteration by calling `buildContext(db, job.userId, job.agentId)` from `lib/agents/context.ts`. It must not issue a second memory query; `stepInput.memory` is assigned from `context.memory`.
-- Before executing any step (including the first), the runner calls **in this order**: `checkBudget(db, job.userId, job.agentId)`, `checkRateLimit(db, job.userId, job.agentId)`, then `checkCircuitBreaker(db, job.userId, job.agentId)`. If any check throws, the runner does NOT execute the step. It catches the error, classifies it (`BudgetExceededError` → `failureClass: 'policy'`; `RateLimitExceededError` → `failureClass: 'policy'`; `CircuitOpenError` → `failureClass: 'dependency'`), persists a `failed` `step_log` entry for the current step, and returns `{ status: 'failed', finalOutput: null, failureReason: <error.message>, stepsExecuted }`.
-- The runner calls `step.run(stepInput)` to execute any step type (`code` or `llm`). It constructs `StepInput` with **exactly this field mapping**:
-
-  ```ts
-  const stepInput: StepInput = {
-    jobInput: job.input,            // raw job payload — same value for every step
-    previousOutput,                 // null for step 1, prior StepResult.data thereafter
-    memory: context.memory,         // from buildContext, never re-queried per step
-    context,                        // full AgentContext from buildContext
-  };
-  ```
-
-  Note that `job.input` maps to `stepInput.jobInput`. The field rename is intentional — `StepInput` already exists in `lib/agents/types.ts` and the runner must conform to it.
-
-- `previousOutput` is `null` for step 1 and the `StepResult.data` from the immediately preceding step thereafter. It is NOT a merged aggregate of all prior steps — each step is responsible for forwarding what downstream steps need.
-- **Input validation** uses the handoff payload for the current step:
-  - Step 1: if `step.inputSchema` is defined, run `step.inputSchema.safeParse(job.input)`.
-  - Step 2+: if `step.inputSchema` is defined, run `step.inputSchema.safeParse(previousOutput)`.
-  - On failure, throw `new BlueprintValidationError(step.name, 'input', parseResult.error)` and short-circuit the run with `failureClass: 'contract'`. `inputSchema` never validates the full `StepInput` object — only the handoff payload.
-- **Output validation** runs against `result.data` when `step.outputSchema` is defined: `step.outputSchema.safeParse(result.data)`. On failure, follow the repair-retry rules below.
-- **Repair retry policy** (LLM steps only):
-  - When an `llm` step's output validation fails, the runner calls `step.run(stepInput)` exactly one more time (one repair retry). Sprint 2 enforces a hard cap of 1 repair retry per step regardless of `StepMetadata.maxRepairAttempts`. `maxRepairAttempts` is reserved for future use and must not be read by the Sprint 2 runner.
-  - Repair retries do NOT increment `agent_jobs.attempt`. `attempt` is the job-level retry counter, owned by the queue, not the runner.
-  - Each LLM attempt — original AND repair retry — gets its own `agent_request_log` row via `recordLlmAttempt`. This means the daily/monthly budget check counts repair retries against the user's quota.
-  - If the repair retry also fails output validation, throw `new BlueprintValidationError(step.name, 'output', parseResult.error)` and short-circuit with `failureClass: 'contract'`.
-  - For `code` steps, there is no repair retry. A failed `code` step short-circuits immediately with the error mapped to `failureClass: 'transient'` if the step throws, or `'contract'` if `outputSchema` rejects the result.
-- **LLM bookkeeping path.** After every `llm` attempt (success OR failure, original OR repair retry), the runner calls `recordLlmAttempt(db, entry)` from `runtime-limits.ts` exactly once for that attempt. The `entry: TokenTrackingEntry` object is built from the LLM response: `userId = job.userId`, `agentId = job.agentId`, `mode = job.jobType`, `lane` from `step.metadata.lane ?? 'background'`, plus the response's token counts, model, duration, and `success` boolean. `code` steps do NOT call `recordLlmAttempt` — they don't consume LLM tokens.
-- **`step_log` persistence.** Persist `step_log` after each meaningful state transition by calling `persistStepLog(db, job.id, options.lockedBy, options.leaseVersion, updatedStepLog)` from `lib/agents/queue.ts` (which fences on `id + locked_by + lease_version`). The runner does NOT write to `agent_jobs` directly. The persisted entries must contain only these fields:
-
-  ```ts
-  // StepLogEntry shape that the runner writes:
-  {
-    step: string,                    // step.name
-    status: 'running' | 'completed' | 'failed',  // narrowed — no 'pending'
-    startedAt: string,               // ISO timestamp set when runner enters the step
-    completedAt?: string,            // ISO timestamp set when step finishes (success or failure)
-    attempt: number,                 // job.attempt (NOT the repair retry counter)
-    validatorResult?: 'pass' | 'fail',
-    tokensUsed?: number,             // sum of all attempts' tokens for this step (including repair retry)
-    errorClass?: string,             // failureClass when status === 'failed'
-  }
-  ```
-
-  Each step writes one entry to `step_log` when it transitions from `running` → `completed` or `running` → `failed`. The runner appends to the existing array; it does not replace or de-duplicate.
-
-- **`persistStepLog` stale-lease handling.** If `persistStepLog` returns `false` (zero rows updated because lease ownership changed), the runner must abort immediately with `{ status: 'failed', finalOutput: null, failureReason: 'lease lost during step_log persistence', stepsExecuted }`. Continuing to execute further steps after a stolen lease is a correctness bug.
-- **Resume integration.** Before iterating steps, the runner calls `loadCheckpoint(db, job.id)` from `lib/agents/checkpoints.ts`. If a checkpoint exists, the runner sets `previousOutput = checkpoint.checkpointJson` and starts iteration at index `checkpoint.stepIndex + 1`. If no checkpoint exists, iteration starts at index 0 with `previousOutput = null`. (See `lib/agents/checkpoints.ts` below for the side-effect-marker contract that gates step skipping.)
-- AEV2-305 covers runner core only. Prompt loading, prompt file resolution, and blueprint/config registry wiring are deferred to AEV2-308. Sprint 2 runner work must use the existing `Blueprint` / `AgentConfig` contracts from [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts); broader wiring belongs to later stories.
-
-#### `lib/agents/checkpoints.ts`
-
-The blueprint runner imports and calls `saveCheckpoint()`, `loadCheckpoint()`, and `recordStepEffect()` directly. The checkpoint module has no dependency on the runner.
-
-**Exported function signatures.** Exactly three exports:
-
-```ts
-export interface CheckpointRecord {
-  jobId: string;
-  stepIndex: number;     // matches BlueprintStep position in blueprint.steps (0-indexed)
-  stepName: string;
-  checkpointJson: unknown;  // exactly the value that becomes previousOutput for the next step
-}
-
-// Loads the most recently saved checkpoint for a job. Returns null when no row exists.
-// "Most recent" is the highest step_index, NOT the highest created_at — the unique index
-// on (job_id, step_index) means there is at most one row per (job, step), and saveCheckpoint
-// uses ON CONFLICT DO UPDATE so re-saving the same step bumps updated_at without creating
-// a duplicate.
-export function loadCheckpoint(db: AgentDb, jobId: string): Promise<CheckpointRecord | null>;
-
-// Persists the checkpoint for a single completed step. Uses ON CONFLICT (job_id, step_index)
-// DO UPDATE so re-running the same step (which Sprint 2 does not do, but Sprint 3 reapers may)
-// is idempotent. Generate `id` with crypto.randomUUID() — there is no helper to call.
-export function saveCheckpoint(
-  db: AgentDb,
-  record: CheckpointRecord,
-): Promise<void>;
-
-// Inserts the side-effect marker row. Idempotent on the unique index agent_step_effects_idempotency.
-// On unique-violation, returns false (the effect already happened — caller must skip the step).
-// On successful insert, returns true. Generate `id` with crypto.randomUUID().
-export function recordStepEffect(
-  db: AgentDb,
-  effect: {
+  params: {
     jobId: string;
-    stepName: string;
-    effectType: 'checkpoint-marker' | 'report-write' | 'discord-delivery' | 'memory-write';
-    idempotencyKey: string;
+    userId: string;
+    agentId: AgentId;
+    reportType: string;
+    title: string;
+    summary: string | null;
+    reportJson: unknown;
   },
-): Promise<boolean>;
+): Promise<{ reportId: string; status: 'published' | 'delivery_failed'; deliveryError: string | null }>;
+
+// Delivery-only path used by POST /api/agents/admin/redeliver.
+export async function redeliverReport(
+  db: AgentDb,
+  reportId: string,
+): Promise<{ status: 'published' | 'delivery_failed'; deliveryError: string | null }>;
 ```
 
-There is no `hasStepEffect` function — the runner's existence check is folded into `recordStepEffect`'s `ON CONFLICT DO NOTHING` semantics. (See "Skip flow" below.)
+Behavior contract:
 
-**Checkpoint semantics:**
+- **Webhook URL resolution.** `resolveWebhookUrl` reads env vars by agent + reportType:
+  - `orchestrator` + `macro-summary` -> `DISCORD_WEBHOOK_MACRO_DAILY`
+  - `orchestrator` + any system alert -> `DISCORD_WEBHOOK_SYSTEM`
+  - `small-cap-trader` + `pre-market-scan` -> `DISCORD_WEBHOOK_SCANS`
+  - `small-cap-trader` + `research` -> `DISCORD_WEBHOOK_RESEARCH`
+  - `swing-trader` + `momentum-scan` or `research` -> `DISCORD_WEBHOOK_SWING_SETUPS`
+  - `swing-trader` + `pattern-check` -> `DISCORD_WEBHOOK_SWING_ALERTS`
+  - Unknown combination -> return `null` and log once. Never throw.
+- **`writeAndDeliverReport` order** (MUST match this sequence — it mirrors the V1 Discord-first publish flow):
+  1. Build `reportId = crypto.randomUUID()`.
+  2. Call `recordStepEffect(db, { jobId, stepName: 'write-report', effectType: 'report-write', idempotencyKey: '${jobId}:write-report:report-write' })`. If it returns `false`, the row already exists — re-read it by `job_id + report_type` and skip to step 4.
+  3. Insert the `agent_reports` row with `status = 'published'`, `delivered_at = null`, `delivery_error = null`.
+  4. Call `recordStepEffect(db, { jobId, stepName: 'deliver-report', effectType: 'discord-delivery', idempotencyKey: 'discord-delivery:${reportId}' })`. If it returns `false`, delivery already happened — return `{ reportId, status: 'published', deliveryError: null }`.
+  5. Resolve the webhook URL. If null, update the row to `status = 'delivery_failed'`, `delivery_error = 'no webhook configured for ${agentId}/${reportType}'`, and return.
+  6. Build the embed via the correct `build*Embed` function and POST to the webhook with `fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ embeds: [embed] }) })`.
+  7. On HTTP 2xx: update `agent_reports` to `delivered_at = now()`, `status = 'published'`. Return `{ reportId, status: 'published', deliveryError: null }`.
+  8. On any other status or fetch throw: update `agent_reports` to `status = 'delivery_failed'`, `delivery_error = '<status code>: <truncated body>'`. Return `{ reportId, status: 'delivery_failed', deliveryError }`. Do NOT throw — delivery failures are expected and must become data, not exceptions.
+- **`redeliverReport`.** Re-reads the existing row by `reportId`, re-runs steps 5-8 above using the stored `report_json` and a fresh `discord-delivery:${reportId}:retry-${timestamp}` idempotency key so the retry is not short-circuited by the original delivery marker. Does NOT call the LLM and does NOT modify `report_json`.
+- **Embed builders.** Pure functions, no DB access, no fetch. Each reads fields from `report.report_json` and returns a `DiscordEmbed` with `color: 0x10B981`. Unknown fields fall back to string coercion; missing required fields render as `"n/a"`. Never throw.
+- **No direct `agent_reports` writes outside this file.** Blueprint steps that need to publish results must call `writeAndDeliverReport` — they do NOT `db.insert(agentReports)` directly.
 
-- `checkpoint_json` stores the normalized `StepResult.data` of the last successful step only. Sprint 2 does not maintain a second accumulator object. The value in `checkpoint_json` is exactly what the runner passes as `previousOutput` to the next step.
-- The schema column `agent_job_checkpoints` has no `status` field. Treat every row in the table as authoritative — saving a row is itself the "completed" signal. The runner only calls `saveCheckpoint` after a step's `step.run()` returns successfully and (if applicable) `outputSchema` validates.
-- Resume semantics:
-  - Call `loadCheckpoint(db, job.id)`. The query is `SELECT id, job_id, step_index, step_name, checkpoint_json FROM agent_job_checkpoints WHERE job_id = ? ORDER BY step_index DESC LIMIT 1`.
-  - If the result is not null, restore `previousOutput = result.checkpointJson` and start iteration at `result.stepIndex + 1`. If the next index is past `blueprint.steps.length - 1`, the job was already complete — return `{ status: 'completed', finalOutput: result.checkpointJson, stepsExecuted: 0 }` immediately.
-  - If the result is null, start iteration at index 0 with `previousOutput = null`.
-- **When `saveCheckpoint` is called within the step lifecycle.** For each successful step the runner executes the following sequence in this exact order:
-  1. `step.run(stepInput)` returns success.
-  2. `step.outputSchema?.safeParse(result.data)` succeeds (or there is no outputSchema).
-  3. If `step.metadata.sideEffect === true`, call `recordStepEffect(...)` with the resolved idempotency key. If `recordStepEffect` returns `false` (key already existed) the runner treats the step as already completed and proceeds to step 4 with `previousOutput` UNCHANGED from its pre-step value (see "Skip flow" below for the read path).
-  4. Call `saveCheckpoint(db, { jobId, stepIndex, stepName, checkpointJson: result.data })`.
-  5. Call `recordLlmAttempt(...)` if this was an LLM step (already handled above per attempt — included here only to fix the relative ordering).
-  6. Call `persistStepLog(...)` with the completed `step_log` entry appended.
+#### `lib/agents/scrape-lite.ts`
 
-  Steps 3 → 4 → 6 must happen in this order. Step 5 can happen between any of them as long as it runs once per LLM attempt. If the worker crashes between any two of these calls, see "Crash recovery" below.
+Pure fetcher. No URL list lives in this file.
 
-**Side-effect / idempotency contract:**
+```ts
+export async function fetchPageText(url: string, options?: { timeoutMs?: number }): Promise<string>;
+```
 
-- A step is side-effecting when `step.metadata.sideEffect === true` AND `step.metadata.idempotencyKey` is a non-empty string. Either condition false → no idempotency check, no `recordStepEffect` call.
-- `metadata.idempotencyKey` must be a fully qualified, globally unique key for the logical effect. The canonical format is `${job.id}:${step.name}:${effectType}`, for example `${job.id}:write-orchestrator-report:report-write`. Bare step names are invalid because `agent_step_effects.idempotency_key` has a global unique index.
-- **Allowed `effectType` values** for Sprint 2 are exactly: `'checkpoint-marker'`, `'report-write'`, `'discord-delivery'`, `'memory-write'`. The runner does not validate these strings, but blueprints in later sprints must pick from this set so analytics queries are stable.
-- **Sprint 2 scope on actual side effects.** Sprint 2 has no blueprints that perform out-of-process side effects (no Discord delivery, no webhook calls). The `recordStepEffect` plumbing is built and tested now so Sprint 3's `report-write` and `discord-delivery` steps wire in cleanly. Sprint 2 tests exercise the skip flow with a synthetic `effectType: 'memory-write'` step, NOT `'discord-delivery'`.
-- **Skip flow when an effect marker already exists.** When `recordStepEffect` returns `false`:
-  1. The runner does NOT call `step.run()` for this step (it has already happened in a prior attempt — re-running would duplicate the side effect).
-  2. The runner needs a `previousOutput` to pass to the next step. Sprint 2 resolves this by treating the most recent saved checkpoint for THIS step (`agent_job_checkpoints WHERE job_id = ? AND step_index = ?`) as the source of truth: call a helper query inside the runner to fetch that row's `checkpoint_json` and use it as `previousOutput` for the next step. If no checkpoint row exists for this step (the prior attempt crashed between `recordStepEffect` and `saveCheckpoint`), see "Crash recovery" below.
-  3. The runner appends a `step_log` entry with `status: 'completed'`, `validatorResult: 'pass'`, `tokensUsed: 0`, and `attempt: job.attempt` so the skip is observable.
+- Uses `fetch(url, { signal, headers: { 'User-Agent': 'Nexus-Agent/1.0', 'Accept': 'text/html' } })` with `AbortController` timeout (default 10000 ms).
+- Strips `<script>`, `<style>`, all remaining HTML tags, decodes `&nbsp;`, `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&#39;`.
+- Normalizes whitespace (collapse runs of whitespace into a single space), trims.
+- Returns the first 30000 characters.
+- Throws on non-2xx response with the status code and truncated body (same `readFailureDetail` style as `lib/agents/llm-client.ts`).
+- Pure function otherwise — no memory, no DB, no caching. Caching is the blueprint's responsibility.
 
-**Crash recovery:** A worker can die between any two of the post-step writes. The runner must handle these states deterministically on the next attempt:
+#### `lib/agents/prompts-loader.ts`
 
-| Crashed between | State on disk | Resume behavior |
-|-----------------|--------------|-----------------|
-| `step.run` success and `recordStepEffect` | No effect row, no checkpoint | Re-run the step. Idempotent because no marker yet. |
-| `recordStepEffect` and `saveCheckpoint` | Effect row exists, no checkpoint | `recordStepEffect` returns `false`. The skip-flow checkpoint lookup finds no row for this step → fall back to the latest saved checkpoint (the PRIOR step's `checkpointJson`) as `previousOutput`. Log a `step_log` entry with `errorClass: 'crash-between-effect-and-checkpoint'` so the gap is auditable, then proceed to the next step. |
-| `saveCheckpoint` and `persistStepLog` | Effect row + checkpoint exist, step_log missing | `loadCheckpoint` finds the checkpoint and resumes at `stepIndex + 1`. The missing `step_log` entry for the prior step is acceptable — it's metadata, not state. |
-| `persistStepLog` and the next step | Everything for prior step persisted | Normal resume. |
+```ts
+import type { AgentId } from './types';
 
-The fallback in row 2 IS a real semantic compromise: the next step will see the previous-previous step's output instead of the just-skipped step's output. Sprint 2 accepts this because no Sprint 2 blueprint actually has a side-effecting step, so the gap is theoretical until Sprint 3. Sprint 3 will revisit by storing a small "effect result envelope" alongside the marker. **Do not** invent that envelope in Sprint 2.
+export function loadGlobalPolicyPrompt(): string;
+export function loadRolePrompt(agentId: AgentId): string;
+export function buildLlmSystemPrompt(agentId: AgentId): string;  // concatenates global-policy + role prompt
+```
 
-- **Effect-row insert is the runner's job, not the step's job.** Sprint 2 does not permit an out-of-process side effect to happen inside `step.run()`. The runner inserts the `agent_step_effects` row via `recordStepEffect` AFTER the step returns success. Steps that need to perform a side effect must declare it via `metadata.sideEffect = true` and let the runner handle the marker — they must not write to `agent_step_effects` themselves.
+- Reads from `lib/agents/prompts/*.md` at module-load time (not per call). Use `fs.readFileSync(path.join(process.cwd(), 'lib/agents/prompts', ...), 'utf8')`.
+- Cache the file contents in a module-level `const` so repeated calls do not re-read. Tests should use `vi.mock('node:fs')` to override.
+- `buildLlmSystemPrompt(agentId)` returns `${globalPolicy}\n\n---\n\n${rolePrompt}` — a single string the blueprint runner passes into `callLlm({ systemPrompt, ... })`.
+- Throws at module load if any of the four expected files is missing. Fail fast — prompts are load-bearing and a missing file is a deployment bug.
 
-#### Explicit Deferrals
+#### `lib/agents/config.ts`
 
-- Do not add `worker.ts`, Docker healthchecks, `/tmp/healthy`, or stale-job reaper scheduling in Sprint 2.
-- Do not add `/api/agents/*` routes, Discord embed/delivery helpers, or Compose cleanup in Sprint 2.
-- Do not create `macro_summaries`, a new memory table, or a second token/cost tracking table.
+```ts
+import type { AgentId, AgentConfig, AgentJob, Blueprint } from './types';
+import { orchestratorChatBlueprint } from './blueprints/orchestrator-chat';
+import { orchestratorMacroSummaryBlueprint } from './blueprints/orchestrator-macro-summary';
+import { smallCapResearchBlueprint } from './blueprints/small-cap-research';
+import { swingTraderResearchBlueprint } from './blueprints/swing-trader-research';
+
+export const AGENT_CONFIGS: Record<AgentId, AgentConfig> = {
+  orchestrator: {
+    id: 'orchestrator',
+    displayName: 'Orchestrator',
+    llmLane: 'interactive',
+    temperature: 0.3,
+    capabilities: ['chat', 'macro-summary'],
+    rolePromptPath: 'lib/agents/prompts/orchestrator.md',
+    blueprints: {
+      chat: orchestratorChatBlueprint,
+      'macro-summary': orchestratorMacroSummaryBlueprint,
+    },
+    blueprintResolver: (job) => resolveFromCapabilities('orchestrator', job),
+  },
+  'small-cap-trader': {
+    id: 'small-cap-trader',
+    displayName: 'Small Cap Trader',
+    llmLane: 'background',
+    temperature: 0.2,
+    capabilities: ['research', 'pre-market-scan'],
+    rolePromptPath: 'lib/agents/prompts/small-cap.md',
+    blueprints: {
+      research: smallCapResearchBlueprint,
+      'pre-market-scan': notImplementedBlueprint('small-cap-trader:pre-market-scan'),
+    },
+    blueprintResolver: (job) => resolveFromCapabilities('small-cap-trader', job),
+  },
+  'swing-trader': {
+    id: 'swing-trader',
+    displayName: 'Swing Trader',
+    llmLane: 'background',
+    temperature: 0.2,
+    capabilities: ['research', 'momentum-scan', 'pattern-check'],
+    rolePromptPath: 'lib/agents/prompts/swing-trader.md',
+    blueprints: {
+      research: swingTraderResearchBlueprint,
+      'momentum-scan': notImplementedBlueprint('swing-trader:momentum-scan'),
+      'pattern-check': notImplementedBlueprint('swing-trader:pattern-check'),
+    },
+    blueprintResolver: (job) => resolveFromCapabilities('swing-trader', job),
+  },
+};
+
+export function resolveBlueprint(job: AgentJob): Blueprint {
+  const config = AGENT_CONFIGS[job.agentId];
+  if (!config) throw new Error(`unknown agent: ${job.agentId}`);
+  return config.blueprintResolver(job);
+}
+```
+
+- `notImplementedBlueprint(name)` returns a `Blueprint` with a single `code` step whose `run()` throws `new Error('blueprint not implemented in Sprint 3: ${name}')`. Per D1, the scan blueprints are declared but unusable in Sprint 3.
+- `resolveFromCapabilities(agentId, job)` throws if `job.jobType` is not in `capabilities[agentId]`, otherwise returns `AGENT_CONFIGS[agentId].blueprints[job.jobType]`. If the resolved blueprint is the `notImplementedBlueprint`, still return it — the runner will fail the job at step-execution time, which is where D1 says the gate lives.
+- No side effects at module load. `AGENT_CONFIGS` is a plain const.
+
+#### `lib/agents/blueprints/orchestrator-chat.ts`
+
+Two steps. Step 1 is deterministic code, step 2 is an LLM call — only reached when the Orchestrator handles the request itself.
+
+```ts
+import { z } from 'zod';
+import type { Blueprint } from '../types';
+
+const chatInputSchema = z.object({
+  message: z.string().min(1),
+  session_id: z.string().optional(),
+  channel: z.enum(['web', 'discord']).default('discord'),
+});
+
+const routeDecisionSchema = z.object({
+  decision: z.enum(['handle-directly', 'route-to-specialist', 'fallback-to-self']),
+  targetAgentId: z.enum(['orchestrator', 'small-cap-trader', 'swing-trader']).nullable(),
+  specialistJobType: z.enum(['research']).nullable(),
+  warning: z.string().nullable(),
+  message: z.string(),
+});
+
+export const orchestratorChatBlueprint: Blueprint = {
+  id: 'orchestrator:chat',
+  description: 'V1 Orchestrator chat — deterministic routing + self-synthesis fallback.',
+  steps: [
+    {
+      name: 'classify-and-route',
+      type: 'code',
+      inputSchema: chatInputSchema,
+      outputSchema: routeDecisionSchema,
+      metadata: { canRetry: true, timeoutMs: 5000, maxRepairAttempts: 0, sideEffect: false },
+      run: async ({ jobInput, context: _ctx }) => {
+        // 1. Slash-command prefix wins.
+        // 2. Keyword match for data-signal routing (small cap, dilution, short, offering -> small-cap-trader).
+        // 3. Keyword match for swing/momentum/MDR/parabolic -> swing-trader.
+        // 4. Otherwise handle-directly.
+        // 5. If routed target is offline/degraded in agent_registry, emit warning + fallback-to-self.
+        // Return object matching routeDecisionSchema.
+      },
+    },
+    {
+      name: 'synthesize-response',
+      type: 'llm',
+      inputSchema: routeDecisionSchema,
+      outputSchema: z.object({ content: z.string().min(1) }),
+      metadata: { canRetry: true, timeoutMs: 30000, maxRepairAttempts: 1, sideEffect: false, lane: 'interactive' },
+      run: async ({ previousOutput: _prev, context: _ctx }) => {
+        // Only reached when step 1 returned decision === 'handle-directly' OR 'fallback-to-self'.
+        // When decision === 'route-to-specialist', step 2 is skipped by the runner because the
+        // step 1 code also enqueues a new agent_jobs row for the specialist and completes the
+        // orchestrator job with { routed: true, specialistJobId }.
+        // Use callLlm({ systemPrompt: buildLlmSystemPrompt('orchestrator'), userMessage: ..., temperature: 0.3 }, 'interactive')
+      },
+    },
+  ],
+};
+```
+
+Contract notes:
+
+- **Step 1 routing rules (deterministic, no LLM):**
+  - `^\s*/research\s+` -> `targetAgentId = 'small-cap-trader'`, `specialistJobType = 'research'`
+  - `^\s*/(swing|momentum)\s+` -> `targetAgentId = 'swing-trader'`, `specialistJobType = 'research'`
+  - message matches `/\b(dilution|offering|ATM|shelf|424B|S-3|short[- ]sell)\b/i` -> `small-cap-trader`, `research`
+  - message matches `/\b(MDR|multi[- ]day[- ]runner|parabolic|momentum|breakout)\b/i` -> `swing-trader`, `research`
+  - Otherwise `decision = 'handle-directly'`, `targetAgentId = null`, `specialistJobType = null`.
+- **Availability check.** After picking a specialist, read `agent_registry.status` for that agent. If `status !== 'online'`, set `decision = 'fallback-to-self'`, fill `warning = '${agentId} is ${status}, handling request directly'`, and let step 2 run.
+- **Handoff enqueue.** When `decision = 'route-to-specialist'`, step 1's `run()` inserts a new `agent_jobs` row via `getAgentDb()` directly (this is allowed — it is a code step, not a queue-helper boundary violation). The insert sets `agent_id = targetAgentId`, `user_id = job.userId`, `job_type = 'research'`, `status = 'queued'`, `input = { ticker: extractedTicker, originator_job_id: job.id }`. The step then returns `{ decision: 'route-to-specialist', targetAgentId, specialistJobType: 'research', warning: null, message: 'routed' }`.
+- **Runner-level short-circuit for routed jobs.** The runner treats step 2 as skippable when `previousOutput.decision === 'route-to-specialist'`. The blueprint expresses this by leaving step 2 as the final step; the worker loop (not the runner) checks the final output and, when it sees `routed: true`, writes `result = { routed: true, specialistJobId: <new job id> }` into the orchestrator job. The blueprint itself does NOT need special-case runner logic — the worker's result-packaging code handles it.
+- **Ticker extraction.** Regex `/\b[A-Z]{1,5}\b/` against the message, first match. If no match, `extractedTicker = null` and the specialist handoff still happens (the specialist blueprint validates ticker).
+
+#### `lib/agents/blueprints/orchestrator-macro-summary.ts`
+
+Four steps per `AGENTIC_EXPANSIONV2.md` §6 Blueprint `orchestrator:macro-summary`.
+
+```ts
+export const orchestratorMacroSummaryBlueprint: Blueprint = {
+  id: 'orchestrator:macro-summary',
+  description: 'Daily macro briefing — headlines + market snapshot + LLM synthesis + persisted report.',
+  steps: [
+    {
+      name: 'scrape-headlines',
+      type: 'code',
+      outputSchema: z.object({ headlines: z.array(z.object({ url: z.string(), text: z.string() })) }),
+      metadata: { canRetry: true, timeoutMs: 20000, maxRepairAttempts: 0, sideEffect: false },
+      run: async () => {
+        const urls = (process.env.MACRO_HEADLINES_URLS ?? 'https://www.marketwatch.com/latest-news,https://finance.yahoo.com/topic/stock-market-news/').split(',').map((u) => u.trim()).filter(Boolean);
+        const headlines = [];
+        for (const url of urls) {
+          try {
+            const text = await fetchPageText(url);
+            headlines.push({ url, text: text.slice(0, 8000) });
+          } catch (err) {
+            headlines.push({ url, text: `[fetch failed: ${(err as Error).message}]` });
+          }
+        }
+        return { status: 'completed', data: { headlines }, metrics: { durationMs: 0, attempt: 1 }, provenance: { sourceIds: urls, upstreamStepIds: [], timestamp: new Date().toISOString() } };
+      },
+    },
+    {
+      name: 'fetch-market-snapshot',
+      type: 'code',
+      metadata: { canRetry: true, timeoutMs: 15000, maxRepairAttempts: 0, sideEffect: false },
+      // Fetches index/sector/commodity prices from Massive API using MASSIVE_API_KEY.
+      // If MASSIVE_API_KEY is unset, return { snapshot: null, note: 'no massive api key' }.
+      run: async () => { /* ... */ },
+    },
+    {
+      name: 'generate-briefing',
+      type: 'llm',
+      inputSchema: z.object({ headlines: z.array(z.object({ url: z.string(), text: z.string() })), snapshot: z.unknown().nullable() }),
+      outputSchema: z.object({
+        summary: z.string(),
+        keyEvents: z.array(z.string()),
+        sectorNotes: z.array(z.string()),
+        confidence: z.enum(['high', 'medium', 'low']),
+      }),
+      metadata: { canRetry: true, timeoutMs: 60000, maxRepairAttempts: 1, sideEffect: false, lane: 'background' },
+      // Uses callLlm(..., 'background'). Overrides the Orchestrator's default 'interactive' lane.
+      run: async () => { /* ... */ },
+    },
+    {
+      name: 'save-summary',
+      type: 'code',
+      metadata: { canRetry: false, timeoutMs: 10000, maxRepairAttempts: 0, sideEffect: true, idempotencyKey: 'PLACEHOLDER' },
+      // idempotencyKey is assigned by the runner at call time using ${job.id}:save-summary:report-write
+      // -- see the Execution Contracts note below on how blueprint metadata keys interact with the runner.
+      run: async () => {
+        // Calls writeAndDeliverReport(db, { jobId, userId: 'system-agent-user', agentId: 'orchestrator',
+        //   reportType: 'macro-summary', title: '<date> macro briefing', summary, reportJson })
+      },
+    },
+  ],
+};
+```
+
+Contract notes:
+
+- **Idempotency key template.** The runner today reads `step.metadata.idempotencyKey` as-is. Sprint 3 adds a small convention: if the key equals `'PLACEHOLDER'`, the runner substitutes `${job.id}:${step.name}:report-write` before calling `recordStepEffect`. This keeps the template co-located with the step without hardcoding job IDs at blueprint construction time. Implement the substitution inside `lib/agents/blueprint-runner.ts` as an additive change — do NOT rewrite the existing idempotency logic.
+- **Macro summary ownership.** The save-summary step always writes with `userId = 'system-agent-user'`. The orchestrator-macro-summary blueprint is the only Sprint 3 blueprint that runs against the system user.
+- **Massive API absence.** If `MASSIVE_API_KEY` is unset, step 2 returns a `null` snapshot and the step succeeds. Step 3 handles a null snapshot gracefully. This keeps Sprint 3 runnable in dev without Massive credentials.
+
+#### `lib/agents/blueprints/small-cap-research.ts`
+
+Three steps: fetch filings from AskEdgar, fetch price/volume from TradingView (via the existing `/api/tradingview/gainers` route OR a direct TradingView scanner call — agent code MAY call the Vercel route over HTTP using `process.env.NEXUS_API_URL`), synthesize the report.
+
+```ts
+export const smallCapResearchBlueprint: Blueprint = {
+  id: 'small-cap-trader:research',
+  description: 'Short-sell / dilution research for a single ticker.',
+  steps: [
+    {
+      name: 'fetch-filings',
+      type: 'code',
+      inputSchema: z.object({ ticker: z.string().min(1) }),
+      outputSchema: z.object({ ticker: z.string(), filings: z.array(z.unknown()), cashPosition: z.unknown().nullable() }),
+      metadata: { canRetry: true, timeoutMs: 30000, maxRepairAttempts: 0, sideEffect: false },
+      // Calls AskEdgar for the ticker. Caches per (ticker, endpoint) in agent_memory_v2
+      // with category 'fact' and key 'askedgar:${endpoint}:${ticker}' and a 1-hour TTL.
+      run: async () => { /* ... */ },
+    },
+    {
+      name: 'fetch-price-context',
+      type: 'code',
+      metadata: { canRetry: true, timeoutMs: 15000, maxRepairAttempts: 0, sideEffect: false },
+      run: async () => { /* ... */ },
+    },
+    {
+      name: 'synthesize-report',
+      type: 'llm',
+      outputSchema: z.object({
+        ticker: z.string(),
+        dilutionRisk: z.enum(['very-high', 'high', 'medium', 'low']),
+        offeringAbility: z.enum(['immediate', 'delayed', 'blocked']),
+        filingSummary: z.string(),
+        catalysts: z.array(z.string()),
+        confidence: z.enum(['high', 'medium', 'low']),
+        evidenceIds: z.array(z.string()),
+      }),
+      metadata: { canRetry: true, timeoutMs: 60000, maxRepairAttempts: 1, sideEffect: false, lane: 'background' },
+      run: async () => { /* calls callLlm(..., 'background') */ },
+    },
+    {
+      name: 'save-research',
+      type: 'code',
+      metadata: { canRetry: false, timeoutMs: 10000, maxRepairAttempts: 0, sideEffect: true, idempotencyKey: 'PLACEHOLDER' },
+      run: async () => { /* calls writeAndDeliverReport with reportType: 'research' */ },
+    },
+  ],
+};
+```
+
+Contract notes:
+
+- **AskEdgar caching.** Read `agent_memory_v2` for `category = 'fact'`, `key = 'askedgar:filings:${ticker}'`. If the row exists and `updated_at > now() - interval '1 hour'`, use `value_json` as the cached response. Otherwise call AskEdgar and upsert the row via `upsertMemory()` with `expiresAt = now() + interval '1 hour'`. This is the cross-restart cache required by `AGENTIC_EXPANSIONV2.md` §9.
+- **Ticker normalization.** Step 1 uppercases and trims the incoming ticker before any external call. Invalid tickers (non-alphabetic or > 5 chars) short-circuit with `failureClass: 'input-quality'`.
+- **Report ownership.** `userId = job.userId` — research reports belong to the user who requested them, never to `system-agent-user`.
+
+#### `lib/agents/blueprints/swing-trader-research.ts`
+
+Same three-step shape as small-cap-research, but the LLM focuses on MDR similarity scoring, momentum indicators, and entry/stop/target levels. Schema:
+
+```ts
+outputSchema: z.object({
+  ticker: z.string(),
+  mdrSimilarity: z.number().min(0).max(100),
+  volumeSurgeRatio: z.number(),
+  levels: z.object({ entry: z.number(), stop: z.number(), targets: z.array(z.number()) }),
+  recommendation: z.enum(['HOLD', 'ADD', 'TRIM', 'EXIT', 'WATCH']),
+  patternClassification: z.enum(['BREAKOUT', 'EXHAUSTION', 'CONTINUATION', 'STOPPED']),
+  confidence: z.enum(['high', 'medium', 'low']),
+  evidenceIds: z.array(z.string()),
+}),
+```
+
+Uses `callLlm(..., 'background')`. Same save-research step shape (idempotencyKey placeholder). Same user-owned report.
+
+#### `lib/agents/heartbeat.ts`
+
+```ts
+export interface HeartbeatHandle { stop: () => Promise<void> }
+export function startHeartbeat(db: AgentDb, agentId: AgentId, intervalMs?: number): HeartbeatHandle;
+```
+
+- `intervalMs` defaults to 30000 ms.
+- On each tick:
+  1. `UPDATE agent_registry SET last_heartbeat = now(), status = 'online' WHERE id = ${agentId}`
+  2. Touch `/tmp/healthy` with `fs.writeFileSync('/tmp/healthy', new Date().toISOString())`.
+- Errors during the UPDATE are caught and logged (`console.error`) but do NOT kill the tick. The next tick retries.
+- `stop()` clears the interval, writes one final `UPDATE agent_registry SET status = 'offline'`, and awaits it.
+- Tests mock `node:fs` and `getAgentDb()` and advance vi fake timers to prove both the UPDATE and the file touch happen per tick.
+
+#### `lib/agents/worker.ts`
+
+```ts
+import type { AgentConfig, WorkerConfig } from './types';
+
+export interface WorkerHandle { stop: () => Promise<void> }
+
+export async function startWorker(config: WorkerConfig & { agentConfig: AgentConfig }): Promise<WorkerHandle>;
+```
+
+Behavior contract:
+
+- On start: writes/updates the agent's `agent_registry` row to `status = 'online'`, then starts `startHeartbeat(db, agentId)`, then begins the poll loop.
+- Poll loop:
+  1. `const claim = await claimNextQueuedJob(db, agentId, workerId)` where `workerId = '${agentId}:${process.pid}'`.
+  2. If null, `await sleep(pollIntervalMs)` and continue.
+  3. If claimed: resolve the blueprint via `config.agentConfig.blueprintResolver(claim.job)`. Catch "not implemented" errors and immediately call `failJob(db, claim.job.id, workerId, claim.leaseVersion, 'blueprint not implemented: ${jobType}')`.
+  4. Call `runBlueprint(blueprint, claim.job, config.agentConfig, db, { lockedBy: workerId, leaseVersion: claim.leaseVersion })`.
+  5. **Result packaging for the orchestrator routed-job case.** If `claim.job.agentId === 'orchestrator' && claim.job.jobType === 'chat'` and the runner's `finalOutput` contains `{ decision: 'route-to-specialist', ... }`, the worker writes `result = { routed: true, specialistJobId: <the job id the blueprint enqueued> }`. Otherwise `result = finalOutput`. Then call `completeJob(db, job.id, workerId, leaseVersion, result)`.
+  6. If `runBlueprint` returns `{ status: 'failed', failureReason }`, classify and branch:
+     - `failureClass === 'transient'` and `claim.job.attempt < claim.job.maxAttempts` -> `scheduleJobRetry(db, job.id, workerId, leaseVersion, new Date(Date.now() + calculateBackoffMs(claim.job.attempt)), failureReason)`.
+     - Otherwise -> `failJob(db, job.id, workerId, leaseVersion, failureReason)`.
+  7. Loop.
+- Graceful shutdown: `stop()` sets an internal `shuttingDown = true` flag. The poll loop checks it before claiming a new job. If a job is in flight, the loop awaits the current `runBlueprint` call (does NOT cancel) and then exits. After the loop exits, call the heartbeat `stop()`.
+- Backoff helper lives inline: `function calculateBackoffMs(attempt: number) { return Math.pow(2, attempt) * 2000 }` — 2s, 8s, 32s at attempts 1, 2, 3.
+- Stale-job reaper: OUT OF SCOPE for Sprint 3. The reaper is listed as a worker-level concern in `AGENTIC_EXPANSIONV2.md` but the plan explicitly defers it. Do NOT add a reaper in Sprint 3.
+- Worker tests mock `claimNextQueuedJob`, `completeJob`, `failJob`, `scheduleJobRetry`, and `runBlueprint`, then advance fake timers to drive the loop through claim -> run -> complete and claim -> run -> retry transitions.
+
+#### `lib/agents/macro-cron.ts`
+
+```ts
+export interface MacroCronHandle { stop: () => Promise<void> }
+export function startMacroCron(db: AgentDb, options?: { hourEt?: number; checkIntervalMs?: number }): MacroCronHandle;
+```
+
+Behavior contract:
+
+- `hourEt` defaults to `Number(process.env.MACRO_CRON_HOUR) || 6`. `checkIntervalMs` defaults to 60000 ms.
+- Tick logic (every `checkIntervalMs`):
+  1. Compute the current hour and date in `America/New_York` using `Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit' })`. The result gives `tradingDate = 'YYYY-MM-DD'` and `currentHour`.
+  2. If `currentHour !== hourEt`, return — not the trigger hour.
+  3. Attempt to claim a scheduled run row via a single SQL:
+     ```sql
+     INSERT INTO agent_scheduled_runs (id, agent_id, trigger_type, trading_date, status, started_at, created_at)
+     VALUES (${randomUUID()}, 'orchestrator', 'macro-summary-cron', ${tradingDate}, 'processing', now(), now())
+     ON CONFLICT (agent_id, trigger_type, trading_date) DO NOTHING
+     RETURNING id;
+     ```
+     If zero rows returned, another tick already claimed the run — skip.
+  4. If one row returned: insert a new `agent_jobs` row with `agent_id = 'orchestrator'`, `user_id = 'system-agent-user'`, `job_type = 'macro-summary'`, `status = 'queued'`, `input = { tradingDate }`. Then update the scheduled-run row with `job_id = <new job id>`, `status = 'completed'`, `completed_at = now()`.
+- `stop()` clears the interval. No DB write on stop — the scheduled-run row stays in whatever state the last tick left it.
+- Only the Orchestrator process calls `startMacroCron`. Sprint 4's `services/agent-entrypoint.ts` wires it; Sprint 3 just ships the library.
+- Tests mock `db.execute` / `db.insert` / `db.update` and advance fake timers to drive the tick. Verify the ON CONFLICT path skips without inserting a new job.
+
+#### `lib/validations/agents.ts`
+
+Define every Zod schema used by a Sprint 3 route in one file. Follow the naming pattern in `lib/validations/trades.ts`.
+
+```ts
+import { z } from 'zod';
+
+export const serviceChatPostSchema = z.object({
+  message: z.string().min(1).max(4000),
+  session_id: z.string().min(1).max(64).optional(),
+  discord_user_id: z.string().min(1),
+  channel: z.literal('discord'),
+});
+export type ServiceChatPostInput = z.infer<typeof serviceChatPostSchema>;
+
+export const serviceChatGetQuerySchema = z.object({
+  job_id: z.string().min(1),
+});
+
+export const reportsListQuerySchema = z.object({
+  status: z.enum(['published', 'delivery_failed', 'archived']).optional(),
+  agent_id: z.enum(['orchestrator', 'small-cap-trader', 'swing-trader']).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+export const researchPostSchema = z.object({
+  ticker: z.string().regex(/^[A-Z]{1,5}$/),
+  agent_id: z.enum(['small-cap-trader', 'swing-trader']),
+});
+
+export const adminMemoryListQuerySchema = z.object({
+  user_id: z.string().optional(),
+  agent_id: z.enum(['orchestrator', 'small-cap-trader', 'swing-trader']).optional(),
+  category: z.string().optional(),
+});
+export const adminMemoryDeleteSchema = z.object({ id: z.string().min(1) });
+
+export const redeliverSchema = z.object({ report_id: z.string().min(1) });
+```
+
+Do NOT inline schemas in route files. Every route imports from `@/lib/validations/agents`.
+
+#### Route Contracts
+
+Each route below lists path, method, auth, request shape, response shape, and error paths. Codex implements each file exactly once.
+
+##### `app/api/agents/service/chat/route.ts`
+
+**POST** — `x-agent-service-key` header; body = `ServiceChatPostInput`.
+
+1. `parseAndValidate(request, serviceChatPostSchema)` -> `{ data }` or 400.
+2. `requireServiceAuth(request, data)` -> `{ user, discordUserId }` or 400/401/403 Response.
+3. `const db = getAgentDb()`. If null, return `Response.json({ error: 'Database not configured' }, { status: 503 })`.
+4. Resolve or create `session_id`: if provided, use it; otherwise `randomUUID()`.
+5. Insert a row into `agent_conversations` with `role = 'user'`, `content = data.message`, `channel = 'discord'`, `user_id = user.id`, `agent_id = 'orchestrator'`, `session_id`.
+6. Insert a new `agent_jobs` row: `id = randomUUID()`, `agent_id = 'orchestrator'`, `user_id = user.id`, `job_type = 'chat'`, `status = 'queued'`, `input = { message: data.message, session_id, channel: 'discord', discord_user_id: discordUserId }`, `priority = 0`, `max_attempts = 3`.
+7. Return `Response.json({ job_id, session_id, agent_id: 'orchestrator' }, { status: 201 })`.
+
+**GET** — `x-agent-service-key` header; query = `job_id`.
+
+1. Parse `job_id` via `serviceChatGetQuerySchema.safeParse(Object.fromEntries(new URL(request.url).searchParams))`.
+2. `requireServiceAuth(request, {})` -- body is empty here because GET requests have no parseable body but the header check still must run. Workaround: the helper returns 400 for missing `discord_user_id`; for GET polling we call `requireAgentAdmin`-equivalent logic using only the service key. Implement a tiny helper in the route file: verify `x-agent-service-key` directly (same check as `requireServiceAuth` step 1-4), without the discord user mapping. Return 401 on mismatch.
+3. `getAgentDb()` or 503.
+4. `SELECT id, agent_id, status, progress_note, result, error_message FROM agent_jobs WHERE id = ${job_id}`. If no row, 404 `{ error: 'job not found' }`.
+5. Return the correct status variant from `AGENTIC_EXPANSIONV2.md` §13:
+   - `queued` -> `{ status: 'queued', job_id, agent_id, progress_note: null }`
+   - `processing` -> `{ status: 'processing', job_id, agent_id, progress_note }`
+   - `completed` with `result.routed === true` -> `{ status: 'completed', job_id, agent_id, result: { routed: true, specialistJobId: result.specialistJobId } }`
+   - `completed` otherwise -> `{ status: 'completed', job_id, agent_id, session_id: result.session_id, result: { message: result.content ?? result.message ?? '' } }` (read `content` or `message` — blueprints may put either)
+   - `failed` -> `{ status: 'failed', job_id, agent_id, error: { message: error_message, failureClass: <parsed from stepLog tail if present> } }`
+
+##### `app/api/agents/reports/route.ts`
+
+**GET** — `requireUser()`.
+
+1. Parse query via `reportsListQuerySchema`.
+2. Query `agent_reports` with `user_id = user.id AND user_id <> 'system-agent-user'` plus optional `status` and `agent_id` filters, ordered by `created_at DESC`, limit = `query.limit ?? 50`.
+3. Return `{ reports: [{ id, agent_id, report_type, status, title, created_at }] }`.
+
+##### `app/api/agents/reports/[id]/route.ts`
+
+**GET** — `requireUser()`.
+
+1. `SELECT * FROM agent_reports WHERE id = ${params.id} AND user_id = ${user.id} LIMIT 1`.
+2. If no row, 404. If row, return `{ report: { id, agent_id, report_type, status, report_json } }`.
+
+##### `app/api/agents/research/route.ts`
+
+**POST** — `requireUser()`; body = `researchPostSchema`.
+
+1. Parse + auth.
+2. `SELECT status FROM agent_registry WHERE id = ${data.agent_id}`. If `status !== 'online'`, return 400 `{ error: 'agent unavailable', agent_id, status }` (AEV2-403 contract — reject, do not silently queue).
+3. Insert `agent_jobs` row: `agent_id = data.agent_id`, `user_id = user.id`, `job_type = 'research'`, `input = { ticker: data.ticker }`, `status = 'queued'`.
+4. Return `{ job_id, agent_id, job_type: 'research' }`.
+
+**GET** — `requireUser()`.
+
+1. `SELECT id, agent_id, report_type, report_json -> 'ticker' AS ticker FROM agent_reports WHERE user_id = ${user.id} AND user_id <> 'system-agent-user' AND report_type = 'research' ORDER BY created_at DESC LIMIT 50`.
+2. Return `{ reports: [{ id, agent_id, report_type, ticker }] }`.
+
+##### `app/api/agents/admin/stats/route.ts`
+
+**GET** — `requireAgentAdmin()`.
+
+Return the full `AdminStatsResponse` shape from `AGENTIC_EXPANSIONV2.md` §11 (per D3). Query plan:
+
+- `circuitBreakers`: `SELECT id, config -> 'circuitBreaker' FROM agent_registry`.
+- `today.*`: aggregates over `agent_request_log` where `created_at >= start of current UTC day`.
+- `today.byLane`: `GROUP BY lane`.
+- `today.byAgent`: `GROUP BY agent_id`.
+- `thisMonth.*`: aggregates over `agent_request_log` where `created_at >= first of current UTC month`. Include `budgetCents` from `getLlmBudgetConfig().monthlyBudgetCents` and `budgetUsedPercent`.
+- `agents`: `SELECT id, display_name, status, last_heartbeat FROM agent_registry`.
+- `delivery.publishedToday`: `SELECT count(*) FROM agent_reports WHERE status = 'published' AND created_at >= start of current UTC day`.
+- `delivery.deliveryFailures`: same with `status = 'delivery_failed'`.
+- `memory.total` and `memory.byCategory`: over `agent_memory_v2`.
+- `macroSummaries.latestGeneratedAt`: latest published macro report's `created_at`.
+
+Include `queueDepth`, `oldestQueuedJobAgeSeconds`, `stuckProcessing` (jobs in `processing` for > 10 minutes with stale heartbeat), `retryRate`, and `deliveryFailureRate` — these are the AEV2-404 acceptance criteria add-ons on top of the §11 shape.
+
+##### `app/api/agents/admin/memory/route.ts`
+
+**GET** — `requireAgentAdmin()`; query = `adminMemoryListQuerySchema`.
+
+1. Query `agent_memory_v2` with optional filters on `user_id`, `agent_id`, `category`, limit 200, order by `updated_at DESC`.
+2. Return `{ memory: [{ id, user_id, agent_id, category, key }] }`.
+
+**DELETE** — `requireAgentAdmin()`; body = `adminMemoryDeleteSchema`.
+
+1. `DELETE FROM agent_memory_v2 WHERE id = ${data.id}`.
+2. Return `{ deleted: true }`. If the delete affected zero rows, return 404 `{ error: 'memory row not found' }`.
+
+##### `app/api/agents/admin/redeliver/route.ts`
+
+**POST** — `requireAgentAdmin()`; body = `redeliverSchema`.
+
+1. `const result = await redeliverReport(getAgentDb(), data.report_id)`.
+2. Return `{ report_id: data.report_id, status: result.status }`.
+3. 404 if the report does not exist.
+
+##### `app/api/agents/macro-summary/latest/route.ts`
+
+**GET** — no auth (public read; matches `AGENTIC_EXPANSIONV2.md` §13).
+
+1. `SELECT created_at AS generated_at, report_json AS content FROM agent_reports WHERE user_id = 'system-agent-user' AND agent_id = 'orchestrator' AND report_type = 'macro-summary' AND status = 'published' ORDER BY created_at DESC LIMIT 1`.
+2. If no row, return `{ summary: null }` with 200.
+3. Otherwise return `{ summary: { generated_at, content } }`.
+
+#### Route Test Mocking Pattern (AEV2-407)
+
+All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rules:
+
+- Use `vi.hoisted(() => ({ ... }))` to create the mock functions.
+- `vi.mock('@/lib/agents/db', () => ({ getAgentDb: getAgentDbMock }))`.
+- `vi.mock('@/lib/agents/admin', () => ({ requireAgentAdmin: requireAgentAdminMock, requireServiceAuth: requireServiceAuthMock }))`.
+- `vi.mock('@/lib/server-db-utils', () => ({ requireUser: requireUserMock, dbUnavailable: ... }))`.
+- `vi.mock('@/lib/agents/discord', () => ({ writeAndDeliverReport: writeAndDeliverReportMock, redeliverReport: redeliverReportMock }))` for the redeliver route.
+- Import the route handler AFTER the mocks: `import { POST, GET } from '@/app/api/agents/service/chat/route'`.
+- Build the DB mock by returning chained fluent mocks matching what the route calls (`insert().values()`, `select().from().where()`, etc.). Use `makeDb()`-style helper functions inside each test file.
+- Required coverage per AEV2-407:
+  - Success paths for every method
+  - 400 on validation failures (missing required fields, bad enum values)
+  - 401 on missing or invalid service/admin key
+  - 403 on unknown Discord user for service/chat POST
+  - 404 on unknown job/report/memory id
+  - 503 when `getAgentDb()` returns null
+  - For `GET /api/agents/service/chat`: prove the three state variants (queued / processing / completed / failed) and the routed-completed variant
+  - For redeliver: prove idempotency — calling twice does not duplicate `agent_reports` rows or double-POST to Discord (mock `fetch` twice, assert second call is a no-op or uses a fresh retry idempotency key)
+  - For reports list: prove `user_id = 'system-agent-user'` rows are excluded
+  - For research POST: prove an offline agent returns 400, not a queued job
 
 ### Order Of Operations
 
-1. Add the Docker-side DB boundary first.
-2. Add the lease-fenced queue helpers second.
-3. Add runtime limits plus memory/context assembly next.
-4. Add the blueprint runner once queue + context contracts are stable.
-5. Add checkpoint/resume last so it builds on the final runner and step-log shape.
+1. Land Discord delivery helpers first so blueprints can call them.
+2. Land scrape-lite + prompts loader + config registry skeleton next. Blueprint files import from the registry, so the registry must exist first as a shell.
+3. Land the four implemented blueprints and wire them into `AGENT_CONFIGS`.
+4. Land heartbeat + worker loop + macro cron.
+5. Land validation schemas + API routes.
+6. Land route tests last — they depend on every route file.
 
-### Checkpoint 1 — DB Boundary + Lease-Fenced Queue
+### Checkpoint 1 — Discord Delivery Helpers
 
-**Stories:** `AEV2-301`, `AEV2-302`
+**Stories:** `AEV2-307`
 
-**Review focus:** confirm the runtime DB helper is separate from Vercel helpers and that stale workers cannot renew or complete work after lease ownership changes.
+**Review focus:** confirm report-write and Discord-delivery idempotency markers are separate, and that a failed webhook POST becomes data (status = `delivery_failed`) instead of an exception.
 
-**Suggested commit:** `feat(aev2): add agent db and lease-fenced queue helpers`
-
-**Check off before commit**
-
-- [x] [`lib/agents/db.ts`](/home/jared/Nexus-Terminal/lib/agents/db.ts) exists and provides `getAgentDb()` returning a WebSocket pool singleton plus `type AgentDb`.
-- [x] [`lib/agents/queue.ts`](/home/jared/Nexus-Terminal/lib/agents/queue.ts) exports exactly the seven helpers listed in the spec (`claimNextQueuedJob`, `renewJobLease`, `heartbeatJob`, `completeJob`, `failJob`, `scheduleJobRetry`, `persistStepLog`).
-- [x] Claim is implemented with the canonical CTE shape from the spec — single UPDATE driven by a CTE candidate, re-checks `status = 'queued'` and `next_retry_at` eligibility in the UPDATE WHERE clause.
-- [x] Claiming a job sets a 5-minute lease, increments `lease_version`, sets `started_at = COALESCE(started_at, now())`, and returns `QueueClaimResult | null`.
-- [x] Queue writes fence on `id + locked_by + lease_version`.
-- [x] No queue helper writes to `progress_note` or `max_attempts`.
-- [x] `completeJob` clears `error_message`; `failJob` preserves `result` as-is; `scheduleJobRetry` preserves `started_at` and `step_log`.
-- [x] All non-claim helpers return `false` (not throw) on stale-lease zero-row updates.
-- [x] No `lib/agents/*.ts` file imports from `@/lib/db` directly (use `lib/agents/db.ts` only).
-- [x] Focused tests cover stale-worker rejection paths for every fenced helper, happy-path lease renewal/completion, and `next_retry_at` boundary (future vs past).
-
-**Exit criteria**
-
-- [x] Docker runtime code no longer depends on `getDb()` / `getPoolDb()` as its primary DB seam.
-- [x] Stale workers cannot renew a lease or write completion/failure after ownership changes.
-- [x] `agent_jobs.step_log` remains metadata-only.
-
-**Validation**
-
-- [x] `npx vitest run __tests__/agent-db.test.ts __tests__/agent-queue.test.ts`
-- [x] `npm run lint`
-- [x] `npx tsc --noEmit`
-
-### Checkpoint 2 — Runtime Limits + Memory / Context Assembly
-
-**Stories:** `AEV2-303`, `AEV2-304`
-
-**Review focus:** confirm token/budget enforcement is deterministic, `agent_memory_v2` is the only memory table used, and macro context comes from `agent_reports`.
-
-**Suggested commit:** `feat(aev2): add agent runtime limits and context helpers`
+**Suggested commit:** `feat(aev2): add agent discord embed and delivery helpers`
 
 **Check off before commit**
 
-- [x] [`lib/agents/runtime-limits.ts`](/home/jared/Nexus-Terminal/lib/agents/runtime-limits.ts) exports exactly `checkBudget`, `checkRateLimit`, `checkCircuitBreaker`, `recordLlmAttempt`, `recordBreakerFailure`, and `recordBreakerSuccess`. The three guard functions throw on rejection (no boolean returns).
-- [x] `RateLimitExceededError` and `CircuitOpenError` are added to `lib/agents/types.ts` immediately after `BudgetExceededError`.
-- [x] Token logging converts `success` to `0 | 1` on insert and calls `Math.round()` on `estimatedCostCents`.
-- [x] Budget checks sum `estimated_cost_cents` from `agent_request_log` using UTC calendar day/month boundaries, scoped per userId only, and read `dailyBudgetCents` / `monthlyBudgetCents` from `getLlmBudgetConfig()`.
-- [x] Rate limit enforces 30 req/hr per userId using rolling 1-hour window.
-- [x] Circuit-breaker state uses the `CircuitBreakerState` type as the single source of truth in `agent_registry.config` and is written via the canonical `jsonb_set` SQL shape from the spec (not read-modify-write). `checkCircuitBreaker` self-heals stale-open breakers by calling `recordBreakerSuccess` when `openedAt` is ≥ 60s old.
-- [x] [`lib/agents/memory.ts`](/home/jared/Nexus-Terminal/lib/agents/memory.ts) exports `getMemory()` and `upsertMemory()`, reads and writes `agent_memory_v2` only.
-- [x] [`lib/agents/context.ts`](/home/jared/Nexus-Terminal/lib/agents/context.ts) exports `buildContext()` returning `AgentContext`. Assembles memory, recent trades, conversation history, and latest macro summary.
-- [x] Context queries use the Sprint 2 default scope: latest 20 trades, latest 20 conversation rows, latest published orchestrator macro summary owned by `system-agent-user`. Empty-state return matches the literal shape `{ recentTrades: [], macroSummary: null, memory: [], conversationHistory: [] }`.
-- [x] Focused tests cover budget rejection (daily and monthly), breaker open/reset behavior including 60s self-heal, rate-limit rejection, agent-scoped memory reads, context query scoping, empty-state behavior (no memory, no macro, no trades), and macro-summary lookup without `macro_summaries`.
+- [ ] `lib/agents/discord.ts` exists and exports exactly the symbols listed in the execution contract (`DiscordEmbed`, `DiscordWebhookPayload`, five `build*Embed` functions, `resolveWebhookUrl`, `writeAndDeliverReport`, `redeliverReport`).
+- [ ] `writeAndDeliverReport` uses two separate `recordStepEffect` calls: `report-write` keyed by `${jobId}:write-report:report-write`, then `discord-delivery` keyed by `discord-delivery:${reportId}`.
+- [ ] `resolveWebhookUrl` maps every (agentId, reportType) combination listed in the contract and returns `null` for unknowns without throwing.
+- [ ] Webhook POST uses `fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ embeds: [embed] }) })` and respects a 10s AbortController timeout.
+- [ ] HTTP 2xx sets `status = 'published'` and `delivered_at = now()`. Non-2xx or fetch throw sets `status = 'delivery_failed'` with `delivery_error` populated. Neither path throws to the caller.
+- [ ] `redeliverReport` re-reads the stored `report_json`, uses a fresh retry idempotency key, and re-runs delivery only (no LLM call, no re-write of `report_json`).
+- [ ] `__tests__/agent-discord.test.ts` covers: happy-path write+deliver, duplicate call short-circuits via idempotency marker, HTTP 500 becomes `delivery_failed`, `fetch` throw becomes `delivery_failed`, `resolveWebhookUrl` unknown combo returns null, and redeliver retry posts again with the retry idempotency key.
 
 **Exit criteria**
 
-- [x] Runtime limit checks can reject work before expensive downstream steps run.
-- [x] No new code reads or writes the legacy `agent_memory` table.
-- [x] Macro summary context is sourced from `agent_reports`.
-- [x] Sprint 2 context assembly is deterministic and does not require route/session code.
+- [ ] Retries cannot duplicate `agent_reports` rows or webhook posts.
+- [ ] Delivery failure becomes observable state, not a thrown exception.
+- [ ] No blueprint file yet imports from `discord.ts` — blueprints land in Checkpoint 3.
 
 **Validation**
 
-- [x] `npm run lint`
-- [x] `npx tsc --noEmit`
-- [x] `npx vitest run __tests__/agent-runtime-limits.test.ts __tests__/agent-memory.test.ts __tests__/agent-context.test.ts`
+- [ ] `npm run lint`
+- [ ] `npx tsc --noEmit`
+- [ ] `npx vitest run __tests__/agent-discord.test.ts`
 
-### Checkpoint 3 — Blueprint Runner Core
+**STOP. Review. Commit. Then continue.**
 
-**Stories:** `AEV2-305`
+### Checkpoint 2 — Scrape-Lite, Prompt Loader, Config Registry
 
-**Review focus:** lock the `previousOutput` contract before resume work lands. Every step should receive the prior step output, validate the correct handoff payload, and persist step metadata without leaking raw artifacts.
+**Stories:** `AEV2-308` (part 1)
 
-**Suggested commit:** `feat(aev2): add agent blueprint runner`
+**Review focus:** confirm `scrape-lite.ts` is a pure fetcher, `prompts-loader.ts` fails fast on missing files, and `AGENT_CONFIGS` is a plain const with no side effects.
+
+**Suggested commit:** `feat(aev2): add agent scrape-lite, prompts loader, and config registry skeleton`
 
 **Check off before commit**
 
-- [x] [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts) exports exactly `runBlueprint(blueprint, job, config, db, options)` returning `Promise<RunBlueprintResult>` with the `RunBlueprintResult` shape from the spec. Runner does NOT call `completeJob`/`failJob` itself.
-- [x] Runner fetches context via `buildContext()` once before step iteration and assigns `stepInput.memory` from `context.memory`. No second memory query.
-- [x] Runner calls `checkBudget` → `checkRateLimit` → `checkCircuitBreaker` (in this order) before each step. Rejection throws are caught and mapped to `failureClass: 'policy'` (budget/rate) or `'dependency'` (breaker), then short-circuit with a `failed` `step_log` entry.
-- [x] `StepInput` field mapping uses `jobInput: job.input` exactly (the field rename matches `lib/agents/types.ts`).
-- [x] Input and output validation happen inside the runner via Zod's `safeParse`, not in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts). `BlueprintValidationError` is thrown on failure.
-- [x] `previousOutput` is the prior step's `StepResult.data` (not a merged aggregate), `null` for step 1, and `inputSchema` validates `job.input` for step 1 then `previousOutput` for later steps.
-- [x] LLM output-contract failures support exactly 1 repair retry. `maxRepairAttempts` is not read. Repair retries do NOT increment `agent_jobs.attempt`.
-- [x] Each LLM attempt — including the repair retry — calls `recordLlmAttempt(db, entry)` exactly once. Code steps do not call `recordLlmAttempt`.
-- [x] `step_log` is persisted via `persistStepLog()` from queue.ts — runner does not write to `agent_jobs` directly, and `step_log.status` stays within `running | completed | failed`. A `false` return from `persistStepLog` aborts the run with `failureReason: 'lease lost during step_log persistence'`.
-- [x] Runner integrates with checkpoints: calls `loadCheckpoint(db, job.id)` before iteration and resumes at `stepIndex + 1` when present.
-- [x] Focused tests cover ordered execution, step-1 vs later-step validation, repair-retry logging cardinality, step-log persistence, runtime-limit rejection before step execution, and stale-lease abort during `persistStepLog`.
+- [ ] `lib/agents/scrape-lite.ts` exports only `fetchPageText(url, options?)`. No URL list in this file.
+- [ ] `fetchPageText` strips `<script>`, `<style>`, HTML tags, decodes the five listed entities, normalizes whitespace, returns first 30000 chars, uses a 10s AbortController timeout, and throws on non-2xx with the status + truncated body.
+- [ ] `lib/agents/prompts-loader.ts` exports `loadGlobalPolicyPrompt`, `loadRolePrompt`, and `buildLlmSystemPrompt`. Files are read once at module load and cached in a module-level const.
+- [ ] `buildLlmSystemPrompt('orchestrator')` returns `${globalPolicy}\n\n---\n\n${orchestratorPrompt}`.
+- [ ] `lib/agents/config.ts` exports `AGENT_CONFIGS` and `resolveBlueprint(job)`. The four implemented blueprints are imported; the three scan blueprints are declared via `notImplementedBlueprint(name)` helper.
+- [ ] The config file compiles even though the blueprint files are still empty stubs — use empty default exports in the blueprint files for this checkpoint and fill them in Checkpoint 3.
+- [ ] `__tests__/agent-scrape-lite.test.ts` covers: happy-path HTML->text, entity decoding, 30k cap, non-2xx throw, and timeout behavior with `vi.useFakeTimers()`.
+- [ ] `__tests__/agent-config.test.ts` covers: every `AgentId` resolves an `AgentConfig`, `resolveBlueprint` throws on unknown `agentId`, `notImplementedBlueprint` surfaces the expected error at `step.run()` invocation time.
 
 **Exit criteria**
 
-- [x] Blueprint execution is deterministic and does not require route-level code.
-- [x] LLM and code steps share one runner contract.
-- [x] Failure paths classify and surface step-level errors cleanly.
-- [x] The runner remains library-only and does not require new route wiring, worker wiring, or a new prompt/config registry.
+- [ ] Prompts fail fast at module load if any file is missing.
+- [ ] Scrape-lite is reusable by any blueprint — no URL hardcoding.
+- [ ] Config registry compiles and routes can import `resolveBlueprint` even before blueprint bodies land.
 
 **Validation**
 
-- [x] `npm run lint`
-- [x] `npx tsc --noEmit`
-- [x] `npx vitest run __tests__/agent-blueprint-runner.test.ts`
+- [ ] `npm run lint`
+- [ ] `npx tsc --noEmit`
+- [ ] `npx vitest run __tests__/agent-scrape-lite.test.ts __tests__/agent-config.test.ts`
 
-### Checkpoint 4 — Checkpoint / Resume Hardening
+**STOP. Review. Commit. Then continue.**
 
-**Stories:** `AEV2-306`
+### Checkpoint 3 — Blueprint Implementations
 
-**Review focus:** verify retries resume from the latest completed checkpoint instead of replaying prior side effects or restarting from step 1.
+**Stories:** `AEV2-308` (part 2)
 
-**Suggested commit:** `feat(aev2): add agent checkpoint resume support`
+**Review focus:** confirm the four implemented blueprints match their execution contracts: deterministic routing for orchestrator:chat, writeAndDeliverReport for every save step, `lane: 'background'` override for the macro synthesis step, and the `'PLACEHOLDER'` idempotency key convention.
+
+**Suggested commit:** `feat(aev2): implement sprint 3 agent blueprints`
 
 **Check off before commit**
 
-- [x] [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts) exports exactly `loadCheckpoint`, `saveCheckpoint`, and `recordStepEffect` with the signatures and return types from the spec.
-- [x] `saveCheckpoint` uses `ON CONFLICT (job_id, step_index) DO UPDATE` so re-saving the same step is idempotent. `recordStepEffect` returns `false` on unique-violation (idempotency key already exists).
-- [x] The runner resumes from the next step after the most recently saved checkpoint by calling `loadCheckpoint` once before step iteration. If no checkpoint exists, iteration starts at index 0 with `previousOutput = null`.
-- [x] Side-effecting steps gate on `recordStepEffect` (the runner skips the step when it returns `false`). The skip flow looks up the prior checkpoint for the same `step_index` to recover `previousOutput`; if the lookup misses, the runner falls back to the most recent earlier checkpoint and emits a `step_log` entry with `errorClass: 'crash-between-effect-and-checkpoint'`.
-- [x] The runner inserts the effect row AFTER `step.run()` returns success and AFTER output validation, but BEFORE `saveCheckpoint`, `persistStepLog`, or any job-status write. The post-step write order is `recordStepEffect → saveCheckpoint → persistStepLog`.
-- [x] No Sprint 2 blueprint or test uses `effectType: 'discord-delivery'`. Skip-flow tests use `effectType: 'memory-write'` as the synthetic effect.
-- [x] Focused tests cover: simulated mid-blueprint failure resume from the correct step; side-effect skip on retry; the four crash-recovery rows in the spec table; saveCheckpoint idempotency on re-save.
+- [ ] `lib/agents/blueprints/orchestrator-chat.ts` exports `orchestratorChatBlueprint` with two steps. Step 1 `classify-and-route` is deterministic (no LLM call), enforces the five routing rules verbatim, checks `agent_registry.status`, and enqueues the specialist handoff when needed. Step 2 `synthesize-response` uses `callLlm(..., 'interactive')` with `buildLlmSystemPrompt('orchestrator')`.
+- [ ] `lib/agents/blueprints/orchestrator-macro-summary.ts` exports four steps matching the contract. Step 1 reads `MACRO_HEADLINES_URLS` env with the documented default. Step 3 uses `lane: 'background'`. Step 4 uses `writeAndDeliverReport` with `userId = 'system-agent-user'` and the `'PLACEHOLDER'` idempotency key.
+- [ ] `lib/agents/blueprints/small-cap-research.ts` exports four steps. Step 1 caches AskEdgar responses in `agent_memory_v2` with `category = 'fact'`, `key = 'askedgar:${endpoint}:${ticker}'`, and a 1-hour TTL. Step 3 uses `lane: 'background'`. Step 4 uses `writeAndDeliverReport` with `userId = job.userId` and `reportType = 'research'`.
+- [ ] `lib/agents/blueprints/swing-trader-research.ts` exports four steps with the MDR-focused output schema. Same save-research contract.
+- [ ] `lib/agents/blueprint-runner.ts` is extended (additive only) to substitute `'PLACEHOLDER'` in `step.metadata.idempotencyKey` with `${job.id}:${step.name}:report-write` before calling `recordStepEffect`. No other runner changes.
+- [ ] `__tests__/agent-blueprints.test.ts` covers: orchestrator routing (each rule branches correctly), orchestrator offline-specialist fallback, macro-summary step 3 using the background lane, small-cap AskEdgar cache hit/miss, research save step using `writeAndDeliverReport`.
 
 **Exit criteria**
 
-- [x] Resume starts from the latest completed checkpoint, not step 1.
-- [x] Prior successful side effects are not replayed during retry.
-- [x] Checkpoint payloads store the normalized last successful step output only.
+- [ ] All four implemented blueprints are callable through `resolveBlueprint(job)` in tests.
+- [ ] Scan blueprints still throw `'blueprint not implemented in Sprint 3: ...'` at step execution time — not at import time.
+- [ ] Runner `'PLACEHOLDER'` substitution is the only runner change.
 
 **Validation**
 
-- [x] `npm run lint`
-- [x] `npx tsc --noEmit`
-- [x] `npx vitest run __tests__/agent-checkpoints.test.ts __tests__/agent-blueprint-runner.test.ts`
+- [ ] `npm run lint`
+- [ ] `npx tsc --noEmit`
+- [ ] `npx vitest run __tests__/agent-blueprints.test.ts __tests__/agent-blueprint-runner.test.ts`
 
-### Sprint 2 Exit Gate
+**STOP. Review. Commit. Then continue.**
 
-- [x] `AEV2-301` through `AEV2-306` landed in the order above.
-- [x] `CircuitBreakerState`, `QueueClaimResult`, `RateLimitExceededError`, and `CircuitOpenError` added to `lib/agents/types.ts`.
-- [x] `StepLogEntry.status` narrowed to `'running' | 'completed' | 'failed'` in `lib/agents/types.ts`.
-- [x] Focused tests cover lease fencing, runtime limits (including breaker self-heal), memory/context assembly, blueprint execution (including repair-retry logging), and checkpoint resume (including all four crash-recovery rows).
-- [x] No Sprint 2 code depends on `/api/agents/*`, Discord delivery, or service package wiring.
-- [x] No Sprint 2 code imports or references the legacy `agent_memory` table (grep for `agentMemory` and `agent_memory` excluding `_v2`).
-- [x] No `lib/agents/*.ts` file imports from `@/lib/db` helper modules directly; schema-only imports remain allowed in Sprint 2.
-- [x] `npm run lint`
-- [x] `npx tsc --noEmit`
-- [x] `npm test`
-- [x] [`HANDOFF.md`](/home/jared/Nexus-Terminal/HANDOFF.md) updated after the final checkpoint closes.
+### Checkpoint 4 — Heartbeat, Worker Loop, Macro Cron
+
+**Stories:** `AEV2-309`, `AEV2-310`
+
+**Review focus:** confirm the worker loop claims through `claimNextQueuedJob`, packages the orchestrator routed-job result correctly, and retries only on `transient` failure class. Confirm the macro cron uses `INSERT ... ON CONFLICT DO NOTHING` for dedupe.
+
+**Suggested commit:** `feat(aev2): add agent worker loop, heartbeat, and macro cron`
+
+**Check off before commit**
+
+- [ ] `lib/agents/heartbeat.ts` exports `startHeartbeat(db, agentId, intervalMs?)` returning `{ stop }`. Each tick updates `agent_registry.last_heartbeat` and `status = 'online'`, and touches `/tmp/healthy`. Errors are logged, not rethrown. `stop()` sets `status = 'offline'`.
+- [ ] `lib/agents/worker.ts` exports `startWorker(config)` returning `{ stop }`. The poll loop calls `claimNextQueuedJob` / `runBlueprint` / `completeJob` in the canonical order from the execution contract.
+- [ ] Routed orchestrator jobs return `result = { routed: true, specialistJobId }` via the worker's result packager — not via blueprint logic.
+- [ ] Retry branch: `failureClass === 'transient' && attempt < maxAttempts` -> `scheduleJobRetry` with `calculateBackoffMs`. Otherwise `failJob`.
+- [ ] Not-implemented blueprints fail immediately via `failJob` with message `'blueprint not implemented: <job_type>'`.
+- [ ] Graceful shutdown waits for the in-flight `runBlueprint` to finish but does not cancel it. Heartbeat `stop()` runs after the loop exits.
+- [ ] `lib/agents/macro-cron.ts` exports `startMacroCron(db, options?)` returning `{ stop }`. Tick checks `currentHour === hourEt` in `America/New_York`, claims the scheduled run with `INSERT ... ON CONFLICT (agent_id, trigger_type, trading_date) DO NOTHING RETURNING id`, and only enqueues an `agent_jobs` row when the insert returned a row.
+- [ ] Stale-job reaper is NOT implemented in Sprint 3 (out of scope per the contract).
+- [ ] `__tests__/agent-worker.test.ts` uses `vi.useFakeTimers()` and covers: claim happy path, empty-claim sleep, routed-job result packaging, transient failure scheduling a retry, non-transient failure failing the job, and graceful shutdown draining one in-flight job.
+- [ ] `__tests__/agent-macro-cron.test.ts` covers: tick outside the trigger hour skips, tick inside the trigger hour inserts the scheduled run + enqueues the job, and concurrent ticks (simulated via two insert calls) only produce one job.
+
+**Exit criteria**
+
+- [ ] The worker loop routes every lease-fenced mutation through Sprint 2 queue helpers.
+- [ ] Macro cron is deduped by `(agent_id, trigger_type, trading_date)`.
+- [ ] Heartbeat touches `/tmp/healthy` on every tick.
+
+**Validation**
+
+- [ ] `npm run lint`
+- [ ] `npx tsc --noEmit`
+- [ ] `npx vitest run __tests__/agent-worker.test.ts __tests__/agent-macro-cron.test.ts`
+
+**STOP. Review. Commit. Then continue.**
+
+### Checkpoint 5 — API Routes
+
+**Stories:** `AEV2-401`, `AEV2-402`, `AEV2-403`, `AEV2-404`, `AEV2-405`, `AEV2-406`
+
+**Review focus:** confirm every route uses the correct auth helper (`requireServiceAuth` / `requireAgentAdmin` / `requireUser`), user-facing routes exclude `system-agent-user` rows, and the admin stats route returns the full §11 shape per D3.
+
+**Suggested commit:** `feat(aev2): add /api/agents/* routes and validation schemas`
+
+**Check off before commit**
+
+- [ ] `lib/validations/agents.ts` exists and exports every schema listed in the execution contract. Route files import from `@/lib/validations/agents`.
+- [ ] `app/api/agents/service/chat/route.ts` implements POST and GET per the contract. POST inserts one `agent_conversations` row and one `agent_jobs` row. GET returns the five state variants from `AGENTIC_EXPANSIONV2.md` §13.
+- [ ] `app/api/agents/reports/route.ts` (GET) excludes `user_id = 'system-agent-user'` rows.
+- [ ] `app/api/agents/reports/[id]/route.ts` (GET) scopes to `user_id = user.id`.
+- [ ] `app/api/agents/research/route.ts` POST rejects offline/degraded specialists with 400 `{ error: 'agent unavailable' }`. GET lists user-owned research reports only.
+- [ ] `app/api/agents/admin/stats/route.ts` returns the full `AGENTIC_EXPANSIONV2.md` §11 JSON shape, including `queueDepth`, `oldestQueuedJobAgeSeconds`, `stuckProcessing`, `retryRate`, and `deliveryFailureRate`.
+- [ ] `app/api/agents/admin/memory/route.ts` GET filters by query params and DELETE returns 404 on missing id.
+- [ ] `app/api/agents/admin/redeliver/route.ts` delegates to `redeliverReport()` and returns `{ report_id, status }`.
+- [ ] `app/api/agents/macro-summary/latest/route.ts` queries system-owned macro report and returns `{ summary: null }` on empty state.
+- [ ] No route file calls `request.json()` directly — all parsing goes through `parseAndValidate`.
+- [ ] No route file writes to `agent_jobs`, `agent_reports`, or `agent_memory_v2` outside of `db.insert()` / `db.update()` / `db.delete()` on the imported schema — no raw `sql` template writes.
+
+**Exit criteria**
+
+- [ ] Every route listed in AEV2-401 through AEV2-406 is reachable and compiles.
+- [ ] Validation schemas are centralized in `lib/validations/agents.ts`.
+- [ ] Admin stats shape matches the launch target so Sprint 4 can focus on deployment.
+
+**Validation**
+
+- [ ] `npm run lint`
+- [ ] `npx tsc --noEmit`
+- [ ] `npm run build` (proves every route compiles under Next.js)
+
+**STOP. Review. Commit. Then continue.**
+
+### Checkpoint 6 — Route Test Coverage (AEV2-407 Gate)
+
+**Stories:** `AEV2-407`
+
+**Review focus:** confirm every required coverage row is exercised, mocks follow the `__tests__/trades-route.test.ts` pattern, and no test touches a real DB or real webhook.
+
+**Suggested commit:** `test(aev2): add agent api route contract tests`
+
+**Check off before commit**
+
+- [ ] `__tests__/agent-service-chat-route.test.ts` covers POST success (201), POST 400 missing `discord_user_id`, POST 401 invalid service key, POST 403 unknown Discord user, POST 503 on `getAgentDb() === null`, GET queued/processing/completed/failed/routed variants, GET 404 on unknown job_id.
+- [ ] `__tests__/agent-reports-route.test.ts` covers GET list success, GET list filtered by `status` + `agent_id`, GET list excludes `system-agent-user` rows, GET detail success, GET detail 404, auth failure 401.
+- [ ] `__tests__/agent-research-route.test.ts` covers POST success, POST 400 invalid ticker, POST 400 on offline/degraded specialist, GET list success, GET list excludes system-owned rows.
+- [ ] `__tests__/agent-admin-stats-route.test.ts` covers the full §11 response shape (at minimum asserts the top-level keys exist), 401 on missing admin key, and the `queueDepth` / `stuckProcessing` fields populate from mocked query results.
+- [ ] `__tests__/agent-admin-memory-route.test.ts` covers GET with filters, GET without filters, DELETE success, DELETE 404, 401 on missing admin key.
+- [ ] `__tests__/agent-admin-redeliver-route.test.ts` covers success (mocks `redeliverReport` to return `published`), delivery_failed path, idempotency (second call with same report_id uses the retry idempotency key), and 404 on unknown report_id.
+- [ ] `__tests__/agent-macro-summary-route.test.ts` covers happy path, empty state returning `{ summary: null }`, and query targets `user_id = 'system-agent-user'` + `report_type = 'macro-summary'`.
+- [ ] No test calls the real `fetch` or a real Neon connection. `global.fetch` is mocked via `vi.stubGlobal('fetch', vi.fn())` where needed.
+
+**Exit criteria**
+
+- [ ] Every row in the AEV2-407 coverage matrix (success, auth failure, validation failure, lease-fencing-sensitive state transitions, redelivery, offline fallback) is exercised by a test.
+- [ ] Test files follow the `vi.hoisted` + `vi.mock` pattern from `__tests__/trades-route.test.ts`.
+- [ ] `npm test` passes without network access.
+
+**Validation**
+
+- [ ] `npm run lint`
+- [ ] `npx tsc --noEmit`
+- [ ] `npm test`
+
+**STOP. Review. Commit. This is the Sprint 3 exit gate.**
+
+### Sprint 3 Exit Gate
+
+- [ ] `AEV2-307` through `AEV2-407` landed in checkpoint order.
+- [ ] Every new file lives under `lib/agents/`, `lib/validations/`, `app/api/agents/`, or `__tests__/`. No file under `services/` was modified.
+- [ ] `lib/db/schema.ts` unchanged. No new migrations.
+- [ ] All four implemented blueprints compile and can be resolved via `resolveBlueprint(job)`. Scan blueprints throw `'blueprint not implemented in Sprint 3'` at step execution.
+- [ ] `npm run lint`
+- [ ] `npx tsc --noEmit`
+- [ ] `npm run build`
+- [ ] `npm test`
+- [ ] `HANDOFF.md` updated after the final checkpoint closes.
 
 ### Complexity
 
-- Overall complexity: `L`
-- Highest-risk checkpoint: Checkpoint 1, because lease fencing is the core correctness boundary for every later runtime path.
+- Overall complexity: `XL` (largest sprint in the AEV2 buildout — touches runtime wiring, app routes, and the contract-test layer).
+- Highest-risk checkpoint: Checkpoint 4 (worker loop + macro cron) because it is where Sprint 2 queue fencing meets real job lifecycle. A bug here corrupts lease state for every downstream sprint.
+- Second-highest-risk checkpoint: Checkpoint 1 (Discord delivery). Idempotency key mistakes here mean duplicate reports or duplicate webhook posts in production. The two-marker design is load-bearing.
