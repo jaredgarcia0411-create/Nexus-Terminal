@@ -99,18 +99,20 @@ Connect the Sprint 2 library runtime to stable app contracts. Sprint 3 lands Dis
 
 ### Decisions Locked For Sprint 3
 
-These four decisions remove ambiguity before Codex starts. If any of them is wrong, update this section before execution — do NOT let Codex discover the ambiguity mid-sprint.
+These six decisions remove ambiguity before Codex starts. If any of them is wrong, update this section before execution — do NOT let Codex discover the ambiguity mid-sprint.
 
-- **D1. Blueprint scope.** Sprint 3 implements exactly four blueprints: `orchestrator:chat`, `orchestrator:macro-summary`, `small-cap-trader:research`, and `swing-trader:research`. The scan blueprints (`small-cap-trader:pre-market-scan`, `swing-trader:momentum-scan`, `swing-trader:pattern-check`) are declared in `AGENT_CAPABILITIES` but their blueprint objects throw `new Error('blueprint not implemented in Sprint 3')` at registry lookup time. Sprint 4 or a follow-up sprint adds the scan bodies.
+- **D1. Blueprint scope.** Sprint 3 implements exactly four blueprints: `orchestrator:chat`, `orchestrator:macro-summary`, `small-cap-trader:research`, and `swing-trader:research`. The scan blueprints (`small-cap-trader:pre-market-scan`, `swing-trader:momentum-scan`, `swing-trader:pattern-check`) are declared in `AGENT_CONFIGS[agentId].blueprints` and resolve normally, but `notImplementedBlueprint(name)` returns a stub blueprint whose only step throws `new NotImplementedBlueprintError(name)` at step execution time. The runner classifies that failure as `contract`, and the worker does not retry it. Sprint 4 or a follow-up sprint adds the scan bodies.
 - **D2. Discord delivery proof.** Sprint 3 tests the delivery helpers with a mocked global `fetch`. Real webhook POSTs wait for Sprint 4 smoke runs when the Docker container actually boots. No manual REPL proof step in Sprint 3.
-- **D3. Admin stats shape.** `GET /api/agents/admin/stats` returns the full JSON shape from `AGENTIC_EXPANSIONV2.md` §11 (circuitBreakers, today, thisMonth, agents, delivery, memory, macroSummaries). Stubbed subset is not acceptable — Sprint 4 launch hardening expects the full shape to already exist.
+- **D3. Admin stats shape.** `GET /api/agents/admin/stats` returns the full JSON shape from `AGENTIC_EXPANSIONV2.md` §11 (circuitBreakers, today, thisMonth, agents, delivery, memory, macroSummaries) plus the Sprint 3 queue add-ons. The exact `AdminStatsResponse` shape and formulas are inlined below; the implementation must not depend on a second doc lookup.
 - **D4. `scrape-headlines` URL source.** The macro-summary blueprint reads a new env var `MACRO_HEADLINES_URLS` (comma-separated URL list). Default when unset: `https://www.marketwatch.com/latest-news,https://finance.yahoo.com/topic/stock-market-news/`. The URL list is NOT hardcoded inside `scrape-lite.ts` — scrape-lite is a pure fetcher, the blueprint chooses what to fetch.
+- **D5. Runtime contract changes are allowed and required.** Sprint 3 may make additive changes to [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts), [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts), and [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts) to support step runtime access (`job`, `db`, `agentConfig`), explicit routed-step skipping, `failureClass` propagation from `runBlueprint()`, and service-key-only auth checks for polling routes.
+- **D6. Delivery semantics.** Report row dedupe is deterministic by `reportId = ${jobId}:${reportType}`. Automatic publish retries must reuse that row and must not repost after a recorded successful `discord-delivery:${reportId}` marker. Manual `redeliverReport()` is intentionally a new delivery attempt and may repost once per admin call; it does not claim route-level idempotent no-op semantics.
 
 ### Planned File Actions
 
 **New library files (lib/agents/):**
 
-- [`lib/agents/discord.ts`](/home/jared/Nexus-Terminal/lib/agents/discord.ts) — embed builders, webhook delivery, report-write + delivery idempotency helpers
+- [`lib/agents/discord.ts`](/home/jared/Nexus-Terminal/lib/agents/discord.ts) — embed builders, webhook delivery, deterministic report-row reuse + delivery dedupe helpers
 - [`lib/agents/scrape-lite.ts`](/home/jared/Nexus-Terminal/lib/agents/scrape-lite.ts) — `fetchPageText(url)` HTML->text fetcher
 - [`lib/agents/prompts-loader.ts`](/home/jared/Nexus-Terminal/lib/agents/prompts-loader.ts) — reads `lib/agents/prompts/*.md` at process start
 - [`lib/agents/config.ts`](/home/jared/Nexus-Terminal/lib/agents/config.ts) — `AGENT_CONFIGS: Record<AgentId, AgentConfig>` registry + `resolveBlueprint(job)` helper
@@ -152,7 +154,9 @@ These four decisions remove ambiguity before Codex starts. If any of them is wro
 
 **Existing files modified:**
 
-- [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts) — add `AdminStatsResponse`, `DiscordEmbed`, `DiscordWebhookPayload`, and `ServiceChatResponse` interfaces only if the new code cannot express them without duplication. No behavioral changes to existing types.
+- [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts) — additive runtime contract updates for Sprint 3 (`StepInput` runtime fields, `NotImplementedBlueprintError`, `AdminStatsResponse`, and any small response interfaces needed by the new routes/tests).
+- [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts) — additive runtime behavior to pass `job` / `db` / `agentConfig` into steps, support explicit routed-step skipping, and return `failureClass` on failed runs.
+- [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts) — add `requireServiceKey(request)` for service-key-only polling routes.
 - [`HANDOFF.md`](/home/jared/Nexus-Terminal/HANDOFF.md) — updated after each checkpoint closes.
 
 **Explicitly NOT modified:**
@@ -165,13 +169,15 @@ These four decisions remove ambiguity before Codex starts. If any of them is wro
 
 ### Security And Correctness Notes
 
-- `/api/agents/service/*` routes use `requireServiceAuth()` from [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts). `/api/agents/admin/*` routes use `requireAgentAdmin()`. User-facing routes (`/api/agents/reports`, `/api/agents/research`, `/api/agents/macro-summary/latest`) use `requireUser()` from [`lib/server-db-utils.ts`](/home/jared/Nexus-Terminal/lib/server-db-utils.ts). Never mix the three.
-- `requireServiceAuth(request, body)` reads the already-parsed body; parse with `parseAndValidate()` first, then pass `parsed.data` into the auth call. Do not call `request.json()` twice.
+- `/api/agents/service/chat` POST uses `requireServiceAuth(request, body)` from [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts). `/api/agents/service/chat` GET uses `requireServiceKey(request)` because it authenticates the bot but does not map a Discord user from a body. `/api/agents/admin/*` routes use `requireAgentAdmin()`. User-auth routes (`/api/agents/reports`, `/api/agents/research`) use `requireUser()`. `/api/agents/macro-summary/latest` is public. Never mix the four patterns.
+- `requireServiceAuth(request, body)` reads the already-parsed body; parse with `parseAndValidate()` first, then pass `parsed.data` into the auth call. Do not call `request.json()` twice. `requireServiceKey(request)` is the shared header-only helper for service polling.
+- Service-chat POST success assumes the Discord-to-Nexus user mapping source is populated at runtime. Sprint 3 route tests mock the helper and do not depend on a real populated map in the repo.
 - Every user-facing reports/research query must filter by `user_id = authenticatedUser.id` AND exclude `user_id = 'system-agent-user'` (system-owned autonomous reports never leak into user history).
 - Discord webhook URLs live in env vars only. Never log the URL. Never accept a webhook URL from a request body.
-- Delivery idempotency uses TWO separate markers per report: `report-write:${jobId}:${stepName}` for the DB row and `discord-delivery:${reportId}` for the webhook POST. `recordStepEffect()` enforces uniqueness on the idempotency key; re-running a step with the same key must NOT duplicate the `agent_reports` row or re-POST to Discord.
+- Automatic publish dedupe uses a deterministic `reportId = ${jobId}:${reportType}` row plus a successful-delivery marker `discord-delivery:${reportId}`. The row write must commit before any webhook POST. Exact-once external delivery is not claimed across the narrow crash window after Discord accepts a POST and before the DB update/marker write completes.
 - `POST /api/agents/admin/redeliver` re-reads the stored `report_json` from `agent_reports` and retries ONLY the delivery portion. It must not regenerate the report via the LLM.
-- Worker and macro cron code paths write to DB only via Sprint 2 helpers (`claimNextQueuedJob`, `completeJob`, `failJob`, etc.). No Sprint 3 file issues raw `db.update(agentJobs)...` calls — all mutations go through `lib/agents/queue.ts`.
+- Worker code paths route every lease-fenced mutation through Sprint 2 queue helpers (`claimNextQueuedJob`, `completeJob`, `failJob`, `scheduleJobRetry`, etc.). Job creators such as API routes, blueprint handoff steps, and macro cron may insert new queued jobs directly via `db.insert(agentJobs)` because they are creating work, not mutating a claimed lease-owned job.
+- Research blueprints use [`getCachedTickerData()`](/home/jared/Nexus-Terminal/lib/askedgar.ts) as the canonical AskEdgar cache. `agent_memory_v2` may store derived agent facts if a blueprint needs them, but Sprint 3 does not introduce a second raw AskEdgar cache.
 - `/tmp/healthy` file touch is library-level only. Sprint 4 wires the Docker healthcheck; Sprint 3 just writes the file so tests can verify the touch happens.
 - Do not introduce any new npm dependency. The repo already has `zod`, `drizzle-orm`, `@neondatabase/serverless`, and Next.js 15's built-in `fetch` / `Response` — that is everything Sprint 3 needs.
 - Do not touch `.env`, `.env.local`, or `services/.env`. Document any new env vars in `services/.env.example` ONLY if Sprint 3 must run without them; otherwise leave `.env.example` changes to Sprint 4.
@@ -245,15 +251,15 @@ Behavior contract:
   - `swing-trader` + `pattern-check` -> `DISCORD_WEBHOOK_SWING_ALERTS`
   - Unknown combination -> return `null` and log once. Never throw.
 - **`writeAndDeliverReport` order** (MUST match this sequence — it mirrors the V1 Discord-first publish flow):
-  1. Build `reportId = crypto.randomUUID()`.
-  2. Call `recordStepEffect(db, { jobId, stepName: 'write-report', effectType: 'report-write', idempotencyKey: '${jobId}:write-report:report-write' })`. If it returns `false`, the row already exists — re-read it by `job_id + report_type` and skip to step 4.
-  3. Insert the `agent_reports` row with `status = 'published'`, `delivered_at = null`, `delivery_error = null`.
-  4. Call `recordStepEffect(db, { jobId, stepName: 'deliver-report', effectType: 'discord-delivery', idempotencyKey: 'discord-delivery:${reportId}' })`. If it returns `false`, delivery already happened — return `{ reportId, status: 'published', deliveryError: null }`.
+  1. Build a deterministic `reportId = ${jobId}:${reportType}`.
+  2. Read `agent_reports` by `reportId`. If no row exists, insert one with `id = reportId`, `status = 'published'`, `delivered_at = null`, and `delivery_error = null`. If a row already exists, reuse it and keep its stored `report_json` as the source of truth for retry paths.
+  3. Commit the report-row write before any webhook POST.
+  4. Check `recordStepEffect` state for `discord-delivery:${reportId}`. If a successful-delivery marker already exists, return `{ reportId, status: 'published', deliveryError: null }` without posting again.
   5. Resolve the webhook URL. If null, update the row to `status = 'delivery_failed'`, `delivery_error = 'no webhook configured for ${agentId}/${reportType}'`, and return.
   6. Build the embed via the correct `build*Embed` function and POST to the webhook with `fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ embeds: [embed] }) })`.
-  7. On HTTP 2xx: update `agent_reports` to `delivered_at = now()`, `status = 'published'`. Return `{ reportId, status: 'published', deliveryError: null }`.
-  8. On any other status or fetch throw: update `agent_reports` to `status = 'delivery_failed'`, `delivery_error = '<status code>: <truncated body>'`. Return `{ reportId, status: 'delivery_failed', deliveryError }`. Do NOT throw — delivery failures are expected and must become data, not exceptions.
-- **`redeliverReport`.** Re-reads the existing row by `reportId`, re-runs steps 5-8 above using the stored `report_json` and a fresh `discord-delivery:${reportId}:retry-${timestamp}` idempotency key so the retry is not short-circuited by the original delivery marker. Does NOT call the LLM and does NOT modify `report_json`.
+  7. On HTTP 2xx: update `agent_reports` to `delivered_at = now()`, `status = 'published'`, then write the successful delivery marker `discord-delivery:${reportId}`. Return `{ reportId, status: 'published', deliveryError: null }`.
+  8. On any other status or fetch throw: update `agent_reports` to `status = 'delivery_failed'`, `delivery_error = '<status code>: <truncated body>'`. Do NOT write the successful delivery marker. Return `{ reportId, status: 'delivery_failed', deliveryError }`. Do NOT throw — delivery failures are expected and must become data, not exceptions.
+- **`redeliverReport`.** Re-reads the existing row by `reportId`, re-runs steps 5-8 above using the stored `report_json`, and records a fresh audit trail marker such as `discord-delivery:${reportId}:manual:${timestamp}` if an attempt log is needed. Manual redelivery is intentionally a new delivery attempt and may repost once per admin call. It does NOT call the LLM and does NOT modify `report_json`.
 - **Embed builders.** Pure functions, no DB access, no fetch. Each reads fields from `report.report_json` and returns a `DiscordEmbed` with `color: 0x10B981`. Unknown fields fall back to string coercion; missing required fields render as `"n/a"`. Never throw.
 - **No direct `agent_reports` writes outside this file.** Blueprint steps that need to publish results must call `writeAndDeliverReport` — they do NOT `db.insert(agentReports)` directly.
 
@@ -346,9 +352,19 @@ export function resolveBlueprint(job: AgentJob): Blueprint {
 }
 ```
 
-- `notImplementedBlueprint(name)` returns a `Blueprint` with a single `code` step whose `run()` throws `new Error('blueprint not implemented in Sprint 3: ${name}')`. Per D1, the scan blueprints are declared but unusable in Sprint 3.
+- `notImplementedBlueprint(name)` returns a `Blueprint` with a single `code` step whose `run()` throws `new NotImplementedBlueprintError(name)`. Per D1, the scan blueprints are declared but unusable in Sprint 3.
 - `resolveFromCapabilities(agentId, job)` throws if `job.jobType` is not in `capabilities[agentId]`, otherwise returns `AGENT_CONFIGS[agentId].blueprints[job.jobType]`. If the resolved blueprint is the `notImplementedBlueprint`, still return it — the runner will fail the job at step-execution time, which is where D1 says the gate lives.
 - No side effects at module load. `AGENT_CONFIGS` is a plain const.
+
+#### Additive runtime contract (`lib/agents/types.ts` + `lib/agents/blueprint-runner.ts`)
+
+Sprint 3 intentionally extends the Sprint 2 runner contract. This is required work, not optional cleanup.
+
+- `StepInput` grows additive runtime fields: `job: AgentJob`, `db: AgentDb`, and `agentConfig: AgentConfig`. Step implementations may destructure these directly from the existing single `input` object.
+- `StepMetadata` grows `skipWhenRouted?: boolean`. The Orchestrator's `synthesize-response` step uses this.
+- `RunBlueprintResult` grows optional `failureClass?: FailureClass`.
+- Runner skip semantics: if `step.metadata.skipWhenRouted === true` and `previousOutput.decision === 'route-to-specialist'`, the runner skips the step, appends a completed step-log entry with `tokensUsed: 0`, and carries `previousOutput` forward unchanged as the next input/final output.
+- Runner failure classification: `NotImplementedBlueprintError` is classified as `contract`, not `transient`.
 
 #### `lib/agents/blueprints/orchestrator-chat.ts`
 
@@ -368,6 +384,7 @@ const routeDecisionSchema = z.object({
   decision: z.enum(['handle-directly', 'route-to-specialist', 'fallback-to-self']),
   targetAgentId: z.enum(['orchestrator', 'small-cap-trader', 'swing-trader']).nullable(),
   specialistJobType: z.enum(['research']).nullable(),
+  specialistJobId: z.string().nullable(),
   warning: z.string().nullable(),
   message: z.string(),
 });
@@ -382,7 +399,7 @@ export const orchestratorChatBlueprint: Blueprint = {
       inputSchema: chatInputSchema,
       outputSchema: routeDecisionSchema,
       metadata: { canRetry: true, timeoutMs: 5000, maxRepairAttempts: 0, sideEffect: false },
-      run: async ({ jobInput, context: _ctx }) => {
+      run: async ({ jobInput, context: _ctx, job, db }) => {
         // 1. Slash-command prefix wins.
         // 2. Keyword match for data-signal routing (small cap, dilution, short, offering -> small-cap-trader).
         // 3. Keyword match for swing/momentum/MDR/parabolic -> swing-trader.
@@ -396,12 +413,11 @@ export const orchestratorChatBlueprint: Blueprint = {
       type: 'llm',
       inputSchema: routeDecisionSchema,
       outputSchema: z.object({ content: z.string().min(1) }),
-      metadata: { canRetry: true, timeoutMs: 30000, maxRepairAttempts: 1, sideEffect: false, lane: 'interactive' },
+      metadata: { canRetry: true, timeoutMs: 30000, maxRepairAttempts: 1, sideEffect: false, lane: 'interactive', skipWhenRouted: true },
       run: async ({ previousOutput: _prev, context: _ctx }) => {
         // Only reached when step 1 returned decision === 'handle-directly' OR 'fallback-to-self'.
-        // When decision === 'route-to-specialist', step 2 is skipped by the runner because the
-        // step 1 code also enqueues a new agent_jobs row for the specialist and completes the
-        // orchestrator job with { routed: true, specialistJobId }.
+        // When decision === 'route-to-specialist', step 2 is skipped by the runner via
+        // metadata.skipWhenRouted and the step 1 output becomes the final blueprint output.
         // Use callLlm({ systemPrompt: buildLlmSystemPrompt('orchestrator'), userMessage: ..., temperature: 0.3 }, 'interactive')
       },
     },
@@ -418,8 +434,8 @@ Contract notes:
   - message matches `/\b(MDR|multi[- ]day[- ]runner|parabolic|momentum|breakout)\b/i` -> `swing-trader`, `research`
   - Otherwise `decision = 'handle-directly'`, `targetAgentId = null`, `specialistJobType = null`.
 - **Availability check.** After picking a specialist, read `agent_registry.status` for that agent. If `status !== 'online'`, set `decision = 'fallback-to-self'`, fill `warning = '${agentId} is ${status}, handling request directly'`, and let step 2 run.
-- **Handoff enqueue.** When `decision = 'route-to-specialist'`, step 1's `run()` inserts a new `agent_jobs` row via `getAgentDb()` directly (this is allowed — it is a code step, not a queue-helper boundary violation). The insert sets `agent_id = targetAgentId`, `user_id = job.userId`, `job_type = 'research'`, `status = 'queued'`, `input = { ticker: extractedTicker, originator_job_id: job.id }`. The step then returns `{ decision: 'route-to-specialist', targetAgentId, specialistJobType: 'research', warning: null, message: 'routed' }`.
-- **Runner-level short-circuit for routed jobs.** The runner treats step 2 as skippable when `previousOutput.decision === 'route-to-specialist'`. The blueprint expresses this by leaving step 2 as the final step; the worker loop (not the runner) checks the final output and, when it sees `routed: true`, writes `result = { routed: true, specialistJobId: <new job id> }` into the orchestrator job. The blueprint itself does NOT need special-case runner logic — the worker's result-packaging code handles it.
+- **Handoff enqueue.** When `decision = 'route-to-specialist'`, step 1's `run()` inserts a new `agent_jobs` row via the injected `db`/`job` runtime fields (this is allowed — it is a code step, not a queue-helper boundary violation). The insert sets `agent_id = targetAgentId`, `user_id = job.userId`, `job_type = 'research'`, `status = 'queued'`, `input = { ticker: extractedTicker, originator_job_id: job.id }`. The step then returns `{ decision: 'route-to-specialist', targetAgentId, specialistJobType: 'research', specialistJobId, warning: null, message: 'routed' }`.
+- **Runner-level short-circuit for routed jobs.** The runner skips step 2 when `previousOutput.decision === 'route-to-specialist'` and `step.metadata.skipWhenRouted === true`. The worker loop then sees the final blueprint output from step 1 and writes `result = { routed: true, specialistJobId }` into the orchestrator job.
 - **Ticker extraction.** Regex `/\b[A-Z]{1,5}\b/` against the message, first match. If no match, `extractedTicker = null` and the specialist handoff still happens (the specialist blueprint validates ticker).
 
 #### `lib/agents/blueprints/orchestrator-macro-summary.ts`
@@ -475,9 +491,7 @@ export const orchestratorMacroSummaryBlueprint: Blueprint = {
     {
       name: 'save-summary',
       type: 'code',
-      metadata: { canRetry: false, timeoutMs: 10000, maxRepairAttempts: 0, sideEffect: true, idempotencyKey: 'PLACEHOLDER' },
-      // idempotencyKey is assigned by the runner at call time using ${job.id}:save-summary:report-write
-      // -- see the Execution Contracts note below on how blueprint metadata keys interact with the runner.
+      metadata: { canRetry: false, timeoutMs: 10000, maxRepairAttempts: 0, sideEffect: true },
       run: async () => {
         // Calls writeAndDeliverReport(db, { jobId, userId: 'system-agent-user', agentId: 'orchestrator',
         //   reportType: 'macro-summary', title: '<date> macro briefing', summary, reportJson })
@@ -489,13 +503,13 @@ export const orchestratorMacroSummaryBlueprint: Blueprint = {
 
 Contract notes:
 
-- **Idempotency key template.** The runner today reads `step.metadata.idempotencyKey` as-is. Sprint 3 adds a small convention: if the key equals `'PLACEHOLDER'`, the runner substitutes `${job.id}:${step.name}:report-write` before calling `recordStepEffect`. This keeps the template co-located with the step without hardcoding job IDs at blueprint construction time. Implement the substitution inside `lib/agents/blueprint-runner.ts` as an additive change — do NOT rewrite the existing idempotency logic.
+- **Save-step idempotency owner.** Save steps do not use runner-level `idempotencyKey` placeholders in Sprint 3. `writeAndDeliverReport()` owns report-row reuse and successful-delivery dedupe for these steps.
 - **Macro summary ownership.** The save-summary step always writes with `userId = 'system-agent-user'`. The orchestrator-macro-summary blueprint is the only Sprint 3 blueprint that runs against the system user.
 - **Massive API absence.** If `MASSIVE_API_KEY` is unset, step 2 returns a `null` snapshot and the step succeeds. Step 3 handles a null snapshot gracefully. This keeps Sprint 3 runnable in dev without Massive credentials.
 
 #### `lib/agents/blueprints/small-cap-research.ts`
 
-Three steps: fetch filings from AskEdgar, fetch price/volume from TradingView (via the existing `/api/tradingview/gainers` route OR a direct TradingView scanner call — agent code MAY call the Vercel route over HTTP using `process.env.NEXUS_API_URL`), synthesize the report.
+Three steps: fetch filings from AskEdgar via the canonical shared cache, fetch price/volume from a direct TradingView scanner call, then synthesize the report. Do NOT call `/api/tradingview/gainers` over HTTP from a worker.
 
 ```ts
 export const smallCapResearchBlueprint: Blueprint = {
@@ -505,11 +519,11 @@ export const smallCapResearchBlueprint: Blueprint = {
     {
       name: 'fetch-filings',
       type: 'code',
-      inputSchema: z.object({ ticker: z.string().min(1) }),
+      inputSchema: z.object({ ticker: z.string().regex(/^[A-Z]{1,5}$/) }),
       outputSchema: z.object({ ticker: z.string(), filings: z.array(z.unknown()), cashPosition: z.unknown().nullable() }),
       metadata: { canRetry: true, timeoutMs: 30000, maxRepairAttempts: 0, sideEffect: false },
-      // Calls AskEdgar for the ticker. Caches per (ticker, endpoint) in agent_memory_v2
-      // with category 'fact' and key 'askedgar:${endpoint}:${ticker}' and a 1-hour TTL.
+      // Uses getCachedTickerData() as the canonical upstream AskEdgar cache, then
+      // shapes the response into the step output required by the blueprint.
       run: async () => { /* ... */ },
     },
     {
@@ -536,7 +550,7 @@ export const smallCapResearchBlueprint: Blueprint = {
     {
       name: 'save-research',
       type: 'code',
-      metadata: { canRetry: false, timeoutMs: 10000, maxRepairAttempts: 0, sideEffect: true, idempotencyKey: 'PLACEHOLDER' },
+      metadata: { canRetry: false, timeoutMs: 10000, maxRepairAttempts: 0, sideEffect: true },
       run: async () => { /* calls writeAndDeliverReport with reportType: 'research' */ },
     },
   ],
@@ -545,8 +559,8 @@ export const smallCapResearchBlueprint: Blueprint = {
 
 Contract notes:
 
-- **AskEdgar caching.** Read `agent_memory_v2` for `category = 'fact'`, `key = 'askedgar:filings:${ticker}'`. If the row exists and `updated_at > now() - interval '1 hour'`, use `value_json` as the cached response. Otherwise call AskEdgar and upsert the row via `upsertMemory()` with `expiresAt = now() + interval '1 hour'`. This is the cross-restart cache required by `AGENTIC_EXPANSIONV2.md` §9.
-- **Ticker normalization.** Step 1 uppercases and trims the incoming ticker before any external call. Invalid tickers (non-alphabetic or > 5 chars) short-circuit with `failureClass: 'input-quality'`.
+- **AskEdgar caching.** Step 1 uses `getCachedTickerData()` as the canonical shared cache for raw AskEdgar data. If the blueprint wants to persist derived facts in `agent_memory_v2`, that write is additive and must not replace the shared cache.
+- **Ticker normalization.** Step 1 uppercases and trims the incoming ticker before any external call. The step input schema should be tightened to `z.object({ ticker: z.string().regex(/^[A-Z]{1,5}$/) })` so invalid or missing tickers fail as non-retriable contract errors.
 - **Report ownership.** `userId = job.userId` — research reports belong to the user who requested them, never to `system-agent-user`.
 
 #### `lib/agents/blueprints/swing-trader-research.ts`
@@ -566,7 +580,7 @@ outputSchema: z.object({
 }),
 ```
 
-Uses `callLlm(..., 'background')`. Same save-research step shape (idempotencyKey placeholder). Same user-owned report.
+Uses `callLlm(..., 'background')`. Same save-research step shape. Same user-owned report.
 
 #### `lib/agents/heartbeat.ts`
 
@@ -581,7 +595,7 @@ export function startHeartbeat(db: AgentDb, agentId: AgentId, intervalMs?: numbe
   2. Touch `/tmp/healthy` with `fs.writeFileSync('/tmp/healthy', new Date().toISOString())`.
 - Errors during the UPDATE are caught and logged (`console.error`) but do NOT kill the tick. The next tick retries.
 - `stop()` clears the interval, writes one final `UPDATE agent_registry SET status = 'offline'`, and awaits it.
-- Tests mock `node:fs` and `getAgentDb()` and advance vi fake timers to prove both the UPDATE and the file touch happen per tick.
+- Tests inject a fake `AgentDb`, mock `node:fs`, and advance vi fake timers to prove both the UPDATE and the file touch happen per tick.
 
 #### `lib/agents/worker.ts`
 
@@ -599,15 +613,15 @@ Behavior contract:
 - Poll loop:
   1. `const claim = await claimNextQueuedJob(db, agentId, workerId)` where `workerId = '${agentId}:${process.pid}'`.
   2. If null, `await sleep(pollIntervalMs)` and continue.
-  3. If claimed: resolve the blueprint via `config.agentConfig.blueprintResolver(claim.job)`. Catch "not implemented" errors and immediately call `failJob(db, claim.job.id, workerId, claim.leaseVersion, 'blueprint not implemented: ${jobType}')`.
+  3. If claimed: resolve the blueprint via `config.agentConfig.blueprintResolver(claim.job)`.
   4. Call `runBlueprint(blueprint, claim.job, config.agentConfig, db, { lockedBy: workerId, leaseVersion: claim.leaseVersion })`.
-  5. **Result packaging for the orchestrator routed-job case.** If `claim.job.agentId === 'orchestrator' && claim.job.jobType === 'chat'` and the runner's `finalOutput` contains `{ decision: 'route-to-specialist', ... }`, the worker writes `result = { routed: true, specialistJobId: <the job id the blueprint enqueued> }`. Otherwise `result = finalOutput`. Then call `completeJob(db, job.id, workerId, leaseVersion, result)`.
-  6. If `runBlueprint` returns `{ status: 'failed', failureReason }`, classify and branch:
+  5. **Result packaging for the orchestrator routed-job case.** If `claim.job.agentId === 'orchestrator' && claim.job.jobType === 'chat'` and the runner's `finalOutput` contains `{ decision: 'route-to-specialist', specialistJobId, ... }`, the worker writes `result = { routed: true, specialistJobId }`. Otherwise `result = finalOutput`. Then call `completeJob(db, job.id, workerId, leaseVersion, result)`.
+  6. If `runBlueprint` returns `{ status: 'failed', failureReason, failureClass }`, branch:
      - `failureClass === 'transient'` and `claim.job.attempt < claim.job.maxAttempts` -> `scheduleJobRetry(db, job.id, workerId, leaseVersion, new Date(Date.now() + calculateBackoffMs(claim.job.attempt)), failureReason)`.
      - Otherwise -> `failJob(db, job.id, workerId, leaseVersion, failureReason)`.
   7. Loop.
 - Graceful shutdown: `stop()` sets an internal `shuttingDown = true` flag. The poll loop checks it before claiming a new job. If a job is in flight, the loop awaits the current `runBlueprint` call (does NOT cancel) and then exits. After the loop exits, call the heartbeat `stop()`.
-- Backoff helper lives inline: `function calculateBackoffMs(attempt: number) { return Math.pow(2, attempt) * 2000 }` — 2s, 8s, 32s at attempts 1, 2, 3.
+- Backoff helper lives inline: `function calculateBackoffMs(attempt: number) { return Math.pow(4, attempt - 1) * 2000 }` — 2s, 8s, 32s at attempts 1, 2, 3.
 - Stale-job reaper: OUT OF SCOPE for Sprint 3. The reaper is listed as a worker-level concern in `AGENTIC_EXPANSIONV2.md` but the plan explicitly defers it. Do NOT add a reaper in Sprint 3.
 - Worker tests mock `claimNextQueuedJob`, `completeJob`, `failJob`, `scheduleJobRetry`, and `runBlueprint`, then advance fake timers to drive the loop through claim -> run -> complete and claim -> run -> retry transitions.
 
@@ -627,7 +641,7 @@ Behavior contract:
   3. Attempt to claim a scheduled run row via a single SQL:
      ```sql
      INSERT INTO agent_scheduled_runs (id, agent_id, trigger_type, trading_date, status, started_at, created_at)
-     VALUES (${randomUUID()}, 'orchestrator', 'macro-summary-cron', ${tradingDate}, 'processing', now(), now())
+     VALUES (${randomUUID()}, 'orchestrator', 'macro-summary', ${tradingDate}, 'running', now(), now())
      ON CONFLICT (agent_id, trigger_type, trading_date) DO NOTHING
      RETURNING id;
      ```
@@ -690,22 +704,23 @@ Each route below lists path, method, auth, request shape, response shape, and er
 1. `parseAndValidate(request, serviceChatPostSchema)` -> `{ data }` or 400.
 2. `requireServiceAuth(request, data)` -> `{ user, discordUserId }` or 400/401/403 Response.
 3. `const db = getAgentDb()`. If null, return `Response.json({ error: 'Database not configured' }, { status: 503 })`.
-4. Resolve or create `session_id`: if provided, use it; otherwise `randomUUID()`.
-5. Insert a row into `agent_conversations` with `role = 'user'`, `content = data.message`, `channel = 'discord'`, `user_id = user.id`, `agent_id = 'orchestrator'`, `session_id`.
-6. Insert a new `agent_jobs` row: `id = randomUUID()`, `agent_id = 'orchestrator'`, `user_id = user.id`, `job_type = 'chat'`, `status = 'queued'`, `input = { message: data.message, session_id, channel: 'discord', discord_user_id: discordUserId }`, `priority = 0`, `max_attempts = 3`.
-7. Return `Response.json({ job_id, session_id, agent_id: 'orchestrator' }, { status: 201 })`.
+4. `await ensureUser(db, user)` so the mapped service user exists before any FK-backed insert.
+5. Resolve or create `session_id`: if provided, use it; otherwise `randomUUID()`.
+6. Insert a row into `agent_conversations` with `role = 'user'`, `content = data.message`, `channel = 'discord'`, `user_id = user.id`, `agent_id = 'orchestrator'`, `session_id`.
+7. Insert a new `agent_jobs` row: `id = randomUUID()`, `agent_id = 'orchestrator'`, `user_id = user.id`, `job_type = 'chat'`, `status = 'queued'`, `input = { message: data.message, session_id, channel: 'discord', discord_user_id: discordUserId }`, `priority = 0`, `max_attempts = 3`.
+8. Return `Response.json({ job_id, session_id, agent_id: 'orchestrator' }, { status: 201 })`.
 
 **GET** — `x-agent-service-key` header; query = `job_id`.
 
 1. Parse `job_id` via `serviceChatGetQuerySchema.safeParse(Object.fromEntries(new URL(request.url).searchParams))`.
-2. `requireServiceAuth(request, {})` -- body is empty here because GET requests have no parseable body but the header check still must run. Workaround: the helper returns 400 for missing `discord_user_id`; for GET polling we call `requireAgentAdmin`-equivalent logic using only the service key. Implement a tiny helper in the route file: verify `x-agent-service-key` directly (same check as `requireServiceAuth` step 1-4), without the discord user mapping. Return 401 on mismatch.
+2. `requireServiceKey(request)` -> `null` or 401 Response.
 3. `getAgentDb()` or 503.
-4. `SELECT id, agent_id, status, progress_note, result, error_message FROM agent_jobs WHERE id = ${job_id}`. If no row, 404 `{ error: 'job not found' }`.
+4. `SELECT id, agent_id, status, progress_note, input, result, error_message, step_log FROM agent_jobs WHERE id = ${job_id}`. If no row, 404 `{ error: 'job not found' }`.
 5. Return the correct status variant from `AGENTIC_EXPANSIONV2.md` §13:
    - `queued` -> `{ status: 'queued', job_id, agent_id, progress_note: null }`
    - `processing` -> `{ status: 'processing', job_id, agent_id, progress_note }`
    - `completed` with `result.routed === true` -> `{ status: 'completed', job_id, agent_id, result: { routed: true, specialistJobId: result.specialistJobId } }`
-   - `completed` otherwise -> `{ status: 'completed', job_id, agent_id, session_id: result.session_id, result: { message: result.content ?? result.message ?? '' } }` (read `content` or `message` — blueprints may put either)
+   - `completed` otherwise -> `{ status: 'completed', job_id, agent_id, session_id: result.session_id ?? input.session_id ?? null, result: { message: result.content ?? result.message ?? '' } }` (read `content` or `message` — blueprints may put either)
    - `failed` -> `{ status: 'failed', job_id, agent_id, error: { message: error_message, failureClass: <parsed from stepLog tail if present> } }`
 
 ##### `app/api/agents/reports/route.ts`
@@ -728,9 +743,11 @@ Each route below lists path, method, auth, request shape, response shape, and er
 **POST** — `requireUser()`; body = `researchPostSchema`.
 
 1. Parse + auth.
-2. `SELECT status FROM agent_registry WHERE id = ${data.agent_id}`. If `status !== 'online'`, return 400 `{ error: 'agent unavailable', agent_id, status }` (AEV2-403 contract — reject, do not silently queue).
-3. Insert `agent_jobs` row: `agent_id = data.agent_id`, `user_id = user.id`, `job_type = 'research'`, `input = { ticker: data.ticker }`, `status = 'queued'`.
-4. Return `{ job_id, agent_id, job_type: 'research' }`.
+2. `const db = getAgentDb()`. If null, return 503.
+3. `await ensureUser(db, user)` before inserting the job row.
+4. `SELECT status FROM agent_registry WHERE id = ${data.agent_id}`. If `status !== 'online'`, return 400 `{ error: 'agent unavailable', agent_id, status }` (AEV2-403 contract — reject, do not silently queue).
+5. Insert `agent_jobs` row: `agent_id = data.agent_id`, `user_id = user.id`, `job_type = 'research'`, `input = { ticker: data.ticker }`, `status = 'queued'`.
+6. Return `{ job_id, agent_id, job_type: 'research' }`.
 
 **GET** — `requireUser()`.
 
@@ -741,20 +758,67 @@ Each route below lists path, method, auth, request shape, response shape, and er
 
 **GET** — `requireAgentAdmin()`.
 
-Return the full `AdminStatsResponse` shape from `AGENTIC_EXPANSIONV2.md` §11 (per D3). Query plan:
+Return this exact `AdminStatsResponse` shape:
+
+```ts
+{
+  circuitBreakers: Record<string, { status: 'closed' | 'open' | 'half-open'; consecutiveFailures: number; lastFailureAt: string | null }>;
+  today: {
+    totalRequests: number;
+    totalTokens: number;
+    estimatedCostCents: number;
+    successRate: number;
+    avgDurationMs: number;
+    validationFailureRate: number;
+    retryRate: number;
+    byLane: Record<string, { totalRequests: number; totalTokens: number; estimatedCostCents: number; successRate: number; avgDurationMs: number }>;
+    byAgent: Record<string, { totalRequests: number; totalTokens: number; estimatedCostCents: number; successRate: number; avgDurationMs: number }>;
+  };
+  thisMonth: {
+    totalTokens: number;
+    estimatedCostCents: number;
+    budgetCents: number;
+    budgetUsedPercent: number;
+  };
+  agents: Array<{ id: string; displayName: string; status: string; lastHeartbeat: string | null }>;
+  delivery: {
+    publishedToday: number;
+    deliveryFailures: number;
+    deliveryFailureRate: number;
+  };
+  memory: {
+    total: number;
+    byCategory: Record<string, number>;
+  };
+  macroSummaries: {
+    latestGeneratedAt: string | null;
+  };
+  queue: {
+    depth: number;
+    oldestQueuedJobAgeSeconds: number | null;
+    stuckProcessing: number;
+  };
+}
+```
+
+Query/formula plan:
 
 - `circuitBreakers`: `SELECT id, config -> 'circuitBreaker' FROM agent_registry`.
 - `today.*`: aggregates over `agent_request_log` where `created_at >= start of current UTC day`.
 - `today.byLane`: `GROUP BY lane`.
 - `today.byAgent`: `GROUP BY agent_id`.
+- `today.validationFailureRate`: `contract-failed jobs created today / jobs created today`; use `0` when the denominator is `0`.
+- `today.retryRate`: `jobs created today with attempt > 1 / jobs created today`; use `0` when the denominator is `0`.
 - `thisMonth.*`: aggregates over `agent_request_log` where `created_at >= first of current UTC month`. Include `budgetCents` from `getLlmBudgetConfig().monthlyBudgetCents` and `budgetUsedPercent`.
 - `agents`: `SELECT id, display_name, status, last_heartbeat FROM agent_registry`.
 - `delivery.publishedToday`: `SELECT count(*) FROM agent_reports WHERE status = 'published' AND created_at >= start of current UTC day`.
 - `delivery.deliveryFailures`: same with `status = 'delivery_failed'`.
+- `delivery.deliveryFailureRate`: `deliveryFailures / (publishedToday + deliveryFailures)`; use `0` when the denominator is `0`.
 - `memory.total` and `memory.byCategory`: over `agent_memory_v2`.
 - `macroSummaries.latestGeneratedAt`: latest published macro report's `created_at`.
-
-Include `queueDepth`, `oldestQueuedJobAgeSeconds`, `stuckProcessing` (jobs in `processing` for > 10 minutes with stale heartbeat), `retryRate`, and `deliveryFailureRate` — these are the AEV2-404 acceptance criteria add-ons on top of the §11 shape.
+- `queue.depth`: queued jobs eligible to run now (`status = 'queued'` and `next_retry_at IS NULL OR next_retry_at <= now()`).
+- `queue.oldestQueuedJobAgeSeconds`: age of the oldest eligible queued job in seconds; `null` when no eligible queued jobs exist.
+- `queue.stuckProcessing`: jobs in `processing` where `lock_expires_at < now()` OR `last_heartbeat_at < now() - interval '10 minutes'`.
 
 ##### `app/api/agents/admin/memory/route.ts`
 
@@ -790,8 +854,8 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 
 - Use `vi.hoisted(() => ({ ... }))` to create the mock functions.
 - `vi.mock('@/lib/agents/db', () => ({ getAgentDb: getAgentDbMock }))`.
-- `vi.mock('@/lib/agents/admin', () => ({ requireAgentAdmin: requireAgentAdminMock, requireServiceAuth: requireServiceAuthMock }))`.
-- `vi.mock('@/lib/server-db-utils', () => ({ requireUser: requireUserMock, dbUnavailable: ... }))`.
+- `vi.mock('@/lib/agents/admin', () => ({ requireAgentAdmin: requireAgentAdminMock, requireServiceAuth: requireServiceAuthMock, requireServiceKey: requireServiceKeyMock }))`.
+- `vi.mock('@/lib/server-db-utils', () => ({ requireUser: requireUserMock, ensureUser: ensureUserMock, dbUnavailable: ... }))`.
 - `vi.mock('@/lib/agents/discord', () => ({ writeAndDeliverReport: writeAndDeliverReportMock, redeliverReport: redeliverReportMock }))` for the redeliver route.
 - Import the route handler AFTER the mocks: `import { POST, GET } from '@/app/api/agents/service/chat/route'`.
 - Build the DB mock by returning chained fluent mocks matching what the route calls (`insert().values()`, `select().from().where()`, etc.). Use `makeDb()`-style helper functions inside each test file.
@@ -803,7 +867,7 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
   - 404 on unknown job/report/memory id
   - 503 when `getAgentDb()` returns null
   - For `GET /api/agents/service/chat`: prove the three state variants (queued / processing / completed / failed) and the routed-completed variant
-  - For redeliver: prove idempotency — calling twice does not duplicate `agent_reports` rows or double-POST to Discord (mock `fetch` twice, assert second call is a no-op or uses a fresh retry idempotency key)
+  - For redeliver route tests: prove success, `delivery_failed`, 404, and admin auth failure. Delivery-attempt dedupe and manual redelivery repost behavior belong in `__tests__/agent-discord.test.ts`, not the route test.
   - For reports list: prove `user_id = 'system-agent-user'` rows are excluded
   - For research POST: prove an offline agent returns 400, not a queued job
 
@@ -820,23 +884,23 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 
 **Stories:** `AEV2-307`
 
-**Review focus:** confirm report-write and Discord-delivery idempotency markers are separate, and that a failed webhook POST becomes data (status = `delivery_failed`) instead of an exception.
+**Review focus:** confirm `writeAndDeliverReport()` reuses a deterministic report row, only writes the successful delivery marker after a 2xx webhook POST, and converts webhook failures into stored `delivery_failed` state instead of exceptions.
 
 **Suggested commit:** `feat(aev2): add agent discord embed and delivery helpers`
 
 **Check off before commit**
 
 - [ ] `lib/agents/discord.ts` exists and exports exactly the symbols listed in the execution contract (`DiscordEmbed`, `DiscordWebhookPayload`, five `build*Embed` functions, `resolveWebhookUrl`, `writeAndDeliverReport`, `redeliverReport`).
-- [ ] `writeAndDeliverReport` uses two separate `recordStepEffect` calls: `report-write` keyed by `${jobId}:write-report:report-write`, then `discord-delivery` keyed by `discord-delivery:${reportId}`.
+- [ ] `writeAndDeliverReport` uses `reportId = ${jobId}:${reportType}` as the deterministic row key and `discord-delivery:${reportId}` as the successful-delivery marker.
 - [ ] `resolveWebhookUrl` maps every (agentId, reportType) combination listed in the contract and returns `null` for unknowns without throwing.
 - [ ] Webhook POST uses `fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ embeds: [embed] }) })` and respects a 10s AbortController timeout.
-- [ ] HTTP 2xx sets `status = 'published'` and `delivered_at = now()`. Non-2xx or fetch throw sets `status = 'delivery_failed'` with `delivery_error` populated. Neither path throws to the caller.
-- [ ] `redeliverReport` re-reads the stored `report_json`, uses a fresh retry idempotency key, and re-runs delivery only (no LLM call, no re-write of `report_json`).
-- [ ] `__tests__/agent-discord.test.ts` covers: happy-path write+deliver, duplicate call short-circuits via idempotency marker, HTTP 500 becomes `delivery_failed`, `fetch` throw becomes `delivery_failed`, `resolveWebhookUrl` unknown combo returns null, and redeliver retry posts again with the retry idempotency key.
+- [ ] HTTP 2xx sets `status = 'published'` and `delivered_at = now()`, then writes the successful delivery marker. Non-2xx or fetch throw sets `status = 'delivery_failed'` with `delivery_error` populated. Neither path throws to the caller.
+- [ ] `redeliverReport` re-reads the stored `report_json`, performs a fresh delivery attempt only, and does not call the LLM or rewrite `report_json`.
+- [ ] `__tests__/agent-discord.test.ts` covers: happy-path write+deliver, repeat automatic publish reuses the existing report row and short-circuits after a recorded successful-delivery marker, HTTP 500 becomes `delivery_failed`, `fetch` throw becomes `delivery_failed`, `resolveWebhookUrl` unknown combo returns null, and manual redeliver posts again as a fresh admin-triggered attempt.
 
 **Exit criteria**
 
-- [ ] Retries cannot duplicate `agent_reports` rows or webhook posts.
+- [ ] Automatic retries reuse the same `agent_reports` row and do not repost after a recorded successful delivery marker.
 - [ ] Delivery failure becomes observable state, not a thrown exception.
 - [ ] No blueprint file yet imports from `discord.ts` — blueprints land in Checkpoint 3.
 
@@ -863,7 +927,7 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 - [ ] `lib/agents/prompts-loader.ts` exports `loadGlobalPolicyPrompt`, `loadRolePrompt`, and `buildLlmSystemPrompt`. Files are read once at module load and cached in a module-level const.
 - [ ] `buildLlmSystemPrompt('orchestrator')` returns `${globalPolicy}\n\n---\n\n${orchestratorPrompt}`.
 - [ ] `lib/agents/config.ts` exports `AGENT_CONFIGS` and `resolveBlueprint(job)`. The four implemented blueprints are imported; the three scan blueprints are declared via `notImplementedBlueprint(name)` helper.
-- [ ] The config file compiles even though the blueprint files are still empty stubs — use empty default exports in the blueprint files for this checkpoint and fill them in Checkpoint 3.
+- [ ] The config file compiles even though the blueprint files are still empty stubs — use minimal named stub exports in the blueprint files for this checkpoint and fill them in Checkpoint 3.
 - [ ] `__tests__/agent-scrape-lite.test.ts` covers: happy-path HTML->text, entity decoding, 30k cap, non-2xx throw, and timeout behavior with `vi.useFakeTimers()`.
 - [ ] `__tests__/agent-config.test.ts` covers: every `AgentId` resolves an `AgentConfig`, `resolveBlueprint` throws on unknown `agentId`, `notImplementedBlueprint` surfaces the expected error at `step.run()` invocation time.
 
@@ -885,24 +949,24 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 
 **Stories:** `AEV2-308` (part 2)
 
-**Review focus:** confirm the four implemented blueprints match their execution contracts: deterministic routing for orchestrator:chat, writeAndDeliverReport for every save step, `lane: 'background'` override for the macro synthesis step, and the `'PLACEHOLDER'` idempotency key convention.
+**Review focus:** confirm the four implemented blueprints match their execution contracts: deterministic routing for orchestrator:chat, routed-step skipping via runner metadata, writeAndDeliverReport for every save step, and `lane: 'background'` for macro synthesis.
 
 **Suggested commit:** `feat(aev2): implement sprint 3 agent blueprints`
 
 **Check off before commit**
 
 - [ ] `lib/agents/blueprints/orchestrator-chat.ts` exports `orchestratorChatBlueprint` with two steps. Step 1 `classify-and-route` is deterministic (no LLM call), enforces the five routing rules verbatim, checks `agent_registry.status`, and enqueues the specialist handoff when needed. Step 2 `synthesize-response` uses `callLlm(..., 'interactive')` with `buildLlmSystemPrompt('orchestrator')`.
-- [ ] `lib/agents/blueprints/orchestrator-macro-summary.ts` exports four steps matching the contract. Step 1 reads `MACRO_HEADLINES_URLS` env with the documented default. Step 3 uses `lane: 'background'`. Step 4 uses `writeAndDeliverReport` with `userId = 'system-agent-user'` and the `'PLACEHOLDER'` idempotency key.
-- [ ] `lib/agents/blueprints/small-cap-research.ts` exports four steps. Step 1 caches AskEdgar responses in `agent_memory_v2` with `category = 'fact'`, `key = 'askedgar:${endpoint}:${ticker}'`, and a 1-hour TTL. Step 3 uses `lane: 'background'`. Step 4 uses `writeAndDeliverReport` with `userId = job.userId` and `reportType = 'research'`.
+- [ ] `lib/agents/blueprints/orchestrator-macro-summary.ts` exports four steps matching the contract. Step 1 reads `MACRO_HEADLINES_URLS` env with the documented default. Step 3 uses `lane: 'background'`. Step 4 uses `writeAndDeliverReport` with `userId = 'system-agent-user'`.
+- [ ] `lib/agents/blueprints/small-cap-research.ts` exports four steps. Step 1 uses `getCachedTickerData()` as the upstream AskEdgar cache, Step 2 uses a direct TradingView scanner call instead of an HTTP call into `/api/tradingview/gainers`, Step 3 uses `lane: 'background'`, and Step 4 uses `writeAndDeliverReport` with `userId = job.userId` and `reportType = 'research'`.
 - [ ] `lib/agents/blueprints/swing-trader-research.ts` exports four steps with the MDR-focused output schema. Same save-research contract.
-- [ ] `lib/agents/blueprint-runner.ts` is extended (additive only) to substitute `'PLACEHOLDER'` in `step.metadata.idempotencyKey` with `${job.id}:${step.name}:report-write` before calling `recordStepEffect`. No other runner changes.
+- [ ] `lib/agents/blueprint-runner.ts` is extended (additive only) to inject `job` / `db` / `agentConfig` into step input, support `skipWhenRouted`, and return `failureClass` on failed runs.
 - [ ] `__tests__/agent-blueprints.test.ts` covers: orchestrator routing (each rule branches correctly), orchestrator offline-specialist fallback, macro-summary step 3 using the background lane, small-cap AskEdgar cache hit/miss, research save step using `writeAndDeliverReport`.
 
 **Exit criteria**
 
 - [ ] All four implemented blueprints are callable through `resolveBlueprint(job)` in tests.
-- [ ] Scan blueprints still throw `'blueprint not implemented in Sprint 3: ...'` at step execution time — not at import time.
-- [ ] Runner `'PLACEHOLDER'` substitution is the only runner change.
+- [ ] Scan blueprints still fail at step execution time — not at import time — and the worker treats them as non-retriable contract failures.
+- [ ] Runner changes are limited to the additive Sprint 3 runtime contract described above.
 
 **Validation**
 
@@ -926,9 +990,9 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 - [ ] `lib/agents/worker.ts` exports `startWorker(config)` returning `{ stop }`. The poll loop calls `claimNextQueuedJob` / `runBlueprint` / `completeJob` in the canonical order from the execution contract.
 - [ ] Routed orchestrator jobs return `result = { routed: true, specialistJobId }` via the worker's result packager — not via blueprint logic.
 - [ ] Retry branch: `failureClass === 'transient' && attempt < maxAttempts` -> `scheduleJobRetry` with `calculateBackoffMs`. Otherwise `failJob`.
-- [ ] Not-implemented blueprints fail immediately via `failJob` with message `'blueprint not implemented: <job_type>'`.
+- [ ] Not-implemented blueprints fail as non-retriable contract failures and end in `failJob` with the blueprint error message.
 - [ ] Graceful shutdown waits for the in-flight `runBlueprint` to finish but does not cancel it. Heartbeat `stop()` runs after the loop exits.
-- [ ] `lib/agents/macro-cron.ts` exports `startMacroCron(db, options?)` returning `{ stop }`. Tick checks `currentHour === hourEt` in `America/New_York`, claims the scheduled run with `INSERT ... ON CONFLICT (agent_id, trigger_type, trading_date) DO NOTHING RETURNING id`, and only enqueues an `agent_jobs` row when the insert returned a row.
+- [ ] `lib/agents/macro-cron.ts` exports `startMacroCron(db, options?)` returning `{ stop }`. Tick checks `currentHour === hourEt` in `America/New_York`, claims the scheduled run with `INSERT ... ON CONFLICT (agent_id, trigger_type, trading_date) DO NOTHING RETURNING id`, uses `trigger_type = 'macro-summary'` and `status = 'running'` for the claimed row, and only enqueues an `agent_jobs` row when the insert returned a row.
 - [ ] Stale-job reaper is NOT implemented in Sprint 3 (out of scope per the contract).
 - [ ] `__tests__/agent-worker.test.ts` uses `vi.useFakeTimers()` and covers: claim happy path, empty-claim sleep, routed-job result packaging, transient failure scheduling a retry, non-transient failure failing the job, and graceful shutdown draining one in-flight job.
 - [ ] `__tests__/agent-macro-cron.test.ts` covers: tick outside the trigger hour skips, tick inside the trigger hour inserts the scheduled run + enqueues the job, and concurrent ticks (simulated via two insert calls) only produce one job.
@@ -951,7 +1015,7 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 
 **Stories:** `AEV2-401`, `AEV2-402`, `AEV2-403`, `AEV2-404`, `AEV2-405`, `AEV2-406`
 
-**Review focus:** confirm every route uses the correct auth helper (`requireServiceAuth` / `requireAgentAdmin` / `requireUser`), user-facing routes exclude `system-agent-user` rows, and the admin stats route returns the full §11 shape per D3.
+**Review focus:** confirm every route uses the correct auth helper (`requireServiceAuth` / `requireServiceKey` / `requireAgentAdmin` / `requireUser`), user-facing routes exclude `system-agent-user` rows, and the admin stats route returns the explicit Sprint 3 stats shape.
 
 **Suggested commit:** `feat(aev2): add /api/agents/* routes and validation schemas`
 
@@ -962,7 +1026,7 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 - [ ] `app/api/agents/reports/route.ts` (GET) excludes `user_id = 'system-agent-user'` rows.
 - [ ] `app/api/agents/reports/[id]/route.ts` (GET) scopes to `user_id = user.id`.
 - [ ] `app/api/agents/research/route.ts` POST rejects offline/degraded specialists with 400 `{ error: 'agent unavailable' }`. GET lists user-owned research reports only.
-- [ ] `app/api/agents/admin/stats/route.ts` returns the full `AGENTIC_EXPANSIONV2.md` §11 JSON shape, including `queueDepth`, `oldestQueuedJobAgeSeconds`, `stuckProcessing`, `retryRate`, and `deliveryFailureRate`.
+- [ ] `app/api/agents/admin/stats/route.ts` returns the explicit `AdminStatsResponse` shape from the execution contract, including `today.retryRate`, `delivery.deliveryFailureRate`, and the top-level `queue` block.
 - [ ] `app/api/agents/admin/memory/route.ts` GET filters by query params and DELETE returns 404 on missing id.
 - [ ] `app/api/agents/admin/redeliver/route.ts` delegates to `redeliverReport()` and returns `{ report_id, status }`.
 - [ ] `app/api/agents/macro-summary/latest/route.ts` queries system-owned macro report and returns `{ summary: null }` on empty state.
@@ -996,9 +1060,9 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 - [ ] `__tests__/agent-service-chat-route.test.ts` covers POST success (201), POST 400 missing `discord_user_id`, POST 401 invalid service key, POST 403 unknown Discord user, POST 503 on `getAgentDb() === null`, GET queued/processing/completed/failed/routed variants, GET 404 on unknown job_id.
 - [ ] `__tests__/agent-reports-route.test.ts` covers GET list success, GET list filtered by `status` + `agent_id`, GET list excludes `system-agent-user` rows, GET detail success, GET detail 404, auth failure 401.
 - [ ] `__tests__/agent-research-route.test.ts` covers POST success, POST 400 invalid ticker, POST 400 on offline/degraded specialist, GET list success, GET list excludes system-owned rows.
-- [ ] `__tests__/agent-admin-stats-route.test.ts` covers the full §11 response shape (at minimum asserts the top-level keys exist), 401 on missing admin key, and the `queueDepth` / `stuckProcessing` fields populate from mocked query results.
+- [ ] `__tests__/agent-admin-stats-route.test.ts` covers the full stats response shape (at minimum asserts the top-level keys exist), 401 on missing admin key, and the `queue.depth` / `queue.stuckProcessing` fields populate from mocked query results.
 - [ ] `__tests__/agent-admin-memory-route.test.ts` covers GET with filters, GET without filters, DELETE success, DELETE 404, 401 on missing admin key.
-- [ ] `__tests__/agent-admin-redeliver-route.test.ts` covers success (mocks `redeliverReport` to return `published`), delivery_failed path, idempotency (second call with same report_id uses the retry idempotency key), and 404 on unknown report_id.
+- [ ] `__tests__/agent-admin-redeliver-route.test.ts` covers success (mocks `redeliverReport` to return `published`), `delivery_failed`, 401 on missing admin key, and 404 on unknown report_id. Redelivery repost behavior is covered in `__tests__/agent-discord.test.ts`.
 - [ ] `__tests__/agent-macro-summary-route.test.ts` covers happy path, empty state returning `{ summary: null }`, and query targets `user_id = 'system-agent-user'` + `report_type = 'macro-summary'`.
 - [ ] No test calls the real `fetch` or a real Neon connection. `global.fetch` is mocked via `vi.stubGlobal('fetch', vi.fn())` where needed.
 
