@@ -38,7 +38,7 @@ Sprint 1 is complete. Older completed sections and manual-spec cleanup notes wer
 ## AEV2 Sprint 2 — Queue and Worker Core
 
 > Generated: 2026-04-06 | Agent: Codex
-> Status: READY
+> Status: IN PROGRESS
 
 ### Objective
 
@@ -48,10 +48,31 @@ Build the shared runtime layer under `lib/agents/` so the queue, memory, bluepri
 
 - Sprint 1 contracts already exist in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts), [`lib/agents/llm-client.ts`](/home/jared/Nexus-Terminal/lib/agents/llm-client.ts), and [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts).
 - Sprint 1 schema is already live in [`lib/db/schema.ts`](/home/jared/Nexus-Terminal/lib/db/schema.ts) and [`drizzle/0019_clever_zodiak.sql`](/home/jared/Nexus-Terminal/drizzle/0019_clever_zodiak.sql), including `agent_jobs`, `agent_reports`, `agent_memory_v2`, `agent_step_effects`, `agent_job_checkpoints`, and `agent_scheduled_runs`.
-- There are no Sprint 2 runtime modules yet: [`lib/agents/db.ts`](/home/jared/Nexus-Terminal/lib/agents/db.ts), [`lib/agents/queue.ts`](/home/jared/Nexus-Terminal/lib/agents/queue.ts), [`lib/agents/runtime-limits.ts`](/home/jared/Nexus-Terminal/lib/agents/runtime-limits.ts), [`lib/agents/memory.ts`](/home/jared/Nexus-Terminal/lib/agents/memory.ts), [`lib/agents/context.ts`](/home/jared/Nexus-Terminal/lib/agents/context.ts), [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts), and [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts) do not exist yet.
+- Checkpoint 1 and Checkpoint 2 are landed on branch `agents-p2` in commit `073292e` (`feat(aev2): add agent runtime core helpers`). The following Sprint 2 modules now exist: [`lib/agents/db.ts`](/home/jared/Nexus-Terminal/lib/agents/db.ts), [`lib/agents/queue.ts`](/home/jared/Nexus-Terminal/lib/agents/queue.ts), [`lib/agents/runtime-limits.ts`](/home/jared/Nexus-Terminal/lib/agents/runtime-limits.ts), [`lib/agents/memory.ts`](/home/jared/Nexus-Terminal/lib/agents/memory.ts), and [`lib/agents/context.ts`](/home/jared/Nexus-Terminal/lib/agents/context.ts).
+- Remaining Sprint 2 runtime modules not yet started in this worktree: [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts) and [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts), plus their focused tests.
 - Root TypeScript excludes [`services/`](/home/jared/Nexus-Terminal/services), so Sprint 2 should stay library-first and avoid service package work until a dedicated service-side TS validation path exists.
 - Legacy `agent_memory` still exists in [`lib/db/schema.ts`](/home/jared/Nexus-Terminal/lib/db/schema.ts); all new runtime code must use `agent_memory_v2` only.
 - [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml) still reflects older runtime assumptions. Do not fold Compose or Redis cleanup into Sprint 2.
+
+### Carry Forward
+
+- Safe compact point: commit `073292e` on worktree branch `agents-p2`.
+- Completed in that commit:
+  - Checkpoint 1: Docker-side DB seam in [`lib/agents/db.ts`](/home/jared/Nexus-Terminal/lib/agents/db.ts), lease-fenced queue helpers in [`lib/agents/queue.ts`](/home/jared/Nexus-Terminal/lib/agents/queue.ts), and focused coverage in [`__tests__/agent-db.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-db.test.ts) and [`__tests__/agent-queue.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-queue.test.ts).
+  - Checkpoint 2: runtime limits, memory, and context in [`lib/agents/runtime-limits.ts`](/home/jared/Nexus-Terminal/lib/agents/runtime-limits.ts), [`lib/agents/memory.ts`](/home/jared/Nexus-Terminal/lib/agents/memory.ts), and [`lib/agents/context.ts`](/home/jared/Nexus-Terminal/lib/agents/context.ts), plus focused coverage in [`__tests__/agent-runtime-limits.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-runtime-limits.test.ts), [`__tests__/agent-memory.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-memory.test.ts), and [`__tests__/agent-context.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-context.test.ts).
+- Validated at the checkpoint boundary before carrying forward:
+  - `npm run lint` ✅
+  - `npx tsc --noEmit` ✅
+  - `npx vitest run __tests__/agent-db.test.ts __tests__/agent-queue.test.ts __tests__/agent-runtime-limits.test.ts __tests__/agent-memory.test.ts __tests__/agent-context.test.ts` ✅
+- Resume from here with Checkpoint 3, then Checkpoint 4, without reopening Checkpoint 1 or 2 scope.
+- Immediate next files to create:
+  - [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts)
+  - [`lib/agents/checkpoints.ts`](/home/jared/Nexus-Terminal/lib/agents/checkpoints.ts)
+  - [`__tests__/agent-blueprint-runner.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprint-runner.test.ts)
+  - [`__tests__/agent-checkpoints.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-checkpoints.test.ts)
+- Next implementation focus:
+  - Checkpoint 3: one context load, ordered guard calls, Zod input/output validation, one LLM repair retry, `recordLlmAttempt()` per LLM attempt, and `persistStepLog()` abort on lease loss.
+  - Checkpoint 4: checkpoint load/save helpers, side-effect idempotency via `recordStepEffect()`, skip-flow recovery, and the four crash-recovery cases from the spec table.
 
 ### Scope
 
@@ -513,28 +534,28 @@ The fallback in row 2 IS a real semantic compromise: the next step will see the 
 
 **Check off before commit**
 
-- [ ] [`lib/agents/db.ts`](/home/jared/Nexus-Terminal/lib/agents/db.ts) exists and provides `getAgentDb()` returning a WebSocket pool singleton plus `type AgentDb`.
-- [ ] [`lib/agents/queue.ts`](/home/jared/Nexus-Terminal/lib/agents/queue.ts) exports exactly the seven helpers listed in the spec (`claimNextQueuedJob`, `renewJobLease`, `heartbeatJob`, `completeJob`, `failJob`, `scheduleJobRetry`, `persistStepLog`).
-- [ ] Claim is implemented with the canonical CTE shape from the spec — single UPDATE driven by a CTE candidate, re-checks `status = 'queued'` and `next_retry_at` eligibility in the UPDATE WHERE clause.
-- [ ] Claiming a job sets a 5-minute lease, increments `lease_version`, sets `started_at = COALESCE(started_at, now())`, and returns `QueueClaimResult | null`.
-- [ ] Queue writes fence on `id + locked_by + lease_version`.
-- [ ] No queue helper writes to `progress_note` or `max_attempts`.
-- [ ] `completeJob` clears `error_message`; `failJob` preserves `result` as-is; `scheduleJobRetry` preserves `started_at` and `step_log`.
-- [ ] All non-claim helpers return `false` (not throw) on stale-lease zero-row updates.
-- [ ] No `lib/agents/*.ts` file imports from `@/lib/db` directly (use `lib/agents/db.ts` only).
-- [ ] Focused tests cover stale-worker rejection paths for every fenced helper, happy-path lease renewal/completion, and `next_retry_at` boundary (future vs past).
+- [x] [`lib/agents/db.ts`](/home/jared/Nexus-Terminal/lib/agents/db.ts) exists and provides `getAgentDb()` returning a WebSocket pool singleton plus `type AgentDb`.
+- [x] [`lib/agents/queue.ts`](/home/jared/Nexus-Terminal/lib/agents/queue.ts) exports exactly the seven helpers listed in the spec (`claimNextQueuedJob`, `renewJobLease`, `heartbeatJob`, `completeJob`, `failJob`, `scheduleJobRetry`, `persistStepLog`).
+- [x] Claim is implemented with the canonical CTE shape from the spec — single UPDATE driven by a CTE candidate, re-checks `status = 'queued'` and `next_retry_at` eligibility in the UPDATE WHERE clause.
+- [x] Claiming a job sets a 5-minute lease, increments `lease_version`, sets `started_at = COALESCE(started_at, now())`, and returns `QueueClaimResult | null`.
+- [x] Queue writes fence on `id + locked_by + lease_version`.
+- [x] No queue helper writes to `progress_note` or `max_attempts`.
+- [x] `completeJob` clears `error_message`; `failJob` preserves `result` as-is; `scheduleJobRetry` preserves `started_at` and `step_log`.
+- [x] All non-claim helpers return `false` (not throw) on stale-lease zero-row updates.
+- [x] No `lib/agents/*.ts` file imports from `@/lib/db` directly (use `lib/agents/db.ts` only).
+- [x] Focused tests cover stale-worker rejection paths for every fenced helper, happy-path lease renewal/completion, and `next_retry_at` boundary (future vs past).
 
 **Exit criteria**
 
-- [ ] Docker runtime code no longer depends on `getDb()` / `getPoolDb()` as its primary DB seam.
-- [ ] Stale workers cannot renew a lease or write completion/failure after ownership changes.
-- [ ] `agent_jobs.step_log` remains metadata-only.
+- [x] Docker runtime code no longer depends on `getDb()` / `getPoolDb()` as its primary DB seam.
+- [x] Stale workers cannot renew a lease or write completion/failure after ownership changes.
+- [x] `agent_jobs.step_log` remains metadata-only.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npx vitest run __tests__/agent-db.test.ts __tests__/agent-queue.test.ts`
+- [x] `npx vitest run __tests__/agent-db.test.ts __tests__/agent-queue.test.ts`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
 
 ### Checkpoint 2 — Runtime Limits + Memory / Context Assembly
 
@@ -546,29 +567,29 @@ The fallback in row 2 IS a real semantic compromise: the next step will see the 
 
 **Check off before commit**
 
-- [ ] [`lib/agents/runtime-limits.ts`](/home/jared/Nexus-Terminal/lib/agents/runtime-limits.ts) exports exactly `checkBudget`, `checkRateLimit`, `checkCircuitBreaker`, `recordLlmAttempt`, `recordBreakerFailure`, and `recordBreakerSuccess`. The three guard functions throw on rejection (no boolean returns).
-- [ ] `RateLimitExceededError` and `CircuitOpenError` are added to `lib/agents/types.ts` immediately after `BudgetExceededError`.
-- [ ] Token logging converts `success` to `0 | 1` on insert and calls `Math.round()` on `estimatedCostCents`.
-- [ ] Budget checks sum `estimated_cost_cents` from `agent_request_log` using UTC calendar day/month boundaries, scoped per userId only, and read `dailyBudgetCents` / `monthlyBudgetCents` from `getLlmBudgetConfig()`.
-- [ ] Rate limit enforces 30 req/hr per userId using rolling 1-hour window.
-- [ ] Circuit-breaker state uses the `CircuitBreakerState` type as the single source of truth in `agent_registry.config` and is written via the canonical `jsonb_set` SQL shape from the spec (not read-modify-write). `checkCircuitBreaker` self-heals stale-open breakers by calling `recordBreakerSuccess` when `openedAt` is ≥ 60s old.
-- [ ] [`lib/agents/memory.ts`](/home/jared/Nexus-Terminal/lib/agents/memory.ts) exports `getMemory()` and `upsertMemory()`, reads and writes `agent_memory_v2` only.
-- [ ] [`lib/agents/context.ts`](/home/jared/Nexus-Terminal/lib/agents/context.ts) exports `buildContext()` returning `AgentContext`. Assembles memory, recent trades, conversation history, and latest macro summary.
-- [ ] Context queries use the Sprint 2 default scope: latest 20 trades, latest 20 conversation rows, latest published orchestrator macro summary owned by `system-agent-user`. Empty-state return matches the literal shape `{ recentTrades: [], macroSummary: null, memory: [], conversationHistory: [] }`.
-- [ ] Focused tests cover budget rejection (daily and monthly), breaker open/reset behavior including 60s self-heal, rate-limit rejection, agent-scoped memory reads, context query scoping, empty-state behavior (no memory, no macro, no trades), and macro-summary lookup without `macro_summaries`.
+- [x] [`lib/agents/runtime-limits.ts`](/home/jared/Nexus-Terminal/lib/agents/runtime-limits.ts) exports exactly `checkBudget`, `checkRateLimit`, `checkCircuitBreaker`, `recordLlmAttempt`, `recordBreakerFailure`, and `recordBreakerSuccess`. The three guard functions throw on rejection (no boolean returns).
+- [x] `RateLimitExceededError` and `CircuitOpenError` are added to `lib/agents/types.ts` immediately after `BudgetExceededError`.
+- [x] Token logging converts `success` to `0 | 1` on insert and calls `Math.round()` on `estimatedCostCents`.
+- [x] Budget checks sum `estimated_cost_cents` from `agent_request_log` using UTC calendar day/month boundaries, scoped per userId only, and read `dailyBudgetCents` / `monthlyBudgetCents` from `getLlmBudgetConfig()`.
+- [x] Rate limit enforces 30 req/hr per userId using rolling 1-hour window.
+- [x] Circuit-breaker state uses the `CircuitBreakerState` type as the single source of truth in `agent_registry.config` and is written via the canonical `jsonb_set` SQL shape from the spec (not read-modify-write). `checkCircuitBreaker` self-heals stale-open breakers by calling `recordBreakerSuccess` when `openedAt` is ≥ 60s old.
+- [x] [`lib/agents/memory.ts`](/home/jared/Nexus-Terminal/lib/agents/memory.ts) exports `getMemory()` and `upsertMemory()`, reads and writes `agent_memory_v2` only.
+- [x] [`lib/agents/context.ts`](/home/jared/Nexus-Terminal/lib/agents/context.ts) exports `buildContext()` returning `AgentContext`. Assembles memory, recent trades, conversation history, and latest macro summary.
+- [x] Context queries use the Sprint 2 default scope: latest 20 trades, latest 20 conversation rows, latest published orchestrator macro summary owned by `system-agent-user`. Empty-state return matches the literal shape `{ recentTrades: [], macroSummary: null, memory: [], conversationHistory: [] }`.
+- [x] Focused tests cover budget rejection (daily and monthly), breaker open/reset behavior including 60s self-heal, rate-limit rejection, agent-scoped memory reads, context query scoping, empty-state behavior (no memory, no macro, no trades), and macro-summary lookup without `macro_summaries`.
 
 **Exit criteria**
 
-- [ ] Runtime limit checks can reject work before expensive downstream steps run.
-- [ ] No new code reads or writes the legacy `agent_memory` table.
-- [ ] Macro summary context is sourced from `agent_reports`.
-- [ ] Sprint 2 context assembly is deterministic and does not require route/session code.
+- [x] Runtime limit checks can reject work before expensive downstream steps run.
+- [x] No new code reads or writes the legacy `agent_memory` table.
+- [x] Macro summary context is sourced from `agent_reports`.
+- [x] Sprint 2 context assembly is deterministic and does not require route/session code.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npx vitest run __tests__/agent-runtime-limits.test.ts __tests__/agent-memory.test.ts __tests__/agent-context.test.ts`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npx vitest run __tests__/agent-runtime-limits.test.ts __tests__/agent-memory.test.ts __tests__/agent-context.test.ts`
 
 ### Checkpoint 3 — Blueprint Runner Core
 
