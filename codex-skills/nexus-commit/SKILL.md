@@ -9,6 +9,8 @@ description: >
 
 Use this skill only when the user explicitly asks for a commit or push. The repo default still applies: do not create commits unless asked.
 
+Treat this skill as the canonical commit workflow for Nexus Terminal. Any user-facing `commit` alias should defer to this process rather than maintain a second copy of the rules.
+
 ## Workflow
 
 1. Review scope before touching git state.

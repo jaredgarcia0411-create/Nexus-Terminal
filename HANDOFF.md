@@ -4,6 +4,10 @@
 
 Sprint 1 is complete. Older completed sections and manual-spec cleanup notes were removed from this file; use git history and `AEV2_PLAN.md` for archived detail.
 
+### Workflow Tooling Note
+
+- 2026-04-06: Added a repo-maintained Codex `commit` alias skill in [`codex-skills/commit/`](/home/jared/Nexus-Terminal/codex-skills/commit) and UI metadata for [`codex-skills/nexus-commit/`](/home/jared/Nexus-Terminal/codex-skills/nexus-commit) so Codex can surface a user-facing commit entry point while keeping `nexus-commit` as the canonical workflow.
+
 ---
 
 ## AEV2 Sprint 1 — Foundation + Schema

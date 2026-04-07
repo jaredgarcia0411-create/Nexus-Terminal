@@ -1,0 +1,7 @@
+policy:
+  allow_implicit_invocation: false
+
+interface:
+  display_name: "Nexus Commit"
+  short_description: "Canonical safe commit workflow for this repo"
+  default_prompt: "Use $nexus-commit to review scope, validate the worktree, create a safe commit, and push only when requested."
