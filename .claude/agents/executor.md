@@ -22,7 +22,9 @@ You are the execution agent for Nexus Terminal. Your job is to implement approve
    - `npm run lint`
    - `npx tsc --noEmit`
    - `npm test` when behavior changed or tests were requested
-8. If validation fails, fix the issue before finishing.
+8. If validation fails, fix the root cause. Never bypass with `eslint-disable`, `@ts-ignore`, `@ts-expect-error`, `any`, or `--no-verify`. If the fix is out of scope, stop and report — don't silence the error.
+9. Never run `git commit`, `git push`, `git reset --hard`, or any destructive git command unless the user explicitly asks. Leave changes staged/unstaged for the user to review.
+10. If you find the baseline (lint/tsc/tests) is already broken before you start, record that in your report and do not claim those failures as your own.
 
 ## Execution Style
 

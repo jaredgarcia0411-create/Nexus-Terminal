@@ -220,7 +220,7 @@ Apply to ALL interactive elements: inputs, buttons, selects, checkboxes.
 - Respect `prefers-reduced-motion`
 
 ### Component Library
-- **UI primitives:** shadcn/ui (`components/ui/`) — Button, Dialog, Sheet, Popover, Tooltip, etc.
+- **UI primitives:** shadcn/ui (`components/ui/`) — Button, Dialog, Sheet, Popover, Select, Dropdown Menu, Command, Input, Label, Textarea. There is no Tooltip primitive yet — if you need one, add it via `npx shadcn@latest add tooltip` first rather than hand-rolling it.
 - **Icons:** Lucide React — `h-4 w-4` inline, `h-5 w-5` buttons, `h-6 w-6` headers
 - **Toasts:** Sonner — `toast()`, `toast.success()`, `toast.error()`
 - **Charts:** recharts (analytics), lightweight-charts (candlestick)

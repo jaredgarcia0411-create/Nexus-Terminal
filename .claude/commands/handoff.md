@@ -1,4 +1,4 @@
-Prepare a handoff for opencode to execute: $ARGUMENTS
+Prepare a handoff for Codex to execute: $ARGUMENTS
 
 ## Process
 
@@ -27,9 +27,9 @@ The spec MUST follow this format for every change:
   - What to import and from where
   - Code snippets for non-trivial additions
   - What the expected behavior should be after the change
-- **Acceptance criteria** as a checklist (`- [ ]`) that opencode can verify
+- **Acceptance criteria** as a checklist (`- [ ]`) that Codex can verify
 
-Leave ZERO ambiguity. opencode should be able to implement without asking questions.
+Leave ZERO ambiguity. Codex should be able to implement without asking questions.
 
 ### Step 3: Write the spec to HANDOFF.md
 
@@ -51,4 +51,4 @@ Show me a summary of:
 - What was cleaned up from HANDOFF.md
 - What the new spec covers (1-2 sentences)
 - Number of files to change and estimated risk
-- Any open questions or decisions I need to make before opencode starts
+- Any open questions or decisions I need to make before Codex starts
