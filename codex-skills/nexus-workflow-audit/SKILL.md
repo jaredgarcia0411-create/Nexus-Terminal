@@ -1,9 +1,9 @@
 ---
 name: nexus-workflow-audit
 description: >
-  Audit Nexus Terminal workflow assets for drift against the live codebase. Use when reviewing
-  AGENTS.md, HANDOFF.md, Claude commands/agents/skills, Codex skill sources, or other repo
-  workflow docs and prompts for stale references, broken assumptions, or duplicate guidance.
+  Audit Nexus Terminal Codex workflow assets for drift against the live codebase. Use when
+  reviewing AGENTS.md, HANDOFF.md, repo-maintained Codex skills, agent metadata, or other
+  Codex harness docs for stale references, broken assumptions, or duplicate guidance.
 ---
 
 # Nexus Terminal Workflow Audit
@@ -14,11 +14,11 @@ This is a read-only audit unless the user explicitly asks for fixes.
 
 - `AGENTS.md`
 - `HANDOFF.md`
-- `.claude/agents/`
-- `.claude/commands/`
-- `.claude/skills/`
-- `.opencode/agents/`
-- Repo-maintained Codex skill sources, if present
+- `codex-skills/**/SKILL.md`
+- `codex-skills/*/agents/openai.yaml`
+- Repo-maintained Codex reference docs under `codex-skills/**/references/`, if present
+
+Ignore `.claude/` and `.opencode/` unless the user explicitly asks for cross-tool alignment.
 
 ## Method
 
@@ -47,5 +47,5 @@ For each finding, provide:
 - Old auth or hook patterns
 - Wrong validation helpers or test commands
 - Mismatches between `HANDOFF.md`, `AGENTS.md`, and repo structure
+- Stale `.claude` or `.opencode` references left inside Codex-facing docs
 - Prompts that assume tools or subagents that do not exist in the current environment
-

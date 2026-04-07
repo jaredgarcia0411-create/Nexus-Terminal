@@ -30,7 +30,7 @@ This is a read-first audit skill. Do not modify tests unless the user explicitly
    - Start with flakes, broken isolation, and missing high-risk coverage.
    - Include exact file paths and concrete fixes.
 6. Save a report when the audit is substantial or the user asks for one.
-   - Use `.opencode/reports/test-audit-<scope>-<date>.md`.
+   - Use `docs/test-audit-<scope>-<date>.md` unless the user asked for a different repo-local path.
    - Show the report contents in chat as well, not just the file path.
 
 ## Output Format

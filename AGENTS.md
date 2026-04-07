@@ -56,7 +56,7 @@ Report pass/fail for each command.
 - **SSE endpoints** use `lib/sse.ts` (`createSSEResponse` helper). Set `export const dynamic = 'force-dynamic'` and `export const maxDuration = 60` on all SSE routes. Auth via `requireUser()` — EventSource sends cookies automatically.
 - **Keyboard shortcuts** use `react-hotkeys-hook`. Global shortcuts are registered in `hooks/use-global-shortcuts.ts` and called once from `app/page.tsx`. The command palette component lives at `components/trading/CommandPalette.tsx`.
 - **Ask Edgar API is usage-billed** — always use `getCachedTickerData` and `getCachedGainers` from `lib/askedgar.ts` instead of the raw `fetchTickerData`/`fetchTopGainers`. The cached versions use DB-backed TTL (1hr for tickers, 5min for gainers) via the `askedgar_cache` table, shared across all users. Only call the raw functions if you have an explicit reason to bypass the cache.
-- **Do not add logic to `hooks/use-trades.ts`** — it is a god hook being decomposed into `hooks/trade-utils.ts` (pure functions), `hooks/use-trade-filters.ts` (filter/search state), and `hooks/use-trade-sync.ts` (persistence). If you need new trade-related state, create a separate hook in `hooks/`.
+- **Do not add logic to `hooks/use-trades.ts`** — it is a god hook being decomposed into `lib/trade-utils.ts` (pure functions), `hooks/use-trade-filters.ts` (filter/search state), and `hooks/use-trade-sync.ts` (persistence). If you need new trade-related state, create a separate hook in `hooks/`.
 - **In-memory state is unreliable on Vercel** — module-level `Map`s, objects, or variables reset on every cold start. Use the database or an external store (e.g., Upstash Redis) for any state that must persist across requests.
 
 ## API Route Conventions
@@ -132,8 +132,10 @@ Report pass/fail for each command.
 
 ## Docs and Handoff Updates
 - After completing session work, update checklist/status in `HANDOFF.md`.
-- Repo-maintained Codex skill sources live in `codex-skills/`; when a `.claude/commands/` or `.opencode/commands/` workflow is worth preserving for Codex, port it there and keep the variants aligned.
-- There is no project README.md — do not create one unless explicitly instructed.
+- Repo-maintained Codex skill sources live in `codex-skills/`; user-facing agent metadata for those skills lives in `codex-skills/*/agents/openai.yaml`.
+- Keep Codex skill text, agent metadata, `AGENTS.md`, and `HANDOFF.md` aligned when durable workflow behavior changes.
+- Ignore `.claude/` and `.opencode/` unless the user explicitly asks for cross-tool alignment work.
+- A project `README.md` already exists. Update it only when explicitly requested or when the task changes durable repo-facing setup or usage guidance.
 
 ## Cursor and Copilot Rules
 - Checked for Cursor rules: no `.cursor/rules/` or `.cursorrules` found.

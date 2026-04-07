@@ -1,6 +1,6 @@
 # Nexus Terminal Design System
 
-This is a condensed copy of the repo's Claude frontend skill, kept as a reference for Codex-facing workflow.
+This is a condensed copy of the repo's frontend design guidance, kept as a reference for Codex-facing workflow.
 
 ## Identity
 
@@ -81,4 +81,3 @@ Only the outermost container of a section should usually carry a border.
 - No washed-out or low-contrast data text
 - No generic SaaS dashboard gradients or decorative clutter
 - Empty, loading, and error states should match the same dark visual system
-

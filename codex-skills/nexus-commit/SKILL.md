@@ -22,7 +22,7 @@ Treat this skill as the canonical commit workflow for Nexus Terminal. Any user-f
 3. Stage intentionally.
    - Prefer explicit `git add <paths>` when the worktree is mixed.
    - Never stage `.env*`, credentials, `.next/`, or other obvious local-only artifacts.
-   - Treat `.opencode/learn/` and `.opencode/reports/` files as opt-in artifacts, not default commit material.
+   - Treat ad hoc scratch notes, one-off reports, and other workflow artifacts as opt-in commit material, not default commit material.
 4. Write the message to match repo style.
    - Use `$ARGUMENTS` as a hint if provided; otherwise derive the message from the diff.
    - Keep the subject concise, imperative, and focused on why the change exists.
