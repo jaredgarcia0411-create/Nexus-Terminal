@@ -3,8 +3,12 @@ import { eq, sql } from 'drizzle-orm';
 import { agentJobs, agentScheduledRuns } from '@/lib/db/schema';
 import type { AgentDb } from './db';
 
-const DEFAULT_MACRO_CRON_HOUR = Number(process.env.MACRO_CRON_HOUR) || 6;
 const DEFAULT_CHECK_INTERVAL_MS = 60_000;
+
+// Read at call time (not module load) so tests can override via env vars.
+function readDefaultMacroCronHour(): number {
+  return Number(process.env.MACRO_CRON_HOUR) || 6;
+}
 
 type ScheduledRunRow = { id: string };
 type ScheduledRunRowsResult = ScheduledRunRow[] | { rows: ScheduledRunRow[] };
@@ -86,7 +90,7 @@ export function startMacroCron(
   db: AgentDb,
   options: { hourEt?: number; checkIntervalMs?: number } = {},
 ): MacroCronHandle {
-  const hourEt = options.hourEt ?? DEFAULT_MACRO_CRON_HOUR;
+  const hourEt = options.hourEt ?? readDefaultMacroCronHour();
   const checkIntervalMs = options.checkIntervalMs ?? DEFAULT_CHECK_INTERVAL_MS;
   const executeTick = () => {
     void runTick(db, hourEt).catch((error) => {

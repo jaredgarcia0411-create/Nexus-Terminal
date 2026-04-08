@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   completeJob: vi.fn(),
   failJob: vi.fn(),
   scheduleJobRetry: vi.fn(),
+  heartbeatJob: vi.fn(),
+  calculateBackoffMs: vi.fn((attempt: number) => Math.pow(4, attempt - 1) * 2000),
   runBlueprint: vi.fn(),
   writeFileSync: vi.fn(),
 }));
@@ -27,6 +29,8 @@ vi.mock('@/lib/agents/queue', () => ({
   completeJob: mocks.completeJob,
   failJob: mocks.failJob,
   scheduleJobRetry: mocks.scheduleJobRetry,
+  heartbeatJob: mocks.heartbeatJob,
+  calculateBackoffMs: mocks.calculateBackoffMs,
 }));
 
 vi.mock('@/lib/agents/blueprint-runner', () => ({
@@ -208,6 +212,7 @@ describe('agent worker loop', () => {
     mocks.completeJob.mockReset();
     mocks.failJob.mockReset();
     mocks.scheduleJobRetry.mockReset();
+    mocks.heartbeatJob.mockReset();
     mocks.runBlueprint.mockReset();
     mocks.writeFileSync.mockReset();
     mocks.startHeartbeat.mockReturnValue({ stop: mocks.stopHeartbeat.mockResolvedValue(undefined) });
@@ -215,6 +220,7 @@ describe('agent worker loop', () => {
     mocks.completeJob.mockResolvedValue(true);
     mocks.failJob.mockResolvedValue(true);
     mocks.scheduleJobRetry.mockResolvedValue(true);
+    mocks.heartbeatJob.mockResolvedValue(true);
   });
 
   afterEach(() => {

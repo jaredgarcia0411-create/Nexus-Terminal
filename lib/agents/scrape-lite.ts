@@ -23,13 +23,47 @@ function normalizeHtmlToText(html: string): string {
     .trim();
 }
 
+function readFailureDetailFromPayload(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') {
+    return '';
+  }
+
+  const parsed = payload as {
+    error?: string | { message?: string };
+    message?: string;
+  };
+
+  if (typeof parsed.error === 'string' && parsed.error.trim()) {
+    return `: ${parsed.error.trim().slice(0, ERROR_BODY_LIMIT)}`;
+  }
+
+  if (
+    parsed.error
+    && typeof parsed.error === 'object'
+    && typeof parsed.error.message === 'string'
+    && parsed.error.message.trim()
+  ) {
+    return `: ${parsed.error.message.trim().slice(0, ERROR_BODY_LIMIT)}`;
+  }
+
+  if (typeof parsed.message === 'string' && parsed.message.trim()) {
+    return `: ${parsed.message.trim().slice(0, ERROR_BODY_LIMIT)}`;
+  }
+
+  return '';
+}
+
 async function readFailureDetail(response: Response): Promise<string> {
   const bodyText = (await response.text()).trim();
   if (!bodyText) {
     return '';
   }
 
-  return `: ${bodyText.slice(0, ERROR_BODY_LIMIT)}`;
+  try {
+    return readFailureDetailFromPayload(JSON.parse(bodyText));
+  } catch {
+    return `: ${bodyText.slice(0, ERROR_BODY_LIMIT)}`;
+  }
 }
 
 export async function fetchPageText(

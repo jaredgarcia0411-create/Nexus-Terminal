@@ -185,15 +185,25 @@ export async function GET(request: Request) {
       });
     }
 
-    return Response.json({
-      status: 'failed',
-      job_id: job.id,
-      agent_id: job.agentId,
-      error: {
-        message: job.errorMessage,
-        failureClass: readFailureClass(job.stepLog),
-      },
-    });
+    if (job.status === 'failed') {
+      return Response.json({
+        status: 'failed',
+        job_id: job.id,
+        agent_id: job.agentId,
+        error: {
+          message: job.errorMessage,
+          failureClass: readFailureClass(job.stepLog),
+        },
+      });
+    }
+
+    // Unknown status (schema drift, new job state, etc.) — surface as 500
+    // instead of silently masquerading as 'failed'.
+    logRouteError(
+      'agents.service-chat.get',
+      new Error(`unknown job status: ${job.status}`),
+    );
+    return internalServerError();
   } catch (error) {
     logRouteError('agents.service-chat.get', error);
     return internalServerError();

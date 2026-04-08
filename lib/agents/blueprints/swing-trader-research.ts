@@ -15,9 +15,11 @@ const TRADINGVIEW_COLUMNS = [
 ];
 
 const researchInputSchema = z.object({
-  ticker: z.string()
-    .transform((value) => value.trim().toUpperCase())
-    .pipe(z.string().regex(/^[A-Z]{1,5}$/)),
+  ticker: z.string().regex(/^[A-Z]{1,5}$/),
+});
+
+const rawResearchInputSchema = z.object({
+  ticker: z.string().min(1),
 });
 
 const filingsSchema = z.object({
@@ -203,8 +205,9 @@ export const swingTraderResearchBlueprint: Blueprint = {
       metadata: { canRetry: true, timeoutMs: 30000, maxRepairAttempts: 0, sideEffect: false },
       run: async ({ jobInput }) => {
         const startedAt = Date.now();
-        const parsed = researchInputSchema.parse(jobInput);
-        const ticker = parsed.ticker.trim().toUpperCase();
+        const rawInput = rawResearchInputSchema.parse(jobInput);
+        const ticker = rawInput.ticker.trim().toUpperCase();
+        researchInputSchema.parse({ ticker });
         const result = await getCachedTickerData(ticker);
         const rawData = result.rawData as Record<string, unknown>;
         const filings = [

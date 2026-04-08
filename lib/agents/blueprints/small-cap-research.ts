@@ -15,9 +15,7 @@ const TRADINGVIEW_COLUMNS = [
 ];
 
 const researchInputSchema = z.object({
-  ticker: z.string()
-    .transform((value) => value.trim().toUpperCase())
-    .pipe(z.string().regex(/^[A-Z]{1,5}$/)),
+  ticker: z.string().regex(/^[A-Z]{1,5}$/),
 });
 
 const rawResearchInputSchema = z.object({

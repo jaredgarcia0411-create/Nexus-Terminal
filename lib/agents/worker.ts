@@ -4,6 +4,7 @@ import { runBlueprint } from './blueprint-runner';
 import { getAgentDb, type AgentDb } from './db';
 import { startHeartbeat } from './heartbeat';
 import {
+  calculateBackoffMs,
   claimNextQueuedJob,
   completeJob,
   failJob,
@@ -57,10 +58,6 @@ function createSleepController() {
       }
     },
   };
-}
-
-function calculateBackoffMs(attempt: number) {
-  return Math.pow(4, attempt - 1) * 2000;
 }
 
 function packageCompletedResult(job: AgentJob, finalOutput: unknown) {
@@ -206,6 +203,8 @@ async function processClaim(
   } catch (error) {
     await leaseHeartbeat.stop();
 
+    // job.attempt is post-incremented at claim time (see claimNextQueuedJob),
+    // so this guard permits a total of job.maxAttempts tries before giving up.
     if (job.attempt < job.maxAttempts) {
       await applyLeaseFencedFinalizer(
         'scheduleJobRetry',

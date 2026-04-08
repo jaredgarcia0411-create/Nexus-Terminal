@@ -64,6 +64,12 @@ function unwrapClaimRows(result: ClaimRowsResult): ClaimRow[] {
   return Array.isArray(result) ? result : result.rows;
 }
 
+// Exponential backoff: 2s, 8s, 32s, ... (4^(attempt-1) * 2000ms).
+// job.attempt is post-incremented at claim time, so attempt=1 on first failure.
+export function calculateBackoffMs(attempt: number): number {
+  return Math.pow(4, attempt - 1) * 2000;
+}
+
 export async function claimNextQueuedJob(
   db: AgentDb,
   agentId: AgentId,
