@@ -1,5 +1,4 @@
 import { and, eq, inArray, or } from 'drizzle-orm';
-import { auth } from '@/lib/auth-config';
 import { type Db, type PoolDb } from '@/lib/db';
 import { users, trades, tradeTags } from '@/lib/db/schema';
 import type { ApiTrade } from '@/lib/types';
@@ -14,6 +13,7 @@ export interface AuthUserIdentity {
 }
 
 export async function requireUser() {
+  const { auth } = await import('@/lib/auth-config');
   const session = await auth();
   const user = session?.user as ({ id?: string; email?: string | null; name?: string | null; image?: string | null } | undefined);
   if (!user?.id || !user.email) {

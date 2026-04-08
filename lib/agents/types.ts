@@ -254,6 +254,66 @@ export interface CircuitBreakerState {
   openedAt: string | null;
 }
 
+export interface AdminStatsResponse {
+  circuitBreakers: Record<string, {
+    status: 'closed' | 'open' | 'half-open';
+    consecutiveFailures: number;
+    lastFailureAt: string | null;
+  }>;
+  today: {
+    totalRequests: number;
+    totalTokens: number;
+    estimatedCostCents: number;
+    successRate: number;
+    avgDurationMs: number;
+    validationFailureRate: number;
+    retryRate: number;
+    byLane: Record<string, {
+      totalRequests: number;
+      totalTokens: number;
+      estimatedCostCents: number;
+      successRate: number;
+      avgDurationMs: number;
+    }>;
+    byAgent: Record<string, {
+      totalRequests: number;
+      totalTokens: number;
+      estimatedCostCents: number;
+      successRate: number;
+      avgDurationMs: number;
+    }>;
+  };
+  thisMonth: {
+    totalTokens: number;
+    estimatedCostCents: number;
+    budgetCents: number;
+    budgetUsedPercent: number;
+  };
+  agents: Array<{
+    id: string;
+    displayName: string;
+    status: string;
+    lastHeartbeat: string | null;
+  }>;
+  delivery: {
+    publishedToday: number;
+    deliveryFailures: number;
+    deliveryFailureRate: number;
+  };
+  memory: {
+    total: number;
+    byCategory: Record<string, number>;
+  };
+  macroSummaries: {
+    latestGeneratedAt: string | null;
+  };
+  queue: {
+    depth: number;
+    oldestQueuedJobAgeSeconds: number | null;
+    stuckProcessing: number;
+  };
+}
+
 export interface QueueClaimResult {
   job: AgentJob;
   leaseVersion: number;

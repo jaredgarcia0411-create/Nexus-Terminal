@@ -63,7 +63,7 @@ Sprint 1 and Sprint 2 are complete. Older detail was removed from this file; use
 ## AEV2 Sprint 3 — Runtime Wiring + API Surface
 
 > Generated: 2026-04-07 | Agent: Claude (Plan)
-> Status: IN PROGRESS — Checkpoint 4 complete on 2026-04-07
+> Status: IN PROGRESS — Checkpoint 5 complete on 2026-04-08
 
 ### Objective
 
@@ -86,12 +86,12 @@ Connect the Sprint 2 library runtime to stable app contracts. Sprint 3 lands Dis
 ### Current State
 
 - Sprint 2 runtime is in place and validated. Every module listed in Sprint 2 Summary is library-only and does not import from `@/app` or `services/`.
-- No `/api/agents/*` route exists yet. Sprint 3 creates all of them.
 - Checkpoint 1 is complete: [`lib/agents/discord.ts`](/home/jared/Nexus-Terminal/lib/agents/discord.ts) and [`__tests__/agent-discord.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-discord.test.ts) are landed and validated.
 - Checkpoint 2 is complete: [`lib/agents/scrape-lite.ts`](/home/jared/Nexus-Terminal/lib/agents/scrape-lite.ts), [`lib/agents/prompts-loader.ts`](/home/jared/Nexus-Terminal/lib/agents/prompts-loader.ts), [`lib/agents/config.ts`](/home/jared/Nexus-Terminal/lib/agents/config.ts), the stub blueprint files under [`lib/agents/blueprints/`](/home/jared/Nexus-Terminal/lib/agents/blueprints), and focused coverage in [`__tests__/agent-scrape-lite.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-scrape-lite.test.ts) plus [`__tests__/agent-config.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-config.test.ts) are landed and validated.
 - Checkpoint 3 is complete: [`lib/agents/blueprints/orchestrator-chat.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/orchestrator-chat.ts), [`lib/agents/blueprints/orchestrator-macro-summary.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/orchestrator-macro-summary.ts), [`lib/agents/blueprints/small-cap-research.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/small-cap-research.ts), [`lib/agents/blueprints/swing-trader-research.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/swing-trader-research.ts), additive runner contract updates in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts) plus [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts), and focused coverage in [`__tests__/agent-blueprints.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprints.test.ts) with the updated runner coverage in [`__tests__/agent-blueprint-runner.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprint-runner.test.ts) are landed and validated.
-- Checkpoint 4 is complete: [`lib/agents/heartbeat.ts`](/home/jared/Nexus-Terminal/lib/agents/heartbeat.ts), [`lib/agents/worker.ts`](/home/jared/Nexus-Terminal/lib/agents/worker.ts), [`lib/agents/macro-cron.ts`](/home/jared/Nexus-Terminal/lib/agents/macro-cron.ts), and focused coverage in [`__tests__/agent-worker.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-worker.test.ts) plus [`__tests__/agent-macro-cron.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-macro-cron.test.ts) are landed and validated.
-- Remaining Sprint 3 new files still pending: the `/api/agents/*` route tree, `lib/validations/agents.ts`, and the remaining Sprint 3 route/admin test files.
+- Checkpoint 4 is complete: [`lib/agents/heartbeat.ts`](/home/jared/Nexus-Terminal/lib/agents/heartbeat.ts), [`lib/agents/worker.ts`](/home/jared/Nexus-Terminal/lib/agents/worker.ts), [`lib/agents/macro-cron.ts`](/home/jared/Nexus-Terminal/lib/agents/macro-cron.ts), and focused coverage in [`__tests__/agent-worker.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-worker.test.ts) plus [`__tests__/agent-macro-cron.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-macro-cron.test.ts) are landed and validated. The 2026-04-08 patch made lease-loss finalizer failures explicit in the worker and moved the macro-cron claim/job/update flow into one transaction so failed ticks cannot wedge a trading day.
+- Checkpoint 5 is complete: the `/api/agents/*` route tree under [`app/api/agents/`](/home/jared/Nexus-Terminal/app/api/agents), [`lib/validations/agents.ts`](/home/jared/Nexus-Terminal/lib/validations/agents.ts), [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts), and the additive [`AdminStatsResponse`](/home/jared/Nexus-Terminal/lib/agents/types.ts) contract are landed and validated. The 2026-04-08 integration pass also made [`lib/server-db-utils.ts`](/home/jared/Nexus-Terminal/lib/server-db-utils.ts) lazy-load auth so non-auth routes can build without importing the OAuth stack, and [`lib/auth-config.ts`](/home/jared/Nexus-Terminal/lib/auth-config.ts) now degrades to an empty Google provider list instead of throwing at module import time when OAuth env vars are missing.
+- Remaining Sprint 3 work is now limited to the Checkpoint 6 route/admin contract tests.
 - `lib/agents/prompts/global-policy.md`, `orchestrator.md`, `small-cap.md`, and `swing-trader.md` already exist from Sprint 1. Sprint 3 adds a loader, not new prompt files.
 - [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml), [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example), and the `services/discord-bot/` tree still reflect pre-AEV2 state. Sprint 3 does NOT touch them — Sprint 4 owns the Compose rewrite and the service container wiring.
 - Root `tsconfig.json` still excludes `services/`. Sprint 3 must stay runnable under the existing root `tsc --noEmit` with no config changes.
@@ -1048,29 +1048,29 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 
 **Check off before commit**
 
-- [ ] `lib/validations/agents.ts` exists and exports every schema listed in the execution contract. Route files import from `@/lib/validations/agents`.
-- [ ] `app/api/agents/service/chat/route.ts` implements POST and GET per the contract. POST inserts one `agent_conversations` row and one `agent_jobs` row. GET returns the five state variants from `AGENTIC_EXPANSIONV2.md` §13.
-- [ ] `app/api/agents/reports/route.ts` (GET) excludes `user_id = 'system-agent-user'` rows.
-- [ ] `app/api/agents/reports/[id]/route.ts` (GET) scopes to `user_id = user.id`.
-- [ ] `app/api/agents/research/route.ts` POST rejects offline/degraded specialists with 400 `{ error: 'agent unavailable' }`. GET lists user-owned research reports only.
-- [ ] `app/api/agents/admin/stats/route.ts` returns the explicit `AdminStatsResponse` shape from the execution contract, including `today.retryRate`, `delivery.deliveryFailureRate`, and the top-level `queue` block.
-- [ ] `app/api/agents/admin/memory/route.ts` GET filters by query params and DELETE returns 404 on missing id.
-- [ ] `app/api/agents/admin/redeliver/route.ts` delegates to `redeliverReport()` and returns `{ report_id, status }`.
-- [ ] `app/api/agents/macro-summary/latest/route.ts` queries system-owned macro report and returns `{ summary: null }` on empty state.
-- [ ] No route file calls `request.json()` directly — all parsing goes through `parseAndValidate`.
-- [ ] No route file writes to `agent_jobs`, `agent_reports`, or `agent_memory_v2` outside of `db.insert()` / `db.update()` / `db.delete()` on the imported schema — no raw `sql` template writes.
+- [x] `lib/validations/agents.ts` exists and exports every schema listed in the execution contract. Route files import from `@/lib/validations/agents`.
+- [x] `app/api/agents/service/chat/route.ts` implements POST and GET per the contract. POST inserts one `agent_conversations` row and one `agent_jobs` row. GET returns the five state variants from `AGENTIC_EXPANSIONV2.md` §13.
+- [x] `app/api/agents/reports/route.ts` (GET) excludes `user_id = 'system-agent-user'` rows.
+- [x] `app/api/agents/reports/[id]/route.ts` (GET) scopes to `user_id = user.id`.
+- [x] `app/api/agents/research/route.ts` POST rejects offline/degraded specialists with 400 `{ error: 'agent unavailable' }`. GET lists user-owned research reports only.
+- [x] `app/api/agents/admin/stats/route.ts` returns the explicit `AdminStatsResponse` shape from the execution contract, including `today.retryRate`, `delivery.deliveryFailureRate`, and the top-level `queue` block.
+- [x] `app/api/agents/admin/memory/route.ts` GET filters by query params and DELETE returns 404 on missing id.
+- [x] `app/api/agents/admin/redeliver/route.ts` delegates to `redeliverReport()` and returns `{ report_id, status }`.
+- [x] `app/api/agents/macro-summary/latest/route.ts` queries system-owned macro report and returns `{ summary: null }` on empty state.
+- [x] No route file calls `request.json()` directly — all parsing goes through `parseAndValidate`.
+- [x] No route file writes to `agent_jobs`, `agent_reports`, or `agent_memory_v2` outside of `db.insert()` / `db.update()` / `db.delete()` on the imported schema — no raw `sql` template writes.
 
 **Exit criteria**
 
-- [ ] Every route listed in AEV2-401 through AEV2-406 is reachable and compiles.
-- [ ] Validation schemas are centralized in `lib/validations/agents.ts`.
-- [ ] Admin stats shape matches the launch target so Sprint 4 can focus on deployment.
+- [x] Every route listed in AEV2-401 through AEV2-406 is reachable and compiles.
+- [x] Validation schemas are centralized in `lib/validations/agents.ts`.
+- [x] Admin stats shape matches the launch target so Sprint 4 can focus on deployment.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npm run build` (proves every route compiles under Next.js)
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npm run build` (proves every route compiles under Next.js)
 
 **STOP. Review. Commit. Then continue.**
 

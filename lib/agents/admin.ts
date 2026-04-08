@@ -64,3 +64,17 @@ export function requireServiceAuth(
 
   return { user, discordUserId };
 }
+
+export function requireServiceKey(request: Request): Response | null {
+  const configuredKey = readConfiguredSecret('AGENT_SERVICE_KEY');
+  if (!configuredKey) {
+    return Response.json({ error: 'Service auth not configured' }, { status: 500 });
+  }
+
+  const providedKey = readHeader(request, 'x-agent-service-key');
+  if (!providedKey || providedKey !== configuredKey) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  return null;
+}

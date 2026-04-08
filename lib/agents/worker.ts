@@ -85,6 +85,26 @@ function formatWorkerFailure(error: unknown) {
   return DEFAULT_FAILURE_REASON;
 }
 
+async function applyLeaseFencedFinalizer(
+  label: string,
+  mutation: Promise<boolean>,
+  jobId: string,
+  workerId: string,
+  leaseVersion: number,
+) {
+  const succeeded = await mutation;
+
+  if (!succeeded) {
+    console.error(`agent worker ${label} lost lease for job ${jobId}`, {
+      jobId,
+      workerId,
+      leaseVersion,
+    });
+  }
+
+  return succeeded;
+}
+
 async function processClaim(
   db: AgentDb,
   claim: QueueClaimResult,
@@ -104,42 +124,75 @@ async function processClaim(
     );
 
     if (result.status === 'completed') {
-      await completeJob(
-        db,
+      const completed = await applyLeaseFencedFinalizer(
+        'completeJob',
+        completeJob(
+          db,
+          job.id,
+          workerId,
+          leaseVersion,
+          packageCompletedResult(job, result.finalOutput),
+        ),
         job.id,
         workerId,
         leaseVersion,
-        packageCompletedResult(job, result.finalOutput),
       );
+      if (!completed) {
+        return;
+      }
       return;
     }
 
     if (result.failureClass === 'transient' && job.attempt < job.maxAttempts) {
-      await scheduleJobRetry(
+      const rescheduled = await applyLeaseFencedFinalizer(
+        'scheduleJobRetry',
+        scheduleJobRetry(
+          db,
+          job.id,
+          workerId,
+          leaseVersion,
+          new Date(Date.now() + calculateBackoffMs(job.attempt)),
+          result.failureReason ?? DEFAULT_FAILURE_REASON,
+        ),
+        job.id,
+        workerId,
+        leaseVersion,
+      );
+      if (!rescheduled) {
+        return;
+      }
+      return;
+    }
+
+    const failed = await applyLeaseFencedFinalizer(
+      'failJob',
+      failJob(
         db,
         job.id,
         workerId,
         leaseVersion,
-        new Date(Date.now() + calculateBackoffMs(job.attempt)),
         result.failureReason ?? DEFAULT_FAILURE_REASON,
-      );
+      ),
+      job.id,
+      workerId,
+      leaseVersion,
+    );
+    if (!failed) {
       return;
     }
-
-    await failJob(
-      db,
-      job.id,
-      workerId,
-      leaseVersion,
-      result.failureReason ?? DEFAULT_FAILURE_REASON,
-    );
   } catch (error) {
-    await failJob(
-      db,
+    await applyLeaseFencedFinalizer(
+      'failJob',
+      failJob(
+        db,
+        job.id,
+        workerId,
+        leaseVersion,
+        formatWorkerFailure(error),
+      ),
       job.id,
       workerId,
       leaseVersion,
-      formatWorkerFailure(error),
     );
   }
 }

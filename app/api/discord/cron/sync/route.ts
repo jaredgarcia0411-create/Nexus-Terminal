@@ -2,12 +2,11 @@ import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { dbUnavailable, requireCronSecret } from '@/lib/server-db-utils';
 import { getDb } from '@/lib/db';
 import { importedResearchReports } from '@/lib/db/schema';
-import { fetchNewMessages, requireDiscordConfig, saveDiscordReports } from '@/lib/discord/client';
-import { parseMessages } from '@/lib/discord/parser';
 import { desc, eq } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+export const runtime = 'nodejs';
 
 /**
  * GET /api/discord/cron/sync
@@ -24,6 +23,11 @@ export async function GET(request: Request) {
     if (!db) {
       return dbUnavailable();
     }
+
+    const [{ fetchNewMessages, requireDiscordConfig, saveDiscordReports }, { parseMessages }] = await Promise.all([
+      import('@/lib/discord/client'),
+      import('@/lib/discord/parser'),
+    ]);
 
     const discordConfig = requireDiscordConfig();
     if (discordConfig instanceof Response) return discordConfig;

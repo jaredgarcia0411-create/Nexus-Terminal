@@ -194,10 +194,13 @@ describe('startHeartbeat', () => {
 });
 
 describe('agent worker loop', () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-07T12:00:00.000Z'));
     vi.clearAllMocks();
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.getAgentDb.mockReset();
     mocks.startHeartbeat.mockReset();
     mocks.stopHeartbeat.mockReset();
@@ -215,6 +218,7 @@ describe('agent worker loop', () => {
   });
 
   afterEach(() => {
+    consoleErrorSpy.mockRestore();
     vi.useRealTimers();
   });
 
@@ -248,7 +252,6 @@ describe('agent worker loop', () => {
     expect(mocks.getAgentDb).toHaveBeenCalledTimes(1);
     expect(db._state.updateCalls[0]).toEqual({
       status: 'online',
-      lastHeartbeat: expect.any(Object),
     });
     expect(mocks.startHeartbeat).toHaveBeenCalledWith(db, 'orchestrator');
     expect(mocks.claimNextQueuedJob).toHaveBeenCalledWith(db, 'orchestrator', WORKER_ID);
@@ -270,6 +273,146 @@ describe('agent worker loop', () => {
 
     await handle.stop();
     expect(mocks.stopHeartbeat).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs when completeJob loses the lease', async () => {
+    const db = createWorkerDb();
+    const job = createAgentJob();
+    const blueprint = createBlueprint();
+    const agentConfig = createAgentConfig({
+      blueprintResolver: vi.fn(() => blueprint),
+    });
+
+    mocks.getAgentDb.mockReturnValue(db);
+    mocks.claimNextQueuedJob
+      .mockResolvedValueOnce({ job, leaseVersion: job.leaseVersion } satisfies QueueClaimResult)
+      .mockResolvedValueOnce(null);
+    mocks.runBlueprint.mockResolvedValue({
+      status: 'completed',
+      finalOutput: { content: 'done' },
+      stepsExecuted: 1,
+    });
+    mocks.completeJob.mockResolvedValue(false);
+
+    const { startWorker } = await import('@/lib/agents/worker');
+    const handle = await startWorker({
+      agentId: 'orchestrator',
+      pollIntervalMs: POLL_INTERVAL_MS,
+      agentConfig,
+    });
+
+    await settleWorker();
+
+    expect(mocks.completeJob).toHaveBeenCalledWith(
+      db,
+      job.id,
+      WORKER_ID,
+      job.leaseVersion,
+      { content: 'done' },
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      `agent worker completeJob lost lease for job ${job.id}`,
+      {
+        jobId: job.id,
+        workerId: WORKER_ID,
+        leaseVersion: job.leaseVersion,
+      },
+    );
+
+    await handle.stop();
+  });
+
+  it('logs when scheduleJobRetry loses the lease', async () => {
+    const db = createWorkerDb();
+    const job = createAgentJob({ attempt: 1, maxAttempts: 3, leaseVersion: 9 });
+    const agentConfig = createAgentConfig();
+
+    mocks.getAgentDb.mockReturnValue(db);
+    mocks.claimNextQueuedJob
+      .mockResolvedValueOnce({ job, leaseVersion: 9 } satisfies QueueClaimResult)
+      .mockResolvedValueOnce(null);
+    mocks.runBlueprint.mockResolvedValue({
+      status: 'failed',
+      finalOutput: null,
+      failureReason: 'temporary upstream error',
+      failureClass: 'transient',
+      stepsExecuted: 1,
+    });
+    mocks.scheduleJobRetry.mockResolvedValue(false);
+
+    const { startWorker } = await import('@/lib/agents/worker');
+    const handle = await startWorker({
+      agentId: 'orchestrator',
+      pollIntervalMs: POLL_INTERVAL_MS,
+      agentConfig,
+    });
+
+    await settleWorker();
+
+    expect(mocks.scheduleJobRetry).toHaveBeenCalledWith(
+      db,
+      job.id,
+      WORKER_ID,
+      9,
+      new Date('2026-04-07T12:00:02.000Z'),
+      'temporary upstream error',
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      `agent worker scheduleJobRetry lost lease for job ${job.id}`,
+      {
+        jobId: job.id,
+        workerId: WORKER_ID,
+        leaseVersion: 9,
+      },
+    );
+
+    await handle.stop();
+  });
+
+  it('logs when failJob loses the lease', async () => {
+    const db = createWorkerDb();
+    const job = createAgentJob({ attempt: 2, maxAttempts: 3, leaseVersion: 4 });
+    const agentConfig = createAgentConfig();
+
+    mocks.getAgentDb.mockReturnValue(db);
+    mocks.claimNextQueuedJob
+      .mockResolvedValueOnce({ job, leaseVersion: 4 } satisfies QueueClaimResult)
+      .mockResolvedValueOnce(null);
+    mocks.runBlueprint.mockResolvedValue({
+      status: 'failed',
+      finalOutput: null,
+      failureReason: 'NotImplementedBlueprintError: blueprint not implemented in Sprint 3: orchestrator:chat',
+      failureClass: 'contract',
+      stepsExecuted: 1,
+    });
+    mocks.failJob.mockResolvedValue(false);
+
+    const { startWorker } = await import('@/lib/agents/worker');
+    const handle = await startWorker({
+      agentId: 'orchestrator',
+      pollIntervalMs: POLL_INTERVAL_MS,
+      agentConfig,
+    });
+
+    await settleWorker();
+
+    expect(mocks.failJob).toHaveBeenCalledWith(
+      db,
+      job.id,
+      WORKER_ID,
+      4,
+      'NotImplementedBlueprintError: blueprint not implemented in Sprint 3: orchestrator:chat',
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      `agent worker failJob lost lease for job ${job.id}`,
+      {
+        jobId: job.id,
+        workerId: WORKER_ID,
+        leaseVersion: 4,
+      },
+    );
+
+    await handle.stop();
   });
 
   it('sleeps when no queued job is available', async () => {

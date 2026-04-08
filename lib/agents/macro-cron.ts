@@ -49,35 +49,37 @@ async function runTick(
     return;
   }
 
-  const claimResult = await db.execute<ScheduledRunRow>(sql`
-    INSERT INTO agent_scheduled_runs (id, agent_id, trigger_type, trading_date, status, started_at, created_at)
-    VALUES (${randomUUID()}, 'orchestrator', 'macro-summary', ${tradingDate}, 'running', now(), now())
-    ON CONFLICT (agent_id, trigger_type, trading_date) DO NOTHING
-    RETURNING id;
-  `);
-  const [scheduledRun] = unwrapRows(claimResult);
+  await db.transaction(async (tx) => {
+    const claimResult = await tx.execute<ScheduledRunRow>(sql`
+      INSERT INTO agent_scheduled_runs (id, agent_id, trigger_type, trading_date, status, started_at, created_at)
+      VALUES (${randomUUID()}, 'orchestrator', 'macro-summary', ${tradingDate}, 'running', now(), now())
+      ON CONFLICT (agent_id, trigger_type, trading_date) DO NOTHING
+      RETURNING id;
+    `);
+    const [scheduledRun] = unwrapRows(claimResult);
 
-  if (!scheduledRun) {
-    return;
-  }
+    if (!scheduledRun) {
+      return;
+    }
 
-  const jobId = randomUUID();
-  await db.insert(agentJobs).values({
-    id: jobId,
-    agentId: 'orchestrator',
-    userId: 'system-agent-user',
-    jobType: 'macro-summary',
-    status: 'queued',
-    input: { tradingDate },
+    const jobId = randomUUID();
+    await tx.insert(agentJobs).values({
+      id: jobId,
+      agentId: 'orchestrator',
+      userId: 'system-agent-user',
+      jobType: 'macro-summary',
+      status: 'queued',
+      input: { tradingDate },
+    });
+
+    await tx.update(agentScheduledRuns)
+      .set({
+        jobId,
+        status: 'completed',
+        completedAt: sql`now()`,
+      })
+      .where(eq(agentScheduledRuns.id, scheduledRun.id));
   });
-
-  await db.update(agentScheduledRuns)
-    .set({
-      jobId,
-      status: 'completed',
-      completedAt: sql`now()`,
-    })
-    .where(eq(agentScheduledRuns.id, scheduledRun.id));
 }
 
 export function startMacroCron(

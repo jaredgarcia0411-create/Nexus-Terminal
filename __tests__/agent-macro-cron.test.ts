@@ -9,27 +9,66 @@ vi.mock('node:crypto', () => ({
 import { startMacroCron } from '@/lib/agents/macro-cron';
 import type { AgentDb } from '@/lib/agents/db';
 
-function createDb(executeResults: unknown[] = []) {
+type TxFailurePlan = Record<number, 'insert' | 'update'>;
+
+function createDb(executeResults: unknown[] = [], failurePlan: TxFailurePlan = {}) {
   const state = {
+    transactionCalls: 0,
     insertedJobs: [] as Array<Record<string, unknown>>,
     updateValues: [] as Array<Record<string, unknown>>,
   };
 
   const execute = vi.fn(async () => executeResults.shift() ?? []);
-  const insertValues = vi.fn(async (value: Record<string, unknown>) => {
-    state.insertedJobs.push(value);
-    return [value];
+  const transaction = vi.fn(async (callback: (tx: {
+    execute: typeof execute;
+    insert: (table: unknown) => { values: (value: Record<string, unknown>) => Promise<unknown[]> };
+    update: (table: unknown) => { set: (value: Record<string, unknown>) => { where: (predicate: unknown) => Promise<unknown[]> } };
+  }) => Promise<unknown>) => {
+    state.transactionCalls += 1;
+    const callNumber = state.transactionCalls;
+    const txState = {
+      insertedJobs: [] as Array<Record<string, unknown>>,
+      updateValues: [] as Array<Record<string, unknown>>,
+    };
+    const failureStage = failurePlan[callNumber];
+
+    const tx = {
+      execute,
+      insert: vi.fn(() => ({
+        values: async (value: Record<string, unknown>) => {
+          if (failureStage === 'insert') {
+            throw new Error('macro cron insert failed');
+          }
+          txState.insertedJobs.push(value);
+          return [value];
+        },
+      })),
+      update: vi.fn(() => ({
+        set: vi.fn((value: Record<string, unknown>) => {
+          const updateWhere = async () => {
+            if (failureStage === 'update') {
+              throw new Error('macro cron update failed');
+            }
+            txState.updateValues.push(value);
+            return [];
+          };
+
+          return { where: updateWhere };
+        }),
+      })),
+    };
+
+    const result = await callback(tx);
+    state.insertedJobs.push(...txState.insertedJobs);
+    state.updateValues.push(...txState.updateValues);
+    return result;
   });
-  const insert = vi.fn(() => ({ values: insertValues }));
-  const updateWhere = vi.fn(async () => []);
-  const updateSet = vi.fn((value: Record<string, unknown>) => {
-    state.updateValues.push(value);
-    return { where: updateWhere };
-  });
-  const update = vi.fn(() => ({ set: updateSet }));
+  const insert = vi.fn(() => ({ values: vi.fn(async () => []) }));
+  const update = vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(async () => []) })) }));
 
   return {
     execute,
+    transaction,
     insert,
     update,
     _state: state,
@@ -44,6 +83,8 @@ describe('startMacroCron', () => {
     randomUUIDMock.mockReset()
       .mockReturnValueOnce('scheduled-run-row')
       .mockReturnValueOnce('macro-job-1')
+      .mockReturnValueOnce('scheduled-run-row-2')
+      .mockReturnValueOnce('macro-job-2')
       .mockReturnValue('extra-id');
   });
 
@@ -59,6 +100,7 @@ describe('startMacroCron', () => {
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(db.execute).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
 
@@ -73,7 +115,7 @@ describe('startMacroCron', () => {
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(db.execute).toHaveBeenCalledTimes(1);
-    expect(db.insert).toHaveBeenCalledTimes(1);
+    expect(db.transaction).toHaveBeenCalledTimes(1);
     expect(db._state.insertedJobs).toEqual([{
       id: 'macro-job-1',
       agentId: 'orchestrator',
@@ -82,7 +124,6 @@ describe('startMacroCron', () => {
       status: 'queued',
       input: { tradingDate: '2026-04-07' },
     }]);
-    expect(db.update).toHaveBeenCalledTimes(1);
     expect(db._state.updateValues).toEqual([{
       jobId: 'macro-job-1',
       status: 'completed',
@@ -104,8 +145,85 @@ describe('startMacroCron', () => {
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(db.execute).toHaveBeenCalledTimes(2);
-    expect(db.insert).toHaveBeenCalledTimes(1);
-    expect(db.update).toHaveBeenCalledTimes(1);
+    expect(db.transaction).toHaveBeenCalledTimes(2);
+    expect(db._state.insertedJobs).toHaveLength(1);
+    expect(db._state.updateValues).toHaveLength(1);
+
+    await handle.stop();
+  });
+
+  it('rolls back a failed job insert so a later tick can claim again', async () => {
+    vi.setSystemTime(new Date('2026-04-07T10:00:00.000Z'));
+    randomUUIDMock.mockReset()
+      .mockReturnValueOnce('scheduled-run-row-1')
+      .mockReturnValueOnce('macro-job-1')
+      .mockReturnValueOnce('scheduled-run-row-2')
+      .mockReturnValueOnce('macro-job-2')
+      .mockReturnValue('extra-id');
+    const db = createDb([
+      [{ id: 'scheduled-run-row-1' }],
+      [{ id: 'scheduled-run-row-2' }],
+    ], {
+      1: 'insert',
+    });
+    const handle = startMacroCron(db, { hourEt: 6, checkIntervalMs: 1_000 });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(db.execute).toHaveBeenCalledTimes(2);
+    expect(db.transaction).toHaveBeenCalledTimes(2);
+    expect(db._state.insertedJobs).toEqual([{
+      id: 'macro-job-2',
+      agentId: 'orchestrator',
+      userId: 'system-agent-user',
+      jobType: 'macro-summary',
+      status: 'queued',
+      input: { tradingDate: '2026-04-07' },
+    }]);
+    expect(db._state.updateValues).toEqual([{
+      jobId: 'macro-job-2',
+      status: 'completed',
+      completedAt: expect.any(Object),
+    }]);
+
+    await handle.stop();
+  });
+
+  it('rolls back a failed completion update so a later tick can claim again', async () => {
+    vi.setSystemTime(new Date('2026-04-07T10:00:00.000Z'));
+    randomUUIDMock.mockReset()
+      .mockReturnValueOnce('scheduled-run-row-1')
+      .mockReturnValueOnce('macro-job-1')
+      .mockReturnValueOnce('scheduled-run-row-2')
+      .mockReturnValueOnce('macro-job-2')
+      .mockReturnValue('extra-id');
+    const db = createDb([
+      [{ id: 'scheduled-run-row-1' }],
+      [{ id: 'scheduled-run-row-2' }],
+    ], {
+      1: 'update',
+    });
+    const handle = startMacroCron(db, { hourEt: 6, checkIntervalMs: 1_000 });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(db.execute).toHaveBeenCalledTimes(2);
+    expect(db.transaction).toHaveBeenCalledTimes(2);
+    expect(db._state.insertedJobs).toEqual([{
+      id: 'macro-job-2',
+      agentId: 'orchestrator',
+      userId: 'system-agent-user',
+      jobType: 'macro-summary',
+      status: 'queued',
+      input: { tradingDate: '2026-04-07' },
+    }]);
+    expect(db._state.updateValues).toEqual([{
+      jobId: 'macro-job-2',
+      status: 'completed',
+      completedAt: expect.any(Object),
+    }]);
 
     await handle.stop();
   });
