@@ -88,12 +88,15 @@ export function startMacroCron(
 ): MacroCronHandle {
   const hourEt = options.hourEt ?? DEFAULT_MACRO_CRON_HOUR;
   const checkIntervalMs = options.checkIntervalMs ?? DEFAULT_CHECK_INTERVAL_MS;
-
-  const timer = setInterval(() => {
+  const executeTick = () => {
     void runTick(db, hourEt).catch((error) => {
       console.error('macro cron tick failed', { error });
     });
-  }, checkIntervalMs);
+  };
+
+  executeTick();
+
+  const timer = setInterval(executeTick, checkIntervalMs);
 
   return {
     stop: async () => {

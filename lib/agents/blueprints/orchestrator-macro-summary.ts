@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { fetchUnifiedSnapshot } from '@/lib/massive-market';
 import { writeAndDeliverReport } from '../discord';
 import { callLlm } from '../llm-client';
-import { buildLlmSystemPrompt } from '../prompts-loader';
 import { fetchPageText } from '../scrape-lite';
 import type { Blueprint, StepResult } from '../types';
 
@@ -107,6 +106,11 @@ function buildBriefingPrompt(
   ].filter(Boolean).join('\n\n');
 }
 
+async function loadOrchestratorSystemPrompt() {
+  const { buildLlmSystemPrompt } = await import('../prompts-loader');
+  return buildLlmSystemPrompt('orchestrator');
+}
+
 export const orchestratorMacroSummaryBlueprint: Blueprint = {
   id: 'orchestrator:macro-summary',
   description: 'Daily macro briefing — headlines + market snapshot + LLM synthesis + persisted report.',
@@ -184,7 +188,7 @@ export const orchestratorMacroSummaryBlueprint: Blueprint = {
       run: async ({ jobInput, previousOutput }) => {
         const input = snapshotSchema.parse(previousOutput);
         const llmResponse = await callLlm({
-          systemPrompt: buildLlmSystemPrompt('orchestrator'),
+          systemPrompt: await loadOrchestratorSystemPrompt(),
           userMessage: buildBriefingPrompt(getTradingDate(jobInput), input),
           temperature: 0.2,
         }, 'background');

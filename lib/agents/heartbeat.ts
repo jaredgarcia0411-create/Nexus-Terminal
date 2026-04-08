@@ -35,13 +35,33 @@ export function startHeartbeat(
   agentId: AgentId,
   intervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS,
 ): HeartbeatHandle {
+  let inFlightWrite: Promise<void> | null = null;
+
+  const runHeartbeat = () => {
+    if (inFlightWrite) {
+      return inFlightWrite;
+    }
+
+    const promise = writeHeartbeat(db, agentId).finally(() => {
+      if (inFlightWrite === promise) {
+        inFlightWrite = null;
+      }
+    });
+
+    inFlightWrite = promise;
+    return promise;
+  };
+
   const timer = setInterval(() => {
-    void writeHeartbeat(db, agentId);
+    void runHeartbeat();
   }, intervalMs);
 
   return {
     stop: async () => {
       clearInterval(timer);
+      if (inFlightWrite) {
+        await inFlightWrite;
+      }
       await db.update(agentRegistry)
         .set({ status: 'offline' })
         .where(eq(agentRegistry.id, agentId));

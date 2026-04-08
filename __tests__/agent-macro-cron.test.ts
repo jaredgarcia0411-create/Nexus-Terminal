@@ -112,7 +112,7 @@ describe('startMacroCron', () => {
     const db = createDb([[{ id: 'scheduled-run-row' }]]);
     const handle = startMacroCron(db, { hourEt: 6, checkIntervalMs: 1_000 });
 
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(db.execute).toHaveBeenCalledTimes(1);
     expect(db.transaction).toHaveBeenCalledTimes(1);
@@ -141,7 +141,7 @@ describe('startMacroCron', () => {
     ]);
     const handle = startMacroCron(db, { hourEt: 6, checkIntervalMs: 1_000 });
 
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(db.execute).toHaveBeenCalledTimes(2);
@@ -168,7 +168,7 @@ describe('startMacroCron', () => {
     });
     const handle = startMacroCron(db, { hourEt: 6, checkIntervalMs: 1_000 });
 
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(db.execute).toHaveBeenCalledTimes(2);
@@ -206,7 +206,7 @@ describe('startMacroCron', () => {
     });
     const handle = startMacroCron(db, { hourEt: 6, checkIntervalMs: 1_000 });
 
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(db.execute).toHaveBeenCalledTimes(2);

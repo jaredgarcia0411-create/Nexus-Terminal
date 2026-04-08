@@ -72,4 +72,28 @@ describe('fetchPageText', () => {
 
     await assertion;
   });
+
+  it('aborts while reading a non-2xx body when the timeout fires', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => {
+      const signal = init?.signal as AbortSignal | undefined;
+
+      return Promise.resolve({
+        ok: false,
+        status: 502,
+        text: () => new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            reject(Object.assign(new Error('aborted during body read'), { name: 'AbortError' }));
+          });
+        }),
+      } as Response);
+    });
+
+    const pending = fetchPageText('https://example.com/error');
+    await Promise.resolve();
+    const assertion = expect(pending).rejects.toThrow('Page fetch timed out after 10000ms');
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    await assertion;
+  });
 });

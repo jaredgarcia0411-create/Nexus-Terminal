@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { getCachedTickerData } from '@/lib/askedgar';
 import { writeAndDeliverReport } from '../discord';
 import { callLlm } from '../llm-client';
-import { buildLlmSystemPrompt } from '../prompts-loader';
 import type { Blueprint, StepResult } from '../types';
 
 const TRADINGVIEW_COLUMNS = [
@@ -182,6 +181,11 @@ function buildResearchPrompt(input: z.infer<typeof priceContextSchema>): string 
   ].join('\n\n');
 }
 
+async function loadSmallCapSystemPrompt() {
+  const { buildLlmSystemPrompt } = await import('../prompts-loader');
+  return buildLlmSystemPrompt('small-cap-trader');
+}
+
 export const smallCapResearchBlueprint: Blueprint = {
   id: 'small-cap-trader:research',
   description: 'Short-sell / dilution research for a single ticker.',
@@ -259,7 +263,7 @@ export const smallCapResearchBlueprint: Blueprint = {
       run: async ({ previousOutput }) => {
         const input = priceContextSchema.parse(previousOutput);
         const llmResponse = await callLlm({
-          systemPrompt: buildLlmSystemPrompt('small-cap-trader'),
+          systemPrompt: await loadSmallCapSystemPrompt(),
           userMessage: buildResearchPrompt(input),
           temperature: 0.2,
         }, 'background');

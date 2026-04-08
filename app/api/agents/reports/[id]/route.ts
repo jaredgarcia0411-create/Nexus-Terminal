@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getAgentDb } from '@/lib/agents/db';
 import { agentReports } from '@/lib/db/schema';
@@ -24,7 +24,11 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       reportJson: agentReports.reportJson,
     })
       .from(agentReports)
-      .where(and(eq(agentReports.id, id), eq(agentReports.userId, user.id)))
+      .where(and(
+        eq(agentReports.id, id),
+        eq(agentReports.userId, user.id),
+        ne(agentReports.userId, 'system-agent-user'),
+      ))
       .limit(1);
 
     if (!report) {

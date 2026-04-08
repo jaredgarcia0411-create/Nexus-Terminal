@@ -40,15 +40,21 @@ export async function fetchPageText(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  let response: Response;
   try {
-    response = await fetch(url, {
+    const response = await fetch(url, {
       headers: {
         'User-Agent': 'Nexus-Agent/1.0',
         Accept: 'text/html',
       },
       signal: controller.signal,
     });
+
+    if (!response.ok) {
+      const detail = await readFailureDetail(response);
+      throw new Error(`Page fetch failed with status ${response.status}${detail}`);
+    }
+
+    return normalizeHtmlToText(await response.text()).slice(0, MAX_TEXT_LENGTH);
   } catch (error) {
     if ((error as { name?: string }).name === 'AbortError') {
       throw new Error(`Page fetch timed out after ${timeoutMs}ms`);
@@ -58,11 +64,4 @@ export async function fetchPageText(
   } finally {
     clearTimeout(timeout);
   }
-
-  if (!response.ok) {
-    const detail = await readFailureDetail(response);
-    throw new Error(`Page fetch failed with status ${response.status}${detail}`);
-  }
-
-  return normalizeHtmlToText(await response.text()).slice(0, MAX_TEXT_LENGTH);
 }

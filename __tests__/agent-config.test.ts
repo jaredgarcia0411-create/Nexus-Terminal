@@ -68,6 +68,10 @@ describe('agent config registry', () => {
     vi.resetModules();
     vi.restoreAllMocks();
     vi.doUnmock('node:fs');
+    vi.doUnmock('@/lib/agents/blueprints/orchestrator-chat');
+    vi.doUnmock('@/lib/agents/blueprints/orchestrator-macro-summary');
+    vi.doUnmock('@/lib/agents/blueprints/small-cap-research');
+    vi.doUnmock('@/lib/agents/blueprints/swing-trader-research');
   });
 
   it('defines a config for every v1 agent id and resolves known blueprints', () => {
@@ -120,6 +124,39 @@ describe('agent config registry', () => {
     await expect(blueprint.steps[0].run(
       createStepInput(job, AGENT_CONFIGS['small-cap-trader']),
     )).rejects.toThrow('blueprint not implemented in Sprint 3');
+  });
+
+  it('does not perform import-time file reads when the config module is loaded with mocked blueprints', async () => {
+    const readFileSyncMock = vi.fn(() => {
+      throw new Error('unexpected file read');
+    });
+    const mockBlueprint = {
+      id: 'mock-blueprint',
+      description: 'mock',
+      steps: [],
+    };
+
+    vi.resetModules();
+    vi.doMock('node:fs', () => ({
+      readFileSync: readFileSyncMock,
+    }));
+    vi.doMock('@/lib/agents/blueprints/orchestrator-chat', () => ({
+      orchestratorChatBlueprint: mockBlueprint,
+    }));
+    vi.doMock('@/lib/agents/blueprints/orchestrator-macro-summary', () => ({
+      orchestratorMacroSummaryBlueprint: mockBlueprint,
+    }));
+    vi.doMock('@/lib/agents/blueprints/small-cap-research', () => ({
+      smallCapResearchBlueprint: mockBlueprint,
+    }));
+    vi.doMock('@/lib/agents/blueprints/swing-trader-research', () => ({
+      swingTraderResearchBlueprint: mockBlueprint,
+    }));
+
+    const { AGENT_CONFIGS: freshConfigs } = await import('@/lib/agents/config');
+
+    expect(readFileSyncMock).not.toHaveBeenCalled();
+    expect(Object.keys(freshConfigs).sort()).toEqual([...V1_AGENT_IDS].sort());
   });
 });
 

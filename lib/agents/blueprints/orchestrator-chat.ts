@@ -3,14 +3,14 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { agentJobs, agentRegistry } from '@/lib/db/schema';
 import { callLlm } from '@/lib/agents/llm-client';
-import { buildLlmSystemPrompt } from '@/lib/agents/prompts-loader';
 import type { AgentId, Blueprint, StepResult } from '@/lib/agents/types';
 
 const RESEARCH_COMMAND = /^\s*\/research\s+/;
 const SWING_COMMAND = /^\s*\/(?:swing|momentum)\s+/;
 const SMALL_CAP_KEYWORDS = /\b(dilution|offering|ATM|shelf|424B|S-3|short[- ]sell)\b/i;
 const SWING_KEYWORDS = /\b(MDR|multi[- ]day[- ]runner|parabolic|momentum|breakout)\b/i;
-const TICKER_PATTERN = /\b[A-Z]{1,5}\b/;
+const TICKER_PATTERN = /\b[A-Z]{1,5}\b/g;
+const SLASH_COMMAND_PREFIX = /^\s*\/(?:research|swing|momentum)\s+/i;
 
 const chatInputSchema = z.object({
   message: z.string().min(1),
@@ -79,7 +79,23 @@ function classifyTargetAgent(message: string): Extract<AgentId, 'small-cap-trade
 }
 
 function extractTicker(message: string): string | null {
-  return message.match(TICKER_PATTERN)?.[0] ?? null;
+  const trimmedMessage = message.trim();
+  const commandBody = trimmedMessage.replace(SLASH_COMMAND_PREFIX, '');
+  const searchText = commandBody !== trimmedMessage ? commandBody : trimmedMessage;
+  const matches = searchText.match(TICKER_PATTERN) ?? [];
+
+  if (matches.length === 0) {
+    return null;
+  }
+
+  return commandBody !== trimmedMessage
+    ? matches[matches.length - 1] ?? null
+    : matches[0] ?? null;
+}
+
+async function loadOrchestratorSystemPrompt() {
+  const { buildLlmSystemPrompt } = await import('@/lib/agents/prompts-loader');
+  return buildLlmSystemPrompt('orchestrator');
 }
 
 function buildSynthesisPrompt(
@@ -205,7 +221,7 @@ export const orchestratorChatBlueprint: Blueprint = {
         const chatInput = chatInputSchema.parse(jobInput);
         const route = routeDecisionSchema.parse(previousOutput);
         const llmResponse = await callLlm({
-          systemPrompt: buildLlmSystemPrompt('orchestrator'),
+          systemPrompt: await loadOrchestratorSystemPrompt(),
           userMessage: buildSynthesisPrompt(route, chatInput, context),
           temperature: 0.3,
         }, 'interactive');

@@ -565,6 +565,40 @@ describe('agent worker loop', () => {
     await handle.stop();
   });
 
+  it('fails the job when runBlueprint rejects before returning a run result', async () => {
+    const db = createWorkerDb();
+    const job = createAgentJob({ attempt: 1, maxAttempts: 3, leaseVersion: 15 });
+    const agentConfig = createAgentConfig();
+
+    mocks.getAgentDb.mockReturnValue(db);
+    mocks.claimNextQueuedJob
+      .mockResolvedValueOnce({ job, leaseVersion: 15 } satisfies QueueClaimResult)
+      .mockResolvedValueOnce(null);
+    mocks.runBlueprint.mockRejectedValue(new Error('blueprint exploded'));
+
+    const { startWorker } = await import('@/lib/agents/worker');
+    const handle = await startWorker({
+      agentId: 'orchestrator',
+      pollIntervalMs: POLL_INTERVAL_MS,
+      agentConfig,
+    });
+
+    await settleWorker();
+
+    expect(mocks.scheduleJobRetry).toHaveBeenCalledWith(
+      db,
+      job.id,
+      WORKER_ID,
+      15,
+      new Date('2026-04-07T12:00:02.000Z'),
+      'blueprint exploded',
+    );
+    expect(mocks.failJob).not.toHaveBeenCalled();
+    expect(mocks.completeJob).not.toHaveBeenCalled();
+
+    await handle.stop();
+  });
+
   it('waits for an in-flight job to finish before stopping the heartbeat', async () => {
     const db = createWorkerDb();
     const job = createAgentJob({ id: 'job-drain', leaseVersion: 13 });

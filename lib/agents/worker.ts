@@ -7,16 +7,19 @@ import {
   claimNextQueuedJob,
   completeJob,
   failJob,
+  heartbeatJob,
   scheduleJobRetry,
 } from './queue';
 import type {
   AgentConfig,
   AgentJob,
+  Blueprint,
   QueueClaimResult,
   WorkerConfig,
 } from './types';
 
 const DEFAULT_FAILURE_REASON = 'Unknown blueprint failure';
+const JOB_LEASE_HEARTBEAT_INTERVAL_MS = 60_000;
 
 export interface WorkerHandle {
   stop: () => Promise<void>;
@@ -105,6 +108,62 @@ async function applyLeaseFencedFinalizer(
   return succeeded;
 }
 
+function startJobLeaseHeartbeat(
+  db: AgentDb,
+  jobId: string,
+  workerId: string,
+  leaseVersion: number,
+  intervalMs = JOB_LEASE_HEARTBEAT_INTERVAL_MS,
+) {
+  let inFlightHeartbeat: Promise<void> | null = null;
+
+  const runHeartbeat = () => {
+    if (inFlightHeartbeat) {
+      return inFlightHeartbeat;
+    }
+
+    const promise = heartbeatJob(db, jobId, workerId, leaseVersion)
+      .then((renewed) => {
+        if (!renewed) {
+          console.error(`agent worker heartbeatJob lost lease for job ${jobId}`, {
+            jobId,
+            workerId,
+            leaseVersion,
+          });
+        }
+      })
+      .catch((error) => {
+        console.error(`agent worker heartbeatJob failed for job ${jobId}`, {
+          jobId,
+          workerId,
+          leaseVersion,
+          error,
+        });
+      })
+      .finally(() => {
+        if (inFlightHeartbeat === promise) {
+          inFlightHeartbeat = null;
+        }
+      });
+
+    inFlightHeartbeat = promise;
+    return promise;
+  };
+
+  const timer = setInterval(() => {
+    void runHeartbeat();
+  }, intervalMs);
+
+  return {
+    stop: async () => {
+      clearInterval(timer);
+      if (inFlightHeartbeat) {
+        await inFlightHeartbeat;
+      }
+    },
+  };
+}
+
 async function processClaim(
   db: AgentDb,
   claim: QueueClaimResult,
@@ -112,17 +171,78 @@ async function processClaim(
   workerId: string,
 ) {
   const { job, leaseVersion } = claim;
+  let blueprint: Blueprint;
 
   try {
-    const blueprint = config.agentConfig.blueprintResolver(job);
-    const result = await runBlueprint(
+    blueprint = config.agentConfig.blueprintResolver(job);
+  } catch (error) {
+    await applyLeaseFencedFinalizer(
+      'failJob',
+      failJob(
+        db,
+        job.id,
+        workerId,
+        leaseVersion,
+        formatWorkerFailure(error),
+      ),
+      job.id,
+      workerId,
+      leaseVersion,
+    );
+    return;
+  }
+
+  const leaseHeartbeat = startJobLeaseHeartbeat(db, job.id, workerId, leaseVersion);
+  let result: Awaited<ReturnType<typeof runBlueprint>>;
+
+  try {
+    result = await runBlueprint(
       blueprint,
       job,
       config.agentConfig,
       db,
       { lockedBy: workerId, leaseVersion },
     );
+  } catch (error) {
+    await leaseHeartbeat.stop();
 
+    if (job.attempt < job.maxAttempts) {
+      await applyLeaseFencedFinalizer(
+        'scheduleJobRetry',
+        scheduleJobRetry(
+          db,
+          job.id,
+          workerId,
+          leaseVersion,
+          new Date(Date.now() + calculateBackoffMs(job.attempt)),
+          formatWorkerFailure(error),
+        ),
+        job.id,
+        workerId,
+        leaseVersion,
+      );
+      return;
+    }
+
+    await applyLeaseFencedFinalizer(
+      'failJob',
+      failJob(
+        db,
+        job.id,
+        workerId,
+        leaseVersion,
+        formatWorkerFailure(error),
+      ),
+      job.id,
+      workerId,
+      leaseVersion,
+    );
+    return;
+  }
+
+  await leaseHeartbeat.stop();
+
+  try {
     if (result.status === 'completed') {
       const completed = await applyLeaseFencedFinalizer(
         'completeJob',

@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { getCachedTickerData } from '@/lib/askedgar';
 import { writeAndDeliverReport } from '../discord';
 import { callLlm } from '../llm-client';
-import { buildLlmSystemPrompt } from '../prompts-loader';
 import type { Blueprint, StepResult } from '../types';
 
 const TRADINGVIEW_COLUMNS = [
@@ -187,6 +186,11 @@ function buildReportSummary(report: z.infer<typeof swingResearchSchema>): string
   return `${report.recommendation} ${report.patternClassification} setup with ${report.mdrSimilarity}% MDR similarity`;
 }
 
+async function loadSwingTraderSystemPrompt() {
+  const { buildLlmSystemPrompt } = await import('../prompts-loader');
+  return buildLlmSystemPrompt('swing-trader');
+}
+
 export const swingTraderResearchBlueprint: Blueprint = {
   id: 'swing-trader:research',
   description: 'Swing-trader research for a single ticker using MDR-focused synthesis.',
@@ -259,7 +263,7 @@ export const swingTraderResearchBlueprint: Blueprint = {
       run: async ({ previousOutput }) => {
         const input = priceContextSchema.parse(previousOutput);
         const llmResponse = await callLlm({
-          systemPrompt: buildLlmSystemPrompt('swing-trader'),
+          systemPrompt: await loadSwingTraderSystemPrompt(),
           userMessage: buildResearchPrompt(input),
           temperature: 0.2,
         }, 'background');

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentConfig, AgentContext, AgentJob, StepInput } from '@/lib/agents/types';
 
 const randomUUIDMock = vi.hoisted(() => vi.fn(() => 'specialist-job-1'));
@@ -133,6 +133,10 @@ describe('agent blueprints', () => {
     vi.unstubAllGlobals();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('resolves all four implemented blueprints through the config registry', () => {
     const blueprints = [
       resolveBlueprint(createJob({
@@ -212,6 +216,31 @@ describe('agent blueprints', () => {
       userId: job.userId,
       jobType: 'research',
       status: 'queued',
+    }));
+  });
+
+  it('hands the slash-command ticker into the specialist job input', async () => {
+    const job = createJob({
+      agentId: 'orchestrator',
+      jobType: 'chat',
+      input: { message: '/research TSLA and NVDA' },
+    });
+    const agentConfig = AGENT_CONFIGS.orchestrator;
+    const { db, insertValues } = createRegistryDb('online');
+    const blueprint = resolveBlueprint(job);
+
+    await blueprint.steps[0].run(createStepInput(job, agentConfig, { db }));
+
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'specialist-job-1',
+      agentId: 'small-cap-trader',
+      userId: job.userId,
+      jobType: 'research',
+      status: 'queued',
+      input: {
+        ticker: 'NVDA',
+        originator_job_id: job.id,
+      },
     }));
   });
 
@@ -298,6 +327,53 @@ describe('agent blueprints', () => {
       keyEvents: ['Event'],
       sectorNotes: ['Tech strong'],
       confidence: 'medium',
+    });
+  });
+
+  it('writes the macro-summary report with the trading date and synthesized payload', async () => {
+    const job = createJob({
+      agentId: 'orchestrator',
+      jobType: 'macro-summary',
+      input: { tradingDate: '2026-04-07' },
+    });
+    const agentConfig = AGENT_CONFIGS.orchestrator;
+    const blueprint = resolveBlueprint(job);
+    writeAndDeliverReportMock.mockResolvedValueOnce({
+      reportId: 'job-1:macro-summary',
+      status: 'published',
+      deliveryError: null,
+    });
+
+    const result = await blueprint.steps[3].run(createStepInput(job, agentConfig, {
+      previousOutput: {
+        summary: 'Macro summary',
+        keyEvents: ['Event'],
+        sectorNotes: ['Tech strong'],
+        confidence: 'medium',
+      },
+      db: {},
+    }));
+
+    expect(writeAndDeliverReportMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      jobId: job.id,
+      userId: 'system-agent-user',
+      agentId: 'orchestrator',
+      reportType: 'macro-summary',
+      title: '2026-04-07 macro briefing',
+      summary: 'Macro summary',
+      reportJson: {
+        tradingDate: '2026-04-07',
+        summary: 'Macro summary',
+        keyEvents: ['Event'],
+        sectorNotes: ['Tech strong'],
+        confidence: 'medium',
+      },
+    }));
+    expect(result.data).toMatchObject({
+      tradingDate: '2026-04-07',
+      reportId: 'job-1:macro-summary',
+      status: 'published',
+      deliveryError: null,
     });
   });
 
