@@ -9,10 +9,8 @@ if (missingGoogleConfig) {
   const message = 'Google OAuth is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET before enabling sign in.';
 
   if (process.env.NODE_ENV !== 'test') {
-    throw new Error(message);
+    console.warn(`[auth-config] ${message}`);
   }
-
-  console.warn(`[auth-config] ${message}`);
 }
 
 const config: NextAuthConfig = {

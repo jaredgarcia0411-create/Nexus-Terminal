@@ -63,7 +63,7 @@ Sprint 1 and Sprint 2 are complete. Older detail was removed from this file; use
 ## AEV2 Sprint 3 — Runtime Wiring + API Surface
 
 > Generated: 2026-04-07 | Agent: Claude (Plan)
-> Status: IN PROGRESS — Checkpoint 1 complete on 2026-04-07
+> Status: COMPLETE — Checkpoint 6 complete on 2026-04-08
 
 ### Objective
 
@@ -86,9 +86,12 @@ Connect the Sprint 2 library runtime to stable app contracts. Sprint 3 lands Dis
 ### Current State
 
 - Sprint 2 runtime is in place and validated. Every module listed in Sprint 2 Summary is library-only and does not import from `@/app` or `services/`.
-- No `/api/agents/*` route exists yet. Sprint 3 creates all of them.
-- Checkpoint 1 is complete: [`lib/agents/discord.ts`](/home/jared/Nexus-Terminal/lib/agents/discord.ts) and [`__tests__/agent-discord.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-discord.test.ts) are landed and validated.
-- Remaining Sprint 3 new files still pending: `lib/agents/config.ts`, `lib/agents/scrape-lite.ts`, `lib/agents/worker.ts`, `lib/agents/heartbeat.ts`, `lib/agents/macro-cron.ts`, and `lib/agents/blueprints/`, plus the `/api/agents/*` route tree and remaining test files.
+- Checkpoint 1 is complete: [`lib/agents/discord.ts`](/home/jared/Nexus-Terminal/lib/agents/discord.ts) and [`__tests__/agent-discord.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-discord.test.ts) are landed and validated. The 2026-04-08 review pass also pinned known webhook mappings, the no-webhook `delivery_failed` path, stored-row reuse as the delivery source of truth, and manual redelivery after an existing success marker.
+- Checkpoint 2 is complete: [`lib/agents/scrape-lite.ts`](/home/jared/Nexus-Terminal/lib/agents/scrape-lite.ts), [`lib/agents/prompts-loader.ts`](/home/jared/Nexus-Terminal/lib/agents/prompts-loader.ts), [`lib/agents/config.ts`](/home/jared/Nexus-Terminal/lib/agents/config.ts), the stub blueprint files under [`lib/agents/blueprints/`](/home/jared/Nexus-Terminal/lib/agents/blueprints), and focused coverage in [`__tests__/agent-scrape-lite.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-scrape-lite.test.ts) plus [`__tests__/agent-config.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-config.test.ts) are landed and validated. The 2026-04-08 review patch kept the config registry side-effect free by deferring prompt-loader imports to runtime and extended the scrape-lite timeout to cover body reads.
+- Checkpoint 3 is complete: [`lib/agents/blueprints/orchestrator-chat.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/orchestrator-chat.ts), [`lib/agents/blueprints/orchestrator-macro-summary.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/orchestrator-macro-summary.ts), [`lib/agents/blueprints/small-cap-research.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/small-cap-research.ts), [`lib/agents/blueprints/swing-trader-research.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/swing-trader-research.ts), additive runner contract updates in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts) plus [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts), and focused coverage in [`__tests__/agent-blueprints.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprints.test.ts) with the updated runner coverage in [`__tests__/agent-blueprint-runner.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprint-runner.test.ts) are landed and validated. The 2026-04-08 review patch also fixed slash-command specialist handoff so the routed job input keeps the command-body ticker instead of the first uppercase keyword.
+- Checkpoint 4 is complete: [`lib/agents/heartbeat.ts`](/home/jared/Nexus-Terminal/lib/agents/heartbeat.ts), [`lib/agents/worker.ts`](/home/jared/Nexus-Terminal/lib/agents/worker.ts), [`lib/agents/macro-cron.ts`](/home/jared/Nexus-Terminal/lib/agents/macro-cron.ts), and focused coverage in [`__tests__/agent-worker.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-worker.test.ts) plus [`__tests__/agent-macro-cron.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-macro-cron.test.ts) are landed and validated. The 2026-04-08 patches made lease-loss finalizer failures explicit in the worker, moved the macro-cron claim/job/update flow into one transaction so failed ticks cannot wedge a trading day, renewed in-flight job leases during long blueprint runs, retried thrown runner preflight failures through the transient path, waited for in-flight heartbeat ticks before marking agents offline, and evaluated the macro cron immediately on startup inside the trigger hour.
+- Checkpoint 5 is complete: the `/api/agents/*` route tree under [`app/api/agents/`](/home/jared/Nexus-Terminal/app/api/agents), [`lib/validations/agents.ts`](/home/jared/Nexus-Terminal/lib/validations/agents.ts), [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts), and the additive [`AdminStatsResponse`](/home/jared/Nexus-Terminal/lib/agents/types.ts) contract are landed and validated. The 2026-04-08 integration pass also made [`lib/server-db-utils.ts`](/home/jared/Nexus-Terminal/lib/server-db-utils.ts) lazy-load auth so non-auth routes can build without importing the OAuth stack, [`lib/auth-config.ts`](/home/jared/Nexus-Terminal/lib/auth-config.ts) degrade to an empty Google provider list instead of throwing at module import time when OAuth env vars are missing, and [`app/api/agents/reports/[id]/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/reports/%5Bid%5D/route.ts) explicitly exclude `system-agent-user` rows.
+- Checkpoint 6 is complete: [`__tests__/agent-service-chat-route.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-service-chat-route.test.ts), [`__tests__/agent-reports-route.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-reports-route.test.ts), [`__tests__/agent-research-route.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-research-route.test.ts), [`__tests__/agent-admin-stats-route.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-admin-stats-route.test.ts), [`__tests__/agent-admin-memory-route.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-admin-memory-route.test.ts), [`__tests__/agent-admin-redeliver-route.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-admin-redeliver-route.test.ts), and [`__tests__/agent-macro-summary-route.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-macro-summary-route.test.ts) are landed and validated. The 2026-04-08 review pass expanded route-contract coverage for the missing validation, auth, db-unavailable, ownership-filter, and stats-shape branches, and the Sprint 3 exit-gate validation passed in the `aev2-s3` worktree: `npm run lint`, `npx tsc --noEmit`, `npm run build`, and `npm test`.
 - `lib/agents/prompts/global-policy.md`, `orchestrator.md`, `small-cap.md`, and `swing-trader.md` already exist from Sprint 1. Sprint 3 adds a loader, not new prompt files.
 - [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml), [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example), and the `services/discord-bot/` tree still reflect pre-AEV2 state. Sprint 3 does NOT touch them — Sprint 4 owns the Compose rewrite and the service container wiring.
 - Root `tsconfig.json` still excludes `services/`. Sprint 3 must stay runnable under the existing root `tsc --noEmit` with no config changes.
@@ -946,26 +949,26 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 
 **Check off before commit**
 
-- [ ] `lib/agents/scrape-lite.ts` exports only `fetchPageText(url, options?)`. No URL list in this file.
-- [ ] `fetchPageText` strips `<script>`, `<style>`, HTML tags, decodes the five listed entities, normalizes whitespace, returns first 30000 chars, uses a 10s AbortController timeout, and throws on non-2xx with the status + truncated body.
-- [ ] `lib/agents/prompts-loader.ts` exports `loadGlobalPolicyPrompt`, `loadRolePrompt`, and `buildLlmSystemPrompt`. Files are read once at module load and cached in a module-level const.
-- [ ] `buildLlmSystemPrompt('orchestrator')` returns `${globalPolicy}\n\n---\n\n${orchestratorPrompt}`.
-- [ ] `lib/agents/config.ts` exports `AGENT_CONFIGS` and `resolveBlueprint(job)`. The four implemented blueprints are imported; the three scan blueprints are declared via `notImplementedBlueprint(name)` helper.
-- [ ] The config file compiles even though the blueprint files are still empty stubs — use minimal named stub exports in the blueprint files for this checkpoint and fill them in Checkpoint 3.
-- [ ] `__tests__/agent-scrape-lite.test.ts` covers: happy-path HTML->text, entity decoding, 30k cap, non-2xx throw, and timeout behavior with `vi.useFakeTimers()`.
-- [ ] `__tests__/agent-config.test.ts` covers: every `AgentId` resolves an `AgentConfig`, `resolveBlueprint` throws on unknown `agentId`, `notImplementedBlueprint` surfaces the expected error at `step.run()` invocation time.
+- [x] `lib/agents/scrape-lite.ts` exports only `fetchPageText(url, options?)`. No URL list in this file.
+- [x] `fetchPageText` strips `<script>`, `<style>`, HTML tags, decodes the five listed entities, normalizes whitespace, returns first 30000 chars, uses a 10s AbortController timeout, and throws on non-2xx with the status + truncated body.
+- [x] `lib/agents/prompts-loader.ts` exports `loadGlobalPolicyPrompt`, `loadRolePrompt`, and `buildLlmSystemPrompt`. Files are read once at module load and cached in a module-level const.
+- [x] `buildLlmSystemPrompt('orchestrator')` returns `${globalPolicy}\n\n---\n\n${orchestratorPrompt}`.
+- [x] `lib/agents/config.ts` exports `AGENT_CONFIGS` and `resolveBlueprint(job)`. The four implemented blueprints are imported; the three scan blueprints are declared via `notImplementedBlueprint(name)` helper.
+- [x] The config file compiles even though the blueprint files are still empty stubs — use minimal named stub exports in the blueprint files for this checkpoint and fill them in Checkpoint 3.
+- [x] `__tests__/agent-scrape-lite.test.ts` covers: happy-path HTML->text, entity decoding, 30k cap, non-2xx throw, and timeout behavior with `vi.useFakeTimers()`.
+- [x] `__tests__/agent-config.test.ts` covers: every `AgentId` resolves an `AgentConfig`, `resolveBlueprint` throws on unknown `agentId`, `notImplementedBlueprint` surfaces the expected error at `step.run()` invocation time.
 
 **Exit criteria**
 
-- [ ] Prompts fail fast at module load if any file is missing.
-- [ ] Scrape-lite is reusable by any blueprint — no URL hardcoding.
-- [ ] Config registry compiles and routes can import `resolveBlueprint` even before blueprint bodies land.
+- [x] Prompts fail fast at module load if any file is missing.
+- [x] Scrape-lite is reusable by any blueprint — no URL hardcoding.
+- [x] Config registry compiles and routes can import `resolveBlueprint` even before blueprint bodies land.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npx vitest run __tests__/agent-scrape-lite.test.ts __tests__/agent-config.test.ts`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npx vitest run __tests__/agent-scrape-lite.test.ts __tests__/agent-config.test.ts`
 
 **STOP. Review. Commit. Then continue.**
 
@@ -979,24 +982,24 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 
 **Check off before commit**
 
-- [ ] `lib/agents/blueprints/orchestrator-chat.ts` exports `orchestratorChatBlueprint` with two steps. Step 1 `classify-and-route` is deterministic (no LLM call), enforces the five routing rules verbatim, checks `agent_registry.status`, and enqueues the specialist handoff when needed. Step 2 `synthesize-response` uses `callLlm(..., 'interactive')` with `buildLlmSystemPrompt('orchestrator')`.
-- [ ] `lib/agents/blueprints/orchestrator-macro-summary.ts` exports four steps matching the contract. Step 1 reads `MACRO_HEADLINES_URLS` env with the documented default. Step 3 uses `lane: 'background'`. Step 4 uses `writeAndDeliverReport` with `userId = 'system-agent-user'`.
-- [ ] `lib/agents/blueprints/small-cap-research.ts` exports four steps. Step 1 calls `getCachedTickerData(ticker)` as the upstream AskEdgar cache (passing the normalized ticker arg — the function signature requires it), Step 2 uses a direct TradingView scanner call instead of an HTTP call into `/api/tradingview/gainers`, Step 3 uses `lane: 'background'`, and Step 4 uses `writeAndDeliverReport` with `userId = job.userId` and `reportType = 'research'`.
-- [ ] `lib/agents/blueprints/swing-trader-research.ts` exports four steps with the MDR-focused output schema. Same save-research contract.
-- [ ] `lib/agents/blueprint-runner.ts` is extended (additive only) to inject `job` / `db` / `agentConfig` into step input, support `skipWhenRouted`, and return `failureClass` on failed runs.
-- [ ] `__tests__/agent-blueprints.test.ts` covers: orchestrator routing (each rule branches correctly), orchestrator offline-specialist fallback, macro-summary step 3 using the background lane, small-cap AskEdgar cache hit/miss, research save step using `writeAndDeliverReport`.
+- [x] `lib/agents/blueprints/orchestrator-chat.ts` exports `orchestratorChatBlueprint` with two steps. Step 1 `classify-and-route` is deterministic (no LLM call), enforces the five routing rules verbatim, checks `agent_registry.status`, and enqueues the specialist handoff when needed. Step 2 `synthesize-response` uses `callLlm(..., 'interactive')` with `buildLlmSystemPrompt('orchestrator')`.
+- [x] `lib/agents/blueprints/orchestrator-macro-summary.ts` exports four steps matching the contract. Step 1 reads `MACRO_HEADLINES_URLS` env with the documented default. Step 3 uses `lane: 'background'`. Step 4 uses `writeAndDeliverReport` with `userId = 'system-agent-user'`.
+- [x] `lib/agents/blueprints/small-cap-research.ts` exports four steps. Step 1 calls `getCachedTickerData(ticker)` as the upstream AskEdgar cache (passing the normalized ticker arg — the function signature requires it), Step 2 uses a direct TradingView scanner call instead of an HTTP call into `/api/tradingview/gainers`, Step 3 uses `lane: 'background'`, and Step 4 uses `writeAndDeliverReport` with `userId = job.userId` and `reportType = 'research'`.
+- [x] `lib/agents/blueprints/swing-trader-research.ts` exports four steps with the MDR-focused output schema. Same save-research contract.
+- [x] `lib/agents/blueprint-runner.ts` is extended (additive only) to inject `job` / `db` / `agentConfig` into step input, support `skipWhenRouted`, and return `failureClass` on failed runs.
+- [x] `__tests__/agent-blueprints.test.ts` covers: orchestrator routing (each rule branches correctly), orchestrator offline-specialist fallback, macro-summary step 3 using the background lane, small-cap AskEdgar cache hit/miss, research save step using `writeAndDeliverReport`.
 
 **Exit criteria**
 
-- [ ] All four implemented blueprints are callable through `resolveBlueprint(job)` in tests.
-- [ ] Scan blueprints still fail at step execution time — not at import time — and the worker treats them as non-retriable contract failures.
-- [ ] Runner changes are limited to the additive Sprint 3 runtime contract described above.
+- [x] All four implemented blueprints are callable through `resolveBlueprint(job)` in tests.
+- [x] Scan blueprints still fail at step execution time — not at import time — and the worker treats them as non-retriable contract failures.
+- [x] Runner changes are limited to the additive Sprint 3 runtime contract described above.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npx vitest run __tests__/agent-blueprints.test.ts __tests__/agent-blueprint-runner.test.ts`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npx vitest run __tests__/agent-blueprints.test.ts __tests__/agent-blueprint-runner.test.ts`
 
 **STOP. Review. Commit. Then continue.**
 
@@ -1010,28 +1013,28 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 
 **Check off before commit**
 
-- [ ] `lib/agents/heartbeat.ts` exports `startHeartbeat(db, agentId, intervalMs?)` returning `{ stop }`. Each tick updates `agent_registry.last_heartbeat` and `status = 'online'`, and touches `/tmp/healthy`. Errors are logged, not rethrown. `stop()` sets `status = 'offline'`.
-- [ ] `lib/agents/worker.ts` exports `startWorker(config)` returning `{ stop }`. The poll loop calls `claimNextQueuedJob` / `runBlueprint` / `completeJob` in the canonical order from the execution contract.
-- [ ] Routed orchestrator jobs return `result = { routed: true, specialistJobId }` via the worker's result packager — not via blueprint logic.
-- [ ] Retry branch: `failureClass === 'transient' && attempt < maxAttempts` -> `scheduleJobRetry` with `calculateBackoffMs`. Otherwise `failJob`.
-- [ ] Not-implemented blueprints fail as non-retriable contract failures and end in `failJob` with the blueprint error message.
-- [ ] Graceful shutdown waits for the in-flight `runBlueprint` to finish but does not cancel it. Heartbeat `stop()` runs after the loop exits.
-- [ ] `lib/agents/macro-cron.ts` exports `startMacroCron(db, options?)` returning `{ stop }`. Tick checks `currentHour === hourEt` in `America/New_York`, claims the scheduled run with `INSERT ... ON CONFLICT (agent_id, trigger_type, trading_date) DO NOTHING RETURNING id`, uses `trigger_type = 'macro-summary'` and `status = 'running'` for the claimed row, and only enqueues an `agent_jobs` row when the insert returned a row.
-- [ ] Stale-job reaper is NOT implemented in Sprint 3 (out of scope per the contract).
-- [ ] `__tests__/agent-worker.test.ts` uses `vi.useFakeTimers()` and covers: claim happy path, empty-claim sleep, routed-job result packaging, transient failure scheduling a retry, non-transient failure failing the job, and graceful shutdown draining one in-flight job.
-- [ ] `__tests__/agent-macro-cron.test.ts` covers: tick outside the trigger hour skips, tick inside the trigger hour inserts the scheduled run + enqueues the job, and concurrent ticks (simulated via two insert calls) only produce one job.
+- [x] `lib/agents/heartbeat.ts` exports `startHeartbeat(db, agentId, intervalMs?)` returning `{ stop }`. Each tick updates `agent_registry.last_heartbeat` and `status = 'online'`, and touches `/tmp/healthy`. Errors are logged, not rethrown. `stop()` sets `status = 'offline'`.
+- [x] `lib/agents/worker.ts` exports `startWorker(config)` returning `{ stop }`. The poll loop calls `claimNextQueuedJob` / `runBlueprint` / `completeJob` in the canonical order from the execution contract.
+- [x] Routed orchestrator jobs return `result = { routed: true, specialistJobId }` via the worker's result packager — not via blueprint logic.
+- [x] Retry branch: `failureClass === 'transient' && attempt < maxAttempts` -> `scheduleJobRetry` with `calculateBackoffMs`. Otherwise `failJob`.
+- [x] Not-implemented blueprints fail as non-retriable contract failures and end in `failJob` with the blueprint error message.
+- [x] Graceful shutdown waits for the in-flight `runBlueprint` to finish but does not cancel it. Heartbeat `stop()` runs after the loop exits.
+- [x] `lib/agents/macro-cron.ts` exports `startMacroCron(db, options?)` returning `{ stop }`. Tick checks `currentHour === hourEt` in `America/New_York`, claims the scheduled run with `INSERT ... ON CONFLICT (agent_id, trigger_type, trading_date) DO NOTHING RETURNING id`, uses `trigger_type = 'macro-summary'` and `status = 'running'` for the claimed row, and only enqueues an `agent_jobs` row when the insert returned a row.
+- [x] Stale-job reaper is NOT implemented in Sprint 3 (out of scope per the contract).
+- [x] `__tests__/agent-worker.test.ts` uses `vi.useFakeTimers()` and covers: claim happy path, empty-claim sleep, routed-job result packaging, transient failure scheduling a retry, non-transient failure failing the job, and graceful shutdown draining one in-flight job.
+- [x] `__tests__/agent-macro-cron.test.ts` covers: tick outside the trigger hour skips, tick inside the trigger hour inserts the scheduled run + enqueues the job, and concurrent ticks (simulated via two insert calls) only produce one job.
 
 **Exit criteria**
 
-- [ ] The worker loop routes every lease-fenced mutation through Sprint 2 queue helpers.
-- [ ] Macro cron is deduped by `(agent_id, trigger_type, trading_date)`.
-- [ ] Heartbeat touches `/tmp/healthy` on every tick.
+- [x] The worker loop routes every lease-fenced mutation through Sprint 2 queue helpers.
+- [x] Macro cron is deduped by `(agent_id, trigger_type, trading_date)`.
+- [x] Heartbeat touches `/tmp/healthy` on every tick.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npx vitest run __tests__/agent-worker.test.ts __tests__/agent-macro-cron.test.ts`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npx vitest run __tests__/agent-worker.test.ts __tests__/agent-macro-cron.test.ts`
 
 **STOP. Review. Commit. Then continue.**
 
@@ -1045,29 +1048,29 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 
 **Check off before commit**
 
-- [ ] `lib/validations/agents.ts` exists and exports every schema listed in the execution contract. Route files import from `@/lib/validations/agents`.
-- [ ] `app/api/agents/service/chat/route.ts` implements POST and GET per the contract. POST inserts one `agent_conversations` row and one `agent_jobs` row. GET returns the five state variants from `AGENTIC_EXPANSIONV2.md` §13.
-- [ ] `app/api/agents/reports/route.ts` (GET) excludes `user_id = 'system-agent-user'` rows.
-- [ ] `app/api/agents/reports/[id]/route.ts` (GET) scopes to `user_id = user.id`.
-- [ ] `app/api/agents/research/route.ts` POST rejects offline/degraded specialists with 400 `{ error: 'agent unavailable' }`. GET lists user-owned research reports only.
-- [ ] `app/api/agents/admin/stats/route.ts` returns the explicit `AdminStatsResponse` shape from the execution contract, including `today.retryRate`, `delivery.deliveryFailureRate`, and the top-level `queue` block.
-- [ ] `app/api/agents/admin/memory/route.ts` GET filters by query params and DELETE returns 404 on missing id.
-- [ ] `app/api/agents/admin/redeliver/route.ts` delegates to `redeliverReport()` and returns `{ report_id, status }`.
-- [ ] `app/api/agents/macro-summary/latest/route.ts` queries system-owned macro report and returns `{ summary: null }` on empty state.
-- [ ] No route file calls `request.json()` directly — all parsing goes through `parseAndValidate`.
-- [ ] No route file writes to `agent_jobs`, `agent_reports`, or `agent_memory_v2` outside of `db.insert()` / `db.update()` / `db.delete()` on the imported schema — no raw `sql` template writes.
+- [x] `lib/validations/agents.ts` exists and exports every schema listed in the execution contract. Route files import from `@/lib/validations/agents`.
+- [x] `app/api/agents/service/chat/route.ts` implements POST and GET per the contract. POST inserts one `agent_conversations` row and one `agent_jobs` row. GET returns the five state variants from `AGENTIC_EXPANSIONV2.md` §13.
+- [x] `app/api/agents/reports/route.ts` (GET) excludes `user_id = 'system-agent-user'` rows.
+- [x] `app/api/agents/reports/[id]/route.ts` (GET) scopes to `user_id = user.id`.
+- [x] `app/api/agents/research/route.ts` POST rejects offline/degraded specialists with 400 `{ error: 'agent unavailable' }`. GET lists user-owned research reports only.
+- [x] `app/api/agents/admin/stats/route.ts` returns the explicit `AdminStatsResponse` shape from the execution contract, including `today.retryRate`, `delivery.deliveryFailureRate`, and the top-level `queue` block.
+- [x] `app/api/agents/admin/memory/route.ts` GET filters by query params and DELETE returns 404 on missing id.
+- [x] `app/api/agents/admin/redeliver/route.ts` delegates to `redeliverReport()` and returns `{ report_id, status }`.
+- [x] `app/api/agents/macro-summary/latest/route.ts` queries system-owned macro report and returns `{ summary: null }` on empty state.
+- [x] No route file calls `request.json()` directly — all parsing goes through `parseAndValidate`.
+- [x] No route file writes to `agent_jobs`, `agent_reports`, or `agent_memory_v2` outside of `db.insert()` / `db.update()` / `db.delete()` on the imported schema — no raw `sql` template writes.
 
 **Exit criteria**
 
-- [ ] Every route listed in AEV2-401 through AEV2-406 is reachable and compiles.
-- [ ] Validation schemas are centralized in `lib/validations/agents.ts`.
-- [ ] Admin stats shape matches the launch target so Sprint 4 can focus on deployment.
+- [x] Every route listed in AEV2-401 through AEV2-406 is reachable and compiles.
+- [x] Validation schemas are centralized in `lib/validations/agents.ts`.
+- [x] Admin stats shape matches the launch target so Sprint 4 can focus on deployment.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npm run build` (proves every route compiles under Next.js)
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npm run build` (proves every route compiles under Next.js)
 
 **STOP. Review. Commit. Then continue.**
 
@@ -1081,40 +1084,40 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 
 **Check off before commit**
 
-- [ ] `__tests__/agent-service-chat-route.test.ts` covers POST success (201), POST 400 missing `discord_user_id`, POST 401 invalid service key, POST 403 unknown Discord user, POST 503 on `getAgentDb() === null`, GET queued/processing/completed/failed/routed variants, GET 404 on unknown job_id.
-- [ ] `__tests__/agent-reports-route.test.ts` covers GET list success, GET list filtered by `status` + `agent_id`, GET list excludes `system-agent-user` rows, GET detail success, GET detail 404, auth failure 401.
-- [ ] `__tests__/agent-research-route.test.ts` covers POST success, POST 400 invalid ticker, POST 400 on offline/degraded specialist, GET list success, GET list excludes system-owned rows.
-- [ ] `__tests__/agent-admin-stats-route.test.ts` covers the full stats response shape (at minimum asserts the top-level keys exist), 401 on missing admin key, and the `queue.depth` / `queue.stuckProcessing` fields populate from mocked query results.
-- [ ] `__tests__/agent-admin-memory-route.test.ts` covers GET with filters, GET without filters, DELETE success, DELETE 404, 401 on missing admin key.
-- [ ] `__tests__/agent-admin-redeliver-route.test.ts` covers success (mocks `redeliverReport` to return `published`), `delivery_failed`, 401 on missing admin key, and 404 on unknown report_id. Redelivery repost behavior is covered in `__tests__/agent-discord.test.ts`.
-- [ ] `__tests__/agent-macro-summary-route.test.ts` covers happy path, empty state returning `{ summary: null }`, and query targets `user_id = 'system-agent-user'` + `report_type = 'macro-summary'`.
-- [ ] No test calls the real `fetch` or a real Neon connection. `global.fetch` is mocked via `vi.stubGlobal('fetch', vi.fn())` where needed.
+- [x] `__tests__/agent-service-chat-route.test.ts` covers POST success (201), POST 400 missing `discord_user_id`, POST 401 invalid service key, POST 403 unknown Discord user, POST 503 on `getAgentDb() === null`, GET queued/processing/completed/failed/routed variants, GET 404 on unknown job_id.
+- [x] `__tests__/agent-reports-route.test.ts` covers GET list success, GET list filtered by `status` + `agent_id`, GET list excludes `system-agent-user` rows, GET detail success, GET detail 404, auth failure 401.
+- [x] `__tests__/agent-research-route.test.ts` covers POST success, POST 400 invalid ticker, POST 400 on offline/degraded specialist, GET list success, GET list excludes system-owned rows.
+- [x] `__tests__/agent-admin-stats-route.test.ts` covers the full stats response shape (at minimum asserts the top-level keys exist), 401 on missing admin key, and the `queue.depth` / `queue.stuckProcessing` fields populate from mocked query results.
+- [x] `__tests__/agent-admin-memory-route.test.ts` covers GET with filters, GET without filters, DELETE success, DELETE 404, 401 on missing admin key.
+- [x] `__tests__/agent-admin-redeliver-route.test.ts` covers success (mocks `redeliverReport` to return `published`), `delivery_failed`, 401 on missing admin key, and 404 on unknown report_id. Redelivery repost behavior is covered in `__tests__/agent-discord.test.ts`.
+- [x] `__tests__/agent-macro-summary-route.test.ts` covers happy path, empty state returning `{ summary: null }`, and query targets `user_id = 'system-agent-user'` + `report_type = 'macro-summary'`.
+- [x] No test calls the real `fetch` or a real Neon connection. `global.fetch` is mocked via `vi.stubGlobal('fetch', vi.fn())` where needed.
 
 **Exit criteria**
 
-- [ ] Every row in the AEV2-407 coverage matrix (success, auth failure, validation failure, lease-fencing-sensitive state transitions, redelivery, offline fallback) is exercised by a test.
-- [ ] Test files follow the `vi.hoisted` + `vi.mock` pattern from `__tests__/trades-route.test.ts`.
-- [ ] `npm test` passes without network access.
+- [x] Every row in the AEV2-407 coverage matrix (success, auth failure, validation failure, lease-fencing-sensitive state transitions, redelivery, offline fallback) is exercised by a test.
+- [x] Test files follow the `vi.hoisted` + `vi.mock` pattern from `__tests__/trades-route.test.ts`.
+- [x] `npm test` passes without network access.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npm test`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npm test`
 
 **STOP. Review. Commit. This is the Sprint 3 exit gate.**
 
 ### Sprint 3 Exit Gate
 
-- [ ] `AEV2-307` through `AEV2-407` landed in checkpoint order.
-- [ ] Every new file lives under `lib/agents/`, `lib/validations/`, `app/api/agents/`, or `__tests__/`. No file under `services/` was modified.
-- [ ] `lib/db/schema.ts` unchanged. No new migrations.
-- [ ] All four implemented blueprints compile and can be resolved via `resolveBlueprint(job)`. Scan blueprints throw `'blueprint not implemented in Sprint 3'` at step execution.
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npm run build`
-- [ ] `npm test`
-- [ ] `HANDOFF.md` updated after the final checkpoint closes.
+- [x] `AEV2-307` through `AEV2-407` landed in checkpoint order.
+- [x] Every new file lives under `lib/agents/`, `lib/validations/`, `app/api/agents/`, or `__tests__/`. No file under `services/` was modified.
+- [x] `lib/db/schema.ts` unchanged. No new migrations.
+- [x] All four implemented blueprints compile and can be resolved via `resolveBlueprint(job)`. Scan blueprints throw `'blueprint not implemented in Sprint 3'` at step execution.
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npm run build`
+- [x] `npm test`
+- [x] `HANDOFF.md` updated after the final checkpoint closes.
 
 ### Complexity
 

@@ -294,6 +294,17 @@ describe('agent discord helpers', () => {
     expect(recordStepEffectMock).not.toHaveBeenCalled();
   });
 
+  it('resolves known webhook mappings without warning', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    vi.stubEnv('DISCORD_WEBHOOK_RESEARCH', 'https://discord.test/research');
+    vi.stubEnv('DISCORD_WEBHOOK_SWING_SETUPS', 'https://discord.test/swing-setups');
+
+    expect(resolveWebhookUrl('small-cap-trader', 'research')).toBe('https://discord.test/research');
+    expect(resolveWebhookUrl('swing-trader', 'research')).toBe('https://discord.test/swing-setups');
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
   it('returns null for unknown webhook combinations and logs the mismatch once', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
@@ -303,14 +314,55 @@ describe('agent discord helpers', () => {
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('manual redelivery posts again and records a manual delivery marker', async () => {
-    vi.stubEnv('DISCORD_WEBHOOK_RESEARCH', 'https://discord.test/research');
-
-    const storedReport = createStoredReport();
+  it('marks delivery_failed when no webhook is configured', async () => {
     const rows = new Map<unknown, unknown[][]>();
     rows.set(agentReports, [
+      [createStoredReport()],
+    ]);
+    rows.set(agentStepEffects, [
       [],
-      [storedReport],
+    ]);
+
+    const db = makeDb(rows);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 204 }));
+
+    const result = await writeAndDeliverReport(db as never, {
+      jobId: 'job-1',
+      userId: 'user-1',
+      agentId: 'small-cap-trader',
+      reportType: 'research',
+      title: 'Incoming title',
+      summary: 'Incoming summary',
+      reportJson: { ticker: 'TSLA' },
+    });
+
+    expect(result).toEqual({
+      reportId: 'job-1:research',
+      status: 'delivery_failed',
+      deliveryError: 'no webhook configured for small-cap-trader/research',
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(db._mocks.reportUpdateSetMock).toHaveBeenCalledWith({
+      status: 'delivery_failed',
+      deliveryError: 'no webhook configured for small-cap-trader/research',
+    });
+    expect(recordStepEffectMock).not.toHaveBeenCalled();
+  });
+
+  it('uses the stored row as the source of truth when delivering an existing report', async () => {
+    vi.stubEnv('DISCORD_WEBHOOK_RESEARCH', 'https://discord.test/research');
+
+    const storedReport = createStoredReport({
+      title: 'Stored title',
+      summary: 'Stored summary',
+      reportJson: {
+        ticker: 'NVDA',
+        thesis: 'Stored thesis',
+      },
+    });
+    const rows = new Map<unknown, unknown[][]>();
+    rows.set(agentReports, [
       [storedReport],
     ]);
     rows.set(agentStepEffects, [
@@ -319,27 +371,64 @@ describe('agent discord helpers', () => {
 
     const db = makeDb(rows);
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(null, { status: 204 }))
-      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+      .mockResolvedValue(new Response(null, { status: 204 }));
 
-    const firstResult = await writeAndDeliverReport(db as never, {
+    const result = await writeAndDeliverReport(db as never, {
       jobId: 'job-1',
       userId: 'user-1',
       agentId: 'small-cap-trader',
       reportType: 'research',
-      title: 'Research note',
-      summary: 'Setup is improving',
-      reportJson: { ticker: 'NVDA' },
+      title: 'Incoming title',
+      summary: 'Incoming summary',
+      reportJson: { ticker: 'TSLA', thesis: 'Incoming thesis' },
     });
-    const secondResult = await redeliverReport(db as never, 'job-1:research');
 
-    expect(firstResult.status).toBe('published');
-    expect(secondResult).toEqual({
+    expect(result).toEqual({
+      reportId: 'job-1:research',
       status: 'published',
       deliveryError: null,
     });
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-    expect(recordStepEffectMock).toHaveBeenNthCalledWith(2, db, expect.objectContaining({
+    expect(db._mocks.reportInsertValuesMock).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledWith('https://discord.test/research', expect.objectContaining({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: expect.any(String),
+      signal: expect.any(AbortSignal),
+    }));
+    expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body))).toEqual({
+      embeds: [
+        expect.objectContaining({
+          title: 'Stored title',
+          description: 'Stored summary',
+        }),
+      ],
+    });
+  });
+
+  it('manual redelivery posts again even when the success marker already exists', async () => {
+    vi.stubEnv('DISCORD_WEBHOOK_RESEARCH', 'https://discord.test/research');
+
+    const storedReport = createStoredReport();
+    const rows = new Map<unknown, unknown[][]>();
+    rows.set(agentReports, [
+      [storedReport],
+    ]);
+    rows.set(agentStepEffects, [
+      [{ id: 'effect-1' }],
+    ]);
+
+    const db = makeDb(rows);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 204 }));
+
+    const result = await redeliverReport(db as never, 'job-1:research');
+
+    expect(result).toEqual({
+      status: 'published',
+      deliveryError: null,
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(recordStepEffectMock).toHaveBeenCalledWith(db, expect.objectContaining({
       jobId: 'job-1',
       stepName: 'discord-delivery-manual',
       effectType: 'discord-delivery',

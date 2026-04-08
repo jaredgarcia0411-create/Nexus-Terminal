@@ -123,8 +123,10 @@ function buildBaseEmbed(
     footer: {
       text: `${report.agentId} • ${report.reportType}`,
     },
-    timestamp: report.createdAt instanceof Date
-      ? report.createdAt.toISOString()
+    timestamp: report.createdAt
+      ? (report.createdAt instanceof Date
+        ? report.createdAt.toISOString()
+        : new Date(report.createdAt).toISOString())
       : undefined,
   };
 }
@@ -557,13 +559,6 @@ export async function writeAndDeliverReport(
     reportId,
     ...params,
   });
-  if (!storedReport) {
-    return {
-      reportId,
-      status: 'delivery_failed',
-      deliveryError: 'report row unavailable',
-    };
-  }
   const deliveryResult = await deliverStoredReport(db, storedReport, {
     allowMarkerShortCircuit: true,
     manualAttempt: false,

@@ -1,3 +1,5 @@
+import type { AgentDb } from './db';
+
 export type AgentId = 'orchestrator' | 'small-cap-trader' | 'swing-trader';
 
 export type JobType =
@@ -90,6 +92,7 @@ export interface StepMetadata {
   sideEffect: boolean;
   idempotencyKey?: string;
   lane?: LlmLane;
+  skipWhenRouted?: boolean;
 }
 
 export interface StepProvenance {
@@ -122,6 +125,9 @@ export interface StepInput {
   previousOutput: unknown;
   memory: AgentMemoryRow[];
   context: AgentContext;
+  job: AgentJob;
+  db: AgentDb;
+  agentConfig: AgentConfig;
 }
 
 export interface BlueprintStep {
@@ -248,6 +254,66 @@ export interface CircuitBreakerState {
   openedAt: string | null;
 }
 
+export interface AdminStatsResponse {
+  circuitBreakers: Record<string, {
+    status: 'closed' | 'open' | 'half-open';
+    consecutiveFailures: number;
+    lastFailureAt: string | null;
+  }>;
+  today: {
+    totalRequests: number;
+    totalTokens: number;
+    estimatedCostCents: number;
+    successRate: number;
+    avgDurationMs: number;
+    validationFailureRate: number;
+    retryRate: number;
+    byLane: Record<string, {
+      totalRequests: number;
+      totalTokens: number;
+      estimatedCostCents: number;
+      successRate: number;
+      avgDurationMs: number;
+    }>;
+    byAgent: Record<string, {
+      totalRequests: number;
+      totalTokens: number;
+      estimatedCostCents: number;
+      successRate: number;
+      avgDurationMs: number;
+    }>;
+  };
+  thisMonth: {
+    totalTokens: number;
+    estimatedCostCents: number;
+    budgetCents: number;
+    budgetUsedPercent: number;
+  };
+  agents: Array<{
+    id: string;
+    displayName: string;
+    status: string;
+    lastHeartbeat: string | null;
+  }>;
+  delivery: {
+    publishedToday: number;
+    deliveryFailures: number;
+    deliveryFailureRate: number;
+  };
+  memory: {
+    total: number;
+    byCategory: Record<string, number>;
+  };
+  macroSummaries: {
+    latestGeneratedAt: string | null;
+  };
+  queue: {
+    depth: number;
+    oldestQueuedJobAgeSeconds: number | null;
+    stuckProcessing: number;
+  };
+}
+
 export interface QueueClaimResult {
   job: AgentJob;
   leaseVersion: number;
@@ -260,6 +326,13 @@ export class BlueprintValidationError extends Error {
     public zodError: unknown,
   ) {
     super(`Validation failed at ${stepName} (${location})`);
+  }
+}
+
+export class NotImplementedBlueprintError extends Error {
+  constructor(public blueprintName: string) {
+    super(`blueprint not implemented in Sprint 3: ${blueprintName}`);
+    this.name = 'NotImplementedBlueprintError';
   }
 }
 

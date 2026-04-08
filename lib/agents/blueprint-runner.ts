@@ -15,6 +15,7 @@ import {
   BlueprintValidationError,
   BudgetExceededError,
   CircuitOpenError,
+  NotImplementedBlueprintError,
   RateLimitExceededError,
 } from './types';
 import type {
@@ -40,6 +41,7 @@ export interface RunBlueprintResult {
   status: 'completed' | 'failed';
   finalOutput: unknown;
   failureReason?: string;
+  failureClass?: FailureClass;
   stepsExecuted: number;
 }
 
@@ -87,6 +89,10 @@ function classifyFailure(error: unknown): FailureClass {
   }
 
   if (error instanceof BlueprintValidationError) {
+    return 'contract';
+  }
+
+  if (error instanceof NotImplementedBlueprintError) {
     return 'contract';
   }
 
@@ -334,6 +340,21 @@ async function executeStep(
   }
 }
 
+function shouldSkipWhenRouted(
+  step: Blueprint['steps'][number],
+  previousOutput: unknown,
+): boolean {
+  if (!step.metadata.skipWhenRouted) {
+    return false;
+  }
+
+  if (!previousOutput || typeof previousOutput !== 'object') {
+    return false;
+  }
+
+  return (previousOutput as { decision?: unknown }).decision === 'route-to-specialist';
+}
+
 export async function runBlueprint(
   blueprint: Blueprint,
   job: AgentJob,
@@ -361,6 +382,31 @@ export async function runBlueprint(
     const startedAt = new Date().toISOString();
     const idempotencyKey = getStepIdempotencyKey(job, step);
 
+    if (shouldSkipWhenRouted(step, previousOutput)) {
+      const entry: StepLogEntry = {
+        step: step.name,
+        status: 'completed',
+        startedAt,
+        completedAt: new Date().toISOString(),
+        attempt: job.attempt,
+        validatorResult: 'pass',
+        tokensUsed: 0,
+      };
+      const persisted = await appendStepLog(db, job, options, currentStepLog, entry);
+      if (!persisted) {
+        return {
+          status: 'failed',
+          finalOutput: null,
+          failureReason: 'lease lost during step_log persistence',
+          failureClass: 'transient',
+          stepsExecuted,
+        };
+      }
+
+      currentStepLog = persisted;
+      continue;
+    }
+
     if (idempotencyKey && await hasRecordedEffect(db, idempotencyKey)) {
       const checkpointOutput = await loadCheckpointForStep(db, job.id, stepIndex);
       const completedAt = new Date().toISOString();
@@ -380,6 +426,7 @@ export async function runBlueprint(
           status: 'failed',
           finalOutput: null,
           failureReason: 'lease lost during step_log persistence',
+          failureClass: 'transient',
           stepsExecuted,
         };
       }
@@ -414,6 +461,9 @@ export async function runBlueprint(
         previousOutput,
         memory: context.memory,
         context,
+        job,
+        db,
+        agentConfig: config,
       };
 
       stepsExecuted += 1;
@@ -446,6 +496,7 @@ export async function runBlueprint(
               status: 'failed',
               finalOutput: null,
               failureReason: 'lease lost during step_log persistence',
+              failureClass: 'transient',
               stepsExecuted,
             };
           }
@@ -480,6 +531,7 @@ export async function runBlueprint(
           status: 'failed',
           finalOutput: null,
           failureReason: 'lease lost during step_log persistence',
+          failureClass: 'transient',
           stepsExecuted,
         };
       }
@@ -506,6 +558,7 @@ export async function runBlueprint(
           status: 'failed',
           finalOutput: null,
           failureReason: 'lease lost during step_log persistence',
+          failureClass: 'transient',
           stepsExecuted,
         };
       }
@@ -515,6 +568,7 @@ export async function runBlueprint(
         status: 'failed',
         finalOutput: null,
         failureReason: formatFailureReason(underlyingError),
+        failureClass,
         stepsExecuted,
       };
     }
