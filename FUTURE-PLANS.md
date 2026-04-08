@@ -228,3 +228,37 @@ Use different models for different tasks based on complexity:
 2. Spike Graphiti/Letta in a branch — one agent, one use case, no production wiring
 3. Measure: does it actually answer the question that `agent_memory_v2` couldn't?
 4. Only then write an AEV2 sprint spec to integrate
+
+---
+
+## AskEdgar Rate-Limit Rework — Post-AEV2 (2026-04-08)
+
+**Context:** The AskEdgar trial key was reissued with new limits: **150 requests/minute** and **50 unique tickers per day, per endpoint**. The current Nexus integration does not match this shape.
+
+### Current state (as of 2026-04-08)
+
+- Single global daily call counter — `DEFAULT_DAILY_LIMIT = 100` in `lib/askedgar.ts:42`, overridable via `ASKEDGAR_DAILY_LIMIT` env var (`.env.example:24` also `100`).
+- Enforcement at `lib/askedgar.ts:234`: blocks once `callCount >= dailyLimit`, returns `AskEdgar daily limit reached (N)`.
+- **No per-minute rate tracking.** We rely on AskEdgar to return 429 and surface the retry hint (handled in `app/api/askedgar/snapshot/route.ts:40` and `components/trading/ResearchTickerView.tsx:43`).
+- **No per-endpoint unique-ticker tracking.** All endpoints share one global counter.
+
+### Why wait until AEV2 is fully merged
+
+1. AEV2 shifts most AskEdgar traffic from the Vercel Research tab to Docker agent scans (Small Cap Trader, Swing Trader). Designing around today's call shape would be throwaway.
+2. AEV2 already introduces its own cache layer — `agent_memory_v2` with 1-hour TTL per `askedgar:{endpoint}:{ticker}` key (AGENTIC_EXPANSIONV2.md:909) — and a per-scan cap via `AGENT_MAX_ASKEDGAR_CALLS_PER_SCAN=60` (AGENTIC_EXPANSIONV2.md:1081). A lot of would-be calls collapse into cache hits, making "unique tickers per endpoint per day" much more meaningful to measure *after* that cache is live.
+3. Active sprint worktree at `.worktrees/aev2-s3/` has its own copy of `lib/askedgar.ts`. Touching rate-limit logic now creates merge pain.
+
+### What to build after AEV2 lands
+
+1. **Per-endpoint unique-ticker tracker (daily)** — cap at 50 unique tickers/endpoint/day. Stored somewhere queryable (probably a small Postgres table or a keyed entry in `agent_memory_v2`) so both Vercel routes and Docker agents share the same counter. Reset at UTC midnight (or whatever AskEdgar's reset window is — confirm when revisiting).
+2. **Per-minute rate governor** — sliding 60s window capped at 150. In-memory counter is fine for the Vercel lane (per-instance), but Docker agents need a shared counter (Postgres row with `INSERT ... ON CONFLICT` update, or a Redis-style lease).
+3. **Reshape `DEFAULT_DAILY_LIMIT`** — either remove it in favor of the new dimensions, or repurpose it as a global safety cap above the per-endpoint budget.
+4. **Better error surfaces** — when we hit 50 unique tickers on `/v1/offerings`, the message should say "offerings endpoint exhausted, N other endpoints still available" not just "daily limit reached."
+5. **Both copies stay in sync** — the active AEV2 worktree and `main` both have `lib/askedgar.ts`. By the time this ships, worktrees should be merged, but double-check.
+6. **Update `ASKEDGAR_DAILY_LIMIT` docs** — `.env.example`, `.claude/CLAUDE.md` env table, and any `/audit` references.
+
+### Don't start until
+
+- All AEV2_PLAN.md epics (EPIC-1 through EPIC-5) are merged to `main`.
+- `agent_memory_v2` AskEdgar cache is running in production and we have a week of real call-volume data to size the new budget against.
+- Jared has saved the new AskEdgar trial-key docs alongside `docs/AE_API_DOCS.md` so we can confirm exact reset windows and whether the 150/min is a hard 429 or a soft throttle.
