@@ -63,7 +63,7 @@ Sprint 1 and Sprint 2 are complete. Older detail was removed from this file; use
 ## AEV2 Sprint 3 — Runtime Wiring + API Surface
 
 > Generated: 2026-04-07 | Agent: Claude (Plan)
-> Status: IN PROGRESS — Checkpoint 3 complete on 2026-04-07
+> Status: IN PROGRESS — Checkpoint 4 complete on 2026-04-07
 
 ### Objective
 
@@ -90,7 +90,8 @@ Connect the Sprint 2 library runtime to stable app contracts. Sprint 3 lands Dis
 - Checkpoint 1 is complete: [`lib/agents/discord.ts`](/home/jared/Nexus-Terminal/lib/agents/discord.ts) and [`__tests__/agent-discord.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-discord.test.ts) are landed and validated.
 - Checkpoint 2 is complete: [`lib/agents/scrape-lite.ts`](/home/jared/Nexus-Terminal/lib/agents/scrape-lite.ts), [`lib/agents/prompts-loader.ts`](/home/jared/Nexus-Terminal/lib/agents/prompts-loader.ts), [`lib/agents/config.ts`](/home/jared/Nexus-Terminal/lib/agents/config.ts), the stub blueprint files under [`lib/agents/blueprints/`](/home/jared/Nexus-Terminal/lib/agents/blueprints), and focused coverage in [`__tests__/agent-scrape-lite.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-scrape-lite.test.ts) plus [`__tests__/agent-config.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-config.test.ts) are landed and validated.
 - Checkpoint 3 is complete: [`lib/agents/blueprints/orchestrator-chat.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/orchestrator-chat.ts), [`lib/agents/blueprints/orchestrator-macro-summary.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/orchestrator-macro-summary.ts), [`lib/agents/blueprints/small-cap-research.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/small-cap-research.ts), [`lib/agents/blueprints/swing-trader-research.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/swing-trader-research.ts), additive runner contract updates in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts) plus [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts), and focused coverage in [`__tests__/agent-blueprints.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprints.test.ts) with the updated runner coverage in [`__tests__/agent-blueprint-runner.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprint-runner.test.ts) are landed and validated.
-- Remaining Sprint 3 new files still pending: `lib/agents/worker.ts`, `lib/agents/heartbeat.ts`, `lib/agents/macro-cron.ts`, the `/api/agents/*` route tree, `lib/validations/agents.ts`, and the remaining Sprint 3 route/admin test files.
+- Checkpoint 4 is complete: [`lib/agents/heartbeat.ts`](/home/jared/Nexus-Terminal/lib/agents/heartbeat.ts), [`lib/agents/worker.ts`](/home/jared/Nexus-Terminal/lib/agents/worker.ts), [`lib/agents/macro-cron.ts`](/home/jared/Nexus-Terminal/lib/agents/macro-cron.ts), and focused coverage in [`__tests__/agent-worker.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-worker.test.ts) plus [`__tests__/agent-macro-cron.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-macro-cron.test.ts) are landed and validated.
+- Remaining Sprint 3 new files still pending: the `/api/agents/*` route tree, `lib/validations/agents.ts`, and the remaining Sprint 3 route/admin test files.
 - `lib/agents/prompts/global-policy.md`, `orchestrator.md`, `small-cap.md`, and `swing-trader.md` already exist from Sprint 1. Sprint 3 adds a loader, not new prompt files.
 - [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml), [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example), and the `services/discord-bot/` tree still reflect pre-AEV2 state. Sprint 3 does NOT touch them — Sprint 4 owns the Compose rewrite and the service container wiring.
 - Root `tsconfig.json` still excludes `services/`. Sprint 3 must stay runnable under the existing root `tsc --noEmit` with no config changes.
@@ -1012,28 +1013,28 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 
 **Check off before commit**
 
-- [ ] `lib/agents/heartbeat.ts` exports `startHeartbeat(db, agentId, intervalMs?)` returning `{ stop }`. Each tick updates `agent_registry.last_heartbeat` and `status = 'online'`, and touches `/tmp/healthy`. Errors are logged, not rethrown. `stop()` sets `status = 'offline'`.
-- [ ] `lib/agents/worker.ts` exports `startWorker(config)` returning `{ stop }`. The poll loop calls `claimNextQueuedJob` / `runBlueprint` / `completeJob` in the canonical order from the execution contract.
-- [ ] Routed orchestrator jobs return `result = { routed: true, specialistJobId }` via the worker's result packager — not via blueprint logic.
-- [ ] Retry branch: `failureClass === 'transient' && attempt < maxAttempts` -> `scheduleJobRetry` with `calculateBackoffMs`. Otherwise `failJob`.
-- [ ] Not-implemented blueprints fail as non-retriable contract failures and end in `failJob` with the blueprint error message.
-- [ ] Graceful shutdown waits for the in-flight `runBlueprint` to finish but does not cancel it. Heartbeat `stop()` runs after the loop exits.
-- [ ] `lib/agents/macro-cron.ts` exports `startMacroCron(db, options?)` returning `{ stop }`. Tick checks `currentHour === hourEt` in `America/New_York`, claims the scheduled run with `INSERT ... ON CONFLICT (agent_id, trigger_type, trading_date) DO NOTHING RETURNING id`, uses `trigger_type = 'macro-summary'` and `status = 'running'` for the claimed row, and only enqueues an `agent_jobs` row when the insert returned a row.
-- [ ] Stale-job reaper is NOT implemented in Sprint 3 (out of scope per the contract).
-- [ ] `__tests__/agent-worker.test.ts` uses `vi.useFakeTimers()` and covers: claim happy path, empty-claim sleep, routed-job result packaging, transient failure scheduling a retry, non-transient failure failing the job, and graceful shutdown draining one in-flight job.
-- [ ] `__tests__/agent-macro-cron.test.ts` covers: tick outside the trigger hour skips, tick inside the trigger hour inserts the scheduled run + enqueues the job, and concurrent ticks (simulated via two insert calls) only produce one job.
+- [x] `lib/agents/heartbeat.ts` exports `startHeartbeat(db, agentId, intervalMs?)` returning `{ stop }`. Each tick updates `agent_registry.last_heartbeat` and `status = 'online'`, and touches `/tmp/healthy`. Errors are logged, not rethrown. `stop()` sets `status = 'offline'`.
+- [x] `lib/agents/worker.ts` exports `startWorker(config)` returning `{ stop }`. The poll loop calls `claimNextQueuedJob` / `runBlueprint` / `completeJob` in the canonical order from the execution contract.
+- [x] Routed orchestrator jobs return `result = { routed: true, specialistJobId }` via the worker's result packager — not via blueprint logic.
+- [x] Retry branch: `failureClass === 'transient' && attempt < maxAttempts` -> `scheduleJobRetry` with `calculateBackoffMs`. Otherwise `failJob`.
+- [x] Not-implemented blueprints fail as non-retriable contract failures and end in `failJob` with the blueprint error message.
+- [x] Graceful shutdown waits for the in-flight `runBlueprint` to finish but does not cancel it. Heartbeat `stop()` runs after the loop exits.
+- [x] `lib/agents/macro-cron.ts` exports `startMacroCron(db, options?)` returning `{ stop }`. Tick checks `currentHour === hourEt` in `America/New_York`, claims the scheduled run with `INSERT ... ON CONFLICT (agent_id, trigger_type, trading_date) DO NOTHING RETURNING id`, uses `trigger_type = 'macro-summary'` and `status = 'running'` for the claimed row, and only enqueues an `agent_jobs` row when the insert returned a row.
+- [x] Stale-job reaper is NOT implemented in Sprint 3 (out of scope per the contract).
+- [x] `__tests__/agent-worker.test.ts` uses `vi.useFakeTimers()` and covers: claim happy path, empty-claim sleep, routed-job result packaging, transient failure scheduling a retry, non-transient failure failing the job, and graceful shutdown draining one in-flight job.
+- [x] `__tests__/agent-macro-cron.test.ts` covers: tick outside the trigger hour skips, tick inside the trigger hour inserts the scheduled run + enqueues the job, and concurrent ticks (simulated via two insert calls) only produce one job.
 
 **Exit criteria**
 
-- [ ] The worker loop routes every lease-fenced mutation through Sprint 2 queue helpers.
-- [ ] Macro cron is deduped by `(agent_id, trigger_type, trading_date)`.
-- [ ] Heartbeat touches `/tmp/healthy` on every tick.
+- [x] The worker loop routes every lease-fenced mutation through Sprint 2 queue helpers.
+- [x] Macro cron is deduped by `(agent_id, trigger_type, trading_date)`.
+- [x] Heartbeat touches `/tmp/healthy` on every tick.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npx vitest run __tests__/agent-worker.test.ts __tests__/agent-macro-cron.test.ts`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npx vitest run __tests__/agent-worker.test.ts __tests__/agent-macro-cron.test.ts`
 
 **STOP. Review. Commit. Then continue.**
 
