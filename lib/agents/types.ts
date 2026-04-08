@@ -263,6 +263,13 @@ export class BlueprintValidationError extends Error {
   }
 }
 
+export class NotImplementedBlueprintError extends Error {
+  constructor(public blueprintName: string) {
+    super(`blueprint not implemented in Sprint 3: ${blueprintName}`);
+    this.name = 'NotImplementedBlueprintError';
+  }
+}
+
 export class BudgetExceededError extends Error {
   constructor(
     public agentId: AgentId,

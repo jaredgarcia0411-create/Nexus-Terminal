@@ -63,7 +63,7 @@ Sprint 1 and Sprint 2 are complete. Older detail was removed from this file; use
 ## AEV2 Sprint 3 — Runtime Wiring + API Surface
 
 > Generated: 2026-04-07 | Agent: Claude (Plan)
-> Status: IN PROGRESS — Checkpoint 1 complete on 2026-04-07
+> Status: IN PROGRESS — Checkpoint 2 complete on 2026-04-07
 
 ### Objective
 
@@ -88,7 +88,8 @@ Connect the Sprint 2 library runtime to stable app contracts. Sprint 3 lands Dis
 - Sprint 2 runtime is in place and validated. Every module listed in Sprint 2 Summary is library-only and does not import from `@/app` or `services/`.
 - No `/api/agents/*` route exists yet. Sprint 3 creates all of them.
 - Checkpoint 1 is complete: [`lib/agents/discord.ts`](/home/jared/Nexus-Terminal/lib/agents/discord.ts) and [`__tests__/agent-discord.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-discord.test.ts) are landed and validated.
-- Remaining Sprint 3 new files still pending: `lib/agents/config.ts`, `lib/agents/scrape-lite.ts`, `lib/agents/worker.ts`, `lib/agents/heartbeat.ts`, `lib/agents/macro-cron.ts`, and `lib/agents/blueprints/`, plus the `/api/agents/*` route tree and remaining test files.
+- Checkpoint 2 is complete: [`lib/agents/scrape-lite.ts`](/home/jared/Nexus-Terminal/lib/agents/scrape-lite.ts), [`lib/agents/prompts-loader.ts`](/home/jared/Nexus-Terminal/lib/agents/prompts-loader.ts), [`lib/agents/config.ts`](/home/jared/Nexus-Terminal/lib/agents/config.ts), the stub blueprint files under [`lib/agents/blueprints/`](/home/jared/Nexus-Terminal/lib/agents/blueprints), and focused coverage in [`__tests__/agent-scrape-lite.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-scrape-lite.test.ts) plus [`__tests__/agent-config.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-config.test.ts) are landed and validated.
+- Remaining Sprint 3 new files still pending: `lib/agents/worker.ts`, `lib/agents/heartbeat.ts`, `lib/agents/macro-cron.ts`, the real blueprint bodies for the four implemented blueprints, the `/api/agents/*` route tree, and the remaining Sprint 3 test files.
 - `lib/agents/prompts/global-policy.md`, `orchestrator.md`, `small-cap.md`, and `swing-trader.md` already exist from Sprint 1. Sprint 3 adds a loader, not new prompt files.
 - [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml), [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example), and the `services/discord-bot/` tree still reflect pre-AEV2 state. Sprint 3 does NOT touch them — Sprint 4 owns the Compose rewrite and the service container wiring.
 - Root `tsconfig.json` still excludes `services/`. Sprint 3 must stay runnable under the existing root `tsc --noEmit` with no config changes.
@@ -946,26 +947,26 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 
 **Check off before commit**
 
-- [ ] `lib/agents/scrape-lite.ts` exports only `fetchPageText(url, options?)`. No URL list in this file.
-- [ ] `fetchPageText` strips `<script>`, `<style>`, HTML tags, decodes the five listed entities, normalizes whitespace, returns first 30000 chars, uses a 10s AbortController timeout, and throws on non-2xx with the status + truncated body.
-- [ ] `lib/agents/prompts-loader.ts` exports `loadGlobalPolicyPrompt`, `loadRolePrompt`, and `buildLlmSystemPrompt`. Files are read once at module load and cached in a module-level const.
-- [ ] `buildLlmSystemPrompt('orchestrator')` returns `${globalPolicy}\n\n---\n\n${orchestratorPrompt}`.
-- [ ] `lib/agents/config.ts` exports `AGENT_CONFIGS` and `resolveBlueprint(job)`. The four implemented blueprints are imported; the three scan blueprints are declared via `notImplementedBlueprint(name)` helper.
-- [ ] The config file compiles even though the blueprint files are still empty stubs — use minimal named stub exports in the blueprint files for this checkpoint and fill them in Checkpoint 3.
-- [ ] `__tests__/agent-scrape-lite.test.ts` covers: happy-path HTML->text, entity decoding, 30k cap, non-2xx throw, and timeout behavior with `vi.useFakeTimers()`.
-- [ ] `__tests__/agent-config.test.ts` covers: every `AgentId` resolves an `AgentConfig`, `resolveBlueprint` throws on unknown `agentId`, `notImplementedBlueprint` surfaces the expected error at `step.run()` invocation time.
+- [x] `lib/agents/scrape-lite.ts` exports only `fetchPageText(url, options?)`. No URL list in this file.
+- [x] `fetchPageText` strips `<script>`, `<style>`, HTML tags, decodes the five listed entities, normalizes whitespace, returns first 30000 chars, uses a 10s AbortController timeout, and throws on non-2xx with the status + truncated body.
+- [x] `lib/agents/prompts-loader.ts` exports `loadGlobalPolicyPrompt`, `loadRolePrompt`, and `buildLlmSystemPrompt`. Files are read once at module load and cached in a module-level const.
+- [x] `buildLlmSystemPrompt('orchestrator')` returns `${globalPolicy}\n\n---\n\n${orchestratorPrompt}`.
+- [x] `lib/agents/config.ts` exports `AGENT_CONFIGS` and `resolveBlueprint(job)`. The four implemented blueprints are imported; the three scan blueprints are declared via `notImplementedBlueprint(name)` helper.
+- [x] The config file compiles even though the blueprint files are still empty stubs — use minimal named stub exports in the blueprint files for this checkpoint and fill them in Checkpoint 3.
+- [x] `__tests__/agent-scrape-lite.test.ts` covers: happy-path HTML->text, entity decoding, 30k cap, non-2xx throw, and timeout behavior with `vi.useFakeTimers()`.
+- [x] `__tests__/agent-config.test.ts` covers: every `AgentId` resolves an `AgentConfig`, `resolveBlueprint` throws on unknown `agentId`, `notImplementedBlueprint` surfaces the expected error at `step.run()` invocation time.
 
 **Exit criteria**
 
-- [ ] Prompts fail fast at module load if any file is missing.
-- [ ] Scrape-lite is reusable by any blueprint — no URL hardcoding.
-- [ ] Config registry compiles and routes can import `resolveBlueprint` even before blueprint bodies land.
+- [x] Prompts fail fast at module load if any file is missing.
+- [x] Scrape-lite is reusable by any blueprint — no URL hardcoding.
+- [x] Config registry compiles and routes can import `resolveBlueprint` even before blueprint bodies land.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npx vitest run __tests__/agent-scrape-lite.test.ts __tests__/agent-config.test.ts`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npx vitest run __tests__/agent-scrape-lite.test.ts __tests__/agent-config.test.ts`
 
 **STOP. Review. Commit. Then continue.**
 
