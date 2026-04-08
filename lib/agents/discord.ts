@@ -1,0 +1,594 @@
+import { eq } from 'drizzle-orm';
+import { agentReports, agentStepEffects } from '@/lib/db/schema';
+import { recordStepEffect } from './checkpoints';
+import type { AgentDb } from './db';
+import type { AgentId, AgentReport } from './types';
+
+const DISCORD_EMBED_COLOR = 0x10B981;
+const DISCORD_TIMEOUT_MS = 10_000;
+const UNKNOWN_VALUE = 'n/a';
+const DELIVERY_CHANNEL = 'discord';
+const loggedUnknownWebhookCombos = new Set<string>();
+
+export interface DiscordEmbedField {
+  name: string;
+  value: string;
+  inline?: boolean;
+}
+
+export interface DiscordEmbed {
+  title: string;
+  description?: string;
+  color: number;
+  fields?: DiscordEmbedField[];
+  footer?: { text: string };
+  timestamp?: string;
+}
+
+export interface DiscordWebhookPayload {
+  username?: string;
+  embeds: DiscordEmbed[];
+}
+
+type Severity = 'info' | 'warn' | 'error';
+
+interface DeliveryResult {
+  status: 'published' | 'delivery_failed';
+  deliveryError: string | null;
+}
+
+type AgentReportRow = typeof agentReports.$inferSelect;
+
+function toReport(row: AgentReportRow): AgentReport {
+  return row as AgentReport;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function coerceFieldValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return UNKNOWN_VALUE;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || UNKNOWN_VALUE;
+  }
+
+  if (
+    typeof value === 'number'
+    || typeof value === 'boolean'
+    || typeof value === 'bigint'
+  ) {
+    return String(value);
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  try {
+    const json = JSON.stringify(value);
+    return json && json !== '{}' ? json : UNKNOWN_VALUE;
+  } catch {
+    return String(value);
+  }
+}
+
+function optionalText(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const rendered = coerceFieldValue(value);
+    if (rendered !== UNKNOWN_VALUE) {
+      return rendered;
+    }
+  }
+
+  return undefined;
+}
+
+function readJsonValue(payload: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      return payload[key];
+    }
+  }
+
+  return undefined;
+}
+
+function buildField(name: string, value: unknown, inline = true): DiscordEmbedField {
+  return {
+    name,
+    value: coerceFieldValue(value),
+    inline,
+  };
+}
+
+function buildBaseEmbed(
+  report: AgentReport,
+  fields: DiscordEmbedField[],
+  description?: string,
+): DiscordEmbed {
+  return {
+    title: coerceFieldValue(report.title),
+    description,
+    color: DISCORD_EMBED_COLOR,
+    fields: fields.length > 0 ? fields : undefined,
+    footer: {
+      text: `${report.agentId} • ${report.reportType}`,
+    },
+    timestamp: report.createdAt instanceof Date
+      ? report.createdAt.toISOString()
+      : undefined,
+  };
+}
+
+function normalizeSeverity(value: unknown): Severity {
+  if (value === 'warn' || value === 'error') {
+    return value;
+  }
+
+  return 'info';
+}
+
+function truncate(value: string, maxLength = 240): string {
+  return value.length <= maxLength ? value : value.slice(0, maxLength);
+}
+
+function readFailureDetailFromPayload(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') {
+    return '';
+  }
+
+  const parsed = payload as {
+    error?: string | { message?: string };
+    message?: string;
+  };
+
+  if (typeof parsed.error === 'string' && parsed.error.trim()) {
+    return truncate(parsed.error.trim());
+  }
+
+  if (
+    parsed.error
+    && typeof parsed.error === 'object'
+    && typeof parsed.error.message === 'string'
+    && parsed.error.message.trim()
+  ) {
+    return truncate(parsed.error.message.trim());
+  }
+
+  if (typeof parsed.message === 'string' && parsed.message.trim()) {
+    return truncate(parsed.message.trim());
+  }
+
+  return '';
+}
+
+async function readFailureDetail(response: Response): Promise<string> {
+  const bodyText = (await response.text()).trim();
+  if (!bodyText) {
+    return '';
+  }
+
+  try {
+    return readFailureDetailFromPayload(JSON.parse(bodyText));
+  } catch {
+    return truncate(bodyText);
+  }
+}
+
+function readThrownError(error: unknown): string {
+  if ((error as { name?: string }).name === 'AbortError') {
+    return `request timed out after ${DISCORD_TIMEOUT_MS}ms`;
+  }
+
+  if (error instanceof Error) {
+    return truncate(error.message);
+  }
+
+  return truncate(String(error));
+}
+
+function selectEmbed(report: AgentReport): DiscordEmbed {
+  if (report.reportType === 'macro-summary') {
+    return buildMacroSummaryEmbed(report);
+  }
+
+  if (report.reportType === 'pre-market-scan') {
+    return buildScanEmbed(report);
+  }
+
+  if (report.reportType === 'pattern-check') {
+    return buildSwingAlertEmbed(report);
+  }
+
+  if (
+    report.agentId === 'swing-trader'
+    && (report.reportType === 'research' || report.reportType === 'momentum-scan')
+  ) {
+    return buildSwingSetupEmbed(report);
+  }
+
+  if (report.reportType === 'system-alert' || report.reportType.startsWith('system-')) {
+    const payload = asRecord(report.reportJson);
+    return buildSystemEmbed(
+      report.title,
+      optionalText(report.summary, readJsonValue(payload, 'detail', 'message')) ?? UNKNOWN_VALUE,
+      normalizeSeverity(readJsonValue(payload, 'severity', 'level')),
+    );
+  }
+
+  return buildResearchEmbed(report);
+}
+
+async function getReportById(
+  db: AgentDb,
+  reportId: string,
+): Promise<AgentReport | null> {
+  const [row] = await db.select()
+    .from(agentReports)
+    .where(eq(agentReports.id, reportId))
+    .limit(1);
+
+  return row ? toReport(row) : null;
+}
+
+async function hasSuccessfulDeliveryMarker(
+  db: AgentDb,
+  reportId: string,
+): Promise<boolean> {
+  const [row] = await db.select({ id: agentStepEffects.id })
+    .from(agentStepEffects)
+    .where(eq(agentStepEffects.idempotencyKey, `discord-delivery:${reportId}`))
+    .limit(1);
+
+  return Boolean(row);
+}
+
+async function updateDeliveryState(
+  db: AgentDb,
+  reportId: string,
+  update: Partial<AgentReportRow>,
+): Promise<void> {
+  await db.update(agentReports)
+    .set(update)
+    .where(eq(agentReports.id, reportId));
+}
+
+async function ensureStoredReport(
+  db: AgentDb,
+  params: {
+    reportId: string;
+    jobId: string;
+    userId: string;
+    agentId: AgentId;
+    reportType: string;
+    title: string;
+    summary: string | null;
+    reportJson: unknown;
+  },
+): Promise<AgentReport> {
+  const existing = await getReportById(db, params.reportId);
+  if (existing) {
+    return existing;
+  }
+
+  await db.insert(agentReports)
+    .values({
+      id: params.reportId,
+      jobId: params.jobId,
+      userId: params.userId,
+      agentId: params.agentId,
+      reportType: params.reportType,
+      title: params.title,
+      summary: params.summary,
+      reportJson: params.reportJson,
+      status: 'published',
+      deliveryChannel: DELIVERY_CHANNEL,
+      deliveredAt: null,
+      deliveryError: null,
+    })
+    .onConflictDoNothing({
+      target: agentReports.id,
+    });
+
+  const stored = await getReportById(db, params.reportId);
+  if (!stored) {
+    throw new Error(`failed to load stored report ${params.reportId}`);
+  }
+
+  return stored;
+}
+
+async function postWebhook(embed: DiscordEmbed, url: string): Promise<DeliveryResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DISCORD_TIMEOUT_MS);
+  const payload: DiscordWebhookPayload = { embeds: [embed] };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    if (response.ok) {
+      return {
+        status: 'published',
+        deliveryError: null,
+      };
+    }
+
+    const detail = await readFailureDetail(response);
+    return {
+      status: 'delivery_failed',
+      deliveryError: detail
+        ? `${response.status}: ${detail}`
+        : String(response.status),
+    };
+  } catch (error) {
+    return {
+      status: 'delivery_failed',
+      deliveryError: readThrownError(error),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function deliverStoredReport(
+  db: AgentDb,
+  report: AgentReport,
+  options: {
+    allowMarkerShortCircuit: boolean;
+    manualAttempt: boolean;
+  },
+): Promise<DeliveryResult> {
+  const reportId = report.id;
+
+  if (options.allowMarkerShortCircuit && await hasSuccessfulDeliveryMarker(db, reportId)) {
+    return {
+      status: 'published',
+      deliveryError: null,
+    };
+  }
+
+  const url = resolveWebhookUrl(report.agentId, report.reportType);
+  if (!url) {
+    const deliveryError = `no webhook configured for ${report.agentId}/${report.reportType}`;
+    await updateDeliveryState(db, reportId, {
+      status: 'delivery_failed',
+      deliveryError,
+    });
+    return {
+      status: 'delivery_failed',
+      deliveryError,
+    };
+  }
+
+  const embed = selectEmbed(report);
+  const deliveryResult = await postWebhook(embed, url);
+
+  if (deliveryResult.status === 'published') {
+    await updateDeliveryState(db, reportId, {
+      status: 'published',
+      deliveredAt: new Date(),
+      deliveryError: null,
+    });
+
+    if (report.jobId) {
+      await recordStepEffect(db, {
+        jobId: report.jobId,
+        stepName: options.manualAttempt ? 'discord-delivery-manual' : 'discord-delivery',
+        effectType: 'discord-delivery',
+        idempotencyKey: options.manualAttempt
+          ? `discord-delivery:${reportId}:manual:${new Date().toISOString()}`
+          : `discord-delivery:${reportId}`,
+      });
+    }
+
+    return deliveryResult;
+  }
+
+  await updateDeliveryState(db, reportId, {
+    status: 'delivery_failed',
+    deliveryError: deliveryResult.deliveryError,
+  });
+
+  return deliveryResult;
+}
+
+export function buildScanEmbed(report: AgentReport): DiscordEmbed {
+  const payload = asRecord(report.reportJson);
+  const fields = [
+    buildField('Ticker', readJsonValue(payload, 'ticker', 'symbol')),
+    buildField('Price', readJsonValue(payload, 'price', 'currentPrice')),
+    buildField('Move', readJsonValue(payload, 'movePercent', 'percentChange', 'gapPercent')),
+    buildField('Volume', readJsonValue(payload, 'volume', 'relativeVolume')),
+    buildField('Float', readJsonValue(payload, 'float', 'floatShares')),
+    buildField('Catalyst', readJsonValue(payload, 'catalyst', 'headline'), false),
+  ];
+
+  return buildBaseEmbed(
+    report,
+    fields,
+    optionalText(report.summary, readJsonValue(payload, 'summary', 'thesis', 'setup')),
+  );
+}
+
+export function buildResearchEmbed(report: AgentReport): DiscordEmbed {
+  const payload = asRecord(report.reportJson);
+  const fields = [
+    buildField('Ticker', readJsonValue(payload, 'ticker', 'symbol')),
+    buildField('Bias', readJsonValue(payload, 'bias', 'stance')),
+    buildField('Entry', readJsonValue(payload, 'entry', 'entryPrice')),
+    buildField('Target', readJsonValue(payload, 'target', 'targetPrice')),
+    buildField('Risk', readJsonValue(payload, 'risk', 'stop', 'stopPrice')),
+    buildField('Catalyst', readJsonValue(payload, 'catalyst', 'headline'), false),
+  ];
+
+  return buildBaseEmbed(
+    report,
+    fields,
+    optionalText(report.summary, readJsonValue(payload, 'summary', 'thesis', 'setup')),
+  );
+}
+
+export function buildSwingSetupEmbed(report: AgentReport): DiscordEmbed {
+  const payload = asRecord(report.reportJson);
+  const fields = [
+    buildField('Ticker', readJsonValue(payload, 'ticker', 'symbol')),
+    buildField('Pattern', readJsonValue(payload, 'pattern', 'setup')),
+    buildField('MDR Score', readJsonValue(payload, 'mdrScore', 'score')),
+    buildField('Entry', readJsonValue(payload, 'entry', 'entryPrice')),
+    buildField('Stop', readJsonValue(payload, 'stop', 'stopPrice')),
+    buildField('Target', readJsonValue(payload, 'target', 'targetPrice')),
+  ];
+
+  return buildBaseEmbed(
+    report,
+    fields,
+    optionalText(report.summary, readJsonValue(payload, 'summary', 'thesis', 'rationale')),
+  );
+}
+
+export function buildSwingAlertEmbed(report: AgentReport): DiscordEmbed {
+  const payload = asRecord(report.reportJson);
+  const fields = [
+    buildField('Ticker', readJsonValue(payload, 'ticker', 'symbol')),
+    buildField('Alert', readJsonValue(payload, 'alertType', 'status')),
+    buildField('Action', readJsonValue(payload, 'action', 'signal')),
+    buildField('Current Price', readJsonValue(payload, 'currentPrice', 'price')),
+    buildField('Entry', readJsonValue(payload, 'entry', 'entryPrice')),
+    buildField('Stop', readJsonValue(payload, 'stop', 'stopPrice')),
+  ];
+
+  return buildBaseEmbed(
+    report,
+    fields,
+    optionalText(report.summary, readJsonValue(payload, 'summary', 'detail', 'rationale')),
+  );
+}
+
+export function buildMacroSummaryEmbed(report: AgentReport): DiscordEmbed {
+  const payload = asRecord(report.reportJson);
+  const fields = [
+    buildField('Bias', readJsonValue(payload, 'marketBias', 'bias')),
+    buildField('Rates', readJsonValue(payload, 'rates', 'yieldSummary')),
+    buildField('Breadth', readJsonValue(payload, 'breadth', 'marketBreadth')),
+    buildField('Top Theme', readJsonValue(payload, 'topTheme', 'theme')),
+    buildField('Watchlist', readJsonValue(payload, 'watchlist', 'tickers'), false),
+  ];
+
+  return buildBaseEmbed(
+    report,
+    fields,
+    optionalText(report.summary, readJsonValue(payload, 'summary', 'overview')),
+  );
+}
+
+export function buildSystemEmbed(
+  title: string,
+  detail: string,
+  severity: Severity,
+): DiscordEmbed {
+  return {
+    title: coerceFieldValue(title),
+    description: optionalText(detail),
+    color: DISCORD_EMBED_COLOR,
+    footer: {
+      text: `system • ${severity}`,
+    },
+  };
+}
+
+export function resolveWebhookUrl(agentId: AgentId, reportType: string): string | null {
+  let envName: string | null = null;
+
+  if (agentId === 'orchestrator' && reportType === 'macro-summary') {
+    envName = 'DISCORD_WEBHOOK_MACRO_DAILY';
+  } else if (agentId === 'orchestrator' && (reportType === 'system-alert' || reportType.startsWith('system-'))) {
+    envName = 'DISCORD_WEBHOOK_SYSTEM';
+  } else if (agentId === 'small-cap-trader' && reportType === 'pre-market-scan') {
+    envName = 'DISCORD_WEBHOOK_SCANS';
+  } else if (agentId === 'small-cap-trader' && reportType === 'research') {
+    envName = 'DISCORD_WEBHOOK_RESEARCH';
+  } else if (agentId === 'swing-trader' && (reportType === 'momentum-scan' || reportType === 'research')) {
+    envName = 'DISCORD_WEBHOOK_SWING_SETUPS';
+  } else if (agentId === 'swing-trader' && reportType === 'pattern-check') {
+    envName = 'DISCORD_WEBHOOK_SWING_ALERTS';
+  } else {
+    const combo = `${agentId}:${reportType}`;
+    if (!loggedUnknownWebhookCombos.has(combo)) {
+      loggedUnknownWebhookCombos.add(combo);
+      console.warn(`Unknown agent webhook mapping: ${combo}`);
+    }
+    return null;
+  }
+
+  const resolved = process.env[envName]?.trim();
+  return resolved ? resolved : null;
+}
+
+export async function writeAndDeliverReport(
+  db: AgentDb,
+  params: {
+    jobId: string;
+    userId: string;
+    agentId: AgentId;
+    reportType: string;
+    title: string;
+    summary: string | null;
+    reportJson: unknown;
+  },
+): Promise<{ reportId: string; status: 'published' | 'delivery_failed'; deliveryError: string | null }> {
+  const reportId = `${params.jobId}:${params.reportType}`;
+  const storedReport = await ensureStoredReport(db, {
+    reportId,
+    ...params,
+  });
+  if (!storedReport) {
+    return {
+      reportId,
+      status: 'delivery_failed',
+      deliveryError: 'report row unavailable',
+    };
+  }
+  const deliveryResult = await deliverStoredReport(db, storedReport, {
+    allowMarkerShortCircuit: true,
+    manualAttempt: false,
+  });
+
+  return {
+    reportId,
+    ...deliveryResult,
+  };
+}
+
+export async function redeliverReport(
+  db: AgentDb,
+  reportId: string,
+): Promise<{ status: 'published' | 'delivery_failed'; deliveryError: string | null }> {
+  const storedReport = await getReportById(db, reportId);
+  if (!storedReport) {
+    return {
+      status: 'delivery_failed',
+      deliveryError: 'report not found',
+    };
+  }
+
+  return deliverStoredReport(db, storedReport, {
+    allowMarkerShortCircuit: false,
+    manualAttempt: true,
+  });
+}

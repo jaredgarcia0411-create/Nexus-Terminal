@@ -63,7 +63,7 @@ Sprint 1 and Sprint 2 are complete. Older detail was removed from this file; use
 ## AEV2 Sprint 3 — Runtime Wiring + API Surface
 
 > Generated: 2026-04-07 | Agent: Claude (Plan)
-> Status: READY FOR CODEX
+> Status: IN PROGRESS — Checkpoint 1 complete on 2026-04-07
 
 ### Objective
 
@@ -87,7 +87,8 @@ Connect the Sprint 2 library runtime to stable app contracts. Sprint 3 lands Dis
 
 - Sprint 2 runtime is in place and validated. Every module listed in Sprint 2 Summary is library-only and does not import from `@/app` or `services/`.
 - No `/api/agents/*` route exists yet. Sprint 3 creates all of them.
-- `lib/agents/config.ts`, `lib/agents/discord.ts`, `lib/agents/scrape-lite.ts`, `lib/agents/worker.ts`, `lib/agents/heartbeat.ts`, `lib/agents/macro-cron.ts`, and `lib/agents/blueprints/` do not exist yet. Sprint 3 creates them.
+- Checkpoint 1 is complete: [`lib/agents/discord.ts`](/home/jared/Nexus-Terminal/lib/agents/discord.ts) and [`__tests__/agent-discord.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-discord.test.ts) are landed and validated.
+- Remaining Sprint 3 new files still pending: `lib/agents/config.ts`, `lib/agents/scrape-lite.ts`, `lib/agents/worker.ts`, `lib/agents/heartbeat.ts`, `lib/agents/macro-cron.ts`, and `lib/agents/blueprints/`, plus the `/api/agents/*` route tree and remaining test files.
 - `lib/agents/prompts/global-policy.md`, `orchestrator.md`, `small-cap.md`, and `swing-trader.md` already exist from Sprint 1. Sprint 3 adds a loader, not new prompt files.
 - [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml), [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example), and the `services/discord-bot/` tree still reflect pre-AEV2 state. Sprint 3 does NOT touch them — Sprint 4 owns the Compose rewrite and the service container wiring.
 - Root `tsconfig.json` still excludes `services/`. Sprint 3 must stay runnable under the existing root `tsc --noEmit` with no config changes.
@@ -245,7 +246,7 @@ Behavior contract:
 
 - **Webhook URL resolution.** `resolveWebhookUrl` reads env vars by agent + reportType:
   - `orchestrator` + `macro-summary` -> `DISCORD_WEBHOOK_MACRO_DAILY`
-  - `orchestrator` + any system alert -> `DISCORD_WEBHOOK_SYSTEM`
+  - `orchestrator` + `system-alert` or any `reportType` prefixed with `system-` -> `DISCORD_WEBHOOK_SYSTEM`
   - `small-cap-trader` + `pre-market-scan` -> `DISCORD_WEBHOOK_SCANS`
   - `small-cap-trader` + `research` -> `DISCORD_WEBHOOK_RESEARCH`
   - `swing-trader` + `momentum-scan` or `research` -> `DISCORD_WEBHOOK_SWING_SETUPS`
@@ -258,9 +259,9 @@ Behavior contract:
   4. Check `recordStepEffect` state for `discord-delivery:${reportId}`. If a successful-delivery marker already exists, return `{ reportId, status: 'published', deliveryError: null }` without posting again.
   5. Resolve the webhook URL. If null, update the row to `status = 'delivery_failed'`, `delivery_error = 'no webhook configured for ${agentId}/${reportType}'`, and return.
   6. Build the embed via the correct `build*Embed` function and POST to the webhook with `fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ embeds: [embed] }) })`.
-  7. On HTTP 2xx: update `agent_reports` to `delivered_at = now()`, `status = 'published'`, then write the successful delivery marker `discord-delivery:${reportId}`. Return `{ reportId, status: 'published', deliveryError: null }`.
+  7. On HTTP 2xx: update `agent_reports` to `delivered_at = now()`, `status = 'published'`, then write the successful delivery marker `discord-delivery:${reportId}` using `effectType = 'discord-delivery'` and a fixed `stepName = 'discord-delivery'`. Return `{ reportId, status: 'published', deliveryError: null }`.
   8. On any other status or fetch throw: update `agent_reports` to `status = 'delivery_failed'`, `delivery_error = '<status code>: <truncated body>'`. Do NOT write the successful delivery marker. Return `{ reportId, status: 'delivery_failed', deliveryError }`. Do NOT throw — delivery failures are expected and must become data, not exceptions.
-- **`redeliverReport`.** Re-reads the existing row by `reportId`, re-runs steps 5-8 above using the stored `report_json`, and records a fresh audit trail marker such as `discord-delivery:${reportId}:manual:${timestamp}` if an attempt log is needed. Manual redelivery is intentionally a new delivery attempt and may repost once per admin call. It does NOT call the LLM and does NOT modify `report_json`.
+- **`redeliverReport`.** Re-reads the existing row by `reportId`, re-runs steps 5-8 above using the stored `report_json`, and records a fresh audit trail marker such as `discord-delivery:${reportId}:manual:${timestamp}` with `effectType = 'discord-delivery'` and fixed `stepName = 'discord-delivery-manual'` if an attempt log is needed. Manual redelivery is intentionally a new delivery attempt and may repost once per admin call. It does NOT call the LLM and does NOT modify `report_json`.
 - **Embed builders.** Pure functions, no DB access, no fetch. Each reads fields from `report.report_json` and returns a `DiscordEmbed` with `color: 0x10B981`. Unknown fields fall back to string coercion; missing required fields render as `"n/a"`. Never throw.
 - **No direct `agent_reports` writes outside this file.** Blueprint steps that need to publish results must call `writeAndDeliverReport` — they do NOT `db.insert(agentReports)` directly.
 
@@ -435,7 +436,7 @@ Contract notes:
   - message matches `/\b(MDR|multi[- ]day[- ]runner|parabolic|momentum|breakout)\b/i` -> `swing-trader`, `research`
   - Otherwise `decision = 'handle-directly'`, `targetAgentId = null`, `specialistJobType = null`.
 - **Availability check.** After picking a specialist, read `agent_registry.status` for that agent. If `status !== 'online'`, set `decision = 'fallback-to-self'`, fill `warning = '${agentId} is ${status}, handling request directly'`, and let step 2 run.
-- **Handoff enqueue.** When `decision = 'route-to-specialist'`, step 1's `run()` inserts a new `agent_jobs` row via the injected `db`/`job` runtime fields (this is allowed — it is a code step, not a queue-helper boundary violation). The insert sets `agent_id = targetAgentId`, `user_id = job.userId`, `job_type = 'research'`, `status = 'queued'`, `input = { ticker: extractedTicker, originator_job_id: job.id }`. The step then returns `{ decision: 'route-to-specialist', targetAgentId, specialistJobType: 'research', specialistJobId, warning: null, message: 'routed' }`.
+- **Handoff enqueue.** When `decision = 'route-to-specialist'`, step 1's `run()` inserts a new `agent_jobs` row via the injected `db`/`job` runtime fields (this is allowed — it is a code step, not a queue-helper boundary violation). The insert sets `id = randomUUID()`, `agent_id = targetAgentId`, `user_id = job.userId`, `job_type = 'research'`, `status = 'queued'`, `input = { ticker: extractedTicker, originator_job_id: job.id }`. The step then returns `{ decision: 'route-to-specialist', targetAgentId, specialistJobType: 'research', specialistJobId, warning: null, message: 'routed' }`.
 - **Runner-level short-circuit for routed jobs.** The runner skips step 2 when `previousOutput.decision === 'route-to-specialist'` and `step.metadata.skipWhenRouted === true`. The worker loop then sees the final blueprint output from step 1 and writes `result = { routed: true, specialistJobId }` into the orchestrator job.
 - **Ticker extraction.** Regex `/\b[A-Z]{1,5}\b/` against the message, first match. If no match, `extractedTicker = null` and the specialist handoff still happens (the specialist blueprint validates ticker).
 
@@ -517,7 +518,7 @@ Contract notes:
 
 #### `lib/agents/blueprints/small-cap-research.ts`
 
-Three steps: fetch filings from AskEdgar via the canonical shared cache, fetch price/volume from a direct TradingView scanner call, then synthesize the report. Do NOT call `/api/tradingview/gainers` over HTTP from a worker.
+Four steps: fetch filings from AskEdgar via the canonical shared cache, fetch price/volume from a direct TradingView scanner call, synthesize the report, then persist/deliver the stored report. Do NOT call `/api/tradingview/gainers` over HTTP from a worker.
 
 ```ts
 export const smallCapResearchBlueprint: Blueprint = {
@@ -568,12 +569,13 @@ export const smallCapResearchBlueprint: Blueprint = {
 Contract notes:
 
 - **AskEdgar caching.** Step 1 calls `getCachedTickerData(ticker)` (signature: `getCachedTickerData(ticker: string)` from `lib/askedgar.ts`) as the canonical shared cache for raw AskEdgar data. The ticker arg is required — pass the normalized ticker from the step input. If the blueprint wants to persist derived facts in `agent_memory_v2`, that write is additive and must not replace the shared cache.
+- **TradingView price context.** Step 2 does NOT call `/api/tradingview/gainers` over HTTP and does NOT refactor the existing route in Sprint 3. Instead, it uses a private helper local to the blueprint file that mirrors the TradingView scanner request shape already used in [`app/api/tradingview/gainers/route.ts`](/home/jared/Nexus-Terminal/app/api/tradingview/gainers/route.ts) and returns only the price/volume fields the research blueprint needs.
 - **Ticker normalization.** Step 1 uppercases and trims the incoming ticker before any external call. The step input schema should be tightened to `z.object({ ticker: z.string().regex(/^[A-Z]{1,5}$/) })` so invalid or missing tickers fail as non-retriable contract errors.
 - **Report ownership.** `userId = job.userId` — research reports belong to the user who requested them, never to `system-agent-user`.
 
 #### `lib/agents/blueprints/swing-trader-research.ts`
 
-Same three-step shape as small-cap-research, but the LLM focuses on MDR similarity scoring, momentum indicators, and entry/stop/target levels. Schema:
+Same four-step shape as small-cap-research, but the LLM focuses on MDR similarity scoring, momentum indicators, and entry/stop/target levels. Schema:
 
 ```ts
 outputSchema: z.object({
@@ -589,6 +591,10 @@ outputSchema: z.object({
 ```
 
 Uses `callLlm(..., 'background')`. Same save-research step shape. Same user-owned report.
+
+Contract notes:
+
+- **Upstream inputs.** Sprint 3 uses the same two upstream data sources as `small-cap-research`: Step 1 calls `getCachedTickerData(ticker)` for filings/context, and Step 2 uses the same blueprint-local TradingView helper shape described above for price/volume context. The differentiation is in the synthesis prompt and output schema, not the transport layer.
 
 #### `lib/agents/heartbeat.ts`
 
@@ -617,6 +623,7 @@ export async function startWorker(config: WorkerConfig & { agentConfig: AgentCon
 
 Behavior contract:
 
+- `startWorker()` resolves its DB internally via `getAgentDb()`. If that returns `null`, it throws `new Error('Database not configured')` before marking the agent online or starting heartbeat/polling. Worker tests should therefore mock `getAgentDb()` rather than threading a DB through the public signature.
 - On start: writes/updates the agent's `agent_registry` row to `status = 'online'`, then starts `startHeartbeat(db, agentId)`, then begins the poll loop.
 - Poll loop:
   1. `const claim = await claimNextQueuedJob(db, agentId, workerId)` where `workerId = '${agentId}:${process.pid}'`.
@@ -654,7 +661,7 @@ Behavior contract:
      RETURNING id;
      ```
      If zero rows returned, another tick already claimed the run — skip.
-  4. If one row returned: insert a new `agent_jobs` row with `agent_id = 'orchestrator'`, `user_id = 'system-agent-user'`, `job_type = 'macro-summary'`, `status = 'queued'`, `input = { tradingDate }`. Then update the scheduled-run row with `job_id = <new job id>`, `status = 'completed'`, `completed_at = now()`.
+  4. If one row returned: insert a new `agent_jobs` row with `id = randomUUID()`, `agent_id = 'orchestrator'`, `user_id = 'system-agent-user'`, `job_type = 'macro-summary'`, `status = 'queued'`, `input = { tradingDate }`. Then update the scheduled-run row with `job_id = <new job id>`, `status = 'completed'`, `completed_at = now()`.
 - `stop()` clears the interval. No DB write on stop — the scheduled-run row stays in whatever state the last tick left it.
 - Only the Orchestrator process calls `startMacroCron`. Sprint 4's `services/agent-entrypoint.ts` wires it; Sprint 3 just ships the library.
 - Tests mock `db.execute` / `db.insert` / `db.update` and advance fake timers to drive the tick. Verify the ON CONFLICT path skips without inserting a new job.
@@ -705,6 +712,8 @@ Do NOT inline schemas in route files. Every route imports from `@/lib/validation
 
 Each route below lists path, method, auth, request shape, response shape, and error paths. Codex implements each file exactly once.
 
+- **DB-backed route guard.** Every DB-backed route in this section uses `const db = getAgentDb(); if (!db) return dbUnavailable();` before any query or write. The earlier step-by-step lists omit repeated mentions in a few places; this guard is still required on every DB-backed `/api/agents/*` route, including list/detail/admin routes and `GET /api/agents/macro-summary/latest`.
+
 ##### `app/api/agents/service/chat/route.ts`
 
 **POST** — `x-agent-service-key` header; body = `ServiceChatPostInput`.
@@ -714,7 +723,7 @@ Each route below lists path, method, auth, request shape, response shape, and er
 3. `const db = getAgentDb()`. If null, return `Response.json({ error: 'Database not configured' }, { status: 503 })`.
 4. `await ensureUser(db, user)` so the mapped service user exists before any FK-backed insert.
 5. Resolve or create `session_id`: if provided, use it; otherwise `randomUUID()`.
-6. Insert a row into `agent_conversations` with `role = 'user'`, `content = data.message`, `channel = 'discord'`, `user_id = user.id`, `agent_id = 'orchestrator'`, `session_id`.
+6. Insert a row into `agent_conversations` with `id = randomUUID()`, `role = 'user'`, `content = data.message`, `channel = 'discord'`, `user_id = user.id`, `agent_id = 'orchestrator'`, `session_id`.
 7. Insert a new `agent_jobs` row: `id = randomUUID()`, `agent_id = 'orchestrator'`, `user_id = user.id`, `job_type = 'chat'`, `status = 'queued'`, `input = { message: data.message, session_id, channel: 'discord', discord_user_id: discordUserId }`, `priority = 0`, `max_attempts = 3`.
 8. Return `Response.json({ job_id, session_id, agent_id: 'orchestrator' }, { status: 201 })`.
 
@@ -757,7 +766,7 @@ Each route below lists path, method, auth, request shape, response shape, and er
 2. `const db = getAgentDb()`. If null, return 503.
 3. `await ensureUser(db, user)` before inserting the job row.
 4. `SELECT status FROM agent_registry WHERE id = ${data.agent_id}`. If `status !== 'online'`, return 400 `{ error: 'agent unavailable', agent_id, status }` (AEV2-403 contract — reject, do not silently queue).
-5. Insert `agent_jobs` row: `agent_id = data.agent_id`, `user_id = user.id`, `job_type = 'research'`, `input = { ticker: data.ticker }`, `status = 'queued'`.
+5. Insert `agent_jobs` row: `id = randomUUID()`, `agent_id = data.agent_id`, `user_id = user.id`, `job_type = 'research'`, `input = { ticker: data.ticker }`, `status = 'queued'`.
 6. Return `{ job_id, agent_id, job_type: 'research' }`.
 
 **GET** — `requireUser()`.
@@ -815,10 +824,13 @@ Return this exact `AdminStatsResponse` shape:
 Query/formula plan:
 
 - `circuitBreakers`: `SELECT id, config -> 'circuitBreaker' FROM agent_registry`.
+- `circuitBreakers` mapping uses the Sprint 2 stored shape in `agent_registry.config.circuitBreaker`, which currently persists `{ consecutiveFailures, openedAt }` rather than a separate `lastFailureAt`.
+- `circuitBreakers.status`: `'closed'` when `openedAt` is null, `'open'` when `openedAt` is within the last 60 seconds, and `'half-open'` when `openedAt` is older than 60 seconds but the self-heal path has not reset the row yet.
+- `circuitBreakers.lastFailureAt`: map from `openedAt`. This remains `null` until the breaker has actually opened because Sprint 2 does not persist pre-threshold failure timestamps.
 - `today.*`: aggregates over `agent_request_log` where `created_at >= start of current UTC day`.
 - `today.byLane`: `GROUP BY lane`.
 - `today.byAgent`: `GROUP BY agent_id`.
-- `today.validationFailureRate`: `contract-failed jobs created today / jobs created today`; use `0` when the denominator is `0`.
+- `today.validationFailureRate`: `contract-failed jobs created today / jobs created today`; use `0` when the denominator is `0`. A job counts as `contract-failed` when its final `step_log` entry has `errorClass = 'contract'`.
 - `today.retryRate`: `jobs created today with attempt > 1 / jobs created today`; use `0` when the denominator is `0`.
 - `thisMonth.*`: aggregates over `agent_request_log` where `created_at >= first of current UTC month`. Include `budgetCents` from `getLlmBudgetConfig().monthlyBudgetCents` and `budgetUsedPercent`.
 - `agents`: `SELECT id, display_name, status, last_heartbeat FROM agent_registry`.
@@ -847,9 +859,10 @@ Query/formula plan:
 
 **POST** — `requireAgentAdmin()`; body = `redeliverSchema`.
 
-1. `const result = await redeliverReport(getAgentDb(), data.report_id)`.
-2. Return `{ report_id: data.report_id, status: result.status }`.
-3. 404 if the report does not exist.
+1. `const db = getAgentDb()`. If null, return 503.
+2. `SELECT id FROM agent_reports WHERE id = ${data.report_id} LIMIT 1`. If no row, return 404 `{ error: 'report not found' }`.
+3. `const result = await redeliverReport(db, data.report_id)`.
+4. Return `{ report_id: data.report_id, status: result.status }`.
 
 ##### `app/api/agents/macro-summary/latest/route.ts`
 
@@ -901,25 +914,25 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 
 **Check off before commit**
 
-- [ ] `lib/agents/discord.ts` exists and exports exactly the symbols listed in the execution contract (`DiscordEmbed`, `DiscordWebhookPayload`, five `build*Embed` functions, `resolveWebhookUrl`, `writeAndDeliverReport`, `redeliverReport`).
-- [ ] `writeAndDeliverReport` uses `reportId = ${jobId}:${reportType}` as the deterministic row key and `discord-delivery:${reportId}` as the successful-delivery marker.
-- [ ] `resolveWebhookUrl` maps every (agentId, reportType) combination listed in the contract and returns `null` for unknowns without throwing.
-- [ ] Webhook POST uses `fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ embeds: [embed] }) })` and respects a 10s AbortController timeout.
-- [ ] HTTP 2xx sets `status = 'published'` and `delivered_at = now()`, then writes the successful delivery marker. Non-2xx or fetch throw sets `status = 'delivery_failed'` with `delivery_error` populated. Neither path throws to the caller.
-- [ ] `redeliverReport` re-reads the stored `report_json`, performs a fresh delivery attempt only, and does not call the LLM or rewrite `report_json`.
-- [ ] `__tests__/agent-discord.test.ts` covers: happy-path write+deliver, repeat automatic publish reuses the existing report row and short-circuits after a recorded successful-delivery marker, HTTP 500 becomes `delivery_failed`, `fetch` throw becomes `delivery_failed`, `resolveWebhookUrl` unknown combo returns null, and manual redeliver posts again as a fresh admin-triggered attempt.
+- [x] `lib/agents/discord.ts` exists and exports exactly the symbols listed in the execution contract (`DiscordEmbed`, `DiscordWebhookPayload`, five `build*Embed` functions, `resolveWebhookUrl`, `writeAndDeliverReport`, `redeliverReport`).
+- [x] `writeAndDeliverReport` uses `reportId = ${jobId}:${reportType}` as the deterministic row key and `discord-delivery:${reportId}` as the successful-delivery marker.
+- [x] `resolveWebhookUrl` maps every (agentId, reportType) combination listed in the contract and returns `null` for unknowns without throwing.
+- [x] Webhook POST uses `fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ embeds: [embed] }) })` and respects a 10s AbortController timeout.
+- [x] HTTP 2xx sets `status = 'published'` and `delivered_at = now()`, then writes the successful delivery marker. Non-2xx or fetch throw sets `status = 'delivery_failed'` with `delivery_error` populated. Neither path throws to the caller.
+- [x] `redeliverReport` re-reads the stored `report_json`, performs a fresh delivery attempt only, and does not call the LLM or rewrite `report_json`.
+- [x] `__tests__/agent-discord.test.ts` covers: happy-path write+deliver, repeat automatic publish reuses the existing report row and short-circuits after a recorded successful-delivery marker, HTTP 500 becomes `delivery_failed`, `fetch` throw becomes `delivery_failed`, `resolveWebhookUrl` unknown combo returns null, and manual redeliver posts again as a fresh admin-triggered attempt.
 
 **Exit criteria**
 
-- [ ] Automatic retries reuse the same `agent_reports` row and do not repost after a recorded successful delivery marker.
-- [ ] Delivery failure becomes observable state, not a thrown exception.
-- [ ] No blueprint file yet imports from `discord.ts` — blueprints land in Checkpoint 3.
+- [x] Automatic retries reuse the same `agent_reports` row and do not repost after a recorded successful delivery marker.
+- [x] Delivery failure becomes observable state, not a thrown exception.
+- [x] No blueprint file yet imports from `discord.ts` — blueprints land in Checkpoint 3.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npx vitest run __tests__/agent-discord.test.ts`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npx vitest run __tests__/agent-discord.test.ts`
 
 **STOP. Review. Commit. Then continue.**
 
