@@ -1,3 +1,5 @@
+import type { AgentDb } from './db';
+
 export type AgentId = 'orchestrator' | 'small-cap-trader' | 'swing-trader';
 
 export type JobType =
@@ -90,6 +92,7 @@ export interface StepMetadata {
   sideEffect: boolean;
   idempotencyKey?: string;
   lane?: LlmLane;
+  skipWhenRouted?: boolean;
 }
 
 export interface StepProvenance {
@@ -122,6 +125,9 @@ export interface StepInput {
   previousOutput: unknown;
   memory: AgentMemoryRow[];
   context: AgentContext;
+  job: AgentJob;
+  db: AgentDb;
+  agentConfig: AgentConfig;
 }
 
 export interface BlueprintStep {

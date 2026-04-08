@@ -4,6 +4,7 @@ import { agentJobCheckpoints, agentStepEffects } from '@/lib/db/schema';
 import {
   BlueprintValidationError,
   BudgetExceededError,
+  NotImplementedBlueprintError,
 } from '@/lib/agents/types';
 
 const buildContextMock = vi.hoisted(() => vi.fn());
@@ -169,15 +170,24 @@ describe('runBlueprint', () => {
   });
 
   it('executes ordered steps with step-1 and later-step validation against the correct payload', async () => {
+    const job = createJob();
+    const db = createDb() as never;
+    let config: AgentConfig;
     const stepOneRun = vi.fn(async (input) => {
       expect(input.jobInput).toEqual({ topic: 'watchlist' });
       expect(input.previousOutput).toBeNull();
       expect(input.memory).toHaveLength(1);
+      expect(input.job).toBe(job);
+      expect(input.db).toBe(db);
+      expect(input.agentConfig).toBe(config);
       return createStepResult({ count: 1 });
     });
     const stepTwoRun = vi.fn(async (input) => {
       expect(input.jobInput).toEqual({ topic: 'watchlist' });
       expect(input.previousOutput).toEqual({ count: 1 });
+      expect(input.job).toBe(job);
+      expect(input.db).toBe(db);
+      expect(input.agentConfig).toBe(config);
       return createStepResult({ summary: 'done' });
     });
 
@@ -204,11 +214,13 @@ describe('runBlueprint', () => {
       ],
     };
 
+    config = createConfig(blueprint);
+
     const result = await runBlueprint(
       blueprint,
-      createJob(),
-      createConfig(blueprint),
-      createDb() as never,
+      job,
+      config,
+      db,
       { lockedBy: 'worker-1', leaseVersion: 2 },
     );
 
@@ -307,6 +319,7 @@ describe('runBlueprint', () => {
     expect(result.status).toBe('failed');
     expect(result.finalOutput).toBeNull();
     expect(result.failureReason).toContain('daily budget exceeded for orchestrator');
+    expect(result.failureClass).toBe('policy');
     expect(result.stepsExecuted).toBe(0);
     expect(stepRun).not.toHaveBeenCalled();
     expect(checkRateLimitMock).not.toHaveBeenCalled();
@@ -342,6 +355,7 @@ describe('runBlueprint', () => {
       status: 'failed',
       finalOutput: null,
       failureReason: 'lease lost during step_log persistence',
+      failureClass: 'transient',
       stepsExecuted: 1,
     });
   });
@@ -653,6 +667,7 @@ describe('runBlueprint', () => {
 
     expect(result.status).toBe('failed');
     expect(result.failureReason).toContain('Validation failed at second (input)');
+    expect(result.failureClass).toBe('contract');
     expect((persistStepLogMock.mock.calls[1][4] as Array<{ validatorResult?: string; errorClass?: string }>)[1]).toMatchObject({
       validatorResult: 'fail',
       errorClass: 'contract',
@@ -686,10 +701,94 @@ describe('runBlueprint', () => {
 
     expect(result.status).toBe('failed');
     expect(result.failureReason).toContain('Validation failed at draft (output)');
+    expect(result.failureClass).toBe('contract');
     expect(recordLlmAttemptMock).toHaveBeenCalledTimes(2);
     expect((persistStepLogMock.mock.calls[0][4] as Array<{ tokensUsed?: number; errorClass?: string }>)[0]).toMatchObject({
       tokensUsed: 10,
       errorClass: 'contract',
     });
+  });
+
+  it('skips a routed step when metadata.skipWhenRouted is enabled', async () => {
+    const routedDecision = {
+      decision: 'route-to-specialist',
+      targetAgentId: 'small-cap-trader',
+      specialistJobType: 'research',
+      specialistJobId: 'job-specialist-1',
+      warning: null,
+      message: 'routed',
+    };
+    const firstRun = vi.fn(async () => createStepResult(routedDecision));
+    const skippedRun = vi.fn();
+    const blueprint: Blueprint = {
+      id: 'bp-routed',
+      description: 'routed',
+      steps: [
+        {
+          name: 'classify',
+          type: 'code',
+          metadata: { canRetry: false, timeoutMs: 1000, maxRepairAttempts: 0, sideEffect: false },
+          run: firstRun,
+        },
+        {
+          name: 'synthesize',
+          type: 'llm',
+          metadata: {
+            canRetry: true,
+            timeoutMs: 1000,
+            maxRepairAttempts: 0,
+            sideEffect: false,
+            skipWhenRouted: true,
+          },
+          run: skippedRun,
+        },
+      ],
+    };
+
+    const result = await runBlueprint(
+      blueprint,
+      createJob(),
+      createConfig(blueprint),
+      createDb() as never,
+      { lockedBy: 'worker-1', leaseVersion: 2 },
+    );
+
+    expect(result).toEqual({
+      status: 'completed',
+      finalOutput: routedDecision,
+      stepsExecuted: 1,
+    });
+    expect(skippedRun).not.toHaveBeenCalled();
+    expect((persistStepLogMock.mock.calls[1][4] as Array<{ step?: string; tokensUsed?: number }>)[1]).toMatchObject({
+      step: 'synthesize',
+      tokensUsed: 0,
+    });
+  });
+
+  it('classifies not implemented blueprints as contract failures', async () => {
+    const blueprint: Blueprint = {
+      id: 'bp-not-implemented',
+      description: 'contract',
+      steps: [{
+        name: 'not-implemented',
+        type: 'code',
+        metadata: { canRetry: false, timeoutMs: 1000, maxRepairAttempts: 0, sideEffect: false },
+        run: vi.fn(async () => {
+          throw new NotImplementedBlueprintError('small-cap-trader:pre-market-scan');
+        }),
+      }],
+    };
+
+    const result = await runBlueprint(
+      blueprint,
+      createJob(),
+      createConfig(blueprint),
+      createDb() as never,
+      { lockedBy: 'worker-1', leaseVersion: 2 },
+    );
+
+    expect(result.status).toBe('failed');
+    expect(result.failureClass).toBe('contract');
+    expect(result.failureReason).toContain('blueprint not implemented in Sprint 3');
   });
 });

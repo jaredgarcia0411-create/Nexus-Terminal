@@ -63,7 +63,7 @@ Sprint 1 and Sprint 2 are complete. Older detail was removed from this file; use
 ## AEV2 Sprint 3 — Runtime Wiring + API Surface
 
 > Generated: 2026-04-07 | Agent: Claude (Plan)
-> Status: IN PROGRESS — Checkpoint 2 complete on 2026-04-07
+> Status: IN PROGRESS — Checkpoint 3 complete on 2026-04-07
 
 ### Objective
 
@@ -89,7 +89,8 @@ Connect the Sprint 2 library runtime to stable app contracts. Sprint 3 lands Dis
 - No `/api/agents/*` route exists yet. Sprint 3 creates all of them.
 - Checkpoint 1 is complete: [`lib/agents/discord.ts`](/home/jared/Nexus-Terminal/lib/agents/discord.ts) and [`__tests__/agent-discord.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-discord.test.ts) are landed and validated.
 - Checkpoint 2 is complete: [`lib/agents/scrape-lite.ts`](/home/jared/Nexus-Terminal/lib/agents/scrape-lite.ts), [`lib/agents/prompts-loader.ts`](/home/jared/Nexus-Terminal/lib/agents/prompts-loader.ts), [`lib/agents/config.ts`](/home/jared/Nexus-Terminal/lib/agents/config.ts), the stub blueprint files under [`lib/agents/blueprints/`](/home/jared/Nexus-Terminal/lib/agents/blueprints), and focused coverage in [`__tests__/agent-scrape-lite.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-scrape-lite.test.ts) plus [`__tests__/agent-config.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-config.test.ts) are landed and validated.
-- Remaining Sprint 3 new files still pending: `lib/agents/worker.ts`, `lib/agents/heartbeat.ts`, `lib/agents/macro-cron.ts`, the real blueprint bodies for the four implemented blueprints, the `/api/agents/*` route tree, and the remaining Sprint 3 test files.
+- Checkpoint 3 is complete: [`lib/agents/blueprints/orchestrator-chat.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/orchestrator-chat.ts), [`lib/agents/blueprints/orchestrator-macro-summary.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/orchestrator-macro-summary.ts), [`lib/agents/blueprints/small-cap-research.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/small-cap-research.ts), [`lib/agents/blueprints/swing-trader-research.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/swing-trader-research.ts), additive runner contract updates in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts) plus [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts), and focused coverage in [`__tests__/agent-blueprints.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprints.test.ts) with the updated runner coverage in [`__tests__/agent-blueprint-runner.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprint-runner.test.ts) are landed and validated.
+- Remaining Sprint 3 new files still pending: `lib/agents/worker.ts`, `lib/agents/heartbeat.ts`, `lib/agents/macro-cron.ts`, the `/api/agents/*` route tree, `lib/validations/agents.ts`, and the remaining Sprint 3 route/admin test files.
 - `lib/agents/prompts/global-policy.md`, `orchestrator.md`, `small-cap.md`, and `swing-trader.md` already exist from Sprint 1. Sprint 3 adds a loader, not new prompt files.
 - [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml), [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example), and the `services/discord-bot/` tree still reflect pre-AEV2 state. Sprint 3 does NOT touch them — Sprint 4 owns the Compose rewrite and the service container wiring.
 - Root `tsconfig.json` still excludes `services/`. Sprint 3 must stay runnable under the existing root `tsc --noEmit` with no config changes.
@@ -980,24 +981,24 @@ All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rule
 
 **Check off before commit**
 
-- [ ] `lib/agents/blueprints/orchestrator-chat.ts` exports `orchestratorChatBlueprint` with two steps. Step 1 `classify-and-route` is deterministic (no LLM call), enforces the five routing rules verbatim, checks `agent_registry.status`, and enqueues the specialist handoff when needed. Step 2 `synthesize-response` uses `callLlm(..., 'interactive')` with `buildLlmSystemPrompt('orchestrator')`.
-- [ ] `lib/agents/blueprints/orchestrator-macro-summary.ts` exports four steps matching the contract. Step 1 reads `MACRO_HEADLINES_URLS` env with the documented default. Step 3 uses `lane: 'background'`. Step 4 uses `writeAndDeliverReport` with `userId = 'system-agent-user'`.
-- [ ] `lib/agents/blueprints/small-cap-research.ts` exports four steps. Step 1 calls `getCachedTickerData(ticker)` as the upstream AskEdgar cache (passing the normalized ticker arg — the function signature requires it), Step 2 uses a direct TradingView scanner call instead of an HTTP call into `/api/tradingview/gainers`, Step 3 uses `lane: 'background'`, and Step 4 uses `writeAndDeliverReport` with `userId = job.userId` and `reportType = 'research'`.
-- [ ] `lib/agents/blueprints/swing-trader-research.ts` exports four steps with the MDR-focused output schema. Same save-research contract.
-- [ ] `lib/agents/blueprint-runner.ts` is extended (additive only) to inject `job` / `db` / `agentConfig` into step input, support `skipWhenRouted`, and return `failureClass` on failed runs.
-- [ ] `__tests__/agent-blueprints.test.ts` covers: orchestrator routing (each rule branches correctly), orchestrator offline-specialist fallback, macro-summary step 3 using the background lane, small-cap AskEdgar cache hit/miss, research save step using `writeAndDeliverReport`.
+- [x] `lib/agents/blueprints/orchestrator-chat.ts` exports `orchestratorChatBlueprint` with two steps. Step 1 `classify-and-route` is deterministic (no LLM call), enforces the five routing rules verbatim, checks `agent_registry.status`, and enqueues the specialist handoff when needed. Step 2 `synthesize-response` uses `callLlm(..., 'interactive')` with `buildLlmSystemPrompt('orchestrator')`.
+- [x] `lib/agents/blueprints/orchestrator-macro-summary.ts` exports four steps matching the contract. Step 1 reads `MACRO_HEADLINES_URLS` env with the documented default. Step 3 uses `lane: 'background'`. Step 4 uses `writeAndDeliverReport` with `userId = 'system-agent-user'`.
+- [x] `lib/agents/blueprints/small-cap-research.ts` exports four steps. Step 1 calls `getCachedTickerData(ticker)` as the upstream AskEdgar cache (passing the normalized ticker arg — the function signature requires it), Step 2 uses a direct TradingView scanner call instead of an HTTP call into `/api/tradingview/gainers`, Step 3 uses `lane: 'background'`, and Step 4 uses `writeAndDeliverReport` with `userId = job.userId` and `reportType = 'research'`.
+- [x] `lib/agents/blueprints/swing-trader-research.ts` exports four steps with the MDR-focused output schema. Same save-research contract.
+- [x] `lib/agents/blueprint-runner.ts` is extended (additive only) to inject `job` / `db` / `agentConfig` into step input, support `skipWhenRouted`, and return `failureClass` on failed runs.
+- [x] `__tests__/agent-blueprints.test.ts` covers: orchestrator routing (each rule branches correctly), orchestrator offline-specialist fallback, macro-summary step 3 using the background lane, small-cap AskEdgar cache hit/miss, research save step using `writeAndDeliverReport`.
 
 **Exit criteria**
 
-- [ ] All four implemented blueprints are callable through `resolveBlueprint(job)` in tests.
-- [ ] Scan blueprints still fail at step execution time — not at import time — and the worker treats them as non-retriable contract failures.
-- [ ] Runner changes are limited to the additive Sprint 3 runtime contract described above.
+- [x] All four implemented blueprints are callable through `resolveBlueprint(job)` in tests.
+- [x] Scan blueprints still fail at step execution time — not at import time — and the worker treats them as non-retriable contract failures.
+- [x] Runner changes are limited to the additive Sprint 3 runtime contract described above.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npx vitest run __tests__/agent-blueprints.test.ts __tests__/agent-blueprint-runner.test.ts`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npx vitest run __tests__/agent-blueprints.test.ts __tests__/agent-blueprint-runner.test.ts`
 
 **STOP. Review. Commit. Then continue.**
 

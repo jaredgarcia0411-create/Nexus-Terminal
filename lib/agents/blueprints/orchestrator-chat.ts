@@ -1,7 +1,229 @@
-import type { Blueprint } from '../types';
+import { randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
+import { z } from 'zod';
+import { agentJobs, agentRegistry } from '@/lib/db/schema';
+import { callLlm } from '@/lib/agents/llm-client';
+import { buildLlmSystemPrompt } from '@/lib/agents/prompts-loader';
+import type { AgentId, Blueprint, StepResult } from '@/lib/agents/types';
+
+const RESEARCH_COMMAND = /^\s*\/research\s+/;
+const SWING_COMMAND = /^\s*\/(?:swing|momentum)\s+/;
+const SMALL_CAP_KEYWORDS = /\b(dilution|offering|ATM|shelf|424B|S-3|short[- ]sell)\b/i;
+const SWING_KEYWORDS = /\b(MDR|multi[- ]day[- ]runner|parabolic|momentum|breakout)\b/i;
+const TICKER_PATTERN = /\b[A-Z]{1,5}\b/;
+
+const chatInputSchema = z.object({
+  message: z.string().min(1),
+  session_id: z.string().optional(),
+  channel: z.enum(['web', 'discord']).default('discord'),
+});
+
+const routeDecisionSchema = z.object({
+  decision: z.enum(['handle-directly', 'route-to-specialist', 'fallback-to-self']),
+  targetAgentId: z.enum(['orchestrator', 'small-cap-trader', 'swing-trader']).nullable(),
+  specialistJobType: z.enum(['research']).nullable(),
+  specialistJobId: z.string().nullable(),
+  warning: z.string().nullable(),
+  message: z.string(),
+});
+
+type RouteDecision = z.infer<typeof routeDecisionSchema>;
+
+function completedResult<T>(
+  data: T,
+  options?: {
+    durationMs?: number;
+    tokensUsed?: number;
+    sourceIds?: string[];
+    upstreamStepIds?: string[];
+    model?: string;
+    artifacts?: Record<string, unknown>;
+  },
+): StepResult<T> {
+  return {
+    status: 'completed',
+    data,
+    ...(options?.artifacts ? { artifacts: options.artifacts } : {}),
+    metrics: {
+      durationMs: options?.durationMs ?? 0,
+      ...(options?.tokensUsed === undefined ? {} : { tokensUsed: options.tokensUsed }),
+      attempt: 1,
+    },
+    provenance: {
+      sourceIds: options?.sourceIds ?? [],
+      ...(options?.model ? { model: options.model } : {}),
+      upstreamStepIds: options?.upstreamStepIds ?? [],
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+function classifyTargetAgent(message: string): Extract<AgentId, 'small-cap-trader' | 'swing-trader'> | null {
+  if (RESEARCH_COMMAND.test(message)) {
+    return 'small-cap-trader';
+  }
+
+  if (SWING_COMMAND.test(message)) {
+    return 'swing-trader';
+  }
+
+  if (SMALL_CAP_KEYWORDS.test(message)) {
+    return 'small-cap-trader';
+  }
+
+  if (SWING_KEYWORDS.test(message)) {
+    return 'swing-trader';
+  }
+
+  return null;
+}
+
+function extractTicker(message: string): string | null {
+  return message.match(TICKER_PATTERN)?.[0] ?? null;
+}
+
+function buildSynthesisPrompt(
+  route: RouteDecision,
+  chatInput: z.infer<typeof chatInputSchema>,
+  context: {
+    conversationHistory: unknown[];
+    macroSummary: unknown | null;
+    recentTrades: unknown[];
+  },
+): string {
+  const sections = [
+    `Channel: ${chatInput.channel}`,
+    route.warning ? `Warning: ${route.warning}` : null,
+    `User message:\n${chatInput.message.trim()}`,
+    context.macroSummary ? `Latest macro summary:\n${JSON.stringify(context.macroSummary)}` : null,
+    context.recentTrades.length > 0
+      ? `Recent trades:\n${JSON.stringify(context.recentTrades.slice(0, 5))}`
+      : null,
+    context.conversationHistory.length > 0
+      ? `Recent conversation:\n${JSON.stringify(context.conversationHistory.slice(0, 5))}`
+      : null,
+    'Respond directly to the user. Keep it concise and actionable.',
+  ];
+
+  return sections.filter(Boolean).join('\n\n');
+}
 
 export const orchestratorChatBlueprint: Blueprint = {
   id: 'orchestrator:chat',
-  description: 'Sprint 3 Checkpoint 2 stub for orchestrator chat.',
-  steps: [],
+  description: 'V1 Orchestrator chat — deterministic routing + self-synthesis fallback.',
+  steps: [
+    {
+      name: 'classify-and-route',
+      type: 'code',
+      inputSchema: chatInputSchema,
+      outputSchema: routeDecisionSchema,
+      metadata: { canRetry: true, timeoutMs: 5000, maxRepairAttempts: 0, sideEffect: false },
+      run: async ({ jobInput, job, db }) => {
+        const startedAt = Date.now();
+        const chatInput = chatInputSchema.parse(jobInput);
+        const trimmedMessage = chatInput.message.trim();
+        const targetAgentId = classifyTargetAgent(trimmedMessage);
+
+        if (!targetAgentId) {
+          return completedResult<RouteDecision>({
+            decision: 'handle-directly',
+            targetAgentId: null,
+            specialistJobType: null,
+            specialistJobId: null,
+            warning: null,
+            message: trimmedMessage,
+          }, {
+            durationMs: Date.now() - startedAt,
+          });
+        }
+
+        const [registryRow] = await db.select({
+          status: agentRegistry.status,
+        })
+          .from(agentRegistry)
+          .where(eq(agentRegistry.id, targetAgentId))
+          .limit(1);
+
+        const status = typeof registryRow?.status === 'string' && registryRow.status.trim()
+          ? registryRow.status
+          : 'offline';
+
+        if (status !== 'online') {
+          return completedResult<RouteDecision>({
+            decision: 'fallback-to-self',
+            targetAgentId,
+            specialistJobType: 'research',
+            specialistJobId: null,
+            warning: `${targetAgentId} is ${status}, handling request directly`,
+            message: trimmedMessage,
+          }, {
+            durationMs: Date.now() - startedAt,
+            sourceIds: [`agent-registry:${targetAgentId}`],
+          });
+        }
+
+        const specialistJobId = randomUUID();
+        await db.insert(agentJobs).values({
+          id: specialistJobId,
+          agentId: targetAgentId,
+          userId: job.userId,
+          jobType: 'research',
+          status: 'queued',
+          input: {
+            ticker: extractTicker(trimmedMessage),
+            originator_job_id: job.id,
+          },
+        });
+
+        return completedResult<RouteDecision>({
+          decision: 'route-to-specialist',
+          targetAgentId,
+          specialistJobType: 'research',
+          specialistJobId,
+          warning: null,
+          message: 'routed',
+        }, {
+          durationMs: Date.now() - startedAt,
+          sourceIds: [`agent-registry:${targetAgentId}`],
+        });
+      },
+    },
+    {
+      name: 'synthesize-response',
+      type: 'llm',
+      inputSchema: routeDecisionSchema,
+      outputSchema: z.object({ content: z.string().min(1) }),
+      metadata: {
+        canRetry: true,
+        timeoutMs: 30000,
+        maxRepairAttempts: 1,
+        sideEffect: false,
+        lane: 'interactive',
+        skipWhenRouted: true,
+      },
+      run: async ({ jobInput, previousOutput, context }) => {
+        const chatInput = chatInputSchema.parse(jobInput);
+        const route = routeDecisionSchema.parse(previousOutput);
+        const llmResponse = await callLlm({
+          systemPrompt: buildLlmSystemPrompt('orchestrator'),
+          userMessage: buildSynthesisPrompt(route, chatInput, context),
+          temperature: 0.3,
+        }, 'interactive');
+
+        return completedResult({
+          content: llmResponse.content,
+        }, {
+          durationMs: llmResponse.durationMs,
+          tokensUsed: llmResponse.inputTokens + llmResponse.outputTokens,
+          model: llmResponse.modelUsed,
+          upstreamStepIds: ['classify-and-route'],
+          artifacts: {
+            inputTokens: llmResponse.inputTokens,
+            outputTokens: llmResponse.outputTokens,
+            modelUsed: llmResponse.modelUsed,
+          },
+        });
+      },
+    },
+  ],
 };
