@@ -800,25 +800,25 @@ The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the Externa
 
 **Check off before commit**
 
-- [ ] `services/discord-bot/package.json`, `services/discord-bot/package-lock.json`, `services/discord-bot/tsconfig.json`, `services/discord-bot/Dockerfile`, and `services/discord-bot/index.ts` all exist.
-- [ ] `services/discord-bot/package.json` lists exactly two dependencies: `discord.js@^14.16.3` and `tsx@^4.19.2`. No dev dependencies. `type: "module"`. `engines.node: ">=20"`.
-- [ ] Root `package.json` has NOT gained `discord.js` or `tsx`.
-- [ ] `services/discord-bot/index.ts` matches the contract: `discord.js` v14 client with `Guilds | GuildMessages | MessageContent` intents, filters to channel name `'orchestrator'` in the configured `DISCORD_GUILD_ID`, posts to `/api/agents/service/chat` with the four required fields (`message`, `discord_user_id`, `channel: 'discord'`, `session_id`), polls every 2s up to 60 attempts, replies via `EmbedBuilder` for `completed`, plain reply for `failed`/routed/timeout, and logs only structured JSON without message bodies.
-- [ ] The bot exits with code `1` if any of the four required env vars (`NEXUS_API_URL`, `AGENT_SERVICE_KEY`, `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`) is missing.
-- [ ] The bot does NOT import or call `/api/agents/admin/*`, `/api/agents/reports`, or `/api/agents/research`.
-- [ ] The bot uses Node 20's built-in `fetch` — no `node-fetch` or `axios` dependency.
-- [ ] `services/discord-bot/Dockerfile` runs `npm ci` against the bot's own lockfile and CMD `["npx", "tsx", "index.ts"]`.
+- [x] `services/discord-bot/package.json`, `services/discord-bot/package-lock.json`, `services/discord-bot/tsconfig.json`, `services/discord-bot/Dockerfile`, and `services/discord-bot/index.ts` all exist.
+- [x] `services/discord-bot/package.json` lists exactly two dependencies: `discord.js@^14.16.3` and `tsx@^4.19.2`. No dev dependencies. `type: "module"`. `engines.node: ">=20"`.
+- [x] Root `package.json` has NOT gained `discord.js` or `tsx`.
+- [x] `services/discord-bot/index.ts` matches the contract: `discord.js` v14 client with `Guilds | GuildMessages | MessageContent` intents, filters to channel name `'orchestrator'` in the configured `DISCORD_GUILD_ID`, posts to `/api/agents/service/chat` with the four required fields (`message`, `discord_user_id`, `channel: 'discord'`, `session_id`), polls every 2s up to 60 attempts, replies via `EmbedBuilder` for `completed`, plain reply for `failed`/routed/timeout, and logs only structured JSON without message bodies.
+- [x] The bot exits with code `1` if any of the four required env vars (`NEXUS_API_URL`, `AGENT_SERVICE_KEY`, `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`) is missing.
+- [x] The bot does NOT import or call `/api/agents/admin/*`, `/api/agents/reports`, or `/api/agents/research`.
+- [x] The bot uses Node 20's built-in `fetch` — no `node-fetch` or `axios` dependency.
+- [x] `services/discord-bot/Dockerfile` runs `npm ci` against the bot's own lockfile and CMD `["npx", "tsx", "index.ts"]`.
 
 **Exit criteria**
 
-- [ ] `services/discord-bot/` is fully self-contained — running `npm ci` inside that directory installs everything the bot needs.
-- [ ] No root `package.json` change beyond what Checkpoint 4 introduces (the typecheck script).
+- [x] `services/discord-bot/` is fully self-contained — running `npm ci` inside that directory installs everything the bot needs.
+- [x] No root `package.json` change beyond what Checkpoint 4 introduces (the typecheck script).
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] (Manual) `cd services/discord-bot && npm ci` succeeds locally — verified once during the checkpoint, then the lockfile is committed.
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] (Manual) `cd services/discord-bot && npm ci` succeeds locally — verified once during the checkpoint, then the lockfile is committed.
 
 **STOP. Review. Commit. Then continue.**
 

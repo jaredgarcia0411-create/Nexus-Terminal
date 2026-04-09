@@ -1,0 +1,15 @@
+{
+  "name": "nexus-terminal-discord-bot",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "tsx index.ts"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "tsx": "^4.19.2"
+  }
+}
