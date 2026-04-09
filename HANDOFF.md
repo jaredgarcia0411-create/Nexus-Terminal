@@ -92,7 +92,7 @@ Sprint 1, Sprint 2, and Sprint 3 are complete. Older detail was removed from thi
 ## AEV2 Sprint 4 — Docker, Discord Bot, and Launch Hardening
 
 > Generated: 2026-04-08 | Agent: Claude (Plan)
-> Status: READY FOR CODEX
+> Status: IN PROGRESS
 
 ### Objective
 
@@ -114,28 +114,16 @@ Take the Sprint 1–3 library + API surface and prove it as a runnable home-serv
 ### Current State
 
 - Sprint 3 is complete. Every `/api/agents/*` route, the worker loop (`startWorker`), the macro cron (`startMacroCron`), the heartbeat (`startHeartbeat`), the four implemented blueprints, the Discord delivery helpers, and the agent config/registry are landed in `lib/agents/` and `app/api/agents/`. Sprint 4 must NOT modify any of those files except the additive items called out below.
-- [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml) currently contains a Redis service plus a stub `discord-bot` service that builds from `./discord-bot` (a directory that does NOT exist) and points at `host.docker.internal:3000`. Sprint 4 deletes the Redis service entirely and rewrites the bot service alongside the three agent services.
-- [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example) already covers `DATABASE_URL`, `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`, all six `DISCORD_WEBHOOK_*` vars, the four `INTERACTIVE_LLM_*` / `BACKGROUND_LLM_*` vars (key, base URL, model — but NOT timeout), `MASSIVE_API_KEY`, `ASKEDGAR_API_KEY`, `AGENT_ADMIN_KEY`, `AGENT_SERVICE_KEY`, `AGENT_POLL_INTERVAL_MS`, `MACRO_CRON_HOUR`, `TZ`. It is MISSING the entries listed below (verified against `lib/agents/llm-client.ts` defaults — six `AGENT_*` caps total, NOT seven; `AGENT_MAX_ASKEDGAR_CALLS_PER_SCAN` from `AGENTIC_EXPANSIONV2.md` §19 is design-doc-only and is NOT consumed by the runtime, so Sprint 4 does NOT add it). `ASKEDGAR_DAILY_LIMIT` and `TRADINGVIEW_SESSION_ID` already exist in the root [`.env.example`](/home/jared/Nexus-Terminal/.env.example) but are also live-read by the trader blueprints, so Sprint 4 mirrors them into `services/.env.example` and the two trader containers:
-  - `INTERACTIVE_LLM_TIMEOUT_MS=30000` (per-request timeout consumed by `lib/agents/llm-client.ts:103`)
-  - `BACKGROUND_LLM_TIMEOUT_MS=60000` (per-request timeout consumed by `lib/agents/llm-client.ts:115`)
-  - `AGENT_DAILY_BUDGET_CENTS=500` (default in `lib/agents/llm-client.ts:14`)
-  - `AGENT_MONTHLY_BUDGET_CENTS=10000` (default in `lib/agents/llm-client.ts:15`)
-  - `AGENT_MAX_CONTEXT_TOKENS=32000` (default in `lib/agents/llm-client.ts:16`)
-  - `AGENT_MAX_SCAN_CANDIDATES=20` (default in `lib/agents/llm-client.ts:17`)
-  - `AGENT_MAX_PATTERN_HISTORY=50` (default in `lib/agents/llm-client.ts:18`)
-  - `AGENT_MAX_RETRIES_PER_STEP=2` (default in `lib/agents/llm-client.ts:19`)
-  - `ASKEDGAR_DAILY_LIMIT=100` (default in `lib/askedgar.ts:36`, consumed via `parseDailyLimit()` in `lib/askedgar.ts:136`)
-  - `TRADINGVIEW_SESSION_ID=` (blank/optional, read by both trader blueprints in `lib/agents/blueprints/small-cap-research.ts:109` and `lib/agents/blueprints/swing-trader-research.ts:112`)
-  - `MACRO_HEADLINES_URLS=` (blank — fallback baked into `lib/agents/blueprints/orchestrator-macro-summary.ts:8`: `https://www.marketwatch.com/latest-news,https://finance.yahoo.com/topic/stock-market-news/`)
-  - `NEXUS_API_URL=` (blank — public Vercel URL, used ONLY by the discord-bot service, never by an agent service)
-  - `MASSIVE_API_BASE_URL=https://api.polygon.io` (design-doc reserved; not yet consumed by runtime, but kept for parity with `AGENTIC_EXPANSIONV2.md` §19)
-- [`services/.env`](/home/jared/Nexus-Terminal/services/.env) exists with real credentials and is `.gitignore`d. Sprint 4 MUST NOT read, copy, edit, or commit this file. Codex only edits `services/.env.example`.
+- [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml) now defines the four-service V1 topology (`orchestrator`, `small-cap-trader`, `swing-trader`, `discord-bot`) with Redis removed. Checkpoint 7 does not change service wiring; it only verifies the landed Compose surface and the related runbooks.
+- [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example) now includes the Sprint 4 V1 env surface: the two LLM timeouts, the six `AGENT_*` runtime caps, `ASKEDGAR_DAILY_LIMIT`, `TRADINGVIEW_SESSION_ID`, `MACRO_HEADLINES_URLS`, `NEXUS_API_URL`, and `MASSIVE_API_BASE_URL`, plus the Docker-side comment above `MASSIVE_API_KEY`. Checkpoint 7 verifies completeness only; it does not add any new env names.
+- [`services/.env`](/home/jared/Nexus-Terminal/services/.env) is operator-owned and gitignored. It may be absent in a clean worktree like this one, and if it exists locally its contents remain out of scope. Sprint 4 MUST NOT read, copy, edit, create, or commit this file. Codex only edits `services/.env.example`.
 - Root [`tsconfig.json`](/home/jared/Nexus-Terminal/tsconfig.json) excludes `services/`. Sprint 4 must NOT change the root tsconfig — it must add a service-side tsconfig at `services/tsconfig.json` that compiles `services/agent-entrypoint.ts` and the discord bot entrypoint and references `lib/` via the existing `@/*` path alias rooted at the repo.
 - `services/discord-bot/` now exists with its isolated `package.json`, generated `package-lock.json`, `tsconfig.json`, `Dockerfile`, and the TypeScript bot entrypoint. Root `package.json` still does not declare `discord.js` or `tsx`.
+- Root `package.json` now includes the Sprint 4 service gate script: `typecheck:services`. Root `package-lock.json` remains unchanged, and `discord.js` / `tsx` remain isolated to `services/discord-bot/package.json`.
 - `scripts/ops/` now exists and currently contains `agent-observability.sql`.
 - `docs/ops/` now exists and contains the five Sprint 4 runbooks: rollback, home-server recovery, deploy smoke, launch validation, and backup/restore. The pre-migration backup runbook (`docs/ops/agents-backup-restore.md`) remains the retroactive launch-readiness artifact for migration 0019 and includes placeholder slots for any user-specific branch IDs or notes that are not in the repo plus an operator-owned section for recording tested-restore verification after handoff.
 - The hardcoded `DISCORD_USER_MAP` in [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts) is currently empty (only commented placeholders). The smoke checklist requires the user to populate it manually after Codex hands off and before the live smoke (see "External Validation Checklist" at the bottom of this sprint). Codex does NOT fill this map — it is operator data.
-- `npm run lint`, `npx tsc --noEmit`, and `npm test` all pass on the Sprint 3 baseline as of 2026-04-08. 307 tests across 45 files. `discord.js` and `tsx` are NOT yet in `package.json` — they will live exclusively in `services/discord-bot/package.json`, NOT in the root `package.json`, so the Vercel bundle stays unaffected.
+- Checkpoints 3-7 are complete on the code side. Sprint 4 remains `IN PROGRESS` only because the External Validation Checklist below is still user-owned and must be completed before the status flips to `COMPLETE`.
 
 ### Scope
 
@@ -930,39 +918,39 @@ The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the full Ex
 
 **Check off before commit**
 
-- [ ] Every file listed in "Planned File Actions" exists with the expected content.
-- [ ] No Codex-authored file under `lib/agents/`, `app/api/`, `lib/validations/`, or `__tests__/` has been modified.
-- [ ] `npm run lint` exits 0.
-- [ ] `npx tsc --noEmit` exits 0.
-- [ ] `npm run typecheck:services` exits 0.
-- [ ] `npm test` exits 0 (still 307+ tests passing — Sprint 4 added zero new vitest cases).
-- [ ] `services/.env` is unchanged (verify via `git status` showing no diff against that path).
-- [ ] `package.json` has exactly one new script (`typecheck:services`) and no new dependencies.
-- [ ] `package-lock.json` is unchanged at the root (only `services/discord-bot/package-lock.json` is new).
+- [x] Every file listed in "Planned File Actions" exists with the expected content.
+- [x] No Codex-authored file under `lib/agents/`, `app/api/`, `lib/validations/`, or `__tests__/` has been modified.
+- [x] `npm run lint` exits 0.
+- [x] `npx tsc --noEmit` exits 0.
+- [x] `npm run typecheck:services` exits 0 after the one-time `cd services/discord-bot && npm ci` bootstrap from Checkpoint 3 if `services/discord-bot/node_modules` is absent in the current worktree.
+- [x] `npm test` exits 0 (307 tests passing — Sprint 4 added zero new vitest cases).
+- [x] `services/.env` remains absent-or-untouched. Codex does not read, create, edit, or commit it; if the file exists locally, leave it exactly as operator-owned state.
+- [x] `package.json` has exactly one new script (`typecheck:services`) and no new dependencies.
+- [x] `package-lock.json` is unchanged at the root (only `services/discord-bot/package-lock.json` is new).
 
 **Exit criteria**
 
-- [ ] Sprint 4 acceptance criteria for AEV2-501 through AEV2-510 are satisfied EXCEPT for items the user must validate manually — those live in the External Validation Checklist below and cause Sprint 4's status to remain `IN PROGRESS` until the user signs off.
-- [ ] HANDOFF.md is updated to reflect the post-Sprint-4 state.
+- [x] Sprint 4 acceptance criteria for AEV2-501 through AEV2-510 are satisfied EXCEPT for items the user must validate manually — those live in the External Validation Checklist below and cause Sprint 4's status to remain `IN PROGRESS` until the user signs off.
+- [x] HANDOFF.md is updated to reflect the post-Sprint-4 state.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npm run typecheck:services`
-- [ ] `npm test`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npm run typecheck:services` (after the one-time `cd services/discord-bot && npm ci` bootstrap if `services/discord-bot/node_modules` is absent)
+- [x] `npm test`
 
 **STOP. This is the Sprint 4 code-side exit gate. The user then runs the External Validation Checklist below before flipping status to COMPLETE.**
 
 ### Sprint 4 Exit Gate (Code-Side)
 
-- [ ] `AEV2-501` through `AEV2-510` artifacts landed in checkpoint order.
-- [ ] No Codex-authored file under `lib/agents/`, `app/api/`, `lib/validations/`, `__tests__/`, `lib/db/`, or `drizzle/` was modified.
-- [ ] `services/.env` was not touched.
-- [ ] Root `package.json` gained one script and zero dependencies.
-- [ ] `services/discord-bot/package.json` is the only package manifest that declares `discord.js` and `tsx` as dependencies.
-- [ ] `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, and `npm test` all pass.
-- [ ] HANDOFF.md updated after Checkpoint 7 closes.
+- [x] `AEV2-501` through `AEV2-510` artifacts landed in checkpoint order.
+- [x] No Codex-authored file under `lib/agents/`, `app/api/`, `lib/validations/`, `__tests__/`, `lib/db/`, or `drizzle/` was modified.
+- [x] `services/.env` remained absent-or-untouched; Codex did not read, create, edit, or commit it.
+- [x] Root `package.json` gained one script and zero dependencies.
+- [x] `services/discord-bot/package.json` is the only package manifest that declares `discord.js` and `tsx` as dependencies.
+- [x] `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, and `npm test` all pass.
+- [x] HANDOFF.md updated after Checkpoint 7 closes.
 
 ### External Validation Checklist (User — Cannot Be Automated)
 
@@ -1014,3 +1002,5 @@ These items live outside the codebase. They are the actual launch gate for V1 �
 - 2026-04-08: Sprint 4 spec drafted and locked. READY FOR CODEX.
 - 2026-04-08: Applied fan-out review amendments. Added D9 (`NEXUS_API_URL` is bot-only) and D10 (discord-bot drops `DATABASE_URL`). Enumerated the six `AGENT_*` caps with explicit names + defaults from `lib/agents/llm-client.ts` (the design doc's 7th cap `AGENT_MAX_ASKEDGAR_CALLS_PER_SCAN` is NOT consumed by the runtime and is intentionally NOT added). Inlined the full Compose contract for one agent service plus diffs for the other two; dropped the deprecated `version: '3.8'` field; added `start_period: 60s` and `stop_grace_period: 30s`. Hardened the Dockerfile (`USER node`, `HEALTHCHECK NONE`, `--no-audit --no-fund --prefer-offline`). Added SIGINT/SIGTERM double-fire guard to the entrypoint. Tightened the Discord bot security surface: never echo upstream response bodies to Discord, use `ChannelType.GuildText` instead of magic `0`, embed truncation now adds a suffix, missing-env exit names which var, timeout/failure replies include `jobId` for log correlation. Expanded `.dockerignore` to exclude `.git`, `.github`, `.vscode`, `.claude`, `coverage`, `.env*`, with the prompt-markdown exception clarified by the later compaction pass. Added explicit SQL snippets to the External Validation Checklist for the macro summary smoke and pinned the offline-fallback wait time. Added a comment on the `stuck-processing` SQL query tying its threshold to `JOB_LEASE_HEARTBEAT_INTERVAL_MS`. Resolved the Checkpoint 5 contradiction (all 7 queries SHALL exist; column drift triggers `PENDING REVIEW`, not partial SQL). Status remains READY FOR CODEX.
 - 2026-04-08: Compacted Sprint 4 to remove execution ambiguities. Normalized the live LLM env names to `INTERACTIVE_LLM_API_BASE_URL` / `BACKGROUND_LLM_API_BASE_URL`, fixed the inline `services/tsconfig.json` alias contract so it inherits the repo-root `@/*` mapping, and made the `typecheck:services` precondition explicit (`cd services/discord-bot && npm ci` once before the gate). Clarified that `.dockerignore` may exclude broad markdown only if it re-includes `lib/agents/prompts/*.md`, relaxed health/log acceptance text to match the actual bot/agent healthcheck surface, and changed the backup/runbook wording to require the canonical Neon branch procedure plus placeholders instead of undocumented historical steps. Also made the `DISCORD_USER_MAP` edit an explicit operator-owned post-handoff exception rather than an implied Codex scope break.
+- 2026-04-09: Compacted Checkpoint 7 for execution. Updated Sprint 4 status/current-state text to match the post-Checkpoint-6 repo, repeated the `typecheck:services` bootstrap precondition in the final validation gate, and replaced the unreliable `git status` proof for `services/.env` with an explicit absent-or-untouched operator-owned rule.
+- 2026-04-09: Executed Checkpoint 7. Re-ran `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, and `npm test` successfully, checked off the final code-side exit gate, and left Sprint 4 `IN PROGRESS` pending the user-run External Validation Checklist.
