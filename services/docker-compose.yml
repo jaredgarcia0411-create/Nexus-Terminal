@@ -1,21 +1,150 @@
-version: '3.8'
-
 services:
-  redis:
-    image: redis:7-alpine
-    ports:
-      - '6379:6379'
-    volumes:
-      - redis-data:/data
-
   discord-bot:
-    build: ./discord-bot
+    build:
+      context: ./discord-bot
     environment:
+      - NODE_ENV=production
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
       - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
-      - NEXUS_API_URL=http://host.docker.internal:3000
-      - TRADE_WEBHOOK_SECRET=${TRADE_WEBHOOK_SECRET}
+      - NEXUS_API_URL=${NEXUS_API_URL}
+      - AGENT_SERVICE_KEY=${AGENT_SERVICE_KEY}
+    restart: unless-stopped
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
 
-volumes:
-  redis-data:
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: services/agent.Dockerfile
+    environment:
+      - AGENT_ID=orchestrator
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - INTERACTIVE_LLM_API_KEY=${INTERACTIVE_LLM_API_KEY}
+      - INTERACTIVE_LLM_API_BASE_URL=${INTERACTIVE_LLM_API_BASE_URL}
+      - INTERACTIVE_LLM_MODEL=${INTERACTIVE_LLM_MODEL}
+      - INTERACTIVE_LLM_TIMEOUT_MS=${INTERACTIVE_LLM_TIMEOUT_MS}
+      - BACKGROUND_LLM_API_KEY=${BACKGROUND_LLM_API_KEY}
+      - BACKGROUND_LLM_API_BASE_URL=${BACKGROUND_LLM_API_BASE_URL}
+      - BACKGROUND_LLM_MODEL=${BACKGROUND_LLM_MODEL}
+      - BACKGROUND_LLM_TIMEOUT_MS=${BACKGROUND_LLM_TIMEOUT_MS}
+      - AGENT_DAILY_BUDGET_CENTS=${AGENT_DAILY_BUDGET_CENTS}
+      - AGENT_MONTHLY_BUDGET_CENTS=${AGENT_MONTHLY_BUDGET_CENTS}
+      - AGENT_MAX_CONTEXT_TOKENS=${AGENT_MAX_CONTEXT_TOKENS}
+      - AGENT_MAX_SCAN_CANDIDATES=${AGENT_MAX_SCAN_CANDIDATES}
+      - AGENT_MAX_PATTERN_HISTORY=${AGENT_MAX_PATTERN_HISTORY}
+      - AGENT_MAX_RETRIES_PER_STEP=${AGENT_MAX_RETRIES_PER_STEP}
+      - AGENT_POLL_INTERVAL_MS=${AGENT_POLL_INTERVAL_MS}
+      - ASKEDGAR_API_KEY=${ASKEDGAR_API_KEY}
+      - MASSIVE_API_KEY=${MASSIVE_API_KEY}
+      - MACRO_CRON_HOUR=${MACRO_CRON_HOUR}
+      - MACRO_HEADLINES_URLS=${MACRO_HEADLINES_URLS}
+      - DISCORD_WEBHOOK_MACRO_DAILY=${DISCORD_WEBHOOK_MACRO_DAILY}
+      - DISCORD_WEBHOOK_SYSTEM=${DISCORD_WEBHOOK_SYSTEM}
+      - TZ=${TZ}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/healthy && find /tmp/healthy -mmin -2 >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  small-cap-trader:
+    build:
+      context: ..
+      dockerfile: services/agent.Dockerfile
+    environment:
+      - AGENT_ID=small-cap-trader
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - INTERACTIVE_LLM_API_KEY=${INTERACTIVE_LLM_API_KEY}
+      - INTERACTIVE_LLM_API_BASE_URL=${INTERACTIVE_LLM_API_BASE_URL}
+      - INTERACTIVE_LLM_MODEL=${INTERACTIVE_LLM_MODEL}
+      - INTERACTIVE_LLM_TIMEOUT_MS=${INTERACTIVE_LLM_TIMEOUT_MS}
+      - BACKGROUND_LLM_API_KEY=${BACKGROUND_LLM_API_KEY}
+      - BACKGROUND_LLM_API_BASE_URL=${BACKGROUND_LLM_API_BASE_URL}
+      - BACKGROUND_LLM_MODEL=${BACKGROUND_LLM_MODEL}
+      - BACKGROUND_LLM_TIMEOUT_MS=${BACKGROUND_LLM_TIMEOUT_MS}
+      - AGENT_DAILY_BUDGET_CENTS=${AGENT_DAILY_BUDGET_CENTS}
+      - AGENT_MONTHLY_BUDGET_CENTS=${AGENT_MONTHLY_BUDGET_CENTS}
+      - AGENT_MAX_CONTEXT_TOKENS=${AGENT_MAX_CONTEXT_TOKENS}
+      - AGENT_MAX_SCAN_CANDIDATES=${AGENT_MAX_SCAN_CANDIDATES}
+      - AGENT_MAX_PATTERN_HISTORY=${AGENT_MAX_PATTERN_HISTORY}
+      - AGENT_MAX_RETRIES_PER_STEP=${AGENT_MAX_RETRIES_PER_STEP}
+      - AGENT_POLL_INTERVAL_MS=${AGENT_POLL_INTERVAL_MS}
+      - ASKEDGAR_API_KEY=${ASKEDGAR_API_KEY}
+      - ASKEDGAR_DAILY_LIMIT=${ASKEDGAR_DAILY_LIMIT}
+      - MASSIVE_API_KEY=${MASSIVE_API_KEY}
+      - TRADINGVIEW_SESSION_ID=${TRADINGVIEW_SESSION_ID}
+      - DISCORD_WEBHOOK_SCANS=${DISCORD_WEBHOOK_SCANS}
+      - DISCORD_WEBHOOK_RESEARCH=${DISCORD_WEBHOOK_RESEARCH}
+      - TZ=${TZ}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/healthy && find /tmp/healthy -mmin -2 >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  swing-trader:
+    build:
+      context: ..
+      dockerfile: services/agent.Dockerfile
+    environment:
+      - AGENT_ID=swing-trader
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - INTERACTIVE_LLM_API_KEY=${INTERACTIVE_LLM_API_KEY}
+      - INTERACTIVE_LLM_API_BASE_URL=${INTERACTIVE_LLM_API_BASE_URL}
+      - INTERACTIVE_LLM_MODEL=${INTERACTIVE_LLM_MODEL}
+      - INTERACTIVE_LLM_TIMEOUT_MS=${INTERACTIVE_LLM_TIMEOUT_MS}
+      - BACKGROUND_LLM_API_KEY=${BACKGROUND_LLM_API_KEY}
+      - BACKGROUND_LLM_API_BASE_URL=${BACKGROUND_LLM_API_BASE_URL}
+      - BACKGROUND_LLM_MODEL=${BACKGROUND_LLM_MODEL}
+      - BACKGROUND_LLM_TIMEOUT_MS=${BACKGROUND_LLM_TIMEOUT_MS}
+      - AGENT_DAILY_BUDGET_CENTS=${AGENT_DAILY_BUDGET_CENTS}
+      - AGENT_MONTHLY_BUDGET_CENTS=${AGENT_MONTHLY_BUDGET_CENTS}
+      - AGENT_MAX_CONTEXT_TOKENS=${AGENT_MAX_CONTEXT_TOKENS}
+      - AGENT_MAX_SCAN_CANDIDATES=${AGENT_MAX_SCAN_CANDIDATES}
+      - AGENT_MAX_PATTERN_HISTORY=${AGENT_MAX_PATTERN_HISTORY}
+      - AGENT_MAX_RETRIES_PER_STEP=${AGENT_MAX_RETRIES_PER_STEP}
+      - AGENT_POLL_INTERVAL_MS=${AGENT_POLL_INTERVAL_MS}
+      - ASKEDGAR_API_KEY=${ASKEDGAR_API_KEY}
+      - ASKEDGAR_DAILY_LIMIT=${ASKEDGAR_DAILY_LIMIT}
+      - MASSIVE_API_KEY=${MASSIVE_API_KEY}
+      - TRADINGVIEW_SESSION_ID=${TRADINGVIEW_SESSION_ID}
+      - DISCORD_WEBHOOK_SWING_SETUPS=${DISCORD_WEBHOOK_SWING_SETUPS}
+      - DISCORD_WEBHOOK_SWING_ALERTS=${DISCORD_WEBHOOK_SWING_ALERTS}
+      - TZ=${TZ}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/healthy && find /tmp/healthy -mmin -2 >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"

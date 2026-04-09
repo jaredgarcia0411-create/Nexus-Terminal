@@ -115,7 +115,7 @@ Take the Sprint 1–3 library + API surface and prove it as a runnable home-serv
 
 - Sprint 3 is complete. Every `/api/agents/*` route, the worker loop (`startWorker`), the macro cron (`startMacroCron`), the heartbeat (`startHeartbeat`), the four implemented blueprints, the Discord delivery helpers, and the agent config/registry are landed in `lib/agents/` and `app/api/agents/`. Sprint 4 must NOT modify any of those files except the additive items called out below.
 - [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml) currently contains a Redis service plus a stub `discord-bot` service that builds from `./discord-bot` (a directory that does NOT exist) and points at `host.docker.internal:3000`. Sprint 4 deletes the Redis service entirely and rewrites the bot service alongside the three agent services.
-- [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example) already covers `DATABASE_URL`, `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`, all six `DISCORD_WEBHOOK_*` vars, the four `INTERACTIVE_LLM_*` / `BACKGROUND_LLM_*` vars (key, base URL, model — but NOT timeout), `MASSIVE_API_KEY`, `ASKEDGAR_API_KEY`, `AGENT_ADMIN_KEY`, `AGENT_SERVICE_KEY`, `AGENT_POLL_INTERVAL_MS`, `MACRO_CRON_HOUR`, `TZ`. It is MISSING the entries listed below (verified against `lib/agents/llm-client.ts` defaults — six `AGENT_*` caps total, NOT seven; `AGENT_MAX_ASKEDGAR_CALLS_PER_SCAN` from `AGENTIC_EXPANSIONV2.md` §19 is design-doc-only and is NOT consumed by the runtime, so Sprint 4 does NOT add it):
+- [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example) already covers `DATABASE_URL`, `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`, all six `DISCORD_WEBHOOK_*` vars, the four `INTERACTIVE_LLM_*` / `BACKGROUND_LLM_*` vars (key, base URL, model — but NOT timeout), `MASSIVE_API_KEY`, `ASKEDGAR_API_KEY`, `AGENT_ADMIN_KEY`, `AGENT_SERVICE_KEY`, `AGENT_POLL_INTERVAL_MS`, `MACRO_CRON_HOUR`, `TZ`. It is MISSING the entries listed below (verified against `lib/agents/llm-client.ts` defaults — six `AGENT_*` caps total, NOT seven; `AGENT_MAX_ASKEDGAR_CALLS_PER_SCAN` from `AGENTIC_EXPANSIONV2.md` §19 is design-doc-only and is NOT consumed by the runtime, so Sprint 4 does NOT add it). `ASKEDGAR_DAILY_LIMIT` and `TRADINGVIEW_SESSION_ID` already exist in the root [`.env.example`](/home/jared/Nexus-Terminal/.env.example) but are also live-read by the trader blueprints, so Sprint 4 mirrors them into `services/.env.example` and the two trader containers:
   - `INTERACTIVE_LLM_TIMEOUT_MS=30000` (per-request timeout consumed by `lib/agents/llm-client.ts:103`)
   - `BACKGROUND_LLM_TIMEOUT_MS=60000` (per-request timeout consumed by `lib/agents/llm-client.ts:115`)
   - `AGENT_DAILY_BUDGET_CENTS=500` (default in `lib/agents/llm-client.ts:14`)
@@ -124,6 +124,8 @@ Take the Sprint 1–3 library + API surface and prove it as a runnable home-serv
   - `AGENT_MAX_SCAN_CANDIDATES=20` (default in `lib/agents/llm-client.ts:17`)
   - `AGENT_MAX_PATTERN_HISTORY=50` (default in `lib/agents/llm-client.ts:18`)
   - `AGENT_MAX_RETRIES_PER_STEP=2` (default in `lib/agents/llm-client.ts:19`)
+  - `ASKEDGAR_DAILY_LIMIT=100` (default in `lib/askedgar.ts:36`, consumed via `parseDailyLimit()` in `lib/askedgar.ts:136`)
+  - `TRADINGVIEW_SESSION_ID=` (blank/optional, read by both trader blueprints in `lib/agents/blueprints/small-cap-research.ts:109` and `lib/agents/blueprints/swing-trader-research.ts:112`)
   - `MACRO_HEADLINES_URLS=` (blank — fallback baked into `lib/agents/blueprints/orchestrator-macro-summary.ts:8`: `https://www.marketwatch.com/latest-news,https://finance.yahoo.com/topic/stock-market-news/`)
   - `NEXUS_API_URL=` (blank — public Vercel URL, used ONLY by the discord-bot service, never by an agent service)
   - `MASSIVE_API_BASE_URL=https://api.polygon.io` (design-doc reserved; not yet consumed by runtime, but kept for parity with `AGENTIC_EXPANSIONV2.md` §19)
@@ -176,8 +178,8 @@ These ten decisions remove ambiguity before Codex starts. If any of them is wron
 
 **Modified files:**
 
-- [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml) — full rewrite per D7 and the inline contract below (NOT the stale §15 example). Removes the `redis` service entirely, removes the `redis-data` volume, drops the deprecated top-level `version:` field, removes `TRADE_WEBHOOK_SECRET` from the bot environment, replaces the `discord-bot` build context to point at `./discord-bot` (which now actually exists), adds the three agent services (`orchestrator`, `small-cap-trader`, `swing-trader`) with the inline env block, healthcheck (with `start_period: 60s`), `restart: unless-stopped`, `stop_grace_period: 30s`, and json-file logging block from the contract. `NEXUS_API_URL` is referenced ONLY in the discord-bot service (per D9). Codex leaves the value as `${NEXUS_API_URL}` and the operator fills it via `services/.env`.
-- [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example) — additive only. Adds the missing entries listed in "Current State" above (`INTERACTIVE_LLM_TIMEOUT_MS=30000`, `BACKGROUND_LLM_TIMEOUT_MS=60000`, the six `AGENT_*` caps with their runtime defaults, `MACRO_HEADLINES_URLS=` blank with the fallback URL list as a comment line above it, `NEXUS_API_URL=` blank, `MASSIVE_API_BASE_URL=https://api.polygon.io`). Adds a one-line comment above `MASSIVE_API_KEY` clarifying it is Docker-side only. Does NOT remove or rename existing entries.
+- [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml) — full rewrite per D7 and the inline contract below (NOT the stale §15 example). Removes the `redis` service entirely, removes the `redis-data` volume, drops the deprecated top-level `version:` field, removes `TRADE_WEBHOOK_SECRET` from the bot environment, replaces the `discord-bot` build context to point at `./discord-bot` (which now actually exists), adds the three agent services (`orchestrator`, `small-cap-trader`, `swing-trader`) with the inline env block, healthcheck (with `start_period: 60s`), `restart: unless-stopped`, `stop_grace_period: 30s`, and json-file logging block from the contract. The two trader services also pass through `ASKEDGAR_DAILY_LIMIT` and `TRADINGVIEW_SESSION_ID` because the live blueprints read them at runtime. `NEXUS_API_URL` is referenced ONLY in the discord-bot service (per D9). Codex leaves the value as `${NEXUS_API_URL}` and the operator fills it via `services/.env`.
+- [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example) — additive only. Adds the missing entries listed in "Current State" above (`INTERACTIVE_LLM_TIMEOUT_MS=30000`, `BACKGROUND_LLM_TIMEOUT_MS=60000`, the six `AGENT_*` caps with their runtime defaults, `ASKEDGAR_DAILY_LIMIT=100`, `TRADINGVIEW_SESSION_ID=` blank, `MACRO_HEADLINES_URLS=` blank with the fallback URL list as a comment line above it, `NEXUS_API_URL=` blank, `MASSIVE_API_BASE_URL=https://api.polygon.io`). Adds a one-line comment above `MASSIVE_API_KEY` clarifying it is Docker-side only. Does NOT remove or rename existing entries.
 - [`package.json`](/home/jared/Nexus-Terminal/package.json) — adds exactly one script: `"typecheck:services": "tsc -p services/tsconfig.json --noEmit"`. No new dependencies. No other changes.
 - [`HANDOFF.md`](/home/jared/Nexus-Terminal/HANDOFF.md) — updated after each checkpoint closes.
 
@@ -414,8 +416,8 @@ Per D10, `DATABASE_URL` is intentionally absent from the bot's env block.
 ```
 
 5. Diffs for the other two agent services (relative to the orchestrator block above):
-   - `small-cap-trader`: change `AGENT_ID=small-cap-trader`. Remove `MACRO_CRON_HOUR`, `MACRO_HEADLINES_URLS`, `DISCORD_WEBHOOK_MACRO_DAILY`, `DISCORD_WEBHOOK_SYSTEM`. Add `DISCORD_WEBHOOK_SCANS=${DISCORD_WEBHOOK_SCANS}` and `DISCORD_WEBHOOK_RESEARCH=${DISCORD_WEBHOOK_RESEARCH}`.
-   - `swing-trader`: change `AGENT_ID=swing-trader`. Remove `MACRO_CRON_HOUR`, `MACRO_HEADLINES_URLS`, `DISCORD_WEBHOOK_MACRO_DAILY`, `DISCORD_WEBHOOK_SYSTEM`. Add `DISCORD_WEBHOOK_SWING_SETUPS=${DISCORD_WEBHOOK_SWING_SETUPS}` and `DISCORD_WEBHOOK_SWING_ALERTS=${DISCORD_WEBHOOK_SWING_ALERTS}`.
+   - `small-cap-trader`: change `AGENT_ID=small-cap-trader`. Remove `MACRO_CRON_HOUR`, `MACRO_HEADLINES_URLS`, `DISCORD_WEBHOOK_MACRO_DAILY`, `DISCORD_WEBHOOK_SYSTEM`. Add `ASKEDGAR_DAILY_LIMIT=${ASKEDGAR_DAILY_LIMIT}`, `TRADINGVIEW_SESSION_ID=${TRADINGVIEW_SESSION_ID}`, `DISCORD_WEBHOOK_SCANS=${DISCORD_WEBHOOK_SCANS}`, and `DISCORD_WEBHOOK_RESEARCH=${DISCORD_WEBHOOK_RESEARCH}`.
+   - `swing-trader`: change `AGENT_ID=swing-trader`. Remove `MACRO_CRON_HOUR`, `MACRO_HEADLINES_URLS`, `DISCORD_WEBHOOK_MACRO_DAILY`, `DISCORD_WEBHOOK_SYSTEM`. Add `ASKEDGAR_DAILY_LIMIT=${ASKEDGAR_DAILY_LIMIT}`, `TRADINGVIEW_SESSION_ID=${TRADINGVIEW_SESSION_ID}`, `DISCORD_WEBHOOK_SWING_SETUPS=${DISCORD_WEBHOOK_SWING_SETUPS}`, and `DISCORD_WEBHOOK_SWING_ALERTS=${DISCORD_WEBHOOK_SWING_ALERTS}`.
 
 6. Codex does NOT introduce a network override, a custom Compose project name, or a `depends_on` block — all four services are independent (Discord bot polls Nexus API over the public URL, agents poll Neon directly).
 7. `start_period: 60s` exists because the worker takes ~10–20s to boot before writing `/tmp/healthy`; without it the first ~3 healthchecks would fail and Docker would briefly mark the container `unhealthy`.
@@ -751,8 +753,8 @@ The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the Externa
 - [ ] `services/docker-compose.yml` has exactly four services: `discord-bot`, `orchestrator`, `small-cap-trader`, `swing-trader`. No `redis` service. No `redis-data` volume. No `volumes:` block at the bottom unless something new is required.
 - [ ] Each agent service uses `build.context: ..` and `dockerfile: services/agent.Dockerfile`. Each agent service lists every env var from the inline Compose contract above plus the agent-specific webhook URLs.
 - [ ] Orchestrator service additionally passes `MACRO_CRON_HOUR=${MACRO_CRON_HOUR}` and pulls `DISCORD_WEBHOOK_MACRO_DAILY` + `DISCORD_WEBHOOK_SYSTEM`.
-- [ ] Small-cap service pulls `DISCORD_WEBHOOK_SCANS` + `DISCORD_WEBHOOK_RESEARCH`.
-- [ ] Swing-trader service pulls `DISCORD_WEBHOOK_SWING_SETUPS` + `DISCORD_WEBHOOK_SWING_ALERTS`.
+- [ ] Small-cap service pulls `ASKEDGAR_DAILY_LIMIT`, `TRADINGVIEW_SESSION_ID`, `DISCORD_WEBHOOK_SCANS`, and `DISCORD_WEBHOOK_RESEARCH`.
+- [ ] Swing-trader service pulls `ASKEDGAR_DAILY_LIMIT`, `TRADINGVIEW_SESSION_ID`, `DISCORD_WEBHOOK_SWING_SETUPS`, and `DISCORD_WEBHOOK_SWING_ALERTS`.
 - [ ] Each agent service has the `["CMD-SHELL", "test -f /tmp/healthy && find /tmp/healthy -mmin -2 >/dev/null 2>&1"]` healthcheck with `interval: 30s`, `timeout: 10s`, `retries: 3`, `start_period: 60s`.
 - [ ] Each agent service has `restart: unless-stopped`, `stop_grace_period: 30s`, and the json-file logging block with `max-size: "50m"` / `max-file: "3"`.
 - [ ] The `discord-bot` service has `restart: unless-stopped` and `stop_grace_period: 15s` (not 30s — the bot has no LLM call to drain).
@@ -768,6 +770,8 @@ The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the Externa
   - `AGENT_MAX_SCAN_CANDIDATES=20`
   - `AGENT_MAX_PATTERN_HISTORY=50`
   - `AGENT_MAX_RETRIES_PER_STEP=2`
+  - `ASKEDGAR_DAILY_LIMIT=100`
+  - `TRADINGVIEW_SESSION_ID=`
   - `MACRO_HEADLINES_URLS=` (blank — add a comment line above it: `# Default if unset: https://www.marketwatch.com/latest-news,https://finance.yahoo.com/topic/stock-market-news/`)
   - `NEXUS_API_URL=` (blank — public Vercel URL; bot-only per D9)
   - `MASSIVE_API_BASE_URL=https://api.polygon.io`
