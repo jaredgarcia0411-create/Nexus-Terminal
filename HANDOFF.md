@@ -652,20 +652,22 @@ WHERE status = 'queued'
 
 -- name: stuck-processing
 -- Jobs in processing past lease expiry or with stale heartbeat.
--- Threshold = 10 × JOB_LEASE_HEARTBEAT_INTERVAL_MS (60s in lib/agents/worker.ts:23).
--- Adjust this interval if you change the worker heartbeat constant.
+-- Threshold = 10 × JOB_LEASE_HEARTBEAT_INTERVAL_MS.
+-- With JOB_LEASE_HEARTBEAT_INTERVAL_MS = 60s in lib/agents/worker.ts:23, the stale-heartbeat threshold is 10 minutes.
 SELECT id, agent_id, locked_by, lock_expires_at, last_heartbeat_at
 FROM agent_jobs
 WHERE status = 'processing'
   AND (lock_expires_at < now() OR last_heartbeat_at < now() - interval '10 minutes');
 
 -- name: missed-macro-summary
--- Today's macro-summary scheduled run, if any.
+-- Today's macro-summary scheduled run row, if present.
+-- `agent_scheduled_runs.trading_date` is stored as ISO `YYYY-MM-DD` text in the live schema/runtime.
+-- Zero rows after the configured cron hour means the run was missed.
 SELECT id, status, started_at, completed_at, job_id
 FROM agent_scheduled_runs
 WHERE agent_id = 'orchestrator'
   AND trigger_type = 'macro-summary'
-  AND trading_date = (now() AT TIME ZONE 'America/New_York')::date;
+  AND trading_date = to_char((now() AT TIME ZONE 'America/New_York')::date, 'YYYY-MM-DD');
 
 -- name: delivery-failures-by-day
 -- Failed Discord deliveries grouped by UTC day, last 7 days.
@@ -695,6 +697,8 @@ GROUP BY lane;
 ```
 
 Codex must not invent column names. The fan-out review confirmed every column above resolves cleanly against `lib/db/schema.ts` as of 2026-04-08, so all seven queries SHALL be present in the final file. If Codex discovers during execution that a column has drifted, STOP and flip Sprint 4 to `PENDING REVIEW` instead of dropping the query — partial SQL is worse than a paused sprint.
+
+Checkpoint 5 is intentionally SQL-only. It does NOT add new `/api/agents/admin/stats` fields. The `AGENTIC_EXPANSIONV2.md` §16 "container restart loops" observability requirement is satisfied by the later ops docs and smoke commands (`docker compose ps`, `docker compose logs`) in Checkpoints 6 and 7, not by this SQL file.
 
 #### `docs/ops/agents-rollback.md`, `docs/ops/home-server-recovery.md`, `docs/ops/agents-deploy-smoke.md`, `docs/ops/agents-launch-validation.md`, `docs/ops/agents-backup-restore.md`
 
@@ -859,25 +863,28 @@ The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the Externa
 
 **Stories:** `AEV2-507`
 
-**Review focus:** confirm every SQL block references real columns from `lib/db/schema.ts`, queries are read-only, and each block is named via a `-- name:` comment.
+**Review focus:** confirm every SQL block references real columns from `lib/db/schema.ts`, queries are read-only, each block is named via a `-- name:` comment, and the live schema/runtime (not the older design-doc type hints) is the source of truth for `agent_scheduled_runs.trading_date`.
 
 **Suggested commit:** `feat(aev2): add agent observability sql`
 
 **Check off before commit**
 
-- [ ] `scripts/ops/agent-observability.sql` exists with all seven named queries from the contract: `queue-depth`, `oldest-queued-job-age`, `stuck-processing`, `missed-macro-summary`, `delivery-failures-by-day`, `agent-heartbeat-freshness`, `token-totals-today`.
-- [ ] Every column referenced (`agent_jobs.next_retry_at`, `agent_jobs.lock_expires_at`, `agent_jobs.last_heartbeat_at`, `agent_scheduled_runs.trigger_type`, `agent_scheduled_runs.trading_date`, `agent_reports.status`, `agent_registry.last_heartbeat`, `agent_request_log.lane`, `agent_request_log.input_tokens`, `agent_request_log.output_tokens`, `agent_request_log.estimated_cost_cents`, `agent_request_log.created_at`) exists in `lib/db/schema.ts`. Verify by reading the schema file before committing.
-- [ ] Every query is read-only (`SELECT` only — no `INSERT`/`UPDATE`/`DELETE`).
-- [ ] No query depends on Drizzle internals — pasteable into raw `psql` against the Neon DB.
+- [x] `scripts/ops/agent-observability.sql` exists with all seven named queries from the contract: `queue-depth`, `oldest-queued-job-age`, `stuck-processing`, `missed-macro-summary`, `delivery-failures-by-day`, `agent-heartbeat-freshness`, `token-totals-today`.
+- [x] Every table and column referenced by the seven SQL blocks exists in `lib/db/schema.ts`. Verify against the live schema file before committing; do NOT rely on older `AGENTIC_EXPANSIONV2.md` type hints.
+- [x] `missed-macro-summary` treats `agent_scheduled_runs.trading_date` as ISO `YYYY-MM-DD` text, matching the live schema/runtime, and zero rows after the configured cron hour is the "missed run" signal.
+- [x] Every query is read-only (`SELECT` only — no `INSERT`/`UPDATE`/`DELETE`).
+- [x] No query depends on Drizzle internals — pasteable into raw `psql` against the Neon DB.
 
 **Exit criteria**
 
-- [ ] An operator can `psql $DATABASE_URL -f scripts/ops/agent-observability.sql` (or paste blocks individually) to answer every operational question listed in `AGENTIC_EXPANSIONV2.md` §16.
+- [x] An operator can `psql $DATABASE_URL -f scripts/ops/agent-observability.sql` (or paste blocks individually) to answer the DB-backed operational questions from `AGENTIC_EXPANSIONV2.md` §16.
+- [x] Container restart-loop observability remains a Checkpoint 6/7 ops-doc + smoke concern, not a Checkpoint 5 SQL or `/api/agents/admin/stats` change.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npm test`
 
 **STOP. Review. Commit. Then continue.**
 
