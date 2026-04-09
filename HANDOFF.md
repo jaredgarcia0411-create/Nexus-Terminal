@@ -131,28 +131,28 @@ Take the Sprint 1–3 library + API surface and prove it as a runnable home-serv
 - Root [`tsconfig.json`](/home/jared/Nexus-Terminal/tsconfig.json) excludes `services/`. Sprint 4 must NOT change the root tsconfig — it must add a service-side tsconfig at `services/tsconfig.json` that compiles `services/agent-entrypoint.ts` and the discord bot entrypoint and references `lib/` via the existing `@/*` path alias rooted at the repo.
 - `services/discord-bot/` does NOT exist yet. Sprint 4 creates the entire directory tree from scratch — `package.json`, `package-lock.json` (via `npm install`), `tsconfig.json`, `Dockerfile`, and the TypeScript bot entrypoint.
 - `scripts/ops/` does NOT exist yet. Sprint 4 creates it and adds `agent-observability.sql`.
-- `docs/ops/` does NOT exist yet. Sprint 4 creates it and adds the rollback + home-server recovery + smoke + launch-validation runbooks. The pre-migration backup runbook (`docs/ops/agents-backup-restore.md`) is the only ops doc the source plan assigns to a pre-Sprint-1 epic; since migration 0019 already shipped without it, Sprint 4 produces the doc retroactively with the actual Neon backup/restore steps the user took.
-- The hardcoded `DISCORD_USER_MAP` in [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts) is currently empty (only commented placeholders). The smoke checklist requires the user to populate it manually (see "External Validation Checklist" at the bottom of this sprint) before Sprint 4 can claim end-to-end success. Codex does NOT fill this map — it is operator data.
+- `docs/ops/` does NOT exist yet. Sprint 4 creates it and adds the rollback + home-server recovery + smoke + launch-validation runbooks. The pre-migration backup runbook (`docs/ops/agents-backup-restore.md`) is the only ops doc the source plan assigns to a pre-Sprint-1 epic; since migration 0019 already shipped without it, Sprint 4 produces the doc retroactively with the canonical Neon branch backup/restore procedure and placeholder slots for any user-specific branch IDs or notes that are not in the repo.
+- The hardcoded `DISCORD_USER_MAP` in [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts) is currently empty (only commented placeholders). The smoke checklist requires the user to populate it manually after Codex hands off and before the live smoke (see "External Validation Checklist" at the bottom of this sprint). Codex does NOT fill this map — it is operator data.
 - `npm run lint`, `npx tsc --noEmit`, and `npm test` all pass on the Sprint 3 baseline as of 2026-04-08. 307 tests across 45 files. `discord.js` and `tsx` are NOT yet in `package.json` — they will live exclusively in `services/discord-bot/package.json`, NOT in the root `package.json`, so the Vercel bundle stays unaffected.
 
 ### Scope
 
 - **In scope:** `AEV2-501` through `AEV2-510`. New files under `services/agent.Dockerfile`, `services/agent-entrypoint.ts`, `services/tsconfig.json`, `services/discord-bot/**`, `scripts/ops/agent-observability.sql`, and `docs/ops/**`. Additive edits to `services/docker-compose.yml`, `services/.env.example`, `package.json` (one new script for service typecheck — see D5), and `.gitignore` if needed for the new bot lockfile path. The HANDOFF.md update lands at the end.
-- **Out of scope:** Any file under `lib/agents/` or `app/api/agents/` except a documentation comment (no behavior changes — see D6), any file under `lib/validations/`, any file under `__tests__/` (Sprint 4 has NO new vitest tests — service-side validation is a manual build/typecheck/runtime smoke, not a vitest contract), any new DB migration, any change to `lib/db/schema.ts`, any change to `middleware.ts`, any change to `lib/llm-client.ts` (Vercel-side), any change to `next.config.ts` or root `tsconfig.json`, any installation of `discord.js` or `tsx` into the root `package.json`, any new feature flag or backwards-compat shim, any rewrite of unrelated Compose services. Codex must NOT touch `services/.env`, ever. Codex must NOT fill the `DISCORD_USER_MAP` — that is operator data and is part of the External Validation Checklist below.
+- **Out of scope:** Any file under `lib/agents/` or `app/api/agents/` except a documentation comment (no behavior changes — see D6), any file under `lib/validations/`, any file under `__tests__/` (Sprint 4 has NO new vitest tests — service-side validation is a manual build/typecheck/runtime smoke, not a vitest contract), any new DB migration, any change to `lib/db/schema.ts`, any change to `middleware.ts`, any change to `lib/llm-client.ts` (Vercel-side), any change to `next.config.ts` or root `tsconfig.json`, any installation of `discord.js` or `tsx` into the root `package.json`, any new feature flag or backwards-compat shim, any rewrite of unrelated Compose services. Codex must NOT touch `services/.env`, ever. Codex must NOT fill the `DISCORD_USER_MAP` — that is operator data and is part of the External Validation Checklist below. This no-`lib/agents/` rule applies to Codex-authored changes; the operator may add the live Discord mapping in `lib/agents/admin.ts` after handoff before smoke.
 
 ### Decisions Locked For Sprint 4
 
 These ten decisions remove ambiguity before Codex starts. If any of them is wrong, update this section before execution — do NOT let Codex discover the ambiguity mid-sprint.
 
 - **D1. Dockerfile install strategy.** `services/agent.Dockerfile` runs `npm ci` (NOT `npm ci --production` or `--omit=dev`). Reason: the agent runtime imports Drizzle, Zod, the schema, and the prompt files at module load. Several of those packages are listed under `dependencies` in the root `package.json`, but the runtime also depends on TypeScript type checks happening through `tsx`'s on-the-fly transpile, and stripping devDependencies risks losing type-only or transitive packages that the runtime indirectly needs. We accept the larger image in V1 in exchange for guaranteed parity with `npm test`. The Dockerfile installs `tsx` separately as a global-style binary via `npm install -g tsx@4` so the production install does not need to mutate `package.json`.
-- **D2. Image surface.** The Dockerfile copies the minimum surface the agent runtime touches at runtime: `package.json`, `package-lock.json`, `tsconfig.json`, `lib/`, and `services/agent-entrypoint.ts`. It does NOT copy `app/`, `components/`, `hooks/`, `public/`, `__tests__/`, `drizzle/`, `scripts/`, `docs/`, `.next/`, `node_modules/`, or any of the Next.js UI surface. A `.dockerignore` at the repo root enforces this — Sprint 4 creates it.
+- **D2. Image surface.** The Dockerfile copies the minimum surface the agent runtime touches at runtime: `package.json`, `package-lock.json`, `tsconfig.json`, `lib/`, and `services/agent-entrypoint.ts`. It does NOT copy `app/`, `components/`, `hooks/`, `public/`, `__tests__/`, `drizzle/`, `scripts/`, `docs/`, `.next/`, `node_modules/`, or any of the Next.js UI surface. A `.dockerignore` at the repo root enforces this — Sprint 4 creates it. Because [`lib/agents/prompts-loader.ts`](/home/jared/Nexus-Terminal/lib/agents/prompts-loader.ts) reads `lib/agents/prompts/*.md` at runtime, any broad markdown exclusion MUST explicitly re-include `lib/agents/prompts/*.md`.
 - **D3. Entrypoint signature.** `services/agent-entrypoint.ts` ignores the stale example in `AGENTIC_EXPANSIONV2.md` §15 (which calls `startMacroCron()` with zero args and `startWorker({ blueprintResolver })`). The current Sprint 3 contracts are: `startWorker(config: WorkerConfig & { agentConfig: AgentConfig })` and `startMacroCron(db: AgentDb, options?: { hourEt?: number; checkIntervalMs?: number })`. The entrypoint resolves `db = getAgentDb()` once at startup (throwing if null), passes `agentConfig: AGENT_CONFIGS[agentId]` into `startWorker`, and only the orchestrator process calls `startMacroCron(db)`. Pull the `pollIntervalMs` from `process.env.AGENT_POLL_INTERVAL_MS ?? '5000'`.
 - **D4. Discord bot tech stack.** `services/discord-bot/` uses `discord.js@14`, runs on Node 20 Alpine, ships with its own `package.json` + `package-lock.json` so the Vercel root install never sees `discord.js`. The bot is written in TypeScript and launched via `tsx services/discord-bot/index.ts` from inside its own container. Polling: 2-second interval with a 60-attempt cap (120s total), then a fixed timeout reply. The bot uses `node:fetch` (built into Node 20) to talk to the Nexus API — no `node-fetch` or `axios` dependency.
-- **D5. Service typecheck script.** `package.json` gains exactly one new script: `"typecheck:services": "tsc -p services/tsconfig.json --noEmit"`. The script runs both the agent entrypoint and the Discord bot entrypoint through one tsc invocation by including both source roots in `services/tsconfig.json`. The script is the AEV2-506 acceptance gate. Codex must not collapse it into the existing `lint` script and must not invoke it from `npm test` (vitest would fail on `services/` files). The script is invoked manually as part of Sprint 4's checkpoint validation and is documented in the smoke runbook.
-- **D6. lib/agents/ untouched.** Sprint 4 does NOT modify `lib/agents/admin.ts`, `lib/agents/worker.ts`, `lib/agents/macro-cron.ts`, `lib/agents/heartbeat.ts`, `lib/agents/config.ts`, or any blueprint file. The `DISCORD_USER_MAP` stays empty in code; the user fills it as part of the External Validation Checklist BEFORE running the smoke. If a contract gap is discovered mid-sprint that would require a code edit under `lib/agents/`, Codex stops and flips this sprint to `PENDING REVIEW` instead of editing in place.
+- **D5. Service typecheck script.** `package.json` gains exactly one new script: `"typecheck:services": "tsc -p services/tsconfig.json --noEmit"`. The script runs both the agent entrypoint and the Discord bot entrypoint through one tsc invocation by including both source roots in `services/tsconfig.json`. The script is the AEV2-506 acceptance gate. Codex must not collapse it into the existing `lint` script and must not invoke it from `npm test` (vitest would fail on `services/` files). Because `discord.js` lives only under `services/discord-bot/`, this gate is evaluated after the one-time `cd services/discord-bot && npm ci` step from Checkpoint 3 and in any workspace where `services/discord-bot/node_modules` exists. The script is invoked manually as part of Sprint 4's checkpoint validation and is documented in the smoke runbook.
+- **D6. lib/agents/ untouched.** Sprint 4 does NOT make Codex-authored behavior changes to `lib/agents/admin.ts`, `lib/agents/worker.ts`, `lib/agents/macro-cron.ts`, `lib/agents/heartbeat.ts`, `lib/agents/config.ts`, or any blueprint file. The checked-in code leaves `DISCORD_USER_MAP` empty; after handoff, the operator may add the live mapping in `lib/agents/admin.ts` before running the smoke. If a contract gap is discovered mid-sprint that would require Codex to edit another `lib/agents/` file or to change `admin.ts` behavior, Codex stops and flips this sprint to `PENDING REVIEW` instead of editing in place.
 - **D7. Healthcheck shape.** The Compose healthcheck uses `["CMD-SHELL", "test -f /tmp/healthy && find /tmp/healthy -mmin -2 >/dev/null 2>&1"]`, copied verbatim from `AGENTIC_EXPANSIONV2.md` §15. Reason: the heartbeat loop (`lib/agents/heartbeat.ts`) writes `/tmp/healthy` on a 30-second tick; a 2-minute mtime tolerance accommodates the heartbeat interval plus container clock skew without false-flagging healthy agents.
 - **D8. Smoke runbook is markdown only.** The deploy smoke checklist (AEV2-509) ships as `docs/ops/agents-deploy-smoke.md` — not as a script. Codex does NOT write a smoke runner. The user walks each item by hand because most steps require live Discord interaction. Sprint 4's "completion" of AEV2-509 means the markdown exists and matches the External Validation Checklist below — actual smoke execution is the user's responsibility (see External Validation Checklist).
-- **D9. `NEXUS_API_URL` is bot-only.** `NEXUS_API_URL` is consumed exclusively by the `discord-bot` Compose service and is referenced nowhere in `lib/agents/`. The three agent services (`orchestrator`, `small-cap-trader`, `swing-trader`) talk to Neon directly and to the LLM lanes via the `INTERACTIVE_LLM_BASE_URL` / `BACKGROUND_LLM_BASE_URL` env vars — they do NOT need `NEXUS_API_URL` and Codex must NOT add it to any agent service env block. Reason: the var is a Sprint-4 introduction not present in `AGENTIC_EXPANSIONV2.md` §19; making the bot the only consumer keeps the agent attack surface small.
+- **D9. `NEXUS_API_URL` is bot-only.** `NEXUS_API_URL` is consumed exclusively by the `discord-bot` Compose service and is referenced nowhere in `lib/agents/`. The three agent services (`orchestrator`, `small-cap-trader`, `swing-trader`) talk to Neon directly and to the LLM lanes via the `INTERACTIVE_LLM_API_BASE_URL` / `BACKGROUND_LLM_API_BASE_URL` env vars — they do NOT need `NEXUS_API_URL` and Codex must NOT add it to any agent service env block. Reason: the var is a Sprint-4 introduction not present in `AGENTIC_EXPANSIONV2.md` §19; making the bot the only consumer keeps the agent attack surface small.
 - **D10. discord-bot service has no `DATABASE_URL`.** The `discord-bot` Compose env block in this spec deliberately omits `DATABASE_URL` (which `AGENTIC_EXPANSIONV2.md` §15 lists). Reason: the bot only talks HTTP to the Nexus API and has no DB client. Adding `DATABASE_URL` would needlessly leak the Neon credential into a service that does not use it. This is an intentional deviation from §15.
 
 ### Planned File Actions
@@ -161,18 +161,18 @@ These ten decisions remove ambiguity before Codex starts. If any of them is wron
 
 - [`services/agent.Dockerfile`](/home/jared/Nexus-Terminal/services/agent.Dockerfile) — Node 20 Alpine image for the three agent services. WORKDIR `/app`, COPY `package.json package-lock.json tsconfig.json ./`, `RUN npm ci && npm install -g tsx@4`, COPY `lib/ ./lib/`, COPY `services/agent-entrypoint.ts ./services/`, CMD `["tsx", "services/agent-entrypoint.ts"]`.
 - [`services/agent-entrypoint.ts`](/home/jared/Nexus-Terminal/services/agent-entrypoint.ts) — boots one agent service. Reads `AGENT_ID` env, validates via `AGENT_CONFIGS`, resolves `db = getAgentDb()` (throw if null), starts `startMacroCron(db)` only when `agentId === 'orchestrator'`, starts `startWorker({ agentId, pollIntervalMs, agentConfig: AGENT_CONFIGS[agentId] })`, wires `SIGINT`/`SIGTERM` to call the returned `stop()` handles in order (worker first, then macro cron) and then `process.exit(0)`.
-- [`services/tsconfig.json`](/home/jared/Nexus-Terminal/services/tsconfig.json) — extends the root tsconfig minimally: same `compilerOptions` (ES2017 target, strict, ESM, `@/*` path alias), `include: ["agent-entrypoint.ts", "discord-bot/index.ts", "../lib/**/*.ts"]`, `exclude: ["../node_modules", "../.next", "discord-bot/node_modules"]`. Compiles under `tsc -p services/tsconfig.json --noEmit`.
+- [`services/tsconfig.json`](/home/jared/Nexus-Terminal/services/tsconfig.json) — extends the root tsconfig minimally and inherits the repo-root `@/*` path alias without overriding it. `include: ["agent-entrypoint.ts", "discord-bot/index.ts", "../lib/**/*.ts"]`, `exclude: ["../node_modules", "../.next", "discord-bot/node_modules"]`. Compiles under `tsc -p services/tsconfig.json --noEmit` once the bot dependencies are installed locally in `services/discord-bot/`.
 - [`services/discord-bot/index.ts`](/home/jared/Nexus-Terminal/services/discord-bot/index.ts) — TypeScript bot entrypoint. Uses `discord.js@14` `Client` with `GatewayIntentBits.Guilds | GuildMessages | MessageContent`. Listens on `messageCreate` only in the `#orchestrator` channel (resolved by name from the configured `DISCORD_GUILD_ID`). For each non-bot message, posts to `${NEXUS_API_URL}/api/agents/service/chat` with `x-agent-service-key` header and body `{ message, discord_user_id: msg.author.id, channel: 'discord', session_id: 'discord:<author>:<channel>' }` (a stable per-author/per-channel string so the Orchestrator can reuse `agent_conversations` rows). On 201, polls `GET /api/agents/service/chat?job_id=<id>` every 2s for up to 60 attempts (120s). On `completed` with `result.message`, posts an embed with title `Orchestrator`, color `0x10B981`, description = result.message (truncated to 4000 chars + `… (truncated — see logs)` suffix if longer); on `completed` with `result.routed === true`, replies `Routed to specialist (job: <specialistJobId>)`; on `failed`, replies `Request failed (job: <jobId>). Check the agent logs.` and logs the upstream error body server-side only; on timeout, replies `Request timed out after 120s (job: <jobId>).`; on any HTTP error from the Nexus API (4xx/5xx), replies `Nexus API rejected the request (status N).` (NEVER echoes the upstream response body to Discord). Never calls `/api/agents/admin/*` or any user-facing route.
-- [`services/discord-bot/package.json`](/home/jared/Nexus-Terminal/services/discord-bot/package.json) — `name: "nexus-discord-bot"`, `version: "0.1.0"`, `private: true`, `type: "module"`, `scripts: { "start": "tsx index.ts" }`, `dependencies: { "discord.js": "^14.16.3", "tsx": "^4.19.2" }`, `engines: { "node": ">=20" }`. Codex runs `npm install --package-lock-only` inside `services/discord-bot/` to generate the lockfile (or full `npm install` if needed for D9 — see below). Lockfile is committed.
+- [`services/discord-bot/package.json`](/home/jared/Nexus-Terminal/services/discord-bot/package.json) — `name: "nexus-discord-bot"`, `version: "0.1.0"`, `private: true`, `type: "module"`, `scripts: { "start": "tsx index.ts" }`, `dependencies: { "discord.js": "^14.16.3", "tsx": "^4.19.2" }`, `engines: { "node": ">=20" }`. Codex generates and commits `services/discord-bot/package-lock.json`, then runs `cd services/discord-bot && npm ci` once during Checkpoint 3 so the local typecheck gate can resolve the bot dependencies.
 - [`services/discord-bot/tsconfig.json`](/home/jared/Nexus-Terminal/services/discord-bot/tsconfig.json) — minimal local tsconfig for in-container compile via `tsx`. Targets Node 20, ESM, strict. Only used at runtime by `tsx`; the Sprint 4 typecheck gate runs through `services/tsconfig.json` instead.
 - [`services/discord-bot/Dockerfile`](/home/jared/Nexus-Terminal/services/discord-bot/Dockerfile) — Node 20 Alpine, WORKDIR `/app`, COPY `package.json package-lock.json ./`, `RUN npm ci`, COPY `index.ts tsconfig.json ./`, CMD `["npx", "tsx", "index.ts"]`.
 - [`scripts/ops/agent-observability.sql`](/home/jared/Nexus-Terminal/scripts/ops/agent-observability.sql) — read-only SQL queries the operator can paste into Drizzle Studio or `psql`. Covers: queue depth, oldest queued job age, jobs stuck in `processing` past lease expiry, missed `agent_scheduled_runs` (today's row not present after cron hour), `agent_reports.delivery_failed` count by day, `agent_registry.last_heartbeat` freshness, and recent `agent_request_log` totals by lane. Each query is named with a `-- name: ...` comment so the operator can grep for one block at a time.
 - [`docs/ops/agents-rollback.md`](/home/jared/Nexus-Terminal/docs/ops/agents-rollback.md) — step-by-step rollback. Covers app rollback (`vercel rollback` to the last green deploy), Docker service rollback (`docker compose down && git checkout <prior tag> && docker compose up -d --build`), and migration 0019 partial-failure recovery (manual `psql` block that drops the new tables in reverse FK order if a future re-migrate is needed).
-- [`docs/ops/home-server-recovery.md`](/home/jared/Nexus-Terminal/docs/ops/home-server-recovery.md) — reboot/recovery procedure for the WSL2 home server. Documents `wsl --shutdown` recovery, Docker daemon restart (`sudo systemctl start docker`), `docker compose up -d` after reboot, healthcheck verification (`docker compose ps` should show all four services as `healthy`), and the exact reboot order after an ISP outage or power loss.
+- [`docs/ops/home-server-recovery.md`](/home/jared/Nexus-Terminal/docs/ops/home-server-recovery.md) — reboot/recovery procedure for the WSL2 home server. Documents `wsl --shutdown` recovery, Docker daemon restart (`sudo systemctl start docker`), `docker compose up -d` after reboot, healthcheck verification (`docker compose ps` should show the three agent services as `healthy` and `discord-bot` as `Up`/running), and the exact reboot order after an ISP outage or power loss.
 - [`docs/ops/agents-deploy-smoke.md`](/home/jared/Nexus-Terminal/docs/ops/agents-deploy-smoke.md) — the manual smoke checklist matching the External Validation Checklist below. Each item is a checkbox plus the exact command or Discord interaction to run, plus the expected result.
 - [`docs/ops/agents-launch-validation.md`](/home/jared/Nexus-Terminal/docs/ops/agents-launch-validation.md) — pre-launch config and secret re-validation checklist (AEV2-510). Documents how to re-verify the lane keys, base URLs, models, the two service/admin keys, and the six webhook URLs against `services/.env` before `docker compose up -d`.
-- [`docs/ops/agents-backup-restore.md`](/home/jared/Nexus-Terminal/docs/ops/agents-backup-restore.md) — retroactive Neon backup/restore doc. Documents the Neon "branch" pattern as the canonical backup mechanism and includes the exact step the user followed before applying migration 0019. Lives in `docs/ops/` even though `AGENTIC_EXPANSIONV2.md` §16 originally assigned it to EPIC-2 — Sprint 4 lands it as a launch-readiness artifact since EPIC-2 closed without it.
-- [`.dockerignore`](/home/jared/Nexus-Terminal/.dockerignore) — repo-root ignore so the agent image build context stays small. Excludes `node_modules`, `.next`, `app`, `components`, `hooks`, `public`, `__tests__`, `drizzle`, `scripts`, `docs`, `services/.env`, `services/discord-bot/node_modules`, `*.log`, plus `.git`, `.github`, `.vscode`, `.claude`, `*.md`, `coverage`, `.env*`. (The `.git` exclusion alone trims ~100MB+ from the build context.)
+- [`docs/ops/agents-backup-restore.md`](/home/jared/Nexus-Terminal/docs/ops/agents-backup-restore.md) — retroactive Neon backup/restore doc. Documents the Neon "branch" pattern as the canonical backup mechanism and leaves branch IDs or any user-specific notes as placeholders unless the user provides them. Lives in `docs/ops/` even though `AGENTIC_EXPANSIONV2.md` §16 originally assigned it to EPIC-2 — Sprint 4 lands it as a launch-readiness artifact since EPIC-2 closed without it.
+- [`.dockerignore`](/home/jared/Nexus-Terminal/.dockerignore) — repo-root ignore so the agent image build context stays small. Excludes `node_modules`, `.next`, `app`, `components`, `hooks`, `public`, `__tests__`, `drizzle`, `scripts`, `docs`, `services/.env`, `services/discord-bot/node_modules`, `*.log`, plus `.git`, `.github`, `.vscode`, `.claude`, `coverage`, `.env*`. If it also excludes general markdown files, it MUST re-include `!lib/agents/prompts/*.md` so the runtime prompt files remain in the image. (The `.git` exclusion alone trims ~100MB+ from the build context.)
 
 **Modified files:**
 
@@ -203,7 +203,7 @@ These ten decisions remove ambiguity before Codex starts. If any of them is wron
 - `services/agent-entrypoint.ts` MUST NOT swallow `db === null`. If `getAgentDb()` returns null, the entrypoint logs a single structured error and exits with code `1` so Compose's restart policy + the user's eyes catch it immediately.
 - The agent services run as the default `node` user from the Node Alpine image — do NOT add a `USER root` directive. The healthcheck file `/tmp/healthy` is writable by `node` since `/tmp` is world-writable in Alpine.
 - `services/.env.example` additions must not include any real secret. Use empty values or commented examples only.
-- The retroactive `agents-backup-restore.md` doc may reference Neon branch IDs only if the user provides them; otherwise leave the branch ID line as a placeholder for the user to fill. Do not invent branch IDs.
+- The retroactive `agents-backup-restore.md` doc records the canonical Neon branch backup/restore flow. It may reference real branch IDs only if the user provides them; otherwise leave the branch ID line as a placeholder for the user to fill. Do not invent branch IDs.
 
 ### Execution Contracts
 
@@ -313,11 +313,7 @@ Notes:
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
-    "rootDir": "..",
-    "baseUrl": "..",
-    "paths": {
-      "@/*": ["../*"]
-    }
+    "rootDir": ".."
   },
   "include": [
     "agent-entrypoint.ts",
@@ -335,6 +331,7 @@ Notes:
 Notes:
 - Root `tsconfig.json` excludes `services/`, so the service-side check needs its own config. This file does NOT touch the root tsconfig.
 - `"extends": "../tsconfig.json"` inherits strict mode and all the existing compiler options from the root.
+- Do NOT override `baseUrl` or `paths` here. The inherited repo-root alias already resolves `@/*` correctly.
 - Including `../lib/**/*.ts` means a type drift in `lib/agents/*` is caught when Codex (or the user) runs the new `npm run typecheck:services` script.
 - `discord-bot/node_modules` is excluded so the bot's `discord.js` types don't double-resolve.
 
@@ -380,11 +377,11 @@ Per D10, `DATABASE_URL` is intentionally absent from the bot's env block.
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL}
       - INTERACTIVE_LLM_API_KEY=${INTERACTIVE_LLM_API_KEY}
-      - INTERACTIVE_LLM_BASE_URL=${INTERACTIVE_LLM_BASE_URL}
+      - INTERACTIVE_LLM_API_BASE_URL=${INTERACTIVE_LLM_API_BASE_URL}
       - INTERACTIVE_LLM_MODEL=${INTERACTIVE_LLM_MODEL}
       - INTERACTIVE_LLM_TIMEOUT_MS=${INTERACTIVE_LLM_TIMEOUT_MS}
       - BACKGROUND_LLM_API_KEY=${BACKGROUND_LLM_API_KEY}
-      - BACKGROUND_LLM_BASE_URL=${BACKGROUND_LLM_BASE_URL}
+      - BACKGROUND_LLM_API_BASE_URL=${BACKGROUND_LLM_API_BASE_URL}
       - BACKGROUND_LLM_MODEL=${BACKGROUND_LLM_MODEL}
       - BACKGROUND_LLM_TIMEOUT_MS=${BACKGROUND_LLM_TIMEOUT_MS}
       - AGENT_DAILY_BUDGET_CENTS=${AGENT_DAILY_BUDGET_CENTS}
@@ -717,27 +714,27 @@ The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the Externa
 
 **Stories:** `AEV2-501`
 
-**Review focus:** confirm the Dockerfile copies only `lib/`, `services/agent-entrypoint.ts`, and the package metadata; the entrypoint resolves the DB once and passes `agentConfig` (not `blueprintResolver`); SIGTERM/SIGINT cleanly stop the worker and the macro cron in order; `.dockerignore` excludes `services/.env`.
+**Review focus:** confirm the Dockerfile copies only `lib/`, `services/agent-entrypoint.ts`, and the package metadata; the entrypoint resolves the DB once and passes `agentConfig` (not `blueprintResolver`); SIGTERM/SIGINT cleanly stop the worker and the macro cron in order; `.dockerignore` excludes `services/.env` while preserving `lib/agents/prompts/*.md`.
 
 **Suggested commit:** `feat(aev2): add agent docker image and service entrypoint`
 
 **Check off before commit**
 
-- [ ] `services/agent.Dockerfile` matches the contract verbatim — `npm ci` (NOT `--production`), `npm install -g tsx@4`, COPY `lib/`, COPY entrypoint, CMD `["tsx", "services/agent-entrypoint.ts"]`.
-- [ ] `services/agent-entrypoint.ts` calls `getAgentDb()` once, exits with code `1` on null, starts `startMacroCron(db)` only for `agentId === 'orchestrator'`, and starts `startWorker({ agentId, pollIntervalMs, agentConfig: AGENT_CONFIGS[agentId] })`.
-- [ ] Entrypoint logs structured JSON, never logs message bodies or secrets, and shuts down worker before macro cron on SIGTERM/SIGINT.
-- [ ] `.dockerignore` exists at the repo root and excludes `services/.env`, `node_modules`, `.next`, `app`, `components`, `hooks`, `public`, `__tests__`, `drizzle`, `scripts`, `docs`, `services/discord-bot/node_modules`, and `*.log`.
-- [ ] Entrypoint compiles under the existing root `npx tsc --noEmit` (it lives in `services/`, which is excluded — it must NOT trip the existing `tsc` baseline). Service-side typecheck is verified in Checkpoint 4.
+- [x] `services/agent.Dockerfile` matches the contract verbatim — `npm ci` (NOT `--production`), `npm install -g tsx@4`, COPY `lib/`, COPY entrypoint, CMD `["tsx", "services/agent-entrypoint.ts"]`.
+- [x] `services/agent-entrypoint.ts` calls `getAgentDb()` once, exits with code `1` on null, starts `startMacroCron(db)` only for `agentId === 'orchestrator'`, and starts `startWorker({ agentId, pollIntervalMs, agentConfig: AGENT_CONFIGS[agentId] })`.
+- [x] Entrypoint logs structured JSON, never logs message bodies or secrets, and shuts down worker before macro cron on SIGTERM/SIGINT.
+- [x] `.dockerignore` exists at the repo root and excludes `services/.env`, `node_modules`, `.next`, `app`, `components`, `hooks`, `public`, `__tests__`, `drizzle`, `scripts`, `docs`, `services/discord-bot/node_modules`, and `*.log`. If it excludes general markdown files, it explicitly keeps `!lib/agents/prompts/*.md`.
+- [x] Entrypoint compiles under the existing root `npx tsc --noEmit` (it lives in `services/`, which is excluded — it must NOT trip the existing `tsc` baseline). Service-side typecheck is verified in Checkpoint 4.
 
 **Exit criteria**
 
-- [ ] Image instructions are reproducible: `docker build -f services/agent.Dockerfile .` would succeed conceptually (Codex does NOT execute Docker — see Checkpoint 7 for the user's manual build step).
-- [ ] Entrypoint stop order is documented in the file as a comment: worker first, macro cron second.
+- [x] Image instructions are reproducible: `docker build -f services/agent.Dockerfile .` would succeed conceptually (Codex does NOT execute Docker — see Checkpoint 7 for the user's manual build step).
+- [x] Entrypoint stop order is documented in the file as a comment: worker first, macro cron second.
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
 
 **STOP. Review. Commit. Then continue.**
 
@@ -752,8 +749,8 @@ The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the Externa
 **Check off before commit**
 
 - [ ] `services/docker-compose.yml` has exactly four services: `discord-bot`, `orchestrator`, `small-cap-trader`, `swing-trader`. No `redis` service. No `redis-data` volume. No `volumes:` block at the bottom unless something new is required.
-- [ ] Each agent service uses `build.context: ..` and `dockerfile: services/agent.Dockerfile`. Each agent service lists every env var from §15 verbatim plus the agent-specific webhook URLs.
-- [ ] Orchestrator service additionally sets `MACRO_CRON_HOUR=6` and pulls `DISCORD_WEBHOOK_MACRO_DAILY` + `DISCORD_WEBHOOK_SYSTEM`.
+- [ ] Each agent service uses `build.context: ..` and `dockerfile: services/agent.Dockerfile`. Each agent service lists every env var from the inline Compose contract above plus the agent-specific webhook URLs.
+- [ ] Orchestrator service additionally passes `MACRO_CRON_HOUR=${MACRO_CRON_HOUR}` and pulls `DISCORD_WEBHOOK_MACRO_DAILY` + `DISCORD_WEBHOOK_SYSTEM`.
 - [ ] Small-cap service pulls `DISCORD_WEBHOOK_SCANS` + `DISCORD_WEBHOOK_RESEARCH`.
 - [ ] Swing-trader service pulls `DISCORD_WEBHOOK_SWING_SETUPS` + `DISCORD_WEBHOOK_SWING_ALERTS`.
 - [ ] Each agent service has the `["CMD-SHELL", "test -f /tmp/healthy && find /tmp/healthy -mmin -2 >/dev/null 2>&1"]` healthcheck with `interval: 30s`, `timeout: 10s`, `retries: 3`, `start_period: 60s`.
@@ -825,7 +822,7 @@ The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the Externa
 
 **Stories:** `AEV2-506`
 
-**Review focus:** confirm `services/tsconfig.json` compiles both entrypoints and the imported `lib/` surface, and that `npm run typecheck:services` is wired in `package.json` and exits 0 against the current tree.
+**Review focus:** confirm `services/tsconfig.json` compiles both entrypoints and the imported `lib/` surface, and that `npm run typecheck:services` is wired in `package.json` and exits 0 against the current tree after the one-time `cd services/discord-bot && npm ci` step from Checkpoint 3.
 
 **Suggested commit:** `chore(aev2): add services typecheck gate`
 
@@ -834,8 +831,9 @@ The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the Externa
 - [ ] `services/tsconfig.json` exists and `extends` the root tsconfig.
 - [ ] `services/tsconfig.json` includes `agent-entrypoint.ts`, `discord-bot/index.ts`, and `../lib/**/*.ts`.
 - [ ] `services/tsconfig.json` excludes `../node_modules`, `../.next`, and `discord-bot/node_modules`.
+- [ ] `services/tsconfig.json` inherits the root `@/*` alias without redefining `baseUrl`/`paths` to point outside the repo.
 - [ ] Root `package.json` has exactly one new script: `"typecheck:services": "tsc -p services/tsconfig.json --noEmit"`.
-- [ ] `npm run typecheck:services` exits 0 against the current tree.
+- [ ] `npm run typecheck:services` exits 0 against the current tree after the one-time `cd services/discord-bot && npm ci` step from Checkpoint 3.
 - [ ] Root `npm run lint` and `npx tsc --noEmit` still pass — the new tsconfig must not interfere with the existing root typecheck.
 - [ ] `npm test` still passes — vitest does NOT pick up `services/` files.
 
@@ -883,7 +881,7 @@ The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the Externa
 
 **Stories:** `AEV2-508`, `AEV2-510` (the launch-validation doc itself)
 
-**Review focus:** confirm the four runbook files exist, each is 100–200 lines of plain markdown, the smoke runbook mirrors the External Validation Checklist below 1:1, and no runbook invents commands the rest of the codebase does not support.
+**Review focus:** confirm the four runbook files exist, each is 100–200 lines of plain markdown, the smoke runbook mirrors the External Validation Checklist below 1:1, and no runbook invents repo scripts, internal paths, or code paths the repo does not support.
 
 **Suggested commit:** `docs(aev2): add ops rollback, recovery, smoke, launch-validation, and backup runbooks`
 
@@ -894,7 +892,7 @@ The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the Externa
 - [ ] `docs/ops/agents-deploy-smoke.md` mirrors the External Validation Checklist below — same items, same order, same expected results.
 - [ ] `docs/ops/agents-launch-validation.md` covers the AEV2-510 acceptance gate: re-verifying lane keys, base URLs, models, `AGENT_ADMIN_KEY`, `AGENT_SERVICE_KEY`, all six webhook URLs, and the `npm run typecheck:services` command from Checkpoint 4.
 - [ ] `docs/ops/agents-backup-restore.md` exists with the retroactive Neon backup/restore steps. Branch IDs are placeholders for the user to fill if not provided.
-- [ ] No runbook references a script or command that does not exist in the repo.
+- [ ] No runbook invents a repo script, internal path, or code path that does not exist. Standard external ops commands like `docker compose`, `psql`, `curl`, `vercel rollback`, `wsl --shutdown`, `systemctl`, and `sudo reboot` are expected.
 - [ ] No runbook contains a real secret value.
 
 **Exit criteria**
@@ -920,7 +918,7 @@ The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the Externa
 **Check off before commit**
 
 - [ ] Every file listed in "Planned File Actions" exists with the expected content.
-- [ ] No file under `lib/agents/`, `app/api/`, `lib/validations/`, or `__tests__/` has been modified.
+- [ ] No Codex-authored file under `lib/agents/`, `app/api/`, `lib/validations/`, or `__tests__/` has been modified.
 - [ ] `npm run lint` exits 0.
 - [ ] `npx tsc --noEmit` exits 0.
 - [ ] `npm run typecheck:services` exits 0.
@@ -946,10 +944,10 @@ The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the Externa
 ### Sprint 4 Exit Gate (Code-Side)
 
 - [ ] `AEV2-501` through `AEV2-510` artifacts landed in checkpoint order.
-- [ ] No file under `lib/agents/`, `app/api/`, `lib/validations/`, `__tests__/`, `lib/db/`, or `drizzle/` was modified.
+- [ ] No Codex-authored file under `lib/agents/`, `app/api/`, `lib/validations/`, `__tests__/`, `lib/db/`, or `drizzle/` was modified.
 - [ ] `services/.env` was not touched.
 - [ ] Root `package.json` gained one script and zero dependencies.
-- [ ] `services/discord-bot/package.json` is the only place `discord.js` and `tsx` appear in any committed file.
+- [ ] `services/discord-bot/package.json` is the only package manifest that declares `discord.js` and `tsx` as dependencies.
 - [ ] `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, and `npm test` all pass.
 - [ ] HANDOFF.md updated after Checkpoint 7 closes.
 
@@ -957,19 +955,19 @@ The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the Externa
 
 These items live outside the codebase. They are the actual launch gate for V1 — Sprint 4 is not COMPLETE until each is checked by the user. Codex does not execute any of these.
 
-**Before Codex starts (or before the user runs the smoke):**
+**Before the user runs the smoke (operator-owned steps, usually after Codex hands off):**
 
-- [ ] **Populate `DISCORD_USER_MAP` in `lib/agents/admin.ts`.** Codex left this empty per D6. Add at least one entry mapping a real Discord user ID to a real Nexus user `{ id, email, name, picture }`. Without this, the bot will get 403 on every message. Reason: V1 deliberately hardcodes the mapping rather than introducing a `discord_user_links` table.
+- [ ] **Populate `DISCORD_USER_MAP` in `lib/agents/admin.ts`.** Codex left this empty per D6. Add at least one entry mapping a real Discord user ID to a real Nexus user `{ id, email, name, picture }`. This is the only expected post-handoff edit under `lib/agents/`. Without this, the bot will get 403 on every message. Reason: V1 deliberately hardcodes the mapping rather than introducing a `discord_user_links` table.
 - [ ] **Fill `services/.env`.** Confirm every var added to `services/.env.example` in Checkpoint 2 has a real value in `services/.env`. Pay special attention to `NEXUS_API_URL` (must be the public Vercel domain, NOT `localhost`), `AGENT_SERVICE_KEY` (must match what Vercel sees), `AGENT_ADMIN_KEY` (separate from `AGENT_SERVICE_KEY`), and all six `DISCORD_WEBHOOK_*` URLs.
 - [ ] **Verify Vercel env vars match `services/.env`.** Specifically: `AGENT_SERVICE_KEY` and `AGENT_ADMIN_KEY` must be set in Vercel dashboard with the same values as `services/.env`. The Nexus API rejects bot calls if the service key does not match.
-- [ ] **Confirm Neon backup before any Compose-side migration.** No new migration ships in Sprint 4, but the user should re-confirm the existing Neon branch from migration 0019 still exists.
+- [ ] **Confirm a Neon backup branch exists before any Compose-side migration.** No new migration ships in Sprint 4, but the user should re-confirm that a usable Neon branch backup exists. If the exact branch ID is unknown, capture it manually in `docs/ops/agents-backup-restore.md` during the smoke.
 - [ ] **Sleep / power management on the home server.** Confirm `systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target` is set so Docker stays up.
 
 **After Codex hands off (smoke checklist — the canonical AEV2-509 walk-through):**
 
 - [ ] **`docker compose -f services/docker-compose.yml config`** exits 0 and shows the four expected services with no Redis.
 - [ ] **`docker compose -f services/docker-compose.yml build`** completes without errors for all four services. Note any image build that takes >5 minutes.
-- [ ] **`docker compose -f services/docker-compose.yml up -d`** brings all four containers up. After ~60 seconds, `docker compose ps` shows all four as `healthy`. If any agent service shows `unhealthy`, check `docker compose logs <service>` for the heartbeat write error.
+- [ ] **`docker compose -f services/docker-compose.yml up -d`** brings all four containers up. After ~60 seconds, `docker compose ps` shows the three agent services as `healthy` and `discord-bot` as `Up`/running. If any agent service shows `unhealthy`, check `docker compose logs <service>` for the heartbeat write error. If `discord-bot` exits, inspect `docker compose logs discord-bot`.
 - [ ] **Discord `#orchestrator` smoke — handle-directly.** Post a plain message ("what's the market doing today?"). Within 60 seconds, the bot should reply with an Orchestrator embed. Verify the embed color is emerald and the title is `Orchestrator`.
 - [ ] **Discord `#orchestrator` smoke — routed-to-specialist.** Post `/research AAPL`. Within 30 seconds, the bot should reply with `Routed to specialist (job: <id>)`. The Small Cap Trader should pick up the routed job and post a research embed in the `#small-cap-research` channel within ~120 seconds (depending on AskEdgar latency).
 - [ ] **Discord `#orchestrator` smoke — offline-fallback.** Stop the `small-cap-trader` container with `docker compose stop small-cap-trader`. The container's SIGTERM handler runs `worker.stop()` → `heartbeat.stop()` → flips `agent_registry.status` to `offline` (typically <10s, capped by `stop_grace_period: 30s`). Verify with `psql $DATABASE_URL -c "SELECT id, status FROM agent_registry WHERE id = 'small-cap-trader';"` — wait until `status = 'offline'`. Then post `/research AAPL` again. The Orchestrator should fall back to handling it directly with a warning (per `lib/agents/blueprints/orchestrator-chat.ts:163-178`). Restart with `docker compose start small-cap-trader`.
@@ -982,7 +980,7 @@ These items live outside the codebase. They are the actual launch gate for V1 �
 - [ ] **Admin redeliver smoke.** Pick one report id from `agent_reports`. `curl -X POST -H "x-agent-admin-key: $AGENT_ADMIN_KEY" -H "Content-Type: application/json" -d '{"report_id":"<id>"}' https://<your-domain>/api/agents/admin/redeliver` should return `{ report_id, status: 'published' }` and the embed should re-post in the matching channel.
 - [ ] **Observability SQL smoke.** Paste each block from `scripts/ops/agent-observability.sql` into Drizzle Studio (or `psql $DATABASE_URL`) and confirm it runs without error and returns sensible numbers.
 - [ ] **Restart resilience.** Run `docker compose restart orchestrator`. Within 90 seconds, the orchestrator should be back to `healthy` and the heartbeat row should be fresh. The bot should still respond to `#orchestrator` messages.
-- [ ] **Logging tail.** `docker compose logs --tail=100 orchestrator small-cap-trader swing-trader discord-bot` should show structured JSON entries with no stack traces and no leaked secrets.
+- [ ] **Logging tail.** `docker compose logs --tail=100 orchestrator small-cap-trader swing-trader discord-bot` should show no leaked secrets. The new entrypoint and `discord-bot` lines should be structured JSON; existing `lib/agents/*` runtime lines may remain plain text. Unexpected crash loops or repeated stack traces are a failure.
 - [ ] **Power-loss simulation (optional).** `sudo reboot`. Verify Docker autostarts and all four agent services come back up with `restart: unless-stopped`.
 
 **After the smoke passes:**
@@ -1000,4 +998,5 @@ These items live outside the codebase. They are the actual launch gate for V1 �
 ### Change Log (Sprint 4)
 
 - 2026-04-08: Sprint 4 spec drafted and locked. READY FOR CODEX.
-- 2026-04-08: Applied fan-out review amendments. Added D9 (`NEXUS_API_URL` is bot-only) and D10 (discord-bot drops `DATABASE_URL`). Enumerated the six `AGENT_*` caps with explicit names + defaults from `lib/agents/llm-client.ts` (the design doc's 7th cap `AGENT_MAX_ASKEDGAR_CALLS_PER_SCAN` is NOT consumed by the runtime and is intentionally NOT added). Inlined the full Compose contract for one agent service plus diffs for the other two; dropped the deprecated `version: '3.8'` field; added `start_period: 60s` and `stop_grace_period: 30s`. Hardened the Dockerfile (`USER node`, `HEALTHCHECK NONE`, `--no-audit --no-fund --prefer-offline`). Added SIGINT/SIGTERM double-fire guard to the entrypoint. Tightened the Discord bot security surface: never echo upstream response bodies to Discord, use `ChannelType.GuildText` instead of magic `0`, embed truncation now adds a suffix, missing-env exit names which var, timeout/failure replies include `jobId` for log correlation. Expanded `.dockerignore` to exclude `.git`, `.github`, `.vscode`, `.claude`, `*.md`, `coverage`, `.env*`. Added explicit SQL snippets to the External Validation Checklist for the macro summary smoke and pinned the offline-fallback wait time. Added a comment on the `stuck-processing` SQL query tying its threshold to `JOB_LEASE_HEARTBEAT_INTERVAL_MS`. Resolved the Checkpoint 5 contradiction (all 7 queries SHALL exist; column drift triggers `PENDING REVIEW`, not partial SQL). Status remains READY FOR CODEX.
+- 2026-04-08: Applied fan-out review amendments. Added D9 (`NEXUS_API_URL` is bot-only) and D10 (discord-bot drops `DATABASE_URL`). Enumerated the six `AGENT_*` caps with explicit names + defaults from `lib/agents/llm-client.ts` (the design doc's 7th cap `AGENT_MAX_ASKEDGAR_CALLS_PER_SCAN` is NOT consumed by the runtime and is intentionally NOT added). Inlined the full Compose contract for one agent service plus diffs for the other two; dropped the deprecated `version: '3.8'` field; added `start_period: 60s` and `stop_grace_period: 30s`. Hardened the Dockerfile (`USER node`, `HEALTHCHECK NONE`, `--no-audit --no-fund --prefer-offline`). Added SIGINT/SIGTERM double-fire guard to the entrypoint. Tightened the Discord bot security surface: never echo upstream response bodies to Discord, use `ChannelType.GuildText` instead of magic `0`, embed truncation now adds a suffix, missing-env exit names which var, timeout/failure replies include `jobId` for log correlation. Expanded `.dockerignore` to exclude `.git`, `.github`, `.vscode`, `.claude`, `coverage`, `.env*`, with the prompt-markdown exception clarified by the later compaction pass. Added explicit SQL snippets to the External Validation Checklist for the macro summary smoke and pinned the offline-fallback wait time. Added a comment on the `stuck-processing` SQL query tying its threshold to `JOB_LEASE_HEARTBEAT_INTERVAL_MS`. Resolved the Checkpoint 5 contradiction (all 7 queries SHALL exist; column drift triggers `PENDING REVIEW`, not partial SQL). Status remains READY FOR CODEX.
+- 2026-04-08: Compacted Sprint 4 to remove execution ambiguities. Normalized the live LLM env names to `INTERACTIVE_LLM_API_BASE_URL` / `BACKGROUND_LLM_API_BASE_URL`, fixed the inline `services/tsconfig.json` alias contract so it inherits the repo-root `@/*` mapping, and made the `typecheck:services` precondition explicit (`cd services/discord-bot && npm ci` once before the gate). Clarified that `.dockerignore` may exclude broad markdown only if it re-includes `lib/agents/prompts/*.md`, relaxed health/log acceptance text to match the actual bot/agent healthcheck surface, and changed the backup/runbook wording to require the canonical Neon branch procedure plus placeholders instead of undocumented historical steps. Also made the `DISCORD_USER_MAP` edit an explicit operator-owned post-handoff exception rather than an implied Codex scope break.
