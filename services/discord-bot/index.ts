@@ -38,19 +38,30 @@ interface ServiceChatAccepted {
 }
 
 type ServiceJobState =
-  | { status: 'queued' | 'processing' }
-  | {
-      status: 'completed';
-      sessionId: string | null;
-      result:
-        | { routed: true; specialistJobId: string | null }
-        | { routed: false; message: string };
-    }
-  | {
-      status: 'failed';
-      errorMessage: string | null;
-      failureClass: string | null;
-    };
+  | ServicePendingState
+  | ServiceCompletedState
+  | ServiceFailedState;
+
+type ServicePendingState = { status: 'queued' | 'processing' };
+
+type ServiceCompletedState = {
+  status: 'completed';
+  sessionId: string | null;
+  result:
+    | { routed: true; specialistJobId: string | null }
+    | { routed: false; message: string };
+};
+
+type ServiceFailedState = {
+  status: 'failed';
+  errorMessage: string | null;
+  failureClass: string | null;
+};
+
+type ServiceTerminalState =
+  | ServiceCompletedState
+  | ServiceFailedState
+  | { status: 'timeout' };
 
 class ServiceRequestError extends Error {
   constructor(
@@ -273,22 +284,20 @@ async function waitForTerminalState(
   config: BotConfig,
   discordUserId: string,
   jobId: string,
-): Promise<ServiceJobState | { status: 'timeout' }> {
+): Promise<ServiceTerminalState> {
   for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt += 1) {
     await sleep(POLL_INTERVAL_MS);
 
     const state = await pollChatJob(config, jobId);
-    if (state.status === 'queued' || state.status === 'processing') {
-      continue;
+    if (state.status === 'completed' || state.status === 'failed') {
+      logEvent('discord_bot.job_terminal', {
+        discord_user_id: discordUserId,
+        job_id: jobId,
+        status: state.status,
+        attempt,
+      });
+      return state;
     }
-
-    logEvent('discord_bot.job_terminal', {
-      discord_user_id: discordUserId,
-      job_id: jobId,
-      status: state.status,
-      attempt,
-    });
-    return state;
   }
 
   logErrorEvent('discord_bot.job_terminal', {

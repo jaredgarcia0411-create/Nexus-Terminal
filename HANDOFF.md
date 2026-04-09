@@ -832,26 +832,26 @@ The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the Externa
 
 **Check off before commit**
 
-- [ ] `services/tsconfig.json` exists and `extends` the root tsconfig.
-- [ ] `services/tsconfig.json` includes `agent-entrypoint.ts`, `discord-bot/index.ts`, and `../lib/**/*.ts`.
-- [ ] `services/tsconfig.json` excludes `../node_modules`, `../.next`, and `discord-bot/node_modules`.
-- [ ] `services/tsconfig.json` inherits the root `@/*` alias without redefining `baseUrl`/`paths` to point outside the repo.
-- [ ] Root `package.json` has exactly one new script: `"typecheck:services": "tsc -p services/tsconfig.json --noEmit"`.
-- [ ] `npm run typecheck:services` exits 0 against the current tree after the one-time `cd services/discord-bot && npm ci` step from Checkpoint 3.
-- [ ] Root `npm run lint` and `npx tsc --noEmit` still pass — the new tsconfig must not interfere with the existing root typecheck.
-- [ ] `npm test` still passes — vitest does NOT pick up `services/` files.
+- [x] `services/tsconfig.json` exists and `extends` the root tsconfig.
+- [x] `services/tsconfig.json` includes `agent-entrypoint.ts`, `discord-bot/index.ts`, and `../lib/**/*.ts`.
+- [x] `services/tsconfig.json` excludes `../node_modules`, `../.next`, and `discord-bot/node_modules`.
+- [x] `services/tsconfig.json` inherits the root `@/*` alias without redefining `baseUrl`/`paths` to point outside the repo.
+- [x] Root `package.json` has exactly one new script: `"typecheck:services": "tsc -p services/tsconfig.json --noEmit"`.
+- [x] `npm run typecheck:services` exits 0 against the current tree after the one-time `cd services/discord-bot && npm ci` step from Checkpoint 3.
+- [x] Root `npm run lint` and `npx tsc --noEmit` still pass — the new tsconfig must not interfere with the existing root typecheck.
+- [x] `npm test` still passes — vitest does NOT pick up `services/` files.
 
 **Exit criteria**
 
-- [ ] AEV2-506 acceptance gate (service-side TypeScript validation) is now an automatable command the user can run from the repo root.
-- [ ] The script is documented in `docs/ops/agents-launch-validation.md` (Checkpoint 6).
+- [x] AEV2-506 acceptance gate (service-side TypeScript validation) is now an automatable command the user can run from the repo root.
+- [ ] The script is documented in `docs/ops/agents-launch-validation.md` (Checkpoint 6; deferred to that checkpoint).
 
 **Validation**
 
-- [ ] `npm run lint`
-- [ ] `npx tsc --noEmit`
-- [ ] `npm run typecheck:services`
-- [ ] `npm test`
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npm run typecheck:services`
+- [x] `npm test`
 
 **STOP. Review. Commit. Then continue.**
 

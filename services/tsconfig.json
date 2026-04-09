@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.json",
+  "include": [
+    "agent-entrypoint.ts",
+    "discord-bot/index.ts",
+    "../lib/**/*.ts"
+  ],
+  "exclude": [
+    "../node_modules",
+    "../.next",
+    "discord-bot/node_modules"
+  ]
+}
