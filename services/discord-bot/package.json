@@ -1,5 +1,5 @@
 {
-  "name": "nexus-terminal-discord-bot",
+  "name": "nexus-discord-bot",
   "private": true,
   "type": "module",
   "engines": {
