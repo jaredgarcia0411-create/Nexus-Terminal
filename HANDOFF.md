@@ -2,7 +2,7 @@
 
 ## Active Handoff Only
 
-Sprint 1 and Sprint 2 are complete. Older detail was removed from this file; use git history and `AEV2_PLAN.md` for archived context.
+Sprint 1, Sprint 2, and Sprint 3 are complete. Older detail was removed from this file; use git history and `AEV2_PLAN.md` for archived context.
 
 ### Workflow Tooling Note
 
@@ -62,1065 +62,942 @@ Sprint 1 and Sprint 2 are complete. Older detail was removed from this file; use
 
 ## AEV2 Sprint 3 — Runtime Wiring + API Surface
 
-> Generated: 2026-04-07 | Agent: Claude (Plan)
-> Status: COMPLETE — Checkpoint 6 complete on 2026-04-08
+> Generated: 2026-04-07 | Agent: Codex
+> Status: COMPLETE
+
+### Summary
+
+- Landed the Sprint 3 Discord delivery helpers in [`lib/agents/discord.ts`](/home/jared/Nexus-Terminal/lib/agents/discord.ts), the agent config/blueprint registry in [`lib/agents/config.ts`](/home/jared/Nexus-Terminal/lib/agents/config.ts), the prompt loader in [`lib/agents/prompts-loader.ts`](/home/jared/Nexus-Terminal/lib/agents/prompts-loader.ts), and the pure HTML fetcher in [`lib/agents/scrape-lite.ts`](/home/jared/Nexus-Terminal/lib/agents/scrape-lite.ts).
+- Implemented the four Sprint 3 blueprints under [`lib/agents/blueprints/`](/home/jared/Nexus-Terminal/lib/agents/blueprints): `orchestrator-chat.ts`, `orchestrator-macro-summary.ts`, `small-cap-research.ts`, `swing-trader-research.ts`. The three scan blueprints remain registered as `notImplementedBlueprint` stubs that fail at step execution as `contract` errors.
+- Landed the worker runtime: [`lib/agents/heartbeat.ts`](/home/jared/Nexus-Terminal/lib/agents/heartbeat.ts), [`lib/agents/worker.ts`](/home/jared/Nexus-Terminal/lib/agents/worker.ts), and [`lib/agents/macro-cron.ts`](/home/jared/Nexus-Terminal/lib/agents/macro-cron.ts) — including lease-loss handling, mid-job lease renewal, and a single-transaction macro-cron claim/job/update flow.
+- Shipped every `/api/agents/*` route under [`app/api/agents/`](/home/jared/Nexus-Terminal/app/api/agents) with centralized Zod validation in [`lib/validations/agents.ts`](/home/jared/Nexus-Terminal/lib/validations/agents.ts) and the additive `requireServiceKey()` helper in [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts).
+- Made [`lib/server-db-utils.ts`](/home/jared/Nexus-Terminal/lib/server-db-utils.ts) lazy-load auth and degraded [`lib/auth-config.ts`](/home/jared/Nexus-Terminal/lib/auth-config.ts) to an empty Google provider list when OAuth env vars are missing, so `npm run build` succeeds without secrets.
+- Added the additive `StepInput` runtime fields, `NotImplementedBlueprintError`, and `AdminStatsResponse` contract to [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts), plus `failureClass` propagation and `skipWhenRouted` semantics in [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts).
+- Locked route contract coverage in `__tests__/agent-discord.test.ts`, `__tests__/agent-scrape-lite.test.ts`, `__tests__/agent-config.test.ts`, `__tests__/agent-blueprints.test.ts`, `__tests__/agent-worker.test.ts`, `__tests__/agent-macro-cron.test.ts`, `__tests__/agent-service-chat-route.test.ts`, `__tests__/agent-reports-route.test.ts`, `__tests__/agent-research-route.test.ts`, `__tests__/agent-admin-stats-route.test.ts`, `__tests__/agent-admin-memory-route.test.ts`, `__tests__/agent-admin-redeliver-route.test.ts`, and `__tests__/agent-macro-summary-route.test.ts`.
+- Kept Sprint 3 strictly inside `lib/agents/`, `lib/validations/`, `app/api/agents/`, and `__tests__/`. No `services/**` files, no schema changes, no new migrations, no new npm dependencies.
+
+### Validation
+
+- `npm run lint` OK
+- `npx tsc --noEmit` OK
+- `npm run build` OK
+- `npm test` OK
+
+### Archive Note
+
+- The Sprint 3 execution contracts (Discord delivery flow, blueprint step shapes, worker lease semantics, AdminStatsResponse formulas, route contracts, six checkpoint gates) were intentionally removed from `HANDOFF.md` now that Sprint 3 is closed. Recover via `git log -- HANDOFF.md` if needed.
+
+---
+
+## AEV2 Sprint 4 — Docker, Discord Bot, and Launch Hardening
+
+> Generated: 2026-04-08 | Agent: Claude (Plan)
+> Status: READY FOR CODEX
 
 ### Objective
 
-Connect the Sprint 2 library runtime to stable app contracts. Sprint 3 lands Discord delivery helpers, the agent config/blueprint registry, the generic worker loop + heartbeat + macro cron, and every `/api/agents/*` route with contract test coverage. After Sprint 3, Sprint 4 can focus purely on Docker containerization and launch hardening — no library or API work should bleed into it.
+Take the Sprint 1–3 library + API surface and prove it as a runnable home-server deployment. Sprint 4 builds the agent Docker image, rewrites Compose for the V1 topology (Orchestrator + Small Cap Trader + Swing Trader + Discord bot, no Redis), ships the minimal `discord.js` bot in `services/discord-bot/`, validates service-side TypeScript, drops the observability SQL + ops runbooks, and walks the deploy smoke checklist. After Sprint 4 closes, the AEV2 V1 system is launch-ready and the user can run `docker compose up -d` against the home server.
 
 ### Stories
 
-- AEV2-307 — Discord embed and delivery utilities
-- AEV2-308 — Wire agent configs, prompt loader, scrape-lite, and blueprints
-- AEV2-309 — Worker heartbeat and generic worker loop
-- AEV2-310 — Orchestrator macro cron
-- AEV2-401 — `POST/GET /api/agents/service/chat`
-- AEV2-402 — `GET /api/agents/reports` and `GET /api/agents/reports/[id]`
-- AEV2-403 — `POST/GET /api/agents/research`
-- AEV2-404 — `GET /api/agents/admin/stats` and `GET/DELETE /api/agents/admin/memory`
-- AEV2-405 — `POST /api/agents/admin/redeliver`
-- AEV2-406 — `GET /api/agents/macro-summary/latest`
-- AEV2-407 — Route test coverage
+- AEV2-501 — Generic agent container runtime (`services/agent.Dockerfile` + `services/agent-entrypoint.ts`)
+- AEV2-502 — Rewrite `services/docker-compose.yml` for V1 topology (3 agents + Discord bot, Redis removed)
+- AEV2-503 — Verify `services/.env.example` completeness for the V1 surface
+- AEV2-504 — Build minimal Discord bot runtime (`services/discord-bot/`)
+- AEV2-505 — Implement bot request/poll/reply flow against `/api/agents/service/chat`
+- AEV2-506 — Service-side TypeScript validation (`services/tsconfig.json` + scripted check)
+- AEV2-507 — Observability artifacts (`scripts/ops/agent-observability.sql`)
+- AEV2-508 — Rollback and home-server recovery runbooks (`docs/ops/`)
+- AEV2-509 — Deploy smoke checklist execution
+- AEV2-510 — Pre-launch config and secrets re-validation
 
 ### Current State
 
-- Sprint 2 runtime is in place and validated. Every module listed in Sprint 2 Summary is library-only and does not import from `@/app` or `services/`.
-- Checkpoint 1 is complete: [`lib/agents/discord.ts`](/home/jared/Nexus-Terminal/lib/agents/discord.ts) and [`__tests__/agent-discord.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-discord.test.ts) are landed and validated. The 2026-04-08 review pass also pinned known webhook mappings, the no-webhook `delivery_failed` path, stored-row reuse as the delivery source of truth, and manual redelivery after an existing success marker.
-- Checkpoint 2 is complete: [`lib/agents/scrape-lite.ts`](/home/jared/Nexus-Terminal/lib/agents/scrape-lite.ts), [`lib/agents/prompts-loader.ts`](/home/jared/Nexus-Terminal/lib/agents/prompts-loader.ts), [`lib/agents/config.ts`](/home/jared/Nexus-Terminal/lib/agents/config.ts), the stub blueprint files under [`lib/agents/blueprints/`](/home/jared/Nexus-Terminal/lib/agents/blueprints), and focused coverage in [`__tests__/agent-scrape-lite.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-scrape-lite.test.ts) plus [`__tests__/agent-config.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-config.test.ts) are landed and validated. The 2026-04-08 review patch kept the config registry side-effect free by deferring prompt-loader imports to runtime and extended the scrape-lite timeout to cover body reads.
-- Checkpoint 3 is complete: [`lib/agents/blueprints/orchestrator-chat.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/orchestrator-chat.ts), [`lib/agents/blueprints/orchestrator-macro-summary.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/orchestrator-macro-summary.ts), [`lib/agents/blueprints/small-cap-research.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/small-cap-research.ts), [`lib/agents/blueprints/swing-trader-research.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/swing-trader-research.ts), additive runner contract updates in [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts) plus [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts), and focused coverage in [`__tests__/agent-blueprints.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprints.test.ts) with the updated runner coverage in [`__tests__/agent-blueprint-runner.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprint-runner.test.ts) are landed and validated. The 2026-04-08 review patch also fixed slash-command specialist handoff so the routed job input keeps the command-body ticker instead of the first uppercase keyword.
-- Checkpoint 4 is complete: [`lib/agents/heartbeat.ts`](/home/jared/Nexus-Terminal/lib/agents/heartbeat.ts), [`lib/agents/worker.ts`](/home/jared/Nexus-Terminal/lib/agents/worker.ts), [`lib/agents/macro-cron.ts`](/home/jared/Nexus-Terminal/lib/agents/macro-cron.ts), and focused coverage in [`__tests__/agent-worker.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-worker.test.ts) plus [`__tests__/agent-macro-cron.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-macro-cron.test.ts) are landed and validated. The 2026-04-08 patches made lease-loss finalizer failures explicit in the worker, moved the macro-cron claim/job/update flow into one transaction so failed ticks cannot wedge a trading day, renewed in-flight job leases during long blueprint runs, retried thrown runner preflight failures through the transient path, waited for in-flight heartbeat ticks before marking agents offline, and evaluated the macro cron immediately on startup inside the trigger hour.
-- Checkpoint 5 is complete: the `/api/agents/*` route tree under [`app/api/agents/`](/home/jared/Nexus-Terminal/app/api/agents), [`lib/validations/agents.ts`](/home/jared/Nexus-Terminal/lib/validations/agents.ts), [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts), and the additive [`AdminStatsResponse`](/home/jared/Nexus-Terminal/lib/agents/types.ts) contract are landed and validated. The 2026-04-08 integration pass also made [`lib/server-db-utils.ts`](/home/jared/Nexus-Terminal/lib/server-db-utils.ts) lazy-load auth so non-auth routes can build without importing the OAuth stack, [`lib/auth-config.ts`](/home/jared/Nexus-Terminal/lib/auth-config.ts) degrade to an empty Google provider list instead of throwing at module import time when OAuth env vars are missing, and [`app/api/agents/reports/[id]/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/reports/%5Bid%5D/route.ts) explicitly exclude `system-agent-user` rows.
-- Checkpoint 6 is complete: [`__tests__/agent-service-chat-route.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-service-chat-route.test.ts), [`__tests__/agent-reports-route.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-reports-route.test.ts), [`__tests__/agent-research-route.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-research-route.test.ts), [`__tests__/agent-admin-stats-route.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-admin-stats-route.test.ts), [`__tests__/agent-admin-memory-route.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-admin-memory-route.test.ts), [`__tests__/agent-admin-redeliver-route.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-admin-redeliver-route.test.ts), and [`__tests__/agent-macro-summary-route.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-macro-summary-route.test.ts) are landed and validated. The 2026-04-08 review pass expanded route-contract coverage for the missing validation, auth, db-unavailable, ownership-filter, and stats-shape branches, and the Sprint 3 exit-gate validation passed in the `aev2-s3` worktree: `npm run lint`, `npx tsc --noEmit`, `npm run build`, and `npm test`.
-- `lib/agents/prompts/global-policy.md`, `orchestrator.md`, `small-cap.md`, and `swing-trader.md` already exist from Sprint 1. Sprint 3 adds a loader, not new prompt files.
-- [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml), [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example), and the `services/discord-bot/` tree still reflect pre-AEV2 state. Sprint 3 does NOT touch them — Sprint 4 owns the Compose rewrite and the service container wiring.
-- Root `tsconfig.json` still excludes `services/`. Sprint 3 must stay runnable under the existing root `tsc --noEmit` with no config changes.
-- `lib/agents/llm-client.ts` exports `getInteractiveLlmConfig`, `getBackgroundLlmConfig`, `getLlmBudgetConfig`, and `callLlm(request, lane, overrides?)`. Sprint 3 consumes these directly.
+- Sprint 3 is complete. Every `/api/agents/*` route, the worker loop (`startWorker`), the macro cron (`startMacroCron`), the heartbeat (`startHeartbeat`), the four implemented blueprints, the Discord delivery helpers, and the agent config/registry are landed in `lib/agents/` and `app/api/agents/`. Sprint 4 must NOT modify any of those files except the additive items called out below.
+- [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml) currently contains a Redis service plus a stub `discord-bot` service that builds from `./discord-bot` (a directory that does NOT exist) and points at `host.docker.internal:3000`. Sprint 4 deletes the Redis service entirely and rewrites the bot service alongside the three agent services.
+- [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example) already covers `DATABASE_URL`, `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`, all six `DISCORD_WEBHOOK_*` vars, the four `INTERACTIVE_LLM_*` / `BACKGROUND_LLM_*` vars (key, base URL, model — but NOT timeout), `MASSIVE_API_KEY`, `ASKEDGAR_API_KEY`, `AGENT_ADMIN_KEY`, `AGENT_SERVICE_KEY`, `AGENT_POLL_INTERVAL_MS`, `MACRO_CRON_HOUR`, `TZ`. It is MISSING the entries listed below (verified against `lib/agents/llm-client.ts` defaults — six `AGENT_*` caps total, NOT seven; `AGENT_MAX_ASKEDGAR_CALLS_PER_SCAN` from `AGENTIC_EXPANSIONV2.md` §19 is design-doc-only and is NOT consumed by the runtime, so Sprint 4 does NOT add it):
+  - `INTERACTIVE_LLM_TIMEOUT_MS=30000` (per-request timeout consumed by `lib/agents/llm-client.ts:103`)
+  - `BACKGROUND_LLM_TIMEOUT_MS=60000` (per-request timeout consumed by `lib/agents/llm-client.ts:115`)
+  - `AGENT_DAILY_BUDGET_CENTS=500` (default in `lib/agents/llm-client.ts:14`)
+  - `AGENT_MONTHLY_BUDGET_CENTS=10000` (default in `lib/agents/llm-client.ts:15`)
+  - `AGENT_MAX_CONTEXT_TOKENS=32000` (default in `lib/agents/llm-client.ts:16`)
+  - `AGENT_MAX_SCAN_CANDIDATES=20` (default in `lib/agents/llm-client.ts:17`)
+  - `AGENT_MAX_PATTERN_HISTORY=50` (default in `lib/agents/llm-client.ts:18`)
+  - `AGENT_MAX_RETRIES_PER_STEP=2` (default in `lib/agents/llm-client.ts:19`)
+  - `MACRO_HEADLINES_URLS=` (blank — fallback baked into `lib/agents/blueprints/orchestrator-macro-summary.ts:8`: `https://www.marketwatch.com/latest-news,https://finance.yahoo.com/topic/stock-market-news/`)
+  - `NEXUS_API_URL=` (blank — public Vercel URL, used ONLY by the discord-bot service, never by an agent service)
+  - `MASSIVE_API_BASE_URL=https://api.polygon.io` (design-doc reserved; not yet consumed by runtime, but kept for parity with `AGENTIC_EXPANSIONV2.md` §19)
+- [`services/.env`](/home/jared/Nexus-Terminal/services/.env) exists with real credentials and is `.gitignore`d. Sprint 4 MUST NOT read, copy, edit, or commit this file. Codex only edits `services/.env.example`.
+- Root [`tsconfig.json`](/home/jared/Nexus-Terminal/tsconfig.json) excludes `services/`. Sprint 4 must NOT change the root tsconfig — it must add a service-side tsconfig at `services/tsconfig.json` that compiles `services/agent-entrypoint.ts` and the discord bot entrypoint and references `lib/` via the existing `@/*` path alias rooted at the repo.
+- `services/discord-bot/` does NOT exist yet. Sprint 4 creates the entire directory tree from scratch — `package.json`, `package-lock.json` (via `npm install`), `tsconfig.json`, `Dockerfile`, and the TypeScript bot entrypoint.
+- `scripts/ops/` does NOT exist yet. Sprint 4 creates it and adds `agent-observability.sql`.
+- `docs/ops/` does NOT exist yet. Sprint 4 creates it and adds the rollback + home-server recovery + smoke + launch-validation runbooks. The pre-migration backup runbook (`docs/ops/agents-backup-restore.md`) is the only ops doc the source plan assigns to a pre-Sprint-1 epic; since migration 0019 already shipped without it, Sprint 4 produces the doc retroactively with the actual Neon backup/restore steps the user took.
+- The hardcoded `DISCORD_USER_MAP` in [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts) is currently empty (only commented placeholders). The smoke checklist requires the user to populate it manually (see "External Validation Checklist" at the bottom of this sprint) before Sprint 4 can claim end-to-end success. Codex does NOT fill this map — it is operator data.
+- `npm run lint`, `npx tsc --noEmit`, and `npm test` all pass on the Sprint 3 baseline as of 2026-04-08. 307 tests across 45 files. `discord.js` and `tsx` are NOT yet in `package.json` — they will live exclusively in `services/discord-bot/package.json`, NOT in the root `package.json`, so the Vercel bundle stays unaffected.
 
 ### Scope
 
-- **In scope:** `AEV2-307` through `AEV2-407`. New files under `lib/agents/`, new routes under `app/api/agents/`, new Zod schemas under `lib/validations/agents.ts`, and new route/test coverage under `__tests__/`.
-- **Out of scope:** `services/**` files, `services/docker-compose.yml`, `services/agent.Dockerfile`, `services/agent-entrypoint.ts`, `services/discord-bot/` rewrites, `/tmp/healthy` real proof (library writes the file but Docker healthcheck wiring waits for Sprint 4), real webhook POSTs to Discord in tests, additional DB migrations, additional schema tables, seed data imports (`AEV2-311`), and any new npm dependency unless explicitly called out below.
+- **In scope:** `AEV2-501` through `AEV2-510`. New files under `services/agent.Dockerfile`, `services/agent-entrypoint.ts`, `services/tsconfig.json`, `services/discord-bot/**`, `scripts/ops/agent-observability.sql`, and `docs/ops/**`. Additive edits to `services/docker-compose.yml`, `services/.env.example`, `package.json` (one new script for service typecheck — see D5), and `.gitignore` if needed for the new bot lockfile path. The HANDOFF.md update lands at the end.
+- **Out of scope:** Any file under `lib/agents/` or `app/api/agents/` except a documentation comment (no behavior changes — see D6), any file under `lib/validations/`, any file under `__tests__/` (Sprint 4 has NO new vitest tests — service-side validation is a manual build/typecheck/runtime smoke, not a vitest contract), any new DB migration, any change to `lib/db/schema.ts`, any change to `middleware.ts`, any change to `lib/llm-client.ts` (Vercel-side), any change to `next.config.ts` or root `tsconfig.json`, any installation of `discord.js` or `tsx` into the root `package.json`, any new feature flag or backwards-compat shim, any rewrite of unrelated Compose services. Codex must NOT touch `services/.env`, ever. Codex must NOT fill the `DISCORD_USER_MAP` — that is operator data and is part of the External Validation Checklist below.
 
-### Decisions Locked For Sprint 3
+### Decisions Locked For Sprint 4
 
-These six decisions remove ambiguity before Codex starts. If any of them is wrong, update this section before execution — do NOT let Codex discover the ambiguity mid-sprint.
+These ten decisions remove ambiguity before Codex starts. If any of them is wrong, update this section before execution — do NOT let Codex discover the ambiguity mid-sprint.
 
-- **D1. Blueprint scope.** Sprint 3 implements exactly four blueprints: `orchestrator:chat`, `orchestrator:macro-summary`, `small-cap-trader:research`, and `swing-trader:research`. The scan blueprints (`small-cap-trader:pre-market-scan`, `swing-trader:momentum-scan`, `swing-trader:pattern-check`) are declared in `AGENT_CONFIGS[agentId].blueprints` and resolve normally, but `notImplementedBlueprint(name)` returns a stub blueprint whose only step throws `new NotImplementedBlueprintError(name)` at step execution time. The runner classifies that failure as `contract`, and the worker does not retry it. Sprint 4 or a follow-up sprint adds the scan bodies.
-- **D2. Discord delivery proof.** Sprint 3 tests the delivery helpers with a mocked global `fetch`. Real webhook POSTs wait for Sprint 4 smoke runs when the Docker container actually boots. No manual REPL proof step in Sprint 3.
-- **D3. Admin stats shape.** `GET /api/agents/admin/stats` returns the full JSON shape from `AGENTIC_EXPANSIONV2.md` §11 (circuitBreakers, today, thisMonth, agents, delivery, memory, macroSummaries) plus the Sprint 3 queue add-ons. The exact `AdminStatsResponse` shape and formulas are inlined below; the implementation must not depend on a second doc lookup.
-- **D4. `scrape-headlines` URL source.** The macro-summary blueprint reads a new env var `MACRO_HEADLINES_URLS` (comma-separated URL list). Default when unset: `https://www.marketwatch.com/latest-news,https://finance.yahoo.com/topic/stock-market-news/`. The URL list is NOT hardcoded inside `scrape-lite.ts` — scrape-lite is a pure fetcher, the blueprint chooses what to fetch.
-- **D5. Runtime contract changes are allowed and required.** Sprint 3 may make additive changes to [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts), [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts), and [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts) to support step runtime access (`job`, `db`, `agentConfig`), explicit routed-step skipping, `failureClass` propagation from `runBlueprint()`, and service-key-only auth checks for polling routes.
-- **D6. Delivery semantics.** Report row dedupe is deterministic by `reportId = ${jobId}:${reportType}`. Automatic publish retries must reuse that row and must not repost after a recorded successful `discord-delivery:${reportId}` marker. Manual `redeliverReport()` is intentionally a new delivery attempt and may repost once per admin call; it does not claim route-level idempotent no-op semantics.
+- **D1. Dockerfile install strategy.** `services/agent.Dockerfile` runs `npm ci` (NOT `npm ci --production` or `--omit=dev`). Reason: the agent runtime imports Drizzle, Zod, the schema, and the prompt files at module load. Several of those packages are listed under `dependencies` in the root `package.json`, but the runtime also depends on TypeScript type checks happening through `tsx`'s on-the-fly transpile, and stripping devDependencies risks losing type-only or transitive packages that the runtime indirectly needs. We accept the larger image in V1 in exchange for guaranteed parity with `npm test`. The Dockerfile installs `tsx` separately as a global-style binary via `npm install -g tsx@4` so the production install does not need to mutate `package.json`.
+- **D2. Image surface.** The Dockerfile copies the minimum surface the agent runtime touches at runtime: `package.json`, `package-lock.json`, `tsconfig.json`, `lib/`, and `services/agent-entrypoint.ts`. It does NOT copy `app/`, `components/`, `hooks/`, `public/`, `__tests__/`, `drizzle/`, `scripts/`, `docs/`, `.next/`, `node_modules/`, or any of the Next.js UI surface. A `.dockerignore` at the repo root enforces this — Sprint 4 creates it.
+- **D3. Entrypoint signature.** `services/agent-entrypoint.ts` ignores the stale example in `AGENTIC_EXPANSIONV2.md` §15 (which calls `startMacroCron()` with zero args and `startWorker({ blueprintResolver })`). The current Sprint 3 contracts are: `startWorker(config: WorkerConfig & { agentConfig: AgentConfig })` and `startMacroCron(db: AgentDb, options?: { hourEt?: number; checkIntervalMs?: number })`. The entrypoint resolves `db = getAgentDb()` once at startup (throwing if null), passes `agentConfig: AGENT_CONFIGS[agentId]` into `startWorker`, and only the orchestrator process calls `startMacroCron(db)`. Pull the `pollIntervalMs` from `process.env.AGENT_POLL_INTERVAL_MS ?? '5000'`.
+- **D4. Discord bot tech stack.** `services/discord-bot/` uses `discord.js@14`, runs on Node 20 Alpine, ships with its own `package.json` + `package-lock.json` so the Vercel root install never sees `discord.js`. The bot is written in TypeScript and launched via `tsx services/discord-bot/index.ts` from inside its own container. Polling: 2-second interval with a 60-attempt cap (120s total), then a fixed timeout reply. The bot uses `node:fetch` (built into Node 20) to talk to the Nexus API — no `node-fetch` or `axios` dependency.
+- **D5. Service typecheck script.** `package.json` gains exactly one new script: `"typecheck:services": "tsc -p services/tsconfig.json --noEmit"`. The script runs both the agent entrypoint and the Discord bot entrypoint through one tsc invocation by including both source roots in `services/tsconfig.json`. The script is the AEV2-506 acceptance gate. Codex must not collapse it into the existing `lint` script and must not invoke it from `npm test` (vitest would fail on `services/` files). The script is invoked manually as part of Sprint 4's checkpoint validation and is documented in the smoke runbook.
+- **D6. lib/agents/ untouched.** Sprint 4 does NOT modify `lib/agents/admin.ts`, `lib/agents/worker.ts`, `lib/agents/macro-cron.ts`, `lib/agents/heartbeat.ts`, `lib/agents/config.ts`, or any blueprint file. The `DISCORD_USER_MAP` stays empty in code; the user fills it as part of the External Validation Checklist BEFORE running the smoke. If a contract gap is discovered mid-sprint that would require a code edit under `lib/agents/`, Codex stops and flips this sprint to `PENDING REVIEW` instead of editing in place.
+- **D7. Healthcheck shape.** The Compose healthcheck uses `["CMD-SHELL", "test -f /tmp/healthy && find /tmp/healthy -mmin -2 >/dev/null 2>&1"]`, copied verbatim from `AGENTIC_EXPANSIONV2.md` §15. Reason: the heartbeat loop (`lib/agents/heartbeat.ts`) writes `/tmp/healthy` on a 30-second tick; a 2-minute mtime tolerance accommodates the heartbeat interval plus container clock skew without false-flagging healthy agents.
+- **D8. Smoke runbook is markdown only.** The deploy smoke checklist (AEV2-509) ships as `docs/ops/agents-deploy-smoke.md` — not as a script. Codex does NOT write a smoke runner. The user walks each item by hand because most steps require live Discord interaction. Sprint 4's "completion" of AEV2-509 means the markdown exists and matches the External Validation Checklist below — actual smoke execution is the user's responsibility (see External Validation Checklist).
+- **D9. `NEXUS_API_URL` is bot-only.** `NEXUS_API_URL` is consumed exclusively by the `discord-bot` Compose service and is referenced nowhere in `lib/agents/`. The three agent services (`orchestrator`, `small-cap-trader`, `swing-trader`) talk to Neon directly and to the LLM lanes via the `INTERACTIVE_LLM_BASE_URL` / `BACKGROUND_LLM_BASE_URL` env vars — they do NOT need `NEXUS_API_URL` and Codex must NOT add it to any agent service env block. Reason: the var is a Sprint-4 introduction not present in `AGENTIC_EXPANSIONV2.md` §19; making the bot the only consumer keeps the agent attack surface small.
+- **D10. discord-bot service has no `DATABASE_URL`.** The `discord-bot` Compose env block in this spec deliberately omits `DATABASE_URL` (which `AGENTIC_EXPANSIONV2.md` §15 lists). Reason: the bot only talks HTTP to the Nexus API and has no DB client. Adding `DATABASE_URL` would needlessly leak the Neon credential into a service that does not use it. This is an intentional deviation from §15.
 
 ### Planned File Actions
 
-**New library files (lib/agents/):**
+**New files:**
 
-- [`lib/agents/discord.ts`](/home/jared/Nexus-Terminal/lib/agents/discord.ts) — embed builders, webhook delivery, deterministic report-row reuse + delivery dedupe helpers
-- [`lib/agents/scrape-lite.ts`](/home/jared/Nexus-Terminal/lib/agents/scrape-lite.ts) — `fetchPageText(url)` HTML->text fetcher
-- [`lib/agents/prompts-loader.ts`](/home/jared/Nexus-Terminal/lib/agents/prompts-loader.ts) — reads `lib/agents/prompts/*.md` at process start
-- [`lib/agents/config.ts`](/home/jared/Nexus-Terminal/lib/agents/config.ts) — `AGENT_CONFIGS: Record<AgentId, AgentConfig>` registry + `resolveBlueprint(job)` helper
-- [`lib/agents/blueprints/orchestrator-chat.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/orchestrator-chat.ts)
-- [`lib/agents/blueprints/orchestrator-macro-summary.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/orchestrator-macro-summary.ts)
-- [`lib/agents/blueprints/small-cap-research.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/small-cap-research.ts)
-- [`lib/agents/blueprints/swing-trader-research.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprints/swing-trader-research.ts)
-- [`lib/agents/heartbeat.ts`](/home/jared/Nexus-Terminal/lib/agents/heartbeat.ts) — `startHeartbeat(db, agentId)` + `/tmp/healthy` touch
-- [`lib/agents/worker.ts`](/home/jared/Nexus-Terminal/lib/agents/worker.ts) — `startWorker(config)` poll loop
-- [`lib/agents/macro-cron.ts`](/home/jared/Nexus-Terminal/lib/agents/macro-cron.ts) — `startMacroCron(db)` scheduler
-- [`lib/validations/agents.ts`](/home/jared/Nexus-Terminal/lib/validations/agents.ts) — Zod schemas for every new route body/query
+- [`services/agent.Dockerfile`](/home/jared/Nexus-Terminal/services/agent.Dockerfile) — Node 20 Alpine image for the three agent services. WORKDIR `/app`, COPY `package.json package-lock.json tsconfig.json ./`, `RUN npm ci && npm install -g tsx@4`, COPY `lib/ ./lib/`, COPY `services/agent-entrypoint.ts ./services/`, CMD `["tsx", "services/agent-entrypoint.ts"]`.
+- [`services/agent-entrypoint.ts`](/home/jared/Nexus-Terminal/services/agent-entrypoint.ts) — boots one agent service. Reads `AGENT_ID` env, validates via `AGENT_CONFIGS`, resolves `db = getAgentDb()` (throw if null), starts `startMacroCron(db)` only when `agentId === 'orchestrator'`, starts `startWorker({ agentId, pollIntervalMs, agentConfig: AGENT_CONFIGS[agentId] })`, wires `SIGINT`/`SIGTERM` to call the returned `stop()` handles in order (worker first, then macro cron) and then `process.exit(0)`.
+- [`services/tsconfig.json`](/home/jared/Nexus-Terminal/services/tsconfig.json) — extends the root tsconfig minimally: same `compilerOptions` (ES2017 target, strict, ESM, `@/*` path alias), `include: ["agent-entrypoint.ts", "discord-bot/index.ts", "../lib/**/*.ts"]`, `exclude: ["../node_modules", "../.next", "discord-bot/node_modules"]`. Compiles under `tsc -p services/tsconfig.json --noEmit`.
+- [`services/discord-bot/index.ts`](/home/jared/Nexus-Terminal/services/discord-bot/index.ts) — TypeScript bot entrypoint. Uses `discord.js@14` `Client` with `GatewayIntentBits.Guilds | GuildMessages | MessageContent`. Listens on `messageCreate` only in the `#orchestrator` channel (resolved by name from the configured `DISCORD_GUILD_ID`). For each non-bot message, posts to `${NEXUS_API_URL}/api/agents/service/chat` with `x-agent-service-key` header and body `{ message, discord_user_id: msg.author.id, channel: 'discord', session_id: 'discord:<author>:<channel>' }` (a stable per-author/per-channel string so the Orchestrator can reuse `agent_conversations` rows). On 201, polls `GET /api/agents/service/chat?job_id=<id>` every 2s for up to 60 attempts (120s). On `completed` with `result.message`, posts an embed with title `Orchestrator`, color `0x10B981`, description = result.message (truncated to 4000 chars + `… (truncated — see logs)` suffix if longer); on `completed` with `result.routed === true`, replies `Routed to specialist (job: <specialistJobId>)`; on `failed`, replies `Request failed (job: <jobId>). Check the agent logs.` and logs the upstream error body server-side only; on timeout, replies `Request timed out after 120s (job: <jobId>).`; on any HTTP error from the Nexus API (4xx/5xx), replies `Nexus API rejected the request (status N).` (NEVER echoes the upstream response body to Discord). Never calls `/api/agents/admin/*` or any user-facing route.
+- [`services/discord-bot/package.json`](/home/jared/Nexus-Terminal/services/discord-bot/package.json) — `name: "nexus-discord-bot"`, `version: "0.1.0"`, `private: true`, `type: "module"`, `scripts: { "start": "tsx index.ts" }`, `dependencies: { "discord.js": "^14.16.3", "tsx": "^4.19.2" }`, `engines: { "node": ">=20" }`. Codex runs `npm install --package-lock-only` inside `services/discord-bot/` to generate the lockfile (or full `npm install` if needed for D9 — see below). Lockfile is committed.
+- [`services/discord-bot/tsconfig.json`](/home/jared/Nexus-Terminal/services/discord-bot/tsconfig.json) — minimal local tsconfig for in-container compile via `tsx`. Targets Node 20, ESM, strict. Only used at runtime by `tsx`; the Sprint 4 typecheck gate runs through `services/tsconfig.json` instead.
+- [`services/discord-bot/Dockerfile`](/home/jared/Nexus-Terminal/services/discord-bot/Dockerfile) — Node 20 Alpine, WORKDIR `/app`, COPY `package.json package-lock.json ./`, `RUN npm ci`, COPY `index.ts tsconfig.json ./`, CMD `["npx", "tsx", "index.ts"]`.
+- [`scripts/ops/agent-observability.sql`](/home/jared/Nexus-Terminal/scripts/ops/agent-observability.sql) — read-only SQL queries the operator can paste into Drizzle Studio or `psql`. Covers: queue depth, oldest queued job age, jobs stuck in `processing` past lease expiry, missed `agent_scheduled_runs` (today's row not present after cron hour), `agent_reports.delivery_failed` count by day, `agent_registry.last_heartbeat` freshness, and recent `agent_request_log` totals by lane. Each query is named with a `-- name: ...` comment so the operator can grep for one block at a time.
+- [`docs/ops/agents-rollback.md`](/home/jared/Nexus-Terminal/docs/ops/agents-rollback.md) — step-by-step rollback. Covers app rollback (`vercel rollback` to the last green deploy), Docker service rollback (`docker compose down && git checkout <prior tag> && docker compose up -d --build`), and migration 0019 partial-failure recovery (manual `psql` block that drops the new tables in reverse FK order if a future re-migrate is needed).
+- [`docs/ops/home-server-recovery.md`](/home/jared/Nexus-Terminal/docs/ops/home-server-recovery.md) — reboot/recovery procedure for the WSL2 home server. Documents `wsl --shutdown` recovery, Docker daemon restart (`sudo systemctl start docker`), `docker compose up -d` after reboot, healthcheck verification (`docker compose ps` should show all four services as `healthy`), and the exact reboot order after an ISP outage or power loss.
+- [`docs/ops/agents-deploy-smoke.md`](/home/jared/Nexus-Terminal/docs/ops/agents-deploy-smoke.md) — the manual smoke checklist matching the External Validation Checklist below. Each item is a checkbox plus the exact command or Discord interaction to run, plus the expected result.
+- [`docs/ops/agents-launch-validation.md`](/home/jared/Nexus-Terminal/docs/ops/agents-launch-validation.md) — pre-launch config and secret re-validation checklist (AEV2-510). Documents how to re-verify the lane keys, base URLs, models, the two service/admin keys, and the six webhook URLs against `services/.env` before `docker compose up -d`.
+- [`docs/ops/agents-backup-restore.md`](/home/jared/Nexus-Terminal/docs/ops/agents-backup-restore.md) — retroactive Neon backup/restore doc. Documents the Neon "branch" pattern as the canonical backup mechanism and includes the exact step the user followed before applying migration 0019. Lives in `docs/ops/` even though `AGENTIC_EXPANSIONV2.md` §16 originally assigned it to EPIC-2 — Sprint 4 lands it as a launch-readiness artifact since EPIC-2 closed without it.
+- [`.dockerignore`](/home/jared/Nexus-Terminal/.dockerignore) — repo-root ignore so the agent image build context stays small. Excludes `node_modules`, `.next`, `app`, `components`, `hooks`, `public`, `__tests__`, `drizzle`, `scripts`, `docs`, `services/.env`, `services/discord-bot/node_modules`, `*.log`, plus `.git`, `.github`, `.vscode`, `.claude`, `*.md`, `coverage`, `.env*`. (The `.git` exclusion alone trims ~100MB+ from the build context.)
 
-**New API routes (app/api/agents/):**
+**Modified files:**
 
-- [`app/api/agents/service/chat/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/service/chat/route.ts) — POST + GET
-- [`app/api/agents/reports/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/reports/route.ts) — GET
-- [`app/api/agents/reports/[id]/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/reports/[id]/route.ts) — GET
-- [`app/api/agents/research/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/research/route.ts) — POST + GET
-- [`app/api/agents/admin/stats/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/admin/stats/route.ts) — GET
-- [`app/api/agents/admin/memory/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/admin/memory/route.ts) — GET + DELETE
-- [`app/api/agents/admin/redeliver/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/admin/redeliver/route.ts) — POST
-- [`app/api/agents/macro-summary/latest/route.ts`](/home/jared/Nexus-Terminal/app/api/agents/macro-summary/latest/route.ts) — GET
-
-**New test files (__tests__/):**
-
-- `__tests__/agent-discord.test.ts`
-- `__tests__/agent-scrape-lite.test.ts`
-- `__tests__/agent-config.test.ts`
-- `__tests__/agent-blueprints.test.ts`
-- `__tests__/agent-worker.test.ts`
-- `__tests__/agent-macro-cron.test.ts`
-- `__tests__/agent-service-chat-route.test.ts`
-- `__tests__/agent-reports-route.test.ts`
-- `__tests__/agent-research-route.test.ts`
-- `__tests__/agent-admin-stats-route.test.ts`
-- `__tests__/agent-admin-memory-route.test.ts`
-- `__tests__/agent-admin-redeliver-route.test.ts`
-- `__tests__/agent-macro-summary-route.test.ts`
-
-**Existing files modified:**
-
-- [`lib/agents/types.ts`](/home/jared/Nexus-Terminal/lib/agents/types.ts) — additive runtime contract updates for Sprint 3 (`StepInput` runtime fields, `NotImplementedBlueprintError`, `AdminStatsResponse`, and any small response interfaces needed by the new routes/tests).
-- [`lib/agents/blueprint-runner.ts`](/home/jared/Nexus-Terminal/lib/agents/blueprint-runner.ts) — additive runtime behavior to pass `job` / `db` / `agentConfig` into steps, support explicit routed-step skipping, and return `failureClass` on failed runs.
-- [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts) — add `requireServiceKey(request)` for service-key-only polling routes.
+- [`services/docker-compose.yml`](/home/jared/Nexus-Terminal/services/docker-compose.yml) — full rewrite per D7 and the inline contract below (NOT the stale §15 example). Removes the `redis` service entirely, removes the `redis-data` volume, drops the deprecated top-level `version:` field, removes `TRADE_WEBHOOK_SECRET` from the bot environment, replaces the `discord-bot` build context to point at `./discord-bot` (which now actually exists), adds the three agent services (`orchestrator`, `small-cap-trader`, `swing-trader`) with the inline env block, healthcheck (with `start_period: 60s`), `restart: unless-stopped`, `stop_grace_period: 30s`, and json-file logging block from the contract. `NEXUS_API_URL` is referenced ONLY in the discord-bot service (per D9). Codex leaves the value as `${NEXUS_API_URL}` and the operator fills it via `services/.env`.
+- [`services/.env.example`](/home/jared/Nexus-Terminal/services/.env.example) — additive only. Adds the missing entries listed in "Current State" above (`INTERACTIVE_LLM_TIMEOUT_MS=30000`, `BACKGROUND_LLM_TIMEOUT_MS=60000`, the six `AGENT_*` caps with their runtime defaults, `MACRO_HEADLINES_URLS=` blank with the fallback URL list as a comment line above it, `NEXUS_API_URL=` blank, `MASSIVE_API_BASE_URL=https://api.polygon.io`). Adds a one-line comment above `MASSIVE_API_KEY` clarifying it is Docker-side only. Does NOT remove or rename existing entries.
+- [`package.json`](/home/jared/Nexus-Terminal/package.json) — adds exactly one script: `"typecheck:services": "tsc -p services/tsconfig.json --noEmit"`. No new dependencies. No other changes.
 - [`HANDOFF.md`](/home/jared/Nexus-Terminal/HANDOFF.md) — updated after each checkpoint closes.
 
 **Explicitly NOT modified:**
 
-- `lib/db/schema.ts` (no new tables, no column changes)
-- Any file under `services/`
-- Any file under `app/api/` outside `app/api/agents/`
-- `lib/llm-client.ts` (Vercel-side — do not cross-import)
-- `middleware.ts` (agent service/admin routes are already covered because `middleware.ts` skips `/api/*`)
+- Any file under `lib/agents/`, including `lib/agents/admin.ts` (per D6).
+- Any file under `app/api/`, including `app/api/agents/`.
+- Any file under `lib/validations/`.
+- Any file under `__tests__/`. Sprint 4 has no new vitest tests.
+- `lib/db/schema.ts`. No new tables.
+- `tsconfig.json` (root). The new `services/tsconfig.json` is independent.
+- `next.config.ts`, `middleware.ts`, `eslint.config.js`, `vitest.config.ts`.
+- `services/.env`. Codex must never read, copy, edit, or commit this file.
+- The root `package.json` `dependencies` / `devDependencies` blocks. `discord.js` and `tsx` live exclusively under `services/discord-bot/`.
 
 ### Security And Correctness Notes
 
-- `/api/agents/service/chat` POST uses `requireServiceAuth(request, body)` from [`lib/agents/admin.ts`](/home/jared/Nexus-Terminal/lib/agents/admin.ts). `/api/agents/service/chat` GET uses `requireServiceKey(request)` because it authenticates the bot but does not map a Discord user from a body. `/api/agents/admin/*` routes use `requireAgentAdmin()`. User-auth routes (`/api/agents/reports`, `/api/agents/research`) use `requireUser()`. `/api/agents/macro-summary/latest` is public. Never mix the four patterns.
-- `requireServiceAuth(request, body)` reads the already-parsed body; parse with `parseAndValidate()` first, then pass `parsed.data` into the auth call. Do not call `request.json()` twice. `requireServiceKey(request)` is the shared header-only helper for service polling.
-- Service-chat POST success assumes the Discord-to-Nexus user mapping source is populated at runtime. Sprint 3 route tests mock the helper and do not depend on a real populated map in the repo.
-- Every user-facing reports/research query must filter by `user_id = authenticatedUser.id` AND exclude `user_id = 'system-agent-user'` (system-owned autonomous reports never leak into user history).
-- Discord webhook URLs live in env vars only. Never log the URL. Never accept a webhook URL from a request body.
-- Automatic publish dedupe uses a deterministic `reportId = ${jobId}:${reportType}` row plus a successful-delivery marker `discord-delivery:${reportId}`. The row write must commit before any webhook POST. Exact-once external delivery is not claimed across the narrow crash window after Discord accepts a POST and before the DB update/marker write completes.
-- `POST /api/agents/admin/redeliver` re-reads the stored `report_json` from `agent_reports` and retries ONLY the delivery portion. It must not regenerate the report via the LLM.
-- Worker code paths route every lease-fenced mutation through Sprint 2 queue helpers (`claimNextQueuedJob`, `completeJob`, `failJob`, `scheduleJobRetry`, etc.). Job creators such as API routes, blueprint handoff steps, and macro cron may insert new queued jobs directly via `db.insert(agentJobs)` because they are creating work, not mutating a claimed lease-owned job.
-- Research blueprints use [`getCachedTickerData(ticker)`](/home/jared/Nexus-Terminal/lib/askedgar.ts) (signature: `getCachedTickerData(ticker: string)`) as the canonical AskEdgar cache. `agent_memory_v2` may store derived agent facts if a blueprint needs them, but Sprint 3 does not introduce a second raw AskEdgar cache.
-- `/tmp/healthy` file touch is library-level only. Sprint 4 wires the Docker healthcheck; Sprint 3 just writes the file so tests can verify the touch happens.
-- Do not introduce any new npm dependency. The repo already has `zod`, `drizzle-orm`, `@neondatabase/serverless`, and Next.js 15's built-in `fetch` / `Response` — that is everything Sprint 3 needs.
-- Do not touch `.env`, `.env.local`, or `services/.env`. Document any new env vars in `services/.env.example` ONLY if Sprint 3 must run without them; otherwise leave `.env.example` changes to Sprint 4.
+- The Docker image must NOT bake any secret in. Every secret arrives via `services/.env` -> Compose `environment:` block -> `process.env.*`. Codex does not write a secret value into any committed file.
+- The `.dockerignore` MUST exclude `services/.env` so a stray rebuild does not leak credentials into the image layer.
+- The Discord bot must NOT call `/api/agents/admin/*` or `/api/agents/reports`/`/api/agents/research`. Only `/api/agents/service/chat` POST and GET. This is enforced by the bot source — there is no admin client and no admin key on the bot side. The bot's only credential is `AGENT_SERVICE_KEY`.
+- The bot also must NOT log the message body, the service key, or any portion of the Nexus API response that could contain user data. Logging is `console.log` with structured fields: `event`, `discord_user_id`, `job_id`, `status`. Never log `message`, `result`, or `error`.
+- The healthcheck uses a 2-minute mtime tolerance via `find -mmin -2`. If the operator changes the heartbeat interval above ~90s in `lib/agents/heartbeat.ts` after Sprint 4, the healthcheck will start false-flagging — note this in `agents-launch-validation.md`.
+- `services/agent-entrypoint.ts` MUST NOT swallow `db === null`. If `getAgentDb()` returns null, the entrypoint logs a single structured error and exits with code `1` so Compose's restart policy + the user's eyes catch it immediately.
+- The agent services run as the default `node` user from the Node Alpine image — do NOT add a `USER root` directive. The healthcheck file `/tmp/healthy` is writable by `node` since `/tmp` is world-writable in Alpine.
+- `services/.env.example` additions must not include any real secret. Use empty values or commented examples only.
+- The retroactive `agents-backup-restore.md` doc may reference Neon branch IDs only if the user provides them; otherwise leave the branch ID line as a placeholder for the user to fill. Do not invent branch IDs.
 
 ### Execution Contracts
 
-These rules are part of the Sprint 3 implementation contract. Codex should be able to build the runtime wiring and API surface from this section plus the live repo without consulting `AGENTIC_EXPANSIONV2.md`.
+These are the inline shapes Codex needs to write the new files without consulting `AGENTIC_EXPANSIONV2.md`. Where the design doc and the current Sprint 3 runtime disagree (notably the entrypoint signature), the runtime is authoritative.
 
-#### `lib/agents/discord.ts`
+#### `services/agent.Dockerfile`
 
-Exports exactly these symbols:
+```dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package.json package-lock.json tsconfig.json ./
+RUN npm ci --no-audit --no-fund --prefer-offline \
+  && npm install -g tsx@4 --no-audit --no-fund
+
+COPY lib/ ./lib/
+COPY services/agent-entrypoint.ts ./services/agent-entrypoint.ts
+
+# NODE_ENV set AFTER npm ci so devDependencies install (see D1).
+ENV NODE_ENV=production
+
+# Compose owns the healthcheck — explicitly disable any Dockerfile-level check.
+HEALTHCHECK NONE
+
+# Run as the non-root `node` user that ships with the Alpine image.
+USER node
+
+CMD ["tsx", "services/agent-entrypoint.ts"]
+```
+
+Notes:
+- `npm ci` (NOT `--production`) per D1. The `--no-audit --no-fund --prefer-offline` flags trim ~30s of npm chatter from each build.
+- `tsx` is installed globally (`-g`) so it does not mutate the committed `package.json` lockfile contents.
+- `USER node` switches to the unprivileged user that ships with `node:20-alpine`. `/tmp` is world-writable so the heartbeat can still write `/tmp/healthy`.
+- The image does NOT install or run any Next.js code path. It only runs the agent entrypoint.
+- Healthcheck is wired in `docker-compose.yml`, not the Dockerfile, so the same image can be reused if a future smoke run wants a different healthcheck.
+
+#### `services/agent-entrypoint.ts`
 
 ```ts
-import type { AgentId, AgentReport } from './types';
-import type { AgentDb } from './db';
+import { startWorker } from '../lib/agents/worker';
+import { startMacroCron } from '../lib/agents/macro-cron';
+import { AGENT_CONFIGS } from '../lib/agents/config';
+import { getAgentDb } from '../lib/agents/db';
+import type { AgentId } from '../lib/agents/types';
 
-export interface DiscordEmbedField { name: string; value: string; inline?: boolean }
-export interface DiscordEmbed {
-  title: string;
-  description?: string;
-  color: number;         // 0x10B981 (emerald-500) for V1
-  fields?: DiscordEmbedField[];
-  footer?: { text: string };
-  timestamp?: string;    // ISO
+async function main() {
+  const agentId = process.env.AGENT_ID as AgentId | undefined;
+  if (!agentId || !(agentId in AGENT_CONFIGS)) {
+    console.error(JSON.stringify({ event: 'entrypoint.unknown_agent_id', agentId }));
+    process.exit(1);
+  }
+
+  const db = getAgentDb();
+  if (!db) {
+    console.error(JSON.stringify({ event: 'entrypoint.db_unavailable', agentId }));
+    process.exit(1);
+  }
+
+  const pollIntervalMs = Number(process.env.AGENT_POLL_INTERVAL_MS) || 5000;
+
+  const macroCron = agentId === 'orchestrator' ? startMacroCron(db) : null;
+
+  const worker = await startWorker({
+    agentId,
+    pollIntervalMs,
+    agentConfig: AGENT_CONFIGS[agentId],
+  });
+
+  console.log(JSON.stringify({ event: 'entrypoint.started', agentId, pollIntervalMs }));
+
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return; // guard against SIGTERM+SIGINT double-fire
+    shuttingDown = true;
+    console.log(JSON.stringify({ event: 'entrypoint.shutdown_begin', agentId, signal }));
+    try {
+      await worker.stop();
+      if (macroCron) {
+        await macroCron.stop();
+      }
+      console.log(JSON.stringify({ event: 'entrypoint.shutdown_complete', agentId }));
+      process.exit(0);
+    } catch (error) {
+      console.error(JSON.stringify({ event: 'entrypoint.shutdown_failed', agentId, error: String(error) }));
+      process.exit(1);
+    }
+  };
+
+  process.on('SIGINT', () => { void shutdown('SIGINT'); });
+  process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
 }
-export interface DiscordWebhookPayload {
-  username?: string;
-  embeds: DiscordEmbed[];
-}
 
-// Report formatting — one builder per report_type.
-export function buildScanEmbed(report: AgentReport): DiscordEmbed;
-export function buildResearchEmbed(report: AgentReport): DiscordEmbed;
-export function buildSwingSetupEmbed(report: AgentReport): DiscordEmbed;
-export function buildSwingAlertEmbed(report: AgentReport): DiscordEmbed;
-export function buildMacroSummaryEmbed(report: AgentReport): DiscordEmbed;
-export function buildSystemEmbed(title: string, detail: string, severity: 'info' | 'warn' | 'error'): DiscordEmbed;
-
-// Channel resolver — maps (agentId, report_type) to webhook env var name.
-export function resolveWebhookUrl(agentId: AgentId, reportType: string): string | null;
-
-// Write-then-deliver flow.
-export async function writeAndDeliverReport(
-  db: AgentDb,
-  params: {
-    jobId: string;
-    userId: string;
-    agentId: AgentId;
-    reportType: string;
-    title: string;
-    summary: string | null;
-    reportJson: unknown;
-  },
-): Promise<{ reportId: string; status: 'published' | 'delivery_failed'; deliveryError: string | null }>;
-
-// Delivery-only path used by POST /api/agents/admin/redeliver.
-export async function redeliverReport(
-  db: AgentDb,
-  reportId: string,
-): Promise<{ status: 'published' | 'delivery_failed'; deliveryError: string | null }>;
+void main();
 ```
 
-Behavior contract:
+Notes:
+- The example in `AGENTIC_EXPANSIONV2.md` §15 is stale — it calls `startMacroCron()` with no args and `startWorker({ blueprintResolver })`. Use the signatures above, which match the Sprint 3 runtime.
+- The entrypoint never imports anything from `app/` or `services/discord-bot/`.
+- All log lines are JSON one-liners so Docker's json-file driver stays scrapable.
 
-- **Webhook URL resolution.** `resolveWebhookUrl` reads env vars by agent + reportType:
-  - `orchestrator` + `macro-summary` -> `DISCORD_WEBHOOK_MACRO_DAILY`
-  - `orchestrator` + `system-alert` or any `reportType` prefixed with `system-` -> `DISCORD_WEBHOOK_SYSTEM`
-  - `small-cap-trader` + `pre-market-scan` -> `DISCORD_WEBHOOK_SCANS`
-  - `small-cap-trader` + `research` -> `DISCORD_WEBHOOK_RESEARCH`
-  - `swing-trader` + `momentum-scan` or `research` -> `DISCORD_WEBHOOK_SWING_SETUPS`
-  - `swing-trader` + `pattern-check` -> `DISCORD_WEBHOOK_SWING_ALERTS`
-  - Unknown combination -> return `null` and log once. Never throw.
-- **`writeAndDeliverReport` order** (MUST match this sequence — it mirrors the V1 Discord-first publish flow):
-  1. Build a deterministic `reportId = ${jobId}:${reportType}`.
-  2. Read `agent_reports` by `reportId`. If no row exists, insert one with `id = reportId`, `status = 'published'`, `delivered_at = null`, and `delivery_error = null`. If a row already exists, reuse it and keep its stored `report_json` as the source of truth for retry paths.
-  3. Commit the report-row write before any webhook POST.
-  4. Check `recordStepEffect` state for `discord-delivery:${reportId}`. If a successful-delivery marker already exists, return `{ reportId, status: 'published', deliveryError: null }` without posting again.
-  5. Resolve the webhook URL. If null, update the row to `status = 'delivery_failed'`, `delivery_error = 'no webhook configured for ${agentId}/${reportType}'`, and return.
-  6. Build the embed via the correct `build*Embed` function and POST to the webhook with `fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ embeds: [embed] }) })`.
-  7. On HTTP 2xx: update `agent_reports` to `delivered_at = now()`, `status = 'published'`, then write the successful delivery marker `discord-delivery:${reportId}` using `effectType = 'discord-delivery'` and a fixed `stepName = 'discord-delivery'`. Return `{ reportId, status: 'published', deliveryError: null }`.
-  8. On any other status or fetch throw: update `agent_reports` to `status = 'delivery_failed'`, `delivery_error = '<status code>: <truncated body>'`. Do NOT write the successful delivery marker. Return `{ reportId, status: 'delivery_failed', deliveryError }`. Do NOT throw — delivery failures are expected and must become data, not exceptions.
-- **`redeliverReport`.** Re-reads the existing row by `reportId`, re-runs steps 5-8 above using the stored `report_json`, and records a fresh audit trail marker such as `discord-delivery:${reportId}:manual:${timestamp}` with `effectType = 'discord-delivery'` and fixed `stepName = 'discord-delivery-manual'` if an attempt log is needed. Manual redelivery is intentionally a new delivery attempt and may repost once per admin call. It does NOT call the LLM and does NOT modify `report_json`.
-- **Embed builders.** Pure functions, no DB access, no fetch. Each reads fields from `report.report_json` and returns a `DiscordEmbed` with `color: 0x10B981`. Unknown fields fall back to string coercion; missing required fields render as `"n/a"`. Never throw.
-- **No direct `agent_reports` writes outside this file.** Blueprint steps that need to publish results must call `writeAndDeliverReport` — they do NOT `db.insert(agentReports)` directly.
+#### `services/tsconfig.json`
 
-#### `lib/agents/scrape-lite.ts`
-
-Pure fetcher. No URL list lives in this file.
-
-```ts
-export async function fetchPageText(url: string, options?: { timeoutMs?: number }): Promise<string>;
-```
-
-- Uses `fetch(url, { signal, headers: { 'User-Agent': 'Nexus-Agent/1.0', 'Accept': 'text/html' } })` with `AbortController` timeout (default 10000 ms).
-- Strips `<script>`, `<style>`, all remaining HTML tags, decodes `&nbsp;`, `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&#39;`.
-- Normalizes whitespace (collapse runs of whitespace into a single space), trims.
-- Returns the first 30000 characters.
-- Throws on non-2xx response with the status code and truncated body (same `readFailureDetail` style as `lib/agents/llm-client.ts`).
-- Pure function otherwise — no memory, no DB, no caching. Caching is the blueprint's responsibility.
-
-#### `lib/agents/prompts-loader.ts`
-
-```ts
-import type { AgentId } from './types';
-
-export function loadGlobalPolicyPrompt(): string;
-export function loadRolePrompt(agentId: AgentId): string;
-export function buildLlmSystemPrompt(agentId: AgentId): string;  // concatenates global-policy + role prompt
-```
-
-- Reads from `lib/agents/prompts/*.md` at module-load time (not per call). Use `fs.readFileSync(path.join(process.cwd(), 'lib/agents/prompts', ...), 'utf8')`.
-- Cache the file contents in a module-level `const` so repeated calls do not re-read. Tests should use `vi.mock('node:fs')` to override.
-- `buildLlmSystemPrompt(agentId)` returns `${globalPolicy}\n\n---\n\n${rolePrompt}` — a single string the blueprint runner passes into `callLlm({ systemPrompt, ... })`.
-- Throws at module load if any of the four expected files is missing. Fail fast — prompts are load-bearing and a missing file is a deployment bug.
-
-#### `lib/agents/config.ts`
-
-```ts
-import type { AgentId, AgentConfig, AgentJob, Blueprint } from './types';
-import { orchestratorChatBlueprint } from './blueprints/orchestrator-chat';
-import { orchestratorMacroSummaryBlueprint } from './blueprints/orchestrator-macro-summary';
-import { smallCapResearchBlueprint } from './blueprints/small-cap-research';
-import { swingTraderResearchBlueprint } from './blueprints/swing-trader-research';
-
-export const AGENT_CONFIGS: Record<AgentId, AgentConfig> = {
-  orchestrator: {
-    id: 'orchestrator',
-    displayName: 'Orchestrator',
-    llmLane: 'interactive',
-    temperature: 0.3,
-    capabilities: ['chat', 'macro-summary'],
-    rolePromptPath: 'lib/agents/prompts/orchestrator.md',
-    blueprints: {
-      chat: orchestratorChatBlueprint,
-      'macro-summary': orchestratorMacroSummaryBlueprint,
-    },
-    blueprintResolver: (job) => resolveFromCapabilities('orchestrator', job),
-  },
-  'small-cap-trader': {
-    id: 'small-cap-trader',
-    displayName: 'Small Cap Trader',
-    llmLane: 'background',
-    temperature: 0.2,
-    capabilities: ['research', 'pre-market-scan'],
-    rolePromptPath: 'lib/agents/prompts/small-cap.md',
-    blueprints: {
-      research: smallCapResearchBlueprint,
-      'pre-market-scan': notImplementedBlueprint('small-cap-trader:pre-market-scan'),
-    },
-    blueprintResolver: (job) => resolveFromCapabilities('small-cap-trader', job),
-  },
-  'swing-trader': {
-    id: 'swing-trader',
-    displayName: 'Swing Trader',
-    llmLane: 'background',
-    temperature: 0.2,
-    capabilities: ['research', 'momentum-scan', 'pattern-check'],
-    rolePromptPath: 'lib/agents/prompts/swing-trader.md',
-    blueprints: {
-      research: swingTraderResearchBlueprint,
-      'momentum-scan': notImplementedBlueprint('swing-trader:momentum-scan'),
-      'pattern-check': notImplementedBlueprint('swing-trader:pattern-check'),
-    },
-    blueprintResolver: (job) => resolveFromCapabilities('swing-trader', job),
-  },
-};
-
-export function resolveBlueprint(job: AgentJob): Blueprint {
-  const config = AGENT_CONFIGS[job.agentId];
-  if (!config) throw new Error(`unknown agent: ${job.agentId}`);
-  return config.blueprintResolver(job);
-}
-```
-
-- `notImplementedBlueprint(name)` returns a `Blueprint` with a single `code` step whose `run()` throws `new NotImplementedBlueprintError(name)`. Per D1, the scan blueprints are declared but unusable in Sprint 3.
-- `resolveFromCapabilities(agentId, job)` throws if `job.jobType` is not in `capabilities[agentId]`, otherwise returns `AGENT_CONFIGS[agentId].blueprints[job.jobType]`. If the resolved blueprint is the `notImplementedBlueprint`, still return it — the runner will fail the job at step-execution time, which is where D1 says the gate lives.
-- No side effects at module load. `AGENT_CONFIGS` is a plain const.
-
-#### Additive runtime contract (`lib/agents/types.ts` + `lib/agents/blueprint-runner.ts`)
-
-Sprint 3 intentionally extends the Sprint 2 runner contract. This is required work, not optional cleanup.
-
-- `StepInput` grows additive runtime fields: `job: AgentJob`, `db: AgentDb`, and `agentConfig: AgentConfig`. Step implementations may destructure these directly from the existing single `input` object.
-- `StepMetadata` grows `skipWhenRouted?: boolean`. The Orchestrator's `synthesize-response` step uses this.
-- `RunBlueprintResult` grows optional `failureClass?: FailureClass`.
-- Runner skip semantics: if `step.metadata.skipWhenRouted === true` and `previousOutput.decision === 'route-to-specialist'`, the runner skips the step, appends a completed step-log entry with `tokensUsed: 0`, and carries `previousOutput` forward unchanged as the next input/final output.
-- Runner failure classification: `NotImplementedBlueprintError` is classified as `contract`, not `transient`.
-
-#### `lib/agents/blueprints/orchestrator-chat.ts`
-
-Two steps. Step 1 is deterministic code, step 2 is an LLM call — only reached when the Orchestrator handles the request itself.
-
-```ts
-import { z } from 'zod';
-import type { Blueprint } from '../types';
-
-const chatInputSchema = z.object({
-  message: z.string().min(1),
-  session_id: z.string().optional(),
-  channel: z.enum(['web', 'discord']).default('discord'),
-});
-
-const routeDecisionSchema = z.object({
-  decision: z.enum(['handle-directly', 'route-to-specialist', 'fallback-to-self']),
-  targetAgentId: z.enum(['orchestrator', 'small-cap-trader', 'swing-trader']).nullable(),
-  specialistJobType: z.enum(['research']).nullable(),
-  specialistJobId: z.string().nullable(),
-  warning: z.string().nullable(),
-  message: z.string(),
-});
-
-export const orchestratorChatBlueprint: Blueprint = {
-  id: 'orchestrator:chat',
-  description: 'V1 Orchestrator chat — deterministic routing + self-synthesis fallback.',
-  steps: [
-    {
-      name: 'classify-and-route',
-      type: 'code',
-      inputSchema: chatInputSchema,
-      outputSchema: routeDecisionSchema,
-      metadata: { canRetry: true, timeoutMs: 5000, maxRepairAttempts: 0, sideEffect: false },
-      run: async ({ jobInput, context: _ctx, job, db }) => {
-        // 1. Slash-command prefix wins.
-        // 2. Keyword match for data-signal routing (small cap, dilution, short, offering -> small-cap-trader).
-        // 3. Keyword match for swing/momentum/MDR/parabolic -> swing-trader.
-        // 4. Otherwise handle-directly.
-        // 5. If routed target is offline/degraded in agent_registry, emit warning + fallback-to-self.
-        // Return object matching routeDecisionSchema.
-      },
-    },
-    {
-      name: 'synthesize-response',
-      type: 'llm',
-      inputSchema: routeDecisionSchema,
-      outputSchema: z.object({ content: z.string().min(1) }),
-      metadata: { canRetry: true, timeoutMs: 30000, maxRepairAttempts: 1, sideEffect: false, lane: 'interactive', skipWhenRouted: true },
-      run: async ({ previousOutput: _prev, context: _ctx }) => {
-        // Only reached when step 1 returned decision === 'handle-directly' OR 'fallback-to-self'.
-        // When decision === 'route-to-specialist', step 2 is skipped by the runner via
-        // metadata.skipWhenRouted and the step 1 output becomes the final blueprint output.
-        // Use callLlm({ systemPrompt: buildLlmSystemPrompt('orchestrator'), userMessage: ..., temperature: 0.3 }, 'interactive')
-      },
-    },
-  ],
-};
-```
-
-Contract notes:
-
-- **Step 1 routing rules (deterministic, no LLM):**
-  - `^\s*/research\s+` -> `targetAgentId = 'small-cap-trader'`, `specialistJobType = 'research'`
-  - `^\s*/(swing|momentum)\s+` -> `targetAgentId = 'swing-trader'`, `specialistJobType = 'research'`
-  - message matches `/\b(dilution|offering|ATM|shelf|424B|S-3|short[- ]sell)\b/i` -> `small-cap-trader`, `research`
-  - message matches `/\b(MDR|multi[- ]day[- ]runner|parabolic|momentum|breakout)\b/i` -> `swing-trader`, `research`
-  - Otherwise `decision = 'handle-directly'`, `targetAgentId = null`, `specialistJobType = null`.
-- **Availability check.** After picking a specialist, read `agent_registry.status` for that agent. If `status !== 'online'`, set `decision = 'fallback-to-self'`, fill `warning = '${agentId} is ${status}, handling request directly'`, and let step 2 run.
-- **Handoff enqueue.** When `decision = 'route-to-specialist'`, step 1's `run()` inserts a new `agent_jobs` row via the injected `db`/`job` runtime fields (this is allowed — it is a code step, not a queue-helper boundary violation). The insert sets `id = randomUUID()`, `agent_id = targetAgentId`, `user_id = job.userId`, `job_type = 'research'`, `status = 'queued'`, `input = { ticker: extractedTicker, originator_job_id: job.id }`. The step then returns `{ decision: 'route-to-specialist', targetAgentId, specialistJobType: 'research', specialistJobId, warning: null, message: 'routed' }`.
-- **Runner-level short-circuit for routed jobs.** The runner skips step 2 when `previousOutput.decision === 'route-to-specialist'` and `step.metadata.skipWhenRouted === true`. The worker loop then sees the final blueprint output from step 1 and writes `result = { routed: true, specialistJobId }` into the orchestrator job.
-- **Ticker extraction.** Regex `/\b[A-Z]{1,5}\b/` against the message, first match. If no match, `extractedTicker = null` and the specialist handoff still happens (the specialist blueprint validates ticker).
-
-#### `lib/agents/blueprints/orchestrator-macro-summary.ts`
-
-Four steps per `AGENTIC_EXPANSIONV2.md` §6 Blueprint `orchestrator:macro-summary`.
-
-```ts
-export const orchestratorMacroSummaryBlueprint: Blueprint = {
-  id: 'orchestrator:macro-summary',
-  description: 'Daily macro briefing — headlines + market snapshot + LLM synthesis + persisted report.',
-  steps: [
-    {
-      name: 'scrape-headlines',
-      type: 'code',
-      outputSchema: z.object({ headlines: z.array(z.object({ url: z.string(), text: z.string() })) }),
-      metadata: { canRetry: true, timeoutMs: 20000, maxRepairAttempts: 0, sideEffect: false },
-      run: async () => {
-        const urls = (process.env.MACRO_HEADLINES_URLS ?? 'https://www.marketwatch.com/latest-news,https://finance.yahoo.com/topic/stock-market-news/').split(',').map((u) => u.trim()).filter(Boolean);
-        const headlines = [];
-        for (const url of urls) {
-          try {
-            const text = await fetchPageText(url);
-            headlines.push({ url, text: text.slice(0, 8000) });
-          } catch (err) {
-            headlines.push({ url, text: `[fetch failed: ${(err as Error).message}]` });
-          }
-        }
-        return { status: 'completed', data: { headlines }, metrics: { durationMs: 0, attempt: 1 }, provenance: { sourceIds: urls, upstreamStepIds: [], timestamp: new Date().toISOString() } };
-      },
-    },
-    {
-      name: 'fetch-market-snapshot',
-      type: 'code',
-      metadata: { canRetry: true, timeoutMs: 15000, maxRepairAttempts: 0, sideEffect: false },
-      // Fetches index/sector/commodity prices via the canonical Massive client at
-      // lib/massive-market.ts. Use `fetchUnifiedSnapshot(tickers)` (signature:
-      // `fetchUnifiedSnapshot(tickers: string[])`) with a fixed list of macro-relevant
-      // tickers — at minimum: ['SPY', 'QQQ', 'IWM', 'DIA', 'XLE', 'XLF', 'XLK', 'GLD', 'USO', 'TLT'].
-      // Do NOT build a fresh fetcher — reuse the existing client so it inherits auth, retry,
-      // and error handling from the rest of the app.
-      // If MASSIVE_API_KEY is unset (check via process.env before calling), return
-      // { snapshot: null, note: 'no massive api key' }. The client throws on missing key,
-      // so the env-var guard avoids surfacing that as a step failure in dev.
-      run: async () => { /* ... */ },
-    },
-    {
-      name: 'generate-briefing',
-      type: 'llm',
-      inputSchema: z.object({ headlines: z.array(z.object({ url: z.string(), text: z.string() })), snapshot: z.unknown().nullable() }),
-      outputSchema: z.object({
-        summary: z.string(),
-        keyEvents: z.array(z.string()),
-        sectorNotes: z.array(z.string()),
-        confidence: z.enum(['high', 'medium', 'low']),
-      }),
-      metadata: { canRetry: true, timeoutMs: 60000, maxRepairAttempts: 1, sideEffect: false, lane: 'background' },
-      // Uses callLlm(..., 'background'). Overrides the Orchestrator's default 'interactive' lane.
-      run: async () => { /* ... */ },
-    },
-    {
-      name: 'save-summary',
-      type: 'code',
-      metadata: { canRetry: false, timeoutMs: 10000, maxRepairAttempts: 0, sideEffect: true },
-      run: async () => {
-        // Calls writeAndDeliverReport(db, { jobId, userId: 'system-agent-user', agentId: 'orchestrator',
-        //   reportType: 'macro-summary', title: '<date> macro briefing', summary, reportJson })
-      },
-    },
-  ],
-};
-```
-
-Contract notes:
-
-- **Save-step idempotency owner.** Save steps do not use runner-level `idempotencyKey` placeholders in Sprint 3. `writeAndDeliverReport()` owns report-row reuse and successful-delivery dedupe for these steps.
-- **Macro summary ownership.** The save-summary step always writes with `userId = 'system-agent-user'`. The orchestrator-macro-summary blueprint is the only Sprint 3 blueprint that runs against the system user.
-- **Massive API absence.** If `MASSIVE_API_KEY` is unset, step 2 returns a `null` snapshot and the step succeeds. Step 3 handles a null snapshot gracefully. This keeps Sprint 3 runnable in dev without Massive credentials.
-
-#### `lib/agents/blueprints/small-cap-research.ts`
-
-Four steps: fetch filings from AskEdgar via the canonical shared cache, fetch price/volume from a direct TradingView scanner call, synthesize the report, then persist/deliver the stored report. Do NOT call `/api/tradingview/gainers` over HTTP from a worker.
-
-```ts
-export const smallCapResearchBlueprint: Blueprint = {
-  id: 'small-cap-trader:research',
-  description: 'Short-sell / dilution research for a single ticker.',
-  steps: [
-    {
-      name: 'fetch-filings',
-      type: 'code',
-      inputSchema: z.object({ ticker: z.string().regex(/^[A-Z]{1,5}$/) }),
-      outputSchema: z.object({ ticker: z.string(), filings: z.array(z.unknown()), cashPosition: z.unknown().nullable() }),
-      metadata: { canRetry: true, timeoutMs: 30000, maxRepairAttempts: 0, sideEffect: false },
-      // Uses getCachedTickerData(ticker) as the canonical upstream AskEdgar cache, then
-      // shapes the response into the step output required by the blueprint.
-      run: async () => { /* ... */ },
-    },
-    {
-      name: 'fetch-price-context',
-      type: 'code',
-      metadata: { canRetry: true, timeoutMs: 15000, maxRepairAttempts: 0, sideEffect: false },
-      run: async () => { /* ... */ },
-    },
-    {
-      name: 'synthesize-report',
-      type: 'llm',
-      outputSchema: z.object({
-        ticker: z.string(),
-        dilutionRisk: z.enum(['very-high', 'high', 'medium', 'low']),
-        offeringAbility: z.enum(['immediate', 'delayed', 'blocked']),
-        filingSummary: z.string(),
-        catalysts: z.array(z.string()),
-        confidence: z.enum(['high', 'medium', 'low']),
-        evidenceIds: z.array(z.string()),
-      }),
-      metadata: { canRetry: true, timeoutMs: 60000, maxRepairAttempts: 1, sideEffect: false, lane: 'background' },
-      run: async () => { /* calls callLlm(..., 'background') */ },
-    },
-    {
-      name: 'save-research',
-      type: 'code',
-      metadata: { canRetry: false, timeoutMs: 10000, maxRepairAttempts: 0, sideEffect: true },
-      run: async () => { /* calls writeAndDeliverReport with reportType: 'research' */ },
-    },
-  ],
-};
-```
-
-Contract notes:
-
-- **AskEdgar caching.** Step 1 calls `getCachedTickerData(ticker)` (signature: `getCachedTickerData(ticker: string)` from `lib/askedgar.ts`) as the canonical shared cache for raw AskEdgar data. The ticker arg is required — pass the normalized ticker from the step input. If the blueprint wants to persist derived facts in `agent_memory_v2`, that write is additive and must not replace the shared cache.
-- **TradingView price context.** Step 2 does NOT call `/api/tradingview/gainers` over HTTP and does NOT refactor the existing route in Sprint 3. Instead, it uses a private helper local to the blueprint file that mirrors the TradingView scanner request shape already used in [`app/api/tradingview/gainers/route.ts`](/home/jared/Nexus-Terminal/app/api/tradingview/gainers/route.ts) and returns only the price/volume fields the research blueprint needs.
-- **Ticker normalization.** Step 1 uppercases and trims the incoming ticker before any external call. The step input schema should be tightened to `z.object({ ticker: z.string().regex(/^[A-Z]{1,5}$/) })` so invalid or missing tickers fail as non-retriable contract errors.
-- **Report ownership.** `userId = job.userId` — research reports belong to the user who requested them, never to `system-agent-user`.
-
-#### `lib/agents/blueprints/swing-trader-research.ts`
-
-Same four-step shape as small-cap-research, but the LLM focuses on MDR similarity scoring, momentum indicators, and entry/stop/target levels. Schema:
-
-```ts
-outputSchema: z.object({
-  ticker: z.string(),
-  mdrSimilarity: z.number().min(0).max(100),
-  volumeSurgeRatio: z.number(),
-  levels: z.object({ entry: z.number(), stop: z.number(), targets: z.array(z.number()) }),
-  recommendation: z.enum(['HOLD', 'ADD', 'TRIM', 'EXIT', 'WATCH']),
-  patternClassification: z.enum(['BREAKOUT', 'EXHAUSTION', 'CONTINUATION', 'STOPPED']),
-  confidence: z.enum(['high', 'medium', 'low']),
-  evidenceIds: z.array(z.string()),
-}),
-```
-
-Uses `callLlm(..., 'background')`. Same save-research step shape. Same user-owned report.
-
-Contract notes:
-
-- **Upstream inputs.** Sprint 3 uses the same two upstream data sources as `small-cap-research`: Step 1 calls `getCachedTickerData(ticker)` for filings/context, and Step 2 uses the same blueprint-local TradingView helper shape described above for price/volume context. The differentiation is in the synthesis prompt and output schema, not the transport layer.
-
-#### `lib/agents/heartbeat.ts`
-
-```ts
-export interface HeartbeatHandle { stop: () => Promise<void> }
-export function startHeartbeat(db: AgentDb, agentId: AgentId, intervalMs?: number): HeartbeatHandle;
-```
-
-- `intervalMs` defaults to 30000 ms.
-- On each tick:
-  1. `UPDATE agent_registry SET last_heartbeat = now(), status = 'online' WHERE id = ${agentId}`
-  2. Touch `/tmp/healthy` with `fs.writeFileSync('/tmp/healthy', new Date().toISOString())`.
-- Errors during the UPDATE are caught and logged (`console.error`) but do NOT kill the tick. The next tick retries.
-- `stop()` clears the interval, writes one final `UPDATE agent_registry SET status = 'offline'`, and awaits it.
-- Tests inject a fake `AgentDb`, mock `node:fs`, and advance vi fake timers to prove both the UPDATE and the file touch happen per tick.
-
-#### `lib/agents/worker.ts`
-
-```ts
-import type { AgentConfig, WorkerConfig } from './types';
-
-export interface WorkerHandle { stop: () => Promise<void> }
-
-export async function startWorker(config: WorkerConfig & { agentConfig: AgentConfig }): Promise<WorkerHandle>;
-```
-
-Behavior contract:
-
-- `startWorker()` resolves its DB internally via `getAgentDb()`. If that returns `null`, it throws `new Error('Database not configured')` before marking the agent online or starting heartbeat/polling. Worker tests should therefore mock `getAgentDb()` rather than threading a DB through the public signature.
-- On start: writes/updates the agent's `agent_registry` row to `status = 'online'`, then starts `startHeartbeat(db, agentId)`, then begins the poll loop.
-- Poll loop:
-  1. `const claim = await claimNextQueuedJob(db, agentId, workerId)` where `workerId = '${agentId}:${process.pid}'`.
-  2. If null, `await sleep(pollIntervalMs)` and continue.
-  3. If claimed: resolve the blueprint via `config.agentConfig.blueprintResolver(claim.job)`.
-  4. Call `runBlueprint(blueprint, claim.job, config.agentConfig, db, { lockedBy: workerId, leaseVersion: claim.leaseVersion })`.
-  5. **Result packaging for the orchestrator routed-job case.** If `claim.job.agentId === 'orchestrator' && claim.job.jobType === 'chat'` and the runner's `finalOutput` contains `{ decision: 'route-to-specialist', specialistJobId, ... }`, the worker writes `result = { routed: true, specialistJobId }`. Otherwise `result = finalOutput`. Then call `completeJob(db, job.id, workerId, leaseVersion, result)`.
-  6. If `runBlueprint` returns `{ status: 'failed', failureReason, failureClass }`, branch:
-     - `failureClass === 'transient'` and `claim.job.attempt < claim.job.maxAttempts` -> `scheduleJobRetry(db, job.id, workerId, leaseVersion, new Date(Date.now() + calculateBackoffMs(claim.job.attempt)), failureReason)`.
-     - Otherwise -> `failJob(db, job.id, workerId, leaseVersion, failureReason)`.
-  7. Loop.
-- Graceful shutdown: `stop()` sets an internal `shuttingDown = true` flag. The poll loop checks it before claiming a new job. If a job is in flight, the loop awaits the current `runBlueprint` call (does NOT cancel) and then exits. After the loop exits, call the heartbeat `stop()`.
-- Backoff helper lives inline: `function calculateBackoffMs(attempt: number) { return Math.pow(4, attempt - 1) * 2000 }` — 2s, 8s, 32s at attempts 1, 2, 3.
-- Stale-job reaper: OUT OF SCOPE for Sprint 3. The reaper is listed as a worker-level concern in `AGENTIC_EXPANSIONV2.md` but the plan explicitly defers it. Do NOT add a reaper in Sprint 3.
-- Worker tests mock `claimNextQueuedJob`, `completeJob`, `failJob`, `scheduleJobRetry`, and `runBlueprint`, then advance fake timers to drive the loop through claim -> run -> complete and claim -> run -> retry transitions.
-
-#### `lib/agents/macro-cron.ts`
-
-```ts
-export interface MacroCronHandle { stop: () => Promise<void> }
-export function startMacroCron(db: AgentDb, options?: { hourEt?: number; checkIntervalMs?: number }): MacroCronHandle;
-```
-
-Behavior contract:
-
-- `hourEt` defaults to `Number(process.env.MACRO_CRON_HOUR) || 6`. `checkIntervalMs` defaults to 60000 ms.
-- Tick logic (every `checkIntervalMs`):
-  1. Compute the current hour and date in `America/New_York` using `Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit' })`. The result gives `tradingDate = 'YYYY-MM-DD'` and `currentHour`.
-  2. If `currentHour !== hourEt`, return — not the trigger hour.
-  3. Attempt to claim a scheduled run row via a single SQL:
-     ```sql
-     INSERT INTO agent_scheduled_runs (id, agent_id, trigger_type, trading_date, status, started_at, created_at)
-     VALUES (${randomUUID()}, 'orchestrator', 'macro-summary', ${tradingDate}, 'running', now(), now())
-     ON CONFLICT (agent_id, trigger_type, trading_date) DO NOTHING
-     RETURNING id;
-     ```
-     If zero rows returned, another tick already claimed the run — skip.
-  4. If one row returned: insert a new `agent_jobs` row with `id = randomUUID()`, `agent_id = 'orchestrator'`, `user_id = 'system-agent-user'`, `job_type = 'macro-summary'`, `status = 'queued'`, `input = { tradingDate }`. Then update the scheduled-run row with `job_id = <new job id>`, `status = 'completed'`, `completed_at = now()`.
-- `stop()` clears the interval. No DB write on stop — the scheduled-run row stays in whatever state the last tick left it.
-- Only the Orchestrator process calls `startMacroCron`. Sprint 4's `services/agent-entrypoint.ts` wires it; Sprint 3 just ships the library.
-- Tests mock `db.execute` / `db.insert` / `db.update` and advance fake timers to drive the tick. Verify the ON CONFLICT path skips without inserting a new job.
-
-#### `lib/validations/agents.ts`
-
-Define every Zod schema used by a Sprint 3 route in one file. Follow the naming pattern in `lib/validations/trades.ts`.
-
-```ts
-import { z } from 'zod';
-
-export const serviceChatPostSchema = z.object({
-  message: z.string().min(1).max(4000),
-  session_id: z.string().min(1).max(64).optional(),
-  discord_user_id: z.string().min(1),
-  channel: z.literal('discord'),
-});
-export type ServiceChatPostInput = z.infer<typeof serviceChatPostSchema>;
-
-export const serviceChatGetQuerySchema = z.object({
-  job_id: z.string().min(1),
-});
-
-export const reportsListQuerySchema = z.object({
-  status: z.enum(['published', 'delivery_failed', 'archived']).optional(),
-  agent_id: z.enum(['orchestrator', 'small-cap-trader', 'swing-trader']).optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
-});
-
-export const researchPostSchema = z.object({
-  ticker: z.string().regex(/^[A-Z]{1,5}$/),
-  agent_id: z.enum(['small-cap-trader', 'swing-trader']),
-});
-
-export const adminMemoryListQuerySchema = z.object({
-  user_id: z.string().optional(),
-  agent_id: z.enum(['orchestrator', 'small-cap-trader', 'swing-trader']).optional(),
-  category: z.string().optional(),
-});
-export const adminMemoryDeleteSchema = z.object({ id: z.string().min(1) });
-
-export const redeliverSchema = z.object({ report_id: z.string().min(1) });
-```
-
-Do NOT inline schemas in route files. Every route imports from `@/lib/validations/agents`.
-
-#### Route Contracts
-
-Each route below lists path, method, auth, request shape, response shape, and error paths. Codex implements each file exactly once.
-
-- **DB-backed route guard.** Every DB-backed route in this section uses `const db = getAgentDb(); if (!db) return dbUnavailable();` before any query or write. The earlier step-by-step lists omit repeated mentions in a few places; this guard is still required on every DB-backed `/api/agents/*` route, including list/detail/admin routes and `GET /api/agents/macro-summary/latest`.
-
-##### `app/api/agents/service/chat/route.ts`
-
-**POST** — `x-agent-service-key` header; body = `ServiceChatPostInput`.
-
-1. `parseAndValidate(request, serviceChatPostSchema)` -> `{ data }` or 400.
-2. `requireServiceAuth(request, data)` -> `{ user, discordUserId }` or 400/401/403 Response.
-3. `const db = getAgentDb()`. If null, return `Response.json({ error: 'Database not configured' }, { status: 503 })`.
-4. `await ensureUser(db, user)` so the mapped service user exists before any FK-backed insert.
-5. Resolve or create `session_id`: if provided, use it; otherwise `randomUUID()`.
-6. Insert a row into `agent_conversations` with `id = randomUUID()`, `role = 'user'`, `content = data.message`, `channel = 'discord'`, `user_id = user.id`, `agent_id = 'orchestrator'`, `session_id`.
-7. Insert a new `agent_jobs` row: `id = randomUUID()`, `agent_id = 'orchestrator'`, `user_id = user.id`, `job_type = 'chat'`, `status = 'queued'`, `input = { message: data.message, session_id, channel: 'discord', discord_user_id: discordUserId }`, `priority = 0`, `max_attempts = 3`.
-8. Return `Response.json({ job_id, session_id, agent_id: 'orchestrator' }, { status: 201 })`.
-
-**GET** — `x-agent-service-key` header; query = `job_id`.
-
-1. Parse `job_id` via `serviceChatGetQuerySchema.safeParse(Object.fromEntries(new URL(request.url).searchParams))`.
-2. `requireServiceKey(request)` -> `null` or 401 Response.
-3. `getAgentDb()` or 503.
-4. `SELECT id, agent_id, status, progress_note, input, result, error_message, step_log FROM agent_jobs WHERE id = ${job_id}`. If no row, 404 `{ error: 'job not found' }`.
-5. Return the correct status variant from `AGENTIC_EXPANSIONV2.md` §13:
-   - `queued` -> `{ status: 'queued', job_id, agent_id, progress_note: null }`
-   - `processing` -> `{ status: 'processing', job_id, agent_id, progress_note }`
-   - `completed` with `result.routed === true` -> `{ status: 'completed', job_id, agent_id, result: { routed: true, specialistJobId: result.specialistJobId } }`
-   - `completed` otherwise -> `{ status: 'completed', job_id, agent_id, session_id: result.session_id ?? input.session_id ?? null, result: { message: result.content ?? result.message ?? '' } }` (read `content` or `message` — blueprints may put either)
-   - `failed` -> `{ status: 'failed', job_id, agent_id, error: { message: error_message, failureClass: <parsed from stepLog tail if present> } }`
-
-##### `app/api/agents/reports/route.ts`
-
-**GET** — `requireUser()`.
-
-1. Parse query via `reportsListQuerySchema`.
-2. Query `agent_reports` with `user_id = user.id AND user_id <> 'system-agent-user'` plus optional `status` and `agent_id` filters, ordered by `created_at DESC`, limit = `query.limit ?? 50`.
-3. Return `{ reports: [{ id, agent_id, report_type, status, title, created_at }] }`.
-
-##### `app/api/agents/reports/[id]/route.ts`
-
-**GET** — `requireUser()`.
-
-> **Next.js 15 dynamic params are async.** Match the existing repo pattern in [`app/api/trades/[id]/route.ts`](/home/jared/Nexus-Terminal/app/api/trades/[id]/route.ts): the handler signature is `export async function GET(_request: Request, context: { params: Promise<{ id: string }> })`, and the id is unpacked via `const { id } = await context.params;` before any DB call. Do NOT read `params.id` synchronously — it will fail to compile under Next.js 15.
-
-1. Unpack `const { id } = await context.params;`.
-2. `SELECT * FROM agent_reports WHERE id = ${id} AND user_id = ${user.id} LIMIT 1`.
-3. If no row, 404. If row, return `{ report: { id, agent_id, report_type, status, report_json } }`.
-
-##### `app/api/agents/research/route.ts`
-
-**POST** — `requireUser()`; body = `researchPostSchema`.
-
-1. Parse + auth.
-2. `const db = getAgentDb()`. If null, return 503.
-3. `await ensureUser(db, user)` before inserting the job row.
-4. `SELECT status FROM agent_registry WHERE id = ${data.agent_id}`. If `status !== 'online'`, return 400 `{ error: 'agent unavailable', agent_id, status }` (AEV2-403 contract — reject, do not silently queue).
-5. Insert `agent_jobs` row: `id = randomUUID()`, `agent_id = data.agent_id`, `user_id = user.id`, `job_type = 'research'`, `input = { ticker: data.ticker }`, `status = 'queued'`.
-6. Return `{ job_id, agent_id, job_type: 'research' }`.
-
-**GET** — `requireUser()`.
-
-1. `SELECT id, agent_id, report_type, report_json -> 'ticker' AS ticker FROM agent_reports WHERE user_id = ${user.id} AND user_id <> 'system-agent-user' AND report_type = 'research' ORDER BY created_at DESC LIMIT 50`.
-2. Return `{ reports: [{ id, agent_id, report_type, ticker }] }`.
-
-##### `app/api/agents/admin/stats/route.ts`
-
-**GET** — `requireAgentAdmin()`.
-
-Return this exact `AdminStatsResponse` shape:
-
-```ts
+```json
 {
-  circuitBreakers: Record<string, { status: 'closed' | 'open' | 'half-open'; consecutiveFailures: number; lastFailureAt: string | null }>;
-  today: {
-    totalRequests: number;
-    totalTokens: number;
-    estimatedCostCents: number;
-    successRate: number;
-    avgDurationMs: number;
-    validationFailureRate: number;
-    retryRate: number;
-    byLane: Record<string, { totalRequests: number; totalTokens: number; estimatedCostCents: number; successRate: number; avgDurationMs: number }>;
-    byAgent: Record<string, { totalRequests: number; totalTokens: number; estimatedCostCents: number; successRate: number; avgDurationMs: number }>;
-  };
-  thisMonth: {
-    totalTokens: number;
-    estimatedCostCents: number;
-    budgetCents: number;
-    budgetUsedPercent: number;
-  };
-  agents: Array<{ id: string; displayName: string; status: string; lastHeartbeat: string | null }>;
-  delivery: {
-    publishedToday: number;
-    deliveryFailures: number;
-    deliveryFailureRate: number;
-  };
-  memory: {
-    total: number;
-    byCategory: Record<string, number>;
-  };
-  macroSummaries: {
-    latestGeneratedAt: string | null;
-  };
-  queue: {
-    depth: number;
-    oldestQueuedJobAgeSeconds: number | null;
-    stuckProcessing: number;
-  };
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "..",
+    "baseUrl": "..",
+    "paths": {
+      "@/*": ["../*"]
+    }
+  },
+  "include": [
+    "agent-entrypoint.ts",
+    "discord-bot/index.ts",
+    "../lib/**/*.ts"
+  ],
+  "exclude": [
+    "../node_modules",
+    "../.next",
+    "discord-bot/node_modules"
+  ]
 }
 ```
 
-Query/formula plan:
+Notes:
+- Root `tsconfig.json` excludes `services/`, so the service-side check needs its own config. This file does NOT touch the root tsconfig.
+- `"extends": "../tsconfig.json"` inherits strict mode and all the existing compiler options from the root.
+- Including `../lib/**/*.ts` means a type drift in `lib/agents/*` is caught when Codex (or the user) runs the new `npm run typecheck:services` script.
+- `discord-bot/node_modules` is excluded so the bot's `discord.js` types don't double-resolve.
 
-- `circuitBreakers`: `SELECT id, config -> 'circuitBreaker' FROM agent_registry`.
-- `circuitBreakers` mapping uses the Sprint 2 stored shape in `agent_registry.config.circuitBreaker`, which currently persists `{ consecutiveFailures, openedAt }` rather than a separate `lastFailureAt`.
-- `circuitBreakers.status`: `'closed'` when `openedAt` is null, `'open'` when `openedAt` is within the last 60 seconds, and `'half-open'` when `openedAt` is older than 60 seconds but the self-heal path has not reset the row yet.
-- `circuitBreakers.lastFailureAt`: map from `openedAt`. This remains `null` until the breaker has actually opened because Sprint 2 does not persist pre-threshold failure timestamps.
-- `today.*`: aggregates over `agent_request_log` where `created_at >= start of current UTC day`.
-- `today.byLane`: `GROUP BY lane`.
-- `today.byAgent`: `GROUP BY agent_id`.
-- `today.validationFailureRate`: `contract-failed jobs created today / jobs created today`; use `0` when the denominator is `0`. A job counts as `contract-failed` when its final `step_log` entry has `errorClass = 'contract'`.
-- `today.retryRate`: `jobs created today with attempt > 1 / jobs created today`; use `0` when the denominator is `0`.
-- `thisMonth.*`: aggregates over `agent_request_log` where `created_at >= first of current UTC month`. Include `budgetCents` from `getLlmBudgetConfig().monthlyBudgetCents` and `budgetUsedPercent`.
-- `agents`: `SELECT id, display_name, status, last_heartbeat FROM agent_registry`.
-- `delivery.publishedToday`: `SELECT count(*) FROM agent_reports WHERE status = 'published' AND created_at >= start of current UTC day`.
-- `delivery.deliveryFailures`: same with `status = 'delivery_failed'`.
-- `delivery.deliveryFailureRate`: `deliveryFailures / (publishedToday + deliveryFailures)`; use `0` when the denominator is `0`.
-- `memory.total` and `memory.byCategory`: over `agent_memory_v2`.
-- `macroSummaries.latestGeneratedAt`: latest published macro report's `created_at`.
-- `queue.depth`: queued jobs eligible to run now (`status = 'queued'` and `next_retry_at IS NULL OR next_retry_at <= now()`).
-- `queue.oldestQueuedJobAgeSeconds`: age of the oldest eligible queued job in seconds; `null` when no eligible queued jobs exist.
-- `queue.stuckProcessing`: jobs in `processing` where `lock_expires_at < now()` OR `last_heartbeat_at < now() - interval '10 minutes'`.
+#### `services/docker-compose.yml`
 
-##### `app/api/agents/admin/memory/route.ts`
+The full rewrite must match the inline contract below. `AGENTIC_EXPANSIONV2.md` §15 is the original source but is incomplete (missing `start_period`, `stop_grace_period`, deprecated `version` field, missing `AGENT_*` cap details). Use the YAML below verbatim — do NOT consult §15 mid-execution.
 
-**GET** — `requireAgentAdmin()`; query = `adminMemoryListQuerySchema`.
+1. Drop `redis` service and `redis-data` volume completely.
+2. Drop the top-level `version:` field entirely. Compose v2 ignores it and emits a deprecation warning. Removing it keeps smoke logs clean.
+3. The `discord-bot` service block becomes:
 
-1. Query `agent_memory_v2` with optional filters on `user_id`, `agent_id`, `category`, limit 200, order by `updated_at DESC`.
-2. Return `{ memory: [{ id, user_id, agent_id, category, key }] }`.
+```yaml
+  discord-bot:
+    build:
+      context: ./discord-bot
+    environment:
+      - NODE_ENV=production
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
+      - NEXUS_API_URL=${NEXUS_API_URL}
+      - AGENT_SERVICE_KEY=${AGENT_SERVICE_KEY}
+    restart: unless-stopped
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+```
 
-**DELETE** — `requireAgentAdmin()`; body = `adminMemoryDeleteSchema`.
+Per D10, `DATABASE_URL` is intentionally absent from the bot's env block.
 
-1. `DELETE FROM agent_memory_v2 WHERE id = ${data.id}`.
-2. Return `{ deleted: true }`. If the delete affected zero rows, return 404 `{ error: 'memory row not found' }`.
+4. Each of the three agent services (`orchestrator`, `small-cap-trader`, `swing-trader`) follows this representative shape (orchestrator shown — repeat for the other two with the diffs in step 5):
 
-##### `app/api/agents/admin/redeliver/route.ts`
+```yaml
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: services/agent.Dockerfile
+    environment:
+      - AGENT_ID=orchestrator
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - INTERACTIVE_LLM_API_KEY=${INTERACTIVE_LLM_API_KEY}
+      - INTERACTIVE_LLM_BASE_URL=${INTERACTIVE_LLM_BASE_URL}
+      - INTERACTIVE_LLM_MODEL=${INTERACTIVE_LLM_MODEL}
+      - INTERACTIVE_LLM_TIMEOUT_MS=${INTERACTIVE_LLM_TIMEOUT_MS}
+      - BACKGROUND_LLM_API_KEY=${BACKGROUND_LLM_API_KEY}
+      - BACKGROUND_LLM_BASE_URL=${BACKGROUND_LLM_BASE_URL}
+      - BACKGROUND_LLM_MODEL=${BACKGROUND_LLM_MODEL}
+      - BACKGROUND_LLM_TIMEOUT_MS=${BACKGROUND_LLM_TIMEOUT_MS}
+      - AGENT_DAILY_BUDGET_CENTS=${AGENT_DAILY_BUDGET_CENTS}
+      - AGENT_MONTHLY_BUDGET_CENTS=${AGENT_MONTHLY_BUDGET_CENTS}
+      - AGENT_MAX_CONTEXT_TOKENS=${AGENT_MAX_CONTEXT_TOKENS}
+      - AGENT_MAX_SCAN_CANDIDATES=${AGENT_MAX_SCAN_CANDIDATES}
+      - AGENT_MAX_PATTERN_HISTORY=${AGENT_MAX_PATTERN_HISTORY}
+      - AGENT_MAX_RETRIES_PER_STEP=${AGENT_MAX_RETRIES_PER_STEP}
+      - AGENT_POLL_INTERVAL_MS=${AGENT_POLL_INTERVAL_MS}
+      - ASKEDGAR_API_KEY=${ASKEDGAR_API_KEY}
+      - MASSIVE_API_KEY=${MASSIVE_API_KEY}
+      - MACRO_CRON_HOUR=${MACRO_CRON_HOUR}
+      - MACRO_HEADLINES_URLS=${MACRO_HEADLINES_URLS}
+      - DISCORD_WEBHOOK_MACRO_DAILY=${DISCORD_WEBHOOK_MACRO_DAILY}
+      - DISCORD_WEBHOOK_SYSTEM=${DISCORD_WEBHOOK_SYSTEM}
+      - TZ=${TZ}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/healthy && find /tmp/healthy -mmin -2 >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+```
 
-**POST** — `requireAgentAdmin()`; body = `redeliverSchema`.
+5. Diffs for the other two agent services (relative to the orchestrator block above):
+   - `small-cap-trader`: change `AGENT_ID=small-cap-trader`. Remove `MACRO_CRON_HOUR`, `MACRO_HEADLINES_URLS`, `DISCORD_WEBHOOK_MACRO_DAILY`, `DISCORD_WEBHOOK_SYSTEM`. Add `DISCORD_WEBHOOK_SCANS=${DISCORD_WEBHOOK_SCANS}` and `DISCORD_WEBHOOK_RESEARCH=${DISCORD_WEBHOOK_RESEARCH}`.
+   - `swing-trader`: change `AGENT_ID=swing-trader`. Remove `MACRO_CRON_HOUR`, `MACRO_HEADLINES_URLS`, `DISCORD_WEBHOOK_MACRO_DAILY`, `DISCORD_WEBHOOK_SYSTEM`. Add `DISCORD_WEBHOOK_SWING_SETUPS=${DISCORD_WEBHOOK_SWING_SETUPS}` and `DISCORD_WEBHOOK_SWING_ALERTS=${DISCORD_WEBHOOK_SWING_ALERTS}`.
 
-1. `const db = getAgentDb()`. If null, return 503.
-2. `SELECT id FROM agent_reports WHERE id = ${data.report_id} LIMIT 1`. If no row, return 404 `{ error: 'report not found' }`.
-3. `const result = await redeliverReport(db, data.report_id)`.
-4. Return `{ report_id: data.report_id, status: result.status }`.
+6. Codex does NOT introduce a network override, a custom Compose project name, or a `depends_on` block — all four services are independent (Discord bot polls Nexus API over the public URL, agents poll Neon directly).
+7. `start_period: 60s` exists because the worker takes ~10–20s to boot before writing `/tmp/healthy`; without it the first ~3 healthchecks would fail and Docker would briefly mark the container `unhealthy`.
+8. `stop_grace_period: 30s` exists because a stuck LLM call can take >10s to abort during shutdown; Docker's default is 10s, after which it `SIGKILL`s mid-cleanup.
 
-##### `app/api/agents/macro-summary/latest/route.ts`
+#### `services/discord-bot/index.ts`
 
-**GET** — no auth (public read; matches `AGENTIC_EXPANSIONV2.md` §13).
+Skeleton (Codex fills in the message handler body). `discord.js` v14 client, intents `Guilds | GuildMessages | MessageContent`, listens on `messageCreate`, filters to the channel resolved by name `'orchestrator'` inside the configured guild, then implements the request/poll/reply flow described in the New Files block above. Concrete contract:
 
-1. `SELECT created_at AS generated_at, report_json AS content FROM agent_reports WHERE user_id = 'system-agent-user' AND agent_id = 'orchestrator' AND report_type = 'macro-summary' AND status = 'published' ORDER BY created_at DESC LIMIT 1`.
-2. If no row, return `{ summary: null }` with 200.
-3. Otherwise return `{ summary: { generated_at, content } }`.
+```ts
+import { Client, GatewayIntentBits, EmbedBuilder, ChannelType, type Message } from 'discord.js';
 
-#### Route Test Mocking Pattern (AEV2-407)
+const NEXUS_API_URL = process.env.NEXUS_API_URL;
+const AGENT_SERVICE_KEY = process.env.AGENT_SERVICE_KEY;
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID;
+const ORCHESTRATOR_CHANNEL_NAME = 'orchestrator';
+const POLL_INTERVAL_MS = 2000;
+const POLL_MAX_ATTEMPTS = 60;
+// 4000 leaves 96 chars of headroom under Discord's 4096 embed cap for the truncation suffix.
+const EMBED_DESCRIPTION_LIMIT = 4000;
+const TRUNCATION_SUFFIX = '\n\n… (truncated — see logs)';
 
-All route tests follow the pattern in `__tests__/trades-route.test.ts`. Key rules:
+const REQUIRED_ENV: Record<string, string | undefined> = {
+  NEXUS_API_URL,
+  AGENT_SERVICE_KEY,
+  DISCORD_BOT_TOKEN,
+  DISCORD_GUILD_ID,
+};
+const missing = Object.entries(REQUIRED_ENV).filter(([, v]) => !v).map(([k]) => k);
+if (missing.length > 0) {
+  console.error(JSON.stringify({ event: 'bot.missing_env', missing }));
+  process.exit(1);
+}
 
-- Use `vi.hoisted(() => ({ ... }))` to create the mock functions.
-- `vi.mock('@/lib/agents/db', () => ({ getAgentDb: getAgentDbMock }))`.
-- `vi.mock('@/lib/agents/admin', () => ({ requireAgentAdmin: requireAgentAdminMock, requireServiceAuth: requireServiceAuthMock, requireServiceKey: requireServiceKeyMock }))`.
-- `vi.mock('@/lib/server-db-utils', () => ({ requireUser: requireUserMock, ensureUser: ensureUserMock, dbUnavailable: ... }))`.
-- `vi.mock('@/lib/agents/discord', () => ({ writeAndDeliverReport: writeAndDeliverReportMock, redeliverReport: redeliverReportMock }))` for the redeliver route.
-- Import the route handler AFTER the mocks: `import { POST, GET } from '@/app/api/agents/service/chat/route'`.
-- Build the DB mock by returning chained fluent mocks matching what the route calls (`insert().values()`, `select().from().where()`, etc.). Use `makeDb()`-style helper functions inside each test file.
-- Required coverage per AEV2-407:
-  - Success paths for every method
-  - 400 on validation failures (missing required fields, bad enum values)
-  - 401 on missing or invalid service/admin key
-  - 403 on unknown Discord user for service/chat POST
-  - 404 on unknown job/report/memory id
-  - 503 when `getAgentDb()` returns null
-  - For `GET /api/agents/service/chat`: prove the three state variants (queued / processing / completed / failed) and the routed-completed variant
-  - For redeliver route tests: prove success, `delivery_failed`, 404, and admin auth failure. Delivery-attempt dedupe and manual redelivery repost behavior belong in `__tests__/agent-discord.test.ts`, not the route test.
-  - For reports list: prove `user_id = 'system-agent-user'` rows are excluded
-  - For research POST: prove an offline agent returns 400, not a queued job
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
+});
+
+client.on('ready', () => {
+  console.log(JSON.stringify({ event: 'bot.ready', user: client.user?.tag }));
+});
+
+client.on('messageCreate', async (msg: Message) => {
+  if (msg.author.bot) return;
+  if (msg.guildId !== DISCORD_GUILD_ID) return;
+  if (msg.channel.type !== ChannelType.GuildText) return;
+  if (msg.channel.name !== ORCHESTRATOR_CHANNEL_NAME) return;
+
+  const sessionId = `discord:${msg.author.id}:${msg.channelId}`;
+  let createResponse: Response;
+  try {
+    createResponse = await fetch(`${NEXUS_API_URL}/api/agents/service/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-agent-service-key': AGENT_SERVICE_KEY!,
+      },
+      body: JSON.stringify({
+        message: msg.content,
+        discord_user_id: msg.author.id,
+        channel: 'discord',
+        session_id: sessionId,
+      }),
+    });
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'bot.create_failed', discord_user_id: msg.author.id, error: String(error) }));
+    await msg.reply('Failed to reach Nexus API.');
+    return;
+  }
+
+  if (!createResponse.ok) {
+    // Read and discard the body server-side; never echo it to Discord (could leak auth detail).
+    const text = await createResponse.text().catch(() => '');
+    console.error(JSON.stringify({ event: 'bot.create_http_error', status: createResponse.status, body: text.slice(0, 500) }));
+    await msg.reply(`Nexus API rejected the request (status ${createResponse.status}).`);
+    return;
+  }
+
+  const created = (await createResponse.json()) as { job_id?: string };
+  const jobId = created.job_id;
+  if (!jobId) {
+    await msg.reply('Nexus API returned no job_id.');
+    return;
+  }
+
+  for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    let pollResponse: Response;
+    try {
+      pollResponse = await fetch(`${NEXUS_API_URL}/api/agents/service/chat?job_id=${encodeURIComponent(jobId)}`, {
+        headers: { 'x-agent-service-key': AGENT_SERVICE_KEY! },
+      });
+    } catch (error) {
+      // Log at warn-style after first failure to avoid log spam under flapping network conditions.
+      console.warn(JSON.stringify({ event: 'bot.poll_failed', job_id: jobId, attempt, error: String(error) }));
+      continue;
+    }
+
+    if (!pollResponse.ok) {
+      console.warn(JSON.stringify({ event: 'bot.poll_http_error', job_id: jobId, attempt, status: pollResponse.status }));
+      continue;
+    }
+
+    const body = (await pollResponse.json()) as {
+      status: 'queued' | 'processing' | 'completed' | 'failed';
+      result?: { message?: string; routed?: boolean; specialistJobId?: string };
+      error?: { message?: string };
+    };
+
+    if (body.status === 'completed') {
+      if (body.result?.routed) {
+        await msg.reply(`Routed to specialist (job: ${body.result.specialistJobId ?? 'unknown'}).`);
+        return;
+      }
+      const raw = body.result?.message ?? '';
+      const description = raw.length > EMBED_DESCRIPTION_LIMIT
+        ? raw.slice(0, EMBED_DESCRIPTION_LIMIT) + TRUNCATION_SUFFIX
+        : raw;
+      const embed = new EmbedBuilder()
+        .setTitle('Orchestrator')
+        .setColor(0x10b981)
+        .setDescription(description);
+      await msg.reply({ embeds: [embed] });
+      return;
+    }
+
+    if (body.status === 'failed') {
+      // Same rule as the create-error path: never echo a raw upstream error body.
+      console.error(JSON.stringify({ event: 'bot.job_failed', job_id: jobId, error: body.error?.message }));
+      await msg.reply(`Request failed (job: ${jobId}). Check the agent logs.`);
+      return;
+    }
+  }
+
+  await msg.reply(`Request timed out after 120s (job: ${jobId}).`);
+});
+
+void client.login(DISCORD_BOT_TOKEN);
+```
+
+Notes:
+- Channel resolution is by name `'orchestrator'` per `AGENTIC_EXPANSIONV2.md` §20. If the operator renames the channel, update `ORCHESTRATOR_CHANNEL_NAME` and rebuild.
+- The bot uses Node 20's built-in `fetch` and `Response` — no `node-fetch` dependency.
+- The `session_id` shape `discord:<user>:<channel>` is intentionally stable so the Orchestrator can reuse `agent_conversations` rows for short multi-turn chats.
+- The bot logs structured JSON only; never logs `msg.content` or `body.result.message`.
+
+#### `services/discord-bot/package.json`
+
+```json
+{
+  "name": "nexus-discord-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx index.ts"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "tsx": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
+```
+
+Codex generates `services/discord-bot/package-lock.json` by running `npm install` inside `services/discord-bot/` once and committing the result. The bot directory's `node_modules/` stays gitignored (root `.gitignore` already covers `**/node_modules`).
+
+#### `services/discord-bot/Dockerfile`
+
+```dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY index.ts tsconfig.json ./
+
+ENV NODE_ENV=production
+
+CMD ["npx", "tsx", "index.ts"]
+```
+
+#### `services/discord-bot/tsconfig.json`
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["index.ts"]
+}
+```
+
+Notes:
+- This config is only used at runtime by `tsx`. The Sprint 4 typecheck gate runs through `services/tsconfig.json` (the parent), not this file.
+- `types: ["node"]` is required so the bot can use `Response` and `fetch` typings without pulling DOM types.
+
+#### `scripts/ops/agent-observability.sql`
+
+```sql
+-- name: queue-depth
+-- Eligible queued jobs awaiting a worker.
+SELECT count(*) AS queued_jobs
+FROM agent_jobs
+WHERE status = 'queued'
+  AND (next_retry_at IS NULL OR next_retry_at <= now());
+
+-- name: oldest-queued-job-age
+-- Age (seconds) of the oldest eligible queued job.
+SELECT extract(epoch FROM (now() - min(created_at)))::int AS oldest_age_seconds
+FROM agent_jobs
+WHERE status = 'queued'
+  AND (next_retry_at IS NULL OR next_retry_at <= now());
+
+-- name: stuck-processing
+-- Jobs in processing past lease expiry or with stale heartbeat.
+-- Threshold = 10 × JOB_LEASE_HEARTBEAT_INTERVAL_MS (60s in lib/agents/worker.ts:23).
+-- Adjust this interval if you change the worker heartbeat constant.
+SELECT id, agent_id, locked_by, lock_expires_at, last_heartbeat_at
+FROM agent_jobs
+WHERE status = 'processing'
+  AND (lock_expires_at < now() OR last_heartbeat_at < now() - interval '10 minutes');
+
+-- name: missed-macro-summary
+-- Today's macro-summary scheduled run, if any.
+SELECT id, status, started_at, completed_at, job_id
+FROM agent_scheduled_runs
+WHERE agent_id = 'orchestrator'
+  AND trigger_type = 'macro-summary'
+  AND trading_date = (now() AT TIME ZONE 'America/New_York')::date;
+
+-- name: delivery-failures-by-day
+-- Failed Discord deliveries grouped by UTC day, last 7 days.
+SELECT date_trunc('day', created_at) AS day, count(*) AS failed_deliveries
+FROM agent_reports
+WHERE status = 'delivery_failed'
+  AND created_at >= now() - interval '7 days'
+GROUP BY 1
+ORDER BY 1 DESC;
+
+-- name: agent-heartbeat-freshness
+-- Last heartbeat per agent and the seconds since.
+SELECT id, status, last_heartbeat,
+       extract(epoch FROM (now() - last_heartbeat))::int AS seconds_since_heartbeat
+FROM agent_registry
+ORDER BY id;
+
+-- name: token-totals-today
+-- Token usage and cost by lane, current UTC day.
+SELECT lane,
+       sum(input_tokens + output_tokens) AS total_tokens,
+       sum(estimated_cost_cents) AS total_cost_cents,
+       count(*) AS total_requests
+FROM agent_request_log
+WHERE created_at >= date_trunc('day', now())
+GROUP BY lane;
+```
+
+Codex must not invent column names. The fan-out review confirmed every column above resolves cleanly against `lib/db/schema.ts` as of 2026-04-08, so all seven queries SHALL be present in the final file. If Codex discovers during execution that a column has drifted, STOP and flip Sprint 4 to `PENDING REVIEW` instead of dropping the query — partial SQL is worse than a paused sprint.
+
+#### `docs/ops/agents-rollback.md`, `docs/ops/home-server-recovery.md`, `docs/ops/agents-deploy-smoke.md`, `docs/ops/agents-launch-validation.md`, `docs/ops/agents-backup-restore.md`
+
+These are markdown runbooks. Length target: 100–200 lines each. Codex writes them based on the items in `AGENTIC_EXPANSIONV2.md` §16 plus the External Validation Checklist below. No code blocks beyond the actual commands the operator must run. No marketing language.
+
+The smoke runbook (`agents-deploy-smoke.md`) MUST be a 1:1 mirror of the External Validation Checklist below — same checkboxes, same order, same expected outputs. The user runs that file as the canonical smoke after Sprint 4 lands.
 
 ### Order Of Operations
 
-1. Land Discord delivery helpers first so blueprints can call them.
-2. Land scrape-lite + prompts loader + config registry skeleton next. Blueprint files import from the registry, so the registry must exist first as a shell.
-3. Land the four implemented blueprints and wire them into `AGENT_CONFIGS`.
-4. Land heartbeat + worker loop + macro cron.
-5. Land validation schemas + API routes.
-6. Land route tests last — they depend on every route file.
+1. Land the Dockerfile, the `.dockerignore`, and the entrypoint together (Checkpoint 1).
+2. Land the Compose rewrite + the `.env.example` additions next so the container topology compiles (Checkpoint 2).
+3. Land the Discord bot directory tree (Checkpoint 3).
+4. Land `services/tsconfig.json` and the `package.json` script for AEV2-506 typecheck gate (Checkpoint 4).
+5. Land `scripts/ops/agent-observability.sql` (Checkpoint 5).
+6. Land the four (+1 retroactive) ops markdown files (Checkpoint 6).
+7. Final repo-wide validation + HANDOFF.md collapse readiness (Checkpoint 7).
 
-### Checkpoint 1 — Discord Delivery Helpers
+### Checkpoint 1 — Agent Image + Entrypoint
 
-**Stories:** `AEV2-307`
+**Stories:** `AEV2-501`
 
-**Review focus:** confirm `writeAndDeliverReport()` reuses a deterministic report row, only writes the successful delivery marker after a 2xx webhook POST, and converts webhook failures into stored `delivery_failed` state instead of exceptions.
+**Review focus:** confirm the Dockerfile copies only `lib/`, `services/agent-entrypoint.ts`, and the package metadata; the entrypoint resolves the DB once and passes `agentConfig` (not `blueprintResolver`); SIGTERM/SIGINT cleanly stop the worker and the macro cron in order; `.dockerignore` excludes `services/.env`.
 
-**Suggested commit:** `feat(aev2): add agent discord embed and delivery helpers`
+**Suggested commit:** `feat(aev2): add agent docker image and service entrypoint`
 
 **Check off before commit**
 
-- [x] `lib/agents/discord.ts` exists and exports exactly the symbols listed in the execution contract (`DiscordEmbed`, `DiscordWebhookPayload`, five `build*Embed` functions, `resolveWebhookUrl`, `writeAndDeliverReport`, `redeliverReport`).
-- [x] `writeAndDeliverReport` uses `reportId = ${jobId}:${reportType}` as the deterministic row key and `discord-delivery:${reportId}` as the successful-delivery marker.
-- [x] `resolveWebhookUrl` maps every (agentId, reportType) combination listed in the contract and returns `null` for unknowns without throwing.
-- [x] Webhook POST uses `fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ embeds: [embed] }) })` and respects a 10s AbortController timeout.
-- [x] HTTP 2xx sets `status = 'published'` and `delivered_at = now()`, then writes the successful delivery marker. Non-2xx or fetch throw sets `status = 'delivery_failed'` with `delivery_error` populated. Neither path throws to the caller.
-- [x] `redeliverReport` re-reads the stored `report_json`, performs a fresh delivery attempt only, and does not call the LLM or rewrite `report_json`.
-- [x] `__tests__/agent-discord.test.ts` covers: happy-path write+deliver, repeat automatic publish reuses the existing report row and short-circuits after a recorded successful-delivery marker, HTTP 500 becomes `delivery_failed`, `fetch` throw becomes `delivery_failed`, `resolveWebhookUrl` unknown combo returns null, and manual redeliver posts again as a fresh admin-triggered attempt.
+- [ ] `services/agent.Dockerfile` matches the contract verbatim — `npm ci` (NOT `--production`), `npm install -g tsx@4`, COPY `lib/`, COPY entrypoint, CMD `["tsx", "services/agent-entrypoint.ts"]`.
+- [ ] `services/agent-entrypoint.ts` calls `getAgentDb()` once, exits with code `1` on null, starts `startMacroCron(db)` only for `agentId === 'orchestrator'`, and starts `startWorker({ agentId, pollIntervalMs, agentConfig: AGENT_CONFIGS[agentId] })`.
+- [ ] Entrypoint logs structured JSON, never logs message bodies or secrets, and shuts down worker before macro cron on SIGTERM/SIGINT.
+- [ ] `.dockerignore` exists at the repo root and excludes `services/.env`, `node_modules`, `.next`, `app`, `components`, `hooks`, `public`, `__tests__`, `drizzle`, `scripts`, `docs`, `services/discord-bot/node_modules`, and `*.log`.
+- [ ] Entrypoint compiles under the existing root `npx tsc --noEmit` (it lives in `services/`, which is excluded — it must NOT trip the existing `tsc` baseline). Service-side typecheck is verified in Checkpoint 4.
 
 **Exit criteria**
 
-- [x] Automatic retries reuse the same `agent_reports` row and do not repost after a recorded successful delivery marker.
-- [x] Delivery failure becomes observable state, not a thrown exception.
-- [x] No blueprint file yet imports from `discord.ts` — blueprints land in Checkpoint 3.
+- [ ] Image instructions are reproducible: `docker build -f services/agent.Dockerfile .` would succeed conceptually (Codex does NOT execute Docker — see Checkpoint 7 for the user's manual build step).
+- [ ] Entrypoint stop order is documented in the file as a comment: worker first, macro cron second.
 
 **Validation**
 
-- [x] `npm run lint`
-- [x] `npx tsc --noEmit`
-- [x] `npx vitest run __tests__/agent-discord.test.ts`
+- [ ] `npm run lint`
+- [ ] `npx tsc --noEmit`
 
 **STOP. Review. Commit. Then continue.**
 
-### Checkpoint 2 — Scrape-Lite, Prompt Loader, Config Registry
+### Checkpoint 2 — Compose Rewrite + .env.example
 
-**Stories:** `AEV2-308` (part 1)
+**Stories:** `AEV2-502`, `AEV2-503`
 
-**Review focus:** confirm `scrape-lite.ts` is a pure fetcher, `prompts-loader.ts` fails fast on missing files, and `AGENT_CONFIGS` is a plain const with no side effects.
+**Review focus:** confirm `services/docker-compose.yml` removes `redis` entirely, all four services have the env block + healthcheck + logging block, and `services/.env.example` gains every missing entry without removing anything that already exists.
 
-**Suggested commit:** `feat(aev2): add agent scrape-lite, prompts loader, and config registry skeleton`
+**Suggested commit:** `feat(aev2): rewrite docker compose for v1 topology`
 
 **Check off before commit**
 
-- [x] `lib/agents/scrape-lite.ts` exports only `fetchPageText(url, options?)`. No URL list in this file.
-- [x] `fetchPageText` strips `<script>`, `<style>`, HTML tags, decodes the five listed entities, normalizes whitespace, returns first 30000 chars, uses a 10s AbortController timeout, and throws on non-2xx with the status + truncated body.
-- [x] `lib/agents/prompts-loader.ts` exports `loadGlobalPolicyPrompt`, `loadRolePrompt`, and `buildLlmSystemPrompt`. Files are read once at module load and cached in a module-level const.
-- [x] `buildLlmSystemPrompt('orchestrator')` returns `${globalPolicy}\n\n---\n\n${orchestratorPrompt}`.
-- [x] `lib/agents/config.ts` exports `AGENT_CONFIGS` and `resolveBlueprint(job)`. The four implemented blueprints are imported; the three scan blueprints are declared via `notImplementedBlueprint(name)` helper.
-- [x] The config file compiles even though the blueprint files are still empty stubs — use minimal named stub exports in the blueprint files for this checkpoint and fill them in Checkpoint 3.
-- [x] `__tests__/agent-scrape-lite.test.ts` covers: happy-path HTML->text, entity decoding, 30k cap, non-2xx throw, and timeout behavior with `vi.useFakeTimers()`.
-- [x] `__tests__/agent-config.test.ts` covers: every `AgentId` resolves an `AgentConfig`, `resolveBlueprint` throws on unknown `agentId`, `notImplementedBlueprint` surfaces the expected error at `step.run()` invocation time.
+- [ ] `services/docker-compose.yml` has exactly four services: `discord-bot`, `orchestrator`, `small-cap-trader`, `swing-trader`. No `redis` service. No `redis-data` volume. No `volumes:` block at the bottom unless something new is required.
+- [ ] Each agent service uses `build.context: ..` and `dockerfile: services/agent.Dockerfile`. Each agent service lists every env var from §15 verbatim plus the agent-specific webhook URLs.
+- [ ] Orchestrator service additionally sets `MACRO_CRON_HOUR=6` and pulls `DISCORD_WEBHOOK_MACRO_DAILY` + `DISCORD_WEBHOOK_SYSTEM`.
+- [ ] Small-cap service pulls `DISCORD_WEBHOOK_SCANS` + `DISCORD_WEBHOOK_RESEARCH`.
+- [ ] Swing-trader service pulls `DISCORD_WEBHOOK_SWING_SETUPS` + `DISCORD_WEBHOOK_SWING_ALERTS`.
+- [ ] Each agent service has the `["CMD-SHELL", "test -f /tmp/healthy && find /tmp/healthy -mmin -2 >/dev/null 2>&1"]` healthcheck with `interval: 30s`, `timeout: 10s`, `retries: 3`, `start_period: 60s`.
+- [ ] Each agent service has `restart: unless-stopped`, `stop_grace_period: 30s`, and the json-file logging block with `max-size: "50m"` / `max-file: "3"`.
+- [ ] The `discord-bot` service has `restart: unless-stopped` and `stop_grace_period: 15s` (not 30s — the bot has no LLM call to drain).
+- [ ] `discord-bot` service builds from `./discord-bot`, drops `TRADE_WEBHOOK_SECRET`, omits `DATABASE_URL` per D10, and uses `NEXUS_API_URL=${NEXUS_API_URL}` (NOT `host.docker.internal:3000`).
+- [ ] `NEXUS_API_URL` does NOT appear in any of the three agent service env blocks (per D9). It is bot-only.
+- [ ] The top-level `version:` field is NOT present (Compose v2 deprecated it).
+- [ ] `services/.env.example` adds the following entries (exact names + defaults from `lib/agents/llm-client.ts`). No existing entries removed.
+  - `INTERACTIVE_LLM_TIMEOUT_MS=30000`
+  - `BACKGROUND_LLM_TIMEOUT_MS=60000`
+  - `AGENT_DAILY_BUDGET_CENTS=500`
+  - `AGENT_MONTHLY_BUDGET_CENTS=10000`
+  - `AGENT_MAX_CONTEXT_TOKENS=32000`
+  - `AGENT_MAX_SCAN_CANDIDATES=20`
+  - `AGENT_MAX_PATTERN_HISTORY=50`
+  - `AGENT_MAX_RETRIES_PER_STEP=2`
+  - `MACRO_HEADLINES_URLS=` (blank — add a comment line above it: `# Default if unset: https://www.marketwatch.com/latest-news,https://finance.yahoo.com/topic/stock-market-news/`)
+  - `NEXUS_API_URL=` (blank — public Vercel URL; bot-only per D9)
+  - `MASSIVE_API_BASE_URL=https://api.polygon.io`
+- [ ] `services/.env.example` adds a one-line comment above `MASSIVE_API_KEY` clarifying it is Docker-side only.
+- [ ] Codex did NOT touch `services/.env`.
 
 **Exit criteria**
 
-- [x] Prompts fail fast at module load if any file is missing.
-- [x] Scrape-lite is reusable by any blueprint — no URL hardcoding.
-- [x] Config registry compiles and routes can import `resolveBlueprint` even before blueprint bodies land.
+- [ ] `docker compose -f services/docker-compose.yml config` would parse cleanly (Codex does NOT execute Docker in Sprint 4 — verified by user in Checkpoint 7).
+- [ ] Every env var the agent runtime touches (per `Current State`) has a corresponding entry in `services/.env.example`.
 
 **Validation**
 
-- [x] `npm run lint`
-- [x] `npx tsc --noEmit`
-- [x] `npx vitest run __tests__/agent-scrape-lite.test.ts __tests__/agent-config.test.ts`
+- [ ] `npm run lint`
+- [ ] `npx tsc --noEmit`
 
 **STOP. Review. Commit. Then continue.**
 
-### Checkpoint 3 — Blueprint Implementations
+### Checkpoint 3 — Discord Bot Directory
 
-**Stories:** `AEV2-308` (part 2)
+**Stories:** `AEV2-504`, `AEV2-505`
 
-**Review focus:** confirm the four implemented blueprints match their execution contracts: deterministic routing for orchestrator:chat, routed-step skipping via runner metadata, writeAndDeliverReport for every save step, and `lane: 'background'` for macro synthesis.
+**Review focus:** confirm the bot lives entirely under `services/discord-bot/`, only calls `/api/agents/service/chat`, never logs message bodies, and has its own `package.json` + `package-lock.json` so the root install never sees `discord.js`.
 
-**Suggested commit:** `feat(aev2): implement sprint 3 agent blueprints`
+**Suggested commit:** `feat(aev2): add minimal discord bot runtime`
 
 **Check off before commit**
 
-- [x] `lib/agents/blueprints/orchestrator-chat.ts` exports `orchestratorChatBlueprint` with two steps. Step 1 `classify-and-route` is deterministic (no LLM call), enforces the five routing rules verbatim, checks `agent_registry.status`, and enqueues the specialist handoff when needed. Step 2 `synthesize-response` uses `callLlm(..., 'interactive')` with `buildLlmSystemPrompt('orchestrator')`.
-- [x] `lib/agents/blueprints/orchestrator-macro-summary.ts` exports four steps matching the contract. Step 1 reads `MACRO_HEADLINES_URLS` env with the documented default. Step 3 uses `lane: 'background'`. Step 4 uses `writeAndDeliverReport` with `userId = 'system-agent-user'`.
-- [x] `lib/agents/blueprints/small-cap-research.ts` exports four steps. Step 1 calls `getCachedTickerData(ticker)` as the upstream AskEdgar cache (passing the normalized ticker arg — the function signature requires it), Step 2 uses a direct TradingView scanner call instead of an HTTP call into `/api/tradingview/gainers`, Step 3 uses `lane: 'background'`, and Step 4 uses `writeAndDeliverReport` with `userId = job.userId` and `reportType = 'research'`.
-- [x] `lib/agents/blueprints/swing-trader-research.ts` exports four steps with the MDR-focused output schema. Same save-research contract.
-- [x] `lib/agents/blueprint-runner.ts` is extended (additive only) to inject `job` / `db` / `agentConfig` into step input, support `skipWhenRouted`, and return `failureClass` on failed runs.
-- [x] `__tests__/agent-blueprints.test.ts` covers: orchestrator routing (each rule branches correctly), orchestrator offline-specialist fallback, macro-summary step 3 using the background lane, small-cap AskEdgar cache hit/miss, research save step using `writeAndDeliverReport`.
+- [ ] `services/discord-bot/package.json`, `services/discord-bot/package-lock.json`, `services/discord-bot/tsconfig.json`, `services/discord-bot/Dockerfile`, and `services/discord-bot/index.ts` all exist.
+- [ ] `services/discord-bot/package.json` lists exactly two dependencies: `discord.js@^14.16.3` and `tsx@^4.19.2`. No dev dependencies. `type: "module"`. `engines.node: ">=20"`.
+- [ ] Root `package.json` has NOT gained `discord.js` or `tsx`.
+- [ ] `services/discord-bot/index.ts` matches the contract: `discord.js` v14 client with `Guilds | GuildMessages | MessageContent` intents, filters to channel name `'orchestrator'` in the configured `DISCORD_GUILD_ID`, posts to `/api/agents/service/chat` with the four required fields (`message`, `discord_user_id`, `channel: 'discord'`, `session_id`), polls every 2s up to 60 attempts, replies via `EmbedBuilder` for `completed`, plain reply for `failed`/routed/timeout, and logs only structured JSON without message bodies.
+- [ ] The bot exits with code `1` if any of the four required env vars (`NEXUS_API_URL`, `AGENT_SERVICE_KEY`, `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`) is missing.
+- [ ] The bot does NOT import or call `/api/agents/admin/*`, `/api/agents/reports`, or `/api/agents/research`.
+- [ ] The bot uses Node 20's built-in `fetch` — no `node-fetch` or `axios` dependency.
+- [ ] `services/discord-bot/Dockerfile` runs `npm ci` against the bot's own lockfile and CMD `["npx", "tsx", "index.ts"]`.
 
 **Exit criteria**
 
-- [x] All four implemented blueprints are callable through `resolveBlueprint(job)` in tests.
-- [x] Scan blueprints still fail at step execution time — not at import time — and the worker treats them as non-retriable contract failures.
-- [x] Runner changes are limited to the additive Sprint 3 runtime contract described above.
+- [ ] `services/discord-bot/` is fully self-contained — running `npm ci` inside that directory installs everything the bot needs.
+- [ ] No root `package.json` change beyond what Checkpoint 4 introduces (the typecheck script).
 
 **Validation**
 
-- [x] `npm run lint`
-- [x] `npx tsc --noEmit`
-- [x] `npx vitest run __tests__/agent-blueprints.test.ts __tests__/agent-blueprint-runner.test.ts`
+- [ ] `npm run lint`
+- [ ] `npx tsc --noEmit`
+- [ ] (Manual) `cd services/discord-bot && npm ci` succeeds locally — verified once during the checkpoint, then the lockfile is committed.
 
 **STOP. Review. Commit. Then continue.**
 
-### Checkpoint 4 — Heartbeat, Worker Loop, Macro Cron
+### Checkpoint 4 — Service-Side Typecheck Gate
 
-**Stories:** `AEV2-309`, `AEV2-310`
+**Stories:** `AEV2-506`
 
-**Review focus:** confirm the worker loop claims through `claimNextQueuedJob`, packages the orchestrator routed-job result correctly, and retries only on `transient` failure class. Confirm the macro cron uses `INSERT ... ON CONFLICT DO NOTHING` for dedupe.
+**Review focus:** confirm `services/tsconfig.json` compiles both entrypoints and the imported `lib/` surface, and that `npm run typecheck:services` is wired in `package.json` and exits 0 against the current tree.
 
-**Suggested commit:** `feat(aev2): add agent worker loop, heartbeat, and macro cron`
+**Suggested commit:** `chore(aev2): add services typecheck gate`
 
 **Check off before commit**
 
-- [x] `lib/agents/heartbeat.ts` exports `startHeartbeat(db, agentId, intervalMs?)` returning `{ stop }`. Each tick updates `agent_registry.last_heartbeat` and `status = 'online'`, and touches `/tmp/healthy`. Errors are logged, not rethrown. `stop()` sets `status = 'offline'`.
-- [x] `lib/agents/worker.ts` exports `startWorker(config)` returning `{ stop }`. The poll loop calls `claimNextQueuedJob` / `runBlueprint` / `completeJob` in the canonical order from the execution contract.
-- [x] Routed orchestrator jobs return `result = { routed: true, specialistJobId }` via the worker's result packager — not via blueprint logic.
-- [x] Retry branch: `failureClass === 'transient' && attempt < maxAttempts` -> `scheduleJobRetry` with `calculateBackoffMs`. Otherwise `failJob`.
-- [x] Not-implemented blueprints fail as non-retriable contract failures and end in `failJob` with the blueprint error message.
-- [x] Graceful shutdown waits for the in-flight `runBlueprint` to finish but does not cancel it. Heartbeat `stop()` runs after the loop exits.
-- [x] `lib/agents/macro-cron.ts` exports `startMacroCron(db, options?)` returning `{ stop }`. Tick checks `currentHour === hourEt` in `America/New_York`, claims the scheduled run with `INSERT ... ON CONFLICT (agent_id, trigger_type, trading_date) DO NOTHING RETURNING id`, uses `trigger_type = 'macro-summary'` and `status = 'running'` for the claimed row, and only enqueues an `agent_jobs` row when the insert returned a row.
-- [x] Stale-job reaper is NOT implemented in Sprint 3 (out of scope per the contract).
-- [x] `__tests__/agent-worker.test.ts` uses `vi.useFakeTimers()` and covers: claim happy path, empty-claim sleep, routed-job result packaging, transient failure scheduling a retry, non-transient failure failing the job, and graceful shutdown draining one in-flight job.
-- [x] `__tests__/agent-macro-cron.test.ts` covers: tick outside the trigger hour skips, tick inside the trigger hour inserts the scheduled run + enqueues the job, and concurrent ticks (simulated via two insert calls) only produce one job.
+- [ ] `services/tsconfig.json` exists and `extends` the root tsconfig.
+- [ ] `services/tsconfig.json` includes `agent-entrypoint.ts`, `discord-bot/index.ts`, and `../lib/**/*.ts`.
+- [ ] `services/tsconfig.json` excludes `../node_modules`, `../.next`, and `discord-bot/node_modules`.
+- [ ] Root `package.json` has exactly one new script: `"typecheck:services": "tsc -p services/tsconfig.json --noEmit"`.
+- [ ] `npm run typecheck:services` exits 0 against the current tree.
+- [ ] Root `npm run lint` and `npx tsc --noEmit` still pass — the new tsconfig must not interfere with the existing root typecheck.
+- [ ] `npm test` still passes — vitest does NOT pick up `services/` files.
 
 **Exit criteria**
 
-- [x] The worker loop routes every lease-fenced mutation through Sprint 2 queue helpers.
-- [x] Macro cron is deduped by `(agent_id, trigger_type, trading_date)`.
-- [x] Heartbeat touches `/tmp/healthy` on every tick.
+- [ ] AEV2-506 acceptance gate (service-side TypeScript validation) is now an automatable command the user can run from the repo root.
+- [ ] The script is documented in `docs/ops/agents-launch-validation.md` (Checkpoint 6).
 
 **Validation**
 
-- [x] `npm run lint`
-- [x] `npx tsc --noEmit`
-- [x] `npx vitest run __tests__/agent-worker.test.ts __tests__/agent-macro-cron.test.ts`
+- [ ] `npm run lint`
+- [ ] `npx tsc --noEmit`
+- [ ] `npm run typecheck:services`
+- [ ] `npm test`
 
 **STOP. Review. Commit. Then continue.**
 
-### Checkpoint 5 — API Routes
+### Checkpoint 5 — Observability SQL
 
-**Stories:** `AEV2-401`, `AEV2-402`, `AEV2-403`, `AEV2-404`, `AEV2-405`, `AEV2-406`
+**Stories:** `AEV2-507`
 
-**Review focus:** confirm every route uses the correct auth helper (`requireServiceAuth` / `requireServiceKey` / `requireAgentAdmin` / `requireUser`), user-facing routes exclude `system-agent-user` rows, and the admin stats route returns the explicit Sprint 3 stats shape.
+**Review focus:** confirm every SQL block references real columns from `lib/db/schema.ts`, queries are read-only, and each block is named via a `-- name:` comment.
 
-**Suggested commit:** `feat(aev2): add /api/agents/* routes and validation schemas`
+**Suggested commit:** `feat(aev2): add agent observability sql`
 
 **Check off before commit**
 
-- [x] `lib/validations/agents.ts` exists and exports every schema listed in the execution contract. Route files import from `@/lib/validations/agents`.
-- [x] `app/api/agents/service/chat/route.ts` implements POST and GET per the contract. POST inserts one `agent_conversations` row and one `agent_jobs` row. GET returns the five state variants from `AGENTIC_EXPANSIONV2.md` §13.
-- [x] `app/api/agents/reports/route.ts` (GET) excludes `user_id = 'system-agent-user'` rows.
-- [x] `app/api/agents/reports/[id]/route.ts` (GET) scopes to `user_id = user.id`.
-- [x] `app/api/agents/research/route.ts` POST rejects offline/degraded specialists with 400 `{ error: 'agent unavailable' }`. GET lists user-owned research reports only.
-- [x] `app/api/agents/admin/stats/route.ts` returns the explicit `AdminStatsResponse` shape from the execution contract, including `today.retryRate`, `delivery.deliveryFailureRate`, and the top-level `queue` block.
-- [x] `app/api/agents/admin/memory/route.ts` GET filters by query params and DELETE returns 404 on missing id.
-- [x] `app/api/agents/admin/redeliver/route.ts` delegates to `redeliverReport()` and returns `{ report_id, status }`.
-- [x] `app/api/agents/macro-summary/latest/route.ts` queries system-owned macro report and returns `{ summary: null }` on empty state.
-- [x] No route file calls `request.json()` directly — all parsing goes through `parseAndValidate`.
-- [x] No route file writes to `agent_jobs`, `agent_reports`, or `agent_memory_v2` outside of `db.insert()` / `db.update()` / `db.delete()` on the imported schema — no raw `sql` template writes.
+- [ ] `scripts/ops/agent-observability.sql` exists with all seven named queries from the contract: `queue-depth`, `oldest-queued-job-age`, `stuck-processing`, `missed-macro-summary`, `delivery-failures-by-day`, `agent-heartbeat-freshness`, `token-totals-today`.
+- [ ] Every column referenced (`agent_jobs.next_retry_at`, `agent_jobs.lock_expires_at`, `agent_jobs.last_heartbeat_at`, `agent_scheduled_runs.trigger_type`, `agent_scheduled_runs.trading_date`, `agent_reports.status`, `agent_registry.last_heartbeat`, `agent_request_log.lane`, `agent_request_log.input_tokens`, `agent_request_log.output_tokens`, `agent_request_log.estimated_cost_cents`, `agent_request_log.created_at`) exists in `lib/db/schema.ts`. Verify by reading the schema file before committing.
+- [ ] Every query is read-only (`SELECT` only — no `INSERT`/`UPDATE`/`DELETE`).
+- [ ] No query depends on Drizzle internals — pasteable into raw `psql` against the Neon DB.
 
 **Exit criteria**
 
-- [x] Every route listed in AEV2-401 through AEV2-406 is reachable and compiles.
-- [x] Validation schemas are centralized in `lib/validations/agents.ts`.
-- [x] Admin stats shape matches the launch target so Sprint 4 can focus on deployment.
+- [ ] An operator can `psql $DATABASE_URL -f scripts/ops/agent-observability.sql` (or paste blocks individually) to answer every operational question listed in `AGENTIC_EXPANSIONV2.md` §16.
 
 **Validation**
 
-- [x] `npm run lint`
-- [x] `npx tsc --noEmit`
-- [x] `npm run build` (proves every route compiles under Next.js)
+- [ ] `npm run lint`
+- [ ] `npx tsc --noEmit`
 
 **STOP. Review. Commit. Then continue.**
 
-### Checkpoint 6 — Route Test Coverage (AEV2-407 Gate)
+### Checkpoint 6 — Ops Runbooks
 
-**Stories:** `AEV2-407`
+**Stories:** `AEV2-508`, `AEV2-510` (the launch-validation doc itself)
 
-**Review focus:** confirm every required coverage row is exercised, mocks follow the `__tests__/trades-route.test.ts` pattern, and no test touches a real DB or real webhook.
+**Review focus:** confirm the four runbook files exist, each is 100–200 lines of plain markdown, the smoke runbook mirrors the External Validation Checklist below 1:1, and no runbook invents commands the rest of the codebase does not support.
 
-**Suggested commit:** `test(aev2): add agent api route contract tests`
+**Suggested commit:** `docs(aev2): add ops rollback, recovery, smoke, launch-validation, and backup runbooks`
 
 **Check off before commit**
 
-- [x] `__tests__/agent-service-chat-route.test.ts` covers POST success (201), POST 400 missing `discord_user_id`, POST 401 invalid service key, POST 403 unknown Discord user, POST 503 on `getAgentDb() === null`, GET queued/processing/completed/failed/routed variants, GET 404 on unknown job_id.
-- [x] `__tests__/agent-reports-route.test.ts` covers GET list success, GET list filtered by `status` + `agent_id`, GET list excludes `system-agent-user` rows, GET detail success, GET detail 404, auth failure 401.
-- [x] `__tests__/agent-research-route.test.ts` covers POST success, POST 400 invalid ticker, POST 400 on offline/degraded specialist, GET list success, GET list excludes system-owned rows.
-- [x] `__tests__/agent-admin-stats-route.test.ts` covers the full stats response shape (at minimum asserts the top-level keys exist), 401 on missing admin key, and the `queue.depth` / `queue.stuckProcessing` fields populate from mocked query results.
-- [x] `__tests__/agent-admin-memory-route.test.ts` covers GET with filters, GET without filters, DELETE success, DELETE 404, 401 on missing admin key.
-- [x] `__tests__/agent-admin-redeliver-route.test.ts` covers success (mocks `redeliverReport` to return `published`), `delivery_failed`, 401 on missing admin key, and 404 on unknown report_id. Redelivery repost behavior is covered in `__tests__/agent-discord.test.ts`.
-- [x] `__tests__/agent-macro-summary-route.test.ts` covers happy path, empty state returning `{ summary: null }`, and query targets `user_id = 'system-agent-user'` + `report_type = 'macro-summary'`.
-- [x] No test calls the real `fetch` or a real Neon connection. `global.fetch` is mocked via `vi.stubGlobal('fetch', vi.fn())` where needed.
+- [ ] `docs/ops/agents-rollback.md` covers Vercel rollback, Docker service rollback, and migration 0019 partial-failure recovery.
+- [ ] `docs/ops/home-server-recovery.md` covers WSL2 reboot, Docker daemon restart, `docker compose up -d`, healthcheck verification, and the post-ISP-outage / post-power-loss sequence.
+- [ ] `docs/ops/agents-deploy-smoke.md` mirrors the External Validation Checklist below — same items, same order, same expected results.
+- [ ] `docs/ops/agents-launch-validation.md` covers the AEV2-510 acceptance gate: re-verifying lane keys, base URLs, models, `AGENT_ADMIN_KEY`, `AGENT_SERVICE_KEY`, all six webhook URLs, and the `npm run typecheck:services` command from Checkpoint 4.
+- [ ] `docs/ops/agents-backup-restore.md` exists with the retroactive Neon backup/restore steps. Branch IDs are placeholders for the user to fill if not provided.
+- [ ] No runbook references a script or command that does not exist in the repo.
+- [ ] No runbook contains a real secret value.
 
 **Exit criteria**
 
-- [x] Every row in the AEV2-407 coverage matrix (success, auth failure, validation failure, lease-fencing-sensitive state transitions, redelivery, offline fallback) is exercised by a test.
-- [x] Test files follow the `vi.hoisted` + `vi.mock` pattern from `__tests__/trades-route.test.ts`.
-- [x] `npm test` passes without network access.
+- [ ] AEV2-508 and AEV2-510 acceptance criteria are met.
+- [ ] The smoke runbook is the canonical AEV2-509 artifact — actual smoke execution is the user's responsibility, tracked via the External Validation Checklist below.
 
 **Validation**
 
-- [x] `npm run lint`
-- [x] `npx tsc --noEmit`
-- [x] `npm test`
+- [ ] `npm run lint`
+- [ ] `npx tsc --noEmit`
 
-**STOP. Review. Commit. This is the Sprint 3 exit gate.**
+**STOP. Review. Commit. Then continue.**
 
-### Sprint 3 Exit Gate
+### Checkpoint 7 — Final Repo Validation
 
-- [x] `AEV2-307` through `AEV2-407` landed in checkpoint order.
-- [x] Every new file lives under `lib/agents/`, `lib/validations/`, `app/api/agents/`, or `__tests__/`. No file under `services/` was modified.
-- [x] `lib/db/schema.ts` unchanged. No new migrations.
-- [x] All four implemented blueprints compile and can be resolved via `resolveBlueprint(job)`. Scan blueprints throw `'blueprint not implemented in Sprint 3'` at step execution.
-- [x] `npm run lint`
-- [x] `npx tsc --noEmit`
-- [x] `npm run build`
-- [x] `npm test`
-- [x] `HANDOFF.md` updated after the final checkpoint closes.
+**Stories:** `AEV2-509` (artifact only — actual smoke is the user's job per D8)
+
+**Review focus:** confirm the entire Sprint 4 surface area is in place, all four validation commands pass on a clean run, and HANDOFF.md is ready to be collapsed by the next planning pass after the user completes the External Validation Checklist.
+
+**Suggested commit:** `chore(aev2): finalize sprint 4 validation`
+
+**Check off before commit**
+
+- [ ] Every file listed in "Planned File Actions" exists with the expected content.
+- [ ] No file under `lib/agents/`, `app/api/`, `lib/validations/`, or `__tests__/` has been modified.
+- [ ] `npm run lint` exits 0.
+- [ ] `npx tsc --noEmit` exits 0.
+- [ ] `npm run typecheck:services` exits 0.
+- [ ] `npm test` exits 0 (still 307+ tests passing — Sprint 4 added zero new vitest cases).
+- [ ] `services/.env` is unchanged (verify via `git status` showing no diff against that path).
+- [ ] `package.json` has exactly one new script (`typecheck:services`) and no new dependencies.
+- [ ] `package-lock.json` is unchanged at the root (only `services/discord-bot/package-lock.json` is new).
+
+**Exit criteria**
+
+- [ ] Sprint 4 acceptance criteria for AEV2-501 through AEV2-510 are satisfied EXCEPT for items the user must validate manually — those live in the External Validation Checklist below and cause Sprint 4's status to remain `IN PROGRESS` until the user signs off.
+- [ ] HANDOFF.md is updated to reflect the post-Sprint-4 state.
+
+**Validation**
+
+- [ ] `npm run lint`
+- [ ] `npx tsc --noEmit`
+- [ ] `npm run typecheck:services`
+- [ ] `npm test`
+
+**STOP. This is the Sprint 4 code-side exit gate. The user then runs the External Validation Checklist below before flipping status to COMPLETE.**
+
+### Sprint 4 Exit Gate (Code-Side)
+
+- [ ] `AEV2-501` through `AEV2-510` artifacts landed in checkpoint order.
+- [ ] No file under `lib/agents/`, `app/api/`, `lib/validations/`, `__tests__/`, `lib/db/`, or `drizzle/` was modified.
+- [ ] `services/.env` was not touched.
+- [ ] Root `package.json` gained one script and zero dependencies.
+- [ ] `services/discord-bot/package.json` is the only place `discord.js` and `tsx` appear in any committed file.
+- [ ] `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, and `npm test` all pass.
+- [ ] HANDOFF.md updated after Checkpoint 7 closes.
+
+### External Validation Checklist (User — Cannot Be Automated)
+
+These items live outside the codebase. They are the actual launch gate for V1 — Sprint 4 is not COMPLETE until each is checked by the user. Codex does not execute any of these.
+
+**Before Codex starts (or before the user runs the smoke):**
+
+- [ ] **Populate `DISCORD_USER_MAP` in `lib/agents/admin.ts`.** Codex left this empty per D6. Add at least one entry mapping a real Discord user ID to a real Nexus user `{ id, email, name, picture }`. Without this, the bot will get 403 on every message. Reason: V1 deliberately hardcodes the mapping rather than introducing a `discord_user_links` table.
+- [ ] **Fill `services/.env`.** Confirm every var added to `services/.env.example` in Checkpoint 2 has a real value in `services/.env`. Pay special attention to `NEXUS_API_URL` (must be the public Vercel domain, NOT `localhost`), `AGENT_SERVICE_KEY` (must match what Vercel sees), `AGENT_ADMIN_KEY` (separate from `AGENT_SERVICE_KEY`), and all six `DISCORD_WEBHOOK_*` URLs.
+- [ ] **Verify Vercel env vars match `services/.env`.** Specifically: `AGENT_SERVICE_KEY` and `AGENT_ADMIN_KEY` must be set in Vercel dashboard with the same values as `services/.env`. The Nexus API rejects bot calls if the service key does not match.
+- [ ] **Confirm Neon backup before any Compose-side migration.** No new migration ships in Sprint 4, but the user should re-confirm the existing Neon branch from migration 0019 still exists.
+- [ ] **Sleep / power management on the home server.** Confirm `systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target` is set so Docker stays up.
+
+**After Codex hands off (smoke checklist — the canonical AEV2-509 walk-through):**
+
+- [ ] **`docker compose -f services/docker-compose.yml config`** exits 0 and shows the four expected services with no Redis.
+- [ ] **`docker compose -f services/docker-compose.yml build`** completes without errors for all four services. Note any image build that takes >5 minutes.
+- [ ] **`docker compose -f services/docker-compose.yml up -d`** brings all four containers up. After ~60 seconds, `docker compose ps` shows all four as `healthy`. If any agent service shows `unhealthy`, check `docker compose logs <service>` for the heartbeat write error.
+- [ ] **Discord `#orchestrator` smoke — handle-directly.** Post a plain message ("what's the market doing today?"). Within 60 seconds, the bot should reply with an Orchestrator embed. Verify the embed color is emerald and the title is `Orchestrator`.
+- [ ] **Discord `#orchestrator` smoke — routed-to-specialist.** Post `/research AAPL`. Within 30 seconds, the bot should reply with `Routed to specialist (job: <id>)`. The Small Cap Trader should pick up the routed job and post a research embed in the `#small-cap-research` channel within ~120 seconds (depending on AskEdgar latency).
+- [ ] **Discord `#orchestrator` smoke — offline-fallback.** Stop the `small-cap-trader` container with `docker compose stop small-cap-trader`. The container's SIGTERM handler runs `worker.stop()` → `heartbeat.stop()` → flips `agent_registry.status` to `offline` (typically <10s, capped by `stop_grace_period: 30s`). Verify with `psql $DATABASE_URL -c "SELECT id, status FROM agent_registry WHERE id = 'small-cap-trader';"` — wait until `status = 'offline'`. Then post `/research AAPL` again. The Orchestrator should fall back to handling it directly with a warning (per `lib/agents/blueprints/orchestrator-chat.ts:163-178`). Restart with `docker compose start small-cap-trader`.
+- [ ] **Macro summary smoke.** `curl https://<your-domain>/api/agents/macro-summary/latest` should return the previous day's summary if any. To force a fresh one, set `MACRO_CRON_HOUR` to the current ET hour in `services/.env`, run `docker compose up -d orchestrator` (Compose detects the env change and restarts the orchestrator container), and wait one cron tick (~60s). Verify the new row appears in `agent_reports`:
+  ```sh
+  psql $DATABASE_URL -c "SELECT id, report_type, created_at FROM agent_reports WHERE report_type = 'macro-summary' ORDER BY created_at DESC LIMIT 1;"
+  ```
+  And confirm the embed posts in the `#macro-daily` Discord channel. Revert `MACRO_CRON_HOUR` to `6` afterward.
+- [ ] **Admin stats smoke.** `curl -H "x-agent-admin-key: $AGENT_ADMIN_KEY" https://<your-domain>/api/agents/admin/stats` should return the full `AdminStatsResponse` shape with non-null `agents`, `circuitBreakers`, and `queue.depth` fields.
+- [ ] **Admin redeliver smoke.** Pick one report id from `agent_reports`. `curl -X POST -H "x-agent-admin-key: $AGENT_ADMIN_KEY" -H "Content-Type: application/json" -d '{"report_id":"<id>"}' https://<your-domain>/api/agents/admin/redeliver` should return `{ report_id, status: 'published' }` and the embed should re-post in the matching channel.
+- [ ] **Observability SQL smoke.** Paste each block from `scripts/ops/agent-observability.sql` into Drizzle Studio (or `psql $DATABASE_URL`) and confirm it runs without error and returns sensible numbers.
+- [ ] **Restart resilience.** Run `docker compose restart orchestrator`. Within 90 seconds, the orchestrator should be back to `healthy` and the heartbeat row should be fresh. The bot should still respond to `#orchestrator` messages.
+- [ ] **Logging tail.** `docker compose logs --tail=100 orchestrator small-cap-trader swing-trader discord-bot` should show structured JSON entries with no stack traces and no leaked secrets.
+- [ ] **Power-loss simulation (optional).** `sudo reboot`. Verify Docker autostarts and all four agent services come back up with `restart: unless-stopped`.
+
+**After the smoke passes:**
+
+- [ ] **Flip Sprint 4 status in HANDOFF.md to COMPLETE** and re-run the planning pass to collapse Sprint 4 into the same 3-block format as Sprints 1–3.
+- [ ] **Update `AEV2_PLAN.md`** to mark EPIC-5 stories AEV2-501 through AEV2-510 as DONE.
+- [ ] **Tag the launch commit** (e.g., `aev2-v1-launch`) so the rollback runbook has a known-good target.
 
 ### Complexity
 
-- Overall complexity: `XL` (largest sprint in the AEV2 buildout — touches runtime wiring, app routes, and the contract-test layer).
-- Highest-risk checkpoint: Checkpoint 4 (worker loop + macro cron) because it is where Sprint 2 queue fencing meets real job lifecycle. A bug here corrupts lease state for every downstream sprint.
-- Second-highest-risk checkpoint: Checkpoint 1 (Discord delivery). Idempotency key mistakes here mean duplicate reports or duplicate webhook posts in production. The two-marker design is load-bearing.
+- Overall complexity: `L` — significantly smaller than Sprint 3 because no new tests, no library logic, no API routes. Most of the work is configuration, Dockerfiles, and runbooks.
+- Highest-risk checkpoint: Checkpoint 3 (Discord bot). The bot is the only NEW runtime code and the only place a logic bug can leak user content into Discord. The structured-logging-only rule matters.
+- Second-highest-risk checkpoint: Checkpoint 2 (Compose rewrite). A typo in a webhook env var name will silently route a report to `null` and the failure shows up only as a `delivery_failed` row hours later. The validation here is "the env var name in Compose matches the env var name in `lib/agents/discord.ts::resolveWebhookUrl`".
+
+### Change Log (Sprint 4)
+
+- 2026-04-08: Sprint 4 spec drafted and locked. READY FOR CODEX.
+- 2026-04-08: Applied fan-out review amendments. Added D9 (`NEXUS_API_URL` is bot-only) and D10 (discord-bot drops `DATABASE_URL`). Enumerated the six `AGENT_*` caps with explicit names + defaults from `lib/agents/llm-client.ts` (the design doc's 7th cap `AGENT_MAX_ASKEDGAR_CALLS_PER_SCAN` is NOT consumed by the runtime and is intentionally NOT added). Inlined the full Compose contract for one agent service plus diffs for the other two; dropped the deprecated `version: '3.8'` field; added `start_period: 60s` and `stop_grace_period: 30s`. Hardened the Dockerfile (`USER node`, `HEALTHCHECK NONE`, `--no-audit --no-fund --prefer-offline`). Added SIGINT/SIGTERM double-fire guard to the entrypoint. Tightened the Discord bot security surface: never echo upstream response bodies to Discord, use `ChannelType.GuildText` instead of magic `0`, embed truncation now adds a suffix, missing-env exit names which var, timeout/failure replies include `jobId` for log correlation. Expanded `.dockerignore` to exclude `.git`, `.github`, `.vscode`, `.claude`, `*.md`, `coverage`, `.env*`. Added explicit SQL snippets to the External Validation Checklist for the macro summary smoke and pinned the offline-fallback wait time. Added a comment on the `stuck-processing` SQL query tying its threshold to `JOB_LEASE_HEARTBEAT_INTERVAL_MS`. Resolved the Checkpoint 5 contradiction (all 7 queries SHALL exist; column drift triggers `PENDING REVIEW`, not partial SQL). Status remains READY FOR CODEX.
