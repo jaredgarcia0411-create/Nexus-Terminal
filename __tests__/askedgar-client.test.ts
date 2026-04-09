@@ -85,16 +85,17 @@ describe('askedgar client', () => {
     const result = await client.fetchTickerData('AAPL');
 
     expect(result.ticker).toBe('AAPL');
-    expect(Object.keys(result.rawData)).toHaveLength(16);
-    expect(result.dataSources).toHaveLength(16);
+    expect(Object.keys(result.rawData)).toHaveLength(17);
+    expect(result.dataSources).toHaveLength(17);
   });
 
-  it('tracks daily call count', async () => {
+  it('tracks unique ticker count', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ status: 'success', count: 1, results: [{}] })));
     const client = await import('@/lib/askedgar');
 
     await client.fetchTickerData('MSFT');
-    expect(client.getAskEdgarCallCount()).toBe(16);
+    await client.fetchTickerData('MSFT');
+    expect(client.getAskEdgarCallCount()).toBe(1);
   });
 
   it('marks fully rate-limited AskEdgar snapshots as unusable', async () => {
@@ -135,7 +136,7 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
     await client.getCachedTickerData('AAPL');
 
-    expect(fetchSpy).toHaveBeenCalledTimes(5);
+    expect(fetchSpy).toHaveBeenCalledTimes(10);
     expect(cacheDb.getRows()).toHaveLength(1);
 
     vi.resetModules();
@@ -160,7 +161,7 @@ describe('askedgar client', () => {
       client.getCachedTickerData('MSFT'),
     ]);
 
-    expect(fetchSpy).toHaveBeenCalledTimes(16);
+    expect(fetchSpy).toHaveBeenCalledTimes(17);
     expect(first).toEqual(second);
   });
 

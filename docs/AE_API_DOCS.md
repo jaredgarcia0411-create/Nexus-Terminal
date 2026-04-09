@@ -44,6 +44,17 @@ const data \= await response.json();
 
 ---
 
+## **Rate Limits**
+
+| Limit | Value |
+| ----- | ----- |
+| Requests per minute | 150 |
+| Unique tickers per day | 50 |
+
+If you exceed the per-minute limit, the API returns `429 Too Many Requests` with a `retry_after` value in the error payload. If you exceed the daily ticker limit, requests for new tickers will fail until midnight UTC.
+
+---
+
 ## **Common Patterns (Read This First)**
 
 ### **Every response looks like this**
@@ -207,7 +218,48 @@ curl "https://eapi.askedgar.io/v1/reverse-splits?ticker=AAPL\&date\_from=2020-01
 
 ---
 
-### **2\. Float, Outstanding, Market Cap & Key Data**
+### **2\. Split Status (Reverse Split Tracker)**
+
+**GET** `/v1/split-status`
+
+Track where a company is in the reverse split approval process. Unlike `/v1/reverse-splits` (completed splits), this shows in-progress or recently announced split activity.
+
+**`ticker` is required.**
+
+#### **`action_type` values**
+
+* `Pending Vote` — Vote date set, shareholders haven't voted yet
+* `Vote Approved` — Shareholders approved the reverse split
+* `Stock Split Announced` — Company announced the effective date
+
+#### **Parameters**
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| `ticker` | string | **Yes** | Stock ticker |
+| `page` | integer | No | Page number (default: `1`) |
+| `limit` | integer | No | Results per page (default: `10`) |
+
+#### **Response fields**
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `ticker` | string | Stock ticker |
+| `action_type` | string | `"Pending Vote"`, `"Vote Approved"`, or `"Stock Split Announced"` |
+| `split_from` | number | Original share count in the ratio |
+| `split_to` | number | New share count in the ratio |
+| `vote_date` | date | Date of the shareholder vote |
+| `approved_date` | date | Date the vote was approved |
+| `effective_date` | date | Date the split takes effect |
+| `details` | string | Description from the filing |
+| `filed_at` | date | SEC filing date |
+| `form_type` | string | SEC form type |
+| `document_url` | string | Link to the SEC filing |
+| `last_updated` | datetime | When this record was last refreshed |
+
+---
+
+### **3\. Float, Outstanding, Market Cap & Key Data**
 
 **GET** `/v1/float-outstanding`
 
@@ -277,7 +329,7 @@ curl "https://eapi.askedgar.io/v1/float-outstanding?ticker=AAPL" \\
 
 ---
 
-### **3\. Dilution Rating**
+### **4\. Dilution Rating**
 
 **GET** `/v1/dilution-rating`
 
@@ -365,7 +417,7 @@ curl "https://eapi.askedgar.io/v1/dilution-rating?ticker=ASTC" \\
 
 ---
 
-### **4\. Nasdaq Compliance**
+### **5\. Nasdaq Compliance**
 
 **GET** `/v1/nasdaq-compliance`
 
@@ -426,7 +478,7 @@ curl "https://eapi.askedgar.io/v1/nasdaq-compliance?ticker=AAPL" \\
 
 ---
 
-### **5\. Offerings**
+### **6\. Offerings**
 
 **GET** `/v1/offerings`
 
@@ -524,7 +576,7 @@ Same as `/v1/offerings`, plus:
 
 ---
 
-### **6\. Dilution Data (Warrants & Convertibles)**
+### **7\. Dilution Data (Warrants & Convertibles)**
 
 **GET** `/v1/dilution-data`
 
@@ -617,7 +669,7 @@ The results array contains a mix of **Warrant** and **Convertible** objects. You
 
 ---
 
-### **7\. Dilution Data — Funds & Underwriters (Advanced)**
+### **8\. Dilution Data — Funds & Underwriters (Advanced)**
 
 **GET** `/v1/dilution-data-advanced`
 
@@ -650,7 +702,7 @@ Returns the same Warrant and Convertible objects as `/v1/dilution-data`, with ad
 
 ---
 
-### **8\. Historical Float & Market Cap (Pro)**
+### **9\. Historical Float & Market Cap (Pro)**
 
 **GET** `/v1/historical-float-pro`
 
@@ -758,7 +810,7 @@ curl "https://eapi.askedgar.io/v1/historical-float-pro?ticker=STRG\&latest\_data
 
 ---
 
-### **9\. News & Filings**
+### **10\. News & Filings**
 
 **GET** `/v1/news`
 
@@ -837,7 +889,7 @@ curl "https://eapi.askedgar.io/v1/news?ticker=AAPL\&date\_from=2025-01-01\&hide\
 
 ---
 
-### **10\. SEC Registrations (Shelf, ATM, Equity Line)**
+### **11\. SEC Registrations (Shelf, ATM, Equity Line)**
 
 **GET** `/v1/registrations`
 
@@ -919,7 +971,7 @@ curl "https://eapi.askedgar.io/v1/registrations?ticker=AAPL\&effective\_status=t
 
 ---
 
-### **11\. Agreements (Registration Rights, Participation Rights, Equity Restrictions)**
+### **12\. Agreements (Registration Rights, Participation Rights, Equity Restrictions)**
 
 **GET** `/v1/agreements`
 
@@ -1004,7 +1056,7 @@ curl "https://eapi.askedgar.io/v1/agreements?ticker=AAPL" \\
 
 ---
 
-### **12\. Pump & Dump Tracker**
+### **13\. Pump & Dump Tracker**
 
 **GET** `/v1/pump-and-dump-tracker`
 
@@ -1137,7 +1189,7 @@ curl "https://eapi.askedgar.io/v1/pump-and-dump-tracker?country\_risk=high\&scam
 
 ---
 
-### **13\. Stock Screener**
+### **14\. Stock Screener**
 
 **GET** `/v1/screener`
 
@@ -1290,7 +1342,7 @@ curl "https://eapi.askedgar.io/v1/screener?max\_price=5\&max\_float=5000000\&min
 
 ---
 
-### **14\. Screener Options (Get Valid Filter Values)**
+### **15\. Screener Options (Get Valid Filter Values)**
 
 **GET** `/v1/screener/options`
 
@@ -1323,7 +1375,7 @@ curl "https://eapi.askedgar.io/v1/screener/options?field=sector" \\
 
 ---
 
-### **15\. Right of First Refusal & Tail Financings (ROFR)**
+### **16\. Right of First Refusal & Tail Financings (ROFR)**
 
 **GET** `/v1/rofr`
 
@@ -1406,7 +1458,7 @@ curl "https://eapi.askedgar.io/v1/rofr?ticker=AAPL\&right\_of\_first\_refusal\_p
 
 ---
 
-### **16\. Ownership**
+### **17\. Ownership**
 
 **GET** `/v1/ownership`
 
@@ -1484,7 +1536,7 @@ Results are grouped by `reported_date`, each containing an array of `owners`:
 
 ---
 
-### **17\. AI Chart Analysis (Gap Analysis)**
+### **18\. AI Chart Analysis (Gap Analysis)**
 
 **GET** `/v1/ai-chart-analysis`
 
@@ -1543,7 +1595,7 @@ curl "https://eapi.askedgar.io/v1/ai-chart-analysis?ticker=AAPL" \\
 
 ---
 
-### **18\. Research Reports**
+### **19\. Research Reports**
 
 Three endpoints provide AI-generated research reports at different levels of detail. All three require `ticker`. **There is no websocket or webhook — poll these endpoints to check for new reports.**
 
@@ -1618,7 +1670,7 @@ curl "https://eapi.askedgar.io/v1/research-reports-tldr?ticker=AAPL" \\
 
 ---
 
-### **19\. Market Strength**
+### **20\. Market Strength**
 
 **GET** `/v1/market-strength`
 
@@ -1664,7 +1716,7 @@ curl "https://eapi.askedgar.io/v1/market-strength?latest=true" \\
 
 ---
 
-### **20\. Filing Titles**
+### **21\. Filing Titles**
 
 **GET** `/v1/filing-titles`
 
@@ -1721,7 +1773,7 @@ curl "https://eapi.askedgar.io/v1/filing-titles?ticker=AAPL\&form\_type=10-K" \\
 
 ---
 
-### **21\. Gap Stats**
+### **22\. Gap Stats**
 
 **GET** `/v1/gap-stats`
 
@@ -1815,6 +1867,7 @@ Here are typical workflows a developer might want to build:
 | Endpoint | Method | Auth | Description |
 | ----- | ----- | ----- | ----- |
 | `/v1/reverse-splits` | GET | API-KEY | Reverse stock splits |
+| `/v1/split-status` | GET | API-KEY | Reverse split tracker for pending, approved, or announced split activity |
 | `/v1/float-outstanding` | GET | API-KEY | Current float, outstanding, market cap, ownership |
 | `/v1/dilution-rating` | GET | API-KEY | Dilution risk ratings |
 | `/v1/nasdaq-compliance` | GET | API-KEY | Nasdaq compliance deficiency notices |
@@ -1839,3 +1892,18 @@ Here are typical workflows a developer might want to build:
 | `/v1/filing-titles` | GET | API-KEY | AI-generated human-readable filing headlines |
 | `/v1/gap-stats` | GET | API-KEY | Historical gap-up statistics per ticker — day 1 gaps only (ticker required) |
 
+---
+
+## **Additional Endpoints (Not Yet Integrated)**
+
+The following AskEdgar API endpoints exist but are not currently called by Nexus Terminal. Documented for future reference.
+
+| Endpoint | Description | Generation Trigger |
+| -------- | ----------- | ------------------ |
+| `GET /v1/ai-chart-analysis` | AI gap analysis for a ticker (ticker required) | Generated at +20% gain |
+| `GET /v1/research-reports` | Full AI research report (ticker required) | Generated at +40% gain |
+| `GET /v1/research-reports-short` | Short AI report, more sources (ticker required) | 10–15 min after +40% gain |
+| `GET /v1/research-reports-tldr` | TLDR version of the AI report (ticker required) | Generated at +40% gain |
+| `GET /v1/market-strength` | Daily AI small-cap market analysis | Generated at 2:30 AM CST |
+
+All endpoints use the same `API-KEY` header authentication and the same `{ status, count, results }` response wrapper.

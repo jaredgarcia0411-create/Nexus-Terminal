@@ -506,6 +506,40 @@ export default function ResearchReportSections({ data }: Props) {
               <NoDataBadge />
             )}
 
+            {data.splitStatuses.length > 0 ? (
+              <div className="space-y-2">
+                <h4 className="font-medium text-zinc-300">Split Status</h4>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full">
+                    <thead>
+                      <tr className="border-b border-white/10 text-zinc-400">
+                        <th className="py-2 pr-3 text-left">Status</th>
+                        <th className="py-2 pr-3 text-left">Ratio</th>
+                        <th className="py-2 pr-3 text-left">Vote Date</th>
+                        <th className="py-2 pr-3 text-left">Effective Date</th>
+                        <th className="py-2 text-left">Details</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.splitStatuses.map((row, index) => (
+                        <tr key={`split-status-${index}`} className="border-b border-white/5 text-zinc-300">
+                          <td className="py-2 pr-3">{toStringValue(row.actionType)}</td>
+                          <td className="py-2 pr-3">
+                            {row.splitFrom != null && row.splitTo != null
+                              ? `${row.splitFrom}:${row.splitTo}`
+                              : '—'}
+                          </td>
+                          <td className="py-2 pr-3">{formatDate(row.voteDate)}</td>
+                          <td className="py-2 pr-3">{formatDate(row.effectiveDate)}</td>
+                          <td className="py-2">{toStringValue(row.details)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+
             {data.agreements.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="min-w-full">

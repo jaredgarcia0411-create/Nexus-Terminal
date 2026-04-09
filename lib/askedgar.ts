@@ -14,6 +14,7 @@ import type {
   ResearchSnapshotOwner,
   ResearchSnapshotRegistration,
   ResearchSnapshotReverseSplit,
+  ResearchSnapshotSplitStatus,
   ResearchSnapshotWarrant,
 } from '@/lib/types';
 
@@ -39,13 +40,13 @@ export interface AskEdgarSnapshotAvailability {
 }
 
 const ASKEDGAR_BASE_URL = 'https://eapi.askedgar.io';
-const DEFAULT_DAILY_LIMIT = 100;
+const DEFAULT_DAILY_LIMIT = 50;
 const REQUEST_TIMEOUT_MS = 15_000;
 const TICKER_REGEX = /^[A-Z0-9.\-^]+$/;
 const TICKER_CACHE_TTL_MS = 60 * 60 * 1000;    // 1 hour
 const GAINERS_CACHE_TTL_MS = 15 * 60 * 1000;   // 15 minutes
 
-let callCount = 0;
+const uniqueTickersToday = new Set<string>();
 let resetDate = '';
 
 // Rate limit tracking — when AskEdgar returns 429, we stop making requests
@@ -70,7 +71,7 @@ function resetCounterIfNeeded() {
   const currentDate = getCurrentUtcDate();
   if (resetDate !== currentDate) {
     resetDate = currentDate;
-    callCount = 0;
+    uniqueTickersToday.clear();
   }
 }
 
@@ -229,17 +230,12 @@ async function requestAskEdgar<T>(path: string, query: Record<string, string | n
   // If we recently got a 429, don't waste a call — fail fast
   if (isRateLimited()) return toErrorResponse<T>('Rate limited — waiting for retry window');
 
-  resetCounterIfNeeded();
-  const dailyLimit = parseDailyLimit();
-  if (callCount >= dailyLimit) return toErrorResponse<T>(`AskEdgar daily limit reached (${dailyLimit})`);
-
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined) continue;
     params.set(key, String(value));
   }
 
-  callCount += 1;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -309,7 +305,8 @@ type EndpointKey =
   | 'filing-titles'
   | 'equity-lines'
   | 'gap-stats'
-  | 'ownership';
+  | 'ownership'
+  | 'split-status';
 
 interface EndpointConfig {
   key: EndpointKey;
@@ -459,8 +456,27 @@ async function fetchOwnership(ticker: string) {
   return requestAskEdgar<unknown>('/v1/ownership', { ticker: validated });
 }
 
+async function fetchSplitStatus(ticker: string) {
+  const validated = validateTickerOrError<unknown>(ticker);
+  if (typeof validated !== 'string') return validated;
+  return requestAskEdgar<unknown>('/v1/split-status', { ticker: validated });
+}
+
 export async function fetchTickerData(ticker: string) {
   const normalizedTicker = ticker.trim().toUpperCase();
+  resetCounterIfNeeded();
+  const dailyLimit = parseDailyLimit();
+  if (!uniqueTickersToday.has(normalizedTicker) && uniqueTickersToday.size >= dailyLimit) {
+    return {
+      ticker: normalizedTicker,
+      fetchedAt: new Date().toISOString(),
+      rawData: {},
+      dataSources: [],
+      warnings: [`AskEdgar daily unique ticker limit reached (${dailyLimit} tickers/day)`],
+      hasAnyData: false,
+    };
+  }
+  uniqueTickersToday.add(normalizedTicker);
 
   const endpointConfigs: EndpointConfig[] = [
     { key: 'float-outstanding', label: 'Float Outstanding', run: () => fetchFloatOutstanding(normalizedTicker) },
@@ -479,12 +495,13 @@ export async function fetchTickerData(ticker: string) {
     { key: 'filing-titles', label: 'Filing Titles', run: () => fetchFilingTitles(normalizedTicker, 20) },
     { key: 'gap-stats', label: 'Gap Stats', run: () => fetchGapStats(normalizedTicker, 50) },
     { key: 'ownership', label: 'Ownership', run: () => fetchOwnership(normalizedTicker) },
+    { key: 'split-status', label: 'Split Status', run: () => fetchSplitStatus(normalizedTicker) },
   ];
 
-  // Run endpoints in batches of 5 to avoid blowing through the 50/min rate limit.
-  // 16 parallel requests would use 32% of the limit in one shot; batching spreads
-  // the load and lets the rate-limit guard kick in between batches if needed.
-  const BATCH_SIZE = 5;
+  // Run endpoints in batches of 10 to stay well within the 150/min API rate limit.
+  // 17 endpoints at batch size 10 = 2 batches, leaving ample headroom.
+  // Batching also lets the rate-limit guard kick in between batches if needed.
+  const BATCH_SIZE = 10;
   const settledResults: PromiseSettledResult<AskEdgarResponse<unknown>>[] = [];
   for (let i = 0; i < endpointConfigs.length; i += BATCH_SIZE) {
     const batch = endpointConfigs.slice(i, i + BATCH_SIZE);
@@ -784,6 +801,23 @@ export function normalizeAskEdgarResponse(
     } satisfies ResearchSnapshotReverseSplit;
   });
 
+  const splitStatuses: ResearchSnapshotSplitStatus[] = getEndpointResponse(rawData, ['split-status', 'splitStatus']).results.map((item) => {
+    const row = toRecord(item);
+    return {
+      actionType: getStringField(row, ['action_type', 'actionType']),
+      splitFrom: toNumberValue(getField(row, ['split_from', 'splitFrom'])),
+      splitTo: toNumberValue(getField(row, ['split_to', 'splitTo'])),
+      voteDate: getStringField(row, ['vote_date', 'voteDate']),
+      approvedDate: getStringField(row, ['approved_date', 'approvedDate']),
+      effectiveDate: getStringField(row, ['effective_date', 'effectiveDate']),
+      details: getStringField(row, ['details']),
+      filedAt: getStringField(row, ['filed_at', 'filedAt']),
+      formType: getStringField(row, ['form_type', 'formType']),
+      documentUrl: getStringField(row, ['document_url', 'documentUrl']),
+      lastUpdated: getStringField(row, ['last_updated', 'lastUpdated']),
+    } satisfies ResearchSnapshotSplitStatus;
+  });
+
   const agreements: ResearchSnapshotAgreement[] = getEndpointResponse(rawData, ['agreements']).results.map((item) => {
     const row = toRecord(item);
     return {
@@ -865,6 +899,7 @@ export function normalizeAskEdgarResponse(
     ownershipGroups,
     historicalFloat,
     reverseSplits,
+    splitStatuses,
     agreements,
     gapStats,
     rawData,
@@ -873,7 +908,7 @@ export function normalizeAskEdgarResponse(
 
 export function getAskEdgarCallCount() {
   resetCounterIfNeeded();
-  return callCount;
+  return uniqueTickersToday.size;
 }
 
 export function getAskEdgarDailyLimit() {

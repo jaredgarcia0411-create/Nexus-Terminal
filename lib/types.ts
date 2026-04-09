@@ -183,6 +183,20 @@ export interface ResearchSnapshotReverseSplit {
   ratio: string | null;
 }
 
+export interface ResearchSnapshotSplitStatus {
+  actionType: string | null;
+  splitFrom: number | null;
+  splitTo: number | null;
+  voteDate: string | null;
+  approvedDate: string | null;
+  effectiveDate: string | null;
+  details: string | null;
+  filedAt: string | null;
+  formType: string | null;
+  documentUrl: string | null;
+  lastUpdated: string | null;
+}
+
 export interface ResearchSnapshotAgreement {
   type: string | null;
   investor: string | null;
@@ -204,7 +218,7 @@ export interface ResearchSnapshotGapStat {
 }
 
 // Client-safe shape — sent to the browser via /api/askedgar/snapshot.
-// Does NOT include rawData (full 16-endpoint payload). That lives in ResearchSnapshotFull.
+// Does NOT include rawData (full 17-endpoint payload). That lives in ResearchSnapshotFull.
 export interface ResearchSnapshot {
   ticker: string;
   fetchedAt: string;
@@ -228,6 +242,7 @@ export interface ResearchSnapshot {
   ownershipGroups: ResearchSnapshotOwnershipGroup[];
   historicalFloat: ResearchSnapshotHistoricalFloatRow[];
   reverseSplits: ResearchSnapshotReverseSplit[];
+  splitStatuses: ResearchSnapshotSplitStatus[];
   agreements: ResearchSnapshotAgreement[];
   gapStats: ResearchSnapshotGapStat[];
 }
@@ -235,5 +250,6 @@ export interface ResearchSnapshot {
 // Server-side full shape — includes the raw per-endpoint API payloads used by
 // the LLM research pipeline (lib/research.ts). Never sent to the browser.
 export interface ResearchSnapshotFull extends ResearchSnapshot {
+  // Raw AskEdgar payload keyed by endpoint (full 17-endpoint payload).
   rawData: Record<string, { status: string; results: unknown[]; error?: string }>;
 }
