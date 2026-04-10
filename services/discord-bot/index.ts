@@ -487,7 +487,10 @@ async function main() {
   await client.login(config.discordBotToken);
 }
 
-void main().catch(() => {
-  logErrorEvent('discord_bot.fatal', { status: 'fatal' });
+void main().catch((error) => {
+  logErrorEvent('discord_bot.fatal', {
+    status: 'fatal',
+    error: error instanceof Error ? error.message : String(error),
+  });
   process.exit(1);
 });
