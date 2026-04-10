@@ -262,3 +262,129 @@ Use different models for different tasks based on complexity:
 - All AEV2_PLAN.md epics (EPIC-1 through EPIC-5) are merged to `main`.
 - `agent_memory_v2` AskEdgar cache is running in production and we have a week of real call-volume data to size the new budget against.
 - Jared has saved the new AskEdgar trial-key docs alongside `docs/AE_API_DOCS.md` so we can confirm exact reset windows and whether the 150/min is a hard 429 or a soft throttle.
+
+---
+
+## Agent Response Quality — Improvement Plan (2026-04-10)
+
+> Generated after first live smoke tests. All 3 agents functional but responses need refinement.
+
+### Root Cause Analysis
+
+**Orchestrator returns raw JSON to Discord:**
+The `synthesize-response` step in `orchestrator-chat.ts` is governed by `global-policy.md` which tells every LLM step to return structured JSON. The synthesis step should return prose, not JSON. The LLM obeys and outputs `{"response": "The market is..."}` which the Discord bot renders verbatim.
+
+**Specialists return n/a for entry, target, stop, bias, MDR score, pattern:**
+1. Swing-trader's `swingResearchSchema` requires numeric fields (`levels.entry`, `levels.stop`, `mdrSimilarity`) but only receives spot price data — no OHLC history for the LLM to derive real levels.
+2. Small-cap's `researchReportSchema` has no `entry`, `target`, or `stop` fields at all — `buildResearchEmbed` looks for them but they're never produced. Always `n/a`.
+
+### P0 — Critical Fixes (Single Session)
+
+**P0.1: Fix raw JSON in orchestrator chat response**
+- File: `lib/agents/blueprints/orchestrator-chat.ts`
+- What: Add explicit prose instruction to synthesis prompt AND add JSON.parse fallback to extract string value if LLM returns JSON anyway
+- Impact: Clean prose responses immediately
+- Complexity: LOW
+
+**P0.2: Add entry/target/stop fields to small-cap schema**
+- Files: `lib/agents/blueprints/small-cap-research.ts`, `lib/agents/discord.ts`
+- What: Add `shortEntry`, `shortTarget`, `stopAbove` to schema and prompt. Update embed to read new field names.
+- Impact: Research embeds show actionable short levels
+- Complexity: LOW
+
+### P1 — This Week (Data & Prompt Quality)
+
+**P1.1: Give Swing Trader real OHLC history for MDR scoring**
+- File: `lib/agents/blueprints/swing-trader-research.ts`
+- What: Add `fetch-ohlc-history` step using Massive API. Pass 5-10 days of OHLC to LLM.
+- Impact: Real MDR scoring instead of fabricated numbers
+- Complexity: MEDIUM
+
+**P1.2: Format trade context for orchestrator LLM**
+- File: `lib/agents/blueprints/orchestrator-chat.ts`
+- What: Replace raw `JSON.stringify(recentTrades)` with formatted summary (ticker, P&L, date, side). Cap at 5 trades.
+- Complexity: LOW
+
+**P1.3: Separate JSON rule from prose steps**
+- Files: `lib/agents/prompts/global-policy.md`, `lib/agents/blueprints/orchestrator-chat.ts`
+- What: Add exception clause for prose-output steps in global policy
+- Complexity: LOW
+
+**P1.4: Small-cap prompt — output field guidance**
+- File: `lib/agents/prompts/small-cap.md`
+- What: Add specific instructions for `filingSummary`, `catalysts`, `evidenceIds`, `shortEntry/stopAbove/shortTarget`
+- Complexity: LOW
+
+**P1.5: Swing trader prompt — scoring guidance**
+- File: `lib/agents/prompts/swing-trader.md`
+- What: Add calculation guidance for `mdrSimilarity`, `volumeSurgeRatio`, `levels.entry/stop/targets`
+- Complexity: LOW
+
+### P2 — Next Sprint (Structural)
+
+**P2.1: Persist assistant conversation turns**
+- File: `lib/agents/blueprints/orchestrator-chat.ts`
+- What: Insert `role: 'assistant'` row after synthesis. Enables multi-turn conversation.
+- Complexity: MEDIUM
+
+**P2.2: Route specialist results back to originating Discord channel**
+- File: `services/discord-bot/index.ts`
+- What: When routed, poll specialist job and send summary back in `#orchestrator`
+- Complexity: MEDIUM
+
+**P2.3: Extend TradingView columns (technicals)**
+- Files: both specialist blueprints
+- What: Add `High.1W`, `Low.1W`, `RSI`, `MACD.macd`, `EMA9`, `EMA21` to scanner columns
+- Complexity: MEDIUM
+
+**P2.4: Memory writes after research**
+- Files: both specialist blueprints
+- What: Upsert `thesis` category memory row with ticker key after research completes
+- Complexity: MEDIUM
+
+**P2.5: Discord embed layout improvements**
+- File: `lib/agents/discord.ts`
+- What: Move high-value fields to non-inline, promote risk rating into title, increase truncate limit
+- Complexity: LOW
+
+### P3 — Future Sprint
+
+**P3.1: Pre-market scan blueprint** — `small-cap-trader:pre-market-scan` stub. HIGH.
+**P3.2: Pattern-check blueprint** — `swing-trader:pattern-check` stub. HIGH.
+**P3.3: Trade context formatting helper** — shared `formatTradesForLlm()`. LOW.
+**P3.4: Model tuning via env vars** — already wired, just change `INTERACTIVE_LLM_MODEL` / `BACKGROUND_LLM_MODEL`. LOW.
+
+### Summary Table
+
+| ID | Description | Complexity | Priority |
+|----|-------------|------------|----------|
+| P0.1 | Fix raw JSON in orchestrator chat | LOW | Today |
+| P0.2 | Add entry/target/stop to small-cap schema | LOW | Today |
+| P1.1 | OHLC history for Swing Trader MDR scoring | MEDIUM | This week |
+| P1.2 | Format trade context for orchestrator LLM | LOW | This week |
+| P1.3 | Separate JSON rule from prose steps | LOW | This week |
+| P1.4 | Small-cap prompt output field guidance | LOW | This week |
+| P1.5 | Swing trader scoring guidance | LOW | This week |
+| P2.1 | Persist assistant conversation turns | MEDIUM | Next sprint |
+| P2.2 | Route specialist results back to Discord | MEDIUM | Next sprint |
+| P2.3 | Extend TradingView columns (technicals) | MEDIUM | Next sprint |
+| P2.4 | Memory writes after research | MEDIUM | Next sprint |
+| P2.5 | Discord embed layout improvements | LOW | Next sprint |
+| P3.1 | Pre-market scan blueprint | HIGH | Future |
+| P3.2 | Pattern-check blueprint | HIGH | Future |
+| P3.3 | Trade context formatting helper | LOW | Future |
+| P3.4 | Model tuning via env vars | LOW | Future |
+
+### Key Files
+
+| File | Items |
+|------|-------|
+| `lib/agents/blueprints/orchestrator-chat.ts` | P0.1, P1.2, P1.3, P2.1 |
+| `lib/agents/blueprints/small-cap-research.ts` | P0.2, P2.3, P2.4 |
+| `lib/agents/blueprints/swing-trader-research.ts` | P1.1, P2.3, P2.4 |
+| `lib/agents/discord.ts` | P0.2, P2.5 |
+| `lib/agents/prompts/global-policy.md` | P1.3 |
+| `lib/agents/prompts/small-cap.md` | P1.4 |
+| `lib/agents/prompts/swing-trader.md` | P1.5 |
+| `services/discord-bot/index.ts` | P2.2 |
+| `lib/agents/context.ts` | P3.3 |
