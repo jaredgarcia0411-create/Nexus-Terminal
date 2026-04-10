@@ -6,12 +6,12 @@ export interface AgentServiceUser {
 }
 
 const DISCORD_USER_MAP: Record<string, AgentServiceUser> = {
-  // 'discord-user-id-1': {
-  //   id: 'nexus-user-id-1',
-  //   email: 'user1@example.com',
-  //   name: 'User One',
-  //   picture: null,
-  // },
+  '549621839350202387': {
+    id: '504efa53-490c-425f-ade0-ca53d31d2f53',
+    email: 'jared.garcia0411@gmail.com',
+    name: 'Jared Garcia',
+    picture: 'https://lh3.googleusercontent.com/a/ACg8ocJcBppldYPBHlDP8BsWhRTYLhJSfbKzWxVbfj3iArzRWNG4vQ=s96-c',
+  },
 };
 
 function readHeader(request: Request, name: string): string | null {
