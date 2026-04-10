@@ -9,39 +9,25 @@
 
 ---
 
-## AEV2 Sprint 4 — External Validation Checklist (User-Owned)
+## AEV2 Sprint 4 — COMPLETE (2026-04-10)
 
-> Status: IN PROGRESS — code-side checkpoints 1–7 are complete; only the user-run items below remain.
+> Docker, Discord Bot & Launch Hardening (EPIC-5: AEV2-501 through AEV2-510)
 
-**Before the user runs the smoke (operator-owned steps, usually after Codex hands off):**
+**What shipped:** 3 agent containers (orchestrator, small-cap-trader, swing-trader) + Discord bot running on OptiPlex home server via Docker Compose. All agents healthy, bot connected, smoke tests passed.
 
-- [ ] **Populate `DISCORD_USER_MAP` in `lib/agents/admin.ts`.** Codex left this empty per D6. Add at least one entry mapping a real Discord user ID to a real Nexus user `{ id, email, name, picture }`. Without this, the bot will get 403 on every message.
-- [ ] **Fill `services/.env`.** Confirm every var in `services/.env.example` has a real value in `services/.env`. Pay special attention to `NEXUS_API_URL` (must be the public Vercel domain, NOT `localhost`), `AGENT_SERVICE_KEY` (must match what Vercel sees), `AGENT_ADMIN_KEY` (separate from `AGENT_SERVICE_KEY`), and all six `DISCORD_WEBHOOK_*` URLs.
-- [ ] **Verify Vercel env vars match `services/.env`.** Specifically: `AGENT_SERVICE_KEY` and `AGENT_ADMIN_KEY` must be set in Vercel dashboard with the same values as `services/.env`.
-- [ ] **Confirm a Neon backup branch exists before any Compose-side migration.**
-- [ ] **Record tested-restore verification in `docs/ops/agents-backup-restore.md`.**
-- [ ] **Sleep / power management on the home server.** Confirm `systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target` is set so Docker stays up.
+**Launch fixes applied during deploy:**
+- Added `ws` package for Neon WebSocket connections in Docker (conditional load — skipped on Vercel)
+- Enabled Discord Gateway privileged intents (Message Content)
+- Ran migration 0019 to create agent tables + seed registry rows
+- Improved bot error logging (actual error message on fatal crash)
 
-**After Codex hands off (smoke checklist — the canonical AEV2-509 walk-through):**
+**Smoke results (2026-04-10):**
+- Orchestrator chat: direct reply received
+- Routed to specialist: `/research` forwarded to small-cap-trader, embed posted
+- Offline fallback: stopped small-cap-trader, orchestrator handled directly
+- Team members (Branden, Cody) added to DISCORD_USER_MAP and tested successfully
 
-- [ ] **`docker compose -f services/docker-compose.yml config`** exits 0, four expected services, no Redis.
-- [ ] **`docker compose -f services/docker-compose.yml build`** completes without errors.
-- [ ] **`docker compose -f services/docker-compose.yml up -d`** — after ~60s, `docker compose ps` shows agents as `healthy` and `discord-bot` as `Up`.
-- [ ] **Discord `#orchestrator` smoke — handle-directly.** Post a message, get an Orchestrator embed reply within 60s.
-- [ ] **Discord `#orchestrator` smoke — routed-to-specialist.** Post `/research AAPL`, get routing reply + specialist embed.
-- [ ] **Discord `#orchestrator` smoke — offline-fallback.** Stop `small-cap-trader`, verify `status = 'offline'` in DB, post `/research AAPL` again — Orchestrator handles directly with warning.
-- [ ] **Macro summary smoke.** Force a cron tick and verify the report row + Discord embed.
-- [ ] **Admin stats smoke.** `curl` the admin stats endpoint, verify `AdminStatsResponse` shape.
-- [ ] **Admin redeliver smoke.** Redeliver a report, verify re-post.
-- [ ] **Observability SQL smoke.** Run each query from `scripts/ops/agent-observability.sql`, confirm no errors.
-- [ ] **Restart resilience.** `docker compose restart orchestrator` — healthy within 90s, bot still responds.
-- [ ] **Logging tail.** No leaked secrets in logs.
-
-**After the smoke passes:**
-
-- [ ] **Flip Sprint 4 status to COMPLETE** and collapse into the same 3-block format as Sprints 1–3.
-- [ ] **Update `AEV2_PLAN.md`** to mark EPIC-5 stories AEV2-501 through AEV2-510 as DONE.
-- [ ] **Tag the launch commit** (e.g., `aev2-v1-launch`).
+**Next:** Agent response quality improvements — see `FUTURE-PLANS.md` (P0–P3 roadmap).
 
 ---
 

@@ -130,18 +130,18 @@ Note: no backfill SQL needed. `jarvis_conversations` and `jarvis_request_log` we
 
 ### EPIC-5 — Docker, Discord Bot & Launch Hardening
 
-| Story ID | Story | Acceptance Criteria | Size |
-|----------|-------|---------------------|------|
-| AEV2-501 | Create generic agent container runtime | `services/agent.Dockerfile` and `services/agent-entrypoint.ts` boot agent services cleanly without depending on Next.js UI runtime paths | M |
-| AEV2-502 | Rewrite Docker Compose for V1 topology | Runs 3 agents + Discord bot; explicitly removes existing Redis service; wires required env vars | L |
-| AEV2-503 | Verify `services/.env.example` completeness | Confirm all required vars are present; clarify `MASSIVE_API_KEY` is for Docker agents only, not Vercel | XS |
-| AEV2-504 | Build minimal Discord bot runtime (`services/discord-bot/`) | Bot listens only to `#orchestrator` and uses only `/api/agents/service/*` routes | L |
-| AEV2-505 | Implement bot request/poll/reply flow | Bot sends `discord_user_id`, polls for completion, replies with embed or timeout handling, and never calls admin or user-facing routes | M |
-| AEV2-506 | Validate service TypeScript and runtime startup | Explicit service-side TypeScript validation passes and all containers boot without contract errors | M |
-| AEV2-507 | Add observability artifacts | `scripts/ops/agent-observability.sql` plus admin stats support required operational checks | M |
-| AEV2-508 | Write rollback and home-server recovery runbooks | Rollback and recovery docs exist and match actual deployment flow | S |
-| AEV2-509 | Execute deploy smoke checklist | Orchestrator chat, webhook delivery, macro summary, admin stats, and offline fallback all pass | L |
-| AEV2-510 | Re-validate config and secrets before launch | Service/admin keys, webhook URLs, lane models, and env parity are confirmed | S |
+| Story ID | Story | Acceptance Criteria | Size | Status |
+|----------|-------|---------------------|------|--------|
+| AEV2-501 | Create generic agent container runtime | `services/agent.Dockerfile` and `services/agent-entrypoint.ts` boot agent services cleanly without depending on Next.js UI runtime paths | M | DONE |
+| AEV2-502 | Rewrite Docker Compose for V1 topology | Runs 3 agents + Discord bot; explicitly removes existing Redis service; wires required env vars | L | DONE |
+| AEV2-503 | Verify `services/.env.example` completeness | Confirm all required vars are present; clarify `MASSIVE_API_KEY` is for Docker agents only, not Vercel | XS | DONE |
+| AEV2-504 | Build minimal Discord bot runtime (`services/discord-bot/`) | Bot listens only to `#orchestrator` and uses only `/api/agents/service/*` routes | L | DONE |
+| AEV2-505 | Implement bot request/poll/reply flow | Bot sends `discord_user_id`, polls for completion, replies with embed or timeout handling, and never calls admin or user-facing routes | M | DONE |
+| AEV2-506 | Validate service TypeScript and runtime startup | Explicit service-side TypeScript validation passes and all containers boot without contract errors | M | DONE |
+| AEV2-507 | Add observability artifacts | `scripts/ops/agent-observability.sql` plus admin stats support required operational checks | M | DONE |
+| AEV2-508 | Write rollback and home-server recovery runbooks | Rollback and recovery docs exist and match actual deployment flow | S | DONE |
+| AEV2-509 | Execute deploy smoke checklist | Orchestrator chat, webhook delivery, macro summary, admin stats, and offline fallback all pass | L | DONE |
+| AEV2-510 | Re-validate config and secrets before launch | Service/admin keys, webhook URLs, lane models, and env parity are confirmed | S | DONE |
 
 ---
 
