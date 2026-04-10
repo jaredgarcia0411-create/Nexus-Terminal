@@ -12,6 +12,18 @@ const DISCORD_USER_MAP: Record<string, AgentServiceUser> = {
     name: 'Jared Garcia',
     picture: 'https://lh3.googleusercontent.com/a/ACg8ocJcBppldYPBHlDP8BsWhRTYLhJSfbKzWxVbfj3iArzRWNG4vQ=s96-c',
   },
+  '369476207823028226': {
+    id: 'dd16e992-d1b8-44a7-9750-575dcf30e13f',
+    email: 'whiteheadbranden@gmail.com',
+    name: 'Branden Whitehead',
+    picture: null,
+  },
+  '373121471293161473': {
+    id: 'ed96f038-6cdb-418f-886c-ad4e1459d3e0',
+    email: 'ccatt5399@gmail.com',
+    name: 'Cody Cattermole',
+    picture: null,
+  },
 };
 
 function readHeader(request: Request, name: string): string | null {
