@@ -16,7 +16,20 @@
 
 > Generated: 2026-04-12
 > Revised: 2026-04-12
-> Status: READY FOR EXECUTION
+> Status: IN PROGRESS — Steps 1-3 complete, Steps 4-6 pending
+
+### Checkpoint — 2026-04-12
+
+- Completed: Step 1 — typed report contracts and report/macro route metadata.
+- Completed: Step 2 — assistant-turn persistence, routed specialist metadata, Discord specialist wait/reply flow.
+- Completed: Step 3 — small-cap TradingView expansion, explicit AskEdgar sections, deterministic analysis step.
+- Pending: Step 4 — swing enrichment + thesis memory.
+- Pending: Step 5 — typed Discord report renderers.
+- Pending: Step 6 — macro summary redesign + compact orchestrator macro context.
+- Validation at this checkpoint:
+  - `npm run lint`
+  - `npx tsc --noEmit`
+  - `npm test`
 
 ### Objective
 

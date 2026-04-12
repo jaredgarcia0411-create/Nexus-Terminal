@@ -247,6 +247,7 @@ describe('agent blueprints', () => {
       input: {
         ticker: 'NVDA',
         originator_job_id: job.id,
+        origin_channel_id: 'discord',
       },
     }));
   });
@@ -337,7 +338,7 @@ describe('agent blueprints', () => {
     });
   });
 
-  it('formats recent trades and extracts prose from wrapped orchestrator JSON responses', async () => {
+  it('formats recent trades, extracts prose from wrapped orchestrator JSON responses, and persists the assistant turn', async () => {
     callLlmMock.mockResolvedValue({
       content: JSON.stringify({
         response: 'Tighten risk and watch follow-through.',
@@ -347,6 +348,7 @@ describe('agent blueprints', () => {
       outputTokens: 6,
       durationMs: 45,
     });
+    randomUUIDMock.mockReturnValueOnce('assistant-turn-1');
     const job = createJob({
       agentId: 'orchestrator',
       jobType: 'chat',
@@ -354,6 +356,7 @@ describe('agent blueprints', () => {
     });
     const agentConfig = AGENT_CONFIGS.orchestrator;
     const blueprint = resolveBlueprint(job);
+    const { db, insertValues } = createRegistryDb('online');
 
     const result = await blueprint.steps[1].run(createStepInput(job, agentConfig, {
       previousOutput: {
@@ -370,6 +373,7 @@ describe('agent blueprints', () => {
           { ticker: 'TSLA', pnl: -90.2, direction: 'SHORT' },
         ],
       },
+      db,
     }));
 
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -380,6 +384,15 @@ describe('agent blueprints', () => {
     }), 'interactive');
     expect(result.data).toEqual({
       content: 'Tighten risk and watch follow-through.',
+    });
+    expect(insertValues).toHaveBeenCalledWith({
+      id: 'assistant-turn-1',
+      userId: job.userId,
+      agentId: 'orchestrator',
+      sessionId: job.id,
+      role: 'assistant',
+      content: 'Tighten risk and watch follow-through.',
+      channel: 'discord',
     });
   });
 
@@ -437,6 +450,15 @@ describe('agent blueprints', () => {
       offerings: [],
       dilutionDetails: { estimatedCash: 1000000 },
       rawData: {
+        'gap-stats': {
+          results: [{ open: 10, close: 9, high: 11 }],
+        },
+        registrations: {
+          results: [{ title: 'Shelf registration' }],
+        },
+        news: {
+          results: [{ title: 'Shelf registration' }],
+        },
         screener: {
           results: [{ name: 'Apple Inc.' }],
         },
@@ -457,7 +479,9 @@ describe('agent blueprints', () => {
     expect(getCachedTickerDataMock).toHaveBeenCalledWith('AAPL');
     expect(result.data).toMatchObject({
       ticker: 'AAPL',
-      filings: [{ title: 'Shelf registration' }],
+      gapStats: [{ open: 10, close: 9, high: 11 }],
+      registrations: [{ title: 'Shelf registration' }],
+      news: [{ title: 'Shelf registration' }],
       cashPosition: { estimatedCash: 1000000 },
     });
   });
@@ -488,8 +512,112 @@ describe('agent blueprints', () => {
     expect(getCachedTickerDataMock).toHaveBeenCalledWith('AAPL');
     expect(result.data).toMatchObject({
       ticker: 'AAPL',
-      filings: [],
+      gapStats: [],
+      offerings: [],
+      registrations: [],
       cashPosition: { name: 'Apple Inc.' },
+    });
+  });
+
+  it('adds deterministic analysis and labeled AskEdgar sections to the small-cap synthesis prompt', async () => {
+    callLlmMock.mockResolvedValue({
+      content: JSON.stringify({
+        ticker: 'AAPL',
+        newsWhyRunning: { rating: 'green', explanation: 'No credible catalyst.' },
+        themeMatch: { rating: 'yellow', explanation: 'Loose theme link.' },
+        otherCatalysts: [{ catalyst: '424B', rating: 'green' }],
+        chartHistory: { rating: 'green', explanation: 'Gap-and-fade history.' },
+        dilution: { rating: 'green', explanation: 'Shelf is active.' },
+        offeringFrequency: { rating: 'green', explanation: 'Frequent issuer.' },
+        offeringAbility: { rating: 'green', explanation: 'ATM is active.' },
+        cashNeed: { rating: 'green', explanation: 'Cash runway looks tight.' },
+        overallOfferingRisk: { rating: 'green', explanation: 'High near-term offering risk.' },
+        jmt415Commentary: null,
+        historicalStats: 'Average gap fade 18%.',
+        confidence: 'high',
+        evidenceIds: ['gap-stats', 'offerings'],
+      }),
+      modelUsed: 'background-model',
+      inputTokens: 22,
+      outputTokens: 11,
+      durationMs: 55,
+    });
+    const job = createJob({
+      agentId: 'small-cap-trader',
+      jobType: 'research',
+      input: { ticker: 'AAPL' },
+    });
+    const agentConfig = AGENT_CONFIGS['small-cap-trader'];
+    const blueprint = resolveBlueprint(job);
+    const synthesizeStep = blueprint.steps.find((step) => step.name === 'synthesize-report');
+
+    expect(synthesizeStep).toBeDefined();
+
+    const result = await synthesizeStep!.run(createStepInput(job, agentConfig, {
+      previousOutput: {
+        ticker: 'AAPL',
+        gapStats: [{ open: 10, close: 9, high: 11 }],
+        offerings: [{ offering_type: 'ATM', status: 'active' }],
+        registrations: [{ status: 'effective' }],
+        equityLines: [],
+        dilutionRating: null,
+        dilutionData: [{ cash_burn: 'high' }],
+        ownership: [{ percentage: 42 }],
+        historicalFloat: [{ date: '2026-01-01', float: 100 }],
+        reverseSplits: [],
+        splitStatus: [{ status: 'approved pending' }],
+        agreements: [],
+        nasdaqCompliance: [{ deadline: '2026-04-15' }],
+        pumpAndDumpTracker: null,
+        news: [{ title: 'Shelf filing' }],
+        cashPosition: { estimatedCash: 1000000 },
+        priceContext: {
+          price: 10,
+          change: 2,
+          volume: 1000,
+          avgVolume90d: 500,
+          marketCap: 1000000,
+          sector: 'Tech',
+          high1w: 11,
+          low1w: 8,
+          rsi: 72,
+          macdSignal: 1.1,
+          ema9: 9.5,
+          ema21: 8.9,
+        },
+        deterministicAnalysis: {
+          gapCount: 1,
+          sameDayFadeRate: 1,
+          avgCloseVsOpen: -10,
+          avgHighExtension: 10,
+          recentOfferingCount: 1,
+          hasActiveShelf: true,
+          hasActiveAtm: true,
+          amountRemainingAtm: 1000000,
+          splitApproved: true,
+          splitEffectivePending: true,
+          daysToComplianceDeadline: 3,
+          floatTrend: 'stable',
+          knownHolderOverhang: 42,
+        },
+      },
+    }));
+
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('AskEdgar sections:'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('gapStats:\n'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Deterministic analysis:\n'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.not.stringContaining('Filings:\n'),
+    }), 'background');
+    expect(result.data).toMatchObject({
+      ticker: 'AAPL',
+      confidence: 'high',
     });
   });
 

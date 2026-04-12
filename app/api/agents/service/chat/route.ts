@@ -130,6 +130,11 @@ export async function GET(request: Request) {
 
     const input = readRecord(job.input);
     const result = readRecord(job.result);
+    const sessionId = typeof result.session_id === 'string'
+      ? result.session_id
+      : typeof input.session_id === 'string'
+        ? input.session_id
+        : null;
 
     if (job.status === 'queued') {
       return Response.json({
@@ -163,16 +168,28 @@ export async function GET(request: Request) {
         });
       }
 
-      const sessionId = typeof result.session_id === 'string'
-        ? result.session_id
-        : typeof input.session_id === 'string'
-          ? input.session_id
-          : null;
+      const reportId = typeof result.reportId === 'string' ? result.reportId : null;
+      const ticker = typeof result.ticker === 'string' ? result.ticker : null;
       const message = typeof result.content === 'string'
         ? result.content
         : typeof result.message === 'string'
           ? result.message
           : '';
+
+      if (reportId || ticker) {
+        return Response.json({
+          status: 'completed',
+          job_id: job.id,
+          agent_id: job.agentId,
+          session_id: sessionId,
+          result: {
+            routed: false,
+            message: ticker ? `Research complete for ${ticker}.` : 'Research complete.',
+            reportId,
+            ticker,
+          },
+        });
+      }
 
       return Response.json({
         status: 'completed',

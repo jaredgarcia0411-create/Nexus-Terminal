@@ -367,6 +367,40 @@ describe('agent service chat route', () => {
     });
   });
 
+  it('returns specialist completion output on GET when a report is available', async () => {
+    getAgentDbMock.mockReturnValueOnce(createGetDb({
+      id: 'job-1',
+      agentId: 'small-cap-trader',
+      status: 'completed',
+      progressNote: null,
+      input: { session_id: 'session-1' },
+      result: {
+        reportId: 'job-2:research',
+        ticker: 'AAPL',
+        message: 'Research complete for AAPL.',
+      },
+      errorMessage: null,
+      stepLog: [],
+    }));
+
+    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1')));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      status: 'completed',
+      job_id: 'job-1',
+      agent_id: 'small-cap-trader',
+      session_id: 'session-1',
+      result: {
+        routed: false,
+        message: 'Research complete for AAPL.',
+        reportId: 'job-2:research',
+        ticker: 'AAPL',
+      },
+    });
+  });
+
   it('returns failure details on GET', async () => {
     getAgentDbMock.mockReturnValueOnce(createGetDb({
       id: 'job-1',

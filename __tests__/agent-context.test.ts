@@ -5,6 +5,7 @@ import {
   agentReports,
   trades,
 } from '@/lib/db/schema';
+import type { MacroSummaryReport } from '@/lib/agents/types';
 const getMemoryMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/agents/memory', () => ({
@@ -59,6 +60,18 @@ describe('agent context helper', () => {
   });
 
   it('assembles memory, trades, conversations, and the latest macro summary', async () => {
+    const macroSummary: MacroSummaryReport = {
+      tradingDate: '2026-04-08',
+      marketBias: 'neutral',
+      summary: 'macro payload',
+      drivers: [],
+      crossAssetSnapshot: [],
+      scheduledCatalysts: [],
+      sectorRotation: [],
+      deskImplications: [],
+      sourceIndex: [],
+      confidence: 'medium',
+    };
     const rows = new Map<unknown, unknown[][]>();
     rows.set(trades, [[
       { id: 'trade-1', sortKey: '2026-04-07', symbol: 'AAPL' },
@@ -67,7 +80,7 @@ describe('agent context helper', () => {
       { id: 'msg-1', role: 'user', content: 'hello', createdAt: new Date('2026-04-07T14:55:00.000Z') },
     ]]);
     rows.set(agentReports, [[
-      { reportJson: { summary: 'macro payload' } },
+      { reportJson: macroSummary },
     ]]);
     const db = createDb(rows);
     getMemoryMock.mockResolvedValueOnce([
@@ -93,7 +106,7 @@ describe('agent context helper', () => {
       recentTrades: [
         { id: 'trade-1', sortKey: '2026-04-07', symbol: 'AAPL' },
       ],
-      macroSummary: { summary: 'macro payload' },
+      macroSummary,
       memory: [
         {
           id: 'memory-1',

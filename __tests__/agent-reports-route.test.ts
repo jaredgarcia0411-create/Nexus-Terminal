@@ -110,6 +110,8 @@ describe('agent reports route', () => {
         reportType: 'macro-summary',
         status: 'published',
         title: 'Macro Summary',
+        summary: 'Daily macro readout',
+        deliveryError: null,
         createdAt: new Date('2026-04-08T12:00:00.000Z'),
       },
     ]);
@@ -125,8 +127,10 @@ describe('agent reports route', () => {
           id: 'report-1',
           agent_id: 'orchestrator',
           report_type: 'macro-summary',
-          status: 'published',
           title: 'Macro Summary',
+          summary: 'Daily macro readout',
+          status: 'published',
+          delivery_error: null,
           created_at: '2026-04-08T12:00:00.000Z',
         },
       ],
@@ -177,6 +181,10 @@ describe('agent reports route', () => {
       agentId: 'swing-trader',
       reportType: 'research',
       status: 'published',
+      title: 'Swing Research',
+      summary: 'Trade looks constructive',
+      deliveryError: null,
+      createdAt: new Date('2026-04-08T12:00:00.000Z'),
       reportJson: { ticker: 'AAPL' },
     }));
 
@@ -192,7 +200,11 @@ describe('agent reports route', () => {
         id: 'report-1',
         agent_id: 'swing-trader',
         report_type: 'research',
+        title: 'Swing Research',
+        summary: 'Trade looks constructive',
         status: 'published',
+        delivery_error: null,
+        created_at: '2026-04-08T12:00:00.000Z',
         report_json: { ticker: 'AAPL' },
       },
     });

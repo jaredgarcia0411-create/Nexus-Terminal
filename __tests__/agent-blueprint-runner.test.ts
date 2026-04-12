@@ -117,7 +117,18 @@ function createConfig(blueprint: Blueprint): AgentConfig {
 function createContext(): AgentContext {
   return {
     recentTrades: [{ id: 'trade-1' }],
-    macroSummary: { summary: 'macro' },
+    macroSummary: {
+      tradingDate: '2026-04-07',
+      marketBias: 'neutral',
+      summary: 'macro',
+      drivers: [],
+      crossAssetSnapshot: [],
+      scheduledCatalysts: [],
+      sectorRotation: [],
+      deskImplications: [],
+      sourceIndex: [],
+      confidence: 'medium',
+    },
     memory: [{
       id: 'memory-1',
       userId: 'user-1',

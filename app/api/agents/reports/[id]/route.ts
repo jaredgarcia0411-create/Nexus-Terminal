@@ -20,7 +20,11 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       id: agentReports.id,
       agentId: agentReports.agentId,
       reportType: agentReports.reportType,
+      title: agentReports.title,
+      summary: agentReports.summary,
       status: agentReports.status,
+      deliveryError: agentReports.deliveryError,
+      createdAt: agentReports.createdAt,
       reportJson: agentReports.reportJson,
     })
       .from(agentReports)
@@ -40,7 +44,11 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         id: report.id,
         agent_id: report.agentId,
         report_type: report.reportType,
+        title: report.title,
+        summary: report.summary,
         status: report.status,
+        delivery_error: report.deliveryError,
+        created_at: report.createdAt?.toISOString() ?? null,
         report_json: report.reportJson,
       },
     });

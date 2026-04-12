@@ -64,6 +64,8 @@ describe('agent macro summary route', () => {
       content: {
         headline: 'Rates steady',
       },
+      status: 'delivery_failed',
+      deliveryError: 'webhook exploded',
     }));
 
     const response = ensureResponse(await GET(new Request('http://localhost/api/agents/macro-summary/latest')));
@@ -76,12 +78,14 @@ describe('agent macro summary route', () => {
         content: {
           headline: 'Rates steady',
         },
+        status: 'delivery_failed',
+        deliveryError: 'webhook exploded',
       },
     });
     expect(eqMock).toHaveBeenCalledWith(expect.anything(), 'system-agent-user');
     expect(eqMock).toHaveBeenCalledWith(expect.anything(), 'orchestrator');
     expect(eqMock).toHaveBeenCalledWith(expect.anything(), 'macro-summary');
-    expect(eqMock).toHaveBeenCalledWith(expect.anything(), 'published');
+    expect(eqMock).not.toHaveBeenCalledWith(expect.anything(), 'published');
     expect(andMock).toHaveBeenCalledTimes(1);
   });
 

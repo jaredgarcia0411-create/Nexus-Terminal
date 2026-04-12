@@ -1,7 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { agentConversations, agentReports, trades } from '@/lib/db/schema';
 import type { AgentDb } from './db';
-import type { AgentContext, AgentId } from './types';
+import type { AgentContext, AgentId, MacroSummaryReport } from './types';
 import { getMemory } from './memory';
 
 const SYSTEM_AGENT_USER_ID = 'system-agent-user';
@@ -40,7 +40,7 @@ export async function buildContext(
 
   return {
     recentTrades: recentTrades as unknown[],
-    macroSummary: macroSummary[0]?.reportJson ?? null,
+    macroSummary: (macroSummary[0]?.reportJson ?? null) as MacroSummaryReport | null,
     memory,
     conversationHistory: conversationHistory as unknown[],
   };

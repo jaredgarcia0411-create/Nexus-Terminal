@@ -14,13 +14,14 @@ export async function GET(request: Request) {
     const [summaryRow] = await db.select({
       generatedAt: agentReports.createdAt,
       content: agentReports.reportJson,
+      status: agentReports.status,
+      deliveryError: agentReports.deliveryError,
     })
       .from(agentReports)
       .where(and(
         eq(agentReports.userId, 'system-agent-user'),
         eq(agentReports.agentId, 'orchestrator'),
         eq(agentReports.reportType, 'macro-summary'),
-        eq(agentReports.status, 'published'),
       ))
       .orderBy(desc(agentReports.createdAt))
       .limit(1);
@@ -33,6 +34,8 @@ export async function GET(request: Request) {
       summary: {
         generated_at: summaryRow.generatedAt?.toISOString() ?? null,
         content: summaryRow.content,
+        status: summaryRow.status,
+        deliveryError: summaryRow.deliveryError,
       },
     });
   } catch (error) {

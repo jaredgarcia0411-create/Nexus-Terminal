@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { agentJobs, agentRegistry } from '@/lib/db/schema';
+import { agentConversations, agentJobs, agentRegistry } from '@/lib/db/schema';
 import { callLlm } from '@/lib/agents/llm-client';
 import type { AgentId, Blueprint, StepResult } from '@/lib/agents/types';
 
@@ -198,16 +198,18 @@ export const orchestratorChatBlueprint: Blueprint = {
         }
 
         const specialistJobId = randomUUID();
+        const specialistJobInput = {
+          ticker: extractTicker(trimmedMessage),
+          originator_job_id: job.id,
+          origin_channel_id: chatInput.channel,
+        };
         await db.insert(agentJobs).values({
           id: specialistJobId,
           agentId: targetAgentId,
           userId: job.userId,
           jobType: 'research',
           status: 'queued',
-          input: {
-            ticker: extractTicker(trimmedMessage),
-            originator_job_id: job.id,
-          },
+          input: specialistJobInput,
         });
 
         return completedResult<RouteDecision>({
@@ -236,7 +238,7 @@ export const orchestratorChatBlueprint: Blueprint = {
         lane: 'interactive',
         skipWhenRouted: true,
       },
-      run: async ({ jobInput, previousOutput, context }) => {
+      run: async ({ jobInput, previousOutput, context, db, job }) => {
         const chatInput = chatInputSchema.parse(jobInput);
         const route = routeDecisionSchema.parse(previousOutput);
         const llmResponse = await callLlm({
@@ -261,6 +263,16 @@ export const orchestratorChatBlueprint: Blueprint = {
             // Not valid JSON — use raw content as-is
           }
         }
+
+        await db.insert(agentConversations).values({
+          id: randomUUID(),
+          userId: job.userId,
+          agentId: 'orchestrator',
+          sessionId: chatInput.session_id ?? job.id,
+          role: 'assistant',
+          content,
+          channel: chatInput.channel,
+        });
 
         return completedResult({
           content,

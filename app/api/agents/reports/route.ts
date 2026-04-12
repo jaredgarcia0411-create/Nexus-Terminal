@@ -47,8 +47,10 @@ export async function GET(request: Request) {
       id: agentReports.id,
       agentId: agentReports.agentId,
       reportType: agentReports.reportType,
-      status: agentReports.status,
       title: agentReports.title,
+      summary: agentReports.summary,
+      status: agentReports.status,
+      deliveryError: agentReports.deliveryError,
       createdAt: agentReports.createdAt,
     })
       .from(agentReports)
@@ -61,8 +63,10 @@ export async function GET(request: Request) {
         id: row.id,
         agent_id: row.agentId,
         report_type: row.reportType,
-        status: row.status,
         title: row.title,
+        summary: row.summary,
+        status: row.status,
+        delivery_error: row.deliveryError,
         created_at: row.createdAt?.toISOString() ?? null,
       })),
     });

@@ -49,7 +49,7 @@ type ServiceCompletedState = {
   sessionId: string | null;
   result:
     | { routed: true; specialistJobId: string | null }
-    | { routed: false; message: string };
+    | { routed: false; message: string; reportId: string | null; ticker: string | null };
 };
 
 type ServiceFailedState = {
@@ -258,12 +258,30 @@ async function pollChatJob(config: BotConfig, jobId: string): Promise<ServiceJob
       };
     }
 
+    const reportId = readString(result.reportId);
+    const ticker = readString(result.ticker);
+
+    if (reportId || ticker) {
+      return {
+        status: 'completed',
+        sessionId: readString(payload.session_id),
+        result: {
+          routed: false,
+          message: readString(result.message) ?? '',
+          reportId,
+          ticker,
+        },
+      };
+    }
+
     return {
       status: 'completed',
       sessionId: readString(payload.session_id),
       result: {
         routed: false,
         message: readString(result.message) ?? '',
+        reportId: null,
+        ticker: null,
       },
     };
   }
@@ -413,12 +431,45 @@ async function handleMessage(message: Message, config: BotConfig) {
     }
 
     if (state.result.routed) {
-      await replyPlain(
-        message,
-        state.result.specialistJobId
-          ? `Your request was routed to a specialist job: ${state.result.specialistJobId}.`
-          : 'Your request was routed to a specialist.',
+      await replyPlain(message, 'Routed to specialist — waiting for results...');
+
+      if (!state.result.specialistJobId) {
+        await replyPlain(message, 'I could not track the specialist job.');
+        return;
+      }
+
+      const specialistState = await waitForTerminalState(
+        config,
+        message.author.id,
+        state.result.specialistJobId,
       );
+
+      if (specialistState.status === 'timeout') {
+        await replyPlain(message, 'Specialist did not finish within 2 minutes.');
+        return;
+      }
+
+      if (specialistState.status === 'failed') {
+        const failureSuffix = specialistState.failureClass
+          ? ` (${specialistState.failureClass})`
+          : '';
+        await replyPlain(
+          message,
+          `The specialist failed${failureSuffix}. ${specialistState.errorMessage ?? 'Please try again.'}`,
+        );
+        return;
+      }
+
+      if (specialistState.result.message.trim()) {
+        await replyCompleted(
+          message,
+          specialistState.result.message,
+          specialistState.sessionId ?? accepted.sessionId,
+        );
+        return;
+      }
+
+      await replyPlain(message, 'Research complete. Report delivered to the research channel.');
       return;
     }
 

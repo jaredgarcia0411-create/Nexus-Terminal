@@ -14,6 +14,90 @@ export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed';
 
 export type ReportStatus = 'published' | 'delivery_failed' | 'archived';
 
+export type TrafficLight = 'green' | 'yellow' | 'red';
+
+export type Confidence = 'high' | 'medium' | 'low';
+
+export interface TrafficLightSection {
+  rating: TrafficLight;
+  explanation: string;
+}
+
+export interface RatedCatalyst {
+  catalyst: string;
+  rating: TrafficLight;
+}
+
+export interface SmallCapResearchReport {
+  ticker: string;
+  newsWhyRunning: TrafficLightSection;
+  themeMatch: TrafficLightSection;
+  otherCatalysts: RatedCatalyst[];
+  chartHistory: TrafficLightSection;
+  dilution: TrafficLightSection;
+  offeringFrequency: TrafficLightSection;
+  offeringAbility: TrafficLightSection;
+  cashNeed: TrafficLightSection;
+  overallOfferingRisk: TrafficLightSection;
+  jmt415Commentary: string | null;
+  historicalStats: string;
+  confidence: Confidence;
+  evidenceIds: string[];
+}
+
+export interface SwingResearchReport {
+  ticker: string;
+  mdrPatternMatch: TrafficLightSection & { mdrSimilarity: number };
+  momentum: TrafficLightSection;
+  catalyst: TrafficLightSection;
+  patternClassification: 'BREAKOUT' | 'EXHAUSTION' | 'CONTINUATION' | 'STOPPED';
+  recommendation: {
+    action: 'HOLD' | 'ADD' | 'TRIM' | 'EXIT' | 'WATCH';
+    reasoning: string;
+  };
+  volumeProfile: TrafficLightSection;
+  confidence: Confidence;
+  evidenceIds: string[];
+}
+
+export interface MacroSource {
+  id: string;
+  title: string;
+  url: string | null;
+  fetchedAt: string;
+}
+
+export interface MacroDriver {
+  driver: string;
+  impact: 'positive' | 'negative' | 'mixed';
+  sourceRefs: string[];
+}
+
+export interface CrossAssetEntry {
+  ticker: string;
+  price: number | null;
+  changePercent: number | null;
+}
+
+export interface ScheduledCatalyst {
+  event: string;
+  date: string | null;
+  expectedImpact: string;
+}
+
+export interface MacroSummaryReport {
+  tradingDate: string;
+  marketBias: 'bullish' | 'bearish' | 'neutral';
+  summary: string;
+  drivers: MacroDriver[];
+  crossAssetSnapshot: CrossAssetEntry[];
+  scheduledCatalysts: ScheduledCatalyst[];
+  sectorRotation: string[];
+  deskImplications: string[];
+  sourceIndex: MacroSource[];
+  confidence: Confidence;
+}
+
 export type StepType = 'code' | 'llm';
 
 export type LlmLane = 'interactive' | 'background';
@@ -196,6 +280,18 @@ export interface AgentReport {
   createdAt: Date;
 }
 
+export interface ReportApiResponse {
+  id: string;
+  agent_id: AgentId;
+  report_type: string;
+  title: string;
+  summary: string | null;
+  status: ReportStatus;
+  delivery_error: string | null;
+  created_at: string | null;
+  report_json: SmallCapResearchReport | SwingResearchReport | MacroSummaryReport | unknown;
+}
+
 export interface AgentMemoryRow {
   id: string;
   userId: string;
@@ -213,7 +309,7 @@ export interface AgentMemoryRow {
 
 export interface AgentContext {
   recentTrades: unknown[];
-  macroSummary: unknown | null;
+  macroSummary: MacroSummaryReport | null;
   memory: AgentMemoryRow[];
   conversationHistory: unknown[];
 }
