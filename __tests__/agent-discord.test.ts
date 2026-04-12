@@ -486,7 +486,7 @@ describe('agent discord helpers', () => {
       embeds: [
         expect.objectContaining({
           title: 'Stored title',
-          description: expect.stringContaining('**Offering Risk**: Stored overall risk.'),
+          description: expect.stringContaining('**Offering Risk** 🟢\n• Stored overall risk.'),
         }),
       ],
     });
@@ -505,8 +505,8 @@ describe('agent discord helpers', () => {
       }),
     }) as never);
 
-    expect(embed.description).toContain('🟢 **Offering Risk**: Odds of an offering remain high.');
-    expect(embed.description).toContain('🟡 **News/Catalyst**: Headline is driving the move.');
+    expect(embed.description).toContain('**Offering Risk** 🟢\n• Odds of an offering remain high.');
+    expect(embed.description).toContain('**News/Catalyst** 🟡\n• Headline is driving the move.');
     expect(embed.fields).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'Ticker', value: 'NVDA' }),
       expect.objectContaining({ name: 'Confidence', value: 'high' }),
@@ -524,8 +524,8 @@ describe('agent discord helpers', () => {
       reportJson: createSwingReportJson(),
     }) as never);
 
-    expect(embed.description).toContain('🟢 **MDR Match**: Clean MDR analog.');
-    expect(embed.description).toContain('🟡 **Momentum**: Momentum is still positive but slowing.');
+    expect(embed.description).toContain('**MDR Match** 🟢\n• Clean MDR analog.');
+    expect(embed.description).toContain('**Momentum** 🟡\n• Momentum is still positive but slowing.');
     expect(embed.fields).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'Pattern', value: 'CONTINUATION' }),
       expect.objectContaining({ name: 'MDR Similarity', value: '87%' }),

@@ -158,6 +158,7 @@ export async function callLlm(
   };
   const model = request.model?.trim() || resolvedConfig.model;
   const temperature = request.temperature ?? 0.2;
+  const maxTokens = request.maxTokens ?? 4096;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), resolvedConfig.timeoutMs);
   const startedAt = Date.now();
@@ -173,6 +174,7 @@ export async function callLlm(
       body: JSON.stringify({
         model,
         temperature,
+        max_tokens: maxTokens,
         messages: [
           { role: 'system', content: request.systemPrompt },
           { role: 'user', content: request.userMessage },

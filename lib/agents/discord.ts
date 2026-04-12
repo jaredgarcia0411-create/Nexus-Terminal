@@ -448,7 +448,7 @@ export function buildResearchEmbed(report: AgentReport): DiscordEmbed {
   const ratingLine = (
     label: string,
     section: SmallCapResearchReport['newsWhyRunning'],
-  ): string => `${ratingEmoji(section.rating)} **${label}**: ${truncate(section.explanation, 100)}`;
+  ): string => `**${label}** ${ratingEmoji(section.rating)}\n• ${truncate(section.explanation, 300)}`;
 
   const historicalStats = payload.historicalStats.trim();
 
@@ -491,7 +491,7 @@ export function buildSwingSetupEmbed(report: AgentReport): DiscordEmbed {
   const ratingLine = (
     label: string,
     section: SwingResearchReport['momentum'],
-  ): string => `${ratingEmoji(section.rating)} **${label}**: ${truncate(section.explanation, 100)}`;
+  ): string => `**${label}** ${ratingEmoji(section.rating)}\n• ${truncate(section.explanation, 300)}`;
 
   const sections = [
     ratingLine('MDR Match', payload.mdrPatternMatch),

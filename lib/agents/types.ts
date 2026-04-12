@@ -143,6 +143,7 @@ export interface LlmRequest {
   userMessage: string;
   temperature?: number;
   model?: string;
+  maxTokens?: number;
 }
 
 export interface LlmResponse {
