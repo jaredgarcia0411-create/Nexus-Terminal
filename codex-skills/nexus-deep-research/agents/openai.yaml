@@ -1,0 +1,7 @@
+policy:
+  allow_implicit_invocation: false
+
+interface:
+  display_name: "Deep Research"
+  short_description: "Parallel research + codebase review reports"
+  default_prompt: "Use $nexus-deep-research to investigate a topic in parallel, connect it to this codebase, and save a structured markdown brief only if I ask for an artifact."
