@@ -14,9 +14,9 @@ Every analysis section uses a traffic-light rating:
 
 ## Number Formatting
 - Always use compact notation: $1.2M not $1,200,000, $350K not $350,000, $2.1B not $2,100,000,000.
-- Round to 1-2 significant digits: $1.2M not $1,234,567.
+- Round dollar amounts to 1-2 significant digits: $1.2M not $1,234,567.
 - Shares/float: 12.5M shares, 325K warrants.
-- Percentages: round to one decimal (58.9%, not 58.896%).
+- Round ALL numeric values to at most 2 decimal places. This includes percentages (51.78%, not 51.77904951480469%), RSI (64.42, not 64.42205271620736), relative volume (4.29x, not 4.287565654620005), and any other metric. Never output more than 2 decimal places in any number.
 
 ## Evidence Citation
 - Reference specific filing types (e.g., "424B filed 2026-03-15").
