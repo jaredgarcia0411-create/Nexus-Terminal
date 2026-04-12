@@ -61,6 +61,16 @@ export interface MassiveBatchDailySummaryRow {
   afterHours: number | null;
 }
 
+export interface DailyOhlcBar {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  vwap: number | null;
+}
+
 export function normalizeMassiveTicker(raw: string) {
   return raw
     .replace(/^X:/i, '')
@@ -180,4 +190,59 @@ export async function fetchBatchDailyTickerSummaries(tickers: string[], date: st
     });
   }
   return byNormalizedTicker;
+}
+
+/**
+ * Fetch daily OHLC bars from Massive (Polygon-compatible) aggregates API.
+ * Returns the most recent `days` trading days of data.
+ */
+export async function fetchDailyAggregates(
+  ticker: string,
+  days: number = 10,
+): Promise<DailyOhlcBar[]> {
+  const to = new Date();
+  const from = new Date();
+  // Extra calendar days to account for weekends/holidays
+  from.setDate(from.getDate() - Math.ceil(days * 1.6));
+
+  const toStr = to.toISOString().split('T')[0]!;
+  const fromStr = from.toISOString().split('T')[0]!;
+
+  const response = await fetchMassiveJson<{
+    results?: Array<{
+      o?: number | null;
+      h?: number | null;
+      l?: number | null;
+      c?: number | null;
+      v?: number | null;
+      vw?: number | null;
+      t?: number | null;
+    }>;
+  }>(
+    `/v2/aggs/ticker/${encodeURIComponent(ticker.trim().toUpperCase())}/range/1/day/${fromStr}/${toStr}`,
+    { adjusted: 'true', sort: 'asc', limit: String(days + 5) },
+  );
+
+  return (response.results ?? [])
+    .flatMap((bar) => {
+      const open = Number(bar.o ?? NaN);
+      const high = Number(bar.h ?? NaN);
+      const low = Number(bar.l ?? NaN);
+      const close = Number(bar.c ?? NaN);
+      if (![open, high, low, close].every(Number.isFinite)) return [];
+
+      const volume = Number(bar.v ?? 0);
+      const timestamp = Number(bar.t ?? 0);
+
+      return [{
+        date: timestamp > 0 ? new Date(timestamp).toISOString().split('T')[0]! : 'unknown',
+        open,
+        high,
+        low,
+        close,
+        volume: Number.isFinite(volume) ? volume : 0,
+        vwap: Number.isFinite(Number(bar.vw)) ? Number(bar.vw) : null,
+      }];
+    })
+    .slice(-days);
 }

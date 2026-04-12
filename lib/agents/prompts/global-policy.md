@@ -12,6 +12,7 @@
 
 ## Output Rules
 - Respond in structured JSON matching the step's output schema.
+- Exception: steps that produce prose responses (e.g., chat synthesis, commentary) must return plain text, not JSON. Do not wrap prose in a JSON object.
 - Do not include markdown formatting in JSON string values.
 - Do not include conversational filler ("Sure!", "Great question!", etc.).
 

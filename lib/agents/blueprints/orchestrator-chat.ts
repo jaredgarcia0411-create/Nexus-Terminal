@@ -98,6 +98,24 @@ async function loadOrchestratorSystemPrompt() {
   return buildLlmSystemPrompt('orchestrator');
 }
 
+function formatRecentTrades(trades: unknown[]): string {
+  return trades
+    .map((trade) => {
+      if (!trade || typeof trade !== 'object') return null;
+      const t = trade as Record<string, unknown>;
+      const symbol = t.symbol ?? t.ticker ?? '???';
+      const pnl = typeof t.grossPnl === 'number' ? t.grossPnl : (typeof t.pnl === 'number' ? t.pnl : null);
+      const direction = typeof t.direction === 'string' ? t.direction.toLowerCase() : '?';
+      const date = typeof t.date === 'string' ? t.date : '';
+      const pnlStr = pnl !== null
+        ? (pnl >= 0 ? `+$${pnl.toFixed(0)}` : `-$${Math.abs(pnl).toFixed(0)}`)
+        : 'n/a';
+      return `${symbol}: ${pnlStr} (${direction}${date ? `, ${date}` : ''})`;
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
 function buildSynthesisPrompt(
   route: RouteDecision,
   chatInput: z.infer<typeof chatInputSchema>,
@@ -113,12 +131,13 @@ function buildSynthesisPrompt(
     `User message:\n${chatInput.message.trim()}`,
     context.macroSummary ? `Latest macro summary:\n${JSON.stringify(context.macroSummary)}` : null,
     context.recentTrades.length > 0
-      ? `Recent trades:\n${JSON.stringify(context.recentTrades.slice(0, 5))}`
+      ? `Recent trades:\n${formatRecentTrades(context.recentTrades.slice(0, 5))}`
       : null,
     context.conversationHistory.length > 0
       ? `Recent conversation:\n${JSON.stringify(context.conversationHistory.slice(0, 5))}`
       : null,
-    'Respond directly to the user. Keep it concise and actionable.',
+    'Respond with plain prose text directly to the user. Keep it concise and actionable.',
+    'IMPORTANT: Do NOT wrap your response in JSON. Do NOT use code fences. Return plain text only.',
   ];
 
   return sections.filter(Boolean).join('\n\n');
@@ -226,8 +245,25 @@ export const orchestratorChatBlueprint: Blueprint = {
           temperature: 0.3,
         }, 'interactive');
 
+        let content = llmResponse.content;
+
+        // Guard: if the LLM returned JSON despite prose instructions, extract the text
+        if (content.startsWith('{') || content.startsWith('```')) {
+          try {
+            const fenceMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/i);
+            const jsonStr = fenceMatch ? fenceMatch[1] ?? content : content;
+            const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+            const extracted = parsed.content ?? parsed.response ?? parsed.message ?? parsed.text;
+            if (typeof extracted === 'string' && extracted.trim().length > 0) {
+              content = extracted.trim();
+            }
+          } catch {
+            // Not valid JSON — use raw content as-is
+          }
+        }
+
         return completedResult({
-          content: llmResponse.content,
+          content,
         }, {
           durationMs: llmResponse.durationMs,
           tokensUsed: llmResponse.inputTokens + llmResponse.outputTokens,

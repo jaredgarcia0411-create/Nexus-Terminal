@@ -9,6 +9,8 @@ vi.mock('@/lib/agents/checkpoints', () => ({
 }));
 
 import {
+  buildResearchEmbed,
+  buildSwingSetupEmbed,
   redeliverReport,
   resolveWebhookUrl,
   writeAndDeliverReport,
@@ -27,7 +29,14 @@ function createStoredReport(overrides: Partial<(typeof agentReports.$inferSelect
     summary: 'Setup is improving',
     reportJson: {
       ticker: 'NVDA',
-      thesis: 'Momentum is expanding',
+      newsWhyRunning: { rating: 'yellow', explanation: 'Headline is getting attention.' },
+      chartHistory: { rating: 'green', explanation: 'Ticker usually fades after opening pops.' },
+      dilution: { rating: 'green', explanation: 'Registration is active and usable.' },
+      offeringAbility: { rating: 'green', explanation: 'ATM can be tapped immediately.' },
+      cashNeed: { rating: 'yellow', explanation: 'Runway is moderate.' },
+      overallOfferingRisk: { rating: 'green', explanation: 'Offering probability is elevated.' },
+      historicalStats: 'Average gap fade 18%.',
+      confidence: 'high',
     },
     status: 'published',
     deliveryChannel: 'discord',
@@ -358,7 +367,14 @@ describe('agent discord helpers', () => {
       summary: 'Stored summary',
       reportJson: {
         ticker: 'NVDA',
-        thesis: 'Stored thesis',
+        newsWhyRunning: { rating: 'yellow', explanation: 'Stored catalyst context.' },
+        chartHistory: { rating: 'green', explanation: 'Stored chart history.' },
+        dilution: { rating: 'green', explanation: 'Stored dilution signal.' },
+        offeringAbility: { rating: 'green', explanation: 'Stored offering ability.' },
+        cashNeed: { rating: 'yellow', explanation: 'Stored cash need.' },
+        overallOfferingRisk: { rating: 'green', explanation: 'Stored overall risk.' },
+        historicalStats: 'Stored historical stats.',
+        confidence: 'high',
       },
     });
     const rows = new Map<unknown, unknown[][]>();
@@ -399,10 +415,59 @@ describe('agent discord helpers', () => {
       embeds: [
         expect.objectContaining({
           title: 'Stored title',
-          description: 'Stored summary',
+          description: expect.stringContaining('**Offering Risk**: Stored overall risk.'),
         }),
       ],
     });
+  });
+
+  it('builds the small-cap research embed with traffic-light lines and history', () => {
+    const embed = buildResearchEmbed(createStoredReport({
+      reportJson: {
+        ticker: 'NVDA',
+        confidence: 'high',
+        newsWhyRunning: { rating: 'yellow', explanation: 'Headline is driving the move.' },
+        chartHistory: { rating: 'green', explanation: 'This ticker usually fades.' },
+        dilution: { rating: 'green', explanation: 'Shelf remains active.' },
+        offeringAbility: { rating: 'green', explanation: 'ATM is live.' },
+        cashNeed: { rating: 'red', explanation: 'Cash runway is healthy.' },
+        overallOfferingRisk: { rating: 'green', explanation: 'Odds of an offering remain high.' },
+        historicalStats: 'Average gap fade 22%.',
+      },
+    }) as never);
+
+    expect(embed.description).toContain('🟢 **Offering Risk**: Odds of an offering remain high.');
+    expect(embed.description).toContain('🟡 **News/Catalyst**: Headline is driving the move.');
+    expect(embed.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Ticker', value: 'NVDA' }),
+      expect.objectContaining({ name: 'Confidence', value: 'high' }),
+      expect.objectContaining({ name: 'History', value: 'Average gap fade 22%.', inline: false }),
+    ]));
+  });
+
+  it('builds the swing setup embed from nested recommendation and MDR fields', () => {
+    const embed = buildSwingSetupEmbed(createStoredReport({
+      agentId: 'swing-trader',
+      reportJson: {
+        ticker: 'NVDA',
+        confidence: 'medium',
+        mdrPatternMatch: { rating: 'green', explanation: 'Clean MDR analog.', mdrSimilarity: 87 },
+        momentum: { rating: 'yellow', explanation: 'Momentum is still positive but slowing.' },
+        catalyst: { rating: 'green', explanation: 'Catalyst remains in play.' },
+        patternClassification: 'CONTINUATION',
+        recommendation: { action: 'ADD', reasoning: 'Trend is intact above short-term support.' },
+        volumeProfile: { rating: 'green', explanation: 'Volume remains elevated.' },
+      },
+    }) as never);
+
+    expect(embed.description).toContain('🟢 **MDR Match**: Clean MDR analog.');
+    expect(embed.description).toContain('🟡 **Momentum**: Momentum is still positive but slowing.');
+    expect(embed.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Pattern', value: 'CONTINUATION' }),
+      expect.objectContaining({ name: 'MDR Similarity', value: '87%' }),
+      expect.objectContaining({ name: 'Action', value: 'ADD' }),
+      expect.objectContaining({ name: 'Reasoning', value: 'Trend is intact above short-term support.', inline: false }),
+    ]));
   });
 
   it('manual redelivery posts again even when the success marker already exists', async () => {

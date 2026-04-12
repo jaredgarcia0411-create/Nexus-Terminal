@@ -7,6 +7,7 @@ const writeAndDeliverReportMock = vi.hoisted(() => vi.fn());
 const getCachedTickerDataMock = vi.hoisted(() => vi.fn());
 const normalizeAskEdgarResponseMock = vi.hoisted(() => vi.fn());
 const fetchUnifiedSnapshotMock = vi.hoisted(() => vi.fn());
+const fetchDailyAggregatesMock = vi.hoisted(() => vi.fn());
 const fetchPageTextMock = vi.hoisted(() => vi.fn());
 
 vi.mock('node:crypto', () => ({
@@ -28,6 +29,7 @@ vi.mock('@/lib/askedgar', () => ({
 
 vi.mock('@/lib/massive-market', () => ({
   fetchUnifiedSnapshot: fetchUnifiedSnapshotMock,
+  fetchDailyAggregates: fetchDailyAggregatesMock,
 }));
 
 vi.mock('@/lib/agents/scrape-lite', () => ({
@@ -79,13 +81,17 @@ function createStepInput(
     jobInput?: unknown;
     previousOutput?: unknown;
     db?: unknown;
+    context?: Partial<AgentContext>;
   } = {},
 ): StepInput {
   return {
     jobInput: options.jobInput ?? job.input,
     previousOutput: options.previousOutput ?? null,
     memory: [],
-    context: createContext(),
+    context: {
+      ...createContext(),
+      ...(options.context ?? {}),
+    },
     job,
     db: (options.db ?? {}) as never,
     agentConfig,
@@ -129,6 +135,7 @@ describe('agent blueprints', () => {
       dilutionDetails: { estimatedCash: 1000000 },
     });
     fetchUnifiedSnapshotMock.mockReset();
+    fetchDailyAggregatesMock.mockReset();
     fetchPageTextMock.mockReset();
     vi.unstubAllGlobals();
   });
@@ -330,6 +337,52 @@ describe('agent blueprints', () => {
     });
   });
 
+  it('formats recent trades and extracts prose from wrapped orchestrator JSON responses', async () => {
+    callLlmMock.mockResolvedValue({
+      content: JSON.stringify({
+        response: 'Tighten risk and watch follow-through.',
+      }),
+      modelUsed: 'interactive-model',
+      inputTokens: 12,
+      outputTokens: 6,
+      durationMs: 45,
+    });
+    const job = createJob({
+      agentId: 'orchestrator',
+      jobType: 'chat',
+      input: { message: 'What should I do next?', channel: 'discord' },
+    });
+    const agentConfig = AGENT_CONFIGS.orchestrator;
+    const blueprint = resolveBlueprint(job);
+
+    const result = await blueprint.steps[1].run(createStepInput(job, agentConfig, {
+      previousOutput: {
+        decision: 'handle-directly',
+        targetAgentId: null,
+        specialistJobType: null,
+        specialistJobId: null,
+        warning: null,
+        message: 'What should I do next?',
+      },
+      context: {
+        recentTrades: [
+          { symbol: 'AAPL', grossPnl: 250.6, direction: 'LONG', date: '2026-04-07' },
+          { ticker: 'TSLA', pnl: -90.2, direction: 'SHORT' },
+        ],
+      },
+    }));
+
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Recent trades:\nAAPL: +$251 (long, 2026-04-07)\nTSLA: -$90 (short)'),
+    }), 'interactive');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('IMPORTANT: Do NOT wrap your response in JSON. Do NOT use code fences. Return plain text only.'),
+    }), 'interactive');
+    expect(result.data).toEqual({
+      content: 'Tighten risk and watch follow-through.',
+    });
+  });
+
   it('writes the macro-summary report with the trading date and synthesized payload', async () => {
     const job = createJob({
       agentId: 'orchestrator',
@@ -450,15 +503,23 @@ describe('agent blueprints', () => {
       }),
       previousOutput: {
         ticker: 'AAPL',
-        dilutionRisk: 'high',
-        offeringAbility: 'immediate',
-        filingSummary: 'Shelf is active',
-        catalysts: ['424B'],
+        newsWhyRunning: { rating: 'green', explanation: 'No real catalyst.' },
+        themeMatch: { rating: 'yellow', explanation: 'Loose sympathy only.' },
+        otherCatalysts: [{ catalyst: '424B', rating: 'green' }],
+        chartHistory: { rating: 'green', explanation: 'Gap-and-fade history.' },
+        dilution: { rating: 'green', explanation: 'Shelf is active.' },
+        offeringFrequency: { rating: 'green', explanation: 'Frequent issuer.' },
+        offeringAbility: { rating: 'green', explanation: 'ATM is active.' },
+        cashNeed: { rating: 'green', explanation: 'Cash runway is tight.' },
+        overallOfferingRisk: { rating: 'green', explanation: 'High probability of near-term offering.' },
+        jmt415Commentary: null,
+        historicalStats: 'Average gap fade 18%.',
         confidence: 'high',
         evidenceIds: ['filing-1'],
       },
       expectedAgentId: 'small-cap-trader',
-      expectedSummary: 'Shelf is active',
+      expectedSummary: /GREEN offering risk/,
+      expectedTitle: 'AAPL Small-Cap Research',
     },
     {
       name: 'swing research save step',
@@ -469,23 +530,26 @@ describe('agent blueprints', () => {
       }),
       previousOutput: {
         ticker: 'NVDA',
-        mdrSimilarity: 87,
-        volumeSurgeRatio: 4.2,
-        levels: { entry: 110, stop: 103, targets: [120, 128] },
-        recommendation: 'ADD',
+        mdrPatternMatch: { rating: 'green', explanation: 'Strong MDR analog.', mdrSimilarity: 87 },
+        momentum: { rating: 'green', explanation: 'Momentum still expanding.' },
+        catalyst: { rating: 'yellow', explanation: 'Catalyst is valid but aging.' },
         patternClassification: 'CONTINUATION',
+        recommendation: { action: 'ADD', reasoning: 'Momentum remains intact.' },
+        volumeProfile: { rating: 'green', explanation: 'Volume is 4x average.' },
         confidence: 'medium',
         evidenceIds: ['chart-1'],
       },
       expectedAgentId: 'swing-trader',
-      expectedSummary: /ADD CONTINUATION/,
+      expectedSummary: /ADD.*CONTINUATION/,
+      expectedTitle: 'NVDA Swing Research',
     },
-  ])('uses writeAndDeliverReport in the $name', async ({ job, previousOutput, expectedAgentId, expectedSummary }) => {
+  ])('uses writeAndDeliverReport in the $name', async ({ job, previousOutput, expectedAgentId, expectedSummary, expectedTitle }) => {
     const agentConfig = AGENT_CONFIGS[job.agentId];
     const blueprint = resolveBlueprint(job);
-    const saveStep = blueprint.steps[3];
+    const saveStep = blueprint.steps.find((step) => step.name === 'save-research');
+    expect(saveStep).toBeDefined();
 
-    const result = await saveStep.run(createStepInput(job, agentConfig, {
+    const result = await saveStep!.run(createStepInput(job, agentConfig, {
       previousOutput,
       db: {},
     }));
@@ -495,6 +559,7 @@ describe('agent blueprints', () => {
       userId: job.userId,
       agentId: expectedAgentId,
       reportType: 'research',
+      title: expectedTitle,
       ...(expectedSummary instanceof RegExp
         ? { summary: expect.stringMatching(expectedSummary) }
         : { summary: expectedSummary }),
@@ -504,5 +569,40 @@ describe('agent blueprints', () => {
       status: 'published',
       deliveryError: null,
     });
+  });
+
+  it('continues swing research with empty OHLC history when Massive fails', async () => {
+    fetchDailyAggregatesMock.mockRejectedValue(new Error('Massive unavailable'));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const job = createJob({
+      agentId: 'swing-trader',
+      jobType: 'research',
+      input: { ticker: 'AAPL' },
+    });
+    const agentConfig = AGENT_CONFIGS['swing-trader'];
+    const blueprint = resolveBlueprint(job);
+
+    const result = await blueprint.steps[2].run(createStepInput(job, agentConfig, {
+      previousOutput: {
+        ticker: 'AAPL',
+        filings: [],
+        cashPosition: null,
+        priceContext: {
+          price: 10,
+          change: 2,
+          volume: 1000,
+          avgVolume90d: 500,
+          marketCap: 1000000,
+          sector: 'Tech',
+        },
+      },
+    }));
+
+    expect(fetchDailyAggregatesMock).toHaveBeenCalledWith('AAPL', 10);
+    expect(result.data).toMatchObject({
+      ticker: 'AAPL',
+      ohlcHistory: [],
+    });
+    expect(warnSpy).toHaveBeenCalledWith('[swing-trader] OHLC fetch failed for AAPL:', expect.any(Error));
   });
 });

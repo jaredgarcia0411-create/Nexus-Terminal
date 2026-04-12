@@ -173,6 +173,9 @@ describe('prompts loader', () => {
       if (normalizedPath.endsWith('global-policy.md')) {
         return 'GLOBAL';
       }
+      if (normalizedPath.endsWith('jmt-report-format.md')) {
+        return 'JMT';
+      }
       if (normalizedPath.endsWith('orchestrator.md')) {
         return 'ORCHESTRATOR';
       }
@@ -192,13 +195,16 @@ describe('prompts loader', () => {
 
     const promptsLoader = await import('@/lib/agents/prompts-loader');
 
-    expect(readFileSyncMock).toHaveBeenCalledTimes(4);
+    expect(readFileSyncMock).toHaveBeenCalledTimes(5);
     expect(promptsLoader.loadGlobalPolicyPrompt()).toBe('GLOBAL');
+    expect(promptsLoader.loadJmtFormatPrompt()).toBe('JMT');
     expect(promptsLoader.loadRolePrompt('orchestrator')).toBe('ORCHESTRATOR');
     expect(promptsLoader.loadRolePrompt('small-cap-trader')).toBe('SMALL');
     expect(promptsLoader.loadRolePrompt('swing-trader')).toBe('SWING');
     expect(promptsLoader.buildLlmSystemPrompt('orchestrator')).toBe('GLOBAL\n\n---\n\nORCHESTRATOR');
-    expect(readFileSyncMock).toHaveBeenCalledTimes(4);
+    expect(promptsLoader.buildLlmSystemPrompt('small-cap-trader')).toBe('GLOBAL\n\n---\n\nJMT\n\n---\n\nSMALL');
+    expect(promptsLoader.buildLlmSystemPrompt('swing-trader')).toBe('GLOBAL\n\n---\n\nJMT\n\n---\n\nSWING');
+    expect(readFileSyncMock).toHaveBeenCalledTimes(5);
   });
 
   it('fails fast when a required prompt file is missing at module load', async () => {

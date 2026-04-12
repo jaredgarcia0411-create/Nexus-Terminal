@@ -9,6 +9,7 @@ function readPromptFile(filename: string): string {
 }
 
 const GLOBAL_POLICY_PROMPT = readPromptFile('global-policy.md');
+const JMT_REPORT_FORMAT_PROMPT = readPromptFile('jmt-report-format.md');
 
 const ROLE_PROMPTS: Record<AgentId, string> = {
   orchestrator: readPromptFile('orchestrator.md'),
@@ -24,6 +25,17 @@ export function loadRolePrompt(agentId: AgentId): string {
   return ROLE_PROMPTS[agentId];
 }
 
+export function loadJmtFormatPrompt(): string {
+  return JMT_REPORT_FORMAT_PROMPT;
+}
+
 export function buildLlmSystemPrompt(agentId: AgentId): string {
-  return `${loadGlobalPolicyPrompt()}\n\n---\n\n${loadRolePrompt(agentId)}`;
+  const parts = [loadGlobalPolicyPrompt()];
+
+  if (agentId === 'small-cap-trader' || agentId === 'swing-trader') {
+    parts.push(JMT_REPORT_FORMAT_PROMPT);
+  }
+
+  parts.push(loadRolePrompt(agentId));
+  return parts.join('\n\n---\n\n');
 }

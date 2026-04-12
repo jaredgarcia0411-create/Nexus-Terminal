@@ -39,12 +39,31 @@ const priceContextSchema = filingsSchema.extend({
   }).nullable(),
 });
 
+const trafficLightRating = z.enum(['green', 'yellow', 'red']);
+
+const ratedSection = z.object({
+  rating: trafficLightRating,
+  explanation: z.string().min(1),
+});
+
+const ratedCatalyst = z.object({
+  catalyst: z.string().min(1),
+  rating: trafficLightRating,
+});
+
 const researchReportSchema = z.object({
   ticker: z.string(),
-  dilutionRisk: z.enum(['very-high', 'high', 'medium', 'low']),
-  offeringAbility: z.enum(['immediate', 'delayed', 'blocked']),
-  filingSummary: z.string(),
-  catalysts: z.array(z.string()),
+  newsWhyRunning: ratedSection,
+  themeMatch: ratedSection,
+  otherCatalysts: z.array(ratedCatalyst),
+  chartHistory: ratedSection,
+  dilution: ratedSection,
+  offeringFrequency: ratedSection,
+  offeringAbility: ratedSection,
+  cashNeed: ratedSection,
+  overallOfferingRisk: ratedSection,
+  jmt415Commentary: z.string().nullable(),
+  historicalStats: z.string(),
   confidence: z.enum(['high', 'medium', 'low']),
   evidenceIds: z.array(z.string()),
 });
@@ -161,21 +180,33 @@ async function fetchTradingViewPriceContext(ticker: string) {
 }
 
 function buildResearchPrompt(input: z.infer<typeof priceContextSchema>): string {
+  const exampleShape = {
+    ticker: input.ticker,
+    newsWhyRunning: { rating: 'green | yellow | red', explanation: 'string' },
+    themeMatch: { rating: 'green | yellow | red', explanation: 'string' },
+    otherCatalysts: [{ catalyst: 'string', rating: 'green | yellow | red' }],
+    chartHistory: { rating: 'green | yellow | red', explanation: 'string' },
+    dilution: { rating: 'green | yellow | red', explanation: 'string' },
+    offeringFrequency: { rating: 'green | yellow | red', explanation: 'string' },
+    offeringAbility: { rating: 'green | yellow | red', explanation: 'string' },
+    cashNeed: { rating: 'green | yellow | red', explanation: 'string' },
+    overallOfferingRisk: { rating: 'green | yellow | red', explanation: 'string' },
+    jmt415Commentary: 'string or null',
+    historicalStats: 'string summary of gap-stats data',
+    confidence: 'high | medium | low',
+    evidenceIds: ['string'],
+  };
+
   return [
     `Ticker: ${input.ticker}`,
-    'Return strict JSON with this shape and no markdown:',
-    JSON.stringify({
-      ticker: input.ticker,
-      dilutionRisk: 'very-high | high | medium | low',
-      offeringAbility: 'immediate | delayed | blocked',
-      filingSummary: 'string',
-      catalysts: ['string'],
-      confidence: 'high | medium | low',
-      evidenceIds: ['string'],
-    }, null, 2),
+    'Return strict JSON matching this exact shape (no markdown, no extra keys):',
+    JSON.stringify(exampleShape, null, 2),
     `Filings:\n${JSON.stringify(input.filings)}`,
     `Cash position:\n${JSON.stringify(input.cashPosition)}`,
     `Price context:\n${JSON.stringify(input.priceContext)}`,
+    'Use the JMT traffic-light rating system. Each rating must be "green", "yellow", or "red" (lowercase).',
+    'For jmt415Commentary: if no jmt415-tagged news items exist in the data, set to null.',
+    'For historicalStats: summarize gap-stats patterns (avg gap fade, same-day fade count, typical range). If no gap-stats data, say "No historical gap data available."',
   ].join('\n\n');
 }
 
@@ -291,8 +322,8 @@ export const smallCapResearchBlueprint: Blueprint = {
           userId: job.userId,
           agentId: 'small-cap-trader',
           reportType: 'research',
-          title: `${report.ticker} dilution research`,
-          summary: report.filingSummary,
+          title: `${report.ticker} Small-Cap Research`,
+          summary: `${report.overallOfferingRisk.rating.toUpperCase()} offering risk — ${report.overallOfferingRisk.explanation.slice(0, 120)}`,
           reportJson: report,
         });
 

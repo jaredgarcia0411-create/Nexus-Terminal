@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { getCachedTickerData } from '@/lib/askedgar';
+import { fetchDailyAggregates } from '@/lib/massive-market';
 import { writeAndDeliverReport } from '../discord';
 import { callLlm } from '../llm-client';
 import type { Blueprint, StepResult } from '../types';
@@ -39,17 +40,40 @@ const priceContextSchema = filingsSchema.extend({
   }).nullable(),
 });
 
+const ohlcBarSchema = z.object({
+  date: z.string(),
+  open: z.number(),
+  high: z.number(),
+  low: z.number(),
+  close: z.number(),
+  volume: z.number(),
+  vwap: z.number().nullable(),
+});
+
+const ohlcEnrichedSchema = priceContextSchema.extend({
+  ohlcHistory: z.array(ohlcBarSchema),
+});
+
+const trafficLightRating = z.enum(['green', 'yellow', 'red']);
+
+const ratedSection = z.object({
+  rating: trafficLightRating,
+  explanation: z.string().min(1),
+});
+
 const swingResearchSchema = z.object({
   ticker: z.string(),
-  mdrSimilarity: z.number().min(0).max(100),
-  volumeSurgeRatio: z.number(),
-  levels: z.object({
-    entry: z.number(),
-    stop: z.number(),
-    targets: z.array(z.number()),
+  mdrPatternMatch: ratedSection.extend({
+    mdrSimilarity: z.number().min(0).max(100),
   }),
-  recommendation: z.enum(['HOLD', 'ADD', 'TRIM', 'EXIT', 'WATCH']),
+  momentum: ratedSection,
+  catalyst: ratedSection,
   patternClassification: z.enum(['BREAKOUT', 'EXHAUSTION', 'CONTINUATION', 'STOPPED']),
+  recommendation: z.object({
+    action: z.enum(['HOLD', 'ADD', 'TRIM', 'EXIT', 'WATCH']),
+    reasoning: z.string().min(1),
+  }),
+  volumeProfile: ratedSection,
   confidence: z.enum(['high', 'medium', 'low']),
   evidenceIds: z.array(z.string()),
 });
@@ -163,29 +187,49 @@ async function fetchTradingViewPriceContext(ticker: string) {
   };
 }
 
-function buildResearchPrompt(input: z.infer<typeof priceContextSchema>): string {
-  return [
+function buildResearchPrompt(input: z.infer<typeof ohlcEnrichedSchema>): string {
+  const exampleShape = {
+    ticker: input.ticker,
+    mdrPatternMatch: { rating: 'green | yellow | red', explanation: 'string', mdrSimilarity: 72 },
+    momentum: { rating: 'green | yellow | red', explanation: 'string' },
+    catalyst: { rating: 'green | yellow | red', explanation: 'string' },
+    patternClassification: 'BREAKOUT | EXHAUSTION | CONTINUATION | STOPPED',
+    recommendation: { action: 'HOLD | ADD | TRIM | EXIT | WATCH', reasoning: 'string' },
+    volumeProfile: { rating: 'green | yellow | red', explanation: 'string' },
+    confidence: 'high | medium | low',
+    evidenceIds: ['string'],
+  };
+
+  const sections = [
     `Ticker: ${input.ticker}`,
-    'Return strict JSON with this shape and no markdown:',
-    JSON.stringify({
-      ticker: input.ticker,
-      mdrSimilarity: 72,
-      volumeSurgeRatio: 3.4,
-      levels: { entry: 12.5, stop: 11.8, targets: [13.2, 14.1] },
-      recommendation: 'WATCH | HOLD | ADD | TRIM | EXIT',
-      patternClassification: 'BREAKOUT | EXHAUSTION | CONTINUATION | STOPPED',
-      confidence: 'high | medium | low',
-      evidenceIds: ['string'],
-    }, null, 2),
+    'Return strict JSON matching this exact shape (no markdown, no extra keys):',
+    JSON.stringify(exampleShape, null, 2),
     `Filings:\n${JSON.stringify(input.filings)}`,
     `Cash position:\n${JSON.stringify(input.cashPosition)}`,
     `Price context:\n${JSON.stringify(input.priceContext)}`,
-    'Focus on MDR similarity, momentum quality, and actionable entry/stop/target levels.',
-  ].join('\n\n');
+  ];
+
+  if (input.ohlcHistory.length > 0) {
+    sections.push(
+      `Daily OHLC history (last ${input.ohlcHistory.length} days):\n${JSON.stringify(input.ohlcHistory, null, 2)}`,
+      'Use the OHLC data to assess momentum, volume trends, and pattern quality. Do NOT fabricate data — only reference values present above.',
+    );
+  } else {
+    sections.push(
+      'No OHLC history available. Base momentum and volume analysis on the price context data only. State that historical OHLC was unavailable.',
+    );
+  }
+
+  sections.push(
+    'Use the JMT traffic-light rating system. Each rating must be "green", "yellow", or "red" (lowercase).',
+    'Do NOT provide specific price levels (entry, stop, target). Focus on pattern quality and setup strength.',
+  );
+
+  return sections.join('\n\n');
 }
 
 function buildReportSummary(report: z.infer<typeof swingResearchSchema>): string {
-  return `${report.recommendation} ${report.patternClassification} setup with ${report.mdrSimilarity}% MDR similarity`;
+  return `${report.recommendation.action} — ${report.patternClassification} (${report.mdrPatternMatch.mdrSimilarity}% MDR match, ${report.mdrPatternMatch.rating})`;
 }
 
 async function loadSwingTraderSystemPrompt() {
@@ -252,9 +296,37 @@ export const swingTraderResearchBlueprint: Blueprint = {
       },
     },
     {
+      name: 'fetch-ohlc-history',
+      type: 'code',
+      inputSchema: priceContextSchema,
+      outputSchema: ohlcEnrichedSchema,
+      metadata: { canRetry: true, timeoutMs: 15000, maxRepairAttempts: 0, sideEffect: false },
+      run: async ({ previousOutput }) => {
+        const startedAt = Date.now();
+        const data = priceContextSchema.parse(previousOutput);
+        let ohlcHistory: z.infer<typeof ohlcBarSchema>[] = [];
+
+        try {
+          ohlcHistory = await fetchDailyAggregates(data.ticker, 10);
+        } catch (error) {
+          // Non-fatal — proceed with empty OHLC if Massive API fails
+          console.warn(`[swing-trader] OHLC fetch failed for ${data.ticker}:`, error);
+        }
+
+        return completedResult({
+          ...data,
+          ohlcHistory,
+        }, {
+          durationMs: Date.now() - startedAt,
+          sourceIds: ohlcHistory.length > 0 ? [`massive-ohlc:${data.ticker}`] : [],
+          upstreamStepIds: ['fetch-price-context'],
+        });
+      },
+    },
+    {
       name: 'synthesize-report',
       type: 'llm',
-      inputSchema: priceContextSchema,
+      inputSchema: ohlcEnrichedSchema,
       outputSchema: swingResearchSchema,
       metadata: {
         canRetry: true,
@@ -264,7 +336,7 @@ export const swingTraderResearchBlueprint: Blueprint = {
         lane: 'background',
       },
       run: async ({ previousOutput }) => {
-        const input = priceContextSchema.parse(previousOutput);
+        const input = ohlcEnrichedSchema.parse(previousOutput);
         const llmResponse = await callLlm({
           systemPrompt: await loadSwingTraderSystemPrompt(),
           userMessage: buildResearchPrompt(input),
@@ -275,7 +347,7 @@ export const swingTraderResearchBlueprint: Blueprint = {
           durationMs: llmResponse.durationMs,
           tokensUsed: llmResponse.inputTokens + llmResponse.outputTokens,
           model: llmResponse.modelUsed,
-          upstreamStepIds: ['fetch-price-context'],
+          upstreamStepIds: ['fetch-ohlc-history'],
           artifacts: {
             inputTokens: llmResponse.inputTokens,
             outputTokens: llmResponse.outputTokens,
@@ -296,7 +368,7 @@ export const swingTraderResearchBlueprint: Blueprint = {
           userId: job.userId,
           agentId: 'swing-trader',
           reportType: 'research',
-          title: `${report.ticker} swing research`,
+          title: `${report.ticker} Swing Research`,
           summary: buildReportSummary(report),
           reportJson: report,
         });
