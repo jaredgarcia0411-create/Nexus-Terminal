@@ -222,6 +222,17 @@ Use different models for different tasks based on complexity:
 - **Don't adopt mempalace** — repo was 2 days old as of 2026-04-07, single dominant maintainer, Python+MCP only. Watch for 3-6 months and revisit if it stabilizes.
 - **Don't adopt mem0 or Cognee** — mem0 overlaps too much with what you already have, and Cognee is RAG-doc-heavy, wrong shape for trading agents.
 
+### Preemptive adoption considered & rejected (2026-04-12)
+
+Asked whether to add Graphiti/Letta now so agents build long-term memory from day one. Answer: **no — the trigger-based approach is still correct.** Reasons:
+
+1. **Agent output quality is upstream of memory.** The agents currently produce broken embeds (n/a fields, fabricated numbers). Fixing what agents *remember* is pointless if what they *say* is wrong. Solve the JMT output format first (see Agent Response Quality section).
+2. **No production data yet.** Sprint 4 just passed smoke tests. `agent_memory_v2` hasn't been exercised in production. There's nothing meaningful to store in a temporal graph or self-editing memory system yet.
+3. **Premature infrastructure cost.** Graphiti needs Neo4j/FalkorDB as a Docker sidecar. Letta wants to replace the entire agent runtime. Both are significant complexity for agents that have run a handful of test scans.
+4. **Right sequence:** Fix output quality → run agents daily in production → let `agent_memory_v2` accumulate real data for a few weeks → *then* evaluate if temporal queries or self-editing memory are needed.
+
+The triggers above remain the right gates. Revisit after agents have been running production scans for 2+ weeks.
+
 ### Action when triggered
 
 1. Re-read this note and the original `/learn` conversation
@@ -274,9 +285,21 @@ Use different models for different tasks based on complexity:
 **Orchestrator returns raw JSON to Discord:**
 The `synthesize-response` step in `orchestrator-chat.ts` is governed by `global-policy.md` which tells every LLM step to return structured JSON. The synthesis step should return prose, not JSON. The LLM obeys and outputs `{"response": "The market is..."}` which the Discord bot renders verbatim.
 
-**Specialists return n/a for entry, target, stop, bias, MDR score, pattern:**
-1. Swing-trader's `swingResearchSchema` requires numeric fields (`levels.entry`, `levels.stop`, `mdrSimilarity`) but only receives spot price data — no OHLC history for the LLM to derive real levels.
-2. Small-cap's `researchReportSchema` has no `entry`, `target`, or `stop` fields at all — `buildResearchEmbed` looks for them but they're never produced. Always `n/a`.
+**N/A Field Investigation — Root Causes (2026-04-12):**
+The "n/a" fields in Discord embeds are **code bugs**, not rate limiting or insufficient data. Three independent causes:
+
+| Agent | Embed Field | Schema Field | Root Cause |
+|-------|------------|--------------|------------|
+| Small-cap | Entry, Target, Risk | *(none)* | Schema has no such fields — `buildResearchEmbed` searches for keys that don't exist |
+| Small-cap | Bias | `dilutionRisk` | Name mismatch — embed searches for `bias`, schema produces `dilutionRisk` |
+| Small-cap | Catalyst | `catalysts` (array) | Embed searches for singular `catalyst` — `readJsonValue` returns the array, `coerceFieldValue` JSON-stringifies it |
+| Swing-trader | Pattern | `patternClassification` | Name mismatch — embed searches for `pattern`/`setup` |
+| Swing-trader | MDR Score | `mdrSimilarity` | Name mismatch — embed searches for `mdrScore`/`score` |
+| Swing-trader | Entry, Stop, Target | `levels.entry`, `levels.stop`, `levels.targets` | `readJsonValue()` only does flat key lookup — can't find nested fields |
+
+**Rate limiting is a separate (worse) problem:** When AskEdgar 429s, the agent continues with empty data and the LLM fabricates values to satisfy required schema fields. Not "n/a" — fake numbers that look real. The blueprint has no conditional check on `hasAnyData` to halt processing.
+
+**Code path:** `readJsonValue()` at `lib/agents/discord.ts:54-82` iterates flat keys only. When swing-trader's `levels.entry` is nested, it returns `undefined` → `coerceFieldValue()` converts to `'n/a'`.
 
 ### P0 — Critical Fixes (Single Session)
 
@@ -286,18 +309,65 @@ The `synthesize-response` step in `orchestrator-chat.ts` is governed by `global-
 - Impact: Clean prose responses immediately
 - Complexity: LOW
 
-**P0.2: Add entry/target/stop fields to small-cap schema**
-- Files: `lib/agents/blueprints/small-cap-research.ts`, `lib/agents/discord.ts`
-- What: Add `shortEntry`, `shortTarget`, `stopAbove` to schema and prompt. Update embed to read new field names.
-- Impact: Research embeds show actionable short levels
+**P0.2: Redesign agent output to match JMT research report format**
+- Files: `lib/agents/blueprints/small-cap-research.ts`, `lib/agents/blueprints/swing-trader-research.ts`, `lib/agents/discord.ts`, `lib/agents/prompts/small-cap.md`, `lib/agents/prompts/swing-trader.md`
+- What: Replace current schemas and embeds with structured traffic-light rating format. **No entry, target, or stop levels.** Bias and catalysts stay. See "Target Output Format" below.
+- Impact: Scannable, actionable research embeds matching the quality of JMT415's "Ultimate Research Report"
+- Complexity: MEDIUM
+
+**P0.3: Fix Discord embed field mappings**
+- File: `lib/agents/discord.ts`
+- What: Update `buildResearchEmbed` and `buildSwingSetupEmbed` field lookups to match actual schema keys. Either add dot-notation support to `readJsonValue` or flatten the schemas. Prerequisite for any output format change.
 - Complexity: LOW
+
+#### Target Output Format — Small-Cap (JMT-style)
+
+Modeled after the JMT415 "Ultimate Research Report" prompt. Each section gets a traffic-light rating and 1-3 sentence explanation. Total output under 1000 words for quick scanning.
+
+**Rating criteria:**
+- 🔴 Red: Negative (dilution events, offerings, ATM programs, reverse splits, delisting risks, financial issues)
+- 🟡 Yellow: Neutral (no clear revenue impact — new features, early-stage trials, general announcements)
+- 🟢 Green: Positive (earnings beats, late-stage clinical success, FDA approvals, contracts with confirmed revenue)
+
+**Sections:**
+
+1. **News / Why it's running** 🔴/🟡/🟢 — most recent developments with dates, form types, and source URLs
+2. **Theme** 🔴/🟡/🟢 — comparison to current market themes from last 5 trading days
+3. **Other Catalysts** — list of upcoming events, each with its own rating
+4. **Chart History** 🟢/🟡/🟠/🔴 — based on `gap-stats` endpoint data (gap count, median gap%, open-to-high/low/close, fade rate, NHOD after 11am, broke PM high)
+5. **Dilution** 🟢/🟠/🔴 — focus on in-the-money or near-ITM dilution, variable pricing (discount to VWAP), upcoming dilution risk
+6. **Offering Frequency** 🟢/🟠/🔴 — historical offering cadence (best predictor of future offerings)
+7. **Offering Ability** 🟢/🟠/🔴 — can they do a registered offering now? Active shelf, S-1/F-1, warrant exercise, or must raise through other means
+8. **Cash Need** 🟢/🟠/🔴 — calculated burn rate + filing commentary
+9. **Overall Offering Risk** 🟢/🟠/🔴 — composite assessment weighted toward frequency
+10. **Jmt415 Historical Commentary** — analyst commentary timeline (if available)
+11. **Historical Stats** — PR history, gap history with open-to-high/low/close stats
+
+**Data availability note:** `fetchTickerData()` already calls 17 AskEdgar endpoints including `gap-stats`, `news`, `dilution-rating`, `dilution-data`, `offerings`, `registrations` — but the current small-cap blueprint only uses ~4 of them. The JMT format would consume most of the already-fetched data. Need to add: `fetchJmt415()` for analyst commentary (endpoint exists in API at `docs/AE_API_DOCS.md:825` but isn't implemented). The "Theme" section needs recent market context — source from TradingView screener history or recent agent scan results.
+
+**Schema changes required:**
+- Replace `researchReportSchema` — each section gets a `rating` (enum: `'red' | 'yellow' | 'green'`) and `explanation` (string)
+- Remove `levels` object from `swingResearchSchema` — replace with traffic-light pattern/momentum assessment
+- Store JMT prompt reference as `lib/agents/prompts/jmt-report-format.md`
+
+#### Target Output Format — Swing Trader
+
+Same traffic-light system, different sections:
+1. **MDR Pattern Match** 🔴/🟡/🟢 — similarity to known multi-day runner setups (keep `mdrSimilarity` score but as context, not a trade signal)
+2. **Momentum** 🔴/🟡/🟢 — RSI, volume surge, EMA position
+3. **Catalyst** 🔴/🟡/🟢 — what's driving the move
+4. **Pattern Classification** — BREAKOUT / EXHAUSTION / CONTINUATION / STOPPED
+5. **Recommendation** — HOLD / ADD / TRIM / EXIT / WATCH with reasoning
+6. **Volume Profile** 🔴/🟡/🟢 — surge ratio, institutional interest signals
+
+Requires OHLC history (P1.1) to produce real pattern data instead of fabricated numbers.
 
 ### P1 — This Week (Data & Prompt Quality)
 
-**P1.1: Give Swing Trader real OHLC history for MDR scoring**
+**P1.1: Give Swing Trader real OHLC history for pattern recognition**
 - File: `lib/agents/blueprints/swing-trader-research.ts`
-- What: Add `fetch-ohlc-history` step using Massive API. Pass 5-10 days of OHLC to LLM.
-- Impact: Real MDR scoring instead of fabricated numbers
+- What: Add `fetch-ohlc-history` step using Massive API. Pass 5-10 days of OHLC to LLM for real pattern classification and momentum assessment — not price levels.
+- Impact: Real MDR pattern scoring and volume analysis instead of fabricated numbers
 - Complexity: MEDIUM
 
 **P1.2: Format trade context for orchestrator LLM**
@@ -310,14 +380,14 @@ The `synthesize-response` step in `orchestrator-chat.ts` is governed by `global-
 - What: Add exception clause for prose-output steps in global policy
 - Complexity: LOW
 
-**P1.4: Small-cap prompt — output field guidance**
+**P1.4: Rewrite small-cap prompt with JMT rating criteria**
 - File: `lib/agents/prompts/small-cap.md`
-- What: Add specific instructions for `filingSummary`, `catalysts`, `evidenceIds`, `shortEntry/stopAbove/shortTarget`
+- What: Replace current prompt with JMT-style traffic-light rating definitions. Include criteria for each section (news, theme, dilution, offering frequency/ability, cash need, overall risk). Reference `lib/agents/prompts/jmt-report-format.md` for the full prompt template.
 - Complexity: LOW
 
-**P1.5: Swing trader prompt — scoring guidance**
+**P1.5: Rewrite swing-trader prompt — remove price levels, add traffic-light format**
 - File: `lib/agents/prompts/swing-trader.md`
-- What: Add calculation guidance for `mdrSimilarity`, `volumeSurgeRatio`, `levels.entry/stop/targets`
+- What: Remove "Be specific about entry/exit prices and invalidation points" and "Compare current price action against entry/stop/target levels." Replace with traffic-light rating guidance for pattern strength, momentum, and volume. Keep MDR scoring direction but frame as pattern recognition, not trade signals.
 - Complexity: LOW
 
 ### P2 — Next Sprint (Structural)
@@ -342,10 +412,10 @@ The `synthesize-response` step in `orchestrator-chat.ts` is governed by `global-
 - What: Upsert `thesis` category memory row with ticker key after research completes
 - Complexity: MEDIUM
 
-**P2.5: Discord embed layout improvements**
+**P2.5: Discord embed layout for JMT format**
 - File: `lib/agents/discord.ts`
-- What: Move high-value fields to non-inline, promote risk rating into title, increase truncate limit
-- Complexity: LOW
+- What: Rebuild `buildResearchEmbed` and `buildSwingSetupEmbed` to render the new traffic-light sections. Use non-inline fields for multi-line explanations. Promote overall risk rating into embed title. Show historical stats in a code block for alignment.
+- Complexity: MEDIUM
 
 ### P3 — Future Sprint
 
@@ -359,17 +429,18 @@ The `synthesize-response` step in `orchestrator-chat.ts` is governed by `global-
 | ID | Description | Complexity | Priority |
 |----|-------------|------------|----------|
 | P0.1 | Fix raw JSON in orchestrator chat | LOW | Today |
-| P0.2 | Add entry/target/stop to small-cap schema | LOW | Today |
-| P1.1 | OHLC history for Swing Trader MDR scoring | MEDIUM | This week |
+| P0.2 | Redesign agent output to JMT research report format | MEDIUM | Today |
+| P0.3 | Fix Discord embed field mappings (prerequisite for P0.2) | LOW | Today |
+| P1.1 | OHLC history for Swing Trader pattern recognition | MEDIUM | This week |
 | P1.2 | Format trade context for orchestrator LLM | LOW | This week |
 | P1.3 | Separate JSON rule from prose steps | LOW | This week |
-| P1.4 | Small-cap prompt output field guidance | LOW | This week |
-| P1.5 | Swing trader scoring guidance | LOW | This week |
+| P1.4 | Rewrite small-cap prompt with JMT rating criteria | LOW | This week |
+| P1.5 | Rewrite swing-trader prompt — traffic-light format, no price levels | LOW | This week |
 | P2.1 | Persist assistant conversation turns | MEDIUM | Next sprint |
 | P2.2 | Route specialist results back to Discord | MEDIUM | Next sprint |
 | P2.3 | Extend TradingView columns (technicals) | MEDIUM | Next sprint |
 | P2.4 | Memory writes after research | MEDIUM | Next sprint |
-| P2.5 | Discord embed layout improvements | LOW | Next sprint |
+| P2.5 | Discord embed layout for JMT format | MEDIUM | Next sprint |
 | P3.1 | Pre-market scan blueprint | HIGH | Future |
 | P3.2 | Pattern-check blueprint | HIGH | Future |
 | P3.3 | Trade context formatting helper | LOW | Future |
@@ -381,10 +452,12 @@ The `synthesize-response` step in `orchestrator-chat.ts` is governed by `global-
 |------|-------|
 | `lib/agents/blueprints/orchestrator-chat.ts` | P0.1, P1.2, P1.3, P2.1 |
 | `lib/agents/blueprints/small-cap-research.ts` | P0.2, P2.3, P2.4 |
-| `lib/agents/blueprints/swing-trader-research.ts` | P1.1, P2.3, P2.4 |
-| `lib/agents/discord.ts` | P0.2, P2.5 |
+| `lib/agents/blueprints/swing-trader-research.ts` | P0.2, P1.1, P2.3, P2.4 |
+| `lib/agents/discord.ts` | P0.2, P0.3, P2.5 |
 | `lib/agents/prompts/global-policy.md` | P1.3 |
 | `lib/agents/prompts/small-cap.md` | P1.4 |
 | `lib/agents/prompts/swing-trader.md` | P1.5 |
+| `lib/agents/prompts/jmt-report-format.md` | P0.2, P1.4 (new file — JMT prompt reference) |
+| `lib/askedgar.ts` | P0.2 (add `fetchJmt415()`) |
 | `services/discord-bot/index.ts` | P2.2 |
 | `lib/agents/context.ts` | P3.3 |
