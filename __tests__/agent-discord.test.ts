@@ -10,11 +10,17 @@ vi.mock('@/lib/agents/checkpoints', () => ({
 
 import {
   buildResearchEmbed,
+  buildMacroSummaryEmbed,
   buildSwingSetupEmbed,
   redeliverReport,
   resolveWebhookUrl,
   writeAndDeliverReport,
 } from '@/lib/agents/discord';
+import type {
+  MacroSummaryReport,
+  SmallCapResearchReport,
+  SwingResearchReport,
+} from '@/lib/agents/types';
 
 type RowQueues = Map<unknown, unknown[][]>;
 
@@ -43,6 +49,71 @@ function createStoredReport(overrides: Partial<(typeof agentReports.$inferSelect
     deliveredAt: null,
     deliveryError: null,
     createdAt: new Date('2026-04-07T14:00:00.000Z'),
+    ...overrides,
+  };
+}
+
+function createSmallCapReportJson(overrides: Partial<SmallCapResearchReport> = {}): SmallCapResearchReport {
+  return {
+    ticker: 'NVDA',
+    newsWhyRunning: { rating: 'yellow', explanation: 'Headline is getting attention.' },
+    themeMatch: { rating: 'green', explanation: 'Theme alignment is strong.' },
+    otherCatalysts: [
+      { catalyst: 'Positioning remains crowded', rating: 'yellow' },
+    ],
+    chartHistory: { rating: 'green', explanation: 'Ticker usually fades after opening pops.' },
+    dilution: { rating: 'green', explanation: 'Registration is active and usable.' },
+    offeringFrequency: { rating: 'yellow', explanation: 'Offerings are not frequent, but still possible.' },
+    offeringAbility: { rating: 'green', explanation: 'ATM can be tapped immediately.' },
+    cashNeed: { rating: 'yellow', explanation: 'Runway is moderate.' },
+    overallOfferingRisk: { rating: 'green', explanation: 'Offering probability is elevated.' },
+    jmt415Commentary: 'JMT-415 context is supportive.',
+    historicalStats: 'Average gap fade 18%.',
+    confidence: 'high',
+    evidenceIds: ['news:1', 'chart:1'],
+    ...overrides,
+  };
+}
+
+function createSwingReportJson(overrides: Partial<SwingResearchReport> = {}): SwingResearchReport {
+  return {
+    ticker: 'NVDA',
+    mdrPatternMatch: { rating: 'green', explanation: 'Clean MDR analog.', mdrSimilarity: 87 },
+    momentum: { rating: 'yellow', explanation: 'Momentum is still positive but slowing.' },
+    catalyst: { rating: 'green', explanation: 'Catalyst remains in play.' },
+    patternClassification: 'CONTINUATION',
+    recommendation: { action: 'ADD', reasoning: 'Trend is intact above short-term support.' },
+    volumeProfile: { rating: 'green', explanation: 'Volume remains elevated.' },
+    confidence: 'medium',
+    evidenceIds: ['pattern:1', 'volume:1'],
+    ...overrides,
+  };
+}
+
+function createMacroReportJson(overrides: Partial<MacroSummaryReport> = {}): MacroSummaryReport {
+  return {
+    tradingDate: '2026-04-12',
+    marketBias: 'bullish',
+    summary: 'Risk appetite improved as macro data eased near-term rate fears.',
+    drivers: [
+      { driver: 'CPI print came in softer than expected', impact: 'positive', sourceRefs: ['headline:1'] },
+      { driver: 'Fed speakers stayed balanced', impact: 'mixed', sourceRefs: ['headline:2'] },
+      { driver: 'Rates backed off into the close', impact: 'negative', sourceRefs: ['snapshot:TLT'] },
+    ],
+    crossAssetSnapshot: [
+      { ticker: 'SPY', price: 520.12, changePercent: 0.8 },
+      { ticker: 'TLT', price: 95.34, changePercent: -0.4 },
+    ],
+    scheduledCatalysts: [
+      { event: 'FOMC rate decision', date: '2026-04-15', expectedImpact: 'Could reset the risk-on backdrop.' },
+    ],
+    sectorRotation: ['Semis bid', 'Utilities lagged'],
+    deskImplications: ['Stay long beta into stronger tape.', 'Fade extended rates rallies.'],
+    sourceIndex: [
+      { id: 'headline:1', title: 'MarketWatch Latest News', url: 'https://example.com/1', fetchedAt: '2026-04-12T13:00:00.000Z' },
+      { id: 'snapshot:TLT', title: 'TLT Session Snapshot', url: null, fetchedAt: '2026-04-12T13:00:00.000Z' },
+    ],
+    confidence: 'high',
     ...overrides,
   };
 }
@@ -423,9 +494,7 @@ describe('agent discord helpers', () => {
 
   it('builds the small-cap research embed with traffic-light lines and history', () => {
     const embed = buildResearchEmbed(createStoredReport({
-      reportJson: {
-        ticker: 'NVDA',
-        confidence: 'high',
+      reportJson: createSmallCapReportJson({
         newsWhyRunning: { rating: 'yellow', explanation: 'Headline is driving the move.' },
         chartHistory: { rating: 'green', explanation: 'This ticker usually fades.' },
         dilution: { rating: 'green', explanation: 'Shelf remains active.' },
@@ -433,7 +502,7 @@ describe('agent discord helpers', () => {
         cashNeed: { rating: 'red', explanation: 'Cash runway is healthy.' },
         overallOfferingRisk: { rating: 'green', explanation: 'Odds of an offering remain high.' },
         historicalStats: 'Average gap fade 22%.',
-      },
+      }),
     }) as never);
 
     expect(embed.description).toContain('🟢 **Offering Risk**: Odds of an offering remain high.');
@@ -441,23 +510,18 @@ describe('agent discord helpers', () => {
     expect(embed.fields).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'Ticker', value: 'NVDA' }),
       expect.objectContaining({ name: 'Confidence', value: 'high' }),
-      expect.objectContaining({ name: 'History', value: 'Average gap fade 22%.', inline: false }),
+      expect.objectContaining({
+        name: 'Historical Stats',
+        value: '```\nAverage gap fade 22%.\n```',
+        inline: false,
+      }),
     ]));
   });
 
   it('builds the swing setup embed from nested recommendation and MDR fields', () => {
     const embed = buildSwingSetupEmbed(createStoredReport({
       agentId: 'swing-trader',
-      reportJson: {
-        ticker: 'NVDA',
-        confidence: 'medium',
-        mdrPatternMatch: { rating: 'green', explanation: 'Clean MDR analog.', mdrSimilarity: 87 },
-        momentum: { rating: 'yellow', explanation: 'Momentum is still positive but slowing.' },
-        catalyst: { rating: 'green', explanation: 'Catalyst remains in play.' },
-        patternClassification: 'CONTINUATION',
-        recommendation: { action: 'ADD', reasoning: 'Trend is intact above short-term support.' },
-        volumeProfile: { rating: 'green', explanation: 'Volume remains elevated.' },
-      },
+      reportJson: createSwingReportJson(),
     }) as never);
 
     expect(embed.description).toContain('🟢 **MDR Match**: Clean MDR analog.');
@@ -468,6 +532,48 @@ describe('agent discord helpers', () => {
       expect.objectContaining({ name: 'Action', value: 'ADD' }),
       expect.objectContaining({ name: 'Reasoning', value: 'Trend is intact above short-term support.', inline: false }),
     ]));
+  });
+
+  it('builds the macro summary embed from the typed report contract', () => {
+    const embed = buildMacroSummaryEmbed(createStoredReport({
+      agentId: 'orchestrator',
+      reportType: 'macro-summary',
+      title: '2026-04-12 macro briefing',
+      summary: 'Legacy summary should not be used for the embed body.',
+      reportJson: createMacroReportJson(),
+    }) as never);
+
+    expect(embed.description).toBe('Risk appetite improved as macro data eased near-term rate fears.');
+    const fields = embed.fields ?? [];
+    expect(fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Market Bias', value: 'bullish' }),
+      expect.objectContaining({ name: 'Confidence', value: 'high' }),
+      expect.objectContaining({
+        name: 'Catalysts',
+        value: expect.stringContaining('FOMC rate decision (2026-04-15) - Could reset the risk-on backdrop.'),
+        inline: false,
+      }),
+      expect.objectContaining({
+        name: 'Desk Implications',
+        value: expect.stringContaining('• Stay long beta into stronger tape.'),
+        inline: false,
+      }),
+      expect.objectContaining({
+        name: 'Sector Rotation',
+        value: expect.stringContaining('• Semis bid'),
+        inline: false,
+      }),
+    ]));
+    const topDrivers = fields.find((field) => field.name === 'Top Drivers');
+    expect(topDrivers).toEqual(expect.objectContaining({
+      name: 'Top Drivers',
+      inline: false,
+    }));
+    expect(topDrivers?.value).toContain('🟢 CPI print came in softer than expected');
+    expect(topDrivers?.value).toContain('🟡 Fed speakers stayed balanced');
+    expect(topDrivers?.value).toContain('🔴 Rates backed off into the close');
+    expect(fields.some((field) => field.name === 'crossAssetSnapshot')).toBe(false);
+    expect(embed.fields).toHaveLength(6);
   });
 
   it('manual redelivery posts again even when the success marker already exists', async () => {

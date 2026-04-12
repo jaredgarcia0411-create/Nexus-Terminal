@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { agentConversations, agentJobs, agentRegistry } from '@/lib/db/schema';
 import { callLlm } from '@/lib/agents/llm-client';
-import type { AgentId, Blueprint, StepResult } from '@/lib/agents/types';
+import type { AgentId, Blueprint, MacroSummaryReport, StepResult } from '@/lib/agents/types';
 
 const RESEARCH_COMMAND = /^\s*\/research\s+/;
 const SWING_COMMAND = /^\s*\/(?:swing|momentum)\s+/;
@@ -116,12 +116,27 @@ function formatRecentTrades(trades: unknown[]): string {
     .join('\n');
 }
 
+function formatMacroContext(macro: MacroSummaryReport): string {
+  const lines = [
+    `Bias: ${macro.marketBias} (${macro.confidence} confidence)`,
+    `Summary: ${macro.summary}`,
+    macro.drivers.length > 0
+      ? `Drivers: ${macro.drivers.map((driver) => `${driver.driver} (${driver.impact})`).join('; ')}`
+      : null,
+    macro.deskImplications.length > 0
+      ? `Desk: ${macro.deskImplications.join('; ')}`
+      : null,
+  ];
+
+  return lines.filter(Boolean).join('\n');
+}
+
 function buildSynthesisPrompt(
   route: RouteDecision,
   chatInput: z.infer<typeof chatInputSchema>,
   context: {
     conversationHistory: unknown[];
-    macroSummary: unknown | null;
+    macroSummary: MacroSummaryReport | null;
     recentTrades: unknown[];
   },
 ): string {
@@ -129,7 +144,7 @@ function buildSynthesisPrompt(
     `Channel: ${chatInput.channel}`,
     route.warning ? `Warning: ${route.warning}` : null,
     `User message:\n${chatInput.message.trim()}`,
-    context.macroSummary ? `Latest macro summary:\n${JSON.stringify(context.macroSummary)}` : null,
+    context.macroSummary ? `Latest macro summary:\n${formatMacroContext(context.macroSummary)}` : null,
     context.recentTrades.length > 0
       ? `Recent trades:\n${formatRecentTrades(context.recentTrades.slice(0, 5))}`
       : null,

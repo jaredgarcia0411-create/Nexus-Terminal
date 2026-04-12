@@ -7,6 +7,14 @@ import { getMemory } from './memory';
 const SYSTEM_AGENT_USER_ID = 'system-agent-user';
 const ORCHESTRATOR_AGENT_ID: AgentId = 'orchestrator';
 
+function isMacroSummaryReport(value: unknown): value is MacroSummaryReport {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  return typeof (value as { marketBias?: unknown }).marketBias === 'string';
+}
+
 export async function buildContext(
   db: AgentDb,
   userId: string,
@@ -38,9 +46,11 @@ export async function buildContext(
       .limit(1),
   ]);
 
+  const latestMacroSummary = macroSummary[0]?.reportJson;
+
   return {
     recentTrades: recentTrades as unknown[],
-    macroSummary: (macroSummary[0]?.reportJson ?? null) as MacroSummaryReport | null,
+    macroSummary: isMacroSummaryReport(latestMacroSummary) ? latestMacroSummary : null,
     memory,
     conversationHistory: conversationHistory as unknown[],
   };

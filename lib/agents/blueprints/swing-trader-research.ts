@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { getCachedTickerData } from '@/lib/askedgar';
 import { fetchDailyAggregates } from '@/lib/massive-market';
 import { writeAndDeliverReport } from '../discord';
+import { upsertMemory } from '../memory';
 import { callLlm } from '../llm-client';
 import type { Blueprint, StepResult } from '../types';
 
@@ -13,6 +14,12 @@ const TRADINGVIEW_COLUMNS = [
   'average_volume_90d_calc',
   'market_cap_basic',
   'sector',
+  'High.1W',
+  'Low.1W',
+  'RSI',
+  'MACD.macd',
+  'EMA9',
+  'EMA21',
 ];
 
 const researchInputSchema = z.object({
@@ -25,8 +32,12 @@ const rawResearchInputSchema = z.object({
 
 const filingsSchema = z.object({
   ticker: z.string(),
-  filings: z.array(z.unknown()),
-  cashPosition: z.unknown().nullable(),
+  gapStats: z.array(z.unknown()),
+  ownership: z.array(z.unknown()),
+  historicalFloat: z.array(z.unknown()),
+  dilutionRating: z.unknown().nullable(),
+  registrations: z.array(z.unknown()),
+  offerings: z.array(z.unknown()),
 });
 
 const priceContextSchema = filingsSchema.extend({
@@ -37,6 +48,12 @@ const priceContextSchema = filingsSchema.extend({
     avgVolume90d: z.number().nullable(),
     marketCap: z.number().nullable(),
     sector: z.string().nullable(),
+    high1w: z.number().nullable(),
+    low1w: z.number().nullable(),
+    rsi: z.number().nullable(),
+    macdSignal: z.number().nullable(),
+    ema9: z.number().nullable(),
+    ema21: z.number().nullable(),
   }).nullable(),
 });
 
@@ -52,6 +69,31 @@ const ohlcBarSchema = z.object({
 
 const ohlcEnrichedSchema = priceContextSchema.extend({
   ohlcHistory: z.array(ohlcBarSchema),
+});
+
+const deterministicTechnicalsSchema = z.object({
+  relativeVolume: z.number().nullable(),
+  extension5d: z.number().nullable(),
+  extension10d: z.number().nullable(),
+  rsi: z.number().nullable(),
+  ema9: z.number().nullable(),
+  ema21: z.number().nullable(),
+});
+
+const runnerQualitySchema = z.object({
+  gapStats: z.array(z.unknown()),
+  ownership: z.array(z.unknown()),
+  historicalFloat: z.array(z.unknown()),
+  dilutionRating: z.unknown().nullable(),
+  registrations: z.array(z.unknown()),
+  offerings: z.array(z.unknown()),
+  floatTrend: z.enum(['increasing', 'decreasing', 'stable']).nullable(),
+  knownHolderOverhang: z.number().nullable(),
+});
+
+const swingPipelineInputSchema = ohlcEnrichedSchema.extend({
+  deterministicTechnicals: deterministicTechnicalsSchema,
+  runnerQuality: runnerQualitySchema,
 });
 
 const trafficLightRating = z.enum(['green', 'yellow', 'red']);
@@ -120,6 +162,18 @@ function parseJson(text: string): unknown {
   throw new Error('LLM did not return valid JSON');
 }
 
+function toObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function toUnknownCollection(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
 function readResults(value: unknown): unknown[] {
   if (!value || typeof value !== 'object') {
     return [];
@@ -131,6 +185,206 @@ function readResults(value: unknown): unknown[] {
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+function readSection(rawData: Record<string, unknown>, ...keys: string[]): unknown[] {
+  for (const key of keys) {
+    const results = readResults(rawData[key]);
+    if (results.length > 0) {
+      return results;
+    }
+  }
+
+  return [];
+}
+
+function readNullableSectionFirst(rawData: Record<string, unknown>, ...keys: string[]): unknown | null {
+  for (const key of keys) {
+    const result = readResults(rawData[key])[0];
+    if (result !== undefined) {
+      return result;
+    }
+  }
+
+  return null;
+}
+
+function getFieldValue(source: unknown, keys: string[]): unknown {
+  const record = toObject(source);
+  if (!record) {
+    return undefined;
+  }
+
+  for (const key of keys) {
+    if (key in record) {
+      return record[key];
+    }
+  }
+
+  return undefined;
+}
+
+function getNumberField(source: unknown, keys: string[]): number | null {
+  const value = getFieldValue(source, keys);
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === 'string') {
+    const numeric = Number(value.replace(/,/g, '').replace(/%/g, '').trim());
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  return null;
+}
+
+function parseLooseDate(value: unknown): Date | null {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
+function isValidRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function flattenOwnershipRecords(value: unknown): Record<string, unknown>[] {
+  const rows: Record<string, unknown>[] = [];
+
+  for (const entry of toUnknownCollection(value)) {
+    if (!isValidRecord(entry)) {
+      continue;
+    }
+
+    const owners = Array.isArray(entry.owners) ? entry.owners : null;
+    if (owners) {
+      rows.push(...flattenOwnershipRecords(owners));
+      continue;
+    }
+
+    rows.push(entry);
+  }
+
+  return rows;
+}
+
+function normalizeHistoricalFloatRow(value: unknown): {
+  date: Date;
+  float: number;
+} | null {
+  if (!isValidRecord(value)) {
+    return null;
+  }
+
+  const date = parseLooseDate(getFieldValue(value, ['date', 'reportedDate', 'reported_date']));
+  const floatValue = getNumberField(value, ['float', 'tradableFloat', 'tradable_float']);
+
+  if (!date || floatValue === null || !Number.isFinite(floatValue)) {
+    return null;
+  }
+
+  return { date, float: floatValue };
+}
+
+function computeFloatTrend(historicalFloat: unknown): 'increasing' | 'decreasing' | 'stable' | null {
+  const rows = asArray(historicalFloat)
+    .map(normalizeHistoricalFloatRow)
+    .filter((row): row is { date: Date; float: number } => row !== null)
+    .sort((left, right) => left.date.getTime() - right.date.getTime());
+
+  if (rows.length < 2) {
+    return null;
+  }
+
+  const first = rows[0]?.float ?? null;
+  const last = rows[rows.length - 1]?.float ?? null;
+  if (first === null || last === null || !Number.isFinite(first) || !Number.isFinite(last)) {
+    return null;
+  }
+
+  if (last > first * 1.05) {
+    return 'increasing';
+  }
+
+  if (last < first * 0.95) {
+    return 'decreasing';
+  }
+
+  return 'stable';
+}
+
+function computeKnownHolderOverhang(ownership: unknown): number | null {
+  const ownershipRows = flattenOwnershipRecords(ownership);
+  if (ownershipRows.length === 0) {
+    return null;
+  }
+
+  return Math.min(
+    100,
+    ownershipRows.reduce((sum, row) => {
+      const percentage = getNumberField(row, ['percentage', 'percent_held', 'percentHeld']);
+      return sum + (percentage ?? 0);
+    }, 0),
+  );
+}
+
+function normalizeOhlcHistory(history: z.infer<typeof ohlcBarSchema>[]): z.infer<typeof ohlcBarSchema>[] {
+  return [...history].sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime());
+}
+
+function computeExtension(history: z.infer<typeof ohlcBarSchema>[], barsAgo: number): number | null {
+  if (history.length < barsAgo) {
+    return null;
+  }
+
+  const latest = history[history.length - 1]?.close;
+  const previous = history[history.length - barsAgo]?.close;
+
+  if (!Number.isFinite(latest) || !Number.isFinite(previous) || previous === 0) {
+    return null;
+  }
+
+  return ((latest - previous) / previous) * 100;
+}
+
+function computeSwingTechnicals(input: z.infer<typeof ohlcEnrichedSchema>): z.infer<typeof swingPipelineInputSchema> {
+  const sortedHistory = normalizeOhlcHistory(input.ohlcHistory);
+  const priceContext = input.priceContext;
+  const relativeVolume = priceContext && priceContext.volume !== null
+    && priceContext.avgVolume90d !== null
+    && priceContext.avgVolume90d > 0
+    ? priceContext.volume / priceContext.avgVolume90d
+    : null;
+
+  return {
+    ...input,
+    ohlcHistory: sortedHistory,
+    deterministicTechnicals: {
+      relativeVolume,
+      extension5d: computeExtension(sortedHistory, 5),
+      extension10d: computeExtension(sortedHistory, 10),
+      rsi: priceContext?.rsi ?? null,
+      ema9: priceContext?.ema9 ?? null,
+      ema21: priceContext?.ema21 ?? null,
+    },
+    runnerQuality: {
+      gapStats: asArray(input.gapStats),
+      ownership: asArray(input.ownership),
+      historicalFloat: asArray(input.historicalFloat),
+      dilutionRating: input.dilutionRating,
+      registrations: asArray(input.registrations),
+      offerings: asArray(input.offerings),
+      floatTrend: computeFloatTrend(input.historicalFloat),
+      knownHolderOverhang: computeKnownHolderOverhang(input.ownership),
+    },
+  };
+}
+
+function formatPromptSection(label: string, value: unknown): string {
+  return `${label}:\n${JSON.stringify(value, null, 2)}`;
 }
 
 async function fetchTradingViewPriceContext(ticker: string) {
@@ -173,6 +427,11 @@ async function fetchTradingViewPriceContext(ticker: string) {
   }
 
   const toNullableNumber = (value: unknown) => {
+    if (typeof value === 'string') {
+      const numeric = Number(value.replace(/,/g, '').replace(/%/g, '').trim());
+      return Number.isFinite(numeric) ? numeric : null;
+    }
+
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : null;
   };
@@ -184,10 +443,16 @@ async function fetchTradingViewPriceContext(ticker: string) {
     avgVolume90d: toNullableNumber(row.d[4]),
     marketCap: toNullableNumber(row.d[5]),
     sector: typeof row.d[6] === 'string' && row.d[6].trim() ? row.d[6].trim() : null,
+    high1w: toNullableNumber(row.d[7]),
+    low1w: toNullableNumber(row.d[8]),
+    rsi: toNullableNumber(row.d[9]),
+    macdSignal: toNullableNumber(row.d[10]),
+    ema9: toNullableNumber(row.d[11]),
+    ema21: toNullableNumber(row.d[12]),
   };
 }
 
-function buildResearchPrompt(input: z.infer<typeof ohlcEnrichedSchema>): string {
+function buildResearchPrompt(input: z.infer<typeof swingPipelineInputSchema>): string {
   const exampleShape = {
     ticker: input.ticker,
     mdrPatternMatch: { rating: 'green | yellow | red', explanation: 'string', mdrSimilarity: 72 },
@@ -204,9 +469,19 @@ function buildResearchPrompt(input: z.infer<typeof ohlcEnrichedSchema>): string 
     `Ticker: ${input.ticker}`,
     'Return strict JSON matching this exact shape (no markdown, no extra keys):',
     JSON.stringify(exampleShape, null, 2),
-    `Filings:\n${JSON.stringify(input.filings)}`,
-    `Cash position:\n${JSON.stringify(input.cashPosition)}`,
-    `Price context:\n${JSON.stringify(input.priceContext)}`,
+    formatPromptSection('Price context', input.priceContext),
+    formatPromptSection('Deterministic technicals', input.deterministicTechnicals),
+    [
+      'Runner quality:',
+      formatPromptSection('gapStats', input.runnerQuality.gapStats),
+      formatPromptSection('ownership', input.runnerQuality.ownership),
+      formatPromptSection('historicalFloat', input.runnerQuality.historicalFloat),
+      formatPromptSection('dilutionRating', input.runnerQuality.dilutionRating),
+      formatPromptSection('registrations', input.runnerQuality.registrations),
+      formatPromptSection('offerings', input.runnerQuality.offerings),
+      formatPromptSection('floatTrend', input.runnerQuality.floatTrend),
+      formatPromptSection('knownHolderOverhang', input.runnerQuality.knownHolderOverhang),
+    ].join('\n\n'),
   ];
 
   if (input.ohlcHistory.length > 0) {
@@ -254,20 +529,15 @@ export const swingTraderResearchBlueprint: Blueprint = {
         researchInputSchema.parse({ ticker });
         const result = await getCachedTickerData(ticker);
         const rawData = result.rawData as Record<string, unknown>;
-        const filings = [
-          ...asArray((result as { offerings?: unknown[] }).offerings),
-          ...asArray((result as { registrations?: unknown[] }).registrations),
-          ...readResults(rawData['filing-titles']),
-        ];
-        const cashPosition = (result as { dilutionDetails?: unknown }).dilutionDetails
-          ?? readResults(rawData['dilution-data'])[0]
-          ?? readResults(rawData.screener)[0]
-          ?? null;
 
         return completedResult({
           ticker,
-          filings,
-          cashPosition,
+          gapStats: readSection(rawData, 'gap-stats', 'gapStats'),
+          ownership: readSection(rawData, 'ownership'),
+          historicalFloat: readSection(rawData, 'historical-float-pro', 'historicalFloatPro'),
+          dilutionRating: readNullableSectionFirst(rawData, 'dilution-rating', 'dilutionRating'),
+          registrations: readSection(rawData, 'registrations'),
+          offerings: readSection(rawData, 'offerings'),
         }, {
           durationMs: Date.now() - startedAt,
           sourceIds: [`askedgar:${ticker}`],
@@ -324,9 +594,26 @@ export const swingTraderResearchBlueprint: Blueprint = {
       },
     },
     {
+      name: 'compute-swing-technicals',
+      type: 'code',
+      inputSchema: ohlcEnrichedSchema,
+      outputSchema: swingPipelineInputSchema,
+      metadata: { canRetry: true, timeoutMs: 10000, maxRepairAttempts: 0, sideEffect: false },
+      run: async ({ previousOutput }) => {
+        const startedAt = Date.now();
+        const input = ohlcEnrichedSchema.parse(previousOutput);
+        const pipelineInput = computeSwingTechnicals(input);
+
+        return completedResult(pipelineInput, {
+          durationMs: Date.now() - startedAt,
+          upstreamStepIds: ['fetch-ohlc-history'],
+        });
+      },
+    },
+    {
       name: 'synthesize-report',
       type: 'llm',
-      inputSchema: ohlcEnrichedSchema,
+      inputSchema: swingPipelineInputSchema,
       outputSchema: swingResearchSchema,
       metadata: {
         canRetry: true,
@@ -336,7 +623,7 @@ export const swingTraderResearchBlueprint: Blueprint = {
         lane: 'background',
       },
       run: async ({ previousOutput }) => {
-        const input = ohlcEnrichedSchema.parse(previousOutput);
+        const input = swingPipelineInputSchema.parse(previousOutput);
         const llmResponse = await callLlm({
           systemPrompt: await loadSwingTraderSystemPrompt(),
           userMessage: buildResearchPrompt(input),
@@ -347,7 +634,7 @@ export const swingTraderResearchBlueprint: Blueprint = {
           durationMs: llmResponse.durationMs,
           tokensUsed: llmResponse.inputTokens + llmResponse.outputTokens,
           model: llmResponse.modelUsed,
-          upstreamStepIds: ['fetch-ohlc-history'],
+          upstreamStepIds: ['compute-swing-technicals'],
           artifacts: {
             inputTokens: llmResponse.inputTokens,
             outputTokens: llmResponse.outputTokens,
@@ -371,6 +658,24 @@ export const swingTraderResearchBlueprint: Blueprint = {
           title: `${report.ticker} Swing Research`,
           summary: buildReportSummary(report),
           reportJson: report,
+        });
+
+        await upsertMemory(db, {
+          userId: job.userId,
+          agentId: 'swing-trader',
+          category: 'thesis',
+          key: report.ticker,
+          value: `${report.recommendation.action} — ${report.patternClassification}`,
+          valueJson: {
+            action: report.recommendation.action,
+            pattern: report.patternClassification,
+            mdrSimilarity: report.mdrPatternMatch.mdrSimilarity,
+            momentum: report.momentum.rating,
+            confidence: report.confidence,
+          },
+          source: `report:${job.id}`,
+          confidence: report.confidence,
+          expiresAt: new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)),
         });
 
         return completedResult({

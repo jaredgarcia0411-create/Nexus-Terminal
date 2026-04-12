@@ -2,7 +2,13 @@ import { eq } from 'drizzle-orm';
 import { agentReports, agentStepEffects } from '@/lib/db/schema';
 import { recordStepEffect } from './checkpoints';
 import type { AgentDb } from './db';
-import type { AgentId, AgentReport } from './types';
+import type {
+  AgentId,
+  AgentReport,
+  MacroSummaryReport,
+  SmallCapResearchReport,
+  SwingResearchReport,
+} from './types';
 
 const DISCORD_EMBED_COLOR = 0x10B981;
 const DISCORD_TIMEOUT_MS = 10_000;
@@ -429,23 +435,22 @@ export function buildScanEmbed(report: AgentReport): DiscordEmbed {
 }
 
 export function buildResearchEmbed(report: AgentReport): DiscordEmbed {
-  const payload = asRecord(report.reportJson);
-  const ticker = coerceFieldValue(readJsonValue(payload, 'ticker', 'symbol'));
+  const payload = report.reportJson as SmallCapResearchReport;
+  const ticker = payload.ticker;
 
-  const ratingEmoji = (section: unknown): string => {
-    const s = asRecord(section);
-    const rating = typeof s.rating === 'string' ? s.rating : '';
+  const ratingEmoji = (rating: SmallCapResearchReport['newsWhyRunning']['rating']): string => {
     if (rating === 'green') return '\u{1F7E2}';
     if (rating === 'yellow') return '\u{1F7E1}';
     if (rating === 'red') return '\u{1F534}';
     return '\u{26AA}';
   };
 
-  const ratingLine = (label: string, section: unknown): string => {
-    const s = asRecord(section);
-    const explanation = typeof s.explanation === 'string' ? s.explanation : '';
-    return `${ratingEmoji(section)} **${label}**: ${truncate(explanation, 100)}`;
-  };
+  const ratingLine = (
+    label: string,
+    section: SmallCapResearchReport['newsWhyRunning'],
+  ): string => `${ratingEmoji(section.rating)} **${label}**: ${truncate(section.explanation, 100)}`;
+
+  const historicalStats = payload.historicalStats.trim();
 
   const sections = [
     ratingLine('Offering Risk', payload.overallOfferingRisk),
@@ -458,44 +463,35 @@ export function buildResearchEmbed(report: AgentReport): DiscordEmbed {
 
   const fields: DiscordEmbedField[] = [
     buildField('Ticker', ticker),
-    buildField('Confidence', readJsonValue(payload, 'confidence')),
+    buildField('Confidence', payload.confidence),
   ];
 
-  const historicalStats = readJsonValue(payload, 'historicalStats');
-  if (typeof historicalStats === 'string' && historicalStats.trim()) {
-    fields.push(buildField('History', truncate(historicalStats, 200), false));
+  if (historicalStats) {
+    fields.push({
+      name: 'Historical Stats',
+      value: `\`\`\`\n${truncate(historicalStats, 1000)}\n\`\`\``,
+      inline: false,
+    });
   }
 
   return buildBaseEmbed(report, fields, sections.join('\n'));
 }
 
 export function buildSwingSetupEmbed(report: AgentReport): DiscordEmbed {
-  const payload = asRecord(report.reportJson);
-  const ticker = coerceFieldValue(readJsonValue(payload, 'ticker', 'symbol'));
+  const payload = report.reportJson as SwingResearchReport;
+  const ticker = payload.ticker;
 
-  const ratingEmoji = (section: unknown): string => {
-    const s = asRecord(section);
-    const rating = typeof s.rating === 'string' ? s.rating : '';
+  const ratingEmoji = (rating: SwingResearchReport['momentum']['rating']): string => {
     if (rating === 'green') return '\u{1F7E2}';
     if (rating === 'yellow') return '\u{1F7E1}';
     if (rating === 'red') return '\u{1F534}';
     return '\u{26AA}';
   };
 
-  const ratingLine = (label: string, section: unknown): string => {
-    const s = asRecord(section);
-    const explanation = typeof s.explanation === 'string' ? s.explanation : '';
-    return `${ratingEmoji(section)} **${label}**: ${truncate(explanation, 100)}`;
-  };
-
-  const mdrMatch = asRecord(payload.mdrPatternMatch);
-  const mdrSimilarity = typeof mdrMatch.mdrSimilarity === 'number' ? `${mdrMatch.mdrSimilarity}%` : 'n/a';
-
-  const recommendation = asRecord(payload.recommendation);
-  const action = typeof recommendation.action === 'string' ? recommendation.action : 'n/a';
-  const reasoning = typeof recommendation.reasoning === 'string' ? recommendation.reasoning : '';
-
-  const patternClassification = coerceFieldValue(readJsonValue(payload, 'patternClassification'));
+  const ratingLine = (
+    label: string,
+    section: SwingResearchReport['momentum'],
+  ): string => `${ratingEmoji(section.rating)} **${label}**: ${truncate(section.explanation, 100)}`;
 
   const sections = [
     ratingLine('MDR Match', payload.mdrPatternMatch),
@@ -506,14 +502,14 @@ export function buildSwingSetupEmbed(report: AgentReport): DiscordEmbed {
 
   const fields: DiscordEmbedField[] = [
     buildField('Ticker', ticker),
-    buildField('Pattern', patternClassification),
-    buildField('MDR Similarity', mdrSimilarity),
-    buildField('Action', action),
-    buildField('Confidence', readJsonValue(payload, 'confidence')),
+    buildField('Pattern', payload.patternClassification),
+    buildField('MDR Similarity', `${payload.mdrPatternMatch.mdrSimilarity}%`),
+    buildField('Action', payload.recommendation.action),
+    buildField('Confidence', payload.confidence),
   ];
 
-  if (reasoning) {
-    fields.push(buildField('Reasoning', truncate(reasoning, 200), false));
+  if (payload.recommendation.reasoning.trim()) {
+    fields.push(buildField('Reasoning', truncate(payload.recommendation.reasoning, 200), false));
   }
 
   return buildBaseEmbed(report, fields, sections.join('\n'));
@@ -538,19 +534,45 @@ export function buildSwingAlertEmbed(report: AgentReport): DiscordEmbed {
 }
 
 export function buildMacroSummaryEmbed(report: AgentReport): DiscordEmbed {
-  const payload = asRecord(report.reportJson);
+  const payload = report.reportJson as MacroSummaryReport;
+  const impactEmoji = (impact: MacroSummaryReport['drivers'][number]['impact']): string => {
+    if (impact === 'positive') return '\u{1F7E2}';
+    if (impact === 'negative') return '\u{1F534}';
+    return '\u{1F7E1}';
+  };
+
+  const formatList = (values: string[]): string => (
+    values.length > 0 ? values.map((value) => `• ${value}`).join('\n') : UNKNOWN_VALUE
+  );
+
   const fields = [
-    buildField('Bias', readJsonValue(payload, 'marketBias', 'bias')),
-    buildField('Rates', readJsonValue(payload, 'rates', 'yieldSummary')),
-    buildField('Breadth', readJsonValue(payload, 'breadth', 'marketBreadth')),
-    buildField('Top Theme', readJsonValue(payload, 'topTheme', 'theme')),
-    buildField('Watchlist', readJsonValue(payload, 'watchlist', 'tickers'), false),
+    buildField('Market Bias', payload.marketBias),
+    buildField('Confidence', payload.confidence),
+    buildField(
+      'Top Drivers',
+      payload.drivers.length > 0
+        ? payload.drivers.slice(0, 3).map((driver) => `${impactEmoji(driver.impact)} ${driver.driver}`).join('\n')
+        : UNKNOWN_VALUE,
+      false,
+    ),
+    buildField(
+      'Catalysts',
+      payload.scheduledCatalysts.length > 0
+        ? payload.scheduledCatalysts.map((catalyst) => {
+          const when = catalyst.date ? ` (${catalyst.date})` : '';
+          return `• ${catalyst.event}${when} - ${catalyst.expectedImpact}`;
+        }).join('\n')
+        : UNKNOWN_VALUE,
+      false,
+    ),
+    buildField('Desk Implications', formatList(payload.deskImplications), false),
+    buildField('Sector Rotation', formatList(payload.sectorRotation), false),
   ];
 
   return buildBaseEmbed(
     report,
     fields,
-    optionalText(report.summary, readJsonValue(payload, 'summary', 'overview')),
+    payload.summary,
   );
 }
 

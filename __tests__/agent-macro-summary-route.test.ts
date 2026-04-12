@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MacroSummaryReport } from '@/lib/agents/types';
 
 const {
   getAgentDbMock,
@@ -59,11 +60,43 @@ describe('agent macro summary route', () => {
   });
 
   it('returns the latest macro summary and targets the system-owned macro report query', async () => {
+    const report: MacroSummaryReport = {
+      tradingDate: '2026-04-08',
+      marketBias: 'neutral',
+      summary: 'Rates steady',
+      drivers: [
+        {
+          driver: 'Fed held rates steady',
+          impact: 'mixed',
+          sourceRefs: ['headline:marketwatch.com'],
+        },
+      ],
+      crossAssetSnapshot: [
+        { ticker: 'SPY', price: 509.12, changePercent: 0.32 },
+      ],
+      scheduledCatalysts: [
+        {
+          event: 'CPI release',
+          date: '2026-04-10',
+          expectedImpact: 'Could shift rate cut timing',
+        },
+      ],
+      sectorRotation: ['Tech held leadership'],
+      deskImplications: ['Stay selective into the open'],
+      sourceIndex: [
+        {
+          id: 'headline:marketwatch.com',
+          title: 'marketwatch.com headlines',
+          url: 'https://www.marketwatch.com/latest-news',
+          fetchedAt: '2026-04-08T12:00:00.000Z',
+        },
+      ],
+      confidence: 'medium',
+    };
+
     getAgentDbMock.mockReturnValueOnce(createMacroSummaryDb({
       generatedAt: new Date('2026-04-08T12:00:00.000Z'),
-      content: {
-        headline: 'Rates steady',
-      },
+      content: report,
       status: 'delivery_failed',
       deliveryError: 'webhook exploded',
     }));
@@ -75,9 +108,7 @@ describe('agent macro summary route', () => {
     expect(payload).toEqual({
       summary: {
         generated_at: '2026-04-08T12:00:00.000Z',
-        content: {
-          headline: 'Rates steady',
-        },
+        content: report,
         status: 'delivery_failed',
         deliveryError: 'webhook exploded',
       },

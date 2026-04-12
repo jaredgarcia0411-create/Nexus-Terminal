@@ -4,6 +4,7 @@ import type { AgentConfig, AgentContext, AgentJob, StepInput } from '@/lib/agent
 const randomUUIDMock = vi.hoisted(() => vi.fn(() => 'specialist-job-1'));
 const callLlmMock = vi.hoisted(() => vi.fn());
 const writeAndDeliverReportMock = vi.hoisted(() => vi.fn());
+const upsertMemoryMock = vi.hoisted(() => vi.fn());
 const getCachedTickerDataMock = vi.hoisted(() => vi.fn());
 const normalizeAskEdgarResponseMock = vi.hoisted(() => vi.fn());
 const fetchUnifiedSnapshotMock = vi.hoisted(() => vi.fn());
@@ -20,6 +21,10 @@ vi.mock('@/lib/agents/llm-client', () => ({
 
 vi.mock('@/lib/agents/discord', () => ({
   writeAndDeliverReport: writeAndDeliverReportMock,
+}));
+
+vi.mock('@/lib/agents/memory', () => ({
+  upsertMemory: upsertMemoryMock,
 }));
 
 vi.mock('@/lib/askedgar', () => ({
@@ -129,6 +134,7 @@ describe('agent blueprints', () => {
       status: 'published',
       deliveryError: null,
     });
+    upsertMemoryMock.mockReset().mockResolvedValue(undefined);
     getCachedTickerDataMock.mockReset();
     normalizeAskEdgarResponseMock.mockReset().mockReturnValue({
       news: [{ title: 'Shelf registration' }],
@@ -301,9 +307,20 @@ describe('agent blueprints', () => {
   it('uses the background lane for macro-summary synthesis', async () => {
     callLlmMock.mockResolvedValue({
       content: JSON.stringify({
+        marketBias: 'neutral',
         summary: 'Macro summary',
-        keyEvents: ['Event'],
-        sectorNotes: ['Tech strong'],
+        drivers: [{
+          driver: 'Rates steady into the close',
+          impact: 'mixed',
+          sourceRefs: ['headline:example.com'],
+        }],
+        scheduledCatalysts: [{
+          event: 'CPI release',
+          date: '2026-04-08',
+          expectedImpact: 'Could reset rate-cut expectations.',
+        }],
+        sectorRotation: ['Tech strong'],
+        deskImplications: ['Stay selective into the open.'],
         confidence: 'medium',
       }),
       modelUsed: 'background-model',
@@ -324,16 +341,46 @@ describe('agent blueprints', () => {
         headlines: [{ url: 'https://example.com', text: 'Markets mixed' }],
         snapshot: null,
         note: 'no massive api key',
+        crossAssetSnapshot: [],
+        sourceIndex: [
+          {
+            id: 'headline:example.com',
+            title: 'example.com headlines',
+            url: 'https://example.com',
+            fetchedAt: '2026-04-07T12:00:00.000Z',
+          },
+        ],
       },
     }));
 
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       systemPrompt: expect.any(String),
+      userMessage: expect.stringContaining('Source index:\n'),
     }), 'background');
     expect(result.data).toEqual({
+      marketBias: 'neutral',
       summary: 'Macro summary',
-      keyEvents: ['Event'],
-      sectorNotes: ['Tech strong'],
+      drivers: [{
+        driver: 'Rates steady into the close',
+        impact: 'mixed',
+        sourceRefs: ['headline:example.com'],
+      }],
+      scheduledCatalysts: [{
+        event: 'CPI release',
+        date: '2026-04-08',
+        expectedImpact: 'Could reset rate-cut expectations.',
+      }],
+      sectorRotation: ['Tech strong'],
+      deskImplications: ['Stay selective into the open.'],
+      crossAssetSnapshot: [],
+      sourceIndex: [
+        {
+          id: 'headline:example.com',
+          title: 'example.com headlines',
+          url: 'https://example.com',
+          fetchedAt: '2026-04-07T12:00:00.000Z',
+        },
+      ],
       confidence: 'medium',
     });
   });
@@ -368,6 +415,27 @@ describe('agent blueprints', () => {
         message: 'What should I do next?',
       },
       context: {
+        macroSummary: {
+          tradingDate: '2026-04-07',
+          marketBias: 'neutral',
+          summary: 'Breadth improved into the close.',
+          drivers: [
+            { driver: 'Rates steadied', impact: 'mixed', sourceRefs: ['headline:marketwatch.com'] },
+          ],
+          crossAssetSnapshot: [],
+          scheduledCatalysts: [],
+          sectorRotation: [],
+          deskImplications: ['Keep size tighter near the open'],
+          sourceIndex: [
+            {
+              id: 'headline:marketwatch.com',
+              title: 'marketwatch.com headlines',
+              url: 'https://www.marketwatch.com/latest-news',
+              fetchedAt: '2026-04-07T13:00:00.000Z',
+            },
+          ],
+          confidence: 'medium',
+        },
         recentTrades: [
           { symbol: 'AAPL', grossPnl: 250.6, direction: 'LONG', date: '2026-04-07' },
           { ticker: 'TSLA', pnl: -90.2, direction: 'SHORT' },
@@ -378,6 +446,9 @@ describe('agent blueprints', () => {
 
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Recent trades:\nAAPL: +$251 (long, 2026-04-07)\nTSLA: -$90 (short)'),
+    }), 'interactive');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Latest macro summary:\nBias: neutral (medium confidence)\nSummary: Breadth improved into the close.\nDrivers: Rates steadied (mixed)\nDesk: Keep size tighter near the open'),
     }), 'interactive');
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('IMPORTANT: Do NOT wrap your response in JSON. Do NOT use code fences. Return plain text only.'),
@@ -412,9 +483,37 @@ describe('agent blueprints', () => {
 
     const result = await blueprint.steps[3].run(createStepInput(job, agentConfig, {
       previousOutput: {
+        marketBias: 'bullish',
         summary: 'Macro summary',
-        keyEvents: ['Event'],
-        sectorNotes: ['Tech strong'],
+        drivers: [{
+          driver: 'Breadth improved after the open',
+          impact: 'positive',
+          sourceRefs: ['headline:marketwatch.com'],
+        }],
+        crossAssetSnapshot: [
+          { ticker: 'SPY', price: 520.12, changePercent: 0.8 },
+        ],
+        scheduledCatalysts: [{
+          event: 'FOMC minutes',
+          date: '2026-04-08',
+          expectedImpact: 'Could shift rate expectations.',
+        }],
+        sectorRotation: ['Tech strong'],
+        deskImplications: ['Stay with relative-strength leaders.'],
+        sourceIndex: [
+          {
+            id: 'headline:marketwatch.com',
+            title: 'marketwatch.com headlines',
+            url: 'https://www.marketwatch.com/latest-news',
+            fetchedAt: '2026-04-07T12:00:00.000Z',
+          },
+          {
+            id: 'snapshot:SPY',
+            title: 'SPY Session Snapshot',
+            url: null,
+            fetchedAt: '2026-04-07T12:00:00.000Z',
+          },
+        ],
         confidence: 'medium',
       },
       db: {},
@@ -429,9 +528,37 @@ describe('agent blueprints', () => {
       summary: 'Macro summary',
       reportJson: {
         tradingDate: '2026-04-07',
+        marketBias: 'bullish',
         summary: 'Macro summary',
-        keyEvents: ['Event'],
-        sectorNotes: ['Tech strong'],
+        drivers: [{
+          driver: 'Breadth improved after the open',
+          impact: 'positive',
+          sourceRefs: ['headline:marketwatch.com'],
+        }],
+        crossAssetSnapshot: [
+          { ticker: 'SPY', price: 520.12, changePercent: 0.8 },
+        ],
+        scheduledCatalysts: [{
+          event: 'FOMC minutes',
+          date: '2026-04-08',
+          expectedImpact: 'Could shift rate expectations.',
+        }],
+        sectorRotation: ['Tech strong'],
+        deskImplications: ['Stay with relative-strength leaders.'],
+        sourceIndex: [
+          {
+            id: 'headline:marketwatch.com',
+            title: 'marketwatch.com headlines',
+            url: 'https://www.marketwatch.com/latest-news',
+            fetchedAt: '2026-04-07T12:00:00.000Z',
+          },
+          {
+            id: 'snapshot:SPY',
+            title: 'SPY Session Snapshot',
+            url: null,
+            fetchedAt: '2026-04-07T12:00:00.000Z',
+          },
+        ],
         confidence: 'medium',
       },
     }));
@@ -697,6 +824,28 @@ describe('agent blueprints', () => {
       status: 'published',
       deliveryError: null,
     });
+
+    if (job.agentId === 'swing-trader') {
+      expect(upsertMemoryMock).toHaveBeenCalledWith(expect.anything(), {
+        userId: job.userId,
+        agentId: 'swing-trader',
+        category: 'thesis',
+        key: 'NVDA',
+        value: 'ADD — CONTINUATION',
+        valueJson: {
+          action: 'ADD',
+          pattern: 'CONTINUATION',
+          mdrSimilarity: 87,
+          momentum: 'green',
+          confidence: 'medium',
+        },
+        source: `report:${job.id}`,
+        confidence: 'medium',
+        expiresAt: expect.any(Date),
+      });
+    } else {
+      expect(upsertMemoryMock).not.toHaveBeenCalled();
+    }
   });
 
   it('continues swing research with empty OHLC history when Massive fails', async () => {
@@ -709,12 +858,19 @@ describe('agent blueprints', () => {
     });
     const agentConfig = AGENT_CONFIGS['swing-trader'];
     const blueprint = resolveBlueprint(job);
+    const fetchOhlcStep = blueprint.steps.find((step) => step.name === 'fetch-ohlc-history');
 
-    const result = await blueprint.steps[2].run(createStepInput(job, agentConfig, {
+    expect(fetchOhlcStep).toBeDefined();
+
+    const result = await fetchOhlcStep!.run(createStepInput(job, agentConfig, {
       previousOutput: {
         ticker: 'AAPL',
-        filings: [],
-        cashPosition: null,
+        gapStats: [],
+        ownership: [],
+        historicalFloat: [],
+        dilutionRating: null,
+        registrations: [],
+        offerings: [],
         priceContext: {
           price: 10,
           change: 2,
@@ -722,6 +878,12 @@ describe('agent blueprints', () => {
           avgVolume90d: 500,
           marketCap: 1000000,
           sector: 'Tech',
+          high1w: 11,
+          low1w: 8,
+          rsi: 72,
+          macdSignal: 1.2,
+          ema9: 9.5,
+          ema21: 8.9,
         },
       },
     }));
@@ -732,5 +894,112 @@ describe('agent blueprints', () => {
       ohlcHistory: [],
     });
     expect(warnSpy).toHaveBeenCalledWith('[swing-trader] OHLC fetch failed for AAPL:', expect.any(Error));
+  });
+
+  it('adds deterministic technicals and runner-quality sections to the swing synthesis prompt', async () => {
+    callLlmMock.mockResolvedValue({
+      content: JSON.stringify({
+        ticker: 'AAPL',
+        mdrPatternMatch: { rating: 'green', explanation: 'Clean MDR analog.', mdrSimilarity: 76 },
+        momentum: { rating: 'yellow', explanation: 'Momentum is elevated but mixed.' },
+        catalyst: { rating: 'green', explanation: 'Catalyst remains valid.' },
+        patternClassification: 'CONTINUATION',
+        recommendation: { action: 'HOLD', reasoning: 'Pattern remains intact without forcing size.' },
+        volumeProfile: { rating: 'green', explanation: 'Volume remains elevated.' },
+        confidence: 'high',
+        evidenceIds: ['gap-stats', 'ownership'],
+      }),
+      modelUsed: 'background-model',
+      inputTokens: 24,
+      outputTokens: 10,
+      durationMs: 60,
+    });
+
+    const job = createJob({
+      agentId: 'swing-trader',
+      jobType: 'research',
+      input: { ticker: 'AAPL' },
+    });
+    const agentConfig = AGENT_CONFIGS['swing-trader'];
+    const blueprint = resolveBlueprint(job);
+    const synthesizeStep = blueprint.steps.find((step) => step.name === 'synthesize-report');
+
+    expect(synthesizeStep).toBeDefined();
+
+    const result = await synthesizeStep!.run(createStepInput(job, agentConfig, {
+      previousOutput: {
+        ticker: 'AAPL',
+        gapStats: [{ open: 10, close: 11, high: 12 }],
+        ownership: [{ percentage: 32 }],
+        historicalFloat: [
+          { date: '2026-01-01', float: 100 },
+          { date: '2026-04-01', float: 112 },
+        ],
+        dilutionRating: { rating: 'moderate' },
+        registrations: [{ status: 'effective' }],
+        offerings: [{ offering_type: 'ATM', status: 'active' }],
+        priceContext: {
+          price: 10,
+          change: 2,
+          volume: 1000,
+          avgVolume90d: 500,
+          marketCap: 1000000,
+          sector: 'Tech',
+          high1w: 11,
+          low1w: 8,
+          rsi: 72,
+          macdSignal: 1.1,
+          ema9: 9.5,
+          ema21: 8.9,
+        },
+        ohlcHistory: [
+          { date: '2026-04-01', open: 8, high: 9, low: 7.8, close: 8.5, volume: 100, vwap: 8.4 },
+          { date: '2026-04-02', open: 8.5, high: 9.2, low: 8.3, close: 8.9, volume: 120, vwap: 8.8 },
+          { date: '2026-04-03', open: 8.9, high: 9.5, low: 8.7, close: 9.1, volume: 140, vwap: 9.0 },
+          { date: '2026-04-04', open: 9.1, high: 9.8, low: 9.0, close: 9.4, volume: 160, vwap: 9.3 },
+          { date: '2026-04-07', open: 9.4, high: 10.2, low: 9.3, close: 10.0, volume: 180, vwap: 9.8 },
+          { date: '2026-04-08', open: 10.0, high: 10.5, low: 9.9, close: 10.3, volume: 200, vwap: 10.2 },
+          { date: '2026-04-09', open: 10.3, high: 10.8, low: 10.1, close: 10.5, volume: 220, vwap: 10.4 },
+          { date: '2026-04-10', open: 10.5, high: 10.9, low: 10.2, close: 10.6, volume: 240, vwap: 10.5 },
+          { date: '2026-04-11', open: 10.6, high: 11.0, low: 10.4, close: 10.8, volume: 260, vwap: 10.7 },
+          { date: '2026-04-12', open: 10.8, high: 11.2, low: 10.7, close: 11.0, volume: 280, vwap: 10.9 },
+        ],
+        deterministicTechnicals: {
+          relativeVolume: 2,
+          extension5d: 23.6,
+          extension10d: 29.4,
+          rsi: 72,
+          ema9: 9.5,
+          ema21: 8.9,
+        },
+        runnerQuality: {
+          gapStats: [{ open: 10, close: 11, high: 12 }],
+          ownership: [{ percentage: 32 }],
+          historicalFloat: [
+            { date: '2026-01-01', float: 100 },
+            { date: '2026-04-01', float: 112 },
+          ],
+          dilutionRating: { rating: 'moderate' },
+          registrations: [{ status: 'effective' }],
+          offerings: [{ offering_type: 'ATM', status: 'active' }],
+          floatTrend: 'increasing',
+          knownHolderOverhang: 32,
+        },
+      },
+    }));
+
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Deterministic technicals:\n'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Runner quality:\n'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('floatTrend:\n"increasing"'),
+    }), 'background');
+    expect(result.data).toMatchObject({
+      ticker: 'AAPL',
+      confidence: 'high',
+    });
   });
 });

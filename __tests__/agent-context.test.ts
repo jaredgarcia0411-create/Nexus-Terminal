@@ -120,4 +120,29 @@ describe('agent context helper', () => {
     });
     expect(db.select).toHaveBeenCalledTimes(3);
   });
+
+  it('drops legacy macro summary JSON that does not match the typed report shape', async () => {
+    const rows = new Map<unknown, unknown[][]>();
+    rows.set(trades, [[]]);
+    rows.set(agentConversations, [[]]);
+    rows.set(agentReports, [[
+      {
+        reportJson: {
+          summary: 'legacy macro payload',
+          keyEvents: ['rates steady'],
+          sectorNotes: ['tech firm'],
+          confidence: 'medium',
+        },
+      },
+    ]]);
+    const db = createDb(rows);
+    getMemoryMock.mockResolvedValueOnce([]);
+
+    await expect(buildContext(db as never, 'user-1', 'orchestrator')).resolves.toEqual({
+      recentTrades: [],
+      macroSummary: null,
+      memory: [],
+      conversationHistory: [],
+    });
+  });
 });
