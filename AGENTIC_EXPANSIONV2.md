@@ -1,6 +1,6 @@
 # Nexus Terminal — Autonomous Agent Framework Reference
 
-> Generated: 2026-03-13 | Updated: 2026-04-06 | Status: Reference doc synced to `AEV2_PLAN.md`
+> Generated: 2026-03-13 | Updated: 2026-04-12 | Status: V1 architecture reference; execution plan completed
 
 ---
 
@@ -13,9 +13,9 @@ Agents run as Docker Compose services on a home server (16GB RAM laptop). They c
 All agent communication flows through Discord. Specialist reports publish to channel webhooks. Orchestrator chat happens in the `#orchestrator` Discord channel via the Discord bot. Reports are persisted in `agent_reports` for history. There is no in-app agent chat UI in V1.
 
 > Document role:
-> - `AEV2_PLAN.md` is authoritative for sprint execution, sequencing, and launch gates.
+> - The original AEV2 execution plan is complete and no longer lives as a maintained file. Use git history for archived sequencing and launch-gate detail.
 > - This document captures the target V1 architecture, contracts, and runtime constraints.
-> - Planned paths under `lib/agents/`, `app/api/agents/`, and `services/` are future V1 additions unless a section explicitly calls out current repo reality.
+> - Paths under `lib/agents/`, `app/api/agents/`, and `services/` now exist in the repo; sections that describe later enhancements call that out explicitly.
 
 ### Design Principles
 
@@ -319,7 +319,7 @@ Implementation requirements:
 
 - The reviewed AEV2 schema migration must create the new agent tables, constraints, indexes, and registry seed rows.
 - Autonomous jobs and reports require a deterministic non-null owner row, `system-agent-user`, before scheduling goes live.
-- Execution sequencing, rollout gates, and migration order live in `AEV2_PLAN.md`, not in this reference document.
+- Execution sequencing, rollout gates, and migration order should live in the active `HANDOFF.md` spec, not in this reference document.
 
 ---
 
@@ -1806,9 +1806,7 @@ These items are launch blockers for EPIC-5, not blockers for the initial impleme
 
 ---
 
-## 17. Execution Source Of Truth
-
-Sprint order, story slicing, launch gates, and worktree-readiness calls live in `AEV2_PLAN.md`.
+## 17. How To Use This Doc
 
 Use this document for:
 
@@ -1817,13 +1815,13 @@ Use this document for:
 - API contracts and routing rules
 - prompt, evidence, and blueprint design rules
 
-If this document and `AEV2_PLAN.md` disagree, `AEV2_PLAN.md` wins.
+Use `HANDOFF.md` for active execution specs and git history for archived rollout sequencing.
 
 ---
 
 ## 18. File Inventory
 
-This reference doc intentionally does not duplicate a phase-by-phase file inventory. The repo has already completed the old Jarvis/Markets deletion work, and new file ownership should be tracked in `AEV2_PLAN.md` story scope instead of hard-coded here.
+This reference doc intentionally does not duplicate a phase-by-phase file inventory. The repo has already completed the old Jarvis and Markets deletion work, and new file ownership should be tracked in active handoff specs instead of hard-coded here.
 
 ---
 
@@ -2129,11 +2127,12 @@ Stable rules only:
 - seeded rows are agent-scoped to `small-cap-trader`, `swing-trader`, or both
 - the main categories are `pattern` and `trade_insight`
 - the seed script must be idempotent and safe to re-run
-- execution timing and operator workflow live in `AEV2_PLAN.md` (`AEV2-007` and `AEV2-311`)
+- execution timing and operator workflow should live in the active `HANDOFF.md` spec when this seed work is revisited
 
 ---
 
 ## Revision History
 
 - 2026-03-22 to 2026-03-28: initial AEV2 architecture drafting and revision passes.
-- 2026-04-06: synced to current repo reality, made `AEV2_PLAN.md` the execution source of truth, and removed stale migration/Jarvis/build-order detail from this reference doc.
+- 2026-04-06: synced to current repo reality and removed stale migration/Jarvis/build-order detail from this reference doc.
+- 2026-04-12: removed references to the completed standalone AEV2 execution-plan file and pointed future implementation work back to `HANDOFF.md` plus git history.

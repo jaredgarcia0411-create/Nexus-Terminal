@@ -178,9 +178,9 @@ Expected result: Docker autostarts and all four agent services return under `res
 
 After the operator finishes the smoke and signs off, re-run the planning pass to collapse Sprint 4 into the same 3-block format as Sprints 1 through 3.
 
-- [ ] **Update `AEV2_PLAN.md`.**
+- [ ] **Refresh `HANDOFF.md` for the next active execution spec.**
 
-Mark EPIC-5 stories `AEV2-501` through `AEV2-510` as DONE.
+Archive any completed launch-only detail in git history instead of maintaining a separate rollout-plan file.
 
 - [ ] **Tag the launch commit.**
 

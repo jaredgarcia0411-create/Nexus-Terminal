@@ -242,197 +242,53 @@ The triggers above remain the right gates. Revisit after agents have been runnin
 
 ---
 
-## AskEdgar Rate-Limit Rework — Post-AEV2 (2026-04-08)
+## Agent Response Quality — Remaining Work (P2+) (2026-04-10, updated 2026-04-12)
 
-**Context:** The AskEdgar trial key was reissued with new limits: **150 requests/minute** and **50 unique tickers per day, per endpoint**. The current Nexus integration does not match this shape.
-
-### Current state (as of 2026-04-08)
-
-- Single global daily call counter — `DEFAULT_DAILY_LIMIT = 100` in `lib/askedgar.ts:42`, overridable via `ASKEDGAR_DAILY_LIMIT` env var (`.env.example:24` also `100`).
-- Enforcement at `lib/askedgar.ts:234`: blocks once `callCount >= dailyLimit`, returns `AskEdgar daily limit reached (N)`.
-- **No per-minute rate tracking.** We rely on AskEdgar to return 429 and surface the retry hint (handled in `app/api/askedgar/snapshot/route.ts:40` and `components/trading/ResearchTickerView.tsx:43`).
-- **No per-endpoint unique-ticker tracking.** All endpoints share one global counter.
-
-### Why wait until AEV2 is fully merged
-
-1. AEV2 shifts most AskEdgar traffic from the Vercel Research tab to Docker agent scans (Small Cap Trader, Swing Trader). Designing around today's call shape would be throwaway.
-2. AEV2 already introduces its own cache layer — `agent_memory_v2` with 1-hour TTL per `askedgar:{endpoint}:{ticker}` key (AGENTIC_EXPANSIONV2.md:909) — and a per-scan cap via `AGENT_MAX_ASKEDGAR_CALLS_PER_SCAN=60` (AGENTIC_EXPANSIONV2.md:1081). A lot of would-be calls collapse into cache hits, making "unique tickers per endpoint per day" much more meaningful to measure *after* that cache is live.
-3. Active sprint worktree at `.worktrees/aev2-s3/` has its own copy of `lib/askedgar.ts`. Touching rate-limit logic now creates merge pain.
-
-### What to build after AEV2 lands
-
-1. **Per-endpoint unique-ticker tracker (daily)** — cap at 50 unique tickers/endpoint/day. Stored somewhere queryable (probably a small Postgres table or a keyed entry in `agent_memory_v2`) so both Vercel routes and Docker agents share the same counter. Reset at UTC midnight (or whatever AskEdgar's reset window is — confirm when revisiting).
-2. **Per-minute rate governor** — sliding 60s window capped at 150. In-memory counter is fine for the Vercel lane (per-instance), but Docker agents need a shared counter (Postgres row with `INSERT ... ON CONFLICT` update, or a Redis-style lease).
-3. **Reshape `DEFAULT_DAILY_LIMIT`** — either remove it in favor of the new dimensions, or repurpose it as a global safety cap above the per-endpoint budget.
-4. **Better error surfaces** — when we hit 50 unique tickers on `/v1/offerings`, the message should say "offerings endpoint exhausted, N other endpoints still available" not just "daily limit reached."
-5. **Both copies stay in sync** — the active AEV2 worktree and `main` both have `lib/askedgar.ts`. By the time this ships, worktrees should be merged, but double-check.
-6. **Update `ASKEDGAR_DAILY_LIMIT` docs** — `.env.example`, `.claude/CLAUDE.md` env table, and any `/audit` references.
-
-### Don't start until
-
-- All AEV2_PLAN.md epics (EPIC-1 through EPIC-5) are merged to `main`.
-- `agent_memory_v2` AskEdgar cache is running in production and we have a week of real call-volume data to size the new budget against.
-- Jared has saved the new AskEdgar trial-key docs alongside `docs/AE_API_DOCS.md` so we can confirm exact reset windows and whether the 150/min is a hard 429 or a soft throttle.
-
----
-
-## Agent Response Quality — Improvement Plan (2026-04-10)
-
-> Generated after first live smoke tests. All 3 agents functional but responses need refinement.
-
-### Root Cause Analysis
-
-**Orchestrator returns raw JSON to Discord:**
-The `synthesize-response` step in `orchestrator-chat.ts` is governed by `global-policy.md` which tells every LLM step to return structured JSON. The synthesis step should return prose, not JSON. The LLM obeys and outputs `{"response": "The market is..."}` which the Discord bot renders verbatim.
-
-**N/A Field Investigation — Root Causes (2026-04-12):**
-The "n/a" fields in Discord embeds are **code bugs**, not rate limiting or insufficient data. Three independent causes:
-
-| Agent | Embed Field | Schema Field | Root Cause |
-|-------|------------|--------------|------------|
-| Small-cap | Entry, Target, Risk | *(none)* | Schema has no such fields — `buildResearchEmbed` searches for keys that don't exist |
-| Small-cap | Bias | `dilutionRisk` | Name mismatch — embed searches for `bias`, schema produces `dilutionRisk` |
-| Small-cap | Catalyst | `catalysts` (array) | Embed searches for singular `catalyst` — `readJsonValue` returns the array, `coerceFieldValue` JSON-stringifies it |
-| Swing-trader | Pattern | `patternClassification` | Name mismatch — embed searches for `pattern`/`setup` |
-| Swing-trader | MDR Score | `mdrSimilarity` | Name mismatch — embed searches for `mdrScore`/`score` |
-| Swing-trader | Entry, Stop, Target | `levels.entry`, `levels.stop`, `levels.targets` | `readJsonValue()` only does flat key lookup — can't find nested fields |
-
-**Rate limiting is a separate (worse) problem:** When AskEdgar 429s, the agent continues with empty data and the LLM fabricates values to satisfy required schema fields. Not "n/a" — fake numbers that look real. The blueprint has no conditional check on `hasAnyData` to halt processing.
-
-**Code path:** `readJsonValue()` at `lib/agents/discord.ts:54-82` iterates flat keys only. When swing-trader's `levels.entry` is nested, it returns `undefined` → `coerceFieldValue()` converts to `'n/a'`.
-
-### P0 — Critical Fixes (Single Session)
-
-**P0.1: Fix raw JSON in orchestrator chat response**
-- File: `lib/agents/blueprints/orchestrator-chat.ts`
-- What: Add explicit prose instruction to synthesis prompt AND add JSON.parse fallback to extract string value if LLM returns JSON anyway
-- Impact: Clean prose responses immediately
-- Complexity: LOW
-
-**P0.2: Redesign agent output to match JMT research report format**
-- Files: `lib/agents/blueprints/small-cap-research.ts`, `lib/agents/blueprints/swing-trader-research.ts`, `lib/agents/discord.ts`, `lib/agents/prompts/small-cap.md`, `lib/agents/prompts/swing-trader.md`
-- What: Replace current schemas and embeds with structured traffic-light rating format. **No entry, target, or stop levels.** Bias and catalysts stay. See "Target Output Format" below.
-- Impact: Scannable, actionable research embeds matching the quality of JMT415's "Ultimate Research Report"
-- Complexity: MEDIUM
-
-**P0.3: Fix Discord embed field mappings**
-- File: `lib/agents/discord.ts`
-- What: Update `buildResearchEmbed` and `buildSwingSetupEmbed` field lookups to match actual schema keys. Either add dot-notation support to `readJsonValue` or flatten the schemas. Prerequisite for any output format change.
-- Complexity: LOW
-
-#### Target Output Format — Small-Cap (JMT-style)
-
-Modeled after the JMT415 "Ultimate Research Report" prompt. Each section gets a traffic-light rating and 1-3 sentence explanation. Total output under 1000 words for quick scanning.
-
-**Rating criteria:**
-- 🔴 Red: Negative (dilution events, offerings, ATM programs, reverse splits, delisting risks, financial issues)
-- 🟡 Yellow: Neutral (no clear revenue impact — new features, early-stage trials, general announcements)
-- 🟢 Green: Positive (earnings beats, late-stage clinical success, FDA approvals, contracts with confirmed revenue)
-
-**Sections:**
-
-1. **News / Why it's running** 🔴/🟡/🟢 — most recent developments with dates, form types, and source URLs
-2. **Theme** 🔴/🟡/🟢 — comparison to current market themes from last 5 trading days
-3. **Other Catalysts** — list of upcoming events, each with its own rating
-4. **Chart History** 🟢/🟡/🟠/🔴 — based on `gap-stats` endpoint data (gap count, median gap%, open-to-high/low/close, fade rate, NHOD after 11am, broke PM high)
-5. **Dilution** 🟢/🟠/🔴 — focus on in-the-money or near-ITM dilution, variable pricing (discount to VWAP), upcoming dilution risk
-6. **Offering Frequency** 🟢/🟠/🔴 — historical offering cadence (best predictor of future offerings)
-7. **Offering Ability** 🟢/🟠/🔴 — can they do a registered offering now? Active shelf, S-1/F-1, warrant exercise, or must raise through other means
-8. **Cash Need** 🟢/🟠/🔴 — calculated burn rate + filing commentary
-9. **Overall Offering Risk** 🟢/🟠/🔴 — composite assessment weighted toward frequency
-10. **Jmt415 Historical Commentary** — analyst commentary timeline (if available)
-11. **Historical Stats** — PR history, gap history with open-to-high/low/close stats
-
-**Data availability note:** `fetchTickerData()` already calls 17 AskEdgar endpoints including `gap-stats`, `news`, `dilution-rating`, `dilution-data`, `offerings`, `registrations` — but the current small-cap blueprint only uses ~4 of them. The JMT format would consume most of the already-fetched data. Need to add: `fetchJmt415()` for analyst commentary (endpoint exists in API at `docs/AE_API_DOCS.md:825` but isn't implemented). The "Theme" section needs recent market context — source from TradingView screener history or recent agent scan results.
-
-**Schema changes required:**
-- Replace `researchReportSchema` — each section gets a `rating` (enum: `'red' | 'yellow' | 'green'`) and `explanation` (string)
-- Remove `levels` object from `swingResearchSchema` — replace with traffic-light pattern/momentum assessment
-- Store JMT prompt reference as `lib/agents/prompts/jmt-report-format.md`
-
-#### Target Output Format — Swing Trader
-
-Same traffic-light system, different sections:
-1. **MDR Pattern Match** 🔴/🟡/🟢 — similarity to known multi-day runner setups (keep `mdrSimilarity` score but as context, not a trade signal)
-2. **Momentum** 🔴/🟡/🟢 — RSI, volume surge, EMA position
-3. **Catalyst** 🔴/🟡/🟢 — what's driving the move
-4. **Pattern Classification** — BREAKOUT / EXHAUSTION / CONTINUATION / STOPPED
-5. **Recommendation** — HOLD / ADD / TRIM / EXIT / WATCH with reasoning
-6. **Volume Profile** 🔴/🟡/🟢 — surge ratio, institutional interest signals
-
-Requires OHLC history (P1.1) to produce real pattern data instead of fabricated numbers.
-
-### P1 — This Week (Data & Prompt Quality)
-
-**P1.1: Give Swing Trader real OHLC history for pattern recognition**
-- File: `lib/agents/blueprints/swing-trader-research.ts`
-- What: Add `fetch-ohlc-history` step using Massive API. Pass 5-10 days of OHLC to LLM for real pattern classification and momentum assessment — not price levels.
-- Impact: Real MDR pattern scoring and volume analysis instead of fabricated numbers
-- Complexity: MEDIUM
-
-**P1.2: Format trade context for orchestrator LLM**
-- File: `lib/agents/blueprints/orchestrator-chat.ts`
-- What: Replace raw `JSON.stringify(recentTrades)` with formatted summary (ticker, P&L, date, side). Cap at 5 trades.
-- Complexity: LOW
-
-**P1.3: Separate JSON rule from prose steps**
-- Files: `lib/agents/prompts/global-policy.md`, `lib/agents/blueprints/orchestrator-chat.ts`
-- What: Add exception clause for prose-output steps in global policy
-- Complexity: LOW
-
-**P1.4: Rewrite small-cap prompt with JMT rating criteria**
-- File: `lib/agents/prompts/small-cap.md`
-- What: Replace current prompt with JMT-style traffic-light rating definitions. Include criteria for each section (news, theme, dilution, offering frequency/ability, cash need, overall risk). Reference `lib/agents/prompts/jmt-report-format.md` for the full prompt template.
-- Complexity: LOW
-
-**P1.5: Rewrite swing-trader prompt — remove price levels, add traffic-light format**
-- File: `lib/agents/prompts/swing-trader.md`
-- What: Remove "Be specific about entry/exit prices and invalidation points" and "Compare current price action against entry/stop/target levels." Replace with traffic-light rating guidance for pattern strength, momentum, and volume. Keep MDR scoring direction but frame as pattern recognition, not trade signals.
-- Complexity: LOW
+P0 and P1 are implemented. This section now tracks only the remaining structural work plus the deep-research findings that should inform the next execution pass.
 
 ### P2 — Next Sprint (Structural)
 
 **P2.1: Persist assistant conversation turns**
-- File: `lib/agents/blueprints/orchestrator-chat.ts`
-- What: Insert `role: 'assistant'` row after synthesis. Enables multi-turn conversation.
+- Files: `lib/agents/blueprints/orchestrator-chat.ts`, `app/api/agents/service/chat/route.ts`
+- What: insert `role: 'assistant'` conversation rows after orchestrator synthesis and preserve the routing metadata needed for multi-turn chat continuity.
 - Complexity: MEDIUM
 
-**P2.2: Route specialist results back to originating Discord channel**
-- File: `services/discord-bot/index.ts`
-- What: When routed, poll specialist job and send summary back in `#orchestrator`
+**P2.2: Route specialist results back to Discord**
+- Files: `services/discord-bot/index.ts`, likely `app/api/agents/service/chat/route.ts`
+- What: when the orchestrator routes to a specialist, poll the specialist completion path and post the final specialist result back into `#orchestrator` instead of stopping at the job ID.
 - Complexity: MEDIUM
 
-**P2.3: Extend TradingView columns (technicals)**
-- Files: both specialist blueprints
-- What: Add `High.1W`, `Low.1W`, `RSI`, `MACD.macd`, `EMA9`, `EMA21` to scanner columns
+**P2.3: Extend deterministic report inputs**
+- Files: `lib/agents/blueprints/small-cap-research.ts`, `lib/agents/blueprints/swing-trader-research.ts`
+- What: add `High.1W`, `Low.1W`, `RSI`, `MACD.macd`, `EMA9`, and `EMA21` to the TradingView columns and compute deterministic pre-LLM technical summaries instead of relying on raw blobs.
 - Complexity: MEDIUM
 
 **P2.4: Memory writes after research**
-- Files: both specialist blueprints
-- What: Upsert `thesis` category memory row with ticker key after research completes
+- Files: both specialist blueprints, `lib/agents/memory.ts`
+- What: upsert a `thesis` memory row keyed by ticker after successful research completes.
 - Complexity: MEDIUM
 
-**P2.5: Discord embed layout for JMT format**
-- File: `lib/agents/discord.ts`
-- What: Rebuild `buildResearchEmbed` and `buildSwingSetupEmbed` to render the new traffic-light sections. Use non-inline fields for multi-line explanations. Promote overall risk rating into embed title. Show historical stats in a code block for alignment.
+**P2.5: Report and embed contract cleanup**
+- Files: `lib/agents/discord.ts`, `app/api/agents/reports/route.ts`, `app/api/agents/reports/[id]/route.ts`, `app/api/agents/macro-summary/latest/route.ts`
+- What: rebuild the report-family renderers around explicit stored JSON contracts, surface stable report metadata in routes, and stop relying on top-level key guessing.
 - Complexity: MEDIUM
 
 ### Deep Research Follow-Up — 2026-04-12
 
-This section captures the repo-aware deep-research findings on how to make the small-cap report, swing report, and macro summary materially more robust. Treat it as pre-spec input for a later implementation handoff.
+This section captures the repo-aware findings that should shape the next implementation handoff for small-cap reports, swing reports, and the macro summary.
 
-#### Core findings
+#### Core Findings
 
 - The current specialist prompts ask for analysis that the blueprints do not actually support with structured inputs.
 - `getCachedTickerData()` already fetches a broad AskEdgar surface, but the live blueprints mostly throw it away before the LLM step.
-- The small-cap blueprint currently passes only `filings`, `cashPosition`, and TradingView price context into the LLM, even though the prompt asks for theme, chart-history, historical stats, and JMT commentary.
+- The small-cap blueprint currently passes only `filings`, `cashPosition`, and TradingView price context into the LLM, even though the report wants theme, chart-history, historical stats, and JMT commentary.
 - The swing blueprint currently passes only `filings`, `cashPosition`, TradingView price context, and 10 OHLC bars. It does not provide computed RSI, EMA, relative-volume, or theme context even though the report implicitly expects those judgments.
-- The macro pipeline is structurally thin and also has a contract mismatch: the stored schema is `{ summary, keyEvents, sectorNotes, confidence }`, while the Discord embed expects `marketBias`, `rates`, `breadth`, `topTheme`, and `watchlist`.
+- The macro pipeline is structurally thin and has a contract mismatch: the stored schema is `{ summary, keyEvents, sectorNotes, confidence }`, while the Discord embed expects `marketBias`, `rates`, `breadth`, `topTheme`, and `watchlist`.
 - Attribution remains too loose. `evidenceIds` exists, but the schema does not require per-section source mapping, and the report builders do not expose source URLs or article provenance.
 
-#### AskEdgar coverage we already have but underuse
+#### AskEdgar Coverage We Already Have But Underuse
 
-`fetchTickerData()` already pulls 17 endpoint families:
+`fetchTickerData()` already pulls these endpoint families:
 
 - `float-outstanding`
 - `screener`
@@ -452,17 +308,15 @@ This section captures the repo-aware deep-research findings on how to make the s
 - `ownership`
 - `split-status`
 
-The normalized snapshot already exposes typed sections for `news`, `offerings`, `registrations`, `equityLines`, `historicalFloat`, `reverseSplits`, `splitStatuses`, `agreements`, and `gapStats`, plus `rawData` for the full payload. The research-tab TLDR path in `lib/research.ts` is currently the only place that tries to summarize most of the AskEdgar payload in one pass.
+The normalized snapshot already exposes typed sections for `news`, `offerings`, `registrations`, `equityLines`, `historicalFloat`, `reverseSplits`, `splitStatuses`, `agreements`, and `gapStats`, plus `rawData` for the full payload. The research-tab TLDR path in `lib/research.ts` is currently the only place that tries to summarize most of that payload in one pass.
 
-#### AskEdgar additions — Small Cap
+#### Small-Cap Additions To Promote
 
-These should be treated as first-class inputs, not buried inside a single prompt blob:
-
-- `gap-stats` is a must-use input. It should drive deterministic chart-history and historical-stat summaries before the LLM sees the data.
-- `news` should drive the catalyst timeline, source chronology, and any `jmt415` commentary extraction.
-- `market-strength` should be added for the theme section. The report needs recent theme context, not just ticker-local evidence.
+- `gap-stats` should drive deterministic chart-history and historical-stat summaries before the LLM sees the data.
+- `news` should drive the catalyst timeline, source chronology, and any future JMT commentary extraction.
 - `dilution-rating`, `dilution-data`, `offerings`, `registrations`, and `equity-lines` should remain core inputs.
 - `ownership`, `historical-float-pro`, `reverse-splits`, `split-status`, `agreements`, `nasdaq-compliance`, and `pump-and-dump-tracker` should become explicit report inputs instead of silent background data.
+- `market-strength` is a useful theme enrichment, but only if the endpoint contract is verified first.
 
 Recommended deterministic pre-LLM fields for small-cap:
 
@@ -481,12 +335,11 @@ Recommended deterministic pre-LLM fields for small-cap:
 - `floatTrend`
 - `knownHolderOverhang`
 
-#### AskEdgar additions — Swing
+#### Swing Additions To Promote
 
-- `market-strength` should be added for theme and tape context.
-- `ai-chart-analysis` is worth adding as a secondary corroborating input for pattern classification, but not as the primary technical source.
 - `gap-stats`, `float-outstanding`, `historical-float-pro`, and `ownership` should be used to judge float quality, runner cleanliness, and whether the move resembles prior continuation or exhaustion behavior.
 - `dilution-rating`, `registrations`, and `offerings` should be used as overhang filters rather than the main thesis driver.
+- `market-strength` and `ai-chart-analysis` are potentially useful enrichments, but only after their contracts are verified.
 
 Recommended deterministic pre-LLM fields for swing:
 
@@ -499,7 +352,7 @@ Recommended deterministic pre-LLM fields for swing:
 - theme alignment score
 - dilution-overhang flag
 
-#### Higher-tier / unverified AskEdgar endpoints
+#### Higher-Tier / Unverified AskEdgar Endpoints
 
 If the account tier supports them, these are likely high-value enrichments:
 
@@ -512,50 +365,51 @@ If the account tier supports them, these are likely high-value enrichments:
 
 Use them only as enrichments unless their schemas are confirmed and source-backed. They should not become primary evidence without verified access and clear field-level contracts.
 
-#### Non-AskEdgar additions worth adding
+#### Non-AskEdgar Additions Worth Adding
 
-- Source-linked news objects for every report section: `title`, `publisher`, `publishedAt`, `url`, `summary`, `category`, `isPrimary`, `relevance`, `stance`
-- Reuters / AP / company press release / SEC IR article links for primary-catalyst confirmation
-- Earnings dates, conference schedules, FDA / court / shareholder-vote calendars
-- Transcript snippets and management-tone shifts
-- Borrow / short availability / short-interest change for small-cap reports
-- Sympathy-ticker watchlists for active themes
-- Explicit thesis invalidation fields
-- Event chronology: what hit first, what confirmed it, what changed after the open
+- source-linked news objects for every report section: `title`, `publisher`, `publishedAt`, `url`, `summary`, `category`, `isPrimary`, `relevance`, `stance`
+- Reuters, AP, company press release, and SEC IR article links for primary-catalyst confirmation
+- earnings dates, conference schedules, FDA or court or shareholder-vote calendars
+- transcript snippets and management-tone shifts
+- borrow or short-availability or short-interest change for small-cap reports
+- sympathy-ticker watchlists for active themes
+- explicit thesis invalidation fields
+- event chronology: what hit first, what confirmed it, what changed after the open
 
-#### X / social-source guidance
+#### X / Social-Source Guidance
 
 - X should be treated as attention and narrative spread, not truth.
 - Use it for `attentionScore`, influencer concentration, and social-first warning flags.
 - Never let X define the catalyst section unless corroborated by filings or reputable news.
-- Store exemplar post links, not synthesized “sentiment truth”.
+- Store exemplar post links, not synthesized "sentiment truth".
 
-#### Macro summary redesign
+#### Macro Summary Redesign
 
 The macro summary should be redesigned around dated, source-backed building blocks, not free-form synthesis from two generic news pages.
 
 As of 2026-04-12, the most relevant macro drivers to anchor are:
 
-- Rates / inflation persistence
-- Labor resilience vs growth slowdown
-- Energy / geopolitics / oil volatility
-- AI infrastructure / electricity demand / industrial spillovers
+- rates and inflation persistence
+- labor resilience versus growth slowdown
+- energy and geopolitics and oil volatility
+- AI infrastructure and electricity demand and industrial spillovers
 
 Recommended macro schema:
 
 - `macroDrivers`: 3-5 current themes, each with `theme`, `whyItMatters`, `sources`, `marketReaction`, `bullCase`, `bearCase`, `watchItems`
 - `crossAssetSnapshot`: indices, yields, dollar, oil, gold, VIX, bitcoin, sector ETFs, breadth
-- `scheduledCatalysts`: CPI, PPI, payrolls, Fed speakers, Treasury auctions, OPEC / EIA, major earnings clusters
+- `scheduledCatalysts`: CPI, PPI, payrolls, Fed speakers, Treasury auctions, OPEC or EIA, major earnings clusters
 - `policyState`: latest Fed range, market-implied path, key quote, inflation trend
 - `riskMatrix`: inflation risk, growth risk, geopolitics risk, liquidity risk, theme-crowding risk
 - `deskImplications`: what the setup means for small-cap shorts, momentum longs, and gap-chasing risk
 - `sourceIndex`: title, publisher, date, URL for every major claim
 
-#### Product-shape decisions to settle before implementation
+### Product Assumptions For The Next Pass
 
-- Discord-first vs full in-app research object first
-- Trader-opinionated voice vs more explicit scenario branching and uncertainty
-- Retail-tier AskEdgar assumptions vs institutional-tier endpoint availability
+- Discord stays the primary delivery surface.
+- The stored `agent_reports.report_json` object is the canonical contract, with routes exposing that shape plus metadata.
+- `fetchJmt415()` stays out of scope until its endpoint contract is confirmed.
+- Retail-tier AskEdgar assumptions remain the baseline unless a verified higher-tier contract is available.
 
 ### P3 — Future Sprint
 
@@ -568,19 +422,11 @@ Recommended macro schema:
 
 | ID | Description | Complexity | Priority |
 |----|-------------|------------|----------|
-| P0.1 | Fix raw JSON in orchestrator chat | LOW | Today |
-| P0.2 | Redesign agent output to JMT research report format | MEDIUM | Today |
-| P0.3 | Fix Discord embed field mappings (prerequisite for P0.2) | LOW | Today |
-| P1.1 | OHLC history for Swing Trader pattern recognition | MEDIUM | This week |
-| P1.2 | Format trade context for orchestrator LLM | LOW | This week |
-| P1.3 | Separate JSON rule from prose steps | LOW | This week |
-| P1.4 | Rewrite small-cap prompt with JMT rating criteria | LOW | This week |
-| P1.5 | Rewrite swing-trader prompt — traffic-light format, no price levels | LOW | This week |
 | P2.1 | Persist assistant conversation turns | MEDIUM | Next sprint |
 | P2.2 | Route specialist results back to Discord | MEDIUM | Next sprint |
-| P2.3 | Extend TradingView columns (technicals) | MEDIUM | Next sprint |
+| P2.3 | Extend deterministic report inputs | MEDIUM | Next sprint |
 | P2.4 | Memory writes after research | MEDIUM | Next sprint |
-| P2.5 | Discord embed layout for JMT format | MEDIUM | Next sprint |
+| P2.5 | Report and embed contract cleanup | MEDIUM | Next sprint |
 | P3.1 | Pre-market scan blueprint | HIGH | Future |
 | P3.2 | Pattern-check blueprint | HIGH | Future |
 | P3.3 | Trade context formatting helper | LOW | Future |
@@ -590,14 +436,13 @@ Recommended macro schema:
 
 | File | Items |
 |------|-------|
-| `lib/agents/blueprints/orchestrator-chat.ts` | P0.1, P1.2, P1.3, P2.1 |
-| `lib/agents/blueprints/small-cap-research.ts` | P0.2, P2.3, P2.4 |
-| `lib/agents/blueprints/swing-trader-research.ts` | P0.2, P1.1, P2.3, P2.4 |
-| `lib/agents/discord.ts` | P0.2, P0.3, P2.5 |
-| `lib/agents/prompts/global-policy.md` | P1.3 |
-| `lib/agents/prompts/small-cap.md` | P1.4 |
-| `lib/agents/prompts/swing-trader.md` | P1.5 |
-| `lib/agents/prompts/jmt-report-format.md` | P0.2, P1.4 (new file — JMT prompt reference) |
-| `lib/askedgar.ts` | P0.2 (add `fetchJmt415()`) |
+| `lib/agents/blueprints/orchestrator-chat.ts` | P2.1, macro prompt formatting |
+| `lib/agents/blueprints/orchestrator-macro-summary.ts` | macro redesign |
+| `lib/agents/blueprints/small-cap-research.ts` | P2.3, provenance tightening |
+| `lib/agents/blueprints/swing-trader-research.ts` | P2.3, P2.4, provenance tightening |
+| `lib/agents/discord.ts` | P2.5, macro embed redesign |
+| `app/api/agents/reports/route.ts` | report metadata contract |
+| `app/api/agents/reports/[id]/route.ts` | report detail contract |
+| `app/api/agents/macro-summary/latest/route.ts` | macro latest contract |
 | `services/discord-bot/index.ts` | P2.2 |
-| `lib/agents/context.ts` | P3.3 |
+| `lib/agents/context.ts` | typed macro summary access |
