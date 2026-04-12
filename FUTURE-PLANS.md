@@ -417,6 +417,146 @@ Requires OHLC history (P1.1) to produce real pattern data instead of fabricated 
 - What: Rebuild `buildResearchEmbed` and `buildSwingSetupEmbed` to render the new traffic-light sections. Use non-inline fields for multi-line explanations. Promote overall risk rating into embed title. Show historical stats in a code block for alignment.
 - Complexity: MEDIUM
 
+### Deep Research Follow-Up — 2026-04-12
+
+This section captures the repo-aware deep-research findings on how to make the small-cap report, swing report, and macro summary materially more robust. Treat it as pre-spec input for a later implementation handoff.
+
+#### Core findings
+
+- The current specialist prompts ask for analysis that the blueprints do not actually support with structured inputs.
+- `getCachedTickerData()` already fetches a broad AskEdgar surface, but the live blueprints mostly throw it away before the LLM step.
+- The small-cap blueprint currently passes only `filings`, `cashPosition`, and TradingView price context into the LLM, even though the prompt asks for theme, chart-history, historical stats, and JMT commentary.
+- The swing blueprint currently passes only `filings`, `cashPosition`, TradingView price context, and 10 OHLC bars. It does not provide computed RSI, EMA, relative-volume, or theme context even though the report implicitly expects those judgments.
+- The macro pipeline is structurally thin and also has a contract mismatch: the stored schema is `{ summary, keyEvents, sectorNotes, confidence }`, while the Discord embed expects `marketBias`, `rates`, `breadth`, `topTheme`, and `watchlist`.
+- Attribution remains too loose. `evidenceIds` exists, but the schema does not require per-section source mapping, and the report builders do not expose source URLs or article provenance.
+
+#### AskEdgar coverage we already have but underuse
+
+`fetchTickerData()` already pulls 17 endpoint families:
+
+- `float-outstanding`
+- `screener`
+- `dilution-rating`
+- `dilution-data`
+- `offerings`
+- `equity-lines`
+- `registrations`
+- `news`
+- `nasdaq-compliance`
+- `pump-and-dump-tracker`
+- `agreements`
+- `historical-float-pro`
+- `reverse-splits`
+- `filing-titles`
+- `gap-stats`
+- `ownership`
+- `split-status`
+
+The normalized snapshot already exposes typed sections for `news`, `offerings`, `registrations`, `equityLines`, `historicalFloat`, `reverseSplits`, `splitStatuses`, `agreements`, and `gapStats`, plus `rawData` for the full payload. The research-tab TLDR path in `lib/research.ts` is currently the only place that tries to summarize most of the AskEdgar payload in one pass.
+
+#### AskEdgar additions — Small Cap
+
+These should be treated as first-class inputs, not buried inside a single prompt blob:
+
+- `gap-stats` is a must-use input. It should drive deterministic chart-history and historical-stat summaries before the LLM sees the data.
+- `news` should drive the catalyst timeline, source chronology, and any `jmt415` commentary extraction.
+- `market-strength` should be added for the theme section. The report needs recent theme context, not just ticker-local evidence.
+- `dilution-rating`, `dilution-data`, `offerings`, `registrations`, and `equity-lines` should remain core inputs.
+- `ownership`, `historical-float-pro`, `reverse-splits`, `split-status`, `agreements`, `nasdaq-compliance`, and `pump-and-dump-tracker` should become explicit report inputs instead of silent background data.
+
+Recommended deterministic pre-LLM fields for small-cap:
+
+- `gapCount`
+- `sameDayFadeRate`
+- `avgCloseVsOpen`
+- `avgHighExtension`
+- `avgPremarketToVWAPFade`
+- `offeringTagFrequencyOnGapDays`
+- `hasActiveShelf`
+- `hasActiveAtm`
+- `amountRemainingAtm`
+- `splitApproved`
+- `splitEffectivePending`
+- `daysToComplianceDeadline`
+- `floatTrend`
+- `knownHolderOverhang`
+
+#### AskEdgar additions — Swing
+
+- `market-strength` should be added for theme and tape context.
+- `ai-chart-analysis` is worth adding as a secondary corroborating input for pattern classification, but not as the primary technical source.
+- `gap-stats`, `float-outstanding`, `historical-float-pro`, and `ownership` should be used to judge float quality, runner cleanliness, and whether the move resembles prior continuation or exhaustion behavior.
+- `dilution-rating`, `registrations`, and `offerings` should be used as overhang filters rather than the main thesis driver.
+
+Recommended deterministic pre-LLM fields for swing:
+
+- RSI
+- EMA9
+- EMA21
+- relative volume
+- 5-day / 10-day extension stats
+- current move vs prior gap-day outcomes
+- theme alignment score
+- dilution-overhang flag
+
+#### Higher-tier / unverified AskEdgar endpoints
+
+If the account tier supports them, these are likely high-value enrichments:
+
+- `offerings-advanced`
+- `dilution-data-advanced`
+- `rofr`
+- `research-reports`
+- `research-reports-short`
+- `research-reports-tldr`
+
+Use them only as enrichments unless their schemas are confirmed and source-backed. They should not become primary evidence without verified access and clear field-level contracts.
+
+#### Non-AskEdgar additions worth adding
+
+- Source-linked news objects for every report section: `title`, `publisher`, `publishedAt`, `url`, `summary`, `category`, `isPrimary`, `relevance`, `stance`
+- Reuters / AP / company press release / SEC IR article links for primary-catalyst confirmation
+- Earnings dates, conference schedules, FDA / court / shareholder-vote calendars
+- Transcript snippets and management-tone shifts
+- Borrow / short availability / short-interest change for small-cap reports
+- Sympathy-ticker watchlists for active themes
+- Explicit thesis invalidation fields
+- Event chronology: what hit first, what confirmed it, what changed after the open
+
+#### X / social-source guidance
+
+- X should be treated as attention and narrative spread, not truth.
+- Use it for `attentionScore`, influencer concentration, and social-first warning flags.
+- Never let X define the catalyst section unless corroborated by filings or reputable news.
+- Store exemplar post links, not synthesized “sentiment truth”.
+
+#### Macro summary redesign
+
+The macro summary should be redesigned around dated, source-backed building blocks, not free-form synthesis from two generic news pages.
+
+As of 2026-04-12, the most relevant macro drivers to anchor are:
+
+- Rates / inflation persistence
+- Labor resilience vs growth slowdown
+- Energy / geopolitics / oil volatility
+- AI infrastructure / electricity demand / industrial spillovers
+
+Recommended macro schema:
+
+- `macroDrivers`: 3-5 current themes, each with `theme`, `whyItMatters`, `sources`, `marketReaction`, `bullCase`, `bearCase`, `watchItems`
+- `crossAssetSnapshot`: indices, yields, dollar, oil, gold, VIX, bitcoin, sector ETFs, breadth
+- `scheduledCatalysts`: CPI, PPI, payrolls, Fed speakers, Treasury auctions, OPEC / EIA, major earnings clusters
+- `policyState`: latest Fed range, market-implied path, key quote, inflation trend
+- `riskMatrix`: inflation risk, growth risk, geopolitics risk, liquidity risk, theme-crowding risk
+- `deskImplications`: what the setup means for small-cap shorts, momentum longs, and gap-chasing risk
+- `sourceIndex`: title, publisher, date, URL for every major claim
+
+#### Product-shape decisions to settle before implementation
+
+- Discord-first vs full in-app research object first
+- Trader-opinionated voice vs more explicit scenario branching and uncertainty
+- Retail-tier AskEdgar assumptions vs institutional-tier endpoint availability
+
 ### P3 — Future Sprint
 
 **P3.1: Pre-market scan blueprint** — `small-cap-trader:pre-market-scan` stub. HIGH.
