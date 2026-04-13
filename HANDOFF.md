@@ -1,416 +1,1010 @@
 # Nexus Terminal — HANDOFF.md
 
-> Older completed execution specs were removed to keep this file focused. Use git history for archived implementation detail.
-
-### Workflow Tooling Note
-
-- 2026-04-06: Added a repo-maintained Codex `commit` alias skill in [`codex-skills/commit/`](/home/jared/Nexus-Terminal/codex-skills/commit) and UI metadata for [`codex-skills/nexus-commit/`](/home/jared/Nexus-Terminal/codex-skills/nexus-commit) so Codex can surface a user-facing commit entry point while keeping `nexus-commit` as the canonical workflow.
-- 2026-04-07: Audited the Codex harness docs and refreshed [`AGENTS.md`](/home/jared/Nexus-Terminal/AGENTS.md) plus repo-maintained skill sources in [`codex-skills/`](/home/jared/Nexus-Terminal/codex-skills) to remove stale `.claude`/`.opencode` assumptions, fix the `lib/trade-utils.ts` path, and document repo-local skill agent metadata.
-- 2026-04-12: Added a repo-maintained Codex deep-research skill in [`codex-skills/nexus-deep-research/`](/home/jared/Nexus-Terminal/codex-skills/nexus-deep-research). It coordinates parallel subagent research passes for repo-specific investigations and only saves markdown briefs under `docs/research/` when the user explicitly asks for an artifact.
-- 2026-04-12: Clarified skill discovery in [`AGENTS.md`](/home/jared/Nexus-Terminal/AGENTS.md): repo-local `codex-skills/` content is source-of-truth for the repo, but Codex only surfaces a skill after it is synced into `~/.codex/skills/<skill-name>` and the session is restarted.
-- 2026-04-12: Archived the completed AEV2 execution plan; `HANDOFF.md` is again the active execution-spec surface and git history is the archive for completed rollout sequencing.
+> Older completed execution specs were removed to keep this file focused. Use git history for archived implementation detail (P2 agent response improvements, T1.1–T1.3 specialist blueprints — all completed 2026-04-13).
 
 ---
 
-## Agent Response Improvement — Reports + Macro Summary (P2+)
-
-> Generated: 2026-04-12
-> Status: COMPLETE — archived, see git history for full detail
-
-Steps 1-6 completed. Typed report contracts, assistant-turn persistence, specialist routing to Discord, deterministic TradingView expansion, swing thesis memory writes, typed Discord renderers, macro summary redesign. 45 test files, 316 tests passing at completion.
-
----
-
-## Agent Response Improvement — Tier 1 (T1.1–T1.3)
+## Macro Daily Pipeline Enhancement — Phase 1
 
 > Generated: 2026-04-13
-> Status: COMPLETE
-> Depends on: P2 completion (done)
-> Scope: 2 blueprint files changed, blueprint fixtures updated, 0 new files, 0 schema/migration changes
-> Completed: 2026-04-13 — T1.1, T1.2, and T1.3 implemented with repo validation passing at 45 test files / 316 tests.
+> Status: NOT STARTED
+> Scope: 2 new files, 5 files modified, 1 new optional env var (`FRED_API_KEY`)
+> No schema/migration changes, no new npm dependencies
 
 ### Overview
 
-Three targeted improvements to specialist blueprint pipelines. No schema changes. No new API routes. No new dependencies. All changes are in existing blueprint files.
+Transform the macro daily briefing from a thin summary (bias + drivers + catalysts) into a comprehensive pre-market macro analysis. Four coordinated changes:
 
-| Step | ID | Description | File |
-|------|------|-------------|------|
-| 1 | T1.1 | Small-cap thesis memory writes | `lib/agents/blueprints/small-cap-research.ts` |
-| 2 | T1.2 | Deterministic news/catalyst extraction + compact digest for small-cap | `lib/agents/blueprints/small-cap-research.ts` |
-| 3 | T1.3 | Swing deterministic gap-day comparison | `lib/agents/blueprints/swing-trader-research.ts` |
+1. **New data sources** — FRED API for Treasury yields/rates, RSS parser for ZeroHedge headlines, 5-day daily OHLC bars for key level identification
+2. **Expanded ticker universe** — add VIX proxy, dollar, semis, mid-term treasuries, high yield bonds, emerging markets, crypto proxy (7 new tickers via existing Massive API — no new cost)
+3. **Deeper output schema** — new sections: risk assessment, key levels, rates outlook, scenario analysis, TLDR
+4. **Updated prompt + embed** — rewrite LLM prompt for deeper analysis, update Discord embed to render all new sections
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `lib/agents/fred-client.ts` | **NEW** — FRED API client |
+| `lib/agents/rss-lite.ts` | **NEW** — RSS feed parser |
+| `lib/agents/types.ts` | Add `FredDataPoint`, `KeyLevel`, `ScenarioAnalysis`; expand `MacroSummaryReport` |
+| `lib/agents/blueprints/orchestrator-macro-summary.ts` | New step, expanded tickers, updated schemas, rewritten prompt |
+| `lib/agents/discord.ts` | Updated `buildMacroSummaryEmbed` with new report sections |
+| `lib/agents/prompts/orchestrator.md` | Updated macro briefing instructions |
+| `__tests__/agent-*.test.ts` | Updated fixtures for new schema shape |
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `FRED_API_KEY` | No | Free API key from [fred.stlouisfed.org](https://fred.stlouisfed.org/docs/api/api_key.html). If absent, FRED data is skipped — pipeline still works. |
+| `MACRO_RSS_URLS` | No | Comma-separated RSS feed URLs. Defaults to ZeroHedge RSS. If feeds fail, pipeline continues without RSS data. |
 
 ### Guardrails
 
-- No schema or migration changes.
-- No new files — all changes are in existing blueprint files.
-- Do not touch the LLM output schemas (`researchReportSchema`, `swingResearchSchema`) — these are report contracts, not pipeline inputs.
-- Do not add new API routes or modify existing routes.
-- `evidenceIds: string[]` stays flat — provenance redesign is Tier 2 work.
-- `pre-market-scan`, `momentum-scan`, `pattern-check` remain stubs.
+- No schema/migration changes (no DB changes).
+- No new npm dependencies — RSS parsing uses regex on XML, FRED uses native fetch.
+- All new data fetches must degrade gracefully: missing API key → skip, failed fetch → empty array, pipeline still completes.
+- The pipeline must produce a valid report with zero new env vars set.
+- Previously stored macro reports (before this change) lack new fields — code reading `MacroSummaryReport` from the DB (e.g., `context.ts`, `orchestrator-chat.ts`) should tolerate missing fields via optional chaining where needed.
 - Run `npm run lint && npx tsc --noEmit && npm test` after each step.
 
 ---
 
-### Step 1 — T1.1: Small-Cap Thesis Memory Writes
+### Step 1 — FRED API Client (NEW FILE)
 
-**File:** `lib/agents/blueprints/small-cap-research.ts`
+**File:** `lib/agents/fred-client.ts`
 
-**Why:** The swing blueprint already writes a `thesis` memory row per ticker after research (keyed by ticker, 7-day TTL). The small-cap blueprint does not. Without this, the orchestrator has no memory of small-cap research — when someone asks "what did you find on MULN?" there's nothing to recall.
+**Why:** FRED is free, authoritative, and reliable. It gives us actual Treasury yield percentages and Fed Funds rate — data that transforms vague "rates are moving" analysis into specific "10Y at 4.32%, 2Y at 3.85%, spread +47bp" analysis. The API key is free (register at fred.stlouisfed.org).
 
-**1a.** Add the `upsertMemory` import. Find this line near the top of the file:
+**What it does:** Fetches the latest observation for each FRED series ID in parallel. Returns an array of `FredDataPoint` objects. If `FRED_API_KEY` is not set, returns empty array immediately (no error). Each individual series fetch has its own timeout and failure is isolated — if one series fails, the others still return.
 
-```ts
-import type { Blueprint, StepResult } from '../types';
-```
-
-Add above it:
+Create this file with this exact content:
 
 ```ts
-import { upsertMemory } from '../memory';
+import type { FredDataPoint } from './types';
+
+const FRED_BASE_URL = 'https://api.stlouisfed.org/fred/series/observations';
+const DEFAULT_TIMEOUT_MS = 10_000;
+
+/**
+ * Human-readable labels for FRED series IDs.
+ * Used in the Discord embed so traders see "10-Year Treasury" instead of "DGS10".
+ */
+const SERIES_LABELS: Record<string, string> = {
+  DGS10: '10Y Treasury',
+  DGS2: '2Y Treasury',
+  T10Y2Y: '10Y-2Y Spread',
+  FEDFUNDS: 'Fed Funds Rate',
+};
+
+/**
+ * Fetch the most recent observation for each FRED series.
+ * Returns empty array if FRED_API_KEY is not set (graceful degrade).
+ * Each series is fetched in parallel with independent error handling.
+ */
+export async function fetchFredSeries(
+  seriesIds: string[],
+  options?: { timeoutMs?: number },
+): Promise<FredDataPoint[]> {
+  const apiKey = process.env.FRED_API_KEY?.trim();
+  if (!apiKey) return [];
+
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+  const settled = await Promise.allSettled(
+    seriesIds.map(async (seriesId) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const url = new URL(FRED_BASE_URL);
+        url.searchParams.set('series_id', seriesId);
+        url.searchParams.set('api_key', apiKey);
+        url.searchParams.set('file_type', 'json');
+        url.searchParams.set('sort_order', 'desc');
+        url.searchParams.set('limit', '1');
+
+        const response = await fetch(url.toString(), { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(`FRED ${seriesId}: status ${response.status}`);
+        }
+
+        const data = (await response.json()) as {
+          observations?: Array<{ date?: string; value?: string }>;
+        };
+
+        const obs = data.observations?.[0];
+        const rawValue = obs?.value?.trim();
+        // FRED uses "." for missing data (holidays, weekends)
+        const numericValue = rawValue && rawValue !== '.' ? Number(rawValue) : null;
+
+        return {
+          seriesId,
+          label: SERIES_LABELS[seriesId] ?? seriesId,
+          date: obs?.date ?? 'unknown',
+          value: Number.isFinite(numericValue) ? numericValue : null,
+        } satisfies FredDataPoint;
+      } finally {
+        clearTimeout(timer);
+      }
+    }),
+  );
+
+  return settled
+    .filter((r): r is PromiseFulfilledResult<FredDataPoint> => r.status === 'fulfilled')
+    .map((r) => r.value);
+}
 ```
 
-**1b.** In the `save-research` step's `run` function, find the `writeAndDeliverReport` call and the `return completedResult` that follows it. Between those two — after `writeAndDeliverReport` completes and before `return completedResult(...)` — insert:
-
-```ts
-await upsertMemory(db, {
-  userId: job.userId,
-  agentId: 'small-cap-trader',
-  category: 'thesis',
-  key: report.ticker,
-  value: `${report.overallOfferingRisk.rating.toUpperCase()} offering risk — ${report.confidence} confidence`,
-  valueJson: {
-    overallOfferingRisk: report.overallOfferingRisk.rating,
-    dilution: report.dilution.rating,
-    cashNeed: report.cashNeed.rating,
-    offeringAbility: report.offeringAbility.rating,
-    confidence: report.confidence,
-  },
-  source: `report:${job.id}`,
-  confidence: report.confidence,
-  expiresAt: new Date(Date.now() + (14 * 24 * 60 * 60 * 1000)),
-});
-```
-
-**Notes:**
-- Uses 14-day TTL (not 7 like swing) because dilution data changes slower than price/momentum signals. Swing thesis expires faster because setups are time-sensitive.
-- `upsertMemory` conflict target is `(userId, agentId, category, key)` — re-researching the same ticker overwrites the previous thesis and resets the TTL.
-- `valueJson` captures the 4 most important dilution ratings plus confidence. This is what the orchestrator reads when asked about a previously researched ticker.
-
-**Validate:** `npm run lint && npx tsc --noEmit && npm test`
+**Validate:** `npm run lint && npx tsc --noEmit`
 
 ---
 
-### Step 2 — T1.2: Deterministic News Extraction + Compact Digest
+### Step 2 — RSS Feed Parser (NEW FILE)
 
-**File:** `lib/agents/blueprints/small-cap-research.ts`
+**File:** `lib/agents/rss-lite.ts`
 
-**Why:** The `news` array from AskEdgar is currently dumped raw into the LLM prompt — up to 20 items with full article `body` text, costing 1,000–3,000 tokens. We replace this with: (a) 6 precomputed deterministic fields, and (b) a compact headlines digest (just `title`, `filed_at`, `form_type` per item — no `body`/`summary`/`tags` blobs). The LLM still sees what happened (headlines + dates) but at a fraction of the token cost.
+**Why:** RSS feeds give structured headline data (title + date + link) much more efficiently than scraping full web pages. ZeroHedge publishes contrarian macro analysis that adds a different perspective from mainstream MarketWatch/Yahoo headlines. No API key needed — RSS is open.
 
-**AskEdgar news item fields** (snake_case from API, raw in `readResults(rawData['news'])`):
-- `filed_at` — date string `"YYYY-MM-DD"` (may be null)
-- `form_type` — `"news"`, `"grok"`, `"jmt415"`, or SEC form (`"8-K"`, `"S-3"`, `"424B5"`, etc.)
-- `title` — article title (populated for `form_type = "news"`, empty for filings)
-- `summary` — short summary
-- `body` — full article text (the big token cost)
-- `tags` — array of strings from a fixed taxonomy
-- `document_url` — URL to original document
+**What it does:** Fetches an RSS XML feed, extracts `<item>` blocks via regex, and returns an array of `{ title, link, pubDate }` only — the `<description>` body is intentionally ignored (ZeroHedge items have massive HTML description blocks that would blow up token usage). Handles CDATA-wrapped titles (common in RSS). No XML parser dependency — regex is sufficient for standard RSS 2.0 feeds. Default limit is 10 items.
 
-**2a.** Add two constant sets and the `extractNewsMetrics` helper function. Place these before `computeDeterministicAnalysis` (which starts around line 364). The function uses helpers already in the file: `isValidRecord`, `getFieldValue`, `getStringField`, `parseLooseDate`.
+Create this file with this exact content:
 
 ```ts
-const FILING_CATALYST_FORM_TYPES = new Set([
-  '424B5', '424B1', '424B4', '424B3', 'S-1', 'S-3', 'F-3', '8-K',
-]);
-const FILING_CATALYST_TAGS = new Set([
-  'Offerings', 'Dilution', 'Financing Activity', 'Capital Structure', 'Cash Runway',
-]);
+const DEFAULT_TIMEOUT_MS = 10_000;
 
-function extractNewsMetrics(newsItems: unknown[]): {
-  newsCount: number;
-  mostRecentNewsDate: string | null;
-  daysSinceLastNews: number | null;
-  hasFilingCatalyst: boolean;
-  hasJmt415Content: boolean;
-  catalystCategories: string[];
-} {
-  const newsCount = newsItems.length;
-  let latestDate: Date | null = null;
-  let hasFilingCatalyst = false;
-  let hasJmt415Content = false;
-  const categorySet = new Set<string>();
+export interface RssItem {
+  title: string;
+  link: string;
+  pubDate: string;
+}
 
-  for (const item of newsItems) {
-    if (!isValidRecord(item)) continue;
+/**
+ * Fetch and parse an RSS 2.0 feed. Returns up to `limit` items.
+ * Uses regex extraction — no XML parser dependency needed.
+ */
+export async function fetchRssItems(
+  url: string,
+  options?: { timeoutMs?: number; limit?: number },
+): Promise<RssItem[]> {
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const limit = options?.limit ?? 10;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-    const date = parseLooseDate(getFieldValue(item, ['filed_at', 'filedAt']));
-    if (date && (latestDate === null || date > latestDate)) {
-      latestDate = date;
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Nexus-Agent/1.0',
+        Accept: 'application/rss+xml, application/xml, text/xml',
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`RSS fetch failed with status ${response.status}`);
     }
 
-    const formType = getStringField(item, ['form_type', 'formType']);
-    if (formType) {
-      categorySet.add(formType);
-      if (FILING_CATALYST_FORM_TYPES.has(formType.toUpperCase())) {
-        hasFilingCatalyst = true;
-      }
-      if (formType.toLowerCase() === 'jmt415') {
-        hasJmt415Content = true;
+    const xml = await response.text();
+    const items: RssItem[] = [];
+    const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+    let match;
+
+    while ((match = itemRegex.exec(xml)) !== null && items.length < limit) {
+      const block = match[1]!;
+      const title = block.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i)?.[1]?.trim() ?? '';
+      const link = block.match(/<link>([\s\S]*?)<\/link>/i)?.[1]?.trim() ?? '';
+      const pubDate = block.match(/<pubDate>([\s\S]*?)<\/pubDate>/i)?.[1]?.trim() ?? '';
+
+      if (title) {
+        items.push({ title, link, pubDate });
       }
     }
 
-    const tags = Array.isArray((item as Record<string, unknown>).tags)
-      ? (item as Record<string, unknown>).tags as unknown[]
-      : [];
-    for (const tag of tags) {
-      if (typeof tag === 'string' && FILING_CATALYST_TAGS.has(tag)) {
-        hasFilingCatalyst = true;
-      }
+    return items;
+  } catch (error) {
+    if ((error as { name?: string }).name === 'AbortError') {
+      throw new Error(`RSS fetch timed out after ${timeoutMs}ms`);
     }
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
-
-  const mostRecentNewsDate = latestDate ? latestDate.toISOString().slice(0, 10) : null;
-  const daysSinceLastNews = latestDate
-    ? Math.floor((Date.now() - latestDate.getTime()) / 86400000)
-    : null;
-
-  return {
-    newsCount,
-    mostRecentNewsDate,
-    daysSinceLastNews,
-    hasFilingCatalyst,
-    hasJmt415Content,
-    catalystCategories: [...categorySet].sort(),
-  };
 }
 ```
 
-**2b.** Add a `buildNewsDigest` helper function right after `extractNewsMetrics`. This produces the compact headlines array for the prompt — just `title`, `filed_at`, and `form_type` per item, no `body` or `summary`.
+**Validate:** `npm run lint && npx tsc --noEmit`
+
+---
+
+### Step 3 — Expand Types
+
+**File:** `lib/agents/types.ts`
+
+**Why:** The report type (`MacroSummaryReport`) is the contract between the blueprint, the Discord embed renderer, and the database. New analysis sections need new fields.
+
+**3a.** Add three new interfaces. Find this line (around line 86):
 
 ```ts
-function buildNewsDigest(newsItems: unknown[]): { title: string; date: string; type: string }[] {
-  const digest: { title: string; date: string; type: string }[] = [];
+export interface ScheduledCatalyst {
+```
 
-  for (const item of newsItems) {
-    if (!isValidRecord(item)) continue;
+Add **above** it:
 
-    const title = getStringField(item, ['title', 'summary']) ?? '(untitled)';
-    const date = getStringField(item, ['filed_at', 'filedAt']) ?? 'unknown';
-    const type = getStringField(item, ['form_type', 'formType']) ?? 'unknown';
-    digest.push({ title, date, type });
-  }
+```ts
+export interface FredDataPoint {
+  seriesId: string;
+  label: string;
+  date: string;
+  value: number | null;
+}
 
-  return digest;
+export interface KeyLevel {
+  ticker: string;
+  support: string;
+  resistance: string;
+  note: string;
+}
+
+export interface ScenarioAnalysis {
+  consensus: string;
+  disruption: string;
+}
+
+```
+
+**3b.** Replace the `MacroSummaryReport` interface. Find (lines 88–99):
+
+```ts
+export interface MacroSummaryReport {
+  tradingDate: string;
+  marketBias: 'bullish' | 'bearish' | 'neutral';
+  summary: string;
+  drivers: MacroDriver[];
+  crossAssetSnapshot: CrossAssetEntry[];
+  scheduledCatalysts: ScheduledCatalyst[];
+  sectorRotation: string[];
+  deskImplications: string[];
+  sourceIndex: MacroSource[];
+  confidence: Confidence;
 }
 ```
 
-**2c.** Extend `deterministicAnalysisSchema`. Find the closing of the schema (after `knownHolderOverhang: z.number().nullable()`). Add 6 new fields:
+Replace with:
 
 ```ts
-  newsCount: z.number(),
-  mostRecentNewsDate: z.string().nullable(),
-  daysSinceLastNews: z.number().nullable(),
-  hasFilingCatalyst: z.boolean(),
-  hasJmt415Content: z.boolean(),
-  catalystCategories: z.array(z.string()),
+export interface MacroSummaryReport {
+  tradingDate: string;
+  marketBias: 'bullish' | 'bearish' | 'neutral';
+  summary: string;
+  riskAssessment: string;
+  drivers: MacroDriver[];
+  crossAssetSnapshot: CrossAssetEntry[];
+  keyLevels: KeyLevel[];
+  ratesOutlook: string;
+  fredData: FredDataPoint[];
+  scheduledCatalysts: ScheduledCatalyst[];
+  sectorRotation: string[];
+  scenarioAnalysis: ScenarioAnalysis;
+  deskImplications: string[];
+  sourceIndex: MacroSource[];
+  confidence: Confidence;
+  tldr: string[];
+}
 ```
 
-**2d.** Extend `researchPipelineInputSchema`. Find where it's defined (it extends `priceContextSchema` with `deterministicAnalysis`). Add a new `newsDigest` field:
+**Validate:** `npm run lint && npx tsc --noEmit` — expect type errors in `discord.ts` and the blueprint until those files are updated in later steps. That's fine.
+
+---
+
+### Step 4 — Update Blueprint
+
+**File:** `lib/agents/blueprints/orchestrator-macro-summary.ts`
+
+This is the main change. Follow sub-steps in order.
+
+#### 4a. Add imports
+
+Find the existing import block at the top of the file (lines 1–12). Replace it with:
 
 ```ts
-const researchPipelineInputSchema = priceContextSchema.extend({
-  deterministicAnalysis: deterministicAnalysisSchema,
-  newsDigest: z.array(z.object({
-    title: z.string(),
-    date: z.string(),
-    type: z.string(),
+import { z } from 'zod';
+import { fetchUnifiedSnapshot, fetchDailyAggregates, type MassiveSnapshotResult } from '@/lib/massive-market';
+import { writeAndDeliverReport } from '../discord';
+import { fetchFredSeries } from '../fred-client';
+import { callLlm } from '../llm-client';
+import { fetchRssItems } from '../rss-lite';
+import { fetchPageText } from '../scrape-lite';
+import type {
+  Blueprint,
+  CrossAssetEntry,
+  FredDataPoint,
+  MacroSource,
+  MacroSummaryReport,
+  StepResult,
+} from '../types';
+```
+
+#### 4b. Update constants
+
+Find the constants (lines 14–15):
+
+```ts
+const DEFAULT_MACRO_HEADLINES_URLS = 'https://www.marketwatch.com/latest-news,https://finance.yahoo.com/topic/stock-market-news/';
+const MACRO_TICKERS = ['SPY', 'QQQ', 'IWM', 'DIA', 'XLE', 'XLF', 'XLK', 'GLD', 'USO', 'TLT'];
+```
+
+Replace with:
+
+```ts
+const DEFAULT_MACRO_HEADLINES_URLS = 'https://www.marketwatch.com/latest-news,https://finance.yahoo.com/topic/stock-market-news/';
+const DEFAULT_MACRO_RSS_URLS = 'https://cms.zerohedge.com/fullrss2.xml';
+const MACRO_TICKERS = [
+  'SPY', 'QQQ', 'IWM', 'DIA',
+  'XLE', 'XLF', 'XLK', 'GLD', 'USO', 'TLT',
+  'UVXY', 'UUP', 'SMH', 'IEF', 'HYG', 'EEM', 'BITO',
+];
+const KEY_LEVEL_TICKERS = ['SPY', 'QQQ', 'IWM'];
+const FRED_SERIES = ['DGS10', 'DGS2', 'T10Y2Y', 'FEDFUNDS'];
+```
+
+**Why the new tickers:**
+- `UVXY` — VIX proxy (volatility = risk sentiment)
+- `UUP` — US Dollar index ETF (dollar strength affects everything)
+- `SMH` — Semiconductor ETF (market bellwether)
+- `IEF` — 7-10 Year Treasury ETF (rate proxy)
+- `HYG` — High Yield Bond ETF (credit risk appetite)
+- `EEM` — Emerging Markets ETF (global risk)
+- `BITO` — Bitcoin ETF (crypto correlation)
+
+#### 4c. Update headlinesSchema
+
+Find (lines 21–26):
+
+```ts
+const headlinesSchema = z.object({
+  headlines: z.array(z.object({
+    url: z.string(),
+    text: z.string(),
   })),
 });
 ```
 
-**2e.** Wire extraction into `computeDeterministicAnalysis`. At the top of the function body, add:
+Replace with:
 
 ```ts
-const newsMetrics = extractNewsMetrics(asArray(input.news));
+const rssItemSchema = z.object({
+  title: z.string(),
+  link: z.string(),
+  pubDate: z.string(),
+});
+
+const headlinesSchema = z.object({
+  headlines: z.array(z.object({
+    url: z.string(),
+    text: z.string(),
+  })),
+  rssHeadlines: z.array(rssItemSchema),
+});
 ```
 
-Then in the `return` statement, spread the news metrics after `knownHolderOverhang`:
+#### 4d. Update macroBriefingSchema (LLM output)
+
+Find (lines 28–44):
 
 ```ts
-    knownHolderOverhang,
-    ...newsMetrics,
-```
-
-**2f.** Wire digest into the `compute-deterministic` step's `run` function. Currently it returns:
-
-```ts
-return completedResult({
-  ...input,
-  deterministicAnalysis,
-}, { ... });
-```
-
-Change to:
-
-```ts
-return completedResult({
-  ...input,
-  deterministicAnalysis,
-  newsDigest: buildNewsDigest(asArray(input.news)),
-}, { ... });
-```
-
-**2g.** Update `buildResearchPrompt`. Replace the raw news line in the AskEdgar sections block:
-
-```ts
-      formatPromptSection('news', input.news),
+const macroBriefingSchema = z.object({
+  marketBias: z.enum(['bullish', 'bearish', 'neutral']),
+  summary: z.string(),
+  drivers: z.array(z.object({
+    driver: z.string(),
+    impact: z.enum(['positive', 'negative', 'mixed']),
+    sourceRefs: z.array(z.string().min(1)).min(1),
+  })),
+  scheduledCatalysts: z.array(z.object({
+    event: z.string(),
+    date: z.string().nullable(),
+    expectedImpact: z.string(),
+  })),
+  sectorRotation: z.array(z.string()),
+  deskImplications: z.array(z.string()),
+  confidence: z.enum(['high', 'medium', 'low']),
+});
 ```
 
 Replace with:
 
 ```ts
-      formatPromptSection('newsDigest (title, date, type only)', input.newsDigest),
+const keyLevelSchema = z.object({
+  ticker: z.string(),
+  support: z.string(),
+  resistance: z.string(),
+  note: z.string(),
+});
+
+const scenarioSchema = z.object({
+  consensus: z.string(),
+  disruption: z.string(),
+});
+
+const macroBriefingSchema = z.object({
+  marketBias: z.enum(['bullish', 'bearish', 'neutral']),
+  summary: z.string(),
+  riskAssessment: z.string(),
+  drivers: z.array(z.object({
+    driver: z.string(),
+    impact: z.enum(['positive', 'negative', 'mixed']),
+    sourceRefs: z.array(z.string().min(1)).min(1),
+  })),
+  keyLevels: z.array(keyLevelSchema),
+  ratesOutlook: z.string(),
+  scheduledCatalysts: z.array(z.object({
+    event: z.string(),
+    date: z.string().nullable(),
+    expectedImpact: z.string(),
+  })),
+  sectorRotation: z.array(z.string()),
+  scenarioAnalysis: scenarioSchema,
+  deskImplications: z.array(z.string()),
+  confidence: z.enum(['high', 'medium', 'low']),
+  tldr: z.array(z.string()),
+});
 ```
 
-**2h.** Update the jmt415 instruction line in `buildResearchPrompt`. Find:
+#### 4e. Add enriched context schemas
+
+Find the `macroBriefingContextSchema` definition (starts around line 46). It currently ends after the `sourceIndex` field. **After** `macroBriefingContextSchema`, add the enriched schema. Find the closing `});` of `macroBriefingContextSchema` and add after it:
 
 ```ts
-    'For jmt415Commentary: if no jmt415-tagged news items exist in the data, set to null.',
+
+const fredPointSchema = z.object({
+  seriesId: z.string(),
+  label: z.string(),
+  date: z.string(),
+  value: z.number().nullable(),
+});
+
+const dailyBarEntrySchema = z.object({
+  ticker: z.string(),
+  bars: z.array(z.object({
+    date: z.string(),
+    open: z.number(),
+    high: z.number(),
+    low: z.number(),
+    close: z.number(),
+    volume: z.number(),
+  })),
+});
+
+const enrichedMacroContextSchema = macroBriefingContextSchema.extend({
+  fredData: z.array(fredPointSchema),
+  dailyBars: z.array(dailyBarEntrySchema),
+});
+```
+
+#### 4f. Update macroBriefingDraftSchema
+
+Find the existing `macroBriefingDraftSchema` (lines 62–79). Replace the entire definition:
+
+```ts
+const macroBriefingDraftSchema = z.object({
+  crossAssetSnapshot: macroBriefingContextSchema.shape.crossAssetSnapshot,
+  sourceIndex: macroBriefingContextSchema.shape.sourceIndex,
+  fredData: z.array(fredPointSchema),
+}).extend(macroBriefingSchema.shape).superRefine((value, ctx) => {
+  const sourceIds = new Set(value.sourceIndex.map((source) => source.id));
+
+  value.drivers.forEach((driver, driverIndex) => {
+    driver.sourceRefs.forEach((sourceRef, sourceRefIndex) => {
+      if (!sourceIds.has(sourceRef)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['drivers', driverIndex, 'sourceRefs', sourceRefIndex],
+          message: `Unknown macro source reference: ${sourceRef}`,
+        });
+      }
+    });
+  });
+});
+```
+
+**What changed:** Added `fredData: z.array(fredPointSchema)` alongside `crossAssetSnapshot` and `sourceIndex` as code-merged (non-LLM-generated) fields in the draft. The `macroBriefingSchema.shape` spread now includes all the new LLM output fields.
+
+#### 4g. Add getRssUrls helper
+
+Find the `getHeadlineUrls` function (around line 130). Add this new function right after it:
+
+```ts
+
+function getRssUrls(): string[] {
+  return (process.env.MACRO_RSS_URLS ?? DEFAULT_MACRO_RSS_URLS)
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+```
+
+#### 4h. Update scrape-headlines step
+
+Find the `scrape-headlines` step (starts around line 218). Replace the entire step object:
+
+```ts
+    {
+      name: 'scrape-headlines',
+      type: 'code',
+      outputSchema: headlinesSchema,
+      metadata: { canRetry: true, timeoutMs: 30000, maxRepairAttempts: 0, sideEffect: false },
+      run: async () => {
+        const startedAt = Date.now();
+        const urls = getHeadlineUrls();
+        const headlines = [];
+
+        for (const url of urls) {
+          try {
+            const text = await fetchPageText(url);
+            headlines.push({ url, text: text.slice(0, 8000) });
+          } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            headlines.push({ url, text: `[fetch failed: ${detail}]` });
+          }
+        }
+
+        const rssUrls = getRssUrls();
+        const rssHeadlines: z.infer<typeof rssItemSchema>[] = [];
+        for (const rssUrl of rssUrls) {
+          try {
+            const items = await fetchRssItems(rssUrl);
+            rssHeadlines.push(...items);
+          } catch {
+            // Gracefully skip failed RSS feeds — pipeline continues without RSS data
+          }
+        }
+
+        return completedResult({ headlines, rssHeadlines }, {
+          durationMs: Date.now() - startedAt,
+          sourceIds: [...urls, ...rssUrls],
+        });
+      },
+    },
+```
+
+**What changed:** Timeout bumped from 20000→30000 to accommodate RSS fetches. Added RSS fetch loop after page headlines. Output now includes `rssHeadlines`. RSS failures are silently swallowed (the pipeline doesn't depend on RSS data).
+
+#### 4i. Add fetch-macro-context step
+
+This is a **new** step. Insert it between `fetch-market-snapshot` and `generate-briefing`. Find the closing `},` of the `fetch-market-snapshot` step and add this step after it:
+
+```ts
+    {
+      name: 'fetch-macro-context',
+      type: 'code',
+      metadata: { canRetry: true, timeoutMs: 20000, maxRepairAttempts: 0, sideEffect: false },
+      run: async ({ previousOutput }) => {
+        const startedAt = Date.now();
+        const context = macroBriefingContextSchema.parse(previousOutput);
+
+        // Fetch FRED data (graceful degrade if key missing or API fails)
+        let fredData: FredDataPoint[] = [];
+        try {
+          fredData = await fetchFredSeries(FRED_SERIES);
+        } catch {
+          // FRED unavailable — continue without rates data
+        }
+
+        // Fetch daily OHLC bars for key level identification
+        let dailyBars: z.infer<typeof dailyBarEntrySchema>[] = [];
+        if (process.env.MASSIVE_API_KEY?.trim()) {
+          const settled = await Promise.allSettled(
+            KEY_LEVEL_TICKERS.map(async (ticker) => ({
+              ticker,
+              bars: (await fetchDailyAggregates(ticker, 5)).map((bar) => ({
+                date: bar.date,
+                open: bar.open,
+                high: bar.high,
+                low: bar.low,
+                close: bar.close,
+                volume: bar.volume,
+              })),
+            })),
+          );
+          dailyBars = settled
+            .filter((r): r is PromiseFulfilledResult<z.infer<typeof dailyBarEntrySchema>> =>
+              r.status === 'fulfilled')
+            .map((r) => r.value);
+        }
+
+        // Extend source index with RSS and FRED source entries
+        const fetchedAt = new Date().toISOString();
+        const rssUrls = getRssUrls();
+        const extendedSourceIndex: MacroSource[] = [
+          ...context.sourceIndex,
+          ...rssUrls.map((url) => {
+            let hostname = 'rss-source';
+            try { hostname = new URL(url).hostname; } catch { /* ignore */ }
+            return {
+              id: `rss:${hostname}`,
+              title: `${hostname} RSS`,
+              url,
+              fetchedAt,
+            };
+          }),
+          ...(fredData.length > 0 ? [{
+            id: 'data:fred',
+            title: 'FRED Economic Data',
+            url: 'https://fred.stlouisfed.org' as string | null,
+            fetchedAt,
+          }] : []),
+        ];
+
+        return completedResult({
+          ...context,
+          sourceIndex: extendedSourceIndex,
+          fredData,
+          dailyBars,
+        }, {
+          durationMs: Date.now() - startedAt,
+          sourceIds: [
+            ...(fredData.length > 0 ? ['fred'] : []),
+            ...KEY_LEVEL_TICKERS,
+          ],
+          upstreamStepIds: ['fetch-market-snapshot'],
+        });
+      },
+    },
+```
+
+**What this step does:**
+1. Fetches FRED series data in parallel (4 series, ~5s). Returns empty if `FRED_API_KEY` not set.
+2. Fetches 5-day daily OHLC bars for SPY, QQQ, IWM in parallel (~5s). Skipped if `MASSIVE_API_KEY` not set.
+3. Extends the `sourceIndex` with RSS feed sources and FRED source entry (so drivers can reference them in `sourceRefs`).
+4. Passes everything forward to the LLM step.
+
+#### 4j. Update generate-briefing step
+
+Find the `generate-briefing` step. Make these changes:
+
+**Change 1:** Update `inputSchema` from `macroBriefingContextSchema` to `enrichedMacroContextSchema`:
+
+```ts
+      inputSchema: enrichedMacroContextSchema,
+```
+
+**Change 2:** In the `run` function, change the parse call:
+
+```ts
+        const input = enrichedMacroContextSchema.parse(previousOutput);
+```
+
+**Change 3:** In the `macroBriefingDraftSchema.parse(...)` call, add `fredData`:
+
+```ts
+        const briefing = macroBriefingDraftSchema.parse({
+          crossAssetSnapshot: input.crossAssetSnapshot,
+          sourceIndex: input.sourceIndex,
+          fredData: input.fredData,
+          ...macroBriefingSchema.parse(parseJson(llmResponse.content)),
+        });
+```
+
+**Change 4:** Update `upstreamStepIds` from `['fetch-market-snapshot']` to `['fetch-macro-context']`.
+
+#### 4k. Rewrite buildBriefingPrompt
+
+Replace the entire `buildBriefingPrompt` function (lines 176–207) with:
+
+```ts
+function buildBriefingPrompt(
+  tradingDate: string,
+  input: z.infer<typeof enrichedMacroContextSchema>,
+): string {
+  const sections: string[] = [
+    `Trading date: ${tradingDate}`,
+    '',
+    'You are writing a pre-market macro analysis for active day traders. This is read before the bell — be specific, actionable, and data-driven. Do NOT pad with generic filler; every sentence must contain specific data or analysis.',
+    '',
+    'Return strict JSON with this shape and no markdown:',
+    JSON.stringify({
+      marketBias: 'bullish | bearish | neutral',
+      summary: '2-3 sentence executive summary of the macro setup',
+      riskAssessment: '2-4 sentences on the risk environment — what is driving risk-on or risk-off, cross-asset signals, where conviction is highest or lowest',
+      drivers: [{
+        driver: 'market-moving headline or driver',
+        impact: 'positive | negative | mixed',
+        sourceRefs: ['headline:marketwatch.com'],
+      }],
+      keyLevels: [{
+        ticker: 'SPY',
+        support: 'price level (e.g. 520.00)',
+        resistance: 'price level (e.g. 535.00)',
+        note: 'why these levels matter — reference recent price action from daily bars',
+      }],
+      ratesOutlook: '1-2 sentences on rates environment and equity implications — reference actual FRED values when available',
+      scheduledCatalysts: [{
+        event: 'scheduled catalyst',
+        date: 'YYYY-MM-DD or null',
+        expectedImpact: 'brief description',
+      }],
+      sectorRotation: ['sector rotation note with specific tickers or ETFs'],
+      scenarioAnalysis: {
+        consensus: 'what plays out if the base case holds — be specific with levels and sectors',
+        disruption: 'what breaks the thesis and consequences — be specific',
+      },
+      deskImplications: ['specific, actionable trading implication'],
+      confidence: 'high | medium | low',
+      tldr: ['2-4 bullet points — start with overall bias, end with what to watch today'],
+    }, null, 2),
+    '',
+    'Rules:',
+    '- Every driver must include at least one sourceRefs entry matching an id from sourceIndex.',
+    '- keyLevels: focus on SPY, QQQ, IWM. Use the daily OHLC bars to identify meaningful support/resistance (recent swing highs/lows, prior day close, round numbers). Include specific price levels.',
+    '- scenarioAnalysis: consensus is the base case, disruption is what breaks it. Both must reference specific data.',
+    '- tldr: what someone reads if they read nothing else. Every bullet must be specific and actionable.',
+    '',
+    `Headlines:\n${JSON.stringify(input.headlines, null, 2)}`,
+    '',
+    `RSS Headlines:\n${JSON.stringify(input.rssHeadlines, null, 2)}`,
+    '',
+    `Cross-asset snapshot:\n${JSON.stringify(input.crossAssetSnapshot, null, 2)}`,
+  ];
+
+  if (input.fredData.length > 0) {
+    sections.push('', `FRED rates data:\n${JSON.stringify(input.fredData, null, 2)}`);
+  }
+
+  if (input.dailyBars.length > 0) {
+    sections.push('', `Recent daily OHLC bars (use for key level identification):\n${JSON.stringify(input.dailyBars, null, 2)}`);
+  }
+
+  sections.push(
+    '',
+    `Source index:\n${JSON.stringify(input.sourceIndex, null, 2)}`,
+    '',
+    `Market snapshot:\n${JSON.stringify(input.snapshot, null, 2)}`,
+  );
+
+  if (input.note) {
+    sections.push(`Snapshot note: ${input.note}`);
+  }
+
+  return sections.join('\n');
+}
+```
+
+**Key differences from original prompt:**
+- Instructs the LLM to write a "pre-market macro analysis for active day traders" (not just a summary)
+- Explicitly tells it not to use filler — every sentence must have data or analysis
+- New output fields: `riskAssessment`, `keyLevels`, `ratesOutlook`, `scenarioAnalysis`, `tldr`
+- Passes RSS headlines and FRED data as separate context sections
+- Passes daily OHLC bars for key level identification
+- Rules section gives specific guidance on how to use each data source
+
+**Validate:** `npm run lint && npx tsc --noEmit`
+
+---
+
+### Step 5 — Update Orchestrator Prompt
+
+**File:** `lib/agents/prompts/orchestrator.md`
+
+Find the `## Macro Briefing` section (lines 16–22). Replace it with:
+
+```md
+## Macro Briefing
+- Daily macro analyses synthesize headlines, RSS feeds, cross-asset data, FRED rates, and recent price bars into a structured pre-market briefing.
+- Return JSON with: `marketBias`, `summary`, `riskAssessment`, `drivers`, `keyLevels`, `ratesOutlook`, `scheduledCatalysts`, `sectorRotation`, `scenarioAnalysis`, `deskImplications`, `confidence`, `tldr`.
+- Every `driver` must include at least one `sourceRefs` entry matching an id from `sourceIndex`.
+- `riskAssessment` is the core analytical section — 2-4 sentences synthesizing cross-asset signals into a risk narrative. Not a summary — an analysis.
+- `keyLevels` must reference actual prices from the daily bars data. Focus on SPY, QQQ, IWM.
+- `scenarioAnalysis` provides consensus (base case) and disruption (what breaks it). Both must be specific and data-referenced.
+- `tldr` is 2-4 bullets — start with bias, end with what to watch. Assume the reader sees nothing else.
+- Be concise — traders read this before the bell.
+```
+
+---
+
+### Step 6 — Update Discord Embed
+
+**File:** `lib/agents/discord.ts`
+
+**6a.** Update the import to include new types. Find (lines 5–11):
+
+```ts
+import type {
+  AgentId,
+  AgentReport,
+  MacroSummaryReport,
+  SmallCapResearchReport,
+  SwingResearchReport,
+} from './types';
 ```
 
 Replace with:
 
 ```ts
-    'For jmt415Commentary: if deterministicAnalysis.hasJmt415Content is false, set to null. If true, note the presence of JMT content based on the news digest.',
+import type {
+  AgentId,
+  AgentReport,
+  FredDataPoint,
+  MacroSummaryReport,
+  SmallCapResearchReport,
+  SwingResearchReport,
+} from './types';
 ```
 
-**Notes:**
-- `buildNewsDigest` falls back to `summary` if `title` is empty (common for filing-type items where title is blank but summary describes the filing).
-- `tags` field may be absent or null on filing items — the extraction guards with `Array.isArray` before iterating.
-- `filed_at` is a date string (`YYYY-MM-DD`), not datetime. `parseLooseDate` handles this via `new Date("2025-02-10")`.
-- The raw `news` array is still available in `input.news` on the pipeline schema (it flows through from `edgarSectionsSchema`). We're just not passing it to the LLM prompt anymore. If we need to revert, the data is still there.
+**6b.** Replace the entire `buildMacroSummaryEmbed` function (lines 536–577) with:
+
+```ts
+export function buildMacroSummaryEmbed(report: AgentReport): DiscordEmbed {
+  const payload = report.reportJson as MacroSummaryReport;
+  const impactEmoji = (impact: MacroSummaryReport['drivers'][number]['impact']): string => {
+    if (impact === 'positive') return '\u{1F7E2}';
+    if (impact === 'negative') return '\u{1F534}';
+    return '\u{1F7E1}';
+  };
+
+  const formatList = (values: string[] | undefined): string => (
+    values && values.length > 0 ? values.map((value) => `\u2022 ${value}`).join('\n') : UNKNOWN_VALUE
+  );
+
+  const formatFredValue = (fp: FredDataPoint): string => {
+    if (fp.value === null) return 'n/a';
+    if (fp.seriesId === 'T10Y2Y') {
+      const bps = Math.round(fp.value * 100);
+      return `${bps >= 0 ? '+' : ''}${bps}bp`;
+    }
+    return `${fp.value.toFixed(2)}%`;
+  };
+
+  const fields: DiscordEmbedField[] = [
+    buildField('Market Bias', payload.marketBias),
+    buildField('Confidence', payload.confidence),
+  ];
+
+  // Risk Assessment
+  if (payload.riskAssessment) {
+    fields.push(buildField('Risk Assessment', payload.riskAssessment, false));
+  }
+
+  // Top Drivers
+  fields.push(buildField(
+    'Top Drivers',
+    payload.drivers.length > 0
+      ? payload.drivers.slice(0, 4).map((driver) => `${impactEmoji(driver.impact)} ${driver.driver}`).join('\n')
+      : UNKNOWN_VALUE,
+    false,
+  ));
+
+  // Key Levels
+  if (payload.keyLevels && payload.keyLevels.length > 0) {
+    fields.push(buildField(
+      'Key Levels',
+      payload.keyLevels.map((kl) =>
+        `**${kl.ticker}**: ${kl.support} / ${kl.resistance} \u2014 ${kl.note}`).join('\n'),
+      false,
+    ));
+  }
+
+  // Rates — show FRED values + LLM outlook
+  if (payload.fredData && payload.fredData.length > 0) {
+    const ratesLine = payload.fredData.map((fp) => `${fp.label}: ${formatFredValue(fp)}`).join(' | ');
+    const ratesText = payload.ratesOutlook
+      ? `${ratesLine}\n${payload.ratesOutlook}`
+      : ratesLine;
+    fields.push(buildField('Rates', ratesText, false));
+  } else if (payload.ratesOutlook) {
+    fields.push(buildField('Rates', payload.ratesOutlook, false));
+  }
+
+  // Catalysts
+  fields.push(buildField(
+    'Catalysts',
+    payload.scheduledCatalysts.length > 0
+      ? payload.scheduledCatalysts.map((catalyst) => {
+        const when = catalyst.date ? ` (${catalyst.date})` : '';
+        return `\u2022 ${catalyst.event}${when} \u2014 ${catalyst.expectedImpact}`;
+      }).join('\n')
+      : UNKNOWN_VALUE,
+    false,
+  ));
+
+  // Sector Rotation
+  fields.push(buildField('Sector Rotation', formatList(payload.sectorRotation), false));
+
+  // Scenarios
+  if (payload.scenarioAnalysis) {
+    fields.push(buildField(
+      'Scenarios',
+      `\u2705 **Consensus:** ${payload.scenarioAnalysis.consensus}\n\u26A0\uFE0F **Disruption:** ${payload.scenarioAnalysis.disruption}`,
+      false,
+    ));
+  }
+
+  // Desk Implications
+  fields.push(buildField('Desk Implications', formatList(payload.deskImplications), false));
+
+  // TLDR
+  if (payload.tldr && payload.tldr.length > 0) {
+    fields.push(buildField('TLDR', formatList(payload.tldr), false));
+  }
+
+  return buildBaseEmbed(
+    report,
+    fields,
+    payload.summary,
+  );
+}
+```
+
+**What changed:**
+- New fields: Risk Assessment, Key Levels, Rates (with FRED values + outlook), Scenarios, TLDR
+- FRED values formatted intelligently — percentages for yields, basis points for spreads
+- All new sections use optional chaining and conditional rendering so old reports (without new fields) still render without errors
+- Drivers now show up to 4 (was 3)
+- Uses unicode characters directly (bullet `\u2022`, em-dash `\u2014`, checkmark `\u2705`, warning `\u26A0\uFE0F`)
+
+**Validate:** `npm run lint && npx tsc --noEmit`
+
+---
+
+### Step 7 — Update Tests
+
+Update test fixtures in these files to include the new schema fields:
+
+- `__tests__/agent-blueprints.test.ts` — blueprint step contract tests
+- `__tests__/agent-discord.test.ts` — embed rendering tests
+- `__tests__/agent-macro-summary-route.test.ts` — macro summary route tests
+- `__tests__/agent-context.test.ts` — context/report tests
+
+**For any test fixture that constructs a `MacroSummaryReport`**, add these new fields with reasonable defaults:
+
+```ts
+riskAssessment: 'Test risk assessment.',
+keyLevels: [{ ticker: 'SPY', support: '520', resistance: '535', note: 'test level' }],
+ratesOutlook: 'Test rates outlook.',
+fredData: [{ seriesId: 'DGS10', label: '10Y Treasury', date: '2026-04-11', value: 4.32 }],
+scenarioAnalysis: { consensus: 'Test consensus.', disruption: 'Test disruption.' },
+tldr: ['Test TLDR bullet.'],
+```
+
+**For any test fixture that constructs a `headlinesSchema` output**, add:
+
+```ts
+rssHeadlines: [],
+```
+
+**For any test that validates the `macroBriefingDraftSchema` or the briefing output**, add the new fields to the expected output.
+
+**Do not delete or skip failing tests — update them.**
 
 **Validate:** `npm run lint && npx tsc --noEmit && npm test`
 
 ---
 
-### Step 3 — T1.3: Swing Deterministic Gap-Day Comparison
+### Step 8 — Final Validation
 
-**File:** `lib/agents/blueprints/swing-trader-research.ts`
-
-**Why:** The swing blueprint already passes `gapStats` in `runnerQuality`, but the raw array goes straight to the LLM with no precomputed metrics. The small-cap blueprint already computes `gapCount`, `sameDayFadeRate`, `avgCloseVsOpen`, `avgHighExtension` from the same data. We add equivalent computation to swing so the LLM gets precomputed numbers instead of parsing raw JSON.
-
-**3a.** Add a `normalizeGapRow` helper function. Place it after the existing `isValidRecord` function (around line 250), before `flattenOwnershipRecords`. This uses swing's local `getNumberField` (which already handles string cleanup — commas, percent signs):
-
-```ts
-function normalizeGapRow(value: unknown): {
-  open: number;
-  close: number;
-  high: number;
-} | null {
-  if (!isValidRecord(value)) {
-    return null;
-  }
-
-  const open = getNumberField(value, ['open', 'marketOpen', 'market_open']);
-  const close = getNumberField(value, ['close', 'marketClose', 'market_close']);
-  const high = getNumberField(value, ['high', 'intradayHigh', 'intraday_high']);
-
-  if (open === null || close === null || high === null || open === 0) {
-    return null;
-  }
-
-  return { open, close, high };
-}
-```
-
-**3b.** Add a `computeGapDayStats` helper function right after `normalizeGapRow`:
-
-```ts
-function computeGapDayStats(gapStats: unknown): {
-  gapCount: number;
-  sameDayFadeRate: number | null;
-  avgHighExtension: number | null;
-  priorGapDayAvgReturn: number | null;
-} {
-  const gapRows = asArray(gapStats)
-    .map(normalizeGapRow)
-    .filter((row): row is { open: number; close: number; high: number } => row !== null);
-
-  const gapCount = gapRows.length;
-  const sameDayFadeRate = gapCount === 0
-    ? null
-    : gapRows.filter((row) => row.close < row.open).length / gapCount;
-  const avgHighExtension = gapCount === 0
-    ? null
-    : gapRows.reduce((sum, row) => sum + (((row.high - row.open) / row.open) * 100), 0) / gapCount;
-  const priorGapDayAvgReturn = gapCount === 0
-    ? null
-    : gapRows.reduce((sum, row) => sum + (((row.close - row.open) / row.open) * 100), 0) / gapCount;
-
-  return { gapCount, sameDayFadeRate, avgHighExtension, priorGapDayAvgReturn };
-}
-```
-
-**Note on naming:** Small-cap uses `avgCloseVsOpen`. Swing uses `priorGapDayAvgReturn` instead — more descriptive for a swing trader reading the report ("on historical gap days, what did this name return by close?"). The computation is identical.
-
-**3c.** Extend `runnerQualitySchema`. Find the schema definition (starts around line 83). Add 4 new fields after `knownHolderOverhang`:
-
-```ts
-  gapCount: z.number(),
-  sameDayFadeRate: z.number().nullable(),
-  avgHighExtension: z.number().nullable(),
-  priorGapDayAvgReturn: z.number().nullable(),
-```
-
-**3d.** Wire into `computeSwingTechnicals`. Find the `runnerQuality` object inside the return statement (starts around line 373). After the `knownHolderOverhang` line, spread the computed gap-day stats:
-
-```ts
-      knownHolderOverhang: computeKnownHolderOverhang(input.ownership),
-      ...computeGapDayStats(input.gapStats),
-```
-
-**3e.** Update `buildResearchPrompt`. Find the "Runner quality" block (starts around line 474). After the `knownHolderOverhang` line, add a new section for the precomputed gap metrics:
-
-```ts
-      formatPromptSection('gapDayStats (precomputed)', {
-        gapCount: input.runnerQuality.gapCount,
-        sameDayFadeRate: input.runnerQuality.sameDayFadeRate,
-        avgHighExtension: input.runnerQuality.avgHighExtension,
-        priorGapDayAvgReturn: input.runnerQuality.priorGapDayAvgReturn,
-      }),
-```
-
-**3f.** Add a prompt instruction. Find the `sections.push(...)` block that contains the JMT traffic-light instruction (around line 498). Add after the "Do NOT provide specific price levels" line:
-
-```ts
-    'Use the precomputed gapDayStats values for historical gap-day analysis. Do not recalculate from the raw gapStats array.',
-```
-
-**Notes:**
-- `normalizeGapRow` is a copy of the small-cap version. Both blueprints are separate files, and per project conventions we prefer duplication over premature abstraction.
-- The raw `gapStats` array is still passed in `runnerQuality` — we're not removing it, just adding precomputed metrics alongside it. The LLM can reference both.
-
-**Validate:** `npm run lint && npx tsc --noEmit && npm test`
-
----
-
-### Existing Test Coverage
-
-These test files exercise the blueprint and discord modules and may need updates if schemas change:
-
-- [`__tests__/agent-blueprints.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-blueprints.test.ts) — blueprint step contracts
-- [`__tests__/agent-discord.test.ts`](/home/jared/Nexus-Terminal/__tests__/agent-discord.test.ts) — embed rendering
-
-If any tests fail after step changes, update the test fixtures to match the new schema shapes (added fields in `deterministicAnalysisSchema`, `runnerQualitySchema`, `researchPipelineInputSchema`). Do not delete or skip failing tests — update them.
-
-### Final Validation
-
-After all three steps:
+After all steps:
 
 ```bash
 npm run lint && npx tsc --noEmit && npm test
 ```
 
-All tests must pass. If the test count changes (new tests added or fixtures updated), note the new count in a checkpoint comment below.
+All tests must pass. Note the final test count in a checkpoint comment below.
 
-Checkpoint 2026-04-13: complete. Validation passed with 45 test files and 316 tests.
+---
+
+## Future Phases (Not Yet Planned)
+
+### Phase 2 — Additional Data Sources
+
+- **Finviz sector heatmap** — scrape sector performance data for more precise sector rotation analysis
+- **CME FedWatch** — rate cut/hike probability data from CME Group (scrapable)
+- **CNN Fear & Greed Index** — composite sentiment indicator
+- **Google News RSS** — topic-specific macro news feeds (free, no API key)
+- Additional RSS feeds (Reuters, CNBC) for broader source diversity
+
+### Phase 3 — Polish & Intelligence
+
+- **Historical comparison** — include yesterday's bias/levels/rates for delta analysis ("10Y up 5bp from yesterday")
+- **Conditional sections** — skip rates section if FRED unavailable; skip key levels if no daily bars
+- **Report quality scoring** — automated check on output quality (did the LLM cite sources? are key levels within recent price range?)
+- **Intraday update** — optional mid-day macro update at 12:30 PM ET with session-so-far analysis
