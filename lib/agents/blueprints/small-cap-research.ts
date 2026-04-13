@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { getCachedTickerData } from '@/lib/askedgar';
 import { writeAndDeliverReport } from '../discord';
 import { callLlm } from '../llm-client';
+import { upsertMemory } from '../memory';
 import type { Blueprint, StepResult } from '../types';
 
 const TRADINGVIEW_COLUMNS = [
@@ -78,10 +79,21 @@ const deterministicAnalysisSchema = z.object({
   daysToComplianceDeadline: z.number().nullable(),
   floatTrend: z.enum(['increasing', 'decreasing', 'stable']).nullable(),
   knownHolderOverhang: z.number().nullable(),
+  newsCount: z.number(),
+  mostRecentNewsDate: z.string().nullable(),
+  daysSinceLastNews: z.number().nullable(),
+  hasFilingCatalyst: z.boolean(),
+  hasJmt415Content: z.boolean(),
+  catalystCategories: z.array(z.string()),
 });
 
 const researchPipelineInputSchema = priceContextSchema.extend({
   deterministicAnalysis: deterministicAnalysisSchema,
+  newsDigest: z.array(z.object({
+    title: z.string(),
+    date: z.string(),
+    type: z.string(),
+  })),
 });
 
 const trafficLightRating = z.enum(['green', 'yellow', 'red']);
@@ -361,7 +373,90 @@ function normalizeComplianceRow(value: unknown): {
   };
 }
 
+const FILING_CATALYST_FORM_TYPES = new Set([
+  '424B5', '424B1', '424B4', '424B3', 'S-1', 'S-3', 'F-3', '8-K',
+]);
+const FILING_CATALYST_TAGS = new Set([
+  'Offerings', 'Dilution', 'Financing Activity', 'Capital Structure', 'Cash Runway',
+]);
+
+function extractNewsMetrics(newsItems: unknown[]): {
+  newsCount: number;
+  mostRecentNewsDate: string | null;
+  daysSinceLastNews: number | null;
+  hasFilingCatalyst: boolean;
+  hasJmt415Content: boolean;
+  catalystCategories: string[];
+} {
+  const newsCount = newsItems.length;
+  let latestDate: Date | null = null;
+  let hasFilingCatalyst = false;
+  let hasJmt415Content = false;
+  const categorySet = new Set<string>();
+
+  for (const item of newsItems) {
+    if (!isValidRecord(item)) {
+      continue;
+    }
+
+    const date = parseLooseDate(getFieldValue(item, ['filed_at', 'filedAt']));
+    if (date && (latestDate === null || date > latestDate)) {
+      latestDate = date;
+    }
+
+    const formType = getStringField(item, ['form_type', 'formType']);
+    if (formType) {
+      categorySet.add(formType);
+      if (FILING_CATALYST_FORM_TYPES.has(formType.toUpperCase())) {
+        hasFilingCatalyst = true;
+      }
+      if (formType.toLowerCase() === 'jmt415') {
+        hasJmt415Content = true;
+      }
+    }
+
+    const tags = Array.isArray(item.tags) ? item.tags : [];
+    for (const tag of tags) {
+      if (typeof tag === 'string' && FILING_CATALYST_TAGS.has(tag)) {
+        hasFilingCatalyst = true;
+      }
+    }
+  }
+
+  const mostRecentNewsDate = latestDate ? latestDate.toISOString().slice(0, 10) : null;
+  const daysSinceLastNews = latestDate
+    ? Math.floor((Date.now() - latestDate.getTime()) / 86400000)
+    : null;
+
+  return {
+    newsCount,
+    mostRecentNewsDate,
+    daysSinceLastNews,
+    hasFilingCatalyst,
+    hasJmt415Content,
+    catalystCategories: [...categorySet].sort(),
+  };
+}
+
+function buildNewsDigest(newsItems: unknown[]): { title: string; date: string; type: string }[] {
+  const digest: { title: string; date: string; type: string }[] = [];
+
+  for (const item of newsItems) {
+    if (!isValidRecord(item)) {
+      continue;
+    }
+
+    const title = getStringField(item, ['title', 'summary']) ?? '(untitled)';
+    const date = getStringField(item, ['filed_at', 'filedAt']) ?? 'unknown';
+    const type = getStringField(item, ['form_type', 'formType']) ?? 'unknown';
+    digest.push({ title, date, type });
+  }
+
+  return digest;
+}
+
 function computeDeterministicAnalysis(input: z.infer<typeof priceContextSchema>): z.infer<typeof deterministicAnalysisSchema> {
+  const newsMetrics = extractNewsMetrics(asArray(input.news));
   const gapRows = asArray(input.gapStats)
     .map(normalizeGapRow)
     .filter((row): row is { open: number; close: number; high: number } => row !== null);
@@ -475,6 +570,7 @@ function computeDeterministicAnalysis(input: z.infer<typeof priceContextSchema>)
     daysToComplianceDeadline,
     floatTrend,
     knownHolderOverhang,
+    ...newsMetrics,
   };
 }
 
@@ -580,12 +676,12 @@ function buildResearchPrompt(input: z.infer<typeof researchPipelineInputSchema>)
       formatPromptSection('agreements', input.agreements),
       formatPromptSection('nasdaqCompliance', input.nasdaqCompliance),
       formatPromptSection('pumpAndDumpTracker', input.pumpAndDumpTracker),
-      formatPromptSection('news', input.news),
+      formatPromptSection('newsDigest (title, date, type only)', input.newsDigest),
       formatPromptSection('cashPosition', input.cashPosition),
     ].join('\n\n'),
     formatPromptSection('Deterministic analysis', input.deterministicAnalysis),
     'Use the JMT traffic-light rating system. Each rating must be "green", "yellow", or "red" (lowercase).',
-    'For jmt415Commentary: if no jmt415-tagged news items exist in the data, set to null.',
+    'For jmt415Commentary: if deterministicAnalysis.hasJmt415Content is false, set to null. If true, note the presence of JMT content based on the news digest.',
     'For historicalStats: summarize gap-stats patterns (avg gap fade, same-day fade count, typical range). If no gap-stats data, say "No historical gap data available."',
     'Use the Deterministic analysis section as precomputed inputs. Do not recalculate those values in the response.',
   ].join('\n\n');
@@ -680,6 +776,7 @@ export const smallCapResearchBlueprint: Blueprint = {
         return completedResult({
           ...input,
           deterministicAnalysis,
+          newsDigest: buildNewsDigest(asArray(input.news)),
         }, {
           durationMs: Date.now() - startedAt,
           upstreamStepIds: ['fetch-price-context'],
@@ -734,6 +831,24 @@ export const smallCapResearchBlueprint: Blueprint = {
           title: `${report.ticker} Small-Cap Research`,
           summary: `${report.overallOfferingRisk.rating.toUpperCase()} offering risk — ${report.overallOfferingRisk.explanation.slice(0, 120)}`,
           reportJson: report,
+        });
+
+        await upsertMemory(db, {
+          userId: job.userId,
+          agentId: 'small-cap-trader',
+          category: 'thesis',
+          key: report.ticker,
+          value: `${report.overallOfferingRisk.rating.toUpperCase()} offering risk — ${report.confidence} confidence`,
+          valueJson: {
+            overallOfferingRisk: report.overallOfferingRisk.rating,
+            dilution: report.dilution.rating,
+            cashNeed: report.cashNeed.rating,
+            offeringAbility: report.offeringAbility.rating,
+            confidence: report.confidence,
+          },
+          source: `report:${job.id}`,
+          confidence: report.confidence,
+          expiresAt: new Date(Date.now() + (14 * 24 * 60 * 60 * 1000)),
         });
 
         return completedResult({

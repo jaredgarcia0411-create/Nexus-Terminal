@@ -726,7 +726,14 @@ describe('agent blueprints', () => {
           daysToComplianceDeadline: 3,
           floatTrend: 'stable',
           knownHolderOverhang: 42,
+          newsCount: 1,
+          mostRecentNewsDate: '2026-04-12',
+          daysSinceLastNews: 1,
+          hasFilingCatalyst: true,
+          hasJmt415Content: false,
+          catalystCategories: ['424B5'],
         },
+        newsDigest: [{ title: 'Shelf filing', date: '2026-04-12', type: '424B5' }],
       },
     }));
 
@@ -738,6 +745,9 @@ describe('agent blueprints', () => {
     }), 'background');
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Deterministic analysis:\n'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('newsDigest (title, date, type only):\n'),
     }), 'background');
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.not.stringContaining('Filings:\n'),
@@ -841,6 +851,24 @@ describe('agent blueprints', () => {
         },
         source: `report:${job.id}`,
         confidence: 'medium',
+        expiresAt: expect.any(Date),
+      });
+    } else if (job.agentId === 'small-cap-trader') {
+      expect(upsertMemoryMock).toHaveBeenCalledWith(expect.anything(), {
+        userId: job.userId,
+        agentId: 'small-cap-trader',
+        category: 'thesis',
+        key: 'AAPL',
+        value: 'GREEN offering risk — high confidence',
+        valueJson: {
+          overallOfferingRisk: 'green',
+          dilution: 'green',
+          cashNeed: 'green',
+          offeringAbility: 'green',
+          confidence: 'high',
+        },
+        source: `report:${job.id}`,
+        confidence: 'high',
         expiresAt: expect.any(Date),
       });
     } else {
@@ -984,6 +1012,10 @@ describe('agent blueprints', () => {
           offerings: [{ offering_type: 'ATM', status: 'active' }],
           floatTrend: 'increasing',
           knownHolderOverhang: 32,
+          gapCount: 1,
+          sameDayFadeRate: 0,
+          avgHighExtension: 20,
+          priorGapDayAvgReturn: 10,
         },
       },
     }));
@@ -996,6 +1028,9 @@ describe('agent blueprints', () => {
     }), 'background');
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('floatTrend:\n"increasing"'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('gapDayStats (precomputed):\n'),
     }), 'background');
     expect(result.data).toMatchObject({
       ticker: 'AAPL',

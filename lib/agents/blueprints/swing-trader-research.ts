@@ -82,6 +82,10 @@ const deterministicTechnicalsSchema = z.object({
 
 const runnerQualitySchema = z.object({
   gapStats: z.array(z.unknown()),
+  gapCount: z.number(),
+  sameDayFadeRate: z.number().nullable(),
+  avgHighExtension: z.number().nullable(),
+  priorGapDayAvgReturn: z.number().nullable(),
   ownership: z.array(z.unknown()),
   historicalFloat: z.array(z.unknown()),
   dilutionRating: z.unknown().nullable(),
@@ -251,6 +255,63 @@ function isValidRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function normalizeGapRow(value: unknown): {
+  open: number;
+  close: number;
+  high: number;
+} | null {
+  if (!isValidRecord(value)) {
+    return null;
+  }
+
+  const open = getNumberField(value, ['open', 'marketOpen', 'market_open']);
+  const close = getNumberField(value, ['close', 'marketClose', 'market_close']);
+  const high = getNumberField(value, ['high', 'intradayHigh', 'intraday_high']);
+
+  if (
+    open === null
+    || close === null
+    || high === null
+    || !Number.isFinite(open)
+    || !Number.isFinite(close)
+    || !Number.isFinite(high)
+    || open === 0
+  ) {
+    return null;
+  }
+
+  return { open, close, high };
+}
+
+function computeGapDayStats(gapStats: unknown): {
+  gapCount: number;
+  sameDayFadeRate: number | null;
+  avgHighExtension: number | null;
+  priorGapDayAvgReturn: number | null;
+} {
+  const gapRows = asArray(gapStats)
+    .map(normalizeGapRow)
+    .filter((row): row is { open: number; close: number; high: number } => row !== null);
+
+  const gapCount = gapRows.length;
+  const sameDayFadeRate = gapCount === 0
+    ? null
+    : gapRows.filter((row) => row.close < row.open).length / gapCount;
+  const priorGapDayAvgReturn = gapCount === 0
+    ? null
+    : gapRows.reduce((sum, row) => sum + (((row.close - row.open) / row.open) * 100), 0) / gapCount;
+  const avgHighExtension = gapCount === 0
+    ? null
+    : gapRows.reduce((sum, row) => sum + (((row.high - row.open) / row.open) * 100), 0) / gapCount;
+
+  return {
+    gapCount,
+    sameDayFadeRate,
+    avgHighExtension,
+    priorGapDayAvgReturn,
+  };
+}
+
 function flattenOwnershipRecords(value: unknown): Record<string, unknown>[] {
   const rows: Record<string, unknown>[] = [];
 
@@ -372,6 +433,7 @@ function computeSwingTechnicals(input: z.infer<typeof ohlcEnrichedSchema>): z.in
     },
     runnerQuality: {
       gapStats: asArray(input.gapStats),
+      ...computeGapDayStats(input.gapStats),
       ownership: asArray(input.ownership),
       historicalFloat: asArray(input.historicalFloat),
       dilutionRating: input.dilutionRating,
@@ -481,6 +543,12 @@ function buildResearchPrompt(input: z.infer<typeof swingPipelineInputSchema>): s
       formatPromptSection('offerings', input.runnerQuality.offerings),
       formatPromptSection('floatTrend', input.runnerQuality.floatTrend),
       formatPromptSection('knownHolderOverhang', input.runnerQuality.knownHolderOverhang),
+      formatPromptSection('gapDayStats (precomputed)', {
+        gapCount: input.runnerQuality.gapCount,
+        sameDayFadeRate: input.runnerQuality.sameDayFadeRate,
+        avgHighExtension: input.runnerQuality.avgHighExtension,
+        priorGapDayAvgReturn: input.runnerQuality.priorGapDayAvgReturn,
+      }),
     ].join('\n\n'),
   ];
 
@@ -498,6 +566,7 @@ function buildResearchPrompt(input: z.infer<typeof swingPipelineInputSchema>): s
   sections.push(
     'Use the JMT traffic-light rating system. Each rating must be "green", "yellow", or "red" (lowercase).',
     'Do NOT provide specific price levels (entry, stop, target). Focus on pattern quality and setup strength.',
+    'Use the precomputed gapDayStats values for historical gap-day analysis. Do not recalculate from the raw gapStats array.',
   );
 
   return sections.join('\n\n');
