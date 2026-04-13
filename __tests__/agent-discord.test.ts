@@ -95,6 +95,7 @@ function createMacroReportJson(overrides: Partial<MacroSummaryReport> = {}): Mac
     tradingDate: '2026-04-12',
     marketBias: 'bullish',
     summary: 'Risk appetite improved as macro data eased near-term rate fears.',
+    riskAssessment: 'Rates and volatility are still the main cross-asset risks, but breadth is constructive.',
     drivers: [
       { driver: 'CPI print came in softer than expected', impact: 'positive', sourceRefs: ['headline:1'] },
       { driver: 'Fed speakers stayed balanced', impact: 'mixed', sourceRefs: ['headline:2'] },
@@ -104,18 +105,32 @@ function createMacroReportJson(overrides: Partial<MacroSummaryReport> = {}): Mac
       { ticker: 'SPY', price: 520.12, changePercent: 0.8 },
       { ticker: 'TLT', price: 95.34, changePercent: -0.4 },
     ],
+    keyLevels: [
+      { ticker: 'SPY', support: '520.00', resistance: '535.00', note: 'Prior breakout range remains intact.' },
+      { ticker: 'QQQ', support: '450.00', resistance: '462.00', note: 'Semis-led leadership is holding.' },
+    ],
+    ratesOutlook: '10Y yields remain the key driver for tape direction, while the curve is still constructive.',
+    fredData: [
+      { seriesId: 'DGS10', label: '10Y Treasury', date: '2026-04-11', value: 4.32 },
+      { seriesId: 'T10Y2Y', label: '10Y-2Y Spread', date: '2026-04-11', value: 0.47 },
+    ],
     scheduledCatalysts: [
       { event: 'FOMC rate decision', date: '2026-04-15', expectedImpact: 'Could reset the risk-on backdrop.' },
     ],
     sectorRotation: ['Semis bid', 'Utilities lagged'],
+    scenarioAnalysis: {
+      consensus: 'SPY stays above support and large-cap growth keeps leadership.',
+      disruption: 'A sharp move higher in yields breaks support and narrows breadth.',
+    },
     deskImplications: ['Stay long beta into stronger tape.', 'Fade extended rates rallies.'],
     sourceIndex: [
       { id: 'headline:1', title: 'MarketWatch Latest News', url: 'https://example.com/1', fetchedAt: '2026-04-12T13:00:00.000Z' },
       { id: 'snapshot:TLT', title: 'TLT Session Snapshot', url: null, fetchedAt: '2026-04-12T13:00:00.000Z' },
     ],
     confidence: 'high',
+    tldr: ['Risk appetite is improving.', 'Watch SPY 520 support and 10Y yields.'],
     ...overrides,
-  };
+  } as MacroSummaryReport;
 }
 
 function makeDb(tableRows: RowQueues = new Map()) {
@@ -549,6 +564,21 @@ describe('agent discord helpers', () => {
       expect.objectContaining({ name: 'Market Bias', value: 'bullish' }),
       expect.objectContaining({ name: 'Confidence', value: 'high' }),
       expect.objectContaining({
+        name: 'Risk Assessment',
+        value: expect.stringContaining('Rates and volatility are still the main cross-asset risks'),
+        inline: false,
+      }),
+      expect.objectContaining({
+        name: 'Key Levels',
+        value: expect.stringContaining('**SPY**: 520.00 / 535.00'),
+        inline: false,
+      }),
+      expect.objectContaining({
+        name: 'Rates',
+        value: expect.stringContaining('10Y Treasury: 4.32%'),
+        inline: false,
+      }),
+      expect.objectContaining({
         name: 'Catalysts',
         value: expect.stringContaining('FOMC rate decision (2026-04-15) - Could reset the risk-on backdrop.'),
         inline: false,
@@ -563,6 +593,16 @@ describe('agent discord helpers', () => {
         value: expect.stringContaining('• Semis bid'),
         inline: false,
       }),
+      expect.objectContaining({
+        name: 'Scenarios',
+        value: expect.stringContaining('Consensus'),
+        inline: false,
+      }),
+      expect.objectContaining({
+        name: 'TLDR',
+        value: expect.stringContaining('• Risk appetite is improving.'),
+        inline: false,
+      }),
     ]));
     const topDrivers = fields.find((field) => field.name === 'Top Drivers');
     expect(topDrivers).toEqual(expect.objectContaining({
@@ -573,7 +613,6 @@ describe('agent discord helpers', () => {
     expect(topDrivers?.value).toContain('🟡 Fed speakers stayed balanced');
     expect(topDrivers?.value).toContain('🔴 Rates backed off into the close');
     expect(fields.some((field) => field.name === 'crossAssetSnapshot')).toBe(false);
-    expect(embed.fields).toHaveLength(6);
   });
 
   it('manual redelivery posts again even when the success marker already exists', async () => {

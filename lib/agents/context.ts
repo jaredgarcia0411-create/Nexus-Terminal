@@ -7,12 +7,45 @@ import { getMemory } from './memory';
 const SYSTEM_AGENT_USER_ID = 'system-agent-user';
 const ORCHESTRATOR_AGENT_ID: AgentId = 'orchestrator';
 
-function isMacroSummaryReport(value: unknown): value is MacroSummaryReport {
+function normalizeMacroSummaryReport(value: unknown): MacroSummaryReport | null {
   if (!value || typeof value !== 'object') {
-    return false;
+    return null;
   }
 
-  return typeof (value as { marketBias?: unknown }).marketBias === 'string';
+  const report = value as Partial<MacroSummaryReport>;
+  if (
+    (report.marketBias !== 'bullish' && report.marketBias !== 'bearish' && report.marketBias !== 'neutral')
+    || typeof report.summary !== 'string'
+    || (report.confidence !== 'high' && report.confidence !== 'medium' && report.confidence !== 'low')
+  ) {
+    return null;
+  }
+
+  const scenario = report.scenarioAnalysis && typeof report.scenarioAnalysis === 'object'
+    ? report.scenarioAnalysis
+    : null;
+
+  return {
+    tradingDate: typeof report.tradingDate === 'string' ? report.tradingDate : '',
+    marketBias: report.marketBias,
+    summary: report.summary,
+    riskAssessment: typeof report.riskAssessment === 'string' ? report.riskAssessment : '',
+    drivers: Array.isArray(report.drivers) ? report.drivers : [],
+    crossAssetSnapshot: Array.isArray(report.crossAssetSnapshot) ? report.crossAssetSnapshot : [],
+    keyLevels: Array.isArray(report.keyLevels) ? report.keyLevels : [],
+    ratesOutlook: typeof report.ratesOutlook === 'string' ? report.ratesOutlook : '',
+    fredData: Array.isArray(report.fredData) ? report.fredData : [],
+    scheduledCatalysts: Array.isArray(report.scheduledCatalysts) ? report.scheduledCatalysts : [],
+    sectorRotation: Array.isArray(report.sectorRotation) ? report.sectorRotation : [],
+    scenarioAnalysis: {
+      consensus: typeof scenario?.consensus === 'string' ? scenario.consensus : '',
+      disruption: typeof scenario?.disruption === 'string' ? scenario.disruption : '',
+    },
+    deskImplications: Array.isArray(report.deskImplications) ? report.deskImplications : [],
+    sourceIndex: Array.isArray(report.sourceIndex) ? report.sourceIndex : [],
+    confidence: report.confidence,
+    tldr: Array.isArray(report.tldr) ? report.tldr : [],
+  };
 }
 
 export async function buildContext(
@@ -50,7 +83,7 @@ export async function buildContext(
 
   return {
     recentTrades: recentTrades as unknown[],
-    macroSummary: isMacroSummaryReport(latestMacroSummary) ? latestMacroSummary : null,
+    macroSummary: normalizeMacroSummaryReport(latestMacroSummary),
     memory,
     conversationHistory: conversationHistory as unknown[],
   };

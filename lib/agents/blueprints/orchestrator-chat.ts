@@ -117,14 +117,16 @@ function formatRecentTrades(trades: unknown[]): string {
 }
 
 function formatMacroContext(macro: MacroSummaryReport): string {
+  const drivers = Array.isArray(macro.drivers) ? macro.drivers : [];
+  const deskImplications = Array.isArray(macro.deskImplications) ? macro.deskImplications : [];
   const lines = [
     `Bias: ${macro.marketBias} (${macro.confidence} confidence)`,
-    `Summary: ${macro.summary}`,
-    macro.drivers.length > 0
-      ? `Drivers: ${macro.drivers.map((driver) => `${driver.driver} (${driver.impact})`).join('; ')}`
+    `Summary: ${typeof macro.summary === 'string' ? macro.summary : ''}`,
+    drivers.length > 0
+      ? `Drivers: ${drivers.map((driver) => `${driver.driver} (${driver.impact})`).join('; ')}`
       : null,
-    macro.deskImplications.length > 0
-      ? `Desk: ${macro.deskImplications.join('; ')}`
+    deskImplications.length > 0
+      ? `Desk: ${deskImplications.join('; ')}`
       : null,
   ];
 

@@ -79,23 +79,48 @@ export interface CrossAssetEntry {
   changePercent: number | null;
 }
 
+export interface FredDataPoint {
+  seriesId: string;
+  label: string;
+  date: string;
+  value: number | null;
+}
+
+export interface KeyLevel {
+  ticker: string;
+  support: string;
+  resistance: string;
+  note: string;
+}
+
 export interface ScheduledCatalyst {
   event: string;
   date: string | null;
   expectedImpact: string;
 }
 
+export interface ScenarioAnalysis {
+  consensus: string;
+  disruption: string;
+}
+
 export interface MacroSummaryReport {
   tradingDate: string;
   marketBias: 'bullish' | 'bearish' | 'neutral';
   summary: string;
+  riskAssessment: string;
   drivers: MacroDriver[];
   crossAssetSnapshot: CrossAssetEntry[];
+  keyLevels: KeyLevel[];
+  ratesOutlook: string;
+  fredData: FredDataPoint[];
   scheduledCatalysts: ScheduledCatalyst[];
   sectorRotation: string[];
+  scenarioAnalysis: ScenarioAnalysis;
   deskImplications: string[];
   sourceIndex: MacroSource[];
   confidence: Confidence;
+  tldr: string[];
 }
 
 export type StepType = 'code' | 'llm';

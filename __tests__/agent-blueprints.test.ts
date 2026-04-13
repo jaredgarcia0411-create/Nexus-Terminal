@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentConfig, AgentContext, AgentJob, StepInput } from '@/lib/agents/types';
+import type { AgentConfig, AgentContext, AgentJob, MacroSummaryReport, StepInput } from '@/lib/agents/types';
 
 const randomUUIDMock = vi.hoisted(() => vi.fn(() => 'specialist-job-1'));
 const callLlmMock = vi.hoisted(() => vi.fn());
@@ -309,19 +309,32 @@ describe('agent blueprints', () => {
       content: JSON.stringify({
         marketBias: 'neutral',
         summary: 'Macro summary',
+        riskAssessment: 'Cross-asset risk is balanced but still rate-sensitive.',
         drivers: [{
           driver: 'Rates steady into the close',
           impact: 'mixed',
           sourceRefs: ['headline:example.com'],
         }],
+        keyLevels: [{
+          ticker: 'SPY',
+          support: '520.00',
+          resistance: '535.00',
+          note: 'Holding the prior breakout range.',
+        }],
+        ratesOutlook: '10Y yields are stable and the curve remains slightly supportive.',
         scheduledCatalysts: [{
           event: 'CPI release',
           date: '2026-04-08',
           expectedImpact: 'Could reset rate-cut expectations.',
         }],
         sectorRotation: ['Tech strong'],
+        scenarioAnalysis: {
+          consensus: 'SPY holds range and leadership stays with large-cap tech.',
+          disruption: 'A rate spike breaks support and rotates into defensives.',
+        },
         deskImplications: ['Stay selective into the open.'],
         confidence: 'medium',
+        tldr: ['Bias is neutral.', 'Watch SPY 520 support.'],
       }),
       modelUsed: 'background-model',
       inputTokens: 10,
@@ -335,18 +348,42 @@ describe('agent blueprints', () => {
     });
     const agentConfig = AGENT_CONFIGS.orchestrator;
     const blueprint = resolveBlueprint(job);
+    const generateStep = blueprint.steps.find((step) => step.name === 'generate-briefing');
 
-    const result = await blueprint.steps[2].run(createStepInput(job, agentConfig, {
+    expect(generateStep).toBeDefined();
+
+    const result = await generateStep!.run(createStepInput(job, agentConfig, {
       previousOutput: {
         headlines: [{ url: 'https://example.com', text: 'Markets mixed' }],
+        rssHeadlines: [{ title: 'Macro headline', link: 'https://zerohedge.test/1', pubDate: 'Mon, 07 Apr 2026 12:00:00 GMT' }],
         snapshot: null,
         note: 'no massive api key',
         crossAssetSnapshot: [],
+        fredData: [{ seriesId: 'DGS10', label: '10Y Treasury', date: '2026-04-07', value: 4.32 }],
+        dailyBars: [{
+          ticker: 'SPY',
+          bars: [
+            { date: '2026-04-07', open: 520, high: 525, low: 518, close: 523, volume: 1000 },
+            { date: '2026-04-06', open: 518, high: 521, low: 516, close: 520, volume: 900 },
+          ],
+        }],
         sourceIndex: [
           {
             id: 'headline:example.com',
             title: 'example.com headlines',
             url: 'https://example.com',
+            fetchedAt: '2026-04-07T12:00:00.000Z',
+          },
+          {
+            id: 'rss:zerohedge.test',
+            title: 'zerohedge.test RSS',
+            url: 'https://zerohedge.test/feed',
+            fetchedAt: '2026-04-07T12:00:00.000Z',
+          },
+          {
+            id: 'data:fred',
+            title: 'FRED Economic Data',
+            url: 'https://fred.stlouisfed.org',
             fetchedAt: '2026-04-07T12:00:00.000Z',
           },
         ],
@@ -357,27 +394,62 @@ describe('agent blueprints', () => {
       systemPrompt: expect.any(String),
       userMessage: expect.stringContaining('Source index:\n'),
     }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('RSS Headlines:\n'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('FRED rates data:\n'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Recent daily OHLC bars (use for key level identification):\n'),
+    }), 'background');
     expect(result.data).toEqual({
       marketBias: 'neutral',
       summary: 'Macro summary',
+      riskAssessment: 'Cross-asset risk is balanced but still rate-sensitive.',
       drivers: [{
         driver: 'Rates steady into the close',
         impact: 'mixed',
         sourceRefs: ['headline:example.com'],
       }],
+      keyLevels: [{
+        ticker: 'SPY',
+        support: '520.00',
+        resistance: '535.00',
+        note: 'Holding the prior breakout range.',
+      }],
+      ratesOutlook: '10Y yields are stable and the curve remains slightly supportive.',
       scheduledCatalysts: [{
         event: 'CPI release',
         date: '2026-04-08',
         expectedImpact: 'Could reset rate-cut expectations.',
       }],
       sectorRotation: ['Tech strong'],
+      scenarioAnalysis: {
+        consensus: 'SPY holds range and leadership stays with large-cap tech.',
+        disruption: 'A rate spike breaks support and rotates into defensives.',
+      },
       deskImplications: ['Stay selective into the open.'],
+      tldr: ['Bias is neutral.', 'Watch SPY 520 support.'],
       crossAssetSnapshot: [],
+      fredData: [{ seriesId: 'DGS10', label: '10Y Treasury', date: '2026-04-07', value: 4.32 }],
       sourceIndex: [
         {
           id: 'headline:example.com',
           title: 'example.com headlines',
           url: 'https://example.com',
+          fetchedAt: '2026-04-07T12:00:00.000Z',
+        },
+        {
+          id: 'rss:zerohedge.test',
+          title: 'zerohedge.test RSS',
+          url: 'https://zerohedge.test/feed',
+          fetchedAt: '2026-04-07T12:00:00.000Z',
+        },
+        {
+          id: 'data:fred',
+          title: 'FRED Economic Data',
+          url: 'https://fred.stlouisfed.org',
           fetchedAt: '2026-04-07T12:00:00.000Z',
         },
       ],
@@ -419,12 +491,20 @@ describe('agent blueprints', () => {
           tradingDate: '2026-04-07',
           marketBias: 'neutral',
           summary: 'Breadth improved into the close.',
+          riskAssessment: 'Breadth improved but rates remain the key risk factor.',
           drivers: [
             { driver: 'Rates steadied', impact: 'mixed', sourceRefs: ['headline:marketwatch.com'] },
           ],
           crossAssetSnapshot: [],
+          keyLevels: [],
+          ratesOutlook: 'Rates eased into the close.',
+          fredData: [],
           scheduledCatalysts: [],
           sectorRotation: [],
+          scenarioAnalysis: {
+            consensus: 'The tape stays orderly if rates remain contained.',
+            disruption: 'A rate spike cuts the rally short.',
+          },
           deskImplications: ['Keep size tighter near the open'],
           sourceIndex: [
             {
@@ -435,7 +515,8 @@ describe('agent blueprints', () => {
             },
           ],
           confidence: 'medium',
-        },
+          tldr: ['Breadth is improving.', 'Rates still matter.'],
+        } as MacroSummaryReport,
         recentTrades: [
           { symbol: 'AAPL', grossPnl: 250.6, direction: 'LONG', date: '2026-04-07' },
           { ticker: 'TSLA', pnl: -90.2, direction: 'SHORT' },
@@ -475,16 +556,20 @@ describe('agent blueprints', () => {
     });
     const agentConfig = AGENT_CONFIGS.orchestrator;
     const blueprint = resolveBlueprint(job);
+    const saveStep = blueprint.steps.find((step) => step.name === 'save-summary');
+
+    expect(saveStep).toBeDefined();
     writeAndDeliverReportMock.mockResolvedValueOnce({
       reportId: 'job-1:macro-summary',
       status: 'published',
       deliveryError: null,
     });
 
-    const result = await blueprint.steps[3].run(createStepInput(job, agentConfig, {
+    const result = await saveStep!.run(createStepInput(job, agentConfig, {
       previousOutput: {
         marketBias: 'bullish',
         summary: 'Macro summary',
+        riskAssessment: 'Risk appetite is steady but still rate-sensitive.',
         drivers: [{
           driver: 'Breadth improved after the open',
           impact: 'positive',
@@ -493,12 +578,23 @@ describe('agent blueprints', () => {
         crossAssetSnapshot: [
           { ticker: 'SPY', price: 520.12, changePercent: 0.8 },
         ],
+        keyLevels: [
+          { ticker: 'SPY', support: '520.00', resistance: '535.00', note: 'Breakout support.' },
+        ],
+        ratesOutlook: 'Rates eased into the close.',
+        fredData: [
+          { seriesId: 'DGS10', label: '10Y Treasury', date: '2026-04-07', value: 4.32 },
+        ],
         scheduledCatalysts: [{
           event: 'FOMC minutes',
           date: '2026-04-08',
           expectedImpact: 'Could shift rate expectations.',
         }],
         sectorRotation: ['Tech strong'],
+        scenarioAnalysis: {
+          consensus: 'SPY holds support and semis continue to lead.',
+          disruption: 'A sharp rates move breaks support and narrows breadth.',
+        },
         deskImplications: ['Stay with relative-strength leaders.'],
         sourceIndex: [
           {
@@ -515,6 +611,7 @@ describe('agent blueprints', () => {
           },
         ],
         confidence: 'medium',
+        tldr: ['Risk-on tone improved.', 'Watch SPY support into the open.'],
       },
       db: {},
     }));
@@ -530,6 +627,7 @@ describe('agent blueprints', () => {
         tradingDate: '2026-04-07',
         marketBias: 'bullish',
         summary: 'Macro summary',
+        riskAssessment: 'Risk appetite is steady but still rate-sensitive.',
         drivers: [{
           driver: 'Breadth improved after the open',
           impact: 'positive',
@@ -538,12 +636,23 @@ describe('agent blueprints', () => {
         crossAssetSnapshot: [
           { ticker: 'SPY', price: 520.12, changePercent: 0.8 },
         ],
+        keyLevels: [
+          { ticker: 'SPY', support: '520.00', resistance: '535.00', note: 'Breakout support.' },
+        ],
+        ratesOutlook: 'Rates eased into the close.',
+        fredData: [
+          { seriesId: 'DGS10', label: '10Y Treasury', date: '2026-04-07', value: 4.32 },
+        ],
         scheduledCatalysts: [{
           event: 'FOMC minutes',
           date: '2026-04-08',
           expectedImpact: 'Could shift rate expectations.',
         }],
         sectorRotation: ['Tech strong'],
+        scenarioAnalysis: {
+          consensus: 'SPY holds support and semis continue to lead.',
+          disruption: 'A sharp rates move breaks support and narrows breadth.',
+        },
         deskImplications: ['Stay with relative-strength leaders.'],
         sourceIndex: [
           {
@@ -560,6 +669,7 @@ describe('agent blueprints', () => {
           },
         ],
         confidence: 'medium',
+        tldr: ['Risk-on tone improved.', 'Watch SPY support into the open.'],
       },
     }));
     expect(result.data).toMatchObject({

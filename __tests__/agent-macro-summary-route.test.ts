@@ -60,10 +60,11 @@ describe('agent macro summary route', () => {
   });
 
   it('returns the latest macro summary and targets the system-owned macro report query', async () => {
-    const report: MacroSummaryReport = {
+    const report = {
       tradingDate: '2026-04-08',
       marketBias: 'neutral',
       summary: 'Rates steady',
+      riskAssessment: 'Rates are stable and breadth is balanced.',
       drivers: [
         {
           driver: 'Fed held rates steady',
@@ -73,6 +74,13 @@ describe('agent macro summary route', () => {
       ],
       crossAssetSnapshot: [
         { ticker: 'SPY', price: 509.12, changePercent: 0.32 },
+      ],
+      keyLevels: [
+        { ticker: 'SPY', support: '505.00', resistance: '515.00', note: 'Prior range still matters.' },
+      ],
+      ratesOutlook: 'The 10Y is steady and the curve remains contained.',
+      fredData: [
+        { seriesId: 'DGS10', label: '10Y Treasury', date: '2026-04-08', value: 4.28 },
       ],
       scheduledCatalysts: [
         {
@@ -92,7 +100,12 @@ describe('agent macro summary route', () => {
         },
       ],
       confidence: 'medium',
-    };
+      scenarioAnalysis: {
+        consensus: 'SPY continues to trade inside the current range.',
+        disruption: 'A surprise CPI print pushes yields higher and breaks support.',
+      },
+      tldr: ['Rates are steady.', 'Watch SPY 505 support into the open.'],
+    } as MacroSummaryReport;
 
     getAgentDbMock.mockReturnValueOnce(createMacroSummaryDb({
       generatedAt: new Date('2026-04-08T12:00:00.000Z'),

@@ -5,6 +5,7 @@ import type { AgentDb } from './db';
 import type {
   AgentId,
   AgentReport,
+  FredDataPoint,
   MacroSummaryReport,
   SmallCapResearchReport,
   SwingResearchReport,
@@ -533,46 +534,121 @@ export function buildSwingAlertEmbed(report: AgentReport): DiscordEmbed {
   );
 }
 
+function formatBulletList(values: unknown, emptyValue = UNKNOWN_VALUE): string {
+  if (!Array.isArray(values)) {
+    return emptyValue;
+  }
+
+  const rendered = values
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter((value) => value.length > 0)
+    .map((value) => `• ${truncate(value, 240)}`);
+
+  return rendered.length > 0 ? rendered.join('\n') : emptyValue;
+}
+
+function formatFredValue(point: FredDataPoint): string {
+  if (point.value === null) {
+    return 'n/a';
+  }
+
+  if (point.seriesId === 'T10Y2Y') {
+    const basisPoints = Math.round(point.value * 100);
+    return `${basisPoints >= 0 ? '+' : ''}${basisPoints}bp`;
+  }
+
+  return `${point.value.toFixed(2)}%`;
+}
+
 export function buildMacroSummaryEmbed(report: AgentReport): DiscordEmbed {
-  const payload = report.reportJson as MacroSummaryReport;
+  const payload = asRecord(report.reportJson) as Partial<MacroSummaryReport>;
   const impactEmoji = (impact: MacroSummaryReport['drivers'][number]['impact']): string => {
     if (impact === 'positive') return '\u{1F7E2}';
     if (impact === 'negative') return '\u{1F534}';
     return '\u{1F7E1}';
   };
-
-  const formatList = (values: string[]): string => (
-    values.length > 0 ? values.map((value) => `• ${value}`).join('\n') : UNKNOWN_VALUE
-  );
-
-  const fields = [
+  const fields: DiscordEmbedField[] = [
     buildField('Market Bias', payload.marketBias),
     buildField('Confidence', payload.confidence),
-    buildField(
-      'Top Drivers',
-      payload.drivers.length > 0
-        ? payload.drivers.slice(0, 3).map((driver) => `${impactEmoji(driver.impact)} ${driver.driver}`).join('\n')
-        : UNKNOWN_VALUE,
-      false,
-    ),
-    buildField(
-      'Catalysts',
-      payload.scheduledCatalysts.length > 0
-        ? payload.scheduledCatalysts.map((catalyst) => {
-          const when = catalyst.date ? ` (${catalyst.date})` : '';
-          return `• ${catalyst.event}${when} - ${catalyst.expectedImpact}`;
-        }).join('\n')
-        : UNKNOWN_VALUE,
-      false,
-    ),
-    buildField('Desk Implications', formatList(payload.deskImplications), false),
-    buildField('Sector Rotation', formatList(payload.sectorRotation), false),
   ];
+
+  if (typeof payload.riskAssessment === 'string' && payload.riskAssessment.trim()) {
+    fields.push(buildField('Risk Assessment', payload.riskAssessment, false));
+  }
+
+  fields.push(buildField(
+    'Top Drivers',
+    Array.isArray(payload.drivers) && payload.drivers.length > 0
+      ? payload.drivers.slice(0, 4).map((driver) => {
+        if (!driver || typeof driver !== 'object') {
+          return null;
+        }
+
+        const entry = driver as MacroSummaryReport['drivers'][number];
+        return `${impactEmoji(entry.impact)} ${entry.driver}`;
+      }).filter((value): value is string => Boolean(value)).join('\n')
+      : UNKNOWN_VALUE,
+    false,
+  ));
+
+  if (Array.isArray(payload.keyLevels) && payload.keyLevels.length > 0) {
+    fields.push(buildField(
+      'Key Levels',
+      payload.keyLevels.map((level) => `**${level.ticker}**: ${level.support} / ${level.resistance} - ${level.note}`).join('\n'),
+      false,
+    ));
+  }
+
+  if (Array.isArray(payload.fredData) && payload.fredData.length > 0) {
+    const ratesLine = payload.fredData.map((point) => `${point.label}: ${formatFredValue(point)}`).join(' | ');
+    const ratesText = typeof payload.ratesOutlook === 'string' && payload.ratesOutlook.trim()
+      ? `${ratesLine}\n${payload.ratesOutlook}`
+      : ratesLine;
+    fields.push(buildField('Rates', ratesText, false));
+  } else if (typeof payload.ratesOutlook === 'string' && payload.ratesOutlook.trim()) {
+    fields.push(buildField('Rates', payload.ratesOutlook, false));
+  }
+
+  fields.push(buildField(
+    'Catalysts',
+    Array.isArray(payload.scheduledCatalysts) && payload.scheduledCatalysts.length > 0
+      ? payload.scheduledCatalysts.map((catalyst) => {
+        const when = catalyst.date ? ` (${catalyst.date})` : '';
+        return `• ${catalyst.event}${when} - ${catalyst.expectedImpact}`;
+      }).join('\n')
+      : UNKNOWN_VALUE,
+    false,
+  ));
+
+  fields.push(buildField('Sector Rotation', formatBulletList(payload.sectorRotation), false));
+
+  if (payload.scenarioAnalysis && typeof payload.scenarioAnalysis === 'object') {
+    const consensus = typeof payload.scenarioAnalysis.consensus === 'string'
+      ? payload.scenarioAnalysis.consensus.trim()
+      : '';
+    const disruption = typeof payload.scenarioAnalysis.disruption === 'string'
+      ? payload.scenarioAnalysis.disruption.trim()
+      : '';
+    const sections = [
+      consensus ? `✅ **Consensus:** ${consensus}` : null,
+      disruption ? `⚠️ **Disruption:** ${disruption}` : null,
+    ].filter(Boolean);
+
+    if (sections.length > 0) {
+      fields.push(buildField('Scenarios', sections.join('\n'), false));
+    }
+  }
+
+  fields.push(buildField('Desk Implications', formatBulletList(payload.deskImplications), false));
+
+  if (Array.isArray(payload.tldr) && payload.tldr.length > 0) {
+    fields.push(buildField('TLDR', formatBulletList(payload.tldr), false));
+  }
 
   return buildBaseEmbed(
     report,
     fields,
-    payload.summary,
+    optionalText(payload.summary, report.summary),
   );
 }
 
