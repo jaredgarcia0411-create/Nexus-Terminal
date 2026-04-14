@@ -4,6 +4,102 @@
 
 ---
 
+## Swing-Trader Massive News Integration — Phase 1
+
+> Generated: 2026-04-14
+> Status: COMPLETED 2026-04-14
+> Scope: 3 implementation files modified, 1 likely test file updated, no schema/migration changes, no new env vars
+> Dependency: existing server-side `MASSIVE_API_KEY`
+> Worktree note: preserve the unstaged `mdrSimilarity: z.number().min(0).max(100).catch(0)` change already present in `lib/agents/blueprints/swing-trader-research.ts`
+
+### Completion Notes
+
+- Implemented `fetchTickerNews()` and `MassiveNewsArticle` in `lib/massive-market.ts` using the existing Massive API helper and key path.
+- Added `fetch-news` to the swing-trader pipeline, threaded `recentNews` through the prompt schemas, and updated the synthesis prompt to use recent-news context with a no-news fallback.
+- Updated `lib/agents/prompts/swing-trader.md` so catalyst reasoning cites article titles from the `Recent news` section in `evidenceIds` when present.
+- Updated `__tests__/agent-blueprints.test.ts` for the new step order, successful/failing news fetch behavior, and prompt assertions.
+- Validation completed successfully on 2026-04-14: `npm run lint`, `npx tsc --noEmit`, `npm test`.
+
+### Objective
+
+Add recent Massive/Polygon news to the `swing-trader:research` pipeline so the LLM can rate the `catalyst` section from real headlines instead of inferring from price action alone. Keep the new fetch best-effort, token-efficient, and server-only.
+
+### Observed Current State
+
+- `lib/massive-market.ts` currently exposes snapshots, daily summaries, and `fetchDailyAggregates()` only. There is no Massive news type or helper in the file.
+- `lib/agents/blueprints/swing-trader-research.ts` currently runs six serial steps: `fetch-filings` -> `fetch-price-context` -> `fetch-ohlc-history` -> `compute-swing-technicals` -> `synthesize-report` -> `save-research`.
+- The same blueprint already treats Massive OHLC as non-fatal: `fetch-ohlc-history` catches errors, logs a warning, and continues with `ohlcHistory: []`. The news step should mirror that behavior instead of aborting the pipeline.
+- `buildResearchPrompt()` in `lib/agents/blueprints/swing-trader-research.ts` only includes price context, deterministic technicals, runner quality, and optional OHLC. There is no recent-news section or fallback instruction today.
+- `lib/agents/prompts/swing-trader.md` tells the model to judge catalyst quality, but it does not instruct the model to cite recent article titles in `evidenceIds`.
+- `lib/agents/blueprints/small-cap-research.ts` already digests AskEdgar `news`, but that is a separate filing/news path and should not be reused for market-news input.
+
+### Files To Modify
+
+| File | Action | Notes |
+|------|--------|-------|
+| `lib/massive-market.ts` | Modify | Add a Massive news response type and a `fetchTickerNews()` helper using the existing Massive API key and shared `fetchMassiveJson()` helper. |
+| `lib/agents/blueprints/swing-trader-research.ts` | Modify | Thread recent-news data through schemas, insert a new `fetch-news` step, and update `buildResearchPrompt()` to include a `Recent news` section plus empty-state guidance. |
+| `lib/agents/prompts/swing-trader.md` | Modify | Tighten catalyst instructions so article titles from the `Recent news` section are cited in `evidenceIds` when news exists. |
+| `__tests__/agent-blueprints.test.ts` | Modify | Update swing-trader blueprint tests for the extra step, Massive news mocking, new warning path, and prompt assertions. |
+
+### Ordered Work
+
+1. Modify `lib/massive-market.ts`.
+   Add `MassiveNewsArticle` for the `/v2/reference/news` response shape and export `fetchTickerNews(ticker: string, daysBack = 3)`.
+   Use `fetchMassiveJson('/v2/reference/news', ...)` with the normalized ticker, `published_utc.gte`, descending `published_utc`, and `limit: '10'`.
+   Return `results ?? []` and keep the helper focused on server-side fetching only. No cache layer, no new env vars, no client exposure.
+2. Modify `lib/agents/blueprints/swing-trader-research.ts`.
+   Import `fetchTickerNews` from `@/lib/massive-market`.
+   Add a prompt-facing `newsArticleSchema` with only the fields the LLM needs: `title`, `publishedUtc`, `description`, `sentiment`, and `sentimentReasoning`.
+   Add `newsEnrichedSchema = ohlcEnrichedSchema.extend({ recentNews: z.array(newsArticleSchema) })`.
+   Change `swingPipelineInputSchema` to extend `newsEnrichedSchema` instead of `ohlcEnrichedSchema`.
+3. Insert the new pipeline step in `lib/agents/blueprints/swing-trader-research.ts`.
+   Add `fetch-news` between `fetch-ohlc-history` and `compute-swing-technicals`.
+   Input schema: `ohlcEnrichedSchema`. Output schema: `newsEnrichedSchema`.
+   Metadata should match the existing best-effort pattern: `canRetry: true`, `sideEffect: false`, timeout around 10s, and no repair loop.
+   On success, map raw Massive articles into a token-efficient `recentNews` array. Pull sentiment fields from the matching per-ticker `insights` item when present.
+   On failure, `console.warn('[swing-trader] News fetch failed for ${data.ticker}:', error)` and continue with `recentNews: []`.
+   Use `sourceIds: ['massive-news:${ticker}']` only when at least one article is returned.
+4. Update prompt construction in `lib/agents/blueprints/swing-trader-research.ts`.
+   Add a `Recent news` section after OHLC context and before the final instruction block.
+   If `recentNews.length > 0`, pass only the simplified article objects and instruct the model to use only those articles when judging catalyst quality.
+   If `recentNews.length === 0`, add a plain fallback note: no recent news was available, so catalyst must be rated from price-action context only.
+   Keep the saved report shape unchanged. This feature should improve the `catalyst` explanation and `evidenceIds`, not add new report fields.
+5. Modify `lib/agents/prompts/swing-trader.md`.
+   Add one sentence under the catalyst guidance: when recent news is provided, use it to inform the catalyst rating and cite article titles from the `Recent news` section in `evidenceIds`.
+6. Update `__tests__/agent-blueprints.test.ts`.
+   Cover the new `fetch-news` step, the non-fatal news fallback, and the new prompt text.
+   If validation exposes additional swing-trader test failures, update only the exact failing files reported by the suite.
+
+### Acceptance Criteria
+
+- `fetchTickerNews()` exists in `lib/massive-market.ts` and uses the existing Massive API key path; no new environment variables are introduced.
+- The swing-trader blueprint step order becomes `fetch-filings` -> `fetch-price-context` -> `fetch-ohlc-history` -> `fetch-news` -> `compute-swing-technicals` -> `synthesize-report` -> `save-research`.
+- News fetch failure is non-fatal and results in `recentNews: []`, matching the existing OHLC resilience pattern.
+- The prompt includes a `Recent news` section when articles exist and an explicit fallback note when they do not.
+- Only token-efficient news fields are passed to the LLM. Do not pass article URLs, images, or publisher-logo noise into the prompt.
+- The saved swing-trader report contract remains unchanged. No DB schema work, no Discord embed work, and no API route changes are part of this phase.
+- Validation passes: `npm run lint`, `npx tsc --noEmit`, `npm test`.
+
+### Security Notes
+
+- Keep `MASSIVE_API_KEY` server-side only; do not surface it to the client or log it.
+- Do not log raw Massive news payloads. Warning logs should stay at the ticker + error level only.
+- This change adds one more third-party request per swing research run, so keep the article window bounded to 3 days / 10 articles to avoid unnecessary spend and prompt bloat.
+
+### Order Of Operations
+
+1. Add the Massive helper first so the blueprint can import a real symbol.
+2. Thread schemas and the new step through `swing-trader-research.ts`.
+3. Update the prompt file once the blueprint is passing the new `Recent news` section.
+4. Fix test fallout and run validation last.
+
+### Complexity
+
+Medium. The change is small in file count, but it crosses a shared market-data helper, the swing-trader step graph, and prompt/test expectations.
+
+---
+
 ## Macro Daily Pipeline Enhancement — Phase 1
 
 > Generated: 2026-04-13

@@ -71,6 +71,25 @@ export interface DailyOhlcBar {
   vwap: number | null;
 }
 
+export interface MassiveNewsArticle {
+  id?: string;
+  title?: string;
+  author?: string;
+  description?: string;
+  article_url?: string;
+  published_utc?: string;
+  tickers?: string[];
+  keywords?: string[];
+  publisher?: {
+    name?: string;
+  };
+  insights?: Array<{
+    ticker?: string;
+    sentiment?: string;
+    sentiment_reasoning?: string;
+  }>;
+}
+
 export function normalizeMassiveTicker(raw: string) {
   return raw
     .replace(/^X:/i, '')
@@ -190,6 +209,26 @@ export async function fetchBatchDailyTickerSummaries(tickers: string[], date: st
     });
   }
   return byNormalizedTicker;
+}
+
+export async function fetchTickerNews(ticker: string, daysBack = 3): Promise<MassiveNewsArticle[]> {
+  const since = new Date();
+  since.setDate(since.getDate() - daysBack);
+
+  const sinceStr = since.toISOString().split('T')[0]!;
+  const normalizedTicker = normalizeMassiveTicker(ticker);
+
+  const response = await fetchMassiveJson<{
+    results?: MassiveNewsArticle[];
+  }>('/v2/reference/news', {
+    ticker: normalizedTicker,
+    'published_utc.gte': sinceStr,
+    order: 'desc',
+    sort: 'published_utc',
+    limit: '10',
+  });
+
+  return response.results ?? [];
 }
 
 /**

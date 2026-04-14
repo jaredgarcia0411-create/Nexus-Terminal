@@ -9,6 +9,7 @@ const getCachedTickerDataMock = vi.hoisted(() => vi.fn());
 const normalizeAskEdgarResponseMock = vi.hoisted(() => vi.fn());
 const fetchUnifiedSnapshotMock = vi.hoisted(() => vi.fn());
 const fetchDailyAggregatesMock = vi.hoisted(() => vi.fn());
+const fetchTickerNewsMock = vi.hoisted(() => vi.fn());
 const fetchPageTextMock = vi.hoisted(() => vi.fn());
 
 vi.mock('node:crypto', () => ({
@@ -35,6 +36,7 @@ vi.mock('@/lib/askedgar', () => ({
 vi.mock('@/lib/massive-market', () => ({
   fetchUnifiedSnapshot: fetchUnifiedSnapshotMock,
   fetchDailyAggregates: fetchDailyAggregatesMock,
+  fetchTickerNews: fetchTickerNewsMock,
 }));
 
 vi.mock('@/lib/agents/scrape-lite', () => ({
@@ -142,6 +144,7 @@ describe('agent blueprints', () => {
     });
     fetchUnifiedSnapshotMock.mockReset();
     fetchDailyAggregatesMock.mockReset();
+    fetchTickerNewsMock.mockReset();
     fetchPageTextMock.mockReset();
     vi.unstubAllGlobals();
   });
@@ -1034,6 +1037,111 @@ describe('agent blueprints', () => {
     expect(warnSpy).toHaveBeenCalledWith('[swing-trader] OHLC fetch failed for AAPL:', expect.any(Error));
   });
 
+  it('adds a fetch-news step to the swing pipeline and maps prompt-safe article fields', async () => {
+    fetchTickerNewsMock.mockResolvedValue([
+      {
+        title: 'Apple extends AI rollout after breakout week',
+        published_utc: '2026-04-12T13:00:00Z',
+        description: 'The company highlighted expanded rollout plans and partner momentum.',
+        insights: [{
+          ticker: 'AAPL',
+          sentiment: 'positive',
+          sentiment_reasoning: 'Expansion headline supports continuation interest.',
+        }],
+      },
+      {
+        title: '   ',
+        published_utc: '2026-04-12T14:00:00Z',
+        description: 'Ignored because the title is blank.',
+      },
+    ]);
+
+    const job = createJob({
+      agentId: 'swing-trader',
+      jobType: 'research',
+      input: { ticker: 'AAPL' },
+    });
+    const agentConfig = AGENT_CONFIGS['swing-trader'];
+    const blueprint = resolveBlueprint(job);
+    const fetchNewsStep = blueprint.steps.find((step) => step.name === 'fetch-news');
+
+    expect(blueprint.steps.map((step) => step.name)).toEqual([
+      'fetch-filings',
+      'fetch-price-context',
+      'fetch-ohlc-history',
+      'fetch-news',
+      'compute-swing-technicals',
+      'synthesize-report',
+      'save-research',
+    ]);
+    expect(fetchNewsStep).toBeDefined();
+
+    const result = await fetchNewsStep!.run(createStepInput(job, agentConfig, {
+      previousOutput: {
+        ticker: 'AAPL',
+        gapStats: [],
+        ownership: [],
+        historicalFloat: [],
+        dilutionRating: null,
+        registrations: [],
+        offerings: [],
+        priceContext: null,
+        ohlcHistory: [],
+      },
+    }));
+
+    expect(fetchTickerNewsMock).toHaveBeenCalledWith('AAPL', 3);
+    expect(result.data).toMatchObject({
+      ticker: 'AAPL',
+      recentNews: [{
+        title: 'Apple extends AI rollout after breakout week',
+        publishedUtc: '2026-04-12T13:00:00Z',
+        description: 'The company highlighted expanded rollout plans and partner momentum.',
+        sentiment: 'positive',
+        sentimentReasoning: 'Expansion headline supports continuation interest.',
+      }],
+    });
+    expect(result.provenance.sourceIds).toEqual(['massive-news:AAPL']);
+    expect(result.provenance.upstreamStepIds).toEqual(['fetch-ohlc-history']);
+  });
+
+  it('continues swing research with empty recentNews when Massive news fails', async () => {
+    fetchTickerNewsMock.mockRejectedValue(new Error('Massive news unavailable'));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const job = createJob({
+      agentId: 'swing-trader',
+      jobType: 'research',
+      input: { ticker: 'AAPL' },
+    });
+    const agentConfig = AGENT_CONFIGS['swing-trader'];
+    const blueprint = resolveBlueprint(job);
+    const fetchNewsStep = blueprint.steps.find((step) => step.name === 'fetch-news');
+
+    expect(fetchNewsStep).toBeDefined();
+
+    const result = await fetchNewsStep!.run(createStepInput(job, agentConfig, {
+      previousOutput: {
+        ticker: 'AAPL',
+        gapStats: [],
+        ownership: [],
+        historicalFloat: [],
+        dilutionRating: null,
+        registrations: [],
+        offerings: [],
+        priceContext: null,
+        ohlcHistory: [],
+      },
+    }));
+
+    expect(fetchTickerNewsMock).toHaveBeenCalledWith('AAPL', 3);
+    expect(result.data).toMatchObject({
+      ticker: 'AAPL',
+      recentNews: [],
+    });
+    expect(result.provenance.sourceIds).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith('[swing-trader] News fetch failed for AAPL:', expect.any(Error));
+  });
+
   it('adds deterministic technicals and runner-quality sections to the swing synthesis prompt', async () => {
     callLlmMock.mockResolvedValue({
       content: JSON.stringify({
@@ -1102,6 +1210,13 @@ describe('agent blueprints', () => {
           { date: '2026-04-11', open: 10.6, high: 11.0, low: 10.4, close: 10.8, volume: 260, vwap: 10.7 },
           { date: '2026-04-12', open: 10.8, high: 11.2, low: 10.7, close: 11.0, volume: 280, vwap: 10.9 },
         ],
+        recentNews: [{
+          title: 'Analyst upgrade sparks fresh breakout chatter',
+          publishedUtc: '2026-04-12T13:00:00Z',
+          description: 'Street desks cited stronger demand and improving sponsorship.',
+          sentiment: 'positive',
+          sentimentReasoning: 'Upgrades and sponsorship are supporting the move.',
+        }],
         deterministicTechnicals: {
           relativeVolume: 2,
           extension5d: 23.6,
@@ -1142,9 +1257,103 @@ describe('agent blueprints', () => {
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('gapDayStats (precomputed):\n'),
     }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Recent news:\n'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Analyst upgrade sparks fresh breakout chatter'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Cite article titles from that section in evidenceIds.'),
+    }), 'background');
     expect(result.data).toMatchObject({
       ticker: 'AAPL',
       confidence: 'high',
     });
+  });
+
+  it('adds a catalyst fallback note to the swing synthesis prompt when recent news is unavailable', async () => {
+    callLlmMock.mockResolvedValue({
+      content: JSON.stringify({
+        ticker: 'AAPL',
+        mdrPatternMatch: { rating: 'green', explanation: 'Clean MDR analog.', mdrSimilarity: 70 },
+        momentum: { rating: 'yellow', explanation: 'Momentum is still constructive.' },
+        catalyst: { rating: 'yellow', explanation: 'No fresh news, but the move is still orderly.' },
+        patternClassification: 'CONTINUATION',
+        recommendation: { action: 'WATCH', reasoning: 'Needs either a fresh catalyst or cleaner extension reset.' },
+        volumeProfile: { rating: 'green', explanation: 'Volume remains elevated.' },
+        confidence: 'medium',
+        evidenceIds: ['ohlc-history'],
+      }),
+      modelUsed: 'background-model',
+      inputTokens: 20,
+      outputTokens: 10,
+      durationMs: 50,
+    });
+
+    const job = createJob({
+      agentId: 'swing-trader',
+      jobType: 'research',
+      input: { ticker: 'AAPL' },
+    });
+    const agentConfig = AGENT_CONFIGS['swing-trader'];
+    const blueprint = resolveBlueprint(job);
+    const synthesizeStep = blueprint.steps.find((step) => step.name === 'synthesize-report');
+
+    expect(synthesizeStep).toBeDefined();
+
+    await synthesizeStep!.run(createStepInput(job, agentConfig, {
+      previousOutput: {
+        ticker: 'AAPL',
+        gapStats: [],
+        ownership: [],
+        historicalFloat: [],
+        dilutionRating: null,
+        registrations: [],
+        offerings: [],
+        priceContext: {
+          price: 10,
+          change: 2,
+          volume: 1000,
+          avgVolume90d: 500,
+          marketCap: 1000000,
+          sector: 'Tech',
+          high1m: 11,
+          low1m: 8,
+          rsi: 72,
+          macdSignal: 1.1,
+          ema9: 9.5,
+          ema21: 8.9,
+        },
+        ohlcHistory: [],
+        recentNews: [],
+        deterministicTechnicals: {
+          relativeVolume: 2,
+          extension5d: null,
+          extension10d: null,
+          rsi: 72,
+          ema9: 9.5,
+          ema21: 8.9,
+        },
+        runnerQuality: {
+          gapStats: [],
+          ownership: [],
+          historicalFloat: [],
+          dilutionRating: null,
+          registrations: [],
+          offerings: [],
+          floatTrend: null,
+          knownHolderOverhang: null,
+          gapCount: 0,
+          sameDayFadeRate: null,
+          avgHighExtension: null,
+          priorGapDayAvgReturn: null,
+        },
+      },
+    }));
+
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('No recent news articles available. Rate catalyst based on price action context only'),
+    }), 'background');
   });
 });

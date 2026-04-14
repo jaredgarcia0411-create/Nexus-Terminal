@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getCachedTickerData } from '@/lib/askedgar';
-import { fetchDailyAggregates } from '@/lib/massive-market';
+import { fetchDailyAggregates, fetchTickerNews, type MassiveNewsArticle } from '@/lib/massive-market';
 import { writeAndDeliverReport } from '../discord';
 import { upsertMemory } from '../memory';
 import { callLlm } from '../llm-client';
@@ -71,6 +71,18 @@ const ohlcEnrichedSchema = priceContextSchema.extend({
   ohlcHistory: z.array(ohlcBarSchema),
 });
 
+const newsArticleSchema = z.object({
+  title: z.string(),
+  publishedUtc: z.string().nullable(),
+  description: z.string().nullable(),
+  sentiment: z.string().nullable(),
+  sentimentReasoning: z.string().nullable(),
+});
+
+const newsEnrichedSchema = ohlcEnrichedSchema.extend({
+  recentNews: z.array(newsArticleSchema),
+});
+
 const deterministicTechnicalsSchema = z.object({
   relativeVolume: z.number().nullable(),
   extension5d: z.number().nullable(),
@@ -95,7 +107,7 @@ const runnerQualitySchema = z.object({
   knownHolderOverhang: z.number().nullable(),
 });
 
-const swingPipelineInputSchema = ohlcEnrichedSchema.extend({
+const swingPipelineInputSchema = newsEnrichedSchema.extend({
   deterministicTechnicals: deterministicTechnicalsSchema,
   runnerQuality: runnerQualitySchema,
 });
@@ -110,7 +122,7 @@ const ratedSection = z.object({
 const swingResearchSchema = z.object({
   ticker: z.string(),
   mdrPatternMatch: ratedSection.extend({
-    mdrSimilarity: z.number().min(0).max(100),
+    mdrSimilarity: z.number().min(0).max(100).catch(0),
   }),
   momentum: ratedSection,
   catalyst: ratedSection,
@@ -411,7 +423,47 @@ function computeExtension(history: z.infer<typeof ohlcBarSchema>[], barsAgo: num
   return ((latest - previous) / previous) * 100;
 }
 
-function computeSwingTechnicals(input: z.infer<typeof ohlcEnrichedSchema>): z.infer<typeof swingPipelineInputSchema> {
+function toOptionalText(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function findMatchingNewsInsight(article: MassiveNewsArticle, ticker: string) {
+  const normalizedTicker = ticker.trim().toUpperCase();
+
+  return article.insights?.find((insight) => {
+    const insightTicker = insight.ticker?.trim().toUpperCase();
+    return insightTicker === normalizedTicker;
+  }) ?? article.insights?.[0] ?? null;
+}
+
+function simplifyNewsArticles(
+  articles: MassiveNewsArticle[],
+  ticker: string,
+): z.infer<typeof newsArticleSchema>[] {
+  return articles.flatMap((article) => {
+    const title = toOptionalText(article.title);
+    if (!title) {
+      return [];
+    }
+
+    const insight = findMatchingNewsInsight(article, ticker);
+
+    return [{
+      title,
+      publishedUtc: toOptionalText(article.published_utc),
+      description: toOptionalText(article.description),
+      sentiment: toOptionalText(insight?.sentiment),
+      sentimentReasoning: toOptionalText(insight?.sentiment_reasoning),
+    }];
+  });
+}
+
+function computeSwingTechnicals(input: z.infer<typeof newsEnrichedSchema>): z.infer<typeof swingPipelineInputSchema> {
   const sortedHistory = normalizeOhlcHistory(input.ohlcHistory);
   const priceContext = input.priceContext;
   const relativeVolume = priceContext && priceContext.volume !== null
@@ -563,6 +615,17 @@ function buildResearchPrompt(input: z.infer<typeof swingPipelineInputSchema>): s
     );
   }
 
+  if (input.recentNews.length > 0) {
+    sections.push(
+      formatPromptSection('Recent news', input.recentNews),
+      'Use only the articles in the Recent news section when judging catalyst quality. Cite article titles from that section in evidenceIds. Do NOT fabricate news not listed above.',
+    );
+  } else {
+    sections.push(
+      'No recent news articles available. Rate catalyst based on price action context only and state that no recent news was available.',
+    );
+  }
+
   sections.push(
     'Use the JMT traffic-light rating system. Each rating must be "green", "yellow", or "red" (lowercase).',
     'Do NOT provide specific price levels (entry, stop, target). Focus on pattern quality and setup strength.',
@@ -663,19 +726,47 @@ export const swingTraderResearchBlueprint: Blueprint = {
       },
     },
     {
-      name: 'compute-swing-technicals',
+      name: 'fetch-news',
       type: 'code',
       inputSchema: ohlcEnrichedSchema,
+      outputSchema: newsEnrichedSchema,
+      metadata: { canRetry: true, timeoutMs: 10000, maxRepairAttempts: 0, sideEffect: false },
+      run: async ({ previousOutput }) => {
+        const startedAt = Date.now();
+        const data = ohlcEnrichedSchema.parse(previousOutput);
+        let recentNews: z.infer<typeof newsArticleSchema>[] = [];
+
+        try {
+          const articles = await fetchTickerNews(data.ticker, 3);
+          recentNews = simplifyNewsArticles(articles, data.ticker);
+        } catch (error) {
+          console.warn(`[swing-trader] News fetch failed for ${data.ticker}:`, error);
+        }
+
+        return completedResult({
+          ...data,
+          recentNews,
+        }, {
+          durationMs: Date.now() - startedAt,
+          sourceIds: recentNews.length > 0 ? [`massive-news:${data.ticker}`] : [],
+          upstreamStepIds: ['fetch-ohlc-history'],
+        });
+      },
+    },
+    {
+      name: 'compute-swing-technicals',
+      type: 'code',
+      inputSchema: newsEnrichedSchema,
       outputSchema: swingPipelineInputSchema,
       metadata: { canRetry: true, timeoutMs: 10000, maxRepairAttempts: 0, sideEffect: false },
       run: async ({ previousOutput }) => {
         const startedAt = Date.now();
-        const input = ohlcEnrichedSchema.parse(previousOutput);
+        const input = newsEnrichedSchema.parse(previousOutput);
         const pipelineInput = computeSwingTechnicals(input);
 
         return completedResult(pipelineInput, {
           durationMs: Date.now() - startedAt,
-          upstreamStepIds: ['fetch-ohlc-history'],
+          upstreamStepIds: ['fetch-news'],
         });
       },
     },
