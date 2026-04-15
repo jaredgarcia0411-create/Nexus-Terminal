@@ -1,1106 +1,1071 @@
 # Nexus Terminal — HANDOFF.md
 
-> Older completed execution specs were removed to keep this file focused. Use git history for archived implementation detail (P2 agent response improvements, T1.1–T1.3 specialist blueprints — all completed 2026-04-13).
+> Older completed execution specs have been collapsed to summaries. Use git history for archived implementation detail (Swing-Trader Massive News integration completed 2026-04-14; Macro Daily Pipeline Phase 1 completed 2026-04-13; P2 agent response improvements, T1.1–T1.3 specialist blueprints completed 2026-04-13).
 
 ---
 
-## Swing-Trader Massive News Integration — Phase 1
+## Macro Daily Pipeline Enhancement — Phase 1 (Summary)
 
-> Generated: 2026-04-14
-> Status: COMPLETED 2026-04-14
-> Scope: 3 implementation files modified, 1 likely test file updated, no schema/migration changes, no new env vars
-> Dependency: existing server-side `MASSIVE_API_KEY`
-> Worktree note: preserve the unstaged `mdrSimilarity: z.number().min(0).max(100).catch(0)` change already present in `lib/agents/blueprints/swing-trader-research.ts`
+> Generated: 2026-04-13
+> Status: COMPLETED 2026-04-13
 
-### Completion Notes
+Transformed the macro daily briefing from a thin summary (bias + drivers + catalysts) into a comprehensive pre-market macro analysis.
 
-- Implemented `fetchTickerNews()` and `MassiveNewsArticle` in `lib/massive-market.ts` using the existing Massive API helper and key path.
-- Added `fetch-news` to the swing-trader pipeline, threaded `recentNews` through the prompt schemas, and updated the synthesis prompt to use recent-news context with a no-news fallback.
-- Updated `lib/agents/prompts/swing-trader.md` so catalyst reasoning cites article titles from the `Recent news` section in `evidenceIds` when present.
-- Updated `__tests__/agent-blueprints.test.ts` for the new step order, successful/failing news fetch behavior, and prompt assertions.
-- Validation completed successfully on 2026-04-14: `npm run lint`, `npx tsc --noEmit`, `npm test`.
+**What shipped:**
+
+1. **New data sources** — FRED API client (`lib/agents/fred-client.ts`) for Treasury yields and Fed Funds rate; lightweight RSS parser (`lib/agents/rss-lite.ts`) for ZeroHedge headlines; 5-day daily OHLC bars for key level identification.
+2. **Expanded ticker universe** — added `UVXY`, `UUP`, `SMH`, `IEF`, `HYG`, `EEM`, `BITO` (7 new tickers via existing Massive API).
+3. **Deeper output schema** — `MacroSummaryReport` gained `riskAssessment`, `keyLevels`, `ratesOutlook`, `fredData`, `scenarioAnalysis`, `tldr`.
+4. **Pipeline + prompt rewrite** — new `fetch-macro-context` step runs FRED + OHLC in parallel, extends `sourceIndex` with RSS/FRED sources, and the LLM prompt was rewritten for deeper analysis (no filler, data-first). The Discord embed renders all new sections with conditional rendering for optional fields.
+
+**Env vars introduced:** `FRED_API_KEY` (optional), `MACRO_RSS_URLS` (optional, defaults to ZeroHedge).
+
+**Files touched:** `lib/agents/fred-client.ts` (new), `lib/agents/rss-lite.ts` (new), `lib/agents/types.ts`, `lib/agents/blueprints/orchestrator-macro-summary.ts`, `lib/agents/discord.ts`, `lib/agents/prompts/orchestrator.md`, plus test fixtures.
+
+**Guardrails honored:** zero schema/migration changes, zero new npm deps, all fetches graceful-degrade, pipeline produces a valid report with no env vars set.
+
+---
+
+## Macro Daily Pipeline Enhancement — Phase 2
+
+> Generated: 2026-04-15
+> Status: READY FOR CODEX
+> Scope: 1 new file, 5 files modified, no new npm deps, no DB/migration changes, no new env vars
+> Dependency: Phase 1 (COMPLETED 2026-04-13)
 
 ### Objective
 
-Add recent Massive/Polygon news to the `swing-trader:research` pipeline so the LLM can rate the `catalyst` section from real headlines instead of inferring from price action alone. Keep the new fetch best-effort, token-efficient, and server-only.
+Add four new data sources to the macro daily pipeline:
+
+- **Alternative.me Fear & Greed Index** — public JSON API (crypto-derived composite sentiment), replaces the originally scoped CNN Fear & Greed (which is JS-only).
+- **MarketWatch Top Stories RSS** via the Dow Jones CDN (`feeds.content.dowjones.io/public/rss/mw_topstories`).
+- **NBC News Business RSS** (`feeds.nbcnews.com/nbcnews/public/business`).
+- **Google News macro RSS** (`news.google.com/rss/search?q=federal+reserve+macro+economy&...`) — aggregates Reuters, AP, FT, CNBC, etc.
+
+Bundle the Fear & Greed fetch into a new `fetch-sentiment` pipeline step. Append the three RSS feeds to `DEFAULT_MACRO_RSS_URLS` so the existing `scrape-headlines` step picks them up with no new code path. Extend `MacroSummaryReport` with an optional `sentimentData` field. Update the LLM prompt and Discord embed to consume and display the new data. All fetches are non-fatal — the pipeline produces a valid report if every new fetch fails.
+
+### Sources Researched And Dropped
+
+| Source | Status | Reason |
+|--------|--------|--------|
+| Finviz sector heatmap | DROPPED | JS-rendered only; static HTML contains no sector performance values. |
+| CME FedWatch | DROPPED | Page and `getMeetingProbabilities.json` both timed out; heavily JS-rendered, no stable public data API. |
+| CNN Fear & Greed | DROPPED (replaced) | JS-rendered, no numeric score in HTML. Replaced by Alternative.me. |
+| Reuters RSS | DROPPED | `feeds.reuters.com` connection-refused (Reuters no longer exposes public RSS). |
+| CNBC RSS | DROPPED | Returns 403. |
+| MarketWatch `feeds.marketwatch.com` | DROPPED (replaced) | Subdomain blocked. Replaced by Dow Jones CDN feed that powers the same content. |
 
 ### Observed Current State
 
-- `lib/massive-market.ts` currently exposes snapshots, daily summaries, and `fetchDailyAggregates()` only. There is no Massive news type or helper in the file.
-- `lib/agents/blueprints/swing-trader-research.ts` currently runs six serial steps: `fetch-filings` -> `fetch-price-context` -> `fetch-ohlc-history` -> `compute-swing-technicals` -> `synthesize-report` -> `save-research`.
-- The same blueprint already treats Massive OHLC as non-fatal: `fetch-ohlc-history` catches errors, logs a warning, and continues with `ohlcHistory: []`. The news step should mirror that behavior instead of aborting the pipeline.
-- `buildResearchPrompt()` in `lib/agents/blueprints/swing-trader-research.ts` only includes price context, deterministic technicals, runner quality, and optional OHLC. There is no recent-news section or fallback instruction today.
-- `lib/agents/prompts/swing-trader.md` tells the model to judge catalyst quality, but it does not instruct the model to cite recent article titles in `evidenceIds`.
-- `lib/agents/blueprints/small-cap-research.ts` already digests AskEdgar `news`, but that is a separate filing/news path and should not be reused for market-news input.
+- Pipeline step order: `scrape-headlines` -> `fetch-market-snapshot` -> `fetch-macro-context` -> `generate-briefing` -> `save-summary`.
+- `scrape-headlines` fetches page text from `MACRO_HEADLINES_URLS` and RSS from `MACRO_RSS_URLS` (current default: ZeroHedge only).
+- `fetch-macro-context` fetches FRED series + daily OHLC bars and extends `sourceIndex`.
+- `MacroSummaryReport` in `lib/agents/types.ts` has no `sentimentData` field.
+- `buildMacroSummaryEmbed` in `lib/agents/discord.ts` renders 14 fields; no sentiment section.
+- `buildBriefingPrompt` includes sections for Headlines, RSS Headlines, Cross-asset, FRED, Daily OHLC, Source index. No sentiment section.
+- `DEFAULT_MACRO_RSS_URLS` is a single-URL string constant.
+- Tests in `__tests__/agent-blueprints.test.ts` mock `fetchPageText` and `callLlm`. The `generate-briefing` test passes a `previousOutput` fixture containing `headlines`, `rssHeadlines`, `snapshot`, `note`, `crossAssetSnapshot`, `fredData`, `dailyBars`, `sourceIndex` — this fixture needs `sentimentData` added.
+
+### Decisions Locked
+
+- **D1. Alternative.me, not CNN.** CNN is JS-only. Alternative.me is a public JSON API (0–100 score + classification). The index is crypto-derived so it acts as a divergent/leading signal for equities — the prompt explicitly tells the LLM to treat it that way.
+- **D2. Google News, MarketWatch CDN, NBC Business go into `rssHeadlines` via `DEFAULT_MACRO_RSS_URLS`, not a new field.** They are structurally identical to ZeroHedge RSS. No schema expansion for feed URLs.
+- **D3. Fear & Greed is a separate step (`fetch-sentiment`), not merged into `fetch-macro-context`.** Different domain, cleaner failure scope.
+- **D4. `sentimentData` is optional on `MacroSummaryReport`.** Old DB rows lack it — consumers must use `?.` access.
+- **D5. Token shape for Fear & Greed: `{ score, classification, source }` only.** Never pass the raw JSON blob.
+- **D6. RSS limit stays at 10 per feed.** Three extra feeds = ~30 more headlines. Acceptable token cost for source diversity.
+- **D7. No new env vars.** All new sources are public / unauthenticated. Fear & Greed is always attempted; failures are silent.
 
 ### Files To Modify
 
 | File | Action | Notes |
 |------|--------|-------|
-| `lib/massive-market.ts` | Modify | Add a Massive news response type and a `fetchTickerNews()` helper using the existing Massive API key and shared `fetchMassiveJson()` helper. |
-| `lib/agents/blueprints/swing-trader-research.ts` | Modify | Thread recent-news data through schemas, insert a new `fetch-news` step, and update `buildResearchPrompt()` to include a `Recent news` section plus empty-state guidance. |
-| `lib/agents/prompts/swing-trader.md` | Modify | Tighten catalyst instructions so article titles from the `Recent news` section are cited in `evidenceIds` when news exists. |
-| `__tests__/agent-blueprints.test.ts` | Modify | Update swing-trader blueprint tests for the extra step, Massive news mocking, new warning path, and prompt assertions. |
+| `lib/agents/types.ts` | Modify | Add `SentimentDataPoint` interface; add `sentimentData?: SentimentDataPoint` to `MacroSummaryReport`. |
+| `lib/agents/sentiment-client.ts` | **NEW** | Fear & Greed fetcher (~40 lines); imports `SentimentDataPoint` from `./types`. |
+| `lib/agents/blueprints/orchestrator-macro-summary.ts` | Modify | Extend RSS defaults; add `fetch-sentiment` step; extend schemas; thread data into prompt + draft. |
+| `lib/agents/discord.ts` | Modify | Render `sentimentData` in `buildMacroSummaryEmbed` with optional-chaining guards. |
+| `lib/agents/prompts/orchestrator.md` | Modify | Add `sentimentData` field description and LLM usage rules. |
+| `__tests__/agent-blueprints.test.ts` | Modify | Mock `fetchFearGreedIndex`; add `fetch-sentiment` step tests; update `generate-briefing` fixture with `sentimentData`. |
+| `__tests__/agent-discord.test.ts` | Modify | Add embed tests for sentiment present/absent. |
 
 ### Ordered Work
 
-1. Modify `lib/massive-market.ts`.
-   Add `MassiveNewsArticle` for the `/v2/reference/news` response shape and export `fetchTickerNews(ticker: string, daysBack = 3)`.
-   Use `fetchMassiveJson('/v2/reference/news', ...)` with the normalized ticker, `published_utc.gte`, descending `published_utc`, and `limit: '10'`.
-   Return `results ?? []` and keep the helper focused on server-side fetching only. No cache layer, no new env vars, no client exposure.
-2. Modify `lib/agents/blueprints/swing-trader-research.ts`.
-   Import `fetchTickerNews` from `@/lib/massive-market`.
-   Add a prompt-facing `newsArticleSchema` with only the fields the LLM needs: `title`, `publishedUtc`, `description`, `sentiment`, and `sentimentReasoning`.
-   Add `newsEnrichedSchema = ohlcEnrichedSchema.extend({ recentNews: z.array(newsArticleSchema) })`.
-   Change `swingPipelineInputSchema` to extend `newsEnrichedSchema` instead of `ohlcEnrichedSchema`.
-3. Insert the new pipeline step in `lib/agents/blueprints/swing-trader-research.ts`.
-   Add `fetch-news` between `fetch-ohlc-history` and `compute-swing-technicals`.
-   Input schema: `ohlcEnrichedSchema`. Output schema: `newsEnrichedSchema`.
-   Metadata should match the existing best-effort pattern: `canRetry: true`, `sideEffect: false`, timeout around 10s, and no repair loop.
-   On success, map raw Massive articles into a token-efficient `recentNews` array. Pull sentiment fields from the matching per-ticker `insights` item when present.
-   On failure, `console.warn('[swing-trader] News fetch failed for ${data.ticker}:', error)` and continue with `recentNews: []`.
-   Use `sourceIds: ['massive-news:${ticker}']` only when at least one article is returned.
-4. Update prompt construction in `lib/agents/blueprints/swing-trader-research.ts`.
-   Add a `Recent news` section after OHLC context and before the final instruction block.
-   If `recentNews.length > 0`, pass only the simplified article objects and instruct the model to use only those articles when judging catalyst quality.
-   If `recentNews.length === 0`, add a plain fallback note: no recent news was available, so catalyst must be rated from price-action context only.
-   Keep the saved report shape unchanged. This feature should improve the `catalyst` explanation and `evidenceIds`, not add new report fields.
-5. Modify `lib/agents/prompts/swing-trader.md`.
-   Add one sentence under the catalyst guidance: when recent news is provided, use it to inform the catalyst rating and cite article titles from the `Recent news` section in `evidenceIds`.
-6. Update `__tests__/agent-blueprints.test.ts`.
-   Cover the new `fetch-news` step, the non-fatal news fallback, and the new prompt text.
-   If validation exposes additional swing-trader test failures, update only the exact failing files reported by the suite.
+**Step 1 — Extend `lib/agents/types.ts` (do this first so Step 2 can import cleanly).**
 
-### Acceptance Criteria
-
-- `fetchTickerNews()` exists in `lib/massive-market.ts` and uses the existing Massive API key path; no new environment variables are introduced.
-- The swing-trader blueprint step order becomes `fetch-filings` -> `fetch-price-context` -> `fetch-ohlc-history` -> `fetch-news` -> `compute-swing-technicals` -> `synthesize-report` -> `save-research`.
-- News fetch failure is non-fatal and results in `recentNews: []`, matching the existing OHLC resilience pattern.
-- The prompt includes a `Recent news` section when articles exist and an explicit fallback note when they do not.
-- Only token-efficient news fields are passed to the LLM. Do not pass article URLs, images, or publisher-logo noise into the prompt.
-- The saved swing-trader report contract remains unchanged. No DB schema work, no Discord embed work, and no API route changes are part of this phase.
-- Validation passes: `npm run lint`, `npx tsc --noEmit`, `npm test`.
-
-### Security Notes
-
-- Keep `MASSIVE_API_KEY` server-side only; do not surface it to the client or log it.
-- Do not log raw Massive news payloads. Warning logs should stay at the ticker + error level only.
-- This change adds one more third-party request per swing research run, so keep the article window bounded to 3 days / 10 articles to avoid unnecessary spend and prompt bloat.
-
-### Order Of Operations
-
-1. Add the Massive helper first so the blueprint can import a real symbol.
-2. Thread schemas and the new step through `swing-trader-research.ts`.
-3. Update the prompt file once the blueprint is passing the new `Recent news` section.
-4. Fix test fallout and run validation last.
-
-### Complexity
-
-Medium. The change is small in file count, but it crosses a shared market-data helper, the swing-trader step graph, and prompt/test expectations.
-
----
-
-## Macro Daily Pipeline Enhancement — Phase 1
-
-> Generated: 2026-04-13
-> Status: COMPLETED 2026-04-13
-> Scope: 2 new files, 5 files modified, 1 new optional env var (`FRED_API_KEY`)
-> No schema/migration changes, no new npm dependencies
-
-### Overview
-
-Transform the macro daily briefing from a thin summary (bias + drivers + catalysts) into a comprehensive pre-market macro analysis. Four coordinated changes:
-
-1. **New data sources** — FRED API for Treasury yields/rates, RSS parser for ZeroHedge headlines, 5-day daily OHLC bars for key level identification
-2. **Expanded ticker universe** — add VIX proxy, dollar, semis, mid-term treasuries, high yield bonds, emerging markets, crypto proxy (7 new tickers via existing Massive API — no new cost)
-3. **Deeper output schema** — new sections: risk assessment, key levels, rates outlook, scenario analysis, TLDR
-4. **Updated prompt + embed** — rewrite LLM prompt for deeper analysis, update Discord embed to render all new sections
-
-### Files Changed
-
-| File | Change |
-|------|--------|
-| `lib/agents/fred-client.ts` | **NEW** — FRED API client |
-| `lib/agents/rss-lite.ts` | **NEW** — RSS feed parser |
-| `lib/agents/types.ts` | Add `FredDataPoint`, `KeyLevel`, `ScenarioAnalysis`; expand `MacroSummaryReport` |
-| `lib/agents/blueprints/orchestrator-macro-summary.ts` | New step, expanded tickers, updated schemas, rewritten prompt |
-| `lib/agents/discord.ts` | Updated `buildMacroSummaryEmbed` with new report sections |
-| `lib/agents/prompts/orchestrator.md` | Updated macro briefing instructions |
-| `__tests__/agent-*.test.ts` | Updated fixtures for new schema shape |
-
-### Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `FRED_API_KEY` | No | Free API key from [fred.stlouisfed.org](https://fred.stlouisfed.org/docs/api/api_key.html). If absent, FRED data is skipped — pipeline still works. |
-| `MACRO_RSS_URLS` | No | Comma-separated RSS feed URLs. Defaults to ZeroHedge RSS. If feeds fail, pipeline continues without RSS data. |
-
-### Guardrails
-
-- No schema/migration changes (no DB changes).
-- No new npm dependencies — RSS parsing uses regex on XML, FRED uses native fetch.
-- All new data fetches must degrade gracefully: missing API key → skip, failed fetch → empty array, pipeline still completes.
-- The pipeline must produce a valid report with zero new env vars set.
-- Previously stored macro reports (before this change) lack new fields — code reading `MacroSummaryReport` from the DB (e.g., `context.ts`, `orchestrator-chat.ts`) should tolerate missing fields via optional chaining where needed.
-- Run `npm run lint && npx tsc --noEmit && npm test` after each step.
-
----
-
-### Step 1 — FRED API Client (NEW FILE)
-
-**File:** `lib/agents/fred-client.ts`
-
-**Why:** FRED is free, authoritative, and reliable. It gives us actual Treasury yield percentages and Fed Funds rate — data that transforms vague "rates are moving" analysis into specific "10Y at 4.32%, 2Y at 3.85%, spread +47bp" analysis. The API key is free (register at fred.stlouisfed.org).
-
-**What it does:** Fetches the latest observation for each FRED series ID in parallel. Returns an array of `FredDataPoint` objects. If `FRED_API_KEY` is not set, returns empty array immediately (no error). Each individual series fetch has its own timeout and failure is isolated — if one series fails, the others still return.
-
-Create this file with this exact content:
+Add this interface near the other shared types (above `MacroSource`, around line 63):
 
 ```ts
-import type { FredDataPoint } from './types';
-
-const FRED_BASE_URL = 'https://api.stlouisfed.org/fred/series/observations';
-const DEFAULT_TIMEOUT_MS = 10_000;
-
-/**
- * Human-readable labels for FRED series IDs.
- * Used in the Discord embed so traders see "10-Year Treasury" instead of "DGS10".
- */
-const SERIES_LABELS: Record<string, string> = {
-  DGS10: '10Y Treasury',
-  DGS2: '2Y Treasury',
-  T10Y2Y: '10Y-2Y Spread',
-  FEDFUNDS: 'Fed Funds Rate',
-};
-
-/**
- * Fetch the most recent observation for each FRED series.
- * Returns empty array if FRED_API_KEY is not set (graceful degrade).
- * Each series is fetched in parallel with independent error handling.
- */
-export async function fetchFredSeries(
-  seriesIds: string[],
-  options?: { timeoutMs?: number },
-): Promise<FredDataPoint[]> {
-  const apiKey = process.env.FRED_API_KEY?.trim();
-  if (!apiKey) return [];
-
-  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-
-  const settled = await Promise.allSettled(
-    seriesIds.map(async (seriesId) => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-      try {
-        const url = new URL(FRED_BASE_URL);
-        url.searchParams.set('series_id', seriesId);
-        url.searchParams.set('api_key', apiKey);
-        url.searchParams.set('file_type', 'json');
-        url.searchParams.set('sort_order', 'desc');
-        url.searchParams.set('limit', '1');
-
-        const response = await fetch(url.toString(), { signal: controller.signal });
-        if (!response.ok) {
-          throw new Error(`FRED ${seriesId}: status ${response.status}`);
-        }
-
-        const data = (await response.json()) as {
-          observations?: Array<{ date?: string; value?: string }>;
-        };
-
-        const obs = data.observations?.[0];
-        const rawValue = obs?.value?.trim();
-        // FRED uses "." for missing data (holidays, weekends)
-        const numericValue = rawValue && rawValue !== '.' ? Number(rawValue) : null;
-
-        return {
-          seriesId,
-          label: SERIES_LABELS[seriesId] ?? seriesId,
-          date: obs?.date ?? 'unknown',
-          value: Number.isFinite(numericValue) ? numericValue : null,
-        } satisfies FredDataPoint;
-      } finally {
-        clearTimeout(timer);
-      }
-    }),
-  );
-
-  return settled
-    .filter((r): r is PromiseFulfilledResult<FredDataPoint> => r.status === 'fulfilled')
-    .map((r) => r.value);
+export interface SentimentDataPoint {
+  score: number;
+  classification: string;
+  source: string;
 }
 ```
 
-**Validate:** `npm run lint && npx tsc --noEmit`
-
----
-
-### Step 2 — RSS Feed Parser (NEW FILE)
-
-**File:** `lib/agents/rss-lite.ts`
-
-**Why:** RSS feeds give structured headline data (title + date + link) much more efficiently than scraping full web pages. ZeroHedge publishes contrarian macro analysis that adds a different perspective from mainstream MarketWatch/Yahoo headlines. No API key needed — RSS is open.
-
-**What it does:** Fetches an RSS XML feed, extracts `<item>` blocks via regex, and returns an array of `{ title, link, pubDate }` only — the `<description>` body is intentionally ignored (ZeroHedge items have massive HTML description blocks that would blow up token usage). Handles CDATA-wrapped titles (common in RSS). No XML parser dependency — regex is sufficient for standard RSS 2.0 feeds. Default limit is 10 items.
-
-Create this file with this exact content:
+In `MacroSummaryReport`, add one optional field after `fredData: FredDataPoint[];`:
 
 ```ts
-const DEFAULT_TIMEOUT_MS = 10_000;
+sentimentData?: SentimentDataPoint;
+```
 
-export interface RssItem {
-  title: string;
-  link: string;
-  pubDate: string;
+Validate: `npm run lint && npx tsc --noEmit`
+
+**Step 2 — Create `lib/agents/sentiment-client.ts` (NEW FILE).**
+
+```ts
+import type { SentimentDataPoint } from './types';
+
+const FEAR_GREED_URL = 'https://api.alternative.me/fng/?limit=1&format=json';
+const DEFAULT_TIMEOUT_MS = 8_000;
+
+interface FngApiResponse {
+  data?: Array<{
+    value?: string;
+    value_classification?: string;
+  }>;
+  metadata?: { error: null | string };
 }
 
 /**
- * Fetch and parse an RSS 2.0 feed. Returns up to `limit` items.
- * Uses regex extraction — no XML parser dependency needed.
+ * Fetch the Alternative.me Fear & Greed Index.
+ * Returns null on any failure — caller must handle gracefully.
+ * Note: This index is crypto-derived (tracks BTC sentiment correlates).
+ * Treat as a divergent/leading signal for equities, not an equities-direct reading.
  */
-export async function fetchRssItems(
-  url: string,
-  options?: { timeoutMs?: number; limit?: number },
-): Promise<RssItem[]> {
+export async function fetchFearGreedIndex(
+  options?: { timeoutMs?: number },
+): Promise<SentimentDataPoint | null> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const limit = options?.limit ?? 10;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Nexus-Agent/1.0',
-        Accept: 'application/rss+xml, application/xml, text/xml',
-      },
+    const response = await fetch(FEAR_GREED_URL, {
+      headers: { 'User-Agent': 'Nexus-Agent/1.0' },
       signal: controller.signal,
     });
 
-    if (!response.ok) {
-      throw new Error(`RSS fetch failed with status ${response.status}`);
-    }
+    if (!response.ok) return null;
 
-    const xml = await response.text();
-    const items: RssItem[] = [];
-    const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
-    let match;
+    const json = (await response.json()) as FngApiResponse;
+    const entry = json.data?.[0];
+    const rawValue = entry?.value?.trim();
+    const classification = entry?.value_classification?.trim();
 
-    while ((match = itemRegex.exec(xml)) !== null && items.length < limit) {
-      const block = match[1]!;
-      const title = block.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i)?.[1]?.trim() ?? '';
-      const link = block.match(/<link>([\s\S]*?)<\/link>/i)?.[1]?.trim() ?? '';
-      const pubDate = block.match(/<pubDate>([\s\S]*?)<\/pubDate>/i)?.[1]?.trim() ?? '';
+    if (!rawValue || !classification) return null;
 
-      if (title) {
-        items.push({ title, link, pubDate });
-      }
-    }
+    const score = Number(rawValue);
+    if (!Number.isFinite(score) || score < 0 || score > 100) return null;
 
-    return items;
-  } catch (error) {
-    if ((error as { name?: string }).name === 'AbortError') {
-      throw new Error(`RSS fetch timed out after ${timeoutMs}ms`);
-    }
-    throw error;
+    return { score, classification, source: 'alternative.me/fng' };
+  } catch {
+    return null;
   } finally {
     clearTimeout(timer);
   }
 }
 ```
 
-**Validate:** `npm run lint && npx tsc --noEmit`
+Validate: `npm run lint && npx tsc --noEmit`
 
----
+**Step 3 — Extend RSS defaults in `lib/agents/blueprints/orchestrator-macro-summary.ts`.**
 
-### Step 3 — Expand Types
-
-**File:** `lib/agents/types.ts`
-
-**Why:** The report type (`MacroSummaryReport`) is the contract between the blueprint, the Discord embed renderer, and the database. New analysis sections need new fields.
-
-**3a.** Add three new interfaces. Find this line (around line 86):
+Find:
 
 ```ts
-export interface ScheduledCatalyst {
-```
-
-Add **above** it:
-
-```ts
-export interface FredDataPoint {
-  seriesId: string;
-  label: string;
-  date: string;
-  value: number | null;
-}
-
-export interface KeyLevel {
-  ticker: string;
-  support: string;
-  resistance: string;
-  note: string;
-}
-
-export interface ScenarioAnalysis {
-  consensus: string;
-  disruption: string;
-}
-
-```
-
-**3b.** Replace the `MacroSummaryReport` interface. Find (lines 88–99):
-
-```ts
-export interface MacroSummaryReport {
-  tradingDate: string;
-  marketBias: 'bullish' | 'bearish' | 'neutral';
-  summary: string;
-  drivers: MacroDriver[];
-  crossAssetSnapshot: CrossAssetEntry[];
-  scheduledCatalysts: ScheduledCatalyst[];
-  sectorRotation: string[];
-  deskImplications: string[];
-  sourceIndex: MacroSource[];
-  confidence: Confidence;
-}
-```
-
-Replace with:
-
-```ts
-export interface MacroSummaryReport {
-  tradingDate: string;
-  marketBias: 'bullish' | 'bearish' | 'neutral';
-  summary: string;
-  riskAssessment: string;
-  drivers: MacroDriver[];
-  crossAssetSnapshot: CrossAssetEntry[];
-  keyLevels: KeyLevel[];
-  ratesOutlook: string;
-  fredData: FredDataPoint[];
-  scheduledCatalysts: ScheduledCatalyst[];
-  sectorRotation: string[];
-  scenarioAnalysis: ScenarioAnalysis;
-  deskImplications: string[];
-  sourceIndex: MacroSource[];
-  confidence: Confidence;
-  tldr: string[];
-}
-```
-
-**Validate:** `npm run lint && npx tsc --noEmit` — expect type errors in `discord.ts` and the blueprint until those files are updated in later steps. That's fine.
-
----
-
-### Step 4 — Update Blueprint
-
-**File:** `lib/agents/blueprints/orchestrator-macro-summary.ts`
-
-This is the main change. Follow sub-steps in order.
-
-#### 4a. Add imports
-
-Find the existing import block at the top of the file (lines 1–12). Replace it with:
-
-```ts
-import { z } from 'zod';
-import { fetchUnifiedSnapshot, fetchDailyAggregates, type MassiveSnapshotResult } from '@/lib/massive-market';
-import { writeAndDeliverReport } from '../discord';
-import { fetchFredSeries } from '../fred-client';
-import { callLlm } from '../llm-client';
-import { fetchRssItems } from '../rss-lite';
-import { fetchPageText } from '../scrape-lite';
-import type {
-  Blueprint,
-  CrossAssetEntry,
-  FredDataPoint,
-  MacroSource,
-  MacroSummaryReport,
-  StepResult,
-} from '../types';
-```
-
-#### 4b. Update constants
-
-Find the constants (lines 14–15):
-
-```ts
-const DEFAULT_MACRO_HEADLINES_URLS = 'https://www.marketwatch.com/latest-news,https://finance.yahoo.com/topic/stock-market-news/';
-const MACRO_TICKERS = ['SPY', 'QQQ', 'IWM', 'DIA', 'XLE', 'XLF', 'XLK', 'GLD', 'USO', 'TLT'];
-```
-
-Replace with:
-
-```ts
-const DEFAULT_MACRO_HEADLINES_URLS = 'https://www.marketwatch.com/latest-news,https://finance.yahoo.com/topic/stock-market-news/';
 const DEFAULT_MACRO_RSS_URLS = 'https://cms.zerohedge.com/fullrss2.xml';
-const MACRO_TICKERS = [
-  'SPY', 'QQQ', 'IWM', 'DIA',
-  'XLE', 'XLF', 'XLK', 'GLD', 'USO', 'TLT',
-  'UVXY', 'UUP', 'SMH', 'IEF', 'HYG', 'EEM', 'BITO',
-];
-const KEY_LEVEL_TICKERS = ['SPY', 'QQQ', 'IWM'];
-const FRED_SERIES = ['DGS10', 'DGS2', 'T10Y2Y', 'FEDFUNDS'];
-```
-
-**Why the new tickers:**
-- `UVXY` — VIX proxy (volatility = risk sentiment)
-- `UUP` — US Dollar index ETF (dollar strength affects everything)
-- `SMH` — Semiconductor ETF (market bellwether)
-- `IEF` — 7-10 Year Treasury ETF (rate proxy)
-- `HYG` — High Yield Bond ETF (credit risk appetite)
-- `EEM` — Emerging Markets ETF (global risk)
-- `BITO` — Bitcoin ETF (crypto correlation)
-
-#### 4c. Update headlinesSchema
-
-Find (lines 21–26):
-
-```ts
-const headlinesSchema = z.object({
-  headlines: z.array(z.object({
-    url: z.string(),
-    text: z.string(),
-  })),
-});
 ```
 
 Replace with:
 
 ```ts
-const rssItemSchema = z.object({
-  title: z.string(),
-  link: z.string(),
-  pubDate: z.string(),
+const DEFAULT_MACRO_RSS_URLS = [
+  'https://cms.zerohedge.com/fullrss2.xml',
+  'https://feeds.content.dowjones.io/public/rss/mw_topstories',
+  'https://feeds.nbcnews.com/nbcnews/public/business',
+  'https://news.google.com/rss/search?q=federal+reserve+macro+economy&hl=en-US&gl=US&ceid=US:en',
+].join(',');
+```
+
+At the top of the file, add imports:
+
+```ts
+import { fetchFearGreedIndex } from '../sentiment-client';
+import type { SentimentDataPoint } from '../types';
+```
+
+**Step 4 — Add sentiment schemas in the same blueprint file.**
+
+After `enrichedMacroContextSchema` (around line 115) add:
+
+```ts
+const sentimentDataSchema = z.object({
+  score: z.number().min(0).max(100),
+  classification: z.string(),
+  source: z.string(),
 });
 
-const headlinesSchema = z.object({
-  headlines: z.array(z.object({
-    url: z.string(),
-    text: z.string(),
-  })),
-  rssHeadlines: z.array(rssItemSchema),
+const sentimentEnrichedContextSchema = enrichedMacroContextSchema.extend({
+  sentimentData: sentimentDataSchema.nullable(),
 });
 ```
 
-#### 4d. Update macroBriefingSchema (LLM output)
-
-Find (lines 28–44):
+In the `macroBriefingDraftSchema` `.extend({...})` block, add after `fredData`:
 
 ```ts
-const macroBriefingSchema = z.object({
-  marketBias: z.enum(['bullish', 'bearish', 'neutral']),
-  summary: z.string(),
-  drivers: z.array(z.object({
-    driver: z.string(),
-    impact: z.enum(['positive', 'negative', 'mixed']),
-    sourceRefs: z.array(z.string().min(1)).min(1),
-  })),
-  scheduledCatalysts: z.array(z.object({
-    event: z.string(),
-    date: z.string().nullable(),
-    expectedImpact: z.string(),
-  })),
-  sectorRotation: z.array(z.string()),
-  deskImplications: z.array(z.string()),
-  confidence: z.enum(['high', 'medium', 'low']),
+sentimentData: sentimentDataSchema.nullable().optional(),
+```
+
+**Step 5 — Add the `fetch-sentiment` step.**
+
+Insert between `fetch-macro-context` and `generate-briefing`:
+
+```ts
+{
+  name: 'fetch-sentiment',
+  type: 'code',
+  inputSchema: enrichedMacroContextSchema,
+  outputSchema: sentimentEnrichedContextSchema,
+  metadata: { canRetry: true, timeoutMs: 12000, maxRepairAttempts: 0, sideEffect: false },
+  run: async ({ previousOutput }) => {
+    const startedAt = Date.now();
+    const context = enrichedMacroContextSchema.parse(previousOutput);
+
+    let sentimentData: SentimentDataPoint | null = null;
+    try {
+      sentimentData = await fetchFearGreedIndex();
+    } catch {
+      // Fear & Greed unavailable - continue without sentiment data
+    }
+
+    const fetchedAt = new Date().toISOString();
+    const extendedSourceIndex: MacroSource[] = [
+      ...context.sourceIndex,
+      ...(sentimentData !== null ? [{
+        id: 'data:fear-greed',
+        title: 'Alternative.me Fear & Greed Index',
+        url: 'https://alternative.me/crypto/fear-and-greed-index/' as string | null,
+        fetchedAt,
+      }] : []),
+    ];
+
+    return completedResult({
+      ...context,
+      sourceIndex: extendedSourceIndex,
+      sentimentData,
+    }, {
+      durationMs: Date.now() - startedAt,
+      sourceIds: sentimentData !== null ? ['fear-greed'] : [],
+      upstreamStepIds: ['fetch-macro-context'],
+    });
+  },
+},
+```
+
+**Step 6 — Update `generate-briefing` to consume sentiment.**
+
+Change its `inputSchema` to `sentimentEnrichedContextSchema`. Change the `parse` call inside `run` to match. Then, in the draft assembly, add `sentimentData` alongside the existing threaded fields:
+
+```ts
+const briefing = macroBriefingDraftSchema.parse({
+  crossAssetSnapshot: input.crossAssetSnapshot,
+  sourceIndex: input.sourceIndex,
+  fredData: input.fredData,
+  sentimentData: input.sentimentData,
+  ...macroBriefingSchema.parse(parseJson(llmResponse.content)),
 });
 ```
 
-Replace with:
+**Step 7 — Update `buildBriefingPrompt`.**
+
+Change its parameter type to `z.infer<typeof sentimentEnrichedContextSchema>`. Add a sentiment section before the Source index section:
 
 ```ts
-const keyLevelSchema = z.object({
-  ticker: z.string(),
-  support: z.string(),
-  resistance: z.string(),
-  note: z.string(),
-});
-
-const scenarioSchema = z.object({
-  consensus: z.string(),
-  disruption: z.string(),
-});
-
-const macroBriefingSchema = z.object({
-  marketBias: z.enum(['bullish', 'bearish', 'neutral']),
-  summary: z.string(),
-  riskAssessment: z.string(),
-  drivers: z.array(z.object({
-    driver: z.string(),
-    impact: z.enum(['positive', 'negative', 'mixed']),
-    sourceRefs: z.array(z.string().min(1)).min(1),
-  })),
-  keyLevels: z.array(keyLevelSchema),
-  ratesOutlook: z.string(),
-  scheduledCatalysts: z.array(z.object({
-    event: z.string(),
-    date: z.string().nullable(),
-    expectedImpact: z.string(),
-  })),
-  sectorRotation: z.array(z.string()),
-  scenarioAnalysis: scenarioSchema,
-  deskImplications: z.array(z.string()),
-  confidence: z.enum(['high', 'medium', 'low']),
-  tldr: z.array(z.string()),
-});
+if (input.sentimentData !== null && input.sentimentData !== undefined) {
+  sections.push(
+    '',
+    `Sentiment (crypto-derived Fear & Greed Index — use as a divergent/leading signal, not an equities-direct reading):\nScore: ${input.sentimentData.score}/100 — ${input.sentimentData.classification}\nSource: ${input.sentimentData.source}`,
+  );
+}
 ```
 
-#### 4e. Add enriched context schemas
-
-Find the `macroBriefingContextSchema` definition (starts around line 46). It currently ends after the `sourceIndex` field. **After** `macroBriefingContextSchema`, add the enriched schema. Find the closing `});` of `macroBriefingContextSchema` and add after it:
+Add this rule to the `Rules:` array:
 
 ```ts
+'- sentimentData (when present): reference the score and classification in riskAssessment and deskImplications. High fear (score < 30) is often contrarian bullish for equities; extreme greed (score > 75) warrants caution. Note: this index tracks crypto sentiment correlates, not pure equities.',
+```
 
-const fredPointSchema = z.object({
-  seriesId: z.string(),
-  label: z.string(),
-  date: z.string(),
-  value: z.number().nullable(),
-});
+**Step 8 — Render sentiment in `lib/agents/discord.ts`.**
 
-const dailyBarEntrySchema = z.object({
-  ticker: z.string(),
-  bars: z.array(z.object({
-    date: z.string(),
-    open: z.number(),
-    high: z.number(),
-    low: z.number(),
-    close: z.number(),
-    volume: z.number(),
-  })),
-});
+In `buildMacroSummaryEmbed`, after the rates block (around line 608) add:
 
+```ts
+if (payload.sentimentData && typeof payload.sentimentData === 'object') {
+  const s = payload.sentimentData as { score?: unknown; classification?: unknown };
+  const score = typeof s.score === 'number' ? s.score : null;
+  const classification = typeof s.classification === 'string' ? s.classification.trim() : null;
+  if (score !== null && classification) {
+    fields.push(buildField('Fear & Greed', `${score}/100 — ${classification} *(crypto-derived)*`, false));
+  }
+}
+```
+
+**Step 9 — Update `lib/agents/prompts/orchestrator.md`.**
+
+In the `## Macro Briefing` section, add a new bullet:
+
+```
+- `sentimentData` (optional, crypto-derived): when present, use the score and classification in `riskAssessment` and `deskImplications`. Scores < 30 = Extreme Fear / Fear (contrarian bullish signal for equities). Scores > 75 = Greed / Extreme Greed (caution warranted). This tracks crypto sentiment correlates — treat as a divergent signal, not an equities-direct reading.
+```
+
+**Step 10 — Update tests.**
+
+`__tests__/agent-blueprints.test.ts`:
+
+- Add a hoisted mock: `const fetchFearGreedIndexMock = vi.hoisted(() => vi.fn());`
+- Mock the module: `vi.mock('@/lib/agents/sentiment-client', () => ({ fetchFearGreedIndex: fetchFearGreedIndexMock }));`
+- Reset it in `beforeEach`/`afterEach` cleanup.
+- Add a test that `fetch-sentiment` succeeds and emits `data:fear-greed` in `sourceIndex`.
+- Add a test that a thrown error from `fetchFearGreedIndex` results in `sentimentData: null` and no pipeline abort.
+- Update the `generate-briefing` test's `previousOutput` fixture with `sentimentData: null`. Assert the prompt does NOT contain "Fear & Greed" when null.
+- Add a second variant with `sentimentData: { score: 23, classification: 'Extreme Fear', source: 'alternative.me/fng' }`. Assert the prompt DOES contain "Fear & Greed".
+- If `blueprint.steps.length` is asserted anywhere, bump from 5 to 6.
+
+`__tests__/agent-discord.test.ts`:
+
+- Test that `buildMacroSummaryEmbed` renders a `Fear & Greed` field when `sentimentData` is present (value contains `23/100` and `Extreme Fear`).
+- Test that no `Fear & Greed` field appears when `sentimentData` is absent (old report).
+
+Validate: `npm run lint && npx tsc --noEmit && npm test`
+
+### Acceptance Criteria
+
+- `SentimentDataPoint` is defined in `lib/agents/types.ts`; `sentimentData?: SentimentDataPoint` is on `MacroSummaryReport`.
+- `lib/agents/sentiment-client.ts` exports `fetchFearGreedIndex` and imports the type from `./types`.
+- Pipeline step order becomes: `scrape-headlines` -> `fetch-market-snapshot` -> `fetch-macro-context` -> `fetch-sentiment` -> `generate-briefing` -> `save-summary`.
+- `DEFAULT_MACRO_RSS_URLS` includes ZeroHedge, MarketWatch Dow Jones CDN, NBC News Business, and Google News macro search.
+- `fetch-sentiment` is non-fatal: thrown errors result in `sentimentData: null`, not a pipeline abort.
+- When `sentimentData` is non-null, `sourceIndex` gains a `data:fear-greed` entry.
+- `buildBriefingPrompt` includes the Sentiment section only when `sentimentData` is non-null.
+- `buildMacroSummaryEmbed` renders a `Fear & Greed` field when `sentimentData` is present; renders nothing (no crash) when absent.
+- Old `MacroSummaryReport` rows without `sentimentData` do not cause runtime errors anywhere.
+- `npm run lint && npx tsc --noEmit && npm test` all pass.
+
+### Security Notes
+
+- `api.alternative.me/fng` is a public unauthenticated endpoint. Do not log raw response bodies.
+- Google News RSS links are Google redirect URLs — used for headline titles only, never followed server-side.
+- No new environment variables. No secrets.
+
+### Complexity
+
+Low–medium. One new ~40-line file. Blueprint adds one step and extends two schemas. Test changes are mechanical (fixture fields + two new test cases per file).
+
+---
+
+## Macro Daily Pipeline Enhancement — Phase 3
+
+> Generated: 2026-04-15
+> Status: READY FOR CODEX
+> Scope: 2 new files, 6 files modified, 0 schema/migration changes, 2 new optional env vars (`MACRO_INTRADAY_ENABLED`, `MACRO_INTRADAY_HOUR_ET`)
+> Dependency: Phase 1 shipped 2026-04-13. Phase 3 can ship independently of Phase 2 — it only uses Phase 1 fields (`marketBias`, `keyLevels`, `fredData`, `tldr`).
+
+### Objective
+
+Four polish + intelligence improvements to the macro daily pipeline:
+
+1. **Historical comparison** — pass yesterday's compact macro report into the LLM prompt so it writes delta sentences ("10Y at 4.35%, up 3bp from 4.32% yesterday").
+2. **Conditional Discord embed sections** — stop rendering `n/a` placeholder fields. Skip Rates entirely when `fredData` is empty; skip Catalysts, Sector Rotation, Desk Implications when their arrays are empty.
+3. **Report quality scoring** — post-LLM validation that checks source citation coverage, key level plausibility, and TLDR length. Logs warnings only; never blocks delivery.
+4. **Intraday update blueprint** — optional 12:30 PM ET mid-day macro snapshot behind `MACRO_INTRADAY_ENABLED=1`. New short blueprint (5–6 fields) that compares the current session to the morning brief.
+
+### Design Decisions
+
+- **A. Add `deltas?: string[]` to `MacroSummaryReport`.** Keeps delta text structured (better testability, separate embed rendering). Optional field so old DB rows deserialize cleanly via `normalizeMacroSummaryReport` in `context.ts`.
+- **B. Quality scoring logs warnings only; do not persist `qualityScore`.** `superRefine` already hard-fails on missing source ids. `console.warn` is enough for a feedback loop at this stage. Reconsider in a later phase if the signal proves valuable.
+- **C. Intraday reuses `jobType: 'macro-summary'`** with a new `input.intradayUpdate: true` discriminator. `blueprintResolver` in `lib/agents/config.ts` branches on the flag. The `agent_scheduled_runs` cron uses a new `trigger_type: 'macro-intraday'` to avoid unique-constraint conflicts with the morning run.
+- **D. Intraday is opt-in.** `MACRO_INTRADAY_ENABLED=1` is required to start the second cron; with the env var unset, the agent entrypoint behaves exactly as today.
+
+### Observed Current State
+
+- `fetch-macro-context` fetches FRED + daily OHLC but has no prior-day lookup.
+- `lib/agents/context.ts` already knows how to query `agentReports` for the latest macro report. The query needed here is the same pattern with `createdAt < tradingDate` plus `limit(1)`.
+- `MacroSummaryReport` has no `deltas` field.
+- `buildMacroSummaryEmbed` in `lib/agents/discord.ts` has an orphan branch that renders `Rates` with text only when `fredData` is empty but `ratesOutlook` exists. This is the source of the "n/a-ish" fallback.
+- `keyLevels` already has conditional rendering. `scheduledCatalysts`, `sectorRotation`, `deskImplications` do not — they always render, falling back to `'n/a'` when empty.
+- `macroBriefingDraftSchema.superRefine` already validates every `driver.sourceRefs` against `sourceIndex`. Quality scoring is a soft cross-check.
+- `keyLevels[i].support`/`resistance` are string fields. Numeric range checks must `parseFloat` and skip on `NaN`.
+- `tldr` has no length constraint in the current schema.
+- `lib/agents/macro-cron.ts` exports `startMacroCron`. A companion `startIntradayCron` needs the same shape but with a distinct `trigger_type`.
+- `lib/agents/macro-cron.ts` references `AgentDb`, `unwrapRows`, `agentScheduledRuns`, `ScheduledRunRow` — confirmed to exist.
+- `services/agent-entrypoint.ts` exists and calls `startMacroCron(db)`; this is where an intraday start call goes.
+- `buildBaseEmbed`, `buildField`, `asRecord`, `readJsonValue`, `optionalText`, `formatBulletList` all exist in `lib/agents/discord.ts` — the intraday embed reuses them.
+
+### Files To Modify
+
+| File | Action | Notes |
+|------|--------|-------|
+| `lib/agents/types.ts` | Modify | Add `deltas?: string[]` to `MacroSummaryReport`. |
+| `lib/agents/blueprints/orchestrator-macro-summary.ts` | Modify | Add `fetchPriorMacroReport()`; extend `enrichedMacroContextSchema` with `priorDay`; update prompt; add `deltas` to schemas; add `scoreReportQuality()`. |
+| `lib/agents/discord.ts` | Modify | Tighten `buildMacroSummaryEmbed` (remove orphan rates branch, skip empty sections, add optional Deltas field); add `buildMacroIntradayEmbed`; route `macro-intraday` in `selectEmbed` and `resolveWebhookUrl`. |
+| `lib/agents/macro-cron.ts` | Modify | Export `startIntradayCron`. |
+| `lib/agents/config.ts` | Modify | Branch `blueprintResolver` on `input.intradayUpdate`. |
+| `services/agent-entrypoint.ts` | Modify | Conditionally start intraday cron when `MACRO_INTRADAY_ENABLED=1`. |
+| `lib/agents/blueprints/orchestrator-macro-intraday.ts` | **NEW** | Intraday blueprint: `fetch-session-snapshot` -> `generate-intraday-briefing` -> `save-intraday-summary`. |
+| `__tests__/agent-blueprints.test.ts` | Modify | Update `generate-briefing` fixture with `priorDay: null`; add prior-day-present test; add quality scoring tests; update `save-summary` test with `deltas`. |
+| `__tests__/agent-discord.test.ts` | Modify | Assert empty-section skipping; add `Deltas` field test; add `buildMacroIntradayEmbed` tests. |
+| `__tests__/agent-macro-cron.test.ts` | Modify | Add `startIntradayCron` tests. |
+
+### Ordered Work
+
+**Step 1 — Add `deltas` to `MacroSummaryReport` in `lib/agents/types.ts`.**
+
+In the `MacroSummaryReport` interface, add one optional field after `tldr`:
+
+```ts
+deltas?: string[];
+```
+
+Optional so existing DB rows deserialize unchanged. `normalizeMacroSummaryReport` needs no edit (arrays with fallback defaults already handle this shape).
+
+Validate: `npm run lint && npx tsc --noEmit`
+
+**Step 2 — Add `fetchPriorMacroReport()` helper in `orchestrator-macro-summary.ts`.**
+
+Add imports at top:
+
+```ts
+import { and, desc, eq, lt } from 'drizzle-orm';
+import { agentReports } from '@/lib/db/schema';
+import type { AgentDb } from '../db';
+```
+
+Add the helper after `buildSourceIndex()` (around line 240):
+
+```ts
+/**
+ * Fetches the most recent prior macro report from the DB.
+ * Returns null on first run or if no prior report exists.
+ * Passes only a compact shape to the prompt to avoid token bloat.
+ */
+async function fetchPriorMacroReport(
+  db: AgentDb,
+  tradingDate: string,
+): Promise<{
+  tradingDate: string;
+  marketBias: string;
+  dgs10: number | null;
+  dgs2: number | null;
+  spySupport: string | null;
+  spyResistance: string | null;
+  qqqSupport: string | null;
+  qqqResistance: string | null;
+} | null> {
+  const [row] = await db
+    .select({ reportJson: agentReports.reportJson })
+    .from(agentReports)
+    .where(
+      and(
+        eq(agentReports.userId, 'system-agent-user'),
+        eq(agentReports.agentId, 'orchestrator'),
+        eq(agentReports.reportType, 'macro-summary'),
+        eq(agentReports.status, 'published'),
+        lt(agentReports.createdAt, new Date(`${tradingDate}T00:00:00.000Z`)),
+      ),
+    )
+    .orderBy(desc(agentReports.createdAt))
+    .limit(1);
+
+  if (!row?.reportJson) return null;
+
+  const r = row.reportJson as Partial<MacroSummaryReport>;
+  if (!r.marketBias || !r.tradingDate) return null;
+
+  const dgs10 = r.fredData?.find((p) => p.seriesId === 'DGS10')?.value ?? null;
+  const dgs2 = r.fredData?.find((p) => p.seriesId === 'DGS2')?.value ?? null;
+  const spy = r.keyLevels?.find((l) => l.ticker === 'SPY');
+  const qqq = r.keyLevels?.find((l) => l.ticker === 'QQQ');
+
+  return {
+    tradingDate: r.tradingDate,
+    marketBias: r.marketBias,
+    dgs10,
+    dgs2,
+    spySupport: spy?.support ?? null,
+    spyResistance: spy?.resistance ?? null,
+    qqqSupport: qqq?.support ?? null,
+    qqqResistance: qqq?.resistance ?? null,
+  };
+}
+```
+
+In the `fetch-macro-context` step, destructure `jobInput, db` from the run args and call the helper:
+
+```ts
+run: async ({ previousOutput, jobInput, db }) => {
+  // ... existing code ...
+  const tradingDate = getTradingDate(jobInput);
+  const priorDay = await fetchPriorMacroReport(db, tradingDate).catch(() => null);
+  // ... fold priorDay into the returned context ...
+}
+```
+
+**Step 3 — Extend schemas and thread `priorDay` + `deltas` through the pipeline.**
+
+Before `enrichedMacroContextSchema`, add:
+
+```ts
+const priorDaySchema = z.object({
+  tradingDate: z.string(),
+  marketBias: z.string(),
+  dgs10: z.number().nullable(),
+  dgs2: z.number().nullable(),
+  spySupport: z.string().nullable(),
+  spyResistance: z.string().nullable(),
+  qqqSupport: z.string().nullable(),
+  qqqResistance: z.string().nullable(),
+}).nullable();
+```
+
+Extend `enrichedMacroContextSchema`:
+
+```ts
 const enrichedMacroContextSchema = macroBriefingContextSchema.extend({
   fredData: z.array(fredPointSchema),
   dailyBars: z.array(dailyBarEntrySchema),
+  priorDay: priorDaySchema,
 });
 ```
 
-#### 4f. Update macroBriefingDraftSchema
+In the `fetch-macro-context` step's return, add `priorDay` alongside `fredData` and `dailyBars`.
 
-Find the existing `macroBriefingDraftSchema` (lines 62–79). Replace the entire definition:
+Add `deltas` to `macroBriefingSchema`:
 
 ```ts
-const macroBriefingDraftSchema = z.object({
-  crossAssetSnapshot: macroBriefingContextSchema.shape.crossAssetSnapshot,
-  sourceIndex: macroBriefingContextSchema.shape.sourceIndex,
-  fredData: z.array(fredPointSchema),
-}).extend(macroBriefingSchema.shape).superRefine((value, ctx) => {
-  const sourceIds = new Set(value.sourceIndex.map((source) => source.id));
-
-  value.drivers.forEach((driver, driverIndex) => {
-    driver.sourceRefs.forEach((sourceRef, sourceRefIndex) => {
-      if (!sourceIds.has(sourceRef)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['drivers', driverIndex, 'sourceRefs', sourceRefIndex],
-          message: `Unknown macro source reference: ${sourceRef}`,
-        });
-      }
-    });
-  });
-});
+deltas: z.array(z.string()).optional(),
 ```
 
-**What changed:** Added `fredData: z.array(fredPointSchema)` alongside `crossAssetSnapshot` and `sourceIndex` as code-merged (non-LLM-generated) fields in the draft. The `macroBriefingSchema.shape` spread now includes all the new LLM output fields.
+**Step 4 — Update `buildBriefingPrompt` with prior-day block and delta instructions.**
 
-#### 4g. Add getRssUrls helper
-
-Find the `getHeadlineUrls` function (around line 130). Add this new function right after it:
+Add `deltas` to the JSON shape block shown to the LLM:
 
 ```ts
-
-function getRssUrls(): string[] {
-  return (process.env.MACRO_RSS_URLS ?? DEFAULT_MACRO_RSS_URLS)
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-}
+deltas: ['delta sentence e.g. "10Y at 4.35% (+3bp from yesterday)" — omit if no prior context'],
 ```
 
-#### 4h. Update scrape-headlines step
-
-Find the `scrape-headlines` step (starts around line 218). Replace the entire step object:
+Near the end, before the Source index push, add:
 
 ```ts
-    {
-      name: 'scrape-headlines',
-      type: 'code',
-      outputSchema: headlinesSchema,
-      metadata: { canRetry: true, timeoutMs: 30000, maxRepairAttempts: 0, sideEffect: false },
-      run: async () => {
-        const startedAt = Date.now();
-        const urls = getHeadlineUrls();
-        const headlines = [];
-
-        for (const url of urls) {
-          try {
-            const text = await fetchPageText(url);
-            headlines.push({ url, text: text.slice(0, 8000) });
-          } catch (error) {
-            const detail = error instanceof Error ? error.message : String(error);
-            headlines.push({ url, text: `[fetch failed: ${detail}]` });
-          }
-        }
-
-        const rssUrls = getRssUrls();
-        const rssHeadlines: z.infer<typeof rssItemSchema>[] = [];
-        for (const rssUrl of rssUrls) {
-          try {
-            const items = await fetchRssItems(rssUrl);
-            rssHeadlines.push(...items);
-          } catch {
-            // Gracefully skip failed RSS feeds — pipeline continues without RSS data
-          }
-        }
-
-        return completedResult({ headlines, rssHeadlines }, {
-          durationMs: Date.now() - startedAt,
-          sourceIds: [...urls, ...rssUrls],
-        });
-      },
-    },
-```
-
-**What changed:** Timeout bumped from 20000→30000 to accommodate RSS fetches. Added RSS fetch loop after page headlines. Output now includes `rssHeadlines`. RSS failures are silently swallowed (the pipeline doesn't depend on RSS data).
-
-#### 4i. Add fetch-macro-context step
-
-This is a **new** step. Insert it between `fetch-market-snapshot` and `generate-briefing`. Find the closing `},` of the `fetch-market-snapshot` step and add this step after it:
-
-```ts
-    {
-      name: 'fetch-macro-context',
-      type: 'code',
-      metadata: { canRetry: true, timeoutMs: 20000, maxRepairAttempts: 0, sideEffect: false },
-      run: async ({ previousOutput }) => {
-        const startedAt = Date.now();
-        const context = macroBriefingContextSchema.parse(previousOutput);
-
-        // Fetch FRED data (graceful degrade if key missing or API fails)
-        let fredData: FredDataPoint[] = [];
-        try {
-          fredData = await fetchFredSeries(FRED_SERIES);
-        } catch {
-          // FRED unavailable — continue without rates data
-        }
-
-        // Fetch daily OHLC bars for key level identification
-        let dailyBars: z.infer<typeof dailyBarEntrySchema>[] = [];
-        if (process.env.MASSIVE_API_KEY?.trim()) {
-          const settled = await Promise.allSettled(
-            KEY_LEVEL_TICKERS.map(async (ticker) => ({
-              ticker,
-              bars: (await fetchDailyAggregates(ticker, 5)).map((bar) => ({
-                date: bar.date,
-                open: bar.open,
-                high: bar.high,
-                low: bar.low,
-                close: bar.close,
-                volume: bar.volume,
-              })),
-            })),
-          );
-          dailyBars = settled
-            .filter((r): r is PromiseFulfilledResult<z.infer<typeof dailyBarEntrySchema>> =>
-              r.status === 'fulfilled')
-            .map((r) => r.value);
-        }
-
-        // Extend source index with RSS and FRED source entries
-        const fetchedAt = new Date().toISOString();
-        const rssUrls = getRssUrls();
-        const extendedSourceIndex: MacroSource[] = [
-          ...context.sourceIndex,
-          ...rssUrls.map((url) => {
-            let hostname = 'rss-source';
-            try { hostname = new URL(url).hostname; } catch { /* ignore */ }
-            return {
-              id: `rss:${hostname}`,
-              title: `${hostname} RSS`,
-              url,
-              fetchedAt,
-            };
-          }),
-          ...(fredData.length > 0 ? [{
-            id: 'data:fred',
-            title: 'FRED Economic Data',
-            url: 'https://fred.stlouisfed.org' as string | null,
-            fetchedAt,
-          }] : []),
-        ];
-
-        return completedResult({
-          ...context,
-          sourceIndex: extendedSourceIndex,
-          fredData,
-          dailyBars,
-        }, {
-          durationMs: Date.now() - startedAt,
-          sourceIds: [
-            ...(fredData.length > 0 ? ['fred'] : []),
-            ...KEY_LEVEL_TICKERS,
-          ],
-          upstreamStepIds: ['fetch-market-snapshot'],
-        });
-      },
-    },
-```
-
-**What this step does:**
-1. Fetches FRED series data in parallel (4 series, ~5s). Returns empty if `FRED_API_KEY` not set.
-2. Fetches 5-day daily OHLC bars for SPY, QQQ, IWM in parallel (~5s). Skipped if `MASSIVE_API_KEY` not set.
-3. Extends the `sourceIndex` with RSS feed sources and FRED source entry (so drivers can reference them in `sourceRefs`).
-4. Passes everything forward to the LLM step.
-
-#### 4j. Update generate-briefing step
-
-Find the `generate-briefing` step. Make these changes:
-
-**Change 1:** Update `inputSchema` from `macroBriefingContextSchema` to `enrichedMacroContextSchema`:
-
-```ts
-      inputSchema: enrichedMacroContextSchema,
-```
-
-**Change 2:** In the `run` function, change the parse call:
-
-```ts
-        const input = enrichedMacroContextSchema.parse(previousOutput);
-```
-
-**Change 3:** In the `macroBriefingDraftSchema.parse(...)` call, add `fredData`:
-
-```ts
-        const briefing = macroBriefingDraftSchema.parse({
-          crossAssetSnapshot: input.crossAssetSnapshot,
-          sourceIndex: input.sourceIndex,
-          fredData: input.fredData,
-          ...macroBriefingSchema.parse(parseJson(llmResponse.content)),
-        });
-```
-
-**Change 4:** Update `upstreamStepIds` from `['fetch-market-snapshot']` to `['fetch-macro-context']`.
-
-#### 4k. Rewrite buildBriefingPrompt
-
-Replace the entire `buildBriefingPrompt` function (lines 176–207) with:
-
-```ts
-function buildBriefingPrompt(
-  tradingDate: string,
-  input: z.infer<typeof enrichedMacroContextSchema>,
-): string {
-  const sections: string[] = [
-    `Trading date: ${tradingDate}`,
-    '',
-    'You are writing a pre-market macro analysis for active day traders. This is read before the bell — be specific, actionable, and data-driven. Do NOT pad with generic filler; every sentence must contain specific data or analysis.',
-    '',
-    'Return strict JSON with this shape and no markdown:',
-    JSON.stringify({
-      marketBias: 'bullish | bearish | neutral',
-      summary: '2-3 sentence executive summary of the macro setup',
-      riskAssessment: '2-4 sentences on the risk environment — what is driving risk-on or risk-off, cross-asset signals, where conviction is highest or lowest',
-      drivers: [{
-        driver: 'market-moving headline or driver',
-        impact: 'positive | negative | mixed',
-        sourceRefs: ['headline:marketwatch.com'],
-      }],
-      keyLevels: [{
-        ticker: 'SPY',
-        support: 'price level (e.g. 520.00)',
-        resistance: 'price level (e.g. 535.00)',
-        note: 'why these levels matter — reference recent price action from daily bars',
-      }],
-      ratesOutlook: '1-2 sentences on rates environment and equity implications — reference actual FRED values when available',
-      scheduledCatalysts: [{
-        event: 'scheduled catalyst',
-        date: 'YYYY-MM-DD or null',
-        expectedImpact: 'brief description',
-      }],
-      sectorRotation: ['sector rotation note with specific tickers or ETFs'],
-      scenarioAnalysis: {
-        consensus: 'what plays out if the base case holds — be specific with levels and sectors',
-        disruption: 'what breaks the thesis and consequences — be specific',
-      },
-      deskImplications: ['specific, actionable trading implication'],
-      confidence: 'high | medium | low',
-      tldr: ['2-4 bullet points — start with overall bias, end with what to watch today'],
-    }, null, 2),
-    '',
-    'Rules:',
-    '- Every driver must include at least one sourceRefs entry matching an id from sourceIndex.',
-    '- keyLevels: focus on SPY, QQQ, IWM. Use the daily OHLC bars to identify meaningful support/resistance (recent swing highs/lows, prior day close, round numbers). Include specific price levels.',
-    '- scenarioAnalysis: consensus is the base case, disruption is what breaks it. Both must reference specific data.',
-    '- tldr: what someone reads if they read nothing else. Every bullet must be specific and actionable.',
-    '',
-    `Headlines:\n${JSON.stringify(input.headlines, null, 2)}`,
-    '',
-    `RSS Headlines:\n${JSON.stringify(input.rssHeadlines, null, 2)}`,
-    '',
-    `Cross-asset snapshot:\n${JSON.stringify(input.crossAssetSnapshot, null, 2)}`,
-  ];
-
-  if (input.fredData.length > 0) {
-    sections.push('', `FRED rates data:\n${JSON.stringify(input.fredData, null, 2)}`);
-  }
-
-  if (input.dailyBars.length > 0) {
-    sections.push('', `Recent daily OHLC bars (use for key level identification):\n${JSON.stringify(input.dailyBars, null, 2)}`);
-  }
+if (input.priorDay) {
+  const pd = input.priorDay;
+  const lines = [
+    `Prior trading date: ${pd.tradingDate}`,
+    `Prior bias: ${pd.marketBias}`,
+    pd.dgs10 !== null ? `Prior 10Y: ${pd.dgs10.toFixed(2)}%` : null,
+    pd.dgs2 !== null ? `Prior 2Y: ${pd.dgs2.toFixed(2)}%` : null,
+    pd.spySupport ? `Prior SPY key levels: ${pd.spySupport} / ${pd.spyResistance}` : null,
+    pd.qqqSupport ? `Prior QQQ key levels: ${pd.qqqSupport} / ${pd.qqqResistance}` : null,
+  ].filter(Boolean);
 
   sections.push(
     '',
-    `Source index:\n${JSON.stringify(input.sourceIndex, null, 2)}`,
-    '',
-    `Market snapshot:\n${JSON.stringify(input.snapshot, null, 2)}`,
+    'Prior day context (use to write delta sentences in the "deltas" field):',
+    lines.join('\n'),
   );
-
-  if (input.note) {
-    sections.push(`Snapshot note: ${input.note}`);
-  }
-
-  return sections.join('\n');
+} else {
+  sections.push('', 'No prior day context available — omit the deltas field or return an empty array.');
 }
 ```
 
-**Key differences from original prompt:**
-- Instructs the LLM to write a "pre-market macro analysis for active day traders" (not just a summary)
-- Explicitly tells it not to use filler — every sentence must have data or analysis
-- New output fields: `riskAssessment`, `keyLevels`, `ratesOutlook`, `scenarioAnalysis`, `tldr`
-- Passes RSS headlines and FRED data as separate context sections
-- Passes daily OHLC bars for key level identification
-- Rules section gives specific guidance on how to use each data source
-
-**Validate:** `npm run lint && npx tsc --noEmit`
-
----
-
-### Step 5 — Update Orchestrator Prompt
-
-**File:** `lib/agents/prompts/orchestrator.md`
-
-Find the `## Macro Briefing` section (lines 16–22). Replace it with:
-
-```md
-## Macro Briefing
-- Daily macro analyses synthesize headlines, RSS feeds, cross-asset data, FRED rates, and recent price bars into a structured pre-market briefing.
-- Return JSON with: `marketBias`, `summary`, `riskAssessment`, `drivers`, `keyLevels`, `ratesOutlook`, `scheduledCatalysts`, `sectorRotation`, `scenarioAnalysis`, `deskImplications`, `confidence`, `tldr`.
-- Every `driver` must include at least one `sourceRefs` entry matching an id from `sourceIndex`.
-- `riskAssessment` is the core analytical section — 2-4 sentences synthesizing cross-asset signals into a risk narrative. Not a summary — an analysis.
-- `keyLevels` must reference actual prices from the daily bars data. Focus on SPY, QQQ, IWM.
-- `scenarioAnalysis` provides consensus (base case) and disruption (what breaks it). Both must be specific and data-referenced.
-- `tldr` is 2-4 bullets — start with bias, end with what to watch. Assume the reader sees nothing else.
-- Be concise — traders read this before the bell.
-```
-
----
-
-### Step 6 — Update Discord Embed
-
-**File:** `lib/agents/discord.ts`
-
-**6a.** Update the import to include new types. Find (lines 5–11):
+Add a rule to the `Rules:` array:
 
 ```ts
-import type {
-  AgentId,
-  AgentReport,
-  MacroSummaryReport,
-  SmallCapResearchReport,
-  SwingResearchReport,
-} from './types';
+'- deltas: 1–4 sentences. Each must reference a specific number and compare to prior day (e.g. "10Y at 4.35%, up 3bp from 4.32% yesterday"). Omit if no prior context.',
 ```
 
-Replace with:
+**Step 5 — Add `scoreReportQuality()` and call it from `generate-briefing`.**
+
+Place after `buildBriefingPrompt`:
 
 ```ts
-import type {
-  AgentId,
-  AgentReport,
-  FredDataPoint,
-  MacroSummaryReport,
-  SmallCapResearchReport,
-  SwingResearchReport,
-} from './types';
-```
+/**
+ * Post-LLM sanity checks. Never throws. Logs warnings only.
+ * Checks: (a) every driver has ≥1 sourceRef, (b) key level support/resistance
+ * values fall within the 5-day OHLC range (±5%), (c) tldr has 2–4 bullets.
+ */
+function scoreReportQuality(
+  briefing: z.infer<typeof macroBriefingDraftSchema>,
+  dailyBars: z.infer<typeof dailyBarEntrySchema>[],
+): void {
+  const issues: string[] = [];
 
-**6b.** Replace the entire `buildMacroSummaryEmbed` function (lines 536–577) with:
-
-```ts
-export function buildMacroSummaryEmbed(report: AgentReport): DiscordEmbed {
-  const payload = report.reportJson as MacroSummaryReport;
-  const impactEmoji = (impact: MacroSummaryReport['drivers'][number]['impact']): string => {
-    if (impact === 'positive') return '\u{1F7E2}';
-    if (impact === 'negative') return '\u{1F534}';
-    return '\u{1F7E1}';
-  };
-
-  const formatList = (values: string[] | undefined): string => (
-    values && values.length > 0 ? values.map((value) => `\u2022 ${value}`).join('\n') : UNKNOWN_VALUE
-  );
-
-  const formatFredValue = (fp: FredDataPoint): string => {
-    if (fp.value === null) return 'n/a';
-    if (fp.seriesId === 'T10Y2Y') {
-      const bps = Math.round(fp.value * 100);
-      return `${bps >= 0 ? '+' : ''}${bps}bp`;
+  briefing.drivers.forEach((driver, i) => {
+    if (driver.sourceRefs.length === 0) {
+      issues.push(`driver[${i}] "${driver.driver.slice(0, 40)}" has no sourceRefs`);
     }
-    return `${fp.value.toFixed(2)}%`;
-  };
+  });
 
+  for (const level of briefing.keyLevels) {
+    const entry = dailyBars.find((bar) => bar.ticker === level.ticker);
+    if (!entry || entry.bars.length === 0) continue;
+
+    const rangeMin = Math.min(...entry.bars.map((b) => b.low));
+    const rangeMax = Math.max(...entry.bars.map((b) => b.high));
+    const margin = (rangeMax - rangeMin) * 0.05 + 1;
+
+    const support = parseFloat(level.support);
+    const resistance = parseFloat(level.resistance);
+
+    if (!Number.isNaN(support) && (support < rangeMin - margin || support > rangeMax + margin)) {
+      issues.push(`${level.ticker} support ${level.support} outside 5-day range [${rangeMin.toFixed(2)}, ${rangeMax.toFixed(2)}]`);
+    }
+    if (!Number.isNaN(resistance) && (resistance < rangeMin - margin || resistance > rangeMax + margin)) {
+      issues.push(`${level.ticker} resistance ${level.resistance} outside 5-day range [${rangeMin.toFixed(2)}, ${rangeMax.toFixed(2)}]`);
+    }
+  }
+
+  if (briefing.tldr.length < 2 || briefing.tldr.length > 4) {
+    issues.push(`tldr has ${briefing.tldr.length} bullets (expected 2–4)`);
+  }
+
+  if (issues.length > 0) {
+    console.warn('[macro-summary] quality issues:', issues);
+  }
+}
+```
+
+Call it in `generate-briefing` right after the draft parse succeeds, before `return completedResult(briefing, ...)`:
+
+```ts
+scoreReportQuality(briefing, input.dailyBars);
+```
+
+**Step 6 — Tighten `buildMacroSummaryEmbed()` in `lib/agents/discord.ts`.**
+
+- Delete the `else if (typeof payload.ratesOutlook === 'string' && payload.ratesOutlook.trim()) { fields.push(buildField('Rates', payload.ratesOutlook, false)); }` branch. Rates appears only when FRED data exists.
+- Wrap the Catalysts push in `if (Array.isArray(payload.scheduledCatalysts) && payload.scheduledCatalysts.length > 0)`.
+- Wrap the Sector Rotation push in `if (Array.isArray(payload.sectorRotation) && payload.sectorRotation.length > 0)`.
+- Wrap the Desk Implications push in `if (Array.isArray(payload.deskImplications) && payload.deskImplications.length > 0)`.
+- After the TLDR block, add:
+
+```ts
+if (Array.isArray(payload.deltas) && payload.deltas.length > 0) {
+  fields.push(buildField('Deltas', formatBulletList(payload.deltas), false));
+}
+```
+
+**Step 7 — Add `startIntradayCron()` to `lib/agents/macro-cron.ts`.**
+
+Append to the bottom of the file:
+
+```ts
+async function runIntradayTick(db: AgentDb, hourEt: number): Promise<void> {
+  const { tradingDate, currentHour } = getTradingWindow();
+  if (currentHour !== hourEt) return;
+
+  await db.transaction(async (tx) => {
+    const claimResult = await tx.execute<ScheduledRunRow>(sql`
+      INSERT INTO agent_scheduled_runs (id, agent_id, trigger_type, trading_date, status, started_at, created_at)
+      VALUES (${randomUUID()}, 'orchestrator', 'macro-intraday', ${tradingDate}, 'running', now(), now())
+      ON CONFLICT (agent_id, trigger_type, trading_date) DO NOTHING
+      RETURNING id;
+    `);
+    const [scheduledRun] = unwrapRows(claimResult);
+    if (!scheduledRun) return;
+
+    const jobId = randomUUID();
+    await tx.insert(agentJobs).values({
+      id: jobId,
+      agentId: 'orchestrator',
+      userId: 'system-agent-user',
+      jobType: 'macro-summary',
+      status: 'queued',
+      input: { tradingDate, intradayUpdate: true },
+    });
+
+    await tx.update(agentScheduledRuns)
+      .set({ jobId, status: 'completed', completedAt: sql`now()` })
+      .where(eq(agentScheduledRuns.id, scheduledRun.id));
+  });
+}
+
+export function startIntradayCron(
+  db: AgentDb,
+  options: { hourEt?: number; checkIntervalMs?: number } = {},
+): MacroCronHandle {
+  const hourEt = options.hourEt ?? Number(process.env.MACRO_INTRADAY_HOUR_ET) || 12;
+  const checkIntervalMs = options.checkIntervalMs ?? DEFAULT_CHECK_INTERVAL_MS;
+  const executeTick = () => {
+    void runIntradayTick(db, hourEt).catch((error) => {
+      console.error('intraday cron tick failed', { error });
+    });
+  };
+  executeTick();
+  const timer = setInterval(executeTick, checkIntervalMs);
+  return { stop: async () => { clearInterval(timer); } };
+}
+```
+
+**Step 8 — Create `lib/agents/blueprints/orchestrator-macro-intraday.ts` (NEW FILE).**
+
+Deliberately short: current snapshot + today's morning brief => 5-field intraday report. No RSS, no FRED, no OHLC daily bars.
+
+```ts
+import { z } from 'zod';
+import { fetchUnifiedSnapshot, type MassiveSnapshotResult } from '@/lib/massive-market';
+import { writeAndDeliverReport } from '../discord';
+import { callLlm } from '../llm-client';
+import { and, desc, eq, gte } from 'drizzle-orm';
+import { agentReports } from '@/lib/db/schema';
+import type {
+  Blueprint,
+  CrossAssetEntry,
+  MacroSummaryReport,
+  StepResult,
+} from '../types';
+
+const INTRADAY_TICKERS = ['SPY', 'QQQ', 'IWM', 'TLT', 'UUP', 'UVXY'];
+
+const intradayJobInputSchema = z.object({
+  tradingDate: z.string().optional(),
+  intradayUpdate: z.boolean().optional(),
+});
+
+function getTradingDate(jobInput: unknown): string {
+  const parsed = intradayJobInputSchema.safeParse(jobInput);
+  return parsed.success && parsed.data.tradingDate
+    ? parsed.data.tradingDate
+    : new Date().toISOString().slice(0, 10);
+}
+
+function completedResult<T>(data: T, options?: { durationMs?: number; upstreamStepIds?: string[]; model?: string; tokensUsed?: number }): StepResult<T> {
+  return {
+    status: 'completed',
+    data,
+    metrics: { durationMs: options?.durationMs ?? 0, attempt: 1, ...(options?.tokensUsed !== undefined ? { tokensUsed: options.tokensUsed } : {}) },
+    provenance: { sourceIds: [], ...(options?.model ? { model: options.model } : {}), upstreamStepIds: options?.upstreamStepIds ?? [], timestamp: new Date().toISOString() },
+  };
+}
+
+function parseJson(text: string): unknown {
+  try { return JSON.parse(text); } catch {
+    const m = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/i);
+    if (m) return JSON.parse(m[1]!);
+  }
+  throw new Error('LLM did not return valid JSON');
+}
+
+const snapshotStepOutputSchema = z.object({
+  tradingDate: z.string(),
+  crossAssetSnapshot: z.array(z.object({
+    ticker: z.string(),
+    price: z.number().nullable(),
+    changePercent: z.number().nullable(),
+  })),
+  morningReport: z.unknown().nullable(),
+});
+
+const intradayBriefingSchema = z.object({
+  sessionBias: z.enum(['bullish', 'bearish', 'neutral']),
+  sessionSummary: z.string(),
+  surprises: z.array(z.string()),
+  updatedKeyWatch: z.string(),
+  deskNote: z.string(),
+});
+
+export const orchestratorMacroIntradayBlueprint: Blueprint = {
+  id: 'orchestrator:macro-intraday',
+  description: 'Mid-day macro update at 12:30 PM ET — session-so-far analysis vs morning brief.',
+  steps: [
+    {
+      name: 'fetch-session-snapshot',
+      type: 'code',
+      metadata: { canRetry: true, timeoutMs: 20000, maxRepairAttempts: 0, sideEffect: false },
+      run: async ({ jobInput, db }) => {
+        const startedAt = Date.now();
+        const tradingDate = getTradingDate(jobInput);
+
+        let crossAssetSnapshot: CrossAssetEntry[] = [];
+        if (process.env.MASSIVE_API_KEY?.trim()) {
+          try {
+            const snap = await fetchUnifiedSnapshot(INTRADAY_TICKERS);
+            const results: MassiveSnapshotResult[] = Array.isArray((snap as { results?: MassiveSnapshotResult[] })?.results)
+              ? (snap as { results: MassiveSnapshotResult[] }).results
+              : [];
+            crossAssetSnapshot = results.map((r) => ({
+              ticker: typeof r.ticker === 'string' ? r.ticker.trim().toUpperCase() : 'UNKNOWN',
+              price: r.session?.close ?? null,
+              changePercent: r.session?.change_percent ?? null,
+            }));
+          } catch {
+            // Snapshot unavailable — continue with empty
+          }
+        }
+
+        let morningReport: MacroSummaryReport | null = null;
+        try {
+          const todayStart = new Date(`${tradingDate}T00:00:00.000Z`);
+          const [row] = await db
+            .select({ reportJson: agentReports.reportJson })
+            .from(agentReports)
+            .where(
+              and(
+                eq(agentReports.userId, 'system-agent-user'),
+                eq(agentReports.agentId, 'orchestrator'),
+                eq(agentReports.reportType, 'macro-summary'),
+                eq(agentReports.status, 'published'),
+                gte(agentReports.createdAt, todayStart),
+              ),
+            )
+            .orderBy(desc(agentReports.createdAt))
+            .limit(1);
+          if (row?.reportJson) {
+            morningReport = row.reportJson as MacroSummaryReport;
+          }
+        } catch {
+          // No morning report — intraday runs blind
+        }
+
+        return completedResult({ tradingDate, crossAssetSnapshot, morningReport }, {
+          durationMs: Date.now() - startedAt,
+        });
+      },
+    },
+    {
+      name: 'generate-intraday-briefing',
+      type: 'llm',
+      inputSchema: snapshotStepOutputSchema,
+      outputSchema: intradayBriefingSchema,
+      metadata: { canRetry: true, timeoutMs: 45000, maxRepairAttempts: 1, sideEffect: false, lane: 'background' },
+      run: async ({ previousOutput }) => {
+        const input = snapshotStepOutputSchema.parse(previousOutput);
+        const morningBias = input.morningReport
+          ? `Morning bias: ${(input.morningReport as MacroSummaryReport).marketBias}. Morning TLDR: ${((input.morningReport as MacroSummaryReport).tldr ?? []).slice(0, 2).join(' | ')}`
+          : 'No morning report available.';
+
+        const userMessage = [
+          `Trading date: ${input.tradingDate} (12:30 PM ET intraday check)`,
+          '',
+          morningBias,
+          '',
+          `Current session snapshot:\n${JSON.stringify(input.crossAssetSnapshot, null, 2)}`,
+          '',
+          'Return strict JSON with this shape and no markdown:',
+          JSON.stringify({
+            sessionBias: 'bullish | bearish | neutral',
+            sessionSummary: '2 sentences: how the session has played out vs the morning thesis',
+            surprises: ['1–3 bullet strings: what is surprising relative to the morning brief'],
+            updatedKeyWatch: '1 sentence: what is the most important level or event to watch into the close',
+            deskNote: '1 sentence: one specific actionable note for the desk right now',
+          }, null, 2),
+        ].join('\n');
+
+        const { buildLlmSystemPrompt } = await import('../prompts-loader');
+        const llmResponse = await callLlm({
+          systemPrompt: await buildLlmSystemPrompt('orchestrator'),
+          userMessage,
+          temperature: 0.2,
+        }, 'background');
+
+        const briefing = intradayBriefingSchema.parse(parseJson(llmResponse.content));
+        return completedResult(briefing, {
+          durationMs: llmResponse.durationMs,
+          tokensUsed: llmResponse.inputTokens + llmResponse.outputTokens,
+          model: llmResponse.modelUsed,
+          upstreamStepIds: ['fetch-session-snapshot'],
+        });
+      },
+    },
+    {
+      name: 'save-intraday-summary',
+      type: 'code',
+      inputSchema: intradayBriefingSchema,
+      metadata: { canRetry: false, timeoutMs: 10000, maxRepairAttempts: 0, sideEffect: true },
+      run: async ({ jobInput, previousOutput, job, db }) => {
+        const briefing = intradayBriefingSchema.parse(previousOutput);
+        const tradingDate = getTradingDate(jobInput);
+        const delivery = await writeAndDeliverReport(db, {
+          jobId: job.id,
+          userId: 'system-agent-user',
+          agentId: 'orchestrator',
+          reportType: 'macro-intraday',
+          title: `${tradingDate} intraday macro update`,
+          summary: briefing.sessionSummary,
+          reportJson: { tradingDate, ...briefing },
+        });
+        return completedResult({ tradingDate, ...delivery }, {
+          durationMs: 0,
+          upstreamStepIds: ['generate-intraday-briefing'],
+        });
+      },
+    },
+  ],
+};
+```
+
+**Step 9 — Wire the intraday blueprint in `lib/agents/config.ts`.**
+
+Add the import:
+
+```ts
+import { orchestratorMacroIntradayBlueprint } from './blueprints/orchestrator-macro-intraday';
+```
+
+Update the orchestrator agent's `blueprintResolver`:
+
+```ts
+blueprintResolver: (job) => {
+  if (job.jobType === 'macro-summary') {
+    const input = job.input as { intradayUpdate?: boolean };
+    if (input.intradayUpdate === true) {
+      return orchestratorMacroIntradayBlueprint;
+    }
+    return orchestratorMacroSummaryBlueprint;
+  }
+  // ... existing resolver logic for other job types ...
+}
+```
+
+**Step 10 — Wire `startIntradayCron()` in `services/agent-entrypoint.ts`.**
+
+Update the import:
+
+```ts
+import { startMacroCron, startIntradayCron, type MacroCronHandle } from '../lib/agents/macro-cron';
+```
+
+Add alongside the existing `macroCron` handle:
+
+```ts
+let intradayCron: MacroCronHandle | null = null;
+// ... after macroCron = startMacroCron(db):
+if (process.env.MACRO_INTRADAY_ENABLED === '1') {
+  intradayCron = startIntradayCron(db);
+}
+```
+
+In the shutdown function, after `macroCron.stop()`:
+
+```ts
+if (intradayCron) {
+  await intradayCron.stop();
+}
+```
+
+**Step 11 — Route `macro-intraday` in `lib/agents/discord.ts`.**
+
+In `resolveWebhookUrl()`, add a branch that maps `macro-intraday` to the existing `DISCORD_WEBHOOK_MACRO_DAILY` env var (so it flows to the same channel as the morning brief):
+
+```ts
+} else if (agentId === 'orchestrator' && reportType === 'macro-intraday') {
+  envName = 'DISCORD_WEBHOOK_MACRO_DAILY';
+```
+
+In `selectEmbed()`, add before the `macro-summary` branch:
+
+```ts
+if (report.reportType === 'macro-intraday') {
+  return buildMacroIntradayEmbed(report);
+}
+```
+
+Add the embed function (reuses existing helpers `asRecord`, `readJsonValue`, `optionalText`, `formatBulletList`, `buildField`, `buildBaseEmbed`):
+
+```ts
+export function buildMacroIntradayEmbed(report: AgentReport): DiscordEmbed {
+  const payload = asRecord(report.reportJson);
   const fields: DiscordEmbedField[] = [
-    buildField('Market Bias', payload.marketBias),
-    buildField('Confidence', payload.confidence),
+    buildField('Session Bias', readJsonValue(payload, 'sessionBias')),
   ];
 
-  // Risk Assessment
-  if (payload.riskAssessment) {
-    fields.push(buildField('Risk Assessment', payload.riskAssessment, false));
+  const surprises = readJsonValue(payload, 'surprises');
+  if (Array.isArray(surprises) && surprises.length > 0) {
+    fields.push(buildField('Surprises', formatBulletList(surprises), false));
   }
 
-  // Top Drivers
-  fields.push(buildField(
-    'Top Drivers',
-    payload.drivers.length > 0
-      ? payload.drivers.slice(0, 4).map((driver) => `${impactEmoji(driver.impact)} ${driver.driver}`).join('\n')
-      : UNKNOWN_VALUE,
-    false,
-  ));
-
-  // Key Levels
-  if (payload.keyLevels && payload.keyLevels.length > 0) {
-    fields.push(buildField(
-      'Key Levels',
-      payload.keyLevels.map((kl) =>
-        `**${kl.ticker}**: ${kl.support} / ${kl.resistance} \u2014 ${kl.note}`).join('\n'),
-      false,
-    ));
+  const updatedKeyWatch = optionalText(readJsonValue(payload, 'updatedKeyWatch'));
+  if (updatedKeyWatch) {
+    fields.push(buildField('Key Watch', updatedKeyWatch, false));
   }
 
-  // Rates — show FRED values + LLM outlook
-  if (payload.fredData && payload.fredData.length > 0) {
-    const ratesLine = payload.fredData.map((fp) => `${fp.label}: ${formatFredValue(fp)}`).join(' | ');
-    const ratesText = payload.ratesOutlook
-      ? `${ratesLine}\n${payload.ratesOutlook}`
-      : ratesLine;
-    fields.push(buildField('Rates', ratesText, false));
-  } else if (payload.ratesOutlook) {
-    fields.push(buildField('Rates', payload.ratesOutlook, false));
-  }
-
-  // Catalysts
-  fields.push(buildField(
-    'Catalysts',
-    payload.scheduledCatalysts.length > 0
-      ? payload.scheduledCatalysts.map((catalyst) => {
-        const when = catalyst.date ? ` (${catalyst.date})` : '';
-        return `\u2022 ${catalyst.event}${when} \u2014 ${catalyst.expectedImpact}`;
-      }).join('\n')
-      : UNKNOWN_VALUE,
-    false,
-  ));
-
-  // Sector Rotation
-  fields.push(buildField('Sector Rotation', formatList(payload.sectorRotation), false));
-
-  // Scenarios
-  if (payload.scenarioAnalysis) {
-    fields.push(buildField(
-      'Scenarios',
-      `\u2705 **Consensus:** ${payload.scenarioAnalysis.consensus}\n\u26A0\uFE0F **Disruption:** ${payload.scenarioAnalysis.disruption}`,
-      false,
-    ));
-  }
-
-  // Desk Implications
-  fields.push(buildField('Desk Implications', formatList(payload.deskImplications), false));
-
-  // TLDR
-  if (payload.tldr && payload.tldr.length > 0) {
-    fields.push(buildField('TLDR', formatList(payload.tldr), false));
+  const deskNote = optionalText(readJsonValue(payload, 'deskNote'));
+  if (deskNote) {
+    fields.push(buildField('Desk Note', deskNote, false));
   }
 
   return buildBaseEmbed(
     report,
     fields,
-    payload.summary,
+    optionalText(report.summary, readJsonValue(payload, 'sessionSummary')),
   );
 }
 ```
 
-**What changed:**
-- New fields: Risk Assessment, Key Levels, Rates (with FRED values + outlook), Scenarios, TLDR
-- FRED values formatted intelligently — percentages for yields, basis points for spreads
-- All new sections use optional chaining and conditional rendering so old reports (without new fields) still render without errors
-- Drivers now show up to 4 (was 3)
-- Uses unicode characters directly (bullet `\u2022`, em-dash `\u2014`, checkmark `\u2705`, warning `\u26A0\uFE0F`)
+**Step 12 — Update tests.**
 
-**Validate:** `npm run lint && npx tsc --noEmit`
+`__tests__/agent-blueprints.test.ts`:
 
----
+- In the `generate-briefing` test's `previousOutput`, add `priorDay: null`. Add a second variant with a populated `priorDay` and assert the prompt contains `Prior day context`.
+- In the `save-summary` test, update the mock LLM output to include `deltas: ['10Y at 4.32%, unchanged from yesterday']` and assert it appears in the saved `reportJson`.
+- Add tests for `scoreReportQuality` behavior — indirectly via the `generate-briefing` step. Spy on `console.warn`:
+  - Key levels outside the 5-day range -> warn called.
+  - Levels within range + 2–4 TLDR bullets -> warn NOT called.
+  - 5+ TLDR bullets -> warn called.
+- If `blueprint.steps.length` is asserted, it remains unchanged at 5 (`fetch-macro-context` was already present in Phase 1; Phase 3 adds no new step to the morning blueprint).
 
-### Step 7 — Update Tests
+`__tests__/agent-discord.test.ts`:
 
-Update test fixtures in these files to include the new schema fields:
+- When `fredData: []` and `ratesOutlook` is set -> no `Rates` field in the embed.
+- When `scheduledCatalysts: []` -> no `Catalysts` field.
+- When `sectorRotation: []` -> no `Sector Rotation` field.
+- When `deskImplications: []` -> no `Desk Implications` field.
+- When `deltas: ['10Y up 3bp']` -> `Deltas` field appears.
+- `buildMacroIntradayEmbed` renders `Session Bias`, `Surprises`, `Key Watch`, `Desk Note`.
 
-- `__tests__/agent-blueprints.test.ts` — blueprint step contract tests
-- `__tests__/agent-discord.test.ts` — embed rendering tests
-- `__tests__/agent-macro-summary-route.test.ts` — macro summary route tests
-- `__tests__/agent-context.test.ts` — context/report tests
+`__tests__/agent-macro-cron.test.ts`:
 
-**For any test fixture that constructs a `MacroSummaryReport`**, add these new fields with reasonable defaults:
+- Add `describe('startIntradayCron')` mirroring `startMacroCron` tests. Assertions:
+  - Skips ticks outside the configured ET hour.
+  - On match, inserts a row into `agent_scheduled_runs` with `trigger_type: 'macro-intraday'` and enqueues an `agentJobs` row with `input.intradayUpdate === true`.
+  - Deduplicates concurrent ticks via the `(agent_id, trigger_type, trading_date)` unique constraint.
 
-```ts
-riskAssessment: 'Test risk assessment.',
-keyLevels: [{ ticker: 'SPY', support: '520', resistance: '535', note: 'test level' }],
-ratesOutlook: 'Test rates outlook.',
-fredData: [{ seriesId: 'DGS10', label: '10Y Treasury', date: '2026-04-11', value: 4.32 }],
-scenarioAnalysis: { consensus: 'Test consensus.', disruption: 'Test disruption.' },
-tldr: ['Test TLDR bullet.'],
-```
+Run: `npm run lint && npx tsc --noEmit && npm test`
 
-**For any test fixture that constructs a `headlinesSchema` output**, add:
+### Environment Variables
 
-```ts
-rssHeadlines: [],
-```
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `MACRO_INTRADAY_ENABLED` | No | Set to `1` to start the 12:30 PM ET intraday cron in the agent service. Default: off (existing behavior unchanged). |
+| `MACRO_INTRADAY_HOUR_ET` | No | ET hour for the intraday trigger. Default: `12`. Only read when `MACRO_INTRADAY_ENABLED=1`. |
 
-**For any test that validates the `macroBriefingDraftSchema` or the briefing output**, add the new fields to the expected output.
+### Acceptance Criteria
 
-**Do not delete or skip failing tests — update them.**
+- `deltas?: string[]` on `MacroSummaryReport`. Prior reports without the field deserialize fine.
+- `fetch-macro-context` queries `agentReports` for the most recent prior report (before `tradingDate`) and passes a compact `priorDay` shape to the LLM. On first run (`priorDay: null`) the prompt instructs the LLM to omit `deltas`.
+- The LLM prompt contains a `Prior day context` block whenever `priorDay` is non-null.
+- `scoreReportQuality()` is called after `macroBriefingDraftSchema.parse()`. It writes warnings to `console.warn` and never throws or blocks delivery.
+- `buildMacroSummaryEmbed()`: `Rates` is absent when `fredData.length === 0`. `Catalysts`, `Sector Rotation`, `Desk Implications` are absent when their arrays are empty. `Deltas` appears when `deltas.length > 0`.
+- `startIntradayCron()` is exported from `lib/agents/macro-cron.ts` and uses `trigger_type: 'macro-intraday'` (distinct from the morning `macro-summary` trigger).
+- `orchestratorMacroIntradayBlueprint` exists, is registered in `lib/agents/config.ts`, and is selected when `job.input.intradayUpdate === true`.
+- `resolveWebhookUrl()` routes `macro-intraday` to `DISCORD_WEBHOOK_MACRO_DAILY`. `buildMacroIntradayEmbed()` renders the intraday report type.
+- Intraday cron does NOT start unless `MACRO_INTRADAY_ENABLED=1`. With the env var unset, `services/agent-entrypoint.ts` behaves exactly as today.
+- `npm run lint && npx tsc --noEmit && npm test` all pass.
 
-**Validate:** `npm run lint && npx tsc --noEmit && npm test`
+### Security Notes
 
----
+- `fetchPriorMacroReport()` reads `agentReports` as `userId: 'system-agent-user'` only. No user data exposure.
+- `MACRO_INTRADAY_ENABLED` / `MACRO_INTRADAY_HOUR_ET` are read server-side only (agent service container). They are not Next.js public env vars and never reach the browser.
+- `scoreReportQuality()` only writes to `console.warn`. No DB persistence, no PII.
 
-### Step 8 — Final Validation
+### Order Of Operations
 
-After all steps:
+1. Type change first (`types.ts`) — everything else imports from it.
+2. Schema + helper additions in `orchestrator-macro-summary.ts` — compile after each chunk.
+3. Embed tightening in `discord.ts` — standalone, easy to validate in isolation.
+4. `macro-cron.ts` export, then intraday blueprint, then `config.ts` resolver wiring.
+5. `services/agent-entrypoint.ts` last (depends on cron export).
+6. Tests after all code compiles clean.
 
-```bash
-npm run lint && npx tsc --noEmit && npm test
-```
+### Complexity
 
-All tests must pass. Note the final test count in a checkpoint comment below.
-
----
-
-## Future Phases (Not Yet Planned)
-
-### Phase 2 — Additional Data Sources
-
-- **Finviz sector heatmap** — scrape sector performance data for more precise sector rotation analysis
-- **CME FedWatch** — rate cut/hike probability data from CME Group (scrapable)
-- **CNN Fear & Greed Index** — composite sentiment indicator
-- **Google News RSS** — topic-specific macro news feeds (free, no API key)
-- Additional RSS feeds (Reuters, CNBC) for broader source diversity
-
-### Phase 3 — Polish & Intelligence
-
-- **Historical comparison** — include yesterday's bias/levels/rates for delta analysis ("10Y up 5bp from yesterday")
-- **Conditional sections** — skip rates section if FRED unavailable; skip key levels if no daily bars
-- **Report quality scoring** — automated check on output quality (did the LLM cite sources? are key levels within recent price range?)
-- **Intraday update** — optional mid-day macro update at 12:30 PM ET with session-so-far analysis
+Medium–high. Highest-risk piece is the intraday blueprint — new code path through the resolver and a new report type through the Discord embed. Risk is contained because it's entirely opt-in (`MACRO_INTRADAY_ENABLED=1`). Historical comparison and quality scoring touch the morning pipeline but are purely additive. Embed tightening is low-risk surgical deletions. Test surface is moderate — 3 test files, ~15–20 new cases.
