@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getCachedTickerData } from '@/lib/askedgar';
 import { fetchDailyAggregates, fetchTickerNews, type MassiveNewsArticle } from '@/lib/massive-market';
+import { buildNewsFeedFromArrays, newsFeedItemSchema, type NewsFeedItem } from '../news-formatter';
 import { writeAndDeliverReport } from '../discord';
 import { upsertMemory } from '../memory';
 import { callLlm } from '../llm-client';
@@ -38,6 +39,7 @@ const filingsSchema = z.object({
   dilutionRating: z.unknown().nullable(),
   registrations: z.array(z.unknown()),
   offerings: z.array(z.unknown()),
+  askEdgarNewsFeed: z.array(newsFeedItemSchema).default([]),
 });
 
 const priceContextSchema = filingsSchema.extend({
@@ -71,16 +73,8 @@ const ohlcEnrichedSchema = priceContextSchema.extend({
   ohlcHistory: z.array(ohlcBarSchema),
 });
 
-const newsArticleSchema = z.object({
-  title: z.string(),
-  publishedUtc: z.string().nullable(),
-  description: z.string().nullable(),
-  sentiment: z.string().nullable(),
-  sentimentReasoning: z.string().nullable(),
-});
-
 const newsEnrichedSchema = ohlcEnrichedSchema.extend({
-  recentNews: z.array(newsArticleSchema),
+  recentNews: z.array(newsFeedItemSchema).default([]),
 });
 
 const deterministicTechnicalsSchema = z.object({
@@ -432,6 +426,12 @@ function toOptionalText(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+function toNewsTimestamp(value: string): number | null {
+  const parsed = new Date(value);
+  const timestamp = parsed.getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
 function findMatchingNewsInsight(article: MassiveNewsArticle, ticker: string) {
   const normalizedTicker = ticker.trim().toUpperCase();
 
@@ -444,7 +444,7 @@ function findMatchingNewsInsight(article: MassiveNewsArticle, ticker: string) {
 function simplifyNewsArticles(
   articles: MassiveNewsArticle[],
   ticker: string,
-): z.infer<typeof newsArticleSchema>[] {
+): NewsFeedItem[] {
   return articles.flatMap((article) => {
     const title = toOptionalText(article.title);
     if (!title) {
@@ -454,13 +454,63 @@ function simplifyNewsArticles(
     const insight = findMatchingNewsInsight(article, ticker);
 
     return [{
-      title,
-      publishedUtc: toOptionalText(article.published_utc),
-      description: toOptionalText(article.description),
+      headline: title,
+      summary: toOptionalText(article.description) ?? '',
+      date: toOptionalText(article.published_utc) ?? '',
+      formType: 'news',
+      url: toOptionalText(article.article_url) ?? '',
+      tags: [],
+      isNews: true,
+      isFiling: false,
       sentiment: toOptionalText(insight?.sentiment),
       sentimentReasoning: toOptionalText(insight?.sentiment_reasoning),
     }];
   });
+}
+
+function mergeRecentNews(items: NewsFeedItem[]): NewsFeedItem[] {
+  const seenHeadlines = new Set<string>();
+  const seenUrls = new Set<string>();
+
+  return items
+    .filter((item) => {
+      const headlineKey = item.headline.trim().toLowerCase();
+      if (headlineKey) {
+        if (seenHeadlines.has(headlineKey)) {
+          return false;
+        }
+        seenHeadlines.add(headlineKey);
+      }
+
+      const urlKey = item.url.trim().toLowerCase();
+      if (urlKey) {
+        if (seenUrls.has(urlKey)) {
+          return false;
+        }
+        seenUrls.add(urlKey);
+      }
+
+      return true;
+    })
+    .sort((left, right) => {
+      const leftTimestamp = left.date ? toNewsTimestamp(left.date) : null;
+      const rightTimestamp = right.date ? toNewsTimestamp(right.date) : null;
+
+      if (leftTimestamp !== null && rightTimestamp !== null) {
+        return rightTimestamp - leftTimestamp;
+      }
+
+      if (leftTimestamp !== null) {
+        return -1;
+      }
+
+      if (rightTimestamp !== null) {
+        return 1;
+      }
+
+      return 0;
+    })
+    .slice(0, 10);
 }
 
 function computeSwingTechnicals(input: z.infer<typeof newsEnrichedSchema>): z.infer<typeof swingPipelineInputSchema> {
@@ -618,11 +668,11 @@ function buildResearchPrompt(input: z.infer<typeof swingPipelineInputSchema>): s
   if (input.recentNews.length > 0) {
     sections.push(
       formatPromptSection('Recent news', input.recentNews),
-      'Use only the articles in the Recent news section when judging catalyst quality. Cite article titles from that section in evidenceIds. Do NOT fabricate news not listed above.',
+      "Use only items in the Recent news section. When rating Catalyst, quote the exact headline text of the single most relevant item and cite its formType (e.g., (8-K) or (news)). Do not claim no news is available unless Recent news is empty.",
     );
   } else {
     sections.push(
-      'No recent news articles available. Rate catalyst based on price action context only and state that no recent news was available.',
+      'Recent news section is empty. Rate catalyst based on price action only and explicitly state that the feed returned no headlines.',
     );
   }
 
@@ -661,6 +711,11 @@ export const swingTraderResearchBlueprint: Blueprint = {
         researchInputSchema.parse({ ticker });
         const result = await getCachedTickerData(ticker);
         const rawData = result.rawData as Record<string, unknown>;
+        const askEdgarNewsFeed = buildNewsFeedFromArrays(
+          readResults(rawData['news']),
+          readResults(rawData['filing-titles']),
+          { maxItems: 8, maxAgeDays: 30 },
+        );
 
         return completedResult({
           ticker,
@@ -670,6 +725,7 @@ export const swingTraderResearchBlueprint: Blueprint = {
           dilutionRating: readNullableSectionFirst(rawData, 'dilution-rating', 'dilutionRating'),
           registrations: readSection(rawData, 'registrations'),
           offerings: readSection(rawData, 'offerings'),
+          askEdgarNewsFeed,
         }, {
           durationMs: Date.now() - startedAt,
           sourceIds: [`askedgar:${ticker}`],
@@ -734,13 +790,21 @@ export const swingTraderResearchBlueprint: Blueprint = {
       run: async ({ previousOutput }) => {
         const startedAt = Date.now();
         const data = ohlcEnrichedSchema.parse(previousOutput);
-        let recentNews: z.infer<typeof newsArticleSchema>[] = [];
+        const askEdgarNewsFeed = data.askEdgarNewsFeed;
+        let recentNews: NewsFeedItem[] = [];
+        let massiveNewsAvailable = false;
 
         try {
           const articles = await fetchTickerNews(data.ticker, 3);
-          recentNews = simplifyNewsArticles(articles, data.ticker);
+          const massiveNews = simplifyNewsArticles(articles, data.ticker);
+          massiveNewsAvailable = massiveNews.length > 0;
+          recentNews = mergeRecentNews([
+            ...askEdgarNewsFeed,
+            ...massiveNews,
+          ]);
         } catch (error) {
           console.warn(`[swing-trader] News fetch failed for ${data.ticker}:`, error);
+          recentNews = mergeRecentNews(askEdgarNewsFeed);
         }
 
         return completedResult({
@@ -748,7 +812,12 @@ export const swingTraderResearchBlueprint: Blueprint = {
           recentNews,
         }, {
           durationMs: Date.now() - startedAt,
-          sourceIds: recentNews.length > 0 ? [`massive-news:${data.ticker}`] : [],
+          sourceIds: recentNews.length > 0
+            ? [
+              ...(askEdgarNewsFeed.length > 0 ? [`askedgar:${data.ticker}`] : []),
+              ...(massiveNewsAvailable ? [`massive-news:${data.ticker}`] : []),
+            ]
+            : [],
           upstreamStepIds: ['fetch-ohlc-history'],
         });
       },

@@ -15,13 +15,12 @@ If no specific focus is given, scan the entire project.
 - **SQL Injection**: All database queries in `lib/db.ts` and API routes must use parameterized queries via Drizzle ORM, never raw string interpolation
 - **XSS**: Check for `dangerouslySetInnerHTML`, unescaped user input rendered in JSX, or raw HTML responses
 - **Command Injection**: Check for `exec()`, `spawn()`, or shell commands using user input
-- Look at the Schwab OAuth callback for HTML injection in the popup response
 
 ### 3. Secrets & Environment Variables
 - `.env.local` must be in `.gitignore`
 - No hardcoded secrets, API keys, or tokens in source code
 - `NEXTAUTH_SECRET` is set and sufficiently random
-- Schwab tokens in DB are never returned to the client
+- `ASKEDGAR_API_KEY`, `MASSIVE_API_KEY`, `DISCORD_BOT_TOKEN` are read server-side only
 - No secrets logged via `console.log` or `console.error`
 
 ### 4. API Security
@@ -33,14 +32,14 @@ If no specific focus is given, scan the entire project.
 
 ### 5. Client-Side Security
 - No sensitive data stored in localStorage (tokens, secrets)
-- `postMessage` listeners validate origin (check Schwab OAuth popup)
+- `postMessage` listeners validate origin
 - External links use `rel="noopener noreferrer"`
 - CSP headers configured if applicable
 
 ### 6. Dependency Vulnerabilities
 - Run `npm audit` mentally — flag any known vulnerable packages
 - Check for outdated packages with known CVEs
-- Verify no unnecessary dependencies (e.g., `firebase-tools` if unused)
+- Verify no unnecessary dependencies
 
 ## Output Format
 

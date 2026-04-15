@@ -12,9 +12,9 @@ Debug the following issue: $ARGUMENTS
 3. **Check Common Pitfalls in This Codebase**:
    - `useTrades` hook manages all trade state — check if the issue is in the hook vs the consuming component
    - Dual persistence: is the bug localStorage-only or cloud (Neon/PostgreSQL) specific? Check `/api/health` response
-   - CSV import: `processCsvData()` silently drops unmatched executions — could data be missing?
-   - Schwab OAuth: tokens stored server-side only — check expiration and refresh logic
+   - CSV import: parsers in `lib/parsers/` may silently drop unmatched executions — could data be missing?
    - NextAuth v5: session available via `auth()` server-side or `useSession()` client-side
+   - AskEdgar: `ASKEDGAR_DAILY_LIMIT` caps requests — check for quota-exhaustion errors in `lib/askedgar.ts`
 
 4. **Identify Root Cause**: Pin down the exact file, function, and line where the bug originates.
 

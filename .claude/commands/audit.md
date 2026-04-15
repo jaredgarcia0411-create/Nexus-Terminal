@@ -11,7 +11,7 @@ Launch up to 3 Explore agents in parallel using the Agent tool. Each agent shoul
 Check `/home/jared/Nexus-Terminal/.claude/CLAUDE.md` against reality:
 - **Counts**: Run `find app/api -name route.ts | wc -l` and compare to the route count in CLAUDE.md. Count tables in `lib/db/schema.ts` and compare to the table count. Count files in `hooks/` and check if a count is claimed.
 - **File existence**: Every file path mentioned in CLAUDE.md — verify it exists. Flag any that don't.
-- **Module lists**: Check exports from `lib/indicators.ts`, files in `lib/jarvis/`, files in `lib/parsers/` — compare to what CLAUDE.md lists.
+- **Module lists**: Check exports from `lib/indicators.ts`, files in `lib/parsers/`, files in `lib/discord/`, files in `lib/validations/` — compare to what CLAUDE.md lists.
 - **Stack versions**: Check `package.json` versions for Next.js, React, TypeScript, Drizzle, NextAuth against CLAUDE.md claims.
 - **Tab mapping**: Compare tab keys and order in `app/page.tsx` to the CLAUDE.md table.
 - **Env vars**: Search for `process.env.` references across the codebase and compare to the env vars table.

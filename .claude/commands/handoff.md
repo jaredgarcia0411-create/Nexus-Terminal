@@ -20,7 +20,7 @@ Use the Agent tool with `subagent_type: "nexus-architect"` to:
 3. Produce a step-by-step implementation spec
 
 The spec MUST follow this format for every change:
-- **File:** exact path (e.g., `lib/jarvis/research.ts`)
+- **File:** exact path (e.g., `lib/research.ts`)
 - **Action:** CREATE, MODIFY, or DELETE
 - **Step-by-step instructions** numbered, with:
   - Exact line numbers or anchor points ("after the `import` block", "replace lines 45-52")

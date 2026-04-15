@@ -27,9 +27,7 @@ Run in order:
 2. `npx tsc --noEmit`
 3. `npm test`
 
-If the spec involves `services/schwab-relay`, also run:
-4. `cd services/schwab-relay && npx tsc --noEmit`
-5. `cd services/schwab-relay && npm run build`
+If the spec touches anything under `services/`, also run the service-local build/test scripts (check the service's `package.json` or `Dockerfile`).
 
 ### Step 4: Report
 

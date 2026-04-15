@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { getCachedTickerData } from '@/lib/askedgar';
+import { buildNewsFeedFromArrays, newsFeedItemSchema } from '../news-formatter';
 import { writeAndDeliverReport } from '../discord';
 import { callLlm } from '../llm-client';
 import { upsertMemory } from '../memory';
@@ -45,6 +46,7 @@ const edgarSectionsSchema = z.object({
   nasdaqCompliance: z.unknown().nullable(),
   pumpAndDumpTracker: z.unknown().nullable(),
   news: z.array(z.unknown()),
+  filingTitles: z.array(z.unknown()).default([]),
   cashPosition: z.unknown().nullable(),
 });
 
@@ -89,11 +91,7 @@ const deterministicAnalysisSchema = z.object({
 
 const researchPipelineInputSchema = priceContextSchema.extend({
   deterministicAnalysis: deterministicAnalysisSchema,
-  newsDigest: z.array(z.object({
-    title: z.string(),
-    date: z.string(),
-    type: z.string(),
-  })),
+  newsFeed: z.array(newsFeedItemSchema).default([]),
 });
 
 const trafficLightRating = z.enum(['green', 'yellow', 'red']);
@@ -438,23 +436,6 @@ function extractNewsMetrics(newsItems: unknown[]): {
   };
 }
 
-function buildNewsDigest(newsItems: unknown[]): { title: string; date: string; type: string }[] {
-  const digest: { title: string; date: string; type: string }[] = [];
-
-  for (const item of newsItems) {
-    if (!isValidRecord(item)) {
-      continue;
-    }
-
-    const title = getStringField(item, ['title', 'summary']) ?? '(untitled)';
-    const date = getStringField(item, ['filed_at', 'filedAt']) ?? 'unknown';
-    const type = getStringField(item, ['form_type', 'formType']) ?? 'unknown';
-    digest.push({ title, date, type });
-  }
-
-  return digest;
-}
-
 function computeDeterministicAnalysis(input: z.infer<typeof priceContextSchema>): z.infer<typeof deterministicAnalysisSchema> {
   const newsMetrics = extractNewsMetrics(asArray(input.news));
   const gapRows = asArray(input.gapStats)
@@ -676,13 +657,15 @@ function buildResearchPrompt(input: z.infer<typeof researchPipelineInputSchema>)
       formatPromptSection('agreements', input.agreements),
       formatPromptSection('nasdaqCompliance', input.nasdaqCompliance),
       formatPromptSection('pumpAndDumpTracker', input.pumpAndDumpTracker),
-      formatPromptSection('newsDigest (title, date, type only)', input.newsDigest),
+      formatPromptSection('Recent news & filings (headline, date, formType, summary)', input.newsFeed),
       formatPromptSection('cashPosition', input.cashPosition),
     ].join('\n\n'),
     formatPromptSection('Deterministic analysis', input.deterministicAnalysis),
     'Use the JMT traffic-light rating system. Each rating must be "green", "yellow", or "red" (lowercase).',
-    'For jmt415Commentary: if deterministicAnalysis.hasJmt415Content is false, set to null. If true, note the presence of JMT content based on the news digest.',
+    'For jmt415Commentary: if deterministicAnalysis.hasJmt415Content is false, set to null. If true, note the presence of JMT content based on the Recent news & filings section.',
     'For historicalStats: summarize gap-stats patterns (avg gap fade, same-day fade count, typical range). If no gap-stats data, say "No historical gap data available."',
+    "When rating 'News / Why It's Running', quote the exact headline text of the single most relevant item from the Recent news & filings section. Reference the formType in parentheses (e.g., (8-K)).",
+    'Do not claim "no recent news available" unless the Recent news & filings section is empty. Do not fabricate headlines.',
     'Use the Deterministic analysis section as precomputed inputs. Do not recalculate those values in the response.',
   ].join('\n\n');
 }
@@ -730,6 +713,7 @@ export const smallCapResearchBlueprint: Blueprint = {
           nasdaqCompliance: readResults(rawData['nasdaq-compliance'])[0] ?? null,
           pumpAndDumpTracker: readResults(rawData['pump-and-dump-tracker'])[0] ?? null,
           news: readResults(rawData['news']),
+          filingTitles: readResults(rawData['filing-titles']),
           cashPosition,
           warnings: Array.isArray((result as { warnings?: unknown }).warnings)
             ? (result as { warnings: string[] }).warnings
@@ -776,7 +760,11 @@ export const smallCapResearchBlueprint: Blueprint = {
         return completedResult({
           ...input,
           deterministicAnalysis,
-          newsDigest: buildNewsDigest(asArray(input.news)),
+          newsFeed: buildNewsFeedFromArrays(
+            asArray(input.news),
+            asArray(input.filingTitles),
+            { maxItems: 10, maxAgeDays: 30 },
+          ),
         }, {
           durationMs: Date.now() - startedAt,
           upstreamStepIds: ['fetch-price-context'],

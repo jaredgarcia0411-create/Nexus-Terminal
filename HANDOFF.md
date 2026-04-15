@@ -1069,3 +1069,178 @@ Run: `npm run lint && npx tsc --noEmit && npm test`
 ### Complexity
 
 Medium–high. Highest-risk piece is the intraday blueprint — new code path through the resolver and a new report type through the Discord embed. Risk is contained because it's entirely opt-in (`MACRO_INTRADAY_ENABLED=1`). Historical comparison and quality scoring touch the morning pipeline but are purely additive. Embed tightening is low-risk surgical deletions. Test surface is moderate — 3 test files, ~15–20 new cases.
+
+---
+
+## News Pipeline Unification — Both Specialists
+
+> Generated: 2026-04-15
+> Status: IMPLEMENTED 2026-04-15 — automated validation passed; live BIRD smoke still pending
+> Tier 2 priority (T2.0) in FUTURE-PLANS.md
+
+### Execution Summary
+
+- Added shared AskEdgar news normalization in `lib/agents/news-formatter.ts` plus `__tests__/news-formatter.test.ts` coverage for news-vs-filing headline selection, age filtering, and deduplication.
+- Small-cap research now carries `filingTitles`, builds `newsFeed`, and prompts the LLM to quote the exact headline + `formType` when explaining News / Why It's Running.
+- Swing-trader research now builds `askEdgarNewsFeed`, merges it with Massive news into one deduplicated `recentNews` feed, and prompts the LLM to quote the exact headline + `formType` when explaining Catalyst.
+- Updated `lib/agents/prompts/small-cap.md` and `lib/agents/prompts/swing-trader.md` with the same quote-the-headline requirement.
+
+### Validation
+
+1. `npm run lint` — passed
+2. `npx tsc --noEmit` — passed
+3. `npm test` — passed (`46` files, `340` tests)
+
+### Follow-up
+
+1. Run a live `/api/agents/research` smoke check for `BIRD` (small-cap + swing-trader) in an environment with AskEdgar/Massive/LLM access and confirm the delivered explanations quote a real headline.
+
+### Problem
+
+Observed on BIRD (04/15/26):
+
+- **Swing-trader** said "No recent news articles are available" in its Catalyst section.
+- **Small-cap** said "the recent 8-K filing was a legitimate catalyst" but did not quote the actual headline.
+- **AskEdgar had the full story** — a 04/15 8-K announcing a $50M convertible financing facility and pivot from footwear to "NewBird AI" (GPU-as-a-Service), on top of an earlier 03/30 asset sale + dissolution plan.
+
+### Root Causes
+
+1. **Swing-trader never reads AskEdgar news.** `fetch-filings` step (`lib/agents/blueprints/swing-trader-research.ts:652-678`) calls `getCachedTickerData()` but only reads `gap-stats`, `ownership`, `historical-float-pro`, `dilution-rating`, `registrations`, `offerings`. The later `fetch-news` step (`:729-754`) only calls `fetchTickerNews()` from Massive, which is a price-feed news API and commonly misses SEC-filing-driven catalysts.
+2. **Small-cap strips context.** `buildNewsDigest()` (`lib/agents/blueprints/small-cap-research.ts:441-456`) reduces each item to `{title, date, type}` with fallback `'(untitled)'`. Per AskEdgar docs (`docs/AE_API_DOCS.md:828`): "The `body`, `title`, `author`, and `channels` fields are **only populated for `form_type = "news"`**. For SEC filings, use the `summary` field instead." So 8-Ks arrive with empty `title`, fall through to `'(untitled)'`, and the LLM has nothing to quote.
+3. **`/v1/filing-titles` is fetched but unused in blueprints.** `fetchTickerData()` (`lib/askedgar.ts:495`) already calls `/v1/filing-titles`, which returns AI-generated one-liners like "Announces $50M ATM offering program". Small-cap's `fetch-filings` (`:732`) only reads `rawData['news']` and ignores `rawData['filing-titles']`. Swing-trader ignores both.
+4. **Prompts lack a "quote the headline" instruction.** Neither blueprint tells the LLM to embed the actual headline string in its Catalyst/News-Why-Running explanation.
+
+AskEdgar `/v1/news` supports `hide_filings=true`, `hide_news=true`, `date_from`, `tag=...`, but we don't need new endpoints — everything needed is already fetched.
+
+### Objective
+
+Both specialists quote real headlines from AskEdgar news + filing-titles in their Catalyst (swing) and News/Why It's Running (small-cap) sections. Swing-trader's Massive news feed stays as a supplement, not the sole source.
+
+### Files To Modify
+
+1. **NEW** `lib/agents/news-formatter.ts` — shared helper
+2. `lib/agents/blueprints/small-cap-research.ts` — `fetch-filings` step + `buildNewsDigest` removal + prompt
+3. `lib/agents/blueprints/swing-trader-research.ts` — `fetch-filings` step + `fetch-news` step + prompt
+4. `lib/agents/prompts/small-cap.md` — add quote-the-headline instruction
+5. `lib/agents/prompts/swing-trader.md` — add quote-the-headline instruction
+6. **NEW** `__tests__/news-formatter.test.ts` — unit tests with fixtures
+
+No schema changes. No new npm deps. No new env vars.
+
+### Ordered Work
+
+#### Step 1 — Create `lib/agents/news-formatter.ts`
+
+Exports one function: `buildNewsFeed(rawData: Record<string, unknown>, options?): NewsFeedItem[]`.
+
+```ts
+export type NewsFeedItem = {
+  headline: string;       // always populated — never "(untitled)"
+  summary: string;        // short excerpt, may be empty
+  date: string;           // ISO date string ('' if missing)
+  formType: string;       // 'news', '8-K', '10-Q', 'S-3', etc.
+  url: string;            // document_url if present, else ''
+  tags: string[];         // AskEdgar tags array
+  isNews: boolean;        // true for form_type === 'news'
+  isFiling: boolean;      // true for SEC filings
+};
+
+export type BuildNewsFeedOptions = {
+  maxItems?: number;        // default 10
+  maxAgeDays?: number;      // default 30
+  nowMs?: number;           // injectable for tests
+};
+```
+
+Logic:
+
+1. Read `rawData['news']` and `rawData['filing-titles']` with `readResults()` (small-cap already has this helper; reuse pattern from `small-cap-research.ts:170`).
+2. Build a lookup map `filingTitlesByKey: Map<string, string>` keyed by `accession_number` and by `${formType}|${date}` — values are the `headline` string from filing-titles.
+3. Iterate news items. For each:
+   - If `form_type === 'news'`: `headline = title ?? body (first 160 chars) ?? 'News item'`, `summary = body` excerpt.
+   - Else (SEC filing): `headline = filingTitlesByKey.get(accession) ?? filingTitlesByKey.get(formTypeDateKey) ?? summary ?? '${formType} filing'`, `summary = summary ?? ''`.
+4. Deduplicate (same `accession_number` or same `url`).
+5. Filter items older than `maxAgeDays` (parse date; keep when unparseable to avoid dropping real hits on bad data — log via `console.warn` if noisy).
+6. Sort by date desc.
+7. Trim to `maxItems`.
+
+Use existing helpers: `getStringField()`, `isValidRecord()` from `small-cap-research.ts` — extract them into `lib/agents/askedgar-readers.ts` (or similar) **only if** both blueprints already import duplicates. Otherwise inline small helpers inside `news-formatter.ts` to avoid churn.
+
+Each field uses a defensive fallback (`?? ''`). Never return `headline === '(untitled)'`.
+
+#### Step 2 — Wire into small-cap `fetch-filings` step
+
+In `lib/agents/blueprints/small-cap-research.ts`:
+
+1. Add `filingTitles: unknown[]` to `edgarSectionsSchema` (find the z.object near the top of the file).
+2. In `fetch-filings` run() body (line ~717), add `filingTitles: readResults(rawData['filing-titles'])` to the return object.
+3. In `fetch-price-context` / wherever `newsDigest` is computed, pass both `news` and `filingTitles` into `buildNewsFeed(rawData, {...})`. Simplest shape: add a call that takes the already-extracted arrays and returns the unified feed. To avoid re-plumbing `rawData`, have `buildNewsFeed` accept an alternate overload: `buildNewsFeedFromArrays(news, filingTitles, opts)`. Expose both.
+4. Remove `buildNewsDigest()` calls and the `newsDigest` schema field. Replace with `newsFeed: NewsFeedItem[]` (declared as a zod object schema — use `z.object({...})` mirroring the exported type, since zod does not import TS types).
+5. Update `extractNewsMetrics()` to accept either the raw AskEdgar `news` array (current) or the new `newsFeed` — whichever is simpler. Keep deterministic output untouched (that's what T1.2 shipped).
+6. In `buildResearchPrompt()` (`:641-688`), replace `formatPromptSection('newsDigest (title, date, type only)', input.newsDigest)` with `formatPromptSection('Recent news & filings (headline, date, formType, summary)', input.newsFeed)`.
+7. Add these instructions immediately after the section:
+   - `"When rating 'News / Why It's Running', quote the exact headline text of the single most relevant item from the Recent news & filings section. Reference the formType in parentheses (e.g., (8-K))."`
+   - `"Do not claim 'no recent news available' unless the Recent news & filings section is empty. Do not fabricate headlines."`
+
+#### Step 3 — Wire into swing-trader `fetch-filings` + `fetch-news`
+
+In `lib/agents/blueprints/swing-trader-research.ts`:
+
+1. Extend `filingsSchema` to include `askEdgarNewsFeed: z.array(newsFeedItemSchema)` (export the zod schema from `news-formatter.ts`).
+2. In `fetch-filings` (`:657-678`), after reading the other sections, call `buildNewsFeedFromArrays(readResults(rawData['news']), readResults(rawData['filing-titles']), { maxItems: 8, maxAgeDays: 30 })` and put the result in `askEdgarNewsFeed`.
+3. In `fetch-news` (`:729-754`), keep the Massive call but **merge** its output with `askEdgarNewsFeed` into a single `recentNews` array passed to the LLM. Shape can stay as a union — simplest is to convert Massive articles to `NewsFeedItem` shape (`isNews: true, isFiling: false, formType: 'news'`) and concat with AskEdgar entries, then de-dupe by headline and sort by date desc, cap at 10.
+4. Update `simplifyNewsArticles()` only if needed to match the `NewsFeedItem` shape — it currently produces `{title, publishedUtc, description, sentiment, sentimentReasoning}`. Map `title → headline`, `publishedUtc → date`, `description → summary`. Keep `sentiment`/`sentimentReasoning` as optional extras on `NewsFeedItem` (add to the schema as optional strings) so the LLM still sees Massive's sentiment tags when present.
+5. In `buildResearchPrompt()` (`:618-627`), the existing `formatPromptSection('Recent news', input.recentNews)` stays, but replace the strict/fabrication warning with:
+   - `"Use only items in the Recent news section. When rating Catalyst, quote the exact headline text of the single most relevant item and cite its formType (e.g., (8-K) or (news)). Do not claim no news is available unless Recent news is empty."`
+6. Keep the existing "no news" fallback path (`:624-626`) but tighten the language: `"Recent news section is empty. Rate catalyst based on price action only and explicitly state that the feed returned no headlines."`.
+
+#### Step 4 — Prompt file updates
+
+Add a single short line to each of these markdown files:
+
+- `lib/agents/prompts/small-cap.md` — under the News/Why-Running section: `"Your explanation MUST quote the exact headline of the most relevant news or filing from the provided feed, followed by the formType in parentheses. Example: \"Announces $50M convertible financing (8-K)\"."`
+- `lib/agents/prompts/swing-trader.md` — under the Catalyst section: same instruction.
+
+#### Step 5 — Tests
+
+Create `__tests__/news-formatter.test.ts`. Fixtures:
+
+- A. `news` array with one `form_type: 'news'` item (title + body populated) → headline uses title.
+- B. `news` array with an 8-K (title empty, summary populated) **plus** matching `filing-titles` entry → headline uses filing-titles `headline`.
+- C. 8-K with no matching filing-titles but summary present → headline uses summary.
+- D. 8-K with neither → headline falls back to `'8-K filing'`.
+- E. Items older than `maxAgeDays` are filtered out.
+- F. Duplicates by `accession_number` collapse to one.
+- G. Empty `rawData` returns `[]`.
+
+Assert `headline` is never `''` and never `'(untitled)'`.
+
+Also update any existing `small-cap-research.test.ts` / `swing-trader-research.test.ts` fixtures that depended on the old `newsDigest` shape.
+
+#### Step 6 — Validate
+
+1. `npm run lint`
+2. `npx tsc --noEmit`
+3. `npm run test`
+4. Smoke-test against BIRD (or any recent 8-K ticker) via the admin research route and confirm Discord embeds include the quoted headline.
+
+### Acceptance Criteria
+
+1. `buildNewsFeed()` unit tests pass with the 7 fixtures above.
+2. Small-cap `newsFeed` output for a ticker with only SEC filings contains human-readable headlines (not `'(untitled)'` or `'8-K'`).
+3. Swing-trader `recentNews` output for the same ticker includes both AskEdgar and Massive entries, de-duplicated.
+4. Discord embeds for a test run on BIRD quote a real headline in both Catalyst (swing) and News/Why Running (small-cap).
+5. `npm run lint && npx tsc --noEmit && npm run test` all pass.
+6. Zero changes to DB schema, env vars, or npm deps.
+
+### Security Notes
+
+- No new secrets. Uses existing `ASKEDGAR_API_KEY` and `MASSIVE_API_KEY`.
+- No client-side exposure — all new code runs in server/agent context.
+- Headlines may include filing URLs; those are SEC/public. Log truncation not required.
+
+### Complexity
+
+Medium. Main risk is schema plumbing — swing-trader's pipeline is a chain of zod-parsed step outputs, so adding `askEdgarNewsFeed` requires updating every downstream schema that inherits from `filingsSchema`. Codex should resolve each `parse()` call in the chain after editing `filingsSchema`. Small-cap is cleaner — the new `newsFeed` field replaces `newsDigest` in one place.
+
+Test surface is small (~7 unit tests + 2 fixture updates). No new infrastructure.

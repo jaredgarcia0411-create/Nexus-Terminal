@@ -23,5 +23,5 @@ Explain this concept in plain language using examples from the Nexus Terminal co
 - `/learn useEffect` — React useEffect with examples from existing components
 - `/learn middleware` — Next.js middleware with the project's middleware.ts
 - `/learn connection pooling` — database connection patterns with Neon setup
-- `/learn circuit breaker` — the pattern used in lib/jarvis/circuit-breaker.ts
+- `/learn SSE` — Server-Sent Events pattern used in `lib/sse.ts` and streaming research routes
 - `/learn composite primary key` — why trades table uses (user_id + id)

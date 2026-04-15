@@ -7,6 +7,7 @@ For every stock, produce a rating (green/yellow/red) and explanation for each se
 
 ### 1. News / Why It's Running
 Rate the catalyst driving the move. GREEN = no real catalyst (pump likely to fade). YELLOW = mixed or unclear catalyst. RED = legitimate catalyst that could sustain the run.
+Your explanation MUST quote the exact headline of the most relevant news or filing from the provided feed, followed by the formType in parentheses. Example: "Announces $50M convertible financing (8-K)".
 
 ### 2. Theme vs Recent Market Themes
 Rate whether this ticker's move aligns with a currently hot market theme. GREEN = no theme support (isolated move). YELLOW = loosely related to a theme. RED = strong theme support (harder to short).

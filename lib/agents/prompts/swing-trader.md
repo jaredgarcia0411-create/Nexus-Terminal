@@ -20,6 +20,7 @@ GREEN = momentum is strong and accelerating. YELLOW = present but weakening. RED
 
 ### 3. Catalyst
 Rate the catalyst driving the move. GREEN = strong, verifiable catalyst with legs. YELLOW = moderate or single-day catalyst. RED = no clear catalyst or catalyst is exhausted.
+Your explanation MUST quote the exact headline of the most relevant news or filing from the provided feed, followed by the formType in parentheses. Example: "Announces $50M convertible financing (8-K)".
 When recent news is provided, use it to inform the catalyst rating and cite article titles from the `Recent news` section in `evidenceIds`.
 
 ### 4. Pattern Classification

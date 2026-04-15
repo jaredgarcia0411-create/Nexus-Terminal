@@ -1345,7 +1345,16 @@ describe('agent blueprints', () => {
           hasJmt415Content: false,
           catalystCategories: ['424B5'],
         },
-        newsDigest: [{ title: 'Shelf filing', date: '2026-04-12', type: '424B5' }],
+        newsFeed: [{
+          headline: 'Shelf filing',
+          summary: 'Shelf filing summary',
+          date: '2026-04-12',
+          formType: '424B5',
+          url: '',
+          tags: [],
+          isNews: false,
+          isFiling: true,
+        }],
       },
     }));
 
@@ -1359,7 +1368,10 @@ describe('agent blueprints', () => {
       userMessage: expect.stringContaining('Deterministic analysis:\n'),
     }), 'background');
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
-      userMessage: expect.stringContaining('newsDigest (title, date, type only):\n'),
+      userMessage: expect.stringContaining('Recent news & filings (headline, date, formType, summary):\n'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining("quote the exact headline text of the single most relevant item"),
     }), 'background');
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.not.stringContaining('Filings:\n'),
@@ -1593,9 +1605,14 @@ describe('agent blueprints', () => {
     expect(result.data).toMatchObject({
       ticker: 'AAPL',
       recentNews: [{
-        title: 'Apple extends AI rollout after breakout week',
-        publishedUtc: '2026-04-12T13:00:00Z',
-        description: 'The company highlighted expanded rollout plans and partner momentum.',
+        headline: 'Apple extends AI rollout after breakout week',
+        summary: 'The company highlighted expanded rollout plans and partner momentum.',
+        date: '2026-04-12T13:00:00Z',
+        formType: 'news',
+        url: '',
+        tags: [],
+        isNews: true,
+        isFiling: false,
         sentiment: 'positive',
         sentimentReasoning: 'Expansion headline supports continuation interest.',
       }],
@@ -1710,9 +1727,14 @@ describe('agent blueprints', () => {
           { date: '2026-04-12', open: 10.8, high: 11.2, low: 10.7, close: 11.0, volume: 280, vwap: 10.9 },
         ],
         recentNews: [{
-          title: 'Analyst upgrade sparks fresh breakout chatter',
-          publishedUtc: '2026-04-12T13:00:00Z',
-          description: 'Street desks cited stronger demand and improving sponsorship.',
+          headline: 'Analyst upgrade sparks fresh breakout chatter',
+          summary: 'Street desks cited stronger demand and improving sponsorship.',
+          date: '2026-04-12T13:00:00Z',
+          formType: 'news',
+          url: '',
+          tags: [],
+          isNews: true,
+          isFiling: false,
           sentiment: 'positive',
           sentimentReasoning: 'Upgrades and sponsorship are supporting the move.',
         }],
@@ -1763,7 +1785,7 @@ describe('agent blueprints', () => {
       userMessage: expect.stringContaining('Analyst upgrade sparks fresh breakout chatter'),
     }), 'background');
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
-      userMessage: expect.stringContaining('Cite article titles from that section in evidenceIds.'),
+      userMessage: expect.stringContaining('quote the exact headline text of the single most relevant item'),
     }), 'background');
     expect(result.data).toMatchObject({
       ticker: 'AAPL',
@@ -1852,7 +1874,7 @@ describe('agent blueprints', () => {
     }));
 
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
-      userMessage: expect.stringContaining('No recent news articles available. Rate catalyst based on price action context only'),
+      userMessage: expect.stringContaining('Recent news section is empty. Rate catalyst based on price action only and explicitly state that the feed returned no headlines.'),
     }), 'background');
   });
 });

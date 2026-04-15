@@ -56,7 +56,7 @@ Personal trading terminal for a small private team. Not SaaS — purpose-built f
 | `research` | `ResearchTab` | Full-width |
 
 ## Backend
-- Next.js API routes under `app/api/` — run `find app/api -name route.ts` to list all 17 routes
+- Next.js API routes under `app/api/` — run `find app/api -name route.ts` to list all 25 routes
 - Auth: NextAuth v5 beta (5.0.0-beta.30), Google OAuth, JWT sessions
 - All routes protected via `requireUser()` except `/api/health`
 - Middleware in `middleware.ts` protects all routes except `/login`, `/api/*`, static assets
@@ -66,7 +66,7 @@ Import from `lib/server-db-utils.ts`. Returns `{ user: { id, email, name, pictur
 
 ## Database
 - PostgreSQL via Neon serverless (`@neondatabase/serverless`)
-- ORM: Drizzle v0.45.1, schema at `lib/db/schema.ts` (14 tables — read schema directly for details)
+- ORM: Drizzle v0.45.1, schema at `lib/db/schema.ts` (23 tables — read schema directly for details)
 - Connection: HTTP client for reads, WebSocket pool for transactions
 - Migrations output to `drizzle/` directory
 

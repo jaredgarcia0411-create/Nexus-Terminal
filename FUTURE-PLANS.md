@@ -242,25 +242,33 @@ The triggers above remain the right gates. Revisit after agents have been runnin
 
 ---
 
-## Agent Response Quality (2026-04-10, updated 2026-04-13)
+## Agent Response Quality (2026-04-10, updated 2026-04-15)
 
-### Completed — P0 through P2 (2026-04-12)
+### Completed — P0 through Tier 1 (2026-04-13)
 
-P0, P1, and P2 are implemented. Execution details archived in HANDOFF.md under "Agent Response Improvement — Reports + Macro Summary" (Steps 1-6). Key deliverables:
+P0, P1, P2, and Tier 1 are implemented. Execution details archived in HANDOFF.md (collapsed summary at top — "T1.1–T1.3 specialist blueprints completed 2026-04-13"). Key deliverables:
 
 - **P2.1** Persist assistant conversation turns — `orchestrator-chat.ts` inserts `role: 'assistant'` rows after synthesis.
 - **P2.2** Route specialist results back to Discord — `discord-bot/index.ts` polls specialist jobs and replies inline.
-- **P2.3** Extend deterministic report inputs — Both blueprints have `RSI`, `MACD.macd`, `EMA9`, `EMA21`, `High.1M`, `Low.1M`; small-cap computes 14 deterministic fields; swing computes `relativeVolume`, `extension5d/10d`.
-- **P2.4** Memory writes after research — **Swing only.** Thesis memory with 7-day TTL. Small-cap does NOT write memory yet (promoted to Tier 1 below).
+- **P2.3** Deterministic report inputs — Both blueprints have `RSI`, `MACD.macd`, `EMA9`, `EMA21`, `High.1M`, `Low.1M`; small-cap computes 14 deterministic fields; swing computes `relativeVolume`, `extension5d/10d`.
+- **P2.4 / T1.1** Memory writes after research — Swing + small-cap both upsert thesis memory with 7-day TTL.
 - **P2.5** Report and embed contract cleanup — Typed renderers in `discord.ts` for all three report types; typed contracts in `types.ts`.
-
-### Tier 1 — In Progress (execution spec in HANDOFF.md)
-
-**T1.1: Small-cap thesis memory writes** — parity with swing's existing memory upsert pattern.
-**T1.2: Deterministic news/catalyst extraction for small-cap** — parse `news` array before LLM step.
-**T1.3: Swing deterministic gap-day comparison** — compute gap-stats metrics like small-cap already does.
+- **T1.2** Deterministic news/catalyst extraction for small-cap — `extractNewsMetrics()` in `small-cap-research.ts:376-439` scans news array before LLM step (flags `hasFilingCatalyst`, `catalystCategories`, etc.).
+- **T1.3** Swing deterministic gap-day comparison — gap-stats metrics computed alongside small-cap.
+- **Swing-Trader Massive News integration** (2026-04-14) — `fetch-news` step calls `fetchTickerNews(ticker, 3)` from Massive and feeds `recentNews` array into the LLM prompt.
 
 ### Tier 2 — Next Sprint (Medium Impact, Medium Effort)
+
+**T2.0: News Pipeline Unification — BIRD Catalyst Gap (2026-04-15)** 🔴 HIGHEST PRIORITY
+
+Observed on BIRD (04/15/26): swing-trader Catalyst section said "No recent news articles are available" and small-cap said "the recent 8-K filing was a legit catalyst" without quoting the actual headline. AskEdgar clearly had the news (convertible financing + pivot from footwear to "NewBird AI" GPU-as-a-Service). Root causes:
+
+1. **Swing-trader never reads AskEdgar news.** `fetch-news` step (`swing-trader-research.ts:729-754`) only calls Massive's `fetchTickerNews()`, which is a general-news API that misses SEC-filing-driven catalysts like 8-Ks. The `fetch-filings` step calls `getCachedTickerData()` but extracts only `gapStats`, `ownership`, `historicalFloat`, `dilutionRating`, `registrations`, `offerings` — never `news` or `filing-titles`.
+2. **Small-cap strips context.** `buildNewsDigest()` (`small-cap-research.ts:441-456`) reduces each item to `{title, date, type}` with fallback `'(untitled)'`. AskEdgar's `/v1/news` response leaves `title` empty for SEC filings (only populated for `form_type = "news"`) — so 8-Ks show up as "(untitled)" and the LLM has nothing to quote.
+3. **`/v1/filing-titles` is fetched but ignored in small-cap's `fetch-filings` step.** The endpoint returns AI-generated one-liners like "Announces $50M ATM offering program" — exactly what the Catalyst section needs — but `fetch-filings` at line 732 only reads `rawData['news']`.
+4. **Both prompts lack "quote the headline" instruction.** Neither blueprint tells the LLM to embed the actual headline string in its Catalyst explanation.
+
+**Fix:** Build shared news-formatter helper, wire it into both blueprints, update prompts. See the execution spec in `HANDOFF.md` — "News Pipeline Unification" section. Complexity: MEDIUM.
 
 **T2.1: Per-section source attribution**
 - Files: `lib/agents/types.ts`, both specialist blueprints, `lib/agents/discord.ts`
