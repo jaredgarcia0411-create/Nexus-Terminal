@@ -1,1246 +1,309 @@
 # Nexus Terminal — HANDOFF.md
 
-> Older completed execution specs have been collapsed to summaries. Use git history for archived implementation detail (Swing-Trader Massive News integration completed 2026-04-14; Macro Daily Pipeline Phase 1 completed 2026-04-13; P2 agent response improvements, T1.1–T1.3 specialist blueprints completed 2026-04-13).
+> Historical completed sections were removed to keep this file focused. Use git history and the `specs/` directory for archived implementation detail. Recently shipped: Macro Daily Phase 1 (2026-04-13), Phase 2 sentiment signals (`fada1b0`), Phase 3 deltas + intraday (`0b33d6e`), news pipeline unification (`fbf04e4`).
 
 ---
 
-## Macro Daily Pipeline Enhancement — Phase 1 (Summary)
+## Discord Orchestrator Bot — Single-Reply Cleanup
 
-> Generated: 2026-04-13
-> Status: COMPLETED 2026-04-13
-
-Transformed the macro daily briefing from a thin summary (bias + drivers + catalysts) into a comprehensive pre-market macro analysis.
-
-**What shipped:**
-
-1. **New data sources** — FRED API client (`lib/agents/fred-client.ts`) for Treasury yields and Fed Funds rate; lightweight RSS parser (`lib/agents/rss-lite.ts`) for ZeroHedge headlines; 5-day daily OHLC bars for key level identification.
-2. **Expanded ticker universe** — added `UVXY`, `UUP`, `SMH`, `IEF`, `HYG`, `EEM`, `BITO` (7 new tickers via existing Massive API).
-3. **Deeper output schema** — `MacroSummaryReport` gained `riskAssessment`, `keyLevels`, `ratesOutlook`, `fredData`, `scenarioAnalysis`, `tldr`.
-4. **Pipeline + prompt rewrite** — new `fetch-macro-context` step runs FRED + OHLC in parallel, extends `sourceIndex` with RSS/FRED sources, and the LLM prompt was rewritten for deeper analysis (no filler, data-first). The Discord embed renders all new sections with conditional rendering for optional fields.
-
-**Env vars introduced:** `FRED_API_KEY` (optional), `MACRO_RSS_URLS` (optional, defaults to ZeroHedge).
-
-**Files touched:** `lib/agents/fred-client.ts` (new), `lib/agents/rss-lite.ts` (new), `lib/agents/types.ts`, `lib/agents/blueprints/orchestrator-macro-summary.ts`, `lib/agents/discord.ts`, `lib/agents/prompts/orchestrator.md`, plus test fixtures.
-
-**Guardrails honored:** zero schema/migration changes, zero new npm deps, all fetches graceful-degrade, pipeline produces a valid report with no env vars set.
-
----
-
-## Macro Daily Pipeline Enhancement — Phase 2
-
-> Generated: 2026-04-15
-> Status: COMMITTED 2026-04-15 (`fada1b0`) — SENTIMENT SOURCES SHIPPED
-> Scope: 1 new file, 5 files modified, no new npm deps, no DB/migration changes, no new env vars
-> Dependency: Phase 1 (COMPLETED 2026-04-13)
+> Generated: 2026-04-15 | Agent: nexus-architect
+> Status: IMPLEMENTED 2026-04-15 — AUTOMATED VALIDATION PASSED
+> Scope: 1 file modified, 0 new files, 0 schema/migration changes, 0 new env vars, 0 new npm deps
+> Dependency: none
 
 ### Objective
 
-Add four new data sources to the macro daily pipeline:
+Make the Discord bot post exactly ONE message in `#orchestrator` per user message, and remove the visible session identifier (shown as a `Session …` footer today, which the operator perceives as a job id).
 
-- **Alternative.me Fear & Greed Index** — public JSON API (crypto-derived composite sentiment), replaces the originally scoped CNN Fear & Greed (which is JS-only).
-- **MarketWatch Top Stories RSS** via the Dow Jones CDN (`feeds.content.dowjones.io/public/rss/mw_topstories`).
-- **NBC News Business RSS** (`feeds.nbcnews.com/nbcnews/public/business`).
-- **Google News macro RSS** (`news.google.com/rss/search?q=federal+reserve+macro+economy&...`) — aggregates Reuters, AP, FT, CNBC, etc.
+Two behaviors change:
 
-Bundle the Fear & Greed fetch into a new `fetch-sentiment` pipeline step. Append the three RSS feeds to `DEFAULT_MACRO_RSS_URLS` so the existing `scrape-headlines` step picks them up with no new code path. Extend `MacroSummaryReport` with an optional `sentimentData` field. Update the LLM prompt and Discord embed to consume and display the new data. All fetches are non-fatal — the pipeline produces a valid report if every new fetch fails.
+1. **Routed path** — when the orchestrator routes a message to a specialist (e.g., `small-cap-trader`, `swing-trader`), the bot currently sends a "Routed to specialist — waiting for results..." message, then polls the specialist job for up to 2 minutes and sends a second message with either the specialist result embed or a "Research complete. Report delivered to the research channel." fallback. After this change: the bot sends ONE plain reply (`Routed to specialist.`) and stops. The specialist's own output still lands in whatever channel that agent posts to (e.g., small-cap or swing research webhooks) — it just stops being echoed back into `#orchestrator`.
+2. **Non-routed path (orchestrator handled directly)** — the bot still posts ONE embed with the orchestrator's reply text, but the `Session {sessionId}` footer is removed.
 
-### Sources Researched And Dropped
-
-| Source | Status | Reason |
-|--------|--------|--------|
-| Finviz sector heatmap | DROPPED | JS-rendered only; static HTML contains no sector performance values. |
-| CME FedWatch | DROPPED | Page and `getMeetingProbabilities.json` both timed out; heavily JS-rendered, no stable public data API. |
-| CNN Fear & Greed | DROPPED (replaced) | JS-rendered, no numeric score in HTML. Replaced by Alternative.me. |
-| Reuters RSS | DROPPED | `feeds.reuters.com` connection-refused (Reuters no longer exposes public RSS). |
-| CNBC RSS | DROPPED | Returns 403. |
-| MarketWatch `feeds.marketwatch.com` | DROPPED (replaced) | Subdomain blocked. Replaced by Dow Jones CDN feed that powers the same content. |
+Failure/timeout paths (submit failure, poll failure, orchestrator job failed, orchestrator job timed out) are unchanged.
 
 ### Observed Current State
 
-- Pipeline step order: `scrape-headlines` -> `fetch-market-snapshot` -> `fetch-macro-context` -> `generate-briefing` -> `save-summary`.
-- `scrape-headlines` fetches page text from `MACRO_HEADLINES_URLS` and RSS from `MACRO_RSS_URLS` (current default: ZeroHedge only).
-- `fetch-macro-context` fetches FRED series + daily OHLC bars and extends `sourceIndex`.
-- `MacroSummaryReport` in `lib/agents/types.ts` has no `sentimentData` field.
-- `buildMacroSummaryEmbed` in `lib/agents/discord.ts` renders 14 fields; no sentiment section.
-- `buildBriefingPrompt` includes sections for Headlines, RSS Headlines, Cross-asset, FRED, Daily OHLC, Source index. No sentiment section.
-- `DEFAULT_MACRO_RSS_URLS` is a single-URL string constant.
-- Tests in `__tests__/agent-blueprints.test.ts` mock `fetchPageText` and `callLlm`. The `generate-briefing` test passes a `previousOutput` fixture containing `headlines`, `rssHeadlines`, `snapshot`, `note`, `crossAssetSnapshot`, `fredData`, `dailyBars`, `sourceIndex` — this fixture needs `sentimentData` added.
+- File: `services/discord-bot/index.ts` (547 lines, single file).
+- `handleMessage()` at line 391 orchestrates the Discord → Nexus job flow.
+- Routed branch lives at lines 433-474 inside `handleMessage`. It:
+  1. Sends `'Routed to specialist — waiting for results...'` (line 434).
+  2. Checks for `state.result.specialistJobId` (line 436-439); sends a second `'I could not track the specialist job.'` reply if null.
+  3. Calls `waitForTerminalState(...)` for the specialist job (lines 441-445).
+  4. On timeout → replyPlain `'Specialist did not finish within 2 minutes.'` (lines 447-450).
+  5. On failed → replyPlain with failure class/message (lines 452-461).
+  6. On completed with non-empty message → `replyCompleted(...)` embed (lines 463-469).
+  7. Fallback → replyPlain `'Research complete. Report delivered to the research channel.'` (line 472).
+- `buildCompletedEmbeds()` at lines 329-347 sets a `Session {sessionId}` footer on the first embed when a sessionId is provided (lines 341-343).
+- `replyCompleted()` at line 349 takes `(message, responseText, sessionId)` and passes the sessionId through to `buildCompletedEmbeds`.
+- `replyCompleted` is called from TWO places today:
+  - Line 464 — inside the routed branch (will be removed).
+  - Lines 476-480 — non-routed branch (must be updated to drop the third argument).
+- No tests exist for this file today. `__tests__/agent-discord.test.ts` covers `lib/agents/discord.ts` (the embed builders on the API side), not the bot.
 
 ### Decisions Locked
 
-- **D1. Alternative.me, not CNN.** CNN is JS-only. Alternative.me is a public JSON API (0–100 score + classification). The index is crypto-derived so it acts as a divergent/leading signal for equities — the prompt explicitly tells the LLM to treat it that way.
-- **D2. Google News, MarketWatch CDN, NBC Business go into `rssHeadlines` via `DEFAULT_MACRO_RSS_URLS`, not a new field.** They are structurally identical to ZeroHedge RSS. No schema expansion for feed URLs.
-- **D3. Fear & Greed is a separate step (`fetch-sentiment`), not merged into `fetch-macro-context`.** Different domain, cleaner failure scope.
-- **D4. `sentimentData` is optional on `MacroSummaryReport`.** Old DB rows lack it — consumers must use `?.` access.
-- **D5. Token shape for Fear & Greed: `{ score, classification, source }` only.** Never pass the raw JSON blob.
-- **D6. RSS limit stays at 10 per feed.** Three extra feeds = ~30 more headlines. Acceptable token cost for source diversity.
-- **D7. No new env vars.** All new sources are public / unauthenticated. Fear & Greed is always attempted; failures are silent.
+- **D1. Hard-drop the specialist polling loop in the bot.** Specialists deliver their own reports via their own Discord webhooks. Echoing the specialist back into `#orchestrator` is duplicative noise. The operator asked for a single "routed / not routed" confirmation — that is the new contract.
+- **D2. Remove the `sessionId` parameter entirely from `buildCompletedEmbeds` and `replyCompleted`.** Nothing else in the bot uses it after the footer is deleted, so keeping the parameter as dead weight would be code debt.
+- **D3. Routed reply text: `'Routed to specialist.'`** — short, no target-agent name, no specialist job id, no session id. Keeps the orchestrator channel terse and predictable.
+- **D4. Keep all failure/timeout/submit-error paths unchanged.** Those are already single-message replies and they surface real operational signal.
 
 ### Files To Modify
 
 | File | Action | Notes |
 |------|--------|-------|
-| `lib/agents/types.ts` | Modify | Add `SentimentDataPoint` interface; add `sentimentData?: SentimentDataPoint` to `MacroSummaryReport`. |
-| `lib/agents/sentiment-client.ts` | **NEW** | Fear & Greed fetcher (~40 lines); imports `SentimentDataPoint` from `./types`. |
-| `lib/agents/blueprints/orchestrator-macro-summary.ts` | Modify | Extend RSS defaults; add `fetch-sentiment` step; extend schemas; thread data into prompt + draft. |
-| `lib/agents/discord.ts` | Modify | Render `sentimentData` in `buildMacroSummaryEmbed` with optional-chaining guards. |
-| `lib/agents/prompts/orchestrator.md` | Modify | Add `sentimentData` field description and LLM usage rules. |
-| `__tests__/agent-blueprints.test.ts` | Modify | Mock `fetchFearGreedIndex`; add `fetch-sentiment` step tests; update `generate-briefing` fixture with `sentimentData`. |
-| `__tests__/agent-discord.test.ts` | Modify | Add embed tests for sentiment present/absent. |
+| `services/discord-bot/index.ts` | Modify | Collapse routed branch to one plain reply; remove `sessionId` param chain; delete the `Session …` footer. |
+
+No new files. No deletions. No schema, migration, env var, or npm dep changes.
 
 ### Ordered Work
 
-**Step 1 — Extend `lib/agents/types.ts` (do this first so Step 2 can import cleanly).**
+**Step 1 — Delete the session footer in `buildCompletedEmbeds`.**
 
-Add this interface near the other shared types (above `MacroSource`, around line 63):
+File: `services/discord-bot/index.ts`
+
+Locate lines 329-347:
 
 ```ts
-export interface SentimentDataPoint {
-  score: number;
-  classification: string;
-  source: string;
+function buildCompletedEmbeds(
+  responseText: string,
+  sessionId: string | null,
+): EmbedBuilder[] {
+  const chunks = splitText(responseText, EMBED_DESCRIPTION_LIMIT);
+
+  return chunks.map((chunk, index) => {
+    const embed = new EmbedBuilder()
+      .setColor(0x10b981)
+      .setTitle(index === 0 ? 'Orchestrator Reply' : `Orchestrator Reply (${index + 1}/${chunks.length})`)
+      .setDescription(chunk);
+
+    if (index === 0 && sessionId) {
+      embed.setFooter({ text: `Session ${sessionId}` });
+    }
+
+    return embed;
+  });
 }
-```
-
-In `MacroSummaryReport`, add one optional field after `fredData: FredDataPoint[];`:
-
-```ts
-sentimentData?: SentimentDataPoint;
-```
-
-Validate: `npm run lint && npx tsc --noEmit`
-
-**Step 2 — Create `lib/agents/sentiment-client.ts` (NEW FILE).**
-
-```ts
-import type { SentimentDataPoint } from './types';
-
-const FEAR_GREED_URL = 'https://api.alternative.me/fng/?limit=1&format=json';
-const DEFAULT_TIMEOUT_MS = 8_000;
-
-interface FngApiResponse {
-  data?: Array<{
-    value?: string;
-    value_classification?: string;
-  }>;
-  metadata?: { error: null | string };
-}
-
-/**
- * Fetch the Alternative.me Fear & Greed Index.
- * Returns null on any failure — caller must handle gracefully.
- * Note: This index is crypto-derived (tracks BTC sentiment correlates).
- * Treat as a divergent/leading signal for equities, not an equities-direct reading.
- */
-export async function fetchFearGreedIndex(
-  options?: { timeoutMs?: number },
-): Promise<SentimentDataPoint | null> {
-  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(FEAR_GREED_URL, {
-      headers: { 'User-Agent': 'Nexus-Agent/1.0' },
-      signal: controller.signal,
-    });
-
-    if (!response.ok) return null;
-
-    const json = (await response.json()) as FngApiResponse;
-    const entry = json.data?.[0];
-    const rawValue = entry?.value?.trim();
-    const classification = entry?.value_classification?.trim();
-
-    if (!rawValue || !classification) return null;
-
-    const score = Number(rawValue);
-    if (!Number.isFinite(score) || score < 0 || score > 100) return null;
-
-    return { score, classification, source: 'alternative.me/fng' };
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-```
-
-Validate: `npm run lint && npx tsc --noEmit`
-
-**Step 3 — Extend RSS defaults in `lib/agents/blueprints/orchestrator-macro-summary.ts`.**
-
-Find:
-
-```ts
-const DEFAULT_MACRO_RSS_URLS = 'https://cms.zerohedge.com/fullrss2.xml';
 ```
 
 Replace with:
 
 ```ts
-const DEFAULT_MACRO_RSS_URLS = [
-  'https://cms.zerohedge.com/fullrss2.xml',
-  'https://feeds.content.dowjones.io/public/rss/mw_topstories',
-  'https://feeds.nbcnews.com/nbcnews/public/business',
-  'https://news.google.com/rss/search?q=federal+reserve+macro+economy&hl=en-US&gl=US&ceid=US:en',
-].join(',');
+function buildCompletedEmbeds(responseText: string): EmbedBuilder[] {
+  const chunks = splitText(responseText, EMBED_DESCRIPTION_LIMIT);
+
+  return chunks.map((chunk, index) => new EmbedBuilder()
+    .setColor(0x10b981)
+    .setTitle(index === 0 ? 'Orchestrator Reply' : `Orchestrator Reply (${index + 1}/${chunks.length})`)
+    .setDescription(chunk));
+}
 ```
 
-At the top of the file, add imports:
+Behavior after: embeds have no footer. The `sessionId` parameter is gone from the function signature.
+
+**Step 2 — Update `replyCompleted` to drop the sessionId parameter.**
+
+Locate lines 349-359:
 
 ```ts
-import { fetchFearGreedIndex } from '../sentiment-client';
-import type { SentimentDataPoint } from '../types';
+async function replyCompleted(message: Message<true>, responseText: string, sessionId: string | null) {
+  const embeds = buildCompletedEmbeds(responseText, sessionId);
+  const channel = message.channel as TextChannel;
+
+  const [firstEmbed, ...remainingEmbeds] = embeds;
+  await message.reply({ embeds: [firstEmbed] });
+
+  for (const embed of remainingEmbeds) {
+    await channel.send({ embeds: [embed] });
+  }
+}
 ```
 
-**Step 4 — Add sentiment schemas in the same blueprint file.**
-
-After `enrichedMacroContextSchema` (around line 115) add:
+Replace with:
 
 ```ts
-const sentimentDataSchema = z.object({
-  score: z.number().min(0).max(100),
-  classification: z.string(),
-  source: z.string(),
-});
+async function replyCompleted(message: Message<true>, responseText: string) {
+  const embeds = buildCompletedEmbeds(responseText);
+  const channel = message.channel as TextChannel;
 
-const sentimentEnrichedContextSchema = enrichedMacroContextSchema.extend({
-  sentimentData: sentimentDataSchema.nullable(),
-});
+  const [firstEmbed, ...remainingEmbeds] = embeds;
+  await message.reply({ embeds: [firstEmbed] });
+
+  for (const embed of remainingEmbeds) {
+    await channel.send({ embeds: [embed] });
+  }
+}
 ```
 
-In the `macroBriefingDraftSchema` `.extend({...})` block, add after `fredData`:
+Behavior after: `replyCompleted` no longer accepts a third argument.
+
+**Step 3 — Collapse the routed branch in `handleMessage` to a single plain reply.**
+
+Locate lines 433-474 (the entire `if (state.result.routed) { ... }` block):
 
 ```ts
-sentimentData: sentimentDataSchema.nullable().optional(),
-```
+    if (state.result.routed) {
+      await replyPlain(message, 'Routed to specialist — waiting for results...');
 
-**Step 5 — Add the `fetch-sentiment` step.**
+      if (!state.result.specialistJobId) {
+        await replyPlain(message, 'I could not track the specialist job.');
+        return;
+      }
 
-Insert between `fetch-macro-context` and `generate-briefing`:
+      const specialistState = await waitForTerminalState(
+        config,
+        message.author.id,
+        state.result.specialistJobId,
+      );
 
-```ts
-{
-  name: 'fetch-sentiment',
-  type: 'code',
-  inputSchema: enrichedMacroContextSchema,
-  outputSchema: sentimentEnrichedContextSchema,
-  metadata: { canRetry: true, timeoutMs: 12000, maxRepairAttempts: 0, sideEffect: false },
-  run: async ({ previousOutput }) => {
-    const startedAt = Date.now();
-    const context = enrichedMacroContextSchema.parse(previousOutput);
+      if (specialistState.status === 'timeout') {
+        await replyPlain(message, 'Specialist did not finish within 2 minutes.');
+        return;
+      }
 
-    let sentimentData: SentimentDataPoint | null = null;
-    try {
-      sentimentData = await fetchFearGreedIndex();
-    } catch {
-      // Fear & Greed unavailable - continue without sentiment data
+      if (specialistState.status === 'failed') {
+        const failureSuffix = specialistState.failureClass
+          ? ` (${specialistState.failureClass})`
+          : '';
+        await replyPlain(
+          message,
+          `The specialist failed${failureSuffix}. ${specialistState.errorMessage ?? 'Please try again.'}`,
+        );
+        return;
+      }
+
+      if (specialistState.result.message.trim()) {
+        await replyCompleted(
+          message,
+          specialistState.result.message,
+          specialistState.sessionId ?? accepted.sessionId,
+        );
+        return;
+      }
+
+      await replyPlain(message, 'Research complete. Report delivered to the research channel.');
+      return;
     }
-
-    const fetchedAt = new Date().toISOString();
-    const extendedSourceIndex: MacroSource[] = [
-      ...context.sourceIndex,
-      ...(sentimentData !== null ? [{
-        id: 'data:fear-greed',
-        title: 'Alternative.me Fear & Greed Index',
-        url: 'https://alternative.me/crypto/fear-and-greed-index/' as string | null,
-        fetchedAt,
-      }] : []),
-    ];
-
-    return completedResult({
-      ...context,
-      sourceIndex: extendedSourceIndex,
-      sentimentData,
-    }, {
-      durationMs: Date.now() - startedAt,
-      sourceIds: sentimentData !== null ? ['fear-greed'] : [],
-      upstreamStepIds: ['fetch-macro-context'],
-    });
-  },
-},
 ```
 
-**Step 6 — Update `generate-briefing` to consume sentiment.**
-
-Change its `inputSchema` to `sentimentEnrichedContextSchema`. Change the `parse` call inside `run` to match. Then, in the draft assembly, add `sentimentData` alongside the existing threaded fields:
+Replace with:
 
 ```ts
-const briefing = macroBriefingDraftSchema.parse({
-  crossAssetSnapshot: input.crossAssetSnapshot,
-  sourceIndex: input.sourceIndex,
-  fredData: input.fredData,
-  sentimentData: input.sentimentData,
-  ...macroBriefingSchema.parse(parseJson(llmResponse.content)),
-});
-```
-
-**Step 7 — Update `buildBriefingPrompt`.**
-
-Change its parameter type to `z.infer<typeof sentimentEnrichedContextSchema>`. Add a sentiment section before the Source index section:
-
-```ts
-if (input.sentimentData !== null && input.sentimentData !== undefined) {
-  sections.push(
-    '',
-    `Sentiment (crypto-derived Fear & Greed Index — use as a divergent/leading signal, not an equities-direct reading):\nScore: ${input.sentimentData.score}/100 — ${input.sentimentData.classification}\nSource: ${input.sentimentData.source}`,
-  );
-}
-```
-
-Add this rule to the `Rules:` array:
-
-```ts
-'- sentimentData (when present): reference the score and classification in riskAssessment and deskImplications. High fear (score < 30) is often contrarian bullish for equities; extreme greed (score > 75) warrants caution. Note: this index tracks crypto sentiment correlates, not pure equities.',
-```
-
-**Step 8 — Render sentiment in `lib/agents/discord.ts`.**
-
-In `buildMacroSummaryEmbed`, after the rates block (around line 608) add:
-
-```ts
-if (payload.sentimentData && typeof payload.sentimentData === 'object') {
-  const s = payload.sentimentData as { score?: unknown; classification?: unknown };
-  const score = typeof s.score === 'number' ? s.score : null;
-  const classification = typeof s.classification === 'string' ? s.classification.trim() : null;
-  if (score !== null && classification) {
-    fields.push(buildField('Fear & Greed', `${score}/100 — ${classification} *(crypto-derived)*`, false));
-  }
-}
-```
-
-**Step 9 — Update `lib/agents/prompts/orchestrator.md`.**
-
-In the `## Macro Briefing` section, add a new bullet:
-
-```
-- `sentimentData` (optional, crypto-derived): when present, use the score and classification in `riskAssessment` and `deskImplications`. Scores < 30 = Extreme Fear / Fear (contrarian bullish signal for equities). Scores > 75 = Greed / Extreme Greed (caution warranted). This tracks crypto sentiment correlates — treat as a divergent signal, not an equities-direct reading.
-```
-
-**Step 10 — Update tests.**
-
-`__tests__/agent-blueprints.test.ts`:
-
-- Add a hoisted mock: `const fetchFearGreedIndexMock = vi.hoisted(() => vi.fn());`
-- Mock the module: `vi.mock('@/lib/agents/sentiment-client', () => ({ fetchFearGreedIndex: fetchFearGreedIndexMock }));`
-- Reset it in `beforeEach`/`afterEach` cleanup.
-- Add a test that `fetch-sentiment` succeeds and emits `data:fear-greed` in `sourceIndex`.
-- Add a test that a thrown error from `fetchFearGreedIndex` results in `sentimentData: null` and no pipeline abort.
-- Update the `generate-briefing` test's `previousOutput` fixture with `sentimentData: null`. Assert the prompt does NOT contain "Fear & Greed" when null.
-- Add a second variant with `sentimentData: { score: 23, classification: 'Extreme Fear', source: 'alternative.me/fng' }`. Assert the prompt DOES contain "Fear & Greed".
-- If `blueprint.steps.length` is asserted anywhere, bump from 5 to 6.
-
-`__tests__/agent-discord.test.ts`:
-
-- Test that `buildMacroSummaryEmbed` renders a `Fear & Greed` field when `sentimentData` is present (value contains `23/100` and `Extreme Fear`).
-- Test that no `Fear & Greed` field appears when `sentimentData` is absent (old report).
-
-Validate: `npm run lint && npx tsc --noEmit && npm test`
-
-### Acceptance Criteria
-
-- `SentimentDataPoint` is defined in `lib/agents/types.ts`; `sentimentData?: SentimentDataPoint` is on `MacroSummaryReport`.
-- `lib/agents/sentiment-client.ts` exports `fetchFearGreedIndex` and imports the type from `./types`.
-- Pipeline step order becomes: `scrape-headlines` -> `fetch-market-snapshot` -> `fetch-macro-context` -> `fetch-sentiment` -> `generate-briefing` -> `save-summary`.
-- `DEFAULT_MACRO_RSS_URLS` includes ZeroHedge, MarketWatch Dow Jones CDN, NBC News Business, and Google News macro search.
-- `fetch-sentiment` is non-fatal: thrown errors result in `sentimentData: null`, not a pipeline abort.
-- When `sentimentData` is non-null, `sourceIndex` gains a `data:fear-greed` entry.
-- `buildBriefingPrompt` includes the Sentiment section only when `sentimentData` is non-null.
-- `buildMacroSummaryEmbed` renders a `Fear & Greed` field when `sentimentData` is present; renders nothing (no crash) when absent.
-- Old `MacroSummaryReport` rows without `sentimentData` do not cause runtime errors anywhere.
-- `npm run lint && npx tsc --noEmit && npm test` all pass.
-
-### Security Notes
-
-- `api.alternative.me/fng` is a public unauthenticated endpoint. Do not log raw response bodies.
-- Google News RSS links are Google redirect URLs — used for headline titles only, never followed server-side.
-- No new environment variables. No secrets.
-
-### Complexity
-
-Low–medium. One new ~40-line file. Blueprint adds one step and extends two schemas. Test changes are mechanical (fixture fields + two new test cases per file).
-
----
-
-## Macro Daily Pipeline Enhancement — Phase 3
-
-> Generated: 2026-04-15
-> Status: IMPLEMENTED 2026-04-15 — AWAITING REVIEW / COMMIT
-> Scope: 2 new files, 6 files modified, 0 schema/migration changes, 2 new optional env vars (`MACRO_INTRADAY_ENABLED`, `MACRO_INTRADAY_HOUR_ET`)
-> Dependency: Phase 1 shipped 2026-04-13. Phase 3 can ship independently of Phase 2 — it only uses Phase 1 fields (`marketBias`, `keyLevels`, `fredData`, `tldr`).
-
-### Objective
-
-Four polish + intelligence improvements to the macro daily pipeline:
-
-1. **Historical comparison** — pass yesterday's compact macro report into the LLM prompt so it writes delta sentences ("10Y at 4.35%, up 3bp from 4.32% yesterday").
-2. **Conditional Discord embed sections** — stop rendering `n/a` placeholder fields. Skip Rates entirely when `fredData` is empty; skip Catalysts, Sector Rotation, Desk Implications when their arrays are empty.
-3. **Report quality scoring** — post-LLM validation that checks source citation coverage, key level plausibility, and TLDR length. Logs warnings only; never blocks delivery.
-4. **Intraday update blueprint** — optional 12:30 PM ET mid-day macro snapshot behind `MACRO_INTRADAY_ENABLED=1`. New short blueprint (5–6 fields) that compares the current session to the morning brief.
-
-### Design Decisions
-
-- **A. Add `deltas?: string[]` to `MacroSummaryReport`.** Keeps delta text structured (better testability, separate embed rendering). Optional field so old DB rows deserialize cleanly via `normalizeMacroSummaryReport` in `context.ts`.
-- **B. Quality scoring logs warnings only; do not persist `qualityScore`.** `superRefine` already hard-fails on missing source ids. `console.warn` is enough for a feedback loop at this stage. Reconsider in a later phase if the signal proves valuable.
-- **C. Intraday reuses `jobType: 'macro-summary'`** with a new `input.intradayUpdate: true` discriminator. `blueprintResolver` in `lib/agents/config.ts` branches on the flag. The `agent_scheduled_runs` cron uses a new `trigger_type: 'macro-intraday'` to avoid unique-constraint conflicts with the morning run.
-- **D. Intraday is opt-in.** `MACRO_INTRADAY_ENABLED=1` is required to start the second cron; with the env var unset, the agent entrypoint behaves exactly as today.
-
-### Observed Current State
-
-- `fetch-macro-context` fetches FRED + daily OHLC but has no prior-day lookup.
-- `lib/agents/context.ts` already knows how to query `agentReports` for the latest macro report. The query needed here is the same pattern with `createdAt < tradingDate` plus `limit(1)`.
-- `MacroSummaryReport` has no `deltas` field.
-- `buildMacroSummaryEmbed` in `lib/agents/discord.ts` has an orphan branch that renders `Rates` with text only when `fredData` is empty but `ratesOutlook` exists. This is the source of the "n/a-ish" fallback.
-- `keyLevels` already has conditional rendering. `scheduledCatalysts`, `sectorRotation`, `deskImplications` do not — they always render, falling back to `'n/a'` when empty.
-- `macroBriefingDraftSchema.superRefine` already validates every `driver.sourceRefs` against `sourceIndex`. Quality scoring is a soft cross-check.
-- `keyLevels[i].support`/`resistance` are string fields. Numeric range checks must `parseFloat` and skip on `NaN`.
-- `tldr` has no length constraint in the current schema.
-- `lib/agents/macro-cron.ts` exports `startMacroCron`. A companion `startIntradayCron` needs the same shape but with a distinct `trigger_type`.
-- `lib/agents/macro-cron.ts` references `AgentDb`, `unwrapRows`, `agentScheduledRuns`, `ScheduledRunRow` — confirmed to exist.
-- `services/agent-entrypoint.ts` exists and calls `startMacroCron(db)`; this is where an intraday start call goes.
-- `buildBaseEmbed`, `buildField`, `asRecord`, `readJsonValue`, `optionalText`, `formatBulletList` all exist in `lib/agents/discord.ts` — the intraday embed reuses them.
-
-### Files To Modify
-
-| File | Action | Notes |
-|------|--------|-------|
-| `lib/agents/types.ts` | Modify | Add `deltas?: string[]` to `MacroSummaryReport`. |
-| `lib/agents/blueprints/orchestrator-macro-summary.ts` | Modify | Add `fetchPriorMacroReport()`; extend `enrichedMacroContextSchema` with `priorDay`; update prompt; add `deltas` to schemas; add `scoreReportQuality()`. |
-| `lib/agents/discord.ts` | Modify | Tighten `buildMacroSummaryEmbed` (remove orphan rates branch, skip empty sections, add optional Deltas field); add `buildMacroIntradayEmbed`; route `macro-intraday` in `selectEmbed` and `resolveWebhookUrl`. |
-| `lib/agents/macro-cron.ts` | Modify | Export `startIntradayCron`. |
-| `lib/agents/config.ts` | Modify | Branch `blueprintResolver` on `input.intradayUpdate`. |
-| `services/agent-entrypoint.ts` | Modify | Conditionally start intraday cron when `MACRO_INTRADAY_ENABLED=1`. |
-| `lib/agents/blueprints/orchestrator-macro-intraday.ts` | **NEW** | Intraday blueprint: `fetch-session-snapshot` -> `generate-intraday-briefing` -> `save-intraday-summary`. |
-| `__tests__/agent-blueprints.test.ts` | Modify | Update `generate-briefing` fixture with `priorDay: null`; add prior-day-present test; add quality scoring tests; update `save-summary` test with `deltas`. |
-| `__tests__/agent-discord.test.ts` | Modify | Assert empty-section skipping; add `Deltas` field test; add `buildMacroIntradayEmbed` tests. |
-| `__tests__/agent-macro-cron.test.ts` | Modify | Add `startIntradayCron` tests. |
-
-### Ordered Work
-
-**Step 1 — Add `deltas` to `MacroSummaryReport` in `lib/agents/types.ts`.**
-
-In the `MacroSummaryReport` interface, add one optional field after `tldr`:
-
-```ts
-deltas?: string[];
-```
-
-Optional so existing DB rows deserialize unchanged. `normalizeMacroSummaryReport` needs no edit (arrays with fallback defaults already handle this shape).
-
-Validate: `npm run lint && npx tsc --noEmit`
-
-**Step 2 — Add `fetchPriorMacroReport()` helper in `orchestrator-macro-summary.ts`.**
-
-Add imports at top:
-
-```ts
-import { and, desc, eq, lt } from 'drizzle-orm';
-import { agentReports } from '@/lib/db/schema';
-import type { AgentDb } from '../db';
-```
-
-Add the helper after `buildSourceIndex()` (around line 240):
-
-```ts
-/**
- * Fetches the most recent prior macro report from the DB.
- * Returns null on first run or if no prior report exists.
- * Passes only a compact shape to the prompt to avoid token bloat.
- */
-async function fetchPriorMacroReport(
-  db: AgentDb,
-  tradingDate: string,
-): Promise<{
-  tradingDate: string;
-  marketBias: string;
-  dgs10: number | null;
-  dgs2: number | null;
-  spySupport: string | null;
-  spyResistance: string | null;
-  qqqSupport: string | null;
-  qqqResistance: string | null;
-} | null> {
-  const [row] = await db
-    .select({ reportJson: agentReports.reportJson })
-    .from(agentReports)
-    .where(
-      and(
-        eq(agentReports.userId, 'system-agent-user'),
-        eq(agentReports.agentId, 'orchestrator'),
-        eq(agentReports.reportType, 'macro-summary'),
-        eq(agentReports.status, 'published'),
-        lt(agentReports.createdAt, new Date(`${tradingDate}T00:00:00.000Z`)),
-      ),
-    )
-    .orderBy(desc(agentReports.createdAt))
-    .limit(1);
-
-  if (!row?.reportJson) return null;
-
-  const r = row.reportJson as Partial<MacroSummaryReport>;
-  if (!r.marketBias || !r.tradingDate) return null;
-
-  const dgs10 = r.fredData?.find((p) => p.seriesId === 'DGS10')?.value ?? null;
-  const dgs2 = r.fredData?.find((p) => p.seriesId === 'DGS2')?.value ?? null;
-  const spy = r.keyLevels?.find((l) => l.ticker === 'SPY');
-  const qqq = r.keyLevels?.find((l) => l.ticker === 'QQQ');
-
-  return {
-    tradingDate: r.tradingDate,
-    marketBias: r.marketBias,
-    dgs10,
-    dgs2,
-    spySupport: spy?.support ?? null,
-    spyResistance: spy?.resistance ?? null,
-    qqqSupport: qqq?.support ?? null,
-    qqqResistance: qqq?.resistance ?? null,
-  };
-}
-```
-
-In the `fetch-macro-context` step, destructure `jobInput, db` from the run args and call the helper:
-
-```ts
-run: async ({ previousOutput, jobInput, db }) => {
-  // ... existing code ...
-  const tradingDate = getTradingDate(jobInput);
-  const priorDay = await fetchPriorMacroReport(db, tradingDate).catch(() => null);
-  // ... fold priorDay into the returned context ...
-}
-```
-
-**Step 3 — Extend schemas and thread `priorDay` + `deltas` through the pipeline.**
-
-Before `enrichedMacroContextSchema`, add:
-
-```ts
-const priorDaySchema = z.object({
-  tradingDate: z.string(),
-  marketBias: z.string(),
-  dgs10: z.number().nullable(),
-  dgs2: z.number().nullable(),
-  spySupport: z.string().nullable(),
-  spyResistance: z.string().nullable(),
-  qqqSupport: z.string().nullable(),
-  qqqResistance: z.string().nullable(),
-}).nullable();
-```
-
-Extend `enrichedMacroContextSchema`:
-
-```ts
-const enrichedMacroContextSchema = macroBriefingContextSchema.extend({
-  fredData: z.array(fredPointSchema),
-  dailyBars: z.array(dailyBarEntrySchema),
-  priorDay: priorDaySchema,
-});
-```
-
-In the `fetch-macro-context` step's return, add `priorDay` alongside `fredData` and `dailyBars`.
-
-Add `deltas` to `macroBriefingSchema`:
-
-```ts
-deltas: z.array(z.string()).optional(),
-```
-
-**Step 4 — Update `buildBriefingPrompt` with prior-day block and delta instructions.**
-
-Add `deltas` to the JSON shape block shown to the LLM:
-
-```ts
-deltas: ['delta sentence e.g. "10Y at 4.35% (+3bp from yesterday)" — omit if no prior context'],
-```
-
-Near the end, before the Source index push, add:
-
-```ts
-if (input.priorDay) {
-  const pd = input.priorDay;
-  const lines = [
-    `Prior trading date: ${pd.tradingDate}`,
-    `Prior bias: ${pd.marketBias}`,
-    pd.dgs10 !== null ? `Prior 10Y: ${pd.dgs10.toFixed(2)}%` : null,
-    pd.dgs2 !== null ? `Prior 2Y: ${pd.dgs2.toFixed(2)}%` : null,
-    pd.spySupport ? `Prior SPY key levels: ${pd.spySupport} / ${pd.spyResistance}` : null,
-    pd.qqqSupport ? `Prior QQQ key levels: ${pd.qqqSupport} / ${pd.qqqResistance}` : null,
-  ].filter(Boolean);
-
-  sections.push(
-    '',
-    'Prior day context (use to write delta sentences in the "deltas" field):',
-    lines.join('\n'),
-  );
-} else {
-  sections.push('', 'No prior day context available — omit the deltas field or return an empty array.');
-}
-```
-
-Add a rule to the `Rules:` array:
-
-```ts
-'- deltas: 1–4 sentences. Each must reference a specific number and compare to prior day (e.g. "10Y at 4.35%, up 3bp from 4.32% yesterday"). Omit if no prior context.',
-```
-
-**Step 5 — Add `scoreReportQuality()` and call it from `generate-briefing`.**
-
-Place after `buildBriefingPrompt`:
-
-```ts
-/**
- * Post-LLM sanity checks. Never throws. Logs warnings only.
- * Checks: (a) every driver has ≥1 sourceRef, (b) key level support/resistance
- * values fall within the 5-day OHLC range (±5%), (c) tldr has 2–4 bullets.
- */
-function scoreReportQuality(
-  briefing: z.infer<typeof macroBriefingDraftSchema>,
-  dailyBars: z.infer<typeof dailyBarEntrySchema>[],
-): void {
-  const issues: string[] = [];
-
-  briefing.drivers.forEach((driver, i) => {
-    if (driver.sourceRefs.length === 0) {
-      issues.push(`driver[${i}] "${driver.driver.slice(0, 40)}" has no sourceRefs`);
+    if (state.result.routed) {
+      await replyPlain(message, 'Routed to specialist.');
+      return;
     }
-  });
-
-  for (const level of briefing.keyLevels) {
-    const entry = dailyBars.find((bar) => bar.ticker === level.ticker);
-    if (!entry || entry.bars.length === 0) continue;
-
-    const rangeMin = Math.min(...entry.bars.map((b) => b.low));
-    const rangeMax = Math.max(...entry.bars.map((b) => b.high));
-    const margin = (rangeMax - rangeMin) * 0.05 + 1;
-
-    const support = parseFloat(level.support);
-    const resistance = parseFloat(level.resistance);
-
-    if (!Number.isNaN(support) && (support < rangeMin - margin || support > rangeMax + margin)) {
-      issues.push(`${level.ticker} support ${level.support} outside 5-day range [${rangeMin.toFixed(2)}, ${rangeMax.toFixed(2)}]`);
-    }
-    if (!Number.isNaN(resistance) && (resistance < rangeMin - margin || resistance > rangeMax + margin)) {
-      issues.push(`${level.ticker} resistance ${level.resistance} outside 5-day range [${rangeMin.toFixed(2)}, ${rangeMax.toFixed(2)}]`);
-    }
-  }
-
-  if (briefing.tldr.length < 2 || briefing.tldr.length > 4) {
-    issues.push(`tldr has ${briefing.tldr.length} bullets (expected 2–4)`);
-  }
-
-  if (issues.length > 0) {
-    console.warn('[macro-summary] quality issues:', issues);
-  }
-}
 ```
 
-Call it in `generate-briefing` right after the draft parse succeeds, before `return completedResult(briefing, ...)`:
+Behavior after: when the orchestrator routes the message to a specialist, the bot sends one reply (`Routed to specialist.`) and `handleMessage` returns. No specialist polling, no second message.
+
+**Step 4 — Update the non-routed `replyCompleted` call.**
+
+Locate lines 476-480 (immediately after the deleted routed branch):
 
 ```ts
-scoreReportQuality(briefing, input.dailyBars);
+    await replyCompleted(
+      message,
+      state.result.message,
+      state.sessionId ?? accepted.sessionId,
+    );
 ```
 
-**Step 6 — Tighten `buildMacroSummaryEmbed()` in `lib/agents/discord.ts`.**
-
-- Delete the `else if (typeof payload.ratesOutlook === 'string' && payload.ratesOutlook.trim()) { fields.push(buildField('Rates', payload.ratesOutlook, false)); }` branch. Rates appears only when FRED data exists.
-- Wrap the Catalysts push in `if (Array.isArray(payload.scheduledCatalysts) && payload.scheduledCatalysts.length > 0)`.
-- Wrap the Sector Rotation push in `if (Array.isArray(payload.sectorRotation) && payload.sectorRotation.length > 0)`.
-- Wrap the Desk Implications push in `if (Array.isArray(payload.deskImplications) && payload.deskImplications.length > 0)`.
-- After the TLDR block, add:
+Replace with:
 
 ```ts
-if (Array.isArray(payload.deltas) && payload.deltas.length > 0) {
-  fields.push(buildField('Deltas', formatBulletList(payload.deltas), false));
-}
+    await replyCompleted(message, state.result.message);
 ```
 
-**Step 7 — Add `startIntradayCron()` to `lib/agents/macro-cron.ts`.**
+Behavior after: the non-routed branch still renders the orchestrator's reply text as an embed, but without the session footer.
 
-Append to the bottom of the file:
+**Step 5 — Verify no now-unused variables linger.**
 
-```ts
-async function runIntradayTick(db: AgentDb, hourEt: number): Promise<void> {
-  const { tradingDate, currentHour } = getTradingWindow();
-  if (currentHour !== hourEt) return;
+After steps 3 and 4, the local `accepted.sessionId` path is no longer read anywhere in `handleMessage`. The `accepted` constant itself is still needed (line 405) because `accepted.jobId` is passed to `waitForTerminalState` on line 412 for the orchestrator job. Do NOT remove `accepted` or change the `submitChatJob` return shape. Just confirm that `accepted.sessionId` has no remaining reader in the file.
 
-  await db.transaction(async (tx) => {
-    const claimResult = await tx.execute<ScheduledRunRow>(sql`
-      INSERT INTO agent_scheduled_runs (id, agent_id, trigger_type, trading_date, status, started_at, created_at)
-      VALUES (${randomUUID()}, 'orchestrator', 'macro-intraday', ${tradingDate}, 'running', now(), now())
-      ON CONFLICT (agent_id, trigger_type, trading_date) DO NOTHING
-      RETURNING id;
-    `);
-    const [scheduledRun] = unwrapRows(claimResult);
-    if (!scheduledRun) return;
+Also confirm no imports become unused:
 
-    const jobId = randomUUID();
-    await tx.insert(agentJobs).values({
-      id: jobId,
-      agentId: 'orchestrator',
-      userId: 'system-agent-user',
-      jobType: 'macro-summary',
-      status: 'queued',
-      input: { tradingDate, intradayUpdate: true },
-    });
+- `EmbedBuilder` — still used in `buildCompletedEmbeds`. Keep.
+- `TextChannel` — still used in `replyCompleted`. Keep.
+- All other imports at lines 1-10 remain in use.
 
-    await tx.update(agentScheduledRuns)
-      .set({ jobId, status: 'completed', completedAt: sql`now()` })
-      .where(eq(agentScheduledRuns.id, scheduledRun.id));
-  });
-}
+**Step 6 — Validate.**
 
-export function startIntradayCron(
-  db: AgentDb,
-  options: { hourEt?: number; checkIntervalMs?: number } = {},
-): MacroCronHandle {
-  const hourEt = options.hourEt ?? Number(process.env.MACRO_INTRADAY_HOUR_ET) || 12;
-  const checkIntervalMs = options.checkIntervalMs ?? DEFAULT_CHECK_INTERVAL_MS;
-  const executeTick = () => {
-    void runIntradayTick(db, hourEt).catch((error) => {
-      console.error('intraday cron tick failed', { error });
-    });
-  };
-  executeTick();
-  const timer = setInterval(executeTick, checkIntervalMs);
-  return { stop: async () => { clearInterval(timer); } };
-}
-```
-
-**Step 8 — Create `lib/agents/blueprints/orchestrator-macro-intraday.ts` (NEW FILE).**
-
-Deliberately short: current snapshot + today's morning brief => 5-field intraday report. No RSS, no FRED, no OHLC daily bars.
-
-```ts
-import { z } from 'zod';
-import { fetchUnifiedSnapshot, type MassiveSnapshotResult } from '@/lib/massive-market';
-import { writeAndDeliverReport } from '../discord';
-import { callLlm } from '../llm-client';
-import { and, desc, eq, gte } from 'drizzle-orm';
-import { agentReports } from '@/lib/db/schema';
-import type {
-  Blueprint,
-  CrossAssetEntry,
-  MacroSummaryReport,
-  StepResult,
-} from '../types';
-
-const INTRADAY_TICKERS = ['SPY', 'QQQ', 'IWM', 'TLT', 'UUP', 'UVXY'];
-
-const intradayJobInputSchema = z.object({
-  tradingDate: z.string().optional(),
-  intradayUpdate: z.boolean().optional(),
-});
-
-function getTradingDate(jobInput: unknown): string {
-  const parsed = intradayJobInputSchema.safeParse(jobInput);
-  return parsed.success && parsed.data.tradingDate
-    ? parsed.data.tradingDate
-    : new Date().toISOString().slice(0, 10);
-}
-
-function completedResult<T>(data: T, options?: { durationMs?: number; upstreamStepIds?: string[]; model?: string; tokensUsed?: number }): StepResult<T> {
-  return {
-    status: 'completed',
-    data,
-    metrics: { durationMs: options?.durationMs ?? 0, attempt: 1, ...(options?.tokensUsed !== undefined ? { tokensUsed: options.tokensUsed } : {}) },
-    provenance: { sourceIds: [], ...(options?.model ? { model: options.model } : {}), upstreamStepIds: options?.upstreamStepIds ?? [], timestamp: new Date().toISOString() },
-  };
-}
-
-function parseJson(text: string): unknown {
-  try { return JSON.parse(text); } catch {
-    const m = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/i);
-    if (m) return JSON.parse(m[1]!);
-  }
-  throw new Error('LLM did not return valid JSON');
-}
-
-const snapshotStepOutputSchema = z.object({
-  tradingDate: z.string(),
-  crossAssetSnapshot: z.array(z.object({
-    ticker: z.string(),
-    price: z.number().nullable(),
-    changePercent: z.number().nullable(),
-  })),
-  morningReport: z.unknown().nullable(),
-});
-
-const intradayBriefingSchema = z.object({
-  sessionBias: z.enum(['bullish', 'bearish', 'neutral']),
-  sessionSummary: z.string(),
-  surprises: z.array(z.string()),
-  updatedKeyWatch: z.string(),
-  deskNote: z.string(),
-});
-
-export const orchestratorMacroIntradayBlueprint: Blueprint = {
-  id: 'orchestrator:macro-intraday',
-  description: 'Mid-day macro update at 12:30 PM ET — session-so-far analysis vs morning brief.',
-  steps: [
-    {
-      name: 'fetch-session-snapshot',
-      type: 'code',
-      metadata: { canRetry: true, timeoutMs: 20000, maxRepairAttempts: 0, sideEffect: false },
-      run: async ({ jobInput, db }) => {
-        const startedAt = Date.now();
-        const tradingDate = getTradingDate(jobInput);
-
-        let crossAssetSnapshot: CrossAssetEntry[] = [];
-        if (process.env.MASSIVE_API_KEY?.trim()) {
-          try {
-            const snap = await fetchUnifiedSnapshot(INTRADAY_TICKERS);
-            const results: MassiveSnapshotResult[] = Array.isArray((snap as { results?: MassiveSnapshotResult[] })?.results)
-              ? (snap as { results: MassiveSnapshotResult[] }).results
-              : [];
-            crossAssetSnapshot = results.map((r) => ({
-              ticker: typeof r.ticker === 'string' ? r.ticker.trim().toUpperCase() : 'UNKNOWN',
-              price: r.session?.close ?? null,
-              changePercent: r.session?.change_percent ?? null,
-            }));
-          } catch {
-            // Snapshot unavailable — continue with empty
-          }
-        }
-
-        let morningReport: MacroSummaryReport | null = null;
-        try {
-          const todayStart = new Date(`${tradingDate}T00:00:00.000Z`);
-          const [row] = await db
-            .select({ reportJson: agentReports.reportJson })
-            .from(agentReports)
-            .where(
-              and(
-                eq(agentReports.userId, 'system-agent-user'),
-                eq(agentReports.agentId, 'orchestrator'),
-                eq(agentReports.reportType, 'macro-summary'),
-                eq(agentReports.status, 'published'),
-                gte(agentReports.createdAt, todayStart),
-              ),
-            )
-            .orderBy(desc(agentReports.createdAt))
-            .limit(1);
-          if (row?.reportJson) {
-            morningReport = row.reportJson as MacroSummaryReport;
-          }
-        } catch {
-          // No morning report — intraday runs blind
-        }
-
-        return completedResult({ tradingDate, crossAssetSnapshot, morningReport }, {
-          durationMs: Date.now() - startedAt,
-        });
-      },
-    },
-    {
-      name: 'generate-intraday-briefing',
-      type: 'llm',
-      inputSchema: snapshotStepOutputSchema,
-      outputSchema: intradayBriefingSchema,
-      metadata: { canRetry: true, timeoutMs: 45000, maxRepairAttempts: 1, sideEffect: false, lane: 'background' },
-      run: async ({ previousOutput }) => {
-        const input = snapshotStepOutputSchema.parse(previousOutput);
-        const morningBias = input.morningReport
-          ? `Morning bias: ${(input.morningReport as MacroSummaryReport).marketBias}. Morning TLDR: ${((input.morningReport as MacroSummaryReport).tldr ?? []).slice(0, 2).join(' | ')}`
-          : 'No morning report available.';
-
-        const userMessage = [
-          `Trading date: ${input.tradingDate} (12:30 PM ET intraday check)`,
-          '',
-          morningBias,
-          '',
-          `Current session snapshot:\n${JSON.stringify(input.crossAssetSnapshot, null, 2)}`,
-          '',
-          'Return strict JSON with this shape and no markdown:',
-          JSON.stringify({
-            sessionBias: 'bullish | bearish | neutral',
-            sessionSummary: '2 sentences: how the session has played out vs the morning thesis',
-            surprises: ['1–3 bullet strings: what is surprising relative to the morning brief'],
-            updatedKeyWatch: '1 sentence: what is the most important level or event to watch into the close',
-            deskNote: '1 sentence: one specific actionable note for the desk right now',
-          }, null, 2),
-        ].join('\n');
-
-        const { buildLlmSystemPrompt } = await import('../prompts-loader');
-        const llmResponse = await callLlm({
-          systemPrompt: await buildLlmSystemPrompt('orchestrator'),
-          userMessage,
-          temperature: 0.2,
-        }, 'background');
-
-        const briefing = intradayBriefingSchema.parse(parseJson(llmResponse.content));
-        return completedResult(briefing, {
-          durationMs: llmResponse.durationMs,
-          tokensUsed: llmResponse.inputTokens + llmResponse.outputTokens,
-          model: llmResponse.modelUsed,
-          upstreamStepIds: ['fetch-session-snapshot'],
-        });
-      },
-    },
-    {
-      name: 'save-intraday-summary',
-      type: 'code',
-      inputSchema: intradayBriefingSchema,
-      metadata: { canRetry: false, timeoutMs: 10000, maxRepairAttempts: 0, sideEffect: true },
-      run: async ({ jobInput, previousOutput, job, db }) => {
-        const briefing = intradayBriefingSchema.parse(previousOutput);
-        const tradingDate = getTradingDate(jobInput);
-        const delivery = await writeAndDeliverReport(db, {
-          jobId: job.id,
-          userId: 'system-agent-user',
-          agentId: 'orchestrator',
-          reportType: 'macro-intraday',
-          title: `${tradingDate} intraday macro update`,
-          summary: briefing.sessionSummary,
-          reportJson: { tradingDate, ...briefing },
-        });
-        return completedResult({ tradingDate, ...delivery }, {
-          durationMs: 0,
-          upstreamStepIds: ['generate-intraday-briefing'],
-        });
-      },
-    },
-  ],
-};
-```
-
-**Step 9 — Wire the intraday blueprint in `lib/agents/config.ts`.**
-
-Add the import:
-
-```ts
-import { orchestratorMacroIntradayBlueprint } from './blueprints/orchestrator-macro-intraday';
-```
-
-Update the orchestrator agent's `blueprintResolver`:
-
-```ts
-blueprintResolver: (job) => {
-  if (job.jobType === 'macro-summary') {
-    const input = job.input as { intradayUpdate?: boolean };
-    if (input.intradayUpdate === true) {
-      return orchestratorMacroIntradayBlueprint;
-    }
-    return orchestratorMacroSummaryBlueprint;
-  }
-  // ... existing resolver logic for other job types ...
-}
-```
-
-**Step 10 — Wire `startIntradayCron()` in `services/agent-entrypoint.ts`.**
-
-Update the import:
-
-```ts
-import { startMacroCron, startIntradayCron, type MacroCronHandle } from '../lib/agents/macro-cron';
-```
-
-Add alongside the existing `macroCron` handle:
-
-```ts
-let intradayCron: MacroCronHandle | null = null;
-// ... after macroCron = startMacroCron(db):
-if (process.env.MACRO_INTRADAY_ENABLED === '1') {
-  intradayCron = startIntradayCron(db);
-}
-```
-
-In the shutdown function, after `macroCron.stop()`:
-
-```ts
-if (intradayCron) {
-  await intradayCron.stop();
-}
-```
-
-**Step 11 — Route `macro-intraday` in `lib/agents/discord.ts`.**
-
-In `resolveWebhookUrl()`, add a branch that maps `macro-intraday` to the existing `DISCORD_WEBHOOK_MACRO_DAILY` env var (so it flows to the same channel as the morning brief):
-
-```ts
-} else if (agentId === 'orchestrator' && reportType === 'macro-intraday') {
-  envName = 'DISCORD_WEBHOOK_MACRO_DAILY';
-```
-
-In `selectEmbed()`, add before the `macro-summary` branch:
-
-```ts
-if (report.reportType === 'macro-intraday') {
-  return buildMacroIntradayEmbed(report);
-}
-```
-
-Add the embed function (reuses existing helpers `asRecord`, `readJsonValue`, `optionalText`, `formatBulletList`, `buildField`, `buildBaseEmbed`):
-
-```ts
-export function buildMacroIntradayEmbed(report: AgentReport): DiscordEmbed {
-  const payload = asRecord(report.reportJson);
-  const fields: DiscordEmbedField[] = [
-    buildField('Session Bias', readJsonValue(payload, 'sessionBias')),
-  ];
-
-  const surprises = readJsonValue(payload, 'surprises');
-  if (Array.isArray(surprises) && surprises.length > 0) {
-    fields.push(buildField('Surprises', formatBulletList(surprises), false));
-  }
-
-  const updatedKeyWatch = optionalText(readJsonValue(payload, 'updatedKeyWatch'));
-  if (updatedKeyWatch) {
-    fields.push(buildField('Key Watch', updatedKeyWatch, false));
-  }
-
-  const deskNote = optionalText(readJsonValue(payload, 'deskNote'));
-  if (deskNote) {
-    fields.push(buildField('Desk Note', deskNote, false));
-  }
-
-  return buildBaseEmbed(
-    report,
-    fields,
-    optionalText(report.summary, readJsonValue(payload, 'sessionSummary')),
-  );
-}
-```
-
-**Step 12 — Update tests.**
-
-`__tests__/agent-blueprints.test.ts`:
-
-- In the `generate-briefing` test's `previousOutput`, add `priorDay: null`. Add a second variant with a populated `priorDay` and assert the prompt contains `Prior day context`.
-- In the `save-summary` test, update the mock LLM output to include `deltas: ['10Y at 4.32%, unchanged from yesterday']` and assert it appears in the saved `reportJson`.
-- Add tests for `scoreReportQuality` behavior — indirectly via the `generate-briefing` step. Spy on `console.warn`:
-  - Key levels outside the 5-day range -> warn called.
-  - Levels within range + 2–4 TLDR bullets -> warn NOT called.
-  - 5+ TLDR bullets -> warn called.
-- If `blueprint.steps.length` is asserted, it remains unchanged at 5 (`fetch-macro-context` was already present in Phase 1; Phase 3 adds no new step to the morning blueprint).
-
-`__tests__/agent-discord.test.ts`:
-
-- When `fredData: []` and `ratesOutlook` is set -> no `Rates` field in the embed.
-- When `scheduledCatalysts: []` -> no `Catalysts` field.
-- When `sectorRotation: []` -> no `Sector Rotation` field.
-- When `deskImplications: []` -> no `Desk Implications` field.
-- When `deltas: ['10Y up 3bp']` -> `Deltas` field appears.
-- `buildMacroIntradayEmbed` renders `Session Bias`, `Surprises`, `Key Watch`, `Desk Note`.
-
-`__tests__/agent-macro-cron.test.ts`:
-
-- Add `describe('startIntradayCron')` mirroring `startMacroCron` tests. Assertions:
-  - Skips ticks outside the configured ET hour.
-  - On match, inserts a row into `agent_scheduled_runs` with `trigger_type: 'macro-intraday'` and enqueues an `agentJobs` row with `input.intradayUpdate === true`.
-  - Deduplicates concurrent ticks via the `(agent_id, trigger_type, trading_date)` unique constraint.
-
-Run: `npm run lint && npx tsc --noEmit && npm test`
-
-### Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `MACRO_INTRADAY_ENABLED` | No | Set to `1` to start the 12:30 PM ET intraday cron in the agent service. Default: off (existing behavior unchanged). |
-| `MACRO_INTRADAY_HOUR_ET` | No | ET hour for the intraday trigger. Default: `12`. Only read when `MACRO_INTRADAY_ENABLED=1`. |
-
-### Acceptance Criteria
-
-- `deltas?: string[]` on `MacroSummaryReport`. Prior reports without the field deserialize fine.
-- `fetch-macro-context` queries `agentReports` for the most recent prior report (before `tradingDate`) and passes a compact `priorDay` shape to the LLM. On first run (`priorDay: null`) the prompt instructs the LLM to omit `deltas`.
-- The LLM prompt contains a `Prior day context` block whenever `priorDay` is non-null.
-- `scoreReportQuality()` is called after `macroBriefingDraftSchema.parse()`. It writes warnings to `console.warn` and never throws or blocks delivery.
-- `buildMacroSummaryEmbed()`: `Rates` is absent when `fredData.length === 0`. `Catalysts`, `Sector Rotation`, `Desk Implications` are absent when their arrays are empty. `Deltas` appears when `deltas.length > 0`.
-- `startIntradayCron()` is exported from `lib/agents/macro-cron.ts` and uses `trigger_type: 'macro-intraday'` (distinct from the morning `macro-summary` trigger).
-- `orchestratorMacroIntradayBlueprint` exists, is registered in `lib/agents/config.ts`, and is selected when `job.input.intradayUpdate === true`.
-- `resolveWebhookUrl()` routes `macro-intraday` to `DISCORD_WEBHOOK_MACRO_DAILY`. `buildMacroIntradayEmbed()` renders the intraday report type.
-- Intraday cron does NOT start unless `MACRO_INTRADAY_ENABLED=1`. With the env var unset, `services/agent-entrypoint.ts` behaves exactly as today.
-- `npm run lint && npx tsc --noEmit && npm test` all pass.
-
-### Security Notes
-
-- `fetchPriorMacroReport()` reads `agentReports` as `userId: 'system-agent-user'` only. No user data exposure.
-- `MACRO_INTRADAY_ENABLED` / `MACRO_INTRADAY_HOUR_ET` are read server-side only (agent service container). They are not Next.js public env vars and never reach the browser.
-- `scoreReportQuality()` only writes to `console.warn`. No DB persistence, no PII.
-
-### Order Of Operations
-
-1. Type change first (`types.ts`) — everything else imports from it.
-2. Schema + helper additions in `orchestrator-macro-summary.ts` — compile after each chunk.
-3. Embed tightening in `discord.ts` — standalone, easy to validate in isolation.
-4. `macro-cron.ts` export, then intraday blueprint, then `config.ts` resolver wiring.
-5. `services/agent-entrypoint.ts` last (depends on cron export).
-6. Tests after all code compiles clean.
-
-### Complexity
-
-Medium–high. Highest-risk piece is the intraday blueprint — new code path through the resolver and a new report type through the Discord embed. Risk is contained because it's entirely opt-in (`MACRO_INTRADAY_ENABLED=1`). Historical comparison and quality scoring touch the morning pipeline but are purely additive. Embed tightening is low-risk surgical deletions. Test surface is moderate — 3 test files, ~15–20 new cases.
-
----
-
-## News Pipeline Unification — Both Specialists
-
-> Generated: 2026-04-15
-> Status: IMPLEMENTED 2026-04-15 — automated validation passed; live BIRD smoke still pending
-> Tier 2 priority (T2.0) in FUTURE-PLANS.md
-
-### Execution Summary
-
-- Added shared AskEdgar news normalization in `lib/agents/news-formatter.ts` plus `__tests__/news-formatter.test.ts` coverage for news-vs-filing headline selection, age filtering, and deduplication.
-- Small-cap research now carries `filingTitles`, builds `newsFeed`, and prompts the LLM to quote the exact headline + `formType` when explaining News / Why It's Running.
-- Swing-trader research now builds `askEdgarNewsFeed`, merges it with Massive news into one deduplicated `recentNews` feed, and prompts the LLM to quote the exact headline + `formType` when explaining Catalyst.
-- Updated `lib/agents/prompts/small-cap.md` and `lib/agents/prompts/swing-trader.md` with the same quote-the-headline requirement.
-
-### Validation
-
-1. `npm run lint` — passed
-2. `npx tsc --noEmit` — passed
-3. `npm test` — passed (`46` files, `340` tests)
-
-### Follow-up
-
-1. Run a live `/api/agents/research` smoke check for `BIRD` (small-cap + swing-trader) in an environment with AskEdgar/Massive/LLM access and confirm the delivered explanations quote a real headline.
-
-### Problem
-
-Observed on BIRD (04/15/26):
-
-- **Swing-trader** said "No recent news articles are available" in its Catalyst section.
-- **Small-cap** said "the recent 8-K filing was a legitimate catalyst" but did not quote the actual headline.
-- **AskEdgar had the full story** — a 04/15 8-K announcing a $50M convertible financing facility and pivot from footwear to "NewBird AI" (GPU-as-a-Service), on top of an earlier 03/30 asset sale + dissolution plan.
-
-### Root Causes
-
-1. **Swing-trader never reads AskEdgar news.** `fetch-filings` step (`lib/agents/blueprints/swing-trader-research.ts:652-678`) calls `getCachedTickerData()` but only reads `gap-stats`, `ownership`, `historical-float-pro`, `dilution-rating`, `registrations`, `offerings`. The later `fetch-news` step (`:729-754`) only calls `fetchTickerNews()` from Massive, which is a price-feed news API and commonly misses SEC-filing-driven catalysts.
-2. **Small-cap strips context.** `buildNewsDigest()` (`lib/agents/blueprints/small-cap-research.ts:441-456`) reduces each item to `{title, date, type}` with fallback `'(untitled)'`. Per AskEdgar docs (`docs/AE_API_DOCS.md:828`): "The `body`, `title`, `author`, and `channels` fields are **only populated for `form_type = "news"`**. For SEC filings, use the `summary` field instead." So 8-Ks arrive with empty `title`, fall through to `'(untitled)'`, and the LLM has nothing to quote.
-3. **`/v1/filing-titles` is fetched but unused in blueprints.** `fetchTickerData()` (`lib/askedgar.ts:495`) already calls `/v1/filing-titles`, which returns AI-generated one-liners like "Announces $50M ATM offering program". Small-cap's `fetch-filings` (`:732`) only reads `rawData['news']` and ignores `rawData['filing-titles']`. Swing-trader ignores both.
-4. **Prompts lack a "quote the headline" instruction.** Neither blueprint tells the LLM to embed the actual headline string in its Catalyst/News-Why-Running explanation.
-
-AskEdgar `/v1/news` supports `hide_filings=true`, `hide_news=true`, `date_from`, `tag=...`, but we don't need new endpoints — everything needed is already fetched.
-
-### Objective
-
-Both specialists quote real headlines from AskEdgar news + filing-titles in their Catalyst (swing) and News/Why It's Running (small-cap) sections. Swing-trader's Massive news feed stays as a supplement, not the sole source.
-
-### Files To Modify
-
-1. **NEW** `lib/agents/news-formatter.ts` — shared helper
-2. `lib/agents/blueprints/small-cap-research.ts` — `fetch-filings` step + `buildNewsDigest` removal + prompt
-3. `lib/agents/blueprints/swing-trader-research.ts` — `fetch-filings` step + `fetch-news` step + prompt
-4. `lib/agents/prompts/small-cap.md` — add quote-the-headline instruction
-5. `lib/agents/prompts/swing-trader.md` — add quote-the-headline instruction
-6. **NEW** `__tests__/news-formatter.test.ts` — unit tests with fixtures
-
-No schema changes. No new npm deps. No new env vars.
-
-### Ordered Work
-
-#### Step 1 — Create `lib/agents/news-formatter.ts`
-
-Exports one function: `buildNewsFeed(rawData: Record<string, unknown>, options?): NewsFeedItem[]`.
-
-```ts
-export type NewsFeedItem = {
-  headline: string;       // always populated — never "(untitled)"
-  summary: string;        // short excerpt, may be empty
-  date: string;           // ISO date string ('' if missing)
-  formType: string;       // 'news', '8-K', '10-Q', 'S-3', etc.
-  url: string;            // document_url if present, else ''
-  tags: string[];         // AskEdgar tags array
-  isNews: boolean;        // true for form_type === 'news'
-  isFiling: boolean;      // true for SEC filings
-};
-
-export type BuildNewsFeedOptions = {
-  maxItems?: number;        // default 10
-  maxAgeDays?: number;      // default 30
-  nowMs?: number;           // injectable for tests
-};
-```
-
-Logic:
-
-1. Read `rawData['news']` and `rawData['filing-titles']` with `readResults()` (small-cap already has this helper; reuse pattern from `small-cap-research.ts:170`).
-2. Build a lookup map `filingTitlesByKey: Map<string, string>` keyed by `accession_number` and by `${formType}|${date}` — values are the `headline` string from filing-titles.
-3. Iterate news items. For each:
-   - If `form_type === 'news'`: `headline = title ?? body (first 160 chars) ?? 'News item'`, `summary = body` excerpt.
-   - Else (SEC filing): `headline = filingTitlesByKey.get(accession) ?? filingTitlesByKey.get(formTypeDateKey) ?? summary ?? '${formType} filing'`, `summary = summary ?? ''`.
-4. Deduplicate (same `accession_number` or same `url`).
-5. Filter items older than `maxAgeDays` (parse date; keep when unparseable to avoid dropping real hits on bad data — log via `console.warn` if noisy).
-6. Sort by date desc.
-7. Trim to `maxItems`.
-
-Use existing helpers: `getStringField()`, `isValidRecord()` from `small-cap-research.ts` — extract them into `lib/agents/askedgar-readers.ts` (or similar) **only if** both blueprints already import duplicates. Otherwise inline small helpers inside `news-formatter.ts` to avoid churn.
-
-Each field uses a defensive fallback (`?? ''`). Never return `headline === '(untitled)'`.
-
-#### Step 2 — Wire into small-cap `fetch-filings` step
-
-In `lib/agents/blueprints/small-cap-research.ts`:
-
-1. Add `filingTitles: unknown[]` to `edgarSectionsSchema` (find the z.object near the top of the file).
-2. In `fetch-filings` run() body (line ~717), add `filingTitles: readResults(rawData['filing-titles'])` to the return object.
-3. In `fetch-price-context` / wherever `newsDigest` is computed, pass both `news` and `filingTitles` into `buildNewsFeed(rawData, {...})`. Simplest shape: add a call that takes the already-extracted arrays and returns the unified feed. To avoid re-plumbing `rawData`, have `buildNewsFeed` accept an alternate overload: `buildNewsFeedFromArrays(news, filingTitles, opts)`. Expose both.
-4. Remove `buildNewsDigest()` calls and the `newsDigest` schema field. Replace with `newsFeed: NewsFeedItem[]` (declared as a zod object schema — use `z.object({...})` mirroring the exported type, since zod does not import TS types).
-5. Update `extractNewsMetrics()` to accept either the raw AskEdgar `news` array (current) or the new `newsFeed` — whichever is simpler. Keep deterministic output untouched (that's what T1.2 shipped).
-6. In `buildResearchPrompt()` (`:641-688`), replace `formatPromptSection('newsDigest (title, date, type only)', input.newsDigest)` with `formatPromptSection('Recent news & filings (headline, date, formType, summary)', input.newsFeed)`.
-7. Add these instructions immediately after the section:
-   - `"When rating 'News / Why It's Running', quote the exact headline text of the single most relevant item from the Recent news & filings section. Reference the formType in parentheses (e.g., (8-K))."`
-   - `"Do not claim 'no recent news available' unless the Recent news & filings section is empty. Do not fabricate headlines."`
-
-#### Step 3 — Wire into swing-trader `fetch-filings` + `fetch-news`
-
-In `lib/agents/blueprints/swing-trader-research.ts`:
-
-1. Extend `filingsSchema` to include `askEdgarNewsFeed: z.array(newsFeedItemSchema)` (export the zod schema from `news-formatter.ts`).
-2. In `fetch-filings` (`:657-678`), after reading the other sections, call `buildNewsFeedFromArrays(readResults(rawData['news']), readResults(rawData['filing-titles']), { maxItems: 8, maxAgeDays: 30 })` and put the result in `askEdgarNewsFeed`.
-3. In `fetch-news` (`:729-754`), keep the Massive call but **merge** its output with `askEdgarNewsFeed` into a single `recentNews` array passed to the LLM. Shape can stay as a union — simplest is to convert Massive articles to `NewsFeedItem` shape (`isNews: true, isFiling: false, formType: 'news'`) and concat with AskEdgar entries, then de-dupe by headline and sort by date desc, cap at 10.
-4. Update `simplifyNewsArticles()` only if needed to match the `NewsFeedItem` shape — it currently produces `{title, publishedUtc, description, sentiment, sentimentReasoning}`. Map `title → headline`, `publishedUtc → date`, `description → summary`. Keep `sentiment`/`sentimentReasoning` as optional extras on `NewsFeedItem` (add to the schema as optional strings) so the LLM still sees Massive's sentiment tags when present.
-5. In `buildResearchPrompt()` (`:618-627`), the existing `formatPromptSection('Recent news', input.recentNews)` stays, but replace the strict/fabrication warning with:
-   - `"Use only items in the Recent news section. When rating Catalyst, quote the exact headline text of the single most relevant item and cite its formType (e.g., (8-K) or (news)). Do not claim no news is available unless Recent news is empty."`
-6. Keep the existing "no news" fallback path (`:624-626`) but tighten the language: `"Recent news section is empty. Rate catalyst based on price action only and explicitly state that the feed returned no headlines."`.
-
-#### Step 4 — Prompt file updates
-
-Add a single short line to each of these markdown files:
-
-- `lib/agents/prompts/small-cap.md` — under the News/Why-Running section: `"Your explanation MUST quote the exact headline of the most relevant news or filing from the provided feed, followed by the formType in parentheses. Example: \"Announces $50M convertible financing (8-K)\"."`
-- `lib/agents/prompts/swing-trader.md` — under the Catalyst section: same instruction.
-
-#### Step 5 — Tests
-
-Create `__tests__/news-formatter.test.ts`. Fixtures:
-
-- A. `news` array with one `form_type: 'news'` item (title + body populated) → headline uses title.
-- B. `news` array with an 8-K (title empty, summary populated) **plus** matching `filing-titles` entry → headline uses filing-titles `headline`.
-- C. 8-K with no matching filing-titles but summary present → headline uses summary.
-- D. 8-K with neither → headline falls back to `'8-K filing'`.
-- E. Items older than `maxAgeDays` are filtered out.
-- F. Duplicates by `accession_number` collapse to one.
-- G. Empty `rawData` returns `[]`.
-
-Assert `headline` is never `''` and never `'(untitled)'`.
-
-Also update any existing `small-cap-research.test.ts` / `swing-trader-research.test.ts` fixtures that depended on the old `newsDigest` shape.
-
-#### Step 6 — Validate
+Run from the repo root:
 
 1. `npm run lint`
 2. `npx tsc --noEmit`
-3. `npm run test`
-4. Smoke-test against BIRD (or any recent 8-K ticker) via the admin research route and confirm Discord embeds include the quoted headline.
+
+If the top-level `npx tsc --noEmit` does not type-check files under `services/`, additionally run:
+
+3. `npx tsc --noEmit -p services/discord-bot/tsconfig.json`
+
+All three (or the two that apply) must complete with zero errors.
+
+### Execution Status
+
+Automated validation completed on 2026-04-15:
+
+1. `npm run lint` — passed
+2. `npx tsc --noEmit` — passed
+3. `npx tsc --noEmit -p services/discord-bot/tsconfig.json` — passed
+4. `npm test` — passed (`46` files, `340` tests)
 
 ### Acceptance Criteria
 
-1. `buildNewsFeed()` unit tests pass with the 7 fixtures above.
-2. Small-cap `newsFeed` output for a ticker with only SEC filings contains human-readable headlines (not `'(untitled)'` or `'8-K'`).
-3. Swing-trader `recentNews` output for the same ticker includes both AskEdgar and Massive entries, de-duplicated.
-4. Discord embeds for a test run on BIRD quote a real headline in both Catalyst (swing) and News/Why Running (small-cap).
-5. `npm run lint && npx tsc --noEmit && npm run test` all pass.
-6. Zero changes to DB schema, env vars, or npm deps.
+- [ ] `services/discord-bot/index.ts` is the only file changed.
+- [ ] `buildCompletedEmbeds` signature is `(responseText: string) => EmbedBuilder[]` — no `sessionId` parameter.
+- [ ] `buildCompletedEmbeds` no longer calls `embed.setFooter(...)` anywhere.
+- [ ] `replyCompleted` signature is `(message: Message<true>, responseText: string) => Promise<void>` — no `sessionId` parameter.
+- [ ] In `handleMessage`, the `if (state.result.routed)` branch contains exactly two statements: `await replyPlain(message, 'Routed to specialist.');` and `return;`.
+- [ ] No reference to `specialistJobId`, `specialistState`, or the strings `'waiting for results'`, `'Research complete'`, `'Specialist did not finish'`, `'The specialist failed'`, `'I could not track the specialist job.'` remains anywhere in `services/discord-bot/index.ts`.
+- [ ] The non-routed branch calls `replyCompleted(message, state.result.message);` with exactly two arguments.
+- [ ] `waitForTerminalState` is still called once (for the orchestrator job at line ~412). It is NOT called a second time for any specialist job.
+- [ ] Submit-failure, poll-failure, job-failed, and job-timeout paths are byte-for-byte unchanged.
+- [ ] `npm run lint` passes.
+- [ ] `npx tsc --noEmit` passes (and `npx tsc --noEmit -p services/discord-bot/tsconfig.json` if it applies).
+
+### Files Changed Summary
+
+| File | Lines Added | Lines Removed | Risk |
+|------|-------------|---------------|------|
+| `services/discord-bot/index.ts` | ~10 | ~50 | Low |
+
+Net deletion of ~40 lines. Pure simplification — no new branches, no new dependencies, no type surface growth.
+
+### Verification Steps
+
+**Automated:**
+
+1. `npm run lint` — must pass.
+2. `npx tsc --noEmit` — must pass.
+3. If top-level tsc does not cover the services directory: `npx tsc --noEmit -p services/discord-bot/tsconfig.json`.
+
+**Manual (smoke test, after deploying the bot):**
+
+1. In `#orchestrator`, send a message that should be routed to a specialist (e.g., a small-cap ticker research request). Confirm: exactly ONE bot reply arrives in `#orchestrator` reading `Routed to specialist.`. The specialist's actual research output arrives in its own channel (small-cap or swing research webhook) and NOT in `#orchestrator`.
+2. In `#orchestrator`, send a message that the orchestrator handles directly (e.g., a general question that does not match the small-cap/swing classifier). Confirm: exactly ONE embed reply arrives with the orchestrator's text, and the embed has no `Session …` footer.
+3. Send an empty message (or trigger a submit failure by stopping the Nexus API). Confirm the relevant error reply still arrives as a single plain message (unchanged behavior).
+
+### Out Of Scope
+
+- Do NOT add a `!health` / `/health` / `/status` command or any admin-stats integration. That is a separate future task — the orchestrator classifier today only routes to `small-cap-trader` / `swing-trader`, so typing "give me system health" would fall through to the LLM with no tool access to `/api/agents/admin/stats`.
+- Do NOT touch `app/api/agents/**` or any file outside `services/discord-bot/index.ts`.
+- Do NOT rename helpers, reorder imports, or introduce new abstractions. Keep the change surgical.
 
 ### Security Notes
 
-- No new secrets. Uses existing `ASKEDGAR_API_KEY` and `MASSIVE_API_KEY`.
-- No client-side exposure — all new code runs in server/agent context.
-- Headlines may include filing URLs; those are SEC/public. Log truncation not required.
+- No secrets touched. No new env vars. No new network calls.
+- Removing the `Session …` footer actually reduces information disclosure in the Discord channel (session ids are opaque but were visible to anyone in `#orchestrator`).
 
 ### Complexity
 
-Medium. Main risk is schema plumbing — swing-trader's pipeline is a chain of zod-parsed step outputs, so adding `askEdgarNewsFeed` requires updating every downstream schema that inherits from `filingsSchema`. Codex should resolve each `parse()` call in the chain after editing `filingsSchema`. Small-cap is cleaner — the new `newsFeed` field replaces `newsDigest` in one place.
+Low. Four localized edits in a single file, all deletions or signature simplifications. No new code paths, no schema changes, no new tests required (the file has no existing test coverage and this change does not warrant adding one — the behavior is trivially verifiable by running the bot against Discord).
 
-Test surface is small (~7 unit tests + 2 fixture updates). No new infrastructure.
+---
+
+## Session Maintenance Checklist
+
+- [ ] After Codex finishes this spec, commit with a message referencing the single-reply cleanup.
+- [ ] Smoke-test both routed and non-routed paths in `#orchestrator` per Verification Steps above.
+- [ ] If a future task adds a `/health` Discord command, note that `/api/agents/admin/stats` already returns the full payload (agent heartbeats, queue depth, stuck jobs, today's request count / cost / success rate, circuit breakers, delivery failures) and requires `AGENT_ADMIN_KEY` — not the service key the bot uses today.

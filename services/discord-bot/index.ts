@@ -48,7 +48,7 @@ type ServiceCompletedState = {
   status: 'completed';
   sessionId: string | null;
   result:
-    | { routed: true; specialistJobId: string | null }
+    | { routed: true }
     | { routed: false; message: string; reportId: string | null; ticker: string | null };
 };
 
@@ -253,7 +253,6 @@ async function pollChatJob(config: BotConfig, jobId: string): Promise<ServiceJob
         sessionId: null,
         result: {
           routed: true,
-          specialistJobId: readString(result.specialistJobId),
         },
       };
     }
@@ -326,28 +325,17 @@ async function waitForTerminalState(
   return { status: 'timeout' };
 }
 
-function buildCompletedEmbeds(
-  responseText: string,
-  sessionId: string | null,
-): EmbedBuilder[] {
+function buildCompletedEmbeds(responseText: string): EmbedBuilder[] {
   const chunks = splitText(responseText, EMBED_DESCRIPTION_LIMIT);
 
-  return chunks.map((chunk, index) => {
-    const embed = new EmbedBuilder()
-      .setColor(0x10b981)
-      .setTitle(index === 0 ? 'Orchestrator Reply' : `Orchestrator Reply (${index + 1}/${chunks.length})`)
-      .setDescription(chunk);
-
-    if (index === 0 && sessionId) {
-      embed.setFooter({ text: `Session ${sessionId}` });
-    }
-
-    return embed;
-  });
+  return chunks.map((chunk, index) => new EmbedBuilder()
+    .setColor(0x10b981)
+    .setTitle(index === 0 ? 'Orchestrator Reply' : `Orchestrator Reply (${index + 1}/${chunks.length})`)
+    .setDescription(chunk));
 }
 
-async function replyCompleted(message: Message<true>, responseText: string, sessionId: string | null) {
-  const embeds = buildCompletedEmbeds(responseText, sessionId);
+async function replyCompleted(message: Message<true>, responseText: string) {
+  const embeds = buildCompletedEmbeds(responseText);
   const channel = message.channel as TextChannel;
 
   const [firstEmbed, ...remainingEmbeds] = embeds;
@@ -431,53 +419,11 @@ async function handleMessage(message: Message, config: BotConfig) {
     }
 
     if (state.result.routed) {
-      await replyPlain(message, 'Routed to specialist — waiting for results...');
-
-      if (!state.result.specialistJobId) {
-        await replyPlain(message, 'I could not track the specialist job.');
-        return;
-      }
-
-      const specialistState = await waitForTerminalState(
-        config,
-        message.author.id,
-        state.result.specialistJobId,
-      );
-
-      if (specialistState.status === 'timeout') {
-        await replyPlain(message, 'Specialist did not finish within 2 minutes.');
-        return;
-      }
-
-      if (specialistState.status === 'failed') {
-        const failureSuffix = specialistState.failureClass
-          ? ` (${specialistState.failureClass})`
-          : '';
-        await replyPlain(
-          message,
-          `The specialist failed${failureSuffix}. ${specialistState.errorMessage ?? 'Please try again.'}`,
-        );
-        return;
-      }
-
-      if (specialistState.result.message.trim()) {
-        await replyCompleted(
-          message,
-          specialistState.result.message,
-          specialistState.sessionId ?? accepted.sessionId,
-        );
-        return;
-      }
-
-      await replyPlain(message, 'Research complete. Report delivered to the research channel.');
+      await replyPlain(message, 'Routed to specialist.');
       return;
     }
 
-    await replyCompleted(
-      message,
-      state.result.message,
-      state.sessionId ?? accepted.sessionId,
-    );
+    await replyCompleted(message, state.result.message);
   } catch (error) {
     const isSubmitError = error instanceof ServiceRequestError && error.phase === 'submit';
 
