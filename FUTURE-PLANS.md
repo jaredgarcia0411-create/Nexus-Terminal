@@ -259,6 +259,149 @@ P0, P1, P2, and Tier 1 are implemented. Execution details archived in HANDOFF.md
 
 ### Tier 2 — Next Sprint (Medium Impact, Medium Effort)
 
+---
+
+## Agent Hardening Backlog (2026-04-15)
+
+**Context:** The current agent stack is already substantial: typed blueprints, DB-backed jobs, checkpoints, retry logic, runtime limits, and specialist routing are all in place. The next constraint is not "add more agent code" so much as "tighten the trust boundaries before giving the system more autonomy."
+
+### Hardening items to prioritize
+
+1. **Fix budget enforcement so spend limits actually work**
+   - **Current gap:** `buildLlmTrackingEntry()` in `lib/agents/blueprint-runner.ts` records `estimatedCostCents: 0`, while `checkBudget()` in `lib/agents/runtime-limits.ts` gates on the summed `estimatedCostCents` column.
+   - **Why this matters:** The current budget system looks real but cannot trip correctly. More agentic behavior means more model calls, so this becomes a real operational risk instead of a cosmetic one.
+   - **Desired state:** Real per-model cost estimation, accurate request logging, and hard stop behavior before a user or background workflow can burn through budget unnoticed.
+
+2. **Tighten job/result authorization on service endpoints**
+   - **Current gap:** `app/api/agents/service/chat/route.ts` GET returns job state by `job_id` behind the shared service key, without validating job ownership or session ownership.
+   - **Why this matters:** If the shared key is reused too broadly or leaked, the endpoint becomes a read-any-job surface.
+   - **Desired state:** Job reads should be scoped to the authenticated service actor plus the expected user/session/channel context, not just a bare UUID.
+
+3. **Separate trusted instructions from untrusted context**
+   - **Current gap:** `buildSynthesisPrompt()` in `lib/agents/blueprints/orchestrator-chat.ts` injects recent conversation history directly into the prompt via `JSON.stringify(...)`, and `lib/agents/context.ts` loads raw rows with minimal filtering.
+   - **Why this matters:** This is the classic prompt-injection seam. User content, retrieved content, and tool output should all be treated as untrusted.
+   - **Desired state:** Clear trust labels in prompt assembly, context sanitization/compaction, and narrower structured context objects instead of raw conversation dumps.
+
+4. **Add approval gates for high-impact actions**
+   - **Current gap:** The prompt policy says the system should be careful, but the runtime does not yet have a general approval framework for consequential mutations or external side effects.
+   - **Why this matters:** "The model promised to be safe" is not a control. Any future write action, webhook trigger, broker integration, account mutation, or file mutation needs a runtime gate.
+   - **Desired state:** Explicit approval-required tool classes, auditable approval records, and deny-by-default behavior for mutating tools.
+
+5. **Move risky execution outside the Next.js app boundary**
+   - **Current gap:** The repo's worker model is durable-process oriented, but there is no dedicated external sandbox boundary for untrusted code, generated scripts, or richer tool execution.
+   - **Why this matters:** Vercel/serverless is a bad place to let autonomous execution grow legs. The app should orchestrate, not become the sandbox.
+   - **Desired state:** Next.js remains the control plane. Risky execution happens in a sidecar/worker/sandbox service with short-lived credentials and explicit input/output contracts.
+
+6. **Make memory writes more explicit, scoped, and expirable**
+   - **Current gap:** `agent_memory_v2` is already better than implicit memory, but there is still no full lifecycle around review, cleanup, or category-specific retention.
+   - **Why this matters:** Agents get more dangerous when memory quietly accumulates stale, low-quality, or over-broad facts.
+   - **Desired state:** Every durable memory row should have provenance, user scope, TTL where appropriate, and a clear reason it exists. Memory should be a product decision, not a side effect of verbosity.
+
+7. **Add end-to-end evals and trace review before increasing autonomy**
+   - **Current gap:** The test suite covers many individual layers, but there is no strong end-to-end eval harness for multi-step agent behavior, prompt regressions, or tool-routing failures.
+   - **Why this matters:** Once the agent gets more tools, a passing unit suite is not enough. You need to know whether it made the right decision, called the right tool, or exposed the wrong data.
+   - **Desired state:** Trace IDs, tool-call logs, golden-path evals, adversarial evals, and release gates on prompt/tool changes.
+
+8. **Add transactionality and dependency tracking for multi-agent workflows**
+   - **Current gap:** The current chat flow persists the user message and queued job as separate inserts, and routed orchestration only tracks a single `specialistJobId`.
+   - **Why this matters:** As soon as orchestration becomes parallel or fan-out based, partial writes and missing dependency graphs become correctness problems.
+   - **Desired state:** Atomic enqueue/persist operations, explicit parent/child job relationships, and durable tracking for parallel specialist runs.
+
+### Order of operations
+
+- Fix spend tracking and auth scoping first.
+- Then harden prompt/context boundaries and approval gates.
+- Then move risky execution into a real sandbox boundary.
+- Only after that should the repo take on substantially more autonomous behavior.
+
+### Guiding rule
+
+The model should be treated as a **coordinator with bounded tools**, not a privileged process with broad implied authority.
+
+---
+
+## Hermes Sidecar Evaluation (2026-04-15)
+
+**Question:** Could Hermes act as a "second hand on deck" for Nexus Terminal?
+
+**Short answer:** Yes, but only if it is scoped as a sidecar worker or internal operator assistant, not as the primary trust boundary of the product.
+
+### What "sidecar" means here
+
+Hermes would run as a separate service or container alongside Nexus Terminal, with a narrow interface. Nexus stays the system of record and UI/API surface. Hermes becomes an auxiliary runtime that can do bounded higher-autonomy work and return structured outputs.
+
+### Good fits for a Hermes sidecar
+
+- Long-form research synthesis
+- Repo-aware codebase investigation
+- Drafting implementation plans or test plans
+- Background research jobs that enrich a Nexus report
+- Internal operator workflows where a trusted human is already in the loop
+
+### Bad fits for a Hermes sidecar
+
+- Direct write access to the main app database
+- Direct execution of high-impact product mutations
+- Multi-tenant customer-facing authority boundary
+- Anything that assumes "Hermes said it, so it must be safe"
+
+### Recommended integration shape
+
+1. **Run Hermes as an isolated service**
+   - Separate process/container from Next.js and from the main worker loop
+   - Prefer container isolation over host execution
+   - Give it its own credentials and network policy
+
+2. **Expose a narrow contract**
+   - Nexus calls Hermes for a small number of jobs, for example:
+     - `researchTicker`
+     - `analyzeRepo`
+     - `draftPlan`
+     - `summarizeFindings`
+   - Hermes returns structured JSON, not ad hoc prose blobs that the app blindly trusts
+
+3. **Keep Nexus as the control plane**
+   - Nexus owns auth, scheduling, persistence, approvals, and final user-visible state
+   - Hermes should not become the thing that decides who can do what in the product
+
+4. **Treat Hermes output as untrusted**
+   - Validate response payloads with Zod
+   - Require explicit promotion before any Hermes output becomes durable memory, a report, or a user-facing action
+   - Log the full request/response and tool path for auditability
+
+5. **Start read-only**
+   - First version should have read-only access to repo context, approved APIs, or a scoped research dataset
+   - Any write path should be mediated by Nexus after validation and, ideally, explicit approval
+
+### "Second hand on deck" interpretation
+
+The right mental model is:
+
+- **Yes:** a second set of hands for research, synthesis, codebase spelunking, and draft proposals
+- **No:** a silent second brain that can independently mutate the app or act as a hidden control plane
+
+If implemented well, Hermes would feel like a high-agency staff analyst attached to the product team, not a ghost maintainer living inside the app.
+
+### Candidate first experiment
+
+Use Hermes for one bounded internal workflow:
+
+- Input: "research this ticker / repo area / product question"
+- Hermes does multi-step research in its own runtime
+- Output: structured JSON report with sources, confidence, and proposed next actions
+- Nexus renders the result, stores it if approved, and does not grant Hermes direct mutation rights
+
+### Why this is attractive
+
+- Lets Nexus keep its typed workflow engine and existing DB-backed job model
+- Avoids replacing the current architecture with a bigger assistant runtime
+- Gives a place for higher-autonomy behavior that would be awkward inside a Vercel-oriented app
+- Makes the trust boundary explicit instead of accidental
+
+### Revisit question
+
+If Hermes proves useful as a sidecar, the next question is not "should Hermes replace the agent stack?" It is "which specific workflows benefit from a sidecar more than they benefit from being implemented as typed Nexus blueprints?"
+
 **T2.0: News Pipeline Unification — BIRD Catalyst Gap (2026-04-15)** 🔴 HIGHEST PRIORITY
 
 Observed on BIRD (04/15/26): swing-trader Catalyst section said "No recent news articles are available" and small-cap said "the recent 8-K filing was a legit catalyst" without quoting the actual headline. AskEdgar clearly had the news (convertible financing + pivot from footwear to "NewBird AI" GPU-as-a-Service). Root causes:
