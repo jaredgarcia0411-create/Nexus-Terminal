@@ -1,0 +1,7 @@
+policy:
+  allow_implicit_invocation: false
+
+interface:
+  display_name: "Ask Edgar Debug"
+  short_description: "Debug the Ask Edgar research + cache pipeline"
+  default_prompt: "Use $nexus-askedgar-debug to trace the Ask Edgar request path, verify cached-helper usage, and diagnose the failing route, report, or blueprint."

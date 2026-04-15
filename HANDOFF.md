@@ -307,3 +307,4 @@ Low. Four localized edits in a single file, all deletions or signature simplific
 - [ ] After Codex finishes this spec, commit with a message referencing the single-reply cleanup.
 - [ ] Smoke-test both routed and non-routed paths in `#orchestrator` per Verification Steps above.
 - [ ] If a future task adds a `/health` Discord command, note that `/api/agents/admin/stats` already returns the full payload (agent heartbeats, queue depth, stuck jobs, today's request count / cost / success rate, circuit breakers, delivery failures) and requires `AGENT_ADMIN_KEY` — not the service key the bot uses today.
+- [ ] Sync the new repo Codex skills (`nexus-status`, `nexus-debug`, `nexus-review`, `nexus-security-audit`, `nexus-askedgar-debug`) into `~/.codex/skills/` and restart Codex if you want them surfaced in the skill list.

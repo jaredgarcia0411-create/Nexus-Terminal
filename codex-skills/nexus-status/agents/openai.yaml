@@ -1,0 +1,7 @@
+policy:
+  allow_implicit_invocation: false
+
+interface:
+  display_name: "Status"
+  short_description: "Glanceable repo + HANDOFF status"
+  default_prompt: "Use $nexus-status to show active specs, local changes, recent commits, and the next step."

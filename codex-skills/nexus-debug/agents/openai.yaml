@@ -1,0 +1,7 @@
+policy:
+  allow_implicit_invocation: false
+
+interface:
+  display_name: "Debug"
+  short_description: "Root-cause and fix repo-specific bugs"
+  default_prompt: "Use $nexus-debug to reproduce the issue, trace the relevant code paths, identify the root cause, and apply the smallest safe fix if requested."

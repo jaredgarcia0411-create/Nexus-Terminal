@@ -1,0 +1,7 @@
+policy:
+  allow_implicit_invocation: false
+
+interface:
+  display_name: "Security Audit"
+  short_description: "Auth, validation, and secret-handling review"
+  default_prompt: "Use $nexus-security-audit to scan the requested scope for auth, validation, secret-handling, and data-exposure risks, then report findings by severity."
