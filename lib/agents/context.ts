@@ -24,6 +24,9 @@ function normalizeMacroSummaryReport(value: unknown): MacroSummaryReport | null 
   const scenario = report.scenarioAnalysis && typeof report.scenarioAnalysis === 'object'
     ? report.scenarioAnalysis
     : null;
+  const deltas = Array.isArray((report as { deltas?: unknown }).deltas)
+    ? (report as { deltas: unknown[] }).deltas.filter((entry): entry is string => typeof entry === 'string')
+    : [];
 
   return {
     tradingDate: typeof report.tradingDate === 'string' ? report.tradingDate : '',
@@ -52,6 +55,7 @@ function normalizeMacroSummaryReport(value: unknown): MacroSummaryReport | null 
     sourceIndex: Array.isArray(report.sourceIndex) ? report.sourceIndex : [],
     confidence: report.confidence,
     tldr: Array.isArray(report.tldr) ? report.tldr : [],
+    deltas,
   };
 }
 

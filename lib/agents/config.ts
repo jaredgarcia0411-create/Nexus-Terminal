@@ -5,6 +5,9 @@ import {
   orchestratorMacroSummaryBlueprint,
 } from './blueprints/orchestrator-macro-summary';
 import {
+  orchestratorMacroIntradayBlueprint,
+} from './blueprints/orchestrator-macro-intraday';
+import {
   smallCapResearchBlueprint,
 } from './blueprints/small-cap-research';
 import {
@@ -66,7 +69,21 @@ export const AGENT_CONFIGS: Record<AgentId, AgentConfig> = {
       chat: orchestratorChatBlueprint,
       'macro-summary': orchestratorMacroSummaryBlueprint,
     },
-    blueprintResolver: (job) => resolveFromCapabilities('orchestrator', job),
+    blueprintResolver: (job) => {
+      if (job.jobType === 'macro-summary') {
+        const input = job.input;
+        if (
+          input
+          && typeof input === 'object'
+          && !Array.isArray(input)
+          && (input as { intradayUpdate?: unknown }).intradayUpdate === true
+        ) {
+          return orchestratorMacroIntradayBlueprint;
+        }
+      }
+
+      return resolveFromCapabilities('orchestrator', job);
+    },
   },
   'small-cap-trader': {
     id: 'small-cap-trader',

@@ -9,6 +9,7 @@ vi.mock('@/lib/agents/checkpoints', () => ({
 }));
 
 import {
+  buildMacroIntradayEmbed,
   buildResearchEmbed,
   buildMacroSummaryEmbed,
   buildSwingSetupEmbed,
@@ -30,6 +31,7 @@ interface MacroSummaryReportFixture extends MacroSummaryReport {
     classification: string;
     source: string;
   };
+  deltas?: string[];
 }
 
 function createStoredReport(overrides: Partial<(typeof agentReports.$inferSelect)> = {}) {
@@ -402,9 +404,12 @@ describe('agent discord helpers', () => {
   it('resolves known webhook mappings without warning', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
+    vi.stubEnv('DISCORD_WEBHOOK_MACRO_DAILY', 'https://discord.test/macro-daily');
     vi.stubEnv('DISCORD_WEBHOOK_RESEARCH', 'https://discord.test/research');
     vi.stubEnv('DISCORD_WEBHOOK_SWING_SETUPS', 'https://discord.test/swing-setups');
 
+    expect(resolveWebhookUrl('orchestrator', 'macro-summary')).toBe('https://discord.test/macro-daily');
+    expect(resolveWebhookUrl('orchestrator', 'macro-intraday')).toBe('https://discord.test/macro-daily');
     expect(resolveWebhookUrl('small-cap-trader', 'research')).toBe('https://discord.test/research');
     expect(resolveWebhookUrl('swing-trader', 'research')).toBe('https://discord.test/swing-setups');
     expect(warnSpy).not.toHaveBeenCalled();
@@ -662,6 +667,84 @@ describe('agent discord helpers', () => {
     const fields = embed.fields ?? [];
 
     expect(fields.some((field) => field.name === 'Fear & Greed')).toBe(false);
+  });
+
+  it('skips empty macro summary sections and omits rates when fred data is unavailable', () => {
+    const embed = buildMacroSummaryEmbed(createStoredReport({
+      agentId: 'orchestrator',
+      reportType: 'macro-summary',
+      title: '2026-04-12 macro briefing',
+      reportJson: createMacroReportJson({
+        fredData: [],
+        ratesOutlook: 'Rates still matter, but no hard data was available.',
+        scheduledCatalysts: [],
+        sectorRotation: [],
+        deskImplications: [],
+      }),
+    }) as never);
+
+    const fieldNames = (embed.fields ?? []).map((field) => field.name);
+
+    expect(fieldNames).not.toContain('Rates');
+    expect(fieldNames).not.toContain('Catalysts');
+    expect(fieldNames).not.toContain('Sector Rotation');
+    expect(fieldNames).not.toContain('Desk Implications');
+  });
+
+  it('renders the Deltas field when delta sentences are present', () => {
+    const embed = buildMacroSummaryEmbed(createStoredReport({
+      agentId: 'orchestrator',
+      reportType: 'macro-summary',
+      title: '2026-04-12 macro briefing',
+      reportJson: createMacroReportJson({
+        deltas: ['10Y at 4.32%, unchanged from yesterday.'],
+      }),
+    }) as never);
+
+    const deltas = (embed.fields ?? []).find((field) => field.name === 'Deltas');
+
+    expect(deltas).toEqual(expect.objectContaining({
+      name: 'Deltas',
+      value: expect.stringContaining('10Y at 4.32%, unchanged from yesterday.'),
+      inline: false,
+    }));
+  });
+
+  it('builds the macro intraday embed with session-specific sections', () => {
+    const embed = buildMacroIntradayEmbed(createStoredReport({
+      agentId: 'orchestrator',
+      reportType: 'macro-intraday',
+      title: '2026-04-12 intraday macro update',
+      summary: 'Stored summary should remain the embed description.',
+      reportJson: {
+        tradingDate: '2026-04-12',
+        sessionBias: 'bullish',
+        sessionSummary: 'The session held the morning thesis and breadth improved into noon.',
+        surprises: ['Semis are outperforming the morning brief.', 'UUP is fading despite stronger yields.'],
+        updatedKeyWatch: 'Watch whether SPY can hold VWAP into the afternoon.',
+        deskNote: 'Keep size small into lunch but lean with semis.',
+      },
+    }) as never);
+
+    expect(embed.description).toBe('Stored summary should remain the embed description.');
+    expect(embed.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Session Bias', value: 'bullish' }),
+      expect.objectContaining({
+        name: 'Surprises',
+        value: expect.stringContaining('• Semis are outperforming the morning brief.'),
+        inline: false,
+      }),
+      expect.objectContaining({
+        name: 'Key Watch',
+        value: 'Watch whether SPY can hold VWAP into the afternoon.',
+        inline: false,
+      }),
+      expect.objectContaining({
+        name: 'Desk Note',
+        value: 'Keep size small into lunch but lean with semis.',
+        inline: false,
+      }),
+    ]));
   });
 
   it('manual redelivery posts again even when the success marker already exists', async () => {

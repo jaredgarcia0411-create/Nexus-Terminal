@@ -206,6 +206,10 @@ function readThrownError(error: unknown): string {
 }
 
 function selectEmbed(report: AgentReport): DiscordEmbed {
+  if (report.reportType === 'macro-intraday') {
+    return buildMacroIntradayEmbed(report);
+  }
+
   if (report.reportType === 'macro-summary') {
     return buildMacroSummaryEmbed(report);
   }
@@ -605,8 +609,6 @@ export function buildMacroSummaryEmbed(report: AgentReport): DiscordEmbed {
       ? `${ratesLine}\n${payload.ratesOutlook}`
       : ratesLine;
     fields.push(buildField('Rates', ratesText, false));
-  } else if (typeof payload.ratesOutlook === 'string' && payload.ratesOutlook.trim()) {
-    fields.push(buildField('Rates', payload.ratesOutlook, false));
   }
 
   const sentimentData = readJsonValue(payload, 'sentimentData');
@@ -637,18 +639,20 @@ export function buildMacroSummaryEmbed(report: AgentReport): DiscordEmbed {
     }
   }
 
-  fields.push(buildField(
-    'Catalysts',
-    Array.isArray(payload.scheduledCatalysts) && payload.scheduledCatalysts.length > 0
-      ? payload.scheduledCatalysts.map((catalyst) => {
+  if (Array.isArray(payload.scheduledCatalysts) && payload.scheduledCatalysts.length > 0) {
+    fields.push(buildField(
+      'Catalysts',
+      payload.scheduledCatalysts.map((catalyst) => {
         const when = catalyst.date ? ` (${catalyst.date})` : '';
         return `• ${catalyst.event}${when} - ${catalyst.expectedImpact}`;
-      }).join('\n')
-      : UNKNOWN_VALUE,
-    false,
-  ));
+      }).join('\n'),
+      false,
+    ));
+  }
 
-  fields.push(buildField('Sector Rotation', formatBulletList(payload.sectorRotation), false));
+  if (Array.isArray(payload.sectorRotation) && payload.sectorRotation.length > 0) {
+    fields.push(buildField('Sector Rotation', formatBulletList(payload.sectorRotation), false));
+  }
 
   if (payload.scenarioAnalysis && typeof payload.scenarioAnalysis === 'object') {
     const consensus = typeof payload.scenarioAnalysis.consensus === 'string'
@@ -667,16 +671,51 @@ export function buildMacroSummaryEmbed(report: AgentReport): DiscordEmbed {
     }
   }
 
-  fields.push(buildField('Desk Implications', formatBulletList(payload.deskImplications), false));
+  if (Array.isArray(payload.deskImplications) && payload.deskImplications.length > 0) {
+    fields.push(buildField('Desk Implications', formatBulletList(payload.deskImplications), false));
+  }
 
   if (Array.isArray(payload.tldr) && payload.tldr.length > 0) {
     fields.push(buildField('TLDR', formatBulletList(payload.tldr), false));
+  }
+
+  const deltas = readJsonValue(payload, 'deltas');
+  if (Array.isArray(deltas) && deltas.length > 0) {
+    fields.push(buildField('Deltas', formatBulletList(deltas), false));
   }
 
   return buildBaseEmbed(
     report,
     fields,
     optionalText(payload.summary, report.summary),
+  );
+}
+
+export function buildMacroIntradayEmbed(report: AgentReport): DiscordEmbed {
+  const payload = asRecord(report.reportJson);
+  const fields: DiscordEmbedField[] = [
+    buildField('Session Bias', readJsonValue(payload, 'sessionBias')),
+  ];
+
+  const surprises = readJsonValue(payload, 'surprises');
+  if (Array.isArray(surprises) && surprises.length > 0) {
+    fields.push(buildField('Surprises', formatBulletList(surprises), false));
+  }
+
+  const updatedKeyWatch = optionalText(readJsonValue(payload, 'updatedKeyWatch'));
+  if (updatedKeyWatch) {
+    fields.push(buildField('Key Watch', updatedKeyWatch, false));
+  }
+
+  const deskNote = optionalText(readJsonValue(payload, 'deskNote'));
+  if (deskNote) {
+    fields.push(buildField('Desk Note', deskNote, false));
+  }
+
+  return buildBaseEmbed(
+    report,
+    fields,
+    optionalText(report.summary, readJsonValue(payload, 'sessionSummary')),
   );
 }
 
@@ -699,6 +738,8 @@ export function resolveWebhookUrl(agentId: AgentId, reportType: string): string 
   let envName: string | null = null;
 
   if (agentId === 'orchestrator' && reportType === 'macro-summary') {
+    envName = 'DISCORD_WEBHOOK_MACRO_DAILY';
+  } else if (agentId === 'orchestrator' && reportType === 'macro-intraday') {
     envName = 'DISCORD_WEBHOOK_MACRO_DAILY';
   } else if (agentId === 'orchestrator' && (reportType === 'system-alert' || reportType.startsWith('system-'))) {
     envName = 'DISCORD_WEBHOOK_SYSTEM';

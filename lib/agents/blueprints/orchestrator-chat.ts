@@ -119,6 +119,7 @@ function formatRecentTrades(trades: unknown[]): string {
 function formatMacroContext(macro: MacroSummaryReport): string {
   const drivers = Array.isArray(macro.drivers) ? macro.drivers : [];
   const deskImplications = Array.isArray(macro.deskImplications) ? macro.deskImplications : [];
+  const deltas = Array.isArray(macro.deltas) ? macro.deltas : [];
   const sentimentLine = macro.sentimentData
     && typeof macro.sentimentData.classification === 'string'
     && typeof macro.sentimentData.score === 'number'
@@ -130,6 +131,9 @@ function formatMacroContext(macro: MacroSummaryReport): string {
     sentimentLine,
     drivers.length > 0
       ? `Drivers: ${drivers.map((driver) => `${driver.driver} (${driver.impact})`).join('; ')}`
+      : null,
+    deltas.length > 0
+      ? `Deltas: ${deltas.join('; ')}`
       : null,
     deskImplications.length > 0
       ? `Desk: ${deskImplications.join('; ')}`

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { and, desc, eq, lt } from 'drizzle-orm';
+import { agentReports } from '@/lib/db/schema';
 import { fetchUnifiedSnapshot, fetchDailyAggregates, type MassiveSnapshotResult } from '@/lib/massive-market';
 import { writeAndDeliverReport } from '../discord';
 import { fetchFearGreedIndex } from '../sentiment-client';
@@ -6,6 +8,7 @@ import { fetchFredSeries } from '../fred-client';
 import { callLlm } from '../llm-client';
 import { fetchRssItems, type RssItem } from '../rss-lite';
 import { fetchPageText } from '../scrape-lite';
+import type { AgentDb } from '../db';
 import type {
   Blueprint,
   CrossAssetEntry,
@@ -82,6 +85,7 @@ const macroBriefingSchema = z.object({
   deskImplications: z.array(z.string()),
   confidence: z.enum(['high', 'medium', 'low']),
   tldr: z.array(z.string()),
+  deltas: z.array(z.string()).optional(),
 });
 
 const macroBriefingContextSchema = headlinesSchema.extend({
@@ -119,9 +123,21 @@ const dailyBarEntrySchema = z.object({
   })),
 });
 
+const priorDaySchema = z.object({
+  tradingDate: z.string(),
+  marketBias: z.string(),
+  dgs10: z.number().nullable(),
+  dgs2: z.number().nullable(),
+  spySupport: z.string().nullable(),
+  spyResistance: z.string().nullable(),
+  qqqSupport: z.string().nullable(),
+  qqqResistance: z.string().nullable(),
+}).nullable();
+
 const enrichedMacroContextSchema = macroBriefingContextSchema.extend({
   fredData: z.array(fredPointSchema),
   dailyBars: z.array(dailyBarEntrySchema),
+  priorDay: priorDaySchema.optional(),
 });
 
 const sentimentDataSchema = z.object({
@@ -139,6 +155,7 @@ const macroBriefingDraftSchema = z.object({
   sourceIndex: macroBriefingContextSchema.shape.sourceIndex,
   fredData: z.array(fredPointSchema),
   sentimentData: sentimentDataSchema.nullable().optional(),
+  deltas: z.array(z.string()).optional(),
 }).extend(macroBriefingSchema.shape).superRefine((value, ctx) => {
   const sourceIds = new Set(value.sourceIndex.map((source) => source.id));
 
@@ -262,6 +279,67 @@ function buildSourceIndex(headlines: z.infer<typeof headlinesSchema>['headlines'
   ];
 }
 
+/**
+ * Fetches the most recent prior macro report from the DB.
+ * Returns null on first run or when no usable prior report exists.
+ */
+async function fetchPriorMacroReport(
+  db: AgentDb,
+  tradingDate: string,
+): Promise<{
+  tradingDate: string;
+  marketBias: string;
+  dgs10: number | null;
+  dgs2: number | null;
+  spySupport: string | null;
+  spyResistance: string | null;
+  qqqSupport: string | null;
+  qqqResistance: string | null;
+} | null> {
+  if (!db || typeof db.select !== 'function') {
+    return null;
+  }
+
+  const [row] = await db.select({ reportJson: agentReports.reportJson })
+    .from(agentReports)
+    .where(
+      and(
+        eq(agentReports.userId, 'system-agent-user'),
+        eq(agentReports.agentId, 'orchestrator'),
+        eq(agentReports.reportType, 'macro-summary'),
+        eq(agentReports.status, 'published'),
+        lt(agentReports.createdAt, new Date(`${tradingDate}T00:00:00.000Z`)),
+      ),
+    )
+    .orderBy(desc(agentReports.createdAt))
+    .limit(1);
+
+  if (!row?.reportJson || typeof row.reportJson !== 'object') {
+    return null;
+  }
+
+  const report = row.reportJson as Partial<MacroSummaryReport>;
+  if (typeof report.tradingDate !== 'string' || typeof report.marketBias !== 'string') {
+    return null;
+  }
+
+  const dgs10 = report.fredData?.find((point) => point.seriesId === 'DGS10')?.value ?? null;
+  const dgs2 = report.fredData?.find((point) => point.seriesId === 'DGS2')?.value ?? null;
+  const spy = report.keyLevels?.find((level) => level.ticker === 'SPY');
+  const qqq = report.keyLevels?.find((level) => level.ticker === 'QQQ');
+
+  return {
+    tradingDate: report.tradingDate,
+    marketBias: report.marketBias,
+    dgs10,
+    dgs2,
+    spySupport: spy?.support ?? null,
+    spyResistance: spy?.resistance ?? null,
+    qqqSupport: qqq?.support ?? null,
+    qqqResistance: qqq?.resistance ?? null,
+  };
+}
+
 function buildBriefingPrompt(
   tradingDate: string,
   input: z.infer<typeof sentimentEnrichedContextSchema>,
@@ -301,12 +379,14 @@ function buildBriefingPrompt(
       deskImplications: ['specific, actionable trading implication'],
       confidence: 'high | medium | low',
       tldr: ['2-4 bullet points - start with overall bias, end with what to watch today'],
+      deltas: ['delta sentence e.g. "10Y at 4.35% (+3bp from yesterday)" — omit if no prior context'],
     }, null, 2),
     '',
     'Rules:',
     '- Every driver must include at least one sourceRefs entry matching an id from sourceIndex.',
     '- keyLevels: focus on SPY, QQQ, IWM. Use the daily OHLC bars to identify meaningful support/resistance (recent swing highs/lows, prior day close, round numbers). Include specific price levels.',
     '- scenarioAnalysis: consensus is the base case, disruption is what breaks it. Both must reference specific data.',
+    '- deltas: 1–4 sentences. Each must reference a specific number and compare to prior day (e.g. "10Y at 4.35%, up 3bp from 4.32% yesterday"). Omit if no prior context.',
     '- sentimentData (when present): reference the score and classification in riskAssessment and deskImplications. High fear (score < 30) is often contrarian bullish for equities; extreme greed (score > 75) warrants caution. Note: this index tracks crypto sentiment correlates, not pure equities.',
     '- tldr: what someone reads if they read nothing else. Every bullet should be specific and actionable.',
     '',
@@ -323,6 +403,26 @@ function buildBriefingPrompt(
 
   if (input.dailyBars.length > 0) {
     sections.push('', `Recent daily OHLC bars (use for key level identification):\n${JSON.stringify(input.dailyBars, null, 2)}`);
+  }
+
+  if (input.priorDay) {
+    const pd = input.priorDay;
+    const lines = [
+      `Prior trading date: ${pd.tradingDate}`,
+      `Prior bias: ${pd.marketBias}`,
+      pd.dgs10 !== null ? `Prior 10Y: ${pd.dgs10.toFixed(2)}%` : null,
+      pd.dgs2 !== null ? `Prior 2Y: ${pd.dgs2.toFixed(2)}%` : null,
+      pd.spySupport ? `Prior SPY key levels: ${pd.spySupport} / ${pd.spyResistance}` : null,
+      pd.qqqSupport ? `Prior QQQ key levels: ${pd.qqqSupport} / ${pd.qqqResistance}` : null,
+    ].filter((line): line is string => Boolean(line));
+
+    sections.push(
+      '',
+      'Prior day context (use to write delta sentences in the "deltas" field):',
+      lines.join('\n'),
+    );
+  } else {
+    sections.push('', 'No prior day context available — omit the deltas field or return an empty array.');
   }
 
   if (input.sentimentData !== null && input.sentimentData !== undefined) {
@@ -344,6 +444,48 @@ function buildBriefingPrompt(
   }
 
   return sections.join('\n');
+}
+
+function scoreReportQuality(
+  briefing: z.infer<typeof macroBriefingDraftSchema>,
+  dailyBars: z.infer<typeof dailyBarEntrySchema>[],
+): void {
+  const issues: string[] = [];
+
+  briefing.drivers.forEach((driver, index) => {
+    if (driver.sourceRefs.length === 0) {
+      issues.push(`driver[${index}] "${driver.driver.slice(0, 40)}" has no sourceRefs`);
+    }
+  });
+
+  for (const level of briefing.keyLevels) {
+    const entry = dailyBars.find((bar) => bar.ticker === level.ticker);
+    if (!entry || entry.bars.length === 0) {
+      continue;
+    }
+
+    const rangeMin = Math.min(...entry.bars.map((bar) => bar.low));
+    const rangeMax = Math.max(...entry.bars.map((bar) => bar.high));
+    const margin = (rangeMax - rangeMin) * 0.05 + 1;
+    const support = Number.parseFloat(level.support);
+    const resistance = Number.parseFloat(level.resistance);
+
+    if (!Number.isNaN(support) && (support < rangeMin - margin || support > rangeMax + margin)) {
+      issues.push(`${level.ticker} support ${level.support} outside 5-day range [${rangeMin.toFixed(2)}, ${rangeMax.toFixed(2)}]`);
+    }
+
+    if (!Number.isNaN(resistance) && (resistance < rangeMin - margin || resistance > rangeMax + margin)) {
+      issues.push(`${level.ticker} resistance ${level.resistance} outside 5-day range [${rangeMin.toFixed(2)}, ${rangeMax.toFixed(2)}]`);
+    }
+  }
+
+  if (briefing.tldr.length < 2 || briefing.tldr.length > 4) {
+    issues.push(`tldr has ${briefing.tldr.length} bullets (expected 2-4)`);
+  }
+
+  if (issues.length > 0) {
+    console.warn('[macro-summary] quality issues:', issues);
+  }
 }
 
 async function loadOrchestratorSystemPrompt() {
@@ -442,9 +584,11 @@ export const orchestratorMacroSummaryBlueprint: Blueprint = {
       inputSchema: macroBriefingContextSchema,
       outputSchema: enrichedMacroContextSchema,
       metadata: { canRetry: true, timeoutMs: 20000, maxRepairAttempts: 0, sideEffect: false },
-      run: async ({ previousOutput }) => {
+      run: async ({ previousOutput, jobInput, db }) => {
         const startedAt = Date.now();
         const context = macroBriefingContextSchema.parse(previousOutput);
+        const tradingDate = getTradingDate(jobInput);
+        const priorDay = await fetchPriorMacroReport(db, tradingDate).catch(() => null);
 
         let fredData: FredDataPoint[] = [];
         try {
@@ -505,6 +649,7 @@ export const orchestratorMacroSummaryBlueprint: Blueprint = {
           sourceIndex: extendedSourceIndex,
           fredData,
           dailyBars,
+          priorDay,
         }, {
           durationMs: Date.now() - startedAt,
           sourceIds: [
@@ -586,13 +731,16 @@ export const orchestratorMacroSummaryBlueprint: Blueprint = {
           temperature: 0.2,
         }, 'background');
 
+        const parsedBriefing = macroBriefingSchema.parse(parseJson(llmResponse.content));
         const briefing = macroBriefingDraftSchema.parse({
           crossAssetSnapshot: input.crossAssetSnapshot,
           sourceIndex: input.sourceIndex,
           fredData: input.fredData,
           sentimentData: input.sentimentData,
-          ...macroBriefingSchema.parse(parseJson(llmResponse.content)),
+          ...parsedBriefing,
         });
+
+        scoreReportQuality(briefing, input.dailyBars);
 
         return completedResult(briefing, {
           durationMs: llmResponse.durationMs,

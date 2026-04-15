@@ -128,6 +128,7 @@ export interface MacroSummaryReport {
   sourceIndex: MacroSource[];
   confidence: Confidence;
   tldr: string[];
+  deltas?: string[];
 }
 
 export type StepType = 'code' | 'llm';

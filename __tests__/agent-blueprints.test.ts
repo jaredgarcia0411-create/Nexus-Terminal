@@ -11,6 +11,7 @@ const fetchUnifiedSnapshotMock = vi.hoisted(() => vi.fn());
 const fetchDailyAggregatesMock = vi.hoisted(() => vi.fn());
 const fetchTickerNewsMock = vi.hoisted(() => vi.fn());
 const fetchPageTextMock = vi.hoisted(() => vi.fn());
+const fetchFredSeriesMock = vi.hoisted(() => vi.fn());
 const fetchFearGreedIndexMock = vi.hoisted(() => vi.fn());
 
 vi.mock('node:crypto', () => ({
@@ -38,6 +39,10 @@ vi.mock('@/lib/massive-market', () => ({
   fetchUnifiedSnapshot: fetchUnifiedSnapshotMock,
   fetchDailyAggregates: fetchDailyAggregatesMock,
   fetchTickerNews: fetchTickerNewsMock,
+}));
+
+vi.mock('@/lib/agents/fred-client', () => ({
+  fetchFredSeries: fetchFredSeriesMock,
 }));
 
 vi.mock('@/lib/agents/scrape-lite', () => ({
@@ -134,6 +139,16 @@ function createRegistryDb(status: string) {
 
 function createMacroPreviousOutput(
   sentimentData: { score: number; classification: string; source: string } | null,
+  priorDay: {
+    tradingDate: string;
+    marketBias: string;
+    dgs10: number | null;
+    dgs2: number | null;
+    spySupport: string | null;
+    spyResistance: string | null;
+    qqqSupport: string | null;
+    qqqResistance: string | null;
+  } | null = null,
 ) {
   return {
     headlines: [{ url: 'https://example.com', text: 'Markets mixed' }],
@@ -170,6 +185,28 @@ function createMacroPreviousOutput(
       },
     ],
     sentimentData,
+    priorDay,
+  };
+}
+
+function createMacroReportsDb(reportJson: unknown[] = []) {
+  const limit = vi.fn().mockResolvedValue(reportJson.map((entry) => ({ reportJson: entry })));
+  const orderBy = vi.fn(() => ({ limit }));
+  const where = vi.fn(() => ({ orderBy, limit }));
+  const from = vi.fn(() => ({ where, orderBy, limit }));
+  const select = vi.fn(() => ({ from }));
+
+  return {
+    db: {
+      select,
+    },
+    mocks: {
+      select,
+      from,
+      where,
+      orderBy,
+      limit,
+    },
   };
 }
 
@@ -192,6 +229,7 @@ describe('agent blueprints', () => {
     fetchDailyAggregatesMock.mockReset();
     fetchTickerNewsMock.mockReset();
     fetchPageTextMock.mockReset();
+    fetchFredSeriesMock.mockReset();
     fetchFearGreedIndexMock.mockReset();
     vi.unstubAllGlobals();
   });
@@ -497,6 +535,81 @@ describe('agent blueprints', () => {
     expect(result.provenance.upstreamStepIds).toEqual(['fetch-macro-context']);
   });
 
+  it('loads the prior-day macro report and threads compact context into fetch-macro-context', async () => {
+    fetchFredSeriesMock.mockResolvedValue([
+      { seriesId: 'DGS10', label: '10Y Treasury', date: '2026-04-08', value: 4.31 },
+      { seriesId: 'DGS2', label: '2Y Treasury', date: '2026-04-08', value: 4.01 },
+    ]);
+
+    const priorDayReport = {
+      tradingDate: '2026-04-07',
+      marketBias: 'bullish',
+      summary: 'Prior macro summary',
+      riskAssessment: 'Risk was balanced.',
+      drivers: [],
+      crossAssetSnapshot: [],
+      keyLevels: [
+        { ticker: 'SPY', support: '518.00', resistance: '525.00', note: 'Holding range.' },
+        { ticker: 'QQQ', support: '444.00', resistance: '452.00', note: 'Holding range.' },
+      ],
+      ratesOutlook: 'Rates were stable.',
+      fredData: [
+        { seriesId: 'DGS10', label: '10Y Treasury', date: '2026-04-07', value: 4.32 },
+        { seriesId: 'DGS2', label: '2Y Treasury', date: '2026-04-07', value: 4.02 },
+      ],
+      scheduledCatalysts: [],
+      sectorRotation: [],
+      scenarioAnalysis: {
+        consensus: 'Base case held.',
+        disruption: 'A rate spike would break the range.',
+      },
+      deskImplications: [],
+      sourceIndex: [],
+      confidence: 'medium',
+      tldr: ['Prior day held the range.', 'Rates stayed contained.'],
+    } satisfies MacroSummaryReport;
+    const { db, mocks } = createMacroReportsDb([priorDayReport]);
+
+    const job = createJob({
+      agentId: 'orchestrator',
+      jobType: 'macro-summary',
+      input: { tradingDate: '2026-04-08' },
+    });
+    const agentConfig = AGENT_CONFIGS.orchestrator;
+    const blueprint = resolveBlueprint(job);
+    const fetchContextStep = blueprint.steps.find((step) => step.name === 'fetch-macro-context');
+
+    expect(fetchContextStep).toBeDefined();
+
+    const result = await fetchContextStep!.run(createStepInput(job, agentConfig, {
+      jobInput: job.input,
+      previousOutput: createMacroPreviousOutput(null),
+      db,
+    }));
+
+    expect(mocks.select).toHaveBeenCalledTimes(1);
+    expect(mocks.limit).toHaveBeenCalledWith(1);
+    expect(result.data).toEqual(expect.objectContaining({
+      priorDay: {
+        tradingDate: '2026-04-07',
+        marketBias: 'bullish',
+        dgs10: 4.32,
+        dgs2: 4.02,
+        spySupport: '518.00',
+        spyResistance: '525.00',
+        qqqSupport: '444.00',
+        qqqResistance: '452.00',
+      },
+      sourceIndex: expect.arrayContaining([
+        expect.objectContaining({ id: 'data:fred' }),
+      ]),
+    }));
+    const resultData = result.data as {
+      dailyBars: unknown[];
+    };
+    expect(resultData.dailyBars).toEqual([]);
+  });
+
   it('uses the background lane for macro-summary synthesis without sentiment data', async () => {
     callLlmMock.mockResolvedValue({
       content: JSON.stringify({
@@ -510,8 +623,8 @@ describe('agent blueprints', () => {
         }],
         keyLevels: [{
           ticker: 'SPY',
-          support: '520.00',
-          resistance: '535.00',
+          support: '518.00',
+          resistance: '524.00',
           note: 'Holding the prior breakout range.',
         }],
         ratesOutlook: '10Y yields are stable and the curve remains slightly supportive.',
@@ -542,6 +655,7 @@ describe('agent blueprints', () => {
     const agentConfig = AGENT_CONFIGS.orchestrator;
     const blueprint = resolveBlueprint(job);
     const generateStep = blueprint.steps.find((step) => step.name === 'generate-briefing');
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     expect(generateStep).toBeDefined();
 
@@ -576,8 +690,8 @@ describe('agent blueprints', () => {
       }],
       keyLevels: [{
         ticker: 'SPY',
-        support: '520.00',
-        resistance: '535.00',
+        support: '518.00',
+        resistance: '524.00',
         note: 'Holding the prior breakout range.',
       }],
       ratesOutlook: '10Y yields are stable and the curve remains slightly supportive.',
@@ -618,6 +732,7 @@ describe('agent blueprints', () => {
       ],
       confidence: 'medium',
     });
+    expect(consoleWarnSpy).not.toHaveBeenCalled();
   });
 
   it('threads fear and greed sentiment into the macro briefing prompt when available', async () => {
@@ -634,7 +749,7 @@ describe('agent blueprints', () => {
         keyLevels: [{
           ticker: 'SPY',
           support: '520.00',
-          resistance: '535.00',
+          resistance: '524.00',
           note: 'Holding the prior breakout range.',
         }],
         ratesOutlook: '10Y yields are stable and the curve remains slightly supportive.',
@@ -649,6 +764,7 @@ describe('agent blueprints', () => {
           disruption: 'A rate spike breaks support and rotates into defensives.',
         },
         deskImplications: ['Stay selective into the open.'],
+        deltas: ['10Y was unchanged from the prior close.'],
         confidence: 'medium',
         tldr: ['Bias is bearish.', 'Watch SPY 520 support.'],
       }),
@@ -673,6 +789,15 @@ describe('agent blueprints', () => {
         score: 23,
         classification: 'Extreme Fear',
         source: 'alternative.me/fng',
+      }, {
+        tradingDate: '2026-04-07',
+        marketBias: 'bullish',
+        dgs10: 4.32,
+        dgs2: 4.01,
+        spySupport: '518.00',
+        spyResistance: '525.00',
+        qqqSupport: '444.00',
+        qqqResistance: '452.00',
       }),
     }));
 
@@ -682,13 +807,80 @@ describe('agent blueprints', () => {
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Score: 23/100 - Extreme Fear'),
     }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Prior day context (use to write delta sentences in the "deltas" field):'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Prior trading date: 2026-04-07'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Prior SPY key levels: 518.00 / 525.00'),
+    }), 'background');
     expect(result.data).toEqual(expect.objectContaining({
       sentimentData: {
         score: 23,
         classification: 'Extreme Fear',
         source: 'alternative.me/fng',
       },
+      deltas: ['10Y was unchanged from the prior close.'],
     }));
+  });
+
+  it('logs a soft quality warning when generated levels fall outside the recent range', async () => {
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    callLlmMock.mockResolvedValue({
+      content: JSON.stringify({
+        marketBias: 'bullish',
+        summary: 'Macro summary',
+        riskAssessment: 'Risk appetite is broadening.',
+        drivers: [{
+          driver: 'Breadth improved after the open',
+          impact: 'positive',
+          sourceRefs: ['headline:example.com'],
+        }],
+        keyLevels: [{
+          ticker: 'SPY',
+          support: '500.00',
+          resistance: '540.00',
+          note: 'Too far from the recent range.',
+        }],
+        ratesOutlook: 'Rates eased into the close.',
+        scheduledCatalysts: [],
+        sectorRotation: [],
+        scenarioAnalysis: {
+          consensus: 'SPY holds above support.',
+          disruption: 'A rate spike breaks the range.',
+        },
+        deskImplications: ['Stay with leaders.'],
+        confidence: 'medium',
+        tldr: ['Bias is bullish.', 'Watch the open.', 'Breadth is improving.', 'Rates are steady.', 'Stay selective.'],
+      }),
+      modelUsed: 'background-model',
+      inputTokens: 10,
+      outputTokens: 5,
+      durationMs: 123,
+    });
+
+    const job = createJob({
+      agentId: 'orchestrator',
+      jobType: 'macro-summary',
+      input: {},
+    });
+    const agentConfig = AGENT_CONFIGS.orchestrator;
+    const blueprint = resolveBlueprint(job);
+    const generateStep = blueprint.steps.find((step) => step.name === 'generate-briefing');
+
+    expect(generateStep).toBeDefined();
+
+    await generateStep!.run(createStepInput(job, agentConfig, {
+      previousOutput: createMacroPreviousOutput(null),
+    }));
+
+    expect(consoleWarnSpy).toHaveBeenCalledWith('[macro-summary] quality issues:', expect.arrayContaining([
+      expect.stringContaining('SPY support 500.00 outside 5-day range'),
+      expect.stringContaining('SPY resistance 540.00 outside 5-day range'),
+      expect.stringContaining('tldr has 5 bullets (expected 2-4)'),
+    ]));
   });
 
   it('reuses a legacy macro briefing draft when resuming across the inserted sentiment step', async () => {
@@ -823,6 +1015,7 @@ describe('agent blueprints', () => {
           ],
           confidence: 'medium',
           tldr: ['Breadth is improving.', 'Rates still matter.'],
+          deltas: ['10Y at 4.32%, unchanged from yesterday.'],
         } as MacroSummaryReport,
         recentTrades: [
           { symbol: 'AAPL', grossPnl: 250.6, direction: 'LONG', date: '2026-04-07' },
@@ -836,7 +1029,7 @@ describe('agent blueprints', () => {
       userMessage: expect.stringContaining('Recent trades:\nAAPL: +$251 (long, 2026-04-07)\nTSLA: -$90 (short)'),
     }), 'interactive');
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
-      userMessage: expect.stringContaining('Latest macro summary:\nBias: neutral (medium confidence)\nSummary: Breadth improved into the close.\nDrivers: Rates steadied (mixed)\nDesk: Keep size tighter near the open'),
+      userMessage: expect.stringContaining('Latest macro summary:\nBias: neutral (medium confidence)\nSummary: Breadth improved into the close.\nDrivers: Rates steadied (mixed)\nDeltas: 10Y at 4.32%, unchanged from yesterday.\nDesk: Keep size tighter near the open'),
     }), 'interactive');
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('IMPORTANT: Do NOT wrap your response in JSON. Do NOT use code fences. Return plain text only.'),
@@ -903,6 +1096,7 @@ describe('agent blueprints', () => {
           disruption: 'A sharp rates move breaks support and narrows breadth.',
         },
         deskImplications: ['Stay with relative-strength leaders.'],
+        deltas: ['10Y was unchanged versus the prior day.'],
         sourceIndex: [
           {
             id: 'headline:marketwatch.com',
@@ -961,6 +1155,7 @@ describe('agent blueprints', () => {
           disruption: 'A sharp rates move breaks support and narrows breadth.',
         },
         deskImplications: ['Stay with relative-strength leaders.'],
+        deltas: ['10Y was unchanged versus the prior day.'],
         sourceIndex: [
           {
             id: 'headline:marketwatch.com',

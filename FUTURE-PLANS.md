@@ -329,3 +329,59 @@ Recommended enriched macro schema (beyond current implementation):
 - `agent_reports.report_json` is the canonical contract; routes expose that shape plus metadata.
 - `fetchJmt415()` stays out of scope until its endpoint contract is confirmed.
 - Retail-tier AskEdgar assumptions remain the baseline.
+
+---
+
+## In-Site Agent — Chat / Reasoning Panel (2026-04-15)
+
+**Goal:** Let me ask reasoning questions about my own data directly from the Nexus site, without going through Discord. On-demand, chat-style.
+
+### Use cases
+- "Review my trades tagged `breakout-failed` over the last 3 months — what's the common pattern?"
+- "Summarize my worst 10 R trades this quarter and tell me what setups they share."
+- "Compare my A-grade trades to my C-grade trades — what's different about entry timing?"
+- General Q&A over journal entries, tags, performance snapshots.
+
+### Shape (rough, to be planned later)
+- New API route under `app/api/agents/` that streams responses via `createSSEResponse`.
+- New blueprint in `lib/agents/blueprints/` — in-site specialist that has tool access to trades, journal, tags, performance aggregations.
+- UI: chat panel in the site (probably a slide-out or a tab, TBD). Messages persist per-conversation.
+- Reuses existing agent runtime — same blueprint system, just a different trigger surface (HTTP instead of Discord).
+
+### Open questions for planning
+- Where does the chat UI live? New tab, dashboard widget, or global slide-out?
+- Do conversations persist in the DB, or ephemeral per-session?
+- Which tools does the agent get — read-only trade queries only, or can it write annotations back?
+- Cost control — cap tokens per turn, or let it run long?
+
+### Don't build until
+In-site agent depends on the AEV2 blueprint system being stable in production. Tier 1 agent quality work (HANDOFF) should land first so the reasoning it produces is trustworthy.
+
+---
+
+## Scheduled Morning & EOD Brief (2026-04-15)
+
+**Goal:** Home-server cron generates a structured brief twice a day — before market open and after close — summarizing what to watch and what happened. Displayed on the Nexus dashboard when I open the site.
+
+### Morning brief (pre-market)
+- Small-cap watchlist: overnight gappers, pre-market movers, fresh filings, dilution flags.
+- Macro setup: overnight futures, major econ data on the calendar, Fed speakers, notable earnings.
+- "What to watch today" — 2–3 narrative themes.
+
+### EOD brief (post-close)
+- What actually moved, why, and how my watchlist performed.
+- Macro recap — key data prints, closing levels, narrative shifts.
+- Carry-over setups worth tracking into tomorrow.
+
+### Shape (rough, to be planned later)
+- **Trigger:** home-server cron (not Vercel) — runs inside the `services/` Docker stack, same host as the agent containers. Vercel cron is for the market-pulse Discord bot; this one lives with the agents.
+- Cron kicks the agent runtime, agent pulls TradingView + Massive + AskEdgar + macro sources, writes a snapshot row to a new `daily_briefs` table.
+- Dashboard reads the latest snapshot on page load — no LLM cost per visit, no wait.
+- Two cron slots: ~8:00 AM ET (morning) and ~4:30 PM ET (EOD).
+
+### Open questions for planning
+- New table schema for `daily_briefs` (morning vs EOD as separate rows or one row per day with both).
+- Which existing blueprints to reuse vs. a new "daily-brief" blueprint.
+- Dashboard placement — top card, dedicated section, or new tab?
+- How macro data is sourced (FMP? econ calendar API? scraped?).
+- Overlap with the Market Pulse Discord bot above — can they share the same data pipeline?

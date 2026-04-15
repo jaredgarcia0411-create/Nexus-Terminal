@@ -80,6 +80,7 @@ describe('agent context helper', () => {
       sourceIndex: [],
       confidence: 'medium',
       tldr: ['Macro bias is neutral.'],
+      deltas: ['10Y at 4.32%, unchanged from yesterday.'],
     } as MacroSummaryReport;
     const rows = new Map<unknown, unknown[][]>();
     rows.set(trades, [[
@@ -167,6 +168,7 @@ describe('agent context helper', () => {
           disruption: '',
         },
         tldr: [],
+        deltas: [],
       },
       memory: [],
       conversationHistory: [],

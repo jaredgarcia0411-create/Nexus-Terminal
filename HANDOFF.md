@@ -29,7 +29,7 @@ Transformed the macro daily briefing from a thin summary (bias + drivers + catal
 ## Macro Daily Pipeline Enhancement — Phase 2
 
 > Generated: 2026-04-15
-> Status: IMPLEMENTED 2026-04-15 — AWAITING REVIEW / COMMIT BEFORE PHASE 3
+> Status: COMMITTED 2026-04-15 (`fada1b0`) — SENTIMENT SOURCES SHIPPED
 > Scope: 1 new file, 5 files modified, no new npm deps, no DB/migration changes, no new env vars
 > Dependency: Phase 1 (COMPLETED 2026-04-13)
 
@@ -366,7 +366,7 @@ Low–medium. One new ~40-line file. Blueprint adds one step and extends two sch
 ## Macro Daily Pipeline Enhancement — Phase 3
 
 > Generated: 2026-04-15
-> Status: READY FOR CODEX
+> Status: IMPLEMENTED 2026-04-15 — AWAITING REVIEW / COMMIT
 > Scope: 2 new files, 6 files modified, 0 schema/migration changes, 2 new optional env vars (`MACRO_INTRADAY_ENABLED`, `MACRO_INTRADAY_HOUR_ET`)
 > Dependency: Phase 1 shipped 2026-04-13. Phase 3 can ship independently of Phase 2 — it only uses Phase 1 fields (`marketBias`, `keyLevels`, `fredData`, `tldr`).
 
