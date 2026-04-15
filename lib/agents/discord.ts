@@ -609,6 +609,34 @@ export function buildMacroSummaryEmbed(report: AgentReport): DiscordEmbed {
     fields.push(buildField('Rates', payload.ratesOutlook, false));
   }
 
+  const sentimentData = readJsonValue(payload, 'sentimentData');
+  if (sentimentData && typeof sentimentData === 'object' && !Array.isArray(sentimentData)) {
+    const sentiment = sentimentData as {
+      score?: unknown;
+      classification?: unknown;
+      source?: unknown;
+    };
+    const score = typeof sentiment.score === 'number'
+      ? sentiment.score
+      : Number(sentiment.score);
+    const classification = typeof sentiment.classification === 'string'
+      ? sentiment.classification.trim()
+      : '';
+    const source = typeof sentiment.source === 'string'
+      ? sentiment.source.trim()
+      : '';
+
+    if (
+      Number.isFinite(score)
+      && score >= 0
+      && score <= 100
+      && classification
+      && source
+    ) {
+      fields.push(buildField('Fear & Greed', `${score}/100 - ${classification} (${source})`, false));
+    }
+  }
+
   fields.push(buildField(
     'Catalysts',
     Array.isArray(payload.scheduledCatalysts) && payload.scheduledCatalysts.length > 0

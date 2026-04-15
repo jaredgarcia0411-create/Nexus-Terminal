@@ -24,6 +24,14 @@ import type {
 
 type RowQueues = Map<unknown, unknown[][]>;
 
+interface MacroSummaryReportFixture extends MacroSummaryReport {
+  sentimentData?: {
+    score: number;
+    classification: string;
+    source: string;
+  };
+}
+
 function createStoredReport(overrides: Partial<(typeof agentReports.$inferSelect)> = {}) {
   return {
     id: 'job-1:research',
@@ -90,7 +98,9 @@ function createSwingReportJson(overrides: Partial<SwingResearchReport> = {}): Sw
   };
 }
 
-function createMacroReportJson(overrides: Partial<MacroSummaryReport> = {}): MacroSummaryReport {
+function createMacroReportJson(
+  overrides: Partial<MacroSummaryReportFixture> = {},
+): MacroSummaryReportFixture {
   return {
     tradingDate: '2026-04-12',
     marketBias: 'bullish',
@@ -130,7 +140,7 @@ function createMacroReportJson(overrides: Partial<MacroSummaryReport> = {}): Mac
     confidence: 'high',
     tldr: ['Risk appetite is improving.', 'Watch SPY 520 support and 10Y yields.'],
     ...overrides,
-  } as MacroSummaryReport;
+  };
 }
 
 function makeDb(tableRows: RowQueues = new Map()) {
@@ -613,6 +623,45 @@ describe('agent discord helpers', () => {
     expect(topDrivers?.value).toContain('🟡 Fed speakers stayed balanced');
     expect(topDrivers?.value).toContain('🔴 Rates backed off into the close');
     expect(fields.some((field) => field.name === 'crossAssetSnapshot')).toBe(false);
+  });
+
+  it('renders the Fear & Greed field when sentiment data is present', () => {
+    const embed = buildMacroSummaryEmbed(createStoredReport({
+      agentId: 'orchestrator',
+      reportType: 'macro-summary',
+      title: '2026-04-12 macro briefing',
+      summary: 'Legacy summary should not be used for the embed body.',
+      reportJson: createMacroReportJson({
+        sentimentData: {
+          score: 23,
+          classification: 'Extreme Fear',
+          source: 'alternative.me/fng',
+        },
+      }),
+    }) as never);
+
+    const fields = embed.fields ?? [];
+    const fearAndGreed = fields.find((field) => field.name === 'Fear & Greed');
+
+    expect(fearAndGreed).toEqual(expect.objectContaining({
+      name: 'Fear & Greed',
+      value: expect.stringContaining('23/100 - Extreme Fear'),
+      inline: false,
+    }));
+  });
+
+  it('skips Fear & Greed when sentiment data is absent', () => {
+    const embed = buildMacroSummaryEmbed(createStoredReport({
+      agentId: 'orchestrator',
+      reportType: 'macro-summary',
+      title: '2026-04-12 macro briefing',
+      summary: 'Legacy summary should not be used for the embed body.',
+      reportJson: createMacroReportJson(),
+    }) as never);
+
+    const fields = embed.fields ?? [];
+
+    expect(fields.some((field) => field.name === 'Fear & Greed')).toBe(false);
   });
 
   it('manual redelivery posts again even when the success marker already exists', async () => {

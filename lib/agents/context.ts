@@ -35,6 +35,13 @@ function normalizeMacroSummaryReport(value: unknown): MacroSummaryReport | null 
     keyLevels: Array.isArray(report.keyLevels) ? report.keyLevels : [],
     ratesOutlook: typeof report.ratesOutlook === 'string' ? report.ratesOutlook : '',
     fredData: Array.isArray(report.fredData) ? report.fredData : [],
+    sentimentData: report.sentimentData
+      && typeof report.sentimentData === 'object'
+      && typeof report.sentimentData.classification === 'string'
+      && typeof report.sentimentData.source === 'string'
+      && typeof report.sentimentData.score === 'number'
+      ? report.sentimentData
+      : undefined,
     scheduledCatalysts: Array.isArray(report.scheduledCatalysts) ? report.scheduledCatalysts : [],
     sectorRotation: Array.isArray(report.sectorRotation) ? report.sectorRotation : [],
     scenarioAnalysis: {

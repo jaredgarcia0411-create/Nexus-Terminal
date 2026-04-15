@@ -60,6 +60,12 @@ export interface SwingResearchReport {
   evidenceIds: string[];
 }
 
+export interface SentimentDataPoint {
+  score: number;
+  classification: string;
+  source: string;
+}
+
 export interface MacroSource {
   id: string;
   title: string;
@@ -114,6 +120,7 @@ export interface MacroSummaryReport {
   keyLevels: KeyLevel[];
   ratesOutlook: string;
   fredData: FredDataPoint[];
+  sentimentData?: SentimentDataPoint;
   scheduledCatalysts: ScheduledCatalyst[];
   sectorRotation: string[];
   scenarioAnalysis: ScenarioAnalysis;

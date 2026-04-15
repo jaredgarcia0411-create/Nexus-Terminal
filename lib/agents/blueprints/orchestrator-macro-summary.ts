@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { fetchUnifiedSnapshot, fetchDailyAggregates, type MassiveSnapshotResult } from '@/lib/massive-market';
 import { writeAndDeliverReport } from '../discord';
+import { fetchFearGreedIndex } from '../sentiment-client';
 import { fetchFredSeries } from '../fred-client';
 import { callLlm } from '../llm-client';
 import { fetchRssItems, type RssItem } from '../rss-lite';
@@ -10,12 +11,18 @@ import type {
   CrossAssetEntry,
   FredDataPoint,
   MacroSource,
+  SentimentDataPoint,
   MacroSummaryReport,
   StepResult,
 } from '../types';
 
 const DEFAULT_MACRO_HEADLINES_URLS = 'https://www.marketwatch.com/latest-news,https://finance.yahoo.com/topic/stock-market-news/';
-const DEFAULT_MACRO_RSS_URLS = 'https://cms.zerohedge.com/fullrss2.xml';
+const DEFAULT_MACRO_RSS_URLS = [
+  'https://cms.zerohedge.com/fullrss2.xml',
+  'https://feeds.content.dowjones.io/public/rss/mw_topstories',
+  'https://feeds.nbcnews.com/nbcnews/public/business',
+  'https://news.google.com/rss/search?q=federal+reserve+macro+economy&hl=en-US&gl=US&ceid=US:en',
+].join(',');
 const MACRO_TICKERS = [
   'SPY', 'QQQ', 'IWM', 'DIA',
   'XLE', 'XLF', 'XLK', 'GLD', 'USO', 'TLT',
@@ -117,10 +124,21 @@ const enrichedMacroContextSchema = macroBriefingContextSchema.extend({
   dailyBars: z.array(dailyBarEntrySchema),
 });
 
+const sentimentDataSchema = z.object({
+  score: z.number().min(0).max(100),
+  classification: z.string(),
+  source: z.string(),
+});
+
+const sentimentEnrichedContextSchema = enrichedMacroContextSchema.extend({
+  sentimentData: sentimentDataSchema.nullable(),
+});
+
 const macroBriefingDraftSchema = z.object({
   crossAssetSnapshot: macroBriefingContextSchema.shape.crossAssetSnapshot,
   sourceIndex: macroBriefingContextSchema.shape.sourceIndex,
   fredData: z.array(fredPointSchema),
+  sentimentData: sentimentDataSchema.nullable().optional(),
 }).extend(macroBriefingSchema.shape).superRefine((value, ctx) => {
   const sourceIds = new Set(value.sourceIndex.map((source) => source.id));
 
@@ -136,6 +154,11 @@ const macroBriefingDraftSchema = z.object({
     });
   });
 });
+
+const generateBriefingInputSchema = z.union([
+  sentimentEnrichedContextSchema,
+  macroBriefingDraftSchema,
+]);
 
 function completedResult<T>(
   data: T,
@@ -241,7 +264,7 @@ function buildSourceIndex(headlines: z.infer<typeof headlinesSchema>['headlines'
 
 function buildBriefingPrompt(
   tradingDate: string,
-  input: z.infer<typeof enrichedMacroContextSchema>,
+  input: z.infer<typeof sentimentEnrichedContextSchema>,
 ): string {
   const sections: string[] = [
     `Trading date: ${tradingDate}`,
@@ -284,6 +307,7 @@ function buildBriefingPrompt(
     '- Every driver must include at least one sourceRefs entry matching an id from sourceIndex.',
     '- keyLevels: focus on SPY, QQQ, IWM. Use the daily OHLC bars to identify meaningful support/resistance (recent swing highs/lows, prior day close, round numbers). Include specific price levels.',
     '- scenarioAnalysis: consensus is the base case, disruption is what breaks it. Both must reference specific data.',
+    '- sentimentData (when present): reference the score and classification in riskAssessment and deskImplications. High fear (score < 30) is often contrarian bullish for equities; extreme greed (score > 75) warrants caution. Note: this index tracks crypto sentiment correlates, not pure equities.',
     '- tldr: what someone reads if they read nothing else. Every bullet should be specific and actionable.',
     '',
     `Headlines:\n${JSON.stringify(input.headlines, null, 2)}`,
@@ -299,6 +323,13 @@ function buildBriefingPrompt(
 
   if (input.dailyBars.length > 0) {
     sections.push('', `Recent daily OHLC bars (use for key level identification):\n${JSON.stringify(input.dailyBars, null, 2)}`);
+  }
+
+  if (input.sentimentData !== null && input.sentimentData !== undefined) {
+    sections.push(
+      '',
+      `Sentiment (crypto-derived Fear & Greed Index - use as a divergent/leading signal, not an equities-direct reading):\nScore: ${input.sentimentData.score}/100 - ${input.sentimentData.classification}\nSource: ${input.sentimentData.source}`,
+    );
   }
 
   sections.push(
@@ -485,9 +516,50 @@ export const orchestratorMacroSummaryBlueprint: Blueprint = {
       },
     },
     {
+      name: 'fetch-sentiment',
+      type: 'code',
+      inputSchema: enrichedMacroContextSchema,
+      outputSchema: sentimentEnrichedContextSchema,
+      metadata: { canRetry: true, timeoutMs: 12000, maxRepairAttempts: 0, sideEffect: false },
+      run: async ({ previousOutput }) => {
+        const startedAt = Date.now();
+        const context = enrichedMacroContextSchema.parse(previousOutput);
+
+        let sentimentData: SentimentDataPoint | null = null;
+        try {
+          sentimentData = await fetchFearGreedIndex();
+        } catch {
+          // Fear & Greed unavailable - continue without sentiment data
+        }
+
+        const fetchedAt = new Date().toISOString();
+        const extendedSourceIndex: MacroSource[] = [
+          ...context.sourceIndex,
+          ...(sentimentData !== null
+            ? [{
+              id: 'data:fear-greed',
+              title: 'Alternative.me Fear & Greed Index',
+              url: 'https://alternative.me/crypto/fear-and-greed-index/',
+              fetchedAt,
+            }]
+            : []),
+        ];
+
+        return completedResult({
+          ...context,
+          sourceIndex: extendedSourceIndex,
+          sentimentData,
+        }, {
+          durationMs: Date.now() - startedAt,
+          sourceIds: sentimentData !== null ? ['fear-greed'] : [],
+          upstreamStepIds: ['fetch-macro-context'],
+        });
+      },
+    },
+    {
       name: 'generate-briefing',
       type: 'llm',
-      inputSchema: enrichedMacroContextSchema,
+      inputSchema: generateBriefingInputSchema,
       outputSchema: macroBriefingDraftSchema,
       metadata: {
         canRetry: true,
@@ -497,7 +569,17 @@ export const orchestratorMacroSummaryBlueprint: Blueprint = {
         lane: 'background',
       },
       run: async ({ jobInput, previousOutput }) => {
-        const input = enrichedMacroContextSchema.parse(previousOutput);
+        // Preserve resume compatibility for runs checkpointed on the pre-Phase-2
+        // generate step before fetch-sentiment existed in the middle of the flow.
+        const resumedDraft = macroBriefingDraftSchema.safeParse(previousOutput);
+        if (resumedDraft.success) {
+          return completedResult(resumedDraft.data, {
+            durationMs: 0,
+            upstreamStepIds: ['fetch-sentiment'],
+          });
+        }
+
+        const input = sentimentEnrichedContextSchema.parse(previousOutput);
         const llmResponse = await callLlm({
           systemPrompt: await loadOrchestratorSystemPrompt(),
           userMessage: buildBriefingPrompt(getTradingDate(jobInput), input),
@@ -508,6 +590,7 @@ export const orchestratorMacroSummaryBlueprint: Blueprint = {
           crossAssetSnapshot: input.crossAssetSnapshot,
           sourceIndex: input.sourceIndex,
           fredData: input.fredData,
+          sentimentData: input.sentimentData,
           ...macroBriefingSchema.parse(parseJson(llmResponse.content)),
         });
 
@@ -515,7 +598,7 @@ export const orchestratorMacroSummaryBlueprint: Blueprint = {
           durationMs: llmResponse.durationMs,
           tokensUsed: llmResponse.inputTokens + llmResponse.outputTokens,
           model: llmResponse.modelUsed,
-          upstreamStepIds: ['fetch-macro-context'],
+          upstreamStepIds: ['fetch-sentiment'],
           artifacts: {
             inputTokens: llmResponse.inputTokens,
             outputTokens: llmResponse.outputTokens,

@@ -29,7 +29,7 @@ Transformed the macro daily briefing from a thin summary (bias + drivers + catal
 ## Macro Daily Pipeline Enhancement — Phase 2
 
 > Generated: 2026-04-15
-> Status: READY FOR CODEX
+> Status: IMPLEMENTED 2026-04-15 — AWAITING REVIEW / COMMIT BEFORE PHASE 3
 > Scope: 1 new file, 5 files modified, no new npm deps, no DB/migration changes, no new env vars
 > Dependency: Phase 1 (COMPLETED 2026-04-13)
 

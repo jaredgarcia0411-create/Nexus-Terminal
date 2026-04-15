@@ -11,6 +11,7 @@ const fetchUnifiedSnapshotMock = vi.hoisted(() => vi.fn());
 const fetchDailyAggregatesMock = vi.hoisted(() => vi.fn());
 const fetchTickerNewsMock = vi.hoisted(() => vi.fn());
 const fetchPageTextMock = vi.hoisted(() => vi.fn());
+const fetchFearGreedIndexMock = vi.hoisted(() => vi.fn());
 
 vi.mock('node:crypto', () => ({
   randomUUID: randomUUIDMock,
@@ -41,6 +42,10 @@ vi.mock('@/lib/massive-market', () => ({
 
 vi.mock('@/lib/agents/scrape-lite', () => ({
   fetchPageText: fetchPageTextMock,
+}));
+
+vi.mock('@/lib/agents/sentiment-client', () => ({
+  fetchFearGreedIndex: fetchFearGreedIndexMock,
 }));
 
 import { AGENT_CONFIGS, resolveBlueprint } from '@/lib/agents/config';
@@ -127,6 +132,47 @@ function createRegistryDb(status: string) {
   };
 }
 
+function createMacroPreviousOutput(
+  sentimentData: { score: number; classification: string; source: string } | null,
+) {
+  return {
+    headlines: [{ url: 'https://example.com', text: 'Markets mixed' }],
+    rssHeadlines: [{ title: 'Macro headline', link: 'https://zerohedge.test/1', pubDate: 'Mon, 07 Apr 2026 12:00:00 GMT' }],
+    snapshot: null,
+    note: 'no massive api key',
+    crossAssetSnapshot: [],
+    fredData: [{ seriesId: 'DGS10', label: '10Y Treasury', date: '2026-04-07', value: 4.32 }],
+    dailyBars: [{
+      ticker: 'SPY',
+      bars: [
+        { date: '2026-04-07', open: 520, high: 525, low: 518, close: 523, volume: 1000 },
+        { date: '2026-04-06', open: 518, high: 521, low: 516, close: 520, volume: 900 },
+      ],
+    }],
+    sourceIndex: [
+      {
+        id: 'headline:example.com',
+        title: 'example.com headlines',
+        url: 'https://example.com',
+        fetchedAt: '2026-04-07T12:00:00.000Z',
+      },
+      {
+        id: 'rss:zerohedge.test',
+        title: 'zerohedge.test RSS',
+        url: 'https://zerohedge.test/feed',
+        fetchedAt: '2026-04-07T12:00:00.000Z',
+      },
+      {
+        id: 'data:fred',
+        title: 'FRED Economic Data',
+        url: 'https://fred.stlouisfed.org',
+        fetchedAt: '2026-04-07T12:00:00.000Z',
+      },
+    ],
+    sentimentData,
+  };
+}
+
 describe('agent blueprints', () => {
   beforeEach(() => {
     randomUUIDMock.mockReset().mockReturnValue('specialist-job-1');
@@ -146,6 +192,7 @@ describe('agent blueprints', () => {
     fetchDailyAggregatesMock.mockReset();
     fetchTickerNewsMock.mockReset();
     fetchPageTextMock.mockReset();
+    fetchFearGreedIndexMock.mockReset();
     vi.unstubAllGlobals();
   });
 
@@ -307,7 +354,150 @@ describe('agent blueprints', () => {
     expect(insertValues).not.toHaveBeenCalled();
   });
 
-  it('uses the background lane for macro-summary synthesis', async () => {
+  it('fetches sentiment data and threads it into the macro briefing context', async () => {
+    fetchFearGreedIndexMock.mockResolvedValue({
+      score: 23,
+      classification: 'Extreme Fear',
+      source: 'alternative.me/fng',
+    });
+
+    const job = createJob({
+      agentId: 'orchestrator',
+      jobType: 'macro-summary',
+      input: {},
+    });
+    const agentConfig = AGENT_CONFIGS.orchestrator;
+    const blueprint = resolveBlueprint(job);
+    const fetchSentimentStep = blueprint.steps.find((step) => step.name === 'fetch-sentiment');
+
+    expect(blueprint.steps.map((step) => step.name)).toEqual([
+      'scrape-headlines',
+      'fetch-market-snapshot',
+      'fetch-macro-context',
+      'fetch-sentiment',
+      'generate-briefing',
+      'save-summary',
+    ]);
+    expect(fetchSentimentStep).toBeDefined();
+
+    const result = await fetchSentimentStep!.run(createStepInput(job, agentConfig, {
+      previousOutput: {
+        headlines: [{ url: 'https://example.com', text: 'Markets mixed' }],
+        rssHeadlines: [],
+        snapshot: null,
+        note: 'no massive api key',
+        crossAssetSnapshot: [],
+        fredData: [{ seriesId: 'DGS10', label: '10Y Treasury', date: '2026-04-07', value: 4.32 }],
+        dailyBars: [],
+        sourceIndex: [
+          {
+            id: 'headline:example.com',
+            title: 'example.com headlines',
+            url: 'https://example.com',
+            fetchedAt: '2026-04-07T12:00:00.000Z',
+          },
+          {
+            id: 'data:fred',
+            title: 'FRED Economic Data',
+            url: 'https://fred.stlouisfed.org',
+            fetchedAt: '2026-04-07T12:00:00.000Z',
+          },
+        ],
+      },
+    }));
+
+    expect(fetchFearGreedIndexMock).toHaveBeenCalledWith();
+    const resultData = result.data as {
+      sentimentData: { score: number; classification: string; source: string } | null;
+      sourceIndex: Array<{
+        id: string;
+        title: string;
+        url: string | null;
+        fetchedAt: string;
+      }>;
+    };
+
+    expect(resultData).toEqual(expect.objectContaining({
+      sentimentData: {
+        score: 23,
+        classification: 'Extreme Fear',
+        source: 'alternative.me/fng',
+      },
+    }));
+    expect(resultData.sourceIndex).toEqual([
+      {
+        id: 'headline:example.com',
+        title: 'example.com headlines',
+        url: 'https://example.com',
+        fetchedAt: '2026-04-07T12:00:00.000Z',
+      },
+      {
+        id: 'data:fred',
+        title: 'FRED Economic Data',
+        url: 'https://fred.stlouisfed.org',
+        fetchedAt: '2026-04-07T12:00:00.000Z',
+      },
+      {
+        id: 'data:fear-greed',
+        title: 'Alternative.me Fear & Greed Index',
+        url: 'https://alternative.me/crypto/fear-and-greed-index/',
+        fetchedAt: expect.any(String),
+      },
+    ]);
+    expect(result.provenance.sourceIds).toEqual(['fear-greed']);
+    expect(result.provenance.upstreamStepIds).toEqual(['fetch-macro-context']);
+  });
+
+  it('continues macro sentiment threading when the fear and greed fetch fails', async () => {
+    fetchFearGreedIndexMock.mockRejectedValue(new Error('sentiment unavailable'));
+    const job = createJob({
+      agentId: 'orchestrator',
+      jobType: 'macro-summary',
+      input: {},
+    });
+    const agentConfig = AGENT_CONFIGS.orchestrator;
+    const blueprint = resolveBlueprint(job);
+    const fetchSentimentStep = blueprint.steps.find((step) => step.name === 'fetch-sentiment');
+
+    expect(fetchSentimentStep).toBeDefined();
+
+    const result = await fetchSentimentStep!.run(createStepInput(job, agentConfig, {
+      previousOutput: {
+        headlines: [{ url: 'https://example.com', text: 'Markets mixed' }],
+        rssHeadlines: [],
+        snapshot: null,
+        note: 'no massive api key',
+        crossAssetSnapshot: [],
+        fredData: [],
+        dailyBars: [],
+        sourceIndex: [
+          {
+            id: 'headline:example.com',
+            title: 'example.com headlines',
+            url: 'https://example.com',
+            fetchedAt: '2026-04-07T12:00:00.000Z',
+          },
+        ],
+      },
+    }));
+
+    expect(fetchFearGreedIndexMock).toHaveBeenCalledWith();
+    expect(result.data).toMatchObject({
+      sentimentData: null,
+      sourceIndex: [
+        {
+          id: 'headline:example.com',
+          title: 'example.com headlines',
+          url: 'https://example.com',
+          fetchedAt: '2026-04-07T12:00:00.000Z',
+        },
+      ],
+    });
+    expect(result.provenance.sourceIds).toEqual([]);
+    expect(result.provenance.upstreamStepIds).toEqual(['fetch-macro-context']);
+  });
+
+  it('uses the background lane for macro-summary synthesis without sentiment data', async () => {
     callLlmMock.mockResolvedValue({
       content: JSON.stringify({
         marketBias: 'neutral',
@@ -356,41 +546,7 @@ describe('agent blueprints', () => {
     expect(generateStep).toBeDefined();
 
     const result = await generateStep!.run(createStepInput(job, agentConfig, {
-      previousOutput: {
-        headlines: [{ url: 'https://example.com', text: 'Markets mixed' }],
-        rssHeadlines: [{ title: 'Macro headline', link: 'https://zerohedge.test/1', pubDate: 'Mon, 07 Apr 2026 12:00:00 GMT' }],
-        snapshot: null,
-        note: 'no massive api key',
-        crossAssetSnapshot: [],
-        fredData: [{ seriesId: 'DGS10', label: '10Y Treasury', date: '2026-04-07', value: 4.32 }],
-        dailyBars: [{
-          ticker: 'SPY',
-          bars: [
-            { date: '2026-04-07', open: 520, high: 525, low: 518, close: 523, volume: 1000 },
-            { date: '2026-04-06', open: 518, high: 521, low: 516, close: 520, volume: 900 },
-          ],
-        }],
-        sourceIndex: [
-          {
-            id: 'headline:example.com',
-            title: 'example.com headlines',
-            url: 'https://example.com',
-            fetchedAt: '2026-04-07T12:00:00.000Z',
-          },
-          {
-            id: 'rss:zerohedge.test',
-            title: 'zerohedge.test RSS',
-            url: 'https://zerohedge.test/feed',
-            fetchedAt: '2026-04-07T12:00:00.000Z',
-          },
-          {
-            id: 'data:fred',
-            title: 'FRED Economic Data',
-            url: 'https://fred.stlouisfed.org',
-            fetchedAt: '2026-04-07T12:00:00.000Z',
-          },
-        ],
-      },
+      previousOutput: createMacroPreviousOutput(null),
     }));
 
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -405,6 +561,9 @@ describe('agent blueprints', () => {
     }), 'background');
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Recent daily OHLC bars (use for key level identification):\n'),
+    }), 'background');
+    expect(callLlmMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Fear & Greed'),
     }), 'background');
     expect(result.data).toEqual({
       marketBias: 'neutral',
@@ -436,6 +595,7 @@ describe('agent blueprints', () => {
       tldr: ['Bias is neutral.', 'Watch SPY 520 support.'],
       crossAssetSnapshot: [],
       fredData: [{ seriesId: 'DGS10', label: '10Y Treasury', date: '2026-04-07', value: 4.32 }],
+      sentimentData: null,
       sourceIndex: [
         {
           id: 'headline:example.com',
@@ -458,6 +618,150 @@ describe('agent blueprints', () => {
       ],
       confidence: 'medium',
     });
+  });
+
+  it('threads fear and greed sentiment into the macro briefing prompt when available', async () => {
+    callLlmMock.mockResolvedValue({
+      content: JSON.stringify({
+        marketBias: 'bearish',
+        summary: 'Macro summary',
+        riskAssessment: 'Fear is elevated and the desk should stay selective.',
+        drivers: [{
+          driver: 'Rates steady into the close',
+          impact: 'mixed',
+          sourceRefs: ['headline:example.com'],
+        }],
+        keyLevels: [{
+          ticker: 'SPY',
+          support: '520.00',
+          resistance: '535.00',
+          note: 'Holding the prior breakout range.',
+        }],
+        ratesOutlook: '10Y yields are stable and the curve remains slightly supportive.',
+        scheduledCatalysts: [{
+          event: 'CPI release',
+          date: '2026-04-08',
+          expectedImpact: 'Could reset rate-cut expectations.',
+        }],
+        sectorRotation: ['Tech strong'],
+        scenarioAnalysis: {
+          consensus: 'SPY holds range and leadership stays with large-cap tech.',
+          disruption: 'A rate spike breaks support and rotates into defensives.',
+        },
+        deskImplications: ['Stay selective into the open.'],
+        confidence: 'medium',
+        tldr: ['Bias is bearish.', 'Watch SPY 520 support.'],
+      }),
+      modelUsed: 'background-model',
+      inputTokens: 10,
+      outputTokens: 5,
+      durationMs: 123,
+    });
+    const job = createJob({
+      agentId: 'orchestrator',
+      jobType: 'macro-summary',
+      input: {},
+    });
+    const agentConfig = AGENT_CONFIGS.orchestrator;
+    const blueprint = resolveBlueprint(job);
+    const generateStep = blueprint.steps.find((step) => step.name === 'generate-briefing');
+
+    expect(generateStep).toBeDefined();
+
+    const result = await generateStep!.run(createStepInput(job, agentConfig, {
+      previousOutput: createMacroPreviousOutput({
+        score: 23,
+        classification: 'Extreme Fear',
+        source: 'alternative.me/fng',
+      }),
+    }));
+
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Sentiment (crypto-derived Fear & Greed Index'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Score: 23/100 - Extreme Fear'),
+    }), 'background');
+    expect(result.data).toEqual(expect.objectContaining({
+      sentimentData: {
+        score: 23,
+        classification: 'Extreme Fear',
+        source: 'alternative.me/fng',
+      },
+    }));
+  });
+
+  it('reuses a legacy macro briefing draft when resuming across the inserted sentiment step', async () => {
+    const job = createJob({
+      agentId: 'orchestrator',
+      jobType: 'macro-summary',
+      input: {},
+    });
+    const agentConfig = AGENT_CONFIGS.orchestrator;
+    const blueprint = resolveBlueprint(job);
+    const generateStep = blueprint.steps.find((step) => step.name === 'generate-briefing');
+
+    expect(generateStep).toBeDefined();
+
+    const legacyDraft = {
+      marketBias: 'neutral' as const,
+      summary: 'Macro summary',
+      riskAssessment: 'Cross-asset risk is balanced but still rate-sensitive.',
+      drivers: [{
+        driver: 'Rates steady into the close',
+        impact: 'mixed' as const,
+        sourceRefs: ['headline:example.com'],
+      }],
+      keyLevels: [{
+        ticker: 'SPY',
+        support: '520.00',
+        resistance: '535.00',
+        note: 'Holding the prior breakout range.',
+      }],
+      ratesOutlook: '10Y yields are stable and the curve remains slightly supportive.',
+      scheduledCatalysts: [{
+        event: 'CPI release',
+        date: '2026-04-08',
+        expectedImpact: 'Could reset rate-cut expectations.',
+      }],
+      sectorRotation: ['Tech strong'],
+      scenarioAnalysis: {
+        consensus: 'SPY holds range and leadership stays with large-cap tech.',
+        disruption: 'A rate spike breaks support and rotates into defensives.',
+      },
+      deskImplications: ['Stay selective into the open.'],
+      confidence: 'medium' as const,
+      tldr: ['Bias is neutral.', 'Watch SPY 520 support.'],
+      crossAssetSnapshot: [],
+      fredData: [{ seriesId: 'DGS10', label: '10Y Treasury', date: '2026-04-07', value: 4.32 }],
+      sourceIndex: [
+        {
+          id: 'headline:example.com',
+          title: 'example.com headlines',
+          url: 'https://example.com',
+          fetchedAt: '2026-04-07T12:00:00.000Z',
+        },
+        {
+          id: 'rss:zerohedge.test',
+          title: 'zerohedge.test RSS',
+          url: 'https://zerohedge.test/feed',
+          fetchedAt: '2026-04-07T12:00:00.000Z',
+        },
+        {
+          id: 'data:fred',
+          title: 'FRED Economic Data',
+          url: 'https://fred.stlouisfed.org',
+          fetchedAt: '2026-04-07T12:00:00.000Z',
+        },
+      ],
+    };
+
+    const result = await generateStep!.run(createStepInput(job, agentConfig, {
+      previousOutput: legacyDraft,
+    }));
+
+    expect(callLlmMock).not.toHaveBeenCalled();
+    expect(result.data).toEqual(legacyDraft);
   });
 
   it('formats recent trades, extracts prose from wrapped orchestrator JSON responses, and persists the assistant turn', async () => {
