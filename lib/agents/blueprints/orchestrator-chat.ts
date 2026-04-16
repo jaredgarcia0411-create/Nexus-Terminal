@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { agentConversations, agentJobs, agentRegistry } from '@/lib/db/schema';
 import { callLlm } from '@/lib/agents/llm-client';
+import { wrapUntrusted } from '@/lib/agents/trust-boundary';
 import type { AgentId, Blueprint, MacroSummaryReport, StepResult } from '@/lib/agents/types';
 
 const RESEARCH_COMMAND = /^\s*\/research\s+/;
@@ -155,13 +156,13 @@ function buildSynthesisPrompt(
   const sections = [
     `Channel: ${chatInput.channel}`,
     route.warning ? `Warning: ${route.warning}` : null,
-    `User message:\n${chatInput.message.trim()}`,
+    `User message:\n${wrapUntrusted('user-message', chatInput.message.trim())}`,
     context.macroSummary ? `Latest macro summary:\n${formatMacroContext(context.macroSummary)}` : null,
     context.recentTrades.length > 0
       ? `Recent trades:\n${formatRecentTrades(context.recentTrades.slice(0, 5))}`
       : null,
     context.conversationHistory.length > 0
-      ? `Recent conversation:\n${JSON.stringify(context.conversationHistory.slice(0, 5))}`
+      ? `Recent conversation:\n${wrapUntrusted('conversation-history', JSON.stringify(context.conversationHistory.slice(0, 5)))}`
       : null,
     'Respond with plain prose text directly to the user. Keep it concise and actionable.',
     'IMPORTANT: Do NOT wrap your response in JSON. Do NOT use code fences. Return plain text only.',

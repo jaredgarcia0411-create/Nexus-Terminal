@@ -8,6 +8,7 @@ import { fetchFredSeries } from '../fred-client';
 import { callLlm } from '../llm-client';
 import { fetchRssItems, type RssItem } from '../rss-lite';
 import { fetchPageText } from '../scrape-lite';
+import { wrapUntrusted } from '@/lib/agents/trust-boundary';
 import type { AgentDb } from '../db';
 import type {
   Blueprint,
@@ -390,19 +391,19 @@ function buildBriefingPrompt(
     '- sentimentData (when present): reference the score and classification in riskAssessment and deskImplications. High fear (score < 30) is often contrarian bullish for equities; extreme greed (score > 75) warrants caution. Note: this index tracks crypto sentiment correlates, not pure equities.',
     '- tldr: what someone reads if they read nothing else. Every bullet should be specific and actionable.',
     '',
-    `Headlines:\n${JSON.stringify(input.headlines, null, 2)}`,
+    `Headlines:\n${wrapUntrusted('news', JSON.stringify(input.headlines, null, 2))}`,
     '',
-    `RSS Headlines:\n${JSON.stringify(input.rssHeadlines, null, 2)}`,
+    `RSS Headlines:\n${wrapUntrusted('news', JSON.stringify(input.rssHeadlines, null, 2))}`,
     '',
-    `Cross-asset snapshot:\n${JSON.stringify(input.crossAssetSnapshot, null, 2)}`,
+    `Cross-asset snapshot:\n${wrapUntrusted('market-snapshot', JSON.stringify(input.crossAssetSnapshot, null, 2))}`,
   ];
 
   if (input.fredData.length > 0) {
-    sections.push('', `FRED rates data:\n${JSON.stringify(input.fredData, null, 2)}`);
+    sections.push('', `FRED rates data:\n${wrapUntrusted('fred-data', JSON.stringify(input.fredData, null, 2))}`);
   }
 
   if (input.dailyBars.length > 0) {
-    sections.push('', `Recent daily OHLC bars (use for key level identification):\n${JSON.stringify(input.dailyBars, null, 2)}`);
+    sections.push('', `Recent daily OHLC bars (use for key level identification):\n${wrapUntrusted('ohlc-bars', JSON.stringify(input.dailyBars, null, 2))}`);
   }
 
   if (input.priorDay) {
@@ -419,7 +420,7 @@ function buildBriefingPrompt(
     sections.push(
       '',
       'Prior day context (use to write delta sentences in the "deltas" field):',
-      lines.join('\n'),
+      wrapUntrusted('prior-day-context', lines.join('\n')),
     );
   } else {
     sections.push('', 'No prior day context available — omit the deltas field or return an empty array.');
@@ -428,7 +429,7 @@ function buildBriefingPrompt(
   if (input.sentimentData !== null && input.sentimentData !== undefined) {
     sections.push(
       '',
-      `Sentiment (crypto-derived Fear & Greed Index - use as a divergent/leading signal, not an equities-direct reading):\nScore: ${input.sentimentData.score}/100 - ${input.sentimentData.classification}\nSource: ${input.sentimentData.source}`,
+      `Sentiment (crypto-derived Fear & Greed Index - use as a divergent/leading signal, not an equities-direct reading):\n${wrapUntrusted('sentiment-data', `Score: ${input.sentimentData.score}/100 - ${input.sentimentData.classification}\nSource: ${input.sentimentData.source}`)}`,
     );
   }
 
@@ -436,7 +437,7 @@ function buildBriefingPrompt(
     '',
     `Source index:\n${JSON.stringify(input.sourceIndex, null, 2)}`,
     '',
-    `Market snapshot:\n${JSON.stringify(input.snapshot, null, 2)}`,
+    `Market snapshot:\n${wrapUntrusted('market-snapshot', JSON.stringify(input.snapshot, null, 2))}`,
   );
 
   if (input.note) {

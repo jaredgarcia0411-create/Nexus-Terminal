@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getCachedTickerData } from '@/lib/askedgar';
 import { fetchDailyAggregates, fetchTickerNews, type MassiveNewsArticle } from '@/lib/massive-market';
+import { wrapUntrusted } from '@/lib/agents/trust-boundary';
 import { buildNewsFeedFromArrays, newsFeedItemSchema, type NewsFeedItem } from '../news-formatter';
 import { writeAndDeliverReport } from '../discord';
 import { upsertMemory } from '../memory';
@@ -633,30 +634,30 @@ function buildResearchPrompt(input: z.infer<typeof swingPipelineInputSchema>): s
     `Ticker: ${input.ticker}`,
     'Return strict JSON matching this exact shape (no markdown, no extra keys):',
     JSON.stringify(exampleShape, null, 2),
-    formatPromptSection('Price context', input.priceContext),
-    formatPromptSection('Deterministic technicals', input.deterministicTechnicals),
+    `Price context:\n${wrapUntrusted('price-context', JSON.stringify(input.priceContext, null, 2))}`,
+    `Deterministic technicals:\n${wrapUntrusted('deterministic-technicals', JSON.stringify(input.deterministicTechnicals, null, 2))}`,
     [
       'Runner quality:',
-      formatPromptSection('gapStats', input.runnerQuality.gapStats),
-      formatPromptSection('ownership', input.runnerQuality.ownership),
-      formatPromptSection('historicalFloat', input.runnerQuality.historicalFloat),
-      formatPromptSection('dilutionRating', input.runnerQuality.dilutionRating),
-      formatPromptSection('registrations', input.runnerQuality.registrations),
-      formatPromptSection('offerings', input.runnerQuality.offerings),
-      formatPromptSection('floatTrend', input.runnerQuality.floatTrend),
-      formatPromptSection('knownHolderOverhang', input.runnerQuality.knownHolderOverhang),
-      formatPromptSection('gapDayStats (precomputed)', {
+      `gapStats:\n${wrapUntrusted('filing', JSON.stringify(input.runnerQuality.gapStats, null, 2))}`,
+      `ownership:\n${wrapUntrusted('filing', JSON.stringify(input.runnerQuality.ownership, null, 2))}`,
+      `historicalFloat:\n${wrapUntrusted('filing', JSON.stringify(input.runnerQuality.historicalFloat, null, 2))}`,
+      `dilutionRating:\n${wrapUntrusted('filing', JSON.stringify(input.runnerQuality.dilutionRating, null, 2))}`,
+      `registrations:\n${wrapUntrusted('filing', JSON.stringify(input.runnerQuality.registrations, null, 2))}`,
+      `offerings:\n${wrapUntrusted('filing', JSON.stringify(input.runnerQuality.offerings, null, 2))}`,
+      `floatTrend:\n${wrapUntrusted('deterministic-technicals', JSON.stringify(input.runnerQuality.floatTrend, null, 2))}`,
+      `knownHolderOverhang:\n${wrapUntrusted('deterministic-technicals', JSON.stringify(input.runnerQuality.knownHolderOverhang, null, 2))}`,
+      `gapDayStats (precomputed):\n${wrapUntrusted('deterministic-technicals', JSON.stringify({
         gapCount: input.runnerQuality.gapCount,
         sameDayFadeRate: input.runnerQuality.sameDayFadeRate,
         avgHighExtension: input.runnerQuality.avgHighExtension,
         priorGapDayAvgReturn: input.runnerQuality.priorGapDayAvgReturn,
-      }),
+      }, null, 2))}`,
     ].join('\n\n'),
   ];
 
   if (input.ohlcHistory.length > 0) {
     sections.push(
-      `Daily OHLC history (last ${input.ohlcHistory.length} days):\n${JSON.stringify(input.ohlcHistory, null, 2)}`,
+      `Daily OHLC history (last ${input.ohlcHistory.length} days):\n${wrapUntrusted('ohlc-bars', JSON.stringify(input.ohlcHistory, null, 2))}`,
       'Use the OHLC data to assess momentum, volume trends, and pattern quality. Do NOT fabricate data — only reference values present above.',
     );
   } else {
@@ -667,7 +668,7 @@ function buildResearchPrompt(input: z.infer<typeof swingPipelineInputSchema>): s
 
   if (input.recentNews.length > 0) {
     sections.push(
-      formatPromptSection('Recent news', input.recentNews),
+      `Recent news:\n${wrapUntrusted('news', JSON.stringify(input.recentNews, null, 2))}`,
       "Use only items in the Recent news section. When rating Catalyst, quote the exact headline text of the single most relevant item and cite its formType (e.g., (8-K) or (news)). Do not claim no news is available unless Recent news is empty.",
     );
   } else {

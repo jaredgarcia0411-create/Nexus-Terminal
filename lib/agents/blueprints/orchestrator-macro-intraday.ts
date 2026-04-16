@@ -2,6 +2,7 @@ import { and, desc, eq, gte } from 'drizzle-orm';
 import { z } from 'zod';
 import { agentReports } from '@/lib/db/schema';
 import { fetchUnifiedSnapshot, type MassiveSnapshotResult } from '@/lib/massive-market';
+import { wrapUntrusted } from '@/lib/agents/trust-boundary';
 import { writeAndDeliverReport } from '../discord';
 import { callLlm } from '../llm-client';
 import type { AgentDb } from '../db';
@@ -135,10 +136,10 @@ function buildIntradayPrompt(input: z.infer<typeof sessionSnapshotSchema>): stri
     '- updatedKeyWatch must name a specific level, event, or cross-asset signal.',
     '- deskNote must be actionable and time-sensitive.',
     '',
-    `Current session snapshot:\n${JSON.stringify(input.crossAssetSnapshot, null, 2)}`,
+    `Current session snapshot:\n${wrapUntrusted('market-snapshot', JSON.stringify(input.crossAssetSnapshot, null, 2))}`,
     '',
     morningReport
-      ? `Morning brief context:\n${JSON.stringify(morningReport, null, 2)}`
+      ? `Morning brief context:\n${wrapUntrusted('morning-report', JSON.stringify(morningReport, null, 2))}`
       : 'Morning brief context: none available. Infer comparison from the current session only.',
   ].join('\n');
 }
