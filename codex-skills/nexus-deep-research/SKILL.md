@@ -2,10 +2,10 @@
 name: nexus-deep-research
 description: >
   Run a deep research workflow for Nexus Terminal topics by grounding the question in the live
-  codebase, splitting research and review into parallel subagent passes, and saving a structured
-  markdown brief when the user explicitly asks for a saved artifact. Use when the user asks for
-  deep research, a repo-aware investigation, a design/options memo, or a parallel multi-agent
-  review tied back to this codebase.
+  codebase, optionally splitting research and review into parallel subagent passes when the task
+  justifies it, and saving a structured markdown brief when the user explicitly asks for a saved
+  artifact. Use when the user asks for deep research, a repo-aware investigation, a design/options
+  memo, or a parallel multi-agent review tied back to this codebase.
 ---
 
 # Nexus Deep Research
@@ -26,9 +26,9 @@ for implementation work.
    - Use `rg`, `find`, and targeted file reads to inventory the exact files, routes, hooks,
      schemas, tests, and docs that frame the topic.
    - Write down 3-5 concrete research questions that the final memo must answer.
-3. Split the work into parallel passes.
-   - Always use parallel subagents for the research passes so the main context stays focused.
-   - Use at least 2 subagents with disjoint scopes.
+3. Split the work into parallel passes only when delegation buys real signal.
+   - Use local-only research for narrow questions that do not benefit from parallel work.
+   - Use 2-3 subagents with disjoint scopes when the topic is broad enough or the user explicitly asks for delegation.
    - Keep the immediate blocking step local. Do not hand off the first thing you need in order to
      understand the problem.
    - While subagents run, continue gathering non-overlapping context locally and prepare the report
@@ -50,7 +50,7 @@ for implementation work.
 
 ## Parallel Passes
 
-Use the smallest split that still buys real signal, but do not skip delegation.
+Use the smallest split that still buys real signal. Do not delegate by reflex.
 
 - Required 2-pass split for purely local topics:
   - Pass 1: codebase inventory and current behavior
@@ -67,9 +67,9 @@ Read `references/subagent-patterns.md` before writing prompts for the delegated 
 ## Delegation Rules
 
 - Use subagents only when the user asked for deep research, delegation, or parallel work.
-- This skill should not run as a single-threaded research pass.
-- If parallel subagents cannot be started because the environment or backend does not allow it,
-  stop and report that blocker instead of silently degrading to a local-only run.
+- A local-only pass is valid when the topic is narrow or delegation would not materially help.
+- If delegated passes would materially help but the environment cannot start subagents, report that
+  blocker and continue locally only when the user still wants the degraded pass.
 - Prefer `explorer` agents for read-only codebase investigation.
 - Prefer the default agent type for browsing-heavy or synthesis-heavy passes.
 - Keep write scopes empty. This skill is for research artifacts, not feature implementation.

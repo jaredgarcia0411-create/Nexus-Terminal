@@ -13,9 +13,9 @@ Follow these rules to match existing architecture and coding style.
 - Tests: Vitest (not Jest).
 
 ## Required Workflow (Always)
-1. Read `HANDOFF.md` first to understand active implementation requirements.
+1. Read `HANDOFF.md` first to check for an active execution spec and recent repo context.
 2. Preserve architecture; do not refactor unrelated areas.
-3. Implement changes in the exact order described by the active spec/handoff.
+3. If `HANDOFF.md` contains an active execution spec, implement changes in the exact order described there. If it does not, use live repo context plus this file.
 4. Never modify `.env`, `.env.local`, or secret files.
 5. After code changes, run lint, type-check, and tests.
 6. If a command fails, fix the issue before finishing.
@@ -27,6 +27,8 @@ Follow these rules to match existing architecture and coding style.
 - Start production server: `npm run start`
 - Lint: `npm run lint`
 - Type-check: `npx tsc --noEmit`
+- Services type-check: `npm run typecheck:services`
+- Workflow drift audit: `npm run workflow:audit`
 - Full test suite: `npm test`
 - Watch mode tests: `npm run test:watch`
 
@@ -40,12 +42,14 @@ Follow these rules to match existing architecture and coding style.
 Run in this order from repo root:
 1. `npm run lint`
 2. `npx tsc --noEmit`
-3. `npm test`
+3. If touched files include `services/`, `npm run typecheck:services`
+4. `npm test`
 
 Report pass/fail for each command.
 
 ## Monorepo/Subproject Notes
 - Main app TypeScript excludes `services/` from root `tsconfig.json`.
+- Any session touching `services/` must run `npm run typecheck:services` because the root type-check does not cover that tree.
 
 ## Architecture Guardrails
 - Keep page-level orchestration in `app/page.tsx`; move business logic to hooks/lib.
@@ -60,7 +64,7 @@ Report pass/fail for each command.
 - **In-memory state is unreliable on Vercel** — module-level `Map`s, objects, or variables reset on every cold start. Use the database or an external store (e.g., Upstash Redis) for any state that must persist across requests.
 
 ## API Route Conventions
-- Use `requireUser()` for protected routes (all except explicitly public routes like health checks).
+- Use the auth helper that matches the route surface. Default to `requireUser()` for user-scoped routes; cron, service, and agent-admin routes use their dedicated helpers.
 - For DB-backed routes:
   - `const db = getDb()`
   - guard with `if (!db) return dbUnavailable()`
@@ -132,11 +136,13 @@ Report pass/fail for each command.
 
 ## Docs and Handoff Updates
 - After completing session work, update checklist/status in `HANDOFF.md`.
-- Repo-maintained Codex skill sources live in `codex-skills/`; user-facing agent metadata for those skills lives in `codex-skills/*/agents/openai.yaml`.
+- Repo-maintained Codex skill sources live in `codex-skills/`; some also expose user-facing agent metadata in `codex-skills/*/agents/openai.yaml` when that file exists.
 - Repo-local skill files do not automatically make a skill callable in the current Codex session. To surface a repo-maintained skill in the skill list, install or sync it into `~/.codex/skills/<skill-name>` and restart Codex.
 - High-value repo-maintained Codex skills include `nexus-status`, `nexus-debug`, `nexus-review`, `nexus-security-audit`, and `nexus-askedgar-debug`; prefer them when the user explicitly asks for those workflows.
 - Keep Codex skill text, agent metadata, `AGENTS.md`, and `HANDOFF.md` aligned when durable workflow behavior changes.
 - Ignore `.claude/` and `.opencode/` unless the user explicitly asks for cross-tool alignment work.
+- When aligning `.claude/` or `.opencode/`, treat `AGENTS.md` as the canonical source and keep tool-specific files thin.
+- When changing workflow assets under `AGENTS.md`, `HANDOFF.md`, `.claude/`, `.opencode/`, or `codex-skills/`, run `npm run workflow:audit`.
 - A project `README.md` already exists. Update it only when explicitly requested or when the task changes durable repo-facing setup or usage guidance.
 
 ## Cursor and Copilot Rules
@@ -150,6 +156,6 @@ Report pass/fail for each command.
 - Do not add dependencies unless required.
 - Do not run destructive git commands.
 - Do not create commits unless explicitly requested.
-- For command workflows that generate docs/reports, both save the artifact and show the report in chat so users can discuss immediately.
+- For command workflows that generate docs/reports, default to concise findings in chat. Save an artifact only when the user asks for one or the workflow explicitly requires a durable file.
 - When the user explicitly asks to load a skill, load it first and follow that skill workflow verbatim.
 - If a workflow requires a specific output format (for example, full report vs summary), match it exactly and do not substitute a condensed version.

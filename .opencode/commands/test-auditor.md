@@ -1,6 +1,6 @@
 ---
 description: Audit the codebase for test coverage gaps, anti-patterns, and testing improvements.
-agent: build
+agent: executor
 ---
 
 Load the `test-auditor` skill and follow its workflow.
@@ -13,13 +13,11 @@ When invoked, parse the scope argument:
 - `component` → Component tests only
 - Any path → Specific file/directory
 
-Then follow the skill instructions:
-1. Launch 3 subagents in parallel (inventory, pattern analysis, quality review)
-2. Create audit report in `.opencode/reports/`
-3. Present summary with key findings in chat
-4. Show critical issues and quick wins
-
-Always save reports to `.opencode/reports/test-audit-{scope}-{timestamp}.md`.
+Execution rules:
+1. Build the file inventory locally before deciding whether delegation helps.
+2. Delegate only when the scope is large enough to benefit from parallel review.
+3. Save a report in `.opencode/reports/` only when the user explicitly asks for a durable artifact.
+4. Present findings first in chat, ordered by severity, then summarize quick wins.
 
 For focused audits, recommend specific scopes:
 - "Run `/test-auditor routes` to audit API routes"

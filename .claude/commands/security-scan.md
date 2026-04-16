@@ -5,7 +5,12 @@ If no specific focus is given, scan the entire project.
 ## Scan Categories
 
 ### 1. Authentication & Authorization
-- Verify all API routes (`app/api/**`) call `requireUser()` from `@/lib/server-db-utils` and reject unauthenticated requests
+- Classify each API route by auth surface and verify it uses the correct helper:
+  - `requireUser()` for user-scoped routes
+  - `requireCronSecret()` for cron routes
+  - `requireAgentAdmin()` for agent-admin routes
+  - `requireServiceAuth()` / `requireServiceKey()` for service routes
+  - explicitly public routes only when intentionally unauthenticated
 - Check that middleware protects all non-public routes
 - Ensure JWT tokens are not exposed to client-side code
 - Verify `ALLOWED_EMAILS` env var is respected in all auth flows

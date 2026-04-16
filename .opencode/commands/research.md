@@ -1,6 +1,6 @@
 ---
-description: Research any topic and create structured crash courses. Combines web search, official docs, and codebase analysis. Always codebase-specific.
-agent: build
+description: Research a topic against the live codebase and relevant external sources. Save a crash course only when the user asks.
+agent: executor
 ---
 
 Load the `research` skill and follow its workflow.
@@ -10,19 +10,8 @@ Command contract:
 - `/research more about <topic/aspect>` continues prior research when possible.
 - If topic is missing, ask once: "What topic should I research?"
 
-**Note**: Research is always codebase-specific (analyzes how the topic is used in your codebase).
-
-Then follow the skill instructions exactly:
-1. Show research plan before delegating (then proceed immediately without waiting for approval)
-2. Choose delegation depth based on complexity (1-4 subagents); default to parallel when independent
-3. Create crash course file in `.opencode/learn/`
-4. Display the complete crash course in chat (full report, not summary)
-
-For follow-ups (user says "tell me more" or asks questions about previous research):
-1. Check `.opencode/learn/` for existing files
-2. Load the relevant crash course
-3. If follow-up is specific, proceed without clarification; only ask when ambiguous
-4. Delegate focused subagent(s)
-5. Append to existing file under "## Follow-up Questions"
-
-Always save crash courses to `.opencode/learn/{topic-kebab-case}-{timestamp}.md`.
+Execution rules:
+1. Build local repo context before delegating.
+2. Delegate only when the topic is broad enough to justify parallel work.
+3. Save a crash course in `.opencode/learn/` only when the user explicitly asks for a durable artifact or when extending an existing research file.
+4. Default to concise findings in chat. If a file was saved, link it. If the user explicitly asks for the full report, provide it.

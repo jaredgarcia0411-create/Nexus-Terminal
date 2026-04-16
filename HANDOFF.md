@@ -14,6 +14,32 @@ No active execution spec is parked here right now. The repo has been in cleanup 
 - The agent hardening backlog in `FUTURE-PLANS.md` was refreshed on `2026-04-16` after a repo-grounded deep research pass.
 - The order of operations now emphasizes auth scoping first, then prompt/context trust separation and retention cleanup, then approval gates and spend enforcement, then dependency tracking, and only then a sandbox/sidecar boundary.
 
+### Workflow Surfaces Rationalized
+
+- On `2026-04-16`, the repo workflow surfaces were cleaned up to reduce drift and token bloat across Codex, Claude, and OpenCode docs.
+- `AGENTS.md` is now the canonical workflow source; `HANDOFF.md` remains a summary file unless a new active execution spec is explicitly parked here.
+- Claude hook guards were fixed to stop depending on `jq`, `MultiEdit` writes are now covered, service-local type-check requirements are explicit, OpenCode research and test-audit workflows were slimmed down, and the unrelated `Remi` persona was removed.
+- A repo-local workflow drift check was also added as `npm run workflow:audit`.
+
+Primary files touched:
+
+- `AGENTS.md`
+- `.claude/CLAUDE.md`
+- `.claude/settings.json`
+- `.claude/hooks/protect-env.sh`
+- `.claude/hooks/migration-guard.sh`
+- `.claude/hooks/typecheck.sh`
+- `.claude/commands/create-agent.md`
+- `.claude/commands/security-scan.md`
+- `.opencode/agents/executor.md`
+- `.opencode/commands/research.md`
+- `.opencode/commands/test-auditor.md`
+- `.opencode/skills/research/SKILL.md`
+- `.opencode/skills/test-auditor/SKILL.md`
+- `codex-skills/nexus-deep-research/SKILL.md`
+- `scripts/workflow-audit.mjs`
+- `package.json`
+
 ### Macro Daily Pipeline Shipped
 
 - Phase 1 established the macro daily flow and follow-on planning (`2026-04-13`).
@@ -33,7 +59,7 @@ Primary files touched:
 
 - Commit `fbf04e4` centralized specialist news formatting through `lib/agents/news-formatter.ts`.
 - Small-cap and swing-trader research blueprints were updated to use the shared path, with prompt adjustments and dedicated formatter tests added.
-- Claude workflow docs were refreshed in the same pass to match the shipped agent behavior.
+- Claude workflow docs were updated in the same pass and later re-rationalized during the workflow cleanup above.
 
 Primary files touched:
 
@@ -80,10 +106,12 @@ Primary files touched:
 
 ## Validation Snapshot
 
-Current repo validation for this handoff consolidation (`2026-04-15`):
+Current repo validation for workflow cleanup (`2026-04-16`):
 
+- `npm run workflow:audit` — passed
 - `npm run lint` — passed
 - `npx tsc --noEmit` — passed
+- `npm run typecheck:services` — passed
 - `npm test` — passed (`46` files, `340` tests)
 
 Most recent implementation-specific validation from the shipped Discord cleanup also included:

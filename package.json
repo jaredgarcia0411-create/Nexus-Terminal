@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck:services": "tsc -p services/tsconfig.json --noEmit",
+    "workflow:audit": "node scripts/workflow-audit.mjs",
     "clean": "next clean",
     "test": "vitest run",
     "test:watch": "vitest",

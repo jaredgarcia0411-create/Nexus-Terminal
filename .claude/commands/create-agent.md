@@ -1,57 +1,34 @@
-Scaffold a new AI agent named: $ARGUMENTS
+Scaffold planning for a new agent surface named: $ARGUMENTS
 
-This creates the foundational files for a new specialized agent in the Nexus Terminal agent team. The scaffold is a starting point — we'll refine the agent's behavior after it's created.
+This command reflects the current Nexus agent architecture. Do not default to creating `lib/<agent>.ts` or `app/api/<agent>/route.ts`; those older paths are no longer the primary pattern.
 
 ## Before You Start
 
-1. Read `lib/llm-client.ts` to understand the LLM client interface (`callLlm`, `callLlmStreaming`)
-2. Read `lib/research.ts` as an example of an existing LLM pipeline
-3. Check `app/api/` for existing API route patterns
+1. Read `AGENTS.md` and `HANDOFF.md`.
+2. Read the current agent runtime files:
+   - `lib/agents/config.ts`
+   - `lib/agents/types.ts`
+   - `lib/agents/blueprint-runner.ts`
+   - `app/api/agents/**/route.ts`
+   - `services/agent-entrypoint.ts`
+3. Decide whether the requested work is:
+   - a new blueprint in `lib/agents/blueprints/`
+   - a prompt or policy addition in `lib/agents/prompts/`
+   - a new route under `app/api/agents/`
+   - a service/background wiring change under `services/`
 
-## What to Create
+## Current Scaffold Targets
 
-### 1. Agent Pipeline (`lib/<agent-name>.ts`)
-- Export a main function that takes a request and returns a structured response
-- Use the existing `callLlm()` client from `lib/llm-client.ts`
-- Include proper error handling with try/catch
-- Keep it simple — start with a single LLM call, we can add multi-step orchestration later
-
-### 2. System Prompt
-- Define the prompt inline or in a dedicated helper in the pipeline file
-- The prompt should clearly define:
-  - Who the agent is (role and expertise)
-  - What data it will receive
-  - What format to respond in
-  - What it should NOT do (constraints)
-- Keep the prompt under 500 tokens to start
-
-### 3. Types (add to `lib/types.ts` if needed)
-- Add request/response types if they differ from existing types
-- Keep types minimal — only add what's needed
-
-### 4. API Route (`app/api/<agent-name>/route.ts`)
-- POST handler following existing patterns in `app/api/`
-- Must call `requireUser()` for auth
-- Validate request body
-- Call the agent pipeline
-- Return structured JSON response
-
-### 5. Update Exports
-- Add the new agent to any barrel exports or registries if they exist
-
-## After Scaffolding
-
-Run `npm run lint && npx tsc --noEmit` to verify everything compiles.
-
-Then tell me:
-- What the agent does and what we might want to customize
-- What inputs it needs (which we can refine)
-- How it connects to the rest of the system
-- Suggested next steps to make it smarter
+- Blueprint logic: `lib/agents/blueprints/<slug>.ts`
+- Prompt or formatting docs: `lib/agents/prompts/<slug>.md`
+- Registry/config wiring: `lib/agents/config.ts`, `lib/agents/types.ts`, and relevant helpers
+- API surface: `app/api/agents/.../route.ts` only when the agent needs a new HTTP entrypoint
+- Service entrypoint wiring: `services/agent-entrypoint.ts` or `services/discord-bot/index.ts` only when background delivery requires it
 
 ## Rules
-- Use `requireUser()` in the API route — no exceptions
-- Never expose API keys in client-side code
-- Follow existing code patterns — don't introduce new frameworks or libraries
-- Start simple. One LLM call, one response. We add complexity later.
-- The agent advises, it does NOT execute trades or take actions
+
+- Keep prompts and policies separate from transport glue.
+- Use the auth helper that matches the route surface instead of assuming `requireUser()` everywhere.
+- Validate request bodies with `parseAndValidate()`.
+- If touched files include `services/`, run `npm run typecheck:services`.
+- Finish with `npm run lint`, `npx tsc --noEmit`, and `npm test`.
