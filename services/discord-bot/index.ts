@@ -223,9 +223,14 @@ async function submitChatJob(
   };
 }
 
-async function pollChatJob(config: BotConfig, jobId: string): Promise<ServiceJobState> {
+async function pollChatJob(
+  config: BotConfig,
+  jobId: string,
+  discordUserId: string,
+): Promise<ServiceJobState> {
   const url = buildChatUrl(config);
   url.searchParams.set('job_id', jobId);
+  url.searchParams.set('discord_user_id', discordUserId);
 
   const response = await fetch(url, {
     headers: {
@@ -305,7 +310,7 @@ async function waitForTerminalState(
   for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt += 1) {
     await sleep(POLL_INTERVAL_MS);
 
-    const state = await pollChatJob(config, jobId);
+    const state = await pollChatJob(config, jobId, discordUserId);
     if (state.status === 'completed' || state.status === 'failed') {
       logEvent('discord_bot.job_terminal', {
         discord_user_id: discordUserId,

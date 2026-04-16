@@ -90,3 +90,7 @@ export function requireServiceKey(request: Request): Response | null {
 
   return null;
 }
+
+export function resolveDiscordUser(discordUserId: string): AgentServiceUser | null {
+  return DISCORD_USER_MAP[discordUserId] ?? null;
+}

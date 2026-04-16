@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
-import { requireServiceAuth, requireServiceKey } from '@/lib/agents/admin';
+import {
+  requireServiceAuth,
+  requireServiceKey,
+  resolveDiscordUser,
+} from '@/lib/agents/admin';
 import { getAgentDb } from '@/lib/agents/db';
 import { agentConversations, agentJobs } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser } from '@/lib/server-db-utils';
@@ -113,6 +117,7 @@ export async function GET(request: Request) {
     const [job] = await db.select({
       id: agentJobs.id,
       agentId: agentJobs.agentId,
+      userId: agentJobs.userId,
       status: agentJobs.status,
       progressNote: agentJobs.progressNote,
       input: agentJobs.input,
@@ -128,7 +133,25 @@ export async function GET(request: Request) {
       return Response.json({ error: 'job not found' }, { status: 404 });
     }
 
-    const input = readRecord(job.input);
+    const callerDiscordId = queryState.data.discord_user_id;
+    const mappedUser = resolveDiscordUser(callerDiscordId);
+    if (!mappedUser) {
+      logRouteError('agents.service-chat.get', new Error('auth.mismatch'));
+      return Response.json({ error: 'job not found' }, { status: 404 });
+    }
+
+    const inputRecord = readRecord(job.input);
+    const jobOwnerMatches = job.userId === mappedUser.id;
+    const inputDiscordMatches =
+      typeof inputRecord.discord_user_id === 'string' &&
+      inputRecord.discord_user_id === callerDiscordId;
+
+    if (!jobOwnerMatches || !inputDiscordMatches) {
+      logRouteError('agents.service-chat.get', new Error('auth.mismatch'));
+      return Response.json({ error: 'job not found' }, { status: 404 });
+    }
+
+    const input = inputRecord;
     const result = readRecord(job.result);
     const sessionId = typeof result.session_id === 'string'
       ? result.session_id

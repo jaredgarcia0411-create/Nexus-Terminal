@@ -8,12 +8,14 @@ const {
   ensureUserMock,
   requireServiceAuthMock,
   requireServiceKeyMock,
+  resolveDiscordUserMock,
 } = vi.hoisted(() => ({
   randomUUIDMock: vi.fn(),
   getAgentDbMock: vi.fn(),
   ensureUserMock: vi.fn(),
   requireServiceAuthMock: vi.fn(),
   requireServiceKeyMock: vi.fn(),
+  resolveDiscordUserMock: vi.fn(),
 }));
 
 vi.mock('node:crypto', () => ({
@@ -23,6 +25,7 @@ vi.mock('node:crypto', () => ({
 vi.mock('@/lib/agents/admin', () => ({
   requireServiceAuth: requireServiceAuthMock,
   requireServiceKey: requireServiceKeyMock,
+  resolveDiscordUser: resolveDiscordUserMock,
 }));
 
 vi.mock('@/lib/agents/db', () => ({
@@ -101,6 +104,12 @@ describe('agent service chat route', () => {
       discordUserId: 'discord-user-1',
     });
     requireServiceKeyMock.mockReturnValue(null);
+    resolveDiscordUserMock.mockReturnValue({
+      id: 'user-1',
+      email: 'user@example.com',
+      name: null,
+      picture: null,
+    });
   });
 
   it('creates a queued chat job on POST success', async () => {
@@ -184,7 +193,7 @@ describe('agent service chat route', () => {
       Response.json({ error: 'Unauthorized' }, { status: 401 }),
     );
 
-    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1')));
+    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1&discord_user_id=discord-user-1')));
     const payload = await response.json();
 
     expect(response.status).toBe(401);
@@ -195,7 +204,7 @@ describe('agent service chat route', () => {
   it('returns 503 on GET when the agent database is unavailable', async () => {
     getAgentDbMock.mockReturnValueOnce(null);
 
-    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1')));
+    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1&discord_user_id=discord-user-1')));
     const payload = await response.json();
 
     expect(response.status).toBe(503);
@@ -264,15 +273,16 @@ describe('agent service chat route', () => {
     getAgentDbMock.mockReturnValueOnce(createGetDb({
       id: 'job-1',
       agentId: 'orchestrator',
+      userId: 'user-1',
       status: 'queued',
       progressNote: null,
-      input: { session_id: 'session-1' },
+      input: { session_id: 'session-1', discord_user_id: 'discord-user-1' },
       result: null,
       errorMessage: null,
       stepLog: [],
     }));
 
-    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1')));
+    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1&discord_user_id=discord-user-1')));
     const payload = await response.json();
 
     expect(response.status).toBe(200);
@@ -288,15 +298,16 @@ describe('agent service chat route', () => {
     getAgentDbMock.mockReturnValueOnce(createGetDb({
       id: 'job-1',
       agentId: 'orchestrator',
+      userId: 'user-1',
       status: 'processing',
       progressNote: 'Thinking',
-      input: { session_id: 'session-1' },
+      input: { session_id: 'session-1', discord_user_id: 'discord-user-1' },
       result: null,
       errorMessage: null,
       stepLog: [],
     }));
 
-    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1')));
+    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1&discord_user_id=discord-user-1')));
     const payload = await response.json();
 
     expect(response.status).toBe(200);
@@ -312,9 +323,10 @@ describe('agent service chat route', () => {
     getAgentDbMock.mockReturnValueOnce(createGetDb({
       id: 'job-1',
       agentId: 'orchestrator',
+      userId: 'user-1',
       status: 'completed',
       progressNote: null,
-      input: { session_id: 'session-1' },
+      input: { session_id: 'session-1', discord_user_id: 'discord-user-1' },
       result: {
         content: 'AAPL moved on earnings.',
       },
@@ -322,7 +334,7 @@ describe('agent service chat route', () => {
       stepLog: [],
     }));
 
-    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1')));
+    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1&discord_user_id=discord-user-1')));
     const payload = await response.json();
 
     expect(response.status).toBe(200);
@@ -341,9 +353,10 @@ describe('agent service chat route', () => {
     getAgentDbMock.mockReturnValueOnce(createGetDb({
       id: 'job-1',
       agentId: 'orchestrator',
+      userId: 'user-1',
       status: 'completed',
       progressNote: null,
-      input: {},
+      input: { discord_user_id: 'discord-user-1' },
       result: {
         routed: true,
         specialistJobId: 'job-2',
@@ -352,7 +365,7 @@ describe('agent service chat route', () => {
       stepLog: [],
     }));
 
-    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1')));
+    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1&discord_user_id=discord-user-1')));
     const payload = await response.json();
 
     expect(response.status).toBe(200);
@@ -371,9 +384,10 @@ describe('agent service chat route', () => {
     getAgentDbMock.mockReturnValueOnce(createGetDb({
       id: 'job-1',
       agentId: 'small-cap-trader',
+      userId: 'user-1',
       status: 'completed',
       progressNote: null,
-      input: { session_id: 'session-1' },
+      input: { session_id: 'session-1', discord_user_id: 'discord-user-1' },
       result: {
         reportId: 'job-2:research',
         ticker: 'AAPL',
@@ -383,7 +397,7 @@ describe('agent service chat route', () => {
       stepLog: [],
     }));
 
-    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1')));
+    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1&discord_user_id=discord-user-1')));
     const payload = await response.json();
 
     expect(response.status).toBe(200);
@@ -405,9 +419,10 @@ describe('agent service chat route', () => {
     getAgentDbMock.mockReturnValueOnce(createGetDb({
       id: 'job-1',
       agentId: 'orchestrator',
+      userId: 'user-1',
       status: 'failed',
       progressNote: null,
-      input: {},
+      input: { discord_user_id: 'discord-user-1' },
       result: null,
       errorMessage: 'model unavailable',
       stepLog: [
@@ -417,7 +432,7 @@ describe('agent service chat route', () => {
       ],
     }));
 
-    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1')));
+    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1&discord_user_id=discord-user-1')));
     const payload = await response.json();
 
     expect(response.status).toBe(200);
@@ -435,7 +450,86 @@ describe('agent service chat route', () => {
   it('returns 404 on GET when the job is unknown', async () => {
     getAgentDbMock.mockReturnValueOnce(createGetDb(null));
 
-    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=missing-job')));
+    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/service/chat?job_id=missing-job&discord_user_id=discord-user-1')));
+    const payload = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(payload).toEqual({ error: 'job not found' });
+  });
+
+  it('returns 400 on GET when discord_user_id query param is missing', async () => {
+    const response = ensureResponse(
+      await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1')),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe('Validation failed');
+    expect(payload.details.fieldErrors.discord_user_id).toBeTruthy();
+    expect(requireServiceKeyMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 on GET when discord_user_id is unknown', async () => {
+    resolveDiscordUserMock.mockReturnValueOnce(null);
+    getAgentDbMock.mockReturnValueOnce(createGetDb({
+      id: 'job-1',
+      agentId: 'orchestrator',
+      userId: 'user-1',
+      status: 'queued',
+      progressNote: null,
+      input: { discord_user_id: 'discord-user-1' },
+      result: null,
+      errorMessage: null,
+      stepLog: [],
+    }));
+
+    const response = ensureResponse(
+      await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1&discord_user_id=discord-user-404')),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(payload).toEqual({ error: 'job not found' });
+  });
+
+  it('returns 404 on GET when discord_user_id maps to a user but job.userId belongs to a different user', async () => {
+    getAgentDbMock.mockReturnValueOnce(createGetDb({
+      id: 'job-1',
+      agentId: 'orchestrator',
+      userId: 'user-OTHER',
+      status: 'queued',
+      progressNote: null,
+      input: { discord_user_id: 'discord-user-1' },
+      result: null,
+      errorMessage: null,
+      stepLog: [],
+    }));
+
+    const response = ensureResponse(
+      await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1&discord_user_id=discord-user-1')),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(payload).toEqual({ error: 'job not found' });
+  });
+
+  it('returns 404 on GET when discord_user_id matches job.userId but job.input.discord_user_id differs', async () => {
+    getAgentDbMock.mockReturnValueOnce(createGetDb({
+      id: 'job-1',
+      agentId: 'orchestrator',
+      userId: 'user-1',
+      status: 'queued',
+      progressNote: null,
+      input: { discord_user_id: 'discord-user-DIFFERENT' },
+      result: null,
+      errorMessage: null,
+      stepLog: [],
+    }));
+
+    const response = ensureResponse(
+      await GET(new Request('http://localhost/api/agents/service/chat?job_id=job-1&discord_user_id=discord-user-1')),
+    );
     const payload = await response.json();
 
     expect(response.status).toBe(404);

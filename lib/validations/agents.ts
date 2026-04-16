@@ -11,6 +11,7 @@ export type ServiceChatPostInput = z.infer<typeof serviceChatPostSchema>;
 
 export const serviceChatGetQuerySchema = z.object({
   job_id: z.string().min(1),
+  discord_user_id: z.string().min(1),
 });
 
 export type ServiceChatGetQueryInput = z.infer<typeof serviceChatGetQuerySchema>;
