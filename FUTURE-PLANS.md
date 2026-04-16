@@ -261,57 +261,55 @@ P0, P1, P2, and Tier 1 are implemented. Execution details archived in HANDOFF.md
 
 ---
 
-## Agent Hardening Backlog (2026-04-15)
+## Agent Hardening Backlog (2026-04-15, refreshed 2026-04-16)
 
 **Context:** The current agent stack is already substantial: typed blueprints, DB-backed jobs, checkpoints, retry logic, runtime limits, and specialist routing are all in place. The next constraint is not "add more agent code" so much as "tighten the trust boundaries before giving the system more autonomy."
 
 ### Hardening items to prioritize
 
-1. **Fix budget enforcement so spend limits actually work**
-   - **Current gap:** `buildLlmTrackingEntry()` in `lib/agents/blueprint-runner.ts` records `estimatedCostCents: 0`, while `checkBudget()` in `lib/agents/runtime-limits.ts` gates on the summed `estimatedCostCents` column.
-   - **Why this matters:** The current budget system looks real but cannot trip correctly. More agentic behavior means more model calls, so this becomes a real operational risk instead of a cosmetic one.
-   - **Desired state:** Real per-model cost estimation, accurate request logging, and hard stop behavior before a user or background workflow can burn through budget unnoticed.
+1. **Tighten job/result authorization on service endpoints first**
+   - **Current gap:** `app/api/agents/service/chat/route.ts` GET returns job state by `job_id` behind the shared service key, without validating job ownership, session ownership, or channel/service scope.
+   - **Why this matters:** If the shared key is reused too broadly or leaked, the endpoint becomes a read-any-job surface. UUIDs are not a real authorization boundary.
+   - **Desired state:** Job reads should be scoped to the authenticated service actor plus the expected user/session/channel context, not just a bare UUID. The long-term shape should be subject-bound authorization, not a shared secret plus object ID.
 
-2. **Tighten job/result authorization on service endpoints**
-   - **Current gap:** `app/api/agents/service/chat/route.ts` GET returns job state by `job_id` behind the shared service key, without validating job ownership or session ownership.
-   - **Why this matters:** If the shared key is reused too broadly or leaked, the endpoint becomes a read-any-job surface.
-   - **Desired state:** Job reads should be scoped to the authenticated service actor plus the expected user/session/channel context, not just a bare UUID.
-
-3. **Separate trusted instructions from untrusted context**
+2. **Separate trusted instructions from untrusted context**
    - **Current gap:** `buildSynthesisPrompt()` in `lib/agents/blueprints/orchestrator-chat.ts` injects recent conversation history directly into the prompt via `JSON.stringify(...)`, and `lib/agents/context.ts` loads raw rows with minimal filtering.
-   - **Why this matters:** This is the classic prompt-injection seam. User content, retrieved content, and tool output should all be treated as untrusted.
-   - **Desired state:** Clear trust labels in prompt assembly, context sanitization/compaction, and narrower structured context objects instead of raw conversation dumps.
+   - **Why this matters:** This is the classic prompt-injection seam. User content, retrieved content, memory, and tool output should all be treated as untrusted. Cross-session conversation bleed makes the seam worse.
+   - **Desired state:** Clear trust labels in prompt assembly, context sanitization/compaction, and narrower structured context objects instead of raw conversation dumps. The model should see a typed envelope, not one flattened blob.
+
+3. **Make memory and conversation retention explicit, scoped, and actually expirable**
+   - **Current gap:** `agent_memory_v2` already has `source`, `confidence`, and `expiresAt`, but there is still no full lifecycle around review, cleanup, or category-specific retention, and the read path does not currently enforce TTL expiry. `agent_conversations` and `agent_request_log` also need a retention story because they become durable agent context and audit artifacts.
+   - **Why this matters:** Agents get more dangerous when stale or low-quality data quietly persists and keeps re-entering prompts.
+   - **Desired state:** Every durable memory row should have provenance, user scope, TTL where appropriate, and a clear reason it exists. Expiration should be enforced on read, and conversation/request-log retention should be a deliberate product and security decision rather than an accident.
 
 4. **Add approval gates for high-impact actions**
    - **Current gap:** The prompt policy says the system should be careful, but the runtime does not yet have a general approval framework for consequential mutations or external side effects.
    - **Why this matters:** "The model promised to be safe" is not a control. Any future write action, webhook trigger, broker integration, account mutation, or file mutation needs a runtime gate.
-   - **Desired state:** Explicit approval-required tool classes, auditable approval records, and deny-by-default behavior for mutating tools.
+   - **Desired state:** Explicit approval-required tool classes, auditable approval records, resumable jobs, and deny-by-default behavior for mutating tools.
 
-5. **Move risky execution outside the Next.js app boundary**
+5. **Fix budget enforcement so spend limits actually work**
+   - **Current gap:** `buildLlmTrackingEntry()` in `lib/agents/blueprint-runner.ts` records `estimatedCostCents: 0`, while `checkBudget()` in `lib/agents/runtime-limits.ts` gates on the summed `estimatedCostCents` column.
+   - **Why this matters:** The current budget system looks real but cannot trip correctly. More agentic behavior means more model calls, so this becomes a real operational risk instead of a cosmetic one.
+   - **Desired state:** Real per-model cost estimation, reserve-then-reconcile accounting, accurate request logging, and hard stop behavior before a user or background workflow can burn through budget unnoticed.
+
+6. **Add transactionality and dependency tracking for multi-agent workflows**
+   - **Current gap:** The current chat flow persists the user message and queued job as separate inserts, and routed orchestration only tracks a single `specialistJobId`.
+   - **Why this matters:** As soon as orchestration becomes parallel or fan-out based, partial writes and missing dependency graphs become correctness problems.
+   - **Desired state:** Atomic enqueue/persist operations, explicit parent/child job relationships, and durable tracking for parallel specialist runs. The runtime should know which runs depend on which others before autonomy grows.
+
+7. **Move risky execution outside the Next.js app boundary**
    - **Current gap:** The repo's worker model is durable-process oriented, but there is no dedicated external sandbox boundary for untrusted code, generated scripts, or richer tool execution.
    - **Why this matters:** Vercel/serverless is a bad place to let autonomous execution grow legs. The app should orchestrate, not become the sandbox.
    - **Desired state:** Next.js remains the control plane. Risky execution happens in a sidecar/worker/sandbox service with short-lived credentials and explicit input/output contracts.
 
-6. **Make memory writes more explicit, scoped, and expirable**
-   - **Current gap:** `agent_memory_v2` is already better than implicit memory, but there is still no full lifecycle around review, cleanup, or category-specific retention.
-   - **Why this matters:** Agents get more dangerous when memory quietly accumulates stale, low-quality, or over-broad facts.
-   - **Desired state:** Every durable memory row should have provenance, user scope, TTL where appropriate, and a clear reason it exists. Memory should be a product decision, not a side effect of verbosity.
-
-7. **Add end-to-end evals and trace review before increasing autonomy**
-   - **Current gap:** The test suite covers many individual layers, but there is no strong end-to-end eval harness for multi-step agent behavior, prompt regressions, or tool-routing failures.
-   - **Why this matters:** Once the agent gets more tools, a passing unit suite is not enough. You need to know whether it made the right decision, called the right tool, or exposed the wrong data.
-   - **Desired state:** Trace IDs, tool-call logs, golden-path evals, adversarial evals, and release gates on prompt/tool changes.
-
-8. **Add transactionality and dependency tracking for multi-agent workflows**
-   - **Current gap:** The current chat flow persists the user message and queued job as separate inserts, and routed orchestration only tracks a single `specialistJobId`.
-   - **Why this matters:** As soon as orchestration becomes parallel or fan-out based, partial writes and missing dependency graphs become correctness problems.
-   - **Desired state:** Atomic enqueue/persist operations, explicit parent/child job relationships, and durable tracking for parallel specialist runs.
-
 ### Order of operations
 
-- Fix spend tracking and auth scoping first.
-- Then harden prompt/context boundaries and approval gates.
+- Fix auth scoping first.
+- Then harden prompt/context boundaries and make memory/retention rules real.
+- Then add approval gates and real spend enforcement.
+- Then add transactional run/dependency tracking for multi-agent work.
 - Then move risky execution into a real sandbox boundary.
+- Keep end-to-end evals and trace review as a separate standing requirement before increasing autonomy.
 - Only after that should the repo take on substantially more autonomous behavior.
 
 ### Guiding rule

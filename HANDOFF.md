@@ -1,6 +1,6 @@
 # Nexus Terminal — HANDOFF.md
 
-> Updated: 2026-04-15
+> Updated: 2026-04-16
 > Purpose: brief summary of recently completed work. Older implementation detail lives in git history and `specs/`.
 
 ## Current State
@@ -8,6 +8,11 @@
 No active execution spec is parked here right now. The repo has been in cleanup and shipment mode, so this file now records the latest completed work at a summary level until a new active handoff is needed.
 
 ## Recently Completed
+
+### Agent Hardening Plan Refreshed
+
+- The agent hardening backlog in `FUTURE-PLANS.md` was refreshed on `2026-04-16` after a repo-grounded deep research pass.
+- The order of operations now emphasizes auth scoping first, then prompt/context trust separation and retention cleanup, then approval gates and spend enforcement, then dependency tracking, and only then a sandbox/sidecar boundary.
 
 ### Macro Daily Pipeline Shipped
 
