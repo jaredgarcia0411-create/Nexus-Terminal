@@ -474,10 +474,127 @@ Recommended enriched macro schema (beyond current implementation):
 
 ### Product Assumptions
 
-- Discord stays the primary delivery surface.
+- Discord remains a useful off-platform delivery surface, but it should not be the canonical request/response path for in-site agent work.
 - `agent_reports.report_json` is the canonical contract; routes expose that shape plus metadata.
 - `fetchJmt415()` stays out of scope until its endpoint contract is confirmed.
 - Retail-tier AskEdgar assumptions remain the baseline.
+
+---
+
+## Site-Native Agent Reports & Macro Surface (2026-04-16)
+
+**Question reviewed:** How should research reports and the macro daily report show up in the Nexus site, and should web requests bounce through Discord first?
+
+**Short answer:** No. Do not route site requests through Discord and then relay the result back into the app. The repo is already DB-backed at the core. Discord sits on top as a transport and delivery client, not the system of record.
+
+### What the architecture review found
+
+- `agent_jobs`, `agent_reports`, and `agent_conversations` in `lib/db/schema.ts` are already the durable primitives for orchestration, persisted artifacts, and chat transcript data.
+- Research reports and macro summaries are both persisted through `writeAndDeliverReport()` in `lib/agents/discord.ts`. Storage happens first, then Discord delivery is attempted after the report row already exists.
+- The site already has read APIs for native rendering:
+  - `app/api/agents/reports/route.ts`
+  - `app/api/agents/reports/[id]/route.ts`
+  - `app/api/agents/research/route.ts`
+  - `app/api/agents/macro-summary/latest/route.ts`
+- The current chat ingress is still Discord-specific. `app/api/agents/service/chat/route.ts` is guarded by a shared service key plus `discord_user_id`, and it hardcodes `channel: 'discord'` despite the orchestrator blueprint already supporting `channel: 'web' | 'discord'`.
+- Routed chat is split into two lifecycles today:
+  - the orchestrator chat job completes early with `routed: true`
+  - the specialist report arrives later through `agent_reports` + Discord delivery
+- `agent_conversations` is not yet a full cross-agent thread model. It captures user/orchestrator chat turns, while specialist outputs live separately in `agent_reports`.
+
+### Why Discord should stay out of the site request path
+
+1. **Wrong authority boundary**
+   - The durable truth already lives in Postgres. Making Discord the middleman would move product flow through the least authoritative layer in the stack.
+
+2. **Extra failure modes with no product upside**
+   - A site request that bounces through Discord would inherit Discord bot uptime, channel routing, and webhook behavior even though the app can already read reports directly from the DB.
+
+3. **The current Discord path is integration glue, not product architecture**
+   - `services/discord-bot/index.ts` is effectively a client for `/api/agents/service/chat`, plus a delivery endpoint for routed outputs. That is useful for Discord users, but it is the wrong primitive to reuse as the in-site control plane.
+
+4. **The repo already points the other way**
+   - `agent_reports` is the canonical persisted artifact.
+   - Discord is downstream of report persistence.
+   - The right product direction is site-native rendering with optional Discord fan-out.
+
+### Product recommendation
+
+**Macro daily report**
+- Put the latest macro summary on `Dashboard`, not in a new top-level tab.
+- Use `GET /api/agents/macro-summary/latest` as the initial source.
+- Render it as a full-width "what matters today" card above the existing performance overview.
+- Important caveat: if macro should show even before trades are imported, it cannot live inside the current `trades.length === 0` empty-state gate in `DashboardTab.tsx`.
+
+**Research reports and agent work**
+- Keep this inside `Research`, not as a separate top-level nav item yet.
+- Add an `Agent Desk` submode to `ResearchTab` alongside the existing ticker-first workflow.
+- Recommended shape:
+  - left rail = recent jobs / recent reports
+  - main pane = selected report detail or explicit run actions
+  - explicit actions first (`Run small-cap research`, `Run swing research`) before freeform site chat
+
+### Why not a new top-level tab yet
+
+- The shell is tightly coupled around the current tab list in `app/page.tsx`, `Sidebar.tsx`, `CommandPalette.tsx`, and `use-global-shortcuts.ts`.
+- Mobile nav is already dense.
+- The shared toolbar is trade-oriented and would be semantically wrong for a dedicated macro/agent tab unless it is made tab-aware first.
+- `Research` already has the wide canvas that an agent/report workspace needs; `Dashboard` already owns the "today's overview" role that the macro report fits.
+
+### Recommended build order
+
+1. **Dashboard macro card**
+   - Show the latest macro summary in-site with no Discord dependency.
+
+2. **Research Agent Desk**
+   - Surface report history and report detail from `agent_reports`.
+   - Let the user explicitly queue specialist research jobs from the site.
+
+3. **User-authenticated research job status**
+   - Add a proper site-facing status/read contract for queued research runs instead of relying on implicit `${jobId}:research` behavior or polling the reports list.
+
+4. **Site-native chat route**
+   - Add a separate user-authenticated `/api/agents/chat` or equivalent `channel: 'web'` path.
+   - Do not reuse the Discord service route as-is.
+
+5. **Unified conversation/event model**
+   - If chat becomes first-class, specialist completions need to fold back into one session/thread instead of living only as separate report artifacts.
+
+### Architecture gaps to solve before in-site chat feels real
+
+- **Discord-locked service route**
+  - `service/chat` currently assumes `discord_user_id`, shared service auth, and `channel: 'discord'`.
+
+- **No clean user-facing job polling for research**
+  - `POST /api/agents/research` queues a job, but the site does not yet have a first-class status endpoint analogous to the Discord service polling flow.
+
+- **Conversation history is not session-scoped enough**
+  - `buildContext()` currently loads conversation history by `userId + agentId`, which is too broad once the site and Discord both become active chat surfaces.
+
+- **Delivery status is overloaded**
+  - `agent_reports.status` currently doubles as report delivery status. A valid report can become `delivery_failed` solely because Discord delivery failed, which is the wrong signal if the site becomes a primary surface.
+
+- **Do not create a new report store**
+  - The repo already has legacy `research_reports` / `imported_research_reports` paths. New agent product work should continue to standardize on `agent_reports`, not create a third or fourth report pipeline.
+
+### Explicit decisions for the future execution spec
+
+- **Do:** build site-native report rendering first.
+- **Do:** treat Discord as optional fan-out and off-platform consumption.
+- **Do:** put macro on `Dashboard` and agent-driven report work in `Research`.
+- **Do not:** route web requests through Discord.
+- **Do not:** add a new top-level `Agents` tab until the workspace proves it needs one.
+- **Do not:** start with freeform site chat before the site can reliably render queued jobs and completed reports.
+
+### Spec trigger
+
+When ready to execute, the spec should be framed as:
+
+- Phase 1: site-native macro card + agent report history/detail
+- Phase 2: site-triggered specialist jobs + user-facing job status
+- Phase 3: in-site orchestrator chat with a unified thread/session model
+
+That sequencing keeps the product aligned with the current architecture instead of fighting it.
 
 ---
 
@@ -492,9 +609,10 @@ Recommended enriched macro schema (beyond current implementation):
 - General Q&A over journal entries, tags, performance snapshots.
 
 ### Shape (rough, to be planned later)
-- New API route under `app/api/agents/` that streams responses via `createSSEResponse`.
+- New user-authenticated API route under `app/api/agents/` that supports `channel: 'web'` directly rather than tunneling through the Discord service path.
 - New blueprint in `lib/agents/blueprints/` — in-site specialist that has tool access to trades, journal, tags, performance aggregations.
-- UI: chat panel in the site (probably a slide-out or a tab, TBD). Messages persist per-conversation.
+- UI: chat should follow the site-native report surfaces, likely as part of the `Research` workspace rather than a new top-level tab.
+- Messages need a real per-session/thread model that can incorporate routed specialist results, not just direct orchestrator turns.
 - Reuses existing agent runtime — same blueprint system, just a different trigger surface (HTTP instead of Discord).
 
 ### Open questions for planning
@@ -504,7 +622,7 @@ Recommended enriched macro schema (beyond current implementation):
 - Cost control — cap tokens per turn, or let it run long?
 
 ### Don't build until
-In-site agent depends on the AEV2 blueprint system being stable in production. Tier 1 agent quality work (HANDOFF) should land first so the reasoning it produces is trustworthy.
+In-site agent depends on the AEV2 blueprint system being stable in production, and it should come after site-native macro/report surfaces exist. Tier 1 agent quality work (HANDOFF) should land first so the reasoning it produces is trustworthy.
 
 ---
 

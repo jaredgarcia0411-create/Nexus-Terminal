@@ -67,6 +67,12 @@ Primary files touched:
 - `codex-skills/nexus-askedgar-debug/`
 - `AGENTS.md`
 
+### Site-Native Agent Surface Planning Captured
+
+- On `2026-04-16`, a repo-grounded architecture review captured the current agent messaging/report findings in `FUTURE-PLANS.md`.
+- The planning note records that `agent_reports` is already the canonical persisted artifact, Discord is a transport/delivery layer rather than the source of truth, macro belongs on `Dashboard`, and agent-driven report work belongs in `Research`.
+- The same note also records the recommended sequencing for a future execution spec: site-native macro/report surfaces first, then site-triggered job/status work, then in-site chat only after thread/session handling is tightened.
+
 ### Follow-Up Planning Captured Elsewhere
 
 - Commit `b1be1d6` moved forward-looking work on agent hardening and the Hermes sidecar into `FUTURE-PLANS.md`.
