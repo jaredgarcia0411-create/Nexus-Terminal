@@ -1,11 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { agentMemoryV2 } from '@/lib/db/schema';
-import { getMemory, upsertMemory } from '@/lib/agents/memory';
+import { DEFAULT_MEMORY_TTL_DAYS, getMemory, upsertMemory } from '@/lib/agents/memory';
 
 function createDb(tableRows: Map<unknown, unknown[][]> = new Map()) {
   const insertedValues: unknown[] = [];
   const conflictCalls: unknown[] = [];
+  const whereArgs: unknown[] = [];
 
   const select = vi.fn(() => ({
     from(table: unknown) {
@@ -13,7 +14,10 @@ function createDb(tableRows: Map<unknown, unknown[][]> = new Map()) {
       tableRows.set(table, queue);
 
       return {
-        where: vi.fn(async () => queue.shift() ?? []),
+        where: vi.fn((condition: unknown) => {
+          whereArgs.push(condition);
+          return Promise.resolve(queue.shift() ?? []);
+        }),
       };
     },
   }));
@@ -39,11 +43,20 @@ function createDb(tableRows: Map<unknown, unknown[][]> = new Map()) {
     _state: {
       insertedValues,
       conflictCalls,
+      whereArgs,
     },
   };
 }
 
 describe('agent memory helpers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('reads from agent_memory_v2 and returns rows for the requested scope', async () => {
     const tableRows = new Map<unknown, unknown[][]>();
     tableRows.set(agentMemoryV2, [[
@@ -120,5 +133,80 @@ describe('agent memory helpers', () => {
         expiresAt: null,
       },
     });
+  });
+
+  it('getMemory() passes a TTL condition to the DB where clause', async () => {
+    const tableRows = new Map<unknown, unknown[][]>();
+    tableRows.set(agentMemoryV2, [[]]);
+    const db = createDb(tableRows);
+
+    await getMemory(db as never, 'user-1', 'orchestrator');
+
+    expect(db._state.whereArgs).toHaveLength(1);
+    expect(db._state.whereArgs[0]).toBeDefined();
+  });
+
+  it('upsertMemory() applies category default TTL when expiresAt is omitted', async () => {
+    const fakeNow = new Date('2026-04-16T08:00:00.000Z').getTime();
+    vi.useFakeTimers();
+    vi.setSystemTime(fakeNow);
+
+    const db = createDb();
+
+    await upsertMemory(db as never, {
+      userId: 'user-1',
+      agentId: 'orchestrator',
+      category: 'thesis',
+      key: 'AAPL',
+      value: 'bullish thesis',
+      valueJson: null,
+      source: null,
+      confidence: null,
+    });
+
+    const ttlDays = DEFAULT_MEMORY_TTL_DAYS.thesis;
+    expect(ttlDays).not.toBeNull();
+    const expectedExpiry = new Date(fakeNow + (ttlDays as number) * 24 * 60 * 60 * 1000);
+
+    expect(db._state.insertedValues[0]).toMatchObject({ expiresAt: expectedExpiry });
+
+    vi.useRealTimers();
+  });
+
+  it('upsertMemory() respects explicit null - does not override with default TTL', async () => {
+    const db = createDb();
+
+    await upsertMemory(db as never, {
+      userId: 'user-1',
+      agentId: 'orchestrator',
+      category: 'thesis',
+      key: 'TSLA',
+      value: 'permanent memory',
+      valueJson: null,
+      source: null,
+      confidence: null,
+      expiresAt: null,
+    });
+
+    expect(db._state.insertedValues[0]).toMatchObject({ expiresAt: null });
+  });
+
+  it('upsertMemory() respects explicit Date - does not override with default TTL', async () => {
+    const customExpiry = new Date('2027-01-01T00:00:00.000Z');
+    const db = createDb();
+
+    await upsertMemory(db as never, {
+      userId: 'user-1',
+      agentId: 'orchestrator',
+      category: 'thesis',
+      key: 'MSFT',
+      value: 'custom expiry',
+      valueJson: null,
+      source: null,
+      confidence: null,
+      expiresAt: customExpiry,
+    });
+
+    expect(db._state.insertedValues[0]).toMatchObject({ expiresAt: customExpiry });
   });
 });

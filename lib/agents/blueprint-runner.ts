@@ -362,7 +362,14 @@ export async function runBlueprint(
   db: AgentDb,
   options: RunBlueprintOptions,
 ): Promise<RunBlueprintResult> {
-  const context = await buildContext(db, job.userId, job.agentId);
+  // Extract session_id from job.input for chat jobs. For research and other job types,
+  // session_id is absent, so jobSessionId will be undefined and buildContext uses
+  // the 30-day rolling window only.
+  const rawJobInput = job.input as Record<string, unknown> | null | undefined;
+  const jobSessionId = typeof rawJobInput?.session_id === 'string'
+    ? rawJobInput.session_id
+    : undefined;
+  const context = await buildContext(db, job.userId, job.agentId, jobSessionId);
   const savedCheckpoint = await loadCheckpoint(db, job.id);
   let previousOutput: unknown | null = savedCheckpoint?.checkpointJson ?? null;
   let currentStepLog = [...job.stepLog];

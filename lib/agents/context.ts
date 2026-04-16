@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gt } from 'drizzle-orm';
 import { agentConversations, agentReports, trades } from '@/lib/db/schema';
 import type { AgentDb } from './db';
 import type { AgentContext, AgentId, MacroSummaryReport } from './types';
@@ -63,6 +63,7 @@ export async function buildContext(
   db: AgentDb,
   userId: string,
   agentId: AgentId,
+  sessionId?: string,
 ): Promise<AgentContext> {
   const [memory, recentTrades, conversationHistory, macroSummary] = await Promise.all([
     getMemory(db, userId, agentId),
@@ -73,7 +74,14 @@ export async function buildContext(
       .limit(20),
     db.select()
       .from(agentConversations)
-      .where(and(eq(agentConversations.userId, userId), eq(agentConversations.agentId, agentId)))
+      .where(and(
+        eq(agentConversations.userId, userId),
+        eq(agentConversations.agentId, agentId),
+        // 30-day rolling window prevents unbounded cross-session history injection.
+        gt(agentConversations.createdAt, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
+        // When sessionId is provided, narrow to that session only.
+        ...(sessionId !== undefined ? [eq(agentConversations.sessionId, sessionId)] : []),
+      ))
       .orderBy(desc(agentConversations.createdAt))
       .limit(20),
     db.select({

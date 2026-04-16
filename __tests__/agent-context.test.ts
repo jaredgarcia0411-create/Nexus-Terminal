@@ -15,30 +15,41 @@ vi.mock('@/lib/agents/memory', () => ({
 import { buildContext } from '@/lib/agents/context';
 
 function createDb(tableRows: Map<unknown, unknown[][]> = new Map()) {
+  const whereArgsByTable = new Map<unknown, unknown[]>();
+
   const select = vi.fn(() => ({
     from(table: unknown) {
       const queue = tableRows.get(table) ?? [];
       tableRows.set(table, queue);
 
       return {
-        where: vi.fn(() => ({
-          orderBy: vi.fn(() => ({
+        where: vi.fn((condition: unknown) => {
+          const existing = whereArgsByTable.get(table) ?? [];
+          existing.push(condition);
+          whereArgsByTable.set(table, existing);
+
+          return {
+            orderBy: vi.fn(() => ({
+              limit: async (count: number) => {
+                const rows = queue.shift() ?? [];
+                return rows.slice(0, count);
+              },
+            })),
             limit: async (count: number) => {
               const rows = queue.shift() ?? [];
               return rows.slice(0, count);
             },
-          })),
-          limit: async (count: number) => {
-            const rows = queue.shift() ?? [];
-            return rows.slice(0, count);
-          },
-        })),
+          };
+        }),
       };
     },
   }));
 
   return {
     select,
+    _state: {
+      whereArgsByTable,
+    },
   };
 }
 
@@ -173,5 +184,35 @@ describe('agent context helper', () => {
       memory: [],
       conversationHistory: [],
     });
+  });
+
+  it('buildContext() with sessionId records a where condition on agentConversations', async () => {
+    const rows = new Map<unknown, unknown[][]>();
+    rows.set(trades, [[]]);
+    rows.set(agentConversations, [[]]);
+    rows.set(agentReports, [[]]);
+    const db = createDb(rows);
+    getMemoryMock.mockResolvedValueOnce([]);
+
+    await buildContext(db as never, 'user-1', 'orchestrator', 'session-abc');
+
+    const convWhereArgs = db._state.whereArgsByTable.get(agentConversations) ?? [];
+    expect(convWhereArgs).toHaveLength(1);
+    expect(convWhereArgs[0]).toBeDefined();
+  });
+
+  it('buildContext() without sessionId still records a where condition on agentConversations', async () => {
+    const rows = new Map<unknown, unknown[][]>();
+    rows.set(trades, [[]]);
+    rows.set(agentConversations, [[]]);
+    rows.set(agentReports, [[]]);
+    const db = createDb(rows);
+    getMemoryMock.mockResolvedValueOnce([]);
+
+    await buildContext(db as never, 'user-1', 'orchestrator');
+
+    const convWhereArgs = db._state.whereArgsByTable.get(agentConversations) ?? [];
+    expect(convWhereArgs).toHaveLength(1);
+    expect(convWhereArgs[0]).toBeDefined();
   });
 });
