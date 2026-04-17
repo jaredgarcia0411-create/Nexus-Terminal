@@ -1283,6 +1283,8 @@ describe('agent blueprints', () => {
         overallOfferingRisk: { rating: 'green', explanation: 'High near-term offering risk.' },
         jmt415Commentary: null,
         historicalStats: 'Average gap fade 18%.',
+        gapStatsTable: [{ date: '1999-01-01', gapPct: 99, open: 99, close: 99 }],
+        financialCommentary: { rating: 'red', explanation: 'Management flagged capital needs.' },
         confidence: 'high',
         evidenceIds: ['gap-stats', 'offerings'],
       }),
@@ -1320,6 +1322,7 @@ describe('agent blueprints', () => {
         pumpAndDumpTracker: null,
         news: [{ title: 'Shelf filing' }],
         cashPosition: { estimatedCash: 1000000 },
+        managementCommentary: 'Liquidity remains tight and management may raise capital.',
         priceContext: {
           price: 10,
           change: 2,
@@ -1355,6 +1358,12 @@ describe('agent blueprints', () => {
           hasJmt415Content: false,
           catalystCategories: ['424B5'],
         },
+        gapStatsTable: [{
+          date: '2026-04-12',
+          gapPct: 10,
+          open: 10,
+          close: 9,
+        }],
         newsFeed: [{
           headline: 'Shelf filing',
           summary: 'Shelf filing summary',
@@ -1372,7 +1381,7 @@ describe('agent blueprints', () => {
       userMessage: expect.stringContaining('AskEdgar sections:'),
     }), 'background');
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
-      userMessage: expect.stringContaining('gapStats:\n'),
+      userMessage: expect.stringContaining('Historical Gap Data (last 5, most recent first):'),
     }), 'background');
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Deterministic analysis:\n'),
@@ -1384,10 +1393,20 @@ describe('agent blueprints', () => {
       userMessage: expect.stringContaining("quote the exact headline text of the single most relevant item"),
     }), 'background');
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Management Commentary (from SEC filings / earnings):'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.not.stringContaining('Filings:\n'),
     }), 'background');
     expect(result.data).toMatchObject({
       ticker: 'AAPL',
+      gapStatsTable: [{
+        date: '2026-04-12',
+        gapPct: 10,
+        open: 10,
+        close: 9,
+      }],
+      financialCommentary: { rating: 'red', explanation: 'Management flagged capital needs.' },
       confidence: 'high',
     });
   });
@@ -1413,6 +1432,8 @@ describe('agent blueprints', () => {
         overallOfferingRisk: { rating: 'green', explanation: 'High probability of near-term offering.' },
         jmt415Commentary: null,
         historicalStats: 'Average gap fade 18%.',
+        gapStatsTable: [{ date: '2026-04-12', gapPct: 10, open: 10, close: 9 }],
+        financialCommentary: { rating: 'red', explanation: 'Liquidity is pressured.' },
         confidence: 'high',
         evidenceIds: ['filing-1'],
       },
@@ -1435,6 +1456,8 @@ describe('agent blueprints', () => {
         patternClassification: 'CONTINUATION',
         recommendation: { action: 'ADD', reasoning: 'Momentum remains intact.' },
         volumeProfile: { rating: 'green', explanation: 'Volume is 4x average.' },
+        gapStatsTable: [{ date: '2026-04-12', gapPct: 10, open: 10, close: 11 }],
+        financialCommentary: { rating: 'yellow', explanation: 'Commentary was mixed.' },
         confidence: 'medium',
         evidenceIds: ['chart-1'],
       },
@@ -1678,6 +1701,8 @@ describe('agent blueprints', () => {
         patternClassification: 'CONTINUATION',
         recommendation: { action: 'HOLD', reasoning: 'Pattern remains intact without forcing size.' },
         volumeProfile: { rating: 'green', explanation: 'Volume remains elevated.' },
+        gapStatsTable: [{ date: '1999-01-01', gapPct: 99, open: 99, close: 99 }],
+        financialCommentary: { rating: 'yellow', explanation: 'Commentary was mixed.' },
         confidence: 'high',
         evidenceIds: ['gap-stats', 'ownership'],
       }),
@@ -1773,6 +1798,13 @@ describe('agent blueprints', () => {
           avgHighExtension: 20,
           priorGapDayAvgReturn: 10,
         },
+        managementCommentary: 'Management highlighted liquidity concerns and potential financing needs.',
+        gapStatsTable: [{
+          date: '2026-04-12',
+          gapPct: 10,
+          open: 10,
+          close: 11,
+        }],
       },
     }));
 
@@ -1789,6 +1821,12 @@ describe('agent blueprints', () => {
       userMessage: expect.stringContaining('gapDayStats (precomputed):\n'),
     }), 'background');
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Historical Gap Data (last 5, most recent first):'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: expect.stringContaining('Management Commentary (from SEC filings / earnings):'),
+    }), 'background');
+    expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Recent news:\n'),
     }), 'background');
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -1799,6 +1837,13 @@ describe('agent blueprints', () => {
     }), 'background');
     expect(result.data).toMatchObject({
       ticker: 'AAPL',
+      gapStatsTable: [{
+        date: '2026-04-12',
+        gapPct: 10,
+        open: 10,
+        close: 11,
+      }],
+      financialCommentary: { rating: 'yellow', explanation: 'Commentary was mixed.' },
       confidence: 'high',
     });
   });
@@ -1813,6 +1858,8 @@ describe('agent blueprints', () => {
         patternClassification: 'CONTINUATION',
         recommendation: { action: 'WATCH', reasoning: 'Needs either a fresh catalyst or cleaner extension reset.' },
         volumeProfile: { rating: 'green', explanation: 'Volume remains elevated.' },
+        gapStatsTable: [],
+        financialCommentary: { rating: 'green', explanation: 'No funding stress was disclosed.' },
         confidence: 'medium',
         evidenceIds: ['ohlc-history'],
       }),
@@ -1880,6 +1927,8 @@ describe('agent blueprints', () => {
           avgHighExtension: null,
           priorGapDayAvgReturn: null,
         },
+        managementCommentary: null,
+        gapStatsTable: [],
       },
     }));
 
@@ -2154,6 +2203,8 @@ describe('agent blueprints', () => {
         overallOfferingRisk: { rating: 'green', explanation: 'High risk.' },
         jmt415Commentary: null,
         historicalStats: 'Avg fade 18%.',
+        gapStatsTable: [],
+        financialCommentary: { rating: 'yellow', explanation: 'Commentary was mixed.' },
         confidence: 'high',
         evidenceIds: [],
       }),
@@ -2186,6 +2237,7 @@ describe('agent blueprints', () => {
         pumpAndDumpTracker: null,
         news: [],
         cashPosition: null,
+        managementCommentary: null,
         priceContext: null,
         deterministicAnalysis: {
           gapCount: 0, sameDayFadeRate: null, avgCloseVsOpen: null, avgHighExtension: null,
@@ -2194,6 +2246,7 @@ describe('agent blueprints', () => {
           floatTrend: null, knownHolderOverhang: null, newsCount: 0, mostRecentNewsDate: null,
           daysSinceLastNews: null, hasFilingCatalyst: false, hasJmt415Content: false, catalystCategories: [],
         },
+        gapStatsTable: [],
         newsFeed: [],
       },
     }));
@@ -2234,6 +2287,8 @@ describe('agent blueprints', () => {
         patternClassification: 'BREAKOUT',
         recommendation: { action: 'WATCH', reasoning: 'Watch for confirmation.' },
         volumeProfile: { rating: 'green', explanation: 'Above avg.' },
+        gapStatsTable: [],
+        financialCommentary: { rating: 'green', explanation: 'No funding stress was disclosed.' },
         confidence: 'medium',
         evidenceIds: [],
       }),
@@ -2258,6 +2313,7 @@ describe('agent blueprints', () => {
         registrations: [],
         offerings: [],
         askEdgarNewsFeed: [],
+        managementCommentary: null,
         priceContext: null,
         ohlcHistory: [{ date: '2026-04-14', open: 250, high: 260, low: 248, close: 258, volume: 5000, vwap: null }],
         recentNews: [{ headline: 'TSLA news headline', summary: '', date: '2026-04-14', formType: 'news', url: '', tags: [], isNews: true, isFiling: false }],
@@ -2269,6 +2325,7 @@ describe('agent blueprints', () => {
           ownership: [], historicalFloat: [], dilutionRating: null, registrations: [], offerings: [],
           floatTrend: null, knownHolderOverhang: null,
         },
+        gapStatsTable: [],
       },
     }));
 

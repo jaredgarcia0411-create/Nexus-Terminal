@@ -16,6 +16,13 @@ export type ReportStatus = 'published' | 'delivery_failed' | 'archived';
 
 export type TrafficLight = 'green' | 'yellow' | 'red';
 
+export interface GapStatsRow {
+  date: string;
+  gapPct: number;
+  open: number;
+  close: number;
+}
+
 export type Confidence = 'high' | 'medium' | 'low';
 
 export interface TrafficLightSection {
@@ -41,6 +48,8 @@ export interface SmallCapResearchReport {
   overallOfferingRisk: TrafficLightSection;
   jmt415Commentary: string | null;
   historicalStats: string;
+  gapStatsTable: GapStatsRow[];
+  financialCommentary: { rating: TrafficLight; explanation: string };
   confidence: Confidence;
   evidenceIds: string[];
 }
@@ -56,6 +65,8 @@ export interface SwingResearchReport {
     reasoning: string;
   };
   volumeProfile: TrafficLightSection;
+  gapStatsTable: GapStatsRow[];
+  financialCommentary: { rating: TrafficLight; explanation: string };
   confidence: Confidence;
   evidenceIds: string[];
 }

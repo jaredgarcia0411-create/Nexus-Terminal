@@ -52,6 +52,8 @@ function createStoredReport(overrides: Partial<(typeof agentReports.$inferSelect
       cashNeed: { rating: 'yellow', explanation: 'Runway is moderate.' },
       overallOfferingRisk: { rating: 'green', explanation: 'Offering probability is elevated.' },
       historicalStats: 'Average gap fade 18%.',
+      gapStatsTable: [],
+      financialCommentary: { rating: 'yellow', explanation: 'Management commentary was mixed.' },
       confidence: 'high',
     },
     status: 'published',
@@ -79,6 +81,8 @@ function createSmallCapReportJson(overrides: Partial<SmallCapResearchReport> = {
     overallOfferingRisk: { rating: 'green', explanation: 'Offering probability is elevated.' },
     jmt415Commentary: 'JMT-415 context is supportive.',
     historicalStats: 'Average gap fade 18%.',
+    gapStatsTable: [],
+    financialCommentary: { rating: 'yellow', explanation: 'Management commentary was mixed.' },
     confidence: 'high',
     evidenceIds: ['news:1', 'chart:1'],
     ...overrides,
@@ -94,6 +98,8 @@ function createSwingReportJson(overrides: Partial<SwingResearchReport> = {}): Sw
     patternClassification: 'CONTINUATION',
     recommendation: { action: 'ADD', reasoning: 'Trend is intact above short-term support.' },
     volumeProfile: { rating: 'green', explanation: 'Volume remains elevated.' },
+    gapStatsTable: [],
+    financialCommentary: { rating: 'green', explanation: 'No financing stress was disclosed.' },
     confidence: 'medium',
     evidenceIds: ['pattern:1', 'volume:1'],
     ...overrides,
@@ -475,6 +481,8 @@ describe('agent discord helpers', () => {
         cashNeed: { rating: 'yellow', explanation: 'Stored cash need.' },
         overallOfferingRisk: { rating: 'green', explanation: 'Stored overall risk.' },
         historicalStats: 'Stored historical stats.',
+        gapStatsTable: [],
+        financialCommentary: { rating: 'yellow', explanation: 'Stored commentary was mixed.' },
         confidence: 'high',
       },
     });
@@ -532,11 +540,16 @@ describe('agent discord helpers', () => {
         cashNeed: { rating: 'red', explanation: 'Cash runway is healthy.' },
         overallOfferingRisk: { rating: 'green', explanation: 'Odds of an offering remain high.' },
         historicalStats: 'Average gap fade 22%.',
+        gapStatsTable: [{ date: '2026-04-11', gapPct: 12.34, open: 1.23, close: 1.1 }],
+        financialCommentary: { rating: 'red', explanation: 'Management highlighted liquidity concerns.' },
       }),
     }) as never);
 
     expect(embed.description).toContain('**Offering Risk** 🟢\n• Odds of an offering remain high.');
     expect(embed.description).toContain('**News/Catalyst** 🟡\n• Headline is driving the move.');
+    expect(embed.description).toContain('**Financial Commentary** 🔴\n• Management highlighted liquidity concerns.');
+    expect(embed.description).toContain('**Gap History**');
+    expect(embed.description).toContain('2026-04-11 | +  12.34% |    1.23 |     1.1');
     expect(embed.fields).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'Ticker', value: 'NVDA' }),
       expect.objectContaining({ name: 'Confidence', value: 'high' }),
@@ -551,11 +564,16 @@ describe('agent discord helpers', () => {
   it('builds the swing setup embed from nested recommendation and MDR fields', () => {
     const embed = buildSwingSetupEmbed(createStoredReport({
       agentId: 'swing-trader',
-      reportJson: createSwingReportJson(),
+      reportJson: createSwingReportJson({
+        gapStatsTable: [{ date: '2026-04-11', gapPct: 8.5, open: 10, close: 10.8 }],
+        financialCommentary: { rating: 'red', explanation: 'Management flagged financing needs.' },
+      }),
     }) as never);
 
     expect(embed.description).toContain('**MDR Match** 🟢\n• Clean MDR analog.');
     expect(embed.description).toContain('**Momentum** 🟡\n• Momentum is still positive but slowing.');
+    expect(embed.description).toContain('**Financial Commentary** 🔴\n• Management flagged financing needs.');
+    expect(embed.description).toContain('2026-04-11 | +   8.50% |      10 |    10.8');
     expect(embed.fields).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'Pattern', value: 'CONTINUATION' }),
       expect.objectContaining({ name: 'MDR Similarity', value: '87%' }),

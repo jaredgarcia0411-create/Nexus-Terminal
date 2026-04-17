@@ -6,7 +6,7 @@
 
 ## Current State
 
-**Active spec:** Research Agent Report Refinements (Gap Stats + Financial Commentary + Traffic-Light Normalization) — see below.
+**Active spec:** None. Research Agent Report Refinements (Gap Stats + Financial Commentary + Traffic-Light Normalization) shipped on `2026-04-17`.
 
 Agent Hardening #1 through #3 are shipped and archived from this file. The next hardening item after this spec is approval gates plus spend enforcement from `FUTURE-PLANS.md`.
 
@@ -15,7 +15,7 @@ Agent Hardening #1 through #3 are shipped and archived from this file. The next 
 ## Active Spec — Research Agent Report Refinements
 
 > Generated: 2026-04-17 | Agent: nexus-architect
-> Status: PLANNED
+> Status: COMPLETED
 
 ### Objective
 
@@ -344,30 +344,30 @@ Manual Discord checks:
 
 ### Acceptance Criteria
 
-- [ ] `GapStatsRow` interface exists in `lib/agents/types.ts`
-- [ ] `SmallCapResearchReport` interface includes `gapStatsTable` and `financialCommentary`
-- [ ] `researchReportSchema` (small-cap) includes both new Zod fields
-- [ ] `swingResearchSchema` (swing-trader) includes both new Zod fields
-- [ ] `extractGapStatsTable()` exists in both blueprints and caps at 5 rows
-- [ ] Gap % extracted from direct aliases first, computed from `priorClose` as fallback
-- [ ] Date normalized to `YYYY-MM-DD`
-- [ ] `gapStatsTable` in parsed report is always overwritten with deterministic value
-- [ ] Both prompts receive gap markdown table in LLM context
-- [ ] Both prompts receive `managementCommentary` text in LLM context
-- [ ] `small-cap.md` uses standard traffic-light semantics (RED = high risk, GREEN = low risk)
-- [ ] `swing-trader.md` semantics unchanged; only additive usage instructions added
-- [ ] `buildResearchEmbed()` renders gap table block and `financialCommentary` rating line
-- [ ] `buildSwingSetupEmbed()` renders gap table block and `financialCommentary` rating line
-- [ ] Empty `gapStatsTable` renders "No historical gap data available." in Discord
-- [ ] `npm run lint` passes
-- [ ] `npx tsc --noEmit` passes
-- [ ] `npm test` passes
+- [x] `GapStatsRow` interface exists in `lib/agents/types.ts`
+- [x] `SmallCapResearchReport` interface includes `gapStatsTable` and `financialCommentary`
+- [x] `researchReportSchema` (small-cap) includes both new Zod fields
+- [x] `swingResearchSchema` (swing-trader) includes both new Zod fields
+- [x] `extractGapStatsTable()` exists in both blueprints and caps at 5 rows
+- [x] Gap % extracted from direct aliases first, computed from `priorClose` as fallback
+- [x] Date normalized to `YYYY-MM-DD`
+- [x] `gapStatsTable` in parsed report is always overwritten with deterministic value
+- [x] Both prompts receive gap markdown table in LLM context
+- [x] Both prompts receive `managementCommentary` text in LLM context
+- [x] `small-cap.md` uses standard traffic-light semantics (RED = high risk, GREEN = low risk)
+- [x] `swing-trader.md` semantics unchanged; only additive usage instructions added
+- [x] `buildResearchEmbed()` renders gap table block and `financialCommentary` rating line
+- [x] `buildSwingSetupEmbed()` renders gap table block and `financialCommentary` rating line
+- [x] Empty `gapStatsTable` renders "No historical gap data available." in Discord
+- [x] `npm run lint` passes
+- [x] `npx tsc --noEmit` passes
+- [x] `npm test` passes
 
 ---
 
 ## Validation Snapshot
 
-Most recent validation (`2026-04-16`, post-commit `bf13567`):
+Most recent validation (`2026-04-17`, Research Agent Report Refinements):
 
 - `npm run lint` — passed
 - `npx tsc --noEmit` — passed

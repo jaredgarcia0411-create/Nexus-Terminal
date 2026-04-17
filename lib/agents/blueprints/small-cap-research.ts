@@ -5,7 +5,7 @@ import { buildNewsFeedFromArrays, newsFeedItemSchema } from '../news-formatter';
 import { writeAndDeliverReport } from '../discord';
 import { callLlm } from '../llm-client';
 import { upsertMemory } from '../memory';
-import type { Blueprint, StepResult } from '../types';
+import type { Blueprint, GapStatsRow, StepResult } from '../types';
 
 const TRADINGVIEW_COLUMNS = [
   'name',
@@ -49,6 +49,7 @@ const edgarSectionsSchema = z.object({
   news: z.array(z.unknown()),
   filingTitles: z.array(z.unknown()).default([]),
   cashPosition: z.unknown().nullable(),
+  managementCommentary: z.string().nullable().default(null),
 });
 
 const priceContextSchema = edgarSectionsSchema.extend({
@@ -92,6 +93,12 @@ const deterministicAnalysisSchema = z.object({
 
 const researchPipelineInputSchema = priceContextSchema.extend({
   deterministicAnalysis: deterministicAnalysisSchema,
+  gapStatsTable: z.array(z.object({
+    date: z.string(),
+    gapPct: z.number(),
+    open: z.number(),
+    close: z.number(),
+  })),
   newsFeed: z.array(newsFeedItemSchema).default([]),
 });
 
@@ -120,6 +127,16 @@ const researchReportSchema = z.object({
   overallOfferingRisk: ratedSection,
   jmt415Commentary: z.string().nullable(),
   historicalStats: z.string(),
+  gapStatsTable: z.array(z.object({
+    date: z.string(),
+    gapPct: z.number(),
+    open: z.number(),
+    close: z.number(),
+  })),
+  financialCommentary: z.object({
+    rating: z.enum(['green', 'yellow', 'red']),
+    explanation: z.string(),
+  }),
   confidence: z.enum(['high', 'medium', 'low']),
   evidenceIds: z.array(z.string()),
 });
@@ -312,6 +329,79 @@ function normalizeGapRow(value: unknown): {
   return { open, close, high };
 }
 
+function extractGapStatsTable(rawRows: unknown[]): GapStatsRow[] {
+  const rows: GapStatsRow[] = [];
+
+  for (const value of rawRows) {
+    if (typeof value !== 'object' || value === null) {
+      continue;
+    }
+
+    const row = value as Record<string, unknown>;
+    const rawDate = row.date
+      ?? row.gapDate
+      ?? row.trading_date
+      ?? row.tradeDate
+      ?? row.tradingDate;
+    if (typeof rawDate !== 'string' || !rawDate) {
+      continue;
+    }
+
+    const date = rawDate.slice(0, 10);
+    const open = Number(
+      row.marketOpen
+      ?? row.open
+      ?? row.openPrice
+      ?? row.open_price
+      ?? Number.NaN,
+    );
+    const close = Number(
+      row.marketClose
+      ?? row.close
+      ?? row.closePrice
+      ?? row.close_price
+      ?? Number.NaN,
+    );
+    if (Number.isNaN(open) || Number.isNaN(close)) {
+      continue;
+    }
+
+    let gapPct: number | null = null;
+    const directGap = row.gapPercentage
+      ?? row.gapPercent
+      ?? row.gap_pct
+      ?? row.gapPct
+      ?? row.pctChange
+      ?? row.gap
+      ?? row.percent_change;
+    if (directGap !== undefined && directGap !== null && !Number.isNaN(Number(directGap))) {
+      gapPct = Number(directGap);
+    } else {
+      const priorClose = Number(
+        row.priorClose
+        ?? row.prior_close
+        ?? row.previousClose
+        ?? Number.NaN,
+      );
+      if (!Number.isNaN(priorClose) && priorClose !== 0) {
+        gapPct = ((open - priorClose) / priorClose) * 100;
+      }
+    }
+    if (gapPct === null) {
+      continue;
+    }
+
+    rows.push({
+      date,
+      gapPct: Math.round(gapPct * 100) / 100,
+      open,
+      close,
+    });
+  }
+
+  return rows.slice(0, 5);
+}
+
 function normalizeHistoricalFloatRow(value: unknown): {
   date: Date;
   float: number;
@@ -437,11 +527,15 @@ function extractNewsMetrics(newsItems: unknown[]): {
   };
 }
 
-function computeDeterministicAnalysis(input: z.infer<typeof priceContextSchema>): z.infer<typeof deterministicAnalysisSchema> {
+function computeDeterministicAnalysis(
+  input: z.infer<typeof priceContextSchema>,
+): z.infer<typeof deterministicAnalysisSchema> & { gapStatsTable: GapStatsRow[] } {
   const newsMetrics = extractNewsMetrics(asArray(input.news));
-  const gapRows = asArray(input.gapStats)
+  const rawGapRows = asArray(input.gapStats);
+  const gapRows = rawGapRows
     .map(normalizeGapRow)
     .filter((row): row is { open: number; close: number; high: number } => row !== null);
+  const gapStatsTable = extractGapStatsTable(rawGapRows);
 
   const gapCount = gapRows.length;
   const sameDayFadeRate = gapCount === 0
@@ -552,6 +646,7 @@ function computeDeterministicAnalysis(input: z.infer<typeof priceContextSchema>)
     daysToComplianceDeadline,
     floatTrend,
     knownHolderOverhang,
+    gapStatsTable,
     ...newsMetrics,
   };
 }
@@ -621,6 +716,18 @@ async function fetchTradingViewPriceContext(ticker: string) {
 }
 
 function buildResearchPrompt(input: z.infer<typeof researchPipelineInputSchema>): string {
+  const gapTableSection = input.gapStatsTable.length === 0
+    ? 'No historical gap data available.'
+    : [
+      'Historical Gap Data (last 5, most recent first):',
+      '| Date | Gap % | Open | Close |',
+      '|------|-------|------|-------|',
+      ...input.gapStatsTable.map(
+        (row) =>
+          `| ${row.date} | ${row.gapPct > 0 ? '+' : ''}${row.gapPct.toFixed(2)}% | ${row.open} | ${row.close} |`,
+      ),
+    ].join('\n');
+  const commentaryText = input.managementCommentary?.trim() || 'No management commentary available.';
   const exampleShape = {
     ticker: input.ticker,
     newsWhyRunning: { rating: 'green | yellow | red', explanation: 'string' },
@@ -634,6 +741,8 @@ function buildResearchPrompt(input: z.infer<typeof researchPipelineInputSchema>)
     overallOfferingRisk: { rating: 'green | yellow | red', explanation: 'string' },
     jmt415Commentary: 'string or null',
     historicalStats: 'string summary of gap-stats data',
+    gapStatsTable: [{ date: '2026-04-17', gapPct: 12.5, open: 1.23, close: 1.18 }],
+    financialCommentary: { rating: 'green | yellow | red', explanation: 'string' },
     confidence: 'high | medium | low',
     evidenceIds: ['string'],
   };
@@ -645,7 +754,7 @@ function buildResearchPrompt(input: z.infer<typeof researchPipelineInputSchema>)
     `Price context:\n${wrapUntrusted('price-context', JSON.stringify(input.priceContext, null, 2))}`,
     [
       'AskEdgar sections:',
-      `gapStats:\n${wrapUntrusted('filing', JSON.stringify(input.gapStats, null, 2))}`,
+      `gapStats:\n${wrapUntrusted('filing', gapTableSection)}`,
       `offerings:\n${wrapUntrusted('filing', JSON.stringify(input.offerings, null, 2))}`,
       `registrations:\n${wrapUntrusted('filing', JSON.stringify(input.registrations, null, 2))}`,
       `equityLines:\n${wrapUntrusted('filing', JSON.stringify(input.equityLines, null, 2))}`,
@@ -660,11 +769,14 @@ function buildResearchPrompt(input: z.infer<typeof researchPipelineInputSchema>)
       `pumpAndDumpTracker:\n${wrapUntrusted('filing', JSON.stringify(input.pumpAndDumpTracker, null, 2))}`,
       `Recent news & filings (headline, date, formType, summary):\n${wrapUntrusted('news', JSON.stringify(input.newsFeed, null, 2))}`,
       `cashPosition:\n${wrapUntrusted('filing', JSON.stringify(input.cashPosition, null, 2))}`,
+      `Management Commentary (from SEC filings / earnings):\n${wrapUntrusted('filing', commentaryText)}`,
     ].join('\n\n'),
     `Deterministic analysis:\n${wrapUntrusted('deterministic-analysis', JSON.stringify(input.deterministicAnalysis, null, 2))}`,
     'Use the JMT traffic-light rating system. Each rating must be "green", "yellow", or "red" (lowercase).',
     'For jmt415Commentary: if deterministicAnalysis.hasJmt415Content is false, set to null. If true, note the presence of JMT content based on the Recent news & filings section.',
     'For historicalStats: summarize gap-stats patterns (avg gap fade, same-day fade count, typical range). If no gap-stats data, say "No historical gap data available."',
+    'For gapStatsTable: copy the exact Historical Gap Data rows into the JSON output. If the table says no data is available, return an empty array.',
+    'For financialCommentary: rate the Management Commentary section using the traffic-light system and explain the cash, liquidity, or financing signal in one short paragraph.',
     "When rating 'News / Why It's Running', quote the exact headline text of the single most relevant item from the Recent news & filings section. Reference the formType in parentheses (e.g., (8-K)).",
     'Do not claim "no recent news available" unless the Recent news & filings section is empty. Do not fabricate headlines.',
     'Use the Deterministic analysis section as precomputed inputs. Do not recalculate those values in the response.',
@@ -697,6 +809,7 @@ export const smallCapResearchBlueprint: Blueprint = {
           ?? readResults(rawData['dilution-data'])[0]
           ?? readResults(rawData['screener'])[0]
           ?? null;
+        const managementCommentary = getStringField(cashPosition, ['managementCommentary', 'management_commentary']);
 
         return completedResult({
           ticker,
@@ -716,6 +829,7 @@ export const smallCapResearchBlueprint: Blueprint = {
           news: readResults(rawData['news']),
           filingTitles: readResults(rawData['filing-titles']),
           cashPosition,
+          managementCommentary,
           warnings: Array.isArray((result as { warnings?: unknown }).warnings)
             ? (result as { warnings: string[] }).warnings
             : [],
@@ -756,11 +870,12 @@ export const smallCapResearchBlueprint: Blueprint = {
       run: async ({ previousOutput }) => {
         const startedAt = Date.now();
         const input = priceContextSchema.parse(previousOutput);
-        const deterministicAnalysis = computeDeterministicAnalysis(input);
+        const { gapStatsTable, ...deterministicAnalysis } = computeDeterministicAnalysis(input);
 
         return completedResult({
           ...input,
           deterministicAnalysis,
+          gapStatsTable,
           newsFeed: buildNewsFeedFromArrays(
             asArray(input.news),
             asArray(input.filingTitles),
@@ -791,8 +906,10 @@ export const smallCapResearchBlueprint: Blueprint = {
           userMessage: buildResearchPrompt(input),
           temperature: 0.2,
         }, 'background');
+        const parsed = researchReportSchema.parse(parseJson(llmResponse.content));
+        parsed.gapStatsTable = input.gapStatsTable;
 
-        return completedResult(researchReportSchema.parse(parseJson(llmResponse.content)), {
+        return completedResult(parsed, {
           durationMs: llmResponse.durationMs,
           tokensUsed: llmResponse.inputTokens + llmResponse.outputTokens,
           model: llmResponse.modelUsed,

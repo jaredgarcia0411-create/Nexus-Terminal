@@ -456,6 +456,18 @@ export function buildResearchEmbed(report: AgentReport): DiscordEmbed {
   ): string => `**${label}** ${ratingEmoji(section.rating)}\n• ${truncate(section.explanation, 300)}`;
 
   const historicalStats = payload.historicalStats.trim();
+  const gapBlock = payload.gapStatsTable.length === 0
+    ? 'No historical gap data available.'
+    : [
+      '```',
+      'Date        | Gap %    | Open    | Close',
+      '------------|----------|---------|--------',
+      ...payload.gapStatsTable.map(
+        (row) =>
+          `${row.date} | ${(row.gapPct > 0 ? '+' : '') + row.gapPct.toFixed(2).padStart(7)}% | ${String(row.open).padStart(7)} | ${String(row.close).padStart(7)}`,
+      ),
+      '```',
+    ].join('\n');
 
   const sections = [
     ratingLine('Offering Risk', payload.overallOfferingRisk),
@@ -464,6 +476,8 @@ export function buildResearchEmbed(report: AgentReport): DiscordEmbed {
     ratingLine('Cash Need', payload.cashNeed),
     ratingLine('News/Catalyst', payload.newsWhyRunning),
     ratingLine('Chart History', payload.chartHistory),
+    ratingLine('Financial Commentary', payload.financialCommentary),
+    `**Gap History**\n${gapBlock}`,
   ];
 
   const fields: DiscordEmbedField[] = [
@@ -497,12 +511,26 @@ export function buildSwingSetupEmbed(report: AgentReport): DiscordEmbed {
     label: string,
     section: SwingResearchReport['momentum'],
   ): string => `**${label}** ${ratingEmoji(section.rating)}\n• ${truncate(section.explanation, 300)}`;
+  const gapBlock = payload.gapStatsTable.length === 0
+    ? 'No historical gap data available.'
+    : [
+      '```',
+      'Date        | Gap %    | Open    | Close',
+      '------------|----------|---------|--------',
+      ...payload.gapStatsTable.map(
+        (row) =>
+          `${row.date} | ${(row.gapPct > 0 ? '+' : '') + row.gapPct.toFixed(2).padStart(7)}% | ${String(row.open).padStart(7)} | ${String(row.close).padStart(7)}`,
+      ),
+      '```',
+    ].join('\n');
 
   const sections = [
     ratingLine('MDR Match', payload.mdrPatternMatch),
     ratingLine('Momentum', payload.momentum),
     ratingLine('Catalyst', payload.catalyst),
     ratingLine('Volume', payload.volumeProfile),
+    ratingLine('Financial Commentary', payload.financialCommentary),
+    `**Gap History**\n${gapBlock}`,
   ];
 
   const fields: DiscordEmbedField[] = [

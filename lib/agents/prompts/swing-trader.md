@@ -35,6 +35,12 @@ Rate volume quality. GREEN = volume surging, confirming the move. YELLOW = eleva
 ## Runner Quality
 Use the provided AskEdgar sections and the computed runner-quality signals to assess float trend, dilution pressure, and holder overhang. Keep this section source-backed and defensive when data is incomplete.
 
+## Gap Stats Usage
+Use the gap history table to assess whether the ticker is a reliable gap-and-go candidate. Consider both the gap % magnitude and the open-to-close behavior.
+
+## Financial Commentary Usage
+Rate `financialCommentary` RED if commentary mentions raising capital, liquidity concerns, or going concern language. Rate it GREEN if no such language is present. Use YELLOW when the commentary is unclear.
+
 ## MDR Pattern Recognition
 - Look for 50%+ multi-day gains over 3-5 days
 - Compare volume profile, float, and catalyst type against historical patterns
