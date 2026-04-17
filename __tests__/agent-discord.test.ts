@@ -561,6 +561,26 @@ describe('agent discord helpers', () => {
     ]));
   });
 
+  it('renders the empty-gap fallback in the small-cap embed when gapStatsTable is empty', () => {
+    const embed = buildResearchEmbed(createStoredReport({
+      reportJson: createSmallCapReportJson({ gapStatsTable: [] }),
+    }) as never);
+
+    expect(embed.description).toContain('**Gap History**');
+    expect(embed.description).toContain('No historical gap data available.');
+    expect(embed.description).not.toContain('| Date ');
+  });
+
+  it('renders the empty-gap fallback in the swing setup embed when gapStatsTable is empty', () => {
+    const embed = buildSwingSetupEmbed(createStoredReport({
+      agentId: 'swing-trader',
+      reportJson: createSwingReportJson({ gapStatsTable: [] }),
+    }) as never);
+
+    expect(embed.description).toContain('**Gap History**');
+    expect(embed.description).toContain('No historical gap data available.');
+  });
+
   it('builds the swing setup embed from nested recommendation and MDR fields', () => {
     const embed = buildSwingSetupEmbed(createStoredReport({
       agentId: 'swing-trader',

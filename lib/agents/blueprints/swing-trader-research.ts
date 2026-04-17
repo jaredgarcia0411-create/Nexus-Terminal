@@ -338,7 +338,7 @@ function computeGapDayStats(gapStats: unknown): {
   };
 }
 
-function extractGapStatsTable(rawRows: unknown[]): GapStatsRow[] {
+export function extractGapStatsTable(rawRows: unknown[]): GapStatsRow[] {
   const rows: GapStatsRow[] = [];
 
   for (const value of rawRows) {

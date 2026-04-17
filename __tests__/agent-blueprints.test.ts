@@ -2349,3 +2349,54 @@ describe('agent blueprints', () => {
     );
   });
 });
+
+describe('extractGapStatsTable alias resolution', () => {
+  it('resolves AskEdgar-normalized field names (gapPercentage / marketOpen / marketClose) from the small-cap blueprint', async () => {
+    const { extractGapStatsTable } = await import('@/lib/agents/blueprints/small-cap-research');
+
+    const rows = extractGapStatsTable([
+      {
+        date: '2026-04-11',
+        gapPercentage: 12.34,
+        marketOpen: 1.23,
+        marketClose: 1.1,
+      },
+    ]);
+
+    expect(rows).toEqual([
+      { date: '2026-04-11', gapPct: 12.34, open: 1.23, close: 1.1 },
+    ]);
+  });
+
+  it('resolves AskEdgar-normalized field names from the swing-trader blueprint', async () => {
+    const { extractGapStatsTable } = await import('@/lib/agents/blueprints/swing-trader-research');
+
+    const rows = extractGapStatsTable([
+      {
+        date: '2026-04-11',
+        gapPercentage: 8.5,
+        marketOpen: 10,
+        marketClose: 10.8,
+      },
+    ]);
+
+    expect(rows).toEqual([
+      { date: '2026-04-11', gapPct: 8.5, open: 10, close: 10.8 },
+    ]);
+  });
+
+  it('caps output at 5 rows and falls back to priorClose-based gap computation when direct gap is missing', async () => {
+    const { extractGapStatsTable } = await import('@/lib/agents/blueprints/small-cap-research');
+
+    const raw = Array.from({ length: 8 }, (_, i) => ({
+      date: `2026-04-${String(i + 1).padStart(2, '0')}`,
+      marketOpen: 11,
+      marketClose: 10.5,
+      priorClose: 10,
+    }));
+
+    const rows = extractGapStatsTable(raw);
+    expect(rows).toHaveLength(5);
+    expect(rows[0]).toEqual({ date: '2026-04-01', gapPct: 10, open: 11, close: 10.5 });
+  });
+});

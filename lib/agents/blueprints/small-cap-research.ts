@@ -329,7 +329,7 @@ function normalizeGapRow(value: unknown): {
   return { open, close, high };
 }
 
-function extractGapStatsTable(rawRows: unknown[]): GapStatsRow[] {
+export function extractGapStatsTable(rawRows: unknown[]): GapStatsRow[] {
   const rows: GapStatsRow[] = [];
 
   for (const value of rawRows) {
