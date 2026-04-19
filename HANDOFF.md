@@ -6,13 +6,13 @@
 
 ## Current State
 
-**Active spec:** Trade Journal Enhancement — DRC + Weekly Review + Archive Tab (below, Status: IN PROGRESS — Phase 3 implemented on 2026-04-19, pending review/commit).
+**Active spec:** Trade Journal Enhancement — DRC + Weekly Review + Archive Tab (below, Status: IN PROGRESS — Phase 4 implemented on 2026-04-19, pending review/commit).
 
 Next up after this ships: approval gates + spend enforcement from `FUTURE-PLANS.md`.
 
 ## Validation Snapshot
 
-Most recent validation (`2026-04-19`, Trade Journal Enhancement phase 3):
+Most recent validation (`2026-04-19`, Trade Journal Enhancement phase 4):
 
 - `npm run lint` — passed
 - `npx tsc --noEmit` — passed
@@ -29,7 +29,7 @@ Most recent validation (`2026-04-19`, Trade Journal Enhancement phase 3):
 ## Trade Journal Enhancement — DRC + Weekly Review + Archive Tab
 
 > Generated: 2026-04-19 | Agent: nexus-architect
-> Status: IN PROGRESS (Phase 3 implemented on 2026-04-19; stop point for review/commit before Phase 4)
+> Status: IN PROGRESS (Phase 4 implemented on 2026-04-19; stop point for review/commit before Phase 5)
 
 ### Goal
 
@@ -1129,7 +1129,7 @@ export default function DailyReportSheet({
     const res = await fetch('/api/report-templates?type=daily');
     if (!res.ok) return;
     const data = (await res.json()) as { template: TemplateRow };
-    // Re-seed defaults by PUTting the hardcoded list — simpler than a ?reset= param
+    // Re-seed defaults from shared constants and persist them through the existing PUT route
     const defaultRes = await fetch('/api/report-templates', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
