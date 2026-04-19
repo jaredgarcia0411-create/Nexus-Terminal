@@ -291,20 +291,20 @@ export default function WeeklyReviewSheet({
                   key={field.id}
                   field={field}
                   value={reportData[field.id]}
-                  readOnly={readOnly || isExistingReport}
+                  readOnly={readOnly}
                   onChange={(nextValue) => setReportData((prev) => ({ ...prev, [field.id]: nextValue }))}
                 />
               ))}
             </div>
 
-            {!readOnly && !isExistingReport ? (
+            {!readOnly ? (
               <div className="flex justify-end pt-2">
                 <Button
                   onClick={handleSave}
                   disabled={saving}
                   className="bg-emerald-500 text-black hover:bg-emerald-400"
                 >
-                  {saving ? 'Saving…' : 'Save Review'}
+                  {saving ? 'Saving…' : isExistingReport ? 'Update Review' : 'Save Review'}
                 </Button>
               </div>
             ) : null}

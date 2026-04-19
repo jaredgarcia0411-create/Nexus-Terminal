@@ -1,3 +1,4 @@
+import { format } from 'date-fns';
 import type { Trade } from '@/lib/types';
 
 export interface DayAggregate {
@@ -15,18 +16,19 @@ export interface WeekAggregate {
   tradeIds: string[];
 }
 
+// Use local-timezone date keys (yyyy-MM-dd) so trades bucket into the same
+// day the user sees on TradingCalendar, which also uses date-fns `format`.
+function toLocalDateKey(input: Date | string): string {
+  const d = input instanceof Date ? input : new Date(input);
+  return format(d, 'yyyy-MM-dd');
+}
+
 /**
- * Aggregate all trades that fall on `date` (YYYY-MM-DD).
+ * Aggregate all trades that fall on `date` (YYYY-MM-DD, local timezone).
  * R is only counted for trades where initialRisk > 0.
  */
 export function aggregateDay(trades: Trade[], date: string): DayAggregate {
-  const matching = trades.filter((t) => {
-    // trade.date is a Date object after normalizeTrade
-    const key = t.date instanceof Date
-      ? t.date.toISOString().slice(0, 10)
-      : String(t.date).slice(0, 10);
-    return key === date;
-  });
+  const matching = trades.filter((t) => toLocalDateKey(t.date) === date);
 
   let grossResult = 0;
   let netResult = 0;
@@ -46,22 +48,18 @@ export function aggregateDay(trades: Trade[], date: string): DayAggregate {
 }
 
 /**
- * Aggregate all trades in [weekStart, weekEnd] inclusive (YYYY-MM-DD strings).
+ * Aggregate all trades in [weekStart, weekEnd] inclusive (YYYY-MM-DD local).
  */
 export function aggregateWeek(
   trades: Trade[],
   weekStart: string,
   weekEnd: string,
 ): WeekAggregate {
-  const start = new Date(weekStart + 'T00:00:00');
-  const end = new Date(weekEnd + 'T23:59:59');
-
   const matching = trades.filter((t) => {
-    const d = t.date instanceof Date ? t.date : new Date(t.date);
-    return d >= start && d <= end;
+    const key = toLocalDateKey(t.date);
+    return key >= weekStart && key <= weekEnd;
   });
 
-  // Build per-day R map
   const dayRMap: Record<string, number> = {};
   let grossResult = 0;
   let netResult = 0;
@@ -69,8 +67,7 @@ export function aggregateWeek(
   const tradeIds: string[] = [];
 
   for (const t of matching) {
-    const d = t.date instanceof Date ? t.date : new Date(t.date);
-    const key = d.toISOString().slice(0, 10);
+    const key = toLocalDateKey(t.date);
     grossResult += t.grossPnl;
     netResult += t.netPnl;
     if (t.initialRisk && t.initialRisk > 0) {
