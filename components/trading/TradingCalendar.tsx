@@ -22,6 +22,8 @@ import { motion, AnimatePresence } from 'motion/react';
 
 interface TradingCalendarProps {
   trades: Trade[];
+  onDayClick?: (dateKey: string) => void;
+  onWeekClick?: (weekStart: string, weekEnd: string) => void;
 }
 
 type WeekData = {
@@ -30,7 +32,7 @@ type WeekData = {
   weeklyR: number;
 };
 
-export default function TradingCalendar({ trades }: TradingCalendarProps) {
+export default function TradingCalendar({ trades, onDayClick, onWeekClick }: TradingCalendarProps) {
   const isMobile = useIsMobile();
   const [currentMonth, setCurrentMonth] = React.useState(new Date());
   const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
@@ -134,7 +136,13 @@ export default function TradingCalendar({ trades }: TradingCalendarProps) {
                 return (
                   <div 
                     key={dayIdx} 
-                    onClick={() => setSelectedDate(isSelected ? null : dateKey)}
+                    onClick={() => {
+                      if (onDayClick) {
+                        onDayClick(dateKey);
+                      } else {
+                        setSelectedDate(isSelected ? null : dateKey);
+                      }
+                    }}
                     className={`${isMobile ? 'min-h-[60px] p-1.5' : 'min-h-[100px] p-2'} relative flex cursor-pointer flex-col gap-1 bg-[#121214] transition-all group ${
                       !isCurrentMonth ? 'opacity-20' : 'hover:bg-white/[0.03]'
                     } ${isToday ? 'ring-1 ring-inset ring-emerald-500/50' : ''} ${
@@ -163,7 +171,16 @@ export default function TradingCalendar({ trades }: TradingCalendarProps) {
               })}
               
               {!isMobile ? (
-                <div className="min-h-[100px] border-l border-white/5 bg-white/5 p-2">
+                <div
+                  className={`min-h-[100px] border-l border-white/5 bg-white/5 p-2 ${onWeekClick ? 'cursor-pointer hover:bg-white/[0.08] transition-colors' : ''}`}
+                  onClick={() => {
+                    if (!onWeekClick) return;
+                    const weekStartDate = week.days[0];
+                    const weekEndDate = week.days[week.days.length - 1];
+                    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                    onWeekClick(fmt(weekStartDate), fmt(weekEndDate));
+                  }}
+                >
                   <div className="flex h-full flex-col items-center justify-center gap-1">
                     <div className={`text-[13px] font-bold ${getPnLColor(week.weeklyPnl)}`}>
                       {week.weeklyPnl >= 0 ? '+' : ''}{formatCurrency(week.weeklyPnl)}
@@ -171,6 +188,9 @@ export default function TradingCalendar({ trades }: TradingCalendarProps) {
                     <div className={`text-[11px] font-medium opacity-70 ${week.weeklyR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {formatR(week.weeklyR)}
                     </div>
+                    {onWeekClick && (
+                      <div className="text-[9px] text-zinc-600 uppercase tracking-widest mt-1">Review</div>
+                    )}
                   </div>
                 </div>
               ) : null}

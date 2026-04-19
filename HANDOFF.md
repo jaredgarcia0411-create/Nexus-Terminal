@@ -6,13 +6,13 @@
 
 ## Current State
 
-**Active spec:** Trade Journal Enhancement — DRC + Weekly Review + Archive Tab (below, Status: PLANNED, queued for Codex 2026-04-19).
+**Active spec:** Trade Journal Enhancement — DRC + Weekly Review + Archive Tab (below, Status: IN PROGRESS — Phase 1 implemented on 2026-04-19, pending review/commit).
 
 Next up after this ships: approval gates + spend enforcement from `FUTURE-PLANS.md`.
 
 ## Validation Snapshot
 
-Most recent validation (`2026-04-17`, post research agent refinements + follow-up tests):
+Most recent validation (`2026-04-19`, Trade Journal Enhancement phase 1):
 
 - `npm run lint` — passed
 - `npx tsc --noEmit` — passed
@@ -28,7 +28,7 @@ Most recent validation (`2026-04-17`, post research agent refinements + follow-u
 ## Trade Journal Enhancement — DRC + Weekly Review + Archive Tab
 
 > Generated: 2026-04-19 | Agent: nexus-architect
-> Status: PLANNED
+> Status: IN PROGRESS (Phase 1 implemented on 2026-04-19; stop point for review/commit before Phase 2)
 
 ### Goal
 
