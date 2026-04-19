@@ -15,13 +15,14 @@ import PerformanceTab from '@/components/trading/PerformanceTab';
 import TradesTab from '@/components/trading/TradesTab';
 import ChartsTab from '@/components/trading/ChartsTab';
 import ResearchTab from '@/components/trading/ResearchTab';
+import ArchiveTab from '@/components/trading/ArchiveTab';
 import CommandPalette from '@/components/trading/CommandPalette';
 import { TabErrorBoundary } from '@/components/ui/TabErrorBoundary';
 import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useTrades } from '@/hooks/use-trades';
 
-const VALID_TABS: TabKey[] = ['dashboard', 'performance', 'journal', 'filter', 'charts', 'research'];
+const VALID_TABS: TabKey[] = ['dashboard', 'performance', 'journal', 'filter', 'charts', 'research', 'archive'];
 
 const TAB_TITLES: Record<TabKey, string> = {
   dashboard: 'Dashboard',
@@ -30,6 +31,7 @@ const TAB_TITLES: Record<TabKey, string> = {
   filter: 'Trades Management',
   charts: 'Charts',
   research: 'Research',
+  archive: 'Archive',
 };
 
 export default function NexusTerminal() {
@@ -296,6 +298,12 @@ export default function NexusTerminal() {
             {activeTab === 'research' ? (
               <TabErrorBoundary name="Research">
                 <ResearchTab />
+              </TabErrorBoundary>
+            ) : null}
+
+            {activeTab === 'archive' ? (
+              <TabErrorBoundary name="Archive">
+                <ArchiveTab trades={trades} />
               </TabErrorBoundary>
             ) : null}
           </AnimatePresence>

@@ -1,13 +1,13 @@
 'use client';
 
-import { Activity, BarChart3, ChartCandlestick, ChevronLeft, ChevronRight, File, Filter, Folder, LayoutGrid, List, Plus, Search, Upload, User } from 'lucide-react';
+import { Activity, Archive, BarChart3, ChartCandlestick, ChevronLeft, ChevronRight, File, Filter, Folder, LayoutGrid, List, Plus, Search, Upload, User } from 'lucide-react';
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import SettingsMenu from '@/components/trading/SettingsMenu';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useIsMobile } from '@/hooks/use-mobile';
 import type { Trade } from '@/lib/types';
 
-export type TabKey = 'dashboard' | 'journal' | 'performance' | 'filter' | 'charts' | 'research';
+export type TabKey = 'dashboard' | 'journal' | 'performance' | 'filter' | 'charts' | 'research' | 'archive';
 
 type UserSession = { id?: string; name?: string | null; email?: string | null; image?: string | null } | undefined;
 
@@ -48,12 +48,14 @@ export default function Sidebar({
     { tab: 'filter', title: 'Trades', icon: Filter },
     { tab: 'charts', title: 'Charts', icon: ChartCandlestick },
     { tab: 'research', title: 'Research', icon: Search },
+    { tab: 'archive', title: 'Archive', icon: Archive },
   ];
 
   if (isMobile) {
     return (
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/5 bg-[#0A0A0B] px-2 py-2">
-        <div className="flex items-center justify-around text-zinc-500">
+        {/* TODO: collapse behind More on mobile when nav items exceed screen width */}
+        <div className="flex items-center justify-around overflow-x-auto text-zinc-500">
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
