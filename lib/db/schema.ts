@@ -1,4 +1,4 @@
-import { pgTable, text, doublePrecision, integer, serial, timestamp, primaryKey, index, unique, foreignKey, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, doublePrecision, integer, serial, timestamp, primaryKey, index, unique, foreignKey, jsonb, date, boolean } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
@@ -361,4 +361,48 @@ export const agentJobCheckpoints = pgTable('agent_job_checkpoints', {
 }, (table) => [
   unique('agent_job_checkpoints_job_step').on(table.jobId, table.stepIndex),
   index('idx_agent_job_checkpoints_job_step').on(table.jobId, table.stepIndex),
+]);
+
+export const reportTemplates = pgTable('report_templates', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: text('type', { enum: ['daily', 'weekly'] }).notNull(),
+  fields: jsonb('fields').notNull(),
+  isDefault: boolean('is_default').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (t) => [
+  unique().on(t.userId, t.type),
+  index('report_templates_user_type_idx').on(t.userId, t.type),
+]);
+
+export const dailyReviews = pgTable('daily_reviews', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  date: date('date').notNull(),
+  templateId: text('template_id').references(() => reportTemplates.id, { onDelete: 'set null' }),
+  templateSnapshot: jsonb('template_snapshot').notNull(),
+  reportData: jsonb('report_data').notNull().default({}),
+  tradeIds: jsonb('trade_ids').notNull().default([]),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (t) => [
+  unique().on(t.userId, t.date),
+  index('daily_reviews_user_date_idx').on(t.userId, t.date),
+]);
+
+export const weeklyReviews = pgTable('weekly_reviews', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  weekStart: date('week_start').notNull(),
+  weekEnd: date('week_end').notNull(),
+  templateId: text('template_id').references(() => reportTemplates.id, { onDelete: 'set null' }),
+  templateSnapshot: jsonb('template_snapshot').notNull(),
+  reportData: jsonb('report_data').notNull().default({}),
+  tradeIds: jsonb('trade_ids').notNull().default([]),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (t) => [
+  unique().on(t.userId, t.weekStart),
+  index('weekly_reviews_user_week_idx').on(t.userId, t.weekStart),
 ]);

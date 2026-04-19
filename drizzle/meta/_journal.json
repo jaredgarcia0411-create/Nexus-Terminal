@@ -141,6 +141,13 @@
       "when": 1775516042313,
       "tag": "0019_clever_zodiak",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1776612483959,
+      "tag": "0020_motionless_vector",
+      "breakpoints": true
     }
   ]
 }
