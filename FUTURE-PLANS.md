@@ -29,36 +29,40 @@ Add 4 new fields to the `trades` table:
 
 ---
 
-### Option 2: Full Journal Migration — Option 1 + Daily/Weekly Review in Nexus
+### Option 2: Full Journal Migration — Daily/Weekly Review in Nexus
 
-Everything from Option 1, plus:
+**Status (2026-04-19):** SPEC'D — see active execution spec in `HANDOFF.md` ("Trade Journal Enhancement — DRC + Weekly Review + Archive"). Final design supersedes the original sketch below.
 
-**Daily Review Card (DRC):**
-- New DB table: `dailyReviews` (userId, date, followedProcess, riskedAccordingly, thoughts, goals, grossResult, netResult)
-- Collapsible "Daily Review" section in JournalTab when expanding a day
-- Questions match Notion DRC: Did I follow process? Did I risk accordingly? Missed trades? Thoughts? Goals?
-- Chart upload/annotation support
+**Final design decisions (locked in before spec):**
+- **Calendar location:** duplicate-rendered at top of `JournalTab` (Dashboard keeps its copy). Collapsible, `localStorage`-persisted.
+- **Interaction:** click day → DRC side-sheet; click weekly row → Weekly Review side-sheet. Same shadcn `Sheet` primitive `TradeDetailSheet` uses.
+- **Editable templates:** per-user, reorder + rename + required-toggle of fixed-type fields (bool/text/number/enum/auto). Stored as JSON; no migrations when template changes.
+- **Template snapshots:** each saved DRC/Weekly copies the template `fields[]` into its own row at save time. Old reports preserve their original layout; future reports pick up the edited template. Eliminates orphan-key problem entirely.
+- **Chart auto-attach (v1):** live-reference via `tradeIds[]` — report re-renders existing `JournalTradeChart` on open. No blob storage until PDF export arrives.
+- **Auto-populated fields:** `grossResult`, `netResult`, `rTotal`, `perDayR` computed from trades by new `lib/journal-aggregates.ts` helpers.
+- **Archive tab:** new top-level tab, flat list + type/date filters, JSON export per report (`Blob` download). Keyboard shortcut is `g a` sequence — the numeric 1–6 tab shortcuts stay untouched.
+- **Template editing UX:** pencil icon inside new-report sheets (hidden on saved reports); includes "Reset to defaults" button.
+- **Save model:** explicit Save button (no autosave). Reopening a day loads the existing DRC and upserts on save.
 
-**Weekly Review:**
-- New DB table: `weeklyReviews` (userId, weekStart, weekEnd, rResults per day, whatWorked, whatDidnt, cycleNotes, goalsNextWeek)
-- Section in Performance tab with auto-populated weekly R totals + reflection questions
+**Starting template fields (DRC):** followedProcess (bool), riskedAccordingly (bool), missedTrades (text), thoughts (text), goals (text), grossResult (auto), netResult (auto), rTotal (auto), grade (enum A+…F).
 
-**Additional trade fields:**
-- `hodTime` — select (30-min buckets from 7:00 to 16:00) — when the name topped
-- `lodTime` — select (same buckets) — when the name bottomed
+**Starting template fields (Weekly):** perDayR (auto bar strip), whatWorked (text), whatDidnt (text), cycleNotes (text), goalsNextWeek (text).
 
-**Why this matters:** Nexus fully replaces Notion for trading workflow. Reviews sit next to actual execution data.
+**Deferred to later phases:**
+- `hodTime` / `lodTime` trade fields (Option 1 or separate spec).
+- Chart screenshot → Vercel Blob storage (needed for PDF export).
+- PDF export.
+- Mobile nav "More" menu collapse (v1 uses `overflow-x-auto`).
 
-**Effort:** ~4-5 sessions. Can be phased — do Option 1 first, then add reviews.
+**Effort:** 5–7 Codex sessions across 6 phases. See `HANDOFF.md` for per-phase steps.
 
 ---
 
 ## Notes
 
-- Option 1 is the recommended starting point — biggest analytical value for the effort
-- Option 2 can layer on top later once Option 1 is in use and we know if Notion reviews should migrate
-- The `tags` system already in Nexus could partially cover setup type and errors, but dedicated structured fields are better for analytics (consistent values, filterable, chartable)
-- R-multiple tracking already works if `initialRisk` is set — consider a user-level default risk setting so it doesn't need to be entered per trade
+- Option 1 (structured trade-row fields: `grade`/`setupType`/`errors`/`agenda`) is still pending and separate from Option 2. Note that Option 2's DRC has a `grade` field on the *report*, not the trade row — they're different surfaces.
+- The `tags` system already in Nexus could partially cover setup type and errors, but dedicated structured fields are better for analytics (consistent values, filterable, chartable).
+- R-multiple tracking already works if `initialRisk` is set — consider a user-level default risk setting so it doesn't need to be entered per trade.
 
 ---
 
