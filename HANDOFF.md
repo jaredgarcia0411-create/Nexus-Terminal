@@ -26,7 +26,7 @@ Most recent validation (`2026-04-20`, Tighten Trading Journal UI):
 ## Spend Enforcement Fix
 
 > Generated: 2026-04-20 | Agent: nexus-architect (inline by plan agent)
-> Status: PLANNED
+> Status: IN PROGRESS (Phase 1 complete)
 
 ### Goal
 
@@ -110,14 +110,14 @@ Make the per-user daily/monthly LLM spend limits actually trip. Today `agent_req
 3. **Why module-level Set is OK here:** The general `CLAUDE.md` rule against module-level state applies to data that must persist across requests (which Vercel cold starts reset). For a log-dedup cache, we *want* reset on cold start — each deploy gets fresh warnings. Do not put this cache in the database.
 
 **Acceptance:**
-- [ ] File exists at `lib/agents/model-pricing.ts`.
-- [ ] `MODEL_PRICING['llama-3.3-70b-versatile']` equals `{ inputCentsPerMToken: 59, outputCentsPerMToken: 79 }`.
+- [x] File exists at `lib/agents/model-pricing.ts`.
+- [x] `MODEL_PRICING['llama-3.3-70b-versatile']` equals `{ inputCentsPerMToken: 59, outputCentsPerMToken: 79 }`.
 - [ ] `estimateCostCents('llama-3.3-70b-versatile', 1_000_000, 1_000_000)` returns `138`.
 - [ ] First call to `estimateCostCents('unknown-model', 100, 100)` returns `0` and logs exactly one `console.warn`.
 - [ ] A second call with the same `'unknown-model'` returns `0` and does NOT warn again.
 - [ ] A call with a different unknown model (e.g. `'another-unknown'`) does warn (once, then suppressed for that model).
 - [ ] `estimateCostCents('llama-3.3-70b-versatile', 0, 0)` returns `0`.
-- [ ] `__resetWarnedModelsForTests` is exported and clears the internal cache.
+- [x] `__resetWarnedModelsForTests` is exported and clears the internal cache.
 
 ---
 
