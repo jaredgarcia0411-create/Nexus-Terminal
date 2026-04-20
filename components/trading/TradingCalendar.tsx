@@ -24,6 +24,7 @@ interface TradingCalendarProps {
   trades: Trade[];
   onDayClick?: (dateKey: string) => void;
   onWeekClick?: (weekStart: string, weekEnd: string) => void;
+  embedded?: boolean;
 }
 
 type WeekData = {
@@ -32,7 +33,7 @@ type WeekData = {
   weeklyR: number;
 };
 
-export default function TradingCalendar({ trades, onDayClick, onWeekClick }: TradingCalendarProps) {
+export default function TradingCalendar({ trades, onDayClick, onWeekClick, embedded = false }: TradingCalendarProps) {
   const isMobile = useIsMobile();
   const [currentMonth, setCurrentMonth] = React.useState(new Date());
   const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
@@ -100,9 +101,11 @@ export default function TradingCalendar({ trades, onDayClick, onWeekClick }: Tra
 
   return (
     <div className="space-y-6">
-      <div className="bg-[#121214] border border-white/5 rounded-2xl p-6">
-        <div className="flex items-center justify-between mb-8">
-          <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">Trading Calendar</h3>
+      <div className={embedded ? '' : 'bg-[#121214] border border-white/5 rounded-2xl p-6'}>
+        <div className={`flex items-center justify-between ${embedded ? 'mb-4' : 'mb-8'}`}>
+          {embedded ? <div /> : (
+            <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">Trading Calendar</h3>
+          )}
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium">{format(currentMonth, 'MMMM yyyy')}</span>
             <div className="flex items-center gap-1">

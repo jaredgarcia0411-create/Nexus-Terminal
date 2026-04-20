@@ -7,8 +7,9 @@ import { toast } from 'sonner';
 import TemplateFieldRenderer from '@/components/trading/TemplateFieldRenderer';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { aggregateWeek } from '@/lib/journal-aggregates';
+import { aggregateWeek, type WeekAggregate } from '@/lib/journal-aggregates';
 import { WEEKLY_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
+import { formatCurrency } from '@/lib/trading-utils';
 import type { Trade } from '@/lib/types';
 import type { TemplateField } from '@/lib/validations/reviews';
 
@@ -88,11 +89,11 @@ export default function WeeklyReviewSheet({
           setExisting(found);
           setFields(cloneTemplateFields(found.templateSnapshot));
           const merged: Record<string, unknown> = { ...found.reportData };
-          if (merged.perDayR == null) merged.perDayR = formatPerDayR(agg.perDayR);
+          if (merged.weeklyTotal == null) merged.weeklyTotal = formatWeeklyTotal(agg);
           setReportData(merged);
         } else if (tmpl) {
           setFields(cloneTemplateFields(tmpl.fields));
-          setReportData({ perDayR: formatPerDayR(agg.perDayR) });
+          setReportData({ weeklyTotal: formatWeeklyTotal(agg) });
         }
       })
       .finally(() => setLoading(false));
@@ -315,10 +316,11 @@ export default function WeeklyReviewSheet({
   );
 }
 
-function formatPerDayR(perDayR: { date: string; r: number }[]): string {
-  return perDayR
-    .map(({ date, r }) => `${date}: ${r >= 0 ? '+' : ''}${r.toFixed(2)}R`)
-    .join('  |  ');
+function formatWeeklyTotal(agg: WeekAggregate): string {
+  const net = formatCurrency(agg.netResult);
+  const rSigned = `${agg.rTotal >= 0 ? '+' : ''}${agg.rTotal.toFixed(2)}R`;
+  const tradeCount = agg.tradeIds.length;
+  return `Net ${net} · ${rSigned} · ${tradeCount} trade${tradeCount === 1 ? '' : 's'}`;
 }
 
 function RBarStrip({ perDayR }: { perDayR: { date: string; r: number }[] }) {

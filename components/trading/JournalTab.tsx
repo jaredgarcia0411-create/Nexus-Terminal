@@ -156,15 +156,25 @@ export default function JournalTab({
             <ChevronRight className="h-4 w-4 text-zinc-500" />
           )}
         </button>
-        {calendarOpen ? (
-          <div className="px-4 pb-4">
-            <TradingCalendar
-              trades={filteredTrades}
-              onDayClick={(dateKey) => setDrcDate(dateKey)}
-              onWeekClick={(start, end) => setWeekRange({ start, end })}
-            />
-          </div>
-        ) : null}
+        <AnimatePresence mode="wait">
+          {calendarOpen ? (
+            <motion.div
+              key="calendar-open"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2, ease: 'easeInOut' }}
+              className="px-4 pb-4"
+            >
+              <TradingCalendar
+                trades={filteredTrades}
+                onDayClick={(dateKey) => setDrcDate(dateKey)}
+                onWeekClick={(start, end) => setWeekRange({ start, end })}
+                embedded
+              />
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
 
       <div className="space-y-4">

@@ -19,9 +19,16 @@ export const DAILY_DEFAULT_FIELDS: TemplateField[] = [
 ];
 
 export const WEEKLY_DEFAULT_FIELDS: TemplateField[] = [
-  { id: 'perDayR', label: 'R by day', type: 'auto', required: false },
+  { id: 'weeklyTotal', label: 'Total for the week', type: 'auto', required: false },
   { id: 'whatWorked', label: 'What worked', type: 'text', required: false },
   { id: 'whatDidnt', label: "What didn't work", type: 'text', required: false },
   { id: 'cycleNotes', label: 'Cycle notes', type: 'text', required: false },
   { id: 'goalsNextWeek', label: 'Goals next week', type: 'text', required: false },
+  { id: 'enterTooSoon',      label: 'Did you enter trades too soon?',        type: 'text', required: false },
+  { id: 'tookProfitTooLate', label: 'Did you take profit too late?',         type: 'text', required: false },
+  { id: 'stopsTooTight',     label: 'Were stops too tight?',                 type: 'text', required: false },
+  { id: 'poorRiskReward',    label: 'Did you take poor risk/reward trades?', type: 'text', required: false },
+  { id: 'riskTooMuch',       label: 'Did you risk too much?',                type: 'text', required: false },
+  { id: 'riskTooLittle',     label: 'Did you risk too little?',              type: 'text', required: false },
+  { id: 'missedTrades',      label: 'Did you miss any trades?',              type: 'text', required: false },
 ];
