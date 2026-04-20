@@ -2,13 +2,11 @@
 
 > Updated: 2026-04-20
 > Purpose: brief summary of recently completed work plus any active execution spec. Older implementation detail lives in git history and `specs/`.
-> Historical completed sections were archived to keep this file focused. Agent Hardening #1 shipped in `7118598`; Agent Hardening #2 in `2a856f1`; Agent Hardening #3 in `bf13567`; Research agent report refinements in `9a69655` (2026-04-17); Trade Journal Enhancement (DRC + Weekly Review + Archive tab) shipped across `4757fa3`, `0e41b5a`, `8dd6b12`, `fe97e8c`, `c300153` (2026-04-19 → 2026-04-20). See git history for full records.
+> Historical completed sections were archived to keep this file focused. Agent Hardening #1 shipped in `7118598`; Agent Hardening #2 in `2a856f1`; Agent Hardening #3 in `bf13567`; Research agent report refinements in `9a69655` (2026-04-17); Trade Journal Enhancement (DRC + Weekly Review + Archive tab) shipped across `4757fa3`, `0e41b5a`, `8dd6b12`, `fe97e8c`, `c300153` (2026-04-19 → 2026-04-20); Tighten Trading Journal UI shipped in `f1fde41` (2026-04-20). See git history for full records.
 
 ## Current State
 
-**Active spec:** None. `Tighten Trading Journal UI` completed on 2026-04-20; next up remains approval gates + spend enforcement from `FUTURE-PLANS.md`.
-
-Next up after this ships: approval gates + spend enforcement from `FUTURE-PLANS.md`.
+**Active spec:** `Spend Enforcement Fix` (below). Next up after this ships: approval gates from `FUTURE-PLANS.md` item 1.
 
 ## Validation Snapshot
 
@@ -25,271 +23,211 @@ Most recent validation (`2026-04-20`, Tighten Trading Journal UI):
 
 ---
 
-## Tighten Trading Journal UI
+## Spend Enforcement Fix
 
 > Generated: 2026-04-20 | Agent: nexus-architect (inline by plan agent)
-> Status: COMPLETED (implemented and validated on 2026-04-20)
+> Status: PLANNED
 
 ### Goal
 
-Polish four items on the Trading Journal surface:
-1. Fade the embedded Trading Calendar in/out when its accordion toggles.
-2. Remove the redundant inner card chrome (border + "Trading Calendar" title) on the TradingCalendar when embedded inside JournalTab, while keeping it intact on the Dashboard.
-3. Replace the duplicate text-form "R by Day" field in the Weekly Review with a "Total for the week" summary auto-field.
-4. Add seven reflection text boxes to the Weekly Review default template.
+Make the per-user daily/monthly LLM spend limits actually trip. Today `agent_request_log.estimated_cost_cents` is written as `0` for every row, so `checkBudget()` sums to 0 forever and the daily $5 / monthly $100 limits never fire. Fix: compute real cost from token usage using a per-model pricing map, write fractional cents into the existing column (migrated from `integer` to `real`), and let the existing `BudgetExceededError` → `failureClass: 'policy'` hard stop take over.
 
-No DB migration, no API change, no Zod change — `weekly_reviews.reportData` is already flexible `jsonb` and `upsertWeeklyReviewSchema` accepts `z.record(z.string(), z.unknown())`.
+### Approved decisions (locked)
 
-### Confirmed decisions (locked by user)
-
-1. "Total for the week" auto-field renders as `"Net $1,234.56 · +2.35R · 12 trades"`.
-2. The 7 new reflection questions are `type: 'text'` (3-row textarea via TemplateFieldRenderer).
-3. No auto-migration for users with saved custom weekly templates — they click "Reset to Defaults" to pick up the new fields.
-4. Keep the month label + prev/next chevron nav visible when TradingCalendar is embedded in JournalTab.
+1. Single-pass post-call real-cost write. No reservation or two-phase write. The race between two concurrent jobs for the same user is acknowledged as a known limitation and will be closed by FUTURE-PLANS item 3 (transactionality).
+2. Pricing: static TypeScript config, not a DB table. Only `llama-3.3-70b-versatile` for now (Groq: `$0.59/1M` input, `$0.79/1M` output).
+3. Schema: `agent_request_log.estimated_cost_cents` migrates from `integer` to `real` (Postgres single-precision float). Reason: at Groq rates many real calls cost < 1¢, which integer rounding collapses to 0. `real` preserves fractional accumulation so the sum crosses the limit at the correct time.
+4. Unknown models → `console.warn` once and return cost `0`. The job still runs. The warning is the canary that tells us to add the model to the pricing map.
+5. Budget env defaults unchanged (`AGENT_DAILY_BUDGET_CENTS=500`, `AGENT_MONTHLY_BUDGET_CENTS=10000`).
 
 ---
 
-### Phase 1 — Fade transition on the Trading Calendar accordion
+### Phase 1 — Add the pricing module
 
-**File:** `components/trading/JournalTab.tsx`
-**Action:** MODIFY
+**File:** `lib/agents/model-pricing.ts`
+**Action:** CREATE
 
-1. Locate the accordion body at lines 159-167:
-   ```tsx
-   {calendarOpen ? (
-     <div className="px-4 pb-4">
-       <TradingCalendar
-         trades={filteredTrades}
-         onDayClick={(dateKey) => setDrcDate(dateKey)}
-         onWeekClick={(start, end) => setWeekRange({ start, end })}
-       />
-     </div>
-   ) : null}
-   ```
-2. Replace that block with an `AnimatePresence` + `motion.div` wrapper that mirrors the day-card fade at lines 276-284 of this same file. The result should read:
-   ```tsx
-   <AnimatePresence mode="wait">
-     {calendarOpen ? (
-       <motion.div
-         key="calendar-open"
-         initial={{ opacity: 0, y: 10 }}
-         animate={{ opacity: 1, y: 0 }}
-         exit={{ opacity: 0, y: -10 }}
-         transition={{ duration: 0.2, ease: "easeInOut" }}
-         className="px-4 pb-4"
-       >
-         <TradingCalendar
-           trades={filteredTrades}
-           onDayClick={(dateKey) => setDrcDate(dateKey)}
-           onWeekClick={(start, end) => setWeekRange({ start, end })}
-           embedded
-         />
-       </motion.div>
-     ) : null}
-   </AnimatePresence>
-   ```
-3. Note the added `embedded` prop on `<TradingCalendar>` — that's required by Phase 2. Do not forget it.
-4. `motion` and `AnimatePresence` are already imported at the top of this file (they power the day-card and tab-level fades). No new imports needed.
-
-**Expected behavior after this change:** clicking the "Trading Calendar" header toggles the body with the same 0.2s opacity + translateY easeInOut transition used on the day cards.
-
-**Acceptance criteria:**
-- [x] Opening the accordion runs opacity 0→1 and y 10→0 over 0.2s.
-- [x] Closing the accordion runs opacity 1→0 and y 0→-10 over 0.2s.
-- [x] `<TradingCalendar>` is rendered with `embedded` prop (no other call site is changed).
-- [x] `lint` and `tsc` pass.
-
----
-
-### Phase 2 — Strip redundant inner card from TradingCalendar when embedded
-
-**File:** `components/trading/TradingCalendar.tsx`
-**Action:** MODIFY
-
-1. Extend the props interface at lines 23-27 by adding an optional `embedded` flag:
+1. Create a new file at `lib/agents/model-pricing.ts` with exactly this content:
    ```ts
-   interface TradingCalendarProps {
-     trades: Trade[];
-     onDayClick?: (dateKey: string) => void;
-     onWeekClick?: (weekStart: string, weekEnd: string) => void;
-     embedded?: boolean;
+   // Per-model LLM pricing for cost accounting.
+   // Rates are cents per 1M tokens. Source: provider public pricing page.
+   // Update when Groq (or a future provider) publishes new rates, or when a
+   // new model is added to the rotation.
+
+   interface ModelRate {
+     inputCentsPerMToken: number;
+     outputCentsPerMToken: number;
+   }
+
+   export const MODEL_PRICING: Record<string, ModelRate> = {
+     'llama-3.3-70b-versatile': {
+       inputCentsPerMToken: 59,
+       outputCentsPerMToken: 79,
+     },
+   };
+
+   /**
+    * Cost in cents for a completed LLM call. Returns a float — fractional
+    * cents are preserved so budget sums trip at the right threshold.
+    * Unknown model → warns once and returns 0 (job continues).
+    */
+   export function estimateCostCents(
+     model: string,
+     inputTokens: number,
+     outputTokens: number,
+   ): number {
+     const rate = MODEL_PRICING[model];
+     if (!rate) {
+       console.warn(
+         `[model-pricing] Unknown model "${model}" — logging cost as 0. Add it to MODEL_PRICING in lib/agents/model-pricing.ts.`,
+       );
+       return 0;
+     }
+
+     const inputCost = (inputTokens / 1_000_000) * rate.inputCentsPerMToken;
+     const outputCost = (outputTokens / 1_000_000) * rate.outputCentsPerMToken;
+     return inputCost + outputCost;
    }
    ```
-2. Update the component signature at line 35 to destructure with a default:
-   ```ts
-   export default function TradingCalendar({ trades, onDayClick, onWeekClick, embedded = false }: TradingCalendarProps) {
-   ```
-3. Locate the inner card wrapper at line 103:
-   ```tsx
-   <div className="bg-[#121214] border border-white/5 rounded-2xl p-6">
-   ```
-   Replace with a conditional className — when `embedded`, use an empty wrapper that keeps layout semantics but drops chrome:
-   ```tsx
-   <div className={embedded ? '' : 'bg-[#121214] border border-white/5 rounded-2xl p-6'}>
-   ```
-4. Locate the header row at line 104:
-   ```tsx
-   <div className="flex items-center justify-between mb-8">
-   ```
-   Swap the bottom margin based on `embedded` (`mb-4` when embedded, `mb-8` when standalone):
-   ```tsx
-   <div className={`flex items-center justify-between ${embedded ? 'mb-4' : 'mb-8'}`}>
-   ```
-5. Locate the title at line 105:
-   ```tsx
-   <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">Trading Calendar</h3>
-   ```
-   Wrap it so it renders only when not embedded. To keep the month label + chevron nav anchored to the right in embedded mode, use a leading spacer `div` when the title is hidden:
-   ```tsx
-   {embedded ? <div /> : (
-     <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">Trading Calendar</h3>
-   )}
-   ```
-6. Leave lines 106-116 (month label + prev/next chevron buttons) untouched — they render in both modes.
-7. Do not change anything below line 117 (calendar grid, weekly column, selected-date dropdown, RBarStrip-equivalent hover logic).
+2. No default export. No other functions. No extra imports.
 
-**Do NOT touch:** `components/trading/DashboardTab.tsx:185` — that site calls `<TradingCalendar trades={filteredTrades} />` without `embedded`, so `embedded` defaults to `false` and the Dashboard view renders exactly as it does today.
-
-**Expected behavior after this change:**
-- In JournalTab (embedded), the calendar renders without an extra rounded background or border, without the "Trading Calendar" uppercase label, but with the month label + prev/next chevrons anchored to the right.
-- In DashboardTab (standalone), nothing changes visually.
-
-**Acceptance criteria:**
-- [x] `TradingCalendarProps` includes `embedded?: boolean`.
-- [x] Default value for `embedded` is `false`.
-- [x] When `embedded` is true, no outer `bg-[#121214] border border-white/5 rounded-2xl p-6` wrapper is rendered, the `<h3>` title is absent, and the header row uses `mb-4`.
-- [x] When `embedded` is false, all three styles above are present exactly as before.
-- [x] DashboardTab.tsx is unmodified.
-- [x] `lint` and `tsc` pass.
+**Acceptance:**
+- [ ] File exists at `lib/agents/model-pricing.ts`.
+- [ ] `MODEL_PRICING['llama-3.3-70b-versatile']` equals `{ inputCentsPerMToken: 59, outputCentsPerMToken: 79 }`.
+- [ ] `estimateCostCents('llama-3.3-70b-versatile', 1_000_000, 1_000_000)` returns `138`.
+- [ ] `estimateCostCents('unknown-model', 100, 100)` returns `0` and logs exactly one `console.warn`.
+- [ ] `estimateCostCents('llama-3.3-70b-versatile', 0, 0)` returns `0`.
 
 ---
 
-### Phase 3 — Replace second "R by Day" with "Total for the week"
+### Phase 2 — Wire real cost into the tracking entry
 
-**File:** `lib/journal-template-defaults.ts`
+**File:** `lib/agents/blueprint-runner.ts`
 **Action:** MODIFY
 
-1. Locate line 22:
+1. Add this import with the other relative imports near the top of the file. Preserve existing import ordering — place it alphabetically among sibling `./` imports:
    ```ts
-   { id: 'perDayR', label: 'R by day', type: 'auto', required: false },
+   import { estimateCostCents } from './model-pricing';
+   ```
+2. Locate `buildLlmTrackingEntry` (currently starts at line 128). At **line 167** the current code is:
+   ```ts
+       estimatedCostCents: 0,
+   ```
+   Replace that exact line with:
+   ```ts
+       estimatedCostCents: estimateCostCents(modelUsed, inputTokens, outputTokens),
+   ```
+3. Do NOT change anything else in this file. Token extraction (lines 145-151), model resolution (lines 153-156), and all 5 call sites of `buildLlmTrackingEntry` (lines ~279, 306, 310, 314, 321) remain as-is.
+
+**Acceptance:**
+- [ ] Exactly one import added at the top of `blueprint-runner.ts`.
+- [ ] Exactly one value replaced inside `buildLlmTrackingEntry` (line 167).
+- [ ] No other edits to `blueprint-runner.ts`.
+
+---
+
+### Phase 3 — Preserve fractional cents at the DB write boundary
+
+**File:** `lib/agents/runtime-limits.ts`
+**Action:** MODIFY
+
+1. Locate `recordLlmAttempt` at line 171. At **line 182** the current code is:
+   ```ts
+       estimatedCostCents: Math.round(entry.estimatedCostCents),
    ```
    Replace with:
    ```ts
-   { id: 'weeklyTotal', label: 'Total for the week', type: 'auto', required: false },
+       estimatedCostCents: entry.estimatedCostCents,
    ```
-   Do not touch the other four default entries on lines 23-26 yet — they're addressed in Phase 4.
+   **Why:** after Phase 4 the column is `real`, so it accepts floats. Keeping `Math.round` here would defeat the migration — every per-call cost would be re-rounded to an integer cent before insert, re-introducing the same 0-cost accumulation bug the migration fixes.
+2. Do NOT change `checkBudget`, `loadUserCost`, `readAggregateNumber`, `loadUserRequestCount`, or any other function in this file. `Number(row?.[key] ?? 0)` at line 48 already coerces both integer and float values returned by `SUM()`.
 
-**File:** `components/trading/WeeklyReviewSheet.tsx`
+**Acceptance:**
+- [ ] Line 182 no longer wraps `entry.estimatedCostCents` in `Math.round`.
+- [ ] No other changes to `runtime-limits.ts`.
+
+---
+
+### Phase 4 — Schema: migrate `estimated_cost_cents` to `real`
+
+**File:** `lib/db/schema.ts`
 **Action:** MODIFY
 
-2. Update the top-of-file imports. Find the existing import line:
+1. At the top of the file, confirm `real` is imported from `drizzle-orm/pg-core`. If it is not present in the existing import list, add it (preserve alphabetical ordering of named imports). Do not remove any existing imports. Example of the resulting line (your existing list will vary):
    ```ts
-   import { aggregateWeek } from '@/lib/journal-aggregates';
+   import { pgTable, text, integer, real, timestamp, index, jsonb /* ... other existing ... */ } from 'drizzle-orm/pg-core';
    ```
-   Replace with (split the value import and type import to keep it explicit):
+2. Locate the `agentRequestLog` table definition (currently starts at line 286). At **line 296** the current column is:
    ```ts
-   import { aggregateWeek, type WeekAggregate } from '@/lib/journal-aggregates';
-   ```
-3. Add a new import for `formatCurrency`. Insert anywhere near the other `@/lib/*` imports at the top of the file:
-   ```ts
-   import { formatCurrency } from '@/lib/trading-utils';
-   ```
-4. Delete the `formatPerDayR` helper at lines 318-322:
-   ```ts
-   function formatPerDayR(perDayR: { date: string; r: number }[]): string {
-     return perDayR
-       .map(({ date, r }) => `${date}: ${r >= 0 ? '+' : ''}${r.toFixed(2)}R`)
-       .join('  |  ');
-   }
-   ```
-   Replace it (same location) with:
-   ```ts
-   function formatWeeklyTotal(agg: WeekAggregate): string {
-     const net = formatCurrency(agg.netResult);
-     const rSigned = `${agg.rTotal >= 0 ? '+' : ''}${agg.rTotal.toFixed(2)}R`;
-     const tradeCount = agg.tradeIds.length;
-     return `Net ${net} · ${rSigned} · ${tradeCount} trade${tradeCount === 1 ? '' : 's'}`;
-   }
-   ```
-5. Update the first call site inside the `useEffect` (currently line 91):
-   ```ts
-   if (merged.perDayR == null) merged.perDayR = formatPerDayR(agg.perDayR);
+     estimatedCostCents: integer('estimated_cost_cents').default(0),
    ```
    Replace with:
    ```ts
-   if (merged.weeklyTotal == null) merged.weeklyTotal = formatWeeklyTotal(agg);
+     estimatedCostCents: real('estimated_cost_cents').default(0),
    ```
-6. Update the second call site (currently line 95):
-   ```ts
-   setReportData({ perDayR: formatPerDayR(agg.perDayR) });
-   ```
-   Replace with:
-   ```ts
-   setReportData({ weeklyTotal: formatWeeklyTotal(agg) });
-   ```
-7. Do NOT touch anything inside the `RBarStrip` function (lines 324-349) or its invocation on line 219 — that visual bar chart is the one "R by Day" we keep.
-8. Do NOT touch the `<TemplateFieldRenderer>` loop at lines 289-297 — it is field-id agnostic and will pick up the renamed field automatically.
+3. Do NOT change any other column in this table or any other table.
 
-**Expected behavior after this change:**
-- Opening a new (unsaved) weekly review shows the bar-chart "R by Day" at the top, then a read-only "Total for the week" auto-field in the form body containing a string like `Net -$2,744.99 · -4.57R · 14 trades`.
-- Opening a previously-saved weekly review uses its own `templateSnapshot`, so legacy reviews continue to render with their old field list unchanged (stale `perDayR` key in `reportData` is cosmetic, not a regression).
+**Action:** CREATE migration via drizzle-kit
 
-**Acceptance criteria:**
-- [x] `WEEKLY_DEFAULT_FIELDS[0]` is `{ id: 'weeklyTotal', label: 'Total for the week', type: 'auto', required: false }`.
-- [x] `formatPerDayR` is removed from `WeeklyReviewSheet.tsx`.
-- [x] `formatWeeklyTotal` exists and is pure.
-- [x] Both `reportData` bootstrapping sites write `weeklyTotal`, not `perDayR`.
-- [x] `RBarStrip` and its call site are byte-identical to before.
-- [x] `lint` and `tsc` pass.
+4. From the repo root, run:
+   ```bash
+   npm run db:generate
+   ```
+   Drizzle-kit will produce:
+   - A new `drizzle/0021_<random-name>.sql` with the `ALTER COLUMN ... SET DATA TYPE real` statement.
+   - An updated `drizzle/meta/0021_snapshot.json`.
+   - An updated `drizzle/meta/_journal.json` with the new entry.
+5. Open the generated SQL file and verify it contains a single `ALTER TABLE "agent_request_log" ALTER COLUMN "estimated_cost_cents" SET DATA TYPE real` (default may also be emitted). If drizzle-kit emits anything unrelated — other columns, other tables, drops — STOP and report. That would mean schema.ts has drift unrelated to this spec and must be investigated before proceeding.
+6. Commit all three generated files alongside the `schema.ts` change.
+
+**Why a migration, not `db:push`:** `db:push` is dev-only and skips the numbered migration history that production deploys rely on.
+
+**Acceptance:**
+- [ ] `lib/db/schema.ts` declares `estimated_cost_cents` as `real`.
+- [ ] `real` is in the `drizzle-orm/pg-core` import.
+- [ ] New file `drizzle/0021_*.sql` exists with exactly one `ALTER COLUMN` statement targeting `agent_request_log.estimated_cost_cents`.
+- [ ] `drizzle/meta/0021_snapshot.json` and updated `drizzle/meta/_journal.json` are committed.
 
 ---
 
-### Phase 4 — Add seven reflection text boxes
+### Phase 5 — Tests
 
-**File:** `lib/journal-template-defaults.ts`
+**File:** `__tests__/agent-model-pricing.test.ts`
+**Action:** CREATE
+
+1. Create a new vitest file following the repo convention. Mirror the import + mock style in `__tests__/agent-runtime-limits.test.ts`. Cover these cases:
+   - **Exact math:** `estimateCostCents('llama-3.3-70b-versatile', 1_000_000, 1_000_000)` equals `138`.
+   - **Small call stays fractional (critical):** `estimateCostCents('llama-3.3-70b-versatile', 3_000, 500)` — use `expect(...).toBeCloseTo(0.2165, 4)`. This is the direct proof that the 0-cent bug is dead.
+   - **Zero tokens:** `estimateCostCents('llama-3.3-70b-versatile', 0, 0)` equals `0`.
+   - **Unknown model:** `estimateCostCents('unknown-xyz', 100, 100)` equals `0` AND a `vi.spyOn(console, 'warn')` fires exactly once with a message containing `"Unknown model"`.
+   - **Empty-string model:** same as unknown — returns `0`, warns once.
+2. Use `vi.spyOn(console, 'warn').mockImplementation(() => {})` in `beforeEach` and restore in `afterEach`.
+
+**File:** `__tests__/agent-blueprint-runner.test.ts`
 **Action:** MODIFY
 
-1. Append the following seven entries to `WEEKLY_DEFAULT_FIELDS` after the existing `goalsNextWeek` entry (the last entry in the array). Keep this exact order and keep the trailing closing bracket of the array on its own line:
-   ```ts
-   { id: 'enterTooSoon',      label: 'Did you enter trades too soon?',        type: 'text', required: false },
-   { id: 'tookProfitTooLate', label: 'Did you take profit too late?',         type: 'text', required: false },
-   { id: 'stopsTooTight',     label: 'Were stops too tight?',                 type: 'text', required: false },
-   { id: 'poorRiskReward',    label: 'Did you take poor risk/reward trades?', type: 'text', required: false },
-   { id: 'riskTooMuch',       label: 'Did you risk too much?',                type: 'text', required: false },
-   { id: 'riskTooLittle',     label: 'Did you risk too little?',              type: 'text', required: false },
-   { id: 'missedTrades',      label: 'Did you miss any trades?',              type: 'text', required: false },
-   ```
-   After this change `WEEKLY_DEFAULT_FIELDS` should contain 12 entries in this order: `weeklyTotal`, `whatWorked`, `whatDidnt`, `cycleNotes`, `goalsNextWeek`, then the seven new questions above.
-2. No other files. `reportData` is flexible `jsonb`, `upsertWeeklyReviewSchema` already accepts `z.record(z.string(), z.unknown())`, and `TemplateFieldRenderer` already renders `type: 'text'` as a 3-row textarea.
+3. Find the existing test around line 307 that verifies `recordLlmAttempt` is called on a successful step (look for the test covering the two-repair-attempts case — its mock already supplies token counts). Extend the assertion so the tracking entry passed to `recordLlmAttempt` has `estimatedCostCents > 0` when a known model (`llama-3.3-70b-versatile`) and non-zero tokens are returned from the mocked LLM call.
+4. If the existing test mocks a model name that is NOT in `MODEL_PRICING`, update the mock to use `llama-3.3-70b-versatile` so the cost lookup hits a real rate. Do not change the scenario logic.
+5. Do not delete or rewrite existing tests. Add the new assertion inside the existing test block.
 
-**Expected behavior after this change:**
-- A brand-new weekly review sheet shows the four existing text questions followed by the seven new reflection textareas, each rendering the label above an empty 3-row textarea.
-- Saving the review persists answers under their new field ids in `weekly_reviews.reportData`.
-- Reopening the saved review rehydrates the answers.
+**File:** `__tests__/agent-runtime-limits.test.ts`
+**Action:** MODIFY
 
-**Acceptance criteria:**
-- [x] `WEEKLY_DEFAULT_FIELDS` has 12 entries in the specified order.
-- [x] Every new entry has `type: 'text'` and `required: false`.
-- [x] `lint` and `tsc` pass.
+6. Find the existing `checkBudget` suite. Add one new test case: given several rows inserted with fractional `estimatedCostCents` values that each individually round to 0 but whose sum exceeds a lowered daily limit, `checkBudget` throws `BudgetExceededError` with `limitType: 'daily'`.
+   - Concrete shape: in the test's fixture setup, insert 10 rows each with `estimatedCostCents: 0.4` for the current UTC day. Stub `getLlmBudgetConfig` to return `dailyBudgetCents: 2` for this case. Verify `checkBudget` rejects with `BudgetExceededError`. Under the old `integer` schema each row would have been rounded to `0` and the sum would be `0`, so this test would have passed broken code silently — it is now a guardrail against regressing the fractional behavior.
+7. Do not remove or rewrite existing test cases.
+
+**Acceptance:**
+- [ ] `__tests__/agent-model-pricing.test.ts` exists and all 5 cases pass.
+- [ ] Blueprint-runner test asserts non-zero cost on a successful step.
+- [ ] Runtime-limits test has a new case proving fractional accumulation trips the daily budget.
+- [ ] All previously passing tests still pass.
 
 ---
 
-### Files Changed Summary
+### Phase 6 — Validation
 
-| File | Action | Approx. lines changed | Risk |
-|---|---|---|---|
-| `components/trading/JournalTab.tsx` | MODIFY | ~14 (replace one JSX block + add one prop) | LOW |
-| `components/trading/TradingCalendar.tsx` | MODIFY | ~8 (new prop, 3 conditional classNames) | LOW |
-| `components/trading/WeeklyReviewSheet.tsx` | MODIFY | ~10 (swap helper, update 2 call sites, add 1 import, split 1 import) | LOW |
-| `lib/journal-template-defaults.ts` | MODIFY | ~8 (rename 1 entry, append 7 entries) | LOW |
-
-No files created, no files deleted, no migration, no API change, no Zod change.
-
----
-
-### Verification Steps
-
-From repo root `/home/jared/Nexus-Terminal`:
+From repo root `/home/jared/Nexus-Terminal`, run in order:
 
 1. `npm run lint`
 2. `npx tsc --noEmit`
@@ -297,15 +235,53 @@ From repo root `/home/jared/Nexus-Terminal`:
 
 Skip `npm run typecheck:services` — no files under `services/` are touched. Skip `npm run workflow:audit` — no workflow assets changed.
 
-**Manual smoke test:**
-1. Open the Journal tab → click the "Trading Calendar" accordion header → confirm the calendar fades in with opacity+y motion over ~0.2s.
-2. Click the header again → confirm the calendar fades out.
-3. Inside the open accordion, confirm there is no inner rounded border and no "TRADING CALENDAR" uppercase title; the "April 2026" label and prev/next chevrons are still visible and functional.
-4. Switch to the Dashboard tab → confirm the `TradingCalendar` there still has its original rounded-2xl card + "Trading Calendar" title (unchanged).
-5. Click a weekly "REVIEW" cell → the Weekly Review sheet opens → confirm exactly one "R by Day" bar chart at the top and one read-only "Total for the week" auto-field in the form body showing `Net $X · ±Y.YYR · N trade(s)`.
-6. Below the four original text fields (`What worked`, `What didn't work`, `Cycle notes`, `Goals next week`) confirm the seven new reflection textareas render in the documented order, each with an empty 3-row textarea.
-7. Type into a few of the new textareas → click Save → toast appears → reopen the same week → answers are rehydrated.
-8. Navigate to the Archive tab → open a previously-saved weekly review → confirm it still renders from its own `templateSnapshot` (it will show the old `perDayR` field, no new reflection fields — this is correct, historical reviews use their own snapshot).
+**Manual sanity check (optional, dev DB only):**
+4. `npm run db:migrate` against a dev database.
+5. Trigger one blueprint run via the normal UI flow.
+6. Query: `SELECT model_used, input_tokens, output_tokens, estimated_cost_cents FROM agent_request_log ORDER BY created_at DESC LIMIT 5;` — confirm `estimated_cost_cents` is a non-zero fractional value for successful rows.
+
+---
+
+### Files NOT to touch
+
+- `lib/agents/llm-client.ts` — token extraction from `payload.usage` already works.
+- `lib/agents/types.ts` — `TokenTrackingEntry.estimatedCostCents: number` already accepts floats; no signature change.
+- `app/api/agents/admin/stats/route.ts` — reads the column via `asNumber(row.estimatedCostCents)`, already coerces both int and float. Will start reporting real numbers automatically once rows are populated.
+- `scripts/ops/agent-observability.sql` — `SUM(estimated_cost_cents)` works on `real` unchanged.
+- `lib/llm-client.ts` — legacy, not used by blueprint steps.
+
+### Known limitation (deferred)
+
+Two concurrent jobs for the same user can both pass `checkBudget` in parallel before either writes its log row. Window is small but real. Explicitly deferred to FUTURE-PLANS item 3 (transactionality + dependency tracking), which will fold in a reserve-then-reconcile pattern.
+
+---
+
+### Files Changed Summary
+
+| File | Action | Approx. lines changed | Risk |
+|---|---|---|---|
+| `lib/agents/model-pricing.ts` | CREATE | ~35 | LOW |
+| `lib/agents/blueprint-runner.ts` | MODIFY | 2 (1 import + 1 value swap) | LOW |
+| `lib/agents/runtime-limits.ts` | MODIFY | 1 (remove `Math.round` wrapper) | LOW |
+| `lib/db/schema.ts` | MODIFY | 2 (column type + import) | MEDIUM |
+| `drizzle/0021_*.sql` | CREATE (via `db:generate`) | ~3 | MEDIUM |
+| `drizzle/meta/0021_snapshot.json` | CREATE (via `db:generate`) | auto | LOW |
+| `drizzle/meta/_journal.json` | MODIFY (via `db:generate`) | 1 entry | LOW |
+| `__tests__/agent-model-pricing.test.ts` | CREATE | ~60 | LOW |
+| `__tests__/agent-blueprint-runner.test.ts` | MODIFY | ~3 | LOW |
+| `__tests__/agent-runtime-limits.test.ts` | MODIFY | ~20 | LOW |
+
+Risk rationale: medium-risk items are the column type migration and the `real` import in `schema.ts`. Both are isolated and reversible via a follow-up migration if anything surfaces in production.
+
+---
+
+### Verification Steps
+
+1. `npm run lint`
+2. `npx tsc --noEmit`
+3. `npm test`
+
+(Skip `typecheck:services` and `workflow:audit` — no touched files require them.)
 
 ---
 

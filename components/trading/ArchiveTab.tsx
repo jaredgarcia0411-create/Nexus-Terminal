@@ -131,6 +131,25 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
     URL.revokeObjectURL(url);
   };
 
+  const deleteReview = async (review: AnyReview) => {
+    if (!window.confirm(`Delete this ${review.type} review for ${review.dateLabel}? This cannot be undone.`)) {
+      return;
+    }
+
+    const endpoint = review.type === 'daily' ? 'daily-reviews' : 'weekly-reviews';
+
+    try {
+      const response = await fetch(`/api/${endpoint}/${review.id}`, { method: 'DELETE' });
+      if (!response.ok) {
+        throw new Error(`Delete failed with status ${response.status}`);
+      }
+      setReviews((prev) => prev.filter((entry) => entry.id !== review.id));
+    } catch (error) {
+      console.error('Failed to delete review', error);
+      window.alert('Failed to delete review. Please try again.');
+    }
+  };
+
   return (
     <motion.div
       key="archive"
@@ -219,15 +238,26 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
                     <td className="px-4 py-3 text-zinc-300">{grade ?? '—'}</td>
                     <td className="px-4 py-3 text-zinc-300">{net}</td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          exportReview(review);
-                        }}
-                        className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-zinc-400 hover:bg-white/10 hover:text-white"
-                      >
-                        Export
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            exportReview(review);
+                          }}
+                          className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-zinc-400 hover:bg-white/10 hover:text-white"
+                        >
+                          Export
+                        </button>
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void deleteReview(review);
+                          }}
+                          className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-zinc-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
