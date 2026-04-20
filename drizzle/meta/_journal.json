@@ -148,6 +148,13 @@
       "when": 1776612483959,
       "tag": "0020_motionless_vector",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1776714790065,
+      "tag": "0021_adorable_proudstar",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { pgTable, text, doublePrecision, integer, serial, timestamp, primaryKey, index, unique, foreignKey, jsonb, date, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, text, doublePrecision, integer, real, serial, timestamp, primaryKey, index, unique, foreignKey, jsonb, date, boolean } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
@@ -293,7 +293,7 @@ export const agentRequestLog = pgTable('agent_request_log', {
   inputTokens: integer('input_tokens').notNull().default(0),
   outputTokens: integer('output_tokens').notNull().default(0),
   totalTokens: integer('total_tokens').notNull().default(0),
-  estimatedCostCents: integer('estimated_cost_cents').default(0),
+  estimatedCostCents: real('estimated_cost_cents').default(0),
   durationMs: integer('duration_ms').notNull().default(0),
   success: integer('success').notNull().default(1),
   sourceCount: integer('source_count').notNull().default(0),

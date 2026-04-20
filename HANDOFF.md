@@ -26,7 +26,7 @@ Most recent validation (`2026-04-20`, Tighten Trading Journal UI):
 ## Spend Enforcement Fix
 
 > Generated: 2026-04-20 | Agent: nexus-architect (inline by plan agent)
-> Status: IN PROGRESS (Phases 1-3 complete)
+> Status: IN PROGRESS (Phases 1-4 complete)
 
 ### Goal
 
@@ -204,10 +204,10 @@ Make the per-user daily/monthly LLM spend limits actually trip. Today `agent_req
 **Why a migration, not `db:push`:** `db:push` is dev-only and skips the numbered migration history that production deploys rely on.
 
 **Acceptance:**
-- [ ] `lib/db/schema.ts` declares `estimated_cost_cents` as `real`.
-- [ ] `real` is in the `drizzle-orm/pg-core` import.
-- [ ] New file `drizzle/0021_*.sql` exists with exactly one `ALTER COLUMN` statement targeting `agent_request_log.estimated_cost_cents`.
-- [ ] `drizzle/meta/0021_snapshot.json` and updated `drizzle/meta/_journal.json` are committed.
+- [x] `lib/db/schema.ts` declares `estimated_cost_cents` as `real`.
+- [x] `real` is in the `drizzle-orm/pg-core` import.
+- [x] New file `drizzle/0021_*.sql` exists with exactly one `ALTER COLUMN` statement targeting `agent_request_log.estimated_cost_cents`.
+- [x] `drizzle/meta/0021_snapshot.json` and updated `drizzle/meta/_journal.json` are committed.
 
 ---
 

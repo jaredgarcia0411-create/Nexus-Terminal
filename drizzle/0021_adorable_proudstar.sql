@@ -1,0 +1,1 @@
+ALTER TABLE "agent_request_log" ALTER COLUMN "estimated_cost_cents" SET DATA TYPE real;
