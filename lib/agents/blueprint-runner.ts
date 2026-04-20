@@ -4,6 +4,7 @@ import { agentJobCheckpoints, agentStepEffects } from '@/lib/db/schema';
 import { loadCheckpoint, recordStepEffect, saveCheckpoint } from './checkpoints';
 import { buildContext } from './context';
 import type { AgentDb } from './db';
+import { estimateCostCents } from './model-pricing';
 import { persistStepLog } from './queue';
 import {
   checkBudget,
@@ -164,7 +165,7 @@ function buildLlmTrackingEntry(
     inputTokens,
     outputTokens,
     totalTokens,
-    estimatedCostCents: 0,
+    estimatedCostCents: estimateCostCents(modelUsed, inputTokens, outputTokens),
     durationMs,
     success,
   };

@@ -26,7 +26,7 @@ Most recent validation (`2026-04-20`, Tighten Trading Journal UI):
 ## Spend Enforcement Fix
 
 > Generated: 2026-04-20 | Agent: nexus-architect (inline by plan agent)
-> Status: IN PROGRESS (Phase 1 complete)
+> Status: IN PROGRESS (Phases 1-2 complete)
 
 ### Goal
 
@@ -141,9 +141,9 @@ Make the per-user daily/monthly LLM spend limits actually trip. Today `agent_req
 3. Do NOT change anything else in this file. Token extraction (lines 145-151), model resolution (lines 153-156), and all 5 call sites of `buildLlmTrackingEntry` (lines ~279, 306, 310, 314, 321) remain as-is.
 
 **Acceptance:**
-- [ ] Exactly one import added at the top of `blueprint-runner.ts`.
-- [ ] Exactly one value replaced inside `buildLlmTrackingEntry` (line 167).
-- [ ] No other edits to `blueprint-runner.ts`.
+- [x] Exactly one import added at the top of `blueprint-runner.ts`.
+- [x] Exactly one value replaced inside `buildLlmTrackingEntry` (line 167).
+- [x] No other edits to `blueprint-runner.ts`.
 
 ---
 
