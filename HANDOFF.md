@@ -66,10 +66,29 @@ Make the per-user daily/monthly LLM spend limits actually trip. Today `agent_req
      },
    };
 
+   // Warn-once cache: prevents a blueprint that retries N times on an unknown
+   // model from spamming N identical warnings. Each cold start resets the set,
+   // which is intentional — fresh warnings on every deploy surface any new
+   // unknown model at least once.
+   const warnedModels = new Set<string>();
+
+   function warnUnknownModelOnce(model: string): void {
+     if (warnedModels.has(model)) return;
+     warnedModels.add(model);
+     console.warn(
+       `[model-pricing] Unknown model "${model}" — logging cost as 0. Add it to MODEL_PRICING in lib/agents/model-pricing.ts.`,
+     );
+   }
+
+   /** Test-only: reset the warn-once cache between vitest cases. */
+   export function __resetWarnedModelsForTests(): void {
+     warnedModels.clear();
+   }
+
    /**
     * Cost in cents for a completed LLM call. Returns a float — fractional
     * cents are preserved so budget sums trip at the right threshold.
-    * Unknown model → warns once and returns 0 (job continues).
+    * Unknown model → warns once per model per process and returns 0.
     */
    export function estimateCostCents(
      model: string,
@@ -78,9 +97,7 @@ Make the per-user daily/monthly LLM spend limits actually trip. Today `agent_req
    ): number {
      const rate = MODEL_PRICING[model];
      if (!rate) {
-       console.warn(
-         `[model-pricing] Unknown model "${model}" — logging cost as 0. Add it to MODEL_PRICING in lib/agents/model-pricing.ts.`,
-       );
+       warnUnknownModelOnce(model);
        return 0;
      }
 
@@ -89,14 +106,18 @@ Make the per-user daily/monthly LLM spend limits actually trip. Today `agent_req
      return inputCost + outputCost;
    }
    ```
-2. No default export. No other functions. No extra imports.
+2. No default export. Exports are exactly `MODEL_PRICING`, `estimateCostCents`, and `__resetWarnedModelsForTests`. No other functions. No extra imports.
+3. **Why module-level Set is OK here:** The general `CLAUDE.md` rule against module-level state applies to data that must persist across requests (which Vercel cold starts reset). For a log-dedup cache, we *want* reset on cold start — each deploy gets fresh warnings. Do not put this cache in the database.
 
 **Acceptance:**
 - [ ] File exists at `lib/agents/model-pricing.ts`.
 - [ ] `MODEL_PRICING['llama-3.3-70b-versatile']` equals `{ inputCentsPerMToken: 59, outputCentsPerMToken: 79 }`.
 - [ ] `estimateCostCents('llama-3.3-70b-versatile', 1_000_000, 1_000_000)` returns `138`.
-- [ ] `estimateCostCents('unknown-model', 100, 100)` returns `0` and logs exactly one `console.warn`.
+- [ ] First call to `estimateCostCents('unknown-model', 100, 100)` returns `0` and logs exactly one `console.warn`.
+- [ ] A second call with the same `'unknown-model'` returns `0` and does NOT warn again.
+- [ ] A call with a different unknown model (e.g. `'another-unknown'`) does warn (once, then suppressed for that model).
 - [ ] `estimateCostCents('llama-3.3-70b-versatile', 0, 0)` returns `0`.
+- [ ] `__resetWarnedModelsForTests` is exported and clears the internal cache.
 
 ---
 
@@ -199,9 +220,11 @@ Make the per-user daily/monthly LLM spend limits actually trip. Today `agent_req
    - **Exact math:** `estimateCostCents('llama-3.3-70b-versatile', 1_000_000, 1_000_000)` equals `138`.
    - **Small call stays fractional (critical):** `estimateCostCents('llama-3.3-70b-versatile', 3_000, 500)` — use `expect(...).toBeCloseTo(0.2165, 4)`. This is the direct proof that the 0-cent bug is dead.
    - **Zero tokens:** `estimateCostCents('llama-3.3-70b-versatile', 0, 0)` equals `0`.
-   - **Unknown model:** `estimateCostCents('unknown-xyz', 100, 100)` equals `0` AND a `vi.spyOn(console, 'warn')` fires exactly once with a message containing `"Unknown model"`.
-   - **Empty-string model:** same as unknown — returns `0`, warns once.
-2. Use `vi.spyOn(console, 'warn').mockImplementation(() => {})` in `beforeEach` and restore in `afterEach`.
+   - **Unknown model warns once:** call `estimateCostCents('unknown-xyz', 100, 100)` twice. Both calls return `0`, but `console.warn` fires exactly once with a message containing `"Unknown model"`.
+   - **Different unknown models each warn once:** after the above, call `estimateCostCents('another-unknown', 100, 100)` once. `console.warn` call count increases to 2 (one per distinct unknown model).
+   - **Empty-string model:** treated as unknown — returns `0`, warns once on first call, does not warn on a repeat.
+2. Use `vi.spyOn(console, 'warn').mockImplementation(() => {})` in `beforeEach`, restore in `afterEach`.
+3. Import `__resetWarnedModelsForTests` from `@/lib/agents/model-pricing` and call it in `beforeEach` so each test starts with an empty warn-once cache. Without this, tests that depend on warning counts would interact through shared module state and become order-dependent.
 
 **File:** `__tests__/agent-blueprint-runner.test.ts`
 **Action:** MODIFY
