@@ -179,7 +179,7 @@ export async function recordLlmAttempt(db: AgentDb, entry: TokenTrackingEntry): 
     inputTokens: entry.inputTokens,
     outputTokens: entry.outputTokens,
     totalTokens: entry.totalTokens,
-    estimatedCostCents: Math.round(entry.estimatedCostCents),
+    estimatedCostCents: entry.estimatedCostCents,
     durationMs: entry.durationMs,
     success: entry.success ? 1 : 0,
     sourceCount: 0,

@@ -26,7 +26,7 @@ Most recent validation (`2026-04-20`, Tighten Trading Journal UI):
 ## Spend Enforcement Fix
 
 > Generated: 2026-04-20 | Agent: nexus-architect (inline by plan agent)
-> Status: IN PROGRESS (Phases 1-2 complete)
+> Status: IN PROGRESS (Phases 1-3 complete)
 
 ### Goal
 
@@ -164,8 +164,8 @@ Make the per-user daily/monthly LLM spend limits actually trip. Today `agent_req
 2. Do NOT change `checkBudget`, `loadUserCost`, `readAggregateNumber`, `loadUserRequestCount`, or any other function in this file. `Number(row?.[key] ?? 0)` at line 48 already coerces both integer and float values returned by `SUM()`.
 
 **Acceptance:**
-- [ ] Line 182 no longer wraps `entry.estimatedCostCents` in `Math.round`.
-- [ ] No other changes to `runtime-limits.ts`.
+- [x] Line 182 no longer wraps `entry.estimatedCostCents` in `Math.round`.
+- [x] No other changes to `runtime-limits.ts`.
 
 ---
 

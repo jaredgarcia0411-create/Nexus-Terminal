@@ -123,7 +123,7 @@ describe('agent runtime limits', () => {
     expect(staleDb.execute).toHaveBeenCalledTimes(1);
   });
 
-  it('records token usage with rounded costs and integer success flags', async () => {
+  it('records token usage with fractional costs and integer success flags', async () => {
     const db = createDb();
 
     await recordLlmAttempt(db as never, {
@@ -150,7 +150,7 @@ describe('agent runtime limits', () => {
       inputTokens: 10,
       outputTokens: 20,
       totalTokens: 30,
-      estimatedCostCents: 13,
+      estimatedCostCents: 12.6,
       durationMs: 1234,
       success: 0,
       sourceCount: 0,
