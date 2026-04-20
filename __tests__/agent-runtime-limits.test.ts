@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { agentRegistry, agentRequestLog } from '@/lib/db/schema';
+const getLlmBudgetConfigMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@/lib/agents/llm-client', () => ({
+  getLlmBudgetConfig: getLlmBudgetConfigMock,
+}));
+
 import {
   checkBudget,
   checkCircuitBreaker,
@@ -11,9 +17,10 @@ import {
 
 function createDb(tableRows: Map<unknown, unknown[][]> = new Map()) {
   const insertedValues: unknown[] = [];
+  const insertedByTable = new Map<unknown, Array<Record<string, unknown>>>();
   const execute = vi.fn(async () => undefined);
 
-  const select = vi.fn(() => ({
+  const select = vi.fn((selected?: Record<string, unknown>) => ({
     from(table: unknown) {
       const queue = tableRows.get(table) ?? [];
       tableRows.set(table, queue);
@@ -22,12 +29,12 @@ function createDb(tableRows: Map<unknown, unknown[][]> = new Map()) {
         where: vi.fn(() => ({
           orderBy: vi.fn(() => ({
             limit: async (count: number) => {
-              const rows = queue.shift() ?? [];
+              const rows = queue.shift() ?? buildRowsFromInsertedState(table, selected, insertedByTable);
               return rows.slice(0, count);
             },
           })),
           limit: async (count: number) => {
-            const rows = queue.shift() ?? [];
+            const rows = queue.shift() ?? buildRowsFromInsertedState(table, selected, insertedByTable);
             return rows.slice(0, count);
           },
         })),
@@ -37,6 +44,9 @@ function createDb(tableRows: Map<unknown, unknown[][]> = new Map()) {
 
   const insertValues = vi.fn(async (value: unknown) => {
     insertedValues.push(value);
+    const rows = insertedByTable.get(agentRequestLog) ?? [];
+    insertedByTable.set(agentRequestLog, rows);
+    rows.push(value as Record<string, unknown>);
   });
   const insert = vi.fn(() => ({
     values: insertValues,
@@ -52,12 +62,39 @@ function createDb(tableRows: Map<unknown, unknown[][]> = new Map()) {
   };
 }
 
+function buildRowsFromInsertedState(
+  table: unknown,
+  selected: Record<string, unknown> | undefined,
+  insertedByTable: Map<unknown, Array<Record<string, unknown>>>,
+): Record<string, unknown>[] {
+  if (table !== agentRequestLog || !selected) {
+    return [];
+  }
+
+  const rows = insertedByTable.get(agentRequestLog) ?? [];
+  if ('totalCostCents' in selected) {
+    return [{
+      totalCostCents: rows.reduce((sum, row) => sum + Number(row.estimatedCostCents ?? 0), 0),
+    }];
+  }
+
+  if ('requestCount' in selected) {
+    return [{ requestCount: rows.length }];
+  }
+
+  return [];
+}
+
 describe('agent runtime limits', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-07T15:30:00.000Z'));
     process.env.AGENT_DAILY_BUDGET_CENTS = '100';
     process.env.AGENT_MONTHLY_BUDGET_CENTS = '1000';
+    getLlmBudgetConfigMock.mockReset().mockReturnValue({
+      dailyBudgetCents: 100,
+      monthlyBudgetCents: 1000,
+    });
   });
 
   it('throws on daily budget exhaustion before checking monthly totals', async () => {
@@ -85,6 +122,37 @@ describe('agent runtime limits', () => {
     await expect(checkBudget(db as never, 'user-1', 'orchestrator')).rejects.toMatchObject({
       name: 'BudgetExceededError',
       message: 'monthly budget exceeded for orchestrator',
+    });
+  });
+
+  it('throws when fractional per-call costs accumulate past the daily budget', async () => {
+    const db = createDb();
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await recordLlmAttempt(db as never, {
+        userId: 'user-1',
+        agentId: 'orchestrator',
+        mode: 'chat',
+        lane: 'background',
+        modelUsed: 'llama-3.3-70b-versatile',
+        inputTokens: 1,
+        outputTokens: 1,
+        totalTokens: 2,
+        estimatedCostCents: 0.4,
+        durationMs: 50,
+        success: true,
+      });
+    }
+
+    getLlmBudgetConfigMock.mockReturnValueOnce({
+      dailyBudgetCents: 2,
+      monthlyBudgetCents: 1000,
+    });
+
+    await expect(checkBudget(db as never, 'user-1', 'orchestrator')).rejects.toMatchObject({
+      name: 'BudgetExceededError',
+      message: 'daily budget exceeded for orchestrator',
+      limitType: 'daily',
     });
   });
 

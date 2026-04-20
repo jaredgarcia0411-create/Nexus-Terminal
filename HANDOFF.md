@@ -6,15 +6,15 @@
 
 ## Current State
 
-**Active spec:** `Spend Enforcement Fix` (below). Next up after this ships: approval gates from `FUTURE-PLANS.md` item 1.
+**Active spec:** `Spend Enforcement Fix` (completed below). Next up: approval gates from `FUTURE-PLANS.md` item 1.
 
 ## Validation Snapshot
 
-Most recent validation (`2026-04-20`, Tighten Trading Journal UI):
+Most recent validation (`2026-04-20`, Spend Enforcement Fix):
 
 - `npm run lint` — passed
 - `npx tsc --noEmit` — passed
-- `npm test` — passed (`52` files, `402` tests)
+- `npm test` — passed (`53` files, `409` tests)
 
 ## Follow-Up Notes
 
@@ -26,7 +26,7 @@ Most recent validation (`2026-04-20`, Tighten Trading Journal UI):
 ## Spend Enforcement Fix
 
 > Generated: 2026-04-20 | Agent: nexus-architect (inline by plan agent)
-> Status: IN PROGRESS (Phases 1-4 complete)
+> Status: COMPLETE
 
 ### Goal
 
@@ -241,10 +241,10 @@ Make the per-user daily/monthly LLM spend limits actually trip. Today `agent_req
 7. Do not remove or rewrite existing test cases.
 
 **Acceptance:**
-- [ ] `__tests__/agent-model-pricing.test.ts` exists and all 5 cases pass.
-- [ ] Blueprint-runner test asserts non-zero cost on a successful step.
-- [ ] Runtime-limits test has a new case proving fractional accumulation trips the daily budget.
-- [ ] All previously passing tests still pass.
+- [x] `__tests__/agent-model-pricing.test.ts` exists and all 5 cases pass.
+- [x] Blueprint-runner test asserts non-zero cost on a successful step.
+- [x] Runtime-limits test has a new case proving fractional accumulation trips the daily budget.
+- [x] All previously passing tests still pass.
 
 ---
 

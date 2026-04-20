@@ -269,6 +269,7 @@ describe('runBlueprint', () => {
         {
           metrics: { durationMs: 20, tokensUsed: 10, attempt: 1 },
           artifacts: { inputTokens: 4, outputTokens: 6 },
+          provenance: { sourceIds: [], upstreamStepIds: [], timestamp: '2026-04-07T12:00:00.000Z', model: 'llama-3.3-70b-versatile' },
         },
       ))
       .mockResolvedValueOnce(createStepResult(
@@ -276,6 +277,7 @@ describe('runBlueprint', () => {
         {
           metrics: { durationMs: 30, tokensUsed: 20, attempt: 1 },
           artifacts: { inputTokens: 8, outputTokens: 12 },
+          provenance: { sourceIds: [], upstreamStepIds: [], timestamp: '2026-04-07T12:00:00.000Z', model: 'llama-3.3-70b-versatile' },
         },
       ));
 
@@ -308,6 +310,8 @@ describe('runBlueprint', () => {
     expect(recordLlmAttemptMock).toHaveBeenCalledTimes(2);
     expect(recordLlmAttemptMock.mock.calls[0][1]).toMatchObject({ success: false, totalTokens: 10 });
     expect(recordLlmAttemptMock.mock.calls[1][1]).toMatchObject({ success: true, totalTokens: 20 });
+    expect((recordLlmAttemptMock.mock.calls[0][1] as { estimatedCostCents: number }).estimatedCostCents).toBeGreaterThan(0);
+    expect((recordLlmAttemptMock.mock.calls[1][1] as { estimatedCostCents: number }).estimatedCostCents).toBeGreaterThan(0);
     expect((persistStepLogMock.mock.calls[0][4] as Array<{ tokensUsed?: number }>)[0]).toMatchObject({
       tokensUsed: 30,
       validatorResult: 'pass',
