@@ -24,6 +24,12 @@ const DISCORD_USER_MAP: Record<string, AgentServiceUser> = {
     name: 'Cody Cattermole',
     picture: null,
   },
+  '677335430336610315': {
+    id: '4b4ccaa5-0f9f-4045-a9b6-38e738def81b',
+    email: 'mikedurante13@gmail.com',
+    name: 'Mike Durante',
+    picture: null,
+  },
 };
 
 function readHeader(request: Request, name: string): string | null {
