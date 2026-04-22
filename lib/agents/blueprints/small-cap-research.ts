@@ -402,7 +402,7 @@ export function extractGapStatsTable(rawRows: unknown[]): GapStatsRow[] {
     });
   }
 
-  return rows.slice(0, 5);
+  return rows.slice(0, 10);
 }
 
 function normalizeHistoricalFloatRow(value: unknown): {
@@ -781,7 +781,7 @@ function buildResearchPrompt(input: z.infer<typeof researchPipelineInputSchema>)
     "When rating 'News / Why It's Running', quote the exact headline text of the single most relevant item from the Recent news & filings section. Reference the formType in parentheses (e.g., (8-K)).",
     'Do not claim "no recent news available" unless the Recent news & filings section is empty. Do not fabricate headlines.',
     'Use the Deterministic analysis section as precomputed inputs. Do not recalculate those values in the response.',
-    'For chartHistory: rate the ticker\'s technical posture and gap follow-through history. Base the explanation on (1) rsi, ema9, ema21, high1m, low1m, sector from priceContext and (2) gapCount, sameDayFadeRate, avgHighExtension, avgCloseVsOpen from deterministicAnalysis. Do NOT write "no historical gap data available" in chartHistory — that phrase belongs only to the gapStatsTable section. If gapCount is 0, still rate the chart setup using price-context technicals and acknowledge thin gap priors in one clause.',
+    'For chartHistory: write 2-3 sentences rating the ticker\'s technical posture and historical gap behavior. Read numeric inputs directly from the deterministicAnalysis JSON block (for gapCount, sameDayFadeRate, avgHighExtension, avgCloseVsOpen) and the priceContext JSON block (for rsi, ema9, ema21, high1m, low1m, sector). Translate those numbers into plain-English phrasing — e.g., "fades intraday about half the time", "averages ~25% above the open", "RSI 69 is approaching overbought", "trades between $2.98 and $6.57 over the last month". Do NOT echo the raw field identifiers in your output (no literal "gapCount", "sameDayFadeRate", "avgHighExtension", "avgCloseVsOpen", "high1m", "low1m", "ema9", or "ema21" tokens in the sentence). Do NOT count rows from the Historical Gap Data display table — trust the gapCount value in deterministicAnalysis (the display table may be a truncated view). Do NOT write "no historical gap data available" in chartHistory — that phrase belongs only to the gapStatsTable section. If gapCount is 0, still rate the chart setup using price-context technicals and acknowledge thin gap priors in one clause.',
   ].join('\n\n');
 }
 

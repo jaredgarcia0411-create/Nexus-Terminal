@@ -412,7 +412,7 @@ export function extractGapStatsTable(rawRows: unknown[]): GapStatsRow[] {
     });
   }
 
-  return rows.slice(0, 5);
+  return rows.slice(0, 10);
 }
 
 function flattenOwnershipRecords(value: unknown): Record<string, unknown>[] {

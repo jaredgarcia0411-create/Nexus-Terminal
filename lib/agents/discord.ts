@@ -474,7 +474,7 @@ export function buildResearchEmbed(report: AgentReport): DiscordEmbed {
     ratingLine('Offering Ability', payload.offeringAbility),
     ratingLine('Cash Need', payload.cashNeed),
     ratingLine('News/Catalyst', payload.newsWhyRunning),
-    ratingLine('Chart History', payload.chartHistory),
+    `**Chart History** ${ratingEmoji(payload.chartHistory.rating)}\n• ${truncate(payload.chartHistory.explanation, 500)}`,
     ratingLine('Financial Commentary', payload.financialCommentary),
     `**Gap History**\n${gapBlock}`,
   ];

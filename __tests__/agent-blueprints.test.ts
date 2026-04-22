@@ -2431,10 +2431,10 @@ describe('extractGapStatsTable alias resolution', () => {
     ]);
   });
 
-  it('caps output at 5 rows and falls back to priorClose-based gap computation when direct gap is missing', async () => {
+  it('caps output at 10 rows and falls back to priorClose-based gap computation when direct gap is missing', async () => {
     const { extractGapStatsTable } = await import('@/lib/agents/blueprints/small-cap-research');
 
-    const raw = Array.from({ length: 8 }, (_, i) => ({
+    const raw = Array.from({ length: 12 }, (_, i) => ({
       date: `2026-04-${String(i + 1).padStart(2, '0')}`,
       marketOpen: 11,
       marketClose: 10.5,
@@ -2442,7 +2442,7 @@ describe('extractGapStatsTable alias resolution', () => {
     }));
 
     const rows = extractGapStatsTable(raw);
-    expect(rows).toHaveLength(5);
+    expect(rows).toHaveLength(10);
     expect(rows[0]).toEqual({ date: '2026-04-01', gapPct: 10, open: 11, close: 10.5 });
   });
 });

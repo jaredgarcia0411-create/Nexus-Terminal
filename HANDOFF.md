@@ -2,15 +2,15 @@
 
 > Updated: 2026-04-22
 > Purpose: brief summary of recently completed work plus any active execution spec. Older implementation detail lives in git history and `specs/`.
-> Historical completed sections were archived to keep this file focused. Agent Hardening #1 shipped in `7118598`; Agent Hardening #2 in `2a856f1`; Agent Hardening #3 in `bf13567`; Research agent report refinements in `9a69655` (2026-04-17); Trade Journal Enhancement (DRC + Weekly Review + Archive tab) shipped across `4757fa3`, `0e41b5a`, `8dd6b12`, `fe97e8c`, `c300153` (2026-04-19 → 2026-04-20); Tighten Trading Journal UI shipped in `f1fde41` (2026-04-20); Spend Enforcement Fix shipped across `7aad160`, `abdefe9`, `1bd5e1e`, `8ad674e`, `9f0a123` (2026-04-20). See git history for full records.
+> Historical completed sections were archived to keep this file focused. Agent Hardening #1 shipped in `7118598`; Agent Hardening #2 in `2a856f1`; Agent Hardening #3 in `bf13567`; Research agent report refinements in `9a69655` (2026-04-17); Trade Journal Enhancement (DRC + Weekly Review + Archive tab) shipped across `4757fa3`, `0e41b5a`, `8dd6b12`, `fe97e8c`, `c300153` (2026-04-19 → 2026-04-20); Tighten Trading Journal UI shipped in `f1fde41` (2026-04-20); Spend Enforcement Fix shipped across `7aad160`, `abdefe9`, `1bd5e1e`, `8ad674e`, `9f0a123` (2026-04-20); Research Gap-Stats Parser + Redundancy Fix shipped in `0e96e16` (2026-04-22). See git history for full records.
 
 ## Current State
 
-**Active spec:** `Research Gap-Stats Parser + Redundancy Fix` (completed below). After this: approval gates from `FUTURE-PLANS.md` item 1.
+**Active spec:** None. Next: approval gates from `FUTURE-PLANS.md` item 1.
 
 ## Validation Snapshot
 
-Most recent validation (`2026-04-22`, Research Gap-Stats Parser + Redundancy Fix):
+Most recent validation (`2026-04-22`, Research Chart History Polish):
 
 - `npm run lint` — passed
 - `npx tsc --noEmit` — passed
@@ -19,539 +19,190 @@ Most recent validation (`2026-04-22`, Research Gap-Stats Parser + Redundancy Fix
 ## Follow-Up Notes
 
 - ~~Production check: verify `GET /api/cron/agent-retention` returns `200`~~ — validated 2026-04-22.
-- After Research Gap-Stats Parser fix ships, re-verify Discord embed: a ticker with gaps (e.g. SPRC / JDZG / PBM — cached with 9/6/7 gap rows on 2026-04-22) must render the gap table; a ticker genuinely without gaps (e.g. AGPU) must still render "No historical gap data available." in the Gap History block.
+- ~~After Research Gap-Stats Parser fix ships, re-verify Discord embed~~ — verified 2026-04-22: SPRC renders populated Gap History, AGPU still renders "No historical gap data available."
+- Latent bug to investigate separately: `lib/askedgar.ts:840` reads `intraday_high` as the primary key for the gap-stats high field, but the AskEdgar `/v1/gap-stats` endpoint actually returns `high_price`. The research blueprints bypass the canonical mapper (reading `rawData['gap-stats']` directly) so this does not currently break research reports, but any other consumer of the mapped snapshot's `gapStats` array will see `intradayHigh: null` on every row. File a dedicated spec if/when another feature depends on the mapped snapshot.
 
 ---
 
-## Research Gap-Stats Parser + Redundancy Fix
+## Research Chart History Polish
 
-> Generated: 2026-04-22 | Agent: nexus-architect
-> Status: COMPLETE
+> Generated: 2026-04-22 | Agent: plan (inline)
+> Status: COMPLETED 2026-04-22
 
 ### Goal
 
-`extractGapStatsTable` in both research blueprints (`small-cap-research.ts` and `swing-trader-research.ts`) reads gap-stats rows using field-name aliases that do not match the snake_case keys the AskEdgar API actually returns (`gap_percentage`, `market_open`, `market_close`, `previous_day_close`). The canonical mapper in `lib/askedgar.ts:831-847` documents the correct field names, but the blueprint extractors lead with camelCase aliases that never match, so every row is silently discarded and the LLM receives an empty gap table for every ticker. Separately, `historicalStats` is a free-text field that is semantically redundant with `gapStatsTable` — when the table is empty the LLM writes the literal string "No historical gap data available." into it, and the lack of a clear `chartHistory` definition causes the LLM to echo the same phrase there too. Both fixes ship in one spec because they touch the same four files and the test cleanup is interleaved.
+Three unrelated-but-co-located polish items observed in the first post-parser-fix research run (SPRC, AGPU, 2026-04-22):
+
+1. **Chart History explanation gets truncated mid-sentence in Discord.** `ratingLine` caps every section at 300 chars (`lib/agents/discord.ts:456`). Chart History synthesizes five-plus metrics and consistently runs longer. Observed SPRC output: `"...Given the gapCount of 5, the sameDayFadeRate of 0.5, and avgHigh"` — cut off mid-word.
+
+2. **Chart History wording parrots field names and miscounts gap rows.** Current prompt at `lib/agents/blueprints/small-cap-research.ts:784` lists the raw identifiers (`gapCount`, `sameDayFadeRate`, `avgHighExtension`, `avgCloseVsOpen`, `low1m`, etc.) and the LLM echoes those identifiers into the prose instead of translating them. Separately, SPRC's chartHistory said "gapCount of 5" when `deterministicAnalysis.gapCount` was actually 10 — the LLM counted rows from the 5-row display table rather than reading the deterministic total. Math check confirms: `sameDayFadeRate: 0.5` with five fades requires a 10-row sample, not 5.
+
+3. **The 5-row display cap on `extractGapStatsTable` hides half the SPRC cache and fuels the miscount.** `small-cap-research.ts:405` and `swing-trader-research.ts:415` both do `rows.slice(0, 5)`. SPRC's cache has 10 rows — all normalize cleanly (verified 2026-04-22 via direct DB query), no drop-off — so capping at 5 is purely a cosmetic choice and the LLM's visible view of the history gets truncated for no benefit.
 
 ### Approved decisions (locked)
 
-1. Fix the `extractGapStatsTable` field-name fallback lists in both blueprints to lead with the canonical snake_case keys (`gap_percentage`, `market_open`, `market_close`, `prior_close`) before the camelCase aliases. Do not remove the camelCase aliases — they are harmless defensive fallbacks.
-2. Remove `historicalStats` entirely from the Zod output schema, the `SmallCapResearchReport` TypeScript interface, the `exampleShape` object in `buildResearchPrompt`, the `historicalStats` prompt instruction string, and the Discord embed render path.
-3. Redefine `chartHistory` via a new explicit prompt instruction so the LLM is told what data sources to use (RSI, EMA9, EMA21, 1-month high/low from `priceContext`; `gapCount`, `sameDayFadeRate`, `avgHighExtension`, `avgCloseVsOpen` from `deterministicAnalysis`) and is prohibited from writing "no historical gap data available" in that field regardless of `gapCount`.
-4. Leave `lib/askedgar.ts`, `lib/discord/parser.ts`, and all DB schema / migration files untouched.
-5. Swing-trader blueprint does not have `historicalStats` in its output schema or embed — only the field-name fix (Phase 2) applies there.
+1. Raise the Chart History truncation cap from 300 → 500 **only for Chart History**, by inlining the rendering call. Leave every other section at 300 (safer against the 4096-char embed-description ceiling).
+2. Rewrite the `chartHistory` prompt instruction so the LLM (a) reads numeric inputs from the `deterministicAnalysis` JSON block rather than counting rows from the visible Historical Gap Data table, (b) translates metrics into plain-English phrasing, and (c) is explicitly forbidden from echoing the field identifiers (`gapCount`, `sameDayFadeRate`, `low1m`, etc.) in the output.
+3. Raise `extractGapStatsTable`'s slice cap from 5 → 10 in both blueprints. 10 rows × ~48 chars = ~480 chars of gap-block content plus ~110 chars of header — still well inside Discord's 4096-char embed-description limit.
+4. Only the small-cap blueprint has a `chartHistory` field — swing-trader has no equivalent, so the prompt rewrite is small-cap-only. The gap-cap bump applies to both.
+5. Do NOT touch `lib/askedgar.ts` — the latent `intraday_high` vs. `high_price` issue in the canonical mapper is tracked in Follow-Up Notes and does not affect research reports.
 
 ---
 
-### Phase 1 — Fix gap-stats field-name fallbacks in small-cap blueprint
+### Phase 1 — Raise Chart History truncation cap
+
+**File:** `lib/agents/discord.ts`
+**Action:** MODIFY
+
+**Step 1.1 — Inline a longer cap for Chart History (line 477)**
+
+The shared `ratingLine` helper at lines 453–456 hard-codes `truncate(section.explanation, 300)`, and the other sections (`Offering Risk`, `Dilution`, etc.) all fit comfortably inside 300 chars. Only Chart History needs more room.
+
+At line 477 the current code is:
+```typescript
+    ratingLine('Chart History', payload.chartHistory),
+```
+
+Replace with an inline expansion that uses a 500-char cap, keeping the same visual format as `ratingLine`:
+```typescript
+    `**Chart History** ${ratingEmoji(payload.chartHistory.rating)}\n• ${truncate(payload.chartHistory.explanation, 500)}`,
+```
+
+Do NOT change the `ratingLine` helper itself — leave it at 300 so the other six small-cap sections stay uniform. Do NOT change the swing-trader `ratingLine` at line 504 (swing-trader has no `chartHistory`).
+
+**Why 500 specifically:** Worst-case embed size with the six other sections at 300, Chart History at 500, and the Gap History block (10 rows ≈ 600 chars) = ~2700 chars, well under Discord's 4096-char description limit. 500 gives Chart History room for ~3–4 sentences before truncation, which matches the new prompt's expected output length (Phase 2).
+
+**Acceptance:**
+- [x] `ratingLine` helper at `discord.ts:453–456` still caps at 300.
+- [x] The Chart History rendering call at line 477 uses a 500-char truncate and matches the `**Label** emoji\n• text` format.
+- [x] `buildSwingSetupEmbed` is unchanged.
+- [x] Existing `agent-discord.test.ts` tests still pass.
+
+---
+
+### Phase 2 — Rewrite the `chartHistory` prompt instruction
+
 **File:** `lib/agents/blueprints/small-cap-research.ts`
 **Action:** MODIFY
 
-**Step 1.1 — Fix `open` fallback list in `extractGapStatsTable` (lines 351–357)**
+**Step 2.1 — Replace the chartHistory instruction (line 784)**
 
-At lines 351–357 the current code is:
-```typescript
-    const open = Number(
-      row.marketOpen
-      ?? row.open
-      ?? row.openPrice
-      ?? row.open_price
-      ?? Number.NaN,
-    );
-```
-
-Replace with:
-```typescript
-    const open = Number(
-      row.market_open
-      ?? row.marketOpen
-      ?? row.open
-      ?? row.openPrice
-      ?? row.open_price
-      ?? Number.NaN,
-    );
-```
-
-**Step 1.2 — Fix `close` fallback list in `extractGapStatsTable` (lines 358–364)**
-
-At lines 358–364 the current code is:
-```typescript
-    const close = Number(
-      row.marketClose
-      ?? row.close
-      ?? row.closePrice
-      ?? row.close_price
-      ?? Number.NaN,
-    );
-```
-
-Replace with:
-```typescript
-    const close = Number(
-      row.market_close
-      ?? row.marketClose
-      ?? row.close
-      ?? row.closePrice
-      ?? row.close_price
-      ?? Number.NaN,
-    );
-```
-
-**Step 1.3 — Fix `directGap` fallback list in `extractGapStatsTable` (lines 370–376)**
-
-At lines 370–376 the current code is:
-```typescript
-    const directGap = row.gapPercentage
-      ?? row.gapPercent
-      ?? row.gap_pct
-      ?? row.gapPct
-      ?? row.pctChange
-      ?? row.gap
-      ?? row.percent_change;
-```
-
-Replace with:
-```typescript
-    const directGap = row.gap_percentage
-      ?? row.gapPercentage
-      ?? row.gapPercent
-      ?? row.gap_pct
-      ?? row.gapPct
-      ?? row.pctChange
-      ?? row.gap
-      ?? row.percent_change;
-```
-
-**Step 1.4 — Fix `priorClose` fallback list in `extractGapStatsTable` (lines 381–385)**
-
-At lines 381–385 the current code is:
-```typescript
-      const priorClose = Number(
-        row.priorClose
-        ?? row.prior_close
-        ?? row.previousClose
-        ?? Number.NaN,
-      );
-```
-
-Replace with:
-```typescript
-      const priorClose = Number(
-        row.previous_day_close
-        ?? row.prior_close
-        ?? row.priorClose
-        ?? row.previousClose
-        ?? Number.NaN,
-      );
-```
-
-**Step 1.5 — Fix `high` lookup in `normalizeGapRow` (line 323)**
-
-At line 323 the current code is:
-```typescript
-  const high = getNumberField(value, ['high', 'intradayHigh', 'intraday_high']);
-```
-
-Replace with:
-```typescript
-  const high = getNumberField(value, ['high_price', 'high', 'intradayHigh', 'intraday_high']);
-```
-
-**Why this matters:** `normalizeGapRow` feeds `computeDeterministicAnalysis` (line 540 onward), which produces `gapCount`, `sameDayFadeRate`, `avgCloseVsOpen`, and `avgHighExtension`. Without `high_price` in the fallback list, every AskEdgar row returns `null` from `normalizeGapRow` (line 325 rejects when any of open/close/high is null), so the deterministic block is zeroed out for every ticker. This must be fixed alongside Step 1.1–1.4 or `chartHistory` (Phase 4) will still have nothing to rate from.
-
-**Acceptance:**
-- [ ] A fixture with a SPRC-shaped row (`{ date: '2026-04-01', gap_percentage: 45.2, market_open: 1.50, market_close: 1.20 }`) passed to `extractGapStatsTable` returns one row with `gapPct: 45.2`, `open: 1.50`, `close: 1.20`.
-- [ ] A fixture with only camelCase keys (`{ date: '2026-04-01', gapPercentage: 10, marketOpen: 1.00, marketClose: 0.90 }`) still produces a valid row (regression check).
-- [ ] A fixture with `market_open`, `market_close`, and `previous_day_close` but no direct gap field computes `gapPct` from the `previous_day_close` fallback.
-- [ ] A fixture with `high_price`, `market_open`, `market_close` passed into the pipeline produces a non-zero `gapCount` from `computeDeterministicAnalysis`.
-
----
-
-### Phase 2 — Apply identical extractor fix to swing-trader blueprint
-**File:** `lib/agents/blueprints/swing-trader-research.ts`
-**Action:** MODIFY
-
-The `extractGapStatsTable` and `normalizeGapRow` functions in swing-trader are direct copies of the ones in small-cap-research. Apply the same five field-list changes at the swing-trader line anchors.
-
-**Step 2.1 — Fix `open` fallback list (lines 360–366)**
-
-At lines 360–366 the current code is:
-```typescript
-    const open = Number(
-      row.marketOpen
-      ?? row.open
-      ?? row.openPrice
-      ?? row.open_price
-      ?? Number.NaN,
-    );
-```
-
-Replace with:
-```typescript
-    const open = Number(
-      row.market_open
-      ?? row.marketOpen
-      ?? row.open
-      ?? row.openPrice
-      ?? row.open_price
-      ?? Number.NaN,
-    );
-```
-
-**Step 2.2 — Fix `close` fallback list (lines 367–373)**
-
-At lines 367–373 the current code is:
-```typescript
-    const close = Number(
-      row.marketClose
-      ?? row.close
-      ?? row.closePrice
-      ?? row.close_price
-      ?? Number.NaN,
-    );
-```
-
-Replace with:
-```typescript
-    const close = Number(
-      row.market_close
-      ?? row.marketClose
-      ?? row.close
-      ?? row.closePrice
-      ?? row.close_price
-      ?? Number.NaN,
-    );
-```
-
-**Step 2.3 — Fix `directGap` fallback list (lines 379–385)**
-
-At lines 379–385 the current code is:
-```typescript
-    const directGap = row.gapPercentage
-      ?? row.gapPercent
-      ?? row.gap_pct
-      ?? row.gapPct
-      ?? row.pctChange
-      ?? row.gap
-      ?? row.percent_change;
-```
-
-Replace with:
-```typescript
-    const directGap = row.gap_percentage
-      ?? row.gapPercentage
-      ?? row.gapPercent
-      ?? row.gap_pct
-      ?? row.gapPct
-      ?? row.pctChange
-      ?? row.gap
-      ?? row.percent_change;
-```
-
-**Step 2.4 — Fix `priorClose` fallback list (lines 389–394)**
-
-At lines 389–394 the current code is:
-```typescript
-      const priorClose = Number(
-        row.priorClose
-        ?? row.prior_close
-        ?? row.previousClose
-        ?? Number.NaN,
-      );
-```
-
-Replace with:
-```typescript
-      const priorClose = Number(
-        row.previous_day_close
-        ?? row.prior_close
-        ?? row.priorClose
-        ?? row.previousClose
-        ?? Number.NaN,
-      );
-```
-
-**Step 2.5 — Fix `high` lookup in swing-trader `normalizeGapRow`**
-
-Use `grep -n "const high = getNumberField" lib/agents/blueprints/swing-trader-research.ts` to locate the single line. The current code is:
-```typescript
-  const high = getNumberField(value, ['high', 'intradayHigh', 'intraday_high']);
-```
-
-Replace with:
-```typescript
-  const high = getNumberField(value, ['high_price', 'high', 'intradayHigh', 'intraday_high']);
-```
-
-**Acceptance:**
-- [ ] The SPRC-shaped fixture passed through the swing-trader `extractGapStatsTable` export produces the identical result to Phase 1 (see Phase 5).
-- [ ] Swing-trader `computeSwingTechnicals` produces a non-empty `gapStatsTable` when a SPRC-shaped `gapStats` array is present in the pipeline input.
-
----
-
-### Phase 3 — Drop `historicalStats` from schema, type, prompt, and embed
-
-#### 3a — `lib/agents/blueprints/small-cap-research.ts`
-**Action:** MODIFY
-
-**Step 3a.1 — Remove `historicalStats` from `researchReportSchema` (line 129)**
-
-At line 129 the current code is:
-```typescript
-  historicalStats: z.string(),
-```
-
-Delete this line entirely. The surrounding schema block at lines 117–142 remains intact; only this one field is removed.
-
-**Step 3a.2 — Remove `historicalStats` from `exampleShape` in `buildResearchPrompt` (line 743)**
-
-At line 743 the current code is:
-```typescript
-    historicalStats: 'string summary of gap-stats data',
-```
-
-Delete this line entirely. The `exampleShape` object at lines 731–748 remains intact; only this one property is removed.
-
-**Step 3a.3 — Remove the `historicalStats` prompt instruction (line 777)**
-
-At line 777 the current code is:
-```typescript
-    'For historicalStats: summarize gap-stats patterns (avg gap fade, same-day fade count, typical range). If no gap-stats data, say "No historical gap data available."',
-```
-
-Delete this line entirely.
-
-**Acceptance:**
-- [ ] `researchReportSchema` no longer declares a `historicalStats` field.
-- [ ] `buildResearchPrompt` output does not contain the string `historicalStats`.
-- [ ] `buildResearchPrompt` output does not contain the string `summarize gap-stats patterns`.
-
-#### 3b — `lib/agents/types.ts`
-**Action:** MODIFY
-
-**Step 3b.1 — Remove `historicalStats` from `SmallCapResearchReport` (line 50)**
-
-At line 50 the current code is:
-```typescript
-  historicalStats: string;
-```
-
-Delete this line entirely. The interface at lines 38–55 remains intact.
-
-**Acceptance:**
-- [ ] `npx tsc --noEmit` passes with no reference to `historicalStats` in error output.
-
-#### 3c — `lib/agents/discord.ts`
-**Action:** MODIFY
-
-**Step 3c.1 — Remove the `historicalStats` read at line 458**
-
-At line 458 the current code is:
-```typescript
-  const historicalStats = payload.historicalStats.trim();
-```
-
-Delete this line entirely.
-
-**Step 3c.2 — Remove the `historicalStats` conditional field push at lines 488–494**
-
-At lines 488–494 the current code is:
-```typescript
-  if (historicalStats) {
-    fields.push({
-      name: 'Historical Stats',
-      value: `\`\`\`\n${truncate(historicalStats, 1000)}\n\`\`\``,
-      inline: false,
-    });
-  }
-```
-
-Delete these seven lines entirely.
-
-**Acceptance:**
-- [ ] `buildResearchEmbed` no longer reads `.historicalStats` from the payload.
-- [ ] The Discord embed produced by `buildResearchEmbed` does not contain a `Historical Stats` field under any input.
-- [ ] `buildResearchEmbed` still renders the `Gap History` block (the `gapBlock` variable and its usage at line 480 are untouched).
-
----
-
-### Phase 4 — Redefine `chartHistory` semantics in the prompt
-**File:** `lib/agents/blueprints/small-cap-research.ts`
-**Action:** MODIFY (prompt-only)
-
-**Step 4.1 — Add an explicit `chartHistory` instruction to `buildResearchPrompt`**
-
-The current prompt array (lines 775–783) lists instruction strings that get joined into the prompt. There is no dedicated `chartHistory` instruction today — the LLM is left to infer meaning from the field name alone, and the now-deleted `historicalStats` instruction was the closest proxy (which is exactly why the LLM was conflating the two).
-
-In `buildResearchPrompt`, within the array passed to `.join('\n\n')` that begins at line 750, immediately after the current line:
-```typescript
-    'Use the Deterministic analysis section as precomputed inputs. Do not recalculate those values in the response.',
-```
-
-Add a new array element (same indentation, trailing comma):
+At line 784 the current code is:
 ```typescript
     'For chartHistory: rate the ticker\'s technical posture and gap follow-through history. Base the explanation on (1) rsi, ema9, ema21, high1m, low1m, sector from priceContext and (2) gapCount, sameDayFadeRate, avgHighExtension, avgCloseVsOpen from deterministicAnalysis. Do NOT write "no historical gap data available" in chartHistory — that phrase belongs only to the gapStatsTable section. If gapCount is 0, still rate the chart setup using price-context technicals and acknowledge thin gap priors in one clause.',
 ```
 
+Replace with:
+```typescript
+    'For chartHistory: write 2-3 sentences rating the ticker\'s technical posture and historical gap behavior. Read numeric inputs directly from the deterministicAnalysis JSON block (for gapCount, sameDayFadeRate, avgHighExtension, avgCloseVsOpen) and the priceContext JSON block (for rsi, ema9, ema21, high1m, low1m, sector). Translate those numbers into plain-English phrasing — e.g., "fades intraday about half the time", "averages ~25% above the open", "RSI 69 is approaching overbought", "trades between $2.98 and $6.57 over the last month". Do NOT echo the raw field identifiers in your output (no literal "gapCount", "sameDayFadeRate", "avgHighExtension", "avgCloseVsOpen", "high1m", "low1m", "ema9", or "ema21" tokens in the sentence). Do NOT count rows from the Historical Gap Data display table — trust the gapCount value in deterministicAnalysis (the display table may be a truncated view). Do NOT write "no historical gap data available" in chartHistory — that phrase belongs only to the gapStatsTable section. If gapCount is 0, still rate the chart setup using price-context technicals and acknowledge thin gap priors in one clause.',
+```
+
 **Acceptance:**
-- [ ] `buildResearchPrompt` output contains the string `For chartHistory:`.
-- [ ] `buildResearchPrompt` output contains the string `Do NOT write "no historical gap data available" in chartHistory`.
-- [ ] `buildResearchPrompt` output does not contain the string `historicalStats` (covered by Phase 3a).
+- [x] `buildResearchPrompt` output contains the string `Read numeric inputs directly from the deterministicAnalysis`.
+- [x] `buildResearchPrompt` output contains the string `Do NOT echo the raw field identifiers`.
+- [x] `buildResearchPrompt` output contains the string `Do NOT count rows from the Historical Gap Data display table`.
+- [x] `buildResearchPrompt` output still contains the string `Do NOT write "no historical gap data available" in chartHistory` (preserved from prior spec).
 
 ---
 
-### Phase 5 — Tests
+### Phase 3 — Raise gap-table display cap from 5 to 10
 
-#### 5a — `__tests__/agent-blueprints.test.ts`
+**File:** `lib/agents/blueprints/small-cap-research.ts`
 **Action:** MODIFY
 
-**Step 5a.1 — Add `extractGapStatsTable` imports**
+**Step 3.1 — Change slice at line 405**
 
-At the top of the file, add these two imports alongside the existing blueprint imports:
+At line 405 the current code is:
 ```typescript
-import { extractGapStatsTable as extractGapStatsTableSmallCap } from '@/lib/agents/blueprints/small-cap-research';
-import { extractGapStatsTable as extractGapStatsTableSwing } from '@/lib/agents/blueprints/swing-trader-research';
+  return rows.slice(0, 5);
 ```
 
-Both functions are already exported — no source change needed. Verify with `grep -n "export function extractGapStatsTable" lib/agents/blueprints/*.ts` before adding.
-
-**Step 5a.2 — Add a new `describe('extractGapStatsTable', …)` block**
-
-Add this block at the top level of the test file (outside any existing blueprint describe), placed immediately before the first existing `describe(...)` call:
-
+Replace with:
 ```typescript
-describe('extractGapStatsTable (gap-stats parser regression guard)', () => {
-  // Canonical AskEdgar /v1/gap-stats row shape (confirmed from the live cache on 2026-04-22).
-  // If this test fails, the extractor has drifted from the real API shape again.
-  const sprcRow = {
-    date: '2026-04-01',
-    gap_percentage: 45.2,
-    market_open: 1.50,
-    market_close: 1.20,
-  };
-
-  it('parses canonical snake_case row in small-cap blueprint', () => {
-    const result = extractGapStatsTableSmallCap([sprcRow]);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ date: '2026-04-01', gapPct: 45.2, open: 1.50, close: 1.20 });
-  });
-
-  it('parses canonical snake_case row in swing-trader blueprint', () => {
-    const result = extractGapStatsTableSwing([sprcRow]);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ date: '2026-04-01', gapPct: 45.2, open: 1.50, close: 1.20 });
-  });
-
-  it('still parses camelCase rows (defensive fallback regression)', () => {
-    const camelRow = {
-      date: '2026-04-01',
-      gapPercentage: 10,
-      marketOpen: 1.00,
-      marketClose: 0.90,
-    };
-    const result = extractGapStatsTableSmallCap([camelRow]);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ gapPct: 10, open: 1.00, close: 0.90 });
-  });
-
-  it('derives gapPct from previous_day_close when no direct gap field is present', () => {
-    const derivedRow = {
-      date: '2026-04-01',
-      market_open: 1.50,
-      market_close: 1.20,
-      previous_day_close: 1.00,
-    };
-    const result = extractGapStatsTableSmallCap([derivedRow]);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.gapPct).toBeCloseTo(50, 1);
-  });
-});
+  return rows.slice(0, 10);
 ```
 
-**Step 5a.3 — Remove `historicalStats` from the synthesize-report mock payload (line 1285)**
-
-At line 1285 the current code is:
-```typescript
-        historicalStats: 'Average gap fade 18%.',
-```
-
-Delete this line from the mock JSON object.
-
-**Step 5a.4 — Remove `historicalStats` from the save-step mock payload (line 1434)**
-
-At line 1434 the current code is:
-```typescript
-        historicalStats: 'Average gap fade 18%.',
-```
-
-Delete this line from the `previousOutput` object.
-
-**Step 5a.5 — Remove `historicalStats` from the third mock payload (line 2205)**
-
-At line 2205 the current code is:
-```typescript
-        historicalStats: 'Avg fade 18%.',
-```
-
-Delete this line. (This is a third mock payload, in a separate test case from Steps 5a.3 and 5a.4 — confirm with `grep -n historicalStats __tests__/agent-blueprints.test.ts` after deletion; the command should return no matches.)
-
-**Acceptance:**
-- [ ] All four new `extractGapStatsTable` tests pass.
-- [ ] `grep -n historicalStats __tests__/agent-blueprints.test.ts` returns zero matches after all deletions.
-- [ ] The existing synthesize-report, save-step, and background-model test cases continue to pass after their `historicalStats` mock lines are removed.
-- [ ] `npm test` passes with no type errors in the test file.
-
-#### 5b — `__tests__/agent-discord.test.ts`
+**File:** `lib/agents/blueprints/swing-trader-research.ts`
 **Action:** MODIFY
 
-**Step 5b.1 — Remove `historicalStats` from the four fixture locations**
+**Step 3.2 — Change slice at line 415**
 
-Before editing, confirm the locations with `grep -n historicalStats __tests__/agent-discord.test.ts`. As of 2026-04-22 the matches are at lines 54, 83, 483, 542. Delete each of these lines:
-
-- Line 54 — inside `createStoredReport`'s `reportJson`:
-  ```typescript
-        historicalStats: 'Average gap fade 18%.',
-  ```
-- Line 83 — inside `createSmallCapReportJson`:
-  ```typescript
-      historicalStats: 'Average gap fade 18%.',
-  ```
-- Line 483 — inside the inline `createStoredReport({...})` override in the "uses the stored row as the source of truth" test:
-  ```typescript
-          historicalStats: 'Stored historical stats.',
-  ```
-- Line 542 — inside the inline `createSmallCapReportJson({...})` override in the "builds the small-cap research embed with traffic-light lines and history" test:
-  ```typescript
-          historicalStats: 'Average gap fade 22%.',
-  ```
-
-**Step 5b.2 — Remove the `Historical Stats` embed field assertion**
-
-In the same `'builds the small-cap research embed with traffic-light lines and history'` test, locate the `expect.arrayContaining([...])` assertion block that currently includes a `Historical Stats` field. The relevant assertion looks approximately like:
+At line 415 the current code is:
 ```typescript
-      expect.objectContaining({
-        name: 'Historical Stats',
-        value: '```\nAverage gap fade 22%.\n```',
-        inline: false,
-      }),
+  return rows.slice(0, 5);
 ```
 
-Delete these four lines from the `expect.arrayContaining([...])` array. Keep the `Ticker` and `Confidence` field assertions that precede/follow it.
+Replace with:
+```typescript
+  return rows.slice(0, 10);
+```
 
 **Acceptance:**
-- [ ] `grep -n historicalStats __tests__/agent-discord.test.ts` returns zero matches.
-- [ ] `grep -n "Historical Stats" __tests__/agent-discord.test.ts` returns zero matches.
-- [ ] `buildResearchEmbed` tests all pass.
-
-#### 5c — No new test files
-
-Do NOT create a separate `__tests__/agent-gap-stats-extractor.test.ts`. The new tests live in `__tests__/agent-blueprints.test.ts` because that file already imports both blueprint modules and already mocks their dependencies — a standalone file would duplicate the mock scaffolding for no gain.
-
-**Acceptance:**
-- [ ] No new test files are created.
+- [x] Both `extractGapStatsTable` exports return up to 10 rows, not 5.
+- [x] Feeding `extractGapStatsTable` an array of 12 rows returns exactly 10.
+- [x] Feeding fewer than 10 rows returns them all unchanged.
 
 ---
 
-### Phase 6 — Validation
+### Phase 4 — Tests
+
+#### 4a — Update the existing slice-cap test
+
+**File:** `__tests__/agent-blueprints.test.ts`
+**Action:** MODIFY
+
+**Step 4a.1 — Update the test at lines 2434–2447**
+
+At lines 2434–2447 the current code is:
+```typescript
+  it('caps output at 5 rows and falls back to priorClose-based gap computation when direct gap is missing', async () => {
+    const { extractGapStatsTable } = await import('@/lib/agents/blueprints/small-cap-research');
+
+    const raw = Array.from({ length: 8 }, (_, i) => ({
+      date: `2026-04-${String(i + 1).padStart(2, '0')}`,
+      marketOpen: 11,
+      marketClose: 10.5,
+      priorClose: 10,
+    }));
+
+    const rows = extractGapStatsTable(raw);
+    expect(rows).toHaveLength(5);
+    expect(rows[0]).toEqual({ date: '2026-04-01', gapPct: 10, open: 11, close: 10.5 });
+  });
+```
+
+Replace with:
+```typescript
+  it('caps output at 10 rows and falls back to priorClose-based gap computation when direct gap is missing', async () => {
+    const { extractGapStatsTable } = await import('@/lib/agents/blueprints/small-cap-research');
+
+    const raw = Array.from({ length: 12 }, (_, i) => ({
+      date: `2026-04-${String(i + 1).padStart(2, '0')}`,
+      marketOpen: 11,
+      marketClose: 10.5,
+      priorClose: 10,
+    }));
+
+    const rows = extractGapStatsTable(raw);
+    expect(rows).toHaveLength(10);
+    expect(rows[0]).toEqual({ date: '2026-04-01', gapPct: 10, open: 11, close: 10.5 });
+  });
+```
+
+**Rationale:** The previous test used 8 rows so it could assert the 5-cap. The new cap is 10, so the input now needs 12 rows to actually exercise the slice.
+
+**Acceptance:**
+- [x] Test description says `caps output at 10 rows`.
+- [x] Test input has 12 rows.
+- [x] Test asserts `toHaveLength(10)`.
+
+#### 4b — No new test files
+
+Do NOT add dedicated tests for the prompt-string rewrite or the truncation change — both are covered by acceptance criteria greps and by existing embed/prompt test coverage. The existing `agent-discord.test.ts` and `agent-blueprints.test.ts` continue to exercise those paths.
+
+---
+
+### Phase 5 — Validation
 
 From repo root `/home/jared/Nexus-Terminal`, run in order:
 
@@ -562,17 +213,21 @@ From repo root `/home/jared/Nexus-Terminal`, run in order:
 Skip `npm run typecheck:services` — no files under `services/` are touched. Skip `npm run workflow:audit` — no workflow assets are changed.
 
 **Manual sanity check (after deploy):**
-- Trigger a `small-cap-trader:research` run on `SPRC` (cached with 9 gap rows on 2026-04-22) and confirm the Discord embed renders a populated `Gap History` table and that the `chartHistory` explanation references RSI/EMA/1-month range rather than gap data availability.
-- Trigger on `AGPU` (cache has 0 gap rows) and confirm `Gap History` shows "No historical gap data available." while `chartHistory` still produces a substantive, non-gap-parroting explanation grounded in price-context technicals.
+- Trigger a `small-cap-trader:research` run on `SPRC` and confirm:
+  - (a) the Gap History table renders all 10 rows (no truncation to 5).
+  - (b) the Chart History explanation is a complete sentence (no mid-word truncation).
+  - (c) the explanation uses plain-English phrasing and does NOT contain the literal strings `gapCount`, `sameDayFadeRate`, `avgHighExtension`, `avgCloseVsOpen`, `high1m`, `low1m`, `ema9`, or `ema21`.
+  - (d) any gap counts or fade rates referenced in prose match `deterministicAnalysis.gapCount` / `sameDayFadeRate`, not the visible table row count.
+- Trigger on `AGPU` (0 gap rows) and confirm chartHistory still produces a substantive explanation grounded in price-context technicals and acknowledges thin gap priors — without writing "no historical gap data available".
 
 ---
 
 ### Files NOT to touch
 
-- `lib/askedgar.ts` — already correct; the canonical mapper at lines 831–847 is the reference, not a target.
-- `lib/discord/parser.ts` — legacy standalone parser with its own `historicalStats` field, unrelated to `lib/agents/types.ts`. Leave untouched.
-- Any DB schema or migration files — no storage changes in this spec.
-- AskEdgar cache table — raw API data is correct; only in-blueprint extraction was wrong.
+- `lib/askedgar.ts` — the canonical mapper's `intraday_high` vs. `high_price` issue is tracked in Follow-Up Notes. Does not affect research reports (blueprints bypass the mapper).
+- `lib/agents/blueprints/swing-trader-research.ts` prompt block — swing-trader has no `chartHistory` field.
+- `lib/agents/discord.ts:504` (swing-trader `ratingLine` helper) — no `chartHistory` in swing-trader; leave at 300.
+- `lib/agents/types.ts` — no schema change in this spec.
 
 ---
 
@@ -580,14 +235,12 @@ Skip `npm run typecheck:services` — no files under `services/` are touched. Sk
 
 | File | Action | Approx. lines changed | Risk |
 |---|---|---|---|
-| `lib/agents/blueprints/small-cap-research.ts` | MODIFY | ~18 (5 extractor fallbacks + schema field + exampleShape property + 1 deleted prompt string + 1 new prompt string) | LOW |
-| `lib/agents/blueprints/swing-trader-research.ts` | MODIFY | ~6 (5 extractor fallbacks) | LOW |
-| `lib/agents/types.ts` | MODIFY | 1 (remove `historicalStats: string` from interface) | LOW |
-| `lib/agents/discord.ts` | MODIFY | ~8 (remove variable read + conditional field push) | LOW |
-| `__tests__/agent-blueprints.test.ts` | MODIFY | ~50 (2 new imports + new describe block + 3 mock-line deletions) | LOW |
-| `__tests__/agent-discord.test.ts` | MODIFY | ~8 (4 fixture line deletions + 1 assertion block deletion) | LOW |
+| `lib/agents/discord.ts` | MODIFY | 1 (inline Chart History render) | LOW |
+| `lib/agents/blueprints/small-cap-research.ts` | MODIFY | 2 (1 slice cap + 1 prompt string) | LOW |
+| `lib/agents/blueprints/swing-trader-research.ts` | MODIFY | 1 (slice cap) | LOW |
+| `__tests__/agent-blueprints.test.ts` | MODIFY | ~4 (update existing slice-cap test in place) | LOW |
 
-Risk rationale: every change is a literal string swap against a known anchor. The only semantic change is in the prompt (Phase 4), which affects LLM output quality, not schema correctness — and the schema remains the hard validator.
+Risk rationale: every change is a literal string/number swap against a known anchor. The prompt rewrite affects LLM output quality only — the schema (unchanged) is still the hard validator.
 
 ---
 
@@ -595,9 +248,9 @@ Risk rationale: every change is a literal string swap against a known anchor. Th
 
 1. `npm run lint`
 2. `npx tsc --noEmit`
-3. `npm test` — prior count was `53` files / `409` tests. Expected new count: `53` files / `413` tests (+4 from the new `extractGapStatsTable` describe block).
+3. `npm test` — prior count was `53` files / `413` tests. Expected new count: `53` files / `413` tests (the existing slice-cap test is modified in place, not added or removed).
 
-(Skip `typecheck:services` and `workflow:audit` — no touched files require them.)
+Skip `typecheck:services` and `workflow:audit` — no touched files require them.
 
 ---
 
