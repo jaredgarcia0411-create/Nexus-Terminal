@@ -455,7 +455,6 @@ export function buildResearchEmbed(report: AgentReport): DiscordEmbed {
     section: SmallCapResearchReport['newsWhyRunning'],
   ): string => `**${label}** ${ratingEmoji(section.rating)}\n• ${truncate(section.explanation, 300)}`;
 
-  const historicalStats = payload.historicalStats.trim();
   const gapBlock = payload.gapStatsTable.length === 0
     ? 'No historical gap data available.'
     : [
@@ -484,14 +483,6 @@ export function buildResearchEmbed(report: AgentReport): DiscordEmbed {
     buildField('Ticker', ticker),
     buildField('Confidence', payload.confidence),
   ];
-
-  if (historicalStats) {
-    fields.push({
-      name: 'Historical Stats',
-      value: `\`\`\`\n${truncate(historicalStats, 1000)}\n\`\`\``,
-      inline: false,
-    });
-  }
 
   return buildBaseEmbed(report, fields, sections.join('\n'));
 }

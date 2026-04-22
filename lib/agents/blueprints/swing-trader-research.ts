@@ -292,7 +292,7 @@ function normalizeGapRow(value: unknown): {
 
   const open = getNumberField(value, ['open', 'marketOpen', 'market_open']);
   const close = getNumberField(value, ['close', 'marketClose', 'market_close']);
-  const high = getNumberField(value, ['high', 'intradayHigh', 'intraday_high']);
+  const high = getNumberField(value, ['high_price', 'high', 'intradayHigh', 'intraday_high']);
 
   if (
     open === null
@@ -358,14 +358,16 @@ export function extractGapStatsTable(rawRows: unknown[]): GapStatsRow[] {
 
     const date = rawDate.slice(0, 10);
     const open = Number(
-      row.marketOpen
+      row.market_open
+      ?? row.marketOpen
       ?? row.open
       ?? row.openPrice
       ?? row.open_price
       ?? Number.NaN,
     );
     const close = Number(
-      row.marketClose
+      row.market_close
+      ?? row.marketClose
       ?? row.close
       ?? row.closePrice
       ?? row.close_price
@@ -376,7 +378,8 @@ export function extractGapStatsTable(rawRows: unknown[]): GapStatsRow[] {
     }
 
     let gapPct: number | null = null;
-    const directGap = row.gapPercentage
+    const directGap = row.gap_percentage
+      ?? row.gapPercentage
       ?? row.gapPercent
       ?? row.gap_pct
       ?? row.gapPct
@@ -387,8 +390,9 @@ export function extractGapStatsTable(rawRows: unknown[]): GapStatsRow[] {
       gapPct = Number(directGap);
     } else {
       const priorClose = Number(
-        row.priorClose
+        row.previous_day_close
         ?? row.prior_close
+        ?? row.priorClose
         ?? row.previousClose
         ?? Number.NaN,
       );

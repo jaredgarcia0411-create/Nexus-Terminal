@@ -54,6 +54,8 @@ vi.mock('@/lib/agents/sentiment-client', () => ({
 }));
 
 import { AGENT_CONFIGS, resolveBlueprint } from '@/lib/agents/config';
+import { extractGapStatsTable as extractGapStatsTableSmallCap } from '@/lib/agents/blueprints/small-cap-research';
+import { extractGapStatsTable as extractGapStatsTableSwing } from '@/lib/agents/blueprints/swing-trader-research';
 
 function createJob(overrides: Partial<AgentJob> = {}): AgentJob {
   return {
@@ -219,6 +221,53 @@ function createMacroReportsDb(reportJson: unknown[] = []) {
     },
   };
 }
+
+describe('extractGapStatsTable (gap-stats parser regression guard)', () => {
+  // Canonical AskEdgar /v1/gap-stats row shape (confirmed from the live cache on 2026-04-22).
+  // If this test fails, the extractor has drifted from the real API shape again.
+  const sprcRow = {
+    date: '2026-04-01',
+    gap_percentage: 45.2,
+    market_open: 1.50,
+    market_close: 1.20,
+  };
+
+  it('parses canonical snake_case row in small-cap blueprint', () => {
+    const result = extractGapStatsTableSmallCap([sprcRow]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ date: '2026-04-01', gapPct: 45.2, open: 1.50, close: 1.20 });
+  });
+
+  it('parses canonical snake_case row in swing-trader blueprint', () => {
+    const result = extractGapStatsTableSwing([sprcRow]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ date: '2026-04-01', gapPct: 45.2, open: 1.50, close: 1.20 });
+  });
+
+  it('still parses camelCase rows (defensive fallback regression)', () => {
+    const camelRow = {
+      date: '2026-04-01',
+      gapPercentage: 10,
+      marketOpen: 1.00,
+      marketClose: 0.90,
+    };
+    const result = extractGapStatsTableSmallCap([camelRow]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ gapPct: 10, open: 1.00, close: 0.90 });
+  });
+
+  it('derives gapPct from previous_day_close when no direct gap field is present', () => {
+    const derivedRow = {
+      date: '2026-04-01',
+      market_open: 1.50,
+      market_close: 1.20,
+      previous_day_close: 1.00,
+    };
+    const result = extractGapStatsTableSmallCap([derivedRow]);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.gapPct).toBeCloseTo(50, 1);
+  });
+});
 
 describe('agent blueprints', () => {
   beforeEach(() => {
@@ -1282,7 +1331,6 @@ describe('agent blueprints', () => {
         cashNeed: { rating: 'green', explanation: 'Cash runway looks tight.' },
         overallOfferingRisk: { rating: 'green', explanation: 'High near-term offering risk.' },
         jmt415Commentary: null,
-        historicalStats: 'Average gap fade 18%.',
         gapStatsTable: [{ date: '1999-01-01', gapPct: 99, open: 99, close: 99 }],
         financialCommentary: { rating: 'red', explanation: 'Management flagged capital needs.' },
         confidence: 'high',
@@ -1431,7 +1479,6 @@ describe('agent blueprints', () => {
         cashNeed: { rating: 'green', explanation: 'Cash runway is tight.' },
         overallOfferingRisk: { rating: 'green', explanation: 'High probability of near-term offering.' },
         jmt415Commentary: null,
-        historicalStats: 'Average gap fade 18%.',
         gapStatsTable: [{ date: '2026-04-12', gapPct: 10, open: 10, close: 9 }],
         financialCommentary: { rating: 'red', explanation: 'Liquidity is pressured.' },
         confidence: 'high',
@@ -2202,7 +2249,6 @@ describe('agent blueprints', () => {
         cashNeed: { rating: 'green', explanation: 'Tight runway.' },
         overallOfferingRisk: { rating: 'green', explanation: 'High risk.' },
         jmt415Commentary: null,
-        historicalStats: 'Avg fade 18%.',
         gapStatsTable: [],
         financialCommentary: { rating: 'yellow', explanation: 'Commentary was mixed.' },
         confidence: 'high',

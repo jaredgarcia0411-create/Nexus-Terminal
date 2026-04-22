@@ -126,7 +126,6 @@ const researchReportSchema = z.object({
   cashNeed: ratedSection,
   overallOfferingRisk: ratedSection,
   jmt415Commentary: z.string().nullable(),
-  historicalStats: z.string(),
   gapStatsTable: z.array(z.object({
     date: z.string(),
     gapPct: z.number(),
@@ -320,7 +319,7 @@ function normalizeGapRow(value: unknown): {
 
   const open = getNumberField(value, ['open', 'marketOpen', 'market_open']);
   const close = getNumberField(value, ['close', 'marketClose', 'market_close']);
-  const high = getNumberField(value, ['high', 'intradayHigh', 'intraday_high']);
+  const high = getNumberField(value, ['high_price', 'high', 'intradayHigh', 'intraday_high']);
 
   if (open === null || close === null || high === null || !Number.isFinite(open) || !Number.isFinite(close) || !Number.isFinite(high) || open === 0) {
     return null;
@@ -349,14 +348,16 @@ export function extractGapStatsTable(rawRows: unknown[]): GapStatsRow[] {
 
     const date = rawDate.slice(0, 10);
     const open = Number(
-      row.marketOpen
+      row.market_open
+      ?? row.marketOpen
       ?? row.open
       ?? row.openPrice
       ?? row.open_price
       ?? Number.NaN,
     );
     const close = Number(
-      row.marketClose
+      row.market_close
+      ?? row.marketClose
       ?? row.close
       ?? row.closePrice
       ?? row.close_price
@@ -367,7 +368,8 @@ export function extractGapStatsTable(rawRows: unknown[]): GapStatsRow[] {
     }
 
     let gapPct: number | null = null;
-    const directGap = row.gapPercentage
+    const directGap = row.gap_percentage
+      ?? row.gapPercentage
       ?? row.gapPercent
       ?? row.gap_pct
       ?? row.gapPct
@@ -378,8 +380,9 @@ export function extractGapStatsTable(rawRows: unknown[]): GapStatsRow[] {
       gapPct = Number(directGap);
     } else {
       const priorClose = Number(
-        row.priorClose
+        row.previous_day_close
         ?? row.prior_close
+        ?? row.priorClose
         ?? row.previousClose
         ?? Number.NaN,
       );
@@ -740,7 +743,6 @@ function buildResearchPrompt(input: z.infer<typeof researchPipelineInputSchema>)
     cashNeed: { rating: 'green | yellow | red', explanation: 'string' },
     overallOfferingRisk: { rating: 'green | yellow | red', explanation: 'string' },
     jmt415Commentary: 'string or null',
-    historicalStats: 'string summary of gap-stats data',
     gapStatsTable: [{ date: '2026-04-17', gapPct: 12.5, open: 1.23, close: 1.18 }],
     financialCommentary: { rating: 'green | yellow | red', explanation: 'string' },
     confidence: 'high | medium | low',
@@ -774,12 +776,12 @@ function buildResearchPrompt(input: z.infer<typeof researchPipelineInputSchema>)
     `Deterministic analysis:\n${wrapUntrusted('deterministic-analysis', JSON.stringify(input.deterministicAnalysis, null, 2))}`,
     'Use the JMT traffic-light rating system. Each rating must be "green", "yellow", or "red" (lowercase).',
     'For jmt415Commentary: if deterministicAnalysis.hasJmt415Content is false, set to null. If true, note the presence of JMT content based on the Recent news & filings section.',
-    'For historicalStats: summarize gap-stats patterns (avg gap fade, same-day fade count, typical range). If no gap-stats data, say "No historical gap data available."',
     'For gapStatsTable: copy the exact Historical Gap Data rows into the JSON output. If the table says no data is available, return an empty array.',
     'For financialCommentary: rate the Management Commentary section using the traffic-light system and explain the cash, liquidity, or financing signal in one short paragraph.',
     "When rating 'News / Why It's Running', quote the exact headline text of the single most relevant item from the Recent news & filings section. Reference the formType in parentheses (e.g., (8-K)).",
     'Do not claim "no recent news available" unless the Recent news & filings section is empty. Do not fabricate headlines.',
     'Use the Deterministic analysis section as precomputed inputs. Do not recalculate those values in the response.',
+    'For chartHistory: rate the ticker\'s technical posture and gap follow-through history. Base the explanation on (1) rsi, ema9, ema21, high1m, low1m, sector from priceContext and (2) gapCount, sameDayFadeRate, avgHighExtension, avgCloseVsOpen from deterministicAnalysis. Do NOT write "no historical gap data available" in chartHistory — that phrase belongs only to the gapStatsTable section. If gapCount is 0, still rate the chart setup using price-context technicals and acknowledge thin gap priors in one clause.',
   ].join('\n\n');
 }
 

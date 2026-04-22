@@ -47,7 +47,6 @@ export interface SmallCapResearchReport {
   cashNeed: TrafficLightSection;
   overallOfferingRisk: TrafficLightSection;
   jmt415Commentary: string | null;
-  historicalStats: string;
   gapStatsTable: GapStatsRow[];
   financialCommentary: { rating: TrafficLight; explanation: string };
   confidence: Confidence;

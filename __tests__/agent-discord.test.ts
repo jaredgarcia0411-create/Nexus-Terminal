@@ -51,7 +51,6 @@ function createStoredReport(overrides: Partial<(typeof agentReports.$inferSelect
       offeringAbility: { rating: 'green', explanation: 'ATM can be tapped immediately.' },
       cashNeed: { rating: 'yellow', explanation: 'Runway is moderate.' },
       overallOfferingRisk: { rating: 'green', explanation: 'Offering probability is elevated.' },
-      historicalStats: 'Average gap fade 18%.',
       gapStatsTable: [],
       financialCommentary: { rating: 'yellow', explanation: 'Management commentary was mixed.' },
       confidence: 'high',
@@ -80,7 +79,6 @@ function createSmallCapReportJson(overrides: Partial<SmallCapResearchReport> = {
     cashNeed: { rating: 'yellow', explanation: 'Runway is moderate.' },
     overallOfferingRisk: { rating: 'green', explanation: 'Offering probability is elevated.' },
     jmt415Commentary: 'JMT-415 context is supportive.',
-    historicalStats: 'Average gap fade 18%.',
     gapStatsTable: [],
     financialCommentary: { rating: 'yellow', explanation: 'Management commentary was mixed.' },
     confidence: 'high',
@@ -480,7 +478,6 @@ describe('agent discord helpers', () => {
         offeringAbility: { rating: 'green', explanation: 'Stored offering ability.' },
         cashNeed: { rating: 'yellow', explanation: 'Stored cash need.' },
         overallOfferingRisk: { rating: 'green', explanation: 'Stored overall risk.' },
-        historicalStats: 'Stored historical stats.',
         gapStatsTable: [],
         financialCommentary: { rating: 'yellow', explanation: 'Stored commentary was mixed.' },
         confidence: 'high',
@@ -539,7 +536,6 @@ describe('agent discord helpers', () => {
         offeringAbility: { rating: 'green', explanation: 'ATM is live.' },
         cashNeed: { rating: 'red', explanation: 'Cash runway is healthy.' },
         overallOfferingRisk: { rating: 'green', explanation: 'Odds of an offering remain high.' },
-        historicalStats: 'Average gap fade 22%.',
         gapStatsTable: [{ date: '2026-04-11', gapPct: 12.34, open: 1.23, close: 1.1 }],
         financialCommentary: { rating: 'red', explanation: 'Management highlighted liquidity concerns.' },
       }),
@@ -553,11 +549,6 @@ describe('agent discord helpers', () => {
     expect(embed.fields).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'Ticker', value: 'NVDA' }),
       expect.objectContaining({ name: 'Confidence', value: 'high' }),
-      expect.objectContaining({
-        name: 'Historical Stats',
-        value: '```\nAverage gap fade 22%.\n```',
-        inline: false,
-      }),
     ]));
   });
 
