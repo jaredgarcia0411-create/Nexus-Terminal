@@ -110,7 +110,7 @@ function main() {
   const tickers = [...new Set(matched.map((t) => t.ticker))].sort();
   console.log(`\nUnique tickers (${tickers.length}): ${tickers.join(", ")}`);
   console.log(`\nNext step: Open ${OUTPUT_FILE} and fill in each trade's details.`);
-  console.log(`See Section 27 of AGENTIC_EXPANSIONV2.md for field definitions.\n`);
+  console.log(`See Section 27 of docs/AGENTIC_EXPANSIONV2.md for field definitions.\n`);
 }
 
 main();

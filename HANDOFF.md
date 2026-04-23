@@ -19,6 +19,7 @@ Most recent validation (`2026-04-23`, System Sheet Sync):
 ## Follow-Up Notes
 
 - Latent bug to investigate separately: `lib/askedgar.ts:840` reads `intraday_high` as the primary key for the gap-stats high field, but the AskEdgar `/v1/gap-stats` endpoint actually returns `high_price`. The research blueprints bypass the canonical mapper (reading `rawData['gap-stats']` directly) so this does not currently break research reports, but any other consumer of the mapped snapshot's `gapStats` array will see `intradayHigh: null` on every row. File a dedicated spec if/when another feature depends on the mapped snapshot.
+- Ask Edgar replacement research was saved to `docs/ae-buildout.md` on 2026-04-23. `FUTURE-PLANS.md` and `AGENTIC_EXPANSIONV2.md` were moved into `docs/` to keep planning material consolidated.
 
 ---
 
