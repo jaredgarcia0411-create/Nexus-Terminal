@@ -155,6 +155,13 @@
       "when": 1776714790065,
       "tag": "0021_adorable_proudstar",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1776977069679,
+      "tag": "0022_system_tickers",
+      "breakpoints": true
     }
   ]
 }

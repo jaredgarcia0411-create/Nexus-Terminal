@@ -406,3 +406,27 @@ export const weeklyReviews = pgTable('weekly_reviews', {
   unique().on(t.userId, t.weekStart),
   index('weekly_reviews_user_week_idx').on(t.userId, t.weekStart),
 ]);
+
+// Shared system-trades log from the team's Google Sheet — no userId, shared across all users
+export const systemTickers = pgTable('system_tickers', {
+  id: text('id').primaryKey(),
+  ticker: text('ticker').notNull(),
+  date: date('date').notNull(),
+  grade: text('grade'),
+  primaryAgenda: text('primary_agenda'),
+  secondaryAgenda: text('secondary_agenda'),
+  setupType: text('setup_type'),
+  outcome: text('outcome'),
+  tickerWinLoss: text('ticker_win_loss'),
+  tickerR: doublePrecision('ticker_r'),
+  triggerCount: integer('trigger_count'),
+  day1GapPct: doublePrecision('day1_gap_pct'),
+  attemptsJson: jsonb('attempts_json').notNull().default([]),
+  rawJson: jsonb('raw_json').notNull(),
+  importedAt: timestamp('imported_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique('system_tickers_ticker_date_unique').on(table.ticker, table.date),
+  index('system_tickers_date_idx').on(table.date),
+  index('system_tickers_ticker_idx').on(table.ticker),
+]);
