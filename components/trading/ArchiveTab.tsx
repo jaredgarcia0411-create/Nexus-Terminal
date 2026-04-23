@@ -159,7 +159,7 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
     if (!file) return;
 
     setSyncing(true);
-    setSyncStatus('Parsing sheet…');
+    setSyncStatus(null);
 
     try {
       const text = await file.text();
@@ -167,11 +167,9 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
       const { rows, warnings } = parseSystemSheet(text);
 
       if (rows.length === 0) {
-        setSyncStatus(`No rows parsed. ${warnings.length} warning(s).`);
-        return;
+        throw new Error(`No rows parsed (${warnings.length} warning(s))`);
       }
 
-      setSyncStatus(`Uploading ${rows.length} row(s)…`);
       const response = await fetch('/api/system-sheet/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -183,17 +181,15 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
         throw new Error(errorBody?.error ?? `Sync failed with status ${response.status}`);
       }
 
-      const result = (await response.json()) as { inserted: number; updated: number; total: number };
-      const skipped = warnings.length;
-      const skippedSuffix = skipped > 0 ? `, ${skipped} skipped` : '';
-      setSyncStatus(`Synced: ${result.inserted} new, ${result.updated} updated${skippedSuffix}.`);
+      await response.json();
+      setSyncStatus('Synced');
 
       if (warnings.length > 0) {
         console.warn('System sheet sync warnings:', warnings);
       }
     } catch (error) {
       console.error('System sheet sync failed', error);
-      setSyncStatus(`Sync failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+      setSyncStatus('Failed');
     } finally {
       setSyncing(false);
     }
