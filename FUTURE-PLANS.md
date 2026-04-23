@@ -649,3 +649,123 @@ In-site agent depends on the AEV2 blueprint system being stable in production, a
 - Dashboard placement — top card, dedicated section, or new tab?
 - How macro data is sourced (FMP? econ calendar API? scraped?).
 - Overlap with the Market Pulse Discord bot above — can they share the same data pipeline?
+
+---
+
+## Self-Host Learning Project — Shadow Coolify + Hetzner Staging (2026-04-23)
+
+**Goal:** Build a *non-production* mirror of Nexus Terminal on a Hetzner VPS running Coolify, behind Cloudflare Tunnel, with a flat-rate managed Postgres. Use it to learn Linux/TLS/backups/deploys on something that doesn't matter. **Not a migration** — Vercel + Neon keep running prod the entire time. The success bar is: *restore a full DB backup to a fresh box in under 1 hour, unaided.*
+
+### Why this, not a direct migration
+- Migrating prod as my first Linux exposure is the footgun — backup I never tested, `pg_hba.conf` left permissive after debugging, cert renewal silently broken.
+- A shadow env lets me break things safely. When I can prove recovery, *then* flipping over is a decision, not a gamble.
+- Side benefit: real second environment for testing risky changes before they hit prod.
+
+### Cost
+- Hetzner CX22 (Ashburn): ~€4.15/mo (~$4.50)
+- DigitalOcean Managed Postgres (1GB basic): $15/mo
+- Cloudflare free tier: $0
+- **Total: ~$20/mo** for the staging stack, while prod keeps running.
+
+### Success criteria (how I know I'm done)
+1. Staging URL (e.g. `staging.nexusterminal.dev`) serves a working mirror of the app via Cloudflare Tunnel.
+2. Deploys happen by pushing to a `staging` git branch — no SSH required for normal updates.
+3. Weekly automated `pg_dump` lands in encrypted off-box storage (Backblaze B2 or S3).
+4. I can destroy the DB, restore from latest backup, and have the app working again — in under 1 hour, from memory.
+5. I have a one-page runbook covering: how to SSH in, where logs live, how to roll back a deploy, how to restore the DB.
+
+### Phase 1 — Provision & harden the VPS (~2–3 hrs)
+1. Create Hetzner account, provision **CX22 Ubuntu 24.04 LTS** in Ashburn (low latency to US markets).
+2. Add my SSH public key during creation. Never touch root password.
+3. First SSH in as root, then immediately:
+   - Create non-root sudo user (`adduser jared && usermod -aG sudo jared`).
+   - Copy SSH key to the new user (`rsync --archive --chown=jared:jared ~/.ssh /home/jared`).
+   - Edit `/etc/ssh/sshd_config`: `PermitRootLogin no`, `PasswordAuthentication no`. Reload sshd.
+4. Install + enable UFW: allow 22, deny everything else. (Coolify will add 80/443 later.)
+5. Install `fail2ban` with default sshd jail.
+6. Install `unattended-upgrades` and confirm it's enabled for security updates.
+7. Log out, log back in as `jared`, confirm root login is dead.
+
+**Why each step:** SSH key-only + non-root user + UFW + fail2ban + auto-updates is the entire beginner security baseline. Skipping any one of them is how boxes get owned.
+
+### Phase 2 — Install Coolify (~1 hr)
+1. Run the Coolify one-liner installer on the VPS.
+2. Open Coolify on port 8000 *via SSH tunnel only* (`ssh -L 8000:localhost:8000 jared@vps`) — don't expose the dashboard publicly.
+3. Set admin password, configure SMTP-less (skip email), add my git provider (GitHub).
+4. Inside Coolify, create a "Staging" project.
+
+**Why SSH tunnel for the dashboard:** the Coolify admin UI is high-value attack surface. Keeping it on localhost behind SSH means even a mis-click can't expose it.
+
+### Phase 3 — Cloudflare Tunnel (~1 hr)
+1. In Cloudflare dashboard → Zero Trust → Networks → Tunnels, create a new tunnel. Copy the install command.
+2. On the VPS, install `cloudflared` and run the tunnel as a systemd service.
+3. Route `staging.<mydomain>` → `http://localhost:3000` (or whatever port Coolify assigns).
+4. Remove ports 80/443 from UFW if I opened them — they're not needed. **The tunnel means the box has no public inbound ports except 22.**
+
+**Why this over exposing 80/443 directly:** no public IP = no DDoS surface, no cert management (Cloudflare handles TLS), works behind CGNAT if I ever move the box home. For a beginner, this is the single biggest safety upgrade over raw VPS.
+
+### Phase 4 — Managed Postgres + mirror the schema (~2 hrs)
+1. Create DigitalOcean Managed Postgres (basic single-node, 1GB, cheapest tier). Note: *not* self-hosted. The goal here is learning Linux + deploys, not learning DB ops simultaneously.
+2. Run my existing Drizzle migrations against the new DB: `DATABASE_URL=<do-url> npx drizzle-kit push` (or whatever command the project uses — check `package.json`).
+3. Dump Neon prod schema + *seed data only* (not real user data) and restore to DO: `pg_dump --schema-only` then a small curated seed script. **Do not copy coworkers' real trades into staging.**
+4. In Coolify, set `DATABASE_URL` to the DO connection string for the staging app.
+
+**Why managed and not self-hosted Postgres:** the DB holds irreplaceable data. Learning Linux on the app tier is recoverable (rebuild the box); learning Postgres ops on a trading DB is not. Flat-rate managed PG sidesteps the usage-billing gripe without taking on DB admin risk.
+
+### Phase 5 — Deploy the app (~2–3 hrs)
+1. Create a `staging` branch off main.
+2. In Coolify, add the GitHub repo, point it at `staging`, set build command to `npm run build`, start command to `npm start`.
+3. Copy all env vars from Vercel to Coolify. Use **test API keys** wherever possible (Discord bot in a test server, separate Anthropic key with low limit, etc.).
+4. First deploy. Expect 2–3 issues on first run — `next build` OOM, missing env var, path case sensitivity (Linux vs macOS). Each failure is a learning moment; don't throw hardware at it before understanding.
+5. Verify the staging URL serves the app, login works, a basic page loads.
+
+**Why a `staging` branch:** Coolify auto-deploys on push. Keeping staging on its own branch means I can break it freely without touching what Vercel deploys from `main`.
+
+### Phase 6 — Cron jobs (~1 hr)
+1. The two existing Vercel crons (`/api/discord/cron/sync`, `/api/cron/agent-retention`) need an equivalent scheduler off Vercel.
+2. Easiest path: a **systemd timer** on the VPS that `curl`s the internal endpoint with the `CRON_SECRET` header. Write one `.service` + one `.timer` file per job under `/etc/systemd/system/`.
+3. `systemctl enable --now <name>.timer`, then `systemctl list-timers` to confirm.
+4. Check `journalctl -u <name>.service` after the first fire to confirm it actually hit the endpoint.
+
+**Why systemd timers:** already on the box, journald gives me logs, no extra deps, no third-party scheduler to trust. GitHub Actions cron is unreliable — drops jobs on inactive repos and delays under load.
+
+### Phase 7 — Backups + the restore drill (~3–4 hrs) — THE MOST IMPORTANT PHASE
+1. Create a Backblaze B2 bucket (cheaper than S3 for backups; free tier covers 10 GB).
+2. Write a `/usr/local/bin/pg-backup.sh` script: `pg_dump -Fc` → encrypt with `gpg --symmetric` → upload via `rclone` to B2. Include the date in the filename.
+3. Add a systemd timer running it **daily at 03:00 UTC**.
+4. Add a second timer that deletes B2 objects older than 30 days (retention).
+5. **The drill (do this on the calendar, quarterly):**
+   - Provision a second throwaway VPS (or just a fresh DO Postgres DB).
+   - Download latest B2 backup, decrypt, restore with `pg_restore`.
+   - Point the staging app at the restored DB. Confirm it works.
+   - **Time the whole operation.** Target: under 1 hour.
+6. Only after the restore drill passes do I consider this phase done.
+
+**Why this phase gets its own block:** untested backups are the #1 self-hosted horror story. A backup that has never been restored *is not a backup* — it's a hope. Running the drill once proves the chain works; doing it quarterly catches silent corruption before it matters.
+
+### Phase 8 — Runbook (~1 hr)
+Single markdown file at `docs/staging-runbook.md` covering:
+- VPS IP, SSH command, who has access.
+- How to open Coolify UI (SSH tunnel command).
+- Where app logs live (`journalctl` / Coolify UI).
+- How to force-redeploy from Coolify dashboard.
+- How to roll back a deploy.
+- How to restore the DB (exact commands).
+- Cloudflare Tunnel dashboard link.
+- B2 bucket name + how to list/download backups.
+
+**Why write this now, not later:** in 6 months when something's broken at 11pm, I won't remember any of this. The runbook *is* the project output — the VPS is just the medium I learned on.
+
+### Deferred / out of scope
+- **Self-hosting Postgres.** Explicitly skipped. Revisit only after 6 months of successful Coolify operations.
+- **Moving prod.** No cutover until the restore drill has passed twice.
+- **Preview deploys per PR.** Vercel does this invisibly; Coolify needs extra config. Not worth it for staging.
+- **Monitoring/alerting stack.** UptimeRobot free tier pinging the staging URL is enough for a learning env.
+
+### Decision checkpoint (after Phase 7 passes)
+Once the quarterly restore drill has passed **twice**, the question becomes: is the savings worth the ongoing ops time? Re-evaluate with real data instead of speculation:
+- Actual hours spent on staging in the last 6 months.
+- Actual Vercel bill trajectory.
+- How many times staging caught a bug that prod would have shipped.
+
+If the answer is "migrate prod," the mechanical work is ~1 day: swap DNS, `pg_dump` Neon → DO, flip env vars. The scary parts will already be solved.
