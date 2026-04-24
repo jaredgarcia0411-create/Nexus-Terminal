@@ -1,6 +1,6 @@
 # Nexus Terminal — HANDOFF.md
 
-> Updated: 2026-04-23
+> Updated: 2026-04-24
 > Purpose: brief summary of recently completed work plus any active execution spec. Older implementation detail lives in git history and `specs/`.
 > Historical completed sections were archived to keep this file focused. Agent Hardening #1 shipped in `7118598`; Agent Hardening #2 in `2a856f1`; Agent Hardening #3 in `bf13567`; Research agent report refinements in `9a69655` (2026-04-17); Trade Journal Enhancement (DRC + Weekly Review + Archive tab) shipped across `4757fa3`, `0e41b5a`, `8dd6b12`, `fe97e8c`, `c300153` (2026-04-19 → 2026-04-20); Tighten Trading Journal UI shipped in `f1fde41` (2026-04-20); Spend Enforcement Fix shipped across `7aad160`, `abdefe9`, `1bd5e1e`, `8ad674e`, `9f0a123` (2026-04-20); Research Gap-Stats Parser + Redundancy Fix shipped in `0e96e16` (2026-04-22); Research Chart History Polish shipped in `5fc5b9e` (2026-04-22). See git history for full records.
 
@@ -20,6 +20,7 @@ Most recent validation (`2026-04-23`, System Sheet Sync):
 
 - Latent bug to investigate separately: `lib/askedgar.ts:840` reads `intraday_high` as the primary key for the gap-stats high field, but the AskEdgar `/v1/gap-stats` endpoint actually returns `high_price`. The research blueprints bypass the canonical mapper (reading `rawData['gap-stats']` directly) so this does not currently break research reports, but any other consumer of the mapped snapshot's `gapStats` array will see `intradayHigh: null` on every row. File a dedicated spec if/when another feature depends on the mapped snapshot.
 - Ask Edgar replacement research was saved to `docs/ae-buildout.md` on 2026-04-23. `FUTURE-PLANS.md` and `AGENTIC_EXPANSIONV2.md` were moved into `docs/` to keep planning material consolidated.
+- Ask Edgar buildout planning was expanded on 2026-04-24 with refined endpoint classifications, an in-house phase plan, site/agent integration notes, storage guidance, external-tool needs, cost tradeoffs, and endpoints that may not be worth replacing.
 
 ---
 
