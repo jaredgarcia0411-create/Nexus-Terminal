@@ -17,7 +17,6 @@ interface TradesTabProps {
   searchQuery: string;
   riskInput: string;
   defaultRiskInput: string;
-  defaultRisk: number | null;
   bulkTagInput: string;
   onSearchQueryChange: (value: string) => void;
   onToggleFilterTag: (tag: string) => void;
@@ -46,7 +45,6 @@ export default function TradesTab({
   hasActiveFilters,
   searchQuery,
   defaultRiskInput,
-  defaultRisk,
   onSearchQueryChange,
   onToggleFilterTag,
   onClearFilterTags,
@@ -123,7 +121,6 @@ export default function TradesTab({
             <Button onClick={onSetDefaultRisk} className="bg-emerald-500 hover:bg-emerald-400">
               Set Auto Risk
             </Button>
-            {defaultRisk != null ? <span className="text-xs text-zinc-500">Future trades: ${defaultRisk.toLocaleString()}</span> : null}
           </div>
           <div className="flex items-center gap-2">
             <input

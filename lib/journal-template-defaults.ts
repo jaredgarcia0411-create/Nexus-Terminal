@@ -19,7 +19,6 @@ export const DAILY_DEFAULT_FIELDS: TemplateField[] = [
 ];
 
 export const WEEKLY_DEFAULT_FIELDS: TemplateField[] = [
-  { id: 'weeklyTotal', label: 'Total for the week', type: 'auto', required: false },
   { id: 'whatWorked', label: 'What worked', type: 'text', required: false },
   { id: 'whatDidnt', label: "What didn't work", type: 'text', required: false },
   { id: 'cycleNotes', label: 'Cycle notes', type: 'text', required: false },

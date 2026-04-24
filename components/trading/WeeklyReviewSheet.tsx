@@ -7,11 +7,25 @@ import { toast } from 'sonner';
 import TemplateFieldRenderer from '@/components/trading/TemplateFieldRenderer';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { aggregateWeek, type WeekAggregate } from '@/lib/journal-aggregates';
+import { aggregateWeek } from '@/lib/journal-aggregates';
 import { WEEKLY_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
 import { formatCurrency } from '@/lib/trading-utils';
 import type { Trade } from '@/lib/types';
 import type { TemplateField } from '@/lib/validations/reviews';
+
+const GRADE_FIELD: TemplateField = {
+  id: 'grade',
+  label: 'Grade',
+  type: 'enum',
+  required: false,
+  options: ['A+', 'A', 'B+', 'B', 'C+', 'C', 'D', 'F'],
+};
+
+const HOISTED_FIELD_IDS = new Set(['weeklyTotal', 'netResult', 'rTotal', 'grade']);
+
+function formatRTotal(r: number): string {
+  return `${r >= 0 ? '+' : ''}${r.toFixed(2)}R`;
+}
 
 interface WeeklyReviewSheetProps {
   open: boolean;
@@ -89,11 +103,15 @@ export default function WeeklyReviewSheet({
           setExisting(found);
           setFields(cloneTemplateFields(found.templateSnapshot));
           const merged: Record<string, unknown> = { ...found.reportData };
-          if (merged.weeklyTotal == null) merged.weeklyTotal = formatWeeklyTotal(agg);
+          if (merged.netResult == null) merged.netResult = formatCurrency(agg.netResult);
+          if (merged.rTotal == null) merged.rTotal = formatRTotal(agg.rTotal);
           setReportData(merged);
         } else if (tmpl) {
           setFields(cloneTemplateFields(tmpl.fields));
-          setReportData({ weeklyTotal: formatWeeklyTotal(agg) });
+          setReportData({
+            netResult: formatCurrency(agg.netResult),
+            rTotal: formatRTotal(agg.rTotal),
+          });
         }
       })
       .finally(() => setLoading(false));
@@ -217,7 +235,34 @@ export default function WeeklyReviewSheet({
           <div className="flex h-32 items-center justify-center text-sm text-zinc-500">Loading…</div>
         ) : (
           <div className="mt-4 space-y-6 p-4">
-            {agg && agg.perDayR.length > 0 ? <RBarStrip perDayR={agg.perDayR} /> : null}
+            {agg ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                {agg.perDayR.length > 0 ? (
+                  <RBarStrip perDayR={agg.perDayR} />
+                ) : (
+                  <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-xs text-zinc-500">
+                    No trades logged this week.
+                  </div>
+                )}
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Total for the Week
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-zinc-100">
+                      Net {formatCurrency(agg.netResult)} · {formatRTotal(agg.rTotal)} · {agg.tradeIds.length} trade
+                      {agg.tradeIds.length === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                  <TemplateFieldRenderer
+                    field={GRADE_FIELD}
+                    value={reportData.grade}
+                    readOnly={readOnly}
+                    onChange={(nextValue) => setReportData((prev) => ({ ...prev, grade: nextValue }))}
+                  />
+                </div>
+              </div>
+            ) : null}
 
             {editingTemplate && !isExistingReport && !readOnly ? (
               <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
@@ -287,15 +332,17 @@ export default function WeeklyReviewSheet({
             ) : null}
 
             <div className="space-y-3">
-              {fields.map((field) => (
-                <TemplateFieldRenderer
-                  key={field.id}
-                  field={field}
-                  value={reportData[field.id]}
-                  readOnly={readOnly}
-                  onChange={(nextValue) => setReportData((prev) => ({ ...prev, [field.id]: nextValue }))}
-                />
-              ))}
+              {fields
+                .filter((field) => !HOISTED_FIELD_IDS.has(field.id))
+                .map((field) => (
+                  <TemplateFieldRenderer
+                    key={field.id}
+                    field={field}
+                    value={reportData[field.id]}
+                    readOnly={readOnly}
+                    onChange={(nextValue) => setReportData((prev) => ({ ...prev, [field.id]: nextValue }))}
+                  />
+                ))}
             </div>
 
             {!readOnly ? (
@@ -314,13 +361,6 @@ export default function WeeklyReviewSheet({
       </SheetContent>
     </Sheet>
   );
-}
-
-function formatWeeklyTotal(agg: WeekAggregate): string {
-  const net = formatCurrency(agg.netResult);
-  const rSigned = `${agg.rTotal >= 0 ? '+' : ''}${agg.rTotal.toFixed(2)}R`;
-  const tradeCount = agg.tradeIds.length;
-  return `Net ${net} · ${rSigned} · ${tradeCount} trade${tradeCount === 1 ? '' : 's'}`;
 }
 
 function RBarStrip({ perDayR }: { perDayR: { date: string; r: number }[] }) {

@@ -78,7 +78,6 @@ export default function NexusTerminal() {
     endDate,
     riskInput,
     defaultRiskInput,
-    defaultRisk,
     filterPreset,
     selectedFilterTags,
     bulkTagInput,
@@ -276,7 +275,6 @@ export default function NexusTerminal() {
                   onTradeClick={(trade) => setSelectedTradeId(trade.id)}
                   riskInput={riskInput}
                   defaultRiskInput={defaultRiskInput}
-                  defaultRisk={defaultRisk}
                   bulkTagInput={bulkTagInput}
                   onSearchQueryChange={setSearchQuery}
                   onRiskInputChange={setRiskInput}

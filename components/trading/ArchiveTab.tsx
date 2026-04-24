@@ -268,6 +268,7 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
                 <th className="px-4 py-3">Date / Range</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Grade</th>
+                <th className="px-4 py-3">R Result</th>
                 <th className="px-4 py-3">Net Result</th>
                 <th className="px-4 py-3" />
               </tr>
@@ -281,6 +282,13 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
                     ? netRaw
                     : typeof netRaw === 'number'
                       ? formatCurrency(netRaw)
+                      : '—';
+                const rRaw = review.reportData.rTotal;
+                const rResult =
+                  typeof rRaw === 'string'
+                    ? rRaw
+                    : typeof rRaw === 'number'
+                      ? `${rRaw >= 0 ? '+' : ''}${rRaw.toFixed(2)}R`
                       : '—';
 
                 return (
@@ -302,6 +310,7 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-zinc-300">{grade ?? '—'}</td>
+                    <td className="px-4 py-3 text-zinc-300">{rResult}</td>
                     <td className="px-4 py-3 text-zinc-300">{net}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
