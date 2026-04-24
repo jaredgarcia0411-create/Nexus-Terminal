@@ -31,30 +31,12 @@ Add 4 new fields to the `trades` table:
 
 ### Option 2: Full Journal Migration — Daily/Weekly Review in Nexus
 
-**Status (2026-04-19):** SPEC'D — see active execution spec in `HANDOFF.md` ("Trade Journal Enhancement — DRC + Weekly Review + Archive"). Final design supersedes the original sketch below.
+**Status:** SHIPPED 2026-04-19 → 2026-04-20. DRC + Weekly Review + Archive tab live. Commits `4757fa3`, `0e41b5a`, `8dd6b12`, `fe97e8c`, `c300153`, `f1fde41`. See git history for implementation detail and the original design decisions.
 
-**Final design decisions (locked in before spec):**
-- **Calendar location:** duplicate-rendered at top of `JournalTab` (Dashboard keeps its copy). Collapsible, `localStorage`-persisted.
-- **Interaction:** click day → DRC side-sheet; click weekly row → Weekly Review side-sheet. Same shadcn `Sheet` primitive `TradeDetailSheet` uses.
-- **Editable templates:** per-user, reorder + rename + required-toggle of fixed-type fields (bool/text/number/enum/auto). Stored as JSON; no migrations when template changes.
-- **Template snapshots:** each saved DRC/Weekly copies the template `fields[]` into its own row at save time. Old reports preserve their original layout; future reports pick up the edited template. Eliminates orphan-key problem entirely.
-- **Chart auto-attach (v1):** live-reference via `tradeIds[]` — report re-renders existing `JournalTradeChart` on open. No blob storage until PDF export arrives.
-- **Auto-populated fields:** `grossResult`, `netResult`, `rTotal`, `perDayR` computed from trades by new `lib/journal-aggregates.ts` helpers.
-- **Archive tab:** new top-level tab, flat list + type/date filters, JSON export per report (`Blob` download). Keyboard shortcut is `g a` sequence — the numeric 1–6 tab shortcuts stay untouched.
-- **Template editing UX:** pencil icon inside new-report sheets (hidden on saved reports); includes "Reset to defaults" button.
-- **Save model:** explicit Save button (no autosave). Reopening a day loads the existing DRC and upserts on save.
-
-**Starting template fields (DRC):** followedProcess (bool), riskedAccordingly (bool), missedTrades (text), thoughts (text), goals (text), grossResult (auto), netResult (auto), rTotal (auto), grade (enum A+…F).
-
-**Starting template fields (Weekly):** perDayR (auto bar strip), whatWorked (text), whatDidnt (text), cycleNotes (text), goalsNextWeek (text).
-
-**Deferred to later phases:**
-- `hodTime` / `lodTime` trade fields (Option 1 or separate spec).
+**Deferred (not shipped with Option 2):**
+- `hodTime` / `lodTime` trade fields (folds into Option 1 or separate spec).
 - Chart screenshot → Vercel Blob storage (needed for PDF export).
 - PDF export.
-- Mobile nav "More" menu collapse (v1 uses `overflow-x-auto`).
-
-**Effort:** 5–7 Codex sessions across 6 phases. See `HANDOFF.md` for per-phase steps.
 
 ---
 
@@ -153,96 +135,66 @@ Current route (`/api/tradingview/gainers`) only pulls 7 fields. Expand to includ
 
 ## Local AI Agent Research (2026-04-06)
 
-### Summary
+**Recommendation:** Claude API for production trading agents. Local models only for privacy-sensitive drafting/brainstorming. Cloud inference APIs (Groq, Google AI Studio, OpenRouter) are cheaper and more reliable than self-hosted hardware.
 
-Investigated running local LLMs (Hermes, Gemma 4, Llama 3.x) for personal assistant and trading agent use.
+### Why not local for agents
 
-### Key Findings
+- Local models (Hermes, Gemma 4, Llama 3.x) are fine for drafting, summarizing, structured output, general Q&A — bad at multi-step tool chaining (60–70% reliability vs 90%+ cloud), long context (8–32K vs 200K), and agentic autonomy.
+- Gemma 4 (27B) impressive for size but doesn't match 70B+ on hard tasks; tool use fragile.
+- Mini-PC clusters not practical — network latency kills throughput. One bigger machine wins.
+- Sweet-spot hardware if pursued: M4 Mac Mini 32GB (~$900) or desktop + RTX 3060 12GB (~$800) for 8–13B models.
 
-- **Local models are good for:** drafting content, brainstorming, summarizing pasted text, structured output, general Q&A
-- **Local models are bad at:** multi-step tool chaining (60-70% reliability vs 90%+ cloud), long context (8-32K vs 200K), agentic autonomy
-- **Gemma 4 (27B):** Impressive for size but doesn't match 70B+ models on hard tasks. Tool use is fragile.
-- **Mini PC clusters:** Not practical — network latency kills throughput. Get one bigger machine instead.
-- **Sweet spot hardware:** M4 Mac Mini 32GB ($900) or desktop + RTX 3060 12GB ($800) for 8B-13B models
-- **Best free cloud inference:** Google AI Studio, Groq, Cerebras — all OpenAI-compatible APIs
+### Cloud inference providers
 
-### Recommendation
-
-Use cloud APIs (Claude) for production trading agents. Local models for privacy-sensitive drafting/brainstorming only. Cloud inference APIs (Groq, Google AI Studio, OpenRouter) are cheaper and more reliable than self-hosted hardware.
-
-### Cloud Inference Providers
-
-| Provider | Free Tier | Best For |
+| Provider | Free tier | Best for |
 |----------|-----------|----------|
 | Google AI Studio | Generous free | Gemma/Gemini, general tasks |
 | Groq | Rate-limited free | Extremely fast inference |
 | Cerebras | Rate-limited free | Fast inference |
 | OpenRouter | Pay-per-token | One API key for dozens of models |
 
-### Model Routing Strategy
+### Model routing strategy
 
-Use different models for different tasks based on complexity:
-- **Simple parsing/structured output** -> cheap/fast model (Gemma 12B via Groq, free)
-- **Research summaries/TLDRs** -> mid-tier model (Gemini Flash via Google AI Studio, free)
-- **Complex reasoning/analysis** -> Claude API (existing `lib/llm-client.ts`)
+- **Simple parsing / structured output** → cheap/fast (Gemma 12B via Groq, free).
+- **Research summaries / TLDRs** → mid-tier (Gemini Flash via Google AI Studio, free).
+- **Complex reasoning / analysis** → Claude API (existing `lib/llm-client.ts`).
 
 ---
 
 ## Agent Memory — Investigate Graphiti & Letta (2026-04-07)
 
-**Context:** AEV2 already has a working memory layer in `agent_memory_v2` (Postgres KV scoped by user+agent+category, see `lib/agents/memory.ts` and `lib/agents/types.ts:36-47`). For most trading-agent needs this is the right call — simple, queryable, auditable. Surveyed the broader landscape (mem0, Letta, Zep/Graphiti, Cognee, mempalace) and identified two systems worth revisiting **only when a specific limitation is hit**, not preemptively.
+**Context:** `agent_memory_v2` (Postgres KV scoped by user+agent+category, see `lib/agents/memory.ts`) is the current memory layer and the right primitive for structured trading facts. Surveyed the landscape (mem0, Letta, Zep/Graphiti, Cognee, mempalace) — two systems worth revisiting **only when a specific limitation is hit**, never preemptively.
 
-### Trigger 1: Temporal pattern queries -> investigate Graphiti
+### Trigger 1: temporal pattern queries → Graphiti
 
-**When to revisit:** When an agent (Small Cap or Swing) needs to answer questions like *"did the MDR runner setup work in Q1 but stop working after April?"* or *"what did I think about TSLA's float in February vs now?"* — questions where the **time validity of a fact** matters, not just its current value.
+Revisit when an agent needs questions where the **time validity of a fact** matters, not just its current value — e.g. *"did the MDR runner setup work in Q1 but stop after April?"* or *"what did I think about TSLA's float in February vs now?"*
 
-**Why Graphiti specifically:**
-- Bitemporal knowledge graph — every edge has `valid_from` / `valid_to` timestamps, so old facts aren't overwritten, they're superseded
-- OSS core of Zep (note: Zep Community Edition was deprecated in 2025 — Graphiti is the path forward)
-- Backend options: Neo4j or FalkorDB (FalkorDB is lighter, better for sidecar deployment)
-- Repo: https://github.com/getzep/graphiti
+- Bitemporal knowledge graph — every edge has `valid_from`/`valid_to`; old facts are superseded, not overwritten.
+- OSS core of Zep (Zep Community Edition deprecated in 2025). Backends: Neo4j or FalkorDB (FalkorDB lighter, better for sidecar). Repo: https://github.com/getzep/graphiti
+- **Shape:** sidecar container in `services/docker-compose.yml`, one graph namespace per agent, REST. Coexists with `agent_memory_v2` — KV for current facts, graph for "facts over time."
+- **Don't add until:** you write a SQL query against `agent_memory_v2` and can't express the temporal dimension cleanly.
 
-**Integration shape:** Run as a sidecar container in `services/docker-compose.yml`. One graph namespace per agent. Agents call it via REST. Would coexist with `agent_memory_v2`, not replace it — KV for current facts, graph for "facts over time."
+### Trigger 2: agent self-editing memory → Letta
 
-**Don't add until:** You write a SQL query against `agent_memory_v2` and realize you can't express the temporal dimension cleanly.
+Revisit when you want agents to **autonomously decide what to remember** rather than having `context.ts` and blueprint code do the writes. Today memory writes are in code paths you control; Letta's pitch is agent-called memory tools mid-conversation.
 
-### Trigger 2: Agent self-editing memory -> investigate Letta
-
-**When to revisit:** When you want agents to **autonomously decide what to remember** rather than having `context.ts` and blueprint code do all the writes. Today, memory writes happen in code paths you control. Letta's pitch is that the agent itself calls memory tools mid-conversation to update its own state.
-
-**Why Letta specifically:**
-- Built on the MemGPT paper — OS-style memory hierarchy: *core memory* (always in context, agent-editable), *recall memory* (conversation history, searchable), *archival memory* (long-term external store, searchable)
-- Agents are first-class REST services with Postgres persistence — matches the Neon stack
-- Docker-native, has an Agent Development Environment (ADE) GUI for inspecting memory state
-- Repo: https://github.com/letta-ai/letta
-
-**Integration shape:** Bigger lift than Graphiti — Letta wants to *be* the agent runtime, not just a memory store. Likely means rewriting one blueprint as a Letta agent to evaluate, not a drop-in addition.
-
-**Don't add until:** You hit a case where the deterministic "code writes memory" pattern is too rigid — e.g., the orchestrator needs to dynamically promote a `trade_insight` to `core memory` based on conversation flow, and hardcoding that logic feels wrong.
+- MemGPT-paper lineage: *core* (always in context, agent-editable) / *recall* (searchable history) / *archival* (long-term store). Agents are first-class REST services with Postgres persistence — fits the Neon stack. Docker-native, has an ADE GUI. Repo: https://github.com/letta-ai/letta
+- **Shape:** bigger lift than Graphiti — Letta wants to *be* the agent runtime. Evaluating means rewriting one blueprint as a Letta agent, not a drop-in.
+- **Don't add until:** the deterministic "code writes memory" pattern feels too rigid — e.g. orchestrator needs to dynamically promote a `trade_insight` to core memory based on conversation flow.
 
 ### What NOT to do
 
-- **Don't replace `agent_memory_v2`** with either system. The Postgres KV is the right primitive for structured trading facts (thesis, watchlist, scan_param, performance). Graphiti and Letta are *additions* for specific scenarios, not replacements.
-- **Don't adopt mempalace** — repo was 2 days old as of 2026-04-07, single dominant maintainer, Python+MCP only. Watch for 3-6 months and revisit if it stabilizes.
-- **Don't adopt mem0 or Cognee** — mem0 overlaps too much with what you already have, and Cognee is RAG-doc-heavy, wrong shape for trading agents.
+- **Don't replace `agent_memory_v2`** with either. Postgres KV is the right primitive for structured trading facts; Graphiti/Letta are additions, not replacements.
+- **Don't adopt mempalace** — 2 days old as of 2026-04-07, single maintainer, Python+MCP only. Watch 3–6 months.
+- **Don't adopt mem0 or Cognee** — mem0 overlaps what you have; Cognee is RAG-doc-heavy, wrong shape for trading agents.
 
-### Preemptive adoption considered & rejected (2026-04-12)
+### Why not preemptive (revisited 2026-04-12)
 
-Asked whether to add Graphiti/Letta now so agents build long-term memory from day one. Answer: **no — the trigger-based approach is still correct.** Reasons:
-
-1. **Agent output quality is upstream of memory.** The agents currently produce broken embeds (n/a fields, fabricated numbers). Fixing what agents *remember* is pointless if what they *say* is wrong. Solve the JMT output format first (see Agent Response Quality section).
-2. **No production data yet.** Sprint 4 just passed smoke tests. `agent_memory_v2` hasn't been exercised in production. There's nothing meaningful to store in a temporal graph or self-editing memory system yet.
-3. **Premature infrastructure cost.** Graphiti needs Neo4j/FalkorDB as a Docker sidecar. Letta wants to replace the entire agent runtime. Both are significant complexity for agents that have run a handful of test scans.
-4. **Right sequence:** Fix output quality → run agents daily in production → let `agent_memory_v2` accumulate real data for a few weeks → *then* evaluate if temporal queries or self-editing memory are needed.
-
-The triggers above remain the right gates. Revisit after agents have been running production scans for 2+ weeks.
+Agent output quality is upstream of memory — fix what agents *say* before tuning what they *remember*. `agent_memory_v2` hasn't been exercised at scale yet, so a temporal graph would have nothing to store. Both systems are significant infrastructure for agents that have run a handful of production scans. Right sequence: fix output → run daily in production → let `agent_memory_v2` accumulate → *then* evaluate.
 
 ### Action when triggered
 
-1. Re-read this note and the original `/learn` conversation
-2. Spike Graphiti/Letta in a branch — one agent, one use case, no production wiring
-3. Measure: does it actually answer the question that `agent_memory_v2` couldn't?
-4. Only then write an AEV2 sprint spec to integrate
+Re-read this note, spike the system on one blueprint + one use case in a branch with no production wiring, measure whether it actually answers the question `agent_memory_v2` couldn't, and only then write an AEV2 sprint to integrate.
 
 ---
 
@@ -263,150 +215,7 @@ P0, P1, P2, and Tier 1 are implemented. Execution details archived in HANDOFF.md
 
 ### Tier 2 — Next Sprint (Medium Impact, Medium Effort)
 
----
-
-## Agent Hardening Backlog (2026-04-15, refreshed 2026-04-16)
-
-**Context:** The current agent stack is already substantial: typed blueprints, DB-backed jobs, checkpoints, retry logic, runtime limits, and specialist routing are all in place. The next constraint is not "add more agent code" so much as "tighten the runtime controls before giving the system more autonomy."
-
-### Recently completed
-
-- Service endpoint authorization hardening shipped in commit `7118598`.
-- Prompt trust-boundary labeling shipped in commit `2a856f1`.
-- Memory / retention TTL-on-read shipped in commit `bf13567`.
-
-### Short follow-up note
-
-- Retention work now only needs routine production verification of the Vercel cron and future policy tweaks if TTL defaults or cleanup scope need to expand.
-
-### Hardening items to prioritize
-
-1. **Add approval gates for high-impact actions**
-   - **Current gap:** The prompt policy says the system should be careful, but the runtime does not yet have a general approval framework for consequential mutations or external side effects.
-   - **Why this matters:** "The model promised to be safe" is not a control. Any future write action, webhook trigger, broker integration, account mutation, or file mutation needs a runtime gate.
-   - **Desired state:** Explicit approval-required tool classes, auditable approval records, resumable jobs, and deny-by-default behavior for mutating tools.
-
-2. **Fix budget enforcement so spend limits actually work**
-   - **Current gap:** `buildLlmTrackingEntry()` in `lib/agents/blueprint-runner.ts` records `estimatedCostCents: 0`, while `checkBudget()` in `lib/agents/runtime-limits.ts` gates on the summed `estimatedCostCents` column.
-   - **Why this matters:** The current budget system looks real but cannot trip correctly. More agentic behavior means more model calls, so this becomes a real operational risk instead of a cosmetic one.
-   - **Desired state:** Real per-model cost estimation, reserve-then-reconcile accounting, accurate request logging, and hard stop behavior before a user or background workflow can burn through budget unnoticed.
-
-3. **Add transactionality and dependency tracking for multi-agent workflows**
-   - **Current gap:** The current chat flow persists the user message and queued job as separate inserts, and routed orchestration only tracks a single `specialistJobId`.
-   - **Why this matters:** As soon as orchestration becomes parallel or fan-out based, partial writes and missing dependency graphs become correctness problems.
-   - **Desired state:** Atomic enqueue/persist operations, explicit parent/child job relationships, and durable tracking for parallel specialist runs. The runtime should know which runs depend on which others before autonomy grows.
-
-4. **Move risky execution outside the Next.js app boundary**
-   - **Current gap:** The repo's worker model is durable-process oriented, but there is no dedicated external sandbox boundary for untrusted code, generated scripts, or richer tool execution.
-   - **Why this matters:** Vercel/serverless is a bad place to let autonomous execution grow legs. The app should orchestrate, not become the sandbox.
-   - **Desired state:** Next.js remains the control plane. Risky execution happens in a sidecar/worker/sandbox service with short-lived credentials and explicit input/output contracts.
-
-### Order of operations
-
-- Add approval gates and real spend enforcement next.
-- Then add transactional run/dependency tracking for multi-agent work.
-- Then move risky execution into a real sandbox boundary.
-- Keep end-to-end evals and trace review as a separate standing requirement before increasing autonomy.
-- Only after that should the repo take on substantially more autonomous behavior.
-
-### Guiding rule
-
-The model should be treated as a **coordinator with bounded tools**, not a privileged process with broad implied authority.
-
----
-
-## Hermes Sidecar Evaluation (2026-04-15)
-
-**Question:** Could Hermes act as a "second hand on deck" for Nexus Terminal?
-
-**Short answer:** Yes, but only if it is scoped as a sidecar worker or internal operator assistant, not as the primary trust boundary of the product.
-
-### What "sidecar" means here
-
-Hermes would run as a separate service or container alongside Nexus Terminal, with a narrow interface. Nexus stays the system of record and UI/API surface. Hermes becomes an auxiliary runtime that can do bounded higher-autonomy work and return structured outputs.
-
-### Good fits for a Hermes sidecar
-
-- Long-form research synthesis
-- Repo-aware codebase investigation
-- Drafting implementation plans or test plans
-- Background research jobs that enrich a Nexus report
-- Internal operator workflows where a trusted human is already in the loop
-
-### Bad fits for a Hermes sidecar
-
-- Direct write access to the main app database
-- Direct execution of high-impact product mutations
-- Multi-tenant customer-facing authority boundary
-- Anything that assumes "Hermes said it, so it must be safe"
-
-### Recommended integration shape
-
-1. **Run Hermes as an isolated service**
-   - Separate process/container from Next.js and from the main worker loop
-   - Prefer container isolation over host execution
-   - Give it its own credentials and network policy
-
-2. **Expose a narrow contract**
-   - Nexus calls Hermes for a small number of jobs, for example:
-     - `researchTicker`
-     - `analyzeRepo`
-     - `draftPlan`
-     - `summarizeFindings`
-   - Hermes returns structured JSON, not ad hoc prose blobs that the app blindly trusts
-
-3. **Keep Nexus as the control plane**
-   - Nexus owns auth, scheduling, persistence, approvals, and final user-visible state
-   - Hermes should not become the thing that decides who can do what in the product
-
-4. **Treat Hermes output as untrusted**
-   - Validate response payloads with Zod
-   - Require explicit promotion before any Hermes output becomes durable memory, a report, or a user-facing action
-   - Log the full request/response and tool path for auditability
-
-5. **Start read-only**
-   - First version should have read-only access to repo context, approved APIs, or a scoped research dataset
-   - Any write path should be mediated by Nexus after validation and, ideally, explicit approval
-
-### "Second hand on deck" interpretation
-
-The right mental model is:
-
-- **Yes:** a second set of hands for research, synthesis, codebase spelunking, and draft proposals
-- **No:** a silent second brain that can independently mutate the app or act as a hidden control plane
-
-If implemented well, Hermes would feel like a high-agency staff analyst attached to the product team, not a ghost maintainer living inside the app.
-
-### Candidate first experiment
-
-Use Hermes for one bounded internal workflow:
-
-- Input: "research this ticker / repo area / product question"
-- Hermes does multi-step research in its own runtime
-- Output: structured JSON report with sources, confidence, and proposed next actions
-- Nexus renders the result, stores it if approved, and does not grant Hermes direct mutation rights
-
-### Why this is attractive
-
-- Lets Nexus keep its typed workflow engine and existing DB-backed job model
-- Avoids replacing the current architecture with a bigger assistant runtime
-- Gives a place for higher-autonomy behavior that would be awkward inside a Vercel-oriented app
-- Makes the trust boundary explicit instead of accidental
-
-### Revisit question
-
-If Hermes proves useful as a sidecar, the next question is not "should Hermes replace the agent stack?" It is "which specific workflows benefit from a sidecar more than they benefit from being implemented as typed Nexus blueprints?"
-
-**T2.0: News Pipeline Unification — BIRD Catalyst Gap (2026-04-15)** 🔴 HIGHEST PRIORITY
-
-Observed on BIRD (04/15/26): swing-trader Catalyst section said "No recent news articles are available" and small-cap said "the recent 8-K filing was a legit catalyst" without quoting the actual headline. AskEdgar clearly had the news (convertible financing + pivot from footwear to "NewBird AI" GPU-as-a-Service). Root causes:
-
-1. **Swing-trader never reads AskEdgar news.** `fetch-news` step (`swing-trader-research.ts:729-754`) only calls Massive's `fetchTickerNews()`, which is a general-news API that misses SEC-filing-driven catalysts like 8-Ks. The `fetch-filings` step calls `getCachedTickerData()` but extracts only `gapStats`, `ownership`, `historicalFloat`, `dilutionRating`, `registrations`, `offerings` — never `news` or `filing-titles`.
-2. **Small-cap strips context.** `buildNewsDigest()` (`small-cap-research.ts:441-456`) reduces each item to `{title, date, type}` with fallback `'(untitled)'`. AskEdgar's `/v1/news` response leaves `title` empty for SEC filings (only populated for `form_type = "news"`) — so 8-Ks show up as "(untitled)" and the LLM has nothing to quote.
-3. **`/v1/filing-titles` is fetched but ignored in small-cap's `fetch-filings` step.** The endpoint returns AI-generated one-liners like "Announces $50M ATM offering program" — exactly what the Catalyst section needs — but `fetch-filings` at line 732 only reads `rawData['news']`.
-4. **Both prompts lack "quote the headline" instruction.** Neither blueprint tells the LLM to embed the actual headline string in its Catalyst explanation.
-
-**Fix:** Build shared news-formatter helper, wire it into both blueprints, update prompts. See the execution spec in `HANDOFF.md` — "News Pipeline Unification" section. Complexity: MEDIUM.
+**T2.0: News Pipeline Unification — SHIPPED.** `lib/agents/news-formatter.ts` wired into both specialist blueprints; catalyst sections now quote actual filing titles. (Originally observed on BIRD 2026-04-15: 8-K catalyst was visible to AskEdgar but never reached the LLM. See git history for the fix.)
 
 **T2.1: Per-section source attribution**
 - Files: `lib/agents/types.ts`, both specialist blueprints, `lib/agents/discord.ts`
@@ -478,177 +287,155 @@ Recommended enriched macro schema (beyond current implementation):
 
 ---
 
-## Site-Native Agent Reports & Macro Surface (2026-04-16)
+## Agent Hardening Backlog (2026-04-15, refreshed 2026-04-24)
 
-**Question reviewed:** How should research reports and the macro daily report show up in the Nexus site, and should web requests bounce through Discord first?
+**Context:** The current agent stack is already substantial: typed blueprints, DB-backed jobs, checkpoints, retry logic, runtime limits, and specialist routing are all in place. The next constraint is not "add more agent code" so much as "tighten the runtime controls before giving the system more autonomy."
 
-**Short answer:** No. Do not route site requests through Discord and then relay the result back into the app. The repo is already DB-backed at the core. Discord sits on top as a transport and delivery client, not the system of record.
+### Recently completed
 
-### What the architecture review found
+- Service endpoint authorization hardening (`7118598`).
+- Prompt trust-boundary labeling (`2a856f1`) — `lib/agents/trust-boundary.ts` + `__tests__/trust-boundary.test.ts`.
+- Memory / retention TTL-on-read (`bf13567`) — `__tests__/agent-retention-cron.test.ts`.
+- Spend enforcement — real per-model cost estimation + hard-stop gating. Commits `7aad160`, `abdefe9`, `1bd5e1e`, `8ad674e`, `9f0a123`. `buildLlmTrackingEntry()` in `blueprint-runner.ts:168` now calls `estimateCostCents(...)`; `checkBudget()` in `runtime-limits.ts:94` gates on accurate summed cost.
 
-- `agent_jobs`, `agent_reports`, and `agent_conversations` in `lib/db/schema.ts` are already the durable primitives for orchestration, persisted artifacts, and chat transcript data.
-- Research reports and macro summaries are both persisted through `writeAndDeliverReport()` in `lib/agents/discord.ts`. Storage happens first, then Discord delivery is attempted after the report row already exists.
-- The site already has read APIs for native rendering:
-  - `app/api/agents/reports/route.ts`
-  - `app/api/agents/reports/[id]/route.ts`
-  - `app/api/agents/research/route.ts`
-  - `app/api/agents/macro-summary/latest/route.ts`
-- The current chat ingress is still Discord-specific. `app/api/agents/service/chat/route.ts` is guarded by a shared service key plus `discord_user_id`, and it hardcodes `channel: 'discord'` despite the orchestrator blueprint already supporting `channel: 'web' | 'discord'`.
-- Routed chat is split into two lifecycles today:
-  - the orchestrator chat job completes early with `routed: true`
-  - the specialist report arrives later through `agent_reports` + Discord delivery
-- `agent_conversations` is not yet a full cross-agent thread model. It captures user/orchestrator chat turns, while specialist outputs live separately in `agent_reports`.
+### Tool classification rule (replaces "general approval framework")
 
-### Why Discord should stay out of the site request path
+Today's agents are effectively read-only: they fetch external data (AskEdgar, FRED, RSS, Massive) and produce text reports. There is no tool that mutates state outside the agent's own logs, so a general approval framework would be built before it had anything to gate. A pure research report → user-read flow has no mutation surface, so a HITL gate would be rubber-stamping, not safety.
 
-1. **Wrong authority boundary**
-   - The durable truth already lives in Postgres. Making Discord the middleman would move product flow through the least authoritative layer in the stack.
+Rule going forward: **don't ship a mutation-capable agent tool without a gate.** Classify each tool as:
 
-2. **Extra failure modes with no product upside**
-   - A site request that bounces through Discord would inherit Discord bot uptime, channel routing, and webhook behavior even though the app can already read reports directly from the DB.
+- **read** — no gate. External data fetches, LLM calls, report synthesis.
+- **internal-write** — no user-facing gate. Agent's own memory/checkpoint/queue writes, bounded by spend + retention.
+- **pre-approved external** — narrow allowlisted surfaces (e.g. posting to a fixed Discord channel). Don't grow the allowlist without a gate.
+- **external-mutation** — requires runtime approval row before execution. Deny-by-default for unknown tool classes.
 
-3. **The current Discord path is integration glue, not product architecture**
-   - `services/discord-bot/index.ts` is effectively a client for `/api/agents/service/chat`, plus a delivery endpoint for routed outputs. That is useful for Discord users, but it is the wrong primitive to reuse as the in-site control plane.
+Current stack mapping:
 
-4. **The repo already points the other way**
-   - `agent_reports` is the canonical persisted artifact.
-   - Discord is downstream of report persistence.
-   - The right product direction is site-native rendering with optional Discord fan-out.
+- *read:* `fred-client`, `rss-lite`, `scrape-lite`, `sentiment-client`, AskEdgar helpers, `llm-client`, `news-formatter`
+- *internal-write:* `memory`, `checkpoints`, `queue`/`worker`, `agent_runs` / `agent_request_log` inserts
+- *pre-approved external:* `discord.ts` (fixed channel allowlist + user map)
+- *external-mutation:* none today
+- *user-initiated writes (not agent-initiated):* journal writes, trade review saves, sheet sync — the UI click is the approval
 
-### Product recommendation
+When the first `external-mutation` tool is on the roadmap (broker integration, agent-initiated bulk journal mutation, outbound DM to non-allowlisted recipient, generated-code execution, new mutating third-party API), the approval-gate framework ships alongside it: `pending_approvals` table, UI card, resumable job path via existing `checkpoints.ts`, auditable approval records.
 
-**Macro daily report**
-- Put the latest macro summary on `Dashboard`, not in a new top-level tab.
-- Use `GET /api/agents/macro-summary/latest` as the initial source.
-- Render it as a full-width "what matters today" card above the existing performance overview.
-- Important caveat: if macro should show even before trades are imported, it cannot live inside the current `trades.length === 0` empty-state gate in `DashboardTab.tsx`.
+### Still open
 
-**Research reports and agent work**
-- Keep this inside `Research`, not as a separate top-level nav item yet.
-- Add an `Agent Desk` submode to `ResearchTab` alongside the existing ticker-first workflow.
-- Recommended shape:
-  - left rail = recent jobs / recent reports
-  - main pane = selected report detail or explicit run actions
-  - explicit actions first (`Run small-cap research`, `Run swing research`) before freeform site chat
+1. **Transactionality and dependency tracking for multi-agent workflows**
+   - **Current gap:** Chat flow persists the user message and queued job as separate inserts; routed orchestration only tracks a single `specialistJobId` (`orchestrator-chat.ts`).
+   - **Why this matters:** As soon as orchestration becomes parallel or fan-out based, partial writes and missing dependency graphs become correctness problems.
+   - **Desired state:** Atomic enqueue/persist operations, explicit parent/child job relationships, and durable tracking for parallel specialist runs.
 
-### Why not a new top-level tab yet
+2. **Isolated sandbox boundary for untrusted execution**
+   - **Current state:** `services/` sidecar runs the worker off-Vercel (`agent-entrypoint.ts`, `agent.Dockerfile`, `docker-compose.yml`). Next.js = control plane.
+   - **Current gap:** The sidecar runs the same blueprint code — no isolated sandbox for generated scripts or richer tool execution, no short-lived credentials, no explicit input/output contract layer.
+   - **Why this matters:** When a tool that executes generated code or calls wider third-party APIs is added, that execution should not share the same process/credentials as the blueprint runner.
+   - **Desired state:** Dedicated execution sandbox (separate container or process) behind a narrow contract, reached only from the sidecar, never from Next.js.
 
-- The shell is tightly coupled around the current tab list in `app/page.tsx`, `Sidebar.tsx`, `CommandPalette.tsx`, and `use-global-shortcuts.ts`.
-- Mobile nav is already dense.
-- The shared toolbar is trade-oriented and would be semantically wrong for a dedicated macro/agent tab unless it is made tab-aware first.
-- `Research` already has the wide canvas that an agent/report workspace needs; `Dashboard` already owns the "today's overview" role that the macro report fits.
+### Order of operations
 
-### Recommended build order
+- **Now:** transactionality / dependency tracking (needed before any parallel specialist work).
+- **When the first external-mutation tool is on the roadmap:** approval-gate framework shipped alongside it.
+- **When a generated-code or broad-third-party tool is on the roadmap:** sandbox boundary shipped alongside it.
+- **Standing requirement:** end-to-end evals and trace review before increasing autonomy.
 
-1. **Dashboard macro card**
-   - Show the latest macro summary in-site with no Discord dependency.
+### Guiding rule
 
-2. **Research Agent Desk**
-   - Surface report history and report detail from `agent_reports`.
-   - Let the user explicitly queue specialist research jobs from the site.
+The model should be treated as a **coordinator with bounded tools**, not a privileged process with broad implied authority.
 
-3. **User-authenticated research job status**
-   - Add a proper site-facing status/read contract for queued research runs instead of relying on implicit `${jobId}:research` behavior or polling the reports list.
+---
 
-4. **Site-native chat route**
-   - Add a separate user-authenticated `/api/agents/chat` or equivalent `channel: 'web'` path.
-   - Do not reuse the Discord service route as-is.
+## Hermes Sidecar Evaluation (2026-04-15)
 
-5. **Unified conversation/event model**
-   - If chat becomes first-class, specialist completions need to fold back into one session/thread instead of living only as separate report artifacts.
+**Could Hermes act as a "second hand on deck" for Nexus?** Yes — but scoped as a sidecar worker, not as the product's trust boundary. Nexus stays the system of record; Hermes becomes an auxiliary runtime for bounded higher-autonomy work that returns structured outputs. Think "staff analyst attached to the product team," not "ghost maintainer living inside the app."
 
-### Architecture gaps to solve before in-site chat feels real
+### Good fits
 
-- **Discord-locked service route**
-  - `service/chat` currently assumes `discord_user_id`, shared service auth, and `channel: 'discord'`.
+Long-form research synthesis, repo-aware codebase investigation, drafting implementation/test plans, background research that enriches a Nexus report, operator workflows where a trusted human is already in the loop.
 
-- **No clean user-facing job polling for research**
-  - `POST /api/agents/research` queues a job, but the site does not yet have a first-class status endpoint analogous to the Discord service polling flow.
+### Bad fits
 
-- **Conversation history is not session-scoped enough**
-  - `buildContext()` currently loads conversation history by `userId + agentId`, which is too broad once the site and Discord both become active chat surfaces.
+Direct write access to the main DB, direct execution of high-impact product mutations, multi-tenant authority boundary, anything that assumes "Hermes said it, so it must be safe."
 
-- **Delivery status is overloaded**
-  - `agent_reports.status` currently doubles as report delivery status. A valid report can become `delivery_failed` solely because Discord delivery failed, which is the wrong signal if the site becomes a primary surface.
+### Integration shape
 
-- **Do not create a new report store**
-  - The repo already has legacy `research_reports` / `imported_research_reports` paths. New agent product work should continue to standardize on `agent_reports`, not create a third or fourth report pipeline.
+1. **Isolated service** — separate process/container from Next.js and the main worker loop, own credentials + network policy, prefer container over host execution.
+2. **Narrow contract** — Nexus calls a small set of jobs (`researchTicker`, `analyzeRepo`, `draftPlan`, `summarizeFindings`). Responses are structured JSON, not prose blobs the app blindly trusts.
+3. **Nexus stays the control plane** — auth, scheduling, persistence, approvals, final user-visible state all live in Nexus.
+4. **Treat output as untrusted** — Zod-validate responses; require explicit promotion before Hermes output becomes durable memory/report/action; log full request/response and tool path.
+5. **Start read-only** — repo context, approved APIs, scoped research datasets only. Any write path mediated by Nexus after validation and approval.
 
-### Explicit decisions for the future execution spec
+### First experiment
 
-- **Do:** build site-native report rendering first.
+One bounded workflow: "research this ticker / repo area / product question." Hermes runs multi-step in its own runtime and returns structured JSON (sources, confidence, proposed next actions). Nexus renders + stores if approved; no direct mutation rights for Hermes.
+
+### Revisit question
+
+If Hermes proves useful, the next question is not *"should Hermes replace the agent stack?"* — it is *"which specific workflows benefit from a sidecar more than from being implemented as typed Nexus blueprints?"*
+
+---
+
+## Site-Native Agent Surfaces (2026-04-15 / 2026-04-16)
+
+**Decision:** Agent output reaches the user through site-native surfaces. Discord stays downstream as optional fan-out, not a middleman for in-site flows. `agent_reports.report_json` is the canonical artifact; UI and Discord both read from there.
+
+### Why Discord stays out of the site request path
+
+The durable truth already lives in Postgres. `agent_jobs`, `agent_reports`, and `agent_conversations` in `lib/db/schema.ts` are the primitives for orchestration, persisted artifacts, and chat transcripts. Reports are written by `writeAndDeliverReport()` in `lib/agents/discord.ts` — storage happens first, then Discord delivery attempts after the report row already exists. `services/discord-bot/index.ts` is integration glue for Discord users, not a control plane the site should reuse. Bouncing web requests through Discord would move product flow through the least authoritative layer and inherit Discord bot/webhook failure modes for no product upside.
+
+### Planned surfaces
+
+All four ride the same `agent_reports` / `agent_jobs` primitives — do not create a new report store. Legacy `research_reports` and `imported_research_reports` exist; keep agent work consolidated on `agent_reports`.
+
+**1. Dashboard macro card**
+- Latest macro summary rendered in-site, no Discord dependency. Source: `GET /api/agents/macro-summary/latest`.
+- Placement: full-width "what matters today" card above performance overview. Must render even before trades are imported — today's `trades.length === 0` empty-state gate in `DashboardTab.tsx` would block it.
+
+**2. Research Agent Desk** (submode of `Research`)
+- Left rail: recent jobs / recent reports. Main pane: selected report detail or explicit run actions.
+- Explicit actions (`Run small-cap research`, `Run swing research`) before freeform chat.
+- Read APIs already exist: `app/api/agents/reports/route.ts`, `app/api/agents/reports/[id]/route.ts`, `app/api/agents/research/route.ts`, `app/api/agents/macro-summary/latest/route.ts`.
+
+**3. Scheduled Morning & EOD Briefs**
+- Home-server cron inside `services/` Docker stack (not Vercel). Two slots: ~8:00 AM ET (morning) and ~4:30 PM ET (EOD).
+- Cron kicks the agent runtime; agent pulls TradingView + Massive + AskEdgar + macro sources; writes a snapshot row to a new `daily_briefs` table. Dashboard reads the latest snapshot on page load — no LLM cost per visit.
+- Morning: small-cap watchlist (overnight gappers, pre-market movers, fresh filings, dilution flags), macro setup (futures, econ calendar, Fed speakers, notable earnings), 2–3 "what to watch" themes.
+- EOD: what moved + why, watchlist performance, macro recap, carry-over setups for tomorrow.
+- Open questions: one row per day (morning + EOD fields) vs. two rows? Reuse existing specialist blueprints vs. new `daily-brief` blueprint? Overlap with the Market Pulse Discord bot — can they share the data pipeline?
+
+**4. In-Site Chat / Reasoning Panel**
+- User-authenticated route (`channel: 'web'`), not the Discord service path. New blueprint with tool access to trades, journal, tags, performance aggregations.
+- Example questions: *"Common pattern across my `breakout-failed` trades in the last 3 months?"*, *"What separates my A-grade trades from C-grade on entry timing?"*, *"Worst 10 R trades this quarter — shared setups?"*
+- Depends on surfaces 1–3 being stable first. Tier 1 agent quality (HANDOFF) must land first so the reasoning is trustworthy.
+- Open questions: chat UI placement (inside Research workspace vs. global slide-out)? Persistent vs. ephemeral conversations? Read-only trade queries, or agent-writable annotations? Per-turn token cap?
+
+### Why not a new top-level `Agents` tab (yet)
+
+- Shell is tightly coupled to the current tab list (`app/page.tsx`, `Sidebar.tsx`, `CommandPalette.tsx`, `use-global-shortcuts.ts`).
+- Mobile nav is already dense; shared toolbar is trade-oriented.
+- `Research` already has the wide canvas an agent/report workspace needs; `Dashboard` already owns "today's overview."
+
+### Phased build order
+
+1. **Dashboard macro card** (surface 1).
+2. **Research Agent Desk** (surface 2) — adds a user-facing job-status endpoint for queued research and a `channel: 'web'` chat/trigger route. Do not reuse the Discord service route as-is.
+3. **Scheduled briefs** (surface 3) — lands once the dashboard can render queued/completed agent output cleanly.
+4. **In-site chat** (surface 4) — needs a proper per-session thread model so routed specialist completions fold back into one conversation.
+
+### Architecture gaps to close along the way
+
+- **Discord-locked service route** — `app/api/agents/service/chat/route.ts` assumes `discord_user_id`, shared service auth, `channel: 'discord'`. The orchestrator blueprint already supports `channel: 'web' | 'discord'`, but the route hardcodes Discord.
+- **No user-facing job polling for research** — `POST /api/agents/research` queues but has no first-class status endpoint for the site.
+- **Conversation history scope too broad** — `buildContext()` loads by `userId + agentId`; needs session scope once both site and Discord are active chat surfaces.
+- **`agent_reports.status` overloaded** — a valid report becomes `delivery_failed` when Discord delivery fails. Wrong signal once the site is the primary surface.
+
+### Guardrails
+
+- **Do:** build site-native report rendering first. Macro on `Dashboard`, agent work in `Research`.
 - **Do:** treat Discord as optional fan-out and off-platform consumption.
-- **Do:** put macro on `Dashboard` and agent-driven report work in `Research`.
 - **Do not:** route web requests through Discord.
-- **Do not:** add a new top-level `Agents` tab until the workspace proves it needs one.
-- **Do not:** start with freeform site chat before the site can reliably render queued jobs and completed reports.
-
-### Spec trigger
-
-When ready to execute, the spec should be framed as:
-
-- Phase 1: site-native macro card + agent report history/detail
-- Phase 2: site-triggered specialist jobs + user-facing job status
-- Phase 3: in-site orchestrator chat with a unified thread/session model
-
-That sequencing keeps the product aligned with the current architecture instead of fighting it.
-
----
-
-## In-Site Agent — Chat / Reasoning Panel (2026-04-15)
-
-**Goal:** Let me ask reasoning questions about my own data directly from the Nexus site, without going through Discord. On-demand, chat-style.
-
-### Use cases
-- "Review my trades tagged `breakout-failed` over the last 3 months — what's the common pattern?"
-- "Summarize my worst 10 R trades this quarter and tell me what setups they share."
-- "Compare my A-grade trades to my C-grade trades — what's different about entry timing?"
-- General Q&A over journal entries, tags, performance snapshots.
-
-### Shape (rough, to be planned later)
-- New user-authenticated API route under `app/api/agents/` that supports `channel: 'web'` directly rather than tunneling through the Discord service path.
-- New blueprint in `lib/agents/blueprints/` — in-site specialist that has tool access to trades, journal, tags, performance aggregations.
-- UI: chat should follow the site-native report surfaces, likely as part of the `Research` workspace rather than a new top-level tab.
-- Messages need a real per-session/thread model that can incorporate routed specialist results, not just direct orchestrator turns.
-- Reuses existing agent runtime — same blueprint system, just a different trigger surface (HTTP instead of Discord).
-
-### Open questions for planning
-- Where does the chat UI live? New tab, dashboard widget, or global slide-out?
-- Do conversations persist in the DB, or ephemeral per-session?
-- Which tools does the agent get — read-only trade queries only, or can it write annotations back?
-- Cost control — cap tokens per turn, or let it run long?
-
-### Don't build until
-In-site agent depends on the AEV2 blueprint system being stable in production, and it should come after site-native macro/report surfaces exist. Tier 1 agent quality work (HANDOFF) should land first so the reasoning it produces is trustworthy.
-
----
-
-## Scheduled Morning & EOD Brief (2026-04-15)
-
-**Goal:** Home-server cron generates a structured brief twice a day — before market open and after close — summarizing what to watch and what happened. Displayed on the Nexus dashboard when I open the site.
-
-### Morning brief (pre-market)
-- Small-cap watchlist: overnight gappers, pre-market movers, fresh filings, dilution flags.
-- Macro setup: overnight futures, major econ data on the calendar, Fed speakers, notable earnings.
-- "What to watch today" — 2–3 narrative themes.
-
-### EOD brief (post-close)
-- What actually moved, why, and how my watchlist performed.
-- Macro recap — key data prints, closing levels, narrative shifts.
-- Carry-over setups worth tracking into tomorrow.
-
-### Shape (rough, to be planned later)
-- **Trigger:** home-server cron (not Vercel) — runs inside the `services/` Docker stack, same host as the agent containers. Vercel cron is for the market-pulse Discord bot; this one lives with the agents.
-- Cron kicks the agent runtime, agent pulls TradingView + Massive + AskEdgar + macro sources, writes a snapshot row to a new `daily_briefs` table.
-- Dashboard reads the latest snapshot on page load — no LLM cost per visit, no wait.
-- Two cron slots: ~8:00 AM ET (morning) and ~4:30 PM ET (EOD).
-
-### Open questions for planning
-- New table schema for `daily_briefs` (morning vs EOD as separate rows or one row per day with both).
-- Which existing blueprints to reuse vs. a new "daily-brief" blueprint.
-- Dashboard placement — top card, dedicated section, or new tab?
-- How macro data is sourced (FMP? econ calendar API? scraped?).
-- Overlap with the Market Pulse Discord bot above — can they share the same data pipeline?
+- **Do not:** add a top-level `Agents` tab until the workspace proves it needs one.
+- **Do not:** start with freeform site chat before the site can render queued jobs and completed reports.
 
 ---
 
