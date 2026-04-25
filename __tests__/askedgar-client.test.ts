@@ -197,4 +197,54 @@ describe('askedgar client', () => {
     });
     expect(normalized.warnings).toEqual(['Screener unavailable: 503 Request failed']);
   });
+
+  it('maps live /v1/gap-stats response shape to ResearchSnapshotGapStat', async () => {
+    // Canonical AskEdgar /v1/gap-stats row captured live from SPRC on 2026-04-24.
+    const sprcRow = {
+      ticker: 'SPRC',
+      date: '2026-04-21',
+      market_open: 6.08,
+      previous_day_close: 4.23,
+      gap_percentage: 43.74,
+      high_price: 6.57,
+      high_time: '2026-04-21T09:33:00',
+      low_price: 4.68,
+      low_time: '2026-04-21T13:43:00',
+      market_close: 6.0,
+      closed_over_vwap: false,
+      premarket_vwap: 6.9595,
+      premarket_dollar_volume: 72234465.08,
+      premarket_volume: 10379248.0,
+      volume: 4606125.857634,
+      dollar_volume: 25723436.06,
+      market_cap: 2392065.0,
+      all_tags: ['Upcoming Events', 'Patents'],
+      filing_types: ['grok', '6-K'],
+      afterhours_close: 5.55,
+      last_updated: '2026-04-22T00:00:03.418652',
+    };
+
+    const client = await import('@/lib/askedgar');
+    const normalized = client.normalizeAskEdgarResponse({
+      'gap-stats': { status: 'success', count: 1, results: [sprcRow] },
+    }, {
+      ticker: 'SPRC',
+      companyName: 'SciSparc',
+      fetchedAt: '2026-04-24T00:00:00.000Z',
+      warnings: [],
+    });
+
+    expect(normalized.gapStats).toHaveLength(1);
+    const row = normalized.gapStats[0];
+    expect(row).toMatchObject({
+      date: '2026-04-21',
+      gapPercentage: 43.74,
+      marketOpen: 6.08,
+      marketClose: 6.0,
+      intradayHigh: 6.57,
+      intradayLow: 4.68,
+      volume: 4606125.857634,
+    });
+    expect(row.tags).toEqual(['Upcoming Events', 'Patents', 'grok', '6-K']);
+  });
 });

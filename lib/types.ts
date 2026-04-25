@@ -211,8 +211,6 @@ export interface ResearchSnapshotGapStat {
   marketClose: number | null;
   intradayHigh: number | null;
   intradayLow: number | null;
-  vwap: number | null;
-  premarketHigh: number | null;
   volume: number | null;
   tags: string[];
 }

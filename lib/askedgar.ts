@@ -830,17 +830,15 @@ export function normalizeAskEdgarResponse(
 
   const gapStats: ResearchSnapshotGapStat[] = getEndpointResponse(rawData, ['gap-stats', 'gapStats']).results.map((item) => {
     const row = toRecord(item);
-    const tags = Array.isArray(getField(row, ['tags'])) ? (getField(row, ['tags']) as string[]) : [];
-    const formTypes = Array.isArray(getField(row, ['form_types', 'formTypes'])) ? (getField(row, ['form_types', 'formTypes']) as string[]) : [];
+    const tags = Array.isArray(getField(row, ['all_tags', 'tags'])) ? (getField(row, ['all_tags', 'tags']) as string[]) : [];
+    const formTypes = Array.isArray(getField(row, ['filing_types', 'form_types', 'formTypes'])) ? (getField(row, ['filing_types', 'form_types', 'formTypes']) as string[]) : [];
     return {
       date: getStringField(row, ['date']),
       gapPercentage: toNumberValue(getField(row, ['gap_percentage', 'gapPercentage'])),
       marketOpen: toNumberValue(getField(row, ['market_open', 'marketOpen'])),
       marketClose: toNumberValue(getField(row, ['market_close', 'marketClose'])),
-      intradayHigh: toNumberValue(getField(row, ['intraday_high', 'intradayHigh'])),
-      intradayLow: toNumberValue(getField(row, ['intraday_low', 'intradayLow'])),
-      vwap: toNumberValue(getField(row, ['vwap'])),
-      premarketHigh: toNumberValue(getField(row, ['premarket_high', 'premarketHigh'])),
+      intradayHigh: toNumberValue(getField(row, ['high_price', 'intraday_high', 'intradayHigh'])),
+      intradayLow: toNumberValue(getField(row, ['low_price', 'intraday_low', 'intradayLow'])),
       volume: toNumberValue(getField(row, ['volume'])),
       tags: [...tags, ...formTypes],
     } satisfies ResearchSnapshotGapStat;

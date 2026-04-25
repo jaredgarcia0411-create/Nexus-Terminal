@@ -147,8 +147,6 @@ function GapStatRow({ row }: { row: ResearchSnapshotGapStat }) {
       <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(row.marketClose)}</td>
       <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(row.intradayHigh)}</td>
       <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(row.intradayLow)}</td>
-      <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(row.vwap)}</td>
-      <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(row.premarketHigh)}</td>
       <td className="py-2 pr-3 text-right text-zinc-300">{formatNumber(row.volume)}</td>
       <td className="py-2 text-zinc-400">
         {row.tags.length === 0 ? '--' : (
@@ -586,8 +584,6 @@ export default function ResearchReportSections({ data }: Props) {
                         <th className="py-2 pr-3 text-right">Close</th>
                         <th className="py-2 pr-3 text-right">High</th>
                         <th className="py-2 pr-3 text-right">Low</th>
-                        <th className="py-2 pr-3 text-right">VWAP</th>
-                        <th className="py-2 pr-3 text-right">PM High</th>
                         <th className="py-2 pr-3 text-right">Volume</th>
                         <th className="py-2 text-left">Tags</th>
                       </tr>
