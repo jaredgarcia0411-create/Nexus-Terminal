@@ -208,6 +208,19 @@ export const askedgarCache = pgTable('askedgar_cache', {
   index('askedgar_cache_expires_idx').on(table.expiresAt),
 ]);
 
+// SEC ticker -> CIK identity map. Hydrated from
+// https://www.sec.gov/files/company_tickers_exchange.json with a 24h refresh.
+// Shared across all users; no userId.
+export const secTickerCik = pgTable('sec_ticker_cik', {
+  ticker: text('ticker').primaryKey(),      // uppercase, share-class hyphenated (e.g. "BRK-B")
+  cik: text('cik').notNull(),               // 10-digit zero-padded (e.g. "0000320193")
+  name: text('name').notNull(),
+  exchange: text('exchange'),               // "Nasdaq" | "NYSE" | "OTC" | null
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('sec_ticker_cik_fetched_idx').on(table.fetchedAt),
+]);
+
 export const agentRegistry = pgTable('agent_registry', {
   id: text('id').primaryKey(),
   displayName: text('display_name').notNull(),

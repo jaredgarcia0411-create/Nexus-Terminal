@@ -12,6 +12,14 @@ vi.mock('@/lib/db', async () => {
   };
 });
 
+const { getRecentFilingsMock } = vi.hoisted(() => ({
+  getRecentFilingsMock: vi.fn(),
+}));
+
+vi.mock('@/lib/sec/submissions', () => ({
+  getRecentFilings: getRecentFilingsMock,
+}));
+
 interface AskedgarCacheRow {
   id: string;
   cacheType: string;
@@ -97,6 +105,19 @@ describe('askedgar client', () => {
     vi.resetModules();
     getDbMock.mockReset();
     getDbMock.mockReturnValue(undefined);
+    getRecentFilingsMock.mockReset();
+    getRecentFilingsMock.mockResolvedValue({
+      status: 'success',
+      count: 1,
+      results: [{
+        accession_number: '0001234567-26-000001',
+        form_type: '8-K',
+        filed_at: '2026-04-20',
+        headline: '8-K filing',
+        url: 'https://www.sec.gov/Archives/edgar/data/0/000123456726000001/doc.htm',
+        primary_doc_description: null,
+      }],
+    });
     process.env.ASKEDGAR_API_KEY = 'test-key';
     process.env.ASKEDGAR_DAILY_LIMIT = '100';
   });
@@ -140,7 +161,7 @@ describe('askedgar client', () => {
 
     const result = await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(9);
+    expect(fetchSpy).toHaveBeenCalledTimes(8);
     expect(Object.keys(result.rawData)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
     expect(cachedRawDataKeys(cacheDb)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
   });
@@ -152,7 +173,7 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
 
     await client.getCachedTickerData('AAPL');
-    expect(fetchSpy).toHaveBeenCalledTimes(17);
+    expect(fetchSpy).toHaveBeenCalledTimes(16);
 
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
@@ -169,7 +190,7 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
 
     await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
-    expect(fetchSpy).toHaveBeenCalledTimes(9);
+    expect(fetchSpy).toHaveBeenCalledTimes(8);
 
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL');
@@ -205,6 +226,18 @@ describe('askedgar client', () => {
     await expect(client.fetchTickerData('AAPL', { endpoints: ['nope'] })).rejects.toThrow('[askedgar] Unknown endpoint key: nope');
   });
 
+  it('routes filing-titles through getRecentFilings, not AskEdgar', async () => {
+    const fetchSpy = mockSuccessfulEndpointFetch();
+    const client = await import('@/lib/askedgar');
+
+    await client.fetchTickerData('AAPL', { endpoints: ['filing-titles'] });
+
+    expect(getRecentFilingsMock).toHaveBeenCalledWith('AAPL', { limit: 20 });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const calledUrls = fetchCallUrls(fetchSpy).map((url) => url.pathname);
+    expect(calledUrls.some((path) => path.includes('filing-titles'))).toBe(false);
+  });
+
   it('tracks unique ticker count', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ status: 'success', count: 1, results: [{}] })));
     const client = await import('@/lib/askedgar');
@@ -215,6 +248,12 @@ describe('askedgar client', () => {
   });
 
   it('marks fully rate-limited AskEdgar snapshots as unusable', async () => {
+    getRecentFilingsMock.mockResolvedValue({
+      status: 'error',
+      count: 0,
+      results: [],
+      error: 'Rate limited — retry after 42s',
+    });
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
       error: {
         code: 'rate_limit_exceeded',
@@ -240,6 +279,12 @@ describe('askedgar client', () => {
   it('caches fully rate-limited ticker results for the retry window', async () => {
     const cacheDb = createAskedgarCacheDb();
     getDbMock.mockReturnValue(cacheDb);
+    getRecentFilingsMock.mockResolvedValue({
+      status: 'error',
+      count: 0,
+      results: [],
+      error: 'Rate limited — retry after 42s',
+    });
 
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
       error: {
@@ -277,7 +322,7 @@ describe('askedgar client', () => {
       client.getCachedTickerData('MSFT'),
     ]);
 
-    expect(fetchSpy).toHaveBeenCalledTimes(17);
+    expect(fetchSpy).toHaveBeenCalledTimes(16);
     expect(first).toEqual(second);
   });
 

@@ -3,6 +3,7 @@ import { and, eq, gt } from 'drizzle-orm';
 import { getField, toNumberValue, toRecord } from '@/lib/askedgar-utils';
 import { getDb } from '@/lib/db';
 import { askedgarCache } from '@/lib/db/schema';
+import { getRecentFilings } from '@/lib/sec/submissions';
 import type {
   ResearchSnapshotFull,
   ResearchSnapshotAgreement,
@@ -446,12 +447,6 @@ async function fetchReverseSplits(ticker: string) {
   return requestAskEdgar<unknown>('/v1/reverse-splits', { ticker: validated });
 }
 
-async function fetchFilingTitles(ticker: string, limit = 20) {
-  const validated = validateTickerOrError<unknown>(ticker);
-  if (typeof validated !== 'string') return validated;
-  return requestAskEdgar<unknown>('/v1/filing-titles', { ticker: validated, limit });
-}
-
 async function fetchGapStats(ticker: string, limit = 50) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
@@ -484,7 +479,7 @@ export const ENDPOINT_REGISTRY = {
   agreements: { label: 'Agreements', run: (ticker) => fetchAgreements(ticker) },
   'historical-float-pro': { label: 'Historical Float', run: (ticker) => fetchHistoricalFloatPro(ticker, 20) },
   'reverse-splits': { label: 'Reverse Splits', run: (ticker) => fetchReverseSplits(ticker) },
-  'filing-titles': { label: 'Filing Titles', run: (ticker) => fetchFilingTitles(ticker, 20) },
+  'filing-titles': { label: 'Filing Titles (SEC)', run: (ticker) => getRecentFilings(ticker, { limit: 20 }) },
   'gap-stats': { label: 'Gap Stats', run: (ticker) => fetchGapStats(ticker, 50) },
   ownership: { label: 'Ownership', run: (ticker) => fetchOwnership(ticker) },
   'split-status': { label: 'Split Status', run: (ticker) => fetchSplitStatus(ticker) },
