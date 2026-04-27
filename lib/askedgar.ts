@@ -30,6 +30,17 @@ export interface AskEdgarResponse<T> {
   count: number;
   results: T[];
   error?: string;
+  usage?: { cost_microdollars?: number };
+}
+
+interface TickerDataResult {
+  ticker: string;
+  fetchedAt: string;
+  rawData: Record<string, AskEdgarResponse<unknown>>;
+  dataSources: DilutionDataSourceCheck[];
+  warnings: string[];
+  hasAnyData: boolean;
+  cacheExpiresAt?: string;
 }
 
 export interface AskEdgarSnapshotAvailability {
@@ -267,10 +278,15 @@ async function requestAskEdgar<T>(path: string, query: Record<string, string | n
 
     const normalized = payload as Record<string, unknown>;
     const results = Array.isArray(normalized.results) ? (normalized.results as T[]) : [];
+    const usage = toRecord(normalized.usage);
+    const costMicrodollars = toNumberValue(usage.cost_microdollars);
     return {
       status: typeof normalized.status === 'string' ? normalized.status : 'success',
       count: Number.isFinite(normalized.count) ? Number(normalized.count) : results.length,
       results,
+      ...(costMicrodollars !== null
+        ? { usage: { cost_microdollars: costMicrodollars } }
+        : {}),
     };
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
@@ -289,33 +305,17 @@ function validateTickerOrError<T>(ticker: string): string | AskEdgarResponse<T> 
   return normalized;
 }
 
-type EndpointKey =
-  | 'float-outstanding'
-  | 'screener'
-  | 'dilution-rating'
-  | 'dilution-data'
-  | 'offerings'
-  | 'registrations'
-  | 'news'
-  | 'nasdaq-compliance'
-  | 'pump-and-dump-tracker'
-  | 'agreements'
-  | 'historical-float-pro'
-  | 'reverse-splits'
-  | 'filing-titles'
-  | 'equity-lines'
-  | 'gap-stats'
-  | 'ownership'
-  | 'split-status';
+type EndpointRunner = (ticker: string) => Promise<AskEdgarResponse<unknown>>;
+type EndpointRegistryEntry = { label: string; run: EndpointRunner };
 
 interface EndpointConfig {
-  key: EndpointKey;
+  key: string;
   label: string;
   run: () => Promise<AskEdgarResponse<unknown>>;
 }
 
 interface EndpointState {
-  key: EndpointKey;
+  key: string;
   label: string;
   response: AskEdgarResponse<unknown>;
   hasData: boolean;
@@ -349,6 +349,14 @@ function endpointWarning(state: EndpointState): string | null {
   if (state.hasData) return null;
   if (state.response.error) return `${state.label} unavailable: ${state.response.error}`;
   return `${state.label} returned no data`;
+}
+
+function sumCostUsd(states: EndpointState[]): number {
+  const micro = states.reduce(
+    (sum, state) => sum + (state.response.usage?.cost_microdollars ?? 0),
+    0,
+  );
+  return micro / 1_000_000;
 }
 
 function toDataSource(state: EndpointState): DilutionDataSourceCheck {
@@ -462,7 +470,55 @@ async function fetchSplitStatus(ticker: string) {
   return requestAskEdgar<unknown>('/v1/split-status', { ticker: validated });
 }
 
-export async function fetchTickerData(ticker: string) {
+export const ENDPOINT_REGISTRY = {
+  'float-outstanding': { label: 'Float Outstanding', run: (ticker) => fetchFloatOutstanding(ticker) },
+  screener: { label: 'Screener', run: (ticker) => fetchScreenerByTicker(ticker) },
+  'dilution-rating': { label: 'Dilution Rating', run: (ticker) => fetchDilutionRating(ticker) },
+  'dilution-data': { label: 'Dilution Data', run: (ticker) => fetchDilutionData(ticker) },
+  offerings: { label: 'Offerings', run: (ticker) => fetchOfferings(ticker, 20) },
+  'equity-lines': { label: 'Equity Lines', run: (ticker) => fetchEquityLines(ticker) },
+  registrations: { label: 'Registrations', run: (ticker) => fetchRegistrations(ticker) },
+  news: { label: 'News', run: (ticker) => fetchNews(ticker, 20) },
+  'nasdaq-compliance': { label: 'Nasdaq Compliance', run: (ticker) => fetchNasdaqCompliance(ticker) },
+  'pump-and-dump-tracker': { label: 'Pump and Dump Tracker', run: (ticker) => fetchPumpAndDumpTracker(ticker) },
+  agreements: { label: 'Agreements', run: (ticker) => fetchAgreements(ticker) },
+  'historical-float-pro': { label: 'Historical Float', run: (ticker) => fetchHistoricalFloatPro(ticker, 20) },
+  'reverse-splits': { label: 'Reverse Splits', run: (ticker) => fetchReverseSplits(ticker) },
+  'filing-titles': { label: 'Filing Titles', run: (ticker) => fetchFilingTitles(ticker, 20) },
+  'gap-stats': { label: 'Gap Stats', run: (ticker) => fetchGapStats(ticker, 50) },
+  ownership: { label: 'Ownership', run: (ticker) => fetchOwnership(ticker) },
+  'split-status': { label: 'Split Status', run: (ticker) => fetchSplitStatus(ticker) },
+} satisfies Record<string, EndpointRegistryEntry>;
+
+export type EndpointKey = keyof typeof ENDPOINT_REGISTRY;
+
+const ENDPOINT_REGISTRY_LOOKUP: Partial<Record<string, EndpointRegistryEntry>> = ENDPOINT_REGISTRY;
+
+export const ALL_ENDPOINT_KEYS = Object.keys(ENDPOINT_REGISTRY) as readonly EndpointKey[];
+
+export const ENDPOINT_SCOPES = {
+  snapshot: ALL_ENDPOINT_KEYS,
+  tldr: ALL_ENDPOINT_KEYS,
+  lookup: ALL_ENDPOINT_KEYS,
+  'small-cap-research': [
+    'screener', 'dilution-rating', 'dilution-data', 'offerings', 'equity-lines',
+    'registrations', 'news', 'nasdaq-compliance', 'pump-and-dump-tracker',
+    'agreements', 'historical-float-pro', 'reverse-splits', 'filing-titles',
+    'gap-stats', 'ownership', 'split-status',
+  ],
+  'swing-trader-research': [
+    'dilution-data', 'dilution-rating', 'offerings', 'registrations',
+    'news', 'filing-titles', 'historical-float-pro', 'gap-stats', 'ownership',
+  ],
+} as const satisfies Record<string, readonly EndpointKey[]>;
+
+export type EndpointScope = keyof typeof ENDPOINT_SCOPES;
+
+export async function fetchTickerData(
+  ticker: string,
+  opts?: { endpoints?: readonly string[] },
+): Promise<TickerDataResult> {
+  const startedAt = Date.now();
   const normalizedTicker = ticker.trim().toUpperCase();
   resetCounterIfNeeded();
   const dailyLimit = parseDailyLimit();
@@ -478,25 +534,14 @@ export async function fetchTickerData(ticker: string) {
   }
   uniqueTickersToday.add(normalizedTicker);
 
-  const endpointConfigs: EndpointConfig[] = [
-    { key: 'float-outstanding', label: 'Float Outstanding', run: () => fetchFloatOutstanding(normalizedTicker) },
-    { key: 'screener', label: 'Screener', run: () => fetchScreenerByTicker(normalizedTicker) },
-    { key: 'dilution-rating', label: 'Dilution Rating', run: () => fetchDilutionRating(normalizedTicker) },
-    { key: 'dilution-data', label: 'Dilution Data', run: () => fetchDilutionData(normalizedTicker) },
-    { key: 'offerings', label: 'Offerings', run: () => fetchOfferings(normalizedTicker, 20) },
-    { key: 'equity-lines', label: 'Equity Lines', run: () => fetchEquityLines(normalizedTicker) },
-    { key: 'registrations', label: 'Registrations', run: () => fetchRegistrations(normalizedTicker) },
-    { key: 'news', label: 'News', run: () => fetchNews(normalizedTicker, 20) },
-    { key: 'nasdaq-compliance', label: 'Nasdaq Compliance', run: () => fetchNasdaqCompliance(normalizedTicker) },
-    { key: 'pump-and-dump-tracker', label: 'Pump and Dump Tracker', run: () => fetchPumpAndDumpTracker(normalizedTicker) },
-    { key: 'agreements', label: 'Agreements', run: () => fetchAgreements(normalizedTicker) },
-    { key: 'historical-float-pro', label: 'Historical Float', run: () => fetchHistoricalFloatPro(normalizedTicker, 20) },
-    { key: 'reverse-splits', label: 'Reverse Splits', run: () => fetchReverseSplits(normalizedTicker) },
-    { key: 'filing-titles', label: 'Filing Titles', run: () => fetchFilingTitles(normalizedTicker, 20) },
-    { key: 'gap-stats', label: 'Gap Stats', run: () => fetchGapStats(normalizedTicker, 50) },
-    { key: 'ownership', label: 'Ownership', run: () => fetchOwnership(normalizedTicker) },
-    { key: 'split-status', label: 'Split Status', run: () => fetchSplitStatus(normalizedTicker) },
-  ];
+  const requested = opts?.endpoints ?? ENDPOINT_SCOPES.snapshot;
+  const endpointConfigs: EndpointConfig[] = requested.map((key) => {
+    const entry = ENDPOINT_REGISTRY_LOOKUP[key];
+    if (!entry) {
+      throw new Error(`[askedgar] Unknown endpoint key: ${key}`);
+    }
+    return { key, label: entry.label, run: () => entry.run(normalizedTicker) };
+  });
 
   // Run endpoints in batches of 10 to stay well within the 150/min API rate limit.
   // 17 endpoints at batch size 10 = 2 batches, leaving ample headroom.
@@ -516,6 +561,13 @@ export async function fetchTickerData(ticker: string) {
   // Flag when every single endpoint failed — callers use this to skip caching bad data
   const hasAnyData = endpointStates.some((state) => state.hasData);
 
+  console.log(
+    `[askedgar-fanout] ticker=${normalizedTicker} requested=${requested.length} `
+    + `succeeded=${endpointStates.filter((state) => state.hasData).length} `
+    + `costUsd=${sumCostUsd(endpointStates).toFixed(4)} `
+    + `durationMs=${Date.now() - startedAt}`,
+  );
+
   return {
     ticker: normalizedTicker,
     fetchedAt: new Date().toISOString(),
@@ -525,8 +577,6 @@ export async function fetchTickerData(ticker: string) {
     hasAnyData,
   };
 }
-
-type TickerDataResult = Awaited<ReturnType<typeof fetchTickerData>>;
 
 function getTickerCacheExpiry(result: TickerDataResult, fetchedAt: Date): Date | null {
   if (result.hasAnyData) {
@@ -579,6 +629,64 @@ function hydrateCachedTickerDataResult(result: TickerDataResult, expiresAt: Date
         : warning
     )),
   };
+}
+
+function endpointStatesFromRawData(rawData: Record<string, AskEdgarResponse<unknown>>): EndpointState[] {
+  return Object.entries(rawData).map(([key, response]) => ({
+    key,
+    label: ENDPOINT_REGISTRY_LOOKUP[key]?.label ?? key,
+    response,
+    hasData: responseHasData(response),
+  }));
+}
+
+function rebuildTickerDataResult(
+  result: TickerDataResult,
+  rawData: Record<string, AskEdgarResponse<unknown>>,
+): TickerDataResult {
+  const endpointStates = endpointStatesFromRawData(rawData);
+
+  return {
+    ...result,
+    rawData,
+    dataSources: endpointStates.map(toDataSource),
+    warnings: endpointStates.map(endpointWarning).filter((warning): warning is string => Boolean(warning)),
+    hasAnyData: endpointStates.some((state) => state.hasData),
+  };
+}
+
+function subsetRawData(
+  rawData: Record<string, AskEdgarResponse<unknown>>,
+  requested: readonly string[],
+): Record<string, AskEdgarResponse<unknown>> {
+  return Object.fromEntries(
+    requested.flatMap((key) => {
+      const response = rawData[key];
+      return response ? [[key, response] as const] : [];
+    }),
+  );
+}
+
+function subsetTickerDataResult(
+  result: TickerDataResult,
+  requested: readonly string[],
+): TickerDataResult {
+  return rebuildTickerDataResult(result, subsetRawData(result.rawData, requested));
+}
+
+function cachedHasFreshEndpoint(
+  rawData: Record<string, AskEdgarResponse<unknown>> | undefined,
+  key: string,
+): boolean {
+  const entry = rawData?.[key];
+  return Boolean(entry && entry.status !== 'error' && Array.isArray(entry.results));
+}
+
+function mergeRawData(
+  cached: Record<string, AskEdgarResponse<unknown>>,
+  fresh: Record<string, AskEdgarResponse<unknown>>,
+): Record<string, AskEdgarResponse<unknown>> {
+  return { ...cached, ...fresh };
 }
 
 function getEndpointResponse(rawData: Record<string, AskEdgarResponse<unknown>>, keys: string[]): AskEdgarResponse<unknown> {
@@ -923,13 +1031,141 @@ export async function fetchTopGainers(minGainPct = 20, limit = 25) {
 
 // --- Cache helpers: wrap the raw fetch functions with DB-backed TTL caching ---
 
+type AskEdgarDb = NonNullable<ReturnType<typeof getDb>>;
+type CacheHitState = 'full' | 'partial' | 'miss';
+
+async function writeTickerCache(
+  db: AskEdgarDb,
+  normalizedTicker: string,
+  result: TickerDataResult,
+) {
+  const fetchedAt = new Date();
+  const expiresAt = getTickerCacheExpiry(result, fetchedAt);
+  if (!expiresAt) {
+    return;
+  }
+
+  try {
+    await db
+      .insert(askedgarCache)
+      .values({
+        id: `ticker-${normalizedTicker}`,
+        cacheType: 'ticker',
+        ticker: normalizedTicker,
+        dataJson: result,
+        fetchedAt,
+        expiresAt,
+      })
+      .onConflictDoUpdate({
+        target: [askedgarCache.cacheType, askedgarCache.ticker],
+        set: {
+          dataJson: result,
+          fetchedAt,
+          expiresAt,
+        },
+      });
+  } catch (err) {
+    console.warn('[askedgar-cache] Failed to write ticker cache:', err);
+  }
+}
+
+async function fetchAndCacheTickerEndpoints(
+  normalizedTicker: string,
+  endpoints: readonly string[],
+  db: AskEdgarDb | null,
+  cachedResult: TickerDataResult,
+): Promise<TickerDataResult> {
+  const freshResult = await fetchTickerData(normalizedTicker, { endpoints });
+  const mergedRawData = mergeRawData(cachedResult.rawData, freshResult.rawData);
+  const mergedResult = rebuildTickerDataResult({
+    ...cachedResult,
+    fetchedAt: freshResult.fetchedAt,
+  }, mergedRawData);
+
+  if (db) {
+    await writeTickerCache(db, normalizedTicker, mergedResult);
+  }
+
+  return mergedResult;
+}
+
+async function completeTickerDataForScope(
+  normalizedTicker: string,
+  requested: readonly string[],
+  db: AskEdgarDb | null,
+  seedResult: TickerDataResult,
+): Promise<{ result: TickerDataResult; freshCount: number }> {
+  let result = seedResult;
+  let freshCount = 0;
+  let missing = requested.filter((key) => !cachedHasFreshEndpoint(result.rawData, key));
+
+  while (missing.length > 0) {
+    // Scope-aware merge-on-write lets a ticker-level in-flight fetch seed later scoped reads.
+    const inFlight = inFlightTickerRequests.get(normalizedTicker);
+    if (inFlight) {
+      const inFlightResult = await inFlight;
+      result = rebuildTickerDataResult({
+        ...result,
+        fetchedAt: inFlightResult.fetchedAt,
+      }, mergeRawData(result.rawData, inFlightResult.rawData));
+
+      const remainingAfterInFlight = requested.filter((key) => !cachedHasFreshEndpoint(result.rawData, key));
+      if (remainingAfterInFlight.length === 0) {
+        break;
+      }
+
+      if (remainingAfterInFlight.length < missing.length) {
+        missing = remainingAfterInFlight;
+        continue;
+      }
+    }
+
+    const endpointsToFetch = missing;
+    const request = fetchAndCacheTickerEndpoints(normalizedTicker, endpointsToFetch, db, result);
+    inFlightTickerRequests.set(normalizedTicker, request);
+
+    try {
+      result = await request;
+      freshCount += endpointsToFetch.length;
+    } finally {
+      if (inFlightTickerRequests.get(normalizedTicker) === request) {
+        inFlightTickerRequests.delete(normalizedTicker);
+      }
+    }
+
+    // Return endpoint errors to the caller; future calls may retry because errors
+    // are not treated as fresh cache coverage.
+    break;
+  }
+
+  return { result, freshCount };
+}
+
+function logTickerCacheDecision(
+  normalizedTicker: string,
+  scope: EndpointScope,
+  cacheHit: CacheHitState,
+  freshCount: number,
+  requestedCount: number,
+) {
+  console.log(
+    `[askedgar-cache] ticker=${normalizedTicker} scope=${scope} `
+    + `cacheHit=${cacheHit} fetchedFresh=${freshCount}/${requestedCount}`,
+  );
+}
+
 /**
  * Cached version of fetchTickerData(). Checks DB for a fresh cached response
  * before hitting Ask Edgar. Cache is shared across all users (same SEC data).
  * TTL: 1 hour.
  */
-export async function getCachedTickerData(ticker: string) {
+export async function getCachedTickerData(
+  ticker: string,
+  opts?: { scope?: EndpointScope },
+): Promise<TickerDataResult> {
   const normalizedTicker = ticker.trim().toUpperCase();
+  const scope = opts?.scope ?? 'snapshot';
+  const requested = ENDPOINT_SCOPES[scope];
   const db = getDb();
 
   if (db) {
@@ -947,61 +1183,35 @@ export async function getCachedTickerData(ticker: string) {
       .limit(1);
 
     if (cached.length > 0) {
-      return hydrateCachedTickerDataResult(cached[0].dataJson as TickerDataResult, cached[0].expiresAt);
+      const cachedResult = hydrateCachedTickerDataResult(cached[0].dataJson as TickerDataResult, cached[0].expiresAt);
+      const cachedAvailability = getAskEdgarSnapshotAvailability(cachedResult.rawData);
+      const fullyRateLimited = !cachedResult.hasAnyData && cachedAvailability.failureKind === 'rate-limited';
+      const missing = fullyRateLimited
+        ? []
+        : requested.filter((key) => !cachedHasFreshEndpoint(cachedResult.rawData, key));
+
+      if (missing.length === 0) {
+        logTickerCacheDecision(normalizedTicker, scope, 'full', 0, requested.length);
+        return subsetTickerDataResult(cachedResult, requested);
+      }
+
+      const { result, freshCount } = await completeTickerDataForScope(normalizedTicker, requested, db, cachedResult);
+      logTickerCacheDecision(normalizedTicker, scope, 'partial', freshCount, requested.length);
+      return subsetTickerDataResult(result, requested);
     }
   }
 
-  const inFlight = inFlightTickerRequests.get(normalizedTicker);
-  if (inFlight) {
-    return inFlight;
-  }
-
-  const request = (async () => {
-    const result = await fetchTickerData(normalizedTicker);
-
-    if (!db) {
-      return result;
-    }
-
-    const fetchedAt = new Date();
-    const expiresAt = getTickerCacheExpiry(result, fetchedAt);
-    if (!expiresAt) {
-      return result;
-    }
-
-    try {
-      await db
-        .insert(askedgarCache)
-        .values({
-          id: `ticker-${normalizedTicker}`,
-          cacheType: 'ticker',
-          ticker: normalizedTicker,
-          dataJson: result,
-          fetchedAt,
-          expiresAt,
-        })
-        .onConflictDoUpdate({
-          target: [askedgarCache.cacheType, askedgarCache.ticker],
-          set: {
-            dataJson: result,
-            fetchedAt,
-            expiresAt,
-          },
-        });
-    } catch (err) {
-      console.warn('[askedgar-cache] Failed to write ticker cache:', err);
-    }
-
-    return result;
-  })();
-
-  inFlightTickerRequests.set(normalizedTicker, request);
-
-  try {
-    return await request;
-  } finally {
-    inFlightTickerRequests.delete(normalizedTicker);
-  }
+  const emptyResult: TickerDataResult = {
+    ticker: normalizedTicker,
+    fetchedAt: new Date().toISOString(),
+    rawData: {},
+    dataSources: [],
+    warnings: [],
+    hasAnyData: false,
+  };
+  const { result, freshCount } = await completeTickerDataForScope(normalizedTicker, requested, db, emptyResult);
+  logTickerCacheDecision(normalizedTicker, scope, 'miss', freshCount, requested.length);
+  return subsetTickerDataResult(result, requested);
 }
 
 /**

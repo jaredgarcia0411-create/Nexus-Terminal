@@ -1274,7 +1274,7 @@ describe('agent blueprints', () => {
 
     const result = await blueprint.steps[0].run(createStepInput(job, agentConfig));
 
-    expect(getCachedTickerDataMock).toHaveBeenCalledWith('AAPL');
+    expect(getCachedTickerDataMock).toHaveBeenCalledWith('AAPL', { scope: 'small-cap-research' });
     expect(result.data).toMatchObject({
       ticker: 'AAPL',
       gapStats: [{ open: 10, close: 9, high: 11 }],
@@ -1307,13 +1307,68 @@ describe('agent blueprints', () => {
 
     const result = await blueprint.steps[0].run(createStepInput(job, agentConfig));
 
-    expect(getCachedTickerDataMock).toHaveBeenCalledWith('AAPL');
+    expect(getCachedTickerDataMock).toHaveBeenCalledWith('AAPL', { scope: 'small-cap-research' });
     expect(result.data).toMatchObject({
       ticker: 'AAPL',
       gapStats: [],
       offerings: [],
       registrations: [],
       cashPosition: { name: 'Apple Inc.' },
+    });
+  });
+
+  it('uses the AskEdgar cache helper for swing-trader research', async () => {
+    getCachedTickerDataMock.mockResolvedValue({
+      fetchedAt: '2026-04-07T12:00:00.000Z',
+      rawData: {
+        'dilution-data': {
+          results: [{ management_commentary: 'Liquidity remains tight.' }],
+        },
+        'dilution-rating': {
+          results: [{ rating: 'high' }],
+        },
+        offerings: {
+          results: [{ offering_type: 'ATM' }],
+        },
+        registrations: {
+          results: [{ title: 'Shelf registration' }],
+        },
+        news: {
+          results: [],
+        },
+        'filing-titles': {
+          results: [],
+        },
+        'historical-float-pro': {
+          results: [{ date: '2026-01-01', float: 1000000 }],
+        },
+        'gap-stats': {
+          results: [{ open: 10, close: 11 }],
+        },
+        ownership: {
+          results: [{ holder: 'Fund A' }],
+        },
+      },
+      warnings: [],
+      hasAnyData: true,
+    });
+    const job = createJob({
+      agentId: 'swing-trader',
+      jobType: 'research',
+      input: { ticker: 'AAPL' },
+    });
+    const agentConfig = AGENT_CONFIGS['swing-trader'];
+    const blueprint = resolveBlueprint(job);
+
+    const result = await blueprint.steps[0].run(createStepInput(job, agentConfig));
+
+    expect(getCachedTickerDataMock).toHaveBeenCalledWith('AAPL', { scope: 'swing-trader-research' });
+    expect(result.data).toMatchObject({
+      ticker: 'AAPL',
+      managementCommentary: 'Liquidity remains tight.',
+      gapStats: [{ open: 10, close: 11 }],
+      registrations: [{ title: 'Shelf registration' }],
+      offerings: [{ offering_type: 'ATM' }],
     });
   });
 

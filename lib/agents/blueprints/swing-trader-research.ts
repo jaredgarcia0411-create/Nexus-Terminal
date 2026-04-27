@@ -825,7 +825,7 @@ export const swingTraderResearchBlueprint: Blueprint = {
         const rawInput = rawResearchInputSchema.parse(jobInput);
         const ticker = rawInput.ticker.trim().toUpperCase();
         researchInputSchema.parse({ ticker });
-        const result = await getCachedTickerData(ticker);
+        const result = await getCachedTickerData(ticker, { scope: 'swing-trader-research' });
         const rawData = result.rawData as Record<string, unknown>;
         const dilutionDetails = (result as { dilutionDetails?: unknown }).dilutionDetails
           ?? readResults(rawData['dilution-data'])[0]

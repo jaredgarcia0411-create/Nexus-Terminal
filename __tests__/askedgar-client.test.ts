@@ -62,6 +62,34 @@ function createAskedgarCacheDb(initialRows: AskedgarCacheRow[] = []) {
   };
 }
 
+function mockSuccessfulEndpointFetch(costMicrodollars = 1000) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = new URL(String(input));
+    const endpoint = url.pathname.replace('/v1/', '');
+
+    return new Response(JSON.stringify({
+      status: 'success',
+      count: 1,
+      results: [{
+        endpoint,
+        ticker: url.searchParams.get('ticker'),
+        offeringType: url.searchParams.get('offering_type'),
+      }],
+      usage: { cost_microdollars: costMicrodollars },
+    }));
+  });
+}
+
+function fetchCallUrls(fetchSpy: ReturnType<typeof mockSuccessfulEndpointFetch>) {
+  return fetchSpy.mock.calls.map(([input]) => new URL(String(input)));
+}
+
+function cachedRawDataKeys(cacheDb: ReturnType<typeof createAskedgarCacheDb>) {
+  const row = cacheDb.getRows()[0];
+  const dataJson = row.dataJson as { rawData: Record<string, unknown> };
+  return Object.keys(dataJson.rawData);
+}
+
 describe('askedgar client', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -87,6 +115,94 @@ describe('askedgar client', () => {
     expect(result.ticker).toBe('AAPL');
     expect(Object.keys(result.rawData)).toHaveLength(17);
     expect(result.dataSources).toHaveLength(17);
+  });
+
+  it('only calls explicitly requested endpoints from fetchTickerData', async () => {
+    const fetchSpy = mockSuccessfulEndpointFetch();
+    const client = await import('@/lib/askedgar');
+
+    const result = await client.fetchTickerData('AAPL', { endpoints: ['gap-stats', 'ownership'] });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchCallUrls(fetchSpy).map((url) => url.pathname)).toEqual([
+      '/v1/gap-stats',
+      '/v1/ownership',
+    ]);
+    expect(Object.keys(result.rawData)).toEqual(['gap-stats', 'ownership']);
+    expect(result.dataSources).toHaveLength(2);
+  });
+
+  it('fetches the swing-trader scope on an empty ticker cache', async () => {
+    const cacheDb = createAskedgarCacheDb();
+    getDbMock.mockReturnValue(cacheDb);
+    const fetchSpy = mockSuccessfulEndpointFetch();
+    const client = await import('@/lib/askedgar');
+
+    const result = await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(9);
+    expect(Object.keys(result.rawData)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
+    expect(cachedRawDataKeys(cacheDb)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
+  });
+
+  it('serves a swing-trader scope from a populated snapshot cache without upstream calls', async () => {
+    const cacheDb = createAskedgarCacheDb();
+    getDbMock.mockReturnValue(cacheDb);
+    const fetchSpy = mockSuccessfulEndpointFetch();
+    const client = await import('@/lib/askedgar');
+
+    await client.getCachedTickerData('AAPL');
+    expect(fetchSpy).toHaveBeenCalledTimes(17);
+
+    fetchSpy.mockClear();
+    const result = await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(Object.keys(result.rawData)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
+    expect(cachedRawDataKeys(cacheDb)).toHaveLength(17);
+  });
+
+  it('merges missing snapshot endpoints after a swing-trader scope populated the cache', async () => {
+    const cacheDb = createAskedgarCacheDb();
+    getDbMock.mockReturnValue(cacheDb);
+    const fetchSpy = mockSuccessfulEndpointFetch();
+    const client = await import('@/lib/askedgar');
+
+    await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
+    expect(fetchSpy).toHaveBeenCalledTimes(9);
+
+    fetchSpy.mockClear();
+    const result = await client.getCachedTickerData('AAPL');
+
+    expect(fetchSpy).toHaveBeenCalledTimes(8);
+    expect(Object.keys(result.rawData)).toHaveLength(17);
+    expect(cachedRawDataKeys(cacheDb)).toHaveLength(17);
+  });
+
+  it('sums AskEdgar usage cost into the fan-out log', async () => {
+    const costs = [1250, 2750];
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      const cost = costs.shift() ?? 0;
+      return new Response(JSON.stringify({
+        status: 'success',
+        count: 1,
+        results: [{}],
+        usage: { cost_microdollars: cost },
+      }));
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const client = await import('@/lib/askedgar');
+
+    await client.fetchTickerData('AAPL', { endpoints: ['gap-stats', 'ownership'] });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('costUsd=0.0040'));
+  });
+
+  it('throws for unknown endpoint keys', async () => {
+    const client = await import('@/lib/askedgar');
+
+    await expect(client.fetchTickerData('AAPL', { endpoints: ['nope'] })).rejects.toThrow('[askedgar] Unknown endpoint key: nope');
   });
 
   it('tracks unique ticker count', async () => {

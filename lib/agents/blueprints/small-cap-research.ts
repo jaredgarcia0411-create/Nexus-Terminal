@@ -805,7 +805,7 @@ export const smallCapResearchBlueprint: Blueprint = {
         const rawInput = rawResearchInputSchema.parse(jobInput);
         const ticker = rawInput.ticker.trim().toUpperCase();
         researchTickerInputSchema.parse({ ticker });
-        const result = await getCachedTickerData(ticker);
+        const result = await getCachedTickerData(ticker, { scope: 'small-cap-research' });
         const rawData = result.rawData as Record<string, unknown>;
         const cashPosition = (result as { dilutionDetails?: unknown }).dilutionDetails
           ?? readResults(rawData['dilution-data'])[0]
