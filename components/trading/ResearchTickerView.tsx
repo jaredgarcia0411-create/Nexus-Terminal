@@ -24,6 +24,8 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  // YYYY-MM-DD when the user clicks a gap-stat row; null = live chart.
+  const [historicalDate, setHistoricalDate] = useState<string | null>(null);
 
   const fetchData = useCallback(async (selectedTicker: string) => {
     setLoading(true);
@@ -66,6 +68,7 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
   }, [onCompanyName]);
 
   useEffect(() => {
+    setHistoricalDate(null);
     void fetchData(ticker);
   }, [ticker, fetchData]);
 
@@ -95,11 +98,15 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
           <ResearchCompanyHeader ticker={ticker} companyName={data.companyName ?? null} header={data.header} />
         </div>
         <div className="min-h-0 flex-1 bg-[#0A0A0B]">
-          <ResearchChart ticker={ticker} />
+          <ResearchChart
+            ticker={ticker}
+            historicalDate={historicalDate}
+            onClearHistorical={() => setHistoricalDate(null)}
+          />
         </div>
       </div>
 
-      <ResearchReportSections ticker={ticker} data={data} />
+      <ResearchReportSections ticker={ticker} data={data} onSelectGapDate={setHistoricalDate} />
 
       <div className="border-t border-white/10">
         <ResearchTldr ticker={ticker} />

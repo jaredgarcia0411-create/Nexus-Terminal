@@ -6,6 +6,7 @@ import { ColorType, CrosshairMode, type CandlestickData, type HistogramData, typ
 import { useCandleData } from '@/hooks/use-candle-data';
 import {
   RESEARCH_CHART_FRAME_CONFIG,
+  buildTradeChartOptions,
   type ResearchChartTimeframeKey,
 } from '@/lib/chart-timeframes';
 
@@ -15,23 +16,41 @@ function toTime(ms: number): Time {
 
 interface Props {
   ticker: string;
+  historicalDate?: string | null;
+  onClearHistorical?: () => void;
 }
 
-export default function ResearchChart({ ticker }: Props) {
+export default function ResearchChart({ ticker, historicalDate, onClearHistorical }: Props) {
   const [timeframe, setTimeframe] = useState<ResearchChartTimeframeKey>('1D');
   const frame = RESEARCH_CHART_FRAME_CONFIG[timeframe];
 
-  const marketOptions = useMemo(
-    () => ({
+  // When historicalDate is set, pin the fetch to that day's session window using the
+  // same helper journal trade charts use. Otherwise drive from the timeframe selector.
+  const marketOptions = useMemo(() => {
+    if (historicalDate) {
+      const opts = buildTradeChartOptions(historicalDate, '5m');
+      return {
+        periodType: opts.periodType,
+        period: opts.period,
+        frequencyType: opts.frequencyType,
+        frequency: opts.frequency,
+        startDate: opts.startDate,
+        endDate: opts.endDate,
+        includePrePost: opts.includePrePost ?? true,
+      };
+    }
+    return {
       periodType: frame.periodType,
       period: frame.period,
       frequencyType: frame.frequencyType,
       frequency: frame.frequency,
       includePrePost: frame.intraday,
       refreshIntervalMs: 60_000,
-    }),
-    [frame.frequency, frame.frequencyType, frame.intraday, frame.period, frame.periodType],
-  );
+    };
+  }, [historicalDate, frame.frequency, frame.frequencyType, frame.intraday, frame.period, frame.periodType]);
+
+  // Historical mode is always 5m intraday. Live mode follows the selected timeframe.
+  const isIntraday = historicalDate ? true : frame.intraday;
 
   const { candles, isLoading, error } = useCandleData(ticker, marketOptions);
 
@@ -64,7 +83,7 @@ export default function ResearchChart({ ticker }: Props) {
         rightPriceScale: { borderColor: '#ffffff10' },
         timeScale: {
           borderColor: '#ffffff10',
-          timeVisible: frame.intraday,
+          timeVisible: isIntraday,
           secondsVisible: false,
         },
         width: containerRef.current.clientWidth,
@@ -113,7 +132,7 @@ export default function ResearchChart({ ticker }: Props) {
       seriesRef.current = null;
       volumeRef.current = null;
     };
-  }, [frame.intraday]);
+  }, [isIntraday]);
 
   useEffect(() => {
     if (!seriesRef.current) return;
@@ -142,19 +161,34 @@ export default function ResearchChart({ ticker }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-1 border-b border-white/10 px-3 py-2">
-        {(Object.keys(RESEARCH_CHART_FRAME_CONFIG) as ResearchChartTimeframeKey[]).map((key) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setTimeframe(key)}
-            className={`rounded px-2 py-1 text-xs transition-colors ${
-              timeframe === key ? 'bg-emerald-500 text-black' : 'text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
-            }`}
-          >
-            {RESEARCH_CHART_FRAME_CONFIG[key].label}
-          </button>
-        ))}
+      <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
+        {historicalDate ? (
+          <>
+            <span className="rounded bg-emerald-500/10 px-2 py-1 text-xs text-emerald-400">
+              Viewing {historicalDate} · 5m
+            </span>
+            <button
+              type="button"
+              onClick={() => onClearHistorical?.()}
+              className="rounded px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+            >
+              Back to live
+            </button>
+          </>
+        ) : (
+          (Object.keys(RESEARCH_CHART_FRAME_CONFIG) as ResearchChartTimeframeKey[]).map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTimeframe(key)}
+              className={`rounded px-2 py-1 text-xs transition-colors ${
+                timeframe === key ? 'bg-emerald-500 text-black' : 'text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
+              }`}
+            >
+              {RESEARCH_CHART_FRAME_CONFIG[key].label}
+            </button>
+          ))
+        )}
       </div>
 
       <div className="relative min-h-0 flex-1">

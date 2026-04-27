@@ -23,6 +23,7 @@ import type {
 interface Props {
   ticker: string;
   data: ResearchSnapshot;
+  onSelectGapDate?: (date: string) => void;
 }
 
 type TabKey = 'overview' | 'offering-ability' | 'dilution' | 'news-filings' | 'offerings' | 'history' | 'gap-stats';
@@ -136,10 +137,26 @@ function WarrantSection({
 
 const TABS: Array<{ key: TabKey; label: string }> = [{ key: 'overview', label: 'Overview' }, { key: 'offering-ability', label: 'Offering Ability' }, { key: 'dilution', label: 'Dilution' }, { key: 'news-filings', label: 'News & Filings' }, { key: 'offerings', label: 'Offerings' }, { key: 'history', label: 'History' }, { key: 'gap-stats', label: 'Gap Stats' }];
 
-function GapStatRow({ row }: { row: ResearchSnapshotGapStat }) {
+function GapStatRow({ row, onSelectDate }: { row: ResearchSnapshotGapStat; onSelectDate?: (date: string) => void }) {
+  // Date upstream is YYYY-MM-DD (verified in __tests__/askedgar-client.test.ts).
+  // Pass it straight through; ResearchChart will hand it to buildTradeChartOptions.
+  const canSelect = Boolean(row.date && onSelectDate);
   return (
     <tr className="border-b border-white/5">
-      <td className="py-2 pr-3 text-zinc-300">{formatDate(row.date)}</td>
+      <td className="py-2 pr-3 text-zinc-300">
+        {canSelect ? (
+          <button
+            type="button"
+            onClick={() => row.date && onSelectDate?.(row.date)}
+            className="text-zinc-300 underline-offset-2 transition-colors hover:text-emerald-400 hover:underline"
+            title="View 5m chart for this date"
+          >
+            {formatDate(row.date)}
+          </button>
+        ) : (
+          formatDate(row.date)
+        )}
+      </td>
       <td className="py-2 pr-3 text-right font-medium text-emerald-400">
         {row.gapPercentage !== null ? `+${row.gapPercentage.toFixed(0)}%` : 'N/A'}
       </td>
@@ -163,7 +180,7 @@ function GapStatRow({ row }: { row: ResearchSnapshotGapStat }) {
   );
 }
 
-export default function ResearchReportSections({ data }: Props) {
+export default function ResearchReportSections({ data, onSelectGapDate }: Props) {
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
 
   const atmRegistrations = data.registrations.filter((row) => row.isAtm);
@@ -590,7 +607,7 @@ export default function ResearchReportSections({ data }: Props) {
                     </thead>
                     <tbody>
                       {data.gapStats.map((row, index) => (
-                        <GapStatRow key={index} row={row} />
+                        <GapStatRow key={index} row={row} onSelectDate={onSelectGapDate} />
                       ))}
                     </tbody>
                   </table>
