@@ -59,7 +59,7 @@ Primary dependencies:
 - [ ] `split-status`
 - [ ] Basic `offerings`
 - [ ] Insider `ownership`
-- [ ] Historical outstanding-share snapshots from `historical-float-pro`
+- [x] Historical outstanding-share snapshots from `historical-float-pro` — shipped 2026-04-27 (`cbde6ee`) via `lib/sec/companyfacts.ts`
 - [x] Basic filing metadata now coming from `filing-titles` and filing feeds — shipped 2026-04-27 (`b4a3e73`) via `lib/sec/submissions.ts`
 
 ### Medium-complexity candidates
