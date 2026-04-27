@@ -162,6 +162,13 @@
       "when": 1776977069679,
       "tag": "0022_system_tickers",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1777300360205,
+      "tag": "0023_abnormal_ser_duncan",
+      "breakpoints": true
     }
   ]
 }

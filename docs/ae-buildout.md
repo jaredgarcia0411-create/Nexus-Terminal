@@ -55,12 +55,12 @@ Primary dependencies:
 
 ### Best first-wave candidates
 
-- `reverse-splits`
-- `split-status`
-- Basic `offerings`
-- Insider `ownership`
-- Historical outstanding-share snapshots from `historical-float-pro`
-- Basic filing metadata now coming from `filing-titles` and filing feeds
+- [ ] `reverse-splits`
+- [ ] `split-status`
+- [ ] Basic `offerings`
+- [ ] Insider `ownership`
+- [ ] Historical outstanding-share snapshots from `historical-float-pro`
+- [x] Basic filing metadata now coming from `filing-titles` and filing feeds — shipped 2026-04-27 (`b4a3e73`) via `lib/sec/submissions.ts`
 
 ### Medium-complexity candidates
 
