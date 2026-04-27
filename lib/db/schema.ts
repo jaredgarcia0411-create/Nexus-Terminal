@@ -221,6 +221,17 @@ export const secTickerCik = pgTable('sec_ticker_cik', {
   index('sec_ticker_cik_fetched_idx').on(table.fetchedAt),
 ]);
 
+// SEC companyfacts cache — full raw XBRL JSON keyed by CIK.
+// ~3-5 MB per entry; Postgres TOAST handles compression automatically.
+// TTL: 24h soft expiry enforced in lib/sec/companyfacts.ts.
+export const secCompanyfactsCache = pgTable('sec_companyfacts_cache', {
+  cik: text('cik').primaryKey(),
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
+  payload: jsonb('payload').notNull(),
+}, (table) => [
+  index('sec_companyfacts_cache_fetched_idx').on(table.fetchedAt),
+]);
+
 export const agentRegistry = pgTable('agent_registry', {
   id: text('id').primaryKey(),
   displayName: text('display_name').notNull(),

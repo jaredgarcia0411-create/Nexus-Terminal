@@ -20,6 +20,14 @@ vi.mock('@/lib/sec/submissions', () => ({
   getRecentFilings: getRecentFilingsMock,
 }));
 
+const { getHistoricalOutstandingMock } = vi.hoisted(() => ({
+  getHistoricalOutstandingMock: vi.fn(),
+}));
+
+vi.mock('@/lib/sec/companyfacts', () => ({
+  getHistoricalOutstanding: getHistoricalOutstandingMock,
+}));
+
 interface AskedgarCacheRow {
   id: string;
   cacheType: string;
@@ -118,6 +126,12 @@ describe('askedgar client', () => {
         primary_doc_description: null,
       }],
     });
+    getHistoricalOutstandingMock.mockReset();
+    getHistoricalOutstandingMock.mockResolvedValue({
+      status: 'success',
+      count: 1,
+      results: [{ date: '2026-01-01', outstanding: 1_000_000 }],
+    });
     process.env.ASKEDGAR_API_KEY = 'test-key';
     process.env.ASKEDGAR_DAILY_LIMIT = '100';
   });
@@ -161,7 +175,7 @@ describe('askedgar client', () => {
 
     const result = await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(8);
+    expect(fetchSpy).toHaveBeenCalledTimes(7);
     expect(Object.keys(result.rawData)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
     expect(cachedRawDataKeys(cacheDb)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
   });
@@ -173,7 +187,7 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
 
     await client.getCachedTickerData('AAPL');
-    expect(fetchSpy).toHaveBeenCalledTimes(16);
+    expect(fetchSpy).toHaveBeenCalledTimes(15);
 
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
@@ -190,7 +204,7 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
 
     await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
-    expect(fetchSpy).toHaveBeenCalledTimes(8);
+    expect(fetchSpy).toHaveBeenCalledTimes(7);
 
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL');
@@ -254,6 +268,12 @@ describe('askedgar client', () => {
       results: [],
       error: 'Rate limited — retry after 42s',
     });
+    getHistoricalOutstandingMock.mockResolvedValue({
+      status: 'error',
+      count: 0,
+      results: [],
+      error: 'SEC unavailable',
+    });
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
       error: {
         code: 'rate_limit_exceeded',
@@ -284,6 +304,12 @@ describe('askedgar client', () => {
       count: 0,
       results: [],
       error: 'Rate limited — retry after 42s',
+    });
+    getHistoricalOutstandingMock.mockResolvedValue({
+      status: 'error',
+      count: 0,
+      results: [],
+      error: 'SEC unavailable',
     });
 
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
@@ -322,7 +348,7 @@ describe('askedgar client', () => {
       client.getCachedTickerData('MSFT'),
     ]);
 
-    expect(fetchSpy).toHaveBeenCalledTimes(16);
+    expect(fetchSpy).toHaveBeenCalledTimes(15);
     expect(first).toEqual(second);
   });
 

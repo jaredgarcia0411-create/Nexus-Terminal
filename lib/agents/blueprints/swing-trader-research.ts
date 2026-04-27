@@ -444,7 +444,9 @@ function normalizeHistoricalFloatRow(value: unknown): {
   }
 
   const date = parseLooseDate(getFieldValue(value, ['date', 'reportedDate', 'reported_date']));
-  const floatValue = getNumberField(value, ['float', 'tradableFloat', 'tradable_float']);
+  // Sprint 2 — historical-float-pro now sources outstanding shares from SEC XBRL companyfacts;
+  // float/tradable are null and we fall back to outstanding for trend computation.
+  const floatValue = getNumberField(value, ['float', 'tradableFloat', 'tradable_float', 'outstanding', 'outstandingShares', 'outstanding_shares']);
 
   if (!date || floatValue === null || !Number.isFinite(floatValue)) {
     return null;

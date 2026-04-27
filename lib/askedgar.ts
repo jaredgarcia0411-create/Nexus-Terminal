@@ -3,6 +3,7 @@ import { and, eq, gt } from 'drizzle-orm';
 import { getField, toNumberValue, toRecord } from '@/lib/askedgar-utils';
 import { getDb } from '@/lib/db';
 import { askedgarCache } from '@/lib/db/schema';
+import { getHistoricalOutstanding } from '@/lib/sec/companyfacts';
 import { getRecentFilings } from '@/lib/sec/submissions';
 import type {
   ResearchSnapshotFull,
@@ -435,12 +436,6 @@ async function fetchAgreements(ticker: string) {
   return requestAskEdgar<unknown>('/v1/agreements', { ticker: validated });
 }
 
-async function fetchHistoricalFloatPro(ticker: string, limit = 20) {
-  const validated = validateTickerOrError<unknown>(ticker);
-  if (typeof validated !== 'string') return validated;
-  return requestAskEdgar<unknown>('/v1/historical-float-pro', { ticker: validated, limit });
-}
-
 async function fetchReverseSplits(ticker: string) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
@@ -477,7 +472,7 @@ export const ENDPOINT_REGISTRY = {
   'nasdaq-compliance': { label: 'Nasdaq Compliance', run: (ticker) => fetchNasdaqCompliance(ticker) },
   'pump-and-dump-tracker': { label: 'Pump and Dump Tracker', run: (ticker) => fetchPumpAndDumpTracker(ticker) },
   agreements: { label: 'Agreements', run: (ticker) => fetchAgreements(ticker) },
-  'historical-float-pro': { label: 'Historical Float', run: (ticker) => fetchHistoricalFloatPro(ticker, 20) },
+  'historical-float-pro': { label: 'Historical Float', run: (ticker) => getHistoricalOutstanding(ticker, { limit: 20 }) },
   'reverse-splits': { label: 'Reverse Splits', run: (ticker) => fetchReverseSplits(ticker) },
   'filing-titles': { label: 'Filing Titles (SEC)', run: (ticker) => getRecentFilings(ticker, { limit: 20 }) },
   'gap-stats': { label: 'Gap Stats', run: (ticker) => fetchGapStats(ticker, 50) },
