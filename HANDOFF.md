@@ -316,7 +316,8 @@ Components:
 
 ## Validation Snapshot
 
-- Backtesting Phase 1 (`2026-04-28`, pending review/commit): `npm run db:generate` produced `drizzle/0025_blue_joseph.sql`; `npm run db:migrate` applied it to Neon; `npm run lint`, `npx tsc --noEmit`, `npm test` (454/454), and `npm run workflow:audit` passed.
+- Backtesting Phase 2 (`2026-04-28`, pending review/commit): replaced the legacy `ChartsTab` wrapper with `BacktestingTab`, `BacktestingSidebar`, `BacktestChartGrid`, and reusable `BacktestChart`; extended backtest timeframe/indicator utilities; `npm run lint`, `npx tsc --noEmit`, `npm test` (457/457), and `npm run workflow:audit` passed. Dev server served `/login`; full chart interaction smoke remains user-authenticated/manual because `/` redirects to login without a browser session.
+- Backtesting Phase 1 (`2026-04-28`, committed `4633b30`): `npm run db:generate` produced `drizzle/0025_blue_joseph.sql`; `npm run db:migrate` applied it to Neon; `npm run lint`, `npx tsc --noEmit`, `npm test` (454/454), and `npm run workflow:audit` passed.
 
 Last validation (before Backtesting work): `npm run lint`, `npx tsc --noEmit`, `npm test` (458/458 in isolation, one pre-existing flaky `sec-client.test.ts` timing assertion under full-suite load), `npm run db:migrate` (`0024_acoustic_jocasta.sql` applied to Neon) — all on AskEdgar Sprint 2 ship `cbde6ee` (2026-04-27).
 

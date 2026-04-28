@@ -39,6 +39,10 @@ const DEFAULT_COLORS = ['#f59e0b', '#22c55e', '#ef4444', '#3b82f6', '#a855f7', '
 const DEFAULT_LINE_WIDTH = 2;
 const STORAGE_KEY_PREFIX = 'nexus-chart-drawings';
 
+type ChartDrawingOptions = {
+  persist?: boolean;
+};
+
 type DrawingState = {
   drawings: Drawing[];
   tempDrawing: Drawing | null;
@@ -141,8 +145,8 @@ function normalizeDrawings(loaded: unknown): Drawing[] {
   return normalized;
 }
 
-function loadDrawingsForSymbol(symbol: string): Drawing[] {
-  if (!symbol) return [];
+function loadDrawingsForSymbol(symbol: string, persist: boolean): Drawing[] {
+  if (!symbol || !persist) return [];
 
   try {
     const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}-${symbol}`);
@@ -277,7 +281,8 @@ export function useChartDrawings(
   symbol: string,
   externalActiveTool?: DrawingTool,
   externalColor?: string,
-  externalLineWidth?: number
+  externalLineWidth?: number,
+  options: ChartDrawingOptions = {},
 ) {
   const [internalActiveTool, setInternalActiveTool] = useState<DrawingTool>(null);
   const [internalColor, setInternalColor] = useState(DEFAULT_COLORS[0]);
@@ -293,8 +298,9 @@ export function useChartDrawings(
 
   const previousExternalToolRef = useRef<DrawingTool | undefined>(externalActiveTool);
   const skipNextStorageSaveRef = useRef(true);
+  const persist = options.persist ?? true;
   const [drawingState, dispatch] = useReducer(drawingReducer, undefined, () => ({
-    drawings: loadDrawingsForSymbol(symbol),
+    drawings: loadDrawingsForSymbol(symbol, persist),
     tempDrawing: null,
     isDrawing: false,
   }));
@@ -305,12 +311,12 @@ export function useChartDrawings(
     skipNextStorageSaveRef.current = true;
     dispatch({
       type: 'syncSymbol',
-      drawings: loadDrawingsForSymbol(symbol),
+      drawings: loadDrawingsForSymbol(symbol, persist),
     });
-  }, [symbol]);
+  }, [persist, symbol]);
 
   useEffect(() => {
-    if (!symbol) return;
+    if (!symbol || !persist) return;
     if (skipNextStorageSaveRef.current) {
       skipNextStorageSaveRef.current = false;
       return;
@@ -321,7 +327,7 @@ export function useChartDrawings(
     } catch {
       // Ignore storage errors
     }
-  }, [drawings, symbol]);
+  }, [drawings, persist, symbol]);
 
   useEffect(() => {
     if (externalActiveTool === undefined) return;

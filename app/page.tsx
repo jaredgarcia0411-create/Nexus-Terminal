@@ -289,7 +289,7 @@ export default function NexusTerminal() {
 
             {activeTab === 'backtesting' ? (
               <TabErrorBoundary name="Backtesting">
-                <BacktestingTab trades={trades} />
+                <BacktestingTab />
               </TabErrorBoundary>
             ) : null}
 

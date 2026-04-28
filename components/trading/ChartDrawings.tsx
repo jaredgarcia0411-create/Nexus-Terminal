@@ -125,6 +125,7 @@ interface ChartDrawingsProps {
 	onDrawingsChange?: (count: number, clearAll: () => void) => void;
 	onDeleteDrawing?: (id: string) => void;
 	onInteractionChange?: (isInteracting: boolean) => void;
+	persistDrawings?: boolean;
 }
 
 export default function ChartDrawings({
@@ -138,6 +139,7 @@ export default function ChartDrawings({
 	onDrawingsChange,
 	onDeleteDrawing,
 	onInteractionChange,
+	persistDrawings = true,
 }: ChartDrawingsProps) {
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
@@ -155,7 +157,7 @@ export default function ChartDrawings({
     clearAllDrawings,
     updateDrawingEndpoint,
     removeDrawing,
-  } = useChartDrawings(symbol, activeTool, selectedColor, lineWidth);
+  } = useChartDrawings(symbol, activeTool, selectedColor, lineWidth, { persist: persistDrawings });
   const isInteracting = isDrawing || dragState !== null;
 
   // Get coordinate converters

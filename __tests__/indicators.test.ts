@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bollingerBands, ema, macd, rsi, sma, vwap, type OHLCData } from '@/lib/indicators';
+import { bollingerBands, ema, ema9, ema20, ema21, ema50, macd, rsi, sma, sma20, sma50, sma200, vwap, type OHLCData } from '@/lib/indicators';
 
 describe('sma', () => {
   it('returns null warmup slots and rolling means', () => {
@@ -10,6 +10,14 @@ describe('sma', () => {
     expect(sma([], 3)).toEqual([]);
     expect(sma([1, 2, 3], 0)).toEqual([null, null, null]);
     expect(sma([1, 2, 3], 1)).toEqual([1, 2, 3]);
+  });
+
+  it('exposes named SMA wrappers', () => {
+    const data = Array.from({ length: 210 }, (_, index) => index + 1);
+
+    expect(sma20(data)).toEqual(sma(data, 20));
+    expect(sma50(data)).toEqual(sma(data, 50));
+    expect(sma200(data)).toEqual(sma(data, 200));
   });
 });
 
@@ -26,6 +34,15 @@ describe('ema', () => {
     expect(ema([10, 11, 12], 10)).toEqual([null, null, null]);
     expect(ema([10, 11, 12], 0)).toEqual([null, null, null]);
     expect(ema([10, 11, 12], 1)).toEqual([10, 11, 12]);
+  });
+
+  it('exposes named EMA wrappers', () => {
+    const data = Array.from({ length: 60 }, (_, index) => 100 + index);
+
+    expect(ema9(data)).toEqual(ema(data, 9));
+    expect(ema20(data)).toEqual(ema(data, 20));
+    expect(ema21(data)).toEqual(ema(data, 21));
+    expect(ema50(data)).toEqual(ema(data, 50));
   });
 });
 

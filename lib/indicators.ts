@@ -30,6 +30,10 @@ export function sma(data: number[], period: number): (number | null)[] {
   return result;
 }
 
+export const sma20 = (data: number[]): (number | null)[] => sma(data, 20);
+export const sma50 = (data: number[]): (number | null)[] => sma(data, 50);
+export const sma200 = (data: number[]): (number | null)[] => sma(data, 200);
+
 export function ema(data: number[], period: number): (number | null)[] {
   const safePeriod = Math.trunc(period);
   if (!Number.isFinite(safePeriod) || safePeriod <= 0) {
@@ -59,6 +63,11 @@ export function ema(data: number[], period: number): (number | null)[] {
   }
   return result;
 }
+
+export const ema9 = (data: number[]): (number | null)[] => ema(data, 9);
+export const ema20 = (data: number[]): (number | null)[] => ema(data, 20);
+export const ema21 = (data: number[]): (number | null)[] => ema(data, 21);
+export const ema50 = (data: number[]): (number | null)[] => ema(data, 50);
 
 export function bollingerBands(
   data: number[],

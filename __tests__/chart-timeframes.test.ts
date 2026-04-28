@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  BACKTEST_FRAME_CONFIG,
   buildTradeChartOptions,
   TRADE_CHART_TIMEFRAME_CONFIG,
 } from '@/lib/chart-timeframes';
@@ -44,5 +45,11 @@ describe('chart-timeframes', () => {
     expect(TRADE_CHART_TIMEFRAME_CONFIG['5m'].label).toBe('5m');
     expect(TRADE_CHART_TIMEFRAME_CONFIG['15m'].label).toBe('15m');
     expect(TRADE_CHART_TIMEFRAME_CONFIG['1d'].label).toBe('Daily');
+  });
+
+  it('exposes Backtesting chart selector frames', () => {
+    expect(BACKTEST_FRAME_CONFIG['2m']).toMatchObject({ label: '2m', frequencyType: 'minute', frequency: '2' });
+    expect(BACKTEST_FRAME_CONFIG['1D']).toMatchObject({ label: '1D', frequencyType: 'daily', intraday: false });
+    expect(BACKTEST_FRAME_CONFIG['1M']).toMatchObject({ label: '1M', frequencyType: 'monthly', intraday: false });
   });
 });
