@@ -49,6 +49,7 @@ import {
   type OHLCData,
 } from '@/lib/indicators';
 import { epochToNySortKey, getPreviousTradingSession, nyDateTimeToEpoch, parseSortKey } from '@/lib/time-utils';
+import type { BacktestActionType } from '@/lib/types';
 
 export type IndicatorKey =
   | 'SMA20'
@@ -90,6 +91,8 @@ interface BacktestChartProps {
   defaultTimeframe: BacktestTimeframeKey;
   defaultIndicators?: readonly IndicatorKey[];
   onAnchorChange?: (newDate: string) => void;
+  armedAction?: BacktestActionType | null;
+  onArmedClick?: (payload: { price: number; barTime: string }) => void;
 }
 
 const UP_COLOR = '#ffffff';
@@ -307,6 +310,8 @@ export default function BacktestChart({
   defaultTimeframe,
   defaultIndicators = [],
   onAnchorChange,
+  armedAction = null,
+  onArmedClick,
 }: BacktestChartProps) {
   const [timeframe, setTimeframe] = useState<BacktestTimeframeKey>(defaultTimeframe);
   const [indicators, setIndicators] = useState<Set<IndicatorKey>>(() => new Set(defaultIndicators));
@@ -552,7 +557,21 @@ export default function BacktestChart({
     chart.timeScale().subscribeVisibleTimeRangeChange(handleRangeChange);
 
     const handleClick = (param: MouseEventParams<Time>) => {
-      if (!isDailyAnchorCell || activeDrawingToolRef.current || !param.time) return;
+      if (activeDrawingToolRef.current || !param.time) return;
+
+      if (armedAction && onArmedClick && param.point) {
+        const price = baseSeries.coordinateToPrice(param.point.y);
+        const epochMs = toEpochMs(param.time);
+        if (price != null && epochMs != null) {
+          onArmedClick({
+            price: Number(price.toFixed(4)),
+            barTime: new Date(epochMs).toISOString(),
+          });
+          return;
+        }
+      }
+
+      if (!isDailyAnchorCell || armedAction) return;
       const epochMs = toEpochMs(param.time);
       if (epochMs == null) return;
       const nextDate = dailyDateKey(epochMs, anchorDate);
@@ -590,7 +609,9 @@ export default function BacktestChart({
     frame.intraday,
     indicators,
     isDailyAnchorCell,
+    armedAction,
     onAnchorChange,
+    onArmedClick,
     priorClose,
     seriesType,
   ]);

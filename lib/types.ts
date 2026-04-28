@@ -80,6 +80,36 @@ export interface TradeMarker {
   label: string;
 }
 
+export type BacktestActionType = 'LONG' | 'LONG_ADD' | 'SELL' | 'SHORT' | 'SHORT_ADD' | 'COVER';
+export type BacktestSessionStatus = 'ACTIVE' | 'REVIEWED';
+
+export interface BacktestSession {
+  id: string;
+  userId: string;
+  ticker: string;
+  date: string;
+  status: BacktestSessionStatus;
+  riskDollars: number;
+  label: string | null;
+  notes: string | null;
+  reviewedAt: string | Date | null;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+}
+
+export interface BacktestAction {
+  id: string;
+  userId: string;
+  sessionId: string;
+  actionType: BacktestActionType;
+  price: number;
+  shares: number;
+  stopPrice: number | null;
+  barTime: string;
+  sequence: number;
+  createdAt: string | Date;
+}
+
 // Normalized server-side shape returned by /api/askedgar/snapshot.
 // All field resolution (snake_case/camelCase, equity dedup, warrant classification)
 // is done server-side in normalizeAskEdgarResponse().

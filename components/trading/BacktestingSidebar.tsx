@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ArrowDown, ArrowUp, Search } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -31,6 +31,7 @@ type SortDirection = 'asc' | 'desc';
 interface BacktestingSidebarProps {
   selected: BacktestSelection | null;
   onSelect: (selection: BacktestSelection) => void;
+  topPanel?: ReactNode;
 }
 
 function formatGap(value: number | null) {
@@ -75,7 +76,7 @@ function useSystemTickers() {
   return { rows, loading, error };
 }
 
-export default function BacktestingSidebar({ selected, onSelect }: BacktestingSidebarProps) {
+export default function BacktestingSidebar({ selected, onSelect, topPanel }: BacktestingSidebarProps) {
   const { rows, loading, error } = useSystemTickers();
   const [filter, setFilter] = useState('');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -93,6 +94,7 @@ export default function BacktestingSidebar({ selected, onSelect }: BacktestingSi
 
   return (
     <aside className="flex h-full w-[280px] shrink-0 flex-col border-l border-white/10 bg-[#0A0A0B]">
+      {topPanel ? <div className="border-b border-white/10">{topPanel}</div> : null}
       <div className="border-b border-white/10 p-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />

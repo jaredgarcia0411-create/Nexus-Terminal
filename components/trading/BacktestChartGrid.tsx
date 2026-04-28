@@ -2,6 +2,7 @@
 
 import BacktestChart, { type IndicatorKey } from '@/components/trading/BacktestChart';
 import type { BacktestTimeframeKey } from '@/lib/chart-timeframes';
+import type { BacktestActionType } from '@/lib/types';
 
 type ChartCellConfig = {
   timeframe: BacktestTimeframeKey;
@@ -19,9 +20,17 @@ interface BacktestChartGridProps {
   ticker: string | null;
   date: string | null;
   onAnchorChange: (newDate: string) => void;
+  armedAction: BacktestActionType | null;
+  onArmedClick: (payload: { price: number; barTime: string }) => void;
 }
 
-export default function BacktestChartGrid({ ticker, date, onAnchorChange }: BacktestChartGridProps) {
+export default function BacktestChartGrid({
+  ticker,
+  date,
+  onAnchorChange,
+  armedAction,
+  onArmedClick,
+}: BacktestChartGridProps) {
   if (!ticker || !date) {
     return (
       <div className="flex min-h-[520px] items-center justify-center border border-white/10 bg-[#121214] text-sm text-zinc-500">
@@ -40,6 +49,8 @@ export default function BacktestChartGrid({ ticker, date, onAnchorChange }: Back
           defaultTimeframe={cell.timeframe}
           defaultIndicators={cell.indicators}
           onAnchorChange={cell.timeframe === '1D' ? onAnchorChange : undefined}
+          armedAction={armedAction}
+          onArmedClick={onArmedClick}
         />
       ))}
     </div>
