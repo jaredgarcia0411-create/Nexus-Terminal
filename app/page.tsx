@@ -13,7 +13,7 @@ import DashboardTab from '@/components/trading/DashboardTab';
 import JournalTab from '@/components/trading/JournalTab';
 import PerformanceTab from '@/components/trading/PerformanceTab';
 import TradesTab from '@/components/trading/TradesTab';
-import ChartsTab from '@/components/trading/ChartsTab';
+import BacktestingTab from '@/components/trading/BacktestingTab';
 import ResearchTab from '@/components/trading/ResearchTab';
 import ArchiveTab from '@/components/trading/ArchiveTab';
 import CommandPalette from '@/components/trading/CommandPalette';
@@ -22,14 +22,14 @@ import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useTrades } from '@/hooks/use-trades';
 
-const VALID_TABS: TabKey[] = ['dashboard', 'performance', 'journal', 'filter', 'charts', 'research', 'archive'];
+const VALID_TABS: TabKey[] = ['dashboard', 'performance', 'journal', 'filter', 'backtesting', 'research', 'archive'];
 
 const TAB_TITLES: Record<TabKey, string> = {
   dashboard: 'Dashboard',
   performance: 'Performance Analytics',
   journal: 'Trading Journal',
   filter: 'Trades Management',
-  charts: 'Charts',
+  backtesting: 'Backtesting',
   research: 'Research',
   archive: 'Archive',
 };
@@ -188,7 +188,7 @@ export default function NexusTerminal() {
         {/* @ts-expect-error webkitdirectory is non-standard but widely supported */}
         <input ref={folderInputRef} type="file" accept=".csv" multiple webkitdirectory="" className="hidden" onChange={handleFolderUpload} />
 
-        <div className={activeTab === 'charts' || activeTab === 'research' ? 'px-3 py-4' : 'mx-auto max-w-7xl p-8'}>
+        <div className={activeTab === 'backtesting' || activeTab === 'research' ? 'px-3 py-4' : 'mx-auto max-w-7xl p-8'}>
           <AnimatePresence mode="wait">
             {activeTab === 'dashboard' ? (
               <TabErrorBoundary name="Dashboard">
@@ -287,9 +287,9 @@ export default function NexusTerminal() {
               </TabErrorBoundary>
             ) : null}
 
-            {activeTab === 'charts' ? (
-              <TabErrorBoundary name="Charts">
-                <ChartsTab trades={trades} />
+            {activeTab === 'backtesting' ? (
+              <TabErrorBoundary name="Backtesting">
+                <BacktestingTab trades={trades} />
               </TabErrorBoundary>
             ) : null}
 

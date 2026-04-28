@@ -3,7 +3,7 @@
 import { useHotkeys } from 'react-hotkeys-hook';
 import type { TabKey } from '@/components/trading/Sidebar';
 
-const TAB_KEYS: TabKey[] = ['dashboard', 'performance', 'journal', 'filter', 'charts', 'research', 'archive'];
+const TAB_KEYS: TabKey[] = ['dashboard', 'performance', 'journal', 'filter', 'backtesting', 'research', 'archive'];
 
 interface GlobalShortcutOptions {
   setActiveTab: (tab: TabKey) => void;

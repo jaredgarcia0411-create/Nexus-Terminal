@@ -23,7 +23,7 @@ const NAV_ITEMS: Array<{
   { tab: 'performance', label: 'Performance', icon: BarChart3, shortcut: '2' },
   { tab: 'journal', label: 'Journal', icon: List, shortcut: '3' },
   { tab: 'filter', label: 'Trades', icon: Filter, shortcut: '4' },
-  { tab: 'charts', label: 'Charts', icon: ChartCandlestick, shortcut: '5' },
+  { tab: 'backtesting', label: 'Backtesting', icon: ChartCandlestick, shortcut: '5' },
   { tab: 'research', label: 'Research', icon: Search, shortcut: '6' },
   { tab: 'archive', label: 'Archive', icon: Archive, shortcut: 'g a' },
 ];

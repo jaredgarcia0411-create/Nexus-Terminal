@@ -454,3 +454,42 @@ export const systemTickers = pgTable('system_tickers', {
   index('system_tickers_date_idx').on(table.date),
   index('system_tickers_ticker_idx').on(table.ticker),
 ]);
+
+export const backtestSessions = pgTable('backtest_sessions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  ticker: text('ticker').notNull(),
+  date: date('date').notNull(),
+  status: text('status', { enum: ['ACTIVE', 'REVIEWED'] }).notNull().default('ACTIVE'),
+  riskDollars: doublePrecision('risk_dollars').notNull(),
+  label: text('label'),
+  notes: text('notes'),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  unique('backtest_sessions_user_id_id_unique').on(t.userId, t.id),
+  index('backtest_sessions_user_ticker_date_idx').on(t.userId, t.ticker, t.date),
+  index('backtest_sessions_user_status_idx').on(t.userId, t.status),
+]);
+
+export const backtestActions = pgTable('backtest_actions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  sessionId: text('session_id').notNull(),
+  actionType: text('action_type', {
+    enum: ['LONG', 'LONG_ADD', 'SELL', 'SHORT', 'SHORT_ADD', 'COVER'],
+  }).notNull(),
+  price: doublePrecision('price').notNull(),
+  shares: doublePrecision('shares').notNull(),
+  stopPrice: doublePrecision('stop_price'),
+  barTime: text('bar_time').notNull(),
+  sequence: integer('sequence').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  foreignKey({
+    columns: [t.userId, t.sessionId],
+    foreignColumns: [backtestSessions.userId, backtestSessions.id],
+  }).onDelete('cascade'),
+  index('backtest_actions_user_session_seq_idx').on(t.userId, t.sessionId, t.sequence),
+]);

@@ -1,13 +1,11 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Settings, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import type { IChartApi, ISeriesApi, Time, IPriceLine } from 'lightweight-charts';
-import { useChartDrawings, type Drawing, type DrawingTool, type TrendLineDrawing, type RectangleDrawing, type FibonacciDrawing } from '@/hooks/use-chart-drawings';
-import FibonacciSettings from './FibonacciSettings';
+import { useChartDrawings, type Drawing, type DrawingTool, type TrendLineDrawing, type RectangleDrawing } from '@/hooks/use-chart-drawings';
 import { createTrendLineRenderer } from './plugins/TrendLinePrimitive';
 import { createRectangleRenderer } from './plugins/RectanglePrimitive';
-import { createFibonacciRenderer, DEFAULT_FIBONACCI_LEVELS } from './plugins/FibonacciPrimitive';
 
 // Hit detection helper - check if point is near a drawing
 const HIT_TOLERANCE = 10; // pixels
@@ -51,29 +49,6 @@ function isPointNearDrawing(
         y <= bottom + HIT_TOLERANCE
       );
     }
-    case 'fibonacci': {
-      const x1 = timeToCoordinate(drawing.start.time);
-      const y1 = priceToCoordinate(drawing.start.price);
-      const x2 = timeToCoordinate(drawing.end.time);
-      const y2 = priceToCoordinate(drawing.end.price);
-      if (x1 === null || y1 === null || x2 === null || y2 === null) return false;
-      const left = Math.min(x1, x2);
-      const right = Math.max(x1, x2);
-      // Check if near the base line or any level line
-      if (distanceToLineSegment(x, y, x1, y1, x2, y2) < HIT_TOLERANCE) return true;
-      // Check level lines
-      const topPrice = Math.max(drawing.start.price, drawing.end.price);
-      const bottomPrice = Math.min(drawing.start.price, drawing.end.price);
-      const priceRange = topPrice - bottomPrice;
-      for (const level of drawing.levels) {
-        const levelPrice = topPrice - priceRange * level;
-        const yPos = priceToCoordinate(levelPrice);
-        if (yPos !== null && Math.abs(y - yPos) < HIT_TOLERANCE && x >= left - HIT_TOLERANCE && x <= right + HIT_TOLERANCE) {
-          return true;
-        }
-      }
-      return false;
-    }
     default:
       return false;
   }
@@ -116,7 +91,7 @@ function isPointNearEndpoint(
     return { isNear: false, which: null };
   }
 
-  const d = drawing as TrendLineDrawing | RectangleDrawing | FibonacciDrawing;
+  const d = drawing as TrendLineDrawing | RectangleDrawing;
   const x1 = timeToCoordinate(d.start.time);
   const y1 = priceToCoordinate(d.start.price);
   const x2 = timeToCoordinate(d.end.time);
@@ -165,8 +140,6 @@ export default function ChartDrawings({
 	onInteractionChange,
 }: ChartDrawingsProps) {
   const overlayRef = useRef<HTMLCanvasElement>(null);
-  const [showFibSettings, setShowFibSettings] = useState(false);
-  const [editingFibId, setEditingFibId] = useState<string | null>(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<{ drawingId: string; point: 'start' | 'end' } | null>(null);
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
@@ -180,7 +153,6 @@ export default function ChartDrawings({
     finishDrawing,
     cancelDrawing,
     clearAllDrawings,
-    updateDrawingLevels,
     updateDrawingEndpoint,
     removeDrawing,
   } = useChartDrawings(symbol, activeTool, selectedColor, lineWidth);
@@ -366,8 +338,7 @@ export default function ChartDrawings({
         ctx.setLineDash([4, 4]);
         // Draw bounding box or highlight based on drawing type
         switch (drawing.type) {
-          case 'trendline':
-          case 'fibonacci': {
+          case 'trendline': {
             const x1 = timeToCoordinate(drawing.start.time);
             const y1 = priceToCoordinate(drawing.start.price);
             const x2 = timeToCoordinate(drawing.end.time);
@@ -417,19 +388,6 @@ export default function ChartDrawings({
             startPrice: drawing.start.price,
             endTime: drawing.end.time,
             endPrice: drawing.end.price,
-            color: drawing.color,
-            lineWidth: drawing.lineWidth,
-          });
-          renderer.draw(ctx, priceToCoordinate, timeToCoordinate);
-          break;
-        }
-        case 'fibonacci': {
-          const renderer = createFibonacciRenderer({
-            startTime: drawing.start.time,
-            startPrice: drawing.start.price,
-            endTime: drawing.end.time,
-            endPrice: drawing.end.price,
-            levels: drawing.levels,
             color: drawing.color,
             lineWidth: drawing.lineWidth,
           });
@@ -555,33 +513,8 @@ export default function ChartDrawings({
     };
   }, [chart, renderDrawings]);
 
-  // Handle fibonacci settings
-  const handleFibSettingsOpen = useCallback((id: string) => {
-    setEditingFibId(id);
-    setShowFibSettings(true);
-  }, []);
-
-  const handleFibSettingsSave = useCallback(
-    (levels: number[]) => {
-      if (editingFibId) {
-        updateDrawingLevels(editingFibId, levels);
-      }
-      setShowFibSettings(false);
-      setEditingFibId(null);
-    },
-    [editingFibId, updateDrawingLevels]
-  );
-
-  // Get current fib levels for editing
-  const currentFibLevels = editingFibId
-    ? (drawings.find((d) => d.id === editingFibId)?.type === 'fibonacci'
-      ? (drawings.find((d) => d.id === editingFibId) as { levels: number[] }).levels
-      : DEFAULT_FIBONACCI_LEVELS)
-    : DEFAULT_FIBONACCI_LEVELS;
-
 	// Get selected drawing for showing settings button
 	const selectedDrawing = selectedDrawingId ? drawings.find((d) => d.id === selectedDrawingId) : null;
-	const isSelectedFibonacci = selectedDrawing?.type === 'fibonacci';
 
 	// Calculate position for action buttons (near the end point of the drawing)
 	const actionButtonPosition = useMemo(() => {
@@ -595,7 +528,7 @@ export default function ChartDrawings({
 			x = chart ? chart.timeScale().getVisibleRange()?.to ? chart.timeScale().timeToCoordinate(chart.timeScale().getVisibleRange()!.to as Time) : null : null;
 			y = priceToCoordinate(selectedDrawing.price);
 		} else {
-			// For trendline, rectangle, fibonacci - use end point
+			// For trendline and rectangle, use end point.
 			const drawing = selectedDrawing as { end: { time: number; price: number } };
 			x = timeToCoordinate(drawing.end.time);
 			y = priceToCoordinate(drawing.end.price);
@@ -711,40 +644,13 @@ export default function ChartDrawings({
 				<button
 					onClick={handleDeleteSelected}
 					className="absolute z-30 rounded bg-red-600/80 p-1 text-white hover:bg-red-500"
-					style={{ left: actionButtonPosition.x + (isSelectedFibonacci ? 56 : 0), top: actionButtonPosition.y }}
+					style={{ left: actionButtonPosition.x, top: actionButtonPosition.y }}
 					title="Delete drawing (Delete key)"
 				>
 					<Trash2 className="h-4 w-4" />
 				</button>
-				
-				{/* Settings button - only for fibonacci */}
-				{isSelectedFibonacci && (
-					<button
-						onClick={() => {
-							if (selectedDrawingId) {
-								handleFibSettingsOpen(selectedDrawingId);
-							}
-						}}
-						className="absolute z-30 rounded bg-zinc-700 p-1 text-white hover:bg-zinc-600"
-						style={{ left: actionButtonPosition.x, top: actionButtonPosition.y }}
-						title="Edit Fibonacci levels"
-					>
-						<Settings className="h-4 w-4" />
-					</button>
-				)}
 			</>
 		)}
-
-      {/* Fibonacci Settings Dialog */}
-      <FibonacciSettings
-        isOpen={showFibSettings}
-        onClose={() => {
-          setShowFibSettings(false);
-          setEditingFibId(null);
-        }}
-        currentLevels={currentFibLevels}
-        onSave={handleFibSettingsSave}
-      />
     </>
   );
 }

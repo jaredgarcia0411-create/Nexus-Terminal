@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Minus, Square, Trash2, TrendingUp, Type, X } from 'lucide-react';
+import { Minus, Square, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { DrawingTool } from '@/hooks/use-chart-drawings';
 
@@ -16,7 +16,6 @@ const tools: Array<{ id: DrawingTool; icon: React.ReactNode; label: string }> = 
   { id: 'trendline', icon: <TrendingUp className="h-4 w-4" />, label: 'Trend Line' },
   { id: 'horizontal', icon: <Minus className="h-4 w-4" />, label: 'Horizontal Line' },
   { id: 'rectangle', icon: <Square className="h-4 w-4" />, label: 'Rectangle' },
-  { id: 'fibonacci', icon: <span className="text-xs font-bold">Fib</span>, label: 'Fibonacci' },
 ];
 
 export default function DrawingToolbar({

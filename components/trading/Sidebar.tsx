@@ -7,7 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useIsMobile } from '@/hooks/use-mobile';
 import type { Trade } from '@/lib/types';
 
-export type TabKey = 'dashboard' | 'journal' | 'performance' | 'filter' | 'charts' | 'research' | 'archive';
+export type TabKey = 'dashboard' | 'journal' | 'performance' | 'filter' | 'backtesting' | 'research' | 'archive';
 
 type UserSession = { id?: string; name?: string | null; email?: string | null; image?: string | null } | undefined;
 
@@ -46,7 +46,7 @@ export default function Sidebar({
     { tab: 'performance', title: 'Performance', icon: BarChart3 },
     { tab: 'journal', title: 'Journal', icon: List },
     { tab: 'filter', title: 'Trades', icon: Filter },
-    { tab: 'charts', title: 'Charts', icon: ChartCandlestick },
+    { tab: 'backtesting', title: 'Backtesting', icon: ChartCandlestick },
     { tab: 'research', title: 'Research', icon: Search },
     { tab: 'archive', title: 'Archive', icon: Archive },
   ];

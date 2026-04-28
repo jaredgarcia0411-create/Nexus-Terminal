@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
-export type DrawingTool = 'trendline' | 'horizontal' | 'rectangle' | 'fibonacci' | null;
+export type DrawingTool = 'trendline' | 'horizontal' | 'rectangle' | null;
 
 export interface DrawingPoint {
   time: number;
@@ -33,20 +33,11 @@ export interface RectangleDrawing extends BaseDrawing {
   end: DrawingPoint;
 }
 
-export interface FibonacciDrawing extends BaseDrawing {
-  type: 'fibonacci';
-  start: DrawingPoint;
-  end: DrawingPoint;
-  levels: number[];
-}
-
-export type Drawing = TrendLineDrawing | HorizontalLineDrawing | RectangleDrawing | FibonacciDrawing;
+export type Drawing = TrendLineDrawing | HorizontalLineDrawing | RectangleDrawing;
 
 const DEFAULT_COLORS = ['#f59e0b', '#22c55e', '#ef4444', '#3b82f6', '#a855f7', '#ffffff'];
 const DEFAULT_LINE_WIDTH = 2;
 const STORAGE_KEY_PREFIX = 'nexus-chart-drawings';
-const FIB_LEVELS_STORAGE_KEY = 'nexus-chart-fib-levels';
-const DEFAULT_FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 
 type DrawingState = {
   drawings: Drawing[];
@@ -62,7 +53,6 @@ type DrawingAction =
   | { type: 'cancelDrawing' }
   | { type: 'removeDrawing'; id: string }
   | { type: 'clearAllDrawings' }
-  | { type: 'updateDrawingLevels'; id: string; levels: number[] }
   | { type: 'updateDrawingEndpoint'; id: string; point: DrawingPoint; which: 'start' | 'end' };
 
 function isDrawingPoint(value: unknown): value is DrawingPoint {
@@ -73,11 +63,7 @@ function isDrawingPoint(value: unknown): value is DrawingPoint {
     && typeof point.price === 'number' && Number.isFinite(point.price);
 }
 
-function isNumberArray(value: unknown): value is number[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'number' && Number.isFinite(item));
-}
-
-function normalizeDrawings(loaded: unknown, fibLevels: number[]): Drawing[] {
+function normalizeDrawings(loaded: unknown): Drawing[] {
   if (!Array.isArray(loaded)) return [];
 
   const normalized: Drawing[] = [];
@@ -147,22 +133,6 @@ function normalizeDrawings(loaded: unknown, fibLevels: number[]): Drawing[] {
         });
         break;
       }
-      case 'fibonacci': {
-        if (!isDrawingPoint(drawing.start) || !isDrawingPoint(drawing.end)) {
-          continue;
-        }
-
-        normalized.push({
-          id,
-          type: 'fibonacci',
-          start: drawing.start,
-          end: drawing.end,
-          levels: isNumberArray(drawing.levels) ? drawing.levels : fibLevels,
-          color,
-          lineWidth,
-        });
-        break;
-      }
       default:
         break;
     }
@@ -171,14 +141,14 @@ function normalizeDrawings(loaded: unknown, fibLevels: number[]): Drawing[] {
   return normalized;
 }
 
-function loadDrawingsForSymbol(symbol: string, fibLevels: number[]): Drawing[] {
+function loadDrawingsForSymbol(symbol: string): Drawing[] {
   if (!symbol) return [];
 
   try {
     const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}-${symbol}`);
     if (!saved) return [];
 
-    return normalizeDrawings(JSON.parse(saved), fibLevels);
+    return normalizeDrawings(JSON.parse(saved));
   } catch {
     return [];
   }
@@ -188,8 +158,7 @@ function createTempDrawing(
   tool: Exclude<DrawingTool, null>,
   point: DrawingPoint,
   color: string,
-  lineWidth: number,
-  fibLevels: number[]
+  lineWidth: number
 ): Drawing {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -199,18 +168,6 @@ function createTempDrawing(
       type: 'horizontal',
       price: point.price,
       time: point.time,
-      color,
-      lineWidth,
-    };
-  }
-
-  if (tool === 'fibonacci') {
-    return {
-      id,
-      type: 'fibonacci',
-      start: point,
-      end: point,
-      levels: fibLevels,
       color,
       lineWidth,
     };
@@ -298,20 +255,6 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
         tempDrawing: null,
         isDrawing: false,
       };
-    case 'updateDrawingLevels':
-      return {
-        ...state,
-        drawings: state.drawings.map((drawing) => {
-          if (drawing.id !== action.id || drawing.type !== 'fibonacci') {
-            return drawing;
-          }
-
-          return {
-            ...drawing,
-            levels: action.levels,
-          };
-        }),
-      };
     case 'updateDrawingEndpoint':
       return {
         ...state,
@@ -339,21 +282,6 @@ export function useChartDrawings(
   const [internalActiveTool, setInternalActiveTool] = useState<DrawingTool>(null);
   const [internalColor, setInternalColor] = useState(DEFAULT_COLORS[0]);
   const [internalLineWidth, setInternalLineWidth] = useState(DEFAULT_LINE_WIDTH);
-  const [lastFibLevels, setLastFibLevels] = useState<number[]>(() => {
-    try {
-      const saved = localStorage.getItem(FIB_LEVELS_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (isNumberArray(parsed)) {
-          return parsed;
-        }
-      }
-    } catch {
-      // Ignore parse errors
-    }
-
-    return DEFAULT_FIB_LEVELS;
-  });
 
   const activeTool = externalActiveTool !== undefined ? externalActiveTool : internalActiveTool;
   const selectedColor = externalColor !== undefined ? externalColor : internalColor;
@@ -363,11 +291,10 @@ export function useChartDrawings(
   const setSelectedColor = externalColor !== undefined ? () => {} : setInternalColor;
   const setLineWidth = externalLineWidth !== undefined ? () => {} : setInternalLineWidth;
 
-  const fibLevelsRef = useRef(lastFibLevels);
   const previousExternalToolRef = useRef<DrawingTool | undefined>(externalActiveTool);
   const skipNextStorageSaveRef = useRef(true);
   const [drawingState, dispatch] = useReducer(drawingReducer, undefined, () => ({
-    drawings: loadDrawingsForSymbol(symbol, lastFibLevels),
+    drawings: loadDrawingsForSymbol(symbol),
     tempDrawing: null,
     isDrawing: false,
   }));
@@ -375,14 +302,10 @@ export function useChartDrawings(
   const { drawings, tempDrawing, isDrawing } = drawingState;
 
   useEffect(() => {
-    fibLevelsRef.current = lastFibLevels;
-  }, [lastFibLevels]);
-
-  useEffect(() => {
     skipNextStorageSaveRef.current = true;
     dispatch({
       type: 'syncSymbol',
-      drawings: loadDrawingsForSymbol(symbol, fibLevelsRef.current),
+      drawings: loadDrawingsForSymbol(symbol),
     });
   }, [symbol]);
 
@@ -401,14 +324,6 @@ export function useChartDrawings(
   }, [drawings, symbol]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(FIB_LEVELS_STORAGE_KEY, JSON.stringify(lastFibLevels));
-    } catch {
-      // Ignore storage errors
-    }
-  }, [lastFibLevels]);
-
-  useEffect(() => {
     if (externalActiveTool === undefined) return;
 
     const previousExternalTool = previousExternalToolRef.current;
@@ -425,7 +340,7 @@ export function useChartDrawings(
 
     dispatch({
       type: 'startDrawing',
-      drawing: createTempDrawing(activeTool, point, selectedColor, lineWidth, fibLevelsRef.current),
+      drawing: createTempDrawing(activeTool, point, selectedColor, lineWidth),
     });
   }, [activeTool, selectedColor, lineWidth]);
 
@@ -449,11 +364,6 @@ export function useChartDrawings(
     dispatch({ type: 'clearAllDrawings' });
   }, []);
 
-  const updateDrawingLevels = useCallback((id: string, levels: number[]) => {
-    dispatch({ type: 'updateDrawingLevels', id, levels });
-    setLastFibLevels(levels);
-  }, []);
-
   const updateDrawingEndpoint = useCallback((id: string, point: DrawingPoint, which: 'start' | 'end') => {
     dispatch({ type: 'updateDrawingEndpoint', id, point, which });
   }, []);
@@ -465,7 +375,6 @@ export function useChartDrawings(
     drawings,
     selectedColor,
     lineWidth,
-    lastFibLevels,
     setActiveTool,
     setSelectedColor,
     setLineWidth,
@@ -475,7 +384,6 @@ export function useChartDrawings(
     cancelDrawing,
     removeDrawing,
     clearAllDrawings,
-    updateDrawingLevels,
     updateDrawingEndpoint,
     availableColors: DEFAULT_COLORS,
   };
