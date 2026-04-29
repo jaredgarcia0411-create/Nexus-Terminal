@@ -183,6 +183,13 @@
       "when": 1777413018447,
       "tag": "0025_blue_joseph",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1777497809022,
+      "tag": "0026_low_wilson_fisk",
+      "breakpoints": true
     }
   ]
 }

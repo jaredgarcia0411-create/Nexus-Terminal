@@ -27,7 +27,7 @@ async function delay(ms: number): Promise<void> {
   await new Promise((r) => setTimeout(r, ms));
 }
 
-export async function secFetchJson<T = unknown>(url: string): Promise<T> {
+async function secFetchResponse(url: string, accept: string): Promise<Response> {
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -41,7 +41,7 @@ export async function secFetchJson<T = unknown>(url: string): Promise<T> {
         method: 'GET',
         headers: {
           'User-Agent': SEC_USER_AGENT,
-          'Accept': 'application/json',
+          'Accept': accept,
         },
         signal: controller.signal,
         cache: 'no-store',
@@ -60,7 +60,7 @@ export async function secFetchJson<T = unknown>(url: string): Promise<T> {
         throw new SecHttpError(response.status, `SEC request failed: ${response.status} ${response.statusText}`);
       }
 
-      return (await response.json()) as T;
+      return response;
     } catch (error) {
       clearTimeout(timeoutId);
 
@@ -78,4 +78,14 @@ export async function secFetchJson<T = unknown>(url: string): Promise<T> {
 
   if (lastError instanceof Error) throw lastError;
   throw new Error('SEC request failed after retries');
+}
+
+export async function secFetchJson<T = unknown>(url: string): Promise<T> {
+  const response = await secFetchResponse(url, 'application/json');
+  return (await response.json()) as T;
+}
+
+export async function secFetchText(url: string): Promise<string> {
+  const response = await secFetchResponse(url, 'text/html, text/plain');
+  return await response.text();
 }

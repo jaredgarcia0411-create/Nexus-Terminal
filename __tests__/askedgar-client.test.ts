@@ -28,6 +28,14 @@ vi.mock('@/lib/sec/companyfacts', () => ({
   getHistoricalOutstanding: getHistoricalOutstandingMock,
 }));
 
+const { getReverseSplitsMock } = vi.hoisted(() => ({
+  getReverseSplitsMock: vi.fn(),
+}));
+
+vi.mock('@/lib/sec/reverse-splits', () => ({
+  getReverseSplits: getReverseSplitsMock,
+}));
+
 interface AskedgarCacheRow {
   id: string;
   cacheType: string;
@@ -132,6 +140,18 @@ describe('askedgar client', () => {
       count: 1,
       results: [{ date: '2026-01-01', outstanding: 1_000_000 }],
     });
+    getReverseSplitsMock.mockReset();
+    getReverseSplitsMock.mockResolvedValue({
+      status: 'success',
+      count: 1,
+      results: [{
+        ratio: '1-for-25',
+        executionDate: '2026-04-21',
+        announcementDate: '2026-04-20',
+        accessionNumber: '0001234567-26-000010',
+        url: 'https://www.sec.gov/Archives/edgar/data/0/000123456726000010/doc.htm',
+      }],
+    });
     process.env.ASKEDGAR_API_KEY = 'test-key';
     process.env.ASKEDGAR_DAILY_LIMIT = '100';
   });
@@ -187,7 +207,7 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
 
     await client.getCachedTickerData('AAPL');
-    expect(fetchSpy).toHaveBeenCalledTimes(15);
+    expect(fetchSpy).toHaveBeenCalledTimes(14);
 
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
@@ -209,7 +229,7 @@ describe('askedgar client', () => {
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL');
 
-    expect(fetchSpy).toHaveBeenCalledTimes(8);
+    expect(fetchSpy).toHaveBeenCalledTimes(7);
     expect(Object.keys(result.rawData)).toHaveLength(17);
     expect(cachedRawDataKeys(cacheDb)).toHaveLength(17);
   });
@@ -252,6 +272,18 @@ describe('askedgar client', () => {
     expect(calledUrls.some((path) => path.includes('filing-titles'))).toBe(false);
   });
 
+  it('routes reverse-splits through getReverseSplits, not AskEdgar', async () => {
+    const fetchSpy = mockSuccessfulEndpointFetch();
+    const client = await import('@/lib/askedgar');
+
+    await client.fetchTickerData('AAPL', { endpoints: ['reverse-splits'] });
+
+    expect(getReverseSplitsMock).toHaveBeenCalledWith('AAPL');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const calledUrls = fetchCallUrls(fetchSpy).map((url) => url.pathname);
+    expect(calledUrls.some((path) => path.includes('reverse-splits'))).toBe(false);
+  });
+
   it('tracks unique ticker count', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ status: 'success', count: 1, results: [{}] })));
     const client = await import('@/lib/askedgar');
@@ -286,7 +318,7 @@ describe('askedgar client', () => {
     const result = await client.fetchTickerData('AAPL');
     const availability = client.getAskEdgarSnapshotAvailability(result.rawData);
 
-    expect(result.hasAnyData).toBe(false);
+    expect(result.hasAnyData).toBe(true);
     expect(availability).toEqual({
       hasAnyData: false,
       hasUsableSnapshotData: false,
@@ -348,7 +380,7 @@ describe('askedgar client', () => {
       client.getCachedTickerData('MSFT'),
     ]);
 
-    expect(fetchSpy).toHaveBeenCalledTimes(15);
+    expect(fetchSpy).toHaveBeenCalledTimes(14);
     expect(first).toEqual(second);
   });
 

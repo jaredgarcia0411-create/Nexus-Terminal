@@ -2,14 +2,14 @@
 
 > Updated: 2026-04-29
 > Purpose: brief summary of recently completed work plus any active execution spec. Older implementation detail lives in git history and `specs/`.
-> Recent ships: Backtesting Tab full rollout (Phase 1 → Phase 3 + polish, last commit `6456f69`). AskEdgar Sprint 1 (`filing-titles` → `lib/sec/submissions.ts`) and Sprint 2 (`historical-float-pro` → `lib/sec/companyfacts.ts`) are live but the snapshot mapper still reads AskEdgar-style field names, which is why the Filings rows render with broken summaries. That bug is the entry point for the next two specs.
+> Recent ships: Backtesting Tab full rollout (Phase 1 → Phase 3 + polish, last commit `6456f69`). Filings v1 is committed locally as `9d31489` (`bucketed Filings tab + SEC field-mapping fix`). AskEdgar Sprint 1 (`filing-titles` → `lib/sec/submissions.ts`) and Sprint 2 (`historical-float-pro` → `lib/sec/companyfacts.ts`) are live; Sprint 3 now builds on that SEC path with filing-body fetch/cache infrastructure and a local reverse-splits parser.
 
 ## Active Specs
 
-Two specs queued. **Filings v1 now exists in the local worktree and is paused for review/commit/compact before Sprint 3** — it's the validation surface Sprint 3 will need (clickable links from filing rows back to the source SEC document).
+Two specs were queued. **Filings v1 is now committed locally, and Sprint 3 is implemented locally on top for review/commit/compact**.
 
-1. **Filings v1** — implemented locally on 2026-04-29; review/commit pending before compaction.
-2. **AskEdgar Sprint 3 (reverse-splits)** — replace AskEdgar's `reverse-splits` endpoint with our own 8-K Item 5.03 parser.
+1. **Filings v1** — committed locally on 2026-04-29 as `9d31489`.
+2. **AskEdgar Sprint 3 (reverse-splits)** — implemented locally on 2026-04-29; review/commit pending.
 
 Run `npm run lint`, `npx tsc --noEmit`, `npm test`, and `npm run workflow:audit` after each phase. Schema changes use `npm run db:migrate`, **never** `db:push`.
 
@@ -359,7 +359,8 @@ The snapshot mapper at `lib/askedgar.ts:892-900` already reads `ratio` and `exec
 
 ## Validation Snapshot
 
-- Filings v1 (`2026-04-29`, pending review/commit): added `filings` to the research snapshot contract, bucketed SEC form-type mapping via `lib/filings-bucket.ts`, SEC `items` passthrough in `lib/sec/submissions.ts`, a split Research `News`/`Filings` UI, and focused tests in `__tests__/filings-bucket.test.ts`, `__tests__/research-snapshot-mapper.test.ts`, and `__tests__/sec-submissions.test.ts`. `npm run lint`, `npx tsc --noEmit`, `npm test` (474/474), and `npm run workflow:audit` passed. Manual browser smoke remains pending because the Research tab requires an authenticated session.
+- AskEdgar Sprint 3 (`2026-04-29`, implemented locally / review pending): added `secFetchText()` in `lib/sec/client.ts`, new shared filing-body cache table `sec_filing_body_cache` via `drizzle/0026_low_wilson_fisk.sql`, `lib/sec/filing-body.ts`, and `lib/sec/reverse-splits.ts`; swapped `reverse-splits` in `lib/askedgar.ts` to the SEC parser; updated AskEdgar cache semantics so SEC-only partial data does not suppress AskEdgar retry-window caching. `npm run db:migrate` applied successfully to Neon after the generated SQL was inspected. `npm run lint`, `npx tsc --noEmit`, `npm test` (483/483), and `npm run workflow:audit` passed. Manual browser smoke remains pending because the Research tab requires an authenticated session.
+- Filings v1 (`2026-04-29`, committed locally as `9d31489`): added `filings` to the research snapshot contract, bucketed SEC form-type mapping via `lib/filings-bucket.ts`, SEC `items` passthrough in `lib/sec/submissions.ts`, a split Research `News`/`Filings` UI, and focused tests in `__tests__/filings-bucket.test.ts`, `__tests__/research-snapshot-mapper.test.ts`, and `__tests__/sec-submissions.test.ts`. `npm run lint`, `npx tsc --noEmit`, `npm test` (474/474), and `npm run workflow:audit` passed. Manual browser smoke remains pending because the Research tab requires an authenticated session.
 - Backtesting Phase 3 (`2026-04-28`, committed `8032710` + polish `f2f4087`/`c29b25a`/`6456f69`): `npm run lint`, `npx tsc --noEmit`, `npm test` (466/466), `npm run workflow:audit` all passed at Phase 3 ship.
 - Backtesting Phase 2 (`2026-04-28`, committed `745958d`): tests 457/457 green.
 - Backtesting Phase 1 (`2026-04-28`, committed `4633b30`): `drizzle/0025_blue_joseph.sql` applied to Neon; tests 454/454 green.

@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db';
 import { askedgarCache } from '@/lib/db/schema';
 import { bucketForFormType } from '@/lib/filings-bucket';
 import { getHistoricalOutstanding } from '@/lib/sec/companyfacts';
+import { getReverseSplits } from '@/lib/sec/reverse-splits';
 import { getRecentFilings } from '@/lib/sec/submissions';
 import type {
   ResearchSnapshotFull,
@@ -53,6 +54,12 @@ export interface AskEdgarSnapshotAvailability {
   failureKind: 'rate-limited' | 'upstream-unavailable' | null;
   retryAfterSeconds: number | null;
 }
+
+const SEC_BACKED_ENDPOINT_KEYS = new Set<string>([
+  'historical-float-pro',
+  'reverse-splits',
+  'filing-titles',
+]);
 
 const ASKEDGAR_BASE_URL = 'https://eapi.askedgar.io';
 const DEFAULT_DAILY_LIMIT = 50;
@@ -125,7 +132,10 @@ function extractRetryAfterSeconds(error?: string): number | null {
 export function getAskEdgarSnapshotAvailability(
   rawData: Record<string, AskEdgarResponse<unknown>>,
 ): AskEdgarSnapshotAvailability {
-  const responses = Object.values(rawData);
+  const askEdgarResponses = Object.entries(rawData)
+    .filter(([key]) => !SEC_BACKED_ENDPOINT_KEYS.has(key))
+    .map(([, response]) => response);
+  const responses = askEdgarResponses.length > 0 ? askEdgarResponses : Object.values(rawData);
   const hasAnyData = responses.some((response) => responseHasData(response));
 
   if (hasAnyData) {
@@ -438,12 +448,6 @@ async function fetchAgreements(ticker: string) {
   return requestAskEdgar<unknown>('/v1/agreements', { ticker: validated });
 }
 
-async function fetchReverseSplits(ticker: string) {
-  const validated = validateTickerOrError<unknown>(ticker);
-  if (typeof validated !== 'string') return validated;
-  return requestAskEdgar<unknown>('/v1/reverse-splits', { ticker: validated });
-}
-
 async function fetchGapStats(ticker: string, limit = 50) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
@@ -475,7 +479,7 @@ export const ENDPOINT_REGISTRY = {
   'pump-and-dump-tracker': { label: 'Pump and Dump Tracker', run: (ticker) => fetchPumpAndDumpTracker(ticker) },
   agreements: { label: 'Agreements', run: (ticker) => fetchAgreements(ticker) },
   'historical-float-pro': { label: 'Historical Float', run: (ticker) => getHistoricalOutstanding(ticker, { limit: 20 }) },
-  'reverse-splits': { label: 'Reverse Splits', run: (ticker) => fetchReverseSplits(ticker) },
+  'reverse-splits': { label: 'Reverse Splits', run: (ticker) => getReverseSplits(ticker) },
   'filing-titles': { label: 'Filing Titles (SEC)', run: (ticker) => getRecentFilings(ticker, { limit: 20 }) },
   'gap-stats': { label: 'Gap Stats', run: (ticker) => fetchGapStats(ticker, 50) },
   ownership: { label: 'Ownership', run: (ticker) => fetchOwnership(ticker) },
@@ -571,11 +575,11 @@ export async function fetchTickerData(
 }
 
 function getTickerCacheExpiry(result: TickerDataResult, fetchedAt: Date): Date | null {
-  if (result.hasAnyData) {
+  const availability = getAskEdgarSnapshotAvailability(result.rawData);
+  if (availability.hasAnyData) {
     return new Date(fetchedAt.getTime() + TICKER_CACHE_TTL_MS);
   }
 
-  const availability = getAskEdgarSnapshotAvailability(result.rawData);
   if (availability.failureKind !== 'rate-limited') {
     return null;
   }
@@ -586,7 +590,7 @@ function getTickerCacheExpiry(result: TickerDataResult, fetchedAt: Date): Date |
 
 function hydrateCachedTickerDataResult(result: TickerDataResult, expiresAt: Date): TickerDataResult {
   const availability = getAskEdgarSnapshotAvailability(result.rawData);
-  if (result.hasAnyData || availability.failureKind !== 'rate-limited') {
+  if (availability.hasAnyData || availability.failureKind !== 'rate-limited') {
     return result;
   }
 
@@ -1193,7 +1197,7 @@ export async function getCachedTickerData(
     if (cached.length > 0) {
       const cachedResult = hydrateCachedTickerDataResult(cached[0].dataJson as TickerDataResult, cached[0].expiresAt);
       const cachedAvailability = getAskEdgarSnapshotAvailability(cachedResult.rawData);
-      const fullyRateLimited = !cachedResult.hasAnyData && cachedAvailability.failureKind === 'rate-limited';
+      const fullyRateLimited = !cachedAvailability.hasAnyData && cachedAvailability.failureKind === 'rate-limited';
       const missing = fullyRateLimited
         ? []
         : requested.filter((key) => !cachedHasFreshEndpoint(cachedResult.rawData, key));

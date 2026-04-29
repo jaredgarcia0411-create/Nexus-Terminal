@@ -232,6 +232,22 @@ export const secCompanyfactsCache = pgTable('sec_companyfacts_cache', {
   index('sec_companyfacts_cache_fetched_idx').on(table.fetchedAt),
 ]);
 
+// Cached filing primary-document HTML/text. Keyed by accession number
+// (globally unique across SEC). TTL: 30 days soft expiry - filings are
+// immutable once filed, so cache invalidation is purely a freshness concern
+// for re-parsing if our parsers improve.
+export const secFilingBodyCache = pgTable('sec_filing_body_cache', {
+  accessionNumber: text('accession_number').primaryKey(),
+  cik: text('cik').notNull(),
+  formType: text('form_type').notNull(),
+  filedAt: text('filed_at').notNull(),
+  body: text('body').notNull(),
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('sec_filing_body_cache_cik_form_idx').on(table.cik, table.formType),
+  index('sec_filing_body_cache_fetched_idx').on(table.fetchedAt),
+]);
+
 export const agentRegistry = pgTable('agent_registry', {
   id: text('id').primaryKey(),
   displayName: text('display_name').notNull(),
