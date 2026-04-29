@@ -530,7 +530,7 @@ export async function fetchTickerData(
   });
 
   // Run endpoints in batches of 10 to stay well within the 150/min API rate limit.
-  // 17 endpoints at batch size 10 = 2 batches, leaving ample headroom.
+  // 16 endpoints at batch size 10 = 2 batches, leaving ample headroom.
   // Batching also lets the rate-limit guard kick in between batches if needed.
   const BATCH_SIZE = 10;
   const settledResults: PromiseSettledResult<AskEdgarResponse<unknown>>[] = [];
@@ -760,6 +760,11 @@ function buildOfferingHeadline(row: {
   const hasFields = row.sharesAmount !== null || row.sharePrice !== null || row.offeringAmount !== null;
   if (!hasFields) {
     const typeLabel = row.offeringType ?? 'Offering';
+    const normalizedFormType = row.formType.toUpperCase();
+    if (/^8-K(?:\/A)?$/.test(normalizedFormType)) {
+      const itemCode = row.offeringType === 'PIPE' ? '3.02' : '1.01';
+      return `${typeLabel} (${normalizedFormType} Item ${itemCode})`;
+    }
     return `${typeLabel} (${row.formType})`;
   }
 
@@ -773,10 +778,10 @@ function buildOfferingHeadline(row: {
       : amount >= 1_000_000
         ? `$${(amount / 1_000_000).toFixed(1)}M`
         : `$${amount.toLocaleString('en-US')}`;
-    parts.push(`— ${formatted}`);
+    parts.push(formatted);
   }
 
-  return parts.join(' — ').replace(/—\s*—/, '—');
+  return parts.join(' — ');
 }
 
 interface NormalizeAskEdgarOptions {

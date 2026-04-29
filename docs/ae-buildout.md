@@ -51,13 +51,13 @@ Primary dependencies:
 - `filing-titles` should be split into basic SEC filing metadata versus AI/human catalyst headlines. Metadata is easy; headline parity requires summarization or rules.
 - `gap-stats` is replaceable in house, but not from SEC alone. It needs historical daily/intraday OHLC, premarket data, VWAP, market-cap snapshots, and catalyst tagging.
 - `dilution-rating` should be a Nexus-owned risk model with evidence and confidence, not a clone of Ask Edgar's proprietary rating.
-- Advanced endpoints from `docs/AE_API_DOCS.md` should be tracked separately even though they are not in the current 17-endpoint fan-out: `offerings-advanced`, `dilution-data-advanced`, `rofr`, `screener/options`, `ai-chart-analysis`, `research-reports`, `research-reports-short`, `research-reports-tldr`, and `market-strength`.
+- Advanced endpoints from `docs/AE_API_DOCS.md` should be tracked separately even though they are not in the current 16-endpoint fan-out: `offerings-advanced`, `dilution-data-advanced`, `rofr`, `screener/options`, `ai-chart-analysis`, `research-reports`, `research-reports-short`, `research-reports-tldr`, and `market-strength`.
 
 ### Best first-wave candidates
 
 - [x] `reverse-splits` — shipped 2026-04-29 (`003aa8c`) via `lib/sec/reverse-splits.ts` (8-K Item 5.03 parser)
 - [ ] `split-status`
-- [x] Basic `offerings` — shipped 2026-04-29 (pending user commit on top of `ebe2db2`) via `lib/sec/offerings.ts` (424B + 8-K Item 3.02 + 8-K Item 1.01 parser)
+- [x] Basic `offerings` — shipped 2026-04-29 (`7e76375`) via `lib/sec/offerings.ts` (424B + 8-K Item 3.02 + 8-K Item 1.01 parser)
 - [ ] Insider `ownership`
 - [x] Historical outstanding-share snapshots from `historical-float-pro` — shipped 2026-04-27 (`cbde6ee`) via `lib/sec/companyfacts.ts`
 - [x] Basic filing metadata now coming from `filing-titles` and filing feeds — shipped 2026-04-27 (`b4a3e73`) via `lib/sec/submissions.ts`

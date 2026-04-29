@@ -234,7 +234,7 @@ describe('normalizeAskEdgarResponse', () => {
         offeringAmount: 5_000_000,
       },
       {
-        headline: 'PIPE (8-K)',
+        headline: 'PIPE (8-K Item 3.02)',
         filedAt: '2026-04-23',
         offeringType: 'PIPE',
         sharesAmount: null,
