@@ -83,7 +83,10 @@ function normalizeRatio(numerator: number, denominator: number): string | null {
 }
 
 function parseWordNumber(value: string): number | null {
-  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, ' ');
+  // The caller's regex captures hyphens inside [a-z-]+, so values like "one-" can
+  // arrive when the boundary hyphen is consumed by the word group. Trim again
+  // after collapsing separators so the split into parts doesn't leave empties.
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, ' ').trim();
   if (!normalized) return null;
 
   const parts = normalized.split(' ');

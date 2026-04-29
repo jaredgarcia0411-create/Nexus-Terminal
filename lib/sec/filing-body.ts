@@ -56,6 +56,8 @@ async function persistCache(body: FilingBody): Promise<void> {
   const db = getDb();
   if (!db) return;
 
+  // Filings are immutable once filed, so there is nothing to update on conflict.
+  // A concurrent duplicate insert is harmless — drop it silently.
   await db
     .insert(secFilingBodyCache)
     .values({
@@ -66,16 +68,7 @@ async function persistCache(body: FilingBody): Promise<void> {
       body: body.text,
       fetchedAt: new Date(),
     })
-    .onConflictDoUpdate({
-      target: secFilingBodyCache.accessionNumber,
-      set: {
-        cik: sql`excluded.cik`,
-        formType: sql`excluded.form_type`,
-        filedAt: sql`excluded.filed_at`,
-        body: sql`excluded.body`,
-        fetchedAt: sql`excluded.fetched_at`,
-      },
-    });
+    .onConflictDoNothing({ target: secFilingBodyCache.accessionNumber });
 }
 
 export async function getFilingBody(args: {

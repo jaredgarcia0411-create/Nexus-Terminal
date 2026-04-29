@@ -13,7 +13,7 @@ const sampleSubmissions = {
       accessionNumber: ['0000320193-26-000001', '0000320193-26-000002', '0000320193-25-999999'],
       filingDate: ['2026-04-20', '2026-04-15', '2025-01-01'],    // last entry is >90 days old
       form: ['8-K', '10-Q', '10-K'],
-      items: ['5.03,9.01'],
+      items: ['5.03,9.01', '', ''],
       primaryDocument: ['doc1.htm', 'doc2.htm', 'doc3.htm'],
       primaryDocDescription: ['Item 1.01', '', 'Annual report'],
       acceptanceDateTime: ['2026-04-20T20:00:00.000Z', '2026-04-15T20:00:00.000Z', '2025-01-01T20:00:00.000Z'],

@@ -34,4 +34,21 @@ describe('extractReverseSplit', () => {
   it('returns null for non-split item 5.03 amendments', () => {
     expect(extractReverseSplit('The board approved an amendment to increase the size of the board of directors.')).toBeNull();
   });
+
+  it('extracts word-spelled ratios with hyphens', () => {
+    expect(
+      extractReverseSplit('The company effected a one-for-twenty-five reverse stock split, effective March 14, 2026.'),
+    ).toEqual({ ratio: '1-for-25', executionDate: '2026-03-14' });
+  });
+
+  it('extracts spaced word-spelled ratios', () => {
+    expect(extractReverseSplit('The issuer approved a one for fifty reverse stock split.')).toEqual({
+      ratio: '1-for-50',
+      executionDate: null,
+    });
+  });
+
+  it('rejects forward word-spelled ratios', () => {
+    expect(extractReverseSplit('The company announced a fifty-for-one forward stock split.')).toBeNull();
+  });
 });

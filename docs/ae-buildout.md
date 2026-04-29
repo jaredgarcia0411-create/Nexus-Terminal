@@ -55,7 +55,7 @@ Primary dependencies:
 
 ### Best first-wave candidates
 
-- [ ] `reverse-splits`
+- [x] `reverse-splits` — shipped 2026-04-29 (`003aa8c`) via `lib/sec/reverse-splits.ts` (8-K Item 5.03 parser)
 - [ ] `split-status`
 - [ ] Basic `offerings`
 - [ ] Insider `ownership`

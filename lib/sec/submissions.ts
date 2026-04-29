@@ -60,7 +60,7 @@ function zipRecent(payload: RawSubmissionsPayload): SecFiling[] {
   for (let i = 0; i < len; i++) {
     const accession = recent.accessionNumber[i];
     const formType = recent.form?.[i] ?? 'unknown';
-    const items = recent.items?.[i] ?? null;
+    const items = recent.items?.[i]?.trim() || null;
     const filedAt = recent.filingDate?.[i] ?? '';
     const primaryDocument = recent.primaryDocument?.[i] ?? '';
     const description = recent.primaryDocDescription?.[i] ?? '';
