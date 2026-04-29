@@ -10,8 +10,8 @@ type ChartCellConfig = {
 };
 
 const DEFAULT_CELLS: ChartCellConfig[] = [
-  { timeframe: '5m', indicators: ['EMA9', 'EMA20', 'VWAP'] },
-  { timeframe: '15m', indicators: ['EMA9', 'EMA20', 'VWAP'] },
+  { timeframe: '5m', indicators: ['VWAP'] },
+  { timeframe: '15m', indicators: ['VWAP'] },
   { timeframe: '1h', indicators: ['EMA20', 'EMA50'] },
   { timeframe: '1D', indicators: ['SMA50', 'SMA200'] },
 ];

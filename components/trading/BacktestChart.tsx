@@ -708,7 +708,7 @@ export default function BacktestChart({
         </DropdownMenu>
 
         {hoverOhlc ? (
-          <div className="ml-2 flex items-center gap-2 font-mono text-[11px] tabular-nums text-zinc-300">
+          <div className="ml-2 flex items-center gap-2 font-mono text-xs tabular-nums text-zinc-300">
             <span><span className="text-zinc-500">O</span> {hoverOhlc.o.toFixed(2)}</span>
             <span><span className="text-zinc-500">H</span> {hoverOhlc.h.toFixed(2)}</span>
             <span><span className="text-zinc-500">L</span> {hoverOhlc.l.toFixed(2)}</span>
