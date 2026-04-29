@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ColorType, CrosshairMode, type CandlestickData, type HistogramData, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts';
 
 import { useCandleData } from '@/hooks/use-candle-data';
+import { formatNyCrosshair, formatNyTime } from '@/lib/chart-time';
 import {
   RESEARCH_CHART_FRAME_CONFIG,
   buildTradeChartOptions,
@@ -85,6 +86,10 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
           borderColor: '#ffffff10',
           timeVisible: isIntraday,
           secondsVisible: false,
+          tickMarkFormatter: (time: Time) => formatNyTime(time, isIntraday),
+        },
+        localization: {
+          timeFormatter: (time: Time) => formatNyCrosshair(time),
         },
         width: containerRef.current.clientWidth,
         height: containerRef.current.clientHeight,

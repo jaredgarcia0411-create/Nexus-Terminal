@@ -25,6 +25,7 @@ import {
 } from 'lightweight-charts';
 import type { TradeMarker } from '@/lib/types';
 import { epochToNySortKey, nyDateTimeToEpoch } from '@/lib/time-utils';
+import { formatNyCrosshair, formatNyTime, toEpochMs } from '@/lib/chart-time';
 
 export interface CandleData {
   datetime: number;
@@ -81,69 +82,8 @@ export interface CandlestickChartOptions {
   showCrosshairLegend?: boolean;
 }
 
-const NY_TIME_ZONE = 'America/New_York';
-
-const NY_INTRADAY_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  timeZone: NY_TIME_ZONE,
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
-
-const NY_DAY_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  timeZone: NY_TIME_ZONE,
-  month: 'short',
-  day: 'numeric',
-});
-
-const NY_CROSSHAIR_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  timeZone: NY_TIME_ZONE,
-  month: 'short',
-  day: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hourCycle: 'h23',
-});
-
 function toUTCSeconds(ms: number): Time {
   return Math.floor(ms / 1000) as unknown as Time;
-}
-
-function toEpochMs(time: Time | undefined): number | null {
-  if (time == null) return null;
-  if (typeof time === 'number') return Number.isFinite(time) ? time * 1000 : null;
-
-  if (typeof time === 'string') {
-    const parsed = Date.parse(time);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  if (time && typeof time === 'object') {
-    const businessDay = time as { year?: number; month?: number; day?: number };
-    if (
-      Number.isFinite(businessDay.year)
-      && Number.isFinite(businessDay.month)
-      && Number.isFinite(businessDay.day)
-    ) {
-      return Date.UTC(Number(businessDay.year), Number(businessDay.month) - 1, Number(businessDay.day));
-    }
-  }
-
-  return null;
-}
-
-function formatNyTime(time: Time, showTime: boolean) {
-  const epochMs = toEpochMs(time);
-  if (epochMs == null) return '';
-  const date = new Date(epochMs);
-  return showTime ? NY_INTRADAY_FORMATTER.format(date) : NY_DAY_FORMATTER.format(date);
-}
-
-function formatNyCrosshair(time: Time) {
-  const epochMs = toEpochMs(time);
-  if (epochMs == null) return '';
-  return NY_CROSSHAIR_FORMATTER.format(new Date(epochMs));
 }
 
 function findNearestTimestamp(target: number, sortedTimestamps: number[]): number | null {

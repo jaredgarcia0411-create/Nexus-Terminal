@@ -93,8 +93,12 @@ export default function BacktestingSidebar({ selected, onSelect, topPanel }: Bac
   }, [filter, rows, sortDirection]);
 
   return (
-    <aside className="flex h-full w-[280px] shrink-0 flex-col border-l border-white/10 bg-[#0A0A0B]">
-      {topPanel ? <div className="border-b border-white/10">{topPanel}</div> : null}
+    <aside className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-white/10 bg-[#0A0A0B]">
+      {topPanel ? (
+        <div className="scrollbar-thin max-h-[55%] shrink-0 overflow-y-auto border-b border-white/10">
+          {topPanel}
+        </div>
+      ) : null}
       <div className="border-b border-white/10 p-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
@@ -119,7 +123,7 @@ export default function BacktestingSidebar({ selected, onSelect, topPanel }: Bac
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto">
         {loading ? (
           <div className="px-3 py-4 text-sm text-zinc-500">Loading tickers...</div>
         ) : null}

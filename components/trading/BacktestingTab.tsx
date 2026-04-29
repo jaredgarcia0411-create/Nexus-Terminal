@@ -95,8 +95,8 @@ export default function BacktestingTab() {
       exit={{ opacity: 0, y: -10 }}
       className="flex h-[calc(100dvh-6.5rem)] min-h-[620px] overflow-hidden bg-[#0A0A0B]"
     >
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_280px]">
-        <main className="flex min-w-0 flex-col gap-2 overflow-hidden pr-2">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_220px] xl:grid-cols-[minmax(0,1fr)_280px]">
+        <main className="flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden pr-2">
           <div className="flex h-10 shrink-0 items-center gap-2 border border-white/10 bg-[#121214] px-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2">

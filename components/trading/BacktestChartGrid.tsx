@@ -40,7 +40,7 @@ export default function BacktestChartGrid({
   }
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 xl:grid-cols-2 xl:grid-rows-2">
+    <div className="scrollbar-thin flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
       {DEFAULT_CELLS.map((cell) => (
         <BacktestChart
           key={`${ticker}:${cell.timeframe}`}

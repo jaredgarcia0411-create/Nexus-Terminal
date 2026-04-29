@@ -49,6 +49,7 @@ import {
   type OHLCData,
 } from '@/lib/indicators';
 import { epochToNySortKey, getPreviousTradingSession, nyDateTimeToEpoch, parseSortKey } from '@/lib/time-utils';
+import { formatNyCrosshair, formatNyTime } from '@/lib/chart-time';
 import type { BacktestActionType } from '@/lib/types';
 
 export type IndicatorKey =
@@ -323,6 +324,7 @@ export default function BacktestChart({
   const [chartInstance, setChartInstance] = useState<IChartApi | null>(null);
   const [seriesInstance, setSeriesInstance] = useState<MainSeriesApi | null>(null);
   const [dailyAnchorRect, setDailyAnchorRect] = useState<DailyAnchorRect | null>(null);
+  const [hoverOhlc, setHoverOhlc] = useState<{ o: number; h: number; l: number; c: number } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const chartWrapRef = useRef<HTMLDivElement>(null);
@@ -384,6 +386,10 @@ export default function BacktestChart({
         borderColor: '#ffffff10',
         timeVisible: frame.intraday,
         secondsVisible: false,
+        tickMarkFormatter: (time: Time) => formatNyTime(time, frame.intraday),
+      },
+      localization: {
+        timeFormatter: (time: Time) => formatNyCrosshair(time),
       },
       handleScroll: true,
       handleScale: true,
@@ -579,11 +585,31 @@ export default function BacktestChart({
     };
     chart.subscribeClick(handleClick);
 
+    const handleCrosshairMove = (param: MouseEventParams<Time>) => {
+      const data = param.seriesData.get(baseSeries) as
+        | { open?: number; high?: number; low?: number; close?: number; value?: number }
+        | undefined;
+      if (!data) {
+        setHoverOhlc(null);
+        return;
+      }
+      // Candle/bar series provide o/h/l/c; line/area/baseline only have `value` (= close).
+      if (data.open != null && data.high != null && data.low != null && data.close != null) {
+        setHoverOhlc({ o: data.open, h: data.high, l: data.low, c: data.close });
+      } else if (data.value != null) {
+        setHoverOhlc({ o: data.value, h: data.value, l: data.value, c: data.value });
+      } else {
+        setHoverOhlc(null);
+      }
+    };
+    chart.subscribeCrosshairMove(handleCrosshairMove);
+
     const resizeObserver = new ResizeObserver(() => {
       const width = containerRef.current?.clientWidth ?? 0;
       const height = containerRef.current?.clientHeight ?? 0;
       if (width > 0 && height > 0) {
         chart.applyOptions({ width, height });
+        chart.timeScale().fitContent();
         recalcDailyAnchorRect();
       }
     });
@@ -594,11 +620,13 @@ export default function BacktestChart({
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleRangeChange);
       chart.timeScale().unsubscribeVisibleTimeRangeChange(handleRangeChange);
       chart.unsubscribeClick(handleClick);
+      chart.unsubscribeCrosshairMove(handleCrosshairMove);
       resizeObserver.disconnect();
       disposed = true;
       setChartInstance(null);
       setSeriesInstance(null);
       setDailyAnchorRect(null);
+      setHoverOhlc(null);
       setIsDrawingInteractionActive(false);
       chart.remove();
       chartRef.current = null;
@@ -617,7 +645,7 @@ export default function BacktestChart({
   ]);
 
   return (
-    <section className="flex min-h-[300px] flex-col overflow-hidden border border-white/10 bg-[#121214]">
+    <section className="flex h-[440px] shrink-0 flex-col overflow-hidden border border-white/10 bg-[#121214]">
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-white/10 bg-[#0A0A0B] px-2">
         <div className="mr-1 flex min-w-0 items-baseline gap-2">
           <span className="font-mono text-xs font-semibold text-zinc-100">{ticker}</span>
@@ -678,6 +706,15 @@ export default function BacktestChart({
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {hoverOhlc ? (
+          <div className="ml-2 flex items-center gap-2 font-mono text-[11px] tabular-nums text-zinc-300">
+            <span><span className="text-zinc-500">O</span> {hoverOhlc.o.toFixed(2)}</span>
+            <span><span className="text-zinc-500">H</span> {hoverOhlc.h.toFixed(2)}</span>
+            <span><span className="text-zinc-500">L</span> {hoverOhlc.l.toFixed(2)}</span>
+            <span><span className="text-zinc-500">C</span> {hoverOhlc.c.toFixed(2)}</span>
+          </div>
+        ) : null}
 
         <div className="ml-auto flex items-center gap-0.5">
           <DrawingToolbar
