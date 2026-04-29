@@ -5,8 +5,10 @@ import { getDb } from '@/lib/db';
 import { askedgarCache } from '@/lib/db/schema';
 import { bucketForFormType } from '@/lib/filings-bucket';
 import { getHistoricalOutstanding } from '@/lib/sec/companyfacts';
+import { getOfferings } from '@/lib/sec/offerings';
 import { getReverseSplits } from '@/lib/sec/reverse-splits';
 import { getRecentFilings } from '@/lib/sec/submissions';
+import type { RawOffering } from '@/lib/sec/offerings';
 import type {
   ResearchSnapshotFull,
   ResearchSnapshotAgreement,
@@ -59,6 +61,7 @@ const SEC_BACKED_ENDPOINT_KEYS = new Set<string>([
   'historical-float-pro',
   'reverse-splits',
   'filing-titles',
+  'offerings',
 ]);
 
 const ASKEDGAR_BASE_URL = 'https://eapi.askedgar.io';
@@ -406,12 +409,6 @@ async function fetchDilutionData(ticker: string) {
   return requestAskEdgar<unknown>('/v1/dilution-data', { ticker: validated });
 }
 
-async function fetchOfferings(ticker: string, limit = 20) {
-  const validated = validateTickerOrError<unknown>(ticker);
-  if (typeof validated !== 'string') return validated;
-  return requestAskEdgar<unknown>('/v1/offerings', { ticker: validated, limit });
-}
-
 async function fetchEquityLines(ticker: string) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
@@ -434,12 +431,6 @@ async function fetchNasdaqCompliance(ticker: string) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
   return requestAskEdgar<unknown>('/v1/nasdaq-compliance', { ticker: validated });
-}
-
-async function fetchPumpAndDumpTracker(ticker: string) {
-  const validated = validateTickerOrError<unknown>(ticker);
-  if (typeof validated !== 'string') return validated;
-  return requestAskEdgar<unknown>('/v1/pump-and-dump-tracker', { ticker: validated });
 }
 
 async function fetchAgreements(ticker: string) {
@@ -471,12 +462,11 @@ export const ENDPOINT_REGISTRY = {
   screener: { label: 'Screener', run: (ticker) => fetchScreenerByTicker(ticker) },
   'dilution-rating': { label: 'Dilution Rating', run: (ticker) => fetchDilutionRating(ticker) },
   'dilution-data': { label: 'Dilution Data', run: (ticker) => fetchDilutionData(ticker) },
-  offerings: { label: 'Offerings', run: (ticker) => fetchOfferings(ticker, 20) },
+  offerings: { label: 'Offerings', run: (ticker) => getOfferings(ticker) },
   'equity-lines': { label: 'Equity Lines', run: (ticker) => fetchEquityLines(ticker) },
   registrations: { label: 'Registrations', run: (ticker) => fetchRegistrations(ticker) },
   news: { label: 'News', run: (ticker) => fetchNews(ticker, 20) },
   'nasdaq-compliance': { label: 'Nasdaq Compliance', run: (ticker) => fetchNasdaqCompliance(ticker) },
-  'pump-and-dump-tracker': { label: 'Pump and Dump Tracker', run: (ticker) => fetchPumpAndDumpTracker(ticker) },
   agreements: { label: 'Agreements', run: (ticker) => fetchAgreements(ticker) },
   'historical-float-pro': { label: 'Historical Float', run: (ticker) => getHistoricalOutstanding(ticker, { limit: 20 }) },
   'reverse-splits': { label: 'Reverse Splits', run: (ticker) => getReverseSplits(ticker) },
@@ -498,9 +488,9 @@ export const ENDPOINT_SCOPES = {
   lookup: ALL_ENDPOINT_KEYS,
   'small-cap-research': [
     'screener', 'dilution-rating', 'dilution-data', 'offerings', 'equity-lines',
-    'registrations', 'news', 'nasdaq-compliance', 'pump-and-dump-tracker',
-    'agreements', 'historical-float-pro', 'reverse-splits', 'filing-titles',
-    'gap-stats', 'ownership', 'split-status',
+    'registrations', 'news', 'nasdaq-compliance', 'agreements',
+    'historical-float-pro', 'reverse-splits', 'filing-titles', 'gap-stats',
+    'ownership', 'split-status',
   ],
   'swing-trader-research': [
     'dilution-data', 'dilution-rating', 'offerings', 'registrations',
@@ -760,6 +750,35 @@ function toRegistrationRow(row: Record<string, unknown>, fallback: string): Rese
   };
 }
 
+function buildOfferingHeadline(row: {
+  offeringType: string | null;
+  sharesAmount: number | null;
+  sharePrice: number | null;
+  offeringAmount: number | null;
+  formType: string;
+}): string {
+  const hasFields = row.sharesAmount !== null || row.sharePrice !== null || row.offeringAmount !== null;
+  if (!hasFields) {
+    const typeLabel = row.offeringType ?? 'Offering';
+    return `${typeLabel} (${row.formType})`;
+  }
+
+  const parts: string[] = [row.offeringType ?? 'Offering'];
+  if (row.sharesAmount !== null) parts.push(`${row.sharesAmount.toLocaleString('en-US')} shares`);
+  if (row.sharePrice !== null) parts.push(`@ $${row.sharePrice.toFixed(2)}`);
+  if (row.offeringAmount !== null) {
+    const amount = row.offeringAmount;
+    const formatted = amount >= 1_000_000_000
+      ? `$${(amount / 1_000_000_000).toFixed(1)}B`
+      : amount >= 1_000_000
+        ? `$${(amount / 1_000_000).toFixed(1)}M`
+        : `$${amount.toLocaleString('en-US')}`;
+    parts.push(`— ${formatted}`);
+  }
+
+  return parts.join(' — ').replace(/—\s*—/, '—');
+}
+
 interface NormalizeAskEdgarOptions {
   ticker: string;
   companyName: string | null;
@@ -777,7 +796,6 @@ export function normalizeAskEdgarResponse(
   const dilutionData = getEndpointResponse(rawData, ['dilution-data', 'dilutionData']);
   const dilutionDataFirst = toRecord(dilutionData.results[0]);
   const compliance = firstResult(rawData, ['nasdaq-compliance', 'nasdaqCompliance']);
-  const pumpAndDump = firstResult(rawData, ['pump-and-dump-tracker', 'pumpAndDumpTracker']);
 
   const registrations = getEndpointResponse(rawData, ['registrations']).results.map((item, index) => (
     toRegistrationRow(toRecord(item), `Registration ${index + 1}`)
@@ -795,17 +813,17 @@ export function normalizeAskEdgarResponse(
   });
 
   const offerings = dedupeByHeadline(
-    getEndpointResponse(rawData, ['offerings']).results
-      .map((item, index) => {
-        const row = toRecord(item);
+    (getEndpointResponse(rawData, ['offerings']).results as RawOffering[])
+      .filter((row) => !row.isSellingStockholderResale)
+      .map((row) => {
         return {
-          headline: normalizeHeadline(row, `Offering ${index + 1}`),
-          filedAt: getStringField(row, ['filed_at', 'filedAt', 'date']),
-          offeringType: getStringField(row, ['offeringType', 'offering_type', 'type', 'formType']),
-          sharesAmount: toNumberValue(getField(row, ['shares_amount', 'sharesAmount', 'shares'])),
-          warrantsAmount: toNumberValue(getField(row, ['warrants_amount', 'warrantsAmount'])),
-          sharePrice: toNumberValue(getField(row, ['share_price', 'sharePrice', 'price'])),
-          offeringAmount: toNumberValue(getField(row, ['offering_amount', 'offeringAmount', 'amount'])),
+          headline: buildOfferingHeadline(row),
+          filedAt: row.filedAt,
+          offeringType: row.offeringType,
+          sharesAmount: row.sharesAmount,
+          warrantsAmount: row.warrantsAmount,
+          sharePrice: row.sharePrice,
+          offeringAmount: row.offeringAmount,
         } satisfies ResearchSnapshotOffering;
       })
       .filter((row) => !String(row.offeringType ?? '').toUpperCase().includes('EQUITY LINE')),
@@ -990,8 +1008,8 @@ export function normalizeAskEdgarResponse(
     offeringFrequencyRating: getStringField(dilutionRating, ['offering_frequency', 'offeringFrequency']),
     offeringAbilityRating: getStringField(dilutionRating, ['offering_ability', 'offeringAbility']),
     warrantExerciseRating: getStringField(dilutionRating, ['warrant_exercise', 'warrantExercise']),
-    overallRisk: getStringField(pumpAndDump, ['overall_risk', 'overallRisk', 'scam_risk', 'scamRisk']),
-    regsho: getBooleanField(compliance, ['regsho']) || getBooleanField(pumpAndDump, ['regsho']),
+    overallRisk: null,
+    regsho: getBooleanField(compliance, ['regsho']),
     nasdaqCompliance: getStringField(compliance, ['status', 'complianceStatus', 'rating', 'nasdaq_compliance', 'nasdaqCompliance']),
     dilutionDetails: {
       cashRemainingMonths: toNumberValue(getField(dilutionRating, ['cash_remaining_months', 'cashRemainingMonths']))

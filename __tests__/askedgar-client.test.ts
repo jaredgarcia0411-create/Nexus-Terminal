@@ -36,6 +36,14 @@ vi.mock('@/lib/sec/reverse-splits', () => ({
   getReverseSplits: getReverseSplitsMock,
 }));
 
+const { getOfferingsMock } = vi.hoisted(() => ({
+  getOfferingsMock: vi.fn(),
+}));
+
+vi.mock('@/lib/sec/offerings', () => ({
+  getOfferings: getOfferingsMock,
+}));
+
 interface AskedgarCacheRow {
   id: string;
   cacheType: string;
@@ -152,6 +160,23 @@ describe('askedgar client', () => {
         url: 'https://www.sec.gov/Archives/edgar/data/0/000123456726000010/doc.htm',
       }],
     });
+    getOfferingsMock.mockReset();
+    getOfferingsMock.mockResolvedValue({
+      status: 'success',
+      count: 1,
+      results: [{
+        accessionNumber: '0001234567-26-000020',
+        formType: '424B5',
+        filedAt: '2026-04-20',
+        url: 'https://www.sec.gov/Archives/edgar/data/0/000123456726000020/offerings.htm',
+        offeringType: 'ATM USED',
+        sharesAmount: 1_000_000,
+        sharePrice: 1,
+        offeringAmount: 1_000_000,
+        warrantsAmount: null,
+        isSellingStockholderResale: false,
+      }],
+    });
     process.env.ASKEDGAR_API_KEY = 'test-key';
     process.env.ASKEDGAR_DAILY_LIMIT = '100';
   });
@@ -168,8 +193,8 @@ describe('askedgar client', () => {
     const result = await client.fetchTickerData('AAPL');
 
     expect(result.ticker).toBe('AAPL');
-    expect(Object.keys(result.rawData)).toHaveLength(17);
-    expect(result.dataSources).toHaveLength(17);
+    expect(Object.keys(result.rawData)).toHaveLength(16);
+    expect(result.dataSources).toHaveLength(16);
   });
 
   it('only calls explicitly requested endpoints from fetchTickerData', async () => {
@@ -195,7 +220,7 @@ describe('askedgar client', () => {
 
     const result = await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(7);
+    expect(fetchSpy).toHaveBeenCalledTimes(6);
     expect(Object.keys(result.rawData)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
     expect(cachedRawDataKeys(cacheDb)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
   });
@@ -207,14 +232,14 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
 
     await client.getCachedTickerData('AAPL');
-    expect(fetchSpy).toHaveBeenCalledTimes(14);
+    expect(fetchSpy).toHaveBeenCalledTimes(12);
 
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(Object.keys(result.rawData)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
-    expect(cachedRawDataKeys(cacheDb)).toHaveLength(17);
+    expect(cachedRawDataKeys(cacheDb)).toHaveLength(16);
   });
 
   it('merges missing snapshot endpoints after a swing-trader scope populated the cache', async () => {
@@ -224,14 +249,14 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
 
     await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
-    expect(fetchSpy).toHaveBeenCalledTimes(7);
+    expect(fetchSpy).toHaveBeenCalledTimes(6);
 
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL');
 
-    expect(fetchSpy).toHaveBeenCalledTimes(7);
-    expect(Object.keys(result.rawData)).toHaveLength(17);
-    expect(cachedRawDataKeys(cacheDb)).toHaveLength(17);
+    expect(fetchSpy).toHaveBeenCalledTimes(6);
+    expect(Object.keys(result.rawData)).toHaveLength(16);
+    expect(cachedRawDataKeys(cacheDb)).toHaveLength(16);
   });
 
   it('sums AskEdgar usage cost into the fan-out log', async () => {
@@ -282,6 +307,18 @@ describe('askedgar client', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     const calledUrls = fetchCallUrls(fetchSpy).map((url) => url.pathname);
     expect(calledUrls.some((path) => path.includes('reverse-splits'))).toBe(false);
+  });
+
+  it('routes offerings through getOfferings, not AskEdgar', async () => {
+    const fetchSpy = mockSuccessfulEndpointFetch();
+    const client = await import('@/lib/askedgar');
+
+    await client.fetchTickerData('AAPL', { endpoints: ['offerings'] });
+
+    expect(getOfferingsMock).toHaveBeenCalledWith('AAPL');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const calledUrls = fetchCallUrls(fetchSpy).map((url) => url.pathname);
+    expect(calledUrls.some((path) => path.includes('offerings'))).toBe(false);
   });
 
   it('tracks unique ticker count', async () => {
@@ -355,7 +392,7 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
     await client.getCachedTickerData('AAPL');
 
-    expect(fetchSpy).toHaveBeenCalledTimes(10);
+    expect(fetchSpy).toHaveBeenCalledTimes(9);
     expect(cacheDb.getRows()).toHaveLength(1);
 
     vi.resetModules();
@@ -380,7 +417,7 @@ describe('askedgar client', () => {
       client.getCachedTickerData('MSFT'),
     ]);
 
-    expect(fetchSpy).toHaveBeenCalledTimes(14);
+    expect(fetchSpy).toHaveBeenCalledTimes(12);
     expect(first).toEqual(second);
   });
 

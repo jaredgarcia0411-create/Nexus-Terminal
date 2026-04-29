@@ -17,7 +17,6 @@ describe('normalizeAskEdgarResponse', () => {
       'dilution-rating': emptyResponse,
       'dilution-data': emptyResponse,
       'nasdaq-compliance': emptyResponse,
-      'pump-and-dump-tracker': emptyResponse,
       registrations: emptyResponse,
       'equity-lines': emptyResponse,
       offerings: emptyResponse,
@@ -150,5 +149,102 @@ describe('normalizeAskEdgarResponse', () => {
         outstanding: 123456789,
       }),
     ]);
+  });
+
+  it('maps SEC-backed offerings, filters resale rows, and derives risk fields from compliance only', () => {
+    const rawData: Record<string, AskEdgarResponse<unknown>> = {
+      screener: emptyResponse,
+      'float-outstanding': emptyResponse,
+      'dilution-rating': emptyResponse,
+      'dilution-data': emptyResponse,
+      'nasdaq-compliance': {
+        status: 'success',
+        count: 1,
+        results: [{ regsho: true, status: 'Watch' }],
+      },
+      registrations: emptyResponse,
+      'equity-lines': emptyResponse,
+      offerings: {
+        status: 'success',
+        count: 3,
+        results: [
+          {
+            accessionNumber: '0000000001-26-000100',
+            formType: '424B5',
+            filedAt: '2026-04-25',
+            url: 'https://www.sec.gov/Archives/edgar/data/1/atm.htm',
+            offeringType: 'ATM USED',
+            sharesAmount: 2_000_000,
+            sharePrice: 2.5,
+            offeringAmount: 5_000_000,
+            warrantsAmount: null,
+            isSellingStockholderResale: false,
+          },
+          {
+            accessionNumber: '0000000001-26-000101',
+            formType: '424B3',
+            filedAt: '2026-04-24',
+            url: 'https://www.sec.gov/Archives/edgar/data/1/resale.htm',
+            offeringType: 'REGISTERED DIRECT',
+            sharesAmount: 3_000_000,
+            sharePrice: 1,
+            offeringAmount: null,
+            warrantsAmount: null,
+            isSellingStockholderResale: true,
+          },
+          {
+            accessionNumber: '0000000001-26-000102',
+            formType: '8-K',
+            filedAt: '2026-04-23',
+            url: 'https://www.sec.gov/Archives/edgar/data/1/pipe.htm',
+            offeringType: 'PIPE',
+            sharesAmount: null,
+            sharePrice: null,
+            offeringAmount: null,
+            warrantsAmount: null,
+            isSellingStockholderResale: false,
+          },
+        ],
+      },
+      news: emptyResponse,
+      'filing-titles': emptyResponse,
+      ownership: emptyResponse,
+      'historical-float-pro': emptyResponse,
+      'reverse-splits': emptyResponse,
+      'split-status': emptyResponse,
+      agreements: emptyResponse,
+      'gap-stats': emptyResponse,
+    };
+
+    const snapshot = normalizeAskEdgarResponse(rawData, {
+      ticker: 'ABCD',
+      companyName: 'Acme Biotech',
+      fetchedAt: '2026-04-29T00:00:00.000Z',
+      warnings: [],
+    });
+
+    expect(snapshot.offerings).toEqual([
+      {
+        headline: 'ATM USED — 2,000,000 shares — @ $2.50 — $5.0M',
+        filedAt: '2026-04-25',
+        offeringType: 'ATM USED',
+        sharesAmount: 2_000_000,
+        warrantsAmount: null,
+        sharePrice: 2.5,
+        offeringAmount: 5_000_000,
+      },
+      {
+        headline: 'PIPE (8-K)',
+        filedAt: '2026-04-23',
+        offeringType: 'PIPE',
+        sharesAmount: null,
+        warrantsAmount: null,
+        sharePrice: null,
+        offeringAmount: null,
+      },
+    ]);
+    expect(snapshot.overallRisk).toBeNull();
+    expect(snapshot.regsho).toBe(true);
+    expect(snapshot.nasdaqCompliance).toBe('Watch');
   });
 });

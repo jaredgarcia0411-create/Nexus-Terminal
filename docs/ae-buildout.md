@@ -57,7 +57,7 @@ Primary dependencies:
 
 - [x] `reverse-splits` — shipped 2026-04-29 (`003aa8c`) via `lib/sec/reverse-splits.ts` (8-K Item 5.03 parser)
 - [ ] `split-status`
-- [ ] Basic `offerings`
+- [x] Basic `offerings` — shipped 2026-04-29 (pending user commit on top of `ebe2db2`) via `lib/sec/offerings.ts` (424B + 8-K Item 3.02 + 8-K Item 1.01 parser)
 - [ ] Insider `ownership`
 - [x] Historical outstanding-share snapshots from `historical-float-pro` — shipped 2026-04-27 (`cbde6ee`) via `lib/sec/companyfacts.ts`
 - [x] Basic filing metadata now coming from `filing-titles` and filing feeds — shipped 2026-04-27 (`b4a3e73`) via `lib/sec/submissions.ts`
