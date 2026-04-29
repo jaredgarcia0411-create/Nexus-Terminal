@@ -174,6 +174,24 @@ export interface ResearchSnapshotNewsItem {
   isNews: boolean;
 }
 
+export type FilingBucket =
+  | 'financials'
+  | 'news'
+  | 'registrations'
+  | 'prospectus'
+  | 'proxies'
+  | 'ownerships'
+  | 'other';
+
+export interface ResearchSnapshotFiling {
+  formType: string;
+  bucket: FilingBucket;
+  title: string;
+  filedAt: string | null;
+  url: string | null;
+  accessionNumber: string | null;
+}
+
 export interface ResearchSnapshotDilutionDetails {
   cashRemainingMonths: number | null;
   cashBurn: number | null;
@@ -267,6 +285,7 @@ export interface ResearchSnapshot {
   equityLines: ResearchSnapshotRegistration[];
   offerings: ResearchSnapshotOffering[];
   news: ResearchSnapshotNewsItem[];
+  filings: ResearchSnapshotFiling[];
   ownershipGroups: ResearchSnapshotOwnershipGroup[];
   historicalFloat: ResearchSnapshotHistoricalFloatRow[];
   reverseSplits: ResearchSnapshotReverseSplit[];

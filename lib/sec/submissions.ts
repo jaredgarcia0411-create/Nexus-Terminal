@@ -12,6 +12,7 @@ export interface SecFiling {
   headline: string;              // primary_doc_description if present, else `${form_type} filing`
   url: string;                   // archives URL to primary document
   primary_doc_description: string | null;
+  items: string | null;
 }
 
 // Matches the AskEdgarResponse<T> shape so the result slots into ENDPOINT_REGISTRY
@@ -30,6 +31,7 @@ interface RawSubmissionsPayload {
       accessionNumber?: string[];
       filingDate?: string[];
       form?: string[];
+      items?: string[];
       primaryDocument?: string[];
       primaryDocDescription?: string[];
       acceptanceDateTime?: string[];
@@ -58,6 +60,7 @@ function zipRecent(payload: RawSubmissionsPayload): SecFiling[] {
   for (let i = 0; i < len; i++) {
     const accession = recent.accessionNumber[i];
     const formType = recent.form?.[i] ?? 'unknown';
+    const items = recent.items?.[i] ?? null;
     const filedAt = recent.filingDate?.[i] ?? '';
     const primaryDocument = recent.primaryDocument?.[i] ?? '';
     const description = recent.primaryDocDescription?.[i] ?? '';
@@ -73,6 +76,7 @@ function zipRecent(payload: RawSubmissionsPayload): SecFiling[] {
       headline,
       url: primaryDocument ? buildFilingUrl(cikUnpadded, accession, primaryDocument) : '',
       primary_doc_description: description.trim() || null,
+      items,
     });
   }
 

@@ -3,11 +3,13 @@ import { and, eq, gt } from 'drizzle-orm';
 import { getField, toNumberValue, toRecord } from '@/lib/askedgar-utils';
 import { getDb } from '@/lib/db';
 import { askedgarCache } from '@/lib/db/schema';
+import { bucketForFormType } from '@/lib/filings-bucket';
 import { getHistoricalOutstanding } from '@/lib/sec/companyfacts';
 import { getRecentFilings } from '@/lib/sec/submissions';
 import type {
   ResearchSnapshotFull,
   ResearchSnapshotAgreement,
+  ResearchSnapshotFiling,
   ResearchSnapshotGapStat,
   ResearchSnapshotHistoricalFloatRow,
   ResearchSnapshotNewsItem,
@@ -821,17 +823,32 @@ export function normalizeAskEdgarResponse(
         isNews: true,
       } satisfies ResearchSnapshotNewsItem;
     }),
-    ...getEndpointResponse(rawData, ['filing-titles', 'filingTitles']).results.map((item, index) => {
-      const row = toRecord(item);
-      return {
-        title: normalizeHeadline(row, `Filing ${index + 1}`),
-        summary: getStringField(row, ['body', 'summary', 'details']) ?? '',
-        filedAt: getStringField(row, ['filedAt', 'filed_at', 'date']),
-        formType: getStringField(row, ['formType', 'form', 'source']) ?? 'Filing',
-        isNews: false,
-      } satisfies ResearchSnapshotNewsItem;
-    }),
   ];
+
+  const filings: ResearchSnapshotFiling[] = getEndpointResponse(rawData, ['filing-titles', 'filingTitles'])
+    .results
+    .map((item) => {
+      const row = toRecord(item);
+      const formType = getStringField(row, ['form_type', 'formType', 'form']) ?? 'unknown';
+      const filedAt = getStringField(row, ['filed_at', 'filedAt', 'date']);
+      const title = getStringField(row, ['headline', 'title', 'primary_doc_description', 'primaryDocDescription'])
+        ?? `${formType} filing`;
+
+      return {
+        formType,
+        bucket: bucketForFormType(formType),
+        title,
+        filedAt,
+        url: getStringField(row, ['url', 'document_url', 'documentUrl']),
+        accessionNumber: getStringField(row, ['accession_number', 'accessionNumber', 'accn']),
+      } satisfies ResearchSnapshotFiling;
+    })
+    .sort((a, b) => {
+      if (!a.filedAt && !b.filedAt) return 0;
+      if (!a.filedAt) return 1;
+      if (!b.filedAt) return -1;
+      return b.filedAt.localeCompare(a.filedAt);
+    });
 
   const currentPrice = toNumberValue(getField(screener, ['price']));
   const warrants: ResearchSnapshotWarrant[] = dilutionData.results.reduce<ResearchSnapshotWarrant[]>((rows, item, index) => {
@@ -992,6 +1009,7 @@ export function normalizeAskEdgarResponse(
     equityLines,
     offerings,
     news,
+    filings,
     ownershipGroups,
     historicalFloat,
     reverseSplits,

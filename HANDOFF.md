@@ -1,334 +1,381 @@
 # Nexus Terminal — HANDOFF.md
 
-> Updated: 2026-04-28
+> Updated: 2026-04-29
 > Purpose: brief summary of recently completed work plus any active execution spec. Older implementation detail lives in git history and `specs/`.
-> Historical completed sections were archived to keep this file focused. Recent ships: AskEdgar Sprint 2 (`historical-float-pro` from XBRL companyfacts) shipped in `cbde6ee`, migration `0024_acoustic_jocasta.sql` applied via `npm run db:migrate`. AskEdgar Sprint 3 (8-K parsing trio: reverse-splits, split-status, offerings) is paused while Backtesting Tab ships.
+> Recent ships: Backtesting Tab full rollout (Phase 1 → Phase 3 + polish, last commit `6456f69`). AskEdgar Sprint 1 (`filing-titles` → `lib/sec/submissions.ts`) and Sprint 2 (`historical-float-pro` → `lib/sec/companyfacts.ts`) are live but the snapshot mapper still reads AskEdgar-style field names, which is why the Filings rows render with broken summaries. That bug is the entry point for the next two specs.
 
-## Active Spec — Backtesting Tab (Charts → Backtesting Makeover)
+## Active Specs
 
-Replace the single-chart `Charts` tab with a 4-chart `Backtesting` tab driven by the team's `system_tickers` list, with a built-in trade simulator that auto-sizes shares from a dollar-risk amount.
+Two specs queued. **Filings v1 now exists in the local worktree and is paused for review/commit/compact before Sprint 3** — it's the validation surface Sprint 3 will need (clickable links from filing rows back to the source SEC document).
 
-Decisions already locked (do NOT re-litigate):
-- Persist sim trades in two new tables; isolated from real `trades`. (No schema change to `trades`.)
-- Trade actions: `LONG`, `LONG_ADD`, `SELL`, `SHORT`, `SHORT_ADD`, `COVER`. Contextually disabled by current sim position.
-- Drawing tools kept: trendline, horizontal, rectangle. **Fibonacci is removed entirely**.
-- Per-chart timeframe + per-chart indicators (compact dropdowns, not the mockup's button row).
-- One ACTIVE session per `(userId, ticker, date)`; auto-saved. SAVE REVIEW snapshots it as REVIEWED with optional label.
-- R$ defaults from existing `nexus-default-risk` localStorage; per-session override stored on the session row.
-- Daily-day highlight via translucent canvas band (same pattern as pre/post-market shading in `ChartsTab.tsx:498`).
-- Click-to-place entry: chart click auto-fills entry price; user types stop in popup, presses Place or Cancel.
-- Auto stop-out is **not** in scope — manual exits only for v1. Logged in Follow-Up Notes below.
-- Route key renamed `'charts'` → `'backtesting'`. URL `?tab=charts` will break (acceptable).
+1. **Filings v1** — implemented locally on 2026-04-29; review/commit pending before compaction.
+2. **AskEdgar Sprint 3 (reverse-splits)** — replace AskEdgar's `reverse-splits` endpoint with our own 8-K Item 5.03 parser.
 
-Run `npm run lint`, `npx tsc --noEmit`, `npm test`, and `npm run workflow:audit` after each phase. Migration uses `npm run db:migrate`, **never** `db:push`.
+Run `npm run lint`, `npx tsc --noEmit`, `npm test`, and `npm run workflow:audit` after each phase. Schema changes use `npm run db:migrate`, **never** `db:push`.
 
 ---
 
-### Phase 1 — Schema, API surface, tab rename, Fibonacci removal
+## Spec 1 — Filings v1 (bucketed Filings tab + SEC field-mapping fix)
 
-**Step 1.1 — Add backtest tables to `lib/db/schema.ts`** (append after `systemTickers`, ~line 457):
+### Phase 1.1 — Plumb SEC URL + accession through the snapshot
+
+**Step 1.1.1 — Extend `ResearchSnapshotNewsItem` and add `ResearchSnapshotFiling`** in `lib/types.ts:169`:
 
 ```ts
-export const backtestSessions = pgTable('backtest_sessions', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  ticker: text('ticker').notNull(),
-  date: date('date').notNull(),
-  status: text('status', { enum: ['ACTIVE', 'REVIEWED'] }).notNull().default('ACTIVE'),
-  riskDollars: doublePrecision('risk_dollars').notNull(),
-  label: text('label'),
-  notes: text('notes'),
-  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-}, (t) => [
-  index('backtest_sessions_user_ticker_date_idx').on(t.userId, t.ticker, t.date),
-  index('backtest_sessions_user_status_idx').on(t.userId, t.status),
-]);
-
-export const backtestActions = pgTable('backtest_actions', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  sessionId: text('session_id').notNull(),
-  actionType: text('action_type', {
-    enum: ['LONG', 'LONG_ADD', 'SELL', 'SHORT', 'SHORT_ADD', 'COVER'],
-  }).notNull(),
-  price: doublePrecision('price').notNull(),
-  shares: doublePrecision('shares').notNull(),
-  stopPrice: doublePrecision('stop_price'),
-  barTime: text('bar_time').notNull(),
-  sequence: integer('sequence').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-}, (t) => [
-  foreignKey({
-    columns: [t.userId, t.sessionId],
-    foreignColumns: [backtestSessions.userId, backtestSessions.id],
-  }).onDelete('cascade'),
-  index('backtest_actions_user_session_seq_idx').on(t.userId, t.sessionId, t.sequence),
-]);
-```
-
-**Step 1.2 — Generate + apply migration:**
-1. `npm run db:generate` — produces `drizzle/0025_*.sql`.
-2. Inspect the SQL. Confirm two `CREATE TABLE`, the FK, and three indexes. No drops, no other tables touched.
-3. `npm run db:migrate` to apply to Neon.
-4. Commit the generated migration file.
-
-**Step 1.3 — Validation schema** at `lib/validations/backtest.ts` (new file). Use Zod v4. Export:
-- `backtestSessionUpsertSchema` — `{ ticker: string(1..20), date: string ISO YYYY-MM-DD, riskDollars: number positive }`
-- `backtestActionCreateSchema` — `{ sessionId: string, actionType: enum(6), price: number positive, shares: number positive, stopPrice: number positive | null, barTime: string }`
-- `backtestSessionReviewSchema` — `{ sessionId: string, label?: string, notes?: string }`
-
-Use `parseAndValidate()` from `lib/api-route-utils.ts` and `z.flattenError()` (Zod v4) — see `AGENTS.md:73`.
-
-**Step 1.4 — API routes** (all `requireUser()` + `ensureUser()` pattern, see `app/api/saved-tickers/route.ts` for reference):
-
-1. `app/api/system-tickers/route.ts` (GET) — read-only list of `system_tickers` ordered by `date DESC, ticker ASC`. Optional query params: `?q=` (ticker substring filter), `?from=YYYY-MM-DD`, `?to=YYYY-MM-DD`. Returns `{ rows: { id, ticker, date, grade, setupType, day1GapPct }[] }`. The full row is not needed in the sidebar.
-
-2. `app/api/backtest/sessions/route.ts`:
-   - `GET` — query params `?ticker=&date=`. Returns the ACTIVE session (or null) plus REVIEWED sessions for that pair.
-   - `POST` — upsert ACTIVE session for `(userId, ticker, date)`. Body: `backtestSessionUpsertSchema`. Insert if no ACTIVE row exists; otherwise update `riskDollars` + `updatedAt`. Returns `{ session }`.
-
-3. `app/api/backtest/sessions/[id]/route.ts`:
-   - `GET` — returns session + actions ordered by sequence asc.
-   - `PATCH` — body `{ riskDollars?, notes?, label? }`. Update fields.
-   - `DELETE` — cascade-deletes its actions.
-
-4. `app/api/backtest/sessions/[id]/review/route.ts` (POST) — sets `status='REVIEWED'`, `reviewedAt=now()`, optional `label`, `notes`. Body: `backtestSessionReviewSchema`. After review, the next `POST /api/backtest/sessions` for the same `(ticker, date)` will create a fresh ACTIVE session.
-
-5. `app/api/backtest/sessions/[id]/clear/route.ts` (POST) — deletes all `backtestActions` for the session but keeps the session row + `riskDollars`. Returns `{ cleared: true }`.
-
-6. `app/api/backtest/actions/route.ts` (POST) — appends an action. Body: `backtestActionCreateSchema`. Server computes `sequence = max(sequence) + 1` for that session. Returns `{ action }`.
-
-7. `app/api/backtest/actions/[id]/route.ts` (DELETE) — undo last action. Confirm caller owns it via `userId`.
-
-**Step 1.5 — Rename tab key `'charts'` → `'backtesting'`** in:
-- `app/page.tsx:16` (import, becomes `BacktestingTab from '@/components/trading/BacktestingTab'`)
-- `app/page.tsx:25` (`VALID_TABS`)
-- `app/page.tsx:32` (`TAB_TITLES`, label `'Backtesting'`)
-- `app/page.tsx:191` (the special-padding conditional — change `'charts'` to `'backtesting'`)
-- `app/page.tsx:290` (the render branch)
-- `components/trading/Sidebar.tsx:10` (`TabKey` union)
-- `components/trading/Sidebar.tsx:49` (nav entry — title `'Backtesting'`, keep `ChartCandlestick` icon)
-- `hooks/use-global-shortcuts.ts:6` (`TAB_KEYS`)
-- `components/trading/CommandPalette.tsx:26` (label `'Backtesting'`, keep shortcut `'5'`)
-
-**Step 1.6 — Remove Fibonacci tool**:
-- Delete `components/trading/plugins/FibonacciPrimitive.ts`
-- Delete `components/trading/FibonacciSettings.tsx`
-- In `hooks/use-chart-drawings.ts`: remove the `'fibonacci'` member from the drawing kind union, drop the fibonacci storage path. If the file is only used by the legacy `ChartsTab.tsx` (being deleted in Phase 2), the hook may itself be deleted in Phase 2 — verify with grep before removing.
-- In `components/trading/DrawingToolbar.tsx:19`: remove the fibonacci button entry. Toolbar should now have 3 tools + 3 line-width selectors.
-- In `components/trading/ChartDrawings.tsx`: remove the fibonacci import (line 10), the canvas render block (lines 426–437), and the settings dialog block (lines 559–580 and 720–734).
-- Grep `rg -i 'fibonacci|fib' --type ts --type tsx` to confirm no stragglers outside test fixtures or git history.
-
-**Step 1.7 — Old test cleanup**:
-- `__tests__/charts-tab.test.ts` — delete. (BacktestingTab gets its own tests in Phase 3.)
-- `__tests__/chart-timeframes.test.ts` — keep; it covers `lib/chart-timeframes.ts` which the new tab still uses.
-
-**Phase 1 validation:** `npm run lint && npx tsc --noEmit && npm test && npm run workflow:audit`. Commit Phase 1 with message `Backtesting Phase 1 — schema, APIs, tab rename, fibonacci removal`.
-
----
-
-### Phase 2 — BacktestingTab shell (4-chart grid + ticker sidebar, no simulator yet)
-
-**Step 2.1 — Delete `components/trading/ChartsTab.tsx`** after extracting reusable bits. Reusable pieces — keep them in their current homes (`lib/indicators.ts`, `lib/chart-timeframes.ts`, `hooks/use-candle-data.ts`, drawing primitives). Anything single-chart-specific in `ChartsTab.tsx` (compare-symbol, time-range buttons, screenshot button, magnet/grid toggles) goes away with the file.
-
-**Step 2.2 — Create `components/trading/BacktestingTab.tsx`** as the new tab root. Layout:
-
-```
-grid-cols-[minmax(0,1fr)_280px]  // main + right sidebar
-├─ main
-│  ├─ Toolbar row: ticker label, date label, Trade dropdown (placeholder in Phase 2), Clear button
-│  └─ ChartGrid (2x2)
-└─ BacktestingSidebar (ticker+date list)
-```
-
-Props: `{}` (no props from `app/page.tsx`; hooks fetch what's needed).
-
-Top-level state (in `BacktestingTab`):
-- `selected: { ticker: string, date: string } | null`
-- `riskDollars: number` (initialized from `localStorage.getItem('nexus-default-risk')` or fallback `100`)
-
-**Step 2.3 — `components/trading/BacktestingSidebar.tsx`** (new):
-
-- Fetches `/api/system-tickers` once (SWR pattern via `useEffect` + state, mirror `hooks/use-saved-tickers.ts` style — keep it a local hook in the component file unless reused elsewhere).
-- UI: text input filter (substring on ticker), sort toggle (DATE ↑/↓, default DESC), scrollable list of rows.
-- Each row: ticker (bold), date (`yyyy-mm-dd`), grade badge if present, gap% if present.
-- Row click: `onSelect({ ticker, date })`.
-- Active row visually marked (background tint matching existing sidebar selection style).
-- Width fixed at 280px. Match shadcn input + button styling already in repo.
-
-**Step 2.4 — `components/trading/BacktestChartGrid.tsx`** (new):
-- Receives `{ ticker, date }` props. Returns null with placeholder message ("Pick a ticker on the right") if either missing.
-- Renders four `BacktestChart` cells in a CSS grid `grid-cols-2 grid-rows-2`. Each cell `min-h-[300px]`.
-- Default timeframes (constant in this file): `['5m', '15m', '1h', '1D']`.
-- Each cell receives: `{ ticker, anchorDate, defaultTimeframe }` plus an `onAnchorChange(newDate)` callback (only fired by the 1D chart when user clicks a daily bar).
-- Anchor change callback bubbles to `BacktestingTab` and updates `selected.date`, which re-renders all four cells with the new anchor.
-
-**Step 2.5 — `components/trading/BacktestChart.tsx`** (new — the reusable chart cell):
-- Props: `{ ticker, anchorDate, defaultTimeframe, defaultIndicators?, onAnchorChange? }`
-- Internal state: `timeframe` (default from prop), `indicators` (Set<IndicatorKey>, default per Step 2.6), `seriesType` (default `'candles'`).
-- Uses `useCandleData` (`hooks/use-candle-data.ts`) with parameters derived from `anchorDate` + `timeframe`. Lookback windows (in this file as a constant map):
-  - `5m` → 2 trading days back from anchor through end-of-anchor day post-market
-  - `15m` → 5 trading days back
-  - `1h` → 20 trading days back
-  - `1D` → 1 calendar year back from anchor
-- Mirror `ChartsTab.tsx` pattern for `createChart()`, series creation, indicator overlays, drawing tools — but scope drawings per-cell (each cell's drawings live in cell-local state; not persisted across switches unless trivial).
-- Cell header: compact dropdown for timeframe (1m, 2m, 3m, 5m, 10m, 15m, 30m, 1h, 4h, 1D, 1W, 1M — pull from `lib/chart-timeframes.ts`), compact dropdown for indicators (multi-select checkbox menu), compact line-tool toolbar (3 buttons + line-width).
-- Drop the screenshot button, magnet toggle, grid toggle, compare feature.
-
-**Step 2.6 — Default indicators per cell** (constants in `BacktestChartGrid.tsx`):
-- 5m and 15m: `['EMA9', 'EMA20', 'VWAP']`
-- 1h: `['EMA20', 'EMA50']`
-- 1D: `['SMA50', 'SMA200']`
-
-`lib/indicators.ts` already implements SMA20, EMA21, VWAP, BB, RSI, ATR, MACD. **It does not implement EMA9/EMA20/EMA50/SMA50/SMA200**. Extend `lib/indicators.ts`:
-- Generalize the existing EMA helper so it accepts an arbitrary period; add named exports `ema9`, `ema20`, `ema50` (thin wrappers around a `ema(period)(data)` core).
-- Add `sma50`, `sma200` (thin wrappers around the existing SMA core).
-- Indicator key union becomes: `'SMA20' | 'SMA50' | 'SMA200' | 'EMA9' | 'EMA20' | 'EMA21' | 'EMA50' | 'VWAP' | 'BB' | 'RSI' | 'ATR'`.
-
-**Step 2.7 — Daily-day highlight (the blue band)** in the 1D `BacktestChart`:
-- Reuse the canvas-overlay pattern from `ChartsTab.tsx:498-555` (pre/post-market shading).
-- Compute the x-pixel range for the bar matching `anchorDate`. Draw a translucent blue rect (e.g. `rgba(56, 139, 253, 0.18)`) spanning the chart height for that bar's width.
-- Update on chart resize and on `anchorDate` change.
-
-**Step 2.8 — Daily-bar click-to-anchor:**
-- Subscribe to lightweight-charts `subscribeClick` on the 1D cell only.
-- Convert click time to YYYY-MM-DD (NY session). Call `onAnchorChange(newDate)`.
-- Skip if the click resolves to the same date as the current anchor.
-
-**Step 2.9 — Prior daily close line** on every sub-1D cell:
-- After bars load, look up the close of the most recent daily bar with `date < anchorDate`. Use the existing `/api/market-data` endpoint with `frequencyType=daily` and a small lookback (10 days) — keep this fetch in the cell, or in a shared hook `hooks/use-prior-close.ts` if you want to reuse.
-- Render as a horizontal price line (`series.createPriceLine({ price, color: '#888', lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'PDC' })`).
-- Refresh when `anchorDate` changes.
-
-**Phase 2 validation:** `npm run lint && npx tsc --noEmit && npm test && npm run workflow:audit`. Manually verify: pick a row → 4 charts populate; click a daily bar → all 4 re-anchor; change a cell's timeframe → only that cell re-fetches; intraday cells show PDC line; daily cell shows blue band on anchor day. Commit as `Backtesting Phase 2 — sidebar + 4-chart grid`.
-
----
-
-### Phase 3 — Trade simulator
-
-**Step 3.1 — Sim state hook** `hooks/use-backtest-session.ts` (new):
-- Inputs: `{ ticker, date, riskDollars }`.
-- Loads ACTIVE session via `GET /api/backtest/sessions?ticker=&date=`. If none, lazily creates one on first action (don't `POST` until needed — avoids blank rows).
-- Exposes:
-  - `session: { id, riskDollars, ... } | null`
-  - `actions: BacktestAction[]` (sorted by sequence)
-  - `position: SimPosition` (derived; see Step 3.3)
-  - `reviews: BacktestSession[]` (REVIEWED list for the pair)
-  - `placeAction(input)`, `undoLast()`, `clear()`, `updateRisk(r)`, `saveReview(label, notes)`, `loadReview(reviewId)` (read-only restore).
-- All mutations call API + optimistically update local state.
-- Keep all logic here so `BacktestingTab` stays a thin orchestrator (matches `app/page.tsx` orchestration rule in `AGENTS.md:55`).
-
-**Step 3.2 — R math** in `lib/backtest-math.ts` (new pure-functions module):
-
-```ts
-export type SimDirection = 'LONG' | 'SHORT' | 'FLAT';
-export interface SimPosition {
-  direction: SimDirection;
-  totalShares: number;     // open shares
-  avgEntry: number | null; // null when flat
-  stop: number | null;
-  realizedPnl: number;     // closed-leg P&L
-  lastExitPrice: number | null;
-  initialRiskDollars: number;
-  closedShares: number;
-  totalSharesEverOpened: number; // for "pk" peak shares display
+export interface ResearchSnapshotNewsItem {
+  title: string;
+  summary: string;
+  filedAt: string | null;
+  formType: string | null;
+  isNews: boolean;
 }
 
-// Replays an ordered action list to derive the current position.
-export function reduceActions(actions: BacktestAction[], riskDollars: number): SimPosition;
+export type FilingBucket =
+  | 'financials' | 'news' | 'registrations' | 'prospectus'
+  | 'proxies' | 'ownerships' | 'other';
 
-// Given the existing position, a desired NEW stop, and the click price for the add,
-// returns the share quantity such that total open risk == riskDollars.
-// For LONG: shares = (R - existingShares * (avgEntry - newStop)) / (clickPrice - newStop)
-// For SHORT: shares = (R - existingShares * (newStop - avgEntry)) / (newStop - clickPrice)
-// Throws if signs are wrong (e.g. LONG with stop above click price).
-export function sizeForAdd(
-  position: SimPosition,
-  newStopPrice: number,
-  clickPrice: number,
-): { shares: number; resultingAvgEntry: number; resultingTotalRisk: number };
-
-// Sizing for a brand-new position (FLAT → LONG/SHORT): shares = R / |entry - stop|.
-export function sizeForOpen(
-  riskDollars: number,
-  entryPrice: number,
-  stopPrice: number,
-  direction: 'LONG' | 'SHORT',
-): { shares: number };
+export interface ResearchSnapshotFiling {
+  formType: string;            // raw SEC form type, e.g. '10-K', '8-K', '424B3'
+  bucket: FilingBucket;        // computed via lib/filings-bucket.ts (Step 1.2.1)
+  title: string;               // primary_doc_description if present, else `${formType} filing`
+  filedAt: string | null;      // 'YYYY-MM-DD'
+  url: string | null;          // direct SEC archives URL to primary document
+  accessionNumber: string | null;
+}
 ```
 
-Round shares to whole integers (floor). The "rounding leftover" is acceptable — actual risk may be slightly under R$. Keep math in this file so it can be unit-tested without UI.
+Add `filings: ResearchSnapshotFiling[]` to `ResearchSnapshotFull` (search the file for the existing `historicalFloat:` field — add `filings:` near `news:`).
 
-**Step 3.3 — Replay reducer** (`reduceActions` in `lib/backtest-math.ts`):
-- Initialize position to FLAT.
-- For each action in sequence:
-  - `LONG` / `SHORT`: only valid from FLAT. Sets direction, totalShares, avgEntry, stop.
-  - `LONG_ADD`: only valid in LONG. Recompute `avgEntry = (existingShares*existingAvg + addShares*addPrice) / (existingShares + addShares)`. Update stop to action's `stopPrice`. Update totalShares.
-  - `SHORT_ADD`: mirror.
-  - `SELL`: subtract shares (partial allowed), realize `(price - avgEntry) * sold` into `realizedPnl`, `lastExitPrice = price`. If shares hit 0 → FLAT.
-  - `COVER`: mirror. Realize `(avgEntry - price) * covered`.
-- Reject impossible actions in API validation (e.g. `SELL` when flat) so the reducer can't see them.
+**Step 1.1.2 — Create `lib/filings-bucket.ts` (new file)**:
 
-**Step 3.4 — Trade dropdown + place-order modal:**
+```ts
+import type { FilingBucket } from '@/lib/types';
 
-Components:
-- `components/trading/BacktestTradeMenu.tsx` — header dropdown above the grid. Button labels: `LONG`, `LONG ADD`, `SELL`, `SHORT`, `SHORT ADD`, `COVER`. Each button's enabled state from `position.direction`:
-  - FLAT → enable LONG, SHORT only
-  - LONG → enable LONG ADD, SELL only
-  - SHORT → enable SHORT ADD, COVER only
-- After click, the tab enters `armedAction: ActionType` mode; charts show a hint banner ("Click chart to place {action} entry — ESC to cancel").
+// SEC form-type → research-tab bucket. Matches AskEdgar's UX layout.
+// Unknown / less-common forms fall through to 'other' on purpose; we surface
+// them rather than dropping them so users still see them in the All view.
+export function bucketForFormType(formType: string): FilingBucket {
+  const f = formType.trim().toUpperCase();
 
-- `components/trading/BacktestPlaceOrderDialog.tsx` — a `Dialog` (use existing shadcn Dialog) opened after the user clicks a chart bar in armed mode. The dialog shows:
-  - Action type (read-only label)
-  - Entry price (read-only, auto-filled from click)
-  - For LONG/SHORT (open): single Stop input. % size selector defaults to 100; preview shows computed shares + total risk.
-  - For LONG_ADD/SHORT_ADD: New Stop input. Preview shows computed add shares (via `sizeForAdd`), resulting avgEntry, resulting total risk (always == R$ if math is right).
-  - For SELL/COVER: % size selector (10/25/33/50/75/100). Preview shows shares closed + realized P&L preview.
-  - `Place` and `Cancel` buttons. ESC = cancel.
-- On Place: hook calls `placeAction()`, dialog closes, banner clears.
+  // Financials (annual/quarterly + amendments)
+  if (/^10-[KQ](\/A)?$/.test(f)) return 'financials';
+  if (/^20-F(\/A)?$/.test(f)) return 'financials';            // foreign private issuers
+  if (/^40-F(\/A)?$/.test(f)) return 'financials';            // Canadian filers
 
-**Step 3.5 — Chart click handler integration:**
-- In `BacktestChart.tsx`, when `armedAction` is set (passed down via context or prop), `subscribeClick` handler reads price-at-click via `series.coordinateToPrice()` and bar time, then calls a parent `onArmedClick({ price, barTime })`.
-- Parent (`BacktestingTab`) opens the place-order dialog with the click data.
-- Click outside chart while armed → no-op. ESC key → clear armed state.
+  // News (current reports)
+  if (/^8-K(\/A)?$/.test(f)) return 'news';
+  if (/^6-K(\/A)?$/.test(f)) return 'news';                   // foreign private issuer interim reports
 
-**Step 3.6 — Right-side stats panel** `components/trading/BacktestSimPanel.tsx` (new):
-- Sits inside the right sidebar **above** the ticker list — sidebar becomes two stacked panels.
-- Displays:
-  - R$ input (number, on blur calls `updateRisk()`; persists to session and writes-through to `localStorage('nexus-default-risk')`)
-  - AVG ENTRY, SHARES, STOP, RISK ($ + R-multiple), AVG EXIT, LAST EXIT, SIM PNL ($ + R), POS VALUE, STATUS (`FLAT` / `OPEN LONG` / `OPEN SHORT` / `CLOSED`).
-  - Action ledger: scrollable list of placed actions (timestamp · type · shares @ price · stop), with an "Undo last" button.
-  - `Clear` button → confirm dialog ("Remove all simulation executions for {ticker} {date}? R$ setting kept.") → calls `/api/backtest/sessions/[id]/clear`.
-  - `SAVE REVIEW` button (disabled when ledger is empty) → opens a small dialog asking for optional label + notes, then `POST /api/backtest/sessions/[id]/review`. After save, hook clears local state and the next action creates a new ACTIVE session.
-  - `LOAD REVIEW` dropdown listing this `(ticker, date)`'s REVIEWED sessions by `reviewedAt DESC`. Selecting one loads it in **read-only mode** — show a banner "Viewing review — click + to start a new session". (Read-only is enforced by hiding the trade dropdown; no schema flag needed.)
-- All numeric values formatted via existing `formatCurrency` / `formatR` from `lib/trading-utils.ts`.
+  // Registrations (and amendments)
+  if (/^S-(1|3|4|8|11)(\/A)?$/.test(f)) return 'registrations';
+  if (/^F-(1|3|4)(\/A)?$/.test(f)) return 'registrations';
 
-**Step 3.7 — Tests** in `__tests__/`:
-- `backtest-math.test.ts` — unit-test `sizeForOpen`, `sizeForAdd`, `reduceActions`. Cover: open long, add to long lowering stop maintains R, partial sell, full sell → FLAT, mirror cases for short, invalid action sequencing throws.
-- `backtest-sessions-route.test.ts` — happy path: create active session, append actions, review, list reviews. Mock DB via existing pattern.
-- `backtesting-tab.test.ts` — render the tab with mocked `useCandleData`, `use-backtest-session`. Verify: empty state when no selection, trade dropdown disabled until ticker chosen, action buttons enable correctly per position state.
+  // Prospectus
+  if (/^424[AB]\d?$/.test(f)) return 'prospectus';
+  if (f === 'EFFECT') return 'prospectus';                    // notice of effectiveness rides with prospectus flow
 
-**Phase 3 validation:** all four commands. Manually exercise: arm LONG → click 5m bar → enter stop → Place; verify shares calc against `R / |entry-stop|`; arm LONG_ADD with a different stop → confirm total risk in panel still equals R$; partial SELL; SAVE REVIEW; LOAD REVIEW shows read-only; CLEAR wipes actions but preserves R$. Commit as `Backtesting Phase 3 — trade simulator`.
+  // Proxies (definitive, preliminary, additional materials, contested)
+  if (/^(DEF|PRE|DEFA|DEFM|DEFC|DFAN|DFRN|PREM|PREC|PRER)/.test(f) && /14[AC]/.test(f)) return 'proxies';
+
+  // Ownerships (insider + institutional beneficial-ownership filings)
+  if (/^SC\s?13[GD](\/A)?$/.test(f)) return 'ownerships';
+  if (/^[345](\/A)?$/.test(f)) return 'ownerships';
+
+  return 'other';
+}
+```
+
+**Step 1.1.3 — Update `lib/sec/submissions.ts`** to expose what the snapshot needs:
+- Add optional `items?: string[]` to `RawSubmissionsPayload.filings.recent` (line 37).
+- Add `items: string | null` to `SecFiling` (line 8). The SEC submissions JSON returns `items` as a single comma-joined string per filing (e.g. `'5.03,9.01'`); store it as-is.
+- In `zipRecent` (line 50), read `recent.items?.[i] ?? null` and emit it on the row.
+- Tests: extend any existing `__tests__/sec-submissions*.test.ts` (or add `__tests__/sec-submissions.test.ts` if none) to assert `items` is preserved when present and `null` when absent.
+
+**Step 1.1.4 — Fix the snapshot mapper** in `lib/askedgar.ts`. Two changes:
+
+(a) The existing `news` array at `lib/askedgar.ts:813-834` currently includes filings rows (the second spread, line 824). **Remove the filings spread from the `news` array entirely.** News should be news only.
+
+(b) Add a new `filings: ResearchSnapshotFiling[]` immediately after the `news` const, sourced from the SEC submissions response:
+
+```ts
+import { bucketForFormType } from '@/lib/filings-bucket';
+
+// ... inside normalizeAskEdgarResponse, after the `news` block:
+const filings: ResearchSnapshotFiling[] = getEndpointResponse(rawData, ['filing-titles', 'filingTitles'])
+  .results
+  .map((item) => {
+    const row = toRecord(item);
+    const formType = getStringField(row, ['form_type', 'formType', 'form']) ?? 'unknown';
+    const filedAt = getStringField(row, ['filed_at', 'filedAt', 'date']);
+    const headline = getStringField(row, ['headline', 'title', 'primary_doc_description', 'primaryDocDescription'])
+      ?? `${formType} filing`;
+    return {
+      formType,
+      bucket: bucketForFormType(formType),
+      title: headline,
+      filedAt,
+      url: getStringField(row, ['url', 'document_url', 'documentUrl']) ?? null,
+      accessionNumber: getStringField(row, ['accession_number', 'accessionNumber', 'accn']) ?? null,
+    } satisfies ResearchSnapshotFiling;
+  })
+  .sort((a, b) => {
+    if (!a.filedAt && !b.filedAt) return 0;
+    if (!a.filedAt) return 1;
+    if (!b.filedAt) return -1;
+    return b.filedAt.localeCompare(a.filedAt);
+  });
+```
+
+Add `filings` to the returned snapshot object.
+
+**Step 1.1.5 — Snapshot mapper unit tests** in `__tests__/research-snapshot-mapper.test.ts` (new file):
+- Build a fixture `rawData` shaped like `Record<string, AskEdgarResponse<unknown>>` with realistic SEC outputs for `'filing-titles'` (a `SecFiling[]`) and `'historical-float-pro'` (a `ShareSnapshot[]`), plus minimal stubs for the other endpoints `normalizeAskEdgarResponse` reads (you can copy the empty-response shape from any existing askedgar test).
+- Assert: `snapshot.filings` length matches input, `formType` is preserved (e.g. `'10-K'`, not `'Filing'`), `bucket` is correct for at least one row of each bucket type, `url` flows through, rows sort newest-first.
+- Assert: `snapshot.historicalFloat` rows have `outstanding` populated from `ShareSnapshot.outstanding`.
+- Assert: `snapshot.news` no longer includes filing-titles rows.
+
+### Phase 1.2 — UI: split News tab, add Filings tab with buckets
+
+**Step 1.2.1 — Update tab key union** in `components/trading/ResearchReportSections.tsx:29`:
+
+```ts
+type TabKey = 'overview' | 'offering-ability' | 'dilution' | 'news' | 'filings'
+  | 'offerings' | 'history' | 'gap-stats';
+```
+
+Update the `TABS` array at line 138: replace `{ key: 'news-filings', label: 'News & Filings' }` with two entries: `{ key: 'news', label: 'News' }` and `{ key: 'filings', label: 'Filings' }`. Keep `'filings'` immediately after `'news'`.
+
+**Step 1.2.2 — Update the news tab body** at `components/trading/ResearchReportSections.tsx:409-434`:
+- Change the conditional from `activeTab === 'news-filings'` to `activeTab === 'news'`.
+- The map already iterates `data.news` — leave the rendering logic alone; just update the ternary at line 412 (which currently says `item.formType ?? (item.isNews ? 'News' : 'Filing')`) to drop the filing fallback. Since news now only contains `isNews: true` rows, the type label is always `'News'` (or `item.formType` when set, e.g. `'Grok'` for AI-tagged news).
+- Drop the badge `sourceClass` orange branch (`!item.isNews`) — it's unreachable now. Keep cyan for default news, violet for grok-tagged.
+
+**Step 1.2.3 — Add Filings section** as a new conditional block right after the news block. Render it inline in `ResearchReportSections.tsx` rather than a new file (the file is already the home for all tab bodies). Layout:
+
+```
+{activeTab === 'filings' ? (
+  <FilingsView filings={data.filings} />
+) : null}
+```
+
+Define `FilingsView` near the other helper components in the same file (e.g. above the main exported component). It should:
+
+- Maintain a local `bucket` state with default `'all'` and possible values `'all' | 'chronological' | FilingBucket`.
+- Render a row of sub-tabs in this order: `All`, `Chronological`, `Financials`, `News`, `Registrations`, `Prospectus`, `Proxies`, `Ownerships`, `Other`. Match the existing tab styling at `ResearchReportSections.tsx:138-180` (small pill buttons; reuse the same classes).
+- For `bucket === 'all'`: render six per-bucket tables stacked vertically (Financials → News → Registrations → Prospectus → Proxies → Ownerships). Skip Other from the All view (matches AskEdgar's behaviour) but include it as a selectable sub-tab.
+- For `bucket === 'chronological'`: one flat table sorted by `filedAt DESC`.
+- For any specific bucket: one table filtered to that bucket.
+
+Each table has columns: `Type` (form-type badge), `Headline` (linked to `url` when present, opens in new tab via `target="_blank" rel="noopener noreferrer"`), `Filed At` (formatted via existing `formatDate`). When `url` is `null`, render the headline as plain text. Reuse the `<details>` collapsible pattern from the news tab is **not** appropriate here — use a flat table per AskEdgar's layout (refer to `data.offerings` table at `ResearchReportSections.tsx:441-462` as the reference for table styling).
+
+When `data.filings` is empty for a given bucket, render `<NoDataBadge />`.
+
+**Step 1.2.4 — Form-type badge styling**: render every form-type badge with white lettering on a neutral background. Use `rounded border border-white/15 bg-white/5 px-2 py-0.5 text-sm text-white` regardless of bucket. Do **not** add per-bucket color helpers — uniform styling across all buckets.
+
+### Phase 1.3 — Validation
+
+**Step 1.3.1 — Bucketing unit test** in `__tests__/filings-bucket.test.ts` (new file): assert the function returns the expected bucket for each form type listed in Step 1.1.2's regex tables. Cover at least one match per bucket plus a clearly-`other` form like `'CORRESP'` or `'UPLOAD'`.
+
+**Step 1.3.2 — Validation commands**: `npm run lint && npx tsc --noEmit && npm test && npm run workflow:audit`. All must pass.
+
+**Step 1.3.3 — Manual smoke** (note in commit message that you couldn't run it because dev server requires login): pick 2-3 tickers from `system_tickers`, open Research tab, verify Filings tab populates with bucketed tables, click a headline → opens correct SEC archives URL, News tab now shows only news (no filing rows).
+
+**Commit** as `Filings v1 — bucketed Filings tab + SEC field-mapping fix`.
+
+---
+
+## Spec 2 — AskEdgar Sprint 3, Part A: reverse-splits parser
+
+Replace AskEdgar's `/v1/reverse-splits` endpoint with a Nexus-owned 8-K Item 5.03 parser. Output shape stays compatible with the existing snapshot mapper at `lib/askedgar.ts:892-900` (which reads `ratio` and `executionDate`/`execution_date`/`date`).
+
+### Phase 2.1 — SEC body-fetch infrastructure
+
+**Step 2.1.1 — Add `secFetchText()`** to `lib/sec/client.ts`. Mirror `secFetchJson` (rate-pacing, retry, timeout, SecHttpError) but:
+- `Accept: 'text/html, text/plain'`
+- Return `string` (the response body via `await response.text()`)
+- Same retry/backoff rules.
+
+Export it alongside `secFetchJson`.
+
+**Step 2.1.2 — Filing body cache table** in `lib/db/schema.ts` (append after `secCompanyfactsCache` at line 233):
+
+```ts
+// Cached filing primary-document HTML/text. Keyed by accession number
+// (globally unique across SEC). TTL: 30 days soft expiry — filings are
+// immutable once filed, so cache invalidation is purely a freshness concern
+// for re-parsing if our parsers improve.
+export const secFilingBodyCache = pgTable('sec_filing_body_cache', {
+  accessionNumber: text('accession_number').primaryKey(),
+  cik: text('cik').notNull(),
+  formType: text('form_type').notNull(),
+  filedAt: text('filed_at').notNull(),       // 'YYYY-MM-DD'
+  body: text('body').notNull(),              // sanitized text (HTML tags stripped)
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('sec_filing_body_cache_cik_form_idx').on(table.cik, table.formType),
+  index('sec_filing_body_cache_fetched_idx').on(table.fetchedAt),
+]);
+```
+
+Then: `npm run db:generate` → inspect the produced `drizzle/0026_*.sql` (one CREATE TABLE + 2 indexes; no other tables touched) → `npm run db:migrate` to apply to Neon. Commit the migration file.
+
+**Step 2.1.3 — Body-fetch helper** `lib/sec/filing-body.ts` (new file). Exports:
+
+```ts
+export interface FilingBody {
+  accessionNumber: string;
+  cik: string;
+  formType: string;
+  filedAt: string;
+  text: string;            // stripped of HTML tags, whitespace-collapsed
+}
+
+// Fetches a filing's primary document, strips HTML, caches the result.
+// `primaryDocUrl` is the URL already built by lib/sec/submissions.ts (SecFiling.url).
+export async function getFilingBody(args: {
+  accessionNumber: string;
+  cik: string;
+  formType: string;
+  filedAt: string;
+  primaryDocUrl: string;
+}): Promise<FilingBody | null>;
+```
+
+Implementation:
+1. Hit `secFilingBodyCache` by `accessionNumber`. If a row exists, return it (no TTL refetch — filings are immutable; we re-fetch only if cache row is missing).
+2. Otherwise call `secFetchText(primaryDocUrl)`.
+3. Strip HTML: replace `<script…>…</script>` and `<style…>…</style>` blocks with empty string, replace all `<[^>]+>` with a space, decode the standard HTML entities (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&#39;`, `&nbsp;`), collapse whitespace runs to single spaces. Keep this minimal — do **not** pull in a full HTML parser. Tests cover the cases that matter.
+4. Cache and return. On fetch failure, return `null` (don't throw — the caller is one of many parsers and a single-filing failure shouldn't kill the fan-out).
+
+### Phase 2.2 — Reverse-split parser
+
+**Step 2.2.1 — `lib/sec/reverse-splits.ts`** (new file). Exports:
+
+```ts
+import { getRecentFilings } from '@/lib/sec/submissions';
+import { getCikForTicker } from '@/lib/sec/cik-map';
+import { getFilingBody } from '@/lib/sec/filing-body';
+
+export interface ReverseSplit {
+  ratio: string;                       // normalized 'X-for-Y' (e.g. '1-for-25')
+  executionDate: string | null;        // 'YYYY-MM-DD' or null if not extracted
+  announcementDate: string;            // the 8-K filing date
+  accessionNumber: string;
+  url: string;                         // direct SEC link to the source 8-K
+}
+
+export interface ReverseSplitsResponse {
+  status: 'success' | 'error';
+  count: number;
+  results: ReverseSplit[];
+  error?: string;
+}
+
+export async function getReverseSplits(
+  rawTicker: string,
+  options?: { sinceDays?: number },
+): Promise<ReverseSplitsResponse>;
+```
+
+Implementation:
+1. Resolve CIK via `getCikForTicker`. Return empty success if no CIK.
+2. Call `getRecentFilings(ticker, { limit: 200, sinceDays: options?.sinceDays ?? 365 * 10 })`.
+3. Filter to rows where `form_type` matches `/^8-K(\/A)?$/` AND `items` (the new field from Step 1.1.3) contains `'5.03'`. If `items` is null on a given row (older filings), still include the row — older 8-Ks may lack the items field upstream and we'd rather false-positive a body fetch than miss a real split.
+4. For each surviving row, call `getFilingBody`. Skip rows where the body fetch returns null.
+5. Run the body through `extractReverseSplit(body)` (Step 2.2.2). Skip rows where the parser returns null.
+6. Return the matches sorted newest-first by `announcementDate`.
+
+**Step 2.2.2 — Parser** in the same file:
+
+```ts
+interface RawSplit {
+  ratio: string;
+  executionDate: string | null;
+}
+
+export function extractReverseSplit(text: string): RawSplit | null;
+```
+
+Detection strategy — try patterns in order, return first non-null:
+
+```ts
+// Ratio: covers '1-for-25', '1 for 25', '1:25', 'one-for-twenty-five', and 'X-to-Y' phrasings.
+const RATIO_PATTERNS: RegExp[] = [
+  /(\d+)\s*[-\s]?\s*(?:for|to|:)\s*[-\s]?\s*(\d+)\s+reverse\s+(?:stock\s+)?split/i,
+  /reverse\s+(?:stock\s+)?split\s+(?:at\s+(?:a\s+)?ratio\s+of\s+)?(\d+)\s*[-\s]?\s*(?:for|to|:)\s*[-\s]?\s*(\d+)/i,
+  /(\d+)\s*[-\s]?\s*(?:for|to)\s*[-\s]?\s*(\d+)\s+(?:share\s+)?consolidation/i,
+];
+```
+
+For each pattern, capture group 1 = numerator, group 2 = denominator. **Reverse splits have denominator > numerator** (e.g. `1-for-25` not `25-for-1`); if the captured pair has `numerator >= denominator`, treat as a no-match and try the next pattern. Normalize output as `${numerator}-for-${denominator}` (always hyphen-for-hyphen, regardless of input separator).
+
+Effective-date extraction: search for a date phrase in the same paragraph (or within ±200 chars of the ratio match). Pattern bank:
+
+```ts
+const DATE_PATTERNS: RegExp[] = [
+  /effective\s+(?:on\s+|as\s+of\s+|date\s+of\s+)?([A-Z][a-z]+\s+\d{1,2},\s*\d{4})/i,
+  /effective\s+(?:on\s+|as\s+of\s+)?(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+  /effective\s+(?:on\s+|as\s+of\s+)?(\d{4}-\d{2}-\d{2})/i,
+];
+```
+
+Convert the matched date string to ISO `YYYY-MM-DD` (write a small `parseFlexibleDate` helper at the bottom of the file). If no date found, return `executionDate: null` — having the ratio is more important than having the date. The 8-K filing date (`announcementDate` in the outer caller) is always present as a fallback.
+
+Cap the `text` slice you scan to the first 50,000 chars of the body — Item 5.03 disclosures appear near the top, and 8-Ks can be very long with exhibits. Saves regex backtracking time.
+
+### Phase 2.3 — Wire into the registry
+
+**Step 2.3.1 — Replace** `lib/askedgar.ts:439-442` (`fetchReverseSplits`) and `lib/askedgar.ts:476` (registry entry):
+
+- Import: `import { getReverseSplits } from '@/lib/sec/reverse-splits';`
+- Delete the local `fetchReverseSplits` function (it now becomes dead code).
+- Update registry: `'reverse-splits': { label: 'Reverse Splits', run: (ticker) => getReverseSplits(ticker) },`
+
+The snapshot mapper at `lib/askedgar.ts:892-900` already reads `ratio` and `executionDate|execution_date|date`. `getReverseSplits` returns `executionDate` (camelCase) — that already matches the alias chain. **Verify by re-reading lines 892-900** before assuming. If field names drift, add aliases there.
+
+### Phase 2.4 — Tests
+
+**Step 2.4.1 — Parser unit tests** in `__tests__/sec-reverse-splits-parser.test.ts` (new file): import `extractReverseSplit`. Cover:
+- `'effected a 1-for-25 reverse stock split, effective March 14, 2026'` → `{ ratio: '1-for-25', executionDate: '2026-03-14' }`
+- `'1 for 50 reverse stock split'` (no date) → `{ ratio: '1-for-50', executionDate: null }`
+- `'reverse stock split at a ratio of 1:100'` → `{ ratio: '1-for-100', executionDate: null }`
+- `'25-for-1 forward stock split'` (forward, denominator < numerator) → `null`
+- Empty string → `null`
+- Item 5.03 about a non-split charter amendment (e.g. `'amend the bylaws to increase the size of the board'`) → `null`
+
+**Step 2.4.2 — HTML stripping** unit test in `__tests__/sec-filing-body.test.ts` (new file): pass HTML containing `<script>` blocks, `<style>` blocks, mixed tags, and entities; assert the stripped output is whitespace-clean and entity-decoded. Don't test the full `getFilingBody` flow with DB cache here — keep the test focused on the strip helper. Export the strip helper from `filing-body.ts` for testability.
+
+**Step 2.4.3 — Integration test** in `__tests__/sec-reverse-splits.test.ts` (new file): mock `getRecentFilings` and `getFilingBody`, run `getReverseSplits('GLND')`, assert it filters to Item 5.03 8-Ks, calls the parser, and returns the expected shape. One happy-path test is enough — parser correctness is covered by Step 2.4.1.
+
+### Phase 2.5 — Validation
+
+**Step 2.5.1 — Validation commands**: `npm run lint && npx tsc --noEmit && npm test && npm run workflow:audit`. All must pass.
+
+**Step 2.5.2 — Manual smoke** (note in commit message that you couldn't run live unless prompted): pick a ticker known to have had a recent reverse split. From the Research tab, confirm the snapshot's reverse-splits section populates and matches the SEC 8-K source filing (use the URL from the new Filings tab to cross-check).
+
+**Commit** as `AskEdgar Sprint 3 — reverse-splits via SEC 8-K Item 5.03`.
 
 ---
 
 ## Validation Snapshot
 
-- Backtesting Phase 3 (`2026-04-28`, pending review/commit): added `lib/backtest-math.ts`, `hooks/use-backtest-session.ts`, `BacktestTradeMenu`, `BacktestPlaceOrderDialog`, and `BacktestSimPanel`; wired armed chart-click order placement, risk/session persistence, undo/clear/review flows, and review-mode restore into `BacktestingTab`; tightened `POST /api/backtest/actions` sequencing validation; added `backtest-math`, backtest route, and `BacktestingTab` tests. `npm run lint`, `npx tsc --noEmit`, `npm test` (466/466), and `npm run workflow:audit` passed. Manual browser smoke remains user-authenticated/manual because `/` redirects to login without a browser session.
-- Backtesting Phase 2 (`2026-04-28`, committed `745958d`): replaced the legacy `ChartsTab` wrapper with `BacktestingTab`, `BacktestingSidebar`, `BacktestChartGrid`, and reusable `BacktestChart`; extended backtest timeframe/indicator utilities; `npm run lint`, `npx tsc --noEmit`, `npm test` (457/457), and `npm run workflow:audit` passed. Dev server served `/login`; full chart interaction smoke remains user-authenticated/manual because `/` redirects to login without a browser session.
-- Backtesting Phase 1 (`2026-04-28`, committed `4633b30`): `npm run db:generate` produced `drizzle/0025_blue_joseph.sql`; `npm run db:migrate` applied it to Neon; `npm run lint`, `npx tsc --noEmit`, `npm test` (454/454), and `npm run workflow:audit` passed.
-
-Last validation (before Backtesting work): `npm run lint`, `npx tsc --noEmit`, `npm test` (458/458 in isolation, one pre-existing flaky `sec-client.test.ts` timing assertion under full-suite load), `npm run db:migrate` (`0024_acoustic_jocasta.sql` applied to Neon) — all on AskEdgar Sprint 2 ship `cbde6ee` (2026-04-27).
+- Filings v1 (`2026-04-29`, pending review/commit): added `filings` to the research snapshot contract, bucketed SEC form-type mapping via `lib/filings-bucket.ts`, SEC `items` passthrough in `lib/sec/submissions.ts`, a split Research `News`/`Filings` UI, and focused tests in `__tests__/filings-bucket.test.ts`, `__tests__/research-snapshot-mapper.test.ts`, and `__tests__/sec-submissions.test.ts`. `npm run lint`, `npx tsc --noEmit`, `npm test` (474/474), and `npm run workflow:audit` passed. Manual browser smoke remains pending because the Research tab requires an authenticated session.
+- Backtesting Phase 3 (`2026-04-28`, committed `8032710` + polish `f2f4087`/`c29b25a`/`6456f69`): `npm run lint`, `npx tsc --noEmit`, `npm test` (466/466), `npm run workflow:audit` all passed at Phase 3 ship.
+- Backtesting Phase 2 (`2026-04-28`, committed `745958d`): tests 457/457 green.
+- Backtesting Phase 1 (`2026-04-28`, committed `4633b30`): `drizzle/0025_blue_joseph.sql` applied to Neon; tests 454/454 green.
+- AskEdgar Sprint 2 (`2026-04-27`, committed `cbde6ee`): `historical-float-pro` swapped to SEC companyfacts; `0024_acoustic_jocasta.sql` applied.
+- AskEdgar Sprint 1 (`2026-04-27`, committed `b4a3e73`): `filing-titles` swapped to SEC submissions.
 
 ## Follow-Up Notes
 
-- **Backtesting drawings still don't render (2026-04-28).** Removed inline-callback chart thrash that was tearing the chart down every parent render (refactored `BacktestChart` to capture `armedAction`, `onArmedClick`, `onAnchorChange` in refs; memoized `handleArmedClick` in `BacktestingTab`). Execution arrows + stop line now render fine via a separate effect. But user-drawn trendlines / horizontals / rectangles still don't appear on the chart. Suspect remaining causes: (a) `<ChartDrawings>` canvas overlay sizing — the resize observer hooks `canvas.parentElement` which is `chartWrapRef`; on first mount `clientWidth/Height` may be 0 before lightweight-charts lays out, leaving the canvas at 0×0 so paints never show. (b) `chart.subscribeClick` may not fire when the overlay canvas (with default `pointer-events: auto` while a tool is active) intercepts the click before it reaches lightweight-charts' internal canvas — hits would never reach `startDrawing`. Investigate by adding console logs in `ChartDrawings.tsx:212` (handleClick), `ChartDrawings.tsx:289` (handleCrosshairMove), and `ChartDrawings.tsx:405` (renderDrawings) to see which fires when the user clicks with a tool armed. Also check the canvas DOM rect in DevTools.
-- **Auto stop-out (deferred from Backtesting v1, 2026-04-28).** When intraday bar prints through a stop, simulator should auto-execute SELL/COVER at the stop price. Schema already supports it (just append a synthetic action with `actionType=SELL|COVER` and the stop as price). UI: a settings toggle "Auto stop-out on bar break" defaulting OFF for parity with the v1 manual model. Add when user requests.
-- **Backtest analytics roll-up (idea, 2026-04-28).** REVIEWED sessions are a corpus of practiced setups — could surface aggregate stats (win-rate by setupType, avg R per `system_tickers.primaryAgenda`). Out of scope for v1.
-- **Financial commentary missing in agent output (logged 2026-04-27).** GLND research report from Sprint 1 smoke run claimed "no financial commentary available." Agents should surface source commentary verbatim then add analysis on top — not replace with summary. Investigate which AskEdgar/SEC field feeds this. Track separately from AskEdgar Sprint 3.
-- **AskEdgar paid API key swapped (2026-04-27).** Test key expired. `https://eapi.askedgar.io` remains the correct base URL. Only swap `ASKEDGAR_API_KEY` env var; do not touch `ASKEDGAR_BASE_URL` in `lib/askedgar.ts`.
-- **Cost-per-report baseline.** Sprint 1 dropped `filing-titles` and Sprint 2 dropped `historical-float-pro` from AskEdgar fan-out. Daily spend at ~10 unique tickers/day should sit well below post-trim ~$5–$10/day estimate. Measure with `[askedgar-fanout]` log's `costUsd` token over coming reports.
-- **News-formatter UX trade.** Filing feeds default to `${formType} filing` labels via fallback in `lib/agents/news-formatter.ts:198`. AI headlines deferred to buildout-doc Phase 8 (`docs/ae-buildout.md:396`).
-- **AskEdgar Sprint 3 — paused.** When Backtesting ships, resume reverse-splits → split-status → offerings sequencing per `docs/ae-buildout.md:58`. Pre-Sprint-3 prep: confirm `lib/sec/submissions.ts` surfaces 8-K accession numbers + primary doc URLs; decide whether to store extracted events in new `sec_split_events` table or keep them inside existing raw cache pattern with parser-version key.
+- **Backtesting drawings still don't render (2026-04-28).** Refactor work captured the `armedAction`/`onArmedClick`/`onAnchorChange` callbacks in refs and memoized `handleArmedClick`; execution arrows + stop line render fine, but user-drawn trendlines/horizontals/rectangles still don't appear. Suspect canvas overlay sizing (parent `clientWidth/Height` is 0 on first mount, leaving the canvas at 0×0) or pointer-events stealing clicks before `chart.subscribeClick` fires. Investigate by adding console logs in `ChartDrawings.tsx:212` (handleClick), `ChartDrawings.tsx:289` (handleCrosshairMove), `ChartDrawings.tsx:405` (renderDrawings) and inspecting the canvas DOM rect in DevTools.
+- **GLND "no financial commentary" (2026-04-27).** Originally suspected to be a Sprint 1 bug. Confirmed unrelated: `managementCommentary` is read from AskEdgar's `dilution-data[0].management_commentary`, not from `filing-titles` (`lib/agents/blueprints/small-cap-research.ts:816`). The GLND `dilution-data` payload was likely just empty for that field. Re-check after Sprint 3 ships; if it persists, triage as a separate AskEdgar payload investigation.
+- **Filings v2 (deferred) — in-app viewer.** AskEdgar-style filing reader (iframe of the SEC primary document with Exhibits sidebar from `<accession>/index.json`, browser-native Ctrl+F inside the iframe). ~1-2 days. Defer until Filings v1 ships and we have user feedback on the click-out flow.
+- **Filings v3 (deferred) — full-text search + AI Copilot.** "Search in Documents" across all filings for a ticker requires Postgres `tsvector` ingestion or external index. AI Copilot panel (Summarize / Key Points / Catalysts) plumbs into existing agent infra. Cost analysis required first.
+- **Auto stop-out for Backtesting (deferred).** When intraday bar prints through a stop, simulator should auto-execute SELL/COVER. Schema supports it. UI: settings toggle defaulting OFF for parity. Add when user requests.
+- **Backtest analytics roll-up (idea).** REVIEWED sessions are a corpus of practiced setups — could surface aggregate stats. Out of scope for Backtesting v1.
+- **News-formatter UX trade.** Filing feeds default to `${formType} filing` labels via fallback in `lib/agents/news-formatter.ts:198`. AI headlines deferred to buildout-doc Phase 8.
+- **AskEdgar Sprint 3 sequencing.** After reverse-splits ships, the next two endpoints are `split-status` (state machine across multiple events — uses the same SEC body-fetch infra from Spec 2 Phase 2.1) and basic `offerings` (parses 424B prospectus bodies). Both reuse `getFilingBody` and `secFilingBodyCache` from this spec.
+- **AskEdgar paid API key.** `https://eapi.askedgar.io` remains the correct base URL. Only swap `ASKEDGAR_API_KEY` env var; do not touch `ASKEDGAR_BASE_URL`.
+- **Cost-per-report baseline.** Sprint 1 dropped `filing-titles` and Sprint 2 dropped `historical-float-pro` from AskEdgar fan-out. Sprint 3 will drop `reverse-splits`. Track via `[askedgar-fanout]` log's `costUsd` token.
+- **Endpoint review pending (2026-04-29).** User flagged for future scrutiny: `pump-and-dump-tracker`, `screener`, `ownership`, `split-status`, `nasdaq-compliance` (likely-removable); `historical-float-pro`, `float-outstanding` (review payload). Park the audit until Sprint 3 ships.

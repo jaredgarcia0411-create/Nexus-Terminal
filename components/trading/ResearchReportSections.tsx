@@ -14,7 +14,9 @@ import {
   toStringValue,
 } from '@/lib/askedgar-utils';
 import type {
+  FilingBucket,
   ResearchSnapshot,
+  ResearchSnapshotFiling,
   ResearchSnapshotGapStat,
   ResearchSnapshotRegistration,
   ResearchSnapshotWarrant,
@@ -26,13 +28,156 @@ interface Props {
   onSelectGapDate?: (date: string) => void;
 }
 
-type TabKey = 'overview' | 'offering-ability' | 'dilution' | 'news-filings' | 'offerings' | 'history' | 'gap-stats';
+type TabKey = 'overview' | 'offering-ability' | 'dilution' | 'news' | 'filings' | 'offerings' | 'history' | 'gap-stats';
+type FilingViewKey = 'all' | 'chronological' | FilingBucket;
+
+const FILING_BUCKET_LABELS: Record<FilingBucket, string> = {
+  financials: 'Financials',
+  news: 'News',
+  registrations: 'Registrations',
+  prospectus: 'Prospectus',
+  proxies: 'Proxies',
+  ownerships: 'Ownerships',
+  other: 'Other',
+};
+
+const FILING_TAB_OPTIONS: Array<{ key: FilingViewKey; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'chronological', label: 'Chronological' },
+  { key: 'financials', label: 'Financials' },
+  { key: 'news', label: 'News' },
+  { key: 'registrations', label: 'Registrations' },
+  { key: 'prospectus', label: 'Prospectus' },
+  { key: 'proxies', label: 'Proxies' },
+  { key: 'ownerships', label: 'Ownerships' },
+  { key: 'other', label: 'Other' },
+];
+
+const FILING_ALL_BUCKETS: FilingBucket[] = [
+  'financials',
+  'news',
+  'registrations',
+  'prospectus',
+  'proxies',
+  'ownerships',
+];
 
 function NoDataBadge({ label = 'No data' }: { label?: string }) {
   return (
     <span className="inline-flex rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-sm text-zinc-400">
       {label}
     </span>
+  );
+}
+
+function compareFiledAtDesc(a: { filedAt: string | null }, b: { filedAt: string | null }) {
+  if (!a.filedAt && !b.filedAt) return 0;
+  if (!a.filedAt) return 1;
+  if (!b.filedAt) return -1;
+  return b.filedAt.localeCompare(a.filedAt);
+}
+
+function FilingsTable({ filings }: { filings: ResearchSnapshotFiling[] }) {
+  if (filings.length === 0) {
+    return <NoDataBadge />;
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full">
+        <thead>
+          <tr className="border-b border-white/10 text-zinc-400">
+            <th className="py-2 pr-3 text-left">Type</th>
+            <th className="py-2 pr-3 text-left">Headline</th>
+            <th className="py-2 text-left">Filed At</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filings.map((filing, index) => (
+            <tr key={`${filing.accessionNumber ?? filing.title}-${index}`} className="border-b border-white/5 text-zinc-300">
+              <td className="py-2 pr-3">
+                <span className="rounded border border-white/15 bg-white/5 px-2 py-0.5 text-sm text-white">
+                  {filing.formType}
+                </span>
+              </td>
+              <td className="py-2 pr-3">
+                {filing.url ? (
+                  <a
+                    href={filing.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-zinc-200 underline-offset-2 transition-colors hover:text-emerald-400 hover:underline"
+                  >
+                    {filing.title}
+                  </a>
+                ) : (
+                  <span className="text-zinc-200">{filing.title}</span>
+                )}
+              </td>
+              <td className="py-2">{formatDate(filing.filedAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FilingsView({ filings }: { filings: ResearchSnapshotFiling[] }) {
+  const [bucket, setBucket] = useState<FilingViewKey>('all');
+  const chronological = [...filings].sort(compareFiledAtDesc);
+
+  if (bucket === 'all') {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-1">
+          {FILING_TAB_OPTIONS.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => setBucket(option.key)}
+              className={`rounded px-2.5 py-1 text-sm transition-colors ${
+                bucket === option.key ? 'bg-emerald-500 text-black' : 'text-white hover:bg-white/10'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        {FILING_ALL_BUCKETS.map((bucketKey) => (
+          <div key={bucketKey} className="space-y-2">
+            <h4 className="font-medium text-zinc-300">{FILING_BUCKET_LABELS[bucketKey]}</h4>
+            <FilingsTable filings={chronological.filter((filing) => filing.bucket === bucketKey)} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const filtered = bucket === 'chronological'
+    ? chronological
+    : chronological.filter((filing) => filing.bucket === bucket);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-1">
+        {FILING_TAB_OPTIONS.map((option) => (
+          <button
+            key={option.key}
+            type="button"
+            onClick={() => setBucket(option.key)}
+            className={`rounded px-2.5 py-1 text-sm transition-colors ${
+              bucket === option.key ? 'bg-emerald-500 text-black' : 'text-white hover:bg-white/10'
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      <FilingsTable filings={filtered} />
+    </div>
   );
 }
 
@@ -135,7 +280,16 @@ function WarrantSection({
   );
 }
 
-const TABS: Array<{ key: TabKey; label: string }> = [{ key: 'overview', label: 'Overview' }, { key: 'offering-ability', label: 'Offering Ability' }, { key: 'dilution', label: 'Dilution' }, { key: 'news-filings', label: 'News & Filings' }, { key: 'offerings', label: 'Offerings' }, { key: 'history', label: 'History' }, { key: 'gap-stats', label: 'Gap Stats' }];
+const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'offering-ability', label: 'Offering Ability' },
+  { key: 'dilution', label: 'Dilution' },
+  { key: 'news', label: 'News' },
+  { key: 'filings', label: 'Filings' },
+  { key: 'offerings', label: 'Offerings' },
+  { key: 'history', label: 'History' },
+  { key: 'gap-stats', label: 'Gap Stats' },
+];
 
 function GapStatRow({ row, onSelectDate }: { row: ResearchSnapshotGapStat; onSelectDate?: (date: string) => void }) {
   // Date upstream is YYYY-MM-DD (verified in __tests__/askedgar-client.test.ts).
@@ -406,15 +560,13 @@ export default function ResearchReportSections({ data, onSelectGapDate }: Props)
           </div>
         ) : null}
 
-        {activeTab === 'news-filings' ? (
+        {activeTab === 'news' ? (
           <div className="space-y-2">
             {data.news.map((item, index) => {
-              const formType = item.formType ?? (item.isNews ? 'News' : 'Filing');
-              const sourceClass = item.isNews
-                ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300'
-                : formType.toLowerCase().includes('grok')
-                  ? 'border-violet-500/30 bg-violet-500/10 text-violet-300'
-                  : 'border-orange-500/30 bg-orange-500/10 text-orange-300';
+              const formType = item.formType ?? 'News';
+              const sourceClass = formType.toLowerCase().includes('grok')
+                ? 'border-violet-500/30 bg-violet-500/10 text-violet-300'
+                : 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300';
 
               return (
                 <details key={`news-filing-${index}`} className="rounded border border-white/10 bg-white/5 p-2">
@@ -431,6 +583,10 @@ export default function ResearchReportSections({ data, onSelectGapDate }: Props)
             })}
             {data.news.length === 0 ? <NoDataBadge /> : null}
           </div>
+        ) : null}
+
+        {activeTab === 'filings' ? (
+          <FilingsView filings={data.filings} />
         ) : null}
 
         {activeTab === 'offerings' ? (
