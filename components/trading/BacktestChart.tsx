@@ -8,14 +8,18 @@ import {
   CandlestickSeries,
   ColorType,
   createChart,
+  createSeriesMarkers,
   CrosshairMode,
   LineSeries,
   LineStyle,
   type CandlestickData,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
   type LineData,
   type MouseEventParams,
+  type SeriesMarker,
   type Time,
 } from 'lightweight-charts';
 import { ChartCandlestick, Layers, Trash2 } from 'lucide-react';
@@ -50,7 +54,7 @@ import {
 } from '@/lib/indicators';
 import { epochToNySortKey, getPreviousTradingSession, nyDateTimeToEpoch, parseSortKey } from '@/lib/time-utils';
 import { formatNyCrosshair, formatNyTime } from '@/lib/chart-time';
-import type { BacktestActionType } from '@/lib/types';
+import type { BacktestAction, BacktestActionType } from '@/lib/types';
 
 export type IndicatorKey =
   | 'SMA20'
@@ -94,6 +98,8 @@ interface BacktestChartProps {
   onAnchorChange?: (newDate: string) => void;
   armedAction?: BacktestActionType | null;
   onArmedClick?: (payload: { price: number; barTime: string }) => void;
+  actions?: BacktestAction[];
+  currentStop?: number | null;
 }
 
 const UP_COLOR = '#ffffff';
@@ -313,12 +319,13 @@ export default function BacktestChart({
   onAnchorChange,
   armedAction = null,
   onArmedClick,
+  actions,
+  currentStop = null,
 }: BacktestChartProps) {
   const [timeframe, setTimeframe] = useState<BacktestTimeframeKey>(defaultTimeframe);
   const [indicators, setIndicators] = useState<Set<IndicatorKey>>(() => new Set(defaultIndicators));
   const [seriesType, setSeriesType] = useState<SeriesType>('candles');
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingTool>(null);
-  const [drawingLineWidth, setDrawingLineWidth] = useState(2);
   const [drawingsCount, setDrawingsCount] = useState(0);
   const [isDrawingInteractionActive, setIsDrawingInteractionActive] = useState(false);
   const [chartInstance, setChartInstance] = useState<IChartApi | null>(null);
@@ -331,6 +338,13 @@ export default function BacktestChart({
   const chartRef = useRef<IChartApi | null>(null);
   const clearAllDrawingsRef = useRef<(() => void) | null>(null);
   const activeDrawingToolRef = useRef<DrawingTool>(activeDrawingTool);
+  // Volatile callbacks/state captured in refs so the main chart effect doesn't
+  // tear down and rebuild the chart whenever the parent re-renders. Without
+  // this, drawings vanish because the underlying chart (and ChartDrawings'
+  // synced canvas) gets replaced mid-interaction.
+  const armedActionRef = useRef<BacktestActionType | null>(armedAction);
+  const onArmedClickRef = useRef(onArmedClick);
+  const onAnchorChangeRef = useRef(onAnchorChange);
 
   const frame = BACKTEST_FRAME_CONFIG[timeframe];
   const isDailyAnchorCell = timeframe === '1D' && onAnchorChange != null;
@@ -343,6 +357,18 @@ export default function BacktestChart({
   useEffect(() => {
     activeDrawingToolRef.current = activeDrawingTool;
   }, [activeDrawingTool]);
+
+  useEffect(() => {
+    armedActionRef.current = armedAction;
+  }, [armedAction]);
+
+  useEffect(() => {
+    onArmedClickRef.current = onArmedClick;
+  }, [onArmedClick]);
+
+  useEffect(() => {
+    onAnchorChangeRef.current = onAnchorChange;
+  }, [onAnchorChange]);
 
   const toggleIndicator = useCallback((key: IndicatorKey, checked: boolean) => {
     setIndicators((current) => {
@@ -565,11 +591,13 @@ export default function BacktestChart({
     const handleClick = (param: MouseEventParams<Time>) => {
       if (activeDrawingToolRef.current || !param.time) return;
 
-      if (armedAction && onArmedClick && param.point) {
+      const currentArmedAction = armedActionRef.current;
+      const armedClick = onArmedClickRef.current;
+      if (currentArmedAction && armedClick && param.point) {
         const price = baseSeries.coordinateToPrice(param.point.y);
         const epochMs = toEpochMs(param.time);
         if (price != null && epochMs != null) {
-          onArmedClick({
+          armedClick({
             price: Number(price.toFixed(4)),
             barTime: new Date(epochMs).toISOString(),
           });
@@ -577,11 +605,11 @@ export default function BacktestChart({
         }
       }
 
-      if (!isDailyAnchorCell || armedAction) return;
+      if (!isDailyAnchorCell || currentArmedAction) return;
       const epochMs = toEpochMs(param.time);
       if (epochMs == null) return;
       const nextDate = dailyDateKey(epochMs, anchorDate);
-      if (nextDate !== anchorDate) onAnchorChange?.(nextDate);
+      if (nextDate !== anchorDate) onAnchorChangeRef.current?.(nextDate);
     };
     chart.subscribeClick(handleClick);
 
@@ -637,12 +665,62 @@ export default function BacktestChart({
     frame.intraday,
     indicators,
     isDailyAnchorCell,
-    armedAction,
-    onAnchorChange,
-    onArmedClick,
     priorClose,
     seriesType,
   ]);
+
+  // Sim execution arrows + open-position stop line. Runs separately from the
+  // chart-creation effect so placing a trade doesn't tear down the chart (and
+  // wipe in-progress drawings).
+  useEffect(() => {
+    if (!seriesInstance) return;
+
+    const series = seriesInstance;
+    let markersPlugin: ISeriesMarkersPluginApi<Time> | null = null;
+    let stopLine: IPriceLine | null = null;
+
+    if (frame.intraday && actions && actions.length > 0) {
+      const markers: SeriesMarker<Time>[] = actions.map((action) => {
+        const epochMs = Date.parse(action.barTime);
+        const time = (Number.isFinite(epochMs) ? Math.floor(epochMs / 1000) : 0) as unknown as Time;
+        const isUpArrow = action.actionType === 'LONG'
+          || action.actionType === 'LONG_ADD'
+          || action.actionType === 'COVER';
+        return {
+          id: action.id,
+          time,
+          position: isUpArrow ? 'atPriceBottom' : 'atPriceTop',
+          color: isUpArrow ? '#22c55e' : '#ef4444',
+          shape: isUpArrow ? 'arrowUp' : 'arrowDown',
+          price: action.price,
+          size: 1,
+        };
+      });
+      markersPlugin = createSeriesMarkers(series, markers);
+    }
+
+    if (currentStop != null && Number.isFinite(currentStop)) {
+      stopLine = series.createPriceLine({
+        price: currentStop,
+        color: '#fbbf24',
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: `S:${currentStop.toFixed(2)}`,
+      });
+    }
+
+    return () => {
+      markersPlugin?.detach();
+      if (stopLine) {
+        try {
+          series.removePriceLine(stopLine);
+        } catch {
+          // series may already be disposed when chart was torn down.
+        }
+      }
+    };
+  }, [seriesInstance, actions, currentStop, frame.intraday]);
 
   return (
     <section className="flex h-[440px] shrink-0 flex-col overflow-hidden border border-white/10 bg-[#121214]">
@@ -720,8 +798,6 @@ export default function BacktestChart({
           <DrawingToolbar
             activeTool={activeDrawingTool}
             onToolSelect={setActiveDrawingTool}
-            lineWidth={drawingLineWidth}
-            onLineWidthChange={setDrawingLineWidth}
           />
           {drawingsCount > 0 ? (
             <Button
@@ -769,7 +845,7 @@ export default function BacktestChart({
           activeTool={activeDrawingTool}
           onToolChange={setActiveDrawingTool}
           selectedColor="#ffffff"
-          lineWidth={drawingLineWidth}
+          lineWidth={1}
           persistDrawings={false}
           onInteractionChange={setIsDrawingInteractionActive}
           onDrawingsChange={(count, clearFn) => {

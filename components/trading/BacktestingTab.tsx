@@ -87,6 +87,18 @@ export default function BacktestingTab() {
     setPendingOrder(null);
   }, [sessionState]);
 
+  const handleArmedClick = useCallback((payload: { price: number; barTime: string }) => {
+    setArmedAction((current) => {
+      if (!current) return current;
+      setPendingOrder({
+        actionType: current,
+        price: payload.price,
+        barTime: payload.barTime,
+      });
+      return current;
+    });
+  }, []);
+
   return (
     <motion.div
       key="backtesting"
@@ -140,14 +152,9 @@ export default function BacktestingTab() {
             date={selected?.date ?? null}
             onAnchorChange={handleAnchorChange}
             armedAction={sessionState.isReadOnly ? null : armedAction}
-            onArmedClick={(payload) => {
-              if (!armedAction) return;
-              setPendingOrder({
-                actionType: armedAction,
-                price: payload.price,
-                barTime: payload.barTime,
-              });
-            }}
+            onArmedClick={handleArmedClick}
+            actions={sessionState.actions}
+            currentStop={sessionState.position.stop}
           />
         </main>
 
