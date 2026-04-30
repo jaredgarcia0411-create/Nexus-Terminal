@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useCandleData } from '@/hooks/use-candle-data';
 import type { DrawingTool } from '@/hooks/use-chart-drawings';
+import { buildExtendedHoursShadeSegments, buildSessionShadeRects, type SessionShadeRect } from '@/lib/chart-session-shading';
 import { BACKTEST_FRAME_CONFIG, type BacktestTimeframeKey } from '@/lib/chart-timeframes';
 import {
   atr,
@@ -331,6 +332,7 @@ export default function BacktestChart({
   const [chartInstance, setChartInstance] = useState<IChartApi | null>(null);
   const [seriesInstance, setSeriesInstance] = useState<MainSeriesApi | null>(null);
   const [dailyAnchorRect, setDailyAnchorRect] = useState<DailyAnchorRect | null>(null);
+  const [sessionShadeRects, setSessionShadeRects] = useState<SessionShadeRect[]>([]);
   const [hoverOhlc, setHoverOhlc] = useState<{ o: number; h: number; l: number; c: number } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -458,6 +460,7 @@ export default function BacktestChart({
     }
 
     let disposed = false;
+    let sessionShadeAnimationFrame: number | null = null;
     queueMicrotask(() => {
       if (disposed) return;
       setChartInstance(chart);
@@ -546,6 +549,60 @@ export default function BacktestChart({
 
     chart.timeScale().fitContent();
 
+    const clearSessionShadeRects = () => {
+      queueMicrotask(() => {
+        if (disposed) return;
+        setSessionShadeRects([]);
+      });
+    };
+
+    const recalcSessionShadeRects = () => {
+      if (!frame.intraday || sortedCandles.length === 0 || !chartWrapRef.current) {
+        clearSessionShadeRects();
+        return;
+      }
+
+      const viewportWidth = chartWrapRef.current.clientWidth;
+      if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
+        clearSessionShadeRects();
+        return;
+      }
+
+      const visibleRange = chart.timeScale().getVisibleRange();
+      const visibleStart = toEpochMs(visibleRange?.from);
+      const visibleEnd = toEpochMs(visibleRange?.to);
+
+      const daySet = new Set<string>();
+      for (const candle of sortedCandles) {
+        daySet.add(epochToNySortKey(candle.datetime));
+      }
+
+      const rects = buildSessionShadeRects({
+        candles: sortedCandles,
+        segments: buildExtendedHoursShadeSegments(daySet),
+        visibleStart,
+        visibleEnd,
+        viewportWidth,
+        timeToCoordinate: (epochMs) => chart.timeScale().timeToCoordinate(toTime(epochMs)),
+      });
+
+      queueMicrotask(() => {
+        if (disposed) return;
+        setSessionShadeRects(rects);
+      });
+    };
+
+    const scheduleSessionShadeRecalc = () => {
+      if (sessionShadeAnimationFrame != null) {
+        cancelAnimationFrame(sessionShadeAnimationFrame);
+      }
+
+      sessionShadeAnimationFrame = requestAnimationFrame(() => {
+        sessionShadeAnimationFrame = null;
+        recalcSessionShadeRects();
+      });
+    };
+
     const recalcDailyAnchorRect = () => {
       if (!isDailyAnchorCell || sortedCandles.length === 0 || !chartWrapRef.current) {
         setDailyAnchorRect(null);
@@ -584,6 +641,7 @@ export default function BacktestChart({
 
     const handleRangeChange = () => {
       recalcDailyAnchorRect();
+      scheduleSessionShadeRecalc();
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(handleRangeChange);
     chart.timeScale().subscribeVisibleTimeRangeChange(handleRangeChange);
@@ -639,10 +697,12 @@ export default function BacktestChart({
         chart.applyOptions({ width, height });
         chart.timeScale().fitContent();
         recalcDailyAnchorRect();
+        scheduleSessionShadeRecalc();
       }
     });
     resizeObserver.observe(containerRef.current);
     recalcDailyAnchorRect();
+    scheduleSessionShadeRecalc();
 
     return () => {
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleRangeChange);
@@ -650,10 +710,15 @@ export default function BacktestChart({
       chart.unsubscribeClick(handleClick);
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
       resizeObserver.disconnect();
+      if (sessionShadeAnimationFrame != null) {
+        cancelAnimationFrame(sessionShadeAnimationFrame);
+        sessionShadeAnimationFrame = null;
+      }
       disposed = true;
       setChartInstance(null);
       setSeriesInstance(null);
       setDailyAnchorRect(null);
+      setSessionShadeRects([]);
       setHoverOhlc(null);
       setIsDrawingInteractionActive(false);
       chart.remove();
@@ -817,8 +882,23 @@ export default function BacktestChart({
 
       <div ref={chartWrapRef} className={`relative min-h-0 flex-1 ${activeDrawingTool ? 'cursor-crosshair' : ''}`}>
         <div ref={containerRef} className="absolute inset-0" />
-        {dailyAnchorRect && dailyAnchorRect.width > 0 ? (
+        {frame.intraday && sessionShadeRects.length > 0 ? (
           <div className="pointer-events-none absolute inset-0 z-10">
+            {sessionShadeRects.map((rect) => (
+              <div
+                key={rect.key}
+                className="absolute bottom-0 top-0"
+                style={{
+                  left: `${rect.left}px`,
+                  width: `${rect.width}px`,
+                  backgroundColor: 'rgba(148, 163, 184, 0.12)',
+                }}
+              />
+            ))}
+          </div>
+        ) : null}
+        {dailyAnchorRect && dailyAnchorRect.width > 0 ? (
+          <div className="pointer-events-none absolute inset-0 z-20">
             <div
               className="absolute bottom-0 top-0"
               style={{

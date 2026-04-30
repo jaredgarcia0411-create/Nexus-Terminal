@@ -24,7 +24,8 @@ import {
   type Time,
 } from 'lightweight-charts';
 import type { TradeMarker } from '@/lib/types';
-import { epochToNySortKey, nyDateTimeToEpoch } from '@/lib/time-utils';
+import { buildExtendedHoursShadeSegments, buildSessionShadeRects, type SessionShadeRect } from '@/lib/chart-session-shading';
+import { epochToNySortKey } from '@/lib/time-utils';
 import { formatNyCrosshair, formatNyTime, toEpochMs } from '@/lib/chart-time';
 
 export interface CandleData {
@@ -52,12 +53,6 @@ interface CandlestickChartProps extends CandlestickChartOptions {
   showSessionShading?: boolean;
   scaleMode?: PriceScaleMode;
 }
-
-type SessionShadeRect = {
-  key: string;
-  left: number;
-  width: number;
-};
 
 type NativeCrosshairPoint = {
   timeLabel: string;
@@ -331,13 +326,6 @@ export default function CandlestickChart({
       return;
     }
 
-    const first = sortedCandles[0]?.datetime;
-    const last = sortedCandles[sortedCandles.length - 1]?.datetime;
-    if (!Number.isFinite(first) || !Number.isFinite(last)) {
-      clearSessionShadeRects();
-      return;
-    }
-
     const viewportWidth = containerRef.current?.clientWidth ?? containerWidth;
     if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
       clearSessionShadeRects();
@@ -353,47 +341,14 @@ export default function CandlestickChart({
       daySet.add(epochToNySortKey(candle.datetime));
     }
 
-    const rects: SessionShadeRect[] = [];
-    for (const dayKey of daySet) {
-      const preStart = nyDateTimeToEpoch(dayKey, '04:00:00');
-      const preEnd = nyDateTimeToEpoch(dayKey, '09:30:00');
-      const postStart = nyDateTimeToEpoch(dayKey, '16:00:00');
-      const postEnd = nyDateTimeToEpoch(dayKey, '20:00:00');
-
-      const segments = [
-        { key: `${dayKey}:pre`, start: preStart, end: preEnd },
-        { key: `${dayKey}:post`, start: postStart, end: postEnd },
-      ];
-
-      for (const segment of segments) {
-        if (segment.start == null || segment.end == null || segment.end <= first || segment.start >= last) continue;
-
-        let clippedStart = segment.start;
-        let clippedEnd = segment.end;
-        if (visibleStart != null && visibleEnd != null) {
-          clippedStart = Math.max(clippedStart, visibleStart);
-          clippedEnd = Math.min(clippedEnd, visibleEnd);
-        }
-        if (clippedEnd <= clippedStart) continue;
-
-        const x1 = chart.timeScale().timeToCoordinate(toUTCSeconds(clippedStart));
-        const x2 = chart.timeScale().timeToCoordinate(toUTCSeconds(clippedEnd));
-        if (x1 == null || x2 == null) continue;
-
-        const leftRaw = Math.min(x1, x2);
-        const rightRaw = Math.max(x1, x2);
-        const left = Math.max(0, Math.min(leftRaw, viewportWidth));
-        const right = Math.max(0, Math.min(rightRaw, viewportWidth));
-        const width = right - left;
-        if (width <= 0) continue;
-
-        rects.push({
-          key: segment.key,
-          left,
-          width,
-        });
-      }
-    }
+    const rects = buildSessionShadeRects({
+      candles: sortedCandles,
+      segments: buildExtendedHoursShadeSegments(daySet),
+      visibleStart,
+      visibleEnd,
+      viewportWidth,
+      timeToCoordinate: (epochMs) => chart.timeScale().timeToCoordinate(toUTCSeconds(epochMs)),
+    });
 
     queueMicrotask(() => setSessionShadeRects(rects));
   }, [clearSessionShadeRects, containerWidth, isIntraday, showSessionShading, sortedCandles]);
