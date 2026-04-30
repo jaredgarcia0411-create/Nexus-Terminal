@@ -13,14 +13,6 @@ vi.mock('motion/react', () => ({
   },
 }));
 
-vi.mock('@/components/trading/ResearchGainersList', () => ({
-  default: ({ onSelectTicker }: { selectedTicker: string | null; onSelectTicker: (ticker: string) => void }) => (
-    <button type="button" onClick={() => onSelectTicker('AAPL')}>
-      Pick AAPL gainer
-    </button>
-  ),
-}));
-
 vi.mock('@/components/trading/ResearchTickerView', async () => {
   const React = await import('react');
 
@@ -39,15 +31,24 @@ vi.mock('@/components/trading/ResearchTickerView', async () => {
 
 import ResearchTab from '@/components/trading/ResearchTab';
 
+function renderResearchTab(props?: Partial<React.ComponentProps<typeof ResearchTab>>) {
+  return render(
+    <ResearchTab
+      pendingResearchTicker={props?.pendingResearchTicker ?? null}
+      onClearPendingTicker={props?.onClearPendingTicker ?? vi.fn()}
+    />,
+  );
+}
+
 describe('ResearchTab', () => {
   it('renders the initial empty state before a ticker is selected', () => {
-    render(<ResearchTab />);
+    renderResearchTab();
 
-    expect(screen.getByText('Select a ticker from the gainers list or search above')).toBeTruthy();
+    expect(screen.getByText('Search a ticker above or click a row in the Scanner')).toBeTruthy();
   });
 
   it('selects an uppercase ticker when pressing Enter in the search input', async () => {
-    render(<ResearchTab />);
+    renderResearchTab();
 
     const input = screen.getByPlaceholderText('Search ticker...');
     fireEvent.change(input, { target: { value: 'msft' } });
@@ -57,16 +58,19 @@ describe('ResearchTab', () => {
     expect(screen.getByText('Research view for MSFT')).toBeTruthy();
   });
 
-  it('selects AAPL when the mocked gainer is clicked', () => {
-    render(<ResearchTab />);
+  it('selects a pending ticker and clears it', async () => {
+    const onClearPendingTicker = vi.fn();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Pick AAPL gainer' }));
+    renderResearchTab({ pendingResearchTicker: 'AAPL', onClearPendingTicker });
 
     expect(screen.getByText('Research view for AAPL')).toBeTruthy();
+    await waitFor(() => {
+      expect(onClearPendingTicker).toHaveBeenCalledOnce();
+    });
   });
 
   it('updates the header from loading text to the mocked company name', async () => {
-    render(<ResearchTab />);
+    renderResearchTab();
 
     const input = screen.getByPlaceholderText('Search ticker...');
     fireEvent.change(input, { target: { value: 'msft' } });

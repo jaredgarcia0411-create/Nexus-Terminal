@@ -1301,3 +1301,130 @@ export async function getCachedGainers(minGainPct = 20, limit = 25) {
 
   return result;
 }
+
+// ---------------------------------------------------------------------------
+// Scanner Summary Cache - 3-hour TTL, cacheType = 'scanner-summary'
+// ---------------------------------------------------------------------------
+
+export interface ScannerSummaryResult {
+  ticker: string;
+  cashOnHand: number | null;
+  hasAtm: boolean;
+  hasEl: boolean;
+  hasWarrants: boolean;
+  hasS1: boolean;
+  fetchedAt: string;
+}
+
+async function fetchScannerSummaryRaw(ticker: string): Promise<ScannerSummaryResult> {
+  const normalizedTicker = ticker.trim().toUpperCase();
+
+  const [registrationsResp, dilutionRatingResp, dilutionDataResp, equityLinesResp] =
+    await Promise.all([
+      fetchRegistrations(normalizedTicker),
+      fetchDilutionRating(normalizedTicker),
+      fetchDilutionData(normalizedTicker),
+      fetchEquityLines(normalizedTicker),
+    ]);
+
+  const dilutionRatingFirst = toRecord(dilutionRatingResp.results[0]);
+  const dilutionDataFirst = toRecord(dilutionDataResp.results[0]);
+
+  const cashOnHand: number | null =
+    toNumberValue(getField(dilutionRatingFirst, ['estimated_cash', 'estimatedCash'])) ??
+    toNumberValue(getField(dilutionDataFirst, ['cashOnHand', 'cash', 'estimatedCash']));
+
+  const registrationRows = registrationsResp.results.map((item, index) =>
+    toRegistrationRow(toRecord(item), `Registration ${index + 1}`),
+  );
+  const hasAtm = registrationRows.some((row) => row.isAtm);
+  const hasS1 = registrationRows.some((row) => {
+    const formType = row.formType ?? '';
+    return /^S-1/i.test(formType);
+  });
+
+  const hasElFromEquityLines = equityLinesResp.results.length > 0;
+  const hasElFromRegistrations = registrationRows.some((row) => {
+    if (row.isAtm) return false;
+    const headline = row.headline.toLowerCase();
+    return (
+      headline.includes('equity line') ||
+      headline.includes('eloc') ||
+      headline.includes('purchase agreement')
+    );
+  });
+  const hasEl = hasElFromEquityLines || hasElFromRegistrations;
+
+  const hasWarrants = dilutionDataResp.results.some((item) => {
+    const row = toRecord(item);
+    const amount = toNumberValue(getField(row, ['warrants_amount']));
+    return amount !== null && amount > 0;
+  });
+
+  return {
+    ticker: normalizedTicker,
+    cashOnHand,
+    hasAtm,
+    hasEl,
+    hasWarrants,
+    hasS1,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+const SCANNER_SUMMARY_CACHE_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
+
+/**
+ * Cached scanner summary for a single ticker. Calls only the 4 endpoints needed
+ * for the Dashboard scanner table and shares the askedgar_cache table.
+ */
+export async function getCachedScannerSummary(ticker: string): Promise<ScannerSummaryResult> {
+  const normalizedTicker = ticker.trim().toUpperCase();
+  const db = getDb();
+
+  if (db) {
+    const now = new Date();
+    const cached = await db
+      .select()
+      .from(askedgarCache)
+      .where(
+        and(
+          eq(askedgarCache.cacheType, 'scanner-summary'),
+          eq(askedgarCache.ticker, normalizedTicker),
+          gt(askedgarCache.expiresAt, now),
+        ),
+      )
+      .limit(1);
+
+    if (cached.length > 0) {
+      return cached[0].dataJson as ScannerSummaryResult;
+    }
+  }
+
+  const result = await fetchScannerSummaryRaw(normalizedTicker);
+
+  if (db) {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + SCANNER_SUMMARY_CACHE_TTL_MS);
+    try {
+      await db
+        .insert(askedgarCache)
+        .values({
+          id: `scanner-summary-${normalizedTicker}`,
+          cacheType: 'scanner-summary',
+          ticker: normalizedTicker,
+          dataJson: result,
+          fetchedAt: now,
+          expiresAt,
+        })
+        .onConflictDoUpdate({
+          target: [askedgarCache.cacheType, askedgarCache.ticker],
+          set: { dataJson: result, fetchedAt: now, expiresAt },
+        });
+    } catch (err) {
+      console.warn('[askedgar-cache] Failed to write scanner-summary cache:', err);
+    }
+  }
+
+  return result;
+}

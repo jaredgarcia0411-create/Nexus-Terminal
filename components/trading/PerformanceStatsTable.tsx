@@ -275,8 +275,24 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
       { label: 'Total Fees', value: formatCurrency(totalFees) },
       { label: 'Average MAE', value: formatCurrency(avgMae) },
       { label: 'Average MFE', value: formatCurrency(avgMfe) },
-      { label: '', value: '' },
-      { label: '', value: '' },
+      {
+        label: 'Avg Risk per Trade',
+        value: (() => {
+          const riskedTrades = trades.filter((trade) => trade.initialRisk);
+          if (riskedTrades.length === 0) return '-';
+          const avg = riskedTrades.reduce((acc, trade) => acc + (trade.initialRisk ?? 0), 0) / riskedTrades.length;
+          return formatCurrency(avg);
+        })(),
+      },
+      {
+        label: 'Total R-Multiple',
+        value: (() => {
+          const riskedTrades = trades.filter((trade) => trade.initialRisk);
+          if (riskedTrades.length === 0) return '-';
+          const total = riskedTrades.reduce((acc, trade) => acc + trade.netPnl / (trade.initialRisk ?? 1), 0);
+          return `${total.toFixed(2)}R`;
+        })(),
+      },
     ];
 
     while (cells.length < 30) {

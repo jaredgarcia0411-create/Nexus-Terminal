@@ -48,6 +48,7 @@ export default function NexusTerminal() {
   const [isManualTradeOpen, setIsManualTradeOpen] = useState(false);
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [pendingResearchTicker, setPendingResearchTicker] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     const stored = localStorage.getItem('sidebarCollapsed');
@@ -173,6 +174,7 @@ export default function NexusTerminal() {
 
       <main className={isMobile ? 'pb-16' : sidebarCollapsed ? 'pl-16' : 'pl-56'}>
       <Toolbar
+        activeTab={activeTab}
         pageTitle={TAB_TITLES[activeTab]}
         error={error}
         filterPreset={filterPreset}
@@ -193,20 +195,10 @@ export default function NexusTerminal() {
             {activeTab === 'dashboard' ? (
               <TabErrorBoundary name="Dashboard">
                 <DashboardTab
-                  trades={trades}
-                  filteredTrades={filteredTrades}
-                  performanceMetric={performanceMetric}
-                  selectedIds={selectedIds}
-                  globalTags={globalTags}
-                  onImportClick={() => importInputRef.current?.click()}
-                  onNewTradeClick={() => setIsManualTradeOpen(true)}
-                  onSetActiveTab={() => setActiveTab('journal')}
-                  onToggleSelect={handleToggleSelect}
-                  onSelectAll={handleSelectAll}
-                  onAddTag={handleAddTag}
-                  onRemoveTag={handleRemoveTag}
-                  onDeleteGlobalTag={handleDeleteGlobalTag}
-                  onTradeClick={(trade) => setSelectedTradeId(trade.id)}
+                  onNavigateToResearch={(ticker) => {
+                    setPendingResearchTicker(ticker);
+                    setActiveTab('research');
+                  }}
                 />
               </TabErrorBoundary>
             ) : null}
@@ -295,7 +287,10 @@ export default function NexusTerminal() {
 
             {activeTab === 'research' ? (
               <TabErrorBoundary name="Research">
-                <ResearchTab />
+                <ResearchTab
+                  pendingResearchTicker={pendingResearchTicker}
+                  onClearPendingTicker={() => setPendingResearchTicker(null)}
+                />
               </TabErrorBoundary>
             ) : null}
 
