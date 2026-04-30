@@ -68,7 +68,7 @@ describe('GET /api/askedgar/scanner-summary', () => {
     authedUser();
     const mockSummary = {
       ticker: 'ACME',
-      cashOnHand: 5_000_000,
+      cashRemainingMonths: 8.5,
       hasAtm: true,
       hasEl: false,
       hasWarrants: true,

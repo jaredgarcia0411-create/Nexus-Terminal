@@ -1308,7 +1308,7 @@ export async function getCachedGainers(minGainPct = 20, limit = 25) {
 
 export interface ScannerSummaryResult {
   ticker: string;
-  cashOnHand: number | null;
+  cashRemainingMonths: number | null;
   hasAtm: boolean;
   hasEl: boolean;
   hasWarrants: boolean;
@@ -1330,9 +1330,9 @@ async function fetchScannerSummaryRaw(ticker: string): Promise<ScannerSummaryRes
   const dilutionRatingFirst = toRecord(dilutionRatingResp.results[0]);
   const dilutionDataFirst = toRecord(dilutionDataResp.results[0]);
 
-  const cashOnHand: number | null =
-    toNumberValue(getField(dilutionRatingFirst, ['estimated_cash', 'estimatedCash'])) ??
-    toNumberValue(getField(dilutionDataFirst, ['cashOnHand', 'cash', 'estimatedCash']));
+  const cashRemainingMonths: number | null =
+    toNumberValue(getField(dilutionRatingFirst, ['cash_remaining_months', 'cashRemainingMonths'])) ??
+    toNumberValue(getField(dilutionDataFirst, ['cashRemainingMonths', 'monthsRemaining']));
 
   const registrationRows = registrationsResp.results.map((item, index) =>
     toRegistrationRow(toRecord(item), `Registration ${index + 1}`),
@@ -1363,7 +1363,7 @@ async function fetchScannerSummaryRaw(ticker: string): Promise<ScannerSummaryRes
 
   return {
     ticker: normalizedTicker,
-    cashOnHand,
+    cashRemainingMonths,
     hasAtm,
     hasEl,
     hasWarrants,

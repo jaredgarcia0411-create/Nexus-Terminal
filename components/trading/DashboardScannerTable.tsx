@@ -14,7 +14,7 @@ interface TradingViewGainer {
 
 interface ScannerSummary {
   ticker: string;
-  cashOnHand: number | null;
+  cashRemainingMonths: number | null;
   hasAtm: boolean;
   hasEl: boolean;
   hasWarrants: boolean;
@@ -33,12 +33,11 @@ function fmtVolume(value: number): string {
   return value.toFixed(0);
 }
 
-function fmtCash(value: number | null): string {
+function fmtMonths(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return '—';
-  if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(1)}B`;
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
-  return `$${value.toFixed(0)}`;
+  if (value >= 100) return `${value.toFixed(0)} mo`;
+  if (value >= 10) return `${value.toFixed(1)} mo`;
+  return `${value.toFixed(2)} mo`;
 }
 
 function BoolCell({ value }: { value: boolean }) {
@@ -52,7 +51,7 @@ function BoolCell({ value }: { value: boolean }) {
 function TH({ children, right }: { children: ReactNode; right?: boolean }) {
   return (
     <th
-      className={`px-3 py-2 text-[10px] font-mono uppercase tracking-wider text-zinc-500 ${right ? 'text-right' : 'text-left'}`}
+      className={`px-3 py-2 text-sm font-medium text-zinc-300 ${right ? 'text-right' : 'text-left'}`}
     >
       {children}
     </th>
@@ -117,7 +116,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
     }
   }, [gainers]);
 
-  const tableCard = 'overflow-hidden rounded-xl border border-emerald-500/20 bg-[#121214]';
+  const tableCard = 'overflow-hidden rounded-xl border border-white/10 bg-[#121214]';
   const headerRow = 'border-b border-white/5 bg-[#0f0f11]';
   const bodyRow = 'cursor-pointer border-b border-white/5 transition-colors hover:bg-white/5';
 
@@ -151,7 +150,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
     <div className="space-y-6">
       <div className={tableCard}>
         <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-300">
+          <h2 className="text-base font-bold text-zinc-300">
             Gainers Scan — Day 1 Setup
           </h2>
           <span className={`text-[10px] font-medium ${isRealtime ? 'text-emerald-500' : 'text-amber-500'}`}>
@@ -179,11 +178,11 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                 <TH right>Mark</TH>
                 <TH right>Mark % Chg</TH>
                 <TH right>Volume</TH>
-                <TH right>Cash on Hand</TH>
-                <TH right>Has ATM</TH>
-                <TH right>Has EL</TH>
-                <TH right>Has Warrants</TH>
-                <TH right>Has S1</TH>
+                <TH right>Cash (mo)</TH>
+                <TH right>ATM</TH>
+                <TH right>EL</TH>
+                <TH right>Warrants</TH>
+                <TH right>S1</TH>
               </tr>
             </thead>
             <tbody>
@@ -201,7 +200,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                     title={`Open ${gainer.ticker} in Research`}
                   >
                     <TD>
-                      <span className="font-bold text-zinc-100">{gainer.ticker}</span>
+                      <span className="text-zinc-100">{gainer.ticker}</span>
                     </TD>
                     <TD right>${pdc.toFixed(3)}</TD>
                     <TD right>${gainer.price.toFixed(3)}</TD>
@@ -212,7 +211,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                     </TD>
                     <TD right>{fmtVolume(gainer.volume)}</TD>
                     <TD right>
-                      {summary ? fmtCash(summary.cashOnHand) : <span className="text-zinc-600">...</span>}
+                      {summary ? fmtMonths(summary.cashRemainingMonths) : <span className="text-zinc-600">...</span>}
                     </TD>
                     <TD right>
                       {summary ? <BoolCell value={summary.hasAtm} /> : <span className="text-zinc-600">...</span>}
@@ -236,7 +235,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
 
       <div className={tableCard}>
         <div className="border-b border-white/5 px-4 py-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-300">
+          <h2 className="text-base font-bold text-zinc-300">
             Potential MDR Setup
           </h2>
         </div>
@@ -276,7 +275,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                     title={`Open ${gainer.ticker} in Research`}
                   >
                     <TD>
-                      <span className="font-bold text-zinc-100">{gainer.ticker}</span>
+                      <span className="text-zinc-100">{gainer.ticker}</span>
                     </TD>
                     <TD right>${pdc.toFixed(3)}</TD>
                     <TD right>${gainer.price.toFixed(3)}</TD>
