@@ -455,6 +455,16 @@ export function buildResearchEmbed(report: AgentReport): DiscordEmbed {
     section: SmallCapResearchReport['newsWhyRunning'],
   ): string => `**${label}** ${ratingEmoji(section.rating)}\n• ${truncate(section.explanation, 300)}`;
 
+  // Verbatim AskEdgar commentary can run 400-1000+ chars; LLM fallback stays short.
+  // Tag the line only when LLM-generated so verbatim text reads cleanly.
+  const financialCommentaryLine = ((): string => {
+    const fc = payload.financialCommentary;
+    const isVerbatim = fc.source === 'verbatim';
+    const labelSuffix = isVerbatim ? '' : ' _LLM Generated Comments_';
+    const limit = isVerbatim ? 1000 : 300;
+    return `**Financial Commentary** ${ratingEmoji(fc.rating)}${labelSuffix}\n• ${truncate(fc.explanation, limit)}`;
+  })();
+
   const gapBlock = payload.gapStatsTable.length === 0
     ? 'No historical gap data available.'
     : [
@@ -475,7 +485,7 @@ export function buildResearchEmbed(report: AgentReport): DiscordEmbed {
     ratingLine('Cash Need', payload.cashNeed),
     ratingLine('News/Catalyst', payload.newsWhyRunning),
     `**Chart History** ${ratingEmoji(payload.chartHistory.rating)}\n• ${truncate(payload.chartHistory.explanation, 500)}`,
-    ratingLine('Financial Commentary', payload.financialCommentary),
+    financialCommentaryLine,
     `**Gap History**\n${gapBlock}`,
   ];
 
@@ -484,7 +494,7 @@ export function buildResearchEmbed(report: AgentReport): DiscordEmbed {
     buildField('Confidence', payload.confidence),
   ];
 
-  return buildBaseEmbed(report, fields, sections.join('\n'));
+  return buildBaseEmbed(report, fields, sections.join('\n\n'));
 }
 
 export function buildSwingSetupEmbed(report: AgentReport): DiscordEmbed {
@@ -502,6 +512,17 @@ export function buildSwingSetupEmbed(report: AgentReport): DiscordEmbed {
     label: string,
     section: SwingResearchReport['momentum'],
   ): string => `**${label}** ${ratingEmoji(section.rating)}\n• ${truncate(section.explanation, 300)}`;
+
+  // Verbatim AskEdgar commentary can run 400-1000+ chars; LLM fallback stays short.
+  // Tag the line only when LLM-generated so verbatim text reads cleanly.
+  const financialCommentaryLine = ((): string => {
+    const fc = payload.financialCommentary;
+    const isVerbatim = fc.source === 'verbatim';
+    const labelSuffix = isVerbatim ? '' : ' _LLM Generated Comments_';
+    const limit = isVerbatim ? 1000 : 300;
+    return `**Financial Commentary** ${ratingEmoji(fc.rating)}${labelSuffix}\n• ${truncate(fc.explanation, limit)}`;
+  })();
+
   const gapBlock = payload.gapStatsTable.length === 0
     ? 'No historical gap data available.'
     : [
@@ -520,7 +541,7 @@ export function buildSwingSetupEmbed(report: AgentReport): DiscordEmbed {
     ratingLine('Momentum', payload.momentum),
     ratingLine('Catalyst', payload.catalyst),
     ratingLine('Volume', payload.volumeProfile),
-    ratingLine('Financial Commentary', payload.financialCommentary),
+    financialCommentaryLine,
     `**Gap History**\n${gapBlock}`,
   ];
 
@@ -536,7 +557,7 @@ export function buildSwingSetupEmbed(report: AgentReport): DiscordEmbed {
     fields.push(buildField('Reasoning', truncate(payload.recommendation.reasoning, 200), false));
   }
 
-  return buildBaseEmbed(report, fields, sections.join('\n'));
+  return buildBaseEmbed(report, fields, sections.join('\n\n'));
 }
 
 export function buildSwingAlertEmbed(report: AgentReport): DiscordEmbed {

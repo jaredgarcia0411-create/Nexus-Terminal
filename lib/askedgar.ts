@@ -68,7 +68,7 @@ const ASKEDGAR_BASE_URL = 'https://eapi.askedgar.io';
 const DEFAULT_DAILY_LIMIT = 50;
 const REQUEST_TIMEOUT_MS = 15_000;
 const TICKER_REGEX = /^[A-Z0-9.\-^]+$/;
-const TICKER_CACHE_TTL_MS = 60 * 60 * 1000;    // 1 hour
+const TICKER_CACHE_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
 const GAINERS_CACHE_TTL_MS = 15 * 60 * 1000;   // 15 minutes
 
 const uniqueTickersToday = new Set<string>();
@@ -1192,7 +1192,7 @@ function logTickerCacheDecision(
 /**
  * Cached version of fetchTickerData(). Checks DB for a fresh cached response
  * before hitting Ask Edgar. Cache is shared across all users (same SEC data).
- * TTL: 1 hour.
+ * TTL: 3 hours.
  */
 export async function getCachedTickerData(
   ticker: string,

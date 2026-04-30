@@ -1508,7 +1508,13 @@ describe('agent blueprints', () => {
         open: 10,
         close: 9,
       }],
-      financialCommentary: { rating: 'red', explanation: 'Management flagged capital needs.' },
+      financialCommentary: {
+        rating: 'red',
+        // synthesize-report overrides the LLM explanation with the verbatim
+        // managementCommentary from the upstream filing data.
+        explanation: 'Liquidity remains tight and management may raise capital.',
+        source: 'verbatim',
+      },
       confidence: 'high',
     });
   });
@@ -1944,7 +1950,13 @@ describe('agent blueprints', () => {
         open: 10,
         close: 11,
       }],
-      financialCommentary: { rating: 'yellow', explanation: 'Commentary was mixed.' },
+      financialCommentary: {
+        rating: 'yellow',
+        // synthesize-report overrides the LLM explanation with the verbatim
+        // managementCommentary from the upstream filing data.
+        explanation: 'Management highlighted liquidity concerns and potential financing needs.',
+        source: 'verbatim',
+      },
       confidence: 'high',
     });
   });

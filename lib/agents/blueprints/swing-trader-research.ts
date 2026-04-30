@@ -145,6 +145,9 @@ const swingResearchSchema = z.object({
   financialCommentary: z.object({
     rating: z.enum(['green', 'yellow', 'red']),
     explanation: z.string(),
+    // 'verbatim' = pasted from AskEdgar's mgmt_commentary; 'llm' = LLM-generated fallback.
+    // Default to 'llm' so the model doesn't have to set it; we override post-LLM in synthesize.
+    source: z.enum(['verbatim', 'llm']).default('llm'),
   }),
   confidence: z.enum(['high', 'medium', 'low']),
   evidenceIds: z.array(z.string()),
@@ -832,28 +835,39 @@ export const swingTraderResearchBlueprint: Blueprint = {
         const dilutionDetails = (result as { dilutionDetails?: unknown }).dilutionDetails
           ?? readResults(rawData['dilution-data'])[0]
           ?? null;
+        const dilutionRatingFirst = readNullableSectionFirst(rawData, 'dilution-rating', 'dilutionRating');
         const askEdgarNewsFeed = buildNewsFeedFromArrays(
           readResults(rawData['news']),
           readResults(rawData['filing-titles']),
           { maxItems: 8, maxAgeDays: 30 },
         );
 
+        // AskEdgar's "Commentary on Financial Condition" lives on dilution-rating[0].mgmt_commentary.
+        // Fall back to the dilutionDetails shape for safety in case AskEdgar ever inlines it there.
+        const ratingCommentary = typeof dilutionRatingFirst === 'object' && dilutionRatingFirst !== null
+          ? ((dilutionRatingFirst as Record<string, unknown>).mgmt_commentary
+            ?? (dilutionRatingFirst as Record<string, unknown>).managementCommentary
+            ?? (dilutionRatingFirst as Record<string, unknown>).commentary
+            ?? null)
+          : null;
+        const detailsCommentary = typeof dilutionDetails === 'object' && dilutionDetails !== null
+          ? ((dilutionDetails as Record<string, unknown>).managementCommentary
+            ?? (dilutionDetails as Record<string, unknown>).management_commentary
+            ?? null)
+          : null;
+        const managementCommentary = (typeof ratingCommentary === 'string' ? ratingCommentary : null)
+          ?? (typeof detailsCommentary === 'string' ? detailsCommentary : null);
+
         return completedResult({
           ticker,
           gapStats: readSection(rawData, 'gap-stats', 'gapStats'),
           ownership: readSection(rawData, 'ownership'),
           historicalFloat: readSection(rawData, 'historical-float-pro', 'historicalFloatPro'),
-          dilutionRating: readNullableSectionFirst(rawData, 'dilution-rating', 'dilutionRating'),
+          dilutionRating: dilutionRatingFirst,
           registrations: readSection(rawData, 'registrations'),
           offerings: readSection(rawData, 'offerings'),
           askEdgarNewsFeed,
-          managementCommentary: typeof dilutionDetails === 'object' && dilutionDetails !== null
-            ? (
-              (dilutionDetails as Record<string, unknown>).managementCommentary
-              ?? (dilutionDetails as Record<string, unknown>).management_commentary
-              ?? null
-            ) as string | null
-            : null,
+          managementCommentary,
         }, {
           durationMs: Date.now() - startedAt,
           sourceIds: [`askedgar:${ticker}`],
@@ -988,6 +1002,19 @@ export const swingTraderResearchBlueprint: Blueprint = {
         }, 'background');
         const parsed = swingResearchSchema.parse(parseJson(llmResponse.content));
         parsed.gapStatsTable = input.gapStatsTable;
+
+        // Override the LLM's financialCommentary explanation with AskEdgar's verbatim
+        // mgmt_commentary when present. The LLM-assigned rating is preserved either way.
+        const verbatimCommentary = input.managementCommentary?.trim();
+        if (verbatimCommentary) {
+          parsed.financialCommentary = {
+            ...parsed.financialCommentary,
+            explanation: verbatimCommentary,
+            source: 'verbatim',
+          };
+        } else {
+          parsed.financialCommentary.source = 'llm';
+        }
 
         return completedResult(parsed, {
           durationMs: llmResponse.durationMs,

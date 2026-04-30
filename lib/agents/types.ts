@@ -48,7 +48,7 @@ export interface SmallCapResearchReport {
   overallOfferingRisk: TrafficLightSection;
   jmt415Commentary: string | null;
   gapStatsTable: GapStatsRow[];
-  financialCommentary: { rating: TrafficLight; explanation: string };
+  financialCommentary: { rating: TrafficLight; explanation: string; source: 'verbatim' | 'llm' };
   confidence: Confidence;
   evidenceIds: string[];
 }
@@ -65,7 +65,7 @@ export interface SwingResearchReport {
   };
   volumeProfile: TrafficLightSection;
   gapStatsTable: GapStatsRow[];
-  financialCommentary: { rating: TrafficLight; explanation: string };
+  financialCommentary: { rating: TrafficLight; explanation: string; source: 'verbatim' | 'llm' };
   confidence: Confidence;
   evidenceIds: string[];
 }

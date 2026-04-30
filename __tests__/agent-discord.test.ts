@@ -80,7 +80,7 @@ function createSmallCapReportJson(overrides: Partial<SmallCapResearchReport> = {
     overallOfferingRisk: { rating: 'green', explanation: 'Offering probability is elevated.' },
     jmt415Commentary: 'JMT-415 context is supportive.',
     gapStatsTable: [],
-    financialCommentary: { rating: 'yellow', explanation: 'Management commentary was mixed.' },
+    financialCommentary: { rating: 'yellow', explanation: 'Management commentary was mixed.', source: 'llm' },
     confidence: 'high',
     evidenceIds: ['news:1', 'chart:1'],
     ...overrides,
@@ -97,7 +97,7 @@ function createSwingReportJson(overrides: Partial<SwingResearchReport> = {}): Sw
     recommendation: { action: 'ADD', reasoning: 'Trend is intact above short-term support.' },
     volumeProfile: { rating: 'green', explanation: 'Volume remains elevated.' },
     gapStatsTable: [],
-    financialCommentary: { rating: 'green', explanation: 'No financing stress was disclosed.' },
+    financialCommentary: { rating: 'green', explanation: 'No financing stress was disclosed.', source: 'llm' },
     confidence: 'medium',
     evidenceIds: ['pattern:1', 'volume:1'],
     ...overrides,
@@ -537,13 +537,13 @@ describe('agent discord helpers', () => {
         cashNeed: { rating: 'red', explanation: 'Cash runway is healthy.' },
         overallOfferingRisk: { rating: 'green', explanation: 'Odds of an offering remain high.' },
         gapStatsTable: [{ date: '2026-04-11', gapPct: 12.34, open: 1.23, close: 1.1 }],
-        financialCommentary: { rating: 'red', explanation: 'Management highlighted liquidity concerns.' },
+        financialCommentary: { rating: 'red', explanation: 'Management highlighted liquidity concerns.', source: 'llm' },
       }),
     }) as never);
 
     expect(embed.description).toContain('**Offering Risk** 🟢\n• Odds of an offering remain high.');
     expect(embed.description).toContain('**News/Catalyst** 🟡\n• Headline is driving the move.');
-    expect(embed.description).toContain('**Financial Commentary** 🔴\n• Management highlighted liquidity concerns.');
+    expect(embed.description).toContain('**Financial Commentary** 🔴 _LLM Generated Comments_\n• Management highlighted liquidity concerns.');
     expect(embed.description).toContain('**Gap History**');
     expect(embed.description).toContain('2026-04-11 | +  12.34% |    1.23 |     1.1');
     expect(embed.fields).toEqual(expect.arrayContaining([
@@ -562,6 +562,34 @@ describe('agent discord helpers', () => {
     expect(embed.description).not.toContain('| Date ');
   });
 
+  it('renders verbatim financial commentary without the LLM tag and separates sections with blank lines', () => {
+    const verbatim = 'The company faces tight liquidity, holding only $83,837 in cash at year-end while carrying a $3M loan.';
+    const embed = buildResearchEmbed(createStoredReport({
+      reportJson: createSmallCapReportJson({
+        financialCommentary: { rating: 'red', explanation: verbatim, source: 'verbatim' },
+      }),
+    }) as never);
+
+    expect(embed.description).toContain(`**Financial Commentary** 🔴\n• ${verbatim}`);
+    expect(embed.description).not.toContain('_LLM Generated Comments_');
+    // Blank line between adjacent sections (Offering Risk → Dilution).
+    expect(embed.description).toMatch(/Offering Risk\b[\s\S]*?\n\n\*\*Dilution\*\*/);
+  });
+
+  it('renders verbatim financial commentary in the swing embed without the LLM tag', () => {
+    const verbatim = 'Cash position remains stable with 18 months of runway and no near-term financing required.';
+    const embed = buildSwingSetupEmbed(createStoredReport({
+      agentId: 'swing-trader',
+      reportJson: createSwingReportJson({
+        financialCommentary: { rating: 'green', explanation: verbatim, source: 'verbatim' },
+      }),
+    }) as never);
+
+    expect(embed.description).toContain(`**Financial Commentary** 🟢\n• ${verbatim}`);
+    expect(embed.description).not.toContain('_LLM Generated Comments_');
+    expect(embed.description).toMatch(/MDR Match\b[\s\S]*?\n\n\*\*Momentum\*\*/);
+  });
+
   it('renders the empty-gap fallback in the swing setup embed when gapStatsTable is empty', () => {
     const embed = buildSwingSetupEmbed(createStoredReport({
       agentId: 'swing-trader',
@@ -577,13 +605,13 @@ describe('agent discord helpers', () => {
       agentId: 'swing-trader',
       reportJson: createSwingReportJson({
         gapStatsTable: [{ date: '2026-04-11', gapPct: 8.5, open: 10, close: 10.8 }],
-        financialCommentary: { rating: 'red', explanation: 'Management flagged financing needs.' },
+        financialCommentary: { rating: 'red', explanation: 'Management flagged financing needs.', source: 'llm' },
       }),
     }) as never);
 
     expect(embed.description).toContain('**MDR Match** 🟢\n• Clean MDR analog.');
     expect(embed.description).toContain('**Momentum** 🟡\n• Momentum is still positive but slowing.');
-    expect(embed.description).toContain('**Financial Commentary** 🔴\n• Management flagged financing needs.');
+    expect(embed.description).toContain('**Financial Commentary** 🔴 _LLM Generated Comments_\n• Management flagged financing needs.');
     expect(embed.description).toContain('2026-04-11 | +   8.50% |      10 |    10.8');
     expect(embed.fields).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'Pattern', value: 'CONTINUATION' }),

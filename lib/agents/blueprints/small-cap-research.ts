@@ -134,6 +134,9 @@ const researchReportSchema = z.object({
   financialCommentary: z.object({
     rating: z.enum(['green', 'yellow', 'red']),
     explanation: z.string(),
+    // 'verbatim' = pasted from AskEdgar's mgmt_commentary; 'llm' = LLM-generated fallback.
+    // Default to 'llm' so the model doesn't have to set it; we override post-LLM in synthesize.
+    source: z.enum(['verbatim', 'llm']).default('llm'),
   }),
   confidence: z.enum(['high', 'medium', 'low']),
   evidenceIds: z.array(z.string()),
@@ -807,11 +810,16 @@ export const smallCapResearchBlueprint: Blueprint = {
         researchTickerInputSchema.parse({ ticker });
         const result = await getCachedTickerData(ticker, { scope: 'small-cap-research' });
         const rawData = result.rawData as Record<string, unknown>;
+        const dilutionRatingFirst = readResults(rawData['dilution-rating'])[0] ?? null;
         const cashPosition = (result as { dilutionDetails?: unknown }).dilutionDetails
           ?? readResults(rawData['dilution-data'])[0]
           ?? readResults(rawData['screener'])[0]
           ?? null;
-        const managementCommentary = getStringField(cashPosition, ['managementCommentary', 'management_commentary']);
+        // AskEdgar's "Commentary on Financial Condition" lives on dilution-rating[0].mgmt_commentary.
+        // Fall back to the cashPosition shape for safety in case AskEdgar ever inlines it there.
+        const managementCommentary =
+          getStringField(dilutionRatingFirst, ['mgmt_commentary', 'managementCommentary', 'commentary'])
+          ?? getStringField(cashPosition, ['managementCommentary', 'management_commentary']);
 
         return completedResult({
           ticker,
@@ -819,7 +827,7 @@ export const smallCapResearchBlueprint: Blueprint = {
           offerings: readResults(rawData['offerings']),
           registrations: readResults(rawData['registrations']),
           equityLines: readResults(rawData['equity-lines']),
-          dilutionRating: readResults(rawData['dilution-rating'])[0] ?? null,
+          dilutionRating: dilutionRatingFirst,
           dilutionData: readResults(rawData['dilution-data']),
           ownership: readResults(rawData['ownership']),
           historicalFloat: readResults(rawData['historical-float-pro']),
@@ -909,6 +917,19 @@ export const smallCapResearchBlueprint: Blueprint = {
         }, 'background');
         const parsed = researchReportSchema.parse(parseJson(llmResponse.content));
         parsed.gapStatsTable = input.gapStatsTable;
+
+        // Override the LLM's financialCommentary explanation with AskEdgar's verbatim
+        // mgmt_commentary when present. The LLM-assigned rating is preserved either way.
+        const verbatimCommentary = input.managementCommentary?.trim();
+        if (verbatimCommentary) {
+          parsed.financialCommentary = {
+            ...parsed.financialCommentary,
+            explanation: verbatimCommentary,
+            source: 'verbatim',
+          };
+        } else {
+          parsed.financialCommentary.source = 'llm';
+        }
 
         return completedResult(parsed, {
           durationMs: llmResponse.durationMs,
