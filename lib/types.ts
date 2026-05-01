@@ -92,6 +92,7 @@ export interface BacktestSession {
   riskDollars: number;
   label: string | null;
   notes: string | null;
+  backtestId: string | null;
   reviewedAt: string | Date | null;
   createdAt: string | Date;
   updatedAt: string | Date;

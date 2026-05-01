@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, Search, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { parseSampleSetCsv, type SampleSetRow } from '@/lib/sample-set-csv';
 import { cn } from '@/lib/utils';
 
 export type BacktestSelection = {
@@ -28,11 +29,6 @@ type SystemTickersResponse = {
 
 type SortDirection = 'asc' | 'desc';
 
-type LoadedTrade = {
-  ticker: string;
-  date: string;
-};
-
 interface BacktestingSidebarProps {
   selected: BacktestSelection | null;
   onSelect: (selection: BacktestSelection) => void;
@@ -45,30 +41,6 @@ function formatGap(value: number | null) {
   return `${sign}${value.toFixed(1)}%`;
 }
 
-// Trade-list CSV is a much simpler shape than the system sheet — header has `ticker` and `date`,
-// plus an optional unnamed pandas index column. Find the columns by name so column order doesn't matter.
-function parseTradesCsv(text: string): LoadedTrade[] {
-  const lines = text.replace(/^﻿/, '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (lines.length === 0) return [];
-
-  const header = lines[0].split(',').map((cell) => cell.trim().toLowerCase());
-  const tickerIdx = header.indexOf('ticker');
-  const dateIdx = header.indexOf('date');
-  if (tickerIdx < 0 || dateIdx < 0) {
-    throw new Error('CSV must include "ticker" and "date" columns');
-  }
-
-  const out: LoadedTrade[] = [];
-  for (let i = 1; i < lines.length; i += 1) {
-    const cols = lines[i].split(',').map((cell) => cell.trim());
-    const ticker = (cols[tickerIdx] ?? '').toUpperCase();
-    const date = cols[dateIdx] ?? '';
-    if (!ticker) continue;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-    out.push({ ticker, date });
-  }
-  return out;
-}
 
 function useSystemTickers() {
   const [rows, setRows] = useState<SystemTickerRow[]>([]);
@@ -110,7 +82,7 @@ export default function BacktestingSidebar({ selected, onSelect, topPanel }: Bac
   const { rows, loading, error } = useSystemTickers();
   const [filter, setFilter] = useState('');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [loadedTrades, setLoadedTrades] = useState<LoadedTrade[] | null>(null);
+  const [loadedTrades, setLoadedTrades] = useState<SampleSetRow[] | null>(null);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const syncInputRef = useRef<HTMLInputElement>(null);
@@ -165,7 +137,7 @@ export default function BacktestingSidebar({ selected, onSelect, topPanel }: Bac
 
     try {
       const text = await file.text();
-      const trades = parseTradesCsv(text);
+      const { rows: trades } = parseSampleSetCsv(text);
       if (trades.length === 0) {
         window.alert('No trades found in CSV.');
         return;

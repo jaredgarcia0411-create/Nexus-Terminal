@@ -190,6 +190,13 @@
       "when": 1777497809022,
       "tag": "0026_low_wilson_fisk",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1777671260552,
+      "tag": "0027_nice_winter_soldier",
+      "breakpoints": true
     }
   ]
 }

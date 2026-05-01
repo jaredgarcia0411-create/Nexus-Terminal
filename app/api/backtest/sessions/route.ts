@@ -2,7 +2,7 @@ import { and, desc, eq } from 'drizzle-orm';
 
 import { internalServerError, logRouteError, normalizeTicker, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
-import { backtestSessions } from '@/lib/db/schema';
+import { backtests, backtestSessions } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { backtestSessionUpsertSchema } from '@/lib/validations/backtest';
 
@@ -32,7 +32,6 @@ export async function GET(request: Request) {
       .select()
       .from(backtestSessions)
       .where(and(
-        eq(backtestSessions.userId, authState.user.id),
         eq(backtestSessions.ticker, ticker),
         eq(backtestSessions.date, date),
       ))
@@ -61,6 +60,19 @@ export async function POST(request: Request) {
     if (bodyState.error) return bodyState.error;
     const body = bodyState.data;
 
+    if (body.backtestId) {
+      const [backtest] = await db
+        .select({ id: backtests.id, userId: backtests.userId })
+        .from(backtests)
+        .where(eq(backtests.id, body.backtestId))
+        .limit(1);
+
+      if (!backtest) return Response.json({ error: 'Backtest not found' }, { status: 404 });
+      if (backtest.userId !== authState.user.id) {
+        return Response.json({ error: 'You can only auto-tag sessions to your own backtests' }, { status: 403 });
+      }
+    }
+
     const [existing] = await db
       .select()
       .from(backtestSessions)
@@ -75,7 +87,11 @@ export async function POST(request: Request) {
     if (existing) {
       const [session] = await db
         .update(backtestSessions)
-        .set({ riskDollars: body.riskDollars, updatedAt: new Date() })
+        .set({
+          riskDollars: body.riskDollars,
+          backtestId: body.backtestId ?? null,
+          updatedAt: new Date(),
+        })
         .where(and(eq(backtestSessions.userId, authState.user.id), eq(backtestSessions.id, existing.id)))
         .returning();
 
@@ -90,6 +106,7 @@ export async function POST(request: Request) {
         ticker: body.ticker,
         date: body.date,
         riskDollars: body.riskDollars,
+        backtestId: body.backtestId ?? null,
       })
       .returning();
 

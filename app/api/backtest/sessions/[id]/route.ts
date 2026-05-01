@@ -25,7 +25,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const [session] = await db
       .select()
       .from(backtestSessions)
-      .where(and(eq(backtestSessions.userId, authState.user.id), eq(backtestSessions.id, id)))
+      .where(eq(backtestSessions.id, id))
       .limit(1);
 
     if (!session) {
@@ -35,7 +35,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const actions = await db
       .select()
       .from(backtestActions)
-      .where(and(eq(backtestActions.userId, authState.user.id), eq(backtestActions.sessionId, id)))
+      .where(eq(backtestActions.sessionId, id))
       .orderBy(asc(backtestActions.sequence));
 
     return Response.json({ session, actions });

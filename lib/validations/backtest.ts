@@ -8,6 +8,7 @@ export const backtestSessionUpsertSchema = z.object({
   ticker: z.string().trim().min(1, 'ticker is required').max(20, 'ticker must be 20 characters or fewer').transform((value) => value.toUpperCase()),
   date: z.string().trim().regex(ISO_DATE_RE, 'date must be YYYY-MM-DD'),
   riskDollars: z.number().positive('riskDollars must be positive'),
+  backtestId: z.string().trim().nullable().optional(),
 });
 
 export type BacktestSessionUpsertBody = z.infer<typeof backtestSessionUpsertSchema>;

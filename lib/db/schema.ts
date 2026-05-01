@@ -1,4 +1,5 @@
-import { pgTable, text, doublePrecision, integer, real, serial, timestamp, primaryKey, index, unique, foreignKey, jsonb, date, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, text, doublePrecision, integer, real, serial, timestamp, primaryKey, index, uniqueIndex, unique, foreignKey, jsonb, date, boolean } from 'drizzle-orm/pg-core';
+import { randomUUID } from 'crypto';
 
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
@@ -471,6 +472,32 @@ export const systemTickers = pgTable('system_tickers', {
   index('system_tickers_ticker_idx').on(table.ticker),
 ]);
 
+export const sampleSets = pgTable('sample_sets', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  rows: jsonb('rows').$type<Array<{ ticker: string; date: string }>>().notNull().default([]),
+  rowCount: integer('row_count').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('sample_sets_user_created_idx').on(t.userId, t.createdAt),
+  uniqueIndex('sample_sets_user_name_idx').on(t.userId, t.name),
+]);
+
+export const backtests = pgTable('backtests', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  description: text('description'),
+  sampleSetId: text('sample_set_id').references(() => sampleSets.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('backtests_user_created_idx').on(t.userId, t.createdAt),
+  uniqueIndex('backtests_user_name_idx').on(t.userId, t.name),
+]);
+
 export const backtestSessions = pgTable('backtest_sessions', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -483,10 +510,12 @@ export const backtestSessions = pgTable('backtest_sessions', {
   reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  backtestId: text('backtest_id').references(() => backtests.id, { onDelete: 'set null' }),
 }, (t) => [
   unique('backtest_sessions_user_id_id_unique').on(t.userId, t.id),
   index('backtest_sessions_user_ticker_date_idx').on(t.userId, t.ticker, t.date),
   index('backtest_sessions_user_status_idx').on(t.userId, t.status),
+  index('backtest_sessions_user_backtest_idx').on(t.userId, t.backtestId),
 ]);
 
 export const backtestActions = pgTable('backtest_actions', {
