@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import DailyReportSheet from '@/components/trading/DailyReportSheet';
 import WeeklyReviewSheet from '@/components/trading/WeeklyReviewSheet';
@@ -59,9 +59,6 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
   const [fromDate, setFromDate] = useState(ninetyDaysAgo());
   const [toDate, setToDate] = useState(todayStr());
   const [openReview, setOpenReview] = useState<AnyReview | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [syncStatus, setSyncStatus] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -153,48 +150,6 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
     }
   };
 
-  const handleSyncSheetFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-
-    setSyncing(true);
-    setSyncStatus(null);
-
-    try {
-      const text = await file.text();
-      const { parseSystemSheet } = await import('@/lib/system-sheet-parser');
-      const { rows, warnings } = parseSystemSheet(text);
-
-      if (rows.length === 0) {
-        throw new Error(`No rows parsed (${warnings.length} warning(s))`);
-      }
-
-      const response = await fetch('/api/system-sheet/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows }),
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({}));
-        throw new Error(errorBody?.error ?? `Sync failed with status ${response.status}`);
-      }
-
-      await response.json();
-      setSyncStatus('Synced');
-
-      if (warnings.length > 0) {
-        console.warn('System sheet sync warnings:', warnings);
-      }
-    } catch (error) {
-      console.error('System sheet sync failed', error);
-      setSyncStatus('Failed');
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   return (
     <motion.div
       key="archive"
@@ -229,27 +184,6 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
             value={toDate}
             onChange={(event) => setToDate(event.target.value)}
             className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 focus:outline-none"
-          />
-        </div>
-
-        <div className="ml-auto flex items-center gap-3">
-          {syncStatus ? (
-            <span className="text-xs text-zinc-500">{syncStatus}</span>
-          ) : null}
-          <button
-            type="button"
-            disabled={syncing}
-            onClick={() => fileInputRef.current?.click()}
-            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {syncing ? 'Syncing…' : 'Sync Sheet'}
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            onChange={handleSyncSheetFile}
-            className="hidden"
           />
         </div>
       </div>

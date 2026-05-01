@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, Search } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { ArrowDown, ArrowUp, Search, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +28,11 @@ type SystemTickersResponse = {
 
 type SortDirection = 'asc' | 'desc';
 
+type LoadedTrade = {
+  ticker: string;
+  date: string;
+};
+
 interface BacktestingSidebarProps {
   selected: BacktestSelection | null;
   onSelect: (selection: BacktestSelection) => void;
@@ -38,6 +43,31 @@ function formatGap(value: number | null) {
   if (value == null || !Number.isFinite(value)) return null;
   const sign = value >= 0 ? '+' : '';
   return `${sign}${value.toFixed(1)}%`;
+}
+
+// Trade-list CSV is a much simpler shape than the system sheet — header has `ticker` and `date`,
+// plus an optional unnamed pandas index column. Find the columns by name so column order doesn't matter.
+function parseTradesCsv(text: string): LoadedTrade[] {
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length === 0) return [];
+
+  const header = lines[0].split(',').map((cell) => cell.trim().toLowerCase());
+  const tickerIdx = header.indexOf('ticker');
+  const dateIdx = header.indexOf('date');
+  if (tickerIdx < 0 || dateIdx < 0) {
+    throw new Error('CSV must include "ticker" and "date" columns');
+  }
+
+  const out: LoadedTrade[] = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const cols = lines[i].split(',').map((cell) => cell.trim());
+    const ticker = (cols[tickerIdx] ?? '').toUpperCase();
+    const date = cols[dateIdx] ?? '';
+    if (!ticker) continue;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    out.push({ ticker, date });
+  }
+  return out;
 }
 
 function useSystemTickers() {
@@ -80,17 +110,102 @@ export default function BacktestingSidebar({ selected, onSelect, topPanel }: Bac
   const { rows, loading, error } = useSystemTickers();
   const [filter, setFilter] = useState('');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [loadedTrades, setLoadedTrades] = useState<LoadedTrade[] | null>(null);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const syncInputRef = useRef<HTMLInputElement>(null);
+  const tradesInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSyncSheetFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setSyncing(true);
+    setSyncStatus(null);
+
+    try {
+      const text = await file.text();
+      const { parseSystemSheet } = await import('@/lib/system-sheet-parser');
+      const { rows: parsedRows, warnings } = parseSystemSheet(text);
+
+      if (parsedRows.length === 0) {
+        throw new Error(`No rows parsed (${warnings.length} warning(s))`);
+      }
+
+      const response = await fetch('/api/system-sheet/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: parsedRows }),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        throw new Error(errorBody?.error ?? `Sync failed with status ${response.status}`);
+      }
+
+      await response.json();
+      setSyncStatus('Synced');
+
+      if (warnings.length > 0) {
+        console.warn('System sheet sync warnings:', warnings);
+      }
+    } catch (syncError) {
+      console.error('System sheet sync failed', syncError);
+      setSyncStatus('Failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleLoadTradesFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const trades = parseTradesCsv(text);
+      if (trades.length === 0) {
+        window.alert('No trades found in CSV.');
+        return;
+      }
+      setLoadedTrades(trades);
+    } catch (loadError) {
+      console.error('Load trades failed', loadError);
+      window.alert(loadError instanceof Error ? loadError.message : 'Failed to load trades CSV.');
+    }
+  };
 
   const visibleRows = useMemo(() => {
     const query = filter.trim().toUpperCase();
-    return [...rows]
-      .filter((row) => (query ? row.ticker.toUpperCase().includes(query) : true))
-      .sort((a, b) => {
+    const sortRows = (list: SystemTickerRow[]) =>
+      list.sort((a, b) => {
         const dateCompare = a.date.localeCompare(b.date);
         if (dateCompare !== 0) return sortDirection === 'asc' ? dateCompare : -dateCompare;
         return a.ticker.localeCompare(b.ticker);
       });
-  }, [filter, rows, sortDirection]);
+
+    if (loadedTrades) {
+      const mapped: SystemTickerRow[] = loadedTrades
+        .filter((row) => (query ? row.ticker.includes(query) : true))
+        .map((row, index) => ({
+          id: `loaded-${row.ticker}-${row.date}-${index}`,
+          ticker: row.ticker,
+          date: row.date,
+          grade: null,
+          setupType: null,
+          day1GapPct: null,
+        }));
+      return sortRows(mapped);
+    }
+
+    return sortRows(
+      rows.filter((row) => (query ? row.ticker.toUpperCase().includes(query) : true)).slice(),
+    );
+  }, [filter, rows, sortDirection, loadedTrades]);
+
+  const sourceLabel = loadedTrades ? `Loaded (${loadedTrades.length})` : 'System';
 
   return (
     <aside className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-white/10 bg-[#0A0A0B]">
@@ -109,8 +224,61 @@ export default function BacktestingSidebar({ selected, onSelect, topPanel }: Bac
             className="h-8 border-white/10 bg-white/5 pl-8 text-xs text-zinc-100 placeholder:text-zinc-600"
           />
         </div>
+
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            disabled={syncing}
+            onClick={() => syncInputRef.current?.click()}
+            className="h-7 border border-white/10 bg-white/5 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {syncing ? 'Syncing…' : 'Sync Sheet'}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={() => tradesInputRef.current?.click()}
+            className="h-7 border border-white/10 bg-white/5 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
+          >
+            Load Trades
+          </Button>
+        </div>
+        <input
+          ref={syncInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          onChange={handleSyncSheetFile}
+          className="hidden"
+        />
+        <input
+          ref={tradesInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          onChange={handleLoadTradesFile}
+          className="hidden"
+        />
+        {syncStatus ? (
+          <div className="mt-1 text-[10px] text-zinc-500">{syncStatus}</div>
+        ) : null}
+
         <div className="mt-2 flex items-center justify-between">
-          <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">System</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">{sourceLabel}</span>
+            {loadedTrades ? (
+              <button
+                type="button"
+                onClick={() => setLoadedTrades(null)}
+                className="text-zinc-500 hover:text-zinc-200"
+                aria-label="Clear loaded trades"
+                title="Clear loaded trades"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            ) : null}
+          </div>
           <Button
             type="button"
             variant="ghost"
@@ -124,20 +292,23 @@ export default function BacktestingSidebar({ selected, onSelect, topPanel }: Bac
       </div>
 
       <div className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto">
-        {loading ? (
+        {!loadedTrades && loading ? (
           <div className="px-3 py-4 text-sm text-zinc-500">Loading tickers...</div>
         ) : null}
-        {!loading && error ? (
+        {!loadedTrades && !loading && error ? (
           <div className="px-3 py-4 text-sm text-rose-400">{error}</div>
         ) : null}
-        {!loading && !error && visibleRows.length === 0 ? (
-          <div className="px-3 py-4 text-sm text-zinc-500">No tickers found</div>
+        {(loadedTrades || (!loading && !error)) && visibleRows.length === 0 ? (
+          <div className="px-3 py-4 text-sm text-zinc-500">
+            {loadedTrades ? 'No trades match filter' : 'No tickers found'}
+          </div>
         ) : null}
-        {!loading && !error && visibleRows.length > 0 ? (
+        {visibleRows.length > 0 ? (
           <div className="flex flex-col">
             {visibleRows.map((row) => {
               const isActive = selected?.ticker === row.ticker && selected.date === row.date;
               const gap = formatGap(row.day1GapPct);
+              const hasMeta = row.grade || gap || row.setupType;
 
               return (
                 <button
@@ -153,15 +324,17 @@ export default function BacktestingSidebar({ selected, onSelect, topPanel }: Bac
                     <span className="font-mono text-sm font-semibold text-zinc-100">{row.ticker}</span>
                     <span className="font-mono text-[11px] tabular-nums text-zinc-500">{row.date}</span>
                   </div>
-                  <div className="mt-1 flex items-center gap-2 text-[11px]">
-                    {row.grade ? (
-                      <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 font-medium text-emerald-400">
-                        {row.grade}
-                      </span>
-                    ) : null}
-                    {gap ? <span className="font-mono tabular-nums text-zinc-400">{gap}</span> : null}
-                    {row.setupType ? <span className="truncate text-zinc-500">{row.setupType}</span> : null}
-                  </div>
+                  {hasMeta ? (
+                    <div className="mt-1 flex items-center gap-2 text-[11px]">
+                      {row.grade ? (
+                        <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 font-medium text-emerald-400">
+                          {row.grade}
+                        </span>
+                      ) : null}
+                      {gap ? <span className="font-mono tabular-nums text-zinc-400">{gap}</span> : null}
+                      {row.setupType ? <span className="truncate text-zinc-500">{row.setupType}</span> : null}
+                    </div>
+                  ) : null}
                 </button>
               );
             })}
