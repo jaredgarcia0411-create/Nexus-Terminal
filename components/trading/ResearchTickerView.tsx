@@ -93,8 +93,8 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
   return (
     <div className="flex flex-col">
       {/* Top row: company info panel on the left, chart on the right — fixed height */}
-      <div className="flex h-[500px] shrink-0 border-b border-white/10">
-        <div className="w-[220px] shrink-0 overflow-y-auto">
+      <div className="flex h-[420px] shrink-0 border-b border-white/10">
+        <div className="w-[320px] shrink-0 overflow-y-auto">
           <ResearchCompanyHeader ticker={ticker} companyName={data.companyName ?? null} header={data.header} />
         </div>
         <div className="min-h-0 flex-1 bg-[#0A0A0B]">

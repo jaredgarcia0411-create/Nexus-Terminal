@@ -20,7 +20,7 @@ function formatCompact(value: unknown): string {
 function statRow(label: string, value: string) {
   return (
     <div className="flex justify-between gap-2">
-      <span className="shrink-0 text-zinc-500">{label}</span>
+      <span className="shrink-0 text-white">{label}</span>
       <span className="text-right text-zinc-200">{value}</span>
     </div>
   );
