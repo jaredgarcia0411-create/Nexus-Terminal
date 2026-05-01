@@ -22,6 +22,17 @@ interface ScannerSummary {
   fetchedAt: string;
 }
 
+interface MdrEligibility {
+  ticker: string;
+  eligible: boolean;
+  hadPriorBigDay: boolean;
+  isUp3xFromBase: boolean;
+  isNew20dHigh: boolean;
+  priorBase20Low: number | null;
+  priorHigh20: number | null;
+  fetchedAt: string;
+}
+
 interface DashboardScannerTableProps {
   onNavigateToResearch: (ticker: string) => void;
 }
@@ -38,6 +49,15 @@ function fmtMonths(value: number | null): string {
   if (value >= 100) return `${value.toFixed(0)} mo`;
   if (value >= 10) return `${value.toFixed(1)} mo`;
   return `${value.toFixed(2)} mo`;
+}
+
+function todayInNewYork(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date()); // YYYY-MM-DD
 }
 
 function BoolCell({ value }: { value: boolean }) {
@@ -72,6 +92,14 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
   const [loading, setLoading] = useState(true);
   const [summaries, setSummaries] = useState<Record<string, ScannerSummary>>({});
   const requestedSummariesRef = useRef(new Set<string>());
+  // Tickers that have qualified for MDR during this session, latched until midnight ET.
+  // Each entry stores the ET date when it qualified ('YYYY-MM-DD'); the Set of
+  // currently-latched tickers is derived from entries whose date matches today.
+  const [mdrLatched, setMdrLatched] = useState<Record<string, string>>({});
+  // Per-ticker fetch dedupe — the eligibility check is keyed by (ticker, mark), but
+  // we only want to *attempt* an eligibility fetch once per ticker per session until
+  // we either get an `eligible: true` (latch it) or we re-poll on the next gainers tick.
+  const requestedEligibilityRef = useRef(new Set<string>());
 
   const fetchGainers = useCallback(async () => {
     try {
@@ -83,6 +111,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
       };
       setGainers(data.gainers ?? []);
       setIsRealtime(data.isRealtime ?? false);
+      requestedEligibilityRef.current = new Set();
     } catch {
       // Keep the last good scanner rows on transient polling failures.
     } finally {
@@ -115,6 +144,40 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
       })();
     }
   }, [gainers]);
+
+  useEffect(() => {
+    if (gainers.length === 0) return;
+    const today = todayInNewYork();
+
+    for (const gainer of gainers) {
+      // Already latched as MDR-eligible today — don't re-check.
+      if (mdrLatched[gainer.ticker] === today) continue;
+
+      // Intraday volume gate — must be >= 10M shares to even attempt eligibility.
+      if (!Number.isFinite(gainer.volume) || gainer.volume < 10_000_000) continue;
+
+      // Dedupe per gainers tick. The Ref is cleared whenever the gainers list reference
+      // changes (every 10 seconds), so a non-eligible ticker can be re-checked on the
+      // next tick once its mark or volume has moved.
+      const key = `${gainer.ticker}:${gainer.price.toFixed(3)}`;
+      if (requestedEligibilityRef.current.has(key)) continue;
+      requestedEligibilityRef.current.add(key);
+
+      void (async () => {
+        try {
+          const url = `/api/scanner/mdr-eligibility?ticker=${encodeURIComponent(gainer.ticker)}&mark=${gainer.price}`;
+          const res = await fetch(url);
+          if (!res.ok) return;
+          const data = (await res.json()) as MdrEligibility;
+          if (data.eligible) {
+            setMdrLatched((prev) => ({ ...prev, [data.ticker]: today }));
+          }
+        } catch {
+          // Leave row out of MDR table on transient failure; will retry on next gainers tick.
+        }
+      })();
+    }
+  }, [gainers, mdrLatched]);
 
   const tableCard = 'overflow-hidden rounded-xl border border-white/10 bg-[#121214]';
   const headerRow = 'border-b border-white/5 bg-[#0f0f11]';
@@ -262,35 +325,50 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
               </tr>
             </thead>
             <tbody>
-              {gainers.map((gainer) => {
-                const pdc = gainer.price / (1 + gainer.change / 100);
-                return (
-                  <tr
-                    key={gainer.ticker}
-                    className={bodyRow}
-                    onClick={() => onNavigateToResearch(gainer.ticker)}
-                    onKeyDown={(event) => handleRowKeyDown(event, gainer.ticker)}
-                    role="button"
-                    tabIndex={0}
-                    title={`Open ${gainer.ticker} in Research`}
-                  >
-                    <TD>
-                      <span className="text-zinc-100">{gainer.ticker}</span>
-                    </TD>
-                    <TD right>${pdc.toFixed(3)}</TD>
-                    <TD right>${gainer.price.toFixed(3)}</TD>
-                    <TD right>
-                      <span className={gainer.change >= 0 ? 'text-emerald-400' : 'text-rose-500'}>
-                        {gainer.change >= 0 ? '+' : ''}{gainer.change.toFixed(2)}%
-                      </span>
-                    </TD>
-                    {/* TODO: MDR threshold formulas plug in here next. */}
-                    <TD right className="text-zinc-600">—</TD>
-                    <TD right className="text-zinc-600">—</TD>
-                    <TD right className="text-zinc-600">—</TD>
-                  </tr>
-                );
-              })}
+              {(() => {
+                const today = todayInNewYork();
+                const mdrGainers = gainers.filter((g) => mdrLatched[g.ticker] === today);
+
+                if (mdrGainers.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-6 text-center text-sm text-zinc-500">
+                        No MDR setups detected.
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return mdrGainers.map((gainer) => {
+                  const pdc = gainer.price / (1 + gainer.change / 100);
+                  return (
+                    <tr
+                      key={gainer.ticker}
+                      className={bodyRow}
+                      onClick={() => onNavigateToResearch(gainer.ticker)}
+                      onKeyDown={(event) => handleRowKeyDown(event, gainer.ticker)}
+                      role="button"
+                      tabIndex={0}
+                      title={`Open ${gainer.ticker} in Research`}
+                    >
+                      <TD>
+                        <span className="text-zinc-100">{gainer.ticker}</span>
+                      </TD>
+                      <TD right>${pdc.toFixed(3)}</TD>
+                      <TD right>${gainer.price.toFixed(3)}</TD>
+                      <TD right>
+                        <span className={gainer.change >= 0 ? 'text-emerald-400' : 'text-rose-500'}>
+                          {gainer.change >= 0 ? '+' : ''}{gainer.change.toFixed(2)}%
+                        </span>
+                      </TD>
+                      {/* TODO: MDR threshold formulas plug in here next. */}
+                      <TD right className="text-zinc-600">—</TD>
+                      <TD right className="text-zinc-600">—</TD>
+                      <TD right className="text-zinc-600">—</TD>
+                    </tr>
+                  );
+                });
+              })()}
             </tbody>
           </table>
         </div>

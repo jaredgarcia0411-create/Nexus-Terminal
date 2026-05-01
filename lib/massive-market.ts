@@ -285,3 +285,107 @@ export async function fetchDailyAggregates(
     })
     .slice(-days);
 }
+
+/**
+ * MDR-eligibility structural check based on prior 20 trading days plus today's mark.
+ *
+ * Returns true for `eligible` only when ALL of:
+ *   - had a "qualifying day" in the prior 20 sessions
+ *     (change >= 20% AND dollar vol >= $100M AND green close AND broke prior high)
+ *   - today's mark >= 4x the 20-day low (excluding today)
+ *   - today's mark > highest high of the prior 20 sessions
+ *
+ * Note: "today" means the most recent bar in the returned series. If the most
+ * recent bar's date matches today's date in America/New_York, that bar is
+ * treated as "today's bar" and excluded from the 20-day lookback.
+ */
+export interface MdrEligibilityResult {
+  ticker: string;
+  eligible: boolean;
+  hadPriorBigDay: boolean;
+  isUp3xFromBase: boolean;
+  isNew20dHigh: boolean;
+  priorBase20Low: number | null;
+  priorHigh20: number | null;
+  fetchedAt: string;
+}
+
+export async function computeMdrEligibility(
+  ticker: string,
+  mark: number,
+): Promise<MdrEligibilityResult> {
+  const fetchedAt = new Date().toISOString();
+  const normalizedTicker = ticker.trim().toUpperCase();
+
+  // Pull 25 trading days as buffer; we need 20 prior bars + maybe today's bar.
+  const bars = await fetchDailyAggregates(normalizedTicker, 25);
+
+  // Determine "today" in America/New_York. If the most recent bar matches today,
+  // treat it as today's bar and slice it off the lookback. Otherwise, all returned
+  // bars are prior sessions.
+  const todayNY = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date()); // YYYY-MM-DD
+
+  const lastBar = bars[bars.length - 1];
+  const priorBars = lastBar && lastBar.date === todayNY ? bars.slice(0, -1) : bars;
+
+  // Need at least 20 prior bars for a meaningful lookback. If fewer (new IPO,
+  // partial history), we conservatively return ineligible.
+  if (priorBars.length < 20) {
+    return {
+      ticker: normalizedTicker,
+      eligible: false,
+      hadPriorBigDay: false,
+      isUp3xFromBase: false,
+      isNew20dHigh: false,
+      priorBase20Low: null,
+      priorHigh20: null,
+      fetchedAt,
+    };
+  }
+
+  const lookback = priorBars.slice(-20); // most recent 20 prior trading days
+
+  // 1. Prior qualifying day check.
+  // For each bar i in lookback, we need bar[i-1] for "broke prior high".
+  // Build a contiguous index over priorBars and walk pairs.
+  let hadPriorBigDay = false;
+  for (let i = priorBars.length - 20; i < priorBars.length; i += 1) {
+    const bar = priorBars[i];
+    const prev = priorBars[i - 1]; // may be undefined for the very first bar
+    if (!prev) continue; // can't evaluate "broke prior high" without a predecessor
+    const changePct = bar.close / prev.close - 1;
+    const dollarVol = bar.close * bar.volume;
+    const isGreen = bar.close > bar.open;
+    const brokePriorHigh = bar.high > prev.high;
+    if (changePct >= 0.2 && dollarVol >= 100_000_000 && isGreen && brokePriorHigh) {
+      hadPriorBigDay = true;
+      break;
+    }
+  }
+
+  // 2. Up >=3x from 20-day base. Lookback low excludes today by construction.
+  const priorBase20Low = Math.min(...lookback.map((b) => b.low));
+  const isUp3xFromBase = priorBase20Low > 0 ? mark / priorBase20Low - 1 >= 3 : false;
+
+  // 3. New 20-day high. Lookback high excludes today by construction.
+  const priorHigh20 = Math.max(...lookback.map((b) => b.high));
+  const isNew20dHigh = mark > priorHigh20;
+
+  const eligible = hadPriorBigDay && isUp3xFromBase && isNew20dHigh;
+
+  return {
+    ticker: normalizedTicker,
+    eligible,
+    hadPriorBigDay,
+    isUp3xFromBase,
+    isNew20dHigh,
+    priorBase20Low,
+    priorHigh20,
+    fetchedAt,
+  };
+}
