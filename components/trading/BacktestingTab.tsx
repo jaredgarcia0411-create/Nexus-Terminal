@@ -228,10 +228,10 @@ export default function BacktestingTab() {
                 setPendingOrder(null);
                 await sessionState.loadReview(reviewId);
               }}
-              onStartNewSession={() => {
+              onDeleteReview={async (reviewId) => {
                 setArmedAction(null);
                 setPendingOrder(null);
-                sessionState.startNewSession();
+                await sessionState.deleteReview(reviewId);
               }}
             />
           )}

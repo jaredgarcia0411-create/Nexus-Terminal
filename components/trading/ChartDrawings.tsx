@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import type { IChartApi, ISeriesApi, Time, IPriceLine } from 'lightweight-charts';
-import { useChartDrawings, type Drawing, type DrawingTool, type TrendLineDrawing, type RectangleDrawing, type FibonacciDrawing } from '@/hooks/use-chart-drawings';
+import { useChartDrawings, type ChartDrawingsController, type Drawing, type DrawingTool, type TrendLineDrawing, type RectangleDrawing, type FibonacciDrawing } from '@/hooks/use-chart-drawings';
 import { createTrendLineRenderer } from './plugins/TrendLinePrimitive';
 import { createRectangleRenderer } from './plugins/RectanglePrimitive';
 import { createFibonacciRenderer } from './plugins/FibonacciPrimitive';
@@ -155,6 +155,7 @@ interface ChartDrawingsProps {
 	onDeleteDrawing?: (id: string) => void;
 	onInteractionChange?: (isInteracting: boolean) => void;
 	persistDrawings?: boolean;
+	controller?: ChartDrawingsController;
 }
 
 export default function ChartDrawings({
@@ -169,12 +170,14 @@ export default function ChartDrawings({
 	onDeleteDrawing,
 	onInteractionChange,
 	persistDrawings = true,
+	controller,
 }: ChartDrawingsProps) {
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<{ drawingId: string; point: 'start' | 'end' } | null>(null);
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
 
+  const localController = useChartDrawings(symbol, activeTool, selectedColor, lineWidth, { persist: persistDrawings });
   const {
     isDrawing,
     tempDrawing,
@@ -186,7 +189,7 @@ export default function ChartDrawings({
     clearAllDrawings,
     updateDrawingEndpoint,
     removeDrawing,
-  } = useChartDrawings(symbol, activeTool, selectedColor, lineWidth, { persist: persistDrawings });
+  } = controller ?? localController;
   const isInteracting = isDrawing || dragState !== null;
 
   // Get coordinate converters

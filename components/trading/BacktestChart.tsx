@@ -22,7 +22,7 @@ import {
   type SeriesMarker,
   type Time,
 } from 'lightweight-charts';
-import { ChartCandlestick, Layers, Trash2 } from 'lucide-react';
+import { ChartCandlestick, ChevronLeft, ChevronRight, Layers, Maximize2, Minimize2 } from 'lucide-react';
 
 import ChartDrawings from '@/components/trading/ChartDrawings';
 import DrawingToolbar from '@/components/trading/DrawingToolbar';
@@ -36,7 +36,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useCandleData } from '@/hooks/use-candle-data';
-import type { DrawingTool } from '@/hooks/use-chart-drawings';
+import type { ChartDrawingsController, DrawingTool } from '@/hooks/use-chart-drawings';
 import { buildExtendedHoursShadeSegments, buildSessionShadeRects, type SessionShadeRect } from '@/lib/chart-session-shading';
 import { BACKTEST_FRAME_CONFIG, type BacktestTimeframeKey } from '@/lib/chart-timeframes';
 import {
@@ -54,7 +54,7 @@ import {
   vwap,
   type OHLCData,
 } from '@/lib/indicators';
-import { epochToNySortKey, getPreviousTradingSession, nyDateTimeToEpoch, parseSortKey } from '@/lib/time-utils';
+import { epochToNySortKey, getNextTradingSession, getPreviousTradingSession, nyDateTimeToEpoch, parseSortKey } from '@/lib/time-utils';
 import { formatNyCrosshair, formatNyTime } from '@/lib/chart-time';
 import type { BacktestAction, BacktestActionType } from '@/lib/types';
 
@@ -102,6 +102,13 @@ interface BacktestChartProps {
   onArmedClick?: (payload: { price: number; barTime: string }) => void;
   actions?: BacktestAction[];
   currentStop?: number | null;
+  drawingsController?: ChartDrawingsController | null;
+  activeDrawingTool?: DrawingTool;
+  onDrawingToolChange?: (tool: DrawingTool) => void;
+  isExpanded?: boolean;
+  onToggleExpanded?: () => void;
+  extraSessionsForward?: number;
+  onExtraSessionsForwardChange?: (next: number) => void;
 }
 
 const UP_COLOR = '#ffffff';
@@ -187,14 +194,25 @@ function shiftTradingSessions(dateKey: string, sessionsBack: number) {
   return cursor;
 }
 
-function buildMarketOptions(anchorDate: string, timeframe: BacktestTimeframeKey) {
+function shiftTradingSessionsForward(dateKey: string, sessionsForward: number) {
+  let cursor = dateKey;
+  for (let index = 0; index < sessionsForward; index += 1) {
+    const next = getNextTradingSession(cursor);
+    if (!next) return cursor;
+    cursor = next;
+  }
+  return cursor;
+}
+
+function buildMarketOptions(anchorDate: string, timeframe: BacktestTimeframeKey, extraSessionsForward = 0) {
   const frame = BACKTEST_FRAME_CONFIG[timeframe];
   const lookback = LOOKBACK_WINDOWS[timeframe];
+  const endKey = shiftTradingSessionsForward(anchorDate, Math.max(0, extraSessionsForward));
 
   if (frame.intraday) {
     const startKey = shiftTradingSessions(anchorDate, lookback.tradingSessionsBack ?? 2);
     const startDate = nyDateTimeToEpoch(startKey, '04:00:00');
-    const endDate = nyDateTimeToEpoch(anchorDate, '20:00:00');
+    const endDate = nyDateTimeToEpoch(endKey, '20:00:00');
 
     return {
       periodType: frame.periodType,
@@ -209,7 +227,7 @@ function buildMarketOptions(anchorDate: string, timeframe: BacktestTimeframeKey)
 
   const startKey = shiftCalendarYears(anchorDate, -(lookback.calendarYearsBack ?? 1));
   const startDate = nyDateTimeToEpoch(startKey, '00:00:00');
-  const endDate = nyDateTimeToEpoch(anchorDate, '20:00:00');
+  const endDate = nyDateTimeToEpoch(endKey, '20:00:00');
 
   return {
     periodType: frame.periodType,
@@ -323,11 +341,17 @@ export default function BacktestChart({
   onArmedClick,
   actions,
   currentStop = null,
+  drawingsController = null,
+  activeDrawingTool = null,
+  onDrawingToolChange,
+  isExpanded = false,
+  onToggleExpanded,
+  extraSessionsForward = 0,
+  onExtraSessionsForwardChange,
 }: BacktestChartProps) {
   const [timeframe, setTimeframe] = useState<BacktestTimeframeKey>(defaultTimeframe);
   const [indicators, setIndicators] = useState<Set<IndicatorKey>>(() => new Set(defaultIndicators));
   const [seriesType, setSeriesType] = useState<SeriesType>('candles');
-  const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingTool>(null);
   const [drawingsCount, setDrawingsCount] = useState(0);
   const [isDrawingInteractionActive, setIsDrawingInteractionActive] = useState(false);
   const [chartInstance, setChartInstance] = useState<IChartApi | null>(null);
@@ -351,11 +375,18 @@ export default function BacktestChart({
 
   const frame = BACKTEST_FRAME_CONFIG[timeframe];
   const isDailyAnchorCell = timeframe === '1D' && onAnchorChange != null;
-  const marketOptions = useMemo(() => buildMarketOptions(anchorDate, timeframe), [anchorDate, timeframe]);
+  const marketOptions = useMemo(
+    () => buildMarketOptions(anchorDate, timeframe, extraSessionsForward),
+    [anchorDate, extraSessionsForward, timeframe],
+  );
   const { candles, isLoading, error } = useCandleData(ticker, marketOptions);
   const priorClose = usePriorDailyClose(ticker, anchorDate, frame.intraday);
   const indicatorSummary = useMemo(() => formatIndicatorSummary(indicators), [indicators]);
   const drawingScope = `${ticker}:${anchorDate}:${timeframe}`;
+  const canDraw = drawingsController != null && onDrawingToolChange != null;
+  const handleDrawingToolChange = useCallback((tool: DrawingTool) => {
+    onDrawingToolChange?.(tool);
+  }, [onDrawingToolChange]);
 
   useEffect(() => {
     activeDrawingToolRef.current = activeDrawingTool;
@@ -796,7 +827,7 @@ export default function BacktestChart({
   }, [seriesInstance, actions, currentStop, frame.intraday]);
 
   return (
-    <section className="flex h-[440px] shrink-0 flex-col overflow-hidden border border-white/10 bg-[#121214]">
+    <section className={`flex ${isExpanded ? 'min-h-[620px] flex-1' : 'h-[440px] shrink-0'} flex-col overflow-hidden border border-white/10 bg-[#121214]`}>
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-white/10 bg-[#0A0A0B] px-2">
         <div className="mr-1 flex min-w-0 items-baseline gap-2">
           <span className="font-mono text-xs font-semibold text-zinc-100">{ticker}</span>
@@ -868,21 +899,57 @@ export default function BacktestChart({
         ) : null}
 
         <div className="ml-auto flex items-center gap-0.5">
-          <DrawingToolbar
-            activeTool={activeDrawingTool}
-            onToolSelect={setActiveDrawingTool}
-          />
-          {drawingsCount > 0 ? (
+          {isExpanded ? (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                disabled={extraSessionsForward <= 0}
+                onClick={() => onExtraSessionsForwardChange?.(Math.max(0, extraSessionsForward - 1))}
+                className="text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-30"
+                title="Remove one forward day"
+                aria-label="Remove one forward day"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              {extraSessionsForward > 0 ? (
+                <span className="px-1 font-mono text-[11px] tabular-nums text-zinc-400">
+                  +{extraSessionsForward} {extraSessionsForward === 1 ? 'day' : 'days'}
+                </span>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => onExtraSessionsForwardChange?.(extraSessionsForward + 1)}
+                className="text-zinc-300 hover:bg-white/10 hover:text-white"
+                title="Add one forward day"
+                aria-label="Add one forward day"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </>
+          ) : null}
+          {canDraw ? (
+            <DrawingToolbar
+              activeTool={activeDrawingTool}
+              onToolSelect={handleDrawingToolChange}
+              drawingsCount={drawingsCount}
+              onClearAll={() => clearAllDrawingsRef.current?.()}
+            />
+          ) : null}
+          {onToggleExpanded ? (
             <Button
               type="button"
               variant="ghost"
               size="icon-xs"
-              onClick={() => clearAllDrawingsRef.current?.()}
-              className="text-zinc-400 hover:bg-rose-500/20 hover:text-rose-400"
-              title="Clear drawings"
-              aria-label="Clear drawings"
+              onClick={onToggleExpanded}
+              className="text-zinc-300 hover:bg-white/10 hover:text-white"
+              title={isExpanded ? 'Collapse chart' : 'Expand chart'}
+              aria-label={isExpanded ? 'Collapse chart' : 'Expand chart'}
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              {isExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             </Button>
           ) : null}
         </div>
@@ -926,21 +993,24 @@ export default function BacktestChart({
         {!isLoading && !error && candles.length === 0 ? (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#121214]/70 text-xs text-zinc-500">No candles found</div>
         ) : null}
-        <ChartDrawings
-          symbol={drawingScope}
-          chart={chartInstance}
-          series={seriesInstance}
-          activeTool={activeDrawingTool}
-          onToolChange={setActiveDrawingTool}
-          selectedColor="#ffffff"
-          lineWidth={1}
-          persistDrawings={false}
-          onInteractionChange={setIsDrawingInteractionActive}
-          onDrawingsChange={(count, clearFn) => {
-            setDrawingsCount(count);
-            clearAllDrawingsRef.current = clearFn;
-          }}
-        />
+        {canDraw ? (
+          <ChartDrawings
+            symbol={drawingScope}
+            chart={chartInstance}
+            series={seriesInstance}
+            activeTool={activeDrawingTool}
+            onToolChange={handleDrawingToolChange}
+            selectedColor="#ffffff"
+            lineWidth={1}
+            persistDrawings={false}
+            controller={drawingsController}
+            onInteractionChange={setIsDrawingInteractionActive}
+            onDrawingsChange={(count, clearFn) => {
+              setDrawingsCount(count);
+              clearAllDrawingsRef.current = clearFn;
+            }}
+          />
+        ) : null}
       </div>
     </section>
   );

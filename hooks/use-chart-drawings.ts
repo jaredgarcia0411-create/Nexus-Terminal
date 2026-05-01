@@ -435,3 +435,5 @@ export function useChartDrawings(
     availableColors: DEFAULT_COLORS,
   };
 }
+
+export type ChartDrawingsController = ReturnType<typeof useChartDrawings>;

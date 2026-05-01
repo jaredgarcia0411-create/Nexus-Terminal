@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   getIntradaySessionWindow,
+  getNextTradingSession,
   epochToNySortKey,
   hasExplicitTimezone,
   normalizeToTradingSession,
@@ -49,6 +50,11 @@ describe('time-utils', () => {
       resolvedSortKey: '2026-03-06',
       wasAdjusted: true,
     });
+  });
+
+  it('finds the next trading session', () => {
+    expect(getNextTradingSession('2026-03-04')).toBe('2026-03-05');
+    expect(getNextTradingSession('2026-03-06')).toBe('2026-03-09');
   });
 
   it('builds intraday session windows with prior day support', () => {

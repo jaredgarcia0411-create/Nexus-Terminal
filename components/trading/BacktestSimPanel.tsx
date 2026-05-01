@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Eye, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { Eye, RotateCcw, Trash2 } from 'lucide-react';
 
 import type { SimPosition } from '@/lib/backtest-math';
 import { formatCurrency, formatR, getPnLColor } from '@/lib/trading-utils';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -89,7 +90,7 @@ interface BacktestSimPanelProps {
   onClear: () => Promise<void> | void;
   onSaveReview: (label?: string, notes?: string) => Promise<void> | void;
   onLoadReview: (reviewId: string) => Promise<void> | void;
-  onStartNewSession: () => void;
+  onDeleteReview: (reviewId: string) => Promise<void> | void;
 }
 
 export default function BacktestSimPanel({
@@ -109,9 +110,10 @@ export default function BacktestSimPanel({
   onClear,
   onSaveReview,
   onLoadReview,
-  onStartNewSession,
+  onDeleteReview,
 }: BacktestSimPanelProps) {
   const [clearOpen, setClearOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewLabel, setReviewLabel] = useState('');
   const [reviewNotes, setReviewNotes] = useState('');
@@ -154,12 +156,14 @@ export default function BacktestSimPanel({
           <Button
             type="button"
             variant="ghost"
-            size="xs"
-            onClick={onStartNewSession}
-            className="border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white"
+            size="icon-xs"
+            disabled={!session || isMutating}
+            onClick={() => setDeleteOpen(true)}
+            className="border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300 disabled:opacity-40"
+            title="Delete review"
+            aria-label="Delete review"
           >
-            <Plus className="h-3 w-3" />
-            New
+            <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </div>
       ) : null}
@@ -266,7 +270,7 @@ export default function BacktestSimPanel({
           <Button
             type="button"
             variant="ghost"
-            disabled={!session || actions.length === 0 || isReadOnly || isMutating}
+            disabled={!session || isMutating || (!isReadOnly && actions.length === 0)}
             onClick={() => setClearOpen(true)}
             className="h-8 border border-white/10 bg-white/5 text-xs text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-40"
           >
@@ -324,11 +328,13 @@ export default function BacktestSimPanel({
       <Dialog open={clearOpen} onOpenChange={setClearOpen}>
         <DialogContent className="border-white/10 bg-[#121214] text-white">
           <DialogHeader>
-            <DialogTitle>Clear simulation?</DialogTitle>
+            <DialogTitle>{isReadOnly ? 'Clear review view?' : 'Clear simulation?'}</DialogTitle>
+            <DialogDescription className="text-sm text-zinc-400">
+              {isReadOnly
+                ? 'Exit this saved review view? The saved review will remain available.'
+                : `Remove all simulation executions for ${ticker ?? '-'} ${date ?? '-'}? R$ setting kept.`}
+            </DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-zinc-400">
-            Remove all simulation executions for {ticker ?? '-'} {date ?? '-'}? R$ setting kept.
-          </p>
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => setClearOpen(false)} className="bg-white/10 hover:bg-white/20">
               Cancel
@@ -348,10 +354,42 @@ export default function BacktestSimPanel({
         </DialogContent>
       </Dialog>
 
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="border-white/10 bg-[#121214] text-white">
+          <DialogHeader>
+            <DialogTitle>Delete review?</DialogTitle>
+            <DialogDescription className="text-sm text-zinc-400">
+              Permanently delete this saved review and its execution ledger. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => setDeleteOpen(false)} className="bg-white/10 hover:bg-white/20">
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!session || isMutating}
+              onClick={() => {
+                if (!session) return;
+                setSelectedReviewId(null);
+                void onDeleteReview(session.id);
+                setDeleteOpen(false);
+              }}
+              className="bg-rose-500 text-white hover:bg-rose-400 disabled:opacity-40"
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
         <DialogContent className="border-white/10 bg-[#121214] text-white">
           <DialogHeader>
             <DialogTitle>Save Review</DialogTitle>
+            <DialogDescription className="text-sm text-zinc-400">
+              Save the current simulation ledger as a read-only review.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-2">

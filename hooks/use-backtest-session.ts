@@ -240,7 +240,13 @@ export function useBacktestSession({ ticker, date, riskDollars }: UseBacktestSes
   }, [activeActions, reviewMode]);
 
   const clear = useCallback(async () => {
-    if (reviewMode || !activeSession) return;
+    if (reviewMode) {
+      setReviewMode(null);
+      setError(null);
+      return;
+    }
+
+    if (!activeSession) return;
 
     const previousActions = [...activeActions];
     setIsMutating(true);
@@ -262,6 +268,34 @@ export function useBacktestSession({ ticker, date, riskDollars }: UseBacktestSes
       setIsMutating(false);
     }
   }, [activeActions, activeSession, reviewMode]);
+
+  const deleteReview = useCallback(async (reviewId: string) => {
+    const previousReviews = [...reviews];
+    const previousReviewMode = reviewMode;
+
+    setIsMutating(true);
+    setError(null);
+    setReviews((current) => current.filter((review) => review.id !== reviewId));
+    if (reviewMode?.session.id === reviewId) {
+      setReviewMode(null);
+    }
+
+    try {
+      const response = await fetch(`/api/backtest/sessions/${reviewId}`, { method: 'DELETE' });
+      const payload = await parseJson<{ error?: string }>(response);
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Could not delete review');
+      }
+    } catch {
+      setReviews(previousReviews);
+      setReviewMode(previousReviewMode);
+      const message = 'Could not delete review';
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setIsMutating(false);
+    }
+  }, [reviewMode, reviews]);
 
   const updateRisk = useCallback(async (nextRiskDollars: number) => {
     if (!Number.isFinite(nextRiskDollars) || nextRiskDollars <= 0 || reviewMode) return;
@@ -368,6 +402,7 @@ export function useBacktestSession({ ticker, date, riskDollars }: UseBacktestSes
     updateRisk,
     saveReview,
     loadReview,
+    deleteReview,
     startNewSession,
   };
 }

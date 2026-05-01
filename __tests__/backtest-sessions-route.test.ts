@@ -18,6 +18,7 @@ vi.mock('@/lib/server-db-utils', () => ({
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
 
 import { POST as postAction } from '@/app/api/backtest/actions/route';
+import { DELETE as deleteSession } from '@/app/api/backtest/sessions/[id]/route';
 import { POST as reviewSession } from '@/app/api/backtest/sessions/[id]/review/route';
 import { GET as getSessions, POST as postSession } from '@/app/api/backtest/sessions/route';
 import { backtestActions, backtestSessions } from '@/lib/db/schema';
@@ -179,6 +180,21 @@ function createBacktestDb() {
 
       return chain;
     },
+    delete(table: unknown) {
+      return {
+        where() {
+          if (table === backtestSessions) {
+            const target = state.sessions.find((row) => row.status === 'REVIEWED') ?? state.sessions[0];
+            if (target) {
+              state.sessions = state.sessions.filter((row) => row.id !== target.id);
+              state.actions = state.actions.filter((row) => row.sessionId !== target.id);
+            }
+          }
+
+          return Promise.resolve();
+        },
+      };
+    },
   };
 }
 
@@ -254,5 +270,39 @@ describe('backtest session routes', () => {
     expect(listPayload.session).toBeNull();
     expect(listPayload.reviews).toHaveLength(1);
     expect(listPayload.reviews[0].status).toBe('REVIEWED');
+  });
+
+  it('deletes a reviewed session and removes it from the session list', async () => {
+    const createResponse = ensureResponse(await postSession(new Request('http://localhost/api/backtest/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker: 'AAPL', date: '2026-04-28', riskDollars: 100 }),
+    })));
+    const createPayload = await createResponse.json();
+
+    const reviewResponse = ensureResponse(await reviewSession(new Request(`http://localhost/api/backtest/sessions/${createPayload.session.id}/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: createPayload.session.id, label: 'A setup' }),
+    }), {
+      params: Promise.resolve({ id: createPayload.session.id }),
+    }));
+    expect(reviewResponse.status).toBe(200);
+
+    const deleteResponse = ensureResponse(await deleteSession(new Request(`http://localhost/api/backtest/sessions/${createPayload.session.id}`, {
+      method: 'DELETE',
+    }), {
+      params: Promise.resolve({ id: createPayload.session.id }),
+    }));
+    const deletePayload = await deleteResponse.json();
+
+    expect(deleteResponse.status).toBe(200);
+    expect(deletePayload).toMatchObject({ deleted: true, id: createPayload.session.id });
+
+    const listResponse = ensureResponse(await getSessions(new Request('http://localhost/api/backtest/sessions?ticker=AAPL&date=2026-04-28')));
+    const listPayload = await listResponse.json();
+
+    expect(listResponse.status).toBe(200);
+    expect(listPayload.reviews).toHaveLength(0);
   });
 });

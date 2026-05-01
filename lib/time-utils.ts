@@ -112,6 +112,20 @@ export function getPreviousTradingSession(sortKey: string): string | null {
   return null;
 }
 
+export function getNextTradingSession(sortKey: string): string | null {
+  const start = nyDateTimeToEpoch(sortKey, '00:00:00');
+  if (start == null) return null;
+
+  let cursor = start;
+  for (let safety = 0; safety < 14; safety += 1) {
+    cursor += 24 * 60 * 60 * 1000;
+    const candidate = epochToNySortKey(cursor);
+    if (isNyTradingDay(candidate)) return candidate;
+  }
+
+  return null;
+}
+
 export function normalizeToTradingSession(sortKey: string): {
   requestedSortKey: string;
   resolvedSortKey: string;

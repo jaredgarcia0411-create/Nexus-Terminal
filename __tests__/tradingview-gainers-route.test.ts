@@ -79,6 +79,9 @@ describe('GET /api/tradingview/gainers', () => {
         avgVolume90d: 789000,
         marketCap: 250000000,
         sector: 'Technology',
+        preMarketPrice: null,
+        preMarketChange: null,
+        preMarketVolume: null,
       }],
       count: 1,
       totalCount: 12,
@@ -110,6 +113,9 @@ describe('GET /api/tradingview/gainers', () => {
         avgVolume90d: 500,
         marketCap: 1000000,
         sector: 'Energy',
+        preMarketPrice: null,
+        preMarketChange: null,
+        preMarketVolume: null,
       },
     ]);
     expect(payload.count).toBe(1);
