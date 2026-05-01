@@ -134,6 +134,41 @@ export function vwap(candles: OHLCData[]): (number | null)[] {
   return result;
 }
 
+// VWAP anchored at a specific epoch (ms). Candles before the anchor produce
+// `null` so the chart line only starts at the anchor — matches "session VWAP"
+// behavior so PM bars on the trade's day get included from the 04:00 NY open.
+export function anchoredVwap(candles: OHLCData[], anchorEpochMs: number): (number | null)[] {
+  const result: (number | null)[] = [];
+  let cumVolume = 0;
+  let cumTP = 0;
+
+  for (const candle of candles) {
+    if (!Number.isFinite(candle.time) || candle.time < anchorEpochMs) {
+      result.push(null);
+      continue;
+    }
+
+    const high = Number(candle.high);
+    const low = Number(candle.low);
+    const close = Number(candle.close);
+    const volume = Number(candle.volume);
+
+    if (![high, low, close].every(Number.isFinite)) {
+      result.push(null);
+      continue;
+    }
+
+    const typicalPrice = (high + low + close) / 3;
+    const safeVolume = Number.isFinite(volume) ? volume : 0;
+
+    cumVolume += safeVolume;
+    cumTP += typicalPrice * safeVolume;
+    result.push(cumVolume > 0 ? cumTP / cumVolume : null);
+  }
+
+  return result;
+}
+
 export function rsi(data: number[], period: number = 14): (number | null)[] {
   if (data.some((value) => !Number.isFinite(value))) {
     return data.map(() => null);

@@ -40,6 +40,7 @@ import type { DrawingTool } from '@/hooks/use-chart-drawings';
 import { buildExtendedHoursShadeSegments, buildSessionShadeRects, type SessionShadeRect } from '@/lib/chart-session-shading';
 import { BACKTEST_FRAME_CONFIG, type BacktestTimeframeKey } from '@/lib/chart-timeframes';
 import {
+  anchoredVwap,
   atr,
   bollingerBands,
   ema9,
@@ -494,7 +495,14 @@ export default function BacktestChart({
     if (indicators.has('EMA20')) addLineOverlay(chart, sortedCandles, ema20(closes), '#eab308');
     if (indicators.has('EMA21')) addLineOverlay(chart, sortedCandles, ema21(closes), '#f97316');
     if (indicators.has('EMA50')) addLineOverlay(chart, sortedCandles, ema50(closes), '#38bdf8');
-    if (indicators.has('VWAP')) addLineOverlay(chart, sortedCandles, vwap(ohlc), '#f472b6');
+    if (indicators.has('VWAP')) {
+      // For intraday charts, anchor VWAP at 04:00 NY of the trade's date so the
+      // line starts at the PM open and includes pre-market bars. For daily
+      // charts (no PM concept), fall back to the simple cumulative VWAP.
+      const anchorEpochMs = frame.intraday ? nyDateTimeToEpoch(anchorDate, '04:00:00') : null;
+      const values = anchorEpochMs != null ? anchoredVwap(ohlc, anchorEpochMs) : vwap(ohlc);
+      addLineOverlay(chart, sortedCandles, values, '#f472b6');
+    }
 
     if (indicators.has('BB')) {
       const bands = bollingerBands(closes, 20, 2);
