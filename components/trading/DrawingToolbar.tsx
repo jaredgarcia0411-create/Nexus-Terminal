@@ -14,6 +14,7 @@ const tools: Array<{ id: DrawingTool; icon: React.ReactNode; label: string }> = 
   { id: 'trendline', icon: <TrendingUp className="h-4 w-4" />, label: 'Trend Line' },
   { id: 'horizontal', icon: <Minus className="h-4 w-4" />, label: 'Horizontal Line' },
   { id: 'rectangle', icon: <Square className="h-4 w-4" />, label: 'Rectangle' },
+  { id: 'fibonacci', icon: <span className="text-[10px] font-bold leading-none">Fib</span>, label: 'Fibonacci Retracement' },
 ];
 
 export default function DrawingToolbar({

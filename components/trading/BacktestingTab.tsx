@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type FormEvent } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { motion } from 'motion/react';
+import { Search } from 'lucide-react';
 
 import BacktestChartGrid from '@/components/trading/BacktestChartGrid';
 import BacktestPlaceOrderDialog, { type BacktestOrderDraft } from '@/components/trading/BacktestPlaceOrderDialog';
@@ -10,6 +11,7 @@ import BacktestSimPanel from '@/components/trading/BacktestSimPanel';
 import BacktestTradeMenu from '@/components/trading/BacktestTradeMenu';
 import BacktestingSidebar, { type BacktestSelection } from '@/components/trading/BacktestingSidebar';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useBacktestSession } from '@/hooks/use-backtest-session';
 import { formatCurrency } from '@/lib/trading-utils';
 import type { BacktestActionType } from '@/lib/types';
@@ -30,12 +32,26 @@ export default function BacktestingTab() {
   const [riskDollars, setRiskDollars] = useState(getInitialRiskDollars);
   const [armedAction, setArmedAction] = useState<BacktestActionType | null>(null);
   const [pendingOrder, setPendingOrder] = useState<BacktestOrderDraft | null>(null);
+  // Ad-hoc lookup form lives in the header so any ticker/date can be loaded
+  // without needing it in the system list.
+  const [lookupTicker, setLookupTicker] = useState('');
+  const [lookupDate, setLookupDate] = useState('');
 
   const handleSelect = useCallback((nextSelection: BacktestSelection) => {
     setArmedAction(null);
     setPendingOrder(null);
     setSelected(nextSelection);
   }, []);
+
+  const handleLookupSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const ticker = lookupTicker.trim().toUpperCase();
+    if (!ticker) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(lookupDate)) return;
+    handleSelect({ ticker, date: lookupDate });
+  };
+
+  const lookupValid = lookupTicker.trim().length > 0 && /^\d{4}-\d{2}-\d{2}$/.test(lookupDate);
 
   const handleAnchorChange = useCallback((newDate: string) => {
     setSelected((current) => (current ? { ...current, date: newDate } : current));
@@ -109,15 +125,44 @@ export default function BacktestingTab() {
     >
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_220px] xl:grid-cols-[minmax(0,1fr)_280px]">
         <main className="flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden pr-2">
-          <div className="flex h-10 shrink-0 items-center gap-2 border border-white/10 bg-[#121214] px-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-sm font-semibold text-white">{selected?.ticker ?? 'No ticker'}</span>
-                {selected ? <span className="font-mono text-xs tabular-nums text-zinc-500">{selected.date}</span> : null}
-              </div>
+          <div className="grid h-10 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border border-white/10 bg-[#121214] px-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="font-mono text-sm font-semibold text-white">{selected?.ticker ?? 'No ticker'}</span>
+              {selected ? <span className="font-mono text-xs tabular-nums text-zinc-500">{selected.date}</span> : null}
             </div>
 
-            <div className="ml-auto flex items-center gap-2">
+            <form
+              onSubmit={handleLookupSubmit}
+              className="flex items-center gap-1.5"
+              aria-label="Lookup ticker on date"
+            >
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+                <Input
+                  value={lookupTicker}
+                  onChange={(event) => setLookupTicker(event.target.value.toUpperCase())}
+                  placeholder="TICKER"
+                  className="h-7 w-32 border-white/10 bg-white/5 pl-7 font-mono text-xs uppercase text-zinc-100 placeholder:text-zinc-600"
+                />
+              </div>
+              <input
+                type="date"
+                value={lookupDate}
+                onChange={(event) => setLookupDate(event.target.value)}
+                className="h-7 rounded-md border border-white/10 bg-white/5 px-2 font-mono text-xs text-zinc-100 [color-scheme:dark]"
+              />
+              <Button
+                type="submit"
+                variant="ghost"
+                size="xs"
+                disabled={!lookupValid}
+                className="h-7 text-[11px] text-zinc-300 hover:bg-transparent hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Load
+              </Button>
+            </form>
+
+            <div className="flex items-center justify-end gap-2">
               <span className="font-mono text-xs tabular-nums text-zinc-400">{formatCurrency(effectiveRiskDollars)}</span>
               {!sessionState.isReadOnly ? (
                 <BacktestTradeMenu

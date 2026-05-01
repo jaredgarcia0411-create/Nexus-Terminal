@@ -3,9 +3,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import type { IChartApi, ISeriesApi, Time, IPriceLine } from 'lightweight-charts';
-import { useChartDrawings, type Drawing, type DrawingTool, type TrendLineDrawing, type RectangleDrawing } from '@/hooks/use-chart-drawings';
+import { useChartDrawings, type Drawing, type DrawingTool, type TrendLineDrawing, type RectangleDrawing, type FibonacciDrawing } from '@/hooks/use-chart-drawings';
 import { createTrendLineRenderer } from './plugins/TrendLinePrimitive';
 import { createRectangleRenderer } from './plugins/RectanglePrimitive';
+import { createFibonacciRenderer } from './plugins/FibonacciPrimitive';
 
 // Hit detection helper - check if point is near a drawing
 const HIT_TOLERANCE = 10; // pixels
@@ -49,6 +50,34 @@ function isPointNearDrawing(
         y <= bottom + HIT_TOLERANCE
       );
     }
+    case 'fibonacci': {
+      const x1 = timeToCoordinate(drawing.start.time);
+      const y1 = priceToCoordinate(drawing.start.price);
+      const x2 = timeToCoordinate(drawing.end.time);
+      const y2 = priceToCoordinate(drawing.end.price);
+      if (x1 === null || y1 === null || x2 === null || y2 === null) return false;
+      const left = Math.min(x1, x2);
+      const right = Math.max(x1, x2);
+      // Hit on the diagonal anchor line counts.
+      if (distanceToLineSegment(x, y, x1, y1, x2, y2) < HIT_TOLERANCE) return true;
+      // Or hit on any horizontal level line within the diagonal's x-span.
+      const topPrice = Math.max(drawing.start.price, drawing.end.price);
+      const bottomPrice = Math.min(drawing.start.price, drawing.end.price);
+      const priceRange = topPrice - bottomPrice;
+      for (const level of drawing.levels) {
+        const levelPrice = topPrice - priceRange * level;
+        const yPos = priceToCoordinate(levelPrice);
+        if (yPos === null) continue;
+        if (
+          Math.abs(y - yPos) < HIT_TOLERANCE &&
+          x >= left - HIT_TOLERANCE &&
+          x <= right + HIT_TOLERANCE
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
     default:
       return false;
   }
@@ -91,7 +120,7 @@ function isPointNearEndpoint(
     return { isNear: false, which: null };
   }
 
-  const d = drawing as TrendLineDrawing | RectangleDrawing;
+  const d = drawing as TrendLineDrawing | RectangleDrawing | FibonacciDrawing;
   const x1 = timeToCoordinate(d.start.time);
   const y1 = priceToCoordinate(d.start.price);
   const x2 = timeToCoordinate(d.end.time);
@@ -340,7 +369,8 @@ export default function ChartDrawings({
         ctx.setLineDash([4, 4]);
         // Draw bounding box or highlight based on drawing type
         switch (drawing.type) {
-          case 'trendline': {
+          case 'trendline':
+          case 'fibonacci': {
             const x1 = timeToCoordinate(drawing.start.time);
             const y1 = priceToCoordinate(drawing.start.price);
             const x2 = timeToCoordinate(drawing.end.time);
@@ -390,6 +420,19 @@ export default function ChartDrawings({
             startPrice: drawing.start.price,
             endTime: drawing.end.time,
             endPrice: drawing.end.price,
+            color: drawing.color,
+            lineWidth: drawing.lineWidth,
+          });
+          renderer.draw(ctx, priceToCoordinate, timeToCoordinate);
+          break;
+        }
+        case 'fibonacci': {
+          const renderer = createFibonacciRenderer({
+            startTime: drawing.start.time,
+            startPrice: drawing.start.price,
+            endTime: drawing.end.time,
+            endPrice: drawing.end.price,
+            levels: drawing.levels,
             color: drawing.color,
             lineWidth: drawing.lineWidth,
           });
@@ -633,10 +676,12 @@ export default function ChartDrawings({
 
   return (
     <>
-      {/* Drawing Overlay Canvas - captures events when tool is active */}
+      {/* Drawing Overlay Canvas — always pointer-events-none so clicks reach
+          the chart's own canvas where chart.subscribeClick is registered. The
+          parent chartWrapRef in BacktestChart applies the crosshair cursor. */}
       <canvas
         ref={overlayRef}
-        className={`absolute inset-0 z-20 ${activeTool ? 'cursor-crosshair' : 'pointer-events-none'}`}
+        className="pointer-events-none absolute inset-0 z-20"
       />
 
 		{/* Action buttons for selected drawing */}

@@ -50,7 +50,7 @@ export default function BacktestTradeMenu({
           variant="ghost"
           size="sm"
           disabled={disabled}
-          className="h-8 border border-white/10 bg-white/5 text-xs text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-40"
+          className="h-8 text-xs text-zinc-300 hover:bg-transparent hover:text-white disabled:opacity-40"
         >
           <TrendingUp className="h-3.5 w-3.5" />
           {armedAction ? ACTION_LABELS[armedAction] : 'Trade'}

@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
-export type DrawingTool = 'trendline' | 'horizontal' | 'rectangle' | null;
+import { DEFAULT_FIBONACCI_LEVELS } from '@/components/trading/plugins/FibonacciPrimitive';
+
+export type DrawingTool = 'trendline' | 'horizontal' | 'rectangle' | 'fibonacci' | null;
 
 export interface DrawingPoint {
   time: number;
@@ -33,7 +35,14 @@ export interface RectangleDrawing extends BaseDrawing {
   end: DrawingPoint;
 }
 
-export type Drawing = TrendLineDrawing | HorizontalLineDrawing | RectangleDrawing;
+export interface FibonacciDrawing extends BaseDrawing {
+  type: 'fibonacci';
+  start: DrawingPoint;
+  end: DrawingPoint;
+  levels: number[];
+}
+
+export type Drawing = TrendLineDrawing | HorizontalLineDrawing | RectangleDrawing | FibonacciDrawing;
 
 const DEFAULT_COLORS = ['#f59e0b', '#22c55e', '#ef4444', '#3b82f6', '#a855f7', '#ffffff'];
 const DEFAULT_LINE_WIDTH = 2;
@@ -65,6 +74,10 @@ function isDrawingPoint(value: unknown): value is DrawingPoint {
   const point = value as Record<string, unknown>;
   return typeof point.time === 'number' && Number.isFinite(point.time)
     && typeof point.price === 'number' && Number.isFinite(point.price);
+}
+
+function isNumberArray(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'number' && Number.isFinite(item));
 }
 
 function normalizeDrawings(loaded: unknown): Drawing[] {
@@ -137,6 +150,22 @@ function normalizeDrawings(loaded: unknown): Drawing[] {
         });
         break;
       }
+      case 'fibonacci': {
+        if (!isDrawingPoint(drawing.start) || !isDrawingPoint(drawing.end)) {
+          continue;
+        }
+
+        normalized.push({
+          id,
+          type: 'fibonacci',
+          start: drawing.start,
+          end: drawing.end,
+          levels: isNumberArray(drawing.levels) ? drawing.levels : DEFAULT_FIBONACCI_LEVELS,
+          color,
+          lineWidth,
+        });
+        break;
+      }
       default:
         break;
     }
@@ -172,6 +201,18 @@ function createTempDrawing(
       type: 'horizontal',
       price: point.price,
       time: point.time,
+      color,
+      lineWidth,
+    };
+  }
+
+  if (tool === 'fibonacci') {
+    return {
+      id,
+      type: 'fibonacci',
+      start: point,
+      end: point,
+      levels: DEFAULT_FIBONACCI_LEVELS,
       color,
       lineWidth,
     };
