@@ -200,24 +200,37 @@ export default function BacktestingTab() {
       {view.kind === 'chart' ? (
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_220px] xl:grid-cols-[minmax(0,1fr)_280px]">
           <main className="flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden pr-2">
-            <div className="flex h-7 shrink-0 items-center gap-2 px-3 text-xs text-zinc-500">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => setView({ kind: 'manager' })}
-                className="text-white hover:bg-white/10 hover:text-white"
-                aria-label="Back to backtest manager"
-                title="Back to backtest manager"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              {view.id ? (
-                <>
-                  <span>|</span>
-                  <span className="text-zinc-300">{view.name ?? 'Backtest'}</span>
-                </>
-              ) : null}
+            <div className="grid h-7 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 px-3 text-xs text-zinc-500">
+              <div className="flex min-w-0 items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => setView({ kind: 'manager' })}
+                  className="text-white hover:bg-white/10 hover:text-white"
+                  aria-label="Back to backtest manager"
+                  title="Back to backtest manager"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+                {view.id ? (
+                  <>
+                    <span>|</span>
+                    <span className="truncate text-zinc-300">{view.name ?? 'Backtest'}</span>
+                  </>
+                ) : null}
+              </div>
+
+              <div className="flex min-w-0 items-center justify-center gap-2">
+                {selected ? (
+                  <>
+                    <span className="font-mono text-sm font-semibold text-white">{selected.ticker}</span>
+                    <span className="font-mono text-xs tabular-nums text-zinc-500">{selected.date}</span>
+                  </>
+                ) : null}
+              </div>
+
+              <div />
             </div>
 
             <div className="grid h-10 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border border-white/10 bg-[#121214] px-3">
@@ -232,14 +245,14 @@ export default function BacktestingTab() {
                     value={lookupTicker}
                     onChange={(event) => setLookupTicker(event.target.value.toUpperCase())}
                     placeholder="TICKER"
-                    className="h-7 w-32 border-white/10 bg-white/5 pl-7 font-mono text-xs uppercase text-zinc-100 placeholder:text-zinc-600"
+                    className="h-7 w-[8.25rem] border-white/10 bg-white/5 pl-7 font-mono text-xs uppercase text-zinc-100 placeholder:text-zinc-600"
                   />
                 </div>
                 <input
                   type="date"
                   value={lookupDate}
                   onChange={(event) => setLookupDate(event.target.value)}
-                  className="h-7 rounded-md border border-white/10 bg-white/5 px-2 font-mono text-xs text-zinc-100 [color-scheme:dark]"
+                  className="h-7 w-[8.25rem] rounded-md border border-white/10 bg-white/5 px-2 font-mono text-xs text-zinc-100 [color-scheme:dark]"
                 />
                 <Button
                   type="submit"
@@ -252,10 +265,7 @@ export default function BacktestingTab() {
                 </Button>
               </form>
 
-              <div className="flex min-w-0 items-center justify-center gap-2">
-                <span className="font-mono text-sm font-semibold text-white">{selected?.ticker ?? 'No ticker'}</span>
-                {selected ? <span className="font-mono text-xs tabular-nums text-zinc-500">{selected.date}</span> : null}
-              </div>
+              <div />
 
               <div className="flex items-center justify-end gap-2">
                 <div className="flex items-center gap-0.5">

@@ -177,20 +177,8 @@ export default function BacktestManagerView({
       <div className="grid min-h-0 flex-1 gap-4 p-4 sm:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)]">
         <div className="flex min-h-0 flex-col rounded-md border border-white/10 bg-[#111319]">
           <div className="border-b border-white/10 p-3">
-            <div className="mb-3">
+            <div className="mb-3 flex items-center justify-between gap-3">
               <h3 className="font-mono text-sm font-semibold text-white">Saved Tests</h3>
-            </div>
-            <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
-                <Input
-                  value={backtestSearch}
-                  onChange={(event) => setBacktestSearch(event.target.value)}
-                  placeholder="Search backtests"
-                  className="h-8 border-white/10 bg-white/5 pl-8 text-xs text-zinc-100 placeholder:text-zinc-600"
-                />
-              </div>
-
               <Select
                 value={sortKey}
                 onValueChange={(value) => setSortKey(value as 'updatedAt' | 'createdAt' | 'name' | 'author')}
@@ -208,6 +196,17 @@ export default function BacktestManagerView({
                   <SelectItem value="author">Author</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="grid gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+                <Input
+                  value={backtestSearch}
+                  onChange={(event) => setBacktestSearch(event.target.value)}
+                  placeholder="Search backtests"
+                  className="h-8 border-white/10 bg-white/5 pl-8 text-xs text-zinc-100 placeholder:text-zinc-600"
+                />
+              </div>
             </div>
           </div>
 

@@ -5,6 +5,13 @@ import { ArrowDown, ArrowUp, Search } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 export type BacktestSelection = {
@@ -31,6 +38,26 @@ type BacktestDetailResponse = {
     id: string;
     name: string;
     sampleSetRows?: Array<{ ticker: string; date: string }> | null;
+  };
+  error?: string;
+};
+
+type SampleSetListItem = {
+  id: string;
+  name: string;
+  ownerName: string | null;
+};
+
+type SampleSetListResponse = {
+  sampleSets?: SampleSetListItem[];
+  error?: string;
+};
+
+type SampleSetDetailResponse = {
+  sampleSet?: {
+    id: string;
+    name: string;
+    rows?: Array<{ ticker: string; date: string }> | null;
   };
   error?: string;
 };
@@ -97,13 +124,43 @@ export default function BacktestingSidebar({
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [sampleSetRows, setSampleSetRows] = useState<SystemTickerRow[] | null>(null);
   const [activeBacktestName, setActiveBacktestName] = useState<string | null>(null);
+  const [availableSampleSets, setAvailableSampleSets] = useState<SampleSetListItem[]>([]);
+  const [selectedSampleSetId, setSelectedSampleSetId] = useState<string>('');
+  const [selectedSampleSetName, setSelectedSampleSetName] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const loadSampleSets = async () => {
+      try {
+        const response = await fetch('/api/sample-sets', { signal: controller.signal });
+        const payload = (await response.json().catch(() => ({}))) as SampleSetListResponse;
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Could not load sample sets');
+        }
+
+        setAvailableSampleSets(payload.sampleSets ?? []);
+      } catch (loadError) {
+        if (controller.signal.aborted) return;
+        console.error(loadError);
+        setAvailableSampleSets([]);
+      }
+    };
+
+    void loadSampleSets();
+
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     if (!activeBacktestId) {
-      setSampleSetRows(null);
       setActiveBacktestName(null);
       return;
     }
+
+    setSelectedSampleSetId('');
+    setSelectedSampleSetName(null);
+    setSampleSetRows(null);
 
     const controller = new AbortController();
 
@@ -139,6 +196,48 @@ export default function BacktestingSidebar({
     return () => controller.abort();
   }, [activeBacktestId]);
 
+  useEffect(() => {
+    if (activeBacktestId) return;
+    if (!selectedSampleSetId) {
+      setSampleSetRows(null);
+      setSelectedSampleSetName(null);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const loadSampleSet = async () => {
+      try {
+        const response = await fetch(`/api/sample-sets/${selectedSampleSetId}`, { signal: controller.signal });
+        const payload = (await response.json().catch(() => ({}))) as SampleSetDetailResponse;
+        if (!response.ok || !payload.sampleSet) {
+          throw new Error(payload.error ?? 'Could not load sample set');
+        }
+
+        setSelectedSampleSetName(payload.sampleSet.name);
+        setSampleSetRows(
+          (payload.sampleSet.rows ?? []).map((row, index) => ({
+            id: `${row.ticker}-${row.date}-${index}`,
+            ticker: row.ticker,
+            date: row.date,
+            grade: null,
+            setupType: null,
+            day1GapPct: null,
+          })),
+        );
+      } catch (loadError) {
+        if (controller.signal.aborted) return;
+        console.error(loadError);
+        setSampleSetRows([]);
+        setSelectedSampleSetName(null);
+      }
+    };
+
+    void loadSampleSet();
+
+    return () => controller.abort();
+  }, [activeBacktestId, selectedSampleSetId]);
+
   const visibleRows = useMemo(() => {
     const query = filter.trim().toUpperCase();
     const sortRows = (list: SystemTickerRow[]) =>
@@ -154,7 +253,7 @@ export default function BacktestingSidebar({
     );
   }, [filter, rows, sampleSetRows, sortDirection]);
 
-  const sourceLabel = activeBacktestName ?? 'System';
+  const sourceLabel = activeBacktestName ?? selectedSampleSetName ?? 'System';
 
   return (
     <aside className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-white/10 bg-[#0A0A0B]">
@@ -173,6 +272,25 @@ export default function BacktestingSidebar({
             className="h-8 border-white/10 bg-white/5 pl-8 text-xs text-zinc-100 placeholder:text-zinc-600"
           />
         </div>
+
+        {!activeBacktestId ? (
+          <Select value={selectedSampleSetId || '__system__'} onValueChange={(value) => setSelectedSampleSetId(value === '__system__' ? '' : value)}>
+            <SelectTrigger
+              aria-label="Select Sample Set"
+              className="mt-2 h-8 w-full border-white/10 bg-black text-xs text-zinc-100"
+            >
+              <SelectValue placeholder="Select Sample Set" />
+            </SelectTrigger>
+            <SelectContent className="border-white/10 bg-black text-white">
+              <SelectItem value="__system__">Select Sample Set</SelectItem>
+              {availableSampleSets.map((sampleSet) => (
+                <SelectItem key={sampleSet.id} value={sampleSet.id}>
+                  {(sampleSet.ownerName ?? 'Unknown')} - {sampleSet.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
 
         <div className="mt-2 flex items-center justify-between">
           <div className="flex min-w-0 items-center gap-1.5">
