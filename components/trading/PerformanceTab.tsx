@@ -106,7 +106,42 @@ export default function PerformanceTab({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-mono uppercase tracking-wider text-zinc-500">Tag Filter</span>
+          <TagFilterDropdown
+            globalTags={globalTags}
+            selectedTags={selectedTagFilters}
+            onToggleTag={(tag) => {
+              setSelectedTagFilters((prev) => {
+                const next = new Set(prev);
+                if (next.has(tag)) next.delete(tag);
+                else next.add(tag);
+                return next;
+              });
+            }}
+            onClearTags={() => setSelectedTagFilters(new Set())}
+          />
+        </div>
+        <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
+          <button
+            type="button"
+            onClick={() => onMetricChange('$')}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === '$' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+          >
+            $ Metrics
+          </button>
+          <button
+            type="button"
+            onClick={() => onMetricChange('R')}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === 'R' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+          >
+            R Metrics
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-2 grid grid-cols-1 gap-6 md:grid-cols-3">
         <div className="rounded-xl border border-white/10 bg-[#121214] p-6">
           <div className="mb-2 text-xs font-mono uppercase tracking-wider text-zinc-500">
             Total {pnlMode === 'net' ? 'Net' : 'Gross'} PnL
@@ -150,42 +185,6 @@ export default function PerformanceTab({
               {stats.largestLoss ? `${stats.largestLoss.symbol} ${fmtCurrency(stats.largestLoss.value)}` : '-'}
             </p>
           </div>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 p-1">
-          <button
-            type="button"
-            onClick={() => onMetricChange('$')}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === '$' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
-          >
-            $ Metrics
-          </button>
-          <button
-            type="button"
-            onClick={() => onMetricChange('R')}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === 'R' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
-          >
-            R Metrics
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-mono uppercase tracking-wider text-zinc-500">Tag Filter</span>
-          <TagFilterDropdown
-            globalTags={globalTags}
-            selectedTags={selectedTagFilters}
-            onToggleTag={(tag) => {
-              setSelectedTagFilters((prev) => {
-                const next = new Set(prev);
-                if (next.has(tag)) next.delete(tag);
-                else next.add(tag);
-                return next;
-              });
-            }}
-            onClearTags={() => setSelectedTagFilters(new Set())}
-          />
         </div>
       </div>
 
