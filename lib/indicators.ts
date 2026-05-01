@@ -134,6 +134,41 @@ export function vwap(candles: OHLCData[]): (number | null)[] {
   return result;
 }
 
+export function sessionVwap(candles: OHLCData[], getSessionKey: (candle: OHLCData) => string | null): (number | null)[] {
+  const result: (number | null)[] = [];
+  let currentSessionKey: string | null = null;
+  let cumVolume = 0;
+  let cumTP = 0;
+
+  for (const candle of candles) {
+    const sessionKey = getSessionKey(candle);
+    if (sessionKey !== currentSessionKey) {
+      currentSessionKey = sessionKey;
+      cumVolume = 0;
+      cumTP = 0;
+    }
+
+    const high = Number(candle.high);
+    const low = Number(candle.low);
+    const close = Number(candle.close);
+    const volume = Number(candle.volume);
+
+    if (!sessionKey || ![high, low, close].every(Number.isFinite)) {
+      result.push(null);
+      continue;
+    }
+
+    const typicalPrice = (high + low + close) / 3;
+    const safeVolume = Number.isFinite(volume) ? volume : 0;
+
+    cumVolume += safeVolume;
+    cumTP += typicalPrice * safeVolume;
+    result.push(cumVolume > 0 ? cumTP / cumVolume : null);
+  }
+
+  return result;
+}
+
 // VWAP anchored at a specific epoch (ms). Candles before the anchor produce
 // `null` so the chart line only starts at the anchor — matches "session VWAP"
 // behavior so PM bars on the trade's day get included from the 04:00 NY open.

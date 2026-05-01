@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SimPosition } from '@/lib/backtest-math';
 import type { BacktestAction, BacktestSession } from '@/lib/types';
 
-const { useBacktestSessionMock } = vi.hoisted(() => ({
+const { chartGridProps, useBacktestSessionMock } = vi.hoisted(() => ({
+  chartGridProps: [] as Array<{ ticker: string | null; date: string | null; extraSessionsForward: number }>,
   useBacktestSessionMock: vi.fn(),
 }));
 
@@ -29,9 +30,18 @@ vi.mock('@/hooks/use-backtest-session', () => ({
 }));
 
 vi.mock('@/components/trading/BacktestChartGrid', () => ({
-  default: ({ ticker, date }: { ticker: string | null; date: string | null }) => (
-    <div>{ticker && date ? 'Grid ready' : 'Pick a ticker on the right'}</div>
-  ),
+  default: ({
+    ticker,
+    date,
+    extraSessionsForward,
+  }: {
+    ticker: string | null;
+    date: string | null;
+    extraSessionsForward: number;
+  }) => {
+    chartGridProps.push({ ticker, date, extraSessionsForward });
+    return <div>{ticker && date ? 'Grid ready' : 'Pick a ticker on the right'}</div>;
+  },
 }));
 
 vi.mock('@/components/trading/BacktestTradeMenu', () => ({
@@ -136,6 +146,7 @@ function makeBaseSessionState(direction: 'FLAT' | 'LONG' | 'SHORT'): MockSession
 describe('BacktestingTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    chartGridProps.length = 0;
     useBacktestSessionMock.mockReturnValue(makeSessionState('FLAT'));
     window.localStorage.clear();
   });
@@ -168,6 +179,17 @@ describe('BacktestingTab', () => {
     expect((screen.getByRole('button', { name: 'SHORT ADD' }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole('button', { name: 'COVER' }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole('button', { name: 'SELL' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('passes the global forward-day count to the chart grid', () => {
+    render(<BacktestingTab />);
+    fireEvent.click(screen.getByText('Select AAPL'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add one forward day' }));
+
+    expect(chartGridProps.at(-1)?.extraSessionsForward).toBe(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove one forward day' }));
+    expect(chartGridProps.at(-1)?.extraSessionsForward).toBe(0);
   });
 
   it('enables Clear and removes the old New button while viewing a review', () => {

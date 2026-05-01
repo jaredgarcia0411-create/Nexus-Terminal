@@ -54,6 +54,8 @@ export type FrameConfig = {
 
 export type BacktestTimeframeKey = '1m' | '2m' | '3m' | '5m' | '10m' | '15m' | '30m' | '1h' | '4h' | '1D' | '1W' | '1M';
 
+export const BACKTEST_TIMEFRAME_STEP_ORDER: BacktestTimeframeKey[] = ['1m', '2m', '3m', '5m', '15m', '1h', '1D'];
+
 export const BACKTEST_FRAME_CONFIG: Record<BacktestTimeframeKey, FrameConfig> = {
   '1m': { label: '1m', periodType: 'day', period: '2', frequencyType: 'minute', frequency: '1', intraday: true },
   '2m': { label: '2m', periodType: 'day', period: '2', frequencyType: 'minute', frequency: '2', intraday: true },

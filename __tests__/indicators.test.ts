@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bollingerBands, ema, ema9, ema20, ema21, ema50, macd, rsi, sma, sma20, sma50, sma200, vwap, type OHLCData } from '@/lib/indicators';
+import { bollingerBands, ema, ema9, ema20, ema21, ema50, macd, rsi, sessionVwap, sma, sma20, sma50, sma200, vwap, type OHLCData } from '@/lib/indicators';
 
 describe('sma', () => {
   it('returns null warmup slots and rolling means', () => {
@@ -93,6 +93,24 @@ describe('vwap', () => {
     const result = vwap(candles);
 
     expect(result).toEqual([null, null, 12]);
+  });
+});
+
+describe('sessionVwap', () => {
+  it('resets cumulative VWAP when the session key changes', () => {
+    const candles: OHLCData[] = [
+      { time: 1, open: 9, high: 10, low: 8, close: 9, volume: 100 },
+      { time: 2, open: 12, high: 13, low: 11, close: 12, volume: 100 },
+      { time: 3, open: 19, high: 20, low: 18, close: 19, volume: 100 },
+      { time: 4, open: 22, high: 23, low: 21, close: 22, volume: 100 },
+    ];
+
+    const result = sessionVwap(candles, (candle) => (candle.time < 3 ? '2026-04-23' : '2026-04-24'));
+
+    expect(result[0]).toBeCloseTo(9, 8);
+    expect(result[1]).toBeCloseTo(10.5, 8);
+    expect(result[2]).toBeCloseTo(19, 8);
+    expect(result[3]).toBeCloseTo(20.5, 8);
   });
 });
 

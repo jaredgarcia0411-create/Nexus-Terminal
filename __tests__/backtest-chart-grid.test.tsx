@@ -10,9 +10,9 @@ const { chartProps } = vi.hoisted(() => ({
 vi.mock('@/components/trading/BacktestChart', () => ({
   default: (props: Record<string, unknown>) => {
     chartProps.push(props);
-    const timeframe = String(props.defaultTimeframe);
+    const timeframe = String(props.timeframe);
     const onToggleExpanded = props.onToggleExpanded as (() => void) | undefined;
-    const onExtraSessionsForwardChange = props.onExtraSessionsForwardChange as ((next: number) => void) | undefined;
+    const onTimeframeChange = props.onTimeframeChange as ((next: string) => void) | undefined;
     const extraSessionsForward = Number(props.extraSessionsForward ?? 0);
 
     return (
@@ -20,12 +20,7 @@ vi.mock('@/components/trading/BacktestChart', () => ({
         <span>{timeframe}</span>
         <span data-testid={`extra-${timeframe}`}>{extraSessionsForward}</span>
         <button type="button" onClick={onToggleExpanded}>toggle {timeframe}</button>
-        <button type="button" onClick={() => onExtraSessionsForwardChange?.(extraSessionsForward + 1)}>
-          right {timeframe}
-        </button>
-        <button type="button" onClick={() => onExtraSessionsForwardChange?.(Math.max(0, extraSessionsForward - 1))}>
-          left {timeframe}
-        </button>
+        <button type="button" onClick={() => onTimeframeChange?.('15m')}>timeframe {timeframe}</button>
       </div>
     );
   },
@@ -43,6 +38,7 @@ function renderGrid() {
       onArmedClick={vi.fn()}
       actions={[]}
       currentStop={null}
+      extraSessionsForward={0}
     />,
   );
 }
@@ -76,20 +72,40 @@ describe('BacktestChartGrid', () => {
     renderGrid();
 
     const firstRender = chartProps.slice(0, 4);
-    expect(firstRender.find((props) => props.defaultTimeframe === '5m')?.drawingsController).toBeTruthy();
-    expect(firstRender.find((props) => props.defaultTimeframe === '15m')?.drawingsController).toBeTruthy();
-    expect(firstRender.find((props) => props.defaultTimeframe === '1h')?.drawingsController).toBeTruthy();
-    expect(firstRender.find((props) => props.defaultTimeframe === '1D')?.drawingsController).toBeNull();
+    expect(firstRender.find((props) => props.timeframe === '5m')?.drawingsController).toBeTruthy();
+    expect(firstRender.find((props) => props.timeframe === '15m')?.drawingsController).toBeTruthy();
+    expect(firstRender.find((props) => props.timeframe === '1h')?.drawingsController).toBeTruthy();
+    expect(firstRender.find((props) => props.timeframe === '1D')?.drawingsController).toBeNull();
   });
 
-  it('updates the expanded chart forward-session count', () => {
+  it('passes the global forward-session count to every visible chart', () => {
+    render(
+      <BacktestChartGrid
+        ticker="AAPL"
+        date="2026-04-28"
+        onAnchorChange={vi.fn()}
+        armedAction={null}
+        onArmedClick={vi.fn()}
+        actions={[]}
+        currentStop={null}
+        extraSessionsForward={2}
+      />,
+    );
+
+    expect(screen.getByTestId('extra-5m').textContent).toBe('2');
+    expect(screen.getByTestId('extra-15m').textContent).toBe('2');
+    expect(screen.getByTestId('extra-1h').textContent).toBe('2');
+    expect(screen.getByTestId('extra-1D').textContent).toBe('2');
+  });
+
+  it('updates a chart slot timeframe without changing the other slots', () => {
     renderGrid();
 
-    fireEvent.click(screen.getByRole('button', { name: 'toggle 5m' }));
-    fireEvent.click(screen.getByRole('button', { name: 'right 5m' }));
-    expect(screen.getByTestId('extra-5m').textContent).toBe('1');
+    fireEvent.click(screen.getByRole('button', { name: 'timeframe 5m' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'left 5m' }));
-    expect(screen.getByTestId('extra-5m').textContent).toBe('0');
+    expect(screen.queryByTestId('chart-5m')).toBeNull();
+    expect(screen.getAllByTestId('chart-15m')).toHaveLength(2);
+    expect(screen.getByTestId('chart-1h')).toBeTruthy();
+    expect(screen.getByTestId('chart-1D')).toBeTruthy();
   });
 });

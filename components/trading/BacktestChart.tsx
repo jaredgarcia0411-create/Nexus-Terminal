@@ -38,9 +38,8 @@ import {
 import { useCandleData } from '@/hooks/use-candle-data';
 import type { ChartDrawingsController, DrawingTool } from '@/hooks/use-chart-drawings';
 import { buildExtendedHoursShadeSegments, buildSessionShadeRects, type SessionShadeRect } from '@/lib/chart-session-shading';
-import { BACKTEST_FRAME_CONFIG, type BacktestTimeframeKey } from '@/lib/chart-timeframes';
+import { BACKTEST_FRAME_CONFIG, BACKTEST_TIMEFRAME_STEP_ORDER, type BacktestTimeframeKey } from '@/lib/chart-timeframes';
 import {
-  anchoredVwap,
   atr,
   bollingerBands,
   ema9,
@@ -51,6 +50,7 @@ import {
   sma20,
   sma50,
   sma200,
+  sessionVwap,
   vwap,
   type OHLCData,
 } from '@/lib/indicators';
@@ -95,7 +95,8 @@ type MarketDataResponse = {
 interface BacktestChartProps {
   ticker: string;
   anchorDate: string;
-  defaultTimeframe: BacktestTimeframeKey;
+  timeframe: BacktestTimeframeKey;
+  onTimeframeChange: (timeframe: BacktestTimeframeKey) => void;
   defaultIndicators?: readonly IndicatorKey[];
   onAnchorChange?: (newDate: string) => void;
   armedAction?: BacktestActionType | null;
@@ -108,7 +109,6 @@ interface BacktestChartProps {
   isExpanded?: boolean;
   onToggleExpanded?: () => void;
   extraSessionsForward?: number;
-  onExtraSessionsForwardChange?: (next: number) => void;
 }
 
 const UP_COLOR = '#ffffff';
@@ -240,6 +240,12 @@ function buildMarketOptions(anchorDate: string, timeframe: BacktestTimeframeKey,
   };
 }
 
+function getSteppedTimeframe(timeframe: BacktestTimeframeKey, direction: -1 | 1): BacktestTimeframeKey | null {
+  const index = BACKTEST_TIMEFRAME_STEP_ORDER.indexOf(timeframe);
+  if (index < 0) return null;
+  return BACKTEST_TIMEFRAME_STEP_ORDER[index + direction] ?? null;
+}
+
 function dailyDateKey(epochMs: number, anchorDate?: string) {
   const utcDate = new Date(epochMs).toISOString().slice(0, 10);
   if (utcDate === anchorDate) return utcDate;
@@ -334,7 +340,8 @@ function addLineOverlay(
 export default function BacktestChart({
   ticker,
   anchorDate,
-  defaultTimeframe,
+  timeframe,
+  onTimeframeChange,
   defaultIndicators = [],
   onAnchorChange,
   armedAction = null,
@@ -347,9 +354,7 @@ export default function BacktestChart({
   isExpanded = false,
   onToggleExpanded,
   extraSessionsForward = 0,
-  onExtraSessionsForwardChange,
 }: BacktestChartProps) {
-  const [timeframe, setTimeframe] = useState<BacktestTimeframeKey>(defaultTimeframe);
   const [indicators, setIndicators] = useState<Set<IndicatorKey>>(() => new Set(defaultIndicators));
   const [seriesType, setSeriesType] = useState<SeriesType>('candles');
   const [drawingsCount, setDrawingsCount] = useState(0);
@@ -380,13 +385,24 @@ export default function BacktestChart({
     [anchorDate, extraSessionsForward, timeframe],
   );
   const { candles, isLoading, error } = useCandleData(ticker, marketOptions);
+  const sortedCandleTimes = useMemo(
+    () => candles.map((candle) => candle.datetime).sort((a, b) => a - b),
+    [candles],
+  );
   const priorClose = usePriorDailyClose(ticker, anchorDate, frame.intraday);
   const indicatorSummary = useMemo(() => formatIndicatorSummary(indicators), [indicators]);
   const drawingScope = `${ticker}:${anchorDate}:${timeframe}`;
-  const canDraw = drawingsController != null && onDrawingToolChange != null;
+  const canDraw = frame.intraday && drawingsController != null && onDrawingToolChange != null;
+  const previousTimeframe = getSteppedTimeframe(timeframe, -1);
+  const nextTimeframe = getSteppedTimeframe(timeframe, 1);
   const handleDrawingToolChange = useCallback((tool: DrawingTool) => {
     onDrawingToolChange?.(tool);
   }, [onDrawingToolChange]);
+  const handleTimeframeChange = useCallback((nextTimeframeValue: BacktestTimeframeKey) => {
+    if (nextTimeframeValue === timeframe) return;
+    onDrawingToolChange?.(null);
+    onTimeframeChange(nextTimeframeValue);
+  }, [onDrawingToolChange, onTimeframeChange, timeframe]);
 
   useEffect(() => {
     activeDrawingToolRef.current = activeDrawingTool;
@@ -527,11 +543,11 @@ export default function BacktestChart({
     if (indicators.has('EMA21')) addLineOverlay(chart, sortedCandles, ema21(closes), '#f97316');
     if (indicators.has('EMA50')) addLineOverlay(chart, sortedCandles, ema50(closes), '#38bdf8');
     if (indicators.has('VWAP')) {
-      // For intraday charts, anchor VWAP at 04:00 NY of the trade's date so the
-      // line starts at the PM open and includes pre-market bars. For daily
-      // charts (no PM concept), fall back to the simple cumulative VWAP.
-      const anchorEpochMs = frame.intraday ? nyDateTimeToEpoch(anchorDate, '04:00:00') : null;
-      const values = anchorEpochMs != null ? anchoredVwap(ohlc, anchorEpochMs) : vwap(ohlc);
+      // Intraday data is requested from 04:00 to 20:00 ET, so grouping by NY
+      // date resets VWAP at each loaded pre-market open.
+      const values = frame.intraday
+        ? sessionVwap(ohlc, (candle) => (Number.isFinite(candle.time) ? epochToNySortKey(candle.time) : null))
+        : vwap(ohlc);
       addLineOverlay(chart, sortedCandles, values, '#f472b6');
     }
 
@@ -831,9 +847,20 @@ export default function BacktestChart({
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-white/10 bg-[#0A0A0B] px-2">
         <div className="mr-1 flex min-w-0 items-baseline gap-2">
           <span className="font-mono text-xs font-semibold text-zinc-100">{ticker}</span>
-          <span className="font-mono text-[11px] tabular-nums text-zinc-500">{BACKTEST_FRAME_CONFIG[timeframe].label}</span>
         </div>
 
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          disabled={!previousTimeframe}
+          onClick={() => previousTimeframe && handleTimeframeChange(previousTimeframe)}
+          className="text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-30"
+          title="Previous timeframe"
+          aria-label="Previous timeframe"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button type="button" variant="ghost" size="xs" className="h-7 px-2 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white">
@@ -841,7 +868,7 @@ export default function BacktestChart({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="border-white/10 bg-[#111319] text-white">
-            <DropdownMenuRadioGroup value={timeframe} onValueChange={(value) => setTimeframe(value as BacktestTimeframeKey)}>
+            <DropdownMenuRadioGroup value={timeframe} onValueChange={(value) => handleTimeframeChange(value as BacktestTimeframeKey)}>
               {TIMEFRAME_OPTIONS.map(([key, config]) => (
                 <DropdownMenuRadioItem key={key} value={key} className="cursor-pointer text-xs">
                   {config.label}
@@ -850,6 +877,18 @@ export default function BacktestChart({
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          disabled={!nextTimeframe}
+          onClick={() => nextTimeframe && handleTimeframeChange(nextTimeframe)}
+          className="text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-30"
+          title="Next timeframe"
+          aria-label="Next timeframe"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </Button>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -899,38 +938,6 @@ export default function BacktestChart({
         ) : null}
 
         <div className="ml-auto flex items-center gap-0.5">
-          {isExpanded ? (
-            <>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                disabled={extraSessionsForward <= 0}
-                onClick={() => onExtraSessionsForwardChange?.(Math.max(0, extraSessionsForward - 1))}
-                className="text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-30"
-                title="Remove one forward day"
-                aria-label="Remove one forward day"
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </Button>
-              {extraSessionsForward > 0 ? (
-                <span className="px-1 font-mono text-[11px] tabular-nums text-zinc-400">
-                  +{extraSessionsForward} {extraSessionsForward === 1 ? 'day' : 'days'}
-                </span>
-              ) : null}
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => onExtraSessionsForwardChange?.(extraSessionsForward + 1)}
-                className="text-zinc-300 hover:bg-white/10 hover:text-white"
-                title="Add one forward day"
-                aria-label="Add one forward day"
-              >
-                <ChevronRight className="h-3.5 w-3.5" />
-              </Button>
-            </>
-          ) : null}
           {canDraw ? (
             <DrawingToolbar
               activeTool={activeDrawingTool}
@@ -1002,6 +1009,7 @@ export default function BacktestChart({
             onToolChange={handleDrawingToolChange}
             selectedColor="#ffffff"
             lineWidth={1}
+            timeMarkers={sortedCandleTimes}
             persistDrawings={false}
             controller={drawingsController}
             onInteractionChange={setIsDrawingInteractionActive}

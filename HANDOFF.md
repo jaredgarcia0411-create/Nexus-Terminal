@@ -5,6 +5,16 @@
 
 ## Recently Completed Spec
 
+## Follow-up — Backtesting Timeframe/Day Controls + VWAP Reset
+
+> Updated: 2026-05-01 | Status: IMPLEMENTED — awaiting user dev-server review.
+
+- Replaced the redundant per-chart timeframe text with always-visible previous/next timeframe controls beside the timeframe picker.
+- Replaced the top-bar risk readout with a global forward-day control; all chart cells now receive the same added trading-session range.
+- Kept the chart-grid slots stable while allowing each slot to step through `1m -> 2m -> 3m -> 5m -> 15m -> 1h -> 1D`.
+- Tightened shared drawing projection across intraday timeframes by interpolating drawing timestamps between candle times when an exact bar timestamp does not exist on the target timeframe.
+- Changed intraday VWAP to reset by NY session date, so each loaded day starts a fresh VWAP from the 04:00 ET premarket open.
+
 ## Build Spec — Dashboard Intraday Latches + Backtesting Chart/Review Controls
 
 > Generated: 2026-05-01 | Agent: Codex (`nexus-handoff`)

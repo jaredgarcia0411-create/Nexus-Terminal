@@ -147,6 +147,7 @@ interface ChartDrawingsProps {
 	symbol: string;
 	chart: IChartApi | null;
 	series: ISeriesApi<'Candlestick' | 'Bar' | 'Line' | 'Area' | 'Baseline'> | null;
+	timeMarkers?: number[];
 	activeTool: DrawingTool;
 	onToolChange?: (tool: DrawingTool) => void;
 	selectedColor: string;
@@ -162,6 +163,7 @@ export default function ChartDrawings({
 	symbol,
 	chart,
 	series,
+	timeMarkers = [],
 	activeTool,
 	onToolChange,
 	selectedColor,
@@ -204,10 +206,27 @@ export default function ChartDrawings({
   const timeToCoordinate = useCallback(
     (time: number): number | null => {
       if (!chart) return null;
-      // Convert milliseconds to seconds for lightweight-charts Time type
-      return chart.timeScale().timeToCoordinate(Math.floor(time / 1000) as Time);
+      // Convert milliseconds to seconds for lightweight-charts Time type.
+      const exact = chart.timeScale().timeToCoordinate(Math.floor(time / 1000) as Time);
+      if (exact !== null) return exact;
+
+      if (timeMarkers.length < 2) return null;
+
+      let right = timeMarkers.findIndex((marker) => marker > time);
+      if (right < 0) right = timeMarkers.length - 1;
+      const left = Math.max(0, right - 1);
+      const leftTime = timeMarkers[left];
+      const rightTime = timeMarkers[right];
+      if (leftTime === rightTime) return null;
+
+      const leftCoordinate = chart.timeScale().timeToCoordinate(Math.floor(leftTime / 1000) as Time);
+      const rightCoordinate = chart.timeScale().timeToCoordinate(Math.floor(rightTime / 1000) as Time);
+      if (leftCoordinate === null || rightCoordinate === null) return null;
+
+      const ratio = Math.max(0, Math.min(1, (time - leftTime) / (rightTime - leftTime)));
+      return leftCoordinate + (rightCoordinate - leftCoordinate) * ratio;
     },
-    [chart]
+    [chart, timeMarkers]
   );
 
   const coordinateToPrice = useCallback(

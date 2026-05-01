@@ -3,7 +3,7 @@
 import { useCallback, useState, type FormEvent } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { motion } from 'motion/react';
-import { Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 
 import BacktestChartGrid from '@/components/trading/BacktestChartGrid';
 import BacktestPlaceOrderDialog, { type BacktestOrderDraft } from '@/components/trading/BacktestPlaceOrderDialog';
@@ -13,7 +13,6 @@ import BacktestingSidebar, { type BacktestSelection } from '@/components/trading
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useBacktestSession } from '@/hooks/use-backtest-session';
-import { formatCurrency } from '@/lib/trading-utils';
 import type { BacktestActionType } from '@/lib/types';
 
 function getInitialRiskDollars() {
@@ -32,6 +31,7 @@ export default function BacktestingTab() {
   const [riskDollars, setRiskDollars] = useState(getInitialRiskDollars);
   const [armedAction, setArmedAction] = useState<BacktestActionType | null>(null);
   const [pendingOrder, setPendingOrder] = useState<BacktestOrderDraft | null>(null);
+  const [extraSessionsForward, setExtraSessionsForward] = useState(0);
   // Ad-hoc lookup form lives in the header so any ticker/date can be loaded
   // without needing it in the system list.
   const [lookupTicker, setLookupTicker] = useState('');
@@ -40,6 +40,7 @@ export default function BacktestingTab() {
   const handleSelect = useCallback((nextSelection: BacktestSelection) => {
     setArmedAction(null);
     setPendingOrder(null);
+    setExtraSessionsForward(0);
     setSelected(nextSelection);
   }, []);
 
@@ -54,6 +55,7 @@ export default function BacktestingTab() {
   const lookupValid = lookupTicker.trim().length > 0 && /^\d{4}-\d{2}-\d{2}$/.test(lookupDate);
 
   const handleAnchorChange = useCallback((newDate: string) => {
+    setExtraSessionsForward(0);
     setSelected((current) => (current ? { ...current, date: newDate } : current));
   }, []);
 
@@ -163,7 +165,35 @@ export default function BacktestingTab() {
             </form>
 
             <div className="flex items-center justify-end gap-2">
-              <span className="font-mono text-xs tabular-nums text-zinc-400">{formatCurrency(effectiveRiskDollars)}</span>
+              <div className="flex items-center gap-0.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  disabled={!selected || extraSessionsForward <= 0}
+                  onClick={() => setExtraSessionsForward((current) => Math.max(0, current - 1))}
+                  className="text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-30"
+                  title="Remove one forward day"
+                  aria-label="Remove one forward day"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <span className="min-w-9 text-center font-mono text-xs tabular-nums text-zinc-400">
+                  +{extraSessionsForward}D
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  disabled={!selected}
+                  onClick={() => setExtraSessionsForward((current) => current + 1)}
+                  className="text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-30"
+                  title="Add one forward day"
+                  aria-label="Add one forward day"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
               {!sessionState.isReadOnly ? (
                 <BacktestTradeMenu
                   disabled={!selected}
@@ -200,6 +230,7 @@ export default function BacktestingTab() {
             onArmedClick={handleArmedClick}
             actions={sessionState.actions}
             currentStop={sessionState.position.stop}
+            extraSessionsForward={extraSessionsForward}
           />
         </main>
 

@@ -4,27 +4,44 @@ import { useState } from 'react';
 
 import BacktestChart, { type IndicatorKey } from '@/components/trading/BacktestChart';
 import { useChartDrawings, type DrawingTool } from '@/hooks/use-chart-drawings';
-import type { BacktestTimeframeKey } from '@/lib/chart-timeframes';
+import { BACKTEST_FRAME_CONFIG, type BacktestTimeframeKey } from '@/lib/chart-timeframes';
 import type { BacktestAction, BacktestActionType } from '@/lib/types';
 
+type ChartSlotId = 'primary' | 'secondary' | 'hourly' | 'daily';
+
 type ChartCellConfig = {
-  timeframe: BacktestTimeframeKey;
-  indicators: IndicatorKey[];
+  id: ChartSlotId;
+  defaultTimeframe: BacktestTimeframeKey;
 };
 
 type ChartGridState = {
   scope: string;
   activeDrawingTool: DrawingTool;
-  expandedTimeframe: BacktestTimeframeKey | null;
-  extraSessionsForward: number;
+  expandedSlotId: ChartSlotId | null;
+  timeframesBySlot: Record<ChartSlotId, BacktestTimeframeKey>;
 };
 
 const DEFAULT_CELLS: ChartCellConfig[] = [
-  { timeframe: '5m', indicators: ['VWAP'] },
-  { timeframe: '15m', indicators: ['VWAP'] },
-  { timeframe: '1h', indicators: ['EMA20', 'EMA50'] },
-  { timeframe: '1D', indicators: ['SMA50', 'SMA200'] },
+  { id: 'primary', defaultTimeframe: '5m' },
+  { id: 'secondary', defaultTimeframe: '15m' },
+  { id: 'hourly', defaultTimeframe: '1h' },
+  { id: 'daily', defaultTimeframe: '1D' },
 ];
+
+function getDefaultSlotTimeframes(): Record<ChartSlotId, BacktestTimeframeKey> {
+  return {
+    primary: '5m',
+    secondary: '15m',
+    hourly: '1h',
+    daily: '1D',
+  };
+}
+
+function getDefaultIndicators(timeframe: BacktestTimeframeKey): IndicatorKey[] {
+  if (timeframe === '1D') return ['SMA50', 'SMA200'];
+  if (timeframe === '1h') return ['EMA20', 'EMA50'];
+  return ['VWAP'];
+}
 
 interface BacktestChartGridProps {
   ticker: string | null;
@@ -34,6 +51,7 @@ interface BacktestChartGridProps {
   onArmedClick: (payload: { price: number; barTime: string }) => void;
   actions: BacktestAction[];
   currentStop: number | null;
+  extraSessionsForward: number;
 }
 
 export default function BacktestChartGrid({
@@ -44,23 +62,24 @@ export default function BacktestChartGrid({
   onArmedClick,
   actions,
   currentStop,
+  extraSessionsForward,
 }: BacktestChartGridProps) {
   const drawingScope = ticker && date ? `${ticker}:${date}:intraday` : 'empty:intraday';
   const [gridState, setGridState] = useState<ChartGridState>({
     scope: drawingScope,
     activeDrawingTool: null,
-    expandedTimeframe: null,
-    extraSessionsForward: 0,
+    expandedSlotId: null,
+    timeframesBySlot: getDefaultSlotTimeframes(),
   });
   const currentGridState = gridState.scope === drawingScope
     ? gridState
     : {
       scope: drawingScope,
       activeDrawingTool: null,
-      expandedTimeframe: null,
-      extraSessionsForward: 0,
+      expandedSlotId: null,
+      timeframesBySlot: getDefaultSlotTimeframes(),
     };
-  const { activeDrawingTool, expandedTimeframe, extraSessionsForward } = currentGridState;
+  const { activeDrawingTool, expandedSlotId, timeframesBySlot } = currentGridState;
   const drawingsController = useChartDrawings(drawingScope, activeDrawingTool, '#ffffff', 1, { persist: false });
 
   const setActiveDrawingTool = (tool: DrawingTool) => {
@@ -70,18 +89,21 @@ export default function BacktestChartGrid({
     });
   };
 
-  const toggleExpandedTimeframe = (timeframe: BacktestTimeframeKey) => {
+  const toggleExpandedSlot = (slotId: ChartSlotId) => {
     setGridState({
       ...currentGridState,
-      expandedTimeframe: currentGridState.expandedTimeframe === timeframe ? null : timeframe,
-      extraSessionsForward: 0,
+      expandedSlotId: currentGridState.expandedSlotId === slotId ? null : slotId,
     });
   };
 
-  const setExtraSessionsForward = (next: number) => {
+  const setSlotTimeframe = (slotId: ChartSlotId, timeframe: BacktestTimeframeKey) => {
     setGridState({
       ...currentGridState,
-      extraSessionsForward: next,
+      activeDrawingTool: BACKTEST_FRAME_CONFIG[timeframe].intraday ? currentGridState.activeDrawingTool : null,
+      timeframesBySlot: {
+        ...currentGridState.timeframesBySlot,
+        [slotId]: timeframe,
+      },
     });
   };
 
@@ -93,24 +115,26 @@ export default function BacktestChartGrid({
     );
   }
 
-  const visibleCells = expandedTimeframe
-    ? DEFAULT_CELLS.filter((cell) => cell.timeframe === expandedTimeframe)
+  const visibleCells = expandedSlotId
+    ? DEFAULT_CELLS.filter((cell) => cell.id === expandedSlotId)
     : DEFAULT_CELLS;
 
   return (
     <div className="scrollbar-thin flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
       {visibleCells.map((cell) => {
-        const isIntradayDrawingChart = cell.timeframe === '5m' || cell.timeframe === '15m' || cell.timeframe === '1h';
-        const isExpanded = expandedTimeframe === cell.timeframe;
+        const timeframe = timeframesBySlot[cell.id] ?? cell.defaultTimeframe;
+        const isIntradayDrawingChart = BACKTEST_FRAME_CONFIG[timeframe].intraday;
+        const isExpanded = expandedSlotId === cell.id;
 
         return (
           <BacktestChart
-            key={`${ticker}:${cell.timeframe}`}
+            key={`${ticker}:${cell.id}:${timeframe}`}
             ticker={ticker}
             anchorDate={date}
-            defaultTimeframe={cell.timeframe}
-            defaultIndicators={cell.indicators}
-            onAnchorChange={cell.timeframe === '1D' ? onAnchorChange : undefined}
+            timeframe={timeframe}
+            onTimeframeChange={(nextTimeframe) => setSlotTimeframe(cell.id, nextTimeframe)}
+            defaultIndicators={getDefaultIndicators(timeframe)}
+            onAnchorChange={timeframe === '1D' ? onAnchorChange : undefined}
             armedAction={armedAction}
             onArmedClick={onArmedClick}
             actions={actions}
@@ -119,9 +143,8 @@ export default function BacktestChartGrid({
             activeDrawingTool={isIntradayDrawingChart ? activeDrawingTool : null}
             onDrawingToolChange={isIntradayDrawingChart ? setActiveDrawingTool : undefined}
             isExpanded={isExpanded}
-            onToggleExpanded={() => toggleExpandedTimeframe(cell.timeframe)}
-            extraSessionsForward={isExpanded ? extraSessionsForward : 0}
-            onExtraSessionsForwardChange={setExtraSessionsForward}
+            onToggleExpanded={() => toggleExpandedSlot(cell.id)}
+            extraSessionsForward={extraSessionsForward}
           />
         );
       })}
