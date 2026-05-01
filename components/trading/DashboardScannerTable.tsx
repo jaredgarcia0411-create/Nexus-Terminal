@@ -10,6 +10,9 @@ interface TradingViewGainer {
   avgVolume90d: number | null;
   marketCap: number | null;
   sector: string | null;
+  preMarketPrice: number | null;
+  preMarketChange: number | null;
+  preMarketVolume: number | null;
 }
 
 interface ScannerSummary {
@@ -30,7 +33,51 @@ interface MdrEligibility {
   isNew20dHigh: boolean;
   priorBase20Low: number | null;
   priorHigh20: number | null;
+  priorClose: number | null;
   fetchedAt: string;
+}
+
+type MarketSession = 'pre-market' | 'regular' | 'after-hours' | 'closed';
+
+// Inlined from lib/massive-market.ts so we don't pull a server module into the client bundle.
+function getMarketSession(now: Date = new Date()): MarketSession {
+  const dayLabel = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short',
+  }).format(now);
+  if (dayLabel === 'Sat' || dayLabel === 'Sun') return 'closed';
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+  const total = hour * 60 + minute;
+
+  if (total >= 240 && total < 570) return 'pre-market';
+  if (total >= 570 && total < 960) return 'regular';
+  if (total >= 960 && total < 1200) return 'after-hours';
+  return 'closed';
+}
+
+// Pick session-aware mark/volume for the MDR table:
+//   pre-market → pre-market price/volume (so the structural check fires on PM breakouts)
+//   regular/after/closed → today's regular session mark/volume
+function sessionMark(g: TradingViewGainer, session: MarketSession): number {
+  if (session === 'pre-market' && g.preMarketPrice != null && Number.isFinite(g.preMarketPrice)) {
+    return g.preMarketPrice;
+  }
+  return g.price;
+}
+
+function sessionVolume(g: TradingViewGainer, session: MarketSession): number {
+  if (session === 'pre-market' && g.preMarketVolume != null && Number.isFinite(g.preMarketVolume)) {
+    return g.preMarketVolume;
+  }
+  return g.volume;
 }
 
 interface DashboardScannerTableProps {
@@ -96,6 +143,9 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
   // Each entry stores the ET date when it qualified ('YYYY-MM-DD'); the Set of
   // currently-latched tickers is derived from entries whose date matches today.
   const [mdrLatched, setMdrLatched] = useState<Record<string, string>>({});
+  // Eligibility response cache — needed so the MDR table can render priorClose (true PDC).
+  // Populated whenever an eligibility response comes back (regardless of eligible result).
+  const [mdrData, setMdrData] = useState<Record<string, MdrEligibility>>({});
   // Per-ticker fetch dedupe — the eligibility check is keyed by (ticker, mark), but
   // we only want to *attempt* an eligibility fetch once per ticker per session until
   // we either get an `eligible: true` (latch it) or we re-poll on the next gainers tick.
@@ -148,27 +198,34 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
   useEffect(() => {
     if (gainers.length === 0) return;
     const today = todayInNewYork();
+    const session = getMarketSession();
 
     for (const gainer of gainers) {
       // Already latched as MDR-eligible today — don't re-check.
       if (mdrLatched[gainer.ticker] === today) continue;
 
-      // Intraday volume gate — must be >= 10M shares to even attempt eligibility.
-      if (!Number.isFinite(gainer.volume) || gainer.volume < 10_000_000) continue;
+      // Volume gate — must be >= 10M shares (pre-market vol during PM, regular vol otherwise).
+      const vol = sessionVolume(gainer, session);
+      if (!Number.isFinite(vol) || vol < 10_000_000) continue;
+
+      // Mark used for the structural check — pre-market price during PM, live mark otherwise.
+      const mark = sessionMark(gainer, session);
+      if (!Number.isFinite(mark) || mark <= 0) continue;
 
       // Dedupe per gainers tick. The Ref is cleared whenever the gainers list reference
       // changes (every 10 seconds), so a non-eligible ticker can be re-checked on the
       // next tick once its mark or volume has moved.
-      const key = `${gainer.ticker}:${gainer.price.toFixed(3)}`;
+      const key = `${gainer.ticker}:${mark.toFixed(3)}`;
       if (requestedEligibilityRef.current.has(key)) continue;
       requestedEligibilityRef.current.add(key);
 
       void (async () => {
         try {
-          const url = `/api/scanner/mdr-eligibility?ticker=${encodeURIComponent(gainer.ticker)}&mark=${gainer.price}`;
+          const url = `/api/scanner/mdr-eligibility?ticker=${encodeURIComponent(gainer.ticker)}&mark=${mark}`;
           const res = await fetch(url);
           if (!res.ok) return;
           const data = (await res.json()) as MdrEligibility;
+          setMdrData((prev) => ({ ...prev, [data.ticker]: data }));
           if (data.eligible) {
             setMdrLatched((prev) => ({ ...prev, [data.ticker]: today }));
           }
@@ -249,8 +306,19 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
               </tr>
             </thead>
             <tbody>
-              {gainers.map((gainer) => {
-                const pdc = gainer.price / (1 + gainer.change / 100);
+              {gainers
+                // Day 1 keeps the small-cap focus (< $300M). The MDR table reads the full
+                // `gainers` list separately, so removing this filter only affects Day 1.
+                .filter((g) => g.marketCap != null && g.marketCap < 300_000_000)
+                .map((gainer) => {
+                // Day 1 table is pre-market focused. During pre-market TV's `close` field
+                // returns yesterday's regular-session close — which is what we want for PDC.
+                // Mark / Mark % Chg / Volume use the dedicated pre-market columns; we fall
+                // back to TV's session-current values when pre-market data is missing.
+                const pdc = gainer.price;
+                const mark = gainer.preMarketPrice ?? gainer.price;
+                const markChange = gainer.preMarketChange ?? gainer.change;
+                const vol = gainer.preMarketVolume ?? gainer.volume;
                 const summary = summaries[gainer.ticker];
                 return (
                   <tr
@@ -266,13 +334,13 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                       <span className="text-zinc-100">{gainer.ticker}</span>
                     </TD>
                     <TD right>${pdc.toFixed(3)}</TD>
-                    <TD right>${gainer.price.toFixed(3)}</TD>
+                    <TD right>${mark.toFixed(3)}</TD>
                     <TD right>
-                      <span className={gainer.change >= 0 ? 'text-emerald-400' : 'text-rose-500'}>
-                        {gainer.change >= 0 ? '+' : ''}{gainer.change.toFixed(2)}%
+                      <span className={markChange >= 0 ? 'text-emerald-400' : 'text-rose-500'}>
+                        {markChange >= 0 ? '+' : ''}{markChange.toFixed(2)}%
                       </span>
                     </TD>
-                    <TD right>{fmtVolume(gainer.volume)}</TD>
+                    <TD right>{fmtVolume(vol)}</TD>
                     <TD right>
                       {summary ? fmtMonths(summary.cashRemainingMonths) : <span className="text-zinc-600">...</span>}
                     </TD>
@@ -327,7 +395,18 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
             <tbody>
               {(() => {
                 const today = todayInNewYork();
-                const mdrGainers = gainers.filter((g) => mdrLatched[g.ticker] === today);
+                const session = getMarketSession();
+                // Sort by recomputed Mark % Chg desc (mark vs true PDC). Pre-sort here
+                // so the table mirrors the Day 1 ordering — biggest movers up top.
+                const mdrGainers = gainers
+                  .filter((g) => mdrLatched[g.ticker] === today)
+                  .map((g) => {
+                    const pdc = mdrData[g.ticker]?.priorClose ?? g.price;
+                    const mark = sessionMark(g, session);
+                    const chg = pdc > 0 ? (mark / pdc - 1) * 100 : 0;
+                    return { gainer: g, pdc, mark, chg };
+                  })
+                  .sort((a, b) => b.chg - a.chg);
 
                 if (mdrGainers.length === 0) {
                   return (
@@ -339,8 +418,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                   );
                 }
 
-                return mdrGainers.map((gainer) => {
-                  const pdc = gainer.price / (1 + gainer.change / 100);
+                return mdrGainers.map(({ gainer, pdc, mark, chg: markChange }) => {
                   return (
                     <tr
                       key={gainer.ticker}
@@ -355,10 +433,10 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                         <span className="text-zinc-100">{gainer.ticker}</span>
                       </TD>
                       <TD right>${pdc.toFixed(3)}</TD>
-                      <TD right>${gainer.price.toFixed(3)}</TD>
+                      <TD right>${mark.toFixed(3)}</TD>
                       <TD right>
-                        <span className={gainer.change >= 0 ? 'text-emerald-400' : 'text-rose-500'}>
-                          {gainer.change >= 0 ? '+' : ''}{gainer.change.toFixed(2)}%
+                        <span className={markChange >= 0 ? 'text-emerald-400' : 'text-rose-500'}>
+                          {markChange >= 0 ? '+' : ''}{markChange.toFixed(2)}%
                         </span>
                       </TD>
                       {/* TODO: MDR threshold formulas plug in here next. */}

@@ -307,6 +307,9 @@ export interface MdrEligibilityResult {
   isNew20dHigh: boolean;
   priorBase20Low: number | null;
   priorHigh20: number | null;
+  // Most recent prior session close (yesterday's close), session-independent.
+  // Used by the dashboard to render a stable PDC for the MDR table.
+  priorClose: number | null;
   fetchedAt: string;
 }
 
@@ -333,6 +336,9 @@ export async function computeMdrEligibility(
   const lastBar = bars[bars.length - 1];
   const priorBars = lastBar && lastBar.date === todayNY ? bars.slice(0, -1) : bars;
 
+  const lastPriorBar = priorBars[priorBars.length - 1];
+  const priorClose = lastPriorBar ? lastPriorBar.close : null;
+
   // Need at least 20 prior bars for a meaningful lookback. If fewer (new IPO,
   // partial history), we conservatively return ineligible.
   if (priorBars.length < 20) {
@@ -344,6 +350,7 @@ export async function computeMdrEligibility(
       isNew20dHigh: false,
       priorBase20Low: null,
       priorHigh20: null,
+      priorClose,
       fetchedAt,
     };
   }
@@ -386,6 +393,7 @@ export async function computeMdrEligibility(
     isNew20dHigh,
     priorBase20Low,
     priorHigh20,
+    priorClose,
     fetchedAt,
   };
 }

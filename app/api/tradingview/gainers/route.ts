@@ -3,28 +3,35 @@ import { requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';
 
-// TradingView screener columns returned in order — index matches d[] array
+// TradingView screener columns returned in order — index matches d[] array.
+// `close` and `change` here are session-dependent (during pre-market they reflect
+// yesterday's regular session; during regular hours they reflect today's live values).
+// The `premarket_*` columns always reflect the current pre-market session and are used
+// directly for the Day 1 Setup table.
 const COLUMNS = [
   'name', // 0 — ticker symbol
-  'close', // 1 — current price
-  'change', // 2 — % change today
-  'volume', // 3 — today's volume
+  'close', // 1 — TV close (session-dependent; live intraday during regular hours)
+  'change', // 2 — % change of `close` vs prior session close (session-dependent)
+  'volume', // 3 — TV volume (session-dependent; today's regular-session volume during/after regular hours)
   'average_volume_90d_calc', // 4 — 90-day avg volume
   'market_cap_basic', // 5 — market cap
   'sector', // 6 — sector
+  'premarket_close', // 7 — pre-market last price
+  'premarket_change', // 8 — pre-market % change
+  'premarket_volume', // 9 — pre-market volume
 ];
 
-// Jared's preset filters: price >= $0.90, PM chg > 20%, market cap < $300M, NASDAQ + NYSE only
+// Preset filters: price >= $0.90, PM chg > 20%, NASDAQ + NYSE only.
+// Market-cap filter intentionally omitted so large-cap names also flow through to the MDR table.
 const SCAN_BODY = {
   columns: COLUMNS,
   filter: [
     { left: 'close', operation: 'egreater', right: 0.9 },
     { left: 'premarket_change', operation: 'greater', right: 20 },
-    { left: 'market_cap_basic', operation: 'less', right: 300_000_000 },
     { left: 'exchange', operation: 'in_range', right: ['NASDAQ', 'NYSE'] },
   ],
-  sort: { sortBy: 'change', sortOrder: 'desc' },
-  range: [0, 30],
+  sort: { sortBy: 'premarket_change', sortOrder: 'desc' },
+  range: [0, 50],
 };
 
 export interface TradingViewGainer {
@@ -35,6 +42,9 @@ export interface TradingViewGainer {
   avgVolume90d: number | null;
   marketCap: number | null;
   sector: string | null;
+  preMarketPrice: number | null;
+  preMarketChange: number | null;
+  preMarketVolume: number | null;
 }
 
 export async function GET() {
@@ -86,14 +96,20 @@ export async function GET() {
       // Skip rows with bad price or change data
       if (!Number.isFinite(price) || !Number.isFinite(change) || !Number.isFinite(volume)) return [];
 
+      const toNum = (idx: number) =>
+        d[idx] != null && Number.isFinite(Number(d[idx])) ? Number(d[idx]) : null;
+
       return [{
         ticker,
         price,
         change,
         volume,
-        avgVolume90d: d[4] != null && Number.isFinite(Number(d[4])) ? Number(d[4]) : null,
-        marketCap: d[5] != null && Number.isFinite(Number(d[5])) ? Number(d[5]) : null,
+        avgVolume90d: toNum(4),
+        marketCap: toNum(5),
         sector: typeof d[6] === 'string' && d[6].trim() ? d[6].trim() : null,
+        preMarketPrice: toNum(7),
+        preMarketChange: toNum(8),
+        preMarketVolume: toNum(9),
       }];
     });
 
