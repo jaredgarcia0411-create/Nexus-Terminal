@@ -116,7 +116,7 @@ export default function TradesTab({
               placeholder="Set automatic risk ($)"
               value={defaultRiskInput}
               onChange={(event) => onDefaultRiskInputChange(event.target.value)}
-              className="w-full md:w-56 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+              className="w-full md:w-48 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
             />
             <Button onClick={onSetDefaultRisk} className="bg-emerald-500 hover:bg-emerald-400">
               Set Auto Risk

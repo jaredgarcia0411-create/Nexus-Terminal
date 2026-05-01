@@ -3,7 +3,7 @@ const MIN_REQUEST_GAP_MS = 100;             // SEC limit is 10 req/s; 100ms is t
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_RETRIES = 3;
 
-let lastRequestAt = 0;
+let nextRequestAt = 0;
 let pacingPromise: Promise<void> = Promise.resolve();
 
 export class SecHttpError extends Error {
@@ -16,9 +16,13 @@ export class SecHttpError extends Error {
 // Serialize the rate-limit gap so concurrent callers respect the 100ms floor.
 function paceRequest(): Promise<void> {
   pacingPromise = pacingPromise.then(async () => {
-    const wait = Math.max(0, MIN_REQUEST_GAP_MS - (Date.now() - lastRequestAt));
-    if (wait > 0) await new Promise((r) => setTimeout(r, wait + 1));
-    lastRequestAt = Date.now();
+    const scheduledAt = Math.max(Date.now(), nextRequestAt);
+
+    while (Date.now() < scheduledAt) {
+      await new Promise((resolve) => setTimeout(resolve, scheduledAt - Date.now()));
+    }
+
+    nextRequestAt = Date.now() + MIN_REQUEST_GAP_MS;
   });
   return pacingPromise;
 }

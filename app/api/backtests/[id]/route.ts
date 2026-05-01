@@ -66,6 +66,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
           name: 'Uncategorized',
           description: null,
           sampleSetId: null,
+          sampleSetRows: null,
           userId: ownerId,
           ownerId,
           ownerName: owner?.name ?? null,
@@ -84,6 +85,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         ownerId: backtests.userId,
         ownerName: users.name,
         sampleSetName: sampleSets.name,
+        sampleSetRows: sampleSets.rows,
         createdAt: backtests.createdAt,
         updatedAt: backtests.updatedAt,
       })

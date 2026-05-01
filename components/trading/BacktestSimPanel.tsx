@@ -77,6 +77,8 @@ interface BacktestSimPanelProps {
   ticker: string | null;
   date: string | null;
   riskDollars: number;
+  activeBacktest: { id: string; name: string; userId: string } | null;
+  currentUserId: string | null;
   session: BacktestSession | null;
   actions: BacktestAction[];
   position: SimPosition;
@@ -97,6 +99,8 @@ export default function BacktestSimPanel({
   ticker,
   date,
   riskDollars,
+  activeBacktest,
+  currentUserId,
   session,
   actions,
   position,
@@ -127,6 +131,9 @@ export default function BacktestSimPanel({
   const status = statusLabel(position, actions.length);
   const pnlClass = getPnLColor(simPnl);
   const posValue = position.avgEntry != null ? position.avgEntry * position.totalShares : 0;
+  const saveLabel = activeBacktest && activeBacktest.userId === currentUserId
+    ? `SAVE TO ${activeBacktest.name.toUpperCase().slice(0, 15)}${activeBacktest.name.length > 15 ? '...' : ''}`
+    : 'SAVE REVIEW';
 
   const commitRisk = async (rawValue: string) => {
     const nextRisk = Number(rawValue);
@@ -283,7 +290,7 @@ export default function BacktestSimPanel({
             onClick={() => setReviewOpen(true)}
             className="h-8 bg-emerald-500 text-xs text-black hover:bg-emerald-400 disabled:opacity-40"
           >
-            SAVE REVIEW
+            {saveLabel}
           </Button>
         </div>
 

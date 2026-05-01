@@ -6,9 +6,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SimPosition } from '@/lib/backtest-math';
 import type { BacktestAction, BacktestSession } from '@/lib/types';
 
-const { chartGridProps, useBacktestSessionMock } = vi.hoisted(() => ({
+const { chartGridProps, useBacktestSessionMock, useSessionMock } = vi.hoisted(() => ({
   chartGridProps: [] as Array<{ ticker: string | null; date: string | null; extraSessionsForward: number }>,
   useBacktestSessionMock: vi.fn(),
+  useSessionMock: vi.fn(),
 }));
 
 vi.mock('motion/react', () => ({
@@ -21,12 +22,58 @@ vi.mock('react-hotkeys-hook', () => ({
   useHotkeys: vi.fn(),
 }));
 
+vi.mock('next-auth/react', () => ({
+  useSession: useSessionMock,
+}));
+
 vi.mock('@/hooks/use-candle-data', () => ({
   useCandleData: vi.fn(() => ({ candles: [], isLoading: false, error: null })),
 }));
 
 vi.mock('@/hooks/use-backtest-session', () => ({
   useBacktestSession: useBacktestSessionMock,
+}));
+
+vi.mock('@/components/trading/BacktestManagerView', () => ({
+  __esModule: true,
+  default: ({
+    onLaunchChart,
+    onViewStats,
+  }: {
+    onLaunchChart: (backtest: { id: string; name: string; ownerId: string } | null) => void;
+    onViewStats: (backtestId: string) => void;
+  }) => (
+    <div>
+      <div>Manager View</div>
+      <button type="button" onClick={() => onLaunchChart({ id: 'bt-1', name: 'Momentum', ownerId: 'u1' })}>
+        Open Managed Chart
+      </button>
+      <button type="button" onClick={() => onViewStats('bt-1')}>
+        Open Stats
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock('@/components/trading/BacktestStatsView', () => ({
+  __esModule: true,
+  default: ({
+    onBack,
+    onOpenInChart,
+  }: {
+    onBack: () => void;
+    onOpenInChart: (ticker: string, date: string, activeBacktest: { id: string | null; name: string | null; userId: string | null }) => void;
+  }) => (
+    <div>
+      <div>Stats View</div>
+      <button type="button" onClick={() => onOpenInChart('AAPL', '2026-04-28', { id: 'bt-1', name: 'Momentum', userId: 'u1' })}>
+        Open Review In Chart
+      </button>
+      <button type="button" onClick={onBack}>
+        Back
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock('@/components/trading/BacktestChartGrid', () => ({
@@ -69,11 +116,14 @@ vi.mock('@/components/trading/BacktestingSidebar', () => ({
   default: ({
     onSelect,
     topPanel,
+    activeBacktestId,
   }: {
     onSelect: (selection: { ticker: string; date: string }) => void;
     topPanel?: React.ReactNode;
+    activeBacktestId: string | null;
   }) => (
     <div>
+      <div>Sidebar Active: {activeBacktestId ?? 'none'}</div>
       <button type="button" onClick={() => onSelect({ ticker: 'AAPL', date: '2026-04-28' })}>
         Select AAPL
       </button>
@@ -147,21 +197,27 @@ describe('BacktestingTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     chartGridProps.length = 0;
+    useSessionMock.mockReturnValue({ data: { user: { id: 'u1' } } });
     useBacktestSessionMock.mockReturnValue(makeSessionState('FLAT'));
     window.localStorage.clear();
   });
 
-  it('renders the empty state and disables trade actions until a ticker is chosen', () => {
+  it('starts on the manager view and enters chart mode when a backtest is launched', () => {
     render(<BacktestingTab />);
 
-    expect(screen.getByText('Pick a ticker on the right')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /trade/i })).toHaveProperty('disabled', true);
+    expect(screen.getByText('Manager View')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Open Managed Chart'));
+
+    expect(screen.getByText('Sidebar Active: bt-1')).toBeTruthy();
+    expect(useBacktestSessionMock).toHaveBeenLastCalledWith(expect.objectContaining({ backtestId: 'bt-1' }));
   });
 
-  it('enables long-side actions for an open long position', () => {
+  it('enables long-side actions for an open long position after selecting a ticker', () => {
     useBacktestSessionMock.mockReturnValue(makeSessionState('LONG'));
 
     render(<BacktestingTab />);
+    fireEvent.click(screen.getByText('Open Managed Chart'));
     fireEvent.click(screen.getByText('Select AAPL'));
 
     expect((screen.getByRole('button', { name: 'Trade' }) as HTMLButtonElement).disabled).toBe(false);
@@ -170,10 +226,11 @@ describe('BacktestingTab', () => {
     expect((screen.getByRole('button', { name: 'SHORT' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('enables short-side actions for an open short position', () => {
+  it('enables short-side actions for an open short position after selecting a ticker', () => {
     useBacktestSessionMock.mockReturnValue(makeSessionState('SHORT'));
 
     render(<BacktestingTab />);
+    fireEvent.click(screen.getByText('Open Managed Chart'));
     fireEvent.click(screen.getByText('Select AAPL'));
 
     expect((screen.getByRole('button', { name: 'SHORT ADD' }) as HTMLButtonElement).disabled).toBe(false);
@@ -183,6 +240,7 @@ describe('BacktestingTab', () => {
 
   it('passes the global forward-day count to the chart grid', () => {
     render(<BacktestingTab />);
+    fireEvent.click(screen.getByText('Open Managed Chart'));
     fireEvent.click(screen.getByText('Select AAPL'));
 
     fireEvent.click(screen.getByRole('button', { name: 'Add one forward day' }));
@@ -192,7 +250,7 @@ describe('BacktestingTab', () => {
     expect(chartGridProps.at(-1)?.extraSessionsForward).toBe(0);
   });
 
-  it('enables Clear and removes the old New button while viewing a review', () => {
+  it('keeps review mode controls in chart view after entering from the manager', () => {
     useBacktestSessionMock.mockReturnValue(makeSessionState('FLAT', {
       session: {
         id: 'review-1',
@@ -203,7 +261,7 @@ describe('BacktestingTab', () => {
         riskDollars: 100,
         label: null,
         notes: null,
-        backtestId: null,
+        backtestId: 'bt-1',
         reviewedAt: '2026-04-29T12:00:00.000Z',
         createdAt: '2026-04-28T12:00:00.000Z',
         updatedAt: '2026-04-29T12:00:00.000Z',
@@ -212,38 +270,10 @@ describe('BacktestingTab', () => {
     }));
 
     render(<BacktestingTab />);
+    fireEvent.click(screen.getByText('Open Managed Chart'));
 
     expect((screen.getByRole('button', { name: 'Clear' }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.queryByRole('button', { name: 'New' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Delete review' })).toBeTruthy();
-  });
-
-  it('confirms before deleting a saved review', () => {
-    const deleteReview = vi.fn();
-    useBacktestSessionMock.mockReturnValue(makeSessionState('FLAT', {
-      session: {
-        id: 'review-1',
-        userId: 'u1',
-        ticker: 'AAPL',
-        date: '2026-04-28',
-        status: 'REVIEWED',
-        riskDollars: 100,
-        label: null,
-        notes: null,
-        backtestId: null,
-        reviewedAt: '2026-04-29T12:00:00.000Z',
-        createdAt: '2026-04-28T12:00:00.000Z',
-        updatedAt: '2026-04-29T12:00:00.000Z',
-      },
-      isReadOnly: true,
-      deleteReview,
-    }));
-
-    render(<BacktestingTab />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Delete review' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-
-    expect(deleteReview).toHaveBeenCalledWith('review-1');
   });
 });

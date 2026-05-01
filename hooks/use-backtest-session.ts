@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSession } from 'next-auth/react';
 
 import { reduceActions, type SimPosition } from '@/lib/backtest-math';
 import type { BacktestAction, BacktestActionType, BacktestSession } from '@/lib/types';
@@ -44,6 +45,7 @@ interface UseBacktestSessionInput {
   ticker: string | null;
   date: string | null;
   riskDollars: number;
+  backtestId: string | null;
 }
 
 function toErrorMessage(error: unknown, fallback: string) {
@@ -54,7 +56,9 @@ async function parseJson<T>(response: Response): Promise<T> {
   return (await response.json().catch(() => ({}))) as T;
 }
 
-export function useBacktestSession({ ticker, date, riskDollars }: UseBacktestSessionInput) {
+export function useBacktestSession({ ticker, date, riskDollars, backtestId }: UseBacktestSessionInput) {
+  const { data: sessionData } = useSession();
+  const currentUserId = (sessionData?.user as { id?: string | null } | undefined)?.id ?? null;
   const [activeSession, setActiveSession] = useState<BacktestSession | null>(null);
   const [activeActions, setActiveActions] = useState<BacktestAction[]>([]);
   const [reviews, setReviews] = useState<BacktestSession[]>([]);
@@ -109,9 +113,11 @@ export function useBacktestSession({ ticker, date, riskDollars }: UseBacktestSes
 
         setReviews(payload.reviews ?? []);
 
-        if (payload.session) {
-          const details = await loadSessionDetails(payload.session.id, controller.signal);
-          setActiveSession(details.session ?? payload.session);
+        const ownActiveSession = payload.session?.userId === currentUserId ? payload.session : null;
+
+        if (ownActiveSession) {
+          const details = await loadSessionDetails(ownActiveSession.id, controller.signal);
+          setActiveSession(details.session ?? ownActiveSession);
           setActiveActions(details.actions ?? []);
         } else {
           setActiveSession(null);
@@ -133,18 +139,24 @@ export function useBacktestSession({ ticker, date, riskDollars }: UseBacktestSes
     void load();
 
     return () => controller.abort();
-  }, [date, loadSessionDetails, ticker]);
+  }, [currentUserId, date, loadSessionDetails, ticker]);
 
   const ensureActiveSession = useCallback(async (nextRiskDollars = riskDollars) => {
     if (!ticker || !date) {
       throw new Error('Pick a ticker and date first');
     }
-    if (activeSession) return activeSession;
+    if (
+      activeSession &&
+      activeSession.riskDollars === nextRiskDollars &&
+      activeSession.backtestId === backtestId
+    ) {
+      return activeSession;
+    }
 
     const response = await fetch('/api/backtest/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker, date, riskDollars: nextRiskDollars }),
+      body: JSON.stringify({ ticker, date, riskDollars: nextRiskDollars, backtestId }),
     });
     const payload = await parseJson<SessionMutationResponse>(response);
     if (!response.ok || !payload.session) {
@@ -153,7 +165,7 @@ export function useBacktestSession({ ticker, date, riskDollars }: UseBacktestSes
 
     setActiveSession(payload.session);
     return payload.session;
-  }, [activeSession, date, riskDollars, ticker]);
+  }, [activeSession, backtestId, date, riskDollars, ticker]);
 
   const placeAction = useCallback(async (input: PlaceBacktestActionInput) => {
     if (reviewMode) {

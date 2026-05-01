@@ -8,18 +8,21 @@
 ## Active Execution Spec
 
 > Generated: 2026-05-01 | Agent: Claude (`nexus-handoff`)
-> Status: IN PROGRESS — phases 1-3 implemented and validated locally on 2026-05-01; paused before phase 4 per checkpoint request.
+> Status: COMPLETE — phases 1-7 implemented locally on 2026-05-01; full validation rerun pending below.
 
 # Build Spec — Backtest Manager Homepage Feature
 > Generated: 2026-05-01 | Agent: nexus-architect
-> Status: IN PROGRESS — checkpoint 1 complete (phases 1-3)
+> Status: COMPLETE — phases 1-7 implemented
 
 ### Codex Checkpoint — 2026-05-01
 - Complete: phase 1 schema + migration (`sample_sets`, `backtests`, `backtest_sessions.backtest_id`)
 - Complete: phase 2 API routes (`/api/backtests*`, `/api/sample-sets*`, session route `backtestId` wiring, cross-user read access)
 - Complete: phase 3 pure logic libs + tests (`lib/sample-set-csv.ts`, `lib/backtest-stats.ts`, `lib/backtest-filters.ts`)
-- Validated locally: `npm run db:generate`, `npm run db:migrate`, `npm run lint`, `npx tsc --noEmit`, `npm test`
-- Pending next checkpoint: phases 4-7 only
+- Complete: phase 4 manager hook/view/dialogs (`use-backtest-manager`, `BacktestManagerView`, `NewBacktestDialog`, `AddSampleSetDialog`, `EditBacktestDialog`)
+- Complete: phase 5 stats hook/view (`use-backtest-stats`, `BacktestStatsView`)
+- Complete: phase 6 view-mode wiring (`BacktestingTab`, `BacktestingSidebar`, `BacktestSimPanel`, `use-backtest-session`, `/api/backtests/[id]` sample-set row response)
+- Complete: phase 7 route/component tests (`backtests-route`, `sample-sets-route`, `backtest-manager-view`, updated `backtesting-tab`)
+- Validated locally before final rerun: `npm run db:generate`, `npm run db:migrate`, focused Vitest coverage for new phase 4-7 tests
 
 ---
 

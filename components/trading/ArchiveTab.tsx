@@ -4,6 +4,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import DailyReportSheet from '@/components/trading/DailyReportSheet';
 import WeeklyReviewSheet from '@/components/trading/WeeklyReviewSheet';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { formatCurrency } from '@/lib/trading-utils';
 import type { Trade } from '@/lib/types';
 
@@ -161,15 +168,16 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
       <div className="flex flex-wrap items-center gap-4">
         <p className="text-base text-zinc-400">Past daily and weekly reviews.</p>
 
-        <select
-          value={typeFilter}
-          onChange={(event) => setTypeFilter(event.target.value as 'all' | ReviewType)}
-          className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 focus:outline-none"
-        >
-          <option value="all">All</option>
-          <option value="daily">Daily</option>
-          <option value="weekly">Weekly</option>
-        </select>
+        <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value as 'all' | ReviewType)}>
+          <SelectTrigger className="h-9 w-24 bg-black text-sm text-zinc-100" aria-label="Filter review type">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="border-white/10 bg-black text-white">
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="daily">Daily</SelectItem>
+            <SelectItem value="weekly">Weekly</SelectItem>
+          </SelectContent>
+        </Select>
 
         <div className="flex items-center gap-2">
           <input
