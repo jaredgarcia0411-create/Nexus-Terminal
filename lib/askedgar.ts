@@ -1372,7 +1372,7 @@ async function fetchScannerSummaryRaw(ticker: string): Promise<ScannerSummaryRes
   };
 }
 
-const SCANNER_SUMMARY_CACHE_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
+const SCANNER_SUMMARY_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
  * Cached scanner summary for a single ticker. Calls only the 4 endpoints needed
