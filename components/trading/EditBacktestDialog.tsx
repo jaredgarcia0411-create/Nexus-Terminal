@@ -12,8 +12,17 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import type { BacktestListItem, SampleSetListItem } from '@/hooks/use-backtest-manager';
+
+const NONE_SAMPLE_SET = '__none__';
 
 interface EditBacktestDialogProps {
   open: boolean;
@@ -99,19 +108,25 @@ export default function EditBacktestDialog({
 
           <div className="space-y-2">
             <Label htmlFor="edit-backtest-sample-set">Sample Set</Label>
-            <select
-              id="edit-backtest-sample-set"
-              value={sampleSetId}
-              onChange={(event) => setSampleSetId(event.target.value)}
-              className="flex h-9 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-zinc-100 outline-none"
+            <Select
+              value={sampleSetId || NONE_SAMPLE_SET}
+              onValueChange={(value) => setSampleSetId(value === NONE_SAMPLE_SET ? '' : value)}
             >
-              <option value="">None</option>
-              {sampleSets.map((sampleSet) => (
-                <option key={sampleSet.id} value={sampleSet.id}>
-                  {(sampleSet.ownerName ?? 'Unknown')} - {sampleSet.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger
+                aria-label="Sample Set"
+                className="w-full border-white/10 bg-black text-sm text-zinc-100"
+              >
+                <SelectValue placeholder="System Sheet" />
+              </SelectTrigger>
+              <SelectContent className="border-white/10 bg-black text-white">
+                <SelectItem value={NONE_SAMPLE_SET}>System Sheet</SelectItem>
+                {sampleSets.map((sampleSet) => (
+                  <SelectItem key={sampleSet.id} value={sampleSet.id}>
+                    {sampleSet.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {error ? <p className="text-sm text-rose-400">{error}</p> : null}

@@ -14,6 +14,7 @@ export async function GET(_request: Request) {
     const db = getDb();
     if (!db) return dbUnavailable();
     await ensureUser(db, authState.user);
+    const currentUserId = authState.user.id;
 
     const rows = await db
       .select({
@@ -29,7 +30,7 @@ export async function GET(_request: Request) {
       .leftJoin(users, eq(sampleSets.userId, users.id))
       .orderBy(desc(sampleSets.updatedAt));
 
-    return Response.json({ sampleSets: rows });
+    return Response.json({ sampleSets: rows, currentUserId });
   } catch (error) {
     logRouteError('sample-sets.get', error);
     return internalServerError();

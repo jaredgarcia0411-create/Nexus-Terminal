@@ -119,11 +119,11 @@ describe('BacktestingSidebar', () => {
 
     await waitFor(() => expect(screen.getByText('SYS')).toBeTruthy());
 
-    fireEvent.click(screen.getByText('Me - Momentum Set'));
+    fireEvent.click(screen.getByText('Momentum Set'));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/sample-sets/ss-1', expect.any(Object)));
     await waitFor(() => expect(screen.getByText('AUID')).toBeTruthy());
-    expect(screen.getByText('Momentum Set')).toBeTruthy();
+    expect(screen.getAllByText('Momentum Set').length).toBeGreaterThanOrEqual(1);
 
     fireEvent.click(screen.getByRole('button', { name: /AUID/i }));
 
@@ -147,6 +147,7 @@ describe('BacktestingSidebar', () => {
           backtest: {
             id: 'bt-1',
             name: 'Saved Test',
+            sampleSetId: 'ss-attached',
             sampleSetRows: [{ ticker: 'AAPL', date: '2026-04-28' }],
           },
         });

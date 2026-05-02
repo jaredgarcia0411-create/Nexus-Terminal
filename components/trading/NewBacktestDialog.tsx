@@ -114,13 +114,13 @@ export default function NewBacktestDialog({
                 aria-label="Sample Set"
                 className="w-full border-white/10 bg-black text-sm text-zinc-100"
               >
-                <SelectValue placeholder="None" />
+                <SelectValue placeholder="System Sheet" />
               </SelectTrigger>
               <SelectContent className="border-white/10 bg-black text-white">
-                <SelectItem value={NONE_SAMPLE_SET}>None</SelectItem>
+                <SelectItem value={NONE_SAMPLE_SET}>System Sheet</SelectItem>
                 {sampleSets.map((sampleSet) => (
                   <SelectItem key={sampleSet.id} value={sampleSet.id}>
-                    {(sampleSet.ownerName ?? 'Unknown')} - {sampleSet.name}
+                    {sampleSet.name}
                   </SelectItem>
                 ))}
               </SelectContent>

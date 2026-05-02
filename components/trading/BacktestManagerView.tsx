@@ -2,19 +2,13 @@
 
 import { useRef, useState, type ChangeEvent } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { MoreHorizontal, Search, TrendingUp } from 'lucide-react';
+import { Search, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 
 import AddSampleSetDialog from '@/components/trading/AddSampleSetDialog';
 import EditBacktestDialog from '@/components/trading/EditBacktestDialog';
 import NewBacktestDialog from '@/components/trading/NewBacktestDialog';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -64,7 +58,6 @@ export default function BacktestManagerView({
     deleteBacktest,
     createSampleSet,
     deleteSampleSet,
-    duplicateSampleSet,
   } = useBacktestManager();
 
   const [newBacktestOpen, setNewBacktestOpen] = useState(false);
@@ -133,18 +126,6 @@ export default function BacktestManagerView({
       toast.success('Sample set deleted');
     } catch (deleteError) {
       toast.error(deleteError instanceof Error ? deleteError.message : 'Could not delete sample set');
-    }
-  };
-
-  const handleDuplicateSampleSet = async (sampleSetId: string, sourceName: string) => {
-    const name = window.prompt('Duplicate sample set as', `${sourceName} Copy`)?.trim();
-    if (!name) return;
-
-    try {
-      await duplicateSampleSet(sampleSetId, name);
-      toast.success('Sample set duplicated');
-    } catch (duplicateError) {
-      toast.error(duplicateError instanceof Error ? duplicateError.message : 'Could not duplicate sample set');
     }
   };
 
@@ -238,33 +219,33 @@ export default function BacktestManagerView({
                           <p className="line-clamp-2 text-sm text-zinc-300">{backtest.description}</p>
                         ) : null}
                       </div>
-
-                      {isOwner && !isUncategorized ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="text-[11px] text-zinc-500">
+                          {formatRelativeTimestamp(backtest.updatedAt)}
+                        </span>
+                        {isOwner && !isUncategorized ? (
+                          <>
                             <Button
                               type="button"
                               variant="ghost"
-                              size="icon-xs"
-                              className="text-zinc-400 hover:bg-white/10 hover:text-white"
-                              aria-label={`Manage ${backtest.name}`}
+                              size="xs"
+                              onClick={() => setEditingBacktest(backtest)}
+                              className="h-7 border border-white/10 bg-white/5 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
                             >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="border-white/10 bg-[#111319] text-white">
-                            <DropdownMenuItem onSelect={() => setEditingBacktest(backtest)} className="cursor-pointer text-xs">
                               Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onSelect={() => void handleDeleteBacktest(backtest)}
-                              className="cursor-pointer text-xs text-rose-300"
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="xs"
+                              onClick={() => void handleDeleteBacktest(backtest)}
+                              className="h-7 border border-rose-500/30 bg-rose-500/10 text-[11px] text-rose-300 hover:bg-rose-500/20 hover:text-rose-200"
                             >
                               Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : null}
+                            </Button>
+                          </>
+                        ) : null}
+                      </div>
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -287,9 +268,6 @@ export default function BacktestManagerView({
                           Launch Chart
                         </Button>
                       ) : null}
-                      <span className="ml-auto text-[11px] text-zinc-500">
-                        {formatRelativeTimestamp(backtest.updatedAt)}
-                      </span>
                     </div>
                   </article>
                 );
@@ -357,30 +335,18 @@ export default function BacktestManagerView({
 
                 return (
                   <article key={sampleSet.id} className="border-b border-white/10 px-4 py-3">
-                    <div className="space-y-1">
-                      <h3 className="truncate font-mono text-sm font-semibold text-white">{sampleSet.name}</h3>
-                      <p className="text-xs text-zinc-500">
-                        {sampleSet.rowCount} rows · by {sampleSet.ownerName ?? 'Unknown'}
-                      </p>
-                    </div>
-
-                    <div className="mt-3 flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => void handleDuplicateSampleSet(sampleSet.id, sampleSet.name)}
-                        className="h-7 border border-white/10 bg-white/5 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
-                      >
-                        Duplicate
-                      </Button>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 space-y-1">
+                        <h3 className="truncate font-mono text-sm font-semibold text-white">{sampleSet.name}</h3>
+                        <p className="text-xs text-zinc-500">{sampleSet.rowCount} rows</p>
+                      </div>
                       {isOwner ? (
                         <Button
                           type="button"
                           variant="ghost"
                           size="xs"
                           onClick={() => void handleDeleteSampleSet(sampleSet.id, sampleSet.name)}
-                          className="h-7 border border-rose-500/30 bg-rose-500/10 text-[11px] text-rose-300 hover:bg-rose-500/20 hover:text-rose-200"
+                          className="h-7 shrink-0 border border-rose-500/30 bg-rose-500/10 text-[11px] text-rose-300 hover:bg-rose-500/20 hover:text-rose-200"
                         >
                           Delete
                         </Button>

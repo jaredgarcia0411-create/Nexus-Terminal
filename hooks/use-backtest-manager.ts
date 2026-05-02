@@ -34,10 +34,12 @@ export type BacktestSortKey = 'updatedAt' | 'createdAt' | 'name' | 'author';
 
 type BacktestsResponse = {
   backtests: BacktestListItem[];
+  currentUserId?: string | null;
 };
 
 type SampleSetsResponse = {
   sampleSets: SampleSetListItem[];
+  currentUserId?: string | null;
 };
 
 type BacktestMutationPayload = {
@@ -63,7 +65,12 @@ function compareNullableDates(a: string | null, b: string | null) {
 
 export function useBacktestManager() {
   const { data: session } = useSession();
-  const currentUserId = normalizeSessionUser(session)?.id ?? null;
+  const sessionUserId = normalizeSessionUser(session)?.id ?? null;
+  const [serverUserId, setServerUserId] = useState<string | null>(null);
+  // Server-derived currentUserId is authoritative — `ensureUser` may remap the
+  // session's JWT id to a canonical DB id when an email-collided record exists,
+  // which would cause owner checks against `session.user.id` to silently fail.
+  const currentUserId = serverUserId ?? sessionUserId;
 
   const [backtests, setBacktests] = useState<BacktestListItem[]>([]);
   const [sampleSets, setSampleSets] = useState<SampleSetListItem[]>([]);
@@ -86,6 +93,8 @@ export function useBacktestManager() {
 
       setBacktests(backtestsData.backtests ?? []);
       setSampleSets(sampleSetsData.sampleSets ?? []);
+      const serverId = backtestsData.currentUserId ?? sampleSetsData.currentUserId ?? null;
+      if (serverId) setServerUserId(serverId);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Could not load backtest manager');
     } finally {

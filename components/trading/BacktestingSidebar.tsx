@@ -37,6 +37,7 @@ type BacktestDetailResponse = {
   backtest?: {
     id: string;
     name: string;
+    sampleSetId?: string | null;
     sampleSetRows?: Array<{ ticker: string; date: string }> | null;
   };
   error?: string;
@@ -173,16 +174,22 @@ export default function BacktestingSidebar({
         }
 
         setActiveBacktestName(payload.backtest.name);
-        setSampleSetRows(
-          (payload.backtest.sampleSetRows ?? []).map((row, index) => ({
-            id: `${row.ticker}-${row.date}-${index}`,
-            ticker: row.ticker,
-            date: row.date,
-            grade: null,
-            setupType: null,
-            day1GapPct: null,
-          })),
-        );
+        // When a backtest has no sample set (System Sheet), leave sampleSetRows
+        // null so the sidebar falls back to the live system tickers list.
+        if (!payload.backtest.sampleSetId) {
+          setSampleSetRows(null);
+        } else {
+          setSampleSetRows(
+            (payload.backtest.sampleSetRows ?? []).map((row, index) => ({
+              id: `${row.ticker}-${row.date}-${index}`,
+              ticker: row.ticker,
+              date: row.date,
+              grade: null,
+              setupType: null,
+              day1GapPct: null,
+            })),
+          );
+        }
       } catch (loadError) {
         if (controller.signal.aborted) return;
         console.error(loadError);
@@ -285,7 +292,7 @@ export default function BacktestingSidebar({
               <SelectItem value="__system__">Select Sample Set</SelectItem>
               {availableSampleSets.map((sampleSet) => (
                 <SelectItem key={sampleSet.id} value={sampleSet.id}>
-                  {(sampleSet.ownerName ?? 'Unknown')} - {sampleSet.name}
+                  {sampleSet.name}
                 </SelectItem>
               ))}
             </SelectContent>

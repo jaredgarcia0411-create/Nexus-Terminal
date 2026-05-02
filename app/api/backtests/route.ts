@@ -14,6 +14,7 @@ export async function GET(_request: Request) {
     const db = getDb();
     if (!db) return dbUnavailable();
     await ensureUser(db, authState.user);
+    const currentUserId = authState.user.id;
 
     const rows = await db
       .select({
@@ -72,7 +73,7 @@ export async function GET(_request: Request) {
       updatedAt: null,
     }));
 
-    return Response.json({ backtests: [...rows, ...uncategorized] });
+    return Response.json({ backtests: [...rows, ...uncategorized], currentUserId });
   } catch (error) {
     logRouteError('backtests.get', error);
     return internalServerError();
