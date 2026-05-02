@@ -219,33 +219,9 @@ export default function BacktestManagerView({
                           <p className="line-clamp-2 text-sm text-zinc-300">{backtest.description}</p>
                         ) : null}
                       </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <span className="text-[11px] text-zinc-500">
-                          {formatRelativeTimestamp(backtest.updatedAt)}
-                        </span>
-                        {isOwner && !isUncategorized ? (
-                          <>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="xs"
-                              onClick={() => setEditingBacktest(backtest)}
-                              className="h-7 border border-white/10 bg-white/5 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="xs"
-                              onClick={() => void handleDeleteBacktest(backtest)}
-                              className="h-7 border border-rose-500/30 bg-rose-500/10 text-[11px] text-rose-300 hover:bg-rose-500/20 hover:text-rose-200"
-                            >
-                              Delete
-                            </Button>
-                          </>
-                        ) : null}
-                      </div>
+                      <span className="shrink-0 text-[11px] text-zinc-500">
+                        {formatRelativeTimestamp(backtest.updatedAt)}
+                      </span>
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -267,6 +243,28 @@ export default function BacktestManagerView({
                         >
                           Launch Chart
                         </Button>
+                      ) : null}
+                      {isOwner && !isUncategorized ? (
+                        <div className="ml-auto flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => setEditingBacktest(backtest)}
+                            className="h-7 border border-white/10 bg-white/5 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => void handleDeleteBacktest(backtest)}
+                            className="h-7 border border-rose-500/30 bg-rose-500/10 text-[11px] text-rose-300 hover:bg-rose-500/20 hover:text-rose-200"
+                          >
+                            Delete
+                          </Button>
+                        </div>
                       ) : null}
                     </div>
                   </article>
