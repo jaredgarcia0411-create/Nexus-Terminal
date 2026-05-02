@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 
 import { internalServerError, logRouteError, normalizeTicker, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
@@ -20,6 +20,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const ticker = normalizeTicker(searchParams.get('ticker') ?? undefined);
     const date = (searchParams.get('date') ?? '').trim();
+    const backtestIdParam = (searchParams.get('backtestId') ?? '').trim();
+    const backtestId = backtestIdParam.length > 0 ? backtestIdParam : null;
 
     if (!ticker) {
       return Response.json({ error: 'ticker is required' }, { status: 400 });
@@ -34,6 +36,7 @@ export async function GET(request: Request) {
       .where(and(
         eq(backtestSessions.ticker, ticker),
         eq(backtestSessions.date, date),
+        backtestId ? eq(backtestSessions.backtestId, backtestId) : isNull(backtestSessions.backtestId),
       ))
       .orderBy(desc(backtestSessions.reviewedAt), desc(backtestSessions.createdAt));
 

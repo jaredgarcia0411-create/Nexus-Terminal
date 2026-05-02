@@ -24,6 +24,13 @@
 - Complete: phase 7 route/component tests (`backtests-route`, `sample-sets-route`, `backtest-manager-view`, updated `backtesting-tab`)
 - Validated locally before final rerun: `npm run db:generate`, `npm run db:migrate`, focused Vitest coverage for new phase 4-7 tests
 
+### Codex Follow-up — 2026-05-01
+- Fixed backtesting review auto-load/context drift after commit `a04ac6a`: manager Launch Chart now prefers the current viewer's most recent review per named backtest, then falls back to the owner-authored review.
+- Scoped `/api/backtest/sessions` GET by `backtestId` so named-backtest chart views do not load uncategorized or other-backtest reviews for the same ticker/date.
+- Moved auto-load into `useBacktestSession` so it runs after chart-context session loading, and guarded stale read-only review state so switching ticker while a review is open no longer renders old review actions or blocks new actions.
+- Fixed `BacktestSimPanel` stale dropdown selection crash where `formatReviewLabel()` received `undefined` after changing ticker/backtest context.
+- Validated: `npm run lint`, `npx tsc --noEmit --pretty false`, `npx vitest run __tests__/backtesting-tab.test.tsx __tests__/backtest-manager-view.test.tsx __tests__/backtests-route.test.ts`, `npm test`, `npm run workflow:audit`, `git diff --check`.
+
 ---
 
 ## 1. Objective

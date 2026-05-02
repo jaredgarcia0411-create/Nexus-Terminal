@@ -133,6 +133,9 @@ export default function BacktestSimPanel({
     }
     return reviews.filter((review) => review.backtestId == null && review.userId === currentUserId);
   }, [activeBacktest, currentUserId, reviews]);
+  const selectedReview = selectedReviewId
+    ? visibleReviews.find((review) => review.id === selectedReviewId) ?? null
+    : null;
 
   const currentOpenRisk = position.avgEntry != null && position.stop != null && position.totalShares > 0
     ? Math.abs(position.avgEntry - position.stop) * position.totalShares
@@ -313,8 +316,8 @@ export default function BacktestSimPanel({
               disabled={!ticker || !date || visibleReviews.length === 0 || isLoading}
               className="h-8 w-full justify-between border border-white/10 bg-white/5 text-xs text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-40"
             >
-              {selectedReviewId
-                ? formatReviewLabel(visibleReviews.find((review) => review.id === selectedReviewId) ?? visibleReviews[0])
+              {selectedReview
+                ? formatReviewLabel(selectedReview)
                 : 'LOAD REVIEW'}
             </Button>
           </DropdownMenuTrigger>

@@ -46,6 +46,7 @@ interface UseBacktestSessionInput {
   date: string | null;
   riskDollars: number;
   backtestId: string | null;
+  autoLoadReviewId?: string | null;
 }
 
 function toErrorMessage(error: unknown, fallback: string) {
@@ -56,7 +57,13 @@ async function parseJson<T>(response: Response): Promise<T> {
   return (await response.json().catch(() => ({}))) as T;
 }
 
-export function useBacktestSession({ ticker, date, riskDollars, backtestId }: UseBacktestSessionInput) {
+export function useBacktestSession({
+  ticker,
+  date,
+  riskDollars,
+  backtestId,
+  autoLoadReviewId = null,
+}: UseBacktestSessionInput) {
   const { data: sessionData } = useSession();
   const currentUserId = (sessionData?.user as { id?: string | null } | undefined)?.id ?? null;
   const [activeSession, setActiveSession] = useState<BacktestSession | null>(null);
@@ -67,9 +74,13 @@ export function useBacktestSession({ ticker, date, riskDollars, backtestId }: Us
   const [isMutating, setIsMutating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const session = reviewMode?.session ?? activeSession;
-  const actions = reviewMode?.actions ?? activeActions;
-  const isReadOnly = reviewMode != null;
+  const isCurrentReviewMode = reviewMode != null
+    && reviewMode.session.ticker === ticker
+    && reviewMode.session.date === date
+    && (reviewMode.session.backtestId ?? null) === (backtestId ?? null);
+  const session = isCurrentReviewMode ? reviewMode.session : activeSession;
+  const actions = isCurrentReviewMode ? reviewMode.actions : activeActions;
+  const isReadOnly = isCurrentReviewMode;
   const effectiveRiskDollars = session?.riskDollars ?? riskDollars;
   const position = useMemo<SimPosition>(
     () => reduceActions(actions, effectiveRiskDollars),
@@ -105,6 +116,7 @@ export function useBacktestSession({ ticker, date, riskDollars, backtestId }: Us
 
       try {
         const params = new URLSearchParams({ ticker, date });
+        if (backtestId) params.set('backtestId', backtestId);
         const response = await fetch(`/api/backtest/sessions?${params.toString()}`, { signal: controller.signal });
         const payload = await parseJson<SessionsResponse>(response);
         if (!response.ok) {
@@ -115,7 +127,15 @@ export function useBacktestSession({ ticker, date, riskDollars, backtestId }: Us
 
         const ownActiveSession = payload.session?.userId === currentUserId ? payload.session : null;
 
-        if (ownActiveSession) {
+        if (autoLoadReviewId) {
+          const details = await loadSessionDetails(autoLoadReviewId, controller.signal);
+          setActiveSession(null);
+          setActiveActions([]);
+          setReviewMode({
+            session: details.session as BacktestSession,
+            actions: details.actions ?? [],
+          });
+        } else if (ownActiveSession) {
           const details = await loadSessionDetails(ownActiveSession.id, controller.signal);
           setActiveSession(details.session ?? ownActiveSession);
           setActiveActions(details.actions ?? []);
@@ -139,7 +159,7 @@ export function useBacktestSession({ ticker, date, riskDollars, backtestId }: Us
     void load();
 
     return () => controller.abort();
-  }, [currentUserId, date, loadSessionDetails, ticker]);
+  }, [autoLoadReviewId, backtestId, currentUserId, date, loadSessionDetails, ticker]);
 
   const ensureActiveSession = useCallback(async (nextRiskDollars = riskDollars) => {
     if (!ticker || !date) {
@@ -168,7 +188,7 @@ export function useBacktestSession({ ticker, date, riskDollars, backtestId }: Us
   }, [activeSession, backtestId, date, riskDollars, ticker]);
 
   const placeAction = useCallback(async (input: PlaceBacktestActionInput) => {
-    if (reviewMode) {
+    if (isReadOnly) {
       throw new Error('Viewing a saved review');
     }
 
@@ -222,10 +242,10 @@ export function useBacktestSession({ ticker, date, riskDollars, backtestId }: Us
     } finally {
       setIsMutating(false);
     }
-  }, [activeActions, activeSession?.riskDollars, ensureActiveSession, reviewMode, riskDollars, session?.userId, activeSession?.userId]);
+  }, [activeActions, activeSession?.riskDollars, ensureActiveSession, isReadOnly, riskDollars, session?.userId, activeSession?.userId]);
 
   const undoLast = useCallback(async () => {
-    if (reviewMode || activeActions.length === 0) return;
+    if (isReadOnly || activeActions.length === 0) return;
 
     const previousActions = [...activeActions];
     const lastAction = previousActions.at(-1);
@@ -249,10 +269,10 @@ export function useBacktestSession({ ticker, date, riskDollars, backtestId }: Us
     } finally {
       setIsMutating(false);
     }
-  }, [activeActions, reviewMode]);
+  }, [activeActions, isReadOnly]);
 
   const clear = useCallback(async () => {
-    if (reviewMode) {
+    if (isReadOnly) {
       setReviewMode(null);
       setError(null);
       return;
@@ -279,7 +299,7 @@ export function useBacktestSession({ ticker, date, riskDollars, backtestId }: Us
     } finally {
       setIsMutating(false);
     }
-  }, [activeActions, activeSession, reviewMode]);
+  }, [activeActions, activeSession, isReadOnly]);
 
   const deleteReview = useCallback(async (reviewId: string) => {
     const previousReviews = [...reviews];
@@ -310,7 +330,7 @@ export function useBacktestSession({ ticker, date, riskDollars, backtestId }: Us
   }, [reviewMode, reviews]);
 
   const updateRisk = useCallback(async (nextRiskDollars: number) => {
-    if (!Number.isFinite(nextRiskDollars) || nextRiskDollars <= 0 || reviewMode) return;
+    if (!Number.isFinite(nextRiskDollars) || nextRiskDollars <= 0 || isReadOnly) return;
     if (!activeSession) return;
 
     const previousSession = activeSession;
@@ -337,10 +357,10 @@ export function useBacktestSession({ ticker, date, riskDollars, backtestId }: Us
     } finally {
       setIsMutating(false);
     }
-  }, [activeSession, reviewMode]);
+  }, [activeSession, isReadOnly]);
 
   const saveReview = useCallback(async (label?: string, notes?: string) => {
-    if (!activeSession || activeActions.length === 0 || reviewMode) return;
+    if (!activeSession || activeActions.length === 0 || isReadOnly) return;
 
     const previousSession = activeSession;
     const previousActions = [...activeActions];
@@ -372,7 +392,7 @@ export function useBacktestSession({ ticker, date, riskDollars, backtestId }: Us
     } finally {
       setIsMutating(false);
     }
-  }, [activeActions, activeSession, reviewMode, reviews]);
+  }, [activeActions, activeSession, isReadOnly, reviews]);
 
   const loadReview = useCallback(async (reviewId: string) => {
     setIsLoading(true);

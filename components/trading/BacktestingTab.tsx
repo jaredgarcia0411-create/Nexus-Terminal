@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useState, type FormEvent } from 'react';
 import { useSession } from 'next-auth/react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { motion } from 'motion/react';
@@ -59,9 +59,6 @@ export default function BacktestingTab() {
   // to the review id. The effect below picks it up once the sessions GET
   // resolves and drops the user into read-only review mode automatically.
   const [autoLoadReviewId, setAutoLoadReviewId] = useState<string | null>(null);
-  // Tracks the last id we already triggered a load for, so the effect doesn't
-  // re-fire every render once sessionState updates.
-  const loadedReviewRef = useRef<string | null>(null);
 
   const selected = view.kind === 'chart' && view.ticker && view.date
     ? { ticker: view.ticker, date: view.date }
@@ -126,21 +123,8 @@ export default function BacktestingTab() {
     date: selected?.date ?? null,
     riskDollars,
     backtestId: view.kind === 'chart' ? view.id : null,
+    autoLoadReviewId,
   });
-
-  // Once the sessions GET resolves and the queued review id is in the list,
-  // drop the user into read-only review mode. The ref guard prevents the
-  // effect from re-firing — setting state inside an effect is a lint error
-  // (cascading renders) and the ref achieves the same "fire once" behavior.
-  useEffect(() => {
-    if (!autoLoadReviewId) return;
-    if (loadedReviewRef.current === autoLoadReviewId) return;
-    if (sessionState.isLoading || sessionState.isReadOnly) return;
-    if (!sessionState.reviews.some((review) => review.id === autoLoadReviewId)) return;
-
-    loadedReviewRef.current = autoLoadReviewId;
-    void sessionState.loadReview(autoLoadReviewId);
-  }, [autoLoadReviewId, sessionState]);
 
   useHotkeys('esc', () => {
     setArmedAction(null);

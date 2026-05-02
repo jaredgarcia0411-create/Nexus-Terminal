@@ -59,42 +59,43 @@ export async function GET(_request: Request) {
       .where(isNull(backtestSessions.backtestId))
       .groupBy(backtestSessions.userId, users.name);
 
-    // Pull every reviewed session that's tied to a backtest AND was authored by
-    // that backtest's owner, sorted newest-first. We then dedupe in JS to keep
-    // only the most-recent per backtestId — that becomes the auto-load target
-    // for the per-card "Launch Chart" button.
-    const ownerReviewRows = await db
+    // Pull every reviewed session that's tied to a backtest, sorted newest-first.
+    // We dedupe in JS twice: first for the current viewer's most-recent review
+    // per backtest, then for the owner-authored fallback used when the viewer
+    // has not saved their own review yet.
+    const reviewRows = await db
       .select({
         backtestId: backtestSessions.backtestId,
+        userId: backtestSessions.userId,
+        ownerId: backtests.userId,
         sessionId: backtestSessions.id,
         ticker: backtestSessions.ticker,
         date: backtestSessions.date,
       })
       .from(backtestSessions)
-      .innerJoin(backtests, and(
-        eq(backtestSessions.backtestId, backtests.id),
-        eq(backtestSessions.userId, backtests.userId),
-      ))
+      .innerJoin(backtests, eq(backtestSessions.backtestId, backtests.id))
       .where(and(
         eq(backtestSessions.status, 'REVIEWED'),
         isNotNull(backtestSessions.backtestId),
       ))
       .orderBy(desc(backtestSessions.reviewedAt), desc(backtestSessions.createdAt));
 
+    const recentUserReviewByBacktest = new Map<string, { id: string; ticker: string; date: string }>();
     const recentOwnerReviewByBacktest = new Map<string, { id: string; ticker: string; date: string }>();
-    for (const row of ownerReviewRows) {
+    for (const row of reviewRows) {
       if (!row.backtestId) continue;
-      if (recentOwnerReviewByBacktest.has(row.backtestId)) continue;
-      recentOwnerReviewByBacktest.set(row.backtestId, {
-        id: row.sessionId,
-        ticker: row.ticker,
-        date: row.date,
-      });
+      const review = { id: row.sessionId, ticker: row.ticker, date: row.date };
+      if (row.userId === currentUserId && !recentUserReviewByBacktest.has(row.backtestId)) {
+        recentUserReviewByBacktest.set(row.backtestId, review);
+      }
+      if (row.userId === row.ownerId && !recentOwnerReviewByBacktest.has(row.backtestId)) {
+        recentOwnerReviewByBacktest.set(row.backtestId, review);
+      }
     }
 
     const namedRows = rows.map((row) => ({
       ...row,
-      recentOwnerReview: recentOwnerReviewByBacktest.get(row.id) ?? null,
+      recentOwnerReview: recentUserReviewByBacktest.get(row.id) ?? recentOwnerReviewByBacktest.get(row.id) ?? null,
     }));
 
     const uncategorized = uncategorizedRows.map((row) => ({
