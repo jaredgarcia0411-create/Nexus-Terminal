@@ -4,6 +4,8 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+type RecentOwnerReview = { id: string; ticker: string; date: string } | null;
+
 const { hookSeed } = vi.hoisted(() => ({
   hookSeed: {
     backtests: [
@@ -19,6 +21,7 @@ const { hookSeed } = vi.hoisted(() => ({
         reviewCount: 2,
         createdAt: '2026-05-01T00:00:00.000Z',
         updatedAt: '2026-05-02T00:00:00.000Z',
+        recentOwnerReview: null as RecentOwnerReview,
       },
       {
         id: 'bt-2',
@@ -32,9 +35,11 @@ const { hookSeed } = vi.hoisted(() => ({
         reviewCount: 1,
         createdAt: '2026-04-01T00:00:00.000Z',
         updatedAt: '2026-05-01T00:00:00.000Z',
+        recentOwnerReview: null as RecentOwnerReview,
       },
     ],
     sampleSets: [],
+    recentUncategorizedReview: null as RecentOwnerReview,
     isLoading: false,
     error: null as string | null,
     currentUserId: 'me',
@@ -133,7 +138,7 @@ vi.mock('@/hooks/use-backtest-manager', async () => {
 
   return {
     useBacktestManager: () => {
-      const [sortKey, setSortKey] = ReactModule.useState<'updatedAt' | 'createdAt' | 'name' | 'author'>('updatedAt');
+      const [sortKey, setSortKey] = ReactModule.useState<'updatedAt' | 'name'>('updatedAt');
       const [backtestSearch, setBacktestSearch] = ReactModule.useState('');
       const [sampleSetSearch, setSampleSetSearch] = ReactModule.useState('');
 
@@ -145,14 +150,13 @@ vi.mock('@/hooks/use-backtest-manager', async () => {
         })
         .sort((a, b) => {
           if (sortKey === 'name') return a.name.localeCompare(b.name);
-          if (sortKey === 'author') return (a.ownerName ?? '').localeCompare(b.ownerName ?? '');
-          if (sortKey === 'createdAt') return Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? '');
           return Date.parse(b.updatedAt ?? '') - Date.parse(a.updatedAt ?? '');
         });
 
       return {
         backtests: hookSeed.backtests,
         sampleSets: hookSeed.sampleSets,
+        recentUncategorizedReview: hookSeed.recentUncategorizedReview ?? null,
         isLoading: hookSeed.isLoading,
         error: hookSeed.error,
         refetch: vi.fn(),
@@ -208,6 +212,7 @@ describe('BacktestManagerView', () => {
         reviewCount: 2,
         createdAt: '2026-05-01T00:00:00.000Z',
         updatedAt: '2026-05-02T00:00:00.000Z',
+        recentOwnerReview: null,
       },
       {
         id: 'bt-2',
@@ -221,8 +226,10 @@ describe('BacktestManagerView', () => {
         reviewCount: 1,
         createdAt: '2026-04-01T00:00:00.000Z',
         updatedAt: '2026-05-01T00:00:00.000Z',
+        recentOwnerReview: null,
       },
     ];
+    hookSeed.recentUncategorizedReview = null;
     hookSeed.isLoading = false;
     hookSeed.error = null;
   });
@@ -273,7 +280,7 @@ describe('BacktestManagerView', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Launch Chart' })[0]);
 
-    expect(onLaunchChart).toHaveBeenCalledWith(null);
+    expect(onLaunchChart).toHaveBeenCalledWith(null, null);
   });
 
   it('renders the empty state when no backtests are available', () => {

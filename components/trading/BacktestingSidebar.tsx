@@ -72,12 +72,6 @@ interface BacktestingSidebarProps {
   topPanel?: ReactNode;
 }
 
-function formatGap(value: number | null) {
-  if (value == null || !Number.isFinite(value)) return null;
-  const sign = value >= 0 ? '+' : '';
-  return `${sign}${value.toFixed(1)}%`;
-}
-
 function useSystemTickers() {
   const [rows, setRows] = useState<SystemTickerRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -333,8 +327,6 @@ export default function BacktestingSidebar({
           <div className="flex flex-col">
             {visibleRows.map((row) => {
               const isActive = selected?.ticker === row.ticker && selected.date === row.date;
-              const gap = formatGap(row.day1GapPct);
-              const hasMeta = row.grade || gap || row.setupType;
 
               return (
                 <button
@@ -350,17 +342,6 @@ export default function BacktestingSidebar({
                     <span className="font-mono text-sm font-semibold text-zinc-100">{row.ticker}</span>
                     <span className="font-mono text-[11px] tabular-nums text-zinc-500">{row.date}</span>
                   </div>
-                  {hasMeta ? (
-                    <div className="mt-1 flex items-center gap-2 text-[11px]">
-                      {row.grade ? (
-                        <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 font-medium text-emerald-400">
-                          {row.grade}
-                        </span>
-                      ) : null}
-                      {gap ? <span className="font-mono tabular-nums text-zinc-400">{gap}</span> : null}
-                      {row.setupType ? <span className="truncate text-zinc-500">{row.setupType}</span> : null}
-                    </div>
-                  ) : null}
                 </button>
               );
             })}

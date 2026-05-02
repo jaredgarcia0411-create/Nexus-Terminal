@@ -123,6 +123,17 @@ export default function BacktestSimPanel({
   const [reviewNotes, setReviewNotes] = useState('');
   const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null);
 
+  // LOAD REVIEW dropdown is context-aware: on a named backtest, show every
+  // review tied to that backtestId so you can browse the author's history.
+  // On the uncategorized "Launch Chart" path, scope to the current viewer's
+  // own reviews so coworkers' free-form sims aren't visible to each other.
+  const visibleReviews = useMemo(() => {
+    if (activeBacktest) {
+      return reviews.filter((review) => review.backtestId === activeBacktest.id);
+    }
+    return reviews.filter((review) => review.backtestId == null && review.userId === currentUserId);
+  }, [activeBacktest, currentUserId, reviews]);
+
   const currentOpenRisk = position.avgEntry != null && position.stop != null && position.totalShares > 0
     ? Math.abs(position.avgEntry - position.stop) * position.totalShares
     : 0;
@@ -299,16 +310,16 @@ export default function BacktestSimPanel({
             <Button
               type="button"
               variant="ghost"
-              disabled={!ticker || !date || reviews.length === 0 || isLoading}
+              disabled={!ticker || !date || visibleReviews.length === 0 || isLoading}
               className="h-8 w-full justify-between border border-white/10 bg-white/5 text-xs text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-40"
             >
               {selectedReviewId
-                ? formatReviewLabel(reviews.find((review) => review.id === selectedReviewId) ?? reviews[0])
+                ? formatReviewLabel(visibleReviews.find((review) => review.id === selectedReviewId) ?? visibleReviews[0])
                 : 'LOAD REVIEW'}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-[240px] border-white/10 bg-[#111319] text-white">
-            {reviews.map((review) => (
+            {visibleReviews.map((review) => (
               <DropdownMenuItem
                 key={review.id}
               onSelect={() => {

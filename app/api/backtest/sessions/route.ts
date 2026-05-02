@@ -37,8 +37,12 @@ export async function GET(request: Request) {
       ))
       .orderBy(desc(backtestSessions.reviewedAt), desc(backtestSessions.createdAt));
 
+    // Active session is per-user: only return the current viewer's ACTIVE row,
+    // otherwise users would clobber each other's in-progress executions.
+    // Reviews stay unfiltered so callers can scope them per context (named
+    // backtest = anyone's reviews on that backtestId; uncategorized = own only).
     return Response.json({
-      session: rows.find((row) => row.status === 'ACTIVE') ?? null,
+      session: rows.find((row) => row.status === 'ACTIVE' && row.userId === authState.user.id) ?? null,
       reviews: rows.filter((row) => row.status === 'REVIEWED'),
     });
   } catch (error) {

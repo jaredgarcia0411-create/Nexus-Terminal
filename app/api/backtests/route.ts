@@ -1,4 +1,4 @@
-import { count, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, count, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
@@ -59,6 +59,44 @@ export async function GET(_request: Request) {
       .where(isNull(backtestSessions.backtestId))
       .groupBy(backtestSessions.userId, users.name);
 
+    // Pull every reviewed session that's tied to a backtest AND was authored by
+    // that backtest's owner, sorted newest-first. We then dedupe in JS to keep
+    // only the most-recent per backtestId — that becomes the auto-load target
+    // for the per-card "Launch Chart" button.
+    const ownerReviewRows = await db
+      .select({
+        backtestId: backtestSessions.backtestId,
+        sessionId: backtestSessions.id,
+        ticker: backtestSessions.ticker,
+        date: backtestSessions.date,
+      })
+      .from(backtestSessions)
+      .innerJoin(backtests, and(
+        eq(backtestSessions.backtestId, backtests.id),
+        eq(backtestSessions.userId, backtests.userId),
+      ))
+      .where(and(
+        eq(backtestSessions.status, 'REVIEWED'),
+        isNotNull(backtestSessions.backtestId),
+      ))
+      .orderBy(desc(backtestSessions.reviewedAt), desc(backtestSessions.createdAt));
+
+    const recentOwnerReviewByBacktest = new Map<string, { id: string; ticker: string; date: string }>();
+    for (const row of ownerReviewRows) {
+      if (!row.backtestId) continue;
+      if (recentOwnerReviewByBacktest.has(row.backtestId)) continue;
+      recentOwnerReviewByBacktest.set(row.backtestId, {
+        id: row.sessionId,
+        ticker: row.ticker,
+        date: row.date,
+      });
+    }
+
+    const namedRows = rows.map((row) => ({
+      ...row,
+      recentOwnerReview: recentOwnerReviewByBacktest.get(row.id) ?? null,
+    }));
+
     const uncategorized = uncategorizedRows.map((row) => ({
       id: `uncat-${row.userId}`,
       name: 'Uncategorized',
@@ -71,9 +109,31 @@ export async function GET(_request: Request) {
       reviewCount: row.reviewCount,
       createdAt: null,
       updatedAt: null,
+      recentOwnerReview: null as { id: string; ticker: string; date: string } | null,
     }));
 
-    return Response.json({ backtests: [...rows, ...uncategorized], currentUserId });
+    // The header "Launch Chart" button is unscoped — surface the current
+    // viewer's most-recent uncategorized review so the chart can pre-populate.
+    const [recentUncatRow] = await db
+      .select({
+        id: backtestSessions.id,
+        ticker: backtestSessions.ticker,
+        date: backtestSessions.date,
+      })
+      .from(backtestSessions)
+      .where(and(
+        eq(backtestSessions.userId, currentUserId),
+        eq(backtestSessions.status, 'REVIEWED'),
+        isNull(backtestSessions.backtestId),
+      ))
+      .orderBy(desc(backtestSessions.reviewedAt), desc(backtestSessions.createdAt))
+      .limit(1);
+
+    return Response.json({
+      backtests: [...namedRows, ...uncategorized],
+      currentUserId,
+      recentUncategorizedReview: recentUncatRow ?? null,
+    });
   } catch (error) {
     logRouteError('backtests.get', error);
     return internalServerError();

@@ -18,6 +18,10 @@ export type BacktestListItem = {
   reviewCount: number;
   createdAt: string | null;
   updatedAt: string | null;
+  // Server-computed: the backtest *owner's* most recent saved review for this
+  // backtest. Drives auto-load when the per-card Launch Chart is clicked, so
+  // viewers see the author's latest work without having to pick from a list.
+  recentOwnerReview: { id: string; ticker: string; date: string } | null;
 };
 
 export type SampleSetListItem = {
@@ -30,11 +34,12 @@ export type SampleSetListItem = {
   updatedAt: string;
 };
 
-export type BacktestSortKey = 'updatedAt' | 'createdAt' | 'name' | 'author';
+export type BacktestSortKey = 'updatedAt' | 'name';
 
 type BacktestsResponse = {
   backtests: BacktestListItem[];
   currentUserId?: string | null;
+  recentUncategorizedReview?: { id: string; ticker: string; date: string } | null;
 };
 
 type SampleSetsResponse = {
@@ -74,6 +79,9 @@ export function useBacktestManager() {
 
   const [backtests, setBacktests] = useState<BacktestListItem[]>([]);
   const [sampleSets, setSampleSets] = useState<SampleSetListItem[]>([]);
+  const [recentUncategorizedReview, setRecentUncategorizedReview] = useState<
+    { id: string; ticker: string; date: string } | null
+  >(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [backtestSearch, setBacktestSearch] = useState('');
@@ -93,6 +101,7 @@ export function useBacktestManager() {
 
       setBacktests(backtestsData.backtests ?? []);
       setSampleSets(sampleSetsData.sampleSets ?? []);
+      setRecentUncategorizedReview(backtestsData.recentUncategorizedReview ?? null);
       const serverId = backtestsData.currentUserId ?? sampleSetsData.currentUserId ?? null;
       if (serverId) setServerUserId(serverId);
     } catch (loadError) {
@@ -130,8 +139,6 @@ export function useBacktestManager() {
 
     regular.sort((a, b) => {
       if (sortKey === 'name') return a.name.localeCompare(b.name);
-      if (sortKey === 'author') return (a.ownerName ?? '').localeCompare(b.ownerName ?? '');
-      if (sortKey === 'createdAt') return compareNullableDates(a.createdAt, b.createdAt);
       return compareNullableDates(a.updatedAt, b.updatedAt);
     });
 
@@ -208,6 +215,7 @@ export function useBacktestManager() {
   return {
     backtests,
     sampleSets,
+    recentUncategorizedReview,
     isLoading,
     error,
     refetch,

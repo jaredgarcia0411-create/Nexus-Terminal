@@ -39,13 +39,17 @@ function createDbMock(options: {
   return {
     select: vi.fn(() => {
       const result = selectQueue.shift() ?? [];
+      // Every chain method returns `chain` so `.orderBy(...).limit(...)` works,
+      // and `then` makes the whole chain awaitable to the queued result. This
+      // lets a single mock support both terminator styles drizzle uses here.
       const chain = {
         from: vi.fn(() => chain),
         leftJoin: vi.fn(() => chain),
+        innerJoin: vi.fn(() => chain),
         where: vi.fn(() => chain),
         groupBy: vi.fn(() => chain),
-        orderBy: vi.fn(() => Promise.resolve(result)),
-        limit: vi.fn(() => Promise.resolve(result)),
+        orderBy: vi.fn(() => chain),
+        limit: vi.fn(() => chain),
         then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
           Promise.resolve(result).then(resolve, reject),
       };
@@ -83,6 +87,8 @@ describe('backtests routes', () => {
 
   it('GET /api/backtests returns the shared list without user filtering', async () => {
     getDbMock.mockReturnValue(createDbMock({
+      // Four selects in order: backtests, uncategorized aggregates,
+      // owner-authored review lookup, current-user uncategorized review.
       selectQueue: [
         [{
           id: 'bt-1',
@@ -98,6 +104,8 @@ describe('backtests routes', () => {
           updatedAt: '2026-05-02T00:00:00.000Z',
         }],
         [],
+        [],
+        [],
       ],
     }));
 
@@ -107,6 +115,8 @@ describe('backtests routes', () => {
     expect(response.status).toBe(200);
     expect(payload.backtests).toHaveLength(1);
     expect(payload.backtests[0].ownerId).toBe('user-2');
+    expect(payload.backtests[0].recentOwnerReview).toBeNull();
+    expect(payload.recentUncategorizedReview).toBeNull();
   });
 
   it('POST /api/backtests creates a backtest for the authed user', async () => {

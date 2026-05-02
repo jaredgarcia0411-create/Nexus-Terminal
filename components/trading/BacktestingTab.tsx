@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useSession } from 'next-auth/react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { motion } from 'motion/react';
@@ -55,6 +55,13 @@ export default function BacktestingTab() {
   const [extraSessionsForward, setExtraSessionsForward] = useState(0);
   const [lookupTicker, setLookupTicker] = useState('');
   const [lookupDate, setLookupDate] = useState('');
+  // When the user clicks Launch Chart with a known recent review, we set this
+  // to the review id. The effect below picks it up once the sessions GET
+  // resolves and drops the user into read-only review mode automatically.
+  const [autoLoadReviewId, setAutoLoadReviewId] = useState<string | null>(null);
+  // Tracks the last id we already triggered a load for, so the effect doesn't
+  // re-fire every render once sessionState updates.
+  const loadedReviewRef = useRef<string | null>(null);
 
   const selected = view.kind === 'chart' && view.ticker && view.date
     ? { ticker: view.ticker, date: view.date }
@@ -69,8 +76,10 @@ export default function BacktestingTab() {
   const openChartView = useCallback((
     selection: BacktestSelection | null,
     activeBacktest: ActiveBacktestSummary = { id: null, name: null, userId: null },
+    reviewToAutoLoad: string | null = null,
   ) => {
     resetTransientState();
+    setAutoLoadReviewId(reviewToAutoLoad);
     setView({
       kind: 'chart',
       ticker: selection?.ticker ?? null,
@@ -87,6 +96,9 @@ export default function BacktestingTab() {
         ? { id: view.id, name: view.name, userId: view.userId }
         : { id: null, name: null, userId: null };
 
+    // Manually picking a new (ticker, date) cancels any pending auto-load —
+    // the user has signaled they want a fresh chart, not the review we queued.
+    setAutoLoadReviewId(null);
     openChartView(nextSelection, activeBacktest);
   }, [openChartView, view]);
 
@@ -115,6 +127,20 @@ export default function BacktestingTab() {
     riskDollars,
     backtestId: view.kind === 'chart' ? view.id : null,
   });
+
+  // Once the sessions GET resolves and the queued review id is in the list,
+  // drop the user into read-only review mode. The ref guard prevents the
+  // effect from re-firing — setting state inside an effect is a lint error
+  // (cascading renders) and the ref achieves the same "fire once" behavior.
+  useEffect(() => {
+    if (!autoLoadReviewId) return;
+    if (loadedReviewRef.current === autoLoadReviewId) return;
+    if (sessionState.isLoading || sessionState.isReadOnly) return;
+    if (!sessionState.reviews.some((review) => review.id === autoLoadReviewId)) return;
+
+    loadedReviewRef.current = autoLoadReviewId;
+    void sessionState.loadReview(autoLoadReviewId);
+  }, [autoLoadReviewId, sessionState]);
 
   useHotkeys('esc', () => {
     setArmedAction(null);
@@ -178,11 +204,12 @@ export default function BacktestingTab() {
     >
       {view.kind === 'manager' ? (
         <BacktestManagerView
-          onLaunchChart={(backtest) => openChartView(
-            null,
+          onLaunchChart={(backtest, autoLoadReview) => openChartView(
+            autoLoadReview ? { ticker: autoLoadReview.ticker, date: autoLoadReview.date } : null,
             backtest
               ? { id: backtest.id, name: backtest.name, userId: backtest.ownerId }
               : { id: null, name: null, userId: null },
+            autoLoadReview?.id ?? null,
           )}
           onViewStats={(backtestId) => setView({ kind: 'stats', backtestId })}
         />

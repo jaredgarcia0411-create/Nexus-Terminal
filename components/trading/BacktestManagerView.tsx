@@ -23,7 +23,10 @@ import {
 } from '@/hooks/use-backtest-manager';
 
 interface BacktestManagerViewProps {
-  onLaunchChart: (backtest: { id: string; name: string; ownerId: string } | null) => void;
+  onLaunchChart: (
+    backtest: { id: string; name: string; ownerId: string } | null,
+    autoLoadReview: { id: string; ticker: string; date: string } | null,
+  ) => void;
   onViewStats: (backtestId: string) => void;
 }
 
@@ -44,6 +47,7 @@ export default function BacktestManagerView({
     sampleSets,
     filteredBacktests,
     filteredSampleSets,
+    recentUncategorizedReview,
     isLoading,
     error,
     backtestSearch,
@@ -139,7 +143,7 @@ export default function BacktestManagerView({
         <div className="flex items-center gap-2">
           <Button
             type="button"
-            onClick={() => onLaunchChart(null)}
+            onClick={() => onLaunchChart(null, recentUncategorizedReview)}
             className="bg-emerald-500 text-black hover:bg-emerald-400"
           >
             <TrendingUp className="h-4 w-4" />
@@ -162,7 +166,7 @@ export default function BacktestManagerView({
               <h3 className="font-mono text-sm font-semibold text-white">Saved Tests</h3>
               <Select
                 value={sortKey}
-                onValueChange={(value) => setSortKey(value as 'updatedAt' | 'createdAt' | 'name' | 'author')}
+                onValueChange={(value) => setSortKey(value as 'updatedAt' | 'name')}
               >
                 <SelectTrigger
                   className="h-8 w-[8.75rem] bg-black text-xs text-zinc-100"
@@ -172,9 +176,7 @@ export default function BacktestManagerView({
                 </SelectTrigger>
                 <SelectContent className="border-white/10 bg-black text-white">
                   <SelectItem value="updatedAt">Last updated</SelectItem>
-                  <SelectItem value="createdAt">Created</SelectItem>
-                  <SelectItem value="name">Name</SelectItem>
-                  <SelectItem value="author">Author</SelectItem>
+                  <SelectItem value="name">Alphabetical</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -238,7 +240,10 @@ export default function BacktestManagerView({
                         <Button
                           type="button"
                           size="xs"
-                          onClick={() => onLaunchChart({ id: backtest.id, name: backtest.name, ownerId: backtest.ownerId })}
+                          onClick={() => onLaunchChart(
+                            { id: backtest.id, name: backtest.name, ownerId: backtest.ownerId },
+                            backtest.recentOwnerReview,
+                          )}
                           className="h-7 bg-emerald-500 text-[11px] text-black hover:bg-emerald-400"
                         >
                           Launch Chart
