@@ -382,6 +382,10 @@ export function useBacktestSession({
         throw new Error(payload.error ?? 'Could not save review');
       }
       setReviews([payload.session, ...previousReviews]);
+      setReviewMode({
+        session: payload.session,
+        actions: previousActions,
+      });
     } catch (mutationError) {
       setActiveSession(previousSession);
       setActiveActions(previousActions);

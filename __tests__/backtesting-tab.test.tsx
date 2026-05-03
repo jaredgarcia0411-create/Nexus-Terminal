@@ -170,6 +170,7 @@ function makeBaseSessionState(direction: 'FLAT' | 'LONG' | 'SHORT'): MockSession
       totalShares: direction === 'FLAT' ? 0 : 100,
       avgEntry: direction === 'FLAT' ? null : 10,
       stop: direction === 'LONG' ? 9 : direction === 'SHORT' ? 11 : null,
+      lastSetStop: direction === 'LONG' ? 9 : direction === 'SHORT' ? 11 : null,
       realizedPnl: 0,
       lastExitPrice: null,
       initialRiskDollars: 100,

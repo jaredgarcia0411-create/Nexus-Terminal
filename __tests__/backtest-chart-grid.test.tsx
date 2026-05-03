@@ -46,6 +46,7 @@ function renderGrid() {
 describe('BacktestChartGrid', () => {
   beforeEach(() => {
     chartProps.length = 0;
+    window.localStorage.clear();
   });
 
   it('renders the default four chart cells', () => {
@@ -105,6 +106,32 @@ describe('BacktestChartGrid', () => {
 
     expect(screen.queryByTestId('chart-5m')).toBeNull();
     expect(screen.getAllByTestId('chart-15m')).toHaveLength(2);
+    expect(screen.getByTestId('chart-1h')).toBeTruthy();
+    expect(screen.getByTestId('chart-1D')).toBeTruthy();
+  });
+
+  it('persists the expanded slot across remounts', () => {
+    const { unmount } = renderGrid();
+
+    fireEvent.click(screen.getByRole('button', { name: 'toggle 1h' }));
+    expect(window.localStorage.getItem('nexus-backtest-expand-slot')).toBe('hourly');
+
+    unmount();
+    renderGrid();
+
+    expect(screen.queryByTestId('chart-5m')).toBeNull();
+    expect(screen.queryByTestId('chart-15m')).toBeNull();
+    expect(screen.getByTestId('chart-1h')).toBeTruthy();
+    expect(screen.queryByTestId('chart-1D')).toBeNull();
+  });
+
+  it('ignores unknown persisted expanded slot values', () => {
+    window.localStorage.setItem('nexus-backtest-expand-slot', 'foobar');
+
+    renderGrid();
+
+    expect(screen.getByTestId('chart-5m')).toBeTruthy();
+    expect(screen.getByTestId('chart-15m')).toBeTruthy();
     expect(screen.getByTestId('chart-1h')).toBeTruthy();
     expect(screen.getByTestId('chart-1D')).toBeTruthy();
   });

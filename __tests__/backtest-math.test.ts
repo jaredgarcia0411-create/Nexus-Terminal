@@ -69,3 +69,34 @@ describe('backtest-math', () => {
     ], 100)).toThrow(/SELL is only valid from LONG/);
   });
 });
+
+describe('lastSetStop on closed positions', () => {
+  it('retains the entry stop after a long closes', () => {
+    const position = reduceActions([
+      makeAction({ actionType: 'LONG', price: 100, shares: 100, stopPrice: 95, sequence: 1 }),
+      makeAction({ actionType: 'SELL', price: 105, shares: 100, stopPrice: null, sequence: 2 }),
+    ], 100);
+
+    expect(position.lastSetStop).toBe(95);
+    expect(position.stop).toBeNull();
+  });
+
+  it('retains the most recent add stop after a long closes', () => {
+    const position = reduceActions([
+      makeAction({ actionType: 'LONG', price: 100, shares: 100, stopPrice: 95, sequence: 1 }),
+      makeAction({ actionType: 'LONG_ADD', price: 102, shares: 50, stopPrice: 97, sequence: 2 }),
+      makeAction({ actionType: 'SELL', price: 106, shares: 150, stopPrice: null, sequence: 3 }),
+    ], 100);
+
+    expect(position.lastSetStop).toBe(97);
+  });
+
+  it('keeps open long stop and lastSetStop in sync', () => {
+    const position = reduceActions([
+      makeAction({ actionType: 'LONG', price: 100, shares: 100, stopPrice: 95, sequence: 1 }),
+    ], 100);
+
+    expect(position.stop).toBe(95);
+    expect(position.lastSetStop).toBe(position.stop);
+  });
+});

@@ -1,1829 +1,1011 @@
 # Nexus Terminal — HANDOFF.md
 
-> Updated: 2026-05-01
+> Updated: 2026-05-03
 > Purpose: active execution spec plus compact recent context. Older implementation detail lives in git history and `specs/`.
 
 > Historical completed sections were removed to keep this file focused. Use git history and the `specs/` directory for archived implementation detail.
 
 ## Active Execution Spec
 
-> Generated: 2026-05-01 | Agent: Claude (`nexus-handoff`)
-> Status: COMPLETE — phases 1-7 implemented locally on 2026-05-01; full validation rerun pending below.
+> Generated: 2026-05-03 | Agent: Claude (`nexus-handoff`)
+> Status: PHASE A COMPLETE — validated locally; Phase B pending. Codex MUST stop and commit between phases.
 
-# Build Spec — Backtest Manager Homepage Feature
-> Generated: 2026-05-01 | Agent: nexus-architect
-> Status: COMPLETE — phases 1-7 implemented
+# Build Spec — Backtesting Tab Improvements
 
-### Codex Checkpoint — 2026-05-01
-- Complete: phase 1 schema + migration (`sample_sets`, `backtests`, `backtest_sessions.backtest_id`)
-- Complete: phase 2 API routes (`/api/backtests*`, `/api/sample-sets*`, session route `backtestId` wiring, cross-user read access)
-- Complete: phase 3 pure logic libs + tests (`lib/sample-set-csv.ts`, `lib/backtest-stats.ts`, `lib/backtest-filters.ts`)
-- Complete: phase 4 manager hook/view/dialogs (`use-backtest-manager`, `BacktestManagerView`, `NewBacktestDialog`, `AddSampleSetDialog`, `EditBacktestDialog`)
-- Complete: phase 5 stats hook/view (`use-backtest-stats`, `BacktestStatsView`)
-- Complete: phase 6 view-mode wiring (`BacktestingTab`, `BacktestingSidebar`, `BacktestSimPanel`, `use-backtest-session`, `/api/backtests/[id]` sample-set row response)
-- Complete: phase 7 route/component tests (`backtests-route`, `sample-sets-route`, `backtest-manager-view`, updated `backtesting-tab`)
-- Validated locally before final rerun: `npm run db:generate`, `npm run db:migrate`, focused Vitest coverage for new phase 4-7 tests
+## Codex Constraints (read first)
 
-### Codex Follow-up — 2026-05-01
-- Fixed backtesting review auto-load/context drift after commit `a04ac6a`: manager Launch Chart now prefers the current viewer's most recent review per named backtest, then falls back to the owner-authored review.
-- Scoped `/api/backtest/sessions` GET by `backtestId` so named-backtest chart views do not load uncategorized or other-backtest reviews for the same ticker/date.
-- Moved auto-load into `useBacktestSession` so it runs after chart-context session loading, and guarded stale read-only review state so switching ticker while a review is open no longer renders old review actions or blocks new actions.
-- Fixed `BacktestSimPanel` stale dropdown selection crash where `formatReviewLabel()` received `undefined` after changing ticker/backtest context.
-- Validated: `npm run lint`, `npx tsc --noEmit --pretty false`, `npx vitest run __tests__/backtesting-tab.test.tsx __tests__/backtest-manager-view.test.tsx __tests__/backtests-route.test.ts`, `npm test`, `npm run workflow:audit`, `git diff --check`.
+- **STOP between phases.** After Phase A passes validation and is committed, Codex MUST end the run. The user will compact the session and re-invoke for Phase B. Do NOT continue from Phase A into Phase B in the same run.
+- **Migration command:** Phase B uses `npm run db:migrate` only. NEVER `db:push` (this repo's composite primary keys produce false positives in `db:push` and corrupt the migration history).
+- **Read-only mode applies to all loaded reviews** (own reviews + coworkers' reviews). To modify, the user deletes the review and starts a new session.
+- **Text drawing styling is fixed.** 14px font, white (`#ffffff`), no color picker, no font-size selector.
+- **Don't change risk math in `reduceActions()`.** The stop-display fix adds a new field; it must not alter `position.stop` semantics for risk calculations.
+- **Local-storage validation.** When reading the chart-expand slot id from `localStorage`, validate against the known slot list before applying.
+- **Order of work:** Within each phase, follow steps in numerical order. Earlier steps may be referenced by later steps.
 
 ---
 
-## 1. Objective
+## Phase A — UI fixes, no schema (Issues 1, 2, 5)
 
-Add a "Backtest Manager" landing view to the Backtesting tab. Users land on a two-column dashboard listing all saved backtests and sample sets across all users. From there they can create backtests tied to sample sets, view aggregate stats for any backtest, or launch the existing chart/sim view inside a named backtest context. The chart view gains an active-backtest breadcrumb; saved reviews auto-attach to the active backtest when the current user owns it.
+### Step A1 — Stop price retains value after position closes
 
----
+**File:** `lib/backtest-math.ts`
+**Action:** MODIFY
 
-## 2. Implementation Phases
+Bug: `reduceActions()` clears `position.stop` to `null` when `totalShares` reaches `0` (lines 192-196 for SELL, lines 210-214 for COVER). When viewing a fully-closed reviewed trade, the stop disappears in the UI even though it was set during the trade.
 
----
+Fix: add a new field `lastSetStop` on `SimPosition` that tracks the most recently set stop and is **never cleared**. The existing `stop` field keeps its semantics (only set on an open position). `BacktestSimPanel` will display `position.stop ?? position.lastSetStop` in step A3.
 
-### Phase 1 — Schema + Migration
+Instructions:
 
-**Files to create / modify:**
-- MODIFY `/home/jared/Nexus-Terminal/lib/db/schema.ts`
-
-**Steps:**
-
-1. Open `/home/jared/Nexus-Terminal/lib/db/schema.ts`. Confirm the existing top-level import line reads:
+1. In the `SimPosition` interface (currently lines 5-15), add a new field after `stop`:
    ```ts
-   import { pgTable, text, doublePrecision, integer, real, serial, timestamp, primaryKey, index, unique, foreignKey, jsonb, date, boolean } from 'drizzle-orm/pg-core';
+   lastSetStop: number | null;
    ```
-   Add `uniqueIndex` to the destructured import list. The full import becomes:
+2. In `createEmptyPosition()` (lines 17-29), add `lastSetStop: null,` to the returned object.
+3. In `reduceActions()` for the four cases that assign `position.stop = action.stopPrice` (`LONG`, `SHORT`, `LONG_ADD`, `SHORT_ADD`), also assign `position.lastSetStop = action.stopPrice` immediately after the existing `position.stop = action.stopPrice` line.
+4. Do **not** modify the SELL / COVER cases. `position.stop` should still be cleared on close; `position.lastSetStop` simply retains the prior value because it was last written by a LONG / SHORT / *_ADD case.
+
+**Acceptance criteria:**
+- [ ] `SimPosition` type exports the new `lastSetStop: number | null` field.
+- [ ] After `LONG @ 100, SELL all`, `reduceActions(...)` returns `{ stop: null, lastSetStop: 95 }` (or whatever stop was set during entry).
+- [ ] After `LONG @ 100, LONG_ADD @ 102 with new stop 96, SELL all`, `lastSetStop === 96`.
+- [ ] `position.stop` for an open position equals the most recent stop (existing behavior unchanged).
+
+---
+
+### Step A2 — Unit test for `lastSetStop`
+
+**File:** `__tests__/backtest-math.test.ts`
+**Action:** MODIFY
+
+Add a focused test that asserts `lastSetStop` retains the most recent stop after the position closes.
+
+Instructions:
+
+1. Read the existing file to learn the test framework and helper conventions used (likely `describe` / `it` from Vitest, building `BacktestAction` objects inline).
+2. Append a new `describe('lastSetStop on closed positions', ...)` block near the bottom of the file. Include three tests:
+   - **Closed long retains the entry stop.** Build actions: `LONG` at `price=100, stop=95`, then `SELL` all. Assert `reduceActions(actions, 100).lastSetStop === 95` and `reduceActions(actions, 100).stop === null`.
+   - **Closed long retains the most recent add stop.** Build actions: `LONG` at `100/95`, `LONG_ADD` at `102/97`, `SELL` all. Assert `lastSetStop === 97`.
+   - **Open long has both `stop` and `lastSetStop` equal.** `LONG` at `100/95`, no exit. Assert `stop === lastSetStop && stop === 95`.
+3. If the existing tests use a helper like `makeAction({ ... })`, reuse it. Otherwise, construct `BacktestAction` objects directly with all required fields (`id`, `userId`, `sessionId`, `actionType`, `price`, `shares`, `stopPrice`, `barTime`, `sequence`, `createdAt`).
+
+**Acceptance criteria:**
+- [ ] `npx vitest run __tests__/backtest-math.test.ts` passes including the new tests.
+- [ ] No existing tests break.
+
+---
+
+### Step A3 — `BacktestSimPanel` displays the retained stop
+
+**File:** `components/trading/BacktestSimPanel.tsx`
+**Action:** MODIFY
+
+Wire the new `lastSetStop` field into the STOP display.
+
+Instructions:
+
+1. Locate the STOP cell at lines ~224-227:
+   ```tsx
+   <div>
+     <div className="text-zinc-500">STOP</div>
+     <div className="font-mono tabular-nums text-zinc-100">{position.stop != null ? formatCurrency(position.stop) : '-'}</div>
+   </div>
+   ```
+2. Replace the inner expression with `position.stop ?? position.lastSetStop`:
+   ```tsx
+   <div className="font-mono tabular-nums text-zinc-100">
+     {(() => {
+       const displayStop = position.stop ?? position.lastSetStop;
+       return displayStop != null ? formatCurrency(displayStop) : '-';
+     })()}
+   </div>
+   ```
+   (Or pull out a `const displayStop = position.stop ?? position.lastSetStop;` above the JSX and use it.)
+3. **Do not** change the `currentOpenRisk` calculation at lines 140-142. It uses `position.stop` for risk-on-an-open-position semantics; that's correct — closed positions should still show `RISK: -`.
+
+**Acceptance criteria:**
+- [ ] Loading a reviewed CLOSED long that had a stop of 95 displays `STOP: $95.00`.
+- [ ] An open position still displays its current `stop`.
+- [ ] A position that never set a stop (impossible in practice but defensive) shows `-`.
+- [ ] The `RISK` field still shows `-` for closed positions (unchanged).
+
+---
+
+### Step A4 — Save Review keeps the saved review loaded
+
+**File:** `hooks/use-backtest-session.ts`
+**Action:** MODIFY
+
+Bug: `saveReview()` (lines 362-395) optimistically clears `activeSession` and `activeActions` (lines 371-372), then on success only adds the new review to the `reviews[]` array (line 384). The chart goes blank instead of staying populated as the just-saved (now read-only) review.
+
+Fix: in the success path, set `reviewMode` to point at the saved session, using the captured `previousActions` so the ledger renders without a refetch. The existing `isCurrentReviewMode` derivation (lines 77-80) will pick this up automatically because the saved session retains the same `ticker`, `date`, and `backtestId`.
+
+Instructions:
+
+1. Inside `saveReview()`, the success branch currently reads:
    ```ts
-   import { pgTable, text, doublePrecision, integer, real, serial, timestamp, primaryKey, index, uniqueIndex, unique, foreignKey, jsonb, date, boolean } from 'drizzle-orm/pg-core';
+   setReviews([payload.session, ...previousReviews]);
    ```
-   Also add `randomUUID` from Node crypto — add this import at the top (after the drizzle import):
+2. Add immediately after that line:
    ```ts
-   import { randomUUID } from 'crypto';
+   setReviewMode({
+     session: payload.session,
+     actions: previousActions,
+   });
    ```
+3. Do **not** modify the catch branch — it already restores `activeSession`, `activeActions`, and `reviews`. `reviewMode` was not changed in the try-block before this addition, so no rollback is needed for it on failure (it stays whatever it was).
 
-2. Append the `sampleSets` table definition **before** `backtestSessions` (so the FK reference resolves in declaration order):
+**Acceptance criteria:**
+- [ ] After clicking SAVE REVIEW with a valid label, the chart immediately shows the read-only "Viewing review" banner (from `BacktestSimPanel` lines 171-190).
+- [ ] The ledger still shows the executions instead of going blank.
+- [ ] `isReadOnly` is `true` after save, so drawing tools and the trade menu are disabled (existing `BacktestTradeMenu` rendering at `BacktestingTab.tsx:311-318` already gates on `!isReadOnly`).
+- [ ] If the save POST fails, the previous active session and actions are restored (existing behavior preserved).
+
+---
+
+### Step A5 — `LOAD REVIEW` dropdown reflects the loaded review
+
+**File:** `components/trading/BacktestSimPanel.tsx`
+**Action:** MODIFY
+
+Bug: when entering review mode via auto-load (or after step A4's auto-load post-save), the chart shows the review correctly but the LOAD REVIEW dropdown still displays the placeholder "LOAD REVIEW" because the panel's local `selectedReviewId` state (line 124) is `null`.
+
+Fix: derive the displayed review id from `session.id` whenever `isReadOnly` is true, falling back to the local `selectedReviewId` state for any transition cases.
+
+Instructions:
+
+1. At line 136, where `selectedReview` is currently computed:
    ```ts
-   export const sampleSets = pgTable('sample_sets', {
-     id: text('id').primaryKey().$defaultFn(() => randomUUID()),
-     userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-     name: text('name').notNull(),
-     rows: jsonb('rows').$type<Array<{ ticker: string; date: string }>>().notNull().default([]),
-     rowCount: integer('row_count').notNull().default(0),
-     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-   }, (t) => [
-     index('sample_sets_user_created_idx').on(t.userId, t.createdAt),
-     uniqueIndex('sample_sets_user_name_idx').on(t.userId, t.name),
-   ]);
+   const selectedReview = selectedReviewId
+     ? visibleReviews.find((review) => review.id === selectedReviewId) ?? null
+     : null;
    ```
-
-3. Append the `backtests` table definition right after `sampleSets`:
+   Replace with a derivation that prefers the loaded review when in read-only mode:
    ```ts
-   export const backtests = pgTable('backtests', {
-     id: text('id').primaryKey().$defaultFn(() => randomUUID()),
-     userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-     name: text('name').notNull(),
-     description: text('description'),
-     sampleSetId: text('sample_set_id').references(() => sampleSets.id, { onDelete: 'set null' }),
-     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-   }, (t) => [
-     index('backtests_user_created_idx').on(t.userId, t.createdAt),
-     uniqueIndex('backtests_user_name_idx').on(t.userId, t.name),
-   ]);
+   const effectiveSelectedReviewId = isReadOnly && session ? session.id : selectedReviewId;
+   const selectedReview = effectiveSelectedReviewId
+     ? visibleReviews.find((review) => review.id === effectiveSelectedReviewId) ?? null
+     : null;
    ```
+2. The dropdown JSX at lines 311-322 reads `selectedReview` to show its label, so no other change is needed there.
+3. The `setSelectedReviewId(null)` call inside the Clear dialog (line 366) already exits the local selection; combined with `clear()` exiting reviewMode (`startNewSession` is implicit through `setReviewMode(null)` at hook line 276), the dropdown will fall back to the placeholder. No change needed.
+4. Do **not** add a `useEffect` to sync `selectedReviewId` to `session.id` — keep the derivation pure to avoid render loops.
 
-4. In the existing `backtestSessions` table definition, add two new fields after `updatedAt`:
+**Acceptance criteria:**
+- [ ] Auto-load: clicking "Open" on a saved review from the manager opens the chart, and the LOAD REVIEW dropdown shows the saved review's label (not the placeholder).
+- [ ] After save (step A4): the dropdown shows the just-saved review's label.
+- [ ] Clicking another review in the dropdown still calls `onLoadReview(review.id)` and updates the displayed selection (existing handler at lines 326-332 unchanged).
+- [ ] Exiting review mode via Clear (or starting a new session) returns the dropdown to "LOAD REVIEW" placeholder.
+
+---
+
+### Step A6 — Chart-expand state persists in localStorage
+
+**File:** `components/trading/BacktestChartGrid.tsx`
+**Action:** MODIFY
+
+Bug: `expandedSlotId` lives in `gridState` (lines 68-73) and is reset whenever `gridState.scope !== drawingScope` (lines 74-81), which happens on every ticker/date change. The component also fully unmounts on tab switch.
+
+Fix: persist a single user-level expand preference in `localStorage` under key `nexus-backtest-expand-slot`. Read on init; write on toggle. Validate against the known slot ids.
+
+Instructions:
+
+1. At the top of the file (after the imports), add the storage key constant and a slot-id validator. Use the existing `ChartSlotId` type for safety:
    ```ts
-   backtestId: text('backtest_id').references(() => backtests.id, { onDelete: 'set null' }),
+   const EXPAND_STORAGE_KEY = 'nexus-backtest-expand-slot';
+   const KNOWN_SLOT_IDS: readonly ChartSlotId[] = ['primary', 'secondary', 'hourly', 'daily'];
+
+   function readPersistedExpandedSlot(): ChartSlotId | null {
+     if (typeof window === 'undefined') return null;
+     try {
+       const stored = window.localStorage.getItem(EXPAND_STORAGE_KEY);
+       if (!stored) return null;
+       return (KNOWN_SLOT_IDS as readonly string[]).includes(stored)
+         ? (stored as ChartSlotId)
+         : null;
+     } catch {
+       return null;
+     }
+   }
+
+   function writePersistedExpandedSlot(slotId: ChartSlotId | null): void {
+     if (typeof window === 'undefined') return;
+     try {
+       if (slotId === null) {
+         window.localStorage.removeItem(EXPAND_STORAGE_KEY);
+       } else {
+         window.localStorage.setItem(EXPAND_STORAGE_KEY, slotId);
+       }
+     } catch {
+       // Ignore storage errors.
+     }
+   }
    ```
-   Then add a new index inside the `(t) => [...]` array for that table:
+2. In the initial `useState` for `gridState` (line 68), replace `expandedSlotId: null` with `expandedSlotId: readPersistedExpandedSlot()`.
+3. In `currentGridState` fallback (lines 74-81), replace `expandedSlotId: null` with `expandedSlotId: readPersistedExpandedSlot()` so a ticker change re-reads the persisted preference rather than collapsing.
+4. In `toggleExpandedSlot()` (lines 92-97), compute the new value, persist it, then update state:
    ```ts
-   index('backtest_sessions_user_backtest_idx').on(t.userId, t.backtestId),
+   const toggleExpandedSlot = (slotId: ChartSlotId) => {
+     const nextExpanded = currentGridState.expandedSlotId === slotId ? null : slotId;
+     writePersistedExpandedSlot(nextExpanded);
+     setGridState({
+       ...currentGridState,
+       expandedSlotId: nextExpanded,
+     });
+   };
    ```
+5. Do **not** include the expand state in any per-review save path. It's a user-level preference, not per-review chart state. (Phase B will save drawings + indicators per review; expand stays in localStorage.)
 
-5. Update `BacktestSession` interface in `/home/jared/Nexus-Terminal/lib/types.ts` — add the new nullable field:
+**Acceptance criteria:**
+- [ ] Expand a slot, switch ticker — the chart still renders only the expanded slot.
+- [ ] Expand a slot, switch to another tab and back — still expanded.
+- [ ] Expand a slot, full page reload — still expanded.
+- [ ] Toggle off an expanded slot, reload — defaults to grid view (no slot expanded).
+- [ ] If `localStorage` somehow contains an unknown value (e.g. `'foobar'`), it's ignored and the grid renders normally.
+
+---
+
+### Phase A end requirements
+
+Run from `/home/jared/Nexus-Terminal`:
+
+```
+npm run lint
+npx tsc --noEmit
+npm test
+```
+
+All three must exit 0. (Skip `npm run typecheck:services` — no `services/` files touched. Skip `npm run workflow:audit` — no workflow assets touched.)
+
+Then commit with this message:
+
+```
+Fix backtest review save flow, stop display, dropdown sync, and persist chart expand
+```
+
+After the commit, **STOP THE RUN.** Print this exact line to the conversation:
+
+```
+✋ STOP — Phase A complete. User will compact and continue with Phase B.
+```
+
+Do not continue to Phase B in the same Codex run.
+
+---
+
+---
+
+## Phase B — Persistence + new text tool (Issues 3, 4)
+
+### Step B1 — Schema migration: add `chart_state` jsonb column
+
+**File:** `lib/db/schema.ts`
+**Action:** MODIFY
+
+Add a single `jsonb` column to `backtestSessions` to hold drawings and per-slot indicators.
+
+Instructions:
+
+1. Confirm `jsonb` is already imported at line 1 — it is.
+2. In the `backtestSessions` table definition (lines 501-519), add a `chartState` field after `backtestId`:
    ```ts
-   backtestId: string | null;
+   chartState: jsonb('chart_state').default({}).notNull(),
    ```
+   Do not type-narrow with `$type<>()` here — keep the schema column untyped at the DB layer. The Zod validation at the API layer (step B3) and the client-side type (step B5) provide runtime + compile-time safety.
+3. Do not add new indexes on this column.
 
-6. Generate and apply the migration. Run from repo root:
-   ```
-   npm run db:generate
-   npm run db:migrate
-   ```
-   Confirm the migration file was created under `/home/jared/Nexus-Terminal/drizzle/`. Do NOT run `db:push`.
-
-**Done when:** `npm run db:migrate` exits 0, `npx tsc --noEmit` passes on schema.ts, and `BacktestSession` in `lib/types.ts` includes `backtestId`.
+**Acceptance criteria:**
+- [ ] `npm run db:generate` produces a new migration file under `drizzle/` (next number after `0027_*`).
+- [ ] The generated SQL adds `"chart_state" jsonb DEFAULT '{}' NOT NULL` to `backtest_sessions`.
+- [ ] No other schema changes are generated.
 
 ---
 
-### Phase 2 — API Routes
+### Step B2 — Apply the migration
 
-**Files to create:**
-- `/home/jared/Nexus-Terminal/lib/validations/backtests.ts`
-- `/home/jared/Nexus-Terminal/lib/validations/sample-sets.ts`
-- `/home/jared/Nexus-Terminal/app/api/backtests/route.ts`
-- `/home/jared/Nexus-Terminal/app/api/backtests/[id]/route.ts`
-- `/home/jared/Nexus-Terminal/app/api/sample-sets/route.ts`
-- `/home/jared/Nexus-Terminal/app/api/sample-sets/[id]/route.ts`
-- `/home/jared/Nexus-Terminal/app/api/sample-sets/[id]/duplicate/route.ts`
+**File:** none (CLI command)
+**Action:** RUN
 
-**Files to modify:**
-- `/home/jared/Nexus-Terminal/app/api/backtest/sessions/route.ts`
-- `/home/jared/Nexus-Terminal/app/api/backtest/sessions/[id]/route.ts`
+Run from `/home/jared/Nexus-Terminal`:
 
----
-
-#### Step 2.1 — Zod validation files
-
-Create `/home/jared/Nexus-Terminal/lib/validations/backtests.ts`:
-```ts
-import { z } from 'zod';
-
-export const backtestCreateSchema = z.object({
-  name: z.string().trim().min(1, 'name is required').max(100, 'name must be 100 characters or fewer'),
-  description: z.string().trim().optional(),
-  sampleSetId: z.string().trim().optional(),
-});
-
-export const backtestPatchSchema = z.object({
-  name: z.string().trim().min(1).max(100).optional(),
-  description: z.string().trim().nullable().optional(),
-  sampleSetId: z.string().trim().nullable().optional(),
-});
-
-export type BacktestCreateBody = z.infer<typeof backtestCreateSchema>;
-export type BacktestPatchBody = z.infer<typeof backtestPatchSchema>;
+```
+npm run db:migrate
 ```
 
-Create `/home/jared/Nexus-Terminal/lib/validations/sample-sets.ts`:
-```ts
-import { z } from 'zod';
+This invokes the safe migrate wrapper at `scripts/db-migrate-safe.mjs` (per `package.json` line 16). **Never use `db:push`** — the user's preference: `db:push` has a false-positive on this repo's composite PKs and corrupts the migration history.
 
-const sampleSetRowSchema = z.object({
-  ticker: z.string().trim().min(1).toUpperCase(),
-  date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
-});
-
-export const sampleSetCreateSchema = z.object({
-  name: z.string().trim().min(1, 'name is required').max(100, 'name must be 100 characters or fewer'),
-  rows: z.array(sampleSetRowSchema).min(1, 'rows must not be empty'),
-});
-
-export const sampleSetPatchSchema = z.object({
-  name: z.string().trim().min(1).max(100).optional(),
-});
-
-export const sampleSetDuplicateSchema = z.object({
-  name: z.string().trim().min(1, 'name is required').max(100),
-});
-
-export type SampleSetCreateBody = z.infer<typeof sampleSetCreateSchema>;
-export type SampleSetPatchBody = z.infer<typeof sampleSetPatchSchema>;
-export type SampleSetDuplicateBody = z.infer<typeof sampleSetDuplicateSchema>;
-```
+**Acceptance criteria:**
+- [ ] `npm run db:migrate` exits 0.
+- [ ] Existing `backtest_sessions` rows now have `chart_state = '{}'` (default backfill, no manual SQL needed).
+- [ ] No errors about composite PKs or missing tables.
 
 ---
 
-#### Step 2.2 — `GET /api/sample-sets` and `POST /api/sample-sets`
+### Step B3 — Extend Zod validation for review POST
 
-Create `/home/jared/Nexus-Terminal/app/api/sample-sets/route.ts`. Follow the auth + db guard pattern from `/home/jared/Nexus-Terminal/app/api/backtest/sessions/route.ts`.
+**File:** `lib/validations/backtest.ts`
+**Action:** MODIFY
 
-```ts
-import { desc, eq, sql } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
-import { getDb } from '@/lib/db';
-import { sampleSets, users } from '@/lib/db/schema';
-import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
-import { sampleSetCreateSchema } from '@/lib/validations/sample-sets';
+Extend `backtestSessionReviewSchema` so the review POST body can include `chartState`. Define a strict-but-tolerant shape: drawings as an array of `unknown` (validated downstream by `normalizeDrawings()`), indicators as a record of slot id → string[].
 
-export async function GET(_request: Request) {
-  try {
-    const authState = await requireUser();
-    if ('error' in authState) return authState.error;
+Instructions:
 
-    const db = getDb();
-    if (!db) return dbUnavailable();
-    await ensureUser(db, authState.user);
-
-    // Join to users to get ownerName. No userId filter — all users see all sets.
-    const rows = await db
-      .select({
-        id: sampleSets.id,
-        name: sampleSets.name,
-        rowCount: sampleSets.rowCount,
-        ownerId: sampleSets.userId,
-        ownerName: users.name,
-        createdAt: sampleSets.createdAt,
-        updatedAt: sampleSets.updatedAt,
-      })
-      .from(sampleSets)
-      .leftJoin(users, eq(sampleSets.userId, users.id))
-      .orderBy(desc(sampleSets.updatedAt));
-
-    return Response.json({ sampleSets: rows });
-  } catch (error) {
-    logRouteError('sample-sets.get', error);
-    return internalServerError();
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const authState = await requireUser();
-    if ('error' in authState) return authState.error;
-
-    const db = getDb();
-    if (!db) return dbUnavailable();
-    await ensureUser(db, authState.user);
-
-    const bodyState = await parseAndValidate(request, sampleSetCreateSchema);
-    if (bodyState.error) return bodyState.error;
-    const body = bodyState.data;
-
-    // Check for (userId, name) collision
-    const [existing] = await db
-      .select({ id: sampleSets.id })
-      .from(sampleSets)
-      .where(sql`${sampleSets.userId} = ${authState.user.id} AND lower(${sampleSets.name}) = lower(${body.name})`)
-      .limit(1);
-
-    if (existing) {
-      return Response.json({ error: 'A sample set with that name already exists' }, { status: 409 });
-    }
-
-    const [created] = await db
-      .insert(sampleSets)
-      .values({
-        userId: authState.user.id,
-        name: body.name,
-        rows: body.rows,
-        rowCount: body.rows.length,
-        updatedAt: new Date(),
-      })
-      .returning();
-
-    return Response.json({ sampleSet: created }, { status: 201 });
-  } catch (error) {
-    logRouteError('sample-sets.post', error);
-    return internalServerError();
-  }
-}
-```
-
----
-
-#### Step 2.3 — `GET /PATCH /DELETE /api/sample-sets/[id]`
-
-Create `/home/jared/Nexus-Terminal/app/api/sample-sets/[id]/route.ts`:
-
-```ts
-import { and, eq } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
-import { getDb } from '@/lib/db';
-import { sampleSets, users } from '@/lib/db/schema';
-import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
-import { sampleSetPatchSchema } from '@/lib/validations/sample-sets';
-
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const authState = await requireUser();
-    if ('error' in authState) return authState.error;
-
-    const db = getDb();
-    if (!db) return dbUnavailable();
-    await ensureUser(db, authState.user);
-
-    const { id } = await context.params;
-    const [row] = await db
-      .select()
-      .from(sampleSets)
-      .where(eq(sampleSets.id, id))
-      .limit(1);
-
-    if (!row) return Response.json({ error: 'Sample set not found' }, { status: 404 });
-
-    return Response.json({ sampleSet: row });
-  } catch (error) {
-    logRouteError('sample-sets.id.get', error);
-    return internalServerError();
-  }
-}
-
-export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const authState = await requireUser();
-    if ('error' in authState) return authState.error;
-
-    const db = getDb();
-    if (!db) return dbUnavailable();
-    await ensureUser(db, authState.user);
-
-    const { id } = await context.params;
-    const bodyState = await parseAndValidate(request, sampleSetPatchSchema);
-    if (bodyState.error) return bodyState.error;
-    const body = bodyState.data;
-
-    const [row] = await db
-      .select({ id: sampleSets.id, userId: sampleSets.userId })
-      .from(sampleSets)
-      .where(eq(sampleSets.id, id))
-      .limit(1);
-
-    if (!row) return Response.json({ error: 'Sample set not found' }, { status: 404 });
-    if (row.userId !== authState.user.id) return Response.json({ error: 'Forbidden' }, { status: 403 });
-
-    const [updated] = await db
-      .update(sampleSets)
-      .set({ name: body.name, updatedAt: new Date() })
-      .where(and(eq(sampleSets.id, id), eq(sampleSets.userId, authState.user.id)))
-      .returning();
-
-    return Response.json({ sampleSet: updated });
-  } catch (error) {
-    logRouteError('sample-sets.id.patch', error);
-    return internalServerError();
-  }
-}
-
-export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const authState = await requireUser();
-    if ('error' in authState) return authState.error;
-
-    const db = getDb();
-    if (!db) return dbUnavailable();
-    await ensureUser(db, authState.user);
-
-    const { id } = await context.params;
-    const [row] = await db
-      .select({ id: sampleSets.id, userId: sampleSets.userId })
-      .from(sampleSets)
-      .where(eq(sampleSets.id, id))
-      .limit(1);
-
-    if (!row) return Response.json({ error: 'Sample set not found' }, { status: 404 });
-    if (row.userId !== authState.user.id) return Response.json({ error: 'Forbidden' }, { status: 403 });
-
-    await db.delete(sampleSets).where(and(eq(sampleSets.id, id), eq(sampleSets.userId, authState.user.id)));
-
-    return Response.json({ deleted: true, id });
-  } catch (error) {
-    logRouteError('sample-sets.id.delete', error);
-    return internalServerError();
-  }
-}
-```
-
----
-
-#### Step 2.4 — `POST /api/sample-sets/[id]/duplicate`
-
-Create `/home/jared/Nexus-Terminal/app/api/sample-sets/[id]/duplicate/route.ts`:
-
-```ts
-import { eq, sql } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
-import { getDb } from '@/lib/db';
-import { sampleSets } from '@/lib/db/schema';
-import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
-import { sampleSetDuplicateSchema } from '@/lib/validations/sample-sets';
-
-export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const authState = await requireUser();
-    if ('error' in authState) return authState.error;
-
-    const db = getDb();
-    if (!db) return dbUnavailable();
-    await ensureUser(db, authState.user);
-
-    const { id } = await context.params;
-    const bodyState = await parseAndValidate(request, sampleSetDuplicateSchema);
-    if (bodyState.error) return bodyState.error;
-    const body = bodyState.data;
-
-    const [source] = await db
-      .select()
-      .from(sampleSets)
-      .where(eq(sampleSets.id, id))
-      .limit(1);
-
-    if (!source) return Response.json({ error: 'Sample set not found' }, { status: 404 });
-
-    // Check name collision for target user
-    const [collision] = await db
-      .select({ id: sampleSets.id })
-      .from(sampleSets)
-      .where(sql`${sampleSets.userId} = ${authState.user.id} AND lower(${sampleSets.name}) = lower(${body.name})`)
-      .limit(1);
-
-    if (collision) return Response.json({ error: 'A sample set with that name already exists' }, { status: 409 });
-
-    const [created] = await db
-      .insert(sampleSets)
-      .values({
-        userId: authState.user.id,
-        name: body.name,
-        rows: source.rows,
-        rowCount: source.rowCount,
-        updatedAt: new Date(),
-      })
-      .returning();
-
-    return Response.json({ sampleSet: created }, { status: 201 });
-  } catch (error) {
-    logRouteError('sample-sets.id.duplicate.post', error);
-    return internalServerError();
-  }
-}
-```
-
----
-
-#### Step 2.5 — `GET /api/backtests` and `POST /api/backtests`
-
-Create `/home/jared/Nexus-Terminal/app/api/backtests/route.ts`:
-
-```ts
-import { count, desc, eq, isNull, sql } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
-import { getDb } from '@/lib/db';
-import { backtests, backtestSessions, sampleSets, users } from '@/lib/db/schema';
-import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
-import { backtestCreateSchema } from '@/lib/validations/backtests';
-
-export async function GET(_request: Request) {
-  try {
-    const authState = await requireUser();
-    if ('error' in authState) return authState.error;
-
-    const db = getDb();
-    if (!db) return dbUnavailable();
-    await ensureUser(db, authState.user);
-
-    // Named backtests with review counts
-    const rows = await db
-      .select({
-        id: backtests.id,
-        name: backtests.name,
-        description: backtests.description,
-        sampleSetId: backtests.sampleSetId,
-        sampleSetName: sampleSets.name,
-        sampleSetExists: sql<boolean>`(${sampleSets.id} IS NOT NULL)`,
-        ownerId: backtests.userId,
-        ownerName: users.name,
-        reviewCount: count(backtestSessions.id),
-        createdAt: backtests.createdAt,
-        updatedAt: backtests.updatedAt,
-      })
-      .from(backtests)
-      .leftJoin(users, eq(backtests.userId, users.id))
-      .leftJoin(sampleSets, eq(backtests.sampleSetId, sampleSets.id))
-      .leftJoin(backtestSessions, eq(backtestSessions.backtestId, backtests.id))
-      .groupBy(backtests.id, users.name, sampleSets.id)
-      .orderBy(desc(backtests.updatedAt));
-
-    // Synthetic "Uncategorized" entries: one per user who has sessions with backtestId IS NULL.
-    // Query distinct userIds + count grouped by userId.
-    const uncatRows = await db
-      .select({
-        userId: backtestSessions.userId,
-        ownerName: users.name,
-        reviewCount: count(backtestSessions.id),
-      })
-      .from(backtestSessions)
-      .leftJoin(users, eq(backtestSessions.userId, users.id))
-      .where(isNull(backtestSessions.backtestId))
-      .groupBy(backtestSessions.userId, users.name);
-
-    const uncategorized = uncatRows.map((row) => ({
-      id: `uncat-${row.userId}`,
-      name: 'Uncategorized',
-      description: null,
-      sampleSetId: null,
-      sampleSetName: null,
-      sampleSetExists: false,
-      ownerId: row.userId,
-      ownerName: row.ownerName,
-      reviewCount: row.reviewCount,
-      createdAt: null,
-      updatedAt: null,
-    }));
-
-    return Response.json({ backtests: [...rows, ...uncategorized] });
-  } catch (error) {
-    logRouteError('backtests.get', error);
-    return internalServerError();
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const authState = await requireUser();
-    if ('error' in authState) return authState.error;
-
-    const db = getDb();
-    if (!db) return dbUnavailable();
-    await ensureUser(db, authState.user);
-
-    const bodyState = await parseAndValidate(request, backtestCreateSchema);
-    if (bodyState.error) return bodyState.error;
-    const body = bodyState.data;
-
-    // 409 on (userId, name) collision — case-insensitive
-    const [existing] = await db
-      .select({ id: backtests.id })
-      .from(backtests)
-      .where(sql`${backtests.userId} = ${authState.user.id} AND lower(${backtests.name}) = lower(${body.name})`)
-      .limit(1);
-
-    if (existing) return Response.json({ error: 'A backtest with that name already exists' }, { status: 409 });
-
-    // If sampleSetId provided, confirm it exists
-    if (body.sampleSetId) {
-      const [ss] = await db
-        .select({ id: sampleSets.id })
-        .from(sampleSets)
-        .where(eq(sampleSets.id, body.sampleSetId))
-        .limit(1);
-      if (!ss) return Response.json({ error: 'Sample set not found' }, { status: 404 });
-    }
-
-    const [created] = await db
-      .insert(backtests)
-      .values({
-        userId: authState.user.id,
-        name: body.name,
-        description: body.description ?? null,
-        sampleSetId: body.sampleSetId ?? null,
-        updatedAt: new Date(),
-      })
-      .returning();
-
-    return Response.json({ backtest: created }, { status: 201 });
-  } catch (error) {
-    logRouteError('backtests.post', error);
-    return internalServerError();
-  }
-}
-```
-
----
-
-#### Step 2.6 — `GET /PATCH /DELETE /api/backtests/[id]`
-
-Create `/home/jared/Nexus-Terminal/app/api/backtests/[id]/route.ts`:
-
-`GET` returns full backtest detail plus all associated reviews (REVIEWED sessions) with their actions and joined `systemTickers` row by `(ticker, date)`. `PATCH` and `DELETE` are author-only.
-
-```ts
-import { and, asc, count, eq, isNull, sql } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
-import { getDb } from '@/lib/db';
-import { backtestActions, backtests, backtestSessions, sampleSets, systemTickers, users } from '@/lib/db/schema';
-import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
-import { backtestPatchSchema } from '@/lib/validations/backtests';
-
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const authState = await requireUser();
-    if ('error' in authState) return authState.error;
-
-    const db = getDb();
-    if (!db) return dbUnavailable();
-    await ensureUser(db, authState.user);
-
-    const { id } = await context.params;
-
-    // Handle synthetic uncategorized id: "uncat-{userId}"
-    if (id.startsWith('uncat-')) {
-      const ownerId = id.slice(6);
-      const [ownerRow] = await db
-        .select({ name: users.name })
-        .from(users)
-        .where(eq(users.id, ownerId))
-        .limit(1);
-
-      const sessions = await db
-        .select()
-        .from(backtestSessions)
-        .where(and(eq(backtestSessions.userId, ownerId), isNull(backtestSessions.backtestId), eq(backtestSessions.status, 'REVIEWED')))
-        .orderBy(asc(backtestSessions.reviewedAt));
-
-      const reviews = await Promise.all(sessions.map(async (session) => {
-        const actions = await db
-          .select()
-          .from(backtestActions)
-          .where(and(eq(backtestActions.userId, ownerId), eq(backtestActions.sessionId, session.id)))
-          .orderBy(asc(backtestActions.sequence));
-
-        const [ticker] = await db
-          .select()
-          .from(systemTickers)
-          .where(and(eq(systemTickers.ticker, session.ticker), eq(systemTickers.date, session.date)))
-          .limit(1);
-
-        return { session, actions, systemTicker: ticker ?? null };
-      }));
-
-      return Response.json({
-        backtest: {
-          id,
-          name: 'Uncategorized',
-          description: null,
-          sampleSetId: null,
-          userId: ownerId,
-          ownerId,
-          ownerName: ownerRow?.name ?? null,
-        },
-        reviews,
-      });
-    }
-
-    const [backtest] = await db
-      .select({
-        id: backtests.id,
-        name: backtests.name,
-        description: backtests.description,
-        sampleSetId: backtests.sampleSetId,
-        userId: backtests.userId,
-        ownerId: backtests.userId,
-        ownerName: users.name,
-        sampleSetName: sampleSets.name,
-        createdAt: backtests.createdAt,
-        updatedAt: backtests.updatedAt,
-      })
-      .from(backtests)
-      .leftJoin(users, eq(backtests.userId, users.id))
-      .leftJoin(sampleSets, eq(backtests.sampleSetId, sampleSets.id))
-      .where(eq(backtests.id, id))
-      .limit(1);
-
-    if (!backtest) return Response.json({ error: 'Backtest not found' }, { status: 404 });
-
-    const sessions = await db
-      .select()
-      .from(backtestSessions)
-      .where(and(eq(backtestSessions.backtestId, id), eq(backtestSessions.status, 'REVIEWED')))
-      .orderBy(asc(backtestSessions.reviewedAt));
-
-    const reviews = await Promise.all(sessions.map(async (session) => {
-      const actions = await db
-        .select()
-        .from(backtestActions)
-        .where(and(eq(backtestActions.userId, session.userId), eq(backtestActions.sessionId, session.id)))
-        .orderBy(asc(backtestActions.sequence));
-
-      const [ticker] = await db
-        .select()
-        .from(systemTickers)
-        .where(and(eq(systemTickers.ticker, session.ticker), eq(systemTickers.date, session.date)))
-        .limit(1);
-
-      return { session, actions, systemTicker: ticker ?? null };
-    }));
-
-    return Response.json({ backtest, reviews });
-  } catch (error) {
-    logRouteError('backtests.id.get', error);
-    return internalServerError();
-  }
-}
-
-export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const authState = await requireUser();
-    if ('error' in authState) return authState.error;
-
-    const db = getDb();
-    if (!db) return dbUnavailable();
-    await ensureUser(db, authState.user);
-
-    const { id } = await context.params;
-    const bodyState = await parseAndValidate(request, backtestPatchSchema);
-    if (bodyState.error) return bodyState.error;
-    const body = bodyState.data;
-
-    const [row] = await db
-      .select({ id: backtests.id, userId: backtests.userId })
-      .from(backtests)
-      .where(eq(backtests.id, id))
-      .limit(1);
-
-    if (!row) return Response.json({ error: 'Backtest not found' }, { status: 404 });
-    if (row.userId !== authState.user.id) return Response.json({ error: 'Forbidden' }, { status: 403 });
-
-    const updateData: Record<string, unknown> = { updatedAt: new Date() };
-    if (body.name !== undefined) updateData.name = body.name;
-    if (Object.prototype.hasOwnProperty.call(body, 'description')) updateData.description = body.description ?? null;
-    if (Object.prototype.hasOwnProperty.call(body, 'sampleSetId')) updateData.sampleSetId = body.sampleSetId ?? null;
-
-    const [updated] = await db
-      .update(backtests)
-      .set(updateData)
-      .where(and(eq(backtests.id, id), eq(backtests.userId, authState.user.id)))
-      .returning();
-
-    return Response.json({ backtest: updated });
-  } catch (error) {
-    logRouteError('backtests.id.patch', error);
-    return internalServerError();
-  }
-}
-
-export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const authState = await requireUser();
-    if ('error' in authState) return authState.error;
-
-    const db = getDb();
-    if (!db) return dbUnavailable();
-    await ensureUser(db, authState.user);
-
-    const { id } = await context.params;
-    const [row] = await db
-      .select({ id: backtests.id, userId: backtests.userId })
-      .from(backtests)
-      .where(eq(backtests.id, id))
-      .limit(1);
-
-    if (!row) return Response.json({ error: 'Backtest not found' }, { status: 404 });
-    if (row.userId !== authState.user.id) return Response.json({ error: 'Forbidden' }, { status: 403 });
-
-    // Deleting the container leaves reviews alive; their backtestId becomes NULL per FK ON DELETE SET NULL.
-    await db.delete(backtests).where(and(eq(backtests.id, id), eq(backtests.userId, authState.user.id)));
-
-    return Response.json({ deleted: true, id });
-  } catch (error) {
-    logRouteError('backtests.id.delete', error);
-    return internalServerError();
-  }
-}
-```
-
----
-
-#### Step 2.7 — Update session routes for `backtestId`
-
-In `/home/jared/Nexus-Terminal/app/api/backtest/sessions/route.ts`:
-
-**POST handler changes:**
-1. Add `backtestId` to the Zod import + schema. In the file, the schema is imported from `@/lib/validations/backtest`. Open that file (`/home/jared/Nexus-Terminal/lib/validations/backtest.ts`) and update `backtestSessionUpsertSchema` to include:
+1. Add a `chartStateSchema` declaration above `backtestSessionReviewSchema`:
    ```ts
-   backtestId: z.string().trim().nullable().optional(),
+   export const chartStateSchema = z.object({
+     drawings: z.array(z.unknown()).optional(),
+     indicators: z.record(z.string(), z.array(z.string())).optional(),
+   }).strict();
+
+   export type ChartStateBody = z.infer<typeof chartStateSchema>;
    ```
-2. After parsing the body, if `body.backtestId` is provided (non-null), validate that the backtest exists AND `backtest.userId === authState.user.id`. If it does not exist, return 404. If it exists but belongs to another user, return 403 with `{ error: 'You can only auto-tag sessions to your own backtests' }`.
-3. When inserting the new session, include `backtestId: body.backtestId ?? null` in the `.values({...})` call.
-4. When updating an existing ACTIVE session, also update `backtestId` if it was provided.
-
-**GET handler changes:**
-- Remove the `eq(backtestSessions.userId, authState.user.id)` filter from the query to allow cross-user reads. Keep `ticker` + `date` filters. Keep `ensureUser` for auth.
-
-In `/home/jared/Nexus-Terminal/app/api/backtest/sessions/[id]/route.ts`:
-
-**GET handler changes:**
-- Remove the `eq(backtestSessions.userId, authState.user.id)` condition from the session `.where()` clause. Change `where(and(eq(backtestSessions.userId, authState.user.id), eq(backtestSessions.id, id)))` to `where(eq(backtestSessions.id, id))`. Similarly remove the userId filter on the actions query — keep only `eq(backtestActions.sessionId, id)`. Write operations (PATCH, DELETE) keep the userId guard unchanged.
-
-**Done when:** All new route files exist, `npx tsc --noEmit` passes, each file follows the `requireUser` / `dbUnavailable` / `parseAndValidate` pattern.
-
----
-
-### Phase 3 — Pure Logic Libraries + Tests
-
-**Files to create:**
-- `/home/jared/Nexus-Terminal/lib/sample-set-csv.ts`
-- `/home/jared/Nexus-Terminal/lib/backtest-stats.ts`
-- `/home/jared/Nexus-Terminal/lib/backtest-filters.ts`
-- `/home/jared/Nexus-Terminal/__tests__/sample-set-csv.test.ts`
-- `/home/jared/Nexus-Terminal/__tests__/backtest-stats.test.ts`
-- `/home/jared/Nexus-Terminal/__tests__/backtest-filters.test.ts`
-
----
-
-#### Step 3.1 — `lib/sample-set-csv.ts`
-
-Extract `parseTradesCsv` from `BacktestingSidebar.tsx` into a standalone pure function. The existing implementation in the sidebar is the reference.
-
-```ts
-export type SampleSetRow = { ticker: string; date: string };
-
-export type ParseSampleSetCsvResult = {
-  rows: SampleSetRow[];
-  skippedCount: number;
-};
-
-/**
- * Parse a CSV file that must have "ticker" and "date" columns (header names,
- * case-insensitive). Optional unnamed pandas index column is tolerated.
- * Returns valid rows and a count of rows that were skipped due to missing/invalid data.
- * Throws if the file has no "ticker" or "date" column header.
- */
-export function parseSampleSetCsv(text: string): ParseSampleSetCsvResult {
-  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  if (lines.length === 0) return { rows: [], skippedCount: 0 };
-
-  const header = lines[0].split(',').map((c) => c.trim().toLowerCase());
-  const tickerIdx = header.indexOf('ticker');
-  const dateIdx = header.indexOf('date');
-
-  if (tickerIdx < 0 || dateIdx < 0) {
-    throw new Error('CSV must include "ticker" and "date" columns');
-  }
-
-  const rows: SampleSetRow[] = [];
-  let skippedCount = 0;
-
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(',').map((c) => c.trim());
-    const ticker = (cols[tickerIdx] ?? '').toUpperCase();
-    const date = cols[dateIdx] ?? '';
-    if (!ticker || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      skippedCount++;
-      continue;
-    }
-    rows.push({ ticker, date });
-  }
-
-  return { rows, skippedCount };
-}
-```
-
----
-
-#### Step 3.2 — `lib/backtest-stats.ts`
-
-```ts
-import type { BacktestAction, BacktestSession } from '@/lib/types';
-
-// Shape of a single systemTickers row as relevant to stats computation.
-export type SystemTickerForStats = {
-  grade: string | null;
-  setupType: string | null;
-  day1GapPct: number | null;
-};
-
-export type ReviewStats = {
-  realizedPnl: number;
-  rMultiple: number | null;
-  direction: 'LONG' | 'SHORT' | null;
-  holdMinutes: number | null;
-  gapPct: number | null;
-  grade: string | null;
-  setupType: string | null;
-};
-
-export type ReviewWithStats = {
-  session: BacktestSession;
-  actions: BacktestAction[];
-  stats: ReviewStats;
-  systemTicker: SystemTickerForStats | null;
-};
-
-export type EquityPoint = { date: string; cumulativePnl: number };
-
-export type AggregateStats = {
-  totalReturn: number;
-  winRate: number;      // 0–1
-  profitFactor: number | null;  // null if no losses
-  expectancyR: number | null;   // mean rMultiple; null if no rMultiple computable
-  maxDrawdown: number;  // negative number or 0
-  totalTrades: number;
-  equityCurve: EquityPoint[];
-};
-
-/**
- * Compute per-review stats from a single session + its actions.
- * `riskDollars` comes from session.riskDollars.
- * `direction` is inferred from the first action's actionType ('LONG' | 'SHORT' | null).
- * `holdMinutes` is computed from the first action's barTime to the last exit barTime.
- * `realizedPnl` is recomputed from actions (not trusted from session — sessions
- *   store no PnL column directly; use the same logic as BacktestSimPanel).
- */
-export function computeReviewStats(
-  session: BacktestSession,
-  actions: BacktestAction[],
-  systemTicker: SystemTickerForStats | null,
-): ReviewStats {
-  if (actions.length === 0) {
-    return {
-      realizedPnl: 0,
-      rMultiple: null,
-      direction: null,
-      holdMinutes: null,
-      gapPct: systemTicker?.day1GapPct ?? null,
-      grade: systemTicker?.grade ?? null,
-      setupType: systemTicker?.setupType ?? null,
-    };
-  }
-
-  // Determine direction from first buy/short action
-  const firstAction = actions[0];
-  const direction: 'LONG' | 'SHORT' | null =
-    firstAction.actionType === 'LONG' || firstAction.actionType === 'LONG_ADD'
-      ? 'LONG'
-      : firstAction.actionType === 'SHORT' || firstAction.actionType === 'SHORT_ADD'
-      ? 'SHORT'
-      : null;
-
-  // Compute realized PnL: sum of (exit - entry) * shares for LONG, (entry - exit) * shares for SHORT.
-  // Use simple running position approach matching the existing backtest-math logic.
-  let totalCost = 0;     // sum of entry shares * price
-  let totalShares = 0;   // current open shares
-  let realizedPnl = 0;
-  let avgEntry = 0;
-
-  for (const action of actions) {
-    if (action.actionType === 'LONG' || action.actionType === 'LONG_ADD') {
-      totalCost += action.shares * action.price;
-      totalShares += action.shares;
-      avgEntry = totalCost / totalShares;
-    } else if (action.actionType === 'SELL') {
-      realizedPnl += (action.price - avgEntry) * action.shares;
-      totalShares -= action.shares;
-      totalCost = avgEntry * totalShares;
-    } else if (action.actionType === 'SHORT' || action.actionType === 'SHORT_ADD') {
-      totalCost += action.shares * action.price;
-      totalShares += action.shares;
-      avgEntry = totalCost / totalShares;
-    } else if (action.actionType === 'COVER') {
-      realizedPnl += (avgEntry - action.price) * action.shares;
-      totalShares -= action.shares;
-      totalCost = avgEntry * totalShares;
-    }
-  }
-
-  const rMultiple = session.riskDollars > 0 ? realizedPnl / session.riskDollars : null;
-
-  // Hold minutes: from first barTime to last exit barTime
-  let holdMinutes: number | null = null;
-  const exitActions = actions.filter((a) => a.actionType === 'SELL' || a.actionType === 'COVER');
-  if (exitActions.length > 0 && actions.length > 0) {
-    const t0 = Date.parse(actions[0].barTime);
-    const t1 = Date.parse(exitActions[exitActions.length - 1].barTime);
-    if (Number.isFinite(t0) && Number.isFinite(t1)) {
-      holdMinutes = Math.round((t1 - t0) / 60_000);
-    }
-  }
-
-  return {
-    realizedPnl,
-    rMultiple,
-    direction,
-    holdMinutes,
-    gapPct: systemTicker?.day1GapPct ?? null,
-    grade: systemTicker?.grade ?? null,
-    setupType: systemTicker?.setupType ?? null,
-  };
-}
-
-/**
- * Aggregate stats across all reviews.
- * Equity curve is sorted by trade date ASC (session.date field, YYYY-MM-DD).
- */
-export function computeAggregateStats(reviews: ReviewWithStats[]): AggregateStats {
-  if (reviews.length === 0) {
-    return {
-      totalReturn: 0,
-      winRate: 0,
-      profitFactor: null,
-      expectancyR: null,
-      maxDrawdown: 0,
-      totalTrades: 0,
-      equityCurve: [],
-    };
-  }
-
-  // Sort by trade date ASC for equity curve
-  const sorted = [...reviews].sort((a, b) => a.session.date.localeCompare(b.session.date));
-
-  let cumPnl = 0;
-  let peak = 0;
-  let maxDrawdown = 0;
-  let grossWins = 0;
-  let grossLosses = 0;
-  let winners = 0;
-  let rMultipleSum = 0;
-  let rMultipleCount = 0;
-
-  const equityCurve: EquityPoint[] = [];
-
-  for (const r of sorted) {
-    const pnl = r.stats.realizedPnl;
-    cumPnl += pnl;
-    equityCurve.push({ date: r.session.date, cumulativePnl: cumPnl });
-
-    if (pnl > 0) { grossWins += pnl; winners++; }
-    if (pnl < 0) { grossLosses += Math.abs(pnl); }
-
-    if (r.stats.rMultiple !== null) {
-      rMultipleSum += r.stats.rMultiple;
-      rMultipleCount++;
-    }
-
-    if (cumPnl > peak) peak = cumPnl;
-    const drawdown = cumPnl - peak;
-    if (drawdown < maxDrawdown) maxDrawdown = drawdown;
-  }
-
-  return {
-    totalReturn: cumPnl,
-    winRate: reviews.length > 0 ? winners / reviews.length : 0,
-    profitFactor: grossLosses > 0 ? grossWins / grossLosses : null,
-    expectancyR: rMultipleCount > 0 ? rMultipleSum / rMultipleCount : null,
-    maxDrawdown,
-    totalTrades: reviews.length,
-    equityCurve,
-  };
-}
-```
-
----
-
-#### Step 3.3 — `lib/backtest-filters.ts`
-
-```ts
-import type { ReviewWithStats } from '@/lib/backtest-stats';
-
-export type FilterDef = {
-  id: string;
-  label: string;
-  group: string;
-  predicate: (r: ReviewWithStats) => boolean;
-};
-
-// Static filters. Dynamic grade/setup filters are generated at runtime in the hook.
-// DEFERRED: 'broke_premarket_high' filter — data not captured today (no premarket high
-// field in systemTickers or backtestActions). Add when data source is available.
-export const FILTER_REGISTRY: FilterDef[] = [
-  { id: 'winners',   label: 'Winners',   group: 'outcome',    predicate: (r) => r.stats.realizedPnl > 0 },
-  { id: 'losers',    label: 'Losers',    group: 'outcome',    predicate: (r) => r.stats.realizedPnl < 0 },
-  { id: 'long',      label: 'Long',      group: 'direction',  predicate: (r) => r.stats.direction === 'LONG' },
-  { id: 'short',     label: 'Short',     group: 'direction',  predicate: (r) => r.stats.direction === 'SHORT' },
-  { id: 'gap-up',    label: 'Gap Up',    group: 'gap',        predicate: (r) => (r.stats.gapPct ?? 0) > 0 },
-  { id: 'gap-down',  label: 'Gap Down',  group: 'gap',        predicate: (r) => (r.stats.gapPct ?? 0) < 0 },
-];
-
-/** Apply all active filter IDs with AND logic. Dynamic filters (grade/setup) are passed in separately. */
-export function applyFilters(
-  reviews: ReviewWithStats[],
-  activeFilterIds: Set<string>,
-  dynamicFilters: FilterDef[],
-): ReviewWithStats[] {
-  if (activeFilterIds.size === 0) return reviews;
-  const allFilters = [...FILTER_REGISTRY, ...dynamicFilters];
-  return reviews.filter((r) =>
-    [...activeFilterIds].every((id) => {
-      const def = allFilters.find((f) => f.id === id);
-      return def ? def.predicate(r) : true;
-    }),
-  );
-}
-
-/** Build dynamic filter defs for grade values present in the loaded reviews. */
-export function buildGradeFilters(reviews: ReviewWithStats[]): FilterDef[] {
-  const grades = [...new Set(reviews.map((r) => r.stats.grade).filter((g): g is string => g !== null))].sort();
-  return grades.map((g) => ({
-    id: `grade-${g}`,
-    label: `Grade ${g}`,
-    group: 'grade',
-    predicate: (r) => r.stats.grade === g,
-  }));
-}
-
-/** Build dynamic filter defs for setup type values present in the loaded reviews. */
-export function buildSetupFilters(reviews: ReviewWithStats[]): FilterDef[] {
-  const setups = [...new Set(reviews.map((r) => r.stats.setupType).filter((s): s is string => s !== null))].sort();
-  return setups.map((s) => ({
-    id: `setup-${s}`,
-    label: s,
-    group: 'setup',
-    predicate: (r) => r.stats.setupType === s,
-  }));
-}
-```
-
----
-
-#### Step 3.4 — Tests for Phase 3 libs
-
-Create `/home/jared/Nexus-Terminal/__tests__/sample-set-csv.test.ts`:
-
-```ts
-import { describe, expect, it } from 'vitest';
-import { parseSampleSetCsv } from '@/lib/sample-set-csv';
-
-describe('parseSampleSetCsv', () => {
-  it('parses valid rows', () => {
-    const csv = 'ticker,date\nAAPL,2024-01-01\nMSFT,2024-01-02';
-    const { rows, skippedCount } = parseSampleSetCsv(csv);
-    expect(rows).toEqual([
-      { ticker: 'AAPL', date: '2024-01-01' },
-      { ticker: 'MSFT', date: '2024-01-02' },
-    ]);
-    expect(skippedCount).toBe(0);
-  });
-
-  it('uppercases tickers', () => {
-    const { rows } = parseSampleSetCsv('ticker,date\naapl,2024-01-01');
-    expect(rows[0].ticker).toBe('AAPL');
-  });
-
-  it('skips rows with invalid date format and counts them', () => {
-    const csv = 'ticker,date\nAAPL,01-01-2024\nMSFT,2024-01-02';
-    const { rows, skippedCount } = parseSampleSetCsv(csv);
-    expect(rows).toHaveLength(1);
-    expect(skippedCount).toBe(1);
-  });
-
-  it('skips rows with empty ticker', () => {
-    const csv = 'ticker,date\n,2024-01-01\nMSFT,2024-01-02';
-    const { skippedCount } = parseSampleSetCsv(csv);
-    expect(skippedCount).toBe(1);
-  });
-
-  it('throws if ticker column missing', () => {
-    expect(() => parseSampleSetCsv('symbol,date\nAAPL,2024-01-01')).toThrow('ticker');
-  });
-
-  it('handles BOM prefix', () => {
-    const csv = '\uFEFFticker,date\nAAPL,2024-01-01';
-    const { rows } = parseSampleSetCsv(csv);
-    expect(rows).toHaveLength(1);
-  });
-
-  it('returns zero rows and zero skipped for empty input', () => {
-    const { rows, skippedCount } = parseSampleSetCsv('');
-    expect(rows).toHaveLength(0);
-    expect(skippedCount).toBe(0);
-  });
-});
-```
-
-Create `/home/jared/Nexus-Terminal/__tests__/backtest-stats.test.ts`:
-
-```ts
-import { describe, expect, it } from 'vitest';
-import { computeReviewStats, computeAggregateStats, type ReviewWithStats } from '@/lib/backtest-stats';
-import type { BacktestSession, BacktestAction } from '@/lib/types';
-
-function makeSession(overrides: Partial<BacktestSession> = {}): BacktestSession {
-  return {
-    id: 's1', userId: 'u1', ticker: 'AAPL', date: '2024-01-02',
-    status: 'REVIEWED', riskDollars: 100, label: null, notes: null,
-    backtestId: null, reviewedAt: null, createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(), ...overrides,
-  };
-}
-
-function makeAction(overrides: Partial<BacktestAction>): BacktestAction {
-  return {
-    id: 'a1', userId: 'u1', sessionId: 's1',
-    actionType: 'LONG', price: 100, shares: 10, stopPrice: null,
-    barTime: '2024-01-02T09:30:00Z', sequence: 1, createdAt: new Date().toISOString(), ...overrides,
-  };
-}
-
-describe('computeReviewStats', () => {
-  it('returns zero pnl for no actions', () => {
-    const stats = computeReviewStats(makeSession(), [], null);
-    expect(stats.realizedPnl).toBe(0);
-    expect(stats.rMultiple).toBeNull();
-  });
-
-  it('computes LONG realized pnl correctly', () => {
-    const session = makeSession({ riskDollars: 100 });
-    const actions = [
-      makeAction({ actionType: 'LONG', price: 100, shares: 10, barTime: '2024-01-02T09:30:00Z', sequence: 1 }),
-      makeAction({ id: 'a2', actionType: 'SELL', price: 110, shares: 10, barTime: '2024-01-02T09:45:00Z', sequence: 2 }),
-    ];
-    const stats = computeReviewStats(session, actions, null);
-    expect(stats.realizedPnl).toBeCloseTo(100); // (110-100)*10
-    expect(stats.rMultiple).toBeCloseTo(1);     // 100/100
-    expect(stats.direction).toBe('LONG');
-    expect(stats.holdMinutes).toBe(15);
-  });
-
-  it('computes SHORT realized pnl correctly', () => {
-    const session = makeSession({ riskDollars: 100 });
-    const actions = [
-      makeAction({ actionType: 'SHORT', price: 100, shares: 10, barTime: '2024-01-02T09:30:00Z', sequence: 1 }),
-      makeAction({ id: 'a2', actionType: 'COVER', price: 90, shares: 10, barTime: '2024-01-02T10:00:00Z', sequence: 2 }),
-    ];
-    const stats = computeReviewStats(session, actions, null);
-    expect(stats.realizedPnl).toBeCloseTo(100);
-    expect(stats.direction).toBe('SHORT');
-  });
-
-  it('surfaces systemTicker fields', () => {
-    const stats = computeReviewStats(makeSession(), [], { grade: 'A', setupType: 'RVOL', day1GapPct: 5.5 });
-    expect(stats.grade).toBe('A');
-    expect(stats.setupType).toBe('RVOL');
-    expect(stats.gapPct).toBe(5.5);
-  });
-});
-
-describe('computeAggregateStats', () => {
-  function makeReview(date: string, pnl: number, rMultiple: number | null = null): ReviewWithStats {
-    return {
-      session: makeSession({ date }),
-      actions: [],
-      stats: { realizedPnl: pnl, rMultiple, direction: 'LONG', holdMinutes: 10, gapPct: null, grade: null, setupType: null },
-      systemTicker: null,
-    };
-  }
-
-  it('returns empty stats for no reviews', () => {
-    const stats = computeAggregateStats([]);
-    expect(stats.totalTrades).toBe(0);
-    expect(stats.equityCurve).toHaveLength(0);
-  });
-
-  it('sorts equity curve by date ASC', () => {
-    const reviews = [
-      makeReview('2024-01-03', 50),
-      makeReview('2024-01-01', 100),
-      makeReview('2024-01-02', -30),
-    ];
-    const { equityCurve } = computeAggregateStats(reviews);
-    expect(equityCurve[0].date).toBe('2024-01-01');
-    expect(equityCurve[1].date).toBe('2024-01-02');
-    expect(equityCurve[2].date).toBe('2024-01-03');
-    expect(equityCurve[2].cumulativePnl).toBeCloseTo(120);
-  });
-
-  it('computes profit factor', () => {
-    const reviews = [makeReview('2024-01-01', 100), makeReview('2024-01-02', -50)];
-    const { profitFactor } = computeAggregateStats(reviews);
-    expect(profitFactor).toBeCloseTo(2);
-  });
-
-  it('returns null profit factor when no losses', () => {
-    const reviews = [makeReview('2024-01-01', 100)];
-    const { profitFactor } = computeAggregateStats(reviews);
-    expect(profitFactor).toBeNull();
-  });
-
-  it('computes expectancyR as mean rMultiple', () => {
-    const reviews = [makeReview('2024-01-01', 100, 1), makeReview('2024-01-02', -50, -0.5)];
-    const { expectancyR } = computeAggregateStats(reviews);
-    expect(expectancyR).toBeCloseTo(0.25);
-  });
-
-  it('computes maxDrawdown', () => {
-    const reviews = [
-      makeReview('2024-01-01', 100),
-      makeReview('2024-01-02', -150),
-      makeReview('2024-01-03', 200),
-    ];
-    const { maxDrawdown } = computeAggregateStats(reviews);
-    expect(maxDrawdown).toBeCloseTo(-50);
-  });
-
-  it('computes winRate', () => {
-    const reviews = [makeReview('2024-01-01', 100), makeReview('2024-01-02', -50), makeReview('2024-01-03', 30)];
-    const { winRate } = computeAggregateStats(reviews);
-    expect(winRate).toBeCloseTo(2 / 3);
-  });
-});
-```
-
-Create `/home/jared/Nexus-Terminal/__tests__/backtest-filters.test.ts`:
-
-```ts
-import { describe, expect, it } from 'vitest';
-import { FILTER_REGISTRY, applyFilters, buildGradeFilters, buildSetupFilters } from '@/lib/backtest-filters';
-import type { ReviewWithStats } from '@/lib/backtest-stats';
-
-function makeReview(overrides: Partial<ReviewWithStats['stats']> = {}): ReviewWithStats {
-  return {
-    session: { id: 's1', userId: 'u1', ticker: 'AAPL', date: '2024-01-01',
-      status: 'REVIEWED', riskDollars: 100, label: null, notes: null,
-      backtestId: null, reviewedAt: null, createdAt: '', updatedAt: '' },
-    actions: [],
-    stats: {
-      realizedPnl: 0, rMultiple: null, direction: 'LONG', holdMinutes: null,
-      gapPct: null, grade: null, setupType: null, ...overrides,
-    },
-    systemTicker: null,
-  };
-}
-
-describe('FILTER_REGISTRY predicates', () => {
-  it('winners filters positive pnl', () => {
-    const f = FILTER_REGISTRY.find((f) => f.id === 'winners')!;
-    expect(f.predicate(makeReview({ realizedPnl: 100 }))).toBe(true);
-    expect(f.predicate(makeReview({ realizedPnl: -50 }))).toBe(false);
-  });
-
-  it('losers filters negative pnl', () => {
-    const f = FILTER_REGISTRY.find((f) => f.id === 'losers')!;
-    expect(f.predicate(makeReview({ realizedPnl: -50 }))).toBe(true);
-    expect(f.predicate(makeReview({ realizedPnl: 100 }))).toBe(false);
-  });
-
-  it('long filters direction', () => {
-    const f = FILTER_REGISTRY.find((f) => f.id === 'long')!;
-    expect(f.predicate(makeReview({ direction: 'LONG' }))).toBe(true);
-    expect(f.predicate(makeReview({ direction: 'SHORT' }))).toBe(false);
-  });
-
-  it('gap-up filters positive gapPct', () => {
-    const f = FILTER_REGISTRY.find((f) => f.id === 'gap-up')!;
-    expect(f.predicate(makeReview({ gapPct: 3.5 }))).toBe(true);
-    expect(f.predicate(makeReview({ gapPct: -2 }))).toBe(false);
-  });
-});
-
-describe('applyFilters', () => {
-  it('returns all reviews when no filters active', () => {
-    const reviews = [makeReview({ realizedPnl: 100 }), makeReview({ realizedPnl: -50 })];
-    expect(applyFilters(reviews, new Set(), [])).toHaveLength(2);
-  });
-
-  it('AND-combines multiple filters', () => {
-    const reviews = [
-      makeReview({ realizedPnl: 100, direction: 'LONG' }),
-      makeReview({ realizedPnl: 100, direction: 'SHORT' }),
-      makeReview({ realizedPnl: -50, direction: 'LONG' }),
-    ];
-    const result = applyFilters(reviews, new Set(['winners', 'long']), []);
-    expect(result).toHaveLength(1);
-    expect(result[0].stats.direction).toBe('LONG');
-    expect(result[0].stats.realizedPnl).toBe(100);
-  });
-});
-
-describe('buildGradeFilters', () => {
-  it('builds filters for unique grades', () => {
-    const reviews = [makeReview({ grade: 'A' }), makeReview({ grade: 'B' }), makeReview({ grade: 'A' })];
-    const filters = buildGradeFilters(reviews);
-    expect(filters.map((f) => f.id)).toEqual(['grade-A', 'grade-B']);
-    expect(filters[0].predicate(makeReview({ grade: 'A' }))).toBe(true);
-  });
-});
-```
-
----
-
-### Phase 4 — Manager View + Dialogs + Hook
-
-**Files to create:**
-- `/home/jared/Nexus-Terminal/hooks/use-backtest-manager.ts`
-- `/home/jared/Nexus-Terminal/components/trading/BacktestManagerView.tsx`
-- `/home/jared/Nexus-Terminal/components/trading/NewBacktestDialog.tsx`
-- `/home/jared/Nexus-Terminal/components/trading/AddSampleSetDialog.tsx`
-- `/home/jared/Nexus-Terminal/components/trading/EditBacktestDialog.tsx`
-
----
-
-#### Step 4.1 — `hooks/use-backtest-manager.ts`
-
-```ts
-// Shape exposed by the hook
-export type BacktestListItem = {
-  id: string;
-  name: string;
-  description: string | null;
-  sampleSetId: string | null;
-  sampleSetName: string | null;
-  sampleSetExists: boolean;
-  ownerId: string;
-  ownerName: string | null;
-  reviewCount: number;
-  createdAt: string | null;
-  updatedAt: string | null;
-};
-
-export type SampleSetListItem = {
-  id: string;
-  name: string;
-  rowCount: number;
-  ownerId: string;
-  ownerName: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-```
-
-The hook fetches `/api/backtests` and `/api/sample-sets` in parallel on mount. It exposes:
-- `backtests: BacktestListItem[]` — all entries including synthetic Uncategorized rows
-- `sampleSets: SampleSetListItem[]`
-- `isLoading: boolean`
-- `error: string | null`
-- `refetch: () => void` — re-fetch both lists
-- `backtestSearch: string`, `setSampleSetSearch: (v: string) => void`, `sampleSetSearch: string`, `setBacktestSearch: (v: string) => void`
-- `mineOnly: boolean`, `setMineOnly: (v: boolean) => void`
-- `sortKey: 'updatedAt' | 'createdAt' | 'name' | 'author'`, `setSortKey: (k: ...) => void`
-- `filteredBacktests: BacktestListItem[]` — derived (search + mineOnly + sort applied)
-- `filteredSampleSets: SampleSetListItem[]` — derived (search applied)
-- `currentUserId: string | null` — from session (fetch `/api/auth/session` or use `useSession()` from next-auth/react)
-- `createBacktest(body): Promise<BacktestListItem>` — POST `/api/backtests`, then refetch
-- `deleteBacktest(id): Promise<void>` — DELETE `/api/backtests/[id]`, then refetch
-- `createSampleSet(body): Promise<SampleSetListItem>` — POST `/api/sample-sets`, then refetch
-- `deleteSampleSet(id): Promise<void>` — DELETE `/api/sample-sets/[id]`, then refetch
-- `duplicateSampleSet(id, name): Promise<SampleSetListItem>` — POST `/api/sample-sets/[id]/duplicate`, then refetch
-- `updateBacktest(id, body): Promise<BacktestListItem>` — PATCH `/api/backtests/[id]`, then refetch
-
-Use `useSession` from `next-auth/react` to get the current user ID for `mineOnly` filtering and ownership checks in the UI.
-
-For `mineOnly` filtering: filter `backtests` where `ownerId === currentUserId`. The synthetic Uncategorized entries have `ownerId` set to the original userId, so this works transparently.
-
-Sort logic for `filteredBacktests`:
-- `updatedAt DESC`: sort by `updatedAt` descending (null last)
-- `createdAt DESC`: sort by `createdAt` descending (null last)
-- `name ASC`: alphabetical
-- `author ASC`: by `ownerName`
-
----
-
-#### Step 4.2 — `components/trading/BacktestManagerView.tsx`
-
-This is a client component. Props:
-```ts
-interface BacktestManagerViewProps {
-  onLaunchChart: (backtestId: string | null, ticker: string, date: string) => void;
-  onViewStats: (backtestId: string) => void;
-}
-```
-
-Use `use-backtest-manager` hook internally. Layout:
-- Full-height flex column matching the existing tab's `h-[calc(100dvh-6.5rem)] min-h-[620px]` class.
-- Header row: "Backtest Manager" `h2` text (font-mono, text-white) + "+ New Backtest" button (top right, `bg-emerald-500 text-black hover:bg-emerald-400`).
-- Two-column grid below: left = Saved Backtests, right = Sample Sets.
-- Left column header: search input + "Mine only" toggle (`<input type="checkbox">` styled as a small toggle, or use a shadcn `Switch`) + sort `<select>` dropdown (options: Last updated / Created / Name / Author).
-- Right column header: "Sample Sets" label + "+ Add Sample" button.
-- Each backtest card: name, author badge (`by [ownerName]` in zinc-500), review count, sample set name (or "No sample set" in zinc-500 if null), `updatedAt` relative time. Two buttons: "View Stats" and "Launch Chart". For Uncategorized rows: show "View Stats" only (no "Launch Chart"). Author-only: kebab menu with Edit and Delete.
-- Uncategorized cards: render them last in the list regardless of sort (push synthetic rows to the bottom always). Identify them by `id.startsWith('uncat-')`.
-- Empty state for Backtests column: if no entries after filter, render "No backtests yet. Create one to get started." in zinc-500.
-- Empty state for Sample Sets column: "No sample sets yet. Add one to import a trade list."
-- Bottom of left column: Sync Sheet button (trigger file input, same logic as the existing `handleSyncSheetFile` in `BacktestingSidebar.tsx` — copy or import that logic).
-- Sync Sheet and file input hidden `<input>` live at the bottom of the left column.
-- Sample set card: name, row count, author, buttons: "Duplicate" (anyone), "Delete" (author only via ownership check against `currentUserId`).
-
-NewBacktestDialog, AddSampleSetDialog, EditBacktestDialog are modal overlays rendered inside this component.
-
----
-
-#### Step 4.3 — `components/trading/NewBacktestDialog.tsx`
-
-Props:
-```ts
-interface NewBacktestDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  sampleSets: SampleSetListItem[];
-  onSubmit: (body: { name: string; description?: string; sampleSetId?: string }) => Promise<void>;
-}
-```
-
-Use shadcn `Dialog`, `DialogContent`, `DialogHeader`, `DialogTitle`, `DialogFooter`. Fields: Name (required text input), Description (optional textarea), Sample Set (optional `<select>` listing all sample sets with `[ownerName] — [name]` label format so users know whose set it is). Submit calls `onSubmit`, closes on success. Show inline error if the promise rejects with a 409.
-
----
-
-#### Step 4.4 — `components/trading/AddSampleSetDialog.tsx`
-
-Props:
-```ts
-interface AddSampleSetDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSubmit: (body: { name: string; rows: Array<{ ticker: string; date: string }> }) => Promise<void>;
-}
-```
-
-Fields: Name (required), CSV file input (accept `.csv,text/csv`). On file selection, run `parseSampleSetCsv` from `lib/sample-set-csv.ts` client-side. Show a preview message: "Imported X rows, skipped Y (invalid)." If `rows.length === 0`, show error "No valid rows found" and disable submit. Submit calls `onSubmit`.
-
----
-
-#### Step 4.5 — `components/trading/EditBacktestDialog.tsx`
-
-Props:
-```ts
-interface EditBacktestDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  backtest: BacktestListItem;
-  sampleSets: SampleSetListItem[];
-  onSubmit: (body: { name?: string; description?: string | null; sampleSetId?: string | null }) => Promise<void>;
-}
-```
-
-Pre-populate fields with current values. Same field set as NewBacktestDialog (name, description, sample set). Submit calls `onSubmit`.
-
----
-
-#### Step 4.6 — Manager view test
-
-Create `/home/jared/Nexus-Terminal/__tests__/backtest-manager-view.test.tsx`:
-
-Mock `use-backtest-manager` hook. Test:
-- Renders backtest cards with name and author.
-- "Mine only" toggle hides other users' backtests.
-- Sort dropdown changes order.
-- "+ New Backtest" button opens `NewBacktestDialog`.
-- Empty state renders when `filteredBacktests` is empty.
-
-Use `@testing-library/react` (already present per vitest config — confirm by checking `package.json` before writing the test).
-
----
-
-### Phase 5 — Stats View + Hook
-
-**Files to create:**
-- `/home/jared/Nexus-Terminal/hooks/use-backtest-stats.ts`
-- `/home/jared/Nexus-Terminal/components/trading/BacktestStatsView.tsx`
-
----
-
-#### Step 5.1 — `hooks/use-backtest-stats.ts`
-
-```ts
-// Given a backtestId, fetches GET /api/backtests/[id] and derives stats.
-// Exposes:
-//   backtest: { id, name, ownerName, sampleSetName, ... } | null
-//   reviewsWithStats: ReviewWithStats[]
-//   filteredReviews: ReviewWithStats[]
-//   aggregateStats: AggregateStats | null
-//   activeFilterIds: Set<string>
-//   toggleFilter: (id: string) => void
-//   dynamicFilters: FilterDef[]   // grade + setup filters built from loaded reviews
-//   isLoading: boolean
-//   error: string | null
-//   refetch: () => void
-//   currentUserId: string | null
-```
-
-Fetch on `backtestId` change. After fetch, call `computeReviewStats` per review and build `reviewsWithStats`. Derive `dynamicFilters` via `buildGradeFilters` + `buildSetupFilters`. Apply `applyFilters` to produce `filteredReviews`. Recompute `aggregateStats` via `computeAggregateStats(filteredReviews)` on every filter change (all in-memory, no server round-trip).
-
----
-
-#### Step 5.2 — `components/trading/BacktestStatsView.tsx`
-
-Props:
-```ts
-interface BacktestStatsViewProps {
-  backtestId: string;
-  onBack: () => void;
-  onOpenInChart: (ticker: string, date: string, backtestId: string | null) => void;
-  currentUserId: string | null;
-}
-```
-
-Uses `use-backtest-stats` hook. Layout:
-- Header: back button ("← Backtest Manager") + backtest name (font-mono white) + author (zinc-500) + sample set name (zinc-400) + period span (`[earliest date] – [latest date]`, computed from `reviewsWithStats`).
-- Metric tile row (6 tiles, grid-cols-6 at lg, grid-cols-3 at sm): Total Return (currency), Avg R (1 decimal), Win Rate (percent), Profit Factor (1 decimal or "—" if null), Max Drawdown (currency), Total Trades (integer).
-- Equity curve chart. The project uses recharts — verify by checking `package.json`. Render a `<LineChart>` from recharts with `equityCurve` data. X-axis: trade date. Y-axis: cumulative PnL ($).
-- Filter chip bar: render chips grouped by `group`. Static groups first (outcome, direction, gap), then dynamic groups (grade, setup). Each chip: button, highlighted when active (`bg-emerald-500/20 border-emerald-500 text-emerald-300`), default (`border-white/10 bg-white/5 text-zinc-400`). Clicking toggles the filter.
-- Reviews table: columns — Ticker, Date, Direction, PnL ($), R-mult, Grade, Setup, Notes excerpt (first 40 chars), "Open" button. Sort by trade date ASC by default.
-- Zero-reviews empty state: "No reviewed sessions in this backtest yet. Launch the chart to start reviewing."
-- Per-review row: author-only kebab menu (check `review.session.userId === currentUserId`). Menu items: "Edit Notes" (PATCH `/api/backtest/sessions/[id]` with `notes`), "Delete" (DELETE `/api/backtest/sessions/[id]`). After mutation, call `refetch`.
-
----
-
-### Phase 6 — View-Mode Wiring
-
-**Files to modify:**
-- `/home/jared/Nexus-Terminal/components/trading/BacktestingTab.tsx`
-- `/home/jared/Nexus-Terminal/components/trading/BacktestingSidebar.tsx`
-- `/home/jared/Nexus-Terminal/components/trading/BacktestSimPanel.tsx`
-
----
-
-#### Step 6.1 — `BacktestingTab.tsx` — view state machine
-
-1. Add a `View` union type at the top of the file:
+2. Extend `backtestSessionReviewSchema` (currently lines 27-31) with an optional `chartState` field:
    ```ts
-   type View =
-     | { kind: 'manager' }
-     | { kind: 'chart'; ticker: string; date: string; activeBacktestId: string | null }
-     | { kind: 'stats'; backtestId: string };
+   export const backtestSessionReviewSchema = z.object({
+     sessionId: z.string().trim().min(1, 'sessionId is required'),
+     label: z.string().trim().optional(),
+     notes: z.string().trim().optional(),
+     chartState: chartStateSchema.optional(),
+   });
    ```
+3. The `BacktestSessionReviewBody` exported type (line 33) updates automatically via `z.infer<>`.
 
-2. Replace `const [selected, setSelected] = useState<BacktestSelection | null>(null)` with `const [view, setView] = useState<View>({ kind: 'manager' })`.
+**Acceptance criteria:**
+- [ ] `npx tsc --noEmit` succeeds.
+- [ ] Posting `{ sessionId, label, notes }` without `chartState` still validates (backwards compatible).
+- [ ] Posting `{ sessionId, chartState: { drawings: [...], indicators: { primary: ['VWAP'] } } }` validates.
+- [ ] Posting `{ chartState: { extraField: 1 } }` fails validation (`.strict()`).
 
-3. Derive `selected` for existing chart wiring: `const selected = view.kind === 'chart' ? { ticker: view.ticker, date: view.date } : null`.
+---
 
-4. Replace `handleSelect` with:
+### Step B4 — Persist `chartState` in the review POST handler
+
+**File:** `app/api/backtest/sessions/[id]/review/route.ts`
+**Action:** MODIFY
+
+Instructions:
+
+1. The handler currently updates `status`, `reviewedAt`, `label`, `notes`, `updatedAt` (lines 28-42). Add `chartState` to the `set()` payload, defaulting to `{}` when the body omits it (so existing callers that don't send the field still produce a valid row):
    ```ts
-   const handleSelect = useCallback((next: BacktestSelection, backtestId: string | null = null) => {
-     setArmedAction(null);
-     setPendingOrder(null);
-     setExtraSessionsForward(0);
-     setView({ kind: 'chart', ticker: next.ticker, date: next.date, activeBacktestId: backtestId });
+   const [session] = await db
+     .update(backtestSessions)
+     .set({
+       status: 'REVIEWED',
+       reviewedAt: now,
+       label: body.label?.trim() || null,
+       notes: body.notes?.trim() || null,
+       chartState: body.chartState ?? {},
+       updatedAt: now,
+     })
+     .where(...)
+     .returning();
+   ```
+2. The GET handler at `app/api/backtest/sessions/[id]/route.ts` returns the full session row via `db.select().from(backtestSessions)`, so `chartState` is included automatically — no change needed there.
+
+**Acceptance criteria:**
+- [ ] `POST /api/backtest/sessions/{id}/review` with a `chartState` body persists the JSON.
+- [ ] `GET /api/backtest/sessions/{id}` returns the session including `chartState`.
+- [ ] Existing tests at `__tests__/backtest-sessions-route.test.ts` still pass (update if they assert on `set()` shape).
+
+---
+
+### Step B5 — Extend client types for `chartState`
+
+**File:** `lib/types.ts`
+**Action:** MODIFY
+
+Instructions:
+
+1. Add a new exported type (above `BacktestSession`, near line 86) describing the on-the-wire shape:
+   ```ts
+   export interface BacktestChartState {
+     drawings?: unknown[];
+     indicators?: Record<string, string[]>;
+   }
+   ```
+   Use `unknown[]` for drawings — the `Drawing` discriminated-union type lives in `hooks/use-chart-drawings.ts` and importing it into `lib/types.ts` would create a cycle. Components that consume drawings will run them through `normalizeDrawings()` (already exported from the hook) which validates and returns a typed `Drawing[]`.
+2. Add `chartState: BacktestChartState | null;` as a field on `BacktestSession` (currently lines 86-99). Place it after `notes`. Allow null because legacy rows may have `null` (though step B1's `.default({}).notNull()` should prevent that going forward; defensive type is fine).
+
+**Acceptance criteria:**
+- [ ] `BacktestSession` type now includes `chartState: BacktestChartState | null`.
+- [ ] Existing imports of `BacktestSession` compile.
+- [ ] `npx tsc --noEmit` passes.
+
+---
+
+### Step B6 — Track per-slot indicators in `BacktestChartGrid`
+
+**File:** `components/trading/BacktestChartGrid.tsx`
+**Action:** MODIFY
+
+The indicator state currently lives entirely inside each `BacktestChart` instance (line 358 of that file). For Phase B we need the grid to know each slot's current indicators so it can pass them to the save flow.
+
+Instructions:
+
+1. Add `indicatorsBySlot` to the `ChartGridState` type (around line 17-22):
+   ```ts
+   type ChartGridState = {
+     scope: string;
+     activeDrawingTool: DrawingTool;
+     expandedSlotId: ChartSlotId | null;
+     timeframesBySlot: Record<ChartSlotId, BacktestTimeframeKey>;
+     indicatorsBySlot: Record<ChartSlotId, IndicatorKey[]>;
+   };
+   ```
+2. Add a helper `getDefaultIndicatorsBySlot()` near the existing `getDefaultSlotTimeframes()`:
+   ```ts
+   function getDefaultIndicatorsBySlot(
+     timeframesBySlot: Record<ChartSlotId, BacktestTimeframeKey>,
+   ): Record<ChartSlotId, IndicatorKey[]> {
+     return {
+       primary: getDefaultIndicators(timeframesBySlot.primary),
+       secondary: getDefaultIndicators(timeframesBySlot.secondary),
+       hourly: getDefaultIndicators(timeframesBySlot.hourly),
+       daily: getDefaultIndicators(timeframesBySlot.daily),
+     };
+   }
+   ```
+3. Initialize `indicatorsBySlot` in the initial `useState` (line 68) and in the `currentGridState` fallback (lines 74-81). When `loadedChartState` (added in step B7) is present, hydrate indicators from it.
+4. Add a handler to update one slot's indicators when `BacktestChart` reports a change:
+   ```ts
+   const setSlotIndicators = (slotId: ChartSlotId, next: IndicatorKey[]) => {
+     setGridState({
+       ...currentGridState,
+       indicatorsBySlot: {
+         ...currentGridState.indicatorsBySlot,
+         [slotId]: next,
+       },
+     });
+   };
+   ```
+5. In `setSlotTimeframe()` (lines 99-108), reset that slot's indicators to the new timeframe's defaults whenever the timeframe changes:
+   ```ts
+   const setSlotTimeframe = (slotId: ChartSlotId, timeframe: BacktestTimeframeKey) => {
+     setGridState({
+       ...currentGridState,
+       activeDrawingTool: BACKTEST_FRAME_CONFIG[timeframe].intraday ? currentGridState.activeDrawingTool : null,
+       timeframesBySlot: {
+         ...currentGridState.timeframesBySlot,
+         [slotId]: timeframe,
+       },
+       indicatorsBySlot: {
+         ...currentGridState.indicatorsBySlot,
+         [slotId]: getDefaultIndicators(timeframe),
+       },
+     });
+   };
+   ```
+6. Pass two new props down to each `BacktestChart` instance in the loop (line 130):
+   - `defaultIndicators={currentGridState.indicatorsBySlot[cell.id]}` — replaces the existing `getDefaultIndicators(timeframe)` call.
+   - `onIndicatorsChange={(next) => setSlotIndicators(cell.id, next)}` — wired in step B7.
+7. Add `isReadOnly: boolean` to `BacktestChartGridProps` (around line 46-55) and thread it into each `BacktestChart` (step B7 wires the consumer side). The grid itself doesn't gate on it; it just forwards.
+8. Add `loadedChartState: BacktestChartState | null` and `onChartStateChange: (state: BacktestChartState) => void` props to `BacktestChartGridProps`. The first is used to hydrate drawings + indicators when entering reviewMode; the second is called whenever drawings or indicators change so the parent can capture them for save.
+9. When `loadedChartState` is non-null and differs from the previous render (use a ref + effect to detect transition), seed the drawings via `drawingsController.clearAllDrawings()` followed by re-importing the loaded drawings. `useChartDrawings` does not currently expose a `setDrawings` action — add one in step B8.
+10. Whenever the drawings array or `indicatorsBySlot` changes, call `onChartStateChange({ drawings, indicators: indicatorsBySlot })` so the parent has the latest snapshot. Use a `useEffect` keyed on those values.
+
+**Acceptance criteria:**
+- [ ] Toggling an indicator in any slot updates `indicatorsBySlot` in the grid state and propagates via `onChartStateChange`.
+- [ ] Changing a slot's timeframe resets that slot's indicators to the new timeframe's defaults.
+- [ ] When `loadedChartState` is provided, drawings and indicators hydrate from it (step B8 + B9 wire the actual rendering).
+- [ ] When `isReadOnly` is true, the grid passes that down to `BacktestChart` (consumed in step B9).
+
+---
+
+### Step B7 — `BacktestChart` reports indicator changes and respects `isReadOnly`
+
+**File:** `components/trading/BacktestChart.tsx`
+**Action:** MODIFY
+
+Instructions:
+
+1. In `BacktestChartProps` (around line 95-115), add:
+   ```ts
+   onIndicatorsChange?: (indicators: IndicatorKey[]) => void;
+   isReadOnly?: boolean;
+   ```
+2. Destructure both in the function signature (around line 340-357).
+3. Add a `useEffect` after the existing indicator declaration (after line 358) that fires whenever `indicators` changes:
+   ```ts
+   useEffect(() => {
+     onIndicatorsChange?.(Array.from(indicators));
+   }, [indicators, onIndicatorsChange]);
+   ```
+4. When `isReadOnly` is true:
+   - `toggleIndicator` (lines 423-429) should short-circuit: `if (isReadOnly) return;` at the top.
+   - The indicator dropdown trigger (line 893-898) should pass `disabled={isReadOnly}` and visually grey out (use Tailwind `disabled:opacity-40 disabled:cursor-not-allowed` on the button — match the existing pattern from `BacktestSimPanel.tsx`).
+   - The series-type dropdown trigger (line 914-918) should also pass `disabled={isReadOnly}`. Series type does not persist with the review (it's purely a viewing preference), but locking it during review prevents user confusion that they're modifying anything.
+5. The `DrawingToolbar` instance (lines 942-947) needs a `disabled` prop. Add it in step B8.
+6. The `ChartDrawings` instance (lines 1003-1010) needs `isReadOnly` so chart clicks don't spawn drawings. Add it in step B9.
+
+**Acceptance criteria:**
+- [ ] Toggling any indicator emits an `onIndicatorsChange` callback with the new full set.
+- [ ] When `isReadOnly` is true, indicator and series-type dropdowns are disabled.
+- [ ] Clicking the (disabled) indicator trigger does nothing.
+
+---
+
+### Step B8 — `DrawingToolbar` gains `disabled` + add `text` tool entry
+
+**File:** `components/trading/DrawingToolbar.tsx`
+**Action:** MODIFY
+
+**File:** `hooks/use-chart-drawings.ts`
+**Action:** MODIFY (add the text drawing type, validator, and an external setter)
+
+Instructions for `hooks/use-chart-drawings.ts`:
+
+1. Extend the `DrawingTool` union (line 7):
+   ```ts
+   export type DrawingTool = 'trendline' | 'horizontal' | 'rectangle' | 'fibonacci' | 'text' | null;
+   ```
+2. Add a `TextDrawing` interface after `FibonacciDrawing` (after line 43). **No `color`, no `lineWidth`, no `fontSize`** — those are fixed at render time:
+   ```ts
+   export interface TextDrawing {
+     id: string;
+     type: 'text';
+     position: DrawingPoint;
+     text: string;
+   }
+   ```
+3. Update the `Drawing` union (line 45) to include `TextDrawing`:
+   ```ts
+   export type Drawing = TrendLineDrawing | HorizontalLineDrawing | RectangleDrawing | FibonacciDrawing | TextDrawing;
+   ```
+4. Update `normalizeDrawings()` (lines 83-175) to recognize `'text'`. Important: text drawings do **not** carry `color` or `lineWidth`, so the existing guard at lines 92-100 (which rejects items missing `color` or `lineWidth`) must be relaxed for the text case. Restructure as follows:
+   ```ts
+   for (const item of loaded) {
+     if (!item || typeof item !== 'object') continue;
+
+     const drawing = item as Record<string, unknown>;
+     const id = typeof drawing.id === 'string' ? drawing.id : null;
+     if (!id) continue;
+
+     // Text drawings have a different field set.
+     if (drawing.type === 'text') {
+       if (
+         !isDrawingPoint(drawing.position)
+         || typeof drawing.text !== 'string'
+         || drawing.text.length === 0
+       ) {
+         continue;
+       }
+       normalized.push({
+         id,
+         type: 'text',
+         position: drawing.position,
+         text: drawing.text,
+       });
+       continue;
+     }
+
+     // All other drawings require color + lineWidth.
+     const color = typeof drawing.color === 'string' ? drawing.color : null;
+     const lineWidth = typeof drawing.lineWidth === 'number' && Number.isFinite(drawing.lineWidth)
+       ? drawing.lineWidth
+       : null;
+     if (!color || lineWidth === null) continue;
+
+     switch (drawing.type) {
+       // ...existing horizontal/trendline/rectangle/fibonacci cases unchanged
+     }
+   }
+   ```
+5. Add a new `createTextDrawing()` action / reducer entry. Since text drawings don't go through the existing temp-drawing/click-and-drag flow, expose a new top-level callback `addTextDrawing(point: DrawingPoint, text: string)` from the hook. Implementation:
+   ```ts
+   type DrawingAction =
+     | ...existing actions...
+     | { type: 'addCompletedDrawing'; drawing: Drawing };
+
+   // In drawingReducer:
+   case 'addCompletedDrawing':
+     return {
+       ...state,
+       drawings: [...state.drawings, action.drawing],
+       tempDrawing: null,
+       isDrawing: false,
+     };
+
+   // In useChartDrawings, add:
+   const addTextDrawing = useCallback((point: DrawingPoint, text: string) => {
+     const trimmed = text.trim();
+     if (!trimmed) return;
+     dispatch({
+       type: 'addCompletedDrawing',
+       drawing: {
+         id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+         type: 'text',
+         position: point,
+         text: trimmed,
+       },
+     });
+   }, []);
+
+   const updateTextDrawing = useCallback((id: string, text: string) => {
+     const trimmed = text.trim();
+     if (!trimmed) return;
+     dispatch({
+       type: 'updateTextDrawing',
+       id,
+       text: trimmed,
+     });
    }, []);
    ```
-
-5. Wrap the existing chart layout in `{view.kind === 'chart' && ...}`. Add `{view.kind === 'manager' && <BacktestManagerView onLaunchChart={...} onViewStats={...} />}`. Add `{view.kind === 'stats' && <BacktestStatsView backtestId={view.backtestId} onBack={...} onOpenInChart={...} currentUserId={currentUserId} />}`.
-
-6. `onLaunchChart`: `(backtestId, ticker, date) => handleSelect({ ticker, date }, backtestId)`.
-
-7. `onViewStats`: `(backtestId) => setView({ kind: 'stats', backtestId })`.
-
-8. Add a breadcrumb bar at the top of the chart layout (inside the chart main `<main>` element, above the existing header `<div>`). Render only when `view.kind === 'chart'`:
-   ```tsx
-   {view.kind === 'chart' ? (
-     <div className="flex h-7 shrink-0 items-center gap-2 px-3 text-xs text-zinc-500">
-       <button type="button" onClick={() => setView({ kind: 'manager' })} className="hover:text-white">
-         ← Backtest Manager
-       </button>
-       {view.activeBacktestId ? (
-         <>
-           <span>•</span>
-           <span className="text-zinc-300">{activeBacktestName}</span>
-         </>
-       ) : null}
-     </div>
-   ) : null}
-   ```
-   `activeBacktestName` requires a small state or a prop passed down from the manager. Simplest approach: store `activeBacktestName: string | null` alongside the chart view state. Change the `View` type to include `activeBacktestName: string | null` in the `chart` variant. Pass it from `onLaunchChart` in `BacktestManagerView` where the backtest name is known.
-
-9. Derive `currentUserId` from `useSession()` (import from `next-auth/react`): `const { data: session } = useSession(); const currentUserId = session?.user?.id ?? null`.
-
----
-
-#### Step 6.2 — `BacktestingSidebar.tsx` — active backtest awareness
-
-1. Add new props to the interface:
+   And the matching reducer case for `updateTextDrawing`:
    ```ts
-   activeBacktest: { id: string; name: string; userId: string } | null;
-   sampleSetRows: Array<{ ticker: string; date: string }> | null;
+   case 'updateTextDrawing':
+     return {
+       ...state,
+       drawings: state.drawings.map((drawing) =>
+         drawing.id === action.id && drawing.type === 'text'
+           ? { ...drawing, text: action.text }
+           : drawing,
+       ),
+     };
    ```
-
-2. Remove internal `handleSyncSheetFile`, `handleLoadTradesFile`, Sync Sheet button, Load Trades button, and the `loadedTrades` / `syncStatus` / `syncing` state. These move to `BacktestManagerView`. Keep `handleSyncSheetFile` in the manager (already described in Phase 4.2 step).
-
-3. When `activeBacktest` is set, show the sample set rows from `sampleSetRows` (passed by parent) as the ticker list instead of the system tickers. Map each `SampleSetRow` to the existing `SystemTickerRow` shape with `grade: null`, `setupType: null`, `day1GapPct: null`, and `id: ticker-date-index` key.
-
-4. Remove the `sourceLabel` / `X` clear button logic (that was for loaded trades). The source label when `activeBacktest` is set becomes `activeBacktest.name` (truncated).
-
-5. Keep the filter input and sort toggle — they still apply.
-
-6. In `BacktestingTab.tsx`, when building the `BacktestingSidebar` call, pass:
+6. Add a `replaceAllDrawings` action used by the grid hydration in step B6:
    ```ts
-   activeBacktest={view.kind === 'chart' && view.activeBacktestId ? { id: view.activeBacktestId, name: view.activeBacktestName ?? '', userId: /* need ownerId */ } : null}
-   sampleSetRows={...} // fetch on demand if activeBacktestId set; store in tab state
+   type DrawingAction =
+     | ...existing...
+     | { type: 'replaceAllDrawings'; drawings: Drawing[] };
+
+   case 'replaceAllDrawings':
+     return {
+       drawings: action.drawings,
+       tempDrawing: null,
+       isDrawing: false,
+     };
+
+   const replaceAllDrawings = useCallback((next: Drawing[]) => {
+     dispatch({ type: 'replaceAllDrawings', drawings: next });
+   }, []);
    ```
-   Simpler: when `activeBacktestId` is set, the sidebar can fetch `GET /api/backtests/[id]` internally to get the sample set rows. Or even simpler: pass `activeBacktestId` as a prop to the sidebar and let the sidebar fetch it. Pick whichever keeps `BacktestingTab.tsx` cleaner. Recommended: give sidebar an `activeBacktestId: string | null` prop and let it do an internal `useEffect` fetch of `GET /api/backtests/[id]` to get the sampleSet rows and backtest name. This avoids lifting that fetch state up into the tab.
+7. Add `addTextDrawing`, `updateTextDrawing`, and `replaceAllDrawings` to the hook's return object (lines 418-436).
 
----
+Instructions for `components/trading/DrawingToolbar.tsx`:
 
-#### Step 6.3 — `BacktestSimPanel.tsx` — active backtest UX
-
-1. Add props:
+1. Add a `disabled?: boolean` prop to `DrawingToolbarProps` (lines 15-20) and destructure it. When `disabled`, render the trigger button with `disabled={true}` and the existing greyed-out classes.
+2. Extend the `tools` array (lines 22-27) with the text tool. Use the `Type` icon from `lucide-react`:
    ```ts
-   activeBacktest: { id: string; name: string; userId: string } | null;
-   currentUserId: string | null;
-   onSaveReview: (label?: string, notes?: string, backtestId?: string | null) => Promise<void> | void;
+   import { ChevronDown, Minus, Square, Trash2, TrendingUp, Type } from 'lucide-react';
+
+   const tools: Array<{ id: DrawingTool; icon: React.ReactNode; label: string }> = [
+     { id: 'trendline', icon: <TrendingUp className="h-4 w-4" />, label: 'Trend Line' },
+     { id: 'horizontal', icon: <Minus className="h-4 w-4" />, label: 'Horizontal Line' },
+     { id: 'rectangle', icon: <Square className="h-4 w-4" />, label: 'Rectangle' },
+     { id: 'fibonacci', icon: <span className="text-[10px] font-bold leading-none">Fib</span>, label: 'Fibonacci Retracement' },
+     { id: 'text', icon: <Type className="h-4 w-4" />, label: 'Text' },
+   ];
    ```
+3. In `BacktestChart.tsx`, pass `disabled={isReadOnly}` to the `DrawingToolbar` instance (line 942).
 
-2. Change the SAVE REVIEW button text: if `activeBacktest && activeBacktest.userId === currentUserId`, render "SAVE TO [BACKTEST NAME]" (uppercase, truncate name if > 15 chars with ellipsis). Otherwise render "SAVE REVIEW".
-
-3. In the `saveReview` async function inside the component, pass `backtestId: activeBacktest?.userId === currentUserId ? activeBacktest?.id : undefined` to `onSaveReview`.
-
-4. In `BacktestingTab.tsx`, update the `onSaveReview` handler passed to `BacktestSimPanel` to forward the `backtestId` to `sessionState.saveReview`. Update `saveReview` in `use-backtest-session.ts` to accept an optional `backtestId?: string | null` parameter and include it in the POST to `/api/backtest/sessions/[id]/review`. (The review endpoint itself doesn't need to store it — `backtestId` lives on the session row, set at session creation time. Instead: update the `ensureActiveSession` call to pass `backtestId` when creating a new session.)
-
-   Actually — the cleaner approach: `backtestId` is set when the session is **created** (POST `/api/backtest/sessions`), not when it is reviewed. So the flow is:
-   - When entering chart view with `activeBacktestId`, the `use-backtest-session` hook must pass `backtestId` on session creation.
-   - Pass `activeBacktestId` into `useBacktestSession` as a new prop: `backtestId: string | null`.
-   - In `ensureActiveSession`, include `backtestId` in the POST body if set.
-   - The `onSaveReview` signature in `BacktestSimPanel` does NOT need to change.
-
-5. Update `useBacktestSession` interface to accept `backtestId: string | null` and thread it into `ensureActiveSession`.
-
-6. In `BacktestingTab.tsx`, pass `backtestId={view.kind === 'chart' ? view.activeBacktestId : null}` to `useBacktestSession`.
+**Acceptance criteria:**
+- [ ] `Drawing` union now includes `TextDrawing`.
+- [ ] `normalizeDrawings()` accepts `{ id, type: 'text', position: { time, price }, text: '...' }` and rejects empty / non-string `text`.
+- [ ] Hook exposes `addTextDrawing`, `updateTextDrawing`, and `replaceAllDrawings`.
+- [ ] `DrawingToolbar` shows a "Text" entry with the `Type` icon.
+- [ ] When `disabled`, the toolbar trigger is non-interactive.
 
 ---
 
-### Phase 7 — Tests + Validation Gates
+### Step B9 — `ChartDrawings` renders + edits text drawings; respects `isReadOnly`
 
-**Files to create:**
-- `/home/jared/Nexus-Terminal/__tests__/backtests-route.test.ts`
-- `/home/jared/Nexus-Terminal/__tests__/sample-sets-route.test.ts`
+**File:** `components/trading/ChartDrawings.tsx`
+**Action:** MODIFY
 
-(Other test files already specified in Phases 3 and 4.)
+Instructions:
+
+1. Add `isReadOnly?: boolean` to `ChartDrawingsProps` (lines 146-160) and destructure (default `false`).
+2. Update the import from `@/hooks/use-chart-drawings` to also pull `addTextDrawing`, `updateTextDrawing`, and the `TextDrawing` type:
+   ```ts
+   import {
+     useChartDrawings,
+     type ChartDrawingsController,
+     type Drawing,
+     type DrawingTool,
+     type TrendLineDrawing,
+     type RectangleDrawing,
+     type FibonacciDrawing,
+     type TextDrawing,
+   } from '@/hooks/use-chart-drawings';
+   ```
+   And from the controller destructuring (lines 183-194), add `addTextDrawing` and `updateTextDrawing`.
+3. **Block all edit interactions when `isReadOnly`:**
+   - The `subscribeClick` handler (lines 260-334): wrap the entire body in `if (isReadOnly) return;`. This prevents starting drawings, completing drawings, selecting drawings, and dragging endpoints when in read-only mode.
+   - The keyboard shortcuts effect (lines 621-661): wrap with `if (isReadOnly) return;` so Delete/Backspace/Escape don't alter drawings.
+   - The double-click handler (lines 663-697): wrap with `if (isReadOnly) return;`.
+4. **Render text drawings on the canvas.** In `renderDrawing()` (lines 384-467), add a `case 'text':` that draws the text with `ctx.fillText`:
+   ```ts
+   case 'text': {
+     const x = timeToCoordinate(drawing.position.time);
+     const y = priceToCoordinate(drawing.position.price);
+     if (x === null || y === null) break;
+     ctx.save();
+     ctx.font = '14px ui-sans-serif, system-ui, -apple-system, sans-serif';
+     ctx.fillStyle = '#ffffff';
+     ctx.textBaseline = 'middle';
+     ctx.fillText(drawing.text, x, y);
+     ctx.restore();
+     break;
+   }
+   ```
+5. **Hit detection for text.** In `isPointNearDrawing()` (lines 14-84), add a `case 'text':` that returns true if the click is within ~12px of the rendered text origin:
+   ```ts
+   case 'text': {
+     const x1 = timeToCoordinate(drawing.position.time);
+     const y1 = priceToCoordinate(drawing.position.price);
+     if (x1 === null || y1 === null) return false;
+     // Approximate text width: 8px per character at 14px font.
+     const approxWidth = drawing.text.length * 8;
+     return x >= x1 - HIT_TOLERANCE
+       && x <= x1 + approxWidth + HIT_TOLERANCE
+       && Math.abs(y - y1) < HIT_TOLERANCE;
+   }
+   ```
+6. **Endpoint hit detection** at `isPointNearEndpoint()` (lines 112-144): text drawings don't have endpoints. Add an early return for text:
+   ```ts
+   if (drawing.type === 'horizontal' || drawing.type === 'text') {
+     return { isNear: false, which: null };
+   }
+   ```
+7. **Inline editor for text.** Add a piece of component state for an in-progress text edit:
+   ```ts
+   const [textEditState, setTextEditState] = useState<{
+     mode: 'create' | 'edit';
+     id?: string;
+     point: { x: number; y: number };
+     value: string;
+   } | null>(null);
+   ```
+8. In the `subscribeClick` handler, when `activeTool === 'text'` is the active tool (and not `isReadOnly`):
+   - If clicking on existing text and not `isReadOnly`: open the editor in 'edit' mode at the click coordinate with the existing text. Do NOT call `addTextDrawing`.
+   - Otherwise (not on existing text): open the editor in 'create' mode at the click coordinate with empty value.
+   - Do not call the existing `startDrawing` flow for text — text uses the inline editor instead.
+9. When clicking on an existing text drawing while NO tool is active and not `isReadOnly`, allow opening the editor in 'edit' mode (so users can edit text without re-selecting the tool). Add this branch to the existing "click on existing drawing" block (around lines 299-316):
+   ```ts
+   if (drawing.type === 'text') {
+     setTextEditState({
+       mode: 'edit',
+       id: drawing.id,
+       point: { x, y },
+       value: drawing.text,
+     });
+     return;
+   }
+   ```
+10. **Render the inline editor as a positioned input.** Below the existing canvas overlay (around line 707), conditionally render:
+    ```tsx
+    {textEditState ? (
+      <input
+        type="text"
+        autoFocus
+        value={textEditState.value}
+        onChange={(event) => setTextEditState((current) => current ? { ...current, value: event.target.value } : current)}
+        onBlur={() => commitTextEdit()}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            commitTextEdit();
+          } else if (event.key === 'Escape') {
+            event.preventDefault();
+            setTextEditState(null);
+          }
+        }}
+        className="absolute z-30 rounded border border-white/20 bg-[#121214] px-1 text-[14px] text-white outline-none"
+        style={{ left: textEditState.point.x, top: textEditState.point.y - 10 }}
+      />
+    ) : null}
+    ```
+    Where `commitTextEdit()` is:
+    ```ts
+    const commitTextEdit = useCallback(() => {
+      if (!textEditState) return;
+      const trimmed = textEditState.value.trim();
+      if (textEditState.mode === 'create') {
+        // Convert the click x/y back to time/price for storage.
+        const time = coordinateToTime(textEditState.point.x);
+        const price = coordinateToPrice(textEditState.point.y);
+        if (trimmed && time !== null && price !== null) {
+          addTextDrawing({ time, price }, trimmed);
+        }
+      } else if (textEditState.mode === 'edit' && textEditState.id) {
+        if (trimmed) {
+          updateTextDrawing(textEditState.id, trimmed);
+        }
+      }
+      setTextEditState(null);
+      onToolChange?.(null); // exit text tool after place
+    }, [textEditState, addTextDrawing, updateTextDrawing, coordinateToTime, coordinateToPrice, onToolChange]);
+    ```
+11. **Don't capture clicks for editor positioning.** The editor is positioned in the canvas wrapper (which is `position: relative`); the existing `chartWrapRef` in `BacktestChart.tsx` is the relative ancestor. Verify the input renders correctly; if not, wrap the input in a div anchored to `chartWrapRef`.
+
+**Acceptance criteria:**
+- [ ] With the Text tool active, clicking the chart spawns an inline input at that point.
+- [ ] Typing then pressing Enter (or blurring) creates a text drawing at the click's time/price.
+- [ ] Typing then pressing Escape cancels (no drawing created).
+- [ ] Clicking an existing text drawing (no tool active) opens the editor with current text; Enter / blur saves.
+- [ ] Text drawings render as 14px white labels at their stored time/price.
+- [ ] When `isReadOnly` is true: cannot create new text, cannot edit existing text, cannot delete text drawings, cannot drag endpoints, cannot use Delete/Backspace shortcuts.
 
 ---
 
-#### Step 7.1 — `backtests-route.test.ts`
+### Step B10 — Save chartState on review save
 
-Follow the exact mocking pattern in `/home/jared/Nexus-Terminal/__tests__/trades-route.test.ts`: use `vi.hoisted` for mock functions, `vi.mock('@/lib/db', ...)` and `vi.mock('@/lib/server-db-utils', ...)`, then import the route handlers.
+**File:** `components/trading/BacktestingTab.tsx`
+**Action:** MODIFY
 
-Cover:
-- `GET /api/backtests` returns list (no userId filter — any authed user sees all).
-- `POST /api/backtests` creates a backtest for the authed user.
-- `POST /api/backtests` returns 409 when `(userId, name)` collides.
-- `GET /api/backtests/[id]` returns backtest + reviews (no ownership check).
-- `PATCH /api/backtests/[id]` returns 403 when authed user is not the owner.
-- `DELETE /api/backtests/[id]` returns 403 when authed user is not the owner.
-- `DELETE /api/backtests/[id]` succeeds when authed user is the owner.
+**File:** `hooks/use-backtest-session.ts`
+**Action:** MODIFY
 
-#### Step 7.2 — `sample-sets-route.test.ts`
+The hook's `saveReview()` needs to accept `chartState` and forward it. The tab needs to capture the latest chart state from `BacktestChartGrid` (via `onChartStateChange`) and pass it on save.
 
-Same pattern. Cover:
-- `GET /api/sample-sets` returns list (no userId filter).
-- `POST /api/sample-sets` creates with rows.
-- `POST /api/sample-sets` returns 409 on name collision.
-- `GET /api/sample-sets/[id]` returns full detail including rows array.
-- `POST /api/sample-sets/[id]/duplicate` creates a copy for the authed user.
-- `PATCH /api/sample-sets/[id]` returns 403 when not owner.
-- `DELETE /api/sample-sets/[id]` returns 403 when not owner.
-- `DELETE /api/sample-sets/[id]` succeeds for owner.
+Instructions for `hooks/use-backtest-session.ts`:
+
+1. Update the `saveReview` signature (line 362):
+   ```ts
+   const saveReview = useCallback(async (
+     label?: string,
+     notes?: string,
+     chartState?: BacktestChartState,
+   ) => { ... });
+   ```
+2. Import `BacktestChartState` from `@/lib/types`.
+3. Include `chartState` in the POST body (line 378):
+   ```ts
+   body: JSON.stringify({ sessionId: activeSession.id, label, notes, chartState: chartState ?? {} }),
+   ```
+4. The success path from step A4 already sets `reviewMode` to `payload.session` — `payload.session` now includes `chartState` (because the API returns the full row), so when the user goes back into the saved review later, hydration works automatically.
+
+Instructions for `components/trading/BacktestingTab.tsx`:
+
+1. Add state for the latest captured chart state:
+   ```ts
+   const [latestChartState, setLatestChartState] = useState<BacktestChartState>({ drawings: [], indicators: {} });
+   ```
+2. Pass `onChartStateChange={setLatestChartState}` to `BacktestChartGrid` (around line 339).
+3. Pass `loadedChartState={sessionState.session?.chartState ?? null}` to `BacktestChartGrid`. When `sessionState.isReadOnly` is true (review loaded), this hydrates drawings + indicators from the saved row. When false (active session), the grid keeps its current in-memory state.
+4. Pass `isReadOnly={sessionState.isReadOnly}` to `BacktestChartGrid`.
+5. In the `BacktestSimPanel` `onSaveReview` prop (line 377), forward the chart state. Currently `onSaveReview={sessionState.saveReview}`; change to:
+   ```ts
+   onSaveReview={(label, notes) => sessionState.saveReview(label, notes, latestChartState)}
+   ```
+   `BacktestSimPanel`'s `BacktestSimPanelProps` already types `onSaveReview` as `(label?: string, notes?: string) => Promise<void> | void` — that signature stays unchanged; the tab is the one composing the chart state in.
+6. When `sessionState.session?.id` changes (or `isReadOnly` flips), reset `latestChartState` so the next active session starts blank:
+   ```ts
+   useEffect(() => {
+     if (sessionState.isReadOnly) return;
+     setLatestChartState({ drawings: [], indicators: {} });
+   }, [sessionState.session?.id, sessionState.isReadOnly]);
+   ```
+   Confirm this doesn't fire on every render (the dependency on `session?.id` is stable across renders for the same session).
+
+**Acceptance criteria:**
+- [ ] Saving a review POSTs `chartState: { drawings, indicators }` capturing the user's drawings and per-slot indicators.
+- [ ] Loading that review later hydrates the same drawings + indicators in the chart.
+- [ ] An active (non-review) session always starts with blank drawings and default-by-timeframe indicators.
+- [ ] Coworker's review loads with the coworker's saved drawings + indicators (cross-user portability).
 
 ---
 
-#### Step 7.3 — Validation gates
+### Step B11 — Read-only enforcement plumbing in the grid
 
-After ALL phases are complete, run in order:
+**File:** `components/trading/BacktestChartGrid.tsx`
+**Action:** MODIFY (continuation of step B6)
+
+Instructions:
+
+1. Pass `isReadOnly` from props down to each `BacktestChart` instance (line 130) as a new prop.
+2. The grid-level `setActiveDrawingTool` (lines 85-90) should short-circuit when `isReadOnly`: `if (isReadOnly) return;`. This prevents the toolbar from arming a tool even if the disabled state is bypassed.
+3. The `drawingsController` returned by `useChartDrawings` is passed into `BacktestChart`, which forwards to `ChartDrawings`. Step B9 already gates ChartDrawings on `isReadOnly`. Pass `isReadOnly` through the chain explicitly so each layer can enforce it.
+
+**Acceptance criteria:**
+- [ ] Loading a review disables the drawing toolbar, indicator dropdown, and series-type dropdown.
+- [ ] Loading a review prevents click-to-draw on the chart.
+- [ ] Loading a review prevents Delete/Backspace from removing existing drawings.
+
+---
+
+### Phase B end requirements
+
+Run from `/home/jared/Nexus-Terminal`:
 
 ```
+npm run db:migrate
 npm run lint
 npx tsc --noEmit
 npm test
 ```
 
-Report pass/fail for each. Fix all failures before marking done. `npm run workflow:audit` is NOT required (no workflow assets changed).
+All four must exit 0.
 
----
-
-## 3. Files Reference
-
-### NEW
-- `/home/jared/Nexus-Terminal/lib/validations/backtests.ts`
-- `/home/jared/Nexus-Terminal/lib/validations/sample-sets.ts`
-- `/home/jared/Nexus-Terminal/lib/sample-set-csv.ts`
-- `/home/jared/Nexus-Terminal/lib/backtest-stats.ts`
-- `/home/jared/Nexus-Terminal/lib/backtest-filters.ts`
-- `/home/jared/Nexus-Terminal/app/api/backtests/route.ts`
-- `/home/jared/Nexus-Terminal/app/api/backtests/[id]/route.ts`
-- `/home/jared/Nexus-Terminal/app/api/sample-sets/route.ts`
-- `/home/jared/Nexus-Terminal/app/api/sample-sets/[id]/route.ts`
-- `/home/jared/Nexus-Terminal/app/api/sample-sets/[id]/duplicate/route.ts`
-- `/home/jared/Nexus-Terminal/hooks/use-backtest-manager.ts`
-- `/home/jared/Nexus-Terminal/hooks/use-backtest-stats.ts`
-- `/home/jared/Nexus-Terminal/components/trading/BacktestManagerView.tsx`
-- `/home/jared/Nexus-Terminal/components/trading/BacktestStatsView.tsx`
-- `/home/jared/Nexus-Terminal/components/trading/NewBacktestDialog.tsx`
-- `/home/jared/Nexus-Terminal/components/trading/AddSampleSetDialog.tsx`
-- `/home/jared/Nexus-Terminal/components/trading/EditBacktestDialog.tsx`
-- `/home/jared/Nexus-Terminal/__tests__/sample-set-csv.test.ts`
-- `/home/jared/Nexus-Terminal/__tests__/backtest-stats.test.ts`
-- `/home/jared/Nexus-Terminal/__tests__/backtest-filters.test.ts`
-- `/home/jared/Nexus-Terminal/__tests__/backtests-route.test.ts`
-- `/home/jared/Nexus-Terminal/__tests__/sample-sets-route.test.ts`
-- `/home/jared/Nexus-Terminal/__tests__/backtest-manager-view.test.tsx`
-
-### MODIFIED
-- `/home/jared/Nexus-Terminal/lib/db/schema.ts` — add `sampleSets`, `backtests` tables; add `backtestId` + index to `backtestSessions`; add `uniqueIndex` + `randomUUID` imports
-- `/home/jared/Nexus-Terminal/lib/types.ts` — add `backtestId: string | null` to `BacktestSession`
-- `/home/jared/Nexus-Terminal/lib/validations/backtest.ts` — add `backtestId` field to `backtestSessionUpsertSchema`
-- `/home/jared/Nexus-Terminal/app/api/backtest/sessions/route.ts` — accept + validate `backtestId`; drop userId filter on GET
-- `/home/jared/Nexus-Terminal/app/api/backtest/sessions/[id]/route.ts` — drop userId filter on GET
-- `/home/jared/Nexus-Terminal/hooks/use-backtest-session.ts` — accept `backtestId: string | null`; thread into `ensureActiveSession`
-- `/home/jared/Nexus-Terminal/components/trading/BacktestingTab.tsx` — replace `selected` state with `view` state machine; add breadcrumb; render manager/stats/chart views; wire `activeBacktestId` into `useBacktestSession`
-- `/home/jared/Nexus-Terminal/components/trading/BacktestingSidebar.tsx` — remove Sync Sheet / Load Trades buttons; add `activeBacktestId` prop; show sample set rows when active backtest set
-- `/home/jared/Nexus-Terminal/components/trading/BacktestSimPanel.tsx` — add `activeBacktest` + `currentUserId` props; change Save Review button text; forward `backtestId` on save
-
----
-
-## 4. Validation Snapshot
-
-Run from `/home/jared/Nexus-Terminal` after all changes:
+Codex must print a manual-test checklist at the end of the run (do not actually run a browser, just print the checklist for the user to follow):
 
 ```
-npm run lint
-npx tsc --noEmit
-npm test
+Phase B manual smoke test (run in browser):
+  [ ] Create an active session on a ticker. Add 2 drawings (e.g. trendline + horizontal). Toggle VWAP on the 5m slot. Save Review.
+  [ ] Reload the page. From the manager's Uncategorized row, "Open" the just-saved review.
+      → Drawings should hydrate. VWAP should be on the 5m slot. Toolbar disabled.
+  [ ] Clear the review (or start a new session). Drawings should clear, indicators should reset to per-timeframe defaults.
+  [ ] With the Text tool active, click a chart bar; type "test"; press Enter. Save Review. Reload + open. Text should persist.
+  [ ] With no tool active, click an existing text drawing. Editor opens. Type new text. Press Enter. Re-save (or treat as fresh review).
+      → Note: editing inside a loaded read-only review is blocked by isReadOnly. To edit, exit the review and start fresh.
+  [ ] On a named backtest path: save review. Have coworker (or simulate by switching user context if test infra allows) load it. Drawings + indicators visible, all controls disabled.
 ```
 
-Expected: all three exit 0. Do not run `npm run workflow:audit` (no workflow assets were changed). Do not run `db:push` at any point.
+Then commit with this message:
+
+```
+Persist drawings and indicators with backtest reviews and add text drawing tool
+```
 
 ---
 
-## 5. Open Assumptions
+## Files Changed Summary
 
-Codex must confirm these by reading the referenced files before writing code:
+### Phase A
 
-1. **Chart library**: Confirm `recharts` is in `package.json` before writing `<LineChart>` in `BacktestStatsView`. If a different chart library is used, adapt accordingly.
+| File | Action | Lines added/removed (rough) | Risk |
+|---|---|---|---|
+| `lib/backtest-math.ts` | MODIFY | +5 / 0 | LOW — additive, no behavior change for existing fields |
+| `__tests__/backtest-math.test.ts` | MODIFY | +30 / 0 | LOW — pure test additions |
+| `components/trading/BacktestSimPanel.tsx` | MODIFY | +5 / -2 | LOW — display-only |
+| `hooks/use-backtest-session.ts` | MODIFY | +4 / 0 | LOW — adds reviewMode set on save success |
+| `components/trading/BacktestChartGrid.tsx` | MODIFY | +30 / -2 | LOW — localStorage, no schema |
 
-2. **`@testing-library/react` availability**: Confirm it is in `package.json` `devDependencies` before writing the `backtest-manager-view.test.tsx` file. If absent, the component test may need to be integration-style or skipped.
+### Phase B
 
-3. **`useSession` availability**: Confirm `next-auth/react` is in `package.json` (it should be, given the project uses NextAuth). The `useSession` hook is used in `BacktestingTab` and `use-backtest-manager`.
+| File | Action | Lines added/removed (rough) | Risk |
+|---|---|---|---|
+| `lib/db/schema.ts` | MODIFY | +1 / 0 | LOW — new column, default `{}` |
+| `drizzle/0028_*.sql` | CREATE (auto-generated) | ~3 lines | LOW — additive migration |
+| `lib/validations/backtest.ts` | MODIFY | +8 / 0 | LOW — Zod additions |
+| `app/api/backtest/sessions/[id]/review/route.ts` | MODIFY | +1 / 0 | LOW — set new column |
+| `lib/types.ts` | MODIFY | +5 / 0 | LOW — type additions |
+| `hooks/use-chart-drawings.ts` | MODIFY | +60 / -10 | MEDIUM — new TextDrawing case + new actions |
+| `components/trading/DrawingToolbar.tsx` | MODIFY | +5 / -1 | LOW — new tool entry, disabled prop |
+| `components/trading/ChartDrawings.tsx` | MODIFY | +80 / 0 | MEDIUM — text rendering, edit overlay, isReadOnly gating |
+| `components/trading/BacktestChart.tsx` | MODIFY | +20 / -2 | LOW — props pass-through, disabled gates |
+| `components/trading/BacktestChartGrid.tsx` | MODIFY | +50 / -5 | MEDIUM — new state shape, hydration, callbacks |
+| `components/trading/BacktestingTab.tsx` | MODIFY | +15 / -1 | LOW — wire chartState capture + save |
+| `hooks/use-backtest-session.ts` | MODIFY | +5 / -2 | LOW — saveReview accepts chartState |
 
-4. **`count` and `isNull` from drizzle-orm**: These are standard Drizzle exports — confirm they are available in the installed version by checking an existing route that does aggregation, or just use them and let TypeScript catch any issue at `tsc --noEmit`.
+---
 
-5. **Index syntax**: The existing schema uses both the `(t) => [...]` array form (newer tables like `reportTemplates`) and the `(table) => [...]` form (older tables). Either is fine — use the array form `(t) => [...]` consistently in the new tables to match the newer style.
+## Verification Steps
 
-6. **`parseSampleSetCsv` in `BacktestingSidebar.tsx`**: After extracting `parseTradesCsv` logic into `lib/sample-set-csv.ts`, update the sidebar's internal reference (if any remaining `loadedTrades` logic is kept). Since Phase 6.2 removes the Load Trades button from the sidebar entirely, no import is needed there — just confirm the sidebar no longer calls `parseTradesCsv` internally after the removal.
+After Phase A:
+- `npm run lint`
+- `npx tsc --noEmit`
+- `npm test`
+- Commit + STOP.
+
+After Phase B:
+- `npm run db:migrate`
+- `npm run lint`
+- `npx tsc --noEmit`
+- `npm test`
+- Commit + print manual-test checklist.
+
+---
+
+## Open Assumptions (Codex must verify before writing code)
+
+1. **`Type` icon from lucide-react** is available in the existing version. Verify by checking `package.json` for `lucide-react` and noting the version, or by confirming a sibling import already pulls a similarly-named icon. If `Type` is not available, substitute `TextCursor` or render a literal `<span className="text-[10px] font-bold leading-none">T</span>` like the Fibonacci entry does.
+2. **`coordinateToTime`/`coordinateToPrice` reverse lookups** for placing a text drawing at a click point: `ChartDrawings.tsx` already has `coordinateToPrice` (lines 232-238) and `coordinateToTime` (lines 240-251). Both can return null at the chart edges; gate the create path on non-null values.
+3. **`scripts/db-migrate-safe.mjs`** executes the equivalent of `drizzle-kit migrate`. Confirm the migration generated by step B1 is auto-discovered (it should be — check the script if a manual step is needed).
+4. **Existing review-route tests** at `__tests__/backtest-sessions-route.test.ts` may assert exact `set()` payload shapes. After step B4, update any test that asserts the payload to include `chartState`.
+5. **`@/lib/types` cycle risk**: importing `Drawing` from `hooks/use-chart-drawings.ts` into `lib/types.ts` could create a cycle. The plan deliberately uses `unknown[]` for `BacktestChartState.drawings` to avoid this. If a cycle still occurs, move `BacktestChartState` to its own file `lib/types/backtest-chart-state.ts`.
 
 ---
 
 ## Recent Completed Context
 
-- 2026-05-01: Backtesting timeframe/day controls + VWAP NY-session reset shipped (`1f1a943`, `43faec3`, `2c0b2d3`).
-- 2026-05-01: Dashboard intraday latches + Backtesting chart/review controls shipped — Day 1 + MDR rows now persist for the ET day, drawings shared across intraday charts, per-chart expansion, saved-review delete affordance.
+- 2026-05-03: Backtest review auto-load context fix shipped (`8467959`).
+- 2026-05-03: Per-user backtest session scoping + auto-load on Launch Chart (`a04ac6a`).
+- 2026-05-03: Scanner summary cache extended to 24h (`4ceb43b`).
+- 2026-05-03: Backtest manager polish — Edit/Delete moved to bottom action row (`457eecb`), default System Sheet wiring (`6421670`).
+- 2026-05-01: Backtest Manager landing page shipped — schema, API, manager + stats views, view-mode wiring across BacktestingTab/Sidebar/SimPanel.
+- 2026-05-01: Backtesting timeframe/day controls + VWAP NY-session reset shipped.
+- 2026-05-01: Dashboard intraday latches + Backtesting chart/review controls shipped — Day 1 + MDR rows persist for the ET day, drawings shared across intraday charts, per-chart expansion, saved-review delete affordance.
 - 2026-04-30: MDR eligibility route and Dashboard Potential MDR filtering shipped.
 - 2026-04-28: Backtesting tab shipped with schema/API/UI, simulator action validation, review save/load, and a four-chart grid.
 

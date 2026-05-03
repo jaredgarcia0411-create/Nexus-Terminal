@@ -7,6 +7,7 @@ export interface SimPosition {
   totalShares: number;
   avgEntry: number | null;
   stop: number | null;
+  lastSetStop: number | null;
   realizedPnl: number;
   lastExitPrice: number | null;
   initialRiskDollars: number;
@@ -20,6 +21,7 @@ function createEmptyPosition(riskDollars: number): SimPosition {
     totalShares: 0,
     avgEntry: null,
     stop: null,
+    lastSetStop: null,
     realizedPnl: 0,
     lastExitPrice: null,
     initialRiskDollars: riskDollars,
@@ -129,6 +131,7 @@ export function reduceActions(actions: BacktestAction[], riskDollars: number): S
         position.totalShares = action.shares;
         position.avgEntry = action.price;
         position.stop = action.stopPrice;
+        position.lastSetStop = action.stopPrice;
         position.totalSharesEverOpened += action.shares;
         break;
       }
@@ -143,6 +146,7 @@ export function reduceActions(actions: BacktestAction[], riskDollars: number): S
         position.totalShares = action.shares;
         position.avgEntry = action.price;
         position.stop = action.stopPrice;
+        position.lastSetStop = action.stopPrice;
         position.totalSharesEverOpened += action.shares;
         break;
       }
@@ -159,6 +163,7 @@ export function reduceActions(actions: BacktestAction[], riskDollars: number): S
         ) / (position.totalShares + action.shares);
         position.totalShares += action.shares;
         position.stop = action.stopPrice;
+        position.lastSetStop = action.stopPrice;
         position.totalSharesEverOpened += action.shares;
         break;
       }
@@ -175,6 +180,7 @@ export function reduceActions(actions: BacktestAction[], riskDollars: number): S
         ) / (position.totalShares + action.shares);
         position.totalShares += action.shares;
         position.stop = action.stopPrice;
+        position.lastSetStop = action.stopPrice;
         position.totalSharesEverOpened += action.shares;
         break;
       }

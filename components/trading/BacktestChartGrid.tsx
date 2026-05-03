@@ -9,6 +9,35 @@ import type { BacktestAction, BacktestActionType } from '@/lib/types';
 
 type ChartSlotId = 'primary' | 'secondary' | 'hourly' | 'daily';
 
+const EXPAND_STORAGE_KEY = 'nexus-backtest-expand-slot';
+const KNOWN_SLOT_IDS: readonly ChartSlotId[] = ['primary', 'secondary', 'hourly', 'daily'];
+
+function readPersistedExpandedSlot(): ChartSlotId | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const stored = window.localStorage.getItem(EXPAND_STORAGE_KEY);
+    if (!stored) return null;
+    return (KNOWN_SLOT_IDS as readonly string[]).includes(stored)
+      ? (stored as ChartSlotId)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedExpandedSlot(slotId: ChartSlotId | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (slotId === null) {
+      window.localStorage.removeItem(EXPAND_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(EXPAND_STORAGE_KEY, slotId);
+    }
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
 type ChartCellConfig = {
   id: ChartSlotId;
   defaultTimeframe: BacktestTimeframeKey;
@@ -68,7 +97,7 @@ export default function BacktestChartGrid({
   const [gridState, setGridState] = useState<ChartGridState>({
     scope: drawingScope,
     activeDrawingTool: null,
-    expandedSlotId: null,
+    expandedSlotId: readPersistedExpandedSlot(),
     timeframesBySlot: getDefaultSlotTimeframes(),
   });
   const currentGridState = gridState.scope === drawingScope
@@ -76,7 +105,7 @@ export default function BacktestChartGrid({
     : {
       scope: drawingScope,
       activeDrawingTool: null,
-      expandedSlotId: null,
+      expandedSlotId: readPersistedExpandedSlot(),
       timeframesBySlot: getDefaultSlotTimeframes(),
     };
   const { activeDrawingTool, expandedSlotId, timeframesBySlot } = currentGridState;
@@ -90,9 +119,11 @@ export default function BacktestChartGrid({
   };
 
   const toggleExpandedSlot = (slotId: ChartSlotId) => {
+    const nextExpanded = currentGridState.expandedSlotId === slotId ? null : slotId;
+    writePersistedExpandedSlot(nextExpanded);
     setGridState({
       ...currentGridState,
-      expandedSlotId: currentGridState.expandedSlotId === slotId ? null : slotId,
+      expandedSlotId: nextExpanded,
     });
   };
 

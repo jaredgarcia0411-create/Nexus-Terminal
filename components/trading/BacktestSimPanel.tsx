@@ -133,13 +133,15 @@ export default function BacktestSimPanel({
     }
     return reviews.filter((review) => review.backtestId == null && review.userId === currentUserId);
   }, [activeBacktest, currentUserId, reviews]);
-  const selectedReview = selectedReviewId
-    ? visibleReviews.find((review) => review.id === selectedReviewId) ?? null
+  const effectiveSelectedReviewId = isReadOnly && session ? session.id : selectedReviewId;
+  const selectedReview = effectiveSelectedReviewId
+    ? visibleReviews.find((review) => review.id === effectiveSelectedReviewId) ?? null
     : null;
 
   const currentOpenRisk = position.avgEntry != null && position.stop != null && position.totalShares > 0
     ? Math.abs(position.avgEntry - position.stop) * position.totalShares
     : 0;
+  const displayStop = position.stop ?? position.lastSetStop;
   const avgExit = useMemo(() => computeAvgExit(actions), [actions]);
   const simPnl = position.realizedPnl;
   const status = statusLabel(position, actions.length);
@@ -223,7 +225,7 @@ export default function BacktestSimPanel({
           </div>
           <div>
             <div className="text-zinc-500">STOP</div>
-            <div className="font-mono tabular-nums text-zinc-100">{position.stop != null ? formatCurrency(position.stop) : '-'}</div>
+            <div className="font-mono tabular-nums text-zinc-100">{displayStop != null ? formatCurrency(displayStop) : '-'}</div>
           </div>
           <div>
             <div className="text-zinc-500">RISK</div>
