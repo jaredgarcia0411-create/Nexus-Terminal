@@ -16,7 +16,7 @@ import BacktestingSidebar, { type BacktestSelection } from '@/components/trading
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useBacktestSession } from '@/hooks/use-backtest-session';
-import type { BacktestActionType } from '@/lib/types';
+import type { BacktestActionType, BacktestChartState } from '@/lib/types';
 
 type ActiveBacktestSummary = {
   id: string | null;
@@ -55,6 +55,7 @@ export default function BacktestingTab() {
   const [extraSessionsForward, setExtraSessionsForward] = useState(0);
   const [lookupTicker, setLookupTicker] = useState('');
   const [lookupDate, setLookupDate] = useState('');
+  const [latestChartState, setLatestChartState] = useState<BacktestChartState>({ drawings: [], indicators: {} });
   // When the user clicks Launch Chart with a known recent review, we set this
   // to the review id. The effect below picks it up once the sessions GET
   // resolves and drops the user into read-only review mode automatically.
@@ -132,6 +133,9 @@ export default function BacktestingTab() {
   }, { preventDefault: true });
 
   const effectiveRiskDollars = sessionState.effectiveRiskDollars;
+  const chartGridKey = `${selected?.ticker ?? 'empty'}:${selected?.date ?? 'empty'}:${
+    sessionState.isReadOnly ? `review:${sessionState.session?.id ?? 'none'}` : 'active'
+  }`;
 
   const updateRisk = useCallback(async (nextRisk: number) => {
     const previousRisk = riskDollars;
@@ -337,6 +341,7 @@ export default function BacktestingTab() {
             ) : null}
 
             <BacktestChartGrid
+              key={chartGridKey}
               ticker={selected?.ticker ?? null}
               date={selected?.date ?? null}
               onAnchorChange={handleAnchorChange}
@@ -345,6 +350,9 @@ export default function BacktestingTab() {
               actions={sessionState.actions}
               currentStop={sessionState.position.stop}
               extraSessionsForward={extraSessionsForward}
+              isReadOnly={sessionState.isReadOnly}
+              loadedChartState={sessionState.session?.chartState ?? null}
+              onChartStateChange={setLatestChartState}
             />
           </main>
 
@@ -374,7 +382,7 @@ export default function BacktestingTab() {
                 onRiskCommit={updateRisk}
                 onUndoLast={sessionState.undoLast}
                 onClear={sessionState.clear}
-                onSaveReview={sessionState.saveReview}
+                onSaveReview={(label, notes) => sessionState.saveReview(label, notes, latestChartState)}
                 onLoadReview={async (reviewId) => {
                   setArmedAction(null);
                   setPendingOrder(null);

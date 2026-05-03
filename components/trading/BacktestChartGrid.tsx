@@ -1,16 +1,29 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import BacktestChart, { type IndicatorKey } from '@/components/trading/BacktestChart';
-import { useChartDrawings, type DrawingTool } from '@/hooks/use-chart-drawings';
+import { normalizeDrawings, useChartDrawings, type DrawingTool } from '@/hooks/use-chart-drawings';
 import { BACKTEST_FRAME_CONFIG, type BacktestTimeframeKey } from '@/lib/chart-timeframes';
-import type { BacktestAction, BacktestActionType } from '@/lib/types';
+import type { BacktestAction, BacktestActionType, BacktestChartState } from '@/lib/types';
 
 type ChartSlotId = 'primary' | 'secondary' | 'hourly' | 'daily';
 
 const EXPAND_STORAGE_KEY = 'nexus-backtest-expand-slot';
 const KNOWN_SLOT_IDS: readonly ChartSlotId[] = ['primary', 'secondary', 'hourly', 'daily'];
+const KNOWN_INDICATORS: readonly IndicatorKey[] = [
+  'SMA20',
+  'SMA50',
+  'SMA200',
+  'EMA9',
+  'EMA20',
+  'EMA21',
+  'EMA50',
+  'VWAP',
+  'BB',
+  'RSI',
+  'ATR',
+];
 
 function readPersistedExpandedSlot(): ChartSlotId | null {
   if (typeof window === 'undefined') return null;
@@ -48,6 +61,7 @@ type ChartGridState = {
   activeDrawingTool: DrawingTool;
   expandedSlotId: ChartSlotId | null;
   timeframesBySlot: Record<ChartSlotId, BacktestTimeframeKey>;
+  indicatorsBySlot: Record<ChartSlotId, IndicatorKey[]>;
 };
 
 const DEFAULT_CELLS: ChartCellConfig[] = [
@@ -72,6 +86,60 @@ function getDefaultIndicators(timeframe: BacktestTimeframeKey): IndicatorKey[] {
   return ['VWAP'];
 }
 
+function getDefaultIndicatorsBySlot(
+  timeframesBySlot: Record<ChartSlotId, BacktestTimeframeKey>,
+): Record<ChartSlotId, IndicatorKey[]> {
+  return {
+    primary: getDefaultIndicators(timeframesBySlot.primary),
+    secondary: getDefaultIndicators(timeframesBySlot.secondary),
+    hourly: getDefaultIndicators(timeframesBySlot.hourly),
+    daily: getDefaultIndicators(timeframesBySlot.daily),
+  };
+}
+
+function isIndicatorKey(value: string): value is IndicatorKey {
+  return (KNOWN_INDICATORS as readonly string[]).includes(value);
+}
+
+function normalizeIndicators(
+  loaded: BacktestChartState | null,
+  timeframesBySlot: Record<ChartSlotId, BacktestTimeframeKey>,
+): Record<ChartSlotId, IndicatorKey[]> {
+  const defaults = getDefaultIndicatorsBySlot(timeframesBySlot);
+  const rawIndicators = loaded?.indicators;
+  if (!rawIndicators) return defaults;
+
+  return {
+    primary: Array.isArray(rawIndicators.primary)
+      ? rawIndicators.primary.filter(isIndicatorKey)
+      : defaults.primary,
+    secondary: Array.isArray(rawIndicators.secondary)
+      ? rawIndicators.secondary.filter(isIndicatorKey)
+      : defaults.secondary,
+    hourly: Array.isArray(rawIndicators.hourly)
+      ? rawIndicators.hourly.filter(isIndicatorKey)
+      : defaults.hourly,
+    daily: Array.isArray(rawIndicators.daily)
+      ? rawIndicators.daily.filter(isIndicatorKey)
+      : defaults.daily,
+  };
+}
+
+function createGridState(scope: string, loadedChartState: BacktestChartState | null): ChartGridState {
+  const timeframesBySlot = getDefaultSlotTimeframes();
+  return {
+    scope,
+    activeDrawingTool: null,
+    expandedSlotId: readPersistedExpandedSlot(),
+    timeframesBySlot,
+    indicatorsBySlot: normalizeIndicators(loadedChartState, timeframesBySlot),
+  };
+}
+
+function areIndicatorListsEqual(left: readonly IndicatorKey[], right: readonly IndicatorKey[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 interface BacktestChartGridProps {
   ticker: string | null;
   date: string | null;
@@ -81,6 +149,9 @@ interface BacktestChartGridProps {
   actions: BacktestAction[];
   currentStop: number | null;
   extraSessionsForward: number;
+  isReadOnly?: boolean;
+  loadedChartState?: BacktestChartState | null;
+  onChartStateChange?: (state: BacktestChartState) => void;
 }
 
 export default function BacktestChartGrid({
@@ -92,26 +163,67 @@ export default function BacktestChartGrid({
   actions,
   currentStop,
   extraSessionsForward,
+  isReadOnly = false,
+  loadedChartState = null,
+  onChartStateChange,
 }: BacktestChartGridProps) {
   const drawingScope = ticker && date ? `${ticker}:${date}:intraday` : 'empty:intraday';
-  const [gridState, setGridState] = useState<ChartGridState>({
-    scope: drawingScope,
-    activeDrawingTool: null,
-    expandedSlotId: readPersistedExpandedSlot(),
-    timeframesBySlot: getDefaultSlotTimeframes(),
-  });
-  const currentGridState = gridState.scope === drawingScope
+  const [gridState, setGridState] = useState<ChartGridState>(() => createGridState(drawingScope, null));
+  const fallbackGridState = useMemo(
+    () => createGridState(drawingScope, null),
+    [drawingScope],
+  );
+  const baseGridState = gridState.scope === drawingScope
     ? gridState
-    : {
-      scope: drawingScope,
-      activeDrawingTool: null,
-      expandedSlotId: readPersistedExpandedSlot(),
-      timeframesBySlot: getDefaultSlotTimeframes(),
-    };
-  const { activeDrawingTool, expandedSlotId, timeframesBySlot } = currentGridState;
+    : fallbackGridState;
+  const loadedIndicatorsBySlot = useMemo(
+    () => normalizeIndicators(loadedChartState, baseGridState.timeframesBySlot),
+    [baseGridState.timeframesBySlot, loadedChartState],
+  );
+  const currentGridState = useMemo(
+    () => (
+      isReadOnly
+        ? {
+          ...baseGridState,
+          activeDrawingTool: null,
+          indicatorsBySlot: loadedIndicatorsBySlot,
+        }
+        : baseGridState
+    ),
+    [baseGridState, isReadOnly, loadedIndicatorsBySlot],
+  );
+  const { activeDrawingTool, expandedSlotId, timeframesBySlot, indicatorsBySlot } = currentGridState;
   const drawingsController = useChartDrawings(drawingScope, activeDrawingTool, '#ffffff', 1, { persist: false });
+  const { drawings, replaceAllDrawings } = drawingsController;
+  const hydratedChartStateRef = useRef<BacktestChartState | null | undefined>(undefined);
+  const hydratedScopeRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isReadOnly) {
+      if (hydratedChartStateRef.current !== undefined) {
+        hydratedChartStateRef.current = undefined;
+        hydratedScopeRef.current = null;
+        replaceAllDrawings([]);
+      }
+      return;
+    }
+    if (hydratedChartStateRef.current === loadedChartState && hydratedScopeRef.current === drawingScope) return;
+
+    hydratedChartStateRef.current = loadedChartState;
+    hydratedScopeRef.current = drawingScope;
+    replaceAllDrawings(normalizeDrawings(loadedChartState?.drawings ?? []));
+  }, [drawingScope, isReadOnly, loadedChartState, replaceAllDrawings]);
+
+  useEffect(() => {
+    onChartStateChange?.({
+      drawings,
+      indicators: indicatorsBySlot,
+    });
+  }, [drawings, indicatorsBySlot, onChartStateChange]);
 
   const setActiveDrawingTool = (tool: DrawingTool) => {
+    if (isReadOnly) return;
+
     setGridState({
       ...currentGridState,
       activeDrawingTool: tool,
@@ -134,6 +246,23 @@ export default function BacktestChartGrid({
       timeframesBySlot: {
         ...currentGridState.timeframesBySlot,
         [slotId]: timeframe,
+      },
+      indicatorsBySlot: {
+        ...currentGridState.indicatorsBySlot,
+        [slotId]: getDefaultIndicators(timeframe),
+      },
+    });
+  };
+
+  const setSlotIndicators = (slotId: ChartSlotId, next: IndicatorKey[]) => {
+    if (isReadOnly) return;
+    if (areIndicatorListsEqual(currentGridState.indicatorsBySlot[slotId], next)) return;
+
+    setGridState({
+      ...currentGridState,
+      indicatorsBySlot: {
+        ...currentGridState.indicatorsBySlot,
+        [slotId]: next,
       },
     });
   };
@@ -164,7 +293,8 @@ export default function BacktestChartGrid({
             anchorDate={date}
             timeframe={timeframe}
             onTimeframeChange={(nextTimeframe) => setSlotTimeframe(cell.id, nextTimeframe)}
-            defaultIndicators={getDefaultIndicators(timeframe)}
+            defaultIndicators={indicatorsBySlot[cell.id] ?? getDefaultIndicators(timeframe)}
+            onIndicatorsChange={(next) => setSlotIndicators(cell.id, next)}
             onAnchorChange={timeframe === '1D' ? onAnchorChange : undefined}
             armedAction={armedAction}
             onArmedClick={onArmedClick}
@@ -176,6 +306,7 @@ export default function BacktestChartGrid({
             isExpanded={isExpanded}
             onToggleExpanded={() => toggleExpandedSlot(cell.id)}
             extraSessionsForward={extraSessionsForward}
+            isReadOnly={isReadOnly}
           />
         );
       })}

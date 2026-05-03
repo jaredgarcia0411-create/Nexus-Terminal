@@ -7,7 +7,13 @@ import type { SimPosition } from '@/lib/backtest-math';
 import type { BacktestAction, BacktestSession } from '@/lib/types';
 
 const { chartGridProps, useBacktestSessionMock, useSessionMock } = vi.hoisted(() => ({
-  chartGridProps: [] as Array<{ ticker: string | null; date: string | null; extraSessionsForward: number }>,
+  chartGridProps: [] as Array<{
+    ticker: string | null;
+    date: string | null;
+    extraSessionsForward: number;
+    isReadOnly?: boolean;
+    loadedChartState?: unknown;
+  }>,
   useBacktestSessionMock: vi.fn(),
   useSessionMock: vi.fn(),
 }));
@@ -81,12 +87,16 @@ vi.mock('@/components/trading/BacktestChartGrid', () => ({
     ticker,
     date,
     extraSessionsForward,
+    isReadOnly,
+    loadedChartState,
   }: {
     ticker: string | null;
     date: string | null;
     extraSessionsForward: number;
+    isReadOnly?: boolean;
+    loadedChartState?: unknown;
   }) => {
-    chartGridProps.push({ ticker, date, extraSessionsForward });
+    chartGridProps.push({ ticker, date, extraSessionsForward, isReadOnly, loadedChartState });
     return <div>{ticker && date ? 'Grid ready' : 'Pick a ticker on the right'}</div>;
   },
 }));
@@ -262,6 +272,7 @@ describe('BacktestingTab', () => {
         riskDollars: 100,
         label: null,
         notes: null,
+        chartState: { drawings: [], indicators: { primary: ['VWAP'] } },
         backtestId: 'bt-1',
         reviewedAt: '2026-04-29T12:00:00.000Z',
         createdAt: '2026-04-28T12:00:00.000Z',
@@ -276,5 +287,7 @@ describe('BacktestingTab', () => {
     expect((screen.getByRole('button', { name: 'Clear' }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.queryByRole('button', { name: 'New' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Delete review' })).toBeTruthy();
+    expect(chartGridProps.at(-1)?.isReadOnly).toBe(true);
+    expect(chartGridProps.at(-1)?.loadedChartState).toEqual({ drawings: [], indicators: { primary: ['VWAP'] } });
   });
 });

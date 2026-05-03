@@ -4,7 +4,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
 import { DEFAULT_FIBONACCI_LEVELS } from '@/components/trading/plugins/FibonacciPrimitive';
 
-export type DrawingTool = 'trendline' | 'horizontal' | 'rectangle' | 'fibonacci' | null;
+export type DrawingTool = 'trendline' | 'horizontal' | 'rectangle' | 'fibonacci' | 'text' | null;
 
 export interface DrawingPoint {
   time: number;
@@ -42,7 +42,14 @@ export interface FibonacciDrawing extends BaseDrawing {
   levels: number[];
 }
 
-export type Drawing = TrendLineDrawing | HorizontalLineDrawing | RectangleDrawing | FibonacciDrawing;
+export interface TextDrawing {
+  id: string;
+  type: 'text';
+  position: DrawingPoint;
+  text: string;
+}
+
+export type Drawing = TrendLineDrawing | HorizontalLineDrawing | RectangleDrawing | FibonacciDrawing | TextDrawing;
 
 const DEFAULT_COLORS = ['#f59e0b', '#22c55e', '#ef4444', '#3b82f6', '#a855f7', '#ffffff'];
 const DEFAULT_LINE_WIDTH = 2;
@@ -66,7 +73,10 @@ type DrawingAction =
   | { type: 'cancelDrawing' }
   | { type: 'removeDrawing'; id: string }
   | { type: 'clearAllDrawings' }
-  | { type: 'updateDrawingEndpoint'; id: string; point: DrawingPoint; which: 'start' | 'end' };
+  | { type: 'updateDrawingEndpoint'; id: string; point: DrawingPoint; which: 'start' | 'end' }
+  | { type: 'addCompletedDrawing'; drawing: Drawing }
+  | { type: 'updateTextDrawing'; id: string; text: string }
+  | { type: 'replaceAllDrawings'; drawings: Drawing[] };
 
 function isDrawingPoint(value: unknown): value is DrawingPoint {
   if (!value || typeof value !== 'object') return false;
@@ -80,7 +90,7 @@ function isNumberArray(value: unknown): value is number[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'number' && Number.isFinite(item));
 }
 
-function normalizeDrawings(loaded: unknown): Drawing[] {
+export function normalizeDrawings(loaded: unknown): Drawing[] {
   if (!Array.isArray(loaded)) return [];
 
   const normalized: Drawing[] = [];
@@ -90,12 +100,32 @@ function normalizeDrawings(loaded: unknown): Drawing[] {
 
     const drawing = item as Record<string, unknown>;
     const id = typeof drawing.id === 'string' ? drawing.id : null;
+    if (!id) continue;
+
+    if (drawing.type === 'text') {
+      if (
+        !isDrawingPoint(drawing.position)
+        || typeof drawing.text !== 'string'
+        || drawing.text.length === 0
+      ) {
+        continue;
+      }
+
+      normalized.push({
+        id,
+        type: 'text',
+        position: drawing.position,
+        text: drawing.text,
+      });
+      continue;
+    }
+
     const color = typeof drawing.color === 'string' ? drawing.color : null;
     const lineWidth = typeof drawing.lineWidth === 'number' && Number.isFinite(drawing.lineWidth)
       ? drawing.lineWidth
       : null;
 
-    if (!id || !color || lineWidth === null) {
+    if (!color || lineWidth === null) {
       continue;
     }
 
@@ -188,7 +218,7 @@ function loadDrawingsForSymbol(symbol: string, persist: boolean): Drawing[] {
 }
 
 function createTempDrawing(
-  tool: Exclude<DrawingTool, null>,
+  tool: Exclude<DrawingTool, null | 'text'>,
   point: DrawingPoint,
   color: string,
   lineWidth: number
@@ -229,7 +259,7 @@ function createTempDrawing(
 }
 
 function hasMeaningfulDrawingSize(drawing: Drawing): boolean {
-  if (drawing.type === 'horizontal') {
+  if (drawing.type === 'horizontal' || drawing.type === 'text') {
     return true;
   }
 
@@ -262,6 +292,7 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
           },
         };
       }
+      if (state.tempDrawing.type === 'text') return state;
 
       return {
         ...state,
@@ -300,18 +331,40 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
         tempDrawing: null,
         isDrawing: false,
       };
+    case 'replaceAllDrawings':
+      return {
+        drawings: action.drawings,
+        tempDrawing: null,
+        isDrawing: false,
+      };
     case 'updateDrawingEndpoint':
       return {
         ...state,
         drawings: state.drawings.map((drawing) => {
           if (drawing.id !== action.id) return drawing;
-          if (drawing.type === 'horizontal') return drawing;
+          if (drawing.type === 'horizontal' || drawing.type === 'text') return drawing;
 
           return {
             ...drawing,
             [action.which]: action.point,
           };
         }),
+      };
+    case 'addCompletedDrawing':
+      return {
+        ...state,
+        drawings: [...state.drawings, action.drawing],
+        tempDrawing: null,
+        isDrawing: false,
+      };
+    case 'updateTextDrawing':
+      return {
+        ...state,
+        drawings: state.drawings.map((drawing) =>
+          drawing.id === action.id && drawing.type === 'text'
+            ? { ...drawing, text: action.text }
+            : drawing,
+        ),
       };
     default:
       return state;
@@ -384,6 +437,7 @@ export function useChartDrawings(
 
   const startDrawing = useCallback((point: DrawingPoint) => {
     if (!activeTool) return;
+    if (activeTool === 'text') return;
 
     dispatch({
       type: 'startDrawing',
@@ -411,8 +465,37 @@ export function useChartDrawings(
     dispatch({ type: 'clearAllDrawings' });
   }, []);
 
+  const replaceAllDrawings = useCallback((next: Drawing[]) => {
+    dispatch({ type: 'replaceAllDrawings', drawings: next });
+  }, []);
+
   const updateDrawingEndpoint = useCallback((id: string, point: DrawingPoint, which: 'start' | 'end') => {
     dispatch({ type: 'updateDrawingEndpoint', id, point, which });
+  }, []);
+
+  const addTextDrawing = useCallback((point: DrawingPoint, text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    dispatch({
+      type: 'addCompletedDrawing',
+      drawing: {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        type: 'text',
+        position: point,
+        text: trimmed,
+      },
+    });
+  }, []);
+
+  const updateTextDrawing = useCallback((id: string, text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    dispatch({
+      type: 'updateTextDrawing',
+      id,
+      text: trimmed,
+    });
   }, []);
 
   return {
@@ -431,7 +514,10 @@ export function useChartDrawings(
     cancelDrawing,
     removeDrawing,
     clearAllDrawings,
+    replaceAllDrawings,
     updateDrawingEndpoint,
+    addTextDrawing,
+    updateTextDrawing,
     availableColors: DEFAULT_COLORS,
   };
 }

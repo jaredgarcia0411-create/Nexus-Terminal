@@ -24,10 +24,18 @@ export const backtestActionCreateSchema = z.object({
 
 export type BacktestActionCreateBody = z.infer<typeof backtestActionCreateSchema>;
 
+export const chartStateSchema = z.object({
+  drawings: z.array(z.unknown()).optional(),
+  indicators: z.record(z.string(), z.array(z.string())).optional(),
+}).strict();
+
+export type ChartStateBody = z.infer<typeof chartStateSchema>;
+
 export const backtestSessionReviewSchema = z.object({
   sessionId: z.string().trim().min(1, 'sessionId is required'),
   label: z.string().trim().optional(),
   notes: z.string().trim().optional(),
+  chartState: chartStateSchema.optional(),
 });
 
 export type BacktestSessionReviewBody = z.infer<typeof backtestSessionReviewSchema>;

@@ -32,6 +32,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         reviewedAt: now,
         label: body.label?.trim() || null,
         notes: body.notes?.trim() || null,
+        chartState: body.chartState ?? {},
         updatedAt: now,
       })
       .where(and(

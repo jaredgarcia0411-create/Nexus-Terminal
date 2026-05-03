@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 
 import { reduceActions, type SimPosition } from '@/lib/backtest-math';
-import type { BacktestAction, BacktestActionType, BacktestSession } from '@/lib/types';
+import type { BacktestAction, BacktestActionType, BacktestChartState, BacktestSession } from '@/lib/types';
 
 type SessionsResponse = {
   session?: BacktestSession | null;
@@ -359,7 +359,11 @@ export function useBacktestSession({
     }
   }, [activeSession, isReadOnly]);
 
-  const saveReview = useCallback(async (label?: string, notes?: string) => {
+  const saveReview = useCallback(async (
+    label?: string,
+    notes?: string,
+    chartState?: BacktestChartState,
+  ) => {
     if (!activeSession || activeActions.length === 0 || isReadOnly) return;
 
     const previousSession = activeSession;
@@ -375,7 +379,7 @@ export function useBacktestSession({
       const response = await fetch(`/api/backtest/sessions/${activeSession.id}/review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: activeSession.id, label, notes }),
+        body: JSON.stringify({ sessionId: activeSession.id, label, notes, chartState: chartState ?? {} }),
       });
       const payload = await parseJson<SessionMutationResponse>(response);
       if (!response.ok || !payload.session) {

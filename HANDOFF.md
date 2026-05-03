@@ -8,7 +8,7 @@
 ## Active Execution Spec
 
 > Generated: 2026-05-03 | Agent: Claude (`nexus-handoff`)
-> Status: PHASE A COMPLETE — validated locally; Phase B pending. Codex MUST stop and commit between phases.
+> Status: PHASE B COMPLETE — validated locally; ready for user manual smoke.
 
 # Build Spec — Backtesting Tab Improvements
 

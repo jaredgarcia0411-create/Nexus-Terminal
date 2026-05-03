@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { ChevronDown, Minus, Square, Trash2, TrendingUp } from 'lucide-react';
+import { ChevronDown, Minus, Square, Trash2, TrendingUp, Type } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -17,6 +17,7 @@ interface DrawingToolbarProps {
   onToolSelect: (tool: DrawingTool) => void;
   drawingsCount?: number;
   onClearAll?: () => void;
+  disabled?: boolean;
 }
 
 const tools: Array<{ id: DrawingTool; icon: React.ReactNode; label: string }> = [
@@ -24,6 +25,7 @@ const tools: Array<{ id: DrawingTool; icon: React.ReactNode; label: string }> = 
   { id: 'horizontal', icon: <Minus className="h-4 w-4" />, label: 'Horizontal Line' },
   { id: 'rectangle', icon: <Square className="h-4 w-4" />, label: 'Rectangle' },
   { id: 'fibonacci', icon: <span className="text-[10px] font-bold leading-none">Fib</span>, label: 'Fibonacci Retracement' },
+  { id: 'text', icon: <Type className="h-4 w-4" />, label: 'Text' },
 ];
 
 export default function DrawingToolbar({
@@ -31,6 +33,7 @@ export default function DrawingToolbar({
   onToolSelect,
   drawingsCount = 0,
   onClearAll,
+  disabled = false,
 }: DrawingToolbarProps) {
   const activeLabel = tools.find((tool) => tool.id === activeTool)?.label ?? 'Drawings';
 
@@ -41,11 +44,12 @@ export default function DrawingToolbar({
           type="button"
           variant="ghost"
           size="xs"
+          disabled={disabled}
           className={`h-7 px-2 text-[11px] ${
             activeTool
               ? 'bg-zinc-700 text-white hover:bg-zinc-600'
               : 'text-zinc-300 hover:bg-white/10 hover:text-white'
-          }`}
+          } disabled:cursor-not-allowed disabled:opacity-40`}
           title="Drawing tools"
           aria-label="Drawing tools"
         >
@@ -58,7 +62,10 @@ export default function DrawingToolbar({
         {tools.map((tool) => (
           <DropdownMenuItem
             key={tool.id}
-            onSelect={() => onToolSelect(activeTool === tool.id ? null : tool.id)}
+            onSelect={() => {
+              if (disabled) return;
+              onToolSelect(activeTool === tool.id ? null : tool.id);
+            }}
             className={`cursor-pointer text-xs ${
               activeTool === tool.id
                 ? 'bg-white/10 text-white focus:bg-white/10 focus:text-white'
@@ -73,7 +80,10 @@ export default function DrawingToolbar({
           <>
             <DropdownMenuSeparator className="bg-white/10" />
             <DropdownMenuItem
-              onSelect={onClearAll}
+              onSelect={() => {
+                if (disabled) return;
+                onClearAll();
+              }}
               className="cursor-pointer text-xs text-rose-400 focus:bg-rose-500/10 focus:text-rose-300"
             >
               <Trash2 className="h-4 w-4" />

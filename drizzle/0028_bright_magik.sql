@@ -1,0 +1,1 @@
+ALTER TABLE "backtest_sessions" ADD COLUMN "chart_state" jsonb DEFAULT '{}'::jsonb NOT NULL;

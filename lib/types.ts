@@ -83,6 +83,11 @@ export interface TradeMarker {
 export type BacktestActionType = 'LONG' | 'LONG_ADD' | 'SELL' | 'SHORT' | 'SHORT_ADD' | 'COVER';
 export type BacktestSessionStatus = 'ACTIVE' | 'REVIEWED';
 
+export interface BacktestChartState {
+  drawings?: unknown[];
+  indicators?: Record<string, string[]>;
+}
+
 export interface BacktestSession {
   id: string;
   userId: string;
@@ -92,6 +97,7 @@ export interface BacktestSession {
   riskDollars: number;
   label: string | null;
   notes: string | null;
+  chartState: BacktestChartState | null;
   backtestId: string | null;
   reviewedAt: string | Date | null;
   createdAt: string | Date;

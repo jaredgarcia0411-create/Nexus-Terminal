@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import type { IChartApi, ISeriesApi, Time, IPriceLine } from 'lightweight-charts';
-import { useChartDrawings, type ChartDrawingsController, type Drawing, type DrawingTool, type TrendLineDrawing, type RectangleDrawing, type FibonacciDrawing } from '@/hooks/use-chart-drawings';
+import { useChartDrawings, type ChartDrawingsController, type Drawing, type DrawingTool, type TrendLineDrawing, type RectangleDrawing, type FibonacciDrawing, type TextDrawing } from '@/hooks/use-chart-drawings';
 import { createTrendLineRenderer } from './plugins/TrendLinePrimitive';
 import { createRectangleRenderer } from './plugins/RectanglePrimitive';
 import { createFibonacciRenderer } from './plugins/FibonacciPrimitive';
@@ -78,6 +78,15 @@ function isPointNearDrawing(
       }
       return false;
     }
+    case 'text': {
+      const x1 = timeToCoordinate(drawing.position.time);
+      const y1 = priceToCoordinate(drawing.position.price);
+      if (x1 === null || y1 === null) return false;
+      const approxWidth = drawing.text.length * 8;
+      return x >= x1 - HIT_TOLERANCE
+        && x <= x1 + approxWidth + HIT_TOLERANCE
+        && Math.abs(y - y1) < HIT_TOLERANCE;
+    }
     default:
       return false;
   }
@@ -116,7 +125,7 @@ function isPointNearEndpoint(
   priceToCoordinate: (price: number) => number | null,
   timeToCoordinate: (time: number) => number | null
 ): { isNear: boolean; which: 'start' | 'end' | null } {
-  if (drawing.type === 'horizontal') {
+  if (drawing.type === 'horizontal' || drawing.type === 'text') {
     return { isNear: false, which: null };
   }
 
@@ -157,6 +166,7 @@ interface ChartDrawingsProps {
 	onInteractionChange?: (isInteracting: boolean) => void;
 	persistDrawings?: boolean;
 	controller?: ChartDrawingsController;
+	isReadOnly?: boolean;
 }
 
 export default function ChartDrawings({
@@ -173,10 +183,17 @@ export default function ChartDrawings({
 	onInteractionChange,
 	persistDrawings = true,
 	controller,
+	isReadOnly = false,
 }: ChartDrawingsProps) {
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<{ drawingId: string; point: 'start' | 'end' } | null>(null);
+  const [textEditState, setTextEditState] = useState<{
+    mode: 'create' | 'edit';
+    id?: string;
+    point: { x: number; y: number };
+    value: string;
+  } | null>(null);
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
 
   const localController = useChartDrawings(symbol, activeTool, selectedColor, lineWidth, { persist: persistDrawings });
@@ -191,8 +208,10 @@ export default function ChartDrawings({
     clearAllDrawings,
     updateDrawingEndpoint,
     removeDrawing,
+    addTextDrawing,
+    updateTextDrawing,
   } = controller ?? localController;
-  const isInteracting = isDrawing || dragState !== null;
+  const isInteracting = isDrawing || dragState !== null || textEditState !== null;
 
   // Get coordinate converters
   const priceToCoordinate = useCallback(
@@ -250,6 +269,26 @@ export default function ChartDrawings({
     [chart]
   );
 
+  const commitTextEdit = useCallback(() => {
+    if (!textEditState) return;
+
+    const trimmed = textEditState.value.trim();
+    if (textEditState.mode === 'create') {
+      const time = coordinateToTime(textEditState.point.x);
+      const price = coordinateToPrice(textEditState.point.y);
+      if (trimmed && time !== null && price !== null) {
+        addTextDrawing({ time, price }, trimmed);
+      }
+    } else if (textEditState.mode === 'edit' && textEditState.id) {
+      if (trimmed) {
+        updateTextDrawing(textEditState.id, trimmed);
+      }
+    }
+
+    setTextEditState(null);
+    onToolChange?.(null);
+  }, [addTextDrawing, coordinateToPrice, coordinateToTime, onToolChange, textEditState, updateTextDrawing]);
+
   useEffect(() => {
     if (onInteractionChange) {
       onInteractionChange(isInteracting);
@@ -261,6 +300,7 @@ export default function ChartDrawings({
     if (!chart) return;
 
     const handleClick = (param: { time?: Time; point?: { x: number; y: number } }) => {
+      if (isReadOnly) return;
       if (!param.time || !param.point) return;
 
       // Convert chart time to milliseconds
@@ -284,6 +324,33 @@ export default function ChartDrawings({
         return;
       }
 
+      if (activeTool === 'text') {
+        for (let i = drawings.length - 1; i >= 0; i--) {
+          const drawing = drawings[i];
+          if (
+            drawing.type === 'text'
+            && isPointNearDrawing(x, y, drawing, priceToCoordinate, timeToCoordinate)
+          ) {
+            setSelectedDrawingId(drawing.id);
+            setTextEditState({
+              mode: 'edit',
+              id: drawing.id,
+              point: { x, y },
+              value: drawing.text,
+            });
+            return;
+          }
+        }
+
+        setSelectedDrawingId(null);
+        setTextEditState({
+          mode: 'create',
+          point: { x, y },
+          value: '',
+        });
+        return;
+      }
+
       if (activeTool) {
         if (isDrawing) {
           updateDrawing({ time: timeMs, price });
@@ -302,6 +369,16 @@ export default function ChartDrawings({
           const drawing = drawings[i];
           if (isPointNearDrawing(x, y, drawing, priceToCoordinate, timeToCoordinate)) {
             setSelectedDrawingId(drawing.id);
+
+            if (drawing.type === 'text') {
+              setTextEditState({
+                mode: 'edit',
+                id: drawing.id,
+                point: { x, y },
+                value: drawing.text,
+              });
+              return;
+            }
             
             // Check if clicking near an endpoint to start dragging
             const endpointCheck = isPointNearEndpoint(x, y, drawing, priceToCoordinate, timeToCoordinate);
@@ -328,6 +405,7 @@ export default function ChartDrawings({
     dragState,
     finishDrawing,
     isDrawing,
+    isReadOnly,
     onToolChange,
     startDrawing,
     updateDrawing,
@@ -338,6 +416,7 @@ export default function ChartDrawings({
     if (!chart) return;
 
     const handleCrosshairMove = (param: { time?: Time; point?: { x: number; y: number } }) => {
+      if (isReadOnly) return;
       if (!param.time || !param.point) return;
 
       let timeMs: number;
@@ -366,7 +445,7 @@ export default function ChartDrawings({
 
     chart.subscribeCrosshairMove(handleCrosshairMove);
     return () => chart.unsubscribeCrosshairMove(handleCrosshairMove);
-  }, [chart, isDrawing, dragState, coordinateToPrice, updateDrawing, updateDrawingEndpoint]);
+  }, [chart, isDrawing, dragState, coordinateToPrice, isReadOnly, updateDrawing, updateDrawingEndpoint]);
 
   // End endpoint drag on mouseup
   useEffect(() => {
@@ -415,6 +494,15 @@ export default function ChartDrawings({
             }
             break;
           }
+          case 'text': {
+            const x = timeToCoordinate(drawing.position.time);
+            const y = priceToCoordinate(drawing.position.price);
+            if (x !== null && y !== null) {
+              const approxWidth = drawing.text.length * 8;
+              ctx.strokeRect(x - 2, y - 9, approxWidth + 4, 18);
+            }
+            break;
+          }
         }
         ctx.restore();
       }
@@ -459,6 +547,18 @@ export default function ChartDrawings({
             lineWidth: drawing.lineWidth,
           });
           renderer.draw(ctx, priceToCoordinate, timeToCoordinate);
+          break;
+        }
+        case 'text': {
+          const x = timeToCoordinate(drawing.position.time);
+          const y = priceToCoordinate(drawing.position.price);
+          if (x === null || y === null) break;
+          ctx.save();
+          ctx.font = '14px ui-sans-serif, system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = '#ffffff';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(drawing.text, x, y);
+          ctx.restore();
           break;
         }
       }
@@ -594,6 +694,10 @@ export default function ChartDrawings({
 			// For horizontal lines, position at the right edge
 			x = chart ? chart.timeScale().getVisibleRange()?.to ? chart.timeScale().timeToCoordinate(chart.timeScale().getVisibleRange()!.to as Time) : null : null;
 			y = priceToCoordinate(selectedDrawing.price);
+		} else if (selectedDrawing.type === 'text') {
+			const drawing = selectedDrawing as TextDrawing;
+			x = timeToCoordinate(drawing.position.time);
+			y = priceToCoordinate(drawing.position.price);
 		} else {
 			// For trendline and rectangle, use end point.
 			const drawing = selectedDrawing as { end: { time: number; price: number } };
@@ -607,6 +711,7 @@ export default function ChartDrawings({
 
 	// Handle deleting selected drawing
 	const handleDeleteSelected = useCallback(() => {
+		if (isReadOnly) return;
 		if (selectedDrawingId) {
 			if (onDeleteDrawing) {
 				onDeleteDrawing(selectedDrawingId);
@@ -615,10 +720,12 @@ export default function ChartDrawings({
 			}
 			setSelectedDrawingId(null);
 		}
-	}, [selectedDrawingId, onDeleteDrawing, removeDrawing]);
+	}, [isReadOnly, selectedDrawingId, onDeleteDrawing, removeDrawing]);
 
 	// Keyboard shortcuts for selected drawing
 	useEffect(() => {
+		if (isReadOnly) return;
+
 		const handleKeyDown = (e: KeyboardEvent) => {
 			// Don't handle if user is typing in an input
 			if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -658,10 +765,11 @@ export default function ChartDrawings({
 
 		window.addEventListener('keydown', handleKeyDown);
 		return () => window.removeEventListener('keydown', handleKeyDown);
-	}, [activeTool, cancelDrawing, dragState, handleDeleteSelected, onToolChange, selectedDrawingId, tempDrawing]);
+	}, [activeTool, cancelDrawing, dragState, handleDeleteSelected, isReadOnly, onToolChange, selectedDrawingId, tempDrawing]);
 
 	// Handle double-click for drawing selection (when canvas has pointer-events-none)
 	useEffect(() => {
+		if (isReadOnly) return;
 		if (activeTool) return; // Only needed when no tool is active
 
 		const handleDoubleClick = (e: MouseEvent) => {
@@ -694,7 +802,7 @@ export default function ChartDrawings({
 
 		window.addEventListener('dblclick', handleDoubleClick, true); // Use capture phase
 		return () => window.removeEventListener('dblclick', handleDoubleClick, true);
-	}, [activeTool, drawings, priceToCoordinate, timeToCoordinate]);
+	}, [activeTool, drawings, isReadOnly, priceToCoordinate, timeToCoordinate]);
 
   return (
     <>
@@ -707,7 +815,7 @@ export default function ChartDrawings({
       />
 
 		{/* Action buttons for selected drawing */}
-		{selectedDrawing && actionButtonPosition && (
+		{!isReadOnly && selectedDrawing && actionButtonPosition && (
 			<>
 				{/* Delete button - shown for all drawing types */}
 				<button
@@ -720,6 +828,29 @@ export default function ChartDrawings({
 				</button>
 			</>
 		)}
+      {textEditState ? (
+        <input
+          type="text"
+          autoFocus
+          value={textEditState.value}
+          onChange={(event) => setTextEditState((current) => (
+            current ? { ...current, value: event.target.value } : current
+          ))}
+          onBlur={() => commitTextEdit()}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              event.currentTarget.blur();
+            } else if (event.key === 'Escape') {
+              event.preventDefault();
+              setTextEditState(null);
+              onToolChange?.(null);
+            }
+          }}
+          className="absolute z-30 rounded border border-white/20 bg-[#121214] px-1 text-[14px] text-white outline-none"
+          style={{ left: textEditState.point.x, top: textEditState.point.y - 10 }}
+        />
+      ) : null}
     </>
   );
 }

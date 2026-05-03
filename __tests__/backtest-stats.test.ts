@@ -13,6 +13,7 @@ function makeSession(overrides: Partial<BacktestSession> = {}): BacktestSession 
     riskDollars: 100,
     label: null,
     notes: null,
+    chartState: null,
     backtestId: null,
     reviewedAt: null,
     createdAt: new Date().toISOString(),

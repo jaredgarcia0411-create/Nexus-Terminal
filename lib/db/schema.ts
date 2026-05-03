@@ -507,6 +507,7 @@ export const backtestSessions = pgTable('backtest_sessions', {
   riskDollars: doublePrecision('risk_dollars').notNull(),
   label: text('label'),
   notes: text('notes'),
+  chartState: jsonb('chart_state').default({}).notNull(),
   reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

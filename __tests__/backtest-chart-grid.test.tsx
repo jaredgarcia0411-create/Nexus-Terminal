@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { chartProps } = vi.hoisted(() => ({
@@ -13,6 +13,7 @@ vi.mock('@/components/trading/BacktestChart', () => ({
     const timeframe = String(props.timeframe);
     const onToggleExpanded = props.onToggleExpanded as (() => void) | undefined;
     const onTimeframeChange = props.onTimeframeChange as ((next: string) => void) | undefined;
+    const onIndicatorsChange = props.onIndicatorsChange as ((next: string[]) => void) | undefined;
     const extraSessionsForward = Number(props.extraSessionsForward ?? 0);
 
     return (
@@ -21,6 +22,7 @@ vi.mock('@/components/trading/BacktestChart', () => ({
         <span data-testid={`extra-${timeframe}`}>{extraSessionsForward}</span>
         <button type="button" onClick={onToggleExpanded}>toggle {timeframe}</button>
         <button type="button" onClick={() => onTimeframeChange?.('15m')}>timeframe {timeframe}</button>
+        <button type="button" onClick={() => onIndicatorsChange?.(['EMA9'])}>indicator {timeframe}</button>
       </div>
     );
   },
@@ -134,5 +136,55 @@ describe('BacktestChartGrid', () => {
     expect(screen.getByTestId('chart-15m')).toBeTruthy();
     expect(screen.getByTestId('chart-1h')).toBeTruthy();
     expect(screen.getByTestId('chart-1D')).toBeTruthy();
+  });
+
+  it('hydrates indicators from loaded chart state and forwards read-only mode', () => {
+    render(
+      <BacktestChartGrid
+        ticker="AAPL"
+        date="2026-04-28"
+        onAnchorChange={vi.fn()}
+        armedAction={null}
+        onArmedClick={vi.fn()}
+        actions={[]}
+        currentStop={null}
+        extraSessionsForward={0}
+        isReadOnly
+        loadedChartState={{
+          drawings: [],
+          indicators: { primary: ['EMA9', 'VWAP'], secondary: [], hourly: ['EMA20'], daily: ['SMA200'] },
+        }}
+      />,
+    );
+
+    const primary = chartProps.find((props) => props.timeframe === '5m');
+    expect(primary?.defaultIndicators).toEqual(['EMA9', 'VWAP']);
+    expect(primary?.isReadOnly).toBe(true);
+  });
+
+  it('emits updated indicators through chart state changes', async () => {
+    const onChartStateChange = vi.fn();
+
+    render(
+      <BacktestChartGrid
+        ticker="AAPL"
+        date="2026-04-28"
+        onAnchorChange={vi.fn()}
+        armedAction={null}
+        onArmedClick={vi.fn()}
+        actions={[]}
+        currentStop={null}
+        extraSessionsForward={0}
+        onChartStateChange={onChartStateChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'indicator 5m' }));
+
+    await waitFor(() => {
+      expect(onChartStateChange).toHaveBeenCalledWith(expect.objectContaining({
+        indicators: expect.objectContaining({ primary: ['EMA9'] }),
+      }));
+    });
   });
 });

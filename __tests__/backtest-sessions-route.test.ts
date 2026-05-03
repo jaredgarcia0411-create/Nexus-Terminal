@@ -32,6 +32,7 @@ type SessionRow = {
   riskDollars: number;
   label: string | null;
   notes: string | null;
+  chartState: Record<string, unknown>;
   reviewedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -120,6 +121,7 @@ function createBacktestDb() {
                   riskDollars: Number(values.riskDollars),
                   label: null,
                   notes: null,
+                  chartState: {},
                   reviewedAt: null,
                   createdAt: new Date(),
                   updatedAt: new Date(),
@@ -253,7 +255,12 @@ describe('backtest session routes', () => {
     const reviewResponse = ensureResponse(await reviewSession(new Request(`http://localhost/api/backtest/sessions/${createPayload.session.id}/review`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: createPayload.session.id, label: 'A setup', notes: 'clean move' }),
+      body: JSON.stringify({
+        sessionId: createPayload.session.id,
+        label: 'A setup',
+        notes: 'clean move',
+        chartState: { drawings: [{ id: 'txt-1', type: 'text', position: { time: 1, price: 10 }, text: 'test' }], indicators: { primary: ['VWAP'] } },
+      }),
     }), {
       params: Promise.resolve({ id: createPayload.session.id }),
     }));
@@ -262,6 +269,10 @@ describe('backtest session routes', () => {
     expect(reviewResponse.status).toBe(200);
     expect(reviewPayload.session.status).toBe('REVIEWED');
     expect(reviewPayload.session.label).toBe('A setup');
+    expect(reviewPayload.session.chartState).toEqual({
+      drawings: [{ id: 'txt-1', type: 'text', position: { time: 1, price: 10 }, text: 'test' }],
+      indicators: { primary: ['VWAP'] },
+    });
 
     const listResponse = ensureResponse(await getSessions(new Request('http://localhost/api/backtest/sessions?ticker=AAPL&date=2026-04-28')));
     const listPayload = await listResponse.json();

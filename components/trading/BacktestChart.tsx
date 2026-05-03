@@ -98,6 +98,7 @@ interface BacktestChartProps {
   timeframe: BacktestTimeframeKey;
   onTimeframeChange: (timeframe: BacktestTimeframeKey) => void;
   defaultIndicators?: readonly IndicatorKey[];
+  onIndicatorsChange?: (indicators: IndicatorKey[]) => void;
   onAnchorChange?: (newDate: string) => void;
   armedAction?: BacktestActionType | null;
   onArmedClick?: (payload: { price: number; barTime: string }) => void;
@@ -109,6 +110,7 @@ interface BacktestChartProps {
   isExpanded?: boolean;
   onToggleExpanded?: () => void;
   extraSessionsForward?: number;
+  isReadOnly?: boolean;
 }
 
 const UP_COLOR = '#ffffff';
@@ -343,6 +345,7 @@ export default function BacktestChart({
   timeframe,
   onTimeframeChange,
   defaultIndicators = [],
+  onIndicatorsChange,
   onAnchorChange,
   armedAction = null,
   onArmedClick,
@@ -354,8 +357,9 @@ export default function BacktestChart({
   isExpanded = false,
   onToggleExpanded,
   extraSessionsForward = 0,
+  isReadOnly = false,
 }: BacktestChartProps) {
-  const [indicators, setIndicators] = useState<Set<IndicatorKey>>(() => new Set(defaultIndicators));
+  const indicators = useMemo(() => new Set(defaultIndicators), [defaultIndicators]);
   const [seriesType, setSeriesType] = useState<SeriesType>('candles');
   const [drawingsCount, setDrawingsCount] = useState(0);
   const [isDrawingInteractionActive, setIsDrawingInteractionActive] = useState(false);
@@ -420,14 +424,18 @@ export default function BacktestChart({
     onAnchorChangeRef.current = onAnchorChange;
   }, [onAnchorChange]);
 
+  useEffect(() => {
+    onIndicatorsChange?.(Array.from(indicators));
+  }, [indicators, onIndicatorsChange]);
+
   const toggleIndicator = useCallback((key: IndicatorKey, checked: boolean) => {
-    setIndicators((current) => {
-      const next = new Set(current);
-      if (checked) next.add(key);
-      else next.delete(key);
-      return next;
-    });
-  }, []);
+    if (isReadOnly) return;
+
+    const next = new Set(indicators);
+    if (checked) next.add(key);
+    else next.delete(key);
+    onIndicatorsChange?.(Array.from(next));
+  }, [indicators, isReadOnly, onIndicatorsChange]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -892,7 +900,13 @@ export default function BacktestChart({
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button type="button" variant="ghost" size="xs" className="h-7 max-w-[130px] px-2 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white">
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              disabled={isReadOnly}
+              className="h-7 max-w-[130px] px-2 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
               <Layers className="h-3 w-3" />
               <span className="truncate">{indicatorSummary}</span>
             </Button>
@@ -913,7 +927,15 @@ export default function BacktestChart({
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button type="button" variant="ghost" size="icon-xs" className="text-zinc-300 hover:bg-white/10 hover:text-white" title="Series type" aria-label="Series type">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              disabled={isReadOnly}
+              className="text-zinc-300 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              title="Series type"
+              aria-label="Series type"
+            >
               <ChartCandlestick className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
@@ -944,6 +966,7 @@ export default function BacktestChart({
               onToolSelect={handleDrawingToolChange}
               drawingsCount={drawingsCount}
               onClearAll={() => clearAllDrawingsRef.current?.()}
+              disabled={isReadOnly}
             />
           ) : null}
           {onToggleExpanded ? (
@@ -1012,6 +1035,7 @@ export default function BacktestChart({
             timeMarkers={sortedCandleTimes}
             persistDrawings={false}
             controller={drawingsController}
+            isReadOnly={isReadOnly}
             onInteractionChange={setIsDrawingInteractionActive}
             onDrawingsChange={(count, clearFn) => {
               setDrawingsCount(count);

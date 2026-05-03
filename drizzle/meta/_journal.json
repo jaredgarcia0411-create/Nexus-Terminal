@@ -197,6 +197,13 @@
       "when": 1777671260552,
       "tag": "0027_nice_winter_soldier",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1777845993649,
+      "tag": "0028_bright_magik",
+      "breakpoints": true
     }
   ]
 }
