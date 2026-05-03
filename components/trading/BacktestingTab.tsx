@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useSession } from 'next-auth/react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { motion } from 'motion/react';
@@ -55,7 +55,7 @@ export default function BacktestingTab() {
   const [extraSessionsForward, setExtraSessionsForward] = useState(0);
   const [lookupTicker, setLookupTicker] = useState('');
   const [lookupDate, setLookupDate] = useState('');
-  const [latestChartState, setLatestChartState] = useState<BacktestChartState>({ drawings: [], indicators: {} });
+  const latestChartStateRef = useRef<BacktestChartState>({ drawings: [], indicators: {} });
   // When the user clicks Launch Chart with a known recent review, we set this
   // to the review id. The effect below picks it up once the sessions GET
   // resolves and drops the user into read-only review mode automatically.
@@ -126,6 +126,15 @@ export default function BacktestingTab() {
     backtestId: view.kind === 'chart' ? view.id : null,
     autoLoadReviewId,
   });
+
+  useEffect(() => {
+    if (sessionState.isReadOnly) return;
+    latestChartStateRef.current = { drawings: [], indicators: {} };
+  }, [sessionState.session?.id, sessionState.isReadOnly]);
+
+  const handleChartStateChange = useCallback((nextChartState: BacktestChartState) => {
+    latestChartStateRef.current = nextChartState;
+  }, []);
 
   useHotkeys('esc', () => {
     setArmedAction(null);
@@ -348,11 +357,11 @@ export default function BacktestingTab() {
               armedAction={sessionState.isReadOnly ? null : armedAction}
               onArmedClick={handleArmedClick}
               actions={sessionState.actions}
-              currentStop={sessionState.position.stop}
+              currentStop={sessionState.position.stop ?? sessionState.position.lastSetStop}
               extraSessionsForward={extraSessionsForward}
               isReadOnly={sessionState.isReadOnly}
               loadedChartState={sessionState.session?.chartState ?? null}
-              onChartStateChange={setLatestChartState}
+              onChartStateChange={handleChartStateChange}
             />
           </main>
 
@@ -382,7 +391,7 @@ export default function BacktestingTab() {
                 onRiskCommit={updateRisk}
                 onUndoLast={sessionState.undoLast}
                 onClear={sessionState.clear}
-                onSaveReview={(label, notes) => sessionState.saveReview(label, notes, latestChartState)}
+                onSaveReview={(label, notes) => sessionState.saveReview(label, notes, latestChartStateRef.current)}
                 onLoadReview={async (reviewId) => {
                   setArmedAction(null);
                   setPendingOrder(null);

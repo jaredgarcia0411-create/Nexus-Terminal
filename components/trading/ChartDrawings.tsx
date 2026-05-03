@@ -195,6 +195,7 @@ export default function ChartDrawings({
     value: string;
   } | null>(null);
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
+  const disposedRef = useRef(false);
 
   const localController = useChartDrawings(symbol, activeTool, selectedColor, lineWidth, { persist: persistDrawings });
   const {
@@ -568,6 +569,7 @@ export default function ChartDrawings({
 
   // Render all drawings on canvas
   const renderDrawings = useCallback(() => {
+    if (disposedRef.current) return;
     const canvas = overlayRef.current;
     if (!canvas || !chart) return;
 
@@ -641,6 +643,7 @@ export default function ChartDrawings({
   useEffect(() => {
     if (!chart || !overlayRef.current) return;
 
+    disposedRef.current = false;
     const canvas = overlayRef.current;
     const container = canvas.parentElement;
     if (!container) return;
@@ -660,21 +663,30 @@ export default function ChartDrawings({
 
     resizeObserver.observe(container);
 
-    return () => resizeObserver.disconnect();
+    return () => {
+      disposedRef.current = true;
+      resizeObserver.disconnect();
+    };
   }, [chart, renderDrawings]);
 
   // Subscribe to chart updates for redraw
   useEffect(() => {
     if (!chart) return;
 
+    let rafId: number | null = null;
     const handleVisibleRangeChange = () => {
-      requestAnimationFrame(renderDrawings);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        renderDrawings();
+      });
     };
 
     chart.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
     chart.timeScale().subscribeVisibleTimeRangeChange(handleVisibleRangeChange);
 
     return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
       chart.timeScale().unsubscribeVisibleTimeRangeChange(handleVisibleRangeChange);
     };

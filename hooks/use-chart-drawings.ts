@@ -402,6 +402,7 @@ export function useChartDrawings(
   const { drawings, tempDrawing, isDrawing } = drawingState;
 
   useEffect(() => {
+    if (!persist) return;
     skipNextStorageSaveRef.current = true;
     dispatch({
       type: 'syncSymbol',

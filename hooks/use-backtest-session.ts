@@ -76,8 +76,7 @@ export function useBacktestSession({
 
   const isCurrentReviewMode = reviewMode != null
     && reviewMode.session.ticker === ticker
-    && reviewMode.session.date === date
-    && (reviewMode.session.backtestId ?? null) === (backtestId ?? null);
+    && reviewMode.session.date === date;
   const session = isCurrentReviewMode ? reviewMode.session : activeSession;
   const actions = isCurrentReviewMode ? reviewMode.actions : activeActions;
   const isReadOnly = isCurrentReviewMode;

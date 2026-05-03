@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 
 import { internalServerError, logRouteError, normalizeTicker, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
@@ -36,16 +36,19 @@ export async function GET(request: Request) {
       .where(and(
         eq(backtestSessions.ticker, ticker),
         eq(backtestSessions.date, date),
-        backtestId ? eq(backtestSessions.backtestId, backtestId) : isNull(backtestSessions.backtestId),
       ))
       .orderBy(desc(backtestSessions.reviewedAt), desc(backtestSessions.createdAt));
 
     // Active session is per-user: only return the current viewer's ACTIVE row,
     // otherwise users would clobber each other's in-progress executions.
-    // Reviews stay unfiltered so callers can scope them per context (named
-    // backtest = anyone's reviews on that backtestId; uncategorized = own only).
+    // Active sessions stay scoped to the launch context, while reviews are
+    // shared across launch contexts for the same ticker/date.
     return Response.json({
-      session: rows.find((row) => row.status === 'ACTIVE' && row.userId === authState.user.id) ?? null,
+      session: rows.find((row) =>
+        row.status === 'ACTIVE'
+        && row.userId === authState.user.id
+        && (row.backtestId ?? null) === (backtestId ?? null)
+      ) ?? null,
       reviews: rows.filter((row) => row.status === 'REVIEWED'),
     });
   } catch (error) {

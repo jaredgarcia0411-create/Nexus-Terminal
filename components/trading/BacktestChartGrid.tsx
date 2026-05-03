@@ -20,6 +20,7 @@ const KNOWN_INDICATORS: readonly IndicatorKey[] = [
   'EMA21',
   'EMA50',
   'VWAP',
+  'VOLUME',
   'BB',
   'RSI',
   'ATR',
@@ -81,9 +82,9 @@ function getDefaultSlotTimeframes(): Record<ChartSlotId, BacktestTimeframeKey> {
 }
 
 function getDefaultIndicators(timeframe: BacktestTimeframeKey): IndicatorKey[] {
-  if (timeframe === '1D') return ['SMA50', 'SMA200'];
-  if (timeframe === '1h') return ['EMA20', 'EMA50'];
-  return ['VWAP'];
+  if (timeframe === '1D') return ['SMA50', 'SMA200', 'VOLUME'];
+  if (timeframe === '1h') return ['EMA20', 'EMA50', 'VOLUME'];
+  return ['VWAP', 'VOLUME'];
 }
 
 function getDefaultIndicatorsBySlot(

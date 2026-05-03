@@ -123,13 +123,12 @@ export default function BacktestSimPanel({
   const [reviewNotes, setReviewNotes] = useState('');
   const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null);
 
-  // LOAD REVIEW dropdown is context-aware: on a named backtest, show every
-  // review tied to that backtestId so you can browse the author's history.
-  // On the uncategorized "Launch Chart" path, scope to the current viewer's
-  // own reviews so coworkers' free-form sims aren't visible to each other.
+  // LOAD REVIEW widens named backtest launches to every returned ticker/date
+  // review, while uncategorized launches stay scoped to the current viewer's
+  // own free-form reviews.
   const visibleReviews = useMemo(() => {
     if (activeBacktest) {
-      return reviews.filter((review) => review.backtestId === activeBacktest.id);
+      return reviews;
     }
     return reviews.filter((review) => review.backtestId == null && review.userId === currentUserId);
   }, [activeBacktest, currentUserId, reviews]);

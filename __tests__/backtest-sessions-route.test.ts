@@ -33,6 +33,7 @@ type SessionRow = {
   label: string | null;
   notes: string | null;
   chartState: Record<string, unknown>;
+  backtestId: string | null;
   reviewedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -122,6 +123,7 @@ function createBacktestDb() {
                   label: null,
                   notes: null,
                   chartState: {},
+                  backtestId: typeof values.backtestId === 'string' ? values.backtestId : null,
                   reviewedAt: null,
                   createdAt: new Date(),
                   updatedAt: new Date(),
@@ -315,5 +317,91 @@ describe('backtest session routes', () => {
 
     expect(listResponse.status).toBe(200);
     expect(listPayload.reviews).toHaveLength(0);
+  });
+
+  it('returns reviews across launch contexts while active sessions stay context-scoped', async () => {
+    const db = createBacktestDb();
+    getDbMock.mockReturnValue(db);
+    const now = new Date('2026-04-28T15:00:00.000Z');
+
+    db.state.sessions.push(
+      {
+        id: 'active-named',
+        userId: 'u1',
+        ticker: 'AAPL',
+        date: '2026-04-28',
+        status: 'ACTIVE',
+        riskDollars: 100,
+        label: null,
+        notes: null,
+        chartState: {},
+        backtestId: 'bt-x',
+        reviewedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'review-named',
+        userId: 'u2',
+        ticker: 'AAPL',
+        date: '2026-04-28',
+        status: 'REVIEWED',
+        riskDollars: 100,
+        label: 'Named',
+        notes: null,
+        chartState: {},
+        backtestId: 'bt-x',
+        reviewedAt: new Date('2026-04-28T16:00:00.000Z'),
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'review-uncategorized',
+        userId: 'u1',
+        ticker: 'AAPL',
+        date: '2026-04-28',
+        status: 'REVIEWED',
+        riskDollars: 100,
+        label: 'Uncategorized',
+        notes: null,
+        chartState: {},
+        backtestId: null,
+        reviewedAt: new Date('2026-04-28T15:30:00.000Z'),
+        createdAt: now,
+        updatedAt: now,
+      },
+    );
+
+    const namedResponse = ensureResponse(await getSessions(new Request(
+      'http://localhost/api/backtest/sessions?ticker=AAPL&date=2026-04-28&backtestId=bt-x',
+    )));
+    const namedPayload = await namedResponse.json();
+
+    expect(namedResponse.status).toBe(200);
+    expect(namedPayload.session.id).toBe('active-named');
+    expect(namedPayload.reviews.map((review: SessionRow) => review.id)).toEqual([
+      'review-named',
+      'review-uncategorized',
+    ]);
+
+    const otherNamedResponse = ensureResponse(await getSessions(new Request(
+      'http://localhost/api/backtest/sessions?ticker=AAPL&date=2026-04-28&backtestId=bt-y',
+    )));
+    const otherNamedPayload = await otherNamedResponse.json();
+
+    expect(otherNamedResponse.status).toBe(200);
+    expect(otherNamedPayload.session).toBeNull();
+    expect(otherNamedPayload.reviews.map((review: SessionRow) => review.id)).toEqual([
+      'review-named',
+      'review-uncategorized',
+    ]);
+
+    const uncategorizedResponse = ensureResponse(await getSessions(new Request(
+      'http://localhost/api/backtest/sessions?ticker=AAPL&date=2026-04-28',
+    )));
+    const uncategorizedPayload = await uncategorizedResponse.json();
+
+    expect(uncategorizedResponse.status).toBe(200);
+    expect(uncategorizedPayload.session).toBeNull();
   });
 });

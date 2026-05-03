@@ -10,6 +10,7 @@ import {
   createChart,
   createSeriesMarkers,
   CrosshairMode,
+  HistogramSeries,
   LineSeries,
   LineStyle,
   type CandlestickData,
@@ -67,6 +68,7 @@ export type IndicatorKey =
   | 'EMA21'
   | 'EMA50'
   | 'VWAP'
+  | 'VOLUME'
   | 'BB'
   | 'RSI'
   | 'ATR';
@@ -128,6 +130,7 @@ const INDICATOR_OPTIONS: Array<{ key: IndicatorKey; label: string }> = [
   { key: 'EMA21', label: 'EMA 21' },
   { key: 'EMA50', label: 'EMA 50' },
   { key: 'VWAP', label: 'VWAP' },
+  { key: 'VOLUME', label: 'Volume' },
   { key: 'BB', label: 'Bollinger' },
   { key: 'RSI', label: 'RSI 14' },
   { key: 'ATR', label: 'ATR 14' },
@@ -563,6 +566,21 @@ export default function BacktestChart({
       const bands = bollingerBands(closes, 20, 2);
       addLineOverlay(chart, sortedCandles, bands.upper, '#94a3b8');
       addLineOverlay(chart, sortedCandles, bands.lower, '#94a3b8');
+    }
+
+    if (indicators.has('VOLUME') && sortedCandles.length > 0) {
+      const volumePane = chart.addPane();
+      volumePane.setHeight(72);
+      volumePane.setStretchFactor(0.22);
+      const volumeSeries = volumePane.addSeries(HistogramSeries, {
+        priceFormat: { type: 'volume' },
+        priceLineVisible: false,
+      });
+      volumeSeries.setData(sortedCandles.map((candle) => ({
+        time: toTime(candle.datetime),
+        value: candle.volume,
+        color: candle.close >= candle.open ? 'rgba(255, 255, 255, 0.45)' : 'rgba(59, 130, 246, 0.55)',
+      })));
     }
 
     if (indicators.has('RSI') && sortedCandles.length > 0) {
