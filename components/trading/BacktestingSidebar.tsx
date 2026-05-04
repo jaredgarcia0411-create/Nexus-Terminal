@@ -38,6 +38,7 @@ type BacktestDetailResponse = {
     id: string;
     name: string;
     sampleSetId?: string | null;
+    sampleSetName?: string | null;
     sampleSetRows?: Array<{ ticker: string; date: string }> | null;
   };
   error?: string;
@@ -121,7 +122,6 @@ export default function BacktestingSidebar({
   const [filter, setFilter] = useState('');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [sampleSetRows, setSampleSetRows] = useState<SystemTickerRow[] | null>(null);
-  const [activeBacktestName, setActiveBacktestName] = useState<string | null>(null);
   const [availableSampleSets, setAvailableSampleSets] = useState<SampleSetListItem[]>([]);
   const [selectedSampleSetId, setSelectedSampleSetId] = useState<string>('');
   const [selectedSampleSetName, setSelectedSampleSetName] = useState<string | null>(null);
@@ -153,7 +153,6 @@ export default function BacktestingSidebar({
 
   useEffect(() => {
     if (!activeBacktestId) {
-      setActiveBacktestName(null);
       return;
     }
 
@@ -172,7 +171,10 @@ export default function BacktestingSidebar({
           throw new Error(payload.error ?? 'Could not load backtest');
         }
 
-        setActiveBacktestName(payload.backtest.name);
+        // The sidebar label tracks the *sample set* (or "System Sheet" when
+        // the backtest runs against the live system tickers), not the
+        // backtest name — the backtest name is already shown in the toolbar.
+        setSelectedSampleSetName(payload.backtest.sampleSetName ?? 'System Sheet');
         // When a backtest has no sample set (System Sheet), leave sampleSetRows
         // null so the sidebar falls back to the live system tickers list.
         if (!payload.backtest.sampleSetId) {
@@ -193,7 +195,7 @@ export default function BacktestingSidebar({
         if (controller.signal.aborted) return;
         console.error(loadError);
         setSampleSetRows([]);
-        setActiveBacktestName(null);
+        setSelectedSampleSetName(null);
       }
     };
 
@@ -278,7 +280,7 @@ export default function BacktestingSidebar({
     );
   }, [activeBacktestId, filter, rows, sampleSetRows, selectedSampleSetId, sortDirection]);
 
-  const sourceLabel = activeBacktestName ?? selectedSampleSetName ?? 'Select Sample Set';
+  const sourceLabel = selectedSampleSetName ?? 'Select Sample Set';
   const awaitingSampleSelection = !activeBacktestId && !selectedSampleSetId;
 
   return (

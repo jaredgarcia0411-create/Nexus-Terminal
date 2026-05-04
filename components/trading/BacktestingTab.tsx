@@ -237,12 +237,6 @@ export default function BacktestingTab() {
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
-                {view.id ? (
-                  <>
-                    <span>|</span>
-                    <span className="truncate text-zinc-300">{view.name ?? 'Backtest'}</span>
-                  </>
-                ) : null}
               </div>
 
               <div className="flex min-w-0 items-center justify-center gap-2">
@@ -290,7 +284,11 @@ export default function BacktestingTab() {
                   </Button>
                 </form>
               ) : (
-                <div />
+                <div className="flex min-w-0 items-center px-2">
+                  <span className="truncate text-sm font-medium text-zinc-200">
+                    {view.name ?? 'Backtest'}
+                  </span>
+                </div>
               )}
 
               <div />
