@@ -54,6 +54,9 @@ vi.mock('@/components/trading/BacktestManagerView', () => ({
       <button type="button" onClick={() => onLaunchChart({ id: 'bt-1', name: 'Momentum', ownerId: 'u1' })}>
         Open Managed Chart
       </button>
+      <button type="button" onClick={() => onLaunchChart(null)}>
+        Open Launch Charts
+      </button>
       <button type="button" onClick={() => onViewStats('bt-1')}>
         Open Stats
       </button>
@@ -222,6 +225,17 @@ describe('BacktestingTab', () => {
 
     expect(screen.getByText('Sidebar Active: bt-1')).toBeTruthy();
     expect(useBacktestSessionMock).toHaveBeenLastCalledWith(expect.objectContaining({ backtestId: 'bt-1' }));
+  });
+
+  it('only shows manual ticker lookup for ad hoc chart launches', () => {
+    render(<BacktestingTab />);
+
+    fireEvent.click(screen.getByText('Open Managed Chart'));
+    expect(screen.queryByLabelText('Lookup ticker on date')).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('Back to backtest manager'));
+    fireEvent.click(screen.getByText('Open Launch Charts'));
+    expect(screen.getByLabelText('Lookup ticker on date')).toBeTruthy();
   });
 
   it('enables long-side actions for an open long position after selecting a ticker', () => {

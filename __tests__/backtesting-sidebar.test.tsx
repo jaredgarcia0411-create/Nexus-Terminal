@@ -117,6 +117,12 @@ describe('BacktestingSidebar', () => {
       />,
     );
 
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/sample-sets', expect.any(Object)));
+    expect(screen.queryByText('SYS')).toBeNull();
+    expect(screen.getByText('Select a sample set to load tickers')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('System Sheet'));
+
     await waitFor(() => expect(screen.getByText('SYS')).toBeTruthy());
 
     fireEvent.click(screen.getByText('Momentum Set'));

@@ -258,36 +258,40 @@ export default function BacktestingTab() {
             </div>
 
             <div className="grid h-10 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border border-white/10 bg-[#121214] px-3">
-              <form
-                onSubmit={handleLookupSubmit}
-                className="flex items-center gap-1.5"
-                aria-label="Lookup ticker on date"
-              >
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
-                  <Input
-                    value={lookupTicker}
-                    onChange={(event) => setLookupTicker(event.target.value.toUpperCase())}
-                    placeholder="TICKER"
-                    className="h-7 w-[8.25rem] border-white/10 bg-white/5 pl-7 font-mono text-xs uppercase text-zinc-100 placeholder:text-zinc-600"
-                  />
-                </div>
-                <input
-                  type="date"
-                  value={lookupDate}
-                  onChange={(event) => setLookupDate(event.target.value)}
-                  className="h-7 w-[8.25rem] rounded-md border border-white/10 bg-white/5 px-2 font-mono text-xs text-zinc-100 [color-scheme:dark]"
-                />
-                <Button
-                  type="submit"
-                  variant="ghost"
-                  size="xs"
-                  disabled={!lookupValid}
-                  className="h-7 text-[11px] text-zinc-300 hover:bg-transparent hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              {!view.id ? (
+                <form
+                  onSubmit={handleLookupSubmit}
+                  className="flex items-center gap-1.5"
+                  aria-label="Lookup ticker on date"
                 >
-                  Load
-                </Button>
-              </form>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+                    <Input
+                      value={lookupTicker}
+                      onChange={(event) => setLookupTicker(event.target.value.toUpperCase())}
+                      placeholder="TICKER"
+                      className="h-7 w-[8.25rem] border-white/10 bg-white/5 pl-7 font-mono text-xs uppercase text-zinc-100 placeholder:text-zinc-600"
+                    />
+                  </div>
+                  <input
+                    type="date"
+                    value={lookupDate}
+                    onChange={(event) => setLookupDate(event.target.value)}
+                    className="h-7 w-[8.25rem] rounded-md border border-white/10 bg-white/5 px-2 font-mono text-xs text-zinc-100 [color-scheme:dark]"
+                  />
+                  <Button
+                    type="submit"
+                    variant="ghost"
+                    size="xs"
+                    disabled={!lookupValid}
+                    className="h-7 text-[11px] text-zinc-300 hover:bg-transparent hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Load
+                  </Button>
+                </form>
+              ) : (
+                <div />
+              )}
 
               <div />
 

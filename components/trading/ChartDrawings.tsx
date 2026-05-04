@@ -218,7 +218,11 @@ export default function ChartDrawings({
   const priceToCoordinate = useCallback(
     (price: number): number | null => {
       if (!series) return null;
-      return series.priceToCoordinate(price);
+      try {
+        return series.priceToCoordinate(price);
+      } catch {
+        return null;
+      }
     },
     [series]
   );
@@ -227,7 +231,12 @@ export default function ChartDrawings({
     (time: number): number | null => {
       if (!chart) return null;
       // Convert milliseconds to seconds for lightweight-charts Time type.
-      const exact = chart.timeScale().timeToCoordinate(Math.floor(time / 1000) as Time);
+      let exact: number | null = null;
+      try {
+        exact = chart.timeScale().timeToCoordinate(Math.floor(time / 1000) as Time);
+      } catch {
+        return null;
+      }
       if (exact !== null) return exact;
 
       if (timeMarkers.length < 2) return null;
@@ -239,8 +248,14 @@ export default function ChartDrawings({
       const rightTime = timeMarkers[right];
       if (leftTime === rightTime) return null;
 
-      const leftCoordinate = chart.timeScale().timeToCoordinate(Math.floor(leftTime / 1000) as Time);
-      const rightCoordinate = chart.timeScale().timeToCoordinate(Math.floor(rightTime / 1000) as Time);
+      let leftCoordinate: number | null = null;
+      let rightCoordinate: number | null = null;
+      try {
+        leftCoordinate = chart.timeScale().timeToCoordinate(Math.floor(leftTime / 1000) as Time);
+        rightCoordinate = chart.timeScale().timeToCoordinate(Math.floor(rightTime / 1000) as Time);
+      } catch {
+        return null;
+      }
       if (leftCoordinate === null || rightCoordinate === null) return null;
 
       const ratio = Math.max(0, Math.min(1, (time - leftTime) / (rightTime - leftTime)));
@@ -252,7 +267,11 @@ export default function ChartDrawings({
   const coordinateToPrice = useCallback(
     (y: number): number | null => {
       if (!series) return null;
-      return series.coordinateToPrice(y);
+      try {
+        return series.coordinateToPrice(y);
+      } catch {
+        return null;
+      }
     },
     [series]
   );
@@ -260,7 +279,12 @@ export default function ChartDrawings({
   const coordinateToTime = useCallback(
     (x: number): number | null => {
       if (!chart) return null;
-      const time = chart.timeScale().coordinateToTime(x);
+      let time: Time | null = null;
+      try {
+        time = chart.timeScale().coordinateToTime(x);
+      } catch {
+        return null;
+      }
       if (time === null) return null;
       // Convert seconds to milliseconds for internal storage
       if (typeof time === 'number') return time * 1000;
@@ -301,6 +325,7 @@ export default function ChartDrawings({
     if (!chart) return;
 
     const handleClick = (param: { time?: Time; point?: { x: number; y: number } }) => {
+      if (disposedRef.current) return;
       if (isReadOnly) return;
       if (!param.time || !param.point) return;
 
@@ -417,6 +442,7 @@ export default function ChartDrawings({
     if (!chart) return;
 
     const handleCrosshairMove = (param: { time?: Time; point?: { x: number; y: number } }) => {
+      if (disposedRef.current) return;
       if (isReadOnly) return;
       if (!param.time || !param.point) return;
 
@@ -600,7 +626,11 @@ export default function ChartDrawings({
 
     // Remove old price lines
     priceLinesMap.forEach((line) => {
-      currentSeries.removePriceLine(line);
+      try {
+        currentSeries.removePriceLine(line);
+      } catch {
+        // Series can already be disposed during rapid chart teardown.
+      }
     });
     priceLinesMap.clear();
 
@@ -621,7 +651,11 @@ export default function ChartDrawings({
     return () => {
       const linesToRemove = Array.from(priceLinesMap.values());
       linesToRemove.forEach((line) => {
-        currentSeries.removePriceLine(line);
+        try {
+          currentSeries.removePriceLine(line);
+        } catch {
+          // Series can already be disposed during rapid chart teardown.
+        }
       });
       priceLinesMap.clear();
     };

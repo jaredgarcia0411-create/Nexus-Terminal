@@ -65,6 +65,9 @@ type SampleSetDetailResponse = {
 
 type SortDirection = 'asc' | 'desc';
 
+const SAMPLE_SELECT_PLACEHOLDER = '__select_sample_set__';
+const SYSTEM_SAMPLE_SET = '__system__';
+
 interface BacktestingSidebarProps {
   selected: BacktestSelection | null;
   onSelect: (selection: BacktestSelection) => void;
@@ -122,6 +125,7 @@ export default function BacktestingSidebar({
   const [availableSampleSets, setAvailableSampleSets] = useState<SampleSetListItem[]>([]);
   const [selectedSampleSetId, setSelectedSampleSetId] = useState<string>('');
   const [selectedSampleSetName, setSelectedSampleSetName] = useState<string | null>(null);
+  const [sampleSetLoading, setSampleSetLoading] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -155,6 +159,7 @@ export default function BacktestingSidebar({
 
     setSelectedSampleSetId('');
     setSelectedSampleSetName(null);
+    setSampleSetLoading(false);
     setSampleSetRows(null);
 
     const controller = new AbortController();
@@ -200,14 +205,22 @@ export default function BacktestingSidebar({
   useEffect(() => {
     if (activeBacktestId) return;
     if (!selectedSampleSetId) {
+      setSampleSetLoading(false);
       setSampleSetRows(null);
       setSelectedSampleSetName(null);
+      return;
+    }
+    if (selectedSampleSetId === SYSTEM_SAMPLE_SET) {
+      setSampleSetLoading(false);
+      setSampleSetRows(null);
+      setSelectedSampleSetName('System Sheet');
       return;
     }
 
     const controller = new AbortController();
 
     const loadSampleSet = async () => {
+      setSampleSetLoading(true);
       try {
         const response = await fetch(`/api/sample-sets/${selectedSampleSetId}`, { signal: controller.signal });
         const payload = (await response.json().catch(() => ({}))) as SampleSetDetailResponse;
@@ -231,6 +244,8 @@ export default function BacktestingSidebar({
         console.error(loadError);
         setSampleSetRows([]);
         setSelectedSampleSetName(null);
+      } finally {
+        if (!controller.signal.aborted) setSampleSetLoading(false);
       }
     };
 
@@ -240,6 +255,15 @@ export default function BacktestingSidebar({
   }, [activeBacktestId, selectedSampleSetId]);
 
   const visibleRows = useMemo(() => {
+    if (!activeBacktestId && !selectedSampleSetId) return [];
+    if (
+      !activeBacktestId
+      && selectedSampleSetId !== SYSTEM_SAMPLE_SET
+      && sampleSetRows == null
+    ) {
+      return [];
+    }
+
     const query = filter.trim().toUpperCase();
     const sortRows = (list: SystemTickerRow[]) =>
       list.sort((a, b) => {
@@ -252,9 +276,10 @@ export default function BacktestingSidebar({
     return sortRows(
       sourceRows.filter((row) => (query ? row.ticker.toUpperCase().includes(query) : true)).slice(),
     );
-  }, [filter, rows, sampleSetRows, sortDirection]);
+  }, [activeBacktestId, filter, rows, sampleSetRows, selectedSampleSetId, sortDirection]);
 
-  const sourceLabel = activeBacktestName ?? selectedSampleSetName ?? 'System';
+  const sourceLabel = activeBacktestName ?? selectedSampleSetName ?? 'Select Sample Set';
+  const awaitingSampleSelection = !activeBacktestId && !selectedSampleSetId;
 
   return (
     <aside className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-white/10 bg-[#0A0A0B]">
@@ -275,7 +300,10 @@ export default function BacktestingSidebar({
         </div>
 
         {!activeBacktestId ? (
-          <Select value={selectedSampleSetId || '__system__'} onValueChange={(value) => setSelectedSampleSetId(value === '__system__' ? '' : value)}>
+          <Select
+            value={selectedSampleSetId || SAMPLE_SELECT_PLACEHOLDER}
+            onValueChange={(value) => setSelectedSampleSetId(value === SAMPLE_SELECT_PLACEHOLDER ? '' : value)}
+          >
             <SelectTrigger
               aria-label="Select Sample Set"
               className="mt-2 h-8 w-full border-white/10 bg-black text-xs text-zinc-100"
@@ -283,7 +311,8 @@ export default function BacktestingSidebar({
               <SelectValue placeholder="Select Sample Set" />
             </SelectTrigger>
             <SelectContent className="border-white/10 bg-black text-white">
-              <SelectItem value="__system__">Select Sample Set</SelectItem>
+              <SelectItem value={SAMPLE_SELECT_PLACEHOLDER}>Select Sample Set</SelectItem>
+              <SelectItem value={SYSTEM_SAMPLE_SET}>System Sheet</SelectItem>
               {availableSampleSets.map((sampleSet) => (
                 <SelectItem key={sampleSet.id} value={sampleSet.id}>
                   {sampleSet.name}
@@ -312,13 +341,19 @@ export default function BacktestingSidebar({
       </div>
 
       <div className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto">
-        {!sampleSetRows && loading ? (
+        {awaitingSampleSelection ? (
+          <div className="px-3 py-4 text-sm text-zinc-500">Select a sample set to load tickers</div>
+        ) : null}
+        {!awaitingSampleSelection && sampleSetLoading ? (
+          <div className="px-3 py-4 text-sm text-zinc-500">Loading sample set...</div>
+        ) : null}
+        {!awaitingSampleSelection && !sampleSetLoading && !sampleSetRows && loading ? (
           <div className="px-3 py-4 text-sm text-zinc-500">Loading tickers...</div>
         ) : null}
-        {!sampleSetRows && !loading && error ? (
+        {!awaitingSampleSelection && !sampleSetLoading && !sampleSetRows && !loading && error ? (
           <div className="px-3 py-4 text-sm text-rose-400">{error}</div>
         ) : null}
-        {(sampleSetRows || (!loading && !error)) && visibleRows.length === 0 ? (
+        {!awaitingSampleSelection && !sampleSetLoading && (sampleSetRows || (!loading && !error)) && visibleRows.length === 0 ? (
           <div className="px-3 py-4 text-sm text-zinc-500">
             {sampleSetRows ? 'No sample set rows match filter' : 'No tickers found'}
           </div>

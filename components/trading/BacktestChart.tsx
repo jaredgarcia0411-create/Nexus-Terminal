@@ -77,6 +77,14 @@ type SeriesType = 'candles' | 'bars' | 'line' | 'area' | 'baseline';
 
 type MainSeriesApi = ISeriesApi<'Candlestick' | 'Bar' | 'Line' | 'Area' | 'Baseline'>;
 
+type HoverOhlc = {
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number | null;
+};
+
 type DailyAnchorRect = {
   left: number;
   width: number;
@@ -310,13 +318,6 @@ function usePriorDailyClose(ticker: string, anchorDate: string, enabled: boolean
   return priorClose;
 }
 
-function formatIndicatorSummary(indicators: Set<IndicatorKey>) {
-  if (indicators.size === 0) return 'Indicators';
-  const labels = INDICATOR_OPTIONS.filter((option) => indicators.has(option.key)).map((option) => option.label);
-  if (labels.length <= 2) return labels.join(', ');
-  return `${labels.length} indicators`;
-}
-
 function toOhlc(candles: MarketDataResponse['candles'] = []): OHLCData[] {
   return candles.map((candle) => ({
     time: candle.datetime,
@@ -326,6 +327,24 @@ function toOhlc(candles: MarketDataResponse['candles'] = []): OHLCData[] {
     close: candle.close,
     volume: candle.volume,
   }));
+}
+
+function areHoverOhlcEqual(left: HoverOhlc | null, right: HoverOhlc | null) {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return left.o === right.o
+    && left.h === right.h
+    && left.l === right.l
+    && left.c === right.c
+    && left.v === right.v;
+}
+
+function formatHoverVolume(value: number | null) {
+  if (value == null || !Number.isFinite(value)) return '-';
+  return new Intl.NumberFormat('en-US', {
+    notation: 'compact',
+    maximumFractionDigits: value >= 1_000_000 ? 2 : 1,
+  }).format(value);
 }
 
 function addLineOverlay(
@@ -370,7 +389,7 @@ export default function BacktestChart({
   const [seriesInstance, setSeriesInstance] = useState<MainSeriesApi | null>(null);
   const [dailyAnchorRect, setDailyAnchorRect] = useState<DailyAnchorRect | null>(null);
   const [sessionShadeRects, setSessionShadeRects] = useState<SessionShadeRect[]>([]);
-  const [hoverOhlc, setHoverOhlc] = useState<{ o: number; h: number; l: number; c: number } | null>(null);
+  const [hoverOhlc, setHoverOhlc] = useState<HoverOhlc | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const chartWrapRef = useRef<HTMLDivElement>(null);
@@ -397,7 +416,6 @@ export default function BacktestChart({
     [candles],
   );
   const priorClose = usePriorDailyClose(ticker, anchorDate, frame.intraday);
-  const indicatorSummary = useMemo(() => formatIndicatorSummary(indicators), [indicators]);
   const drawingScope = `${ticker}:${anchorDate}:${timeframe}`;
   const canDraw = frame.intraday && drawingsController != null && onDrawingToolChange != null;
   const previousTimeframe = getSteppedTimeframe(timeframe, -1);
@@ -410,6 +428,9 @@ export default function BacktestChart({
     onDrawingToolChange?.(null);
     onTimeframeChange(nextTimeframeValue);
   }, [onDrawingToolChange, onTimeframeChange, timeframe]);
+  const updateHoverOhlc = useCallback((next: HoverOhlc | null) => {
+    setHoverOhlc((current) => (areHoverOhlcEqual(current, next) ? current : next));
+  }, []);
 
   useEffect(() => {
     activeDrawingToolRef.current = activeDrawingTool;
@@ -545,6 +566,10 @@ export default function BacktestChart({
 
     const closes = sortedCandles.map((candle) => candle.close);
     const ohlc = toOhlc(sortedCandles);
+    const volumeByTime = new Map(sortedCandles.map((candle) => [
+      Math.floor(candle.datetime / 1000),
+      candle.volume,
+    ]));
 
     if (indicators.has('SMA20')) addLineOverlay(chart, sortedCandles, sma20(closes), '#a1a1aa');
     if (indicators.has('SMA50')) addLineOverlay(chart, sortedCandles, sma50(closes), '#f59e0b');
@@ -638,6 +663,7 @@ export default function BacktestChart({
     };
 
     const recalcSessionShadeRects = () => {
+      if (disposed) return;
       if (!frame.intraday || sortedCandles.length === 0 || !chartWrapRef.current) {
         clearSessionShadeRects();
         return;
@@ -674,17 +700,20 @@ export default function BacktestChart({
     };
 
     const scheduleSessionShadeRecalc = () => {
+      if (disposed) return;
       if (sessionShadeAnimationFrame != null) {
         cancelAnimationFrame(sessionShadeAnimationFrame);
       }
 
       sessionShadeAnimationFrame = requestAnimationFrame(() => {
         sessionShadeAnimationFrame = null;
+        if (disposed) return;
         recalcSessionShadeRects();
       });
     };
 
     const recalcDailyAnchorRect = () => {
+      if (disposed) return;
       if (!isDailyAnchorCell || sortedCandles.length === 0 || !chartWrapRef.current) {
         setDailyAnchorRect(null);
         return;
@@ -721,6 +750,7 @@ export default function BacktestChart({
     };
 
     const handleRangeChange = () => {
+      if (disposed) return;
       recalcDailyAnchorRect();
       scheduleSessionShadeRecalc();
     };
@@ -728,6 +758,7 @@ export default function BacktestChart({
     chart.timeScale().subscribeVisibleTimeRangeChange(handleRangeChange);
 
     const handleClick = (param: MouseEventParams<Time>) => {
+      if (disposed) return;
       if (activeDrawingToolRef.current || !param.time) return;
 
       const currentArmedAction = armedActionRef.current;
@@ -753,25 +784,29 @@ export default function BacktestChart({
     chart.subscribeClick(handleClick);
 
     const handleCrosshairMove = (param: MouseEventParams<Time>) => {
+      if (disposed) return;
       const data = param.seriesData.get(baseSeries) as
         | { open?: number; high?: number; low?: number; close?: number; value?: number }
         | undefined;
       if (!data) {
-        setHoverOhlc(null);
+        updateHoverOhlc(null);
         return;
       }
+      const epochMs = toEpochMs(param.time);
+      const volume = epochMs == null ? null : volumeByTime.get(Math.floor(epochMs / 1000)) ?? null;
       // Candle/bar series provide o/h/l/c; line/area/baseline only have `value` (= close).
       if (data.open != null && data.high != null && data.low != null && data.close != null) {
-        setHoverOhlc({ o: data.open, h: data.high, l: data.low, c: data.close });
+        updateHoverOhlc({ o: data.open, h: data.high, l: data.low, c: data.close, v: volume });
       } else if (data.value != null) {
-        setHoverOhlc({ o: data.value, h: data.value, l: data.value, c: data.value });
+        updateHoverOhlc({ o: data.value, h: data.value, l: data.value, c: data.value, v: volume });
       } else {
-        setHoverOhlc(null);
+        updateHoverOhlc(null);
       }
     };
     chart.subscribeCrosshairMove(handleCrosshairMove);
 
     const resizeObserver = new ResizeObserver(() => {
+      if (disposed || chartRef.current !== chart) return;
       const width = containerRef.current?.clientWidth ?? 0;
       const height = containerRef.current?.clientHeight ?? 0;
       if (width > 0 && height > 0) {
@@ -786,6 +821,10 @@ export default function BacktestChart({
     scheduleSessionShadeRecalc();
 
     return () => {
+      disposed = true;
+      if (chartRef.current === chart) {
+        chartRef.current = null;
+      }
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleRangeChange);
       chart.timeScale().unsubscribeVisibleTimeRangeChange(handleRangeChange);
       chart.unsubscribeClick(handleClick);
@@ -795,15 +834,17 @@ export default function BacktestChart({
         cancelAnimationFrame(sessionShadeAnimationFrame);
         sessionShadeAnimationFrame = null;
       }
-      disposed = true;
-      setChartInstance(null);
-      setSeriesInstance(null);
+      setChartInstance((current) => (current === chart ? null : current));
+      setSeriesInstance((current) => (current === baseSeries ? null : current));
       setDailyAnchorRect(null);
       setSessionShadeRects([]);
-      setHoverOhlc(null);
+      updateHoverOhlc(null);
       setIsDrawingInteractionActive(false);
-      chart.remove();
-      chartRef.current = null;
+      try {
+        chart.remove();
+      } catch {
+        // The chart can already be mid-disposal during rapid review switches.
+      }
     };
   }, [
     anchorDate,
@@ -813,6 +854,7 @@ export default function BacktestChart({
     isDailyAnchorCell,
     priorClose,
     seriesType,
+    updateHoverOhlc,
   ]);
 
   // Sim execution arrows + open-position stop line. Runs separately from the
@@ -921,12 +963,13 @@ export default function BacktestChart({
             <Button
               type="button"
               variant="ghost"
-              size="xs"
+              size="icon-xs"
               disabled={isReadOnly}
-              className="h-7 max-w-[130px] px-2 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              className="text-zinc-300 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              title="Indicators"
+              aria-label="Indicators"
             >
-              <Layers className="h-3 w-3" />
-              <span className="truncate">{indicatorSummary}</span>
+              <Layers className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-80 border-white/10 bg-[#111319] text-white">
@@ -974,6 +1017,7 @@ export default function BacktestChart({
             <span><span className="text-zinc-500">H</span> {hoverOhlc.h.toFixed(2)}</span>
             <span><span className="text-zinc-500">L</span> {hoverOhlc.l.toFixed(2)}</span>
             <span><span className="text-zinc-500">C</span> {hoverOhlc.c.toFixed(2)}</span>
+            <span><span className="text-zinc-500">V</span> {formatHoverVolume(hoverOhlc.v)}</span>
           </div>
         ) : null}
 

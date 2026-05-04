@@ -403,15 +403,15 @@ Print this manual smoke checklist for the user (do not run a browser yourself):
 
 ```
 Phase C manual smoke test:
-  [ ] Save a review with drawings + VWAP. Clear. Reload page. Open the review from the manager.
+  [x] Save a review with drawings + VWAP. Clear. Reload page. Open the review from the manager.
       → Drawings should render. VWAP and Volume both visible.
-  [ ] Open a fully-closed reviewed trade. Stop line should render at the lastSetStop level.
-  [ ] Save uncategorized review. From manager, Launch Charts on a named backtest with the same ticker/date.
+  [x] Open a fully-closed reviewed trade. Stop line should render at the lastSetStop level.
+  [x] Save uncategorized review. From manager, Launch Charts on a named backtest with the same ticker/date.
       → Uncategorized review appears in the LOAD REVIEW dropdown.
   [ ] Toggle between active session and a saved review several times. No "Object is disposed" errors in the browser console.
-  [ ] Save Review A with drawings → Clear → start a fresh session with no drawings → Save Review B.
+  [x] Save Review A with drawings → Clear → start a fresh session with no drawings → Save Review B.
       → Review B's chartState in DB has drawings: [].
-  [ ] On any intraday chart, toggle Volume off → off. Toggle on → on. Save review. Reload. State persists.
+  [x] On any intraday chart, toggle Volume off → off. Toggle on → on. Save review. Reload. State persists.
 ```
 
 ---
