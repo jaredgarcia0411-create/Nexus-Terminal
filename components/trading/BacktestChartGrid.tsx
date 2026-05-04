@@ -10,7 +10,10 @@ import type { BacktestAction, BacktestActionType, BacktestChartState } from '@/l
 type ChartSlotId = 'primary' | 'secondary' | 'hourly' | 'daily';
 
 const EXPAND_STORAGE_KEY = 'nexus-backtest-expand-slot';
+const GRID_LAYOUT_STORAGE_KEY = 'nexus-backtest-grid-layout';
 const KNOWN_SLOT_IDS: readonly ChartSlotId[] = ['primary', 'secondary', 'hourly', 'daily'];
+const KNOWN_GRID_LAYOUTS = ['stacked', 'grid2x2'] as const;
+type GridLayout = (typeof KNOWN_GRID_LAYOUTS)[number];
 const KNOWN_INDICATORS: readonly IndicatorKey[] = [
   'SMA20',
   'SMA50',
@@ -47,6 +50,27 @@ function writePersistedExpandedSlot(slotId: ChartSlotId | null): void {
     } else {
       window.localStorage.setItem(EXPAND_STORAGE_KEY, slotId);
     }
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
+function readPersistedGridLayout(): GridLayout {
+  if (typeof window === 'undefined') return 'stacked';
+  try {
+    const stored = window.localStorage.getItem(GRID_LAYOUT_STORAGE_KEY);
+    return (KNOWN_GRID_LAYOUTS as readonly string[]).includes(stored ?? '')
+      ? (stored as GridLayout)
+      : 'stacked';
+  } catch {
+    return 'stacked';
+  }
+}
+
+function writePersistedGridLayout(layout: GridLayout): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(GRID_LAYOUT_STORAGE_KEY, layout);
   } catch {
     // Ignore storage errors.
   }
@@ -170,7 +194,7 @@ export default function BacktestChartGrid({
 }: BacktestChartGridProps) {
   const drawingScope = ticker && date ? `${ticker}:${date}:intraday` : 'empty:intraday';
   const [gridState, setGridState] = useState<ChartGridState>(() => createGridState(drawingScope, null));
-  const [gridLayout, setGridLayout] = useState<'stacked' | 'grid2x2'>('stacked');
+  const [gridLayout, setGridLayout] = useState<GridLayout>(() => readPersistedGridLayout());
   const fallbackGridState = useMemo(
     () => createGridState(drawingScope, null),
     [drawingScope],
@@ -242,7 +266,11 @@ export default function BacktestChartGrid({
   };
 
   const toggleGridLayout = () => {
-    setGridLayout((prev) => (prev === 'stacked' ? 'grid2x2' : 'stacked'));
+    setGridLayout((prev) => {
+      const next: GridLayout = prev === 'stacked' ? 'grid2x2' : 'stacked';
+      writePersistedGridLayout(next);
+      return next;
+    });
   };
 
   const setSlotTimeframe = (slotId: ChartSlotId, timeframe: BacktestTimeframeKey) => {

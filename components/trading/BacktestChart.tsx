@@ -483,6 +483,10 @@ export default function BacktestChart({
       layout: {
         background: { type: ColorType.Solid, color: '#121214' },
         textColor: '#71717a',
+        panes: {
+          separatorColor: '#3f3f46',
+          separatorHoverColor: '#52525b',
+        },
       },
       grid: {
         vertLines: { color: '#ffffff08' },
@@ -920,7 +924,7 @@ export default function BacktestChart({
         isExpanded ? 'min-h-[620px] flex-1' : gridLayout === 'grid2x2' ? 'h-full min-h-0' : 'h-[440px] shrink-0'
       } flex-col overflow-hidden border border-white/10 bg-[#121214]`}
     >
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-white/10 bg-[#0A0A0B] px-2">
+      <div className="relative flex h-9 shrink-0 items-center gap-1 border-b border-white/10 bg-[#0A0A0B] px-2">
         <Button
           type="button"
           variant="ghost"
@@ -1016,12 +1020,12 @@ export default function BacktestChart({
         </DropdownMenu>
 
         {hoverOhlc ? (
-          <div className="ml-2 flex items-center gap-3 font-mono text-xs tabular-nums text-zinc-300">
-            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">H</span><span className="inline-block w-[5ch] text-right">{hoverOhlc.h.toFixed(2)}</span></span>
-            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">L</span><span className="inline-block w-[5ch] text-right">{hoverOhlc.l.toFixed(2)}</span></span>
-            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">O</span><span className="inline-block w-[5ch] text-right">{hoverOhlc.o.toFixed(2)}</span></span>
-            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">C</span><span className="inline-block w-[5ch] text-right">{hoverOhlc.c.toFixed(2)}</span></span>
-            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">V</span><span className="inline-block w-[6ch] text-right">{formatHoverVolume(hoverOhlc.v)}</span></span>
+          <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-3 font-mono text-xs tabular-nums text-zinc-300">
+            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">H</span><span>{hoverOhlc.h.toFixed(2)}</span></span>
+            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">L</span><span>{hoverOhlc.l.toFixed(2)}</span></span>
+            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">O</span><span>{hoverOhlc.o.toFixed(2)}</span></span>
+            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">C</span><span>{hoverOhlc.c.toFixed(2)}</span></span>
+            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">V</span><span>{formatHoverVolume(hoverOhlc.v)}</span></span>
           </div>
         ) : null}
 
@@ -1041,9 +1045,9 @@ export default function BacktestChart({
               variant="ghost"
               size="icon-xs"
               onClick={onToggleGridLayout}
-              className={`hover:bg-white/10 hover:text-white ${gridLayout === 'grid2x2' ? 'text-emerald-400' : 'text-zinc-400'}`}
-              title={gridLayout === 'grid2x2' ? 'Switch to stacked layout' : 'Switch to 2x2 grid layout'}
-              aria-label={gridLayout === 'grid2x2' ? 'Switch to stacked layout' : 'Switch to 2x2 grid layout'}
+              className="text-zinc-300 hover:bg-white/10 hover:text-white"
+              title={gridLayout === 'grid2x2' ? 'Back to Stacked View' : '2x2 Grid Layout'}
+              aria-label={gridLayout === 'grid2x2' ? 'Back to Stacked View' : '2x2 Grid Layout'}
             >
               <LayoutGrid className="h-3.5 w-3.5" />
             </Button>
