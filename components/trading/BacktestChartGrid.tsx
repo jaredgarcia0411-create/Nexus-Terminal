@@ -170,6 +170,7 @@ export default function BacktestChartGrid({
 }: BacktestChartGridProps) {
   const drawingScope = ticker && date ? `${ticker}:${date}:intraday` : 'empty:intraday';
   const [gridState, setGridState] = useState<ChartGridState>(() => createGridState(drawingScope, null));
+  const [gridLayout, setGridLayout] = useState<'stacked' | 'grid2x2'>('stacked');
   const fallbackGridState = useMemo(
     () => createGridState(drawingScope, null),
     [drawingScope],
@@ -240,6 +241,10 @@ export default function BacktestChartGrid({
     });
   };
 
+  const toggleGridLayout = () => {
+    setGridLayout((prev) => (prev === 'stacked' ? 'grid2x2' : 'stacked'));
+  };
+
   const setSlotTimeframe = (slotId: ChartSlotId, timeframe: BacktestTimeframeKey) => {
     setGridState({
       ...currentGridState,
@@ -281,7 +286,15 @@ export default function BacktestChartGrid({
     : DEFAULT_CELLS;
 
   return (
-    <div className="scrollbar-thin flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+    <div
+      className={
+        expandedSlotId
+          ? 'flex min-h-0 flex-1 flex-col gap-2 overflow-hidden'
+          : gridLayout === 'grid2x2'
+            ? 'grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-2 overflow-hidden'
+            : 'scrollbar-thin flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1'
+      }
+    >
       {visibleCells.map((cell) => {
         const timeframe = timeframesBySlot[cell.id] ?? cell.defaultTimeframe;
         const isIntradayDrawingChart = BACKTEST_FRAME_CONFIG[timeframe].intraday;
@@ -306,6 +319,8 @@ export default function BacktestChartGrid({
             onDrawingToolChange={isIntradayDrawingChart ? setActiveDrawingTool : undefined}
             isExpanded={isExpanded}
             onToggleExpanded={() => toggleExpandedSlot(cell.id)}
+            gridLayout={gridLayout}
+            onToggleGridLayout={toggleGridLayout}
             extraSessionsForward={extraSessionsForward}
             isReadOnly={isReadOnly}
           />

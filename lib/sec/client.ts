@@ -1,5 +1,6 @@
 const SEC_USER_AGENT = 'Nexus Terminal jared.garcia0411@gmail.com';
 const MIN_REQUEST_GAP_MS = 100;             // SEC limit is 10 req/s; 100ms is the safe floor
+const REQUEST_GAP_BUFFER_MS = 5;            // Account for timer and promise handoff jitter.
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_RETRIES = 3;
 
@@ -22,7 +23,7 @@ function paceRequest(): Promise<void> {
       await new Promise((resolve) => setTimeout(resolve, scheduledAt - Date.now()));
     }
 
-    nextRequestAt = Date.now() + MIN_REQUEST_GAP_MS;
+    nextRequestAt = Date.now() + MIN_REQUEST_GAP_MS + REQUEST_GAP_BUFFER_MS;
   });
   return pacingPromise;
 }

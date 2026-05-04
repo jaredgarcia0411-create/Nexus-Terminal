@@ -138,7 +138,6 @@ export default function BacktestManagerView({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
         <div>
           <h2 className="font-mono text-lg font-semibold text-white">Backtest Manager</h2>
-          <p className="text-sm text-zinc-500">Named backtests, shared sample sets, and review stats.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button

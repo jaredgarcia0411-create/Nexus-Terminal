@@ -166,8 +166,6 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
       className="space-y-6"
     >
       <div className="flex flex-wrap items-center gap-4">
-        <p className="text-base text-zinc-400">Past daily and weekly reviews.</p>
-
         <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value as 'all' | ReviewType)}>
           <SelectTrigger className="h-9 w-24 bg-black text-sm text-zinc-100" aria-label="Filter review type">
             <SelectValue />

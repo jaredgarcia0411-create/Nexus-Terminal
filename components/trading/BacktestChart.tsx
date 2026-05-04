@@ -23,7 +23,7 @@ import {
   type SeriesMarker,
   type Time,
 } from 'lightweight-charts';
-import { ChartCandlestick, ChevronLeft, ChevronRight, Layers, Maximize2, Minimize2 } from 'lucide-react';
+import { ChartCandlestick, ChevronLeft, ChevronRight, Layers, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
 
 import ChartDrawings from '@/components/trading/ChartDrawings';
 import DrawingToolbar from '@/components/trading/DrawingToolbar';
@@ -119,6 +119,8 @@ interface BacktestChartProps {
   onDrawingToolChange?: (tool: DrawingTool) => void;
   isExpanded?: boolean;
   onToggleExpanded?: () => void;
+  gridLayout?: 'stacked' | 'grid2x2';
+  onToggleGridLayout?: () => void;
   extraSessionsForward?: number;
   isReadOnly?: boolean;
 }
@@ -378,6 +380,8 @@ export default function BacktestChart({
   onDrawingToolChange,
   isExpanded = false,
   onToggleExpanded,
+  gridLayout = 'stacked',
+  onToggleGridLayout,
   extraSessionsForward = 0,
   isReadOnly = false,
 }: BacktestChartProps) {
@@ -584,7 +588,7 @@ export default function BacktestChart({
       const values = frame.intraday
         ? sessionVwap(ohlc, (candle) => (Number.isFinite(candle.time) ? epochToNySortKey(candle.time) : null))
         : vwap(ohlc);
-      addLineOverlay(chart, sortedCandles, values, '#f472b6');
+      addLineOverlay(chart, sortedCandles, values, '#86efac');
     }
 
     if (indicators.has('BB')) {
@@ -911,12 +915,12 @@ export default function BacktestChart({
   }, [seriesInstance, actions, currentStop, frame.intraday]);
 
   return (
-    <section className={`flex ${isExpanded ? 'min-h-[620px] flex-1' : 'h-[440px] shrink-0'} flex-col overflow-hidden border border-white/10 bg-[#121214]`}>
+    <section
+      className={`flex ${
+        isExpanded ? 'min-h-[620px] flex-1' : gridLayout === 'grid2x2' ? 'h-full min-h-0' : 'h-[440px] shrink-0'
+      } flex-col overflow-hidden border border-white/10 bg-[#121214]`}
+    >
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-white/10 bg-[#0A0A0B] px-2">
-        <div className="mr-1 flex min-w-0 items-baseline gap-2">
-          <span className="font-mono text-xs font-semibold text-zinc-100">{ticker}</span>
-        </div>
-
         <Button
           type="button"
           variant="ghost"
@@ -966,6 +970,31 @@ export default function BacktestChart({
               size="icon-xs"
               disabled={isReadOnly}
               className="text-zinc-300 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              title="Series type"
+              aria-label="Series type"
+            >
+              <ChartCandlestick className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="border-white/10 bg-[#111319] text-white">
+            <DropdownMenuRadioGroup value={seriesType} onValueChange={(value) => setSeriesType(value as SeriesType)}>
+              <DropdownMenuRadioItem value="candles" className="cursor-pointer text-xs">Candles</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="bars" className="cursor-pointer text-xs">Bars</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="line" className="cursor-pointer text-xs">Line</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="area" className="cursor-pointer text-xs">Area</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="baseline" className="cursor-pointer text-xs">Baseline</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              disabled={isReadOnly}
+              className="text-zinc-300 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
               title="Indicators"
               aria-label="Indicators"
             >
@@ -986,38 +1015,13 @@ export default function BacktestChart({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              disabled={isReadOnly}
-              className="text-zinc-300 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-              title="Series type"
-              aria-label="Series type"
-            >
-              <ChartCandlestick className="h-3.5 w-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="border-white/10 bg-[#111319] text-white">
-            <DropdownMenuRadioGroup value={seriesType} onValueChange={(value) => setSeriesType(value as SeriesType)}>
-              <DropdownMenuRadioItem value="candles" className="cursor-pointer text-xs">Candles</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="bars" className="cursor-pointer text-xs">Bars</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="line" className="cursor-pointer text-xs">Line</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="area" className="cursor-pointer text-xs">Area</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="baseline" className="cursor-pointer text-xs">Baseline</DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
         {hoverOhlc ? (
-          <div className="ml-2 flex items-center gap-2 font-mono text-xs tabular-nums text-zinc-300">
-            <span><span className="text-zinc-500">O</span> {hoverOhlc.o.toFixed(2)}</span>
-            <span><span className="text-zinc-500">H</span> {hoverOhlc.h.toFixed(2)}</span>
-            <span><span className="text-zinc-500">L</span> {hoverOhlc.l.toFixed(2)}</span>
-            <span><span className="text-zinc-500">C</span> {hoverOhlc.c.toFixed(2)}</span>
-            <span><span className="text-zinc-500">V</span> {formatHoverVolume(hoverOhlc.v)}</span>
+          <div className="ml-2 flex items-center gap-3 font-mono text-xs tabular-nums text-zinc-300">
+            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">H</span><span className="inline-block w-[5ch] text-right">{hoverOhlc.h.toFixed(2)}</span></span>
+            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">L</span><span className="inline-block w-[5ch] text-right">{hoverOhlc.l.toFixed(2)}</span></span>
+            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">O</span><span className="inline-block w-[5ch] text-right">{hoverOhlc.o.toFixed(2)}</span></span>
+            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">C</span><span className="inline-block w-[5ch] text-right">{hoverOhlc.c.toFixed(2)}</span></span>
+            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">V</span><span className="inline-block w-[6ch] text-right">{formatHoverVolume(hoverOhlc.v)}</span></span>
           </div>
         ) : null}
 
@@ -1030,6 +1034,19 @@ export default function BacktestChart({
               onClearAll={() => clearAllDrawingsRef.current?.()}
               disabled={isReadOnly}
             />
+          ) : null}
+          {onToggleGridLayout ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={onToggleGridLayout}
+              className={`hover:bg-white/10 hover:text-white ${gridLayout === 'grid2x2' ? 'text-emerald-400' : 'text-zinc-400'}`}
+              title={gridLayout === 'grid2x2' ? 'Switch to stacked layout' : 'Switch to 2x2 grid layout'}
+              aria-label={gridLayout === 'grid2x2' ? 'Switch to stacked layout' : 'Switch to 2x2 grid layout'}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+            </Button>
           ) : null}
           {onToggleExpanded ? (
             <Button

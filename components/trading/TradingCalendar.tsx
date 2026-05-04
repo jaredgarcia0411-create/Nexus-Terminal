@@ -152,16 +152,16 @@ export default function TradingCalendar({ trades, onDayClick, onWeekClick, embed
                       isOffDay ? 'bg-white/[0.01]' : ''
                     } ${isSelected ? 'bg-emerald-500/5 ring-1 ring-inset ring-emerald-500/30' : ''}`}
                   >
-                    <span className={`${isMobile ? 'text-[9px]' : 'text-[10px]'} font-mono ${isToday ? 'text-emerald-500 font-bold' : 'text-zinc-500'}`}>
+                    <span className={`${isMobile ? 'text-[10px]' : 'text-[11px]'} font-mono ${isToday ? 'text-emerald-500 font-bold' : 'text-zinc-500'}`}>
                       {format(day, 'd')}
                     </span>
                     
                     {stats && (stats.pnl !== 0 || stats.r !== 0) && (
                       <div className="mt-auto flex flex-col gap-0.5">
-                        <div className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-bold ${getPnLColor(stats.pnl)}`}>
+                        <div className={`${isMobile ? 'text-[13px]' : 'text-[14px]'} font-bold ${getPnLColor(stats.pnl)}`}>
                           {stats.pnl >= 0 ? '+' : ''}{formatCurrency(stats.pnl)}
                         </div>
-                        <div className={`${isMobile ? 'text-[10px]' : 'text-[11px]'} font-medium opacity-60 ${stats.r >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <div className={`${isMobile ? 'text-[11px]' : 'text-[12px]'} font-medium opacity-60 ${stats.r > 0 ? 'text-emerald-400' : stats.r < 0 ? 'text-rose-400' : 'text-white'}`}>
                           {formatR(stats.r)}
                         </div>
                       </div>
@@ -188,7 +188,7 @@ export default function TradingCalendar({ trades, onDayClick, onWeekClick, embed
                     <div className={`text-[13px] font-bold ${getPnLColor(week.weeklyPnl)}`}>
                       {week.weeklyPnl >= 0 ? '+' : ''}{formatCurrency(week.weeklyPnl)}
                     </div>
-                    <div className={`text-[11px] font-medium opacity-70 ${week.weeklyR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <div className={`text-[12px] font-medium opacity-70 ${week.weeklyR > 0 ? 'text-emerald-400' : week.weeklyR < 0 ? 'text-rose-400' : 'text-white'}`}>
                       {formatR(week.weeklyR)}
                     </div>
                     {onWeekClick && (

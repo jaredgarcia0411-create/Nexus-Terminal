@@ -27,8 +27,6 @@ interface TradeDetailSheetProps {
   onSaveNotes: (tradeId: string, notes: string) => Promise<void> | void;
 }
 
-type DetailTab = 'overview' | 'chart' | 'executions' | 'notes';
-
 function timeValue(sortKey: string, time: string, timestamp?: string | Date) {
   const parsedTimestamp = parseAbsoluteTimestampMs(timestamp);
   if (parsedTimestamp != null) return parsedTimestamp;
@@ -57,7 +55,6 @@ function prettyPct(value?: number | null) {
 export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNotes }: TradeDetailSheetProps) {
   const [notes, setNotes] = useState(trade?.notes ?? '');
   const [timeframe, setTimeframe] = useState<TradeChartTimeframeKey>('5m');
-  const [activeTab, setActiveTab] = useState<DetailTab>('overview');
 
   const chartOptions = useMemo(() => {
     if (!trade) return null;
@@ -92,11 +89,6 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
     }
   };
 
-  const tabButtonClass = (tab: DetailTab) =>
-    `rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-      activeTab === tab ? 'bg-emerald-500 text-black' : 'bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white'
-    }`;
-
   const overviewItems = trade
     ? [
         ['Shares Traded', trade.totalQuantity.toString()],
@@ -118,14 +110,14 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-3xl bg-[#121214] border-white/10 text-white">
+      <SheetContent side="right" className="min-h-0 w-full sm:max-w-3xl bg-[#121214] border-white/10 text-white">
         <SheetHeader>
-          <SheetTitle>Trade Details</SheetTitle>
+          <SheetTitle className="text-xl">Trade Details</SheetTitle>
         </SheetHeader>
 
         {!trade ? null : (
-          <div className="mt-6 space-y-4">
-            <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 p-3">
+          <div className="mt-2 flex min-h-0 flex-1 flex-col gap-4">
+            <div className="flex items-center justify-between p-3">
               <div>
                 <p className="text-xs text-zinc-500">{format(new Date(trade.date), 'MMM dd, yyyy HH:mm')}</p>
                 <p className="text-sm font-semibold">
@@ -145,133 +137,129 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <div className="flex min-w-max gap-2">
-                <button className={tabButtonClass('overview')} onClick={() => setActiveTab('overview')}>Overview</button>
-                <button className={tabButtonClass('chart')} onClick={() => setActiveTab('chart')}>Chart</button>
-                <button className={tabButtonClass('executions')} onClick={() => setActiveTab('executions')}>Executions</button>
-                <button className={tabButtonClass('notes')} onClick={() => setActiveTab('notes')}>Notes</button>
+            <div className="flex-1 overflow-y-auto px-1 pb-6">
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Overview</h3>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {overviewItems.map(([label, value]) => (
+                      <div key={label} className="p-2">
+                        <p className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</p>
+                        <p className="mt-1 text-sm font-medium">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-end" />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="mt-6 text-sm font-semibold uppercase tracking-wider text-zinc-400">Chart</h3>
+                <div className="space-y-3 p-3">
+                  <div className="flex items-center justify-end gap-4">
+                    <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TradeChartTimeframeKey)}>
+                      <SelectTrigger className="h-8 w-28 bg-white/5 border-white/10 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#121214] border-white/10 text-white">
+                        {Object.entries(TRADE_CHART_TIMEFRAME_CONFIG).map(([value, cfg]) => (
+                          <SelectItem key={value} value={value}>
+                            {cfg.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {loadingCandles ? (
+                    <div className="flex h-[640px] items-center justify-center text-sm text-zinc-400">Loading candles...</div>
+                  ) : candlesError ? (
+                    <div className="flex h-[640px] items-center justify-center text-sm text-zinc-400">
+                      {candlesError}
+                    </div>
+                  ) : candles.length === 0 ? (
+                    <div className="flex h-[640px] items-center justify-center text-sm text-zinc-400">
+                      No candle data available for this trade window.
+                    </div>
+                  ) : (
+                    <CandlestickChart
+                      candles={candles}
+                      tradeMarkers={tradeMarkers}
+                      height={640}
+                      exactPriceMarkers
+                      showTimeAxis
+                      showSessionShading={timeframe !== '1d'}
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="mt-6 text-sm font-semibold uppercase tracking-wider text-zinc-400">Executions</h3>
+                <div className="overflow-x-auto p-3">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-zinc-500">
+                      <tr>
+                        <th className="px-3 py-2">Time</th>
+                        <th className="px-3 py-2">Side</th>
+                        <th className="px-3 py-2 text-right">Qty</th>
+                        <th className="px-3 py-2 text-right">Price</th>
+                        <th className="px-3 py-2 text-right">Commission</th>
+                        <th className="px-3 py-2 text-right">Fees</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedExecutions.map((execution) => (
+                        <tr key={execution.id}>
+                          <td className="px-3 py-2 font-mono">{execution.time}</td>
+                          <td className="px-3 py-2">
+                            <span
+                              className={`rounded px-2 py-0.5 ${
+                                execution.side === 'ENTRY' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                              }`}
+                            >
+                              {execution.side}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono">{execution.qty}</td>
+                          <td className="px-3 py-2 text-right font-mono">{formatCurrency(execution.price)}</td>
+                          <td className="px-3 py-2 text-right font-mono">{formatCurrency(execution.commission ?? 0)}</td>
+                          <td className="px-3 py-2 text-right font-mono">{formatCurrency(execution.fees ?? 0)}</td>
+                        </tr>
+                      ))}
+                      {sortedExecutions.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-3 py-6 text-center text-zinc-500">No execution rows available.</td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="mt-6 text-sm font-semibold uppercase tracking-wider text-zinc-400">Notes</h3>
+                <div className="space-y-3 p-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="trade-notes">Notes</Label>
+                    <Textarea
+                      id="trade-notes"
+                      value={notes}
+                      onChange={(event) => setNotes(event.target.value)}
+                      rows={10}
+                      className="bg-white/5 border-white/10"
+                      placeholder="Add notes about setup quality, execution, emotions, and lessons learned..."
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <Button onClick={handleSave} className="bg-emerald-500 hover:bg-emerald-400 text-black">
+                      Save Notes
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
-
-            {activeTab === 'overview' ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {overviewItems.map(([label, value]) => (
-                    <div key={label} className="rounded-lg border border-white/10 bg-white/5 p-3">
-                      <p className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</p>
-                      <p className="mt-1 text-sm font-medium">{value}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex justify-end" />
-              </div>
-            ) : null}
-
-            {activeTab === 'chart' ? (
-              <div className="space-y-3 rounded-lg border border-white/10 bg-white/5 p-3">
-                <div className="flex items-center justify-between gap-4">
-                  <p className="text-[10px] uppercase tracking-wider text-zinc-500">Chart</p>
-                  <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TradeChartTimeframeKey)}>
-                    <SelectTrigger className="h-8 w-28 bg-white/5 border-white/10 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#121214] border-white/10 text-white">
-                      {Object.entries(TRADE_CHART_TIMEFRAME_CONFIG).map(([value, cfg]) => (
-                        <SelectItem key={value} value={value}>
-                          {cfg.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {loadingCandles ? (
-                  <div className="flex h-[640px] items-center justify-center text-sm text-zinc-400">Loading candles...</div>
-                ) : candlesError ? (
-                  <div className="flex h-[640px] items-center justify-center text-sm text-zinc-400">
-                    {candlesError}
-                  </div>
-                ) : candles.length === 0 ? (
-                  <div className="flex h-[640px] items-center justify-center text-sm text-zinc-400">
-                    No candle data available for this trade window.
-                  </div>
-                ) : (
-                  <CandlestickChart
-                    candles={candles}
-                    tradeMarkers={tradeMarkers}
-                    height={640}
-                    exactPriceMarkers
-                    showTimeAxis
-                    showSessionShading={timeframe !== '1d'}
-                  />
-                )}
-              </div>
-            ) : null}
-
-            {activeTab === 'executions' ? (
-              <div className="overflow-x-auto rounded-lg border border-white/10 bg-white/5">
-                <table className="w-full text-left text-xs">
-                  <thead className="border-b border-white/10 text-zinc-500">
-                    <tr>
-                      <th className="px-3 py-2">Time</th>
-                      <th className="px-3 py-2">Side</th>
-                      <th className="px-3 py-2 text-right">Qty</th>
-                      <th className="px-3 py-2 text-right">Price</th>
-                      <th className="px-3 py-2 text-right">Commission</th>
-                      <th className="px-3 py-2 text-right">Fees</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedExecutions.map((execution) => (
-                      <tr key={execution.id} className="border-b border-white/5 last:border-b-0">
-                        <td className="px-3 py-2 font-mono">{execution.time}</td>
-                        <td className="px-3 py-2">
-                          <span
-                            className={`rounded px-2 py-0.5 ${
-                              execution.side === 'ENTRY' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
-                            }`}
-                          >
-                            {execution.side}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono">{execution.qty}</td>
-                        <td className="px-3 py-2 text-right font-mono">{formatCurrency(execution.price)}</td>
-                        <td className="px-3 py-2 text-right font-mono">{formatCurrency(execution.commission ?? 0)}</td>
-                        <td className="px-3 py-2 text-right font-mono">{formatCurrency(execution.fees ?? 0)}</td>
-                      </tr>
-                    ))}
-                    {sortedExecutions.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="px-3 py-6 text-center text-zinc-500">No execution rows available.</td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-
-            {activeTab === 'notes' ? (
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="trade-notes">Notes</Label>
-                  <Textarea
-                    id="trade-notes"
-                    value={notes}
-                    onChange={(event) => setNotes(event.target.value)}
-                    rows={10}
-                    className="bg-white/5 border-white/10"
-                    placeholder="Add notes about setup quality, execution, emotions, and lessons learned..."
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2">
-                  <Button onClick={handleSave} className="bg-emerald-500 hover:bg-emerald-400 text-black">
-                    Save Notes
-                  </Button>
-                </div>
-              </div>
-            ) : null}
           </div>
         )}
       </SheetContent>

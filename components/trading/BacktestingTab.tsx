@@ -257,7 +257,7 @@ export default function BacktestingTab() {
               <div />
             </div>
 
-            <div className="grid h-10 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border border-white/10 bg-[#121214] px-3">
+            <div className="grid h-10 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border-b border-white/10 px-1">
               {!view.id ? (
                 <form
                   onSubmit={handleLookupSubmit}

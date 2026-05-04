@@ -69,7 +69,6 @@ export default function TradesTab({
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-4">
-              <p className="text-sm text-zinc-400">Filter, tag, and manage all imported trades.</p>
               <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
               <input
@@ -82,10 +81,6 @@ export default function TradesTab({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex shrink-0 items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-500">
-              <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-              {filteredTrades.length} TRADES LOGGED
-            </div>
             {hasActiveFilters ? (
               <div className="flex items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-400">
                 <span>Filtered ({activeFilterCount})</span>
@@ -122,28 +117,30 @@ export default function TradesTab({
               Set Auto Risk
             </Button>
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              placeholder="Add tag to selected"
-              value={bulkTagInput}
-              onChange={(e) => onBulkTagInputChange(e.target.value)}
-              className="w-full md:w-48 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
-            />
-            <Button onClick={onBulkAddTag} className="bg-emerald-500 hover:bg-emerald-400">
-              Add Tag
-            </Button>
-          </div>
         </div>
 
         <div className="space-y-4">
           <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-500">Tag Filters</h3>
-          <TagFilterDropdown
-            globalTags={globalTags}
-            selectedTags={selectedFilterTags}
-            onToggleTag={onToggleFilterTag}
-            onClearTags={onClearFilterTags}
-          />
+          <div className="flex flex-wrap items-center gap-3">
+            <TagFilterDropdown
+              globalTags={globalTags}
+              selectedTags={selectedFilterTags}
+              onToggleTag={onToggleFilterTag}
+              onClearTags={onClearFilterTags}
+            />
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Add tag to selected"
+                value={bulkTagInput}
+                onChange={(e) => onBulkTagInputChange(e.target.value)}
+                className="w-full md:w-48 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+              />
+              <Button onClick={onBulkAddTag} className="bg-emerald-500 hover:bg-emerald-400">
+                Add Tag
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
 

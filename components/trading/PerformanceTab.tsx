@@ -87,22 +87,39 @@ export default function PerformanceTab({
       className="space-y-6"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-zinc-400">Detailed breakdowns of performance metrics.</p>
-        <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
-          <button
-            type="button"
-            onClick={() => setPnlMode('net')}
-            className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'net' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
-          >
-            Net PnL
-          </button>
-          <button
-            type="button"
-            onClick={() => setPnlMode('gross')}
-            className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'gross' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
-          >
-            Gross PnL
-          </button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
+            <button
+              type="button"
+              onClick={() => setPnlMode('net')}
+              className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'net' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+            >
+              Net PnL
+            </button>
+            <button
+              type="button"
+              onClick={() => setPnlMode('gross')}
+              className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'gross' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+            >
+              Gross PnL
+            </button>
+          </div>
+          <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
+            <button
+              type="button"
+              onClick={() => onMetricChange('$')}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === '$' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+            >
+              $ Metrics
+            </button>
+            <button
+              type="button"
+              onClick={() => onMetricChange('R')}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === 'R' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+            >
+              R Metrics
+            </button>
+          </div>
         </div>
       </div>
 
@@ -122,22 +139,6 @@ export default function PerformanceTab({
             }}
             onClearTags={() => setSelectedTagFilters(new Set())}
           />
-        </div>
-        <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
-          <button
-            type="button"
-            onClick={() => onMetricChange('$')}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === '$' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
-          >
-            $ Metrics
-          </button>
-          <button
-            type="button"
-            onClick={() => onMetricChange('R')}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === 'R' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
-          >
-            R Metrics
-          </button>
         </div>
       </div>
 
