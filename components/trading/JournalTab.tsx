@@ -144,6 +144,51 @@ export default function JournalTab({
 
   return (
     <motion.div key="journal" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+          <input
+            type="text"
+            placeholder="Search symbol..."
+            value={searchQuery}
+            onChange={(event) => onSearchQueryChange(event.target.value)}
+            className="w-64 rounded-lg border border-white/10 bg-white/5 py-1.5 pl-10 pr-4 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+          />
+        </div>
+
+        {selectedIds.size > 0 ? (
+          <div className="animate-in slide-in-from-right-2 fade-in flex items-center gap-2">
+            <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1">
+              <span className="text-[10px] font-bold uppercase text-zinc-500">Set Risk:</span>
+              <input
+                type="number"
+                placeholder="$500"
+                value={riskInput}
+                onChange={(event) => onRiskInputChange(event.target.value)}
+                className="w-20 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+              />
+              <button onClick={onApplyRisk} className="rounded-md bg-emerald-500 px-2 py-1 text-[10px] font-bold uppercase text-black hover:bg-emerald-400">
+                Apply
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1">
+              <TagIcon className="h-3 w-3 text-zinc-500" />
+              <input
+                type="text"
+                placeholder="Add Tag..."
+                value={bulkTagInput}
+                onChange={(event) => onBulkTagInputChange(event.target.value)}
+                className="w-24 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+              />
+              <button onClick={onBulkAddTag} className="rounded-md bg-emerald-500 px-2 py-1 text-[10px] font-bold uppercase text-black hover:bg-emerald-400">
+                Add
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
       <div className="overflow-hidden rounded-xl border border-white/10 bg-[#121214]">
         <button
           onClick={toggleCalendar}
@@ -175,56 +220,6 @@ export default function JournalTab({
             </motion.div>
           ) : null}
         </AnimatePresence>
-      </div>
-
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <p className="text-base text-zinc-400">Daily trade replay with charts and notes.</p>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-              <input
-                type="text"
-                placeholder="Search symbol..."
-                value={searchQuery}
-                onChange={(event) => onSearchQueryChange(event.target.value)}
-                className="w-64 rounded-lg border border-white/10 bg-white/5 py-1.5 pl-10 pr-4 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
-              />
-            </div>
-          </div>
-
-          {selectedIds.size > 0 ? (
-            <div className="animate-in slide-in-from-right-2 fade-in flex items-center gap-2">
-              <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1">
-                <span className="text-[10px] font-bold uppercase text-zinc-500">Set Risk:</span>
-                <input
-                  type="number"
-                  placeholder="$500"
-                  value={riskInput}
-                  onChange={(event) => onRiskInputChange(event.target.value)}
-                  className="w-20 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
-                />
-                <button onClick={onApplyRisk} className="rounded-md bg-emerald-500 px-2 py-1 text-[10px] font-bold uppercase text-black hover:bg-emerald-400">
-                  Apply
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1">
-                <TagIcon className="h-3 w-3 text-zinc-500" />
-                <input
-                  type="text"
-                  placeholder="Add Tag..."
-                  value={bulkTagInput}
-                  onChange={(event) => onBulkTagInputChange(event.target.value)}
-                  className="w-24 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
-                />
-                <button onClick={onBulkAddTag} className="rounded-md bg-emerald-500 px-2 py-1 text-[10px] font-bold uppercase text-black hover:bg-emerald-400">
-                  Add
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </div>
       </div>
 
       <div className="space-y-4">

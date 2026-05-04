@@ -8,7 +8,7 @@
 ## Active Execution Spec
 
 > Generated: 2026-05-04 | Agent: Claude (`nexus-handoff`)
-> Status: IMPLEMENTED — code validated; authenticated browser smoke pending.
+> Status: FOLLOW-UP EDITS IMPLEMENTED — code validated; unauthenticated dev smoke passed; authenticated browser smoke pending. Backtesting spacing follow-up implemented. VWAP color aligned to Nexus emerald.
 
 # Build Spec — UI Refinements (Performance, Journal, Trades, Backtesting, Archive, Trade Details)
 

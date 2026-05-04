@@ -87,6 +87,22 @@ export default function PerformanceTab({
       className="space-y-6"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-mono uppercase tracking-wider text-zinc-500">Tag Filter</span>
+          <TagFilterDropdown
+            globalTags={globalTags}
+            selectedTags={selectedTagFilters}
+            onToggleTag={(tag) => {
+              setSelectedTagFilters((prev) => {
+                const next = new Set(prev);
+                if (next.has(tag)) next.delete(tag);
+                else next.add(tag);
+                return next;
+              });
+            }}
+            onClearTags={() => setSelectedTagFilters(new Set())}
+          />
+        </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
             <button
@@ -120,25 +136,6 @@ export default function PerformanceTab({
               R Metrics
             </button>
           </div>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-mono uppercase tracking-wider text-zinc-500">Tag Filter</span>
-          <TagFilterDropdown
-            globalTags={globalTags}
-            selectedTags={selectedTagFilters}
-            onToggleTag={(tag) => {
-              setSelectedTagFilters((prev) => {
-                const next = new Set(prev);
-                if (next.has(tag)) next.delete(tag);
-                else next.add(tag);
-                return next;
-              });
-            }}
-            onClearTags={() => setSelectedTagFilters(new Set())}
-          />
         </div>
       </div>
 

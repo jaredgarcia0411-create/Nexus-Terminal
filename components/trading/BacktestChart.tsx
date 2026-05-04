@@ -588,7 +588,7 @@ export default function BacktestChart({
       const values = frame.intraday
         ? sessionVwap(ohlc, (candle) => (Number.isFinite(candle.time) ? epochToNySortKey(candle.time) : null))
         : vwap(ohlc);
-      addLineOverlay(chart, sortedCandles, values, '#86efac');
+      addLineOverlay(chart, sortedCandles, values, '#10b981');
     }
 
     if (indicators.has('BB')) {

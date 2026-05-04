@@ -223,7 +223,7 @@ export default function BacktestingTab() {
 
       {view.kind === 'chart' ? (
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_220px] xl:grid-cols-[minmax(0,1fr)_280px]">
-          <main className="flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden pr-2">
+          <main className="flex min-h-0 min-w-0 flex-col gap-0 overflow-hidden pr-2">
             <div className="grid h-7 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 px-3 text-xs text-zinc-500">
               <div className="flex min-w-0 items-center gap-2">
                 <Button
@@ -257,7 +257,7 @@ export default function BacktestingTab() {
               <div />
             </div>
 
-            <div className="grid h-10 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border-b border-white/10 px-1">
+            <div className="grid h-10 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border-t border-white/10 px-1">
               {!view.id ? (
                 <form
                   onSubmit={handleLookupSubmit}
