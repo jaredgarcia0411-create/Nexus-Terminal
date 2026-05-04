@@ -63,3 +63,57 @@ Untested caveats — would need to verify with a real embed:
 - Re-test `app.askedgar.io` headers — they may have added `X-Frame-Options` or CSP `frame-ancestors` since this was written.
 - Re-read the [ToS](https://www.askedgar.io/legal/terms) — clauses change.
 - Confirm our existing `lib/askedgar.ts` integration is still ToS-compliant (cached helpers, not bulk download).
+
+---
+
+## Semantic-token migration pass (parked 2026-05-04)
+
+### The idea
+Replace hardcoded color literals in `.tsx` files (`bg-[#121214]`, `text-white`, `border-white/10`, etc.) with the semantic tokens already defined in `app/globals.css` (`bg-card`, `text-foreground`, `border-border`, etc.). Same visual output, but every color routes through one variable in `globals.css` instead of being splattered across ~50 files.
+
+### Why it's worth doing on its own
+- Fixes the recurring UI-inconsistency pain point — right now "the card background" is `#121214` in some files, `bg-zinc-900` in others, `bg-white/[0.02]` in a few more. Tokens give you one source of truth.
+- shadcn/ui (already in use, see `components.json`) is built around these tokens — the trading-specific components just drifted into hex literals over time.
+- Makes a future light-mode toggle a weekend job instead of a 1–2 day project (see "Why it's parked" below).
+
+### Why it's parked
+Bigger goal it unblocks (light/dark mode toggle) isn't a priority right now. The migration itself is mechanical but touches ~50 files, so we'd want to batch it as one focused pass rather than dribble it in.
+
+### The mapping
+| Hardcoded | Semantic token |
+|---|---|
+| `bg-[#0A0A0B]` | `bg-background` |
+| `bg-[#121214]` | `bg-card` (or `bg-popover` for menus/dropdowns) |
+| `bg-[#18181b]` | `bg-muted` |
+| `text-white` | `text-foreground` |
+| `text-zinc-400` / `text-zinc-500` | `text-muted-foreground` |
+| `border-white/10` / `border-white/5` | `border-border` |
+| `bg-white/5` | `bg-accent` (or `bg-input` for input fields) |
+| `text-rose-500` (destructive actions) | `text-destructive` |
+
+**Stays literal on purpose:** P&L greens/reds (`text-emerald-400`, `text-rose-400`) and chart-specific tints. Those are data viz, not UI chrome.
+
+### Scope at time of writing (2026-05-04)
+- `bg-[#…]` / `bg-zinc-*` / `bg-white/N` literals: **49 files**
+- `text-white` / `text-zinc-*` literals: **49 files**
+- `border-white/N` / `border-zinc-*` literals: **46 files**
+- Out of **60** total `.tsx` files in `components/` + `app/`
+
+### Execution plan
+1. **Pilot a single file** (e.g. `components/trading/SettingsMenu.tsx`). Apply the mapping, run `npm run lint && npx tsc --noEmit`, eyeball the diff vs `main` — should be visually identical.
+2. **Walk the file list.** Group by family (`Backtest*.tsx`, `Performance*.tsx`, `Research*.tsx`) so the context-switching is minimal.
+3. **Skip charts in this pass.** `BacktestChart.tsx`, `CandlestickChart.tsx`, `ResearchChart.tsx`, `PerformanceCharts.tsx` pass colors as JS strings to chart libraries (lightweight-charts, recharts) — those don't accept Tailwind classes. They'd need a `getComputedStyle(...).getPropertyValue('--color-card')` pattern, which is a separate, smaller pass.
+4. **Validate.** `npm run lint && npx tsc --noEmit && npm test`, then click through every tab/dialog/sheet — the goal is zero pixel diff.
+
+### Best way to run it
+Mechanical + explicit rules + easy to verify with `git diff` → ideal Codex spec. Hand Codex a `HANDOFF.md` containing the mapping table, the file list, and the "do not touch chart-init color strings" rule. Suggest piloting one file manually first to confirm the mapping looks right before fanning out.
+
+### Triggers to revisit
+- Want to add a light-mode toggle (this migration is the prerequisite).
+- UI inconsistencies become painful enough to fix on their own merits.
+- A larger UI redesign — would want tokens in place before changing the palette.
+
+### What to check before acting
+- Re-grep counts — files may have grown/shrunk since this was written.
+- Confirm `app/globals.css` token names still match the table above.
+- Decide whether to also collapse the chart-color JS strings in the same pass or defer.
