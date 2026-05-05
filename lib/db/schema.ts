@@ -539,3 +539,25 @@ export const backtestActions = pgTable('backtest_actions', {
   }).onDelete('cascade'),
   index('backtest_actions_user_session_seq_idx').on(t.userId, t.sessionId, t.sequence),
 ]);
+
+// MDR scanner triggers — one row per ticker per trigger date.
+// Populated by the nightly cron (/api/cron/mdr-sweep) and read by
+// /api/scanner/mdr-recent. Shared across all users; no userId.
+//
+// invalidated_at is set by the cron when a single -10% red day fires
+// after the trigger date. The dashboard filters out invalidated rows.
+//
+// PK is (ticker, trigger_date) so a ticker that re-triggers on a later
+// day gets a new row.
+export const mdrTriggers = pgTable('mdr_triggers', {
+  ticker: text('ticker').notNull(),
+  triggerDate: date('trigger_date').notNull(),
+  triggerClose: doublePrecision('trigger_close').notNull(),
+  payload: jsonb('payload').notNull(),
+  invalidatedAt: timestamp('invalidated_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.ticker, t.triggerDate] }),
+  index('mdr_triggers_trigger_date_idx').on(t.triggerDate),
+  index('mdr_triggers_active_idx').on(t.invalidatedAt, t.triggerDate),
+]);

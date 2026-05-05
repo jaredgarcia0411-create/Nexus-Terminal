@@ -3,39 +3,35 @@ import { requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';
 
-// TradingView screener columns returned in order — index matches d[] array.
-// `close` and `change` here are session-dependent (during pre-market they reflect
-// yesterday's regular session; during regular hours they reflect today's live values).
-// The `premarket_*` columns always reflect the current pre-market session and are used
-// directly for the Day 1 Setup table.
 const COLUMNS = [
-  'name', // 0 — ticker symbol
-  'close', // 1 — TV close (session-dependent; live intraday during regular hours)
-  'change', // 2 — % change of `close` vs prior session close (session-dependent)
-  'volume', // 3 — TV volume (session-dependent; today's regular-session volume during/after regular hours)
-  'average_volume_90d_calc', // 4 — 90-day avg volume
-  'market_cap_basic', // 5 — market cap
-  'sector', // 6 — sector
-  'premarket_close', // 7 — pre-market last price
-  'premarket_change', // 8 — pre-market % change
-  'premarket_volume', // 9 — pre-market volume
+  'name',
+  'close',
+  'change',
+  'volume',
+  'average_volume_90d_calc',
+  'market_cap_basic',
+  'sector',
+  'premarket_close',
+  'premarket_change',
+  'premarket_volume',
 ];
 
-// Preset filters: price >= $0.90, PM chg > 20%, NASDAQ + NYSE only.
-// Market-cap filter intentionally omitted so large-cap names also flow through to the MDR table.
+// MDR-aligned filter set — mirrors the Python d2_mdr precondition stack
+// (close >= $1, vol >= 10M, regular-session change >= 20%) so anything
+// passing the Python scan also passes this gate.
 const SCAN_BODY = {
   columns: COLUMNS,
   filter: [
-    { left: 'close', operation: 'egreater', right: 0.9 },
-    { left: 'premarket_change', operation: 'greater', right: 20 },
-    { left: 'volume', operation: 'egreater', right: 2_000_000 },
+    { left: 'close', operation: 'egreater', right: 1 },
+    { left: 'volume', operation: 'egreater', right: 10_000_000 },
+    { left: 'change', operation: 'egreater', right: 20 },
     { left: 'exchange', operation: 'in_range', right: ['NASDAQ', 'NYSE'] },
   ],
-  sort: { sortBy: 'premarket_change', sortOrder: 'desc' },
-  range: [0, 50],
+  sort: { sortBy: 'change', sortOrder: 'desc' },
+  range: [0, 100],
 };
 
-export interface TradingViewGainer {
+export interface MdrCandidate {
   ticker: string;
   price: number;
   change: number;
@@ -59,8 +55,6 @@ export async function GET() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // Without a session cookie, TradingView returns 15-min delayed data.
-        // With it, data is real-time. Either way the endpoint works.
         ...(sessionId ? { Cookie: `sessionid=${sessionId}` } : {}),
         'User-Agent': 'Mozilla/5.0',
         Origin: 'https://www.tradingview.com',
@@ -84,8 +78,7 @@ export async function GET() {
 
     const raw = payload.data ?? [];
 
-    const gainers: TradingViewGainer[] = raw.flatMap((row) => {
-      // row.s is "EXCHANGE:TICKER" — strip the exchange prefix
+    const candidates: MdrCandidate[] = raw.flatMap((row) => {
       const ticker = (row.s ?? '').split(':')[1];
       if (!ticker) return [];
 
@@ -93,8 +86,6 @@ export async function GET() {
       const price = Number(d[1]);
       const change = Number(d[2]);
       const volume = Number(d[3]);
-
-      // Skip rows with bad price or change data
       if (!Number.isFinite(price) || !Number.isFinite(change) || !Number.isFinite(volume)) return [];
 
       const toNum = (idx: number) =>
@@ -115,14 +106,14 @@ export async function GET() {
     });
 
     return Response.json({
-      gainers,
-      count: gainers.length,
-      totalCount: payload.totalCount ?? gainers.length,
+      candidates,
+      count: candidates.length,
+      totalCount: payload.totalCount ?? candidates.length,
       isRealtime: Boolean(sessionId),
       fetchedAt: new Date().toISOString(),
     });
   } catch (error) {
-    logRouteError('tradingview-gainers', error);
+    logRouteError('tradingview-mdr-candidates', error);
     return internalServerError();
   }
 }

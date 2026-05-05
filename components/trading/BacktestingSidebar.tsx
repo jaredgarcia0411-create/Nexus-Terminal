@@ -171,10 +171,14 @@ export default function BacktestingSidebar({
           throw new Error(payload.error ?? 'Could not load backtest');
         }
 
-        // The sidebar label tracks the *sample set* (or "System Sheet" when
-        // the backtest runs against the live system tickers), not the
-        // backtest name — the backtest name is already shown in the toolbar.
-        setSelectedSampleSetName(payload.backtest.sampleSetName ?? 'System Sheet');
+        // The sidebar label tracks the sample set source. If an older
+        // response has sampleSetId without sampleSetName, fall back to the
+        // backtest name instead of mislabeling it as System Sheet.
+        setSelectedSampleSetName(
+          payload.backtest.sampleSetId
+            ? (payload.backtest.sampleSetName ?? payload.backtest.name)
+            : 'System Sheet',
+        );
         // When a backtest has no sample set (System Sheet), leave sampleSetRows
         // null so the sidebar falls back to the live system tickers list.
         if (!payload.backtest.sampleSetId) {

@@ -397,3 +397,145 @@ export async function computeMdrEligibility(
     fetchedAt,
   };
 }
+
+// ============================================================
+// MDR cron helpers
+// ============================================================
+
+export interface GroupedDailyBar {
+  ticker: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  vwap: number | null;
+  timestamp: number;
+}
+
+/**
+ * Pull every US stock's daily bar for `date` from Massive's grouped
+ * aggregates endpoint. Returns [] for non-trading days (Massive returns
+ * no results for weekends/holidays).
+ */
+export async function fetchGroupedDailyAggregates(date: string): Promise<GroupedDailyBar[]> {
+  const response = await fetchMassiveJson<{
+    results?: Array<{
+      T?: string;
+      o?: number | null;
+      h?: number | null;
+      l?: number | null;
+      c?: number | null;
+      v?: number | null;
+      vw?: number | null;
+      t?: number | null;
+    }>;
+  }>(
+    `/v2/aggs/grouped/locale/us/market/stocks/${encodeURIComponent(date)}`,
+    { adjusted: 'true' },
+  );
+
+  return (response.results ?? []).flatMap((bar) => {
+    const ticker = (bar.T ?? '').trim().toUpperCase();
+    const open = Number(bar.o ?? NaN);
+    const high = Number(bar.h ?? NaN);
+    const low = Number(bar.l ?? NaN);
+    const close = Number(bar.c ?? NaN);
+    const volume = Number(bar.v ?? NaN);
+    if (!ticker) return [];
+    if (![open, high, low, close, volume].every(Number.isFinite)) return [];
+
+    return [{
+      ticker,
+      open,
+      high,
+      low,
+      close,
+      volume,
+      vwap: Number.isFinite(Number(bar.vw)) ? Number(bar.vw) : null,
+      timestamp: Number(bar.t ?? 0),
+    }];
+  });
+}
+
+export interface D2MdrTriggerResult {
+  triggered: boolean;
+  reason?: string;
+  priorHigh20: number | null;
+  priorLow20: number | null;
+  priorBigDayDate: string | null;
+}
+
+/**
+ * Full d2_mdr evaluator. Mirrors the Python at
+ * /mnt/c/Users/jared/Downloads/mdr swing scan.py:493.
+ *
+ * `priorBars` MUST be oldest-first and contain at least 20 bars. The
+ * 20-day lookback uses the most-recent 20 bars in `priorBars`. The
+ * "prior big day" search walks the same 20-day window and requires
+ * each candidate bar to have a predecessor (so it can compare highs).
+ *
+ * All conditions must pass for `triggered: true`:
+ *   1. (today.close / prevClose - 1) >= 0.20
+ *   2. today.close >= 1
+ *   3. today.volume >= 10_000_000
+ *   4. today.high > prevHigh
+ *   5. today.close > today.open
+ *   6. today.high > max(20 prior highs)
+ *   7. (today.high / min(20 prior lows)) - 1 >= 3
+ *   8. there exists a "prior big day" in the last 20 prior bars where:
+ *      change >= 20% AND dollar_vol >= $100M AND close > open AND high > prev.high
+ */
+export function evaluateD2MdrTrigger(
+  today: GroupedDailyBar,
+  priorBars: GroupedDailyBar[],
+): D2MdrTriggerResult {
+  if (priorBars.length < 20) {
+    return { triggered: false, reason: 'insufficient_history', priorHigh20: null, priorLow20: null, priorBigDayDate: null };
+  }
+
+  const lookback = priorBars.slice(-20);
+  const lastPrior = lookback[lookback.length - 1];
+
+  const changePct = today.close / lastPrior.close - 1;
+  if (changePct < 0.2) return { triggered: false, reason: 'change_below_20pct', priorHigh20: null, priorLow20: null, priorBigDayDate: null };
+  if (today.close < 1) return { triggered: false, reason: 'close_below_1', priorHigh20: null, priorLow20: null, priorBigDayDate: null };
+  if (today.volume < 10_000_000) return { triggered: false, reason: 'volume_below_10m', priorHigh20: null, priorLow20: null, priorBigDayDate: null };
+  if (today.high <= lastPrior.high) return { triggered: false, reason: 'did_not_break_prior_high', priorHigh20: null, priorLow20: null, priorBigDayDate: null };
+  if (today.close <= today.open) return { triggered: false, reason: 'not_green', priorHigh20: null, priorLow20: null, priorBigDayDate: null };
+
+  const priorHigh20 = Math.max(...lookback.map((b) => b.high));
+  const priorLow20 = Math.min(...lookback.map((b) => b.low));
+  if (today.high <= priorHigh20) return { triggered: false, reason: 'not_new_20d_high', priorHigh20, priorLow20, priorBigDayDate: null };
+  if (priorLow20 <= 0) return { triggered: false, reason: 'invalid_prior_low', priorHigh20, priorLow20, priorBigDayDate: null };
+  if (today.high / priorLow20 - 1 < 3) return { triggered: false, reason: 'not_up_3x_from_base', priorHigh20, priorLow20, priorBigDayDate: null };
+
+  // Prior big day: walk the last 20 prior bars; each candidate needs a
+  // predecessor (priorBars[i-1]) for the prevHigh comparison.
+  let priorBigDayDate: string | null = null;
+  const lookbackStartIdx = priorBars.length - 20;
+  for (let i = lookbackStartIdx; i < priorBars.length; i += 1) {
+    const bar = priorBars[i];
+    const prev = priorBars[i - 1];
+    if (!prev) continue;
+    const bigChange = bar.close / prev.close - 1;
+    const dollarVol = bar.close * bar.volume;
+    const isGreen = bar.close > bar.open;
+    const brokeHigh = bar.high > prev.high;
+    if (bigChange >= 0.2 && dollarVol >= 100_000_000 && isGreen && brokeHigh) {
+      priorBigDayDate = bar.timestamp > 0
+        ? new Date(bar.timestamp).toISOString().split('T')[0]!
+        : null;
+      break;
+    }
+  }
+  if (priorBigDayDate === null) return { triggered: false, reason: 'no_prior_big_day', priorHigh20, priorLow20, priorBigDayDate: null };
+
+  return { triggered: true, priorHigh20, priorLow20, priorBigDayDate };
+}
+
+/** True if today.close <= 0.90 * prev.close (single -10% red day). */
+export function isInvalidationDay(today: GroupedDailyBar, prev: GroupedDailyBar): boolean {
+  if (prev.close <= 0) return false;
+  return today.close / prev.close - 1 <= -0.10;
+}

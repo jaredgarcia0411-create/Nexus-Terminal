@@ -25,16 +25,16 @@ interface ScannerSummary {
   fetchedAt: string;
 }
 
-interface MdrEligibility {
+interface MdrCandidate extends TradingViewGainer {}
+
+interface MdrRecentRow {
   ticker: string;
-  eligible: boolean;
-  hadPriorBigDay: boolean;
-  isUp3xFromBase: boolean;
-  isNew20dHigh: boolean;
-  priorBase20Low: number | null;
-  priorHigh20: number | null;
-  priorClose: number | null;
-  fetchedAt: string;
+  triggerDate: string;
+  triggerClose: number;
+  mark: number | null;
+  pdc: number | null;
+  change: number | null;
+  volume: number | null;
 }
 
 type MarketSession = 'pre-market' | 'regular' | 'after-hours' | 'closed';
@@ -44,12 +44,7 @@ type DashboardLatchState = {
   rowsByTicker: Record<string, TradingViewGainer>;
 };
 
-type DashboardMdrLatchState = DashboardLatchState & {
-  eligibilityByTicker: Record<string, MdrEligibility>;
-};
-
 const DASHBOARD_DAY1_LATCH_STORAGE_KEY = 'nexus-dashboard-day1-latched';
-const DASHBOARD_MDR_LATCH_STORAGE_KEY = 'nexus-dashboard-mdr-latched';
 
 // Inlined from lib/massive-market.ts so we don't pull a server module into the client bundle.
 function getMarketSession(now: Date = new Date()): MarketSession {
@@ -85,13 +80,6 @@ function sessionMark(g: TradingViewGainer, session: MarketSession): number {
   return g.price;
 }
 
-function sessionVolume(g: TradingViewGainer, session: MarketSession): number {
-  if (session === 'pre-market' && g.preMarketVolume != null && Number.isFinite(g.preMarketVolume)) {
-    return g.preMarketVolume;
-  }
-  return g.volume;
-}
-
 interface DashboardScannerTableProps {
   onNavigateToResearch: (ticker: string) => void;
 }
@@ -123,10 +111,6 @@ function emptyLatchState(date = todayInNewYork()): DashboardLatchState {
   return { date, rowsByTicker: {} };
 }
 
-function emptyMdrLatchState(date = todayInNewYork()): DashboardMdrLatchState {
-  return { date, rowsByTicker: {}, eligibilityByTicker: {} };
-}
-
 function isTradingViewGainer(value: unknown): value is TradingViewGainer {
   if (!value || typeof value !== 'object') return false;
   const row = value as Record<string, unknown>;
@@ -139,34 +123,12 @@ function isTradingViewGainer(value: unknown): value is TradingViewGainer {
     && Number.isFinite(row.volume);
 }
 
-function isMdrEligibility(value: unknown): value is MdrEligibility {
-  if (!value || typeof value !== 'object') return false;
-  const row = value as Record<string, unknown>;
-  return typeof row.ticker === 'string'
-    && typeof row.eligible === 'boolean'
-    && typeof row.hadPriorBigDay === 'boolean'
-    && typeof row.isUp3xFromBase === 'boolean'
-    && typeof row.isNew20dHigh === 'boolean'
-    && typeof row.fetchedAt === 'string';
-}
-
 function normalizeRowsByTicker(value: unknown): Record<string, TradingViewGainer> {
   if (!value || typeof value !== 'object') return {};
 
   const rows: Record<string, TradingViewGainer> = {};
   for (const [ticker, row] of Object.entries(value as Record<string, unknown>)) {
     if (!isTradingViewGainer(row)) continue;
-    rows[ticker] = row;
-  }
-  return rows;
-}
-
-function normalizeEligibilityByTicker(value: unknown): Record<string, MdrEligibility> {
-  if (!value || typeof value !== 'object') return {};
-
-  const rows: Record<string, MdrEligibility> = {};
-  for (const [ticker, row] of Object.entries(value as Record<string, unknown>)) {
-    if (!isMdrEligibility(row)) continue;
     rows[ticker] = row;
   }
   return rows;
@@ -192,34 +154,6 @@ function loadDashboardLatch(storageKey: string): DashboardLatchState {
     };
   } catch {
     return emptyLatchState(today);
-  }
-}
-
-function loadDashboardMdrLatch(): DashboardMdrLatchState {
-  const today = todayInNewYork();
-  if (typeof window === 'undefined') return emptyMdrLatchState(today);
-
-  try {
-    const raw = window.localStorage.getItem(DASHBOARD_MDR_LATCH_STORAGE_KEY);
-    if (!raw) return emptyMdrLatchState(today);
-
-    const parsed = JSON.parse(raw) as {
-      date?: unknown;
-      rowsByTicker?: unknown;
-      eligibilityByTicker?: unknown;
-    };
-    if (parsed.date !== today) {
-      window.localStorage.removeItem(DASHBOARD_MDR_LATCH_STORAGE_KEY);
-      return emptyMdrLatchState(today);
-    }
-
-    return {
-      date: today,
-      rowsByTicker: normalizeRowsByTicker(parsed.rowsByTicker),
-      eligibilityByTicker: normalizeEligibilityByTicker(parsed.eligibilityByTicker),
-    };
-  } catch {
-    return emptyMdrLatchState(today);
   }
 }
 
@@ -268,21 +202,6 @@ function sortDayOneRows(rowsByTicker: Record<string, TradingViewGainer>): Tradin
   return Object.values(rowsByTicker).sort((a, b) => dayOneMarkChange(b) - dayOneMarkChange(a));
 }
 
-function sortMdrRows(
-  rowsByTicker: Record<string, TradingViewGainer>,
-  eligibilityByTicker: Record<string, MdrEligibility>,
-  session: MarketSession,
-) {
-  return Object.values(rowsByTicker)
-    .map((gainer) => {
-      const pdc = eligibilityByTicker[gainer.ticker]?.priorClose ?? gainer.price;
-      const mark = sessionMark(gainer, session);
-      const chg = pdc > 0 ? (mark / pdc - 1) * 100 : 0;
-      return { gainer, pdc, mark, chg };
-    })
-    .sort((a, b) => b.chg - a.chg);
-}
-
 function BoolCell({ value }: { value: boolean }) {
   return (
     <span className={value ? 'font-semibold text-emerald-400' : 'font-semibold text-rose-500'}>
@@ -310,17 +229,13 @@ function TD({ children, right, className }: { children: ReactNode; right?: boole
 }
 
 export default function DashboardScannerTable({ onNavigateToResearch }: DashboardScannerTableProps) {
-  const [gainers, setGainers] = useState<TradingViewGainer[]>([]);
   const [isRealtime, setIsRealtime] = useState(false);
   const [loading, setLoading] = useState(true);
   const [summaries, setSummaries] = useState<Record<string, ScannerSummary>>({});
   const requestedSummariesRef = useRef(new Set<string>());
   const [dayOneLatch, setDayOneLatch] = useState<DashboardLatchState>(() => loadDashboardLatch(DASHBOARD_DAY1_LATCH_STORAGE_KEY));
-  const [mdrLatch, setMdrLatch] = useState<DashboardMdrLatchState>(() => loadDashboardMdrLatch());
-  // Per-ticker fetch dedupe — the eligibility check is keyed by (ticker, mark), but
-  // we only want to *attempt* an eligibility fetch once per ticker per session until
-  // we either get an `eligible: true` (latch it) or we re-poll on the next gainers tick.
-  const requestedEligibilityRef = useRef(new Set<string>());
+  const [mdrLive, setMdrLive] = useState<MdrCandidate[]>([]);
+  const [mdrRecent, setMdrRecent] = useState<MdrRecentRow[]>([]);
 
   const fetchGainers = useCallback(async () => {
     try {
@@ -332,27 +247,12 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
       };
       const nextGainers = data.gainers ?? [];
       const today = todayInNewYork();
-      setGainers(nextGainers);
       setIsRealtime(data.isRealtime ?? false);
       setDayOneLatch((previous) => mergeLatchRows(
         previous,
         today,
         nextGainers.filter(isDayOneCandidate),
       ));
-      setMdrLatch((previous) => {
-        const baseRows = previous.date === today ? previous.rowsByTicker : {};
-        const baseEligibility = previous.date === today ? previous.eligibilityByTicker : {};
-        const rowsByTicker = { ...baseRows };
-
-        for (const row of nextGainers) {
-          if (rowsByTicker[row.ticker]) {
-            rowsByTicker[row.ticker] = row;
-          }
-        }
-
-        return { date: today, rowsByTicker, eligibilityByTicker: baseEligibility };
-      });
-      requestedEligibilityRef.current = new Set();
     } catch {
       // Keep the last good scanner rows on transient polling failures.
     } finally {
@@ -360,19 +260,43 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
     }
   }, []);
 
+  const fetchMdrLive = useCallback(async () => {
+    try {
+      const res = await fetch('/api/tradingview/mdr-candidates');
+      if (!res.ok) return;
+      const data = (await res.json()) as { candidates: MdrCandidate[] };
+      setMdrLive(data.candidates ?? []);
+    } catch {
+      // Keep last good list on transient failures.
+    }
+  }, []);
+
+  const fetchMdrRecent = useCallback(async () => {
+    try {
+      const res = await fetch('/api/scanner/mdr-recent');
+      if (!res.ok) return;
+      const data = (await res.json()) as { rows: MdrRecentRow[] };
+      setMdrRecent(data.rows ?? []);
+    } catch {
+      // Keep last good list on transient failures.
+    }
+  }, []);
+
   useEffect(() => {
     void fetchGainers();
-    const interval = setInterval(() => void fetchGainers(), 10_000);
+    void fetchMdrLive();
+    void fetchMdrRecent();
+    const interval = setInterval(() => {
+      void fetchGainers();
+      void fetchMdrLive();
+      void fetchMdrRecent();
+    }, 10_000);
     return () => clearInterval(interval);
-  }, [fetchGainers]);
+  }, [fetchGainers, fetchMdrLive, fetchMdrRecent]);
 
   useEffect(() => {
     persistLatch(DASHBOARD_DAY1_LATCH_STORAGE_KEY, dayOneLatch);
   }, [dayOneLatch]);
-
-  useEffect(() => {
-    persistLatch(DASHBOARD_MDR_LATCH_STORAGE_KEY, mdrLatch);
-  }, [mdrLatch]);
 
   const dayOneRows = useMemo(() => sortDayOneRows(dayOneLatch.rowsByTicker), [dayOneLatch.rowsByTicker]);
 
@@ -396,54 +320,6 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
     }
   }, [dayOneRows]);
 
-  useEffect(() => {
-    if (gainers.length === 0) return;
-    const today = todayInNewYork();
-    const session = getMarketSession();
-
-    for (const gainer of gainers) {
-      // Already latched as MDR-eligible today — don't re-check.
-      if (mdrLatch.date === today && mdrLatch.rowsByTicker[gainer.ticker]) continue;
-
-      // Volume gate — must be >= 10M shares (pre-market vol during PM, regular vol otherwise).
-      const vol = sessionVolume(gainer, session);
-      if (!Number.isFinite(vol) || vol < 10_000_000) continue;
-
-      // Mark used for the structural check — pre-market price during PM, live mark otherwise.
-      const mark = sessionMark(gainer, session);
-      if (!Number.isFinite(mark) || mark <= 0) continue;
-
-      // Dedupe per gainers tick. The Ref is cleared whenever the gainers list reference
-      // changes (every 10 seconds), so a non-eligible ticker can be re-checked on the
-      // next tick once its mark or volume has moved.
-      const key = `${gainer.ticker}:${mark.toFixed(3)}`;
-      if (requestedEligibilityRef.current.has(key)) continue;
-      requestedEligibilityRef.current.add(key);
-
-      void (async () => {
-        try {
-          const url = `/api/scanner/mdr-eligibility?ticker=${encodeURIComponent(gainer.ticker)}&mark=${mark}`;
-          const res = await fetch(url);
-          if (!res.ok) return;
-          const data = (await res.json()) as MdrEligibility;
-          if (data.eligible) {
-            setMdrLatch((previous) => {
-              const baseRows = previous.date === today ? previous.rowsByTicker : {};
-              const baseEligibility = previous.date === today ? previous.eligibilityByTicker : {};
-              return {
-                date: today,
-                rowsByTicker: { ...baseRows, [data.ticker]: gainer },
-                eligibilityByTicker: { ...baseEligibility, [data.ticker]: data },
-              };
-            });
-          }
-        } catch {
-          // Leave row out of MDR table on transient failure; will retry on next gainers tick.
-        }
-      })();
-    }
-  }, [gainers, mdrLatch]);
-
   const tableCard = 'overflow-hidden rounded-xl border border-white/10 bg-[#121214]';
   const headerRow = 'border-b border-white/5 bg-[#0f0f11]';
   const bodyRow = 'cursor-pointer border-b border-white/5 transition-colors hover:bg-white/5';
@@ -453,6 +329,33 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
     event.preventDefault();
     onNavigateToResearch(ticker);
   };
+
+  const mdrRows = useMemo(() => {
+    const session = getMarketSession();
+    const byTicker = new Map<string, { ticker: string; pdc: number; mark: number; chg: number }>();
+
+    // Live candidates first — TV's `change` is regular-session % change.
+    // Back-compute pdc from price + change so the table stays consistent
+    // with the existing format. During PM, mark falls back to preMarketPrice.
+    for (const c of mdrLive) {
+      const mark = sessionMark(c, session);
+      const chg = c.change;
+      const pdc = chg !== 0 ? c.price / (1 + chg / 100) : c.price;
+      byTicker.set(c.ticker, { ticker: c.ticker, pdc, mark, chg });
+    }
+
+    // DB rows fill in any ticker not already in the live set. They have
+    // proper mark + pdc from Massive's unified snapshot.
+    for (const r of mdrRecent) {
+      if (byTicker.has(r.ticker)) continue;
+      const mark = r.mark ?? r.triggerClose;
+      const pdc = r.pdc ?? r.triggerClose;
+      const chg = pdc > 0 ? (mark / pdc - 1) * 100 : 0;
+      byTicker.set(r.ticker, { ticker: r.ticker, pdc, mark, chg });
+    }
+
+    return Array.from(byTicker.values()).sort((a, b) => b.chg - a.chg);
+  }, [mdrLive, mdrRecent]);
 
   if (loading) {
     return (
@@ -593,55 +496,40 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
               </tr>
             </thead>
             <tbody>
-              {(() => {
-                const session = getMarketSession();
-                // Sort by recomputed Mark % Chg desc (mark vs true PDC). Pre-sort here
-                // so the table mirrors the Day 1 ordering — biggest movers up top.
-                const mdrGainers = sortMdrRows(
-                  mdrLatch.rowsByTicker,
-                  mdrLatch.eligibilityByTicker,
-                  session,
-                );
-
-                if (mdrGainers.length === 0) {
-                  return (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-6 text-center text-sm text-zinc-500">
-                        No MDR setups detected.
-                      </td>
-                    </tr>
-                  );
-                }
-
-                return mdrGainers.map(({ gainer, pdc, mark, chg: markChange }) => {
-                  return (
-                    <tr
-                      key={gainer.ticker}
-                      className={bodyRow}
-                      onClick={() => onNavigateToResearch(gainer.ticker)}
-                      onKeyDown={(event) => handleRowKeyDown(event, gainer.ticker)}
-                      role="button"
-                      tabIndex={0}
-                      title={`Open ${gainer.ticker} in Research`}
-                    >
-                      <TD>
-                        <span className="text-zinc-100">{gainer.ticker}</span>
-                      </TD>
-                      <TD right>${pdc.toFixed(3)}</TD>
-                      <TD right>${mark.toFixed(3)}</TD>
-                      <TD right>
-                        <span className={markChange >= 0 ? 'text-emerald-400' : 'text-rose-500'}>
-                          {markChange >= 0 ? '+' : ''}{markChange.toFixed(2)}%
-                        </span>
-                      </TD>
-                      {/* TODO: MDR threshold formulas plug in here next. */}
-                      <TD right className="text-zinc-600">—</TD>
-                      <TD right className="text-zinc-600">—</TD>
-                      <TD right className="text-zinc-600">—</TD>
-                    </tr>
-                  );
-                });
-              })()}
+              {mdrRows.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-6 text-center text-sm text-zinc-500">
+                    No MDR setups detected.
+                  </td>
+                </tr>
+              ) : (
+                mdrRows.map((row) => (
+                  <tr
+                    key={row.ticker}
+                    className={bodyRow}
+                    onClick={() => onNavigateToResearch(row.ticker)}
+                    onKeyDown={(event) => handleRowKeyDown(event, row.ticker)}
+                    role="button"
+                    tabIndex={0}
+                    title={`Open ${row.ticker} in Research`}
+                  >
+                    <TD>
+                      <span className="text-zinc-100">{row.ticker}</span>
+                    </TD>
+                    <TD right>${row.pdc.toFixed(3)}</TD>
+                    <TD right>${row.mark.toFixed(3)}</TD>
+                    <TD right>
+                      <span className={row.chg >= 0 ? 'text-emerald-400' : 'text-rose-500'}>
+                        {row.chg >= 0 ? '+' : ''}{row.chg.toFixed(2)}%
+                      </span>
+                    </TD>
+                    {/* MDR threshold formulas — see HANDOFF.md follow-up. */}
+                    <TD right className="text-zinc-600">—</TD>
+                    <TD right className="text-zinc-600">—</TD>
+                    <TD right className="text-zinc-600">—</TD>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

@@ -204,6 +204,13 @@
       "when": 1777845993649,
       "tag": "0028_bright_magik",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1777986728560,
+      "tag": "0029_harsh_spectrum",
+      "breakpoints": true
     }
   ]
 }
