@@ -179,8 +179,20 @@ function dayOneMarkChange(gainer: TradingViewGainer) {
   return gainer.preMarketChange ?? gainer.change;
 }
 
-function dayOneVolume(gainer: TradingViewGainer) {
-  return gainer.preMarketVolume ?? gainer.volume;
+// Volume is session-aware so the displayed value (and the >=2M floor it gates)
+// always reflects "what's actually trading right now":
+//   pre-market → today's PM session volume (falls back to TV's regular-session
+//                column if PM data is missing)
+//   regular/after/closed → today's regular-session volume
+// This also means a name latched during PM with yesterday's session vol >= 2M
+// will fall off the display once regular hours start if it doesn't accumulate
+// 2M of regular-session volume — and once it does, vol is monotonic so it
+// sticks for the rest of the day.
+function dayOneVolume(gainer: TradingViewGainer, session: MarketSession): number {
+  if (session === 'pre-market') {
+    return gainer.preMarketVolume ?? gainer.volume;
+  }
+  return gainer.volume;
 }
 
 function mergeLatchRows(
@@ -298,7 +310,15 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
     persistLatch(DASHBOARD_DAY1_LATCH_STORAGE_KEY, dayOneLatch);
   }, [dayOneLatch]);
 
-  const dayOneRows = useMemo(() => sortDayOneRows(dayOneLatch.rowsByTicker), [dayOneLatch.rowsByTicker]);
+  // Compute once per render so both the latch filter and the row render share
+  // the same session — keeps the displayed volume cell in sync with the >=2M
+  // gate that decided whether to render the row at all.
+  const session = getMarketSession();
+
+  const dayOneRows = useMemo(() => (
+    sortDayOneRows(dayOneLatch.rowsByTicker)
+      .filter((gainer) => dayOneVolume(gainer, session) >= 2_000_000)
+  ), [dayOneLatch.rowsByTicker, session]);
 
   useEffect(() => {
     if (dayOneRows.length === 0) return;
@@ -331,7 +351,6 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
   };
 
   const mdrRows = useMemo(() => {
-    const session = getMarketSession();
     const byTicker = new Map<string, { ticker: string; pdc: number; mark: number; chg: number }>();
 
     // Live candidates first — TV's `change` is regular-session % change.
@@ -355,7 +374,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
     }
 
     return Array.from(byTicker.values()).sort((a, b) => b.chg - a.chg);
-  }, [mdrLive, mdrRecent]);
+  }, [mdrLive, mdrRecent, session]);
 
   if (loading) {
     return (
@@ -421,7 +440,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                 const pdc = gainer.price;
                 const mark = dayOneMark(gainer);
                 const markChange = dayOneMarkChange(gainer);
-                const vol = dayOneVolume(gainer);
+                const vol = dayOneVolume(gainer, session);
                 const summary = summaries[gainer.ticker];
                 return (
                   <tr

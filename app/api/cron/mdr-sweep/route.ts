@@ -116,7 +116,14 @@ function nyMidnightMs(): number {
  * Runs the d2_mdr sweep for one date. Returns the number of triggers
  * inserted, or null if `dateStr` was a non-trading day (grouped agg
  * empty).
+ *
+ * Per-candidate history fetches run in chunks of CANDIDATE_CONCURRENCY so
+ * a 20-day backfill stays within Vercel's 300s maxDuration. A single day
+ * with ~150 candidates × ~200ms serial fetches blows past the budget;
+ * parallelizing keeps it under ~5s/day.
  */
+const CANDIDATE_CONCURRENCY = 10;
+
 async function sweepOneDay(
   db: NonNullable<ReturnType<typeof getDb>>,
   dateStr: string,
@@ -136,68 +143,92 @@ async function sweepOneDay(
   );
 
   let inserted = 0;
-  for (const candidate of candidates) {
-    try {
-      // 60 bars covers a 20-day backfill date plus 20 prior bars with
-      // weekend/holiday buffer, so older backfill dates still have context.
-      const history = await fetchDailyAggregates(candidate.ticker, 60);
-      const historyAsOf = history.filter((b) => b.date <= dateStr);
-      if (historyAsOf.length < 21) continue;
 
-      const todayBarIdx = historyAsOf.findIndex((b) => b.date === dateStr);
-      if (todayBarIdx < 20) continue;
+  for (let i = 0; i < candidates.length; i += CANDIDATE_CONCURRENCY) {
+    const chunk = candidates.slice(i, i + CANDIDATE_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      chunk.map((candidate) => evaluateAndInsertCandidate(db, candidate, dateStr)),
+    );
 
-      const todayHistoric = historyAsOf[todayBarIdx];
-      const priorBars: GroupedDailyBar[] = historyAsOf.slice(0, todayBarIdx).map((b) => ({
-        ticker: candidate.ticker,
-        open: b.open,
-        high: b.high,
-        low: b.low,
-        close: b.close,
-        volume: b.volume,
-        vwap: b.vwap,
-        timestamp: Date.parse(`${b.date}T00:00:00Z`),
-      }));
-      const todayBar: GroupedDailyBar = {
-        ticker: candidate.ticker,
-        open: todayHistoric.open,
-        high: todayHistoric.high,
-        low: todayHistoric.low,
-        close: todayHistoric.close,
-        volume: todayHistoric.volume,
-        vwap: todayHistoric.vwap,
-        timestamp: Date.parse(`${todayHistoric.date}T00:00:00Z`),
-      };
-
-      const result = evaluateD2MdrTrigger(todayBar, priorBars);
-      if (!result.triggered) continue;
-
-      await db.insert(mdrTriggers).values({
-        ticker: candidate.ticker,
-        triggerDate: dateStr,
-        triggerClose: todayBar.close,
-        payload: {
-          open: todayBar.open,
-          high: todayBar.high,
-          low: todayBar.low,
-          close: todayBar.close,
-          volume: todayBar.volume,
-          priorHigh20: result.priorHigh20,
-          priorLow20: result.priorLow20,
-          priorBigDayDate: result.priorBigDayDate,
-        },
-      }).onConflictDoNothing();
-
-      inserted += 1;
-    } catch (error) {
-      summary.errors.push({
-        stage: `sweep:${dateStr}:${candidate.ticker}`,
-        message: error instanceof Error ? error.message : String(error),
-      });
+    for (let j = 0; j < settled.length; j += 1) {
+      const result = settled[j];
+      if (result.status === 'fulfilled') {
+        if (result.value) inserted += 1;
+      } else {
+        summary.errors.push({
+          stage: `sweep:${dateStr}:${chunk[j].ticker}`,
+          message: result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason),
+        });
+      }
     }
   }
 
   return inserted;
+}
+
+/**
+ * Evaluate one candidate ticker for `dateStr`. Returns true if a trigger
+ * row was inserted (or was already present), false otherwise. Throws on
+ * unexpected fetch/db errors so the caller can surface them in `summary.errors`.
+ */
+async function evaluateAndInsertCandidate(
+  db: NonNullable<ReturnType<typeof getDb>>,
+  candidate: GroupedDailyBar,
+  dateStr: string,
+): Promise<boolean> {
+  // 60 bars covers a 20-day backfill date plus 20 prior bars with
+  // weekend/holiday buffer, so older backfill dates still have context.
+  const history = await fetchDailyAggregates(candidate.ticker, 60);
+  const historyAsOf = history.filter((b) => b.date <= dateStr);
+  if (historyAsOf.length < 21) return false;
+
+  const todayBarIdx = historyAsOf.findIndex((b) => b.date === dateStr);
+  if (todayBarIdx < 20) return false;
+
+  const todayHistoric = historyAsOf[todayBarIdx];
+  const priorBars: GroupedDailyBar[] = historyAsOf.slice(0, todayBarIdx).map((b) => ({
+    ticker: candidate.ticker,
+    open: b.open,
+    high: b.high,
+    low: b.low,
+    close: b.close,
+    volume: b.volume,
+    vwap: b.vwap,
+    timestamp: Date.parse(`${b.date}T00:00:00Z`),
+  }));
+  const todayBar: GroupedDailyBar = {
+    ticker: candidate.ticker,
+    open: todayHistoric.open,
+    high: todayHistoric.high,
+    low: todayHistoric.low,
+    close: todayHistoric.close,
+    volume: todayHistoric.volume,
+    vwap: todayHistoric.vwap,
+    timestamp: Date.parse(`${todayHistoric.date}T00:00:00Z`),
+  };
+
+  const result = evaluateD2MdrTrigger(todayBar, priorBars);
+  if (!result.triggered) return false;
+
+  await db.insert(mdrTriggers).values({
+    ticker: candidate.ticker,
+    triggerDate: dateStr,
+    triggerClose: todayBar.close,
+    payload: {
+      open: todayBar.open,
+      high: todayBar.high,
+      low: todayBar.low,
+      close: todayBar.close,
+      volume: todayBar.volume,
+      priorHigh20: result.priorHigh20,
+      priorLow20: result.priorLow20,
+      priorBigDayDate: result.priorBigDayDate,
+    },
+  }).onConflictDoNothing();
+
+  return true;
 }
 
 /**
@@ -218,40 +249,60 @@ async function applyInvalidations(db: NonNullable<ReturnType<typeof getDb>>): Pr
       gte(mdrTriggers.triggerDate, cutoff),
     ));
 
+  // Same chunked-parallel pattern as sweepOneDay — the invalidation pass also
+  // does one history fetch per active row, so serial would blow the 300s budget
+  // for any meaningful backlog of triggers.
   let invalidated = 0;
-  for (const row of active) {
-    try {
-      // Keep the same 60-bar buffer as sweep evaluation so the invalidation
-      // window stays covered even after weekends and market holidays.
-      const history = await fetchDailyAggregates(row.ticker, 60);
-      const fromTrigger = history.filter((b) => b.date >= row.triggerDate);
-      if (fromTrigger.length < 2) continue;
 
-      let hit = false;
-      for (let i = 1; i < fromTrigger.length; i += 1) {
-        const prev = fromTrigger[i - 1];
-        const today = fromTrigger[i];
-        if (isInvalidationDay(
-          { ticker: row.ticker, open: today.open, high: today.high, low: today.low, close: today.close, volume: today.volume, vwap: today.vwap, timestamp: 0 },
-          { ticker: row.ticker, open: prev.open, high: prev.high, low: prev.low, close: prev.close, volume: prev.volume, vwap: prev.vwap, timestamp: 0 },
-        )) {
-          hit = true;
-          break;
-        }
+  for (let i = 0; i < active.length; i += CANDIDATE_CONCURRENCY) {
+    const chunk = active.slice(i, i + CANDIDATE_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      chunk.map((row) => evaluateInvalidation(db, row.ticker, row.triggerDate)),
+    );
+
+    for (let j = 0; j < settled.length; j += 1) {
+      const result = settled[j];
+      if (result.status === 'fulfilled') {
+        if (result.value) invalidated += 1;
+      } else {
+        logRouteError(`mdr-sweep:invalidate:${chunk[j].ticker}`, result.reason);
       }
-      if (!hit) continue;
-
-      await db.update(mdrTriggers)
-        .set({ invalidatedAt: new Date() })
-        .where(and(
-          eq(mdrTriggers.ticker, row.ticker),
-          eq(mdrTriggers.triggerDate, row.triggerDate),
-        ));
-      invalidated += 1;
-    } catch (error) {
-      logRouteError(`mdr-sweep:invalidate:${row.ticker}`, error);
     }
   }
 
   return invalidated;
+}
+
+async function evaluateInvalidation(
+  db: NonNullable<ReturnType<typeof getDb>>,
+  ticker: string,
+  triggerDate: string,
+): Promise<boolean> {
+  // Keep the same 60-bar buffer as sweep evaluation so the invalidation
+  // window stays covered even after weekends and market holidays.
+  const history = await fetchDailyAggregates(ticker, 60);
+  const fromTrigger = history.filter((b) => b.date >= triggerDate);
+  if (fromTrigger.length < 2) return false;
+
+  let hit = false;
+  for (let i = 1; i < fromTrigger.length; i += 1) {
+    const prev = fromTrigger[i - 1];
+    const today = fromTrigger[i];
+    if (isInvalidationDay(
+      { ticker, open: today.open, high: today.high, low: today.low, close: today.close, volume: today.volume, vwap: today.vwap, timestamp: 0 },
+      { ticker, open: prev.open, high: prev.high, low: prev.low, close: prev.close, volume: prev.volume, vwap: prev.vwap, timestamp: 0 },
+    )) {
+      hit = true;
+      break;
+    }
+  }
+  if (!hit) return false;
+
+  await db.update(mdrTriggers)
+    .set({ invalidatedAt: new Date() })
+    .where(and(
+      eq(mdrTriggers.ticker, ticker),
+      eq(mdrTriggers.triggerDate, triggerDate),
+    ));
+  return true;
 }

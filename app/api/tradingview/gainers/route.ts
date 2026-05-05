@@ -22,13 +22,17 @@ const COLUMNS = [
 ];
 
 // Preset filters: price >= $0.90, PM chg > 20%, NASDAQ + NYSE only.
-// Market-cap filter intentionally omitted so large-cap names also flow through to the MDR table.
+// We intentionally do NOT filter on `volume` server-side. TV's `volume` column
+// is session-dependent (yesterday's regular session during PM, today's
+// accumulating regular vol during regular hours). A server filter on it would
+// drop names from the response once today's regular-session vol fell behind,
+// freezing stale entries in the dashboard latch. The 2M floor is enforced
+// client-side against the live session volume instead.
 const SCAN_BODY = {
   columns: COLUMNS,
   filter: [
     { left: 'close', operation: 'egreater', right: 0.9 },
     { left: 'premarket_change', operation: 'greater', right: 20 },
-    { left: 'volume', operation: 'egreater', right: 2_000_000 },
     { left: 'exchange', operation: 'in_range', right: ['NASDAQ', 'NYSE'] },
   ],
   sort: { sortBy: 'premarket_change', sortOrder: 'desc' },
