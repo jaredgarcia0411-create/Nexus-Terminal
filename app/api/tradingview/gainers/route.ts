@@ -4,39 +4,85 @@ import { requireUser } from '@/lib/server-db-utils';
 export const dynamic = 'force-dynamic';
 
 // TradingView screener columns returned in order — index matches d[] array.
-// `close` and `change` here are session-dependent (during pre-market they reflect
+// `close`, `change`, `volume` are session-dependent (during pre-market they reflect
 // yesterday's regular session; during regular hours they reflect today's live values).
-// The `premarket_*` columns always reflect the current pre-market session and are used
-// directly for the Day 1 Setup table.
+// The `premarket_*` columns reflect today's pre-market session.
+// The `postmarket_*` columns reflect the most recent after-hours session — that's
+// yesterday's AH (4–8 PM yesterday) until today's AH starts at 4 PM, at which
+// point they switch to today's AH. For Day 1 qualification we want yesterday's
+// AH (the gap heading into today's regular open), which is what `postmarket_*`
+// returns from PM through to today's regular session close.
 const COLUMNS = [
   'name', // 0 — ticker symbol
-  'close', // 1 — TV close (session-dependent; live intraday during regular hours)
-  'change', // 2 — % change of `close` vs prior session close (session-dependent)
-  'volume', // 3 — TV volume (session-dependent; today's regular-session volume during/after regular hours)
+  'close', // 1 — TV close (session-dependent)
+  'change', // 2 — % change of `close` vs prior session close
+  'volume', // 3 — TV volume (session-dependent)
   'average_volume_90d_calc', // 4 — 90-day avg volume
   'market_cap_basic', // 5 — market cap
   'sector', // 6 — sector
   'premarket_close', // 7 — pre-market last price
-  'premarket_change', // 8 — pre-market % change
+  'premarket_change', // 8 — pre-market % change vs prior regular close
   'premarket_volume', // 9 — pre-market volume
+  'postmarket_close', // 10 — most recent after-hours close
+  'postmarket_change', // 11 — after-hours % change
+  'postmarket_volume', // 12 — after-hours volume
 ];
 
-// Preset filters: price >= $0.90, PM chg > 20%, NASDAQ + NYSE only.
-// We intentionally do NOT filter on `volume` server-side. TV's `volume` column
-// is session-dependent (yesterday's regular session during PM, today's
-// accumulating regular vol during regular hours). A server filter on it would
-// drop names from the response once today's regular-session vol fell behind,
-// freezing stale entries in the dashboard latch. The 2M floor is enforced
-// client-side against the live session volume instead.
+// Day 1 qualification rules (per user spec):
+//   - market cap < $300M
+//   - close >= $0.90  (defensive penny-stock floor; existing behavior)
+//   - NASDAQ or NYSE listed
+//   - PM gap >= 40% with PM volume >= 2M  OR  AH gap >= 40% with AH volume >= 2M
+//
+// Once a name passes server-side here it gets latched on the dashboard for the
+// rest of the day, even if the criteria stop holding (sticky semantics).
+//
+// `filter` is the legacy AND-only filter list. `filter2` is TradingView's
+// nested boolean syntax — we use it here to express the OR between the PM and
+// AH qualification branches.
+const PM_GAP_THRESHOLD = 40;
+const AH_GAP_THRESHOLD = 40;
+const SESSION_VOLUME_FLOOR = 2_000_000;
+
 const SCAN_BODY = {
   columns: COLUMNS,
   filter: [
     { left: 'close', operation: 'egreater', right: 0.9 },
-    { left: 'premarket_change', operation: 'greater', right: 20 },
+    { left: 'market_cap_basic', operation: 'eless', right: 300_000_000 },
     { left: 'exchange', operation: 'in_range', right: ['NASDAQ', 'NYSE'] },
   ],
+  filter2: {
+    operator: 'and',
+    operands: [
+      {
+        operation: {
+          operator: 'or',
+          operands: [
+            {
+              operation: {
+                operator: 'and',
+                operands: [
+                  { expression: { left: 'premarket_change', operation: 'egreater', right: PM_GAP_THRESHOLD } },
+                  { expression: { left: 'premarket_volume', operation: 'egreater', right: SESSION_VOLUME_FLOOR } },
+                ],
+              },
+            },
+            {
+              operation: {
+                operator: 'and',
+                operands: [
+                  { expression: { left: 'postmarket_change', operation: 'egreater', right: AH_GAP_THRESHOLD } },
+                  { expression: { left: 'postmarket_volume', operation: 'egreater', right: SESSION_VOLUME_FLOOR } },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ],
+  },
   sort: { sortBy: 'premarket_change', sortOrder: 'desc' },
-  range: [0, 50],
+  range: [0, 100],
 };
 
 export interface TradingViewGainer {
@@ -50,6 +96,9 @@ export interface TradingViewGainer {
   preMarketPrice: number | null;
   preMarketChange: number | null;
   preMarketVolume: number | null;
+  postMarketPrice: number | null;
+  postMarketChange: number | null;
+  postMarketVolume: number | null;
 }
 
 export async function GET() {
@@ -115,6 +164,9 @@ export async function GET() {
         preMarketPrice: toNum(7),
         preMarketChange: toNum(8),
         preMarketVolume: toNum(9),
+        postMarketPrice: toNum(10),
+        postMarketChange: toNum(11),
+        postMarketVolume: toNum(12),
       }];
     });
 

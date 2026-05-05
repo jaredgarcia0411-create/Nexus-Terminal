@@ -25,7 +25,12 @@ export const runtime = 'nodejs';
  *
  * Query params:
  *   - days (1..30, default 1): number of trading days back to evaluate.
- *     Pass `?days=20` once at deploy to backfill the lookback window.
+ *     Pass `?days=5` per call when chunking a backfill so each request
+ *     stays well inside Vercel's 300s function cap.
+ *   - from (YYYY-MM-DD, optional): start the walk-back from this calendar
+ *     date instead of yesterday. Lets you chunk a 20-day backfill into 4
+ *     calls of `?from=...&days=5`. Inserts are idempotent (composite PK +
+ *     onConflictDoNothing) so overlapping windows are safe.
  *
  * Authenticated via CRON_SECRET (Authorization: Bearer ...).
  */
@@ -42,6 +47,9 @@ export async function GET(request: Request) {
     ? Math.floor(daysParam)
     : 1;
 
+  const fromRaw = url.searchParams.get('from');
+  const fromMs = parseFromParam(fromRaw);
+
   const summary = {
     evaluatedDates: [] as string[],
     triggersInserted: 0,
@@ -50,10 +58,10 @@ export async function GET(request: Request) {
     errors: [] as Array<{ stage: string; message: string }>,
   };
 
-  // Walk back from yesterday in calendar order. `days * 2` calendar days
-  // is more than enough to cover N trading days even with weekends and
-  // holidays interleaved.
-  const calendarDates = collectCalendarDates(days * 2 + 5);
+  // Walk back from `from` (or yesterday if omitted) in calendar order.
+  // `days * 2` calendar days is more than enough to cover N trading days
+  // even with weekends and holidays interleaved.
+  const calendarDates = collectCalendarDates(days * 2 + 5, fromMs);
 
   let tradingDaysEvaluated = 0;
   for (const dateStr of calendarDates) {
@@ -89,15 +97,34 @@ export async function GET(request: Request) {
   return Response.json(summary);
 }
 
-/** Calendar dates yesterday-back, most-recent-first, as YYYY-MM-DD. */
-function collectCalendarDates(maxDays: number): string[] {
+/**
+ * Calendar dates walking back from `startMs` (or yesterday-NY if omitted),
+ * most-recent-first, as YYYY-MM-DD strings.
+ */
+function collectCalendarDates(maxDays: number, startMs?: number): string[] {
   const out: string[] = [];
-  const yesterdayMs = nyMidnightMs() - 24 * 60 * 60 * 1000;
+  const anchorMs = startMs ?? (nyMidnightMs() - 24 * 60 * 60 * 1000);
   for (let i = 0; i < maxDays; i += 1) {
-    const ts = yesterdayMs - i * 24 * 60 * 60 * 1000;
+    const ts = anchorMs - i * 24 * 60 * 60 * 1000;
     out.push(new Date(ts).toISOString().split('T')[0]!);
   }
   return out;
+}
+
+/**
+ * Parse a YYYY-MM-DD `from` query param to ms-since-epoch at UTC midnight.
+ * Returns undefined for missing/invalid inputs so the caller falls back to
+ * yesterday-NY. Permitted range is the last 5 years through today (NY).
+ */
+function parseFromParam(raw: string | null): number | undefined {
+  if (!raw) return undefined;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return undefined;
+  const ms = Date.parse(`${raw}T00:00:00Z`);
+  if (!Number.isFinite(ms)) return undefined;
+  const todayNyMs = nyMidnightMs();
+  const fiveYearsAgoMs = todayNyMs - 5 * 365 * 24 * 60 * 60 * 1000;
+  if (ms < fiveYearsAgoMs || ms > todayNyMs) return undefined;
+  return ms;
 }
 
 /** Midnight today in America/New_York, as ms-since-epoch. */

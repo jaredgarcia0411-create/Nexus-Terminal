@@ -13,6 +13,9 @@ interface TradingViewGainer {
   preMarketPrice: number | null;
   preMarketChange: number | null;
   preMarketVolume: number | null;
+  postMarketPrice: number | null;
+  postMarketChange: number | null;
+  postMarketVolume: number | null;
 }
 
 interface ScannerSummary {
@@ -25,7 +28,15 @@ interface ScannerSummary {
   fetchedAt: string;
 }
 
-interface MdrCandidate extends TradingViewGainer {}
+// MDR feed only carries PM data — decouple from TradingViewGainer so we don't
+// force the mdr-candidates route to surface postmarket columns it doesn't need.
+interface MdrCandidate {
+  ticker: string;
+  price: number;
+  change: number;
+  volume: number;
+  preMarketPrice: number | null;
+}
 
 interface MdrRecentRow {
   ticker: string;
@@ -73,7 +84,10 @@ function getMarketSession(now: Date = new Date()): MarketSession {
 // Pick session-aware mark/volume for the MDR table:
 //   pre-market → pre-market price/volume (so the structural check fires on PM breakouts)
 //   regular/after/closed → today's regular session mark/volume
-function sessionMark(g: TradingViewGainer, session: MarketSession): number {
+function sessionMark(
+  g: { price: number; preMarketPrice: number | null },
+  session: MarketSession,
+): number {
   if (session === 'pre-market' && g.preMarketPrice != null && Number.isFinite(g.preMarketPrice)) {
     return g.preMarketPrice;
   }
@@ -129,7 +143,13 @@ function normalizeRowsByTicker(value: unknown): Record<string, TradingViewGainer
   const rows: Record<string, TradingViewGainer> = {};
   for (const [ticker, row] of Object.entries(value as Record<string, unknown>)) {
     if (!isTradingViewGainer(row)) continue;
-    rows[ticker] = row;
+    // Backfill postmarket fields for entries persisted before the columns existed.
+    rows[ticker] = {
+      ...row,
+      postMarketPrice: row.postMarketPrice ?? null,
+      postMarketChange: row.postMarketChange ?? null,
+      postMarketVolume: row.postMarketVolume ?? null,
+    };
   }
   return rows;
 }
@@ -179,15 +199,13 @@ function dayOneMarkChange(gainer: TradingViewGainer) {
   return gainer.preMarketChange ?? gainer.change;
 }
 
-// Volume is session-aware so the displayed value (and the >=2M floor it gates)
-// always reflects "what's actually trading right now":
-//   pre-market → today's PM session volume (falls back to TV's regular-session
+// Volume is session-aware purely for display now — the gainers route does the
+// 2M qualification gate server-side, and the latch keeps qualified names
+// sticky for the rest of the day. The displayed cell shows whatever session is
+// currently producing volume:
+//   pre-market → today's PM session vol (falls back to TV's regular-session
 //                column if PM data is missing)
-//   regular/after/closed → today's regular-session volume
-// This also means a name latched during PM with yesterday's session vol >= 2M
-// will fall off the display once regular hours start if it doesn't accumulate
-// 2M of regular-session volume — and once it does, vol is monotonic so it
-// sticks for the rest of the day.
+//   regular/after/closed → today's regular-session vol
 function dayOneVolume(gainer: TradingViewGainer, session: MarketSession): number {
   if (session === 'pre-market') {
     return gainer.preMarketVolume ?? gainer.volume;
@@ -310,15 +328,16 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
     persistLatch(DASHBOARD_DAY1_LATCH_STORAGE_KEY, dayOneLatch);
   }, [dayOneLatch]);
 
-  // Compute once per render so both the latch filter and the row render share
-  // the same session — keeps the displayed volume cell in sync with the >=2M
-  // gate that decided whether to render the row at all.
+  // Session is used for the session-aware volume display + the MDR mark choice.
+  // We no longer apply a render-time volume filter — the gainers route now
+  // narrows server-side to (PM gap >= 40 AND PM vol >= 2M) OR (AH gap >= 40
+  // AND AH vol >= 2M), and the latch keeps qualified names sticky for the day
+  // even if the criteria stop holding.
   const session = getMarketSession();
 
   const dayOneRows = useMemo(() => (
     sortDayOneRows(dayOneLatch.rowsByTicker)
-      .filter((gainer) => dayOneVolume(gainer, session) >= 2_000_000)
-  ), [dayOneLatch.rowsByTicker, session]);
+  ), [dayOneLatch.rowsByTicker]);
 
   useEffect(() => {
     if (dayOneRows.length === 0) return;
