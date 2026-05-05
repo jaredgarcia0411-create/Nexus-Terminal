@@ -32,58 +32,39 @@ const COLUMNS = [
 //   - market cap < $300M
 //   - close >= $0.90  (defensive penny-stock floor; existing behavior)
 //   - NASDAQ or NYSE listed
-//   - PM gap >= 40% with PM volume >= 2M  OR  AH gap >= 40% with AH volume >= 2M
+//   - best PM/AH move >= 40%
+//   - combined previous AH + current PM volume >= 2M shares
 //
 // Once a name passes server-side here it gets latched on the dashboard for the
 // rest of the day, even if the criteria stop holding (sticky semantics).
 //
-// `filter` is the legacy AND-only filter list. `filter2` is TradingView's
-// nested boolean syntax — we use it here to express the OR between the PM and
-// AH qualification branches.
+// TradingView cannot filter on PM volume + AH volume, so each scan is only a
+// broad PM/AH move prefilter. The final move + combined-volume qualification
+// happens after normalization.
 const PM_GAP_THRESHOLD = 40;
 const AH_GAP_THRESHOLD = 40;
-const SESSION_VOLUME_FLOOR = 2_000_000;
+const EXTENDED_HOURS_VOLUME_FLOOR = 2_000_000;
 
-const SCAN_BODY = {
-  columns: COLUMNS,
-  filter: [
-    { left: 'close', operation: 'egreater', right: 0.9 },
-    { left: 'market_cap_basic', operation: 'eless', right: 300_000_000 },
-    { left: 'exchange', operation: 'in_range', right: ['NASDAQ', 'NYSE'] },
-  ],
-  filter2: {
-    operator: 'and',
-    operands: [
-      {
-        operation: {
-          operator: 'or',
-          operands: [
-            {
-              operation: {
-                operator: 'and',
-                operands: [
-                  { expression: { left: 'premarket_change', operation: 'egreater', right: PM_GAP_THRESHOLD } },
-                  { expression: { left: 'premarket_volume', operation: 'egreater', right: SESSION_VOLUME_FLOOR } },
-                ],
-              },
-            },
-            {
-              operation: {
-                operator: 'and',
-                operands: [
-                  { expression: { left: 'postmarket_change', operation: 'egreater', right: AH_GAP_THRESHOLD } },
-                  { expression: { left: 'postmarket_volume', operation: 'egreater', right: SESSION_VOLUME_FLOOR } },
-                ],
-              },
-            },
-          ],
-        },
-      },
+const BASE_FILTERS = [
+  { left: 'close', operation: 'egreater', right: 0.9 },
+  { left: 'market_cap_basic', operation: 'eless', right: 300_000_000 },
+  { left: 'exchange', operation: 'in_range', right: ['NASDAQ', 'NYSE'] },
+] as const;
+
+function scanBody(changeColumn: 'premarket_change' | 'postmarket_change', threshold: number) {
+  return {
+    columns: COLUMNS,
+    filter: [
+      ...BASE_FILTERS,
+      { left: changeColumn, operation: 'egreater', right: threshold },
     ],
-  },
-  sort: { sortBy: 'premarket_change', sortOrder: 'desc' },
-  range: [0, 100],
-};
+    sort: { sortBy: changeColumn, sortOrder: 'desc' },
+    range: [0, 100],
+  };
+}
+
+const PM_SCAN_BODY = scanBody('premarket_change', PM_GAP_THRESHOLD);
+const AH_SCAN_BODY = scanBody('postmarket_change', AH_GAP_THRESHOLD);
 
 export interface TradingViewGainer {
   ticker: string;
@@ -99,6 +80,137 @@ export interface TradingViewGainer {
   postMarketPrice: number | null;
   postMarketChange: number | null;
   postMarketVolume: number | null;
+  extendedHoursVolume: number;
+  dayOneMovePercent: number;
+  dayOneMark: number;
+  dayOneMoveSource: 'pre-market' | 'after-hours';
+}
+
+type TradingViewScanPayload = {
+  totalCount?: number;
+  data?: Array<{ s: string; d: unknown[] }>;
+};
+
+function toNum(d: unknown[], idx: number) {
+  return d[idx] != null && Number.isFinite(Number(d[idx])) ? Number(d[idx]) : null;
+}
+
+function safeVolume(value: number | null) {
+  return value != null && Number.isFinite(value) ? value : 0;
+}
+
+function bestMove(
+  preMarketChange: number | null,
+  postMarketChange: number | null,
+): { percent: number; source: TradingViewGainer['dayOneMoveSource'] } {
+  const pm = preMarketChange != null && Number.isFinite(preMarketChange) ? preMarketChange : Number.NEGATIVE_INFINITY;
+  const ah = postMarketChange != null && Number.isFinite(postMarketChange) ? postMarketChange : Number.NEGATIVE_INFINITY;
+
+  if (pm >= ah) {
+    return { percent: pm, source: 'pre-market' };
+  }
+  return { percent: ah, source: 'after-hours' };
+}
+
+function normalizeTradingViewRow(row: { s: string; d: unknown[] }): TradingViewGainer | null {
+  // row.s is "EXCHANGE:TICKER" — strip the exchange prefix
+  const ticker = (row.s ?? '').split(':')[1];
+  if (!ticker) return null;
+
+  const d = row.d;
+  const price = Number(d[1]);
+  const change = Number(d[2]);
+  const volume = Number(d[3]);
+
+  // Skip rows with bad price or change data
+  if (!Number.isFinite(price) || !Number.isFinite(change) || !Number.isFinite(volume)) return null;
+
+  const preMarketPrice = toNum(d, 7);
+  const preMarketChange = toNum(d, 8);
+  const preMarketVolume = toNum(d, 9);
+  const postMarketPrice = toNum(d, 10);
+  const postMarketChange = toNum(d, 11);
+  const postMarketVolume = toNum(d, 12);
+  const extendedHoursVolume = safeVolume(preMarketVolume) + safeVolume(postMarketVolume);
+  const move = bestMove(preMarketChange, postMarketChange);
+  const dayOneMark = move.source === 'pre-market'
+    ? preMarketPrice ?? price
+    : postMarketPrice ?? price;
+
+  return {
+    ticker,
+    price,
+    change,
+    volume,
+    avgVolume90d: toNum(d, 4),
+    marketCap: toNum(d, 5),
+    sector: typeof d[6] === 'string' && d[6].trim() ? d[6].trim() : null,
+    preMarketPrice,
+    preMarketChange,
+    preMarketVolume,
+    postMarketPrice,
+    postMarketChange,
+    postMarketVolume,
+    extendedHoursVolume,
+    dayOneMovePercent: move.percent,
+    dayOneMark,
+    dayOneMoveSource: move.source,
+  };
+}
+
+function qualifiesDayOne(row: TradingViewGainer) {
+  return row.dayOneMovePercent >= PM_GAP_THRESHOLD
+    && row.extendedHoursVolume >= EXTENDED_HOURS_VOLUME_FLOOR;
+}
+
+function richerGainer(a: TradingViewGainer, b: TradingViewGainer) {
+  const aScore = [
+    a.preMarketPrice,
+    a.preMarketChange,
+    a.preMarketVolume,
+    a.postMarketPrice,
+    a.postMarketChange,
+    a.postMarketVolume,
+  ].filter((value) => value != null).length;
+  const bScore = [
+    b.preMarketPrice,
+    b.preMarketChange,
+    b.preMarketVolume,
+    b.postMarketPrice,
+    b.postMarketChange,
+    b.postMarketVolume,
+  ].filter((value) => value != null).length;
+
+  if (b.dayOneMovePercent !== a.dayOneMovePercent) {
+    return b.dayOneMovePercent > a.dayOneMovePercent ? b : a;
+  }
+  if (b.extendedHoursVolume !== a.extendedHoursVolume) {
+    return b.extendedHoursVolume > a.extendedHoursVolume ? b : a;
+  }
+  return bScore > aScore ? b : a;
+}
+
+async function fetchScan(body: typeof PM_SCAN_BODY, sessionId: string) {
+  const response = await fetch('https://scanner.tradingview.com/america/scan', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      // Without a session cookie, TradingView returns 15-min delayed data.
+      // With it, data is real-time. Either way the endpoint works.
+      ...(sessionId ? { Cookie: `sessionid=${sessionId}` } : {}),
+      'User-Agent': 'Mozilla/5.0',
+      Origin: 'https://www.tradingview.com',
+      Referer: 'https://www.tradingview.com/',
+    },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error(`TradingView scanner returned ${response.status}`);
+  }
+
+  return (await response.json()) as TradingViewScanPayload;
 }
 
 export async function GET() {
@@ -108,76 +220,43 @@ export async function GET() {
   const sessionId = process.env.TRADINGVIEW_SESSION_ID?.trim() ?? '';
 
   try {
-    const response = await fetch('https://scanner.tradingview.com/america/scan', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // Without a session cookie, TradingView returns 15-min delayed data.
-        // With it, data is real-time. Either way the endpoint works.
-        ...(sessionId ? { Cookie: `sessionid=${sessionId}` } : {}),
-        'User-Agent': 'Mozilla/5.0',
-        Origin: 'https://www.tradingview.com',
-        Referer: 'https://www.tradingview.com/',
-      },
-      body: JSON.stringify(SCAN_BODY),
-      cache: 'no-store',
-    });
+    const [pmPayload, ahPayload] = await Promise.all([
+      fetchScan(PM_SCAN_BODY, sessionId),
+      fetchScan(AH_SCAN_BODY, sessionId),
+    ]);
 
-    if (!response.ok) {
-      return Response.json(
-        { error: `TradingView scanner returned ${response.status}` },
-        { status: 502 },
-      );
+    const byTicker = new Map<string, TradingViewGainer>();
+    for (const row of [...(pmPayload.data ?? []), ...(ahPayload.data ?? [])]) {
+      const normalized = normalizeTradingViewRow(row);
+      if (!normalized || !qualifiesDayOne(normalized)) continue;
+
+      const existing = byTicker.get(normalized.ticker);
+      byTicker.set(normalized.ticker, existing ? richerGainer(existing, normalized) : normalized);
     }
 
-    const payload = (await response.json()) as {
-      totalCount?: number;
-      data?: Array<{ s: string; d: unknown[] }>;
-    };
-
-    const raw = payload.data ?? [];
-
-    const gainers: TradingViewGainer[] = raw.flatMap((row) => {
-      // row.s is "EXCHANGE:TICKER" — strip the exchange prefix
-      const ticker = (row.s ?? '').split(':')[1];
-      if (!ticker) return [];
-
-      const d = row.d;
-      const price = Number(d[1]);
-      const change = Number(d[2]);
-      const volume = Number(d[3]);
-
-      // Skip rows with bad price or change data
-      if (!Number.isFinite(price) || !Number.isFinite(change) || !Number.isFinite(volume)) return [];
-
-      const toNum = (idx: number) =>
-        d[idx] != null && Number.isFinite(Number(d[idx])) ? Number(d[idx]) : null;
-
-      return [{
-        ticker,
-        price,
-        change,
-        volume,
-        avgVolume90d: toNum(4),
-        marketCap: toNum(5),
-        sector: typeof d[6] === 'string' && d[6].trim() ? d[6].trim() : null,
-        preMarketPrice: toNum(7),
-        preMarketChange: toNum(8),
-        preMarketVolume: toNum(9),
-        postMarketPrice: toNum(10),
-        postMarketChange: toNum(11),
-        postMarketVolume: toNum(12),
-      }];
-    });
+    const gainers = Array.from(byTicker.values()).sort((a, b) => (
+      b.dayOneMovePercent - a.dayOneMovePercent
+      || b.extendedHoursVolume - a.extendedHoursVolume
+      || a.ticker.localeCompare(b.ticker)
+    ));
 
     return Response.json({
       gainers,
       count: gainers.length,
-      totalCount: payload.totalCount ?? gainers.length,
+      totalCount: (pmPayload.totalCount ?? pmPayload.data?.length ?? 0)
+        + (ahPayload.totalCount ?? ahPayload.data?.length ?? 0),
       isRealtime: Boolean(sessionId),
       fetchedAt: new Date().toISOString(),
     });
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith('TradingView scanner returned ')) {
+      const status = error.message.replace('TradingView scanner returned ', '');
+      return Response.json(
+        { error: `TradingView scanner returned ${status}` },
+        { status: 502 },
+      );
+    }
+
     logRouteError('tradingview-gainers', error);
     return internalServerError();
   }

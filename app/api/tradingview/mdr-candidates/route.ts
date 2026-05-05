@@ -1,7 +1,9 @@
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
+import { evaluateLatestD2MdrTrigger } from '@/lib/massive-market';
 import { requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const COLUMNS = [
   'name',
@@ -31,6 +33,8 @@ const SCAN_BODY = {
   range: [0, 100],
 };
 
+const CANDIDATE_CONCURRENCY = 10;
+
 export interface MdrCandidate {
   ticker: string;
   price: number;
@@ -42,6 +46,55 @@ export interface MdrCandidate {
   preMarketPrice: number | null;
   preMarketChange: number | null;
   preMarketVolume: number | null;
+  pmPriceNeeded: number | null;
+  openingGapNeededPercent: number | null;
+  intradayPriceNeeded: number | null;
+  basisPrice: number | null;
+  atr14: number | null;
+}
+
+type NormalizedMdrCandidate = Omit<
+  MdrCandidate,
+  'pmPriceNeeded' | 'openingGapNeededPercent' | 'intradayPriceNeeded' | 'basisPrice' | 'atr14'
+>;
+
+async function structurallyQualifyCandidates(candidates: NormalizedMdrCandidate[]): Promise<MdrCandidate[]> {
+  const qualified: MdrCandidate[] = [];
+
+  for (let i = 0; i < candidates.length; i += CANDIDATE_CONCURRENCY) {
+    const chunk = candidates.slice(i, i + CANDIDATE_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      chunk.map(async (candidate) => {
+        const evaluation = await evaluateLatestD2MdrTrigger(candidate.ticker);
+        if (!evaluation.triggered) return null;
+
+        return {
+          ...candidate,
+          pmPriceNeeded: evaluation.thresholds.pmPriceNeeded,
+          openingGapNeededPercent: evaluation.thresholds.openingGapNeededPercent,
+          intradayPriceNeeded: evaluation.thresholds.intradayPriceNeeded,
+          basisPrice: evaluation.thresholds.basisPrice,
+          atr14: evaluation.thresholds.atr14,
+        } satisfies MdrCandidate;
+      }),
+    );
+
+    for (let j = 0; j < settled.length; j += 1) {
+      const result = settled[j];
+      if (result.status === 'fulfilled') {
+        if (result.value) qualified.push(result.value);
+        continue;
+      }
+
+      const ticker = chunk[j]?.ticker ?? 'UNKNOWN';
+      console.warn('[api:tradingview-mdr-candidates] skipped structural evaluation', {
+        ticker,
+        reason: result.reason instanceof Error ? result.reason.message : 'unknown',
+      });
+    }
+  }
+
+  return qualified;
 }
 
 export async function GET() {
@@ -78,7 +131,7 @@ export async function GET() {
 
     const raw = payload.data ?? [];
 
-    const candidates: MdrCandidate[] = raw.flatMap((row) => {
+    const normalizedCandidates: NormalizedMdrCandidate[] = raw.flatMap((row) => {
       const ticker = (row.s ?? '').split(':')[1];
       if (!ticker) return [];
 
@@ -104,6 +157,8 @@ export async function GET() {
         preMarketVolume: toNum(9),
       }];
     });
+
+    const candidates = await structurallyQualifyCandidates(normalizedCandidates);
 
     return Response.json({
       candidates,

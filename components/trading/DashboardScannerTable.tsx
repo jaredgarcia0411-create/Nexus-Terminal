@@ -16,6 +16,10 @@ interface TradingViewGainer {
   postMarketPrice: number | null;
   postMarketChange: number | null;
   postMarketVolume: number | null;
+  extendedHoursVolume: number;
+  dayOneMovePercent: number;
+  dayOneMark: number;
+  dayOneMoveSource: 'pre-market' | 'after-hours';
 }
 
 interface ScannerSummary {
@@ -36,6 +40,9 @@ interface MdrCandidate {
   change: number;
   volume: number;
   preMarketPrice: number | null;
+  pmPriceNeeded?: number | null;
+  openingGapNeededPercent?: number | null;
+  intradayPriceNeeded?: number | null;
 }
 
 interface MdrRecentRow {
@@ -46,6 +53,9 @@ interface MdrRecentRow {
   pdc: number | null;
   change: number | null;
   volume: number | null;
+  pmPriceNeeded?: number | null;
+  openingGapNeededPercent?: number | null;
+  intradayPriceNeeded?: number | null;
 }
 
 type MarketSession = 'pre-market' | 'regular' | 'after-hours' | 'closed';
@@ -55,7 +65,8 @@ type DashboardLatchState = {
   rowsByTicker: Record<string, TradingViewGainer>;
 };
 
-const DASHBOARD_DAY1_LATCH_STORAGE_KEY = 'nexus-dashboard-day1-latched';
+const LEGACY_DASHBOARD_DAY1_LATCH_STORAGE_KEY = 'nexus-dashboard-day1-latched';
+const DASHBOARD_DAY1_LATCH_STORAGE_KEY = 'nexus-dashboard-day1-latched-v2';
 
 // Inlined from lib/massive-market.ts so we don't pull a server module into the client bundle.
 function getMarketSession(now: Date = new Date()): MarketSession {
@@ -134,7 +145,14 @@ function isTradingViewGainer(value: unknown): value is TradingViewGainer {
     && typeof row.change === 'number'
     && Number.isFinite(row.change)
     && typeof row.volume === 'number'
-    && Number.isFinite(row.volume);
+    && Number.isFinite(row.volume)
+    && typeof row.extendedHoursVolume === 'number'
+    && Number.isFinite(row.extendedHoursVolume)
+    && typeof row.dayOneMovePercent === 'number'
+    && Number.isFinite(row.dayOneMovePercent)
+    && typeof row.dayOneMark === 'number'
+    && Number.isFinite(row.dayOneMark)
+    && (row.dayOneMoveSource === 'pre-market' || row.dayOneMoveSource === 'after-hours');
 }
 
 function normalizeRowsByTicker(value: unknown): Record<string, TradingViewGainer> {
@@ -143,13 +161,7 @@ function normalizeRowsByTicker(value: unknown): Record<string, TradingViewGainer
   const rows: Record<string, TradingViewGainer> = {};
   for (const [ticker, row] of Object.entries(value as Record<string, unknown>)) {
     if (!isTradingViewGainer(row)) continue;
-    // Backfill postmarket fields for entries persisted before the columns existed.
-    rows[ticker] = {
-      ...row,
-      postMarketPrice: row.postMarketPrice ?? null,
-      postMarketChange: row.postMarketChange ?? null,
-      postMarketVolume: row.postMarketVolume ?? null,
-    };
+    rows[ticker] = row;
   }
   return rows;
 }
@@ -159,6 +171,10 @@ function loadDashboardLatch(storageKey: string): DashboardLatchState {
   if (typeof window === 'undefined') return emptyLatchState(today);
 
   try {
+    if (storageKey !== LEGACY_DASHBOARD_DAY1_LATCH_STORAGE_KEY) {
+      window.localStorage.removeItem(LEGACY_DASHBOARD_DAY1_LATCH_STORAGE_KEY);
+    }
+
     const raw = window.localStorage.getItem(storageKey);
     if (!raw) return emptyLatchState(today);
 
@@ -187,30 +203,16 @@ function persistLatch(storageKey: string, latch: DashboardLatchState) {
   }
 }
 
-function isDayOneCandidate(gainer: TradingViewGainer) {
-  return gainer.marketCap != null && gainer.marketCap < 300_000_000;
-}
-
 function dayOneMark(gainer: TradingViewGainer) {
-  return gainer.preMarketPrice ?? gainer.price;
+  return gainer.dayOneMark;
 }
 
 function dayOneMarkChange(gainer: TradingViewGainer) {
-  return gainer.preMarketChange ?? gainer.change;
+  return gainer.dayOneMovePercent;
 }
 
-// Volume is session-aware purely for display now — the gainers route does the
-// 2M qualification gate server-side, and the latch keeps qualified names
-// sticky for the rest of the day. The displayed cell shows whatever session is
-// currently producing volume:
-//   pre-market → today's PM session vol (falls back to TV's regular-session
-//                column if PM data is missing)
-//   regular/after/closed → today's regular-session vol
-function dayOneVolume(gainer: TradingViewGainer, session: MarketSession): number {
-  if (session === 'pre-market') {
-    return gainer.preMarketVolume ?? gainer.volume;
-  }
-  return gainer.volume;
+function dayOneVolume(gainer: TradingViewGainer): number {
+  return gainer.extendedHoursVolume;
 }
 
 function mergeLatchRows(
@@ -229,7 +231,11 @@ function mergeLatchRows(
 }
 
 function sortDayOneRows(rowsByTicker: Record<string, TradingViewGainer>): TradingViewGainer[] {
-  return Object.values(rowsByTicker).sort((a, b) => dayOneMarkChange(b) - dayOneMarkChange(a));
+  return Object.values(rowsByTicker).sort((a, b) => (
+    dayOneMarkChange(b) - dayOneMarkChange(a)
+    || dayOneVolume(b) - dayOneVolume(a)
+    || a.ticker.localeCompare(b.ticker)
+  ));
 }
 
 function BoolCell({ value }: { value: boolean }) {
@@ -258,6 +264,22 @@ function TD({ children, right, className }: { children: ReactNode; right?: boole
   );
 }
 
+function fmtDollarOrDash(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+  return `$${value.toFixed(2)}`;
+}
+
+function fmtPercentOrDash(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+}
+
+function thresholdClass(value: number | null | undefined, tone?: 'percent'): string | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'text-zinc-600';
+  if (tone === 'percent') return value >= 0 ? 'text-emerald-400' : 'text-rose-500';
+  return undefined;
+}
+
 export default function DashboardScannerTable({ onNavigateToResearch }: DashboardScannerTableProps) {
   const [isRealtime, setIsRealtime] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -281,7 +303,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
       setDayOneLatch((previous) => mergeLatchRows(
         previous,
         today,
-        nextGainers.filter(isDayOneCandidate),
+        nextGainers,
       ));
     } catch {
       // Keep the last good scanner rows on transient polling failures.
@@ -328,11 +350,9 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
     persistLatch(DASHBOARD_DAY1_LATCH_STORAGE_KEY, dayOneLatch);
   }, [dayOneLatch]);
 
-  // Session is used for the session-aware volume display + the MDR mark choice.
-  // We no longer apply a render-time volume filter — the gainers route now
-  // narrows server-side to (PM gap >= 40 AND PM vol >= 2M) OR (AH gap >= 40
-  // AND AH vol >= 2M), and the latch keeps qualified names sticky for the day
-  // even if the criteria stop holding.
+  // Session is still used for the MDR mark choice. Day 1 rows now use
+  // route-derived AH+PM volume and move fields because the combined-volume
+  // qualification cannot be reconstructed from TV's session-current columns.
   const session = getMarketSession();
 
   const dayOneRows = useMemo(() => (
@@ -370,7 +390,15 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
   };
 
   const mdrRows = useMemo(() => {
-    const byTicker = new Map<string, { ticker: string; pdc: number; mark: number; chg: number }>();
+    const byTicker = new Map<string, {
+      ticker: string;
+      pdc: number;
+      mark: number;
+      chg: number;
+      pmPriceNeeded: number | null;
+      openingGapNeededPercent: number | null;
+      intradayPriceNeeded: number | null;
+    }>();
 
     // Live candidates first — TV's `change` is regular-session % change.
     // Back-compute pdc from price + change so the table stays consistent
@@ -379,7 +407,15 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
       const mark = sessionMark(c, session);
       const chg = c.change;
       const pdc = chg !== 0 ? c.price / (1 + chg / 100) : c.price;
-      byTicker.set(c.ticker, { ticker: c.ticker, pdc, mark, chg });
+      byTicker.set(c.ticker, {
+        ticker: c.ticker,
+        pdc,
+        mark,
+        chg,
+        pmPriceNeeded: c.pmPriceNeeded ?? null,
+        openingGapNeededPercent: c.openingGapNeededPercent ?? null,
+        intradayPriceNeeded: c.intradayPriceNeeded ?? null,
+      });
     }
 
     // DB rows fill in any ticker not already in the live set. They have
@@ -389,7 +425,15 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
       const mark = r.mark ?? r.triggerClose;
       const pdc = r.pdc ?? r.triggerClose;
       const chg = pdc > 0 ? (mark / pdc - 1) * 100 : 0;
-      byTicker.set(r.ticker, { ticker: r.ticker, pdc, mark, chg });
+      byTicker.set(r.ticker, {
+        ticker: r.ticker,
+        pdc,
+        mark,
+        chg,
+        pmPriceNeeded: r.pmPriceNeeded ?? null,
+        openingGapNeededPercent: r.openingGapNeededPercent ?? null,
+        intradayPriceNeeded: r.intradayPriceNeeded ?? null,
+      });
     }
 
     return Array.from(byTicker.values()).sort((a, b) => b.chg - a.chg);
@@ -436,7 +480,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                 <TH right>PDC</TH>
                 <TH right>Mark</TH>
                 <TH right>Mark % Chg</TH>
-                <TH right>Volume</TH>
+                <TH right>AH+PM Vol</TH>
                 <TH right>Cash (mo)</TH>
                 <TH right>ATM</TH>
                 <TH right>EL</TH>
@@ -459,7 +503,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                 const pdc = gainer.price;
                 const mark = dayOneMark(gainer);
                 const markChange = dayOneMarkChange(gainer);
-                const vol = dayOneVolume(gainer, session);
+                const vol = dayOneVolume(gainer);
                 const summary = summaries[gainer.ticker];
                 return (
                   <tr
@@ -561,10 +605,15 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                         {row.chg >= 0 ? '+' : ''}{row.chg.toFixed(2)}%
                       </span>
                     </TD>
-                    {/* MDR threshold formulas — see HANDOFF.md follow-up. */}
-                    <TD right className="text-zinc-600">—</TD>
-                    <TD right className="text-zinc-600">—</TD>
-                    <TD right className="text-zinc-600">—</TD>
+                    <TD right className={thresholdClass(row.pmPriceNeeded)}>
+                      {fmtDollarOrDash(row.pmPriceNeeded)}
+                    </TD>
+                    <TD right className={thresholdClass(row.openingGapNeededPercent, 'percent')}>
+                      {fmtPercentOrDash(row.openingGapNeededPercent)}
+                    </TD>
+                    <TD right className={thresholdClass(row.intradayPriceNeeded)}>
+                      {fmtDollarOrDash(row.intradayPriceNeeded)}
+                    </TD>
                   </tr>
                 ))
               )}

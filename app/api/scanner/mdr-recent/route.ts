@@ -3,10 +3,13 @@ import { and, gte, isNull, sql } from 'drizzle-orm';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { mdrTriggers } from '@/lib/db/schema';
-import { fetchUnifiedSnapshot } from '@/lib/massive-market';
+import { evaluateLatestD2MdrTrigger, fetchUnifiedSnapshot, type MdrThresholds } from '@/lib/massive-market';
 import { dbUnavailable, requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
+const THRESHOLD_CONCURRENCY = 10;
 
 export interface MdrRecentRow {
   ticker: string;
@@ -16,6 +19,52 @@ export interface MdrRecentRow {
   pdc: number | null;
   change: number | null;
   volume: number | null;
+  pmPriceNeeded: number | null;
+  openingGapNeededPercent: number | null;
+  intradayPriceNeeded: number | null;
+  basisPrice: number | null;
+  atr14: number | null;
+}
+
+const NULL_THRESHOLDS: MdrThresholds = {
+  pmPriceNeeded: null,
+  openingGapNeededPercent: null,
+  intradayPriceNeeded: null,
+  basisPrice: null,
+  atr14: null,
+};
+
+function thresholdKey(ticker: string, triggerDate: string) {
+  return `${ticker.toUpperCase()}|${triggerDate}`;
+}
+
+async function loadThresholdsByTrigger(rows: Array<{ ticker: string; triggerDate: string }>) {
+  const thresholdsByTrigger = new Map<string, MdrThresholds>();
+
+  for (let i = 0; i < rows.length; i += THRESHOLD_CONCURRENCY) {
+    const chunk = rows.slice(i, i + THRESHOLD_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      chunk.map(async (row) => {
+        const evaluation = await evaluateLatestD2MdrTrigger(row.ticker, { asOfDate: row.triggerDate });
+        return { key: thresholdKey(row.ticker, row.triggerDate), thresholds: evaluation.thresholds };
+      }),
+    );
+
+    for (let j = 0; j < settled.length; j += 1) {
+      const result = settled[j];
+      if (result.status === 'fulfilled') {
+        thresholdsByTrigger.set(result.value.key, result.value.thresholds);
+        continue;
+      }
+
+      console.warn('[api:scanner-mdr-recent] skipped threshold enrichment', {
+        ticker: chunk[j]?.ticker ?? 'UNKNOWN',
+        reason: result.reason instanceof Error ? result.reason.message : 'unknown',
+      });
+    }
+  }
+
+  return thresholdsByTrigger;
 }
 
 export async function GET() {
@@ -63,8 +112,11 @@ export async function GET() {
       }
     }
 
+    const thresholdsByTrigger = await loadThresholdsByTrigger(rows);
+
     const out: MdrRecentRow[] = rows.map((r) => {
       const snap = snapshotByTicker.get(r.ticker.toUpperCase());
+      const thresholds = thresholdsByTrigger.get(thresholdKey(r.ticker, r.triggerDate)) ?? NULL_THRESHOLDS;
       return {
         ticker: r.ticker,
         triggerDate: r.triggerDate,
@@ -73,6 +125,11 @@ export async function GET() {
         pdc: snap?.pdc ?? null,
         change: snap?.change ?? null,
         volume: snap?.volume ?? null,
+        pmPriceNeeded: thresholds.pmPriceNeeded,
+        openingGapNeededPercent: thresholds.openingGapNeededPercent,
+        intradayPriceNeeded: thresholds.intradayPriceNeeded,
+        basisPrice: thresholds.basisPrice,
+        atr14: thresholds.atr14,
       };
     });
 

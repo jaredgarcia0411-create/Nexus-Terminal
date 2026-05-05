@@ -24,6 +24,12 @@ function makeJsonResponse(payload: unknown, status = 200) {
   });
 }
 
+function mockTradingViewFetch(pmPayload: unknown, ahPayload: unknown = { data: [] }) {
+  return vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(makeJsonResponse(pmPayload))
+    .mockResolvedValueOnce(makeJsonResponse(ahPayload));
+}
+
 describe('GET /api/tradingview/gainers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -58,13 +64,27 @@ describe('GET /api/tradingview/gainers', () => {
   });
 
   it('returns 200 and normalizes valid TradingView rows into gainers', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(makeJsonResponse({
+    mockTradingViewFetch({
       totalCount: 12,
       data: [{
         s: 'NASDAQ:AAPL',
-        d: ['AAPL', 12.34, 45.6, 123456, 789000, 250000000, 'Technology'],
+        d: [
+          'AAPL',
+          12.34,
+          45.6,
+          123456,
+          789000,
+          250000000,
+          'Technology',
+          17.9,
+          45.6,
+          1_100_000,
+          17.4,
+          41.2,
+          950_000,
+        ],
       }],
-    }));
+    });
 
     const response = ensureResponse(await GET());
     const payload = await response.json();
@@ -79,9 +99,16 @@ describe('GET /api/tradingview/gainers', () => {
         avgVolume90d: 789000,
         marketCap: 250000000,
         sector: 'Technology',
-        preMarketPrice: null,
-        preMarketChange: null,
-        preMarketVolume: null,
+        preMarketPrice: 17.9,
+        preMarketChange: 45.6,
+        preMarketVolume: 1100000,
+        postMarketPrice: 17.4,
+        postMarketChange: 41.2,
+        postMarketVolume: 950000,
+        extendedHoursVolume: 2050000,
+        dayOneMovePercent: 45.6,
+        dayOneMark: 17.9,
+        dayOneMoveSource: 'pre-market',
       }],
       count: 1,
       totalCount: 12,
@@ -91,14 +118,14 @@ describe('GET /api/tradingview/gainers', () => {
   });
 
   it('filters out rows with invalid numeric price, change, or volume', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(makeJsonResponse({
+    mockTradingViewFetch({
       data: [
         { s: 'NASDAQ:BADPRICE', d: ['BADPRICE', 'oops', 50, 1000, null, null, 'Tech'] },
         { s: 'NASDAQ:BADCHANGE', d: ['BADCHANGE', 10, 'oops', 1000, null, null, 'Tech'] },
         { s: 'NASDAQ:BADVOLUME', d: ['BADVOLUME', 10, 50, 'oops', null, null, 'Tech'] },
-        { s: 'NASDAQ:GOOD', d: ['GOOD', 10, 50, 1000, 500, 1000000, 'Energy'] },
+        { s: 'NASDAQ:GOOD', d: ['GOOD', 10, 50, 1000, 500, 1000000, 'Energy', 15, 50, 2_000_000, null, null, null] },
       ],
-    }));
+    });
 
     const response = ensureResponse(await GET());
     const payload = await response.json();
@@ -113,16 +140,54 @@ describe('GET /api/tradingview/gainers', () => {
         avgVolume90d: 500,
         marketCap: 1000000,
         sector: 'Energy',
-        preMarketPrice: null,
-        preMarketChange: null,
-        preMarketVolume: null,
+        preMarketPrice: 15,
+        preMarketChange: 50,
+        preMarketVolume: 2000000,
+        postMarketPrice: null,
+        postMarketChange: null,
+        postMarketVolume: null,
+        extendedHoursVolume: 2000000,
+        dayOneMovePercent: 50,
+        dayOneMark: 15,
+        dayOneMoveSource: 'pre-market',
       },
     ]);
     expect(payload.count).toBe(1);
   });
 
+  it('qualifies rows on combined AH and PM volume, not one session alone', async () => {
+    mockTradingViewFetch({
+      data: [
+        {
+          s: 'NASDAQ:COMBO',
+          d: ['COMBO', 1, 45, 1000, null, 100000000, null, 1.45, 45, 1_100_000, 1.42, 42, 950_000],
+        },
+        {
+          s: 'NASDAQ:SHORT',
+          d: ['SHORT', 1, 45, 1000, null, 100000000, null, 1.45, 45, 1_999_999, null, null, null],
+        },
+        {
+          s: 'NASDAQ:NOMOVE',
+          d: ['NOMOVE', 1, 15, 1000, null, 100000000, null, 1.15, 15, 2_000_000, 1.2, 20, 1_000_000],
+        },
+      ],
+    });
+
+    const response = ensureResponse(await GET());
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.gainers.map((row: { ticker: string }) => row.ticker)).toEqual(['COMBO']);
+    expect(payload.gainers[0]).toEqual(expect.objectContaining({
+      ticker: 'COMBO',
+      extendedHoursVolume: 2050000,
+      dayOneMovePercent: 45,
+      dayOneMoveSource: 'pre-market',
+    }));
+  });
+
   it('returns isRealtime false when TRADINGVIEW_SESSION_ID is missing', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(makeJsonResponse({ data: [] }));
+    mockTradingViewFetch({ data: [] });
 
     const response = ensureResponse(await GET());
     const payload = await response.json();
@@ -133,25 +198,27 @@ describe('GET /api/tradingview/gainers', () => {
 
   it('returns isRealtime true and sends Cookie when TRADINGVIEW_SESSION_ID is set', async () => {
     process.env.TRADINGVIEW_SESSION_ID = 'live-session';
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(makeJsonResponse({ data: [] }));
+    const fetchSpy = mockTradingViewFetch({ data: [] });
 
     const response = ensureResponse(await GET());
     const payload = await response.json();
 
     expect(response.status).toBe(200);
     expect(payload.isRealtime).toBe(true);
-    expect(fetchSpy).toHaveBeenCalledWith(
-      'https://scanner.tradingview.com/america/scan',
-      expect.objectContaining({
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    for (const call of fetchSpy.mock.calls) {
+      expect(call[1]).toEqual(expect.objectContaining({
         headers: expect.objectContaining({
           Cookie: 'sessionid=live-session',
         }),
-      }),
-    );
+      }));
+    }
   });
 
   it('returns 502 when TradingView responds with a non-OK status', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(makeJsonResponse({ error: 'nope' }, 403));
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(makeJsonResponse({ error: 'nope' }, 403))
+      .mockResolvedValueOnce(makeJsonResponse({ data: [] }));
 
     const response = ensureResponse(await GET());
     const payload = await response.json();
@@ -161,7 +228,9 @@ describe('GET /api/tradingview/gainers', () => {
   });
 
   it('returns 500 when fetch throws', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('network down'));
+    vi.spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce(makeJsonResponse({ data: [] }));
 
     const response = ensureResponse(await GET());
     const payload = await response.json();

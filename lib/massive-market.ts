@@ -1,3 +1,5 @@
+import { atr, ema50, type OHLCData } from '@/lib/indicators';
+
 const MASSIVE_BASE_URL = 'https://api.massive.com';
 
 export type MassiveDirection = 'gainers' | 'losers';
@@ -466,6 +468,29 @@ export interface D2MdrTriggerResult {
   priorBigDayDate: string | null;
 }
 
+export interface MdrThresholds {
+  pmPriceNeeded: number | null;
+  openingGapNeededPercent: number | null;
+  intradayPriceNeeded: number | null;
+  basisPrice: number | null;
+  atr14: number | null;
+}
+
+export interface D2MdrDailyEvaluation {
+  ticker: string;
+  triggered: boolean;
+  reason?: string;
+  todayBar: GroupedDailyBar | null;
+  priorBars: GroupedDailyBar[];
+  priorHigh20: number | null;
+  priorLow20: number | null;
+  priorBigDayDate: string | null;
+  thresholds: MdrThresholds;
+  atr14: number | null;
+  ema50: number | null;
+  fetchedAt: string;
+}
+
 /**
  * Full d2_mdr evaluator. Mirrors the Python at
  * /mnt/c/Users/jared/Downloads/mdr swing scan.py:493.
@@ -532,6 +557,163 @@ export function evaluateD2MdrTrigger(
   if (priorBigDayDate === null) return { triggered: false, reason: 'no_prior_big_day', priorHigh20, priorLow20, priorBigDayDate: null };
 
   return { triggered: true, priorHigh20, priorLow20, priorBigDayDate };
+}
+
+const NULL_MDR_THRESHOLDS: MdrThresholds = {
+  pmPriceNeeded: null,
+  openingGapNeededPercent: null,
+  intradayPriceNeeded: null,
+  basisPrice: null,
+  atr14: null,
+};
+
+function round2(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function lastFinite(values: Array<number | null | undefined>) {
+  for (let i = values.length - 1; i >= 0; i -= 1) {
+    const value = values[i];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function dailyBarTime(date: string) {
+  const timestamp = Date.parse(`${date}T00:00:00Z`);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function toGroupedDailyBar(ticker: string, bar: DailyOhlcBar): GroupedDailyBar {
+  return {
+    ticker,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    volume: bar.volume,
+    vwap: bar.vwap,
+    timestamp: dailyBarTime(bar.date),
+  };
+}
+
+function toOhlcData(bars: DailyOhlcBar[]): OHLCData[] {
+  return bars.map((bar, index) => ({
+    time: dailyBarTime(bar.date) || index,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    volume: bar.volume,
+  }));
+}
+
+function indicatorContext(bars: DailyOhlcBar[]) {
+  const ohlc = toOhlcData(bars);
+  return {
+    atr14: lastFinite(atr(ohlc, 14)),
+    ema50: lastFinite(ema50(bars.map((bar) => bar.close))),
+  };
+}
+
+export function calculateMdrThresholds(
+  todayBar: Pick<GroupedDailyBar, 'open' | 'high' | 'close'> | null,
+  atr14: number | null,
+): MdrThresholds {
+  if (
+    !todayBar
+    || typeof atr14 !== 'number'
+    || !Number.isFinite(atr14)
+    || atr14 <= 0
+    || ![todayBar.open, todayBar.high, todayBar.close].every(Number.isFinite)
+  ) {
+    return { ...NULL_MDR_THRESHOLDS };
+  }
+
+  const highChange = todayBar.high - todayBar.open;
+  const candidates = [
+    Math.max(todayBar.high + atr14, todayBar.high + highChange * 0.3),
+    todayBar.close + atr14,
+    todayBar.close + atr14,
+    Math.max(todayBar.high + atr14 * 0.5, todayBar.close + atr14),
+    todayBar.close + atr14 * 3,
+  ].filter(Number.isFinite);
+
+  if (candidates.length === 0) {
+    return { ...NULL_MDR_THRESHOLDS };
+  }
+
+  const basisPrice = round2(Math.min(...candidates));
+  const openingGapNeededPercent = todayBar.close > 0
+    ? round2((basisPrice / todayBar.close - 1) * 100)
+    : null;
+
+  return {
+    pmPriceNeeded: basisPrice,
+    openingGapNeededPercent,
+    intradayPriceNeeded: basisPrice,
+    basisPrice,
+    atr14: round2(atr14),
+  };
+}
+
+export function evaluateD2MdrDailySeries(
+  ticker: string,
+  bars: DailyOhlcBar[],
+  asOfDate?: string,
+): D2MdrDailyEvaluation {
+  const normalizedTicker = normalizeMassiveTicker(ticker);
+  const ordered = [...bars]
+    .filter((bar) => !asOfDate || bar.date <= asOfDate)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const todaySource = ordered[ordered.length - 1] ?? null;
+  const todayBar = todaySource ? toGroupedDailyBar(normalizedTicker, todaySource) : null;
+  const priorBars = ordered.slice(0, -1).map((bar) => toGroupedDailyBar(normalizedTicker, bar));
+  const context = indicatorContext(ordered);
+  const thresholds = calculateMdrThresholds(todayBar, context.atr14);
+
+  if (!todayBar || priorBars.length < 20) {
+    return {
+      ticker: normalizedTicker,
+      triggered: false,
+      reason: 'insufficient_history',
+      todayBar,
+      priorBars,
+      priorHigh20: null,
+      priorLow20: null,
+      priorBigDayDate: null,
+      thresholds: priorBars.length < 20 ? { ...NULL_MDR_THRESHOLDS } : thresholds,
+      atr14: context.atr14,
+      ema50: context.ema50,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  const result = evaluateD2MdrTrigger(todayBar, priorBars);
+  return {
+    ticker: normalizedTicker,
+    triggered: result.triggered,
+    reason: result.reason,
+    todayBar,
+    priorBars,
+    priorHigh20: result.priorHigh20,
+    priorLow20: result.priorLow20,
+    priorBigDayDate: result.priorBigDayDate,
+    thresholds,
+    atr14: context.atr14,
+    ema50: context.ema50,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+export async function evaluateLatestD2MdrTrigger(
+  ticker: string,
+  options: { days?: number; asOfDate?: string } = {},
+): Promise<D2MdrDailyEvaluation> {
+  const normalizedTicker = normalizeMassiveTicker(ticker);
+  const days = Math.max(60, Math.trunc(options.days ?? 80));
+  const history = await fetchDailyAggregates(normalizedTicker, days);
+  return evaluateD2MdrDailySeries(normalizedTicker, history, options.asOfDate);
 }
 
 /** True if today.close <= 0.90 * prev.close (single -10% red day). */

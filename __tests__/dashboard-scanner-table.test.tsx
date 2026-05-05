@@ -16,9 +16,20 @@ type TestGainer = {
   preMarketPrice: number | null;
   preMarketChange: number | null;
   preMarketVolume: number | null;
+  postMarketPrice: number | null;
+  postMarketChange: number | null;
+  postMarketVolume: number | null;
+  extendedHoursVolume: number;
+  dayOneMovePercent: number;
+  dayOneMark: number;
+  dayOneMoveSource: 'pre-market' | 'after-hours';
+  pmPriceNeeded?: number | null;
+  openingGapNeededPercent?: number | null;
+  intradayPriceNeeded?: number | null;
 };
 
-const DAY1_STORAGE_KEY = 'nexus-dashboard-day1-latched';
+const LEGACY_DAY1_STORAGE_KEY = 'nexus-dashboard-day1-latched';
+const DAY1_STORAGE_KEY = 'nexus-dashboard-day1-latched-v2';
 const MDR_STORAGE_KEY = 'nexus-dashboard-mdr-latched';
 
 function makeGainer(overrides: Partial<TestGainer> & { ticker: string }): TestGainer {
@@ -34,6 +45,13 @@ function makeGainer(overrides: Partial<TestGainer> & { ticker: string }): TestGa
     preMarketPrice: 1.4,
     preMarketChange: 40,
     preMarketVolume: 3_000_000,
+    postMarketPrice: 1.35,
+    postMarketChange: 35,
+    postMarketVolume: 1_000_000,
+    extendedHoursVolume: 4_000_000,
+    dayOneMovePercent: 40,
+    dayOneMark: 1.4,
+    dayOneMoveSource: 'pre-market',
     ...rest,
   };
 }
@@ -53,6 +71,9 @@ type TestMdrRecentRow = {
   pdc: number | null;
   change: number | null;
   volume: number | null;
+  pmPriceNeeded?: number | null;
+  openingGapNeededPercent?: number | null;
+  intradayPriceNeeded?: number | null;
 };
 
 function installFetchMock({
@@ -167,6 +188,9 @@ describe('DashboardScannerTable', () => {
           pdc: 1,
           change: 50,
           volume: 12_000_000,
+          pmPriceNeeded: 2.25,
+          openingGapNeededPercent: 125,
+          intradayPriceNeeded: 2.25,
         },
         {
           ticker: 'LIVE',
@@ -176,6 +200,9 @@ describe('DashboardScannerTable', () => {
           pdc: 1,
           change: 900,
           volume: 20_000_000,
+          pmPriceNeeded: 9,
+          openingGapNeededPercent: 800,
+          intradayPriceNeeded: 9,
         },
       ],
     });
@@ -189,6 +216,9 @@ describe('DashboardScannerTable', () => {
     expect(screen.getByText('+100.00%')).toBeTruthy();
     expect(screen.getByText('+50.00%')).toBeTruthy();
     expect(screen.queryByText('+900.00%')).toBeNull();
+    expect(screen.getAllByText('$2.25').length).toBe(2);
+    expect(screen.getByText('+125.00%')).toBeTruthy();
+    expect(screen.queryByText('$9.00')).toBeNull();
     expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/scanner/mdr-eligibility'))).toBe(false);
     expect(window.localStorage.getItem(MDR_STORAGE_KEY)).toBeNull();
     expect(setItemSpy).not.toHaveBeenCalledWith(MDR_STORAGE_KEY, expect.any(String));
@@ -208,5 +238,49 @@ describe('DashboardScannerTable', () => {
 
     await waitFor(() => expect(screen.getByText('No Day 1 gainers detected.')).toBeTruthy());
     expect(screen.queryByText('STALE')).toBeNull();
+  });
+
+  it('ignores rows from the legacy Day 1 latch key', async () => {
+    window.localStorage.setItem(LEGACY_DAY1_STORAGE_KEY, JSON.stringify({
+      date: new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date()),
+      rowsByTicker: {
+        STALE: makeGainer({ ticker: 'STALE' }),
+      },
+    }));
+    installFetchMock({ gainerBatches: [[]] });
+
+    render(<DashboardScannerTable onNavigateToResearch={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText('No Day 1 gainers detected.')).toBeTruthy());
+    expect(screen.queryByText('STALE')).toBeNull();
+  });
+
+  it('renders Day 1 route-derived combined AH and PM volume', async () => {
+    installFetchMock({
+      gainerBatches: [[
+        makeGainer({
+          ticker: 'BDRX',
+          volume: 7_700,
+          preMarketVolume: 3_000_000,
+          postMarketVolume: 400_000,
+          extendedHoursVolume: 3_400_000,
+          dayOneMovePercent: 42,
+          dayOneMark: 1.42,
+        }),
+      ]],
+    });
+
+    render(<DashboardScannerTable onNavigateToResearch={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText('BDRX')).toBeTruthy());
+    expect(screen.getByText('AH+PM Vol')).toBeTruthy();
+    expect(screen.getByText('3.4M')).toBeTruthy();
+    expect(screen.queryByText('7.7K')).toBeNull();
+    expect(screen.getByText('+42.00%')).toBeTruthy();
   });
 });
