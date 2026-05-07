@@ -10,7 +10,7 @@
 ### Research Tab Refresh — 8 → 5 sub-pages, layout reorganization
 
 > Generated: 2026-05-07 | Author: planning conversation (scope locked by user)
-> Status: IN PROGRESS - phases 1-7 implemented and code-validated 2026-05-07; stop for review/commit/compact before phases 8-10
+> Status: IMPLEMENTED - phases 1-10 code-validated 2026-05-07; user dev-server smoke checked 2026-05-07
 > Executor: Codex
 
 #### Goal
@@ -35,7 +35,7 @@ TLDR cost is moot — Jared uses a free Groq API key.
 
 Phases 1 → 10 as ordered. Each phase is self-contained and validates with `npm run lint && npx tsc --noEmit` before moving on. Phase 1 is the foundation — Phases 5, 7, 8 all depend on it.
 
-Checkpoint 2026-05-07: phases 1-7 are implemented. Phase 8 (conditional chart rendering), Phase 9 (residual badge cleanup), Phase 10 (final cleanup pass), and browser smoke remain pending.
+Checkpoint 2026-05-07: phases 1-10 are implemented and code-validated. User dev-server smoke was checked with no blocking issue reported.
 
 ---
 
@@ -646,7 +646,14 @@ Checkpoint validation completed from repo root on 2026-05-07 after phases 1-7:
 - `npx vitest run __tests__/research-tab.test.tsx` - passed (4 tests)
 - `npm test` - passed (84 files / 612 tests)
 - `npm run typecheck:services` - not run; no `services/` files were touched
-- Manual browser smoke remains pending for user/dev-server review
+- Manual browser smoke - user checked via dev server; no blocking issue reported
+
+Final validation completed from repo root on 2026-05-07 after phases 8-10:
+- `npm run lint` - passed
+- `npx tsc --noEmit` - passed
+- `npm test` - passed (84 files / 612 tests)
+- `npm run typecheck:services` - not run; no `services/` files were touched
+- Manual browser smoke - user checked via dev server; no blocking issue reported
 
 Run from repo root after each phase, and again at the end:
 - `npm run lint`

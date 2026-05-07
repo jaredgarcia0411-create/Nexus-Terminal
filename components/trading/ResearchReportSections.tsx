@@ -6,13 +6,10 @@ import DilutionRatingTile from '@/components/trading/DilutionRatingTile';
 import ResearchTldr from '@/components/trading/ResearchTldr';
 import {
   babyShelfBadge,
-  detectFormType,
   formatDate,
   formatMoney,
   formatNumber,
   getWarrantStatus,
-  riskClass,
-  riskDotClass,
   toStringValue,
 } from '@/lib/askedgar-utils';
 import type {

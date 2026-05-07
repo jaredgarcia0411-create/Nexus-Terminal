@@ -99,22 +99,26 @@ export default function ResearchTickerView({ ticker }: Props) {
 
   if (!data) return null;
 
+  const hasChart = activeTab === 'overview' || activeTab === 'gap-stats';
+
   return (
     <div className="flex flex-col">
       <ResearchSubNav tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
 
-      {/* Top row: company info panel on the left, chart on the right — fixed height */}
-      <div className="flex h-[420px] shrink-0 border-b border-white/10">
+      {/* Top row: company info panel on the left, chart only where it supports the tab. */}
+      <div className={`flex shrink-0 border-b border-white/10 ${hasChart ? 'h-[420px]' : ''}`}>
         <div className="w-[320px] shrink-0 overflow-y-auto">
           <ResearchCompanyHeader ticker={ticker} companyName={data.companyName ?? null} header={data.header} />
         </div>
-        <div className="min-h-0 flex-1 bg-[#0A0A0B]">
-          <ResearchChart
-            ticker={ticker}
-            historicalDate={historicalDate}
-            onClearHistorical={() => setHistoricalDate(null)}
-          />
-        </div>
+        {hasChart ? (
+          <div className="min-h-0 flex-1 bg-[#0A0A0B]">
+            <ResearchChart
+              ticker={ticker}
+              historicalDate={historicalDate}
+              onClearHistorical={() => setHistoricalDate(null)}
+            />
+          </div>
+        ) : null}
       </div>
 
       <ResearchReportSections ticker={ticker} data={data} activeTab={activeTab} onSelectGapDate={setHistoricalDate} />
