@@ -36,7 +36,7 @@ describe('ResearchTab', () => {
   it('renders the initial empty state before a ticker is selected', () => {
     renderResearchTab();
 
-    expect(screen.queryByText('Search a ticker above or click a row in the Scanner')).toBeNull();
+    expect(screen.getByText('Search a Ticker or Select One From The Scanner in Dashboard')).toBeTruthy();
     expect(screen.getByPlaceholderText('Search Symbol')).toBeTruthy();
   });
 

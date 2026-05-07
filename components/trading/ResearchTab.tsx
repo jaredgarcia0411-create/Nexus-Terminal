@@ -75,7 +75,9 @@ export default function ResearchTab({ pendingResearchTicker, onClearPendingTicke
         {selectedTicker ? (
           <ResearchTickerView ticker={selectedTicker} />
         ) : (
-          <div className="flex h-full items-center justify-center" />
+          <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+            Search a Ticker or Select One From The Scanner in Dashboard
+          </div>
         )}
       </div>
     </motion.section>

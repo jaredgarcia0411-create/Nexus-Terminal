@@ -105,10 +105,7 @@ describe('POST /api/askedgar/tldr', () => {
       },
     });
     runResearchTldrMock.mockResolvedValue({
-      tldr: 'TLDR summary',
       findings: ['Finding 1'],
-      actionSteps: ['Step 1'],
-      risks: ['Risk 1'],
       historicalContext: null,
     });
   });
@@ -158,7 +155,7 @@ describe('POST /api/askedgar/tldr', () => {
     });
   });
 
-  it('returns 200 with ticker, TLDR payload, generatedAt, and hasHistoricalData', async () => {
+  it('returns 200 with ticker, TLDR findings payload, generatedAt, and hasHistoricalData', async () => {
     const historicalSummary = { summary: 'Two prior offerings' };
     const latestDiscordDate = new Date('2026-04-05T15:30:00.000Z');
     const latestDiscord = 'Discord report text';
@@ -177,10 +174,7 @@ describe('POST /api/askedgar/tldr', () => {
     getDbMock.mockReturnValueOnce(db);
     getCachedTickerDataMock.mockResolvedValueOnce({ ticker: 'AAPL', rawData });
     runResearchTldrMock.mockResolvedValueOnce({
-      tldr: 'Compact summary',
       findings: ['Finding 1'],
-      actionSteps: ['Watch volume'],
-      risks: ['Offering risk'],
       historicalContext: 'Risk has increased over time.',
     });
 
@@ -190,10 +184,7 @@ describe('POST /api/askedgar/tldr', () => {
     expect(response.status).toBe(200);
     expect(payload).toEqual({
       ticker: 'AAPL',
-      tldr: 'Compact summary',
       findings: ['Finding 1'],
-      actionSteps: ['Watch volume'],
-      risks: ['Offering risk'],
       historicalContext: 'Risk has increased over time.',
       generatedAt: expect.any(String),
       hasHistoricalData: true,

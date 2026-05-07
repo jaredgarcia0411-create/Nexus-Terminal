@@ -4,10 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 interface TldrResponse {
   ticker: string;
-  tldr: string;
   findings: string[];
-  actionSteps: string[];
-  risks: string[];
   historicalContext?: string | null;
   hasHistoricalData?: boolean;
   generatedAt: string;
@@ -82,38 +79,14 @@ export default function ResearchTldr({ ticker }: Props) {
     return null;
   }
 
-  const watchAndRisks = [...(data.actionSteps ?? []), ...(data.risks ?? [])];
-
   return (
-    <div className="space-y-4">
-      <div>
-        <h4 className="mb-2 text-base font-semibold text-zinc-200">TLDR</h4>
-        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
-          <p className="text-sm text-zinc-200">{data.tldr}</p>
-        </div>
-      </div>
-
-      {data.findings && data.findings.length > 0 ? (
-        <div>
-          <h4 className="mb-2 text-sm font-semibold text-zinc-200">Key Findings</h4>
-          <ul className="space-y-1">
-            {data.findings.map((item, i) => (
-              <li key={i} className="text-sm text-zinc-300">• {item}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {watchAndRisks.length > 0 ? (
-        <div>
-          <h4 className="mb-2 text-sm font-semibold text-zinc-200">Watch For &amp; Risks</h4>
-          <ul className="space-y-1">
-            {watchAndRisks.map((item, i) => (
-              <li key={i} className="text-sm text-zinc-300">• {item}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+    <div>
+      <h4 className="mb-2 text-base font-semibold text-zinc-200">TLDR</h4>
+      <ul className="space-y-1">
+        {data.findings.map((item, i) => (
+          <li key={i} className="text-sm text-zinc-300">• {item}</li>
+        ))}
+      </ul>
     </div>
   );
 }

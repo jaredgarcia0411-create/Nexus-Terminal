@@ -7,10 +7,7 @@ import type { AskEdgarResponse } from '@/lib/askedgar';
 import { callLlm } from '@/lib/llm-client';
 
 export interface ResearchTldr {
-  tldr: string;
   findings: string[];
-  actionSteps: string[];
-  risks: string[];
   historicalContext: string | null;
 }
 
@@ -45,20 +42,18 @@ function buildResearchTldrPrompt(
     `
 OUTPUT FORMAT (strict JSON, no markdown):
 {
-  "tldr": "2-3 sentence executive summary of the ticker's dilution risk and outlook",
-  "findings": ["key fact 1", "key fact 2", ...],
-  "actionSteps": ["what to watch or do 1", "what to watch or do 2", ...],
-  "risks": ["risk flag 1", "risk flag 2", ...],
+  "findings": ["bullet 1", "bullet 2", ...],
   "historicalContext": "1-2 sentences on how the risk profile has evolved, or null if no history"
 }
 
 RULES:
-- findings: 5-8 bullets, focus on dilution, offerings, cash position, compliance
-- actionSteps: 3-5 bullets, actionable next steps for a trader
-- risks: 3-5 bullets, biggest risk flags
-- Be specific with numbers (prices, dates, percentages) when available
-- Never fabricate data. Use null for missing values.
-- JSON only, no explanation
+- findings: maximum 10 bullets, ranked from highest dilution-trigger risk first to lowest at the bottom.
+- For the top bullets that represent imminent dilution risk, prefix with "**High Risk:**" (in bold markdown).
+- For the next tier of cautionary items (warrants near strike, recent offering pattern, compliance watch), prefix with "**Watch:**".
+- Below those, write plain factual bullets (cash on hand, share count growth, recent offering price, insider ownership, etc.) without prefixes.
+- Be specific with numbers (prices, dates, percentages, share counts) when available.
+- Never fabricate data. Use null or omit a bullet if the underlying field is missing.
+- JSON only, no explanation, no markdown fences.
 
 <report_data>
 ${JSON.stringify(reportData)}
@@ -229,18 +224,11 @@ export async function runResearchTldr(
   const parsed = parseJson(reply.content);
   const parsedObj = isObject(parsed) ? parsed : {};
 
-  const tldr = typeof parsedObj.tldr === 'string'
-    ? parsedObj.tldr
-    : `Research data fetched for ${ticker} but TLDR generation failed.`;
-
   const toStringArray = (val: unknown) =>
     Array.isArray(val) ? val.filter((item): item is string => typeof item === 'string') : [];
 
   return {
-    tldr,
-    findings: toStringArray(parsedObj.findings),
-    actionSteps: toStringArray(parsedObj.actionSteps),
-    risks: toStringArray(parsedObj.risks),
+    findings: toStringArray(parsedObj.findings).slice(0, 10),
     historicalContext: typeof parsedObj.historicalContext === 'string' ? parsedObj.historicalContext : null,
   };
 }

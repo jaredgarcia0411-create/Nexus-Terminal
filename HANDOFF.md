@@ -7,623 +7,759 @@
 
 ## Active Execution Spec
 
-### Research Tab Refresh — 8 → 5 sub-pages, layout reorganization
+### Research Report wiring + TLDR risk-ranked refactor + empty-state polish
 
 > Generated: 2026-05-07 | Author: planning conversation (scope locked by user)
-> Status: IMPLEMENTED - phases 1-10 code-validated 2026-05-07; user dev-server smoke checked 2026-05-07
+> Status: IN PROGRESS — phases 1-2 implemented and code-validated 2026-05-07; phases 3-6 pending
 > Executor: Codex
 
 #### Goal
 
-Condense the Research surface from 8 sub-pages to 5 (Overview, Dilution, News, Filings, Gap Stats), reorganize content so dilution detail consolidates into one tab, refresh the Overview layout with a side-by-side compact rating tile + auto-generated TLDR, and apply a set of UI cleanups (nav position, search bar, tab styles, outer container, badge styling). No new API endpoints. Company description is deferred to a follow-up PR.
+Three things in one bundle:
 
-#### Locked decisions (from planning conversation)
+1. **Empty state** — when the Research tab has no ticker selected, render a centered gray message instead of a blank pane.
+2. **TLDR refactor (Variation B)** — replace the 3-section TLDR (executive summary box, Key Findings, Watch For & Risks) with a single risk-ranked bullet list rendered under the existing "TLDR" heading. Max 10 bullets, ordered highest-impact first. Drop the action-steps and risks fields from the API response shape entirely.
+3. **Research Report endpoint + panel** — wire the existing small-cap-research agent prompt into a site-only API route so users can generate the full structured JMT-style report on-demand from the Research tab. Reuse the agent's prompt files (no duplication). Use the agent's `BACKGROUND_LLM_API_KEY` (paid Groq) so the report endpoint stays separate from the TLDR endpoint, which keeps using the free `LLM_API_KEY`. Cache the latest result in the existing `research_reports` table.
 
-- **Q1**: `activeTab` state lives in `ResearchTickerView` (lifted from `ResearchReportSections`).
-- **Q2**: Auto-TLDR uses **0ms debounce** — fire immediately on ticker change. Just abort guard + module-level `Map<string, TldrResponse>` session cache.
-- **Q3**: **Skip** company description for v1. No Polygon fetch. No description slot in the layout.
-- **Q4**: Keep `nasdaqCompliance` — it's already in the snapshot. Add as 7th row in `DilutionRatingTile`.
-- **Q5**: Research Reports placeholder copy = `"Research Reports Coming Soon"`.
-- **Q6**: S-1 filings sourced via `data.filings.filter(f => f.formType.startsWith('S-1'))`.
-- **Q7**: `nasdaqCompliance` row label = `"Nasdaq Compliance"`, value = `data.nasdaqCompliance`.
-- **Q8**: `DilutionRatingTile` bar-chart icons are **color-coded** (green=Low, amber=Medium, red=High). Only the text labels and borders go neutral. Use `riskDotClass`-equivalent logic to pick icon color.
-- **Q9**: Reset `activeTab` to `'overview'` on ticker change.
+#### Locked decisions
 
-TLDR cost is moot — Jared uses a free Groq API key.
+- **TLDR shape**: `{ findings: string[]; historicalContext: string | null }`. No `tldr`, no `actionSteps`, no `risks`. Findings are pre-ranked by the LLM (highest-impact first) and may use bold prefixes like `**High Risk:**` / `**Watch:**` for the top tier.
+- **Research Report section heading**: rename "Research Reports" → "Research Report" (singular). Heading uses `text-base font-semibold text-zinc-200` to match the TLDR and Dilution Rating titles.
+- **Auto-generate with 16h shared cache, no UI buttons**: report fires automatically on ticker change. Cache is global per ticker (not per user) — the first user of the day generates it, everyone else reuses. TTL = 16 hours from `generatedAt`. After 16h, the next view auto-regenerates. No "Generate" button, no "Regenerate" button.
+- **API key strategy**: the new report route imports `callLlm` from `lib/agents/llm-client.ts` with `lane: 'background'` — this resolves `BACKGROUND_LLM_API_KEY` (paid). The TLDR keeps using `lib/llm-client.ts` which reads `LLM_API_KEY` (free). No new env vars; both are already configured for the agent platform.
+- **Prompt source of truth**: the agent's prompt files (`lib/agents/prompts/{global-policy,jmt-report-format,small-cap}.md`) and the agent's `buildResearchPrompt` are exported and reused. Site does not own a parallel prompt copy. When you tune the agent prompt, the site report stays in sync.
+- **Output schema**: same `researchReportSchema` (Zod) as the agent — same JSON shape, same fields, same ratings semantics.
+- **No Discord, no memory write, no agent platform integration**: site endpoint only runs the LLM step and persists to `research_reports`. It does not write to `agent_reports`, does not call `writeAndDeliverReport`, does not call `upsertMemory`.
+- **Agent blueprint stays untouched at runtime**: we only export helpers from `lib/agents/blueprints/small-cap-research.ts`. The Discord/orchestrator pipeline is unchanged.
 
 #### Phase order (top-down execution)
 
-Phases 1 → 10 as ordered. Each phase is self-contained and validates with `npm run lint && npx tsc --noEmit` before moving on. Phase 1 is the foundation — Phases 5, 7, 8 all depend on it.
+Phases 1 → 6 as ordered. Each phase runs `npm run lint && npx tsc --noEmit` before moving on. Phase 5 depends on Phase 3 + 4. Phase 6 is final validation only.
 
-Checkpoint 2026-05-07: phases 1-10 are implemented and code-validated. User dev-server smoke was checked with no blocking issue reported.
-
----
-
-#### Phase 1 — Lift `activeTab` state + extract `ResearchSubNav`
-
-**Goal:** Establish foundation. After this phase the app behaves identically to today — only the state location and nav markup location change.
-
-**File:** `components/trading/ResearchSubNav.tsx`
-**Action:** CREATE
-
-1. Create new file. Generic nav bar component:
-   ```tsx
-   interface Props<T extends string> {
-     tabs: Array<{ key: T; label: string }>;
-     activeTab: T;
-     onTabChange: (key: T) => void;
-   }
-
-   export default function ResearchSubNav<T extends string>({ tabs, activeTab, onTabChange }: Props<T>) {
-     return (
-       <div className="border-b border-white/10 px-3 py-2">
-         <div className="flex flex-wrap gap-1">
-           {tabs.map((tab) => (
-             <button
-               key={tab.key}
-               type="button"
-               onClick={() => onTabChange(tab.key)}
-               className={`rounded px-2.5 py-1 text-sm transition-colors ${
-                 activeTab === tab.key
-                   ? 'bg-emerald-500 text-black'
-                   : 'text-white hover:bg-white/10'
-               }`}
-             >
-               {tab.label}
-             </button>
-           ))}
-         </div>
-       </div>
-     );
-   }
-   ```
-   Note: button styling is restyled in Phase 2; keep current classes here for Phase 1.
-
-**File:** `components/trading/ResearchReportSections.tsx`
-**Action:** MODIFY
-
-1. Remove the local `useState<TabKey>('overview')` declaration at line 338 and any associated `useState` import if `useState` is unused elsewhere in this file (check `FilingsView` — it uses `useState` for the bucket filter, so keep the import).
-2. Add `activeTab: TabKey` to the existing `Props` interface (around line 25).
-3. Delete the inline nav bar JSX block at lines 368-384 entirely (the `<div className="border-b border-white/10 px-3 py-2">…</div>` block containing the tab buttons).
-4. The component now receives `activeTab` as a prop and uses it directly in the conditional render blocks below.
-
-**File:** `components/trading/ResearchTickerView.tsx`
-**Action:** MODIFY
-
-1. Add import: `import ResearchSubNav from '@/components/trading/ResearchSubNav';`
-2. Add the `TabKey` type and `TABS` array at module top (mirror the 8-tab versions from `ResearchReportSections.tsx` lines 31 and 283-292):
-   ```ts
-   type TabKey = 'overview' | 'offering-ability' | 'dilution' | 'news' | 'filings' | 'offerings' | 'history' | 'gap-stats';
-
-   const TABS: Array<{ key: TabKey; label: string }> = [
-     { key: 'overview', label: 'Overview' },
-     { key: 'offering-ability', label: 'Offering Ability' },
-     { key: 'dilution', label: 'Dilution' },
-     { key: 'news', label: 'News' },
-     { key: 'filings', label: 'Filings' },
-     { key: 'offerings', label: 'Offerings' },
-     { key: 'history', label: 'History' },
-     { key: 'gap-stats', label: 'Gap Stats' },
-   ];
-   ```
-   These reduce to 5 in Phase 3.
-3. Inside the component, after the `historicalDate` state, add:
-   ```ts
-   const [activeTab, setActiveTab] = useState<TabKey>('overview');
-   useEffect(() => { setActiveTab('overview'); }, [ticker]);
-   ```
-4. In the JSX, render `<ResearchSubNav tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />` as the first child of the outermost layout `<div>` (above the 420px chart row).
-5. Pass `activeTab={activeTab}` to `<ResearchReportSections />` in its existing render call.
-
-**Validation:**
-- [ ] `npm run lint && npx tsc --noEmit` pass.
-- [ ] All 8 tabs still render. Clicking them switches content. Nav bar now appears above the chart.
-- [ ] TLDR button still works (TLDR still mounted in ResearchTickerView for now).
+Checkpoint 2026-05-07 after Phase 2: `npm run lint`, `npx tsc --noEmit`, `npx vitest run __tests__/research-tab.test.tsx __tests__/askedgar-tldr-route.test.ts`, and `npm test` passed. Manual dev-server smoke remains unchecked.
 
 ---
 
-#### Phase 2 — Search bar cleanup + nav style + remove outer gray container
+#### Phase 1 — Empty-state placeholder copy
+
+**Goal:** Show a friendly hint when no ticker is selected.
 
 **File:** `components/trading/ResearchTab.tsx`
 **Action:** MODIFY
 
-1. Search input (current lines 56-64). Wrap in a relative container and add a magnifying glass icon. Replace the existing input block with:
+1. Locate the empty-state branch (currently `<div className="flex h-full items-center justify-center" />` around line 76).
+2. Replace it with:
    ```tsx
-   <div className="relative">
-     <svg
-       className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500"
-       fill="none"
-       stroke="currentColor"
-       viewBox="0 0 24 24"
-       xmlns="http://www.w3.org/2000/svg"
-     >
-       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
-     </svg>
-     <input
-       type="text"
-       value={tickerInput}
-       onChange={(e) => setTickerInput(e.target.value)}
-       onKeyDown={(e) => { if (e.key === 'Enter') { /* existing handler logic */ } }}
-       placeholder="Search Symbol"
-       className="w-48 rounded-lg border border-white/10 bg-[#121214] pl-8 pr-3 py-1.5 text-sm text-zinc-200 transition-colors focus:border-emerald-500/50 focus:outline-none"
-     />
+   <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+     Search a Ticker or Select One From The Scanner in Dashboard
    </div>
    ```
-   Preserve the existing `onChange` and `onKeyDown` handler logic from the current input. Only change `placeholder`, the className (`px-3` → `pl-8 pr-3`), and add the wrapping `<div className="relative">` + icon.
-2. Delete the company name `<span>` block at lines 65-71 (`<span className="text-sm text-zinc-200">…</span>`).
-3. Remove the `companyName` state declaration, the `handleCompanyName` callback, and the `onCompanyName` prop passed to `<ResearchTickerView />`. The `companyName` state existed only to feed the now-deleted span.
-4. Outer container at line 74: change `<div className="h-[calc(100vh-120px)] overflow-y-auto rounded-lg border border-white/10 bg-[#121214]">` to `<div className="h-[calc(100vh-120px)] overflow-y-auto">`. Remove `rounded-lg`, `border`, `border-white/10`, `bg-[#121214]`.
-5. The "no ticker selected" empty state at line 78: keep the empty `<div>` but remove the inner text "Search a ticker above or click a row in the Scanner". Replace inner content with empty (`<div className="flex h-full items-center justify-center" />` or similar). Leaves the structural placeholder without prompting copy.
-
-**File:** `components/trading/ResearchTickerView.tsx`
-**Action:** MODIFY
-
-1. Remove the `onCompanyName?: (name: string \| null) => void;` field from the `Props` interface.
-2. Remove the corresponding destructure of `onCompanyName` from props.
-3. Remove the `onCompanyName?.(null)` call inside `fetchData` (start of try/fetch).
-4. Remove the `onCompanyName?.(result.companyName ?? null)` call (end of try/fetch).
-
-**File:** `components/trading/ResearchSubNav.tsx`
-**Action:** MODIFY
-
-1. Update the button className. Selected = `bg-emerald-500/10 text-emerald-500`. Unselected = `font-bold text-white hover:bg-white/10`:
-   ```tsx
-   className={`rounded px-2.5 py-1 text-sm transition-colors ${
-     activeTab === tab.key
-       ? 'bg-emerald-500/10 text-emerald-500'
-       : 'font-bold text-white hover:bg-white/10'
-   }`}
-   ```
+3. No other changes in this file.
 
 **Validation:**
-- [ ] `npm run lint && npx tsc --noEmit` pass.
-- [ ] Search bar shows magnifying glass icon, placeholder reads `"Search Symbol"`.
-- [ ] No company name text beside the search bar.
-- [ ] No gray box border/background around the entire Research surface.
-- [ ] Selected tab = translucent green text on subtle green bg. Unselected = bold white.
-- [ ] No "Search a ticker above" text in the empty state.
+- [x] `npm run lint && npx tsc --noEmit` pass.
+- [ ] Open Research tab with no ticker → centered gray message visible.
+- [ ] Type a ticker, press Enter → message disappears, snapshot loads.
 
 ---
 
-#### Phase 3 — Reduce 8 tabs to 5
+#### Phase 2 — TLDR Variation B refactor
 
-**File:** `components/trading/ResearchReportSections.tsx`
+**Goal:** Replace the 3-section TLDR with a single risk-ranked bullet list under the existing "TLDR" heading. Drop unused fields end-to-end.
+
+##### 2a. Update the LLM prompt + return shape
+
+**File:** `lib/research.ts`
 **Action:** MODIFY
 
-1. Line 31: replace the `TabKey` union with:
+1. Update the `ResearchTldr` interface (currently around lines 9-15) to:
    ```ts
-   type TabKey = 'overview' | 'dilution' | 'news' | 'filings' | 'gap-stats';
+   export interface ResearchTldr {
+     findings: string[];
+     historicalContext: string | null;
+   }
    ```
-2. Lines 283-292: replace the `TABS` array with:
+   Remove the `tldr`, `actionSteps`, and `risks` fields.
+
+2. Replace the prompt body inside `buildResearchTldrPrompt` (currently around lines 38-74). Keep the function signature the same. New body:
    ```ts
-   const TABS: Array<{ key: TabKey; label: string }> = [
-     { key: 'overview', label: 'Overview' },
-     { key: 'dilution', label: 'Dilution' },
-     { key: 'news', label: 'News' },
-     { key: 'filings', label: 'Filings' },
-     { key: 'gap-stats', label: 'Gap Stats' },
-   ];
-   ```
-3. Delete the entire conditional render blocks for the removed tabs:
-   - `activeTab === 'offering-ability'` block (current lines 485-530)
-   - `activeTab === 'offerings'` block (current lines 592-626)
-   - `activeTab === 'history'` block (current lines 628-741)
-   The content from these blocks is reincorporated into the new Dilution body in Phase 7. Keep the references handy.
-
-**File:** `components/trading/ResearchTickerView.tsx`
-**Action:** MODIFY
-
-1. Update the local `TabKey` type and `TABS` array to match the 5-tab versions above.
-
-**Validation:**
-- [ ] `npm run lint && npx tsc --noEmit` pass.
-- [ ] Only 5 tabs appear in the nav: Overview, Dilution, News, Filings, Gap Stats.
-- [ ] All 5 tabs render content. Dilution tab still shows the old sparse content (rewritten in Phase 7).
-- [ ] No console errors.
-
----
-
-#### Phase 4 — Build `DilutionRatingTile`
-
-**File:** `components/trading/DilutionRatingTile.tsx`
-**Action:** CREATE
-
-1. Create new file. Component shows 7 rows: Ofr. Ability, Ofr. Freq., Dilution, Cash Need, Overall Ofr. Risk, Warrant Exercise, Nasdaq Compliance. Bar-chart icon is color-coded by risk; text and borders are neutral.
-   ```tsx
-   import { toStringValue } from '@/lib/askedgar-utils';
-
-   interface Props {
-     offeringAbilityRating: string | null;
-     offeringFrequencyRating: string | null;
-     dilutionRating: string | null;
-     cashNeedRating: string | null;
-     overallRisk: string | null;
-     warrantExerciseRating: string | null;
-     nasdaqCompliance: string | null;
+   function buildResearchTldrPrompt(
+     reportData: Record<string, unknown[]>,
+     options?: { ticker?: string; historicalSummary?: unknown; discordReport?: { date: string; text: string } },
+   ): string {
+     const parts = [
+       `Analyze this AskEdgar data and return a compact JSON research summary.`,
+       options?.ticker ? `\nTicker: ${options.ticker}` : '',
+       `
+   OUTPUT FORMAT (strict JSON, no markdown):
+   {
+     "findings": ["bullet 1", "bullet 2", ...],
+     "historicalContext": "1-2 sentences on how the risk profile has evolved, or null if no history"
    }
 
-   function iconColorClass(value: string | null): string {
-     if (!value) return 'text-zinc-500';
-     const v = value.toLowerCase();
-     if (v.includes('low') || v.includes('compliant') || v.includes('positive')) return 'text-emerald-500';
-     if (v.includes('medium') || v.includes('watch') || v.includes('warning')) return 'text-amber-500';
-     if (v.includes('high') || v.includes('non-compliant') || v.includes('risk')) return 'text-rose-500';
-     return 'text-zinc-500';
-   }
+   RULES:
+   - findings: maximum 10 bullets, ranked from highest dilution-trigger risk first to lowest at the bottom.
+   - For the top bullets that represent imminent dilution risk, prefix with "**High Risk:**" (in bold markdown).
+   - For the next tier of cautionary items (warrants near strike, recent offering pattern, compliance watch), prefix with "**Watch:**".
+   - Below those, write plain factual bullets (cash on hand, share count growth, recent offering price, insider ownership, etc.) without prefixes.
+   - Be specific with numbers (prices, dates, percentages, share counts) when available.
+   - Never fabricate data. Use null or omit a bullet if the underlying field is missing.
+   - JSON only, no explanation, no markdown fences.
 
-   function BarChartIcon({ colorClass }: { colorClass: string }) {
-     return (
-       <svg className={`h-3 w-3 ${colorClass}`} fill="currentColor" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg">
-         <rect x="1" y="7" width="2" height="4" />
-         <rect x="5" y="4" width="2" height="7" />
-         <rect x="9" y="1" width="2" height="10" />
-       </svg>
-     );
-   }
-
-   export default function DilutionRatingTile(props: Props) {
-     const rows = [
-       { label: 'Ofr. Ability', value: props.offeringAbilityRating },
-       { label: 'Ofr. Freq.', value: props.offeringFrequencyRating },
-       { label: 'Dilution', value: props.dilutionRating },
-       { label: 'Cash Need', value: props.cashNeedRating },
-       { label: 'Overall Ofr. Risk', value: props.overallRisk },
-       { label: 'Warrant Exercise', value: props.warrantExerciseRating },
-       { label: 'Nasdaq Compliance', value: props.nasdaqCompliance },
+   <report_data>
+   ${JSON.stringify(reportData)}
+   </report_data>`,
+       options?.historicalSummary
+         ? `\n<historical_summary>\n${JSON.stringify(options.historicalSummary, null, 1)}\n</historical_summary>`
+         : '',
+       options?.discordReport
+         ? `\n<latest_discord_report date="${options.discordReport.date}">\n${options.discordReport.text.slice(0, 2000)}\n</latest_discord_report>`
+         : '',
      ];
-
-     return (
-       <div>
-         <h4 className="mb-2 text-sm font-semibold text-zinc-200">Dilution Rating</h4>
-         <div className="space-y-1.5">
-           {rows.map((row) => (
-             <div key={row.label} className="flex items-center justify-between gap-2">
-               <span className="text-xs text-zinc-400">{row.label}</span>
-               <div className="flex items-center gap-2">
-                 <BarChartIcon colorClass={iconColorClass(row.value)} />
-                 <span className="text-xs font-medium text-zinc-200">{toStringValue(row.value)}</span>
-               </div>
-             </div>
-           ))}
-         </div>
-       </div>
-     );
+     return parts.filter(Boolean).join('\n');
    }
    ```
 
-**Validation:**
-- [ ] `npm run lint && npx tsc --noEmit` pass.
-- [ ] Component compiles. Not yet rendered anywhere; smoke check happens in Phase 5.
-
----
-
-#### Phase 5 — Rewrite Overview tab
-
-**File:** `components/trading/ResearchReportSections.tsx`
-**Action:** MODIFY
-
-1. Add imports at top of file:
+3. Update `runResearchTldr` (currently around lines 213-246). Remove the `tldr`, `actionSteps`, and `risks` derivation; return the narrowed shape:
    ```ts
-   import DilutionRatingTile from '@/components/trading/DilutionRatingTile';
-   import ResearchTldr from '@/components/trading/ResearchTldr';
-   ```
-2. Confirm `ticker: string` is already in the `Props` interface (verify line ~26). It is.
-3. Remove the now-unused computed variables that fed the old Overview block:
-   - `ratings` array (current lines 344-351)
-   - `hasRatings` flag (line ~352)
-   - `hasCashPosition` flag — keep it; reused in Phase 7
-   - `hasMarketStats` flag (line ~358) and any related code
-4. Replace the entire `activeTab === 'overview'` conditional block (current lines 387-483) with the new layout:
-   ```tsx
-   {activeTab === 'overview' ? (
-     <div className="space-y-5 p-3">
-       <div className="flex gap-4">
-         <div className="w-64 shrink-0">
-           <DilutionRatingTile
-             offeringAbilityRating={data.offeringAbilityRating}
-             offeringFrequencyRating={data.offeringFrequencyRating}
-             dilutionRating={data.dilutionRating}
-             cashNeedRating={data.cashNeedRating}
-             overallRisk={data.overallRisk}
-             warrantExerciseRating={data.warrantExerciseRating}
-             nasdaqCompliance={data.nasdaqCompliance}
-           />
-         </div>
-         <div className="min-w-0 flex-1">
-           <ResearchTldr ticker={ticker} />
-         </div>
-       </div>
+   export async function runResearchTldr(
+     rawData: Record<string, AskEdgarResponse<unknown>>,
+     ticker: string,
+     context?: { historicalSummary?: unknown; discordReport?: { date: string; text: string } },
+   ): Promise<ResearchTldr> {
+     const trimmed = trimRawDataForLlm(rawData);
+     const userPrompt = buildResearchTldrPrompt(trimmed, {
+       ticker,
+       historicalSummary: context?.historicalSummary,
+       discordReport: context?.discordReport,
+     });
+     const reply = await callLlm(
+       'You are a financial analyst specializing in small-cap dilution risk assessment. Return JSON only.',
+       userPrompt,
+     );
 
-       <div>
-         <h4 className="mb-2 text-sm font-semibold text-zinc-200">Research Reports</h4>
-         <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-zinc-500">
-           Research Reports Coming Soon
-         </div>
-       </div>
-     </div>
-   ) : null}
+     const parsed = parseJson(reply.content);
+     const parsedObj = isObject(parsed) ? parsed : {};
+
+     const toStringArray = (val: unknown) =>
+       Array.isArray(val) ? val.filter((item): item is string => typeof item === 'string') : [];
+
+     return {
+       findings: toStringArray(parsedObj.findings).slice(0, 10),
+       historicalContext: typeof parsedObj.historicalContext === 'string' ? parsedObj.historicalContext : null,
+     };
+   }
    ```
 
-**File:** `components/trading/ResearchTickerView.tsx`
-**Action:** MODIFY
+4. The `_ticker` parameter was previously used in the failure message; now unused. Drop nothing — leave `ticker` in the signature since the prompt still uses it.
 
-1. Remove the `<ResearchTldr ticker={ticker} />` mount (currently in a `border-t border-white/10` wrapper around lines 111-113). TLDR now lives inside the Overview tab body.
-2. Remove the `import ResearchTldr from '@/components/trading/ResearchTldr';` line.
+**Note for Codex:** the change drops the `tldr` fallback string. If the LLM fails entirely, the route's `try/catch` in `app/api/askedgar/tldr/route.ts` already returns a 500. Don't add a fallback string.
 
-**Validation:**
-- [ ] `npm run lint && npx tsc --noEmit` pass.
-- [ ] Overview tab shows: side-by-side row with `DilutionRatingTile` (left, fixed width) and `ResearchTldr` (right, flex-1). Below: Research Reports placeholder card with "Research Reports Coming Soon".
-- [ ] No Market Stats grid anywhere on Overview.
-- [ ] Switching to Dilution/News/Filings/Gap Stats hides the TLDR and Research Reports placeholder.
-- [ ] Switching back to Overview re-shows them.
+##### 2b. Update the API response handling
 
----
+**File:** `app/api/askedgar/tldr/route.ts`
+**Action:** No changes required. The route does `...result` over whatever `runResearchTldr` returns; the shape just narrowed. Confirm by reading the route — no edits.
 
-#### Phase 6 — Auto-TLDR refactor
+##### 2c. Update the TLDR component
 
 **File:** `components/trading/ResearchTldr.tsx`
-**Action:** MODIFY (full rewrite)
+**Action:** MODIFY
 
-1. Replace the file content. Key changes:
-   - Module-level `const tldrCache = new Map<string, TldrResponse>();` (declared outside the component function so it persists across remounts during the session).
-   - `useEffect` on `ticker` that fires the fetch immediately (no `setTimeout`/debounce).
-   - `AbortController` ref to cancel in-flight requests on ticker change.
-   - Remove the Generate button + "Click 'Generate TLDR'" prompt.
-   - Merge the existing `actionSteps` (Watch For) and `risks` lists into a single "Watch For & Risks" section. Use `•` bullet character. All items rendered with `text-zinc-300` (no color coding).
+1. Update the `TldrResponse` interface to drop `tldr`, `actionSteps`, `risks`:
+   ```ts
+   interface TldrResponse {
+     ticker: string;
+     findings: string[];
+     historicalContext?: string | null;
+     hasHistoricalData?: boolean;
+     generatedAt: string;
+   }
+   ```
 
-   Replace the file body with:
+2. Replace the rendered output (the `return` block when `data` is non-null, currently around lines 87-118) with:
+   ```tsx
+   return (
+     <div>
+       <h4 className="mb-2 text-base font-semibold text-zinc-200">TLDR</h4>
+       <ul className="space-y-1">
+         {data.findings.map((item, i) => (
+           <li key={i} className="text-sm text-zinc-300">• {item}</li>
+         ))}
+       </ul>
+     </div>
+   );
+   ```
+   Remove the green-bordered TLDR box (the `<div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">` wrapper around the old `data.tldr` paragraph), the "Key Findings" sub-heading, the "Watch For & Risks" section, and the `watchAndRisks` constant. The single `<ul>` is the entire body — no border, no green styling, no boxed background anywhere on the TLDR.
+
+3. Bullets that arrive with leading `**High Risk:**` or `**Watch:**` markdown will render with the literal asterisks. For a v1 ship that's acceptable — the bold markers still convey priority visually. Defer styled rendering of the bold prefixes (would need a tiny markdown-to-jsx pass) unless the user calls it out after smoke testing.
+
+4. The loading and error states (currently lines 65-83) keep their existing TLDR header (`<h4 className="mb-2 text-base font-semibold text-zinc-200">TLDR</h4>`). No change.
+
+##### 2d. Update `__tests__/research-tab.test.tsx` if it asserts on the dropped fields
+
+**File:** `__tests__/research-tab.test.tsx`
+**Action:** READ + MODIFY only if needed
+
+1. Read the test file. If it asserts on `tldr`, `actionSteps`, or `risks` strings in the rendered TLDR output, update those assertions to look for `findings` content instead. If it does not exercise TLDR rendering, leave alone.
+
+**Validation:**
+- [x] `npm run lint && npx tsc --noEmit` pass.
+- [x] `npx vitest run __tests__/research-tab.test.tsx` passes.
+- [ ] Smoke a ticker in dev server: TLDR renders one bulleted list under the "TLDR" heading. No green box, no "Key Findings" header, no "Watch For & Risks" header.
+- [ ] Bullets at the top read like `**High Risk:** Cash runway 6 months + $42M ATM live`. Bullets at the bottom are plain factual.
+
+---
+
+#### Phase 3 — Export reusable helpers from the small-cap-research blueprint
+
+**Goal:** Expose the agent's prompt assembly + analysis pipeline so the site's report endpoint can reuse them without duplicating prompts. Do NOT modify the agent's blueprint runtime — only add `export` keywords and one new exported function.
+
+**File:** `lib/agents/blueprints/small-cap-research.ts`
+**Action:** MODIFY
+
+1. Add `export` to these existing declarations (file is ~993 lines; line numbers below are approximate from the 2026-05-07 snapshot — search by name if line numbers drift):
+
+   - `const researchTickerInputSchema = ...` (~line 26) — add `export`
+   - `const edgarSectionsSchema = ...` (~line 34) — add `export`
+   - `const priceContextSchema = ...` (~line 54) — add `export`
+   - `const researchPipelineInputSchema = ...` (~line 93) — add `export`
+   - `const researchReportSchema = ...` (~line 116) — add `export`
+   - `function parseJson(...)` (~line 174) — add `export`
+   - `function readResults(...)` (~line 187) — add `export`
+   - `function getStringField(...)` (~line 247) — add `export`
+   - `function computeDeterministicAnalysis(...)` (~line 537) — add `export`
+   - `async function fetchTradingViewPriceContext(...)` (~line 665) — add `export`
+   - `function buildResearchPrompt(...)` (~line 725) — add `export`
+   - `async function loadSmallCapSystemPrompt()` (~line 791) — add `export`
+
+   **None of the existing call sites change** — they're internal references that work the same whether the symbol is exported or not.
+
+2. Add a new exported function near the bottom of the file, immediately BEFORE `export const smallCapResearchBlueprint: Blueprint = {`:
+
+   ```ts
+   /**
+    * Generate a small-cap research report for a single ticker.
+    * Reuses the agent's prompt + analysis pipeline but skips Discord delivery and memory persistence —
+    * intended for the Research tab's site-only API route. Uses the BACKGROUND_LLM_API_KEY (paid lane).
+    */
+   export async function generateSmallCapResearchReport(
+     ticker: string,
+   ): Promise<z.infer<typeof researchReportSchema>> {
+     const normalized = ticker.trim().toUpperCase();
+     researchTickerInputSchema.parse({ ticker: normalized });
+
+     // 1. Fetch AskEdgar data (cached helper).
+     const askEdgarResult = await getCachedTickerData(normalized, { scope: 'small-cap-research' });
+     const rawData = askEdgarResult.rawData as Record<string, unknown>;
+     const dilutionRatingFirst = readResults(rawData['dilution-rating'])[0] ?? null;
+     const cashPosition = readResults(rawData['dilution-data'])[0]
+       ?? readResults(rawData['screener'])[0]
+       ?? null;
+     const managementCommentary =
+       getStringField(dilutionRatingFirst, ['mgmt_commentary', 'managementCommentary', 'commentary'])
+       ?? getStringField(cashPosition, ['managementCommentary', 'management_commentary']);
+
+     const edgarSections = edgarSectionsSchema.parse({
+       ticker: normalized,
+       gapStats: readResults(rawData['gap-stats']),
+       offerings: readResults(rawData['offerings']),
+       registrations: readResults(rawData['registrations']),
+       equityLines: readResults(rawData['equity-lines']),
+       dilutionRating: dilutionRatingFirst,
+       dilutionData: readResults(rawData['dilution-data']),
+       ownership: readResults(rawData['ownership']),
+       historicalFloat: readResults(rawData['historical-float-pro']),
+       reverseSplits: readResults(rawData['reverse-splits']),
+       splitStatus: readResults(rawData['split-status']),
+       agreements: readResults(rawData['agreements']),
+       nasdaqCompliance: readResults(rawData['nasdaq-compliance'])[0] ?? null,
+       news: readResults(rawData['news']),
+       filingTitles: readResults(rawData['filing-titles']),
+       cashPosition,
+       managementCommentary,
+     });
+
+     // 2. Add price context.
+     const priceContext = await fetchTradingViewPriceContext(normalized);
+     const withPriceContext = priceContextSchema.parse({ ...edgarSections, priceContext });
+
+     // 3. Compute deterministic analysis + news feed.
+     const { gapStatsTable, ...deterministicAnalysis } = computeDeterministicAnalysis(withPriceContext);
+     const newsFeed = buildNewsFeedFromArrays(
+       Array.isArray(withPriceContext.news) ? withPriceContext.news : [],
+       Array.isArray(withPriceContext.filingTitles) ? withPriceContext.filingTitles : [],
+       { maxItems: 10, maxAgeDays: 30 },
+     );
+     const pipelineInput = researchPipelineInputSchema.parse({
+       ...withPriceContext,
+       deterministicAnalysis,
+       gapStatsTable,
+       newsFeed,
+     });
+
+     // 4. Call LLM via agent's background lane (paid Groq key).
+     const { callLlm: callAgentLlm } = await import('../llm-client');
+     const llmResponse = await callAgentLlm({
+       systemPrompt: await loadSmallCapSystemPrompt(),
+       userMessage: buildResearchPrompt(pipelineInput),
+       temperature: 0.2,
+     }, 'background');
+
+     // 5. Parse + apply the same post-LLM commentary override the blueprint uses.
+     const parsed = researchReportSchema.parse(parseJson(llmResponse.content));
+     parsed.gapStatsTable = pipelineInput.gapStatsTable;
+
+     const verbatimCommentary = pipelineInput.managementCommentary?.trim();
+     if (verbatimCommentary) {
+       parsed.financialCommentary = {
+         ...parsed.financialCommentary,
+         explanation: verbatimCommentary,
+         source: 'verbatim',
+       };
+     } else {
+       parsed.financialCommentary.source = 'llm';
+     }
+
+     return parsed;
+   }
+   ```
+
+3. **Do not modify** the existing blueprint steps. The `synthesize-report` step continues to inline its own LLM call. We're not refactoring it to call `generateSmallCapResearchReport` — that's a follow-up if the team wants DRY later.
+
+**Validation:**
+- [ ] `npm run lint && npx tsc --noEmit` pass.
+- [ ] `npm run typecheck:services` passes (this file is touched and may be referenced from `services/agent-entrypoint.ts`).
+- [ ] No runtime change to the agent platform — the synthesize-report step still uses its existing inline call.
+
+---
+
+#### Phase 4 — Research Report API route
+
+**Goal:** Site-only endpoint that generates and caches the structured small-cap research report per (user, ticker).
+
+**File:** `app/api/research-report/route.ts`
+**Action:** CREATE
+
+1. Create the route file. Pattern mirrors `app/api/askedgar/tldr/route.ts`. Cache is **global per ticker** (not per user) — `requireUser()` still gates the endpoint for auth, but the freshness lookup ignores `userId` so the first user to generate a report on a given ticker satisfies everyone for the next 16 hours.
+
+   ```ts
+   import { and, desc, eq, gte } from 'drizzle-orm';
+   import { z } from 'zod';
+
+   import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
+   import { getDb } from '@/lib/db';
+   import { researchReports } from '@/lib/db/schema';
+   import { generateSmallCapResearchReport } from '@/lib/agents/blueprints/small-cap-research';
+   import { dbUnavailable, requireUser } from '@/lib/server-db-utils';
+
+   export const dynamic = 'force-dynamic';
+   export const maxDuration = 60;
+
+   const tickerPattern = /^[A-Z0-9.\-^]{1,10}$/;
+   // Reuse the same row across users for 16 hours — typical small-cap dilution data
+   // doesn't shift meaningfully within a single trading session, and we want one LLM
+   // call per ticker per ~day across the whole team.
+   const CACHE_TTL_HOURS = 16;
+
+   const postSchema = z.object({
+     ticker: z.string().trim().toUpperCase().regex(tickerPattern, 'Valid ticker required'),
+   });
+
+   export async function GET(request: Request) {
+     const authState = await requireUser();
+     if ('error' in authState) return authState.error;
+
+     const db = getDb();
+     if (!db) return dbUnavailable();
+
+     const url = new URL(request.url);
+     const ticker = url.searchParams.get('ticker')?.trim().toUpperCase() ?? '';
+     if (!tickerPattern.test(ticker)) {
+       return Response.json({ error: 'Valid ticker required' }, { status: 400 });
+     }
+
+     try {
+       const freshSince = new Date(Date.now() - CACHE_TTL_HOURS * 60 * 60 * 1000);
+       const [latest] = await db
+         .select({
+           reportJson: researchReports.reportJson,
+           generatedAt: researchReports.generatedAt,
+           modelUsed: researchReports.modelUsed,
+         })
+         .from(researchReports)
+         .where(and(
+           eq(researchReports.ticker, ticker),
+           gte(researchReports.generatedAt, freshSince),
+         ))
+         .orderBy(desc(researchReports.generatedAt))
+         .limit(1);
+
+       // Only return rows with a structured report_json — early-day rows seeded by
+       // fetchAndCacheRawReport() leave reportJson null. Treat those as "no fresh report".
+       if (latest?.reportJson) {
+         return Response.json({
+           ticker,
+           report: latest.reportJson,
+           generatedAt: latest.generatedAt?.toISOString() ?? null,
+           modelUsed: latest.modelUsed,
+           cached: true,
+         });
+       }
+
+       return Response.json({ ticker, report: null, cached: false });
+     } catch (error) {
+       logRouteError('research-report:get', error);
+       return internalServerError();
+     }
+   }
+
+   export async function POST(request: Request) {
+     const authState = await requireUser();
+     if ('error' in authState) return authState.error;
+
+     const db = getDb();
+     if (!db) return dbUnavailable();
+
+     const bodyState = await parseAndValidate(request, postSchema);
+     if (bodyState.error) return bodyState.error;
+     const { ticker } = bodyState.data;
+
+     try {
+       const report = await generateSmallCapResearchReport(ticker);
+       const generatedAt = new Date();
+
+       // Audit trail: store who triggered the generation. The GET above ignores userId
+       // for cache reads so the row still satisfies the team-wide 16h cache window.
+       await db.insert(researchReports).values({
+         id: crypto.randomUUID(),
+         userId: authState.user.id,
+         ticker,
+         status: 'complete',
+         rawData: null,
+         reportJson: report,
+         modelUsed: 'small-cap-research',
+         generatedAt,
+       });
+
+       return Response.json({
+         ticker,
+         report,
+         generatedAt: generatedAt.toISOString(),
+         cached: false,
+       });
+     } catch (error) {
+       logRouteError('research-report:post', error);
+       return internalServerError();
+     }
+   }
+   ```
+
+2. **Auth model:** `requireUser()` per the project's user-scoped route convention. The cache itself is global; auth just keeps anonymous callers out.
+
+3. **Body validation:** `parseAndValidate(request, postSchema)` with Zod. `tickerPattern` matches the validation used elsewhere in the codebase.
+
+4. **maxDuration = 60** matches the agent's synthesize-report step timeout.
+
+5. **No new env vars.** `generateSmallCapResearchReport` reaches into `lib/agents/llm-client.ts` which calls `getBackgroundLlmConfig()` and reads `BACKGROUND_LLM_API_KEY`. That env var is already in use by the agent platform.
+
+**Validation:**
+- [ ] `npm run lint && npx tsc --noEmit` pass.
+- [ ] Manual: `curl -X POST http://localhost:3000/api/research-report -H 'Content-Type: application/json' --cookie '<auth>' -d '{"ticker":"<a known small-cap with rich data>"}'` returns a structured JSON with `report.overallOfferingRisk.rating` populated.
+- [ ] `curl http://localhost:3000/api/research-report?ticker=<same ticker>` returns `cached: true` and the same report.
+- [ ] Manually fast-forward by editing the row's `generated_at` to >16h ago in the DB → next GET returns `report: null` (cache miss).
+
+---
+
+#### Phase 5 — Research Report frontend panel
+
+##### 5a. Rename heading
+
+**File:** `components/trading/ResearchReportSections.tsx`
+**Action:** MODIFY
+
+1. Find the Overview-tab block that currently renders the Research Reports placeholder (around lines 601-606 in the 2026-05-07 snapshot — search for `"Research Reports Coming Soon"` if line numbers drift).
+2. Change the `<h4>` text from "Research Reports" to "Research Report" (singular, no `s`).
+3. The `<h4>` className must be `text-base font-semibold text-zinc-200` to match the TLDR and Dilution Rating titles. Update if the existing className is `text-sm`.
+
+##### 5b. Build the panel component
+
+**File:** `components/trading/ResearchReportPanel.tsx`
+**Action:** CREATE
+
+1. Create a new client component. Behavior (matches the auto-TLDR pattern — no buttons):
+   - Mounts → GETs `/api/research-report?ticker=<ticker>`.
+   - If GET returns `report: null` (no fresh row in the 16h window) → automatically POST `/api/research-report` to generate one. Show a "Generating Research Report…" placeholder while the POST is pending (15-30s expected).
+   - If GET returns a `report` (cache hit) → render it instantly. No second call.
+   - On any error → render the error message in place of the report.
+   - Use an `AbortController` to cancel both the GET and POST when `ticker` changes mid-flight, the same way `ResearchTldr.tsx` does.
+   - There is **no Generate button, no Regenerate button**. Cache invalidation is purely time-based (16h server-side TTL).
+
+2. Use the agent's traffic-light vocabulary (`green` / `yellow` / `red`). Map ratings to the same translucent pill style used by `DilutionRatingPanel` (`bg-emerald-500/15 text-emerald-300`, `bg-amber-500/15 text-amber-300`, `bg-rose-500/15 text-rose-300`).
+
+3. Render structure (one section per top-level field of `researchReportSchema`):
+
    ```tsx
    'use client';
 
    import { useEffect, useRef, useState } from 'react';
 
-   interface TldrResponse {
+   // The structural shape of the agent's research report. Mirrors researchReportSchema
+   // from lib/agents/blueprints/small-cap-research.ts. Kept as a local type instead of
+   // importing the Zod-inferred type so this client component doesn't pull the agent
+   // module into the browser bundle.
+   type Rating = 'green' | 'yellow' | 'red';
+   interface RatedSection { rating: Rating; explanation: string }
+   interface RatedCatalyst { catalyst: string; rating: Rating }
+   interface ResearchReport {
      ticker: string;
-     tldr: string;
-     findings: string[];
-     actionSteps: string[];
-     risks: string[];
-     historicalContext?: string | null;
-     hasHistoricalData?: boolean;
-     generatedAt: string;
+     newsWhyRunning: RatedSection;
+     themeMatch: RatedSection;
+     otherCatalysts: RatedCatalyst[];
+     chartHistory: RatedSection;
+     dilution: RatedSection;
+     offeringFrequency: RatedSection;
+     offeringAbility: RatedSection;
+     cashNeed: RatedSection;
+     overallOfferingRisk: RatedSection;
+     jmt415Commentary: string | null;
+     gapStatsTable: Array<{ date: string; gapPct: number; open: number; close: number }>;
+     financialCommentary: { rating: Rating; explanation: string; source: 'verbatim' | 'llm' };
+     confidence: 'high' | 'medium' | 'low';
+     evidenceIds: string[];
    }
 
-   const tldrCache = new Map<string, TldrResponse>();
-
-   interface Props {
+   interface ApiResponse {
      ticker: string;
+     report: ResearchReport | null;
+     generatedAt: string | null;
+     cached: boolean;
+     modelUsed?: string | null;
    }
 
-   export default function ResearchTldr({ ticker }: Props) {
-     const [data, setData] = useState<TldrResponse | null>(null);
-     const [loading, setLoading] = useState(false);
+   function pillClass(rating: Rating): string {
+     if (rating === 'red') return 'bg-rose-500/15 text-rose-300';
+     if (rating === 'yellow') return 'bg-amber-500/15 text-amber-300';
+     return 'bg-emerald-500/15 text-emerald-300';
+   }
+
+   function RatedRow({ label, section }: { label: string; section: RatedSection }) {
+     return (
+       <div className="space-y-1">
+         <div className="flex items-center justify-between gap-2">
+           <span className="text-sm font-semibold text-zinc-200">{label}</span>
+           <span className={`rounded px-2 py-0.5 text-xs font-medium uppercase ${pillClass(section.rating)}`}>
+             {section.rating}
+           </span>
+         </div>
+         <p className="text-sm text-zinc-300">{section.explanation}</p>
+       </div>
+     );
+   }
+
+   interface Props { ticker: string }
+
+   // Module-level cache mirrors the auto-TLDR's pattern — keyed by ticker, persists across remounts
+   // within a session so flipping between tickers doesn't refetch immediately.
+   const reportCache = new Map<string, { report: ResearchReport; generatedAt: string | null }>();
+
+   export default function ResearchReportPanel({ ticker }: Props) {
+     const cached = reportCache.get(ticker);
+     const [report, setReport] = useState<ResearchReport | null>(cached?.report ?? null);
+     const [generatedAt, setGeneratedAt] = useState<string | null>(cached?.generatedAt ?? null);
+     const [status, setStatus] = useState<'idle' | 'loading' | 'generating'>(cached ? 'idle' : 'loading');
      const [error, setError] = useState<string | null>(null);
      const abortRef = useRef<AbortController | null>(null);
 
      useEffect(() => {
        if (!ticker) return;
 
-       const cached = tldrCache.get(ticker);
-       if (cached) {
-         setData(cached);
+       // Session cache hit — no network round-trip.
+       const hit = reportCache.get(ticker);
+       if (hit) {
+         setReport(hit.report);
+         setGeneratedAt(hit.generatedAt);
+         setStatus('idle');
          setError(null);
-         setLoading(false);
          return;
        }
 
        abortRef.current?.abort();
        const controller = new AbortController();
        abortRef.current = controller;
-       setLoading(true);
+       setStatus('loading');
        setError(null);
-       setData(null);
+       setReport(null);
+       setGeneratedAt(null);
 
-       fetch('/api/askedgar/tldr', {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({ ticker }),
-         signal: controller.signal,
-       })
-         .then((res) => {
-           if (!res.ok) throw new Error(`TLDR request failed: ${res.status}`);
-           return res.json() as Promise<TldrResponse>;
-         })
-         .then((result) => {
-           tldrCache.set(ticker, result);
-           setData(result);
-         })
-         .catch((err: unknown) => {
+       (async () => {
+         try {
+           // 1. Probe the server cache.
+           const getRes = await fetch(
+             `/api/research-report?ticker=${encodeURIComponent(ticker)}`,
+             { signal: controller.signal },
+           );
+           if (!getRes.ok) throw new Error(`Lookup failed: ${getRes.status}`);
+           const getPayload = (await getRes.json()) as ApiResponse;
+
+           if (getPayload.report) {
+             reportCache.set(ticker, { report: getPayload.report, generatedAt: getPayload.generatedAt });
+             setReport(getPayload.report);
+             setGeneratedAt(getPayload.generatedAt);
+             setStatus('idle');
+             return;
+           }
+
+           // 2. No fresh row in the 16h window — auto-generate.
+           setStatus('generating');
+           const postRes = await fetch('/api/research-report', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ ticker }),
+             signal: controller.signal,
+           });
+           if (!postRes.ok) throw new Error(`Generation failed: ${postRes.status}`);
+           const postPayload = (await postRes.json()) as ApiResponse;
+           if (postPayload.report) {
+             reportCache.set(ticker, { report: postPayload.report, generatedAt: postPayload.generatedAt });
+             setReport(postPayload.report);
+             setGeneratedAt(postPayload.generatedAt);
+           }
+           setStatus('idle');
+         } catch (err) {
            if (err instanceof Error && err.name === 'AbortError') return;
-           setError(err instanceof Error ? err.message : 'TLDR generation failed');
-         })
-         .finally(() => {
-           if (controller.signal.aborted) return;
-           setLoading(false);
-         });
+           setError(err instanceof Error ? err.message : 'Report unavailable');
+           setStatus('idle');
+         }
+       })();
 
-       return () => {
-         controller.abort();
-       };
+       return () => { controller.abort(); };
      }, [ticker]);
 
-     if (loading) {
-       return <div className="text-sm text-zinc-500">Generating TLDR…</div>;
+     if (status === 'loading') {
+       return <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-zinc-500">Loading report…</div>;
      }
+
+     if (status === 'generating') {
+       return <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-zinc-500">Generating Research Report…</div>;
+     }
+
      if (error) {
-       return <div className="text-sm text-rose-400">{error}</div>;
+       return <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-rose-400">{error}</div>;
      }
-     if (!data) {
+
+     if (!report) {
        return null;
      }
 
-     const watchAndRisks = [...(data.actionSteps ?? []), ...(data.risks ?? [])];
-
      return (
-       <div className="space-y-4">
-         <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
-           <p className="text-sm text-zinc-200">{data.tldr}</p>
+       <div className="space-y-4 rounded border border-white/10 bg-white/5 p-4">
+         <div className="flex items-center justify-between gap-2">
+           <span className="flex items-center gap-2">
+             <span className="text-xs uppercase tracking-wide text-zinc-500">Confidence</span>
+             <span className="rounded bg-zinc-700/40 px-2 py-0.5 text-xs font-medium uppercase text-zinc-200">{report.confidence}</span>
+           </span>
+           {generatedAt ? <span className="text-xs text-zinc-500">{new Date(generatedAt).toLocaleString()}</span> : null}
          </div>
 
-         {data.findings && data.findings.length > 0 ? (
+         <RatedRow label="Overall Offering Risk" section={report.overallOfferingRisk} />
+         <RatedRow label="News / Why It's Running" section={report.newsWhyRunning} />
+         <RatedRow label="Theme Match" section={report.themeMatch} />
+         <RatedRow label="Chart History" section={report.chartHistory} />
+         <RatedRow label="Dilution" section={report.dilution} />
+         <RatedRow label="Offering Frequency" section={report.offeringFrequency} />
+         <RatedRow label="Offering Ability" section={report.offeringAbility} />
+         <RatedRow label="Cash Need" section={report.cashNeed} />
+
+         {report.otherCatalysts.length > 0 ? (
            <div>
-             <h4 className="mb-2 text-sm font-semibold text-zinc-200">Key Findings</h4>
+             <h5 className="mb-1 text-sm font-semibold text-zinc-200">Other Catalysts</h5>
              <ul className="space-y-1">
-               {data.findings.map((item, i) => (
-                 <li key={i} className="text-sm text-zinc-300">• {item}</li>
+               {report.otherCatalysts.map((c, i) => (
+                 <li key={i} className="flex items-center justify-between gap-2">
+                   <span className="text-sm text-zinc-300">{c.catalyst}</span>
+                   <span className={`rounded px-2 py-0.5 text-xs font-medium uppercase ${pillClass(c.rating)}`}>{c.rating}</span>
+                 </li>
                ))}
              </ul>
            </div>
          ) : null}
 
-         {watchAndRisks.length > 0 ? (
-           <div>
-             <h4 className="mb-2 text-sm font-semibold text-zinc-200">Watch For &amp; Risks</h4>
-             <ul className="space-y-1">
-               {watchAndRisks.map((item, i) => (
-                 <li key={i} className="text-sm text-zinc-300">• {item}</li>
-               ))}
-             </ul>
+         <div>
+           <div className="flex items-center justify-between gap-2">
+             <h5 className="text-sm font-semibold text-zinc-200">Financial Commentary</h5>
+             <span className={`rounded px-2 py-0.5 text-xs font-medium uppercase ${pillClass(report.financialCommentary.rating)}`}>{report.financialCommentary.rating}</span>
            </div>
+           <p className="mt-1 text-sm text-zinc-300">
+             {report.financialCommentary.explanation}
+             {report.financialCommentary.source === 'verbatim' ? <span className="ml-1 text-xs text-zinc-500">(verbatim from filings)</span> : null}
+           </p>
+         </div>
+
+         {report.jmt415Commentary ? (
+           <div>
+             <h5 className="mb-1 text-sm font-semibold text-zinc-200">JMT415 Commentary</h5>
+             <p className="text-sm text-zinc-300">{report.jmt415Commentary}</p>
+           </div>
+         ) : null}
+
+         {report.evidenceIds.length > 0 ? (
+           <p className="text-xs text-zinc-500">Evidence: {report.evidenceIds.join(', ')}</p>
          ) : null}
        </div>
      );
    }
    ```
 
-**Validation:**
-- [ ] `npm run lint && npx tsc --noEmit` pass.
-- [ ] Selecting a ticker fires the TLDR call automatically (no button visible). "Generating TLDR…" shows briefly, then result renders.
-- [ ] Selecting the same ticker again shows the cached result instantly (no spinner, no network call — verify in DevTools Network tab).
-- [ ] Selecting a different ticker mid-flight aborts the previous call (verify in DevTools).
-- [ ] Watch For & Risks renders as one section with `•` bullets, all `text-zinc-300`. No colored amber/rose text.
-
----
-
-#### Phase 7 — Rewrite Dilution tab
+##### 5c. Mount the panel
 
 **File:** `components/trading/ResearchReportSections.tsx`
 **Action:** MODIFY
 
-1. Replace the entire `activeTab === 'dilution'` conditional block (current lines 532-561, now reduced after Phase 3) with the consolidated 11-section layout. Source content from the previously deleted blocks (kept handy for Phase 7).
-2. Wrap in `<div className="space-y-6 p-3">`. Each section uses `<h4 className="mb-2 text-base font-semibold text-zinc-200">` for section headers (Offering Risks uses `font-bold` to match the spec emphasis).
-3. Section order and content sources:
-
-   **1. Offering Risks** — header + 4-card grid from the old Dilution block (current lines 541-555). Header className: `text-base font-bold text-zinc-200`. Cards: Warrants / Convertibles / Auth Shares / Available, sourced from `data.dilutionDetails.{warrantInfo, convertibles, authorizedShares, sharesAvailable}`.
-
-   **2. Cash Position** — port the prose block from old Overview (lines 410-419). Recompute `hasCashPosition` inline. Heading "Cash Position" + the "X months of cash left based on quarterly burn $Y and estimated cash $Z" sentence, fields from `data.dilutionDetails.{cashRemainingMonths, cashBurn, estimatedCash}`.
-
-   **3. Financial Commentary** — Use the simpler Offering Ability format (previously lines 525-528):
-   ```tsx
-   <div>
-     <h4 className="mb-2 text-base font-semibold text-zinc-200">Financial Commentary</h4>
-     <p className="text-sm text-zinc-200">{toStringValue(data.dilutionDetails.managementCommentary)}</p>
-   </div>
-   ```
-
-   **4. Split History** — combines 4 sub-tables from old History block:
-   - Historical Float table (was lines 630-655) under sub-heading `Historical Float`
-   - Reverse Splits table (was 657-678) under `Reverse Splits`
-   - Split Status table (was 680-712) under `Split Status`
-   - Agreements table (was 714-739) under `Agreements`
-
-   Wrap all four under one `<h4>Split History</h4>` parent header. Sub-headings use `text-sm font-medium text-zinc-300`.
-
-   **5. S-1's** — Filter from `data.filings`:
-   ```tsx
-   <div>
-     <h4 className="mb-2 text-base font-semibold text-zinc-200">S-1's</h4>
-     <FilingsTable rows={data.filings.filter(f => f.formType.startsWith('S-1'))} />
-   </div>
-   ```
-   (`FilingsTable` is the existing helper used by `FilingsView`; if it isn't directly accessible, render the same column structure inline — Type, Headline link, Filed At.)
-
-   **6. Shelfs** — port the shelf registrations table from old Offering Ability block (was lines 491-523). Header "Shelfs". Same column structure (Headline / ATM / Amount / Remaining / Baby Shelf / Filed).
-
-   **7. ATM's** — `<ProgramSection title="ATM Programs" rows={atmRegistrations} />`. The `atmRegistrations` constant is `data.registrations.filter(r => r.isAtm === true)` — verify the existing definition still lives in this file; preserve it.
-
-   **8. Equity Lines** — `<ProgramSection title="Equity Lines" rows={data.equityLines} />`.
-
-   **9. Warrants** — both existing `<WarrantSection>` calls:
-   - `<WarrantSection title="Outstanding Warrants" rows={regularWarrants} />`
-   - `<WarrantSection title="Pre-funded Warrants" rows={prefundedWarrants} />`
-
-   `regularWarrants` and `prefundedWarrants` constants must still exist near the top of the component — preserve them.
-
-   **10. Past Offerings** — port the offerings table from old Offerings block (was lines 594-626). Wrap under `<h4>Past Offerings</h4>`. Columns: Date / Type / Shares / Price / Amount.
-
-   **11. Owners** — port the ownership groups section from old Overview (was lines 432-467). Wrap under `<h4>Owners</h4>`. Multiple tables, one per `data.ownershipGroups[]`, each with reported date + columns Name / Role / Common / Preferred / Options / Warrants.
-
-4. Remove the standalone `dilutionRating` badge row (was lines 534-539) — the rating is now visible in the Overview `DilutionRatingTile` and the 4-card grid covers Offering Risks.
-
-**Validation:**
-- [ ] `npm run lint && npx tsc --noEmit` pass.
-- [ ] Dilution tab renders all 11 sections in the listed order with no console errors.
-- [ ] Empty/missing data shows `NoDataBadge` (where existing code uses it) — no blank holes.
-- [ ] Spot-check a ticker with rich dilution data (any biotech micro-cap) — every section populates.
-
----
-
-#### Phase 8 — Conditional chart rendering
-
-**File:** `components/trading/ResearchTickerView.tsx`
-**Action:** MODIFY
-
-1. Locate the 420px-height row that contains `<ResearchCompanyHeader />` and `<ResearchChart />` (currently around lines 96-107). The chart side currently always renders.
-2. Wrap the chart container with a conditional. Replace the current chart `<div className="min-h-0 flex-1 bg-[#0A0A0B]">` block with:
-   ```tsx
-   {(activeTab === 'overview' || activeTab === 'gap-stats') ? (
-     <div className="min-h-0 flex-1 bg-[#0A0A0B]">
-       <ResearchChart {/* preserve existing props */} />
-     </div>
-   ) : null}
-   ```
-3. Make the row height conditional so the company header doesn't sit alone in a 420px box on chart-less tabs:
-   ```tsx
-   <div className={`flex shrink-0 border-b border-white/10 ${(activeTab === 'overview' || activeTab === 'gap-stats') ? 'h-[420px]' : ''}`}>
-   ```
-   When the chart is hidden, the row collapses to the natural height of `ResearchCompanyHeader`.
-
-**Validation:**
-- [ ] `npm run lint && npx tsc --noEmit` pass.
-- [ ] Chart renders on Overview tab.
-- [ ] Chart renders on Gap Stats tab. Clicking a date row in the Gap Stats table still updates the chart correctly.
-- [ ] Chart is absent on Dilution, News, and Filings tabs. Company header collapses naturally — no big empty 420px box.
-
----
-
-#### Phase 9 — Strip residual badge color/border
-
-**File:** `components/trading/ResearchReportSections.tsx`
-**Action:** MODIFY
-
-1. Audit remaining calls to `riskClass()` and `riskDotClass()` after Phases 5 and 7. Most should be gone.
-2. If any badge calls remain in the active code path that should be neutral per spec (Dilution Risk / High / Medium / Low text in any surviving location), replace `className={riskClass(value)}` with plain `className="text-sm text-zinc-200"` (no border, no bg, no colored text).
-3. Leave alone: `WarrantSection` status pills (use `getWarrantStatus().colorClass`, intentionally colored) and `ProgramSection` Active/Inactive badges (inline classes, intentional).
-4. If `riskClass` and/or `riskDotClass` are no longer called anywhere in this file, remove them from the import line:
+1. Add the import at the top of the file (alongside `DilutionRatingTile` and `ResearchTldr`):
    ```ts
-   import { babyShelfBadge, detectFormType, formatDate, formatMoney, formatNumber, getWarrantStatus, riskClass, riskDotClass, toStringValue } from '@/lib/askedgar-utils';
+   import ResearchReportPanel from '@/components/trading/ResearchReportPanel';
    ```
-5. Same audit for `detectFormType` — if unused in the active code path, remove from the import.
+
+2. Inside the Overview tab block, replace the placeholder card with the panel. Title size matches TLDR + Dilution Rating (`text-base font-semibold`):
+   ```tsx
+   <div>
+     <h4 className="mb-2 text-base font-semibold text-zinc-200">Research Report</h4>
+     <ResearchReportPanel ticker={ticker} />
+   </div>
+   ```
+   (The "Research Reports Coming Soon" copy is gone now.)
 
 **Validation:**
-- [ ] `npm run lint && npx tsc --noEmit` pass with no unused-import warnings.
-- [ ] No colored Dilution Risk badges in the new Overview/Dilution surfaces. Warrant status pills and ATM/Equity Active badges keep their colors (intentional).
+- [ ] `npm run lint && npx tsc --noEmit` pass.
+- [ ] First open of a new ticker on Overview → "Generating Research Report…" placeholder shows for 15-30s → structured report renders with Overall Offering Risk + other rated sections + financial commentary. No buttons visible at any point.
+- [ ] Reload page → report renders instantly from cache (no LLM call). Confidence + timestamp visible at top.
+- [ ] Open the same ticker as a different team member → renders the cached report instantly (global 16h cache).
+- [ ] Edit the row's `generated_at` to >16h ago in the DB → reload → "Generating Research Report…" placeholder shows again, then a new row gets written.
 
 ---
 
-#### Phase 10 — Final cleanup pass
+#### Phase 6 — Final validation
 
-1. `components/trading/ResearchReportSections.tsx`: confirm the `ticker` prop is still actively used (it feeds the `<ResearchTldr ticker={ticker} />` in the Overview block). If not, remove from `Props` and from the call site in `ResearchTickerView.tsx`. (It IS used — verify, don't remove.)
-2. `components/trading/ResearchTickerView.tsx`: confirm the local `TabKey` and `TABS` definitions match `ResearchReportSections.tsx` exactly (5 tabs, identical labels). Optional cleanup: export `TabKey` and `TABS` from `ResearchReportSections.tsx` and import them in `ResearchTickerView.tsx` to dedupe. Skip if it complicates the diff.
-3. `components/trading/ResearchTab.tsx`: confirm `companyName` state, `handleCompanyName` callback, and `onCompanyName` prop chain are fully removed (Phase 2). No remnants.
-4. Run from repo root:
-   - `npm run lint`
-   - `npx tsc --noEmit`
-   - `npm test`
-   - `npm run typecheck:services` only if any `services/` files were touched (none expected)
+Run from repo root after all phases:
 
-**Validation:**
-- [ ] All four commands pass with zero errors and zero warnings.
+1. `npm run lint`
+2. `npx tsc --noEmit`
+3. `npm run typecheck:services` (touched `lib/agents/blueprints/small-cap-research.ts`)
+4. `npm test`
+
+**Manual smoke checklist:**
+
+- [ ] Research tab with no ticker → centered gray "Search a Ticker or Select One From The Scanner in Dashboard".
+- [ ] Search a ticker → snapshot loads.
+- [ ] Overview: TLDR header renders one bullet list, max 10 bullets, top items use bold `**High Risk:**` / `**Watch:**` prefixes (literal asterisks acceptable for v1).
+- [ ] Overview: section heading reads "Research Report" (singular). Heading uses `text-base font-semibold` and visually matches the TLDR + Dilution Rating headers on the same page.
+- [ ] Overview: when no fresh row exists, "Generating Research Report…" placeholder auto-fires. No button is ever rendered.
+- [ ] Once generated, structured report renders with traffic-light pills + confidence badge + timestamp.
+- [ ] Reload → cached report renders instantly (no second LLM call).
+- [ ] Force a stale row in the DB (set `generated_at` to >16h ago) → next page load auto-regenerates.
+- [ ] TLDR header has no green border or green background. The rendered TLDR is just a heading + plain bullet list.
+- [ ] No JS console errors. No TypeScript errors. No lint warnings.
+- [ ] Agent platform smoke (defensive): `npx vitest run __tests__/agent-blueprints.test.ts` still passes — confirms exporting helpers didn't break the existing pipeline.
 
 ---
 
@@ -631,68 +767,30 @@ Checkpoint 2026-05-07: phases 1-10 are implemented and code-validated. User dev-
 
 | File | Change | Risk |
 |---|---|---|
-| `components/trading/ResearchSubNav.tsx` | CREATE — generic nav bar component | Low |
-| `components/trading/DilutionRatingTile.tsx` | CREATE — 7-row compact rating tile with color-coded bar-chart icons | Low |
-| `components/trading/ResearchTab.tsx` | Search bar magnifying glass + "Search Symbol", drop company-name span, drop gray container, drop empty-state copy, remove `companyName` state + `onCompanyName` chain | Med |
-| `components/trading/ResearchTickerView.tsx` | Lift `activeTab` state, mount `ResearchSubNav`, conditional chart rendering, remove TLDR mount, remove `onCompanyName` prop | Med |
-| `components/trading/ResearchReportSections.tsx` | Remove inline nav, accept `activeTab` prop, reduce TabKey 8→5, full Overview rewrite, full Dilution rewrite (11 sections), strip residual `riskClass` usage, clean unused imports | High |
-| `components/trading/ResearchTldr.tsx` | Full rewrite: auto-fire on ticker change, abort guard, module-level Map cache, merge Watch For + Risks into one bullet list, drop colored text | Med |
-
-#### Verification
-
-Checkpoint validation completed from repo root on 2026-05-07 after phases 1-7:
-- `npm run lint` - passed after each phase 1-7
-- `npx tsc --noEmit` - passed after each phase 1-7
-- `npx vitest run __tests__/research-tab.test.tsx` - passed (4 tests)
-- `npm test` - passed (84 files / 612 tests)
-- `npm run typecheck:services` - not run; no `services/` files were touched
-- Manual browser smoke - user checked via dev server; no blocking issue reported
-
-Final validation completed from repo root on 2026-05-07 after phases 8-10:
-- `npm run lint` - passed
-- `npx tsc --noEmit` - passed
-- `npm test` - passed (84 files / 612 tests)
-- `npm run typecheck:services` - not run; no `services/` files were touched
-- Manual browser smoke - user checked via dev server; no blocking issue reported
-
-Run from repo root after each phase, and again at the end:
-- `npm run lint`
-- `npx tsc --noEmit`
-- `npm test`
-- `npm run typecheck:services` only if any `services/` files were touched (none expected here)
-
-Manual smoke (cannot be auto-verified — flag in completion report):
-- Search a ticker (any micro-cap with rich dilution data, e.g., a biotech). Snapshot loads.
-- All 5 tabs appear in order: Overview → Dilution → News → Filings → Gap Stats.
-- Sub-page nav sits directly below the search bar (above the chart row).
-- Selected tab is translucent green text on subtle green bg; unselected is bold white.
-- Search bar shows magnifying glass icon and "Search Symbol" placeholder. No company name text beside it.
-- No gray box/border around the entire Research surface.
-- Overview: chart visible at top; below it, side-by-side row with `DilutionRatingTile` (7 rows including Nasdaq Compliance, color-coded bar-chart icons, neutral text) on the left and auto-generated TLDR on the right; Research Reports placeholder ("Research Reports Coming Soon") below.
-- TLDR fires immediately on ticker load (no button). Re-selecting the same ticker shows the cached result instantly (verify Network tab — no second POST to `/api/askedgar/tldr`).
-- TLDR Watch For & Risks: single section, `•` bullets, all neutral zinc text.
-- Market Stats grid is gone everywhere.
-- Dilution tab: scroll through 11 sections in order: Offering Risks → Cash Position → Financial Commentary → Split History (Historical Float + Reverse Splits + Split Status + Agreements) → S-1's → Shelfs → ATM's → Equity Lines → Warrants → Past Offerings → Owners. All populate or show NoDataBadge.
-- Chart is hidden on Dilution, News, Filings tabs. Company header row collapses to natural height.
-- Chart visible on Gap Stats tab; clicking a date row updates the chart to that date's intraday view.
-- News tab unchanged structurally; Filings tab unchanged structurally; Gap Stats tab unchanged structurally.
-- Switching tickers resets active tab to Overview.
-- No JavaScript console errors on any tab.
+| `components/trading/ResearchTab.tsx` | Empty-state placeholder copy | Low |
+| `lib/research.ts` | TLDR prompt + return shape narrows to `{ findings, historicalContext }` | Med |
+| `components/trading/ResearchTldr.tsx` | Render single bullet list under TLDR header; drop tldr box + Watch/Risks section | Med |
+| `__tests__/research-tab.test.tsx` | Update assertions only if they reference dropped fields | Low |
+| `lib/agents/blueprints/small-cap-research.ts` | Add `export` to ~12 existing declarations + add `generateSmallCapResearchReport` helper | Med |
+| `app/api/research-report/route.ts` | CREATE — GET (cached) + POST (generate) | Med |
+| `components/trading/ResearchReportPanel.tsx` | CREATE — fetches/generates and renders the structured report | Med |
+| `components/trading/ResearchReportSections.tsx` | Rename "Research Reports" → "Research Report"; mount `ResearchReportPanel` | Low |
 
 #### Out of scope
 
-- Adding company description (deferred to v2 — pick a source first).
-- Wiring the Research Reports placeholder to real data.
-- Deleting `ResearchGainersList.tsx` (dead code, but out of scope for this refresh).
-- Refactoring `lib/research.ts` `fetchAndCacheRawReport` (likely orphaned, but unchanged scope).
-- Persisting `activeTab` across sessions (intentional reset on ticker change).
-- Adding tests for `DilutionRatingTile` or the auto-TLDR cache (small enough to skip).
+- Refactoring the agent's `synthesize-report` step to call `generateSmallCapResearchReport` (DRY follow-up; keep blueprint runtime untouched for safety).
+- Storing the report in `agent_reports` table or pushing to Discord.
+- Markdown rendering for the `**High Risk:**` / `**Watch:**` prefixes in TLDR bullets — literal asterisks are acceptable for v1; revisit if the user calls it out after smoke testing.
+- A user-triggered "Regenerate" button on the panel — auto-managed by the 16h TTL.
+- A purge job for stale `research_reports` rows — DB grows slowly enough that we don't need cleanup yet.
+- Agent prompt tuning — using existing prompt verbatim.
+- Cleaning up `__tests__/research-snapshot-mapper.test.ts` — unaffected by this scope.
 
 ---
 
 ## Recently Completed Summary
 
-- 2026-05-07: UI Cleanup Pass shipped — Trading Journal calendar always-on with bigger fonts; Trade Detail popout polish (white section titles, dividers, no duplicate Notes label); Trade Replay rows lose checkboxes only in journal context (preserves click-through and tag editing); Backtesting review surface centered max-width with 4×2 stats grid including new `Total Return (R)` and `Avg Hold Time` boxes; sample-set deletion uses Trash2 icon; New Backtest dialog gates Create on explicit sample-set selection (System Sheet remains a valid choice via sentinel-based gating). Validated with `npm run lint`, `npx tsc --noEmit`, `npm test` (84 files / 612 tests), `npm run workflow:audit`.
+- 2026-05-07: Research tab refresh shipped (8 → 5 tabs, Dilution rewrite, auto-TLDR, Overview rebuild, conditional chart). Then Dilution Rating + chart-less header polish (large 6-tile panel above Offering Risks, compact header on chart-less tabs, swap of TLDR/Dilution Rating positions on Overview, TLDR h4 added). Then `overall_offering_risk` mapped from AskEdgar dilution-rating endpoint (was hardcoded null), Overview titles bumped to `text-base`, Research tab restructured so only the inner sections scroll (sub-nav + chart row pinned, outer scrollbar removed). Validated each step with `npm run lint`, `npx tsc --noEmit`, vitest research suites.
 - 2026-05-05: Dashboard scanner completion — split PM/AH gainers scan with combined volume gating, MDR scanner with `mdr_triggers` table + nightly cron + dashboard merging of live and recent rows. Threshold values render as prices/percentages.
 - 2026-05-04: Backtesting UI refinements plus grid layout and sample-set sidebar (`b03fa38`, `82bfa46`, `10e1071`, `82cca14`, `36a410b`).
 - 2026-05-03: Backtesting chart drawing/indicator persistence and review save-flow fixes (`82cbb55`, `88a4da4`, `6513e40`).
