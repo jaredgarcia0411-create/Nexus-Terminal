@@ -63,10 +63,20 @@ export default function ResearchTldr({ ticker }: Props) {
   }, [ticker]);
 
   if (loading) {
-    return <div className="text-sm text-zinc-500">Generating TLDR…</div>;
+    return (
+      <div>
+        <h4 className="mb-2 text-sm font-semibold text-zinc-200">TLDR</h4>
+        <div className="text-sm text-zinc-500">Generating TLDR…</div>
+      </div>
+    );
   }
   if (error) {
-    return <div className="text-sm text-rose-400">{error}</div>;
+    return (
+      <div>
+        <h4 className="mb-2 text-sm font-semibold text-zinc-200">TLDR</h4>
+        <div className="text-sm text-rose-400">{error}</div>
+      </div>
+    );
   }
   if (!data) {
     return null;
@@ -76,8 +86,11 @@ export default function ResearchTldr({ ticker }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
-        <p className="text-sm text-zinc-200">{data.tldr}</p>
+      <div>
+        <h4 className="mb-2 text-sm font-semibold text-zinc-200">TLDR</h4>
+        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+          <p className="text-sm text-zinc-200">{data.tldr}</p>
+        </div>
       </div>
 
       {data.findings && data.findings.length > 0 ? (

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import DilutionRatingTile from '@/components/trading/DilutionRatingTile';
+import DilutionRatingTile, { DilutionRatingPanel } from '@/components/trading/DilutionRatingTile';
 import ResearchTldr from '@/components/trading/ResearchTldr';
 import {
   babyShelfBadge,
@@ -582,6 +582,9 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
         {activeTab === 'overview' ? (
           <div className="space-y-5 p-3">
             <div className="flex gap-4">
+              <div className="min-w-0 flex-1">
+                <ResearchTldr key={ticker} ticker={ticker} />
+              </div>
               <div className="w-64 shrink-0">
                 <DilutionRatingTile
                   offeringAbilityRating={data.offeringAbilityRating}
@@ -592,9 +595,6 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
                   warrantExerciseRating={data.warrantExerciseRating}
                   nasdaqCompliance={data.nasdaqCompliance}
                 />
-              </div>
-              <div className="min-w-0 flex-1">
-                <ResearchTldr key={ticker} ticker={ticker} />
               </div>
             </div>
 
@@ -609,6 +609,8 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
 
         {activeTab === 'dilution' ? (
           <div className="space-y-6 p-3">
+            <DilutionRatingPanel data={data} />
+
             <div>
               <h4 className="mb-2 text-base font-bold text-zinc-200">Offering Risks</h4>
               {[
@@ -649,10 +651,6 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
             <div className="space-y-4">
               <h4 className="mb-2 text-base font-semibold text-zinc-200">Split History</h4>
               <div className="space-y-2">
-                <h5 className="text-sm font-medium text-zinc-300">Historical Float</h5>
-                <HistoricalFloatTable rows={data.historicalFloat} />
-              </div>
-              <div className="space-y-2">
                 <h5 className="text-sm font-medium text-zinc-300">Reverse Splits</h5>
                 <ReverseSplitsTable rows={data.reverseSplits} />
               </div>
@@ -689,6 +687,11 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
             <div>
               <h4 className="mb-2 text-base font-semibold text-zinc-200">Past Offerings</h4>
               <PastOfferingsTable rows={data.offerings} />
+            </div>
+
+            <div>
+              <h4 className="mb-2 text-base font-semibold text-zinc-200">Historical Float</h4>
+              <HistoricalFloatTable rows={data.historicalFloat} />
             </div>
 
             <div>

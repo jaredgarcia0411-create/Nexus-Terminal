@@ -108,7 +108,7 @@ export default function ResearchTickerView({ ticker }: Props) {
       {/* Top row: company info panel on the left, chart only where it supports the tab. */}
       <div className={`flex shrink-0 border-b border-white/10 ${hasChart ? 'h-[420px]' : ''}`}>
         <div className="w-[320px] shrink-0 overflow-y-auto">
-          <ResearchCompanyHeader ticker={ticker} companyName={data.companyName ?? null} header={data.header} />
+          <ResearchCompanyHeader ticker={ticker} companyName={data.companyName ?? null} header={data.header} compact={!hasChart} />
         </div>
         {hasChart ? (
           <div className="min-h-0 flex-1 bg-[#0A0A0B]">

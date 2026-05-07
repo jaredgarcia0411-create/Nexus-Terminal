@@ -6,6 +6,9 @@ interface Props {
   ticker: string;
   companyName: string | null;
   header: ResearchSnapshotHeader;
+  // When true, render only the ticker + company name. Used on tabs without a chart so the panel doesn't
+  // sit alone with a wide stats column next to a blank space.
+  compact?: boolean;
 }
 
 function formatCompact(value: unknown): string {
@@ -26,7 +29,7 @@ function statRow(label: string, value: string) {
   );
 }
 
-export default function ResearchCompanyHeader({ ticker, companyName, header }: Props) {
+export default function ResearchCompanyHeader({ ticker, companyName, header, compact = false }: Props) {
   const marketCap = header.marketCap;
   const outstanding = header.outstandingShares;
   const float = header.float;
@@ -48,15 +51,17 @@ export default function ResearchCompanyHeader({ ticker, companyName, header }: P
         ) : null}
       </div>
 
-      {/* Company Stats */}
-      <div className="flex flex-col gap-1 text-sm">
-        {statRow('MCap', `$${formatCompact(marketCap)}`)}
-        {statRow('OS', formatCompact(outstanding))}
-        {statRow('Float', formatCompact(float))}
-        {exchange ? statRow('Exchange', String(exchange)) : null}
-        {ipoDate ? statRow('IPO', String(ipoDate)) : null}
-        {industry ? statRow('Industry', String(industry)) : null}
-      </div>
+      {/* Company Stats — hidden on tabs without a chart so we don't render a tall stat column next to nothing. */}
+      {!compact ? (
+        <div className="flex flex-col gap-1 text-sm">
+          {statRow('MCap', `$${formatCompact(marketCap)}`)}
+          {statRow('OS', formatCompact(outstanding))}
+          {statRow('Float', formatCompact(float))}
+          {exchange ? statRow('Exchange', String(exchange)) : null}
+          {ipoDate ? statRow('IPO', String(ipoDate)) : null}
+          {industry ? statRow('Industry', String(industry)) : null}
+        </div>
+      ) : null}
 
     </div>
   );
