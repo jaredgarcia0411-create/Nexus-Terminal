@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, ChevronRight, Search, Tag as TagIcon } from 'lucide-react';
@@ -72,21 +72,14 @@ export default function JournalTab({
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [chartCountByDay, setChartCountByDay] = useState<Record<string, number>>({});
   const [chartTimeframes, setChartTimeframes] = useState<Record<string, TradeChartTimeframeKey>>({});
-  const [calendarOpen, setCalendarOpen] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    const stored = localStorage.getItem('nexus.journal.calendarOpen');
-    return stored === null ? true : stored === 'true';
-  });
   const [drcDate, setDrcDate] = useState<string | null>(null);
   const [weekRange, setWeekRange] = useState<{ start: string; end: string } | null>(null);
 
-  const toggleCalendar = () => {
-    setCalendarOpen((previous) => {
-      const next = !previous;
-      localStorage.setItem('nexus.journal.calendarOpen', String(next));
-      return next;
-    });
-  };
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('nexus.journal.calendarOpen');
+    }
+  }, []);
 
   const dayCards = useMemo<DayCard[]>(() => {
     const dayMap = new Map<string, Trade[]>();
@@ -189,38 +182,11 @@ export default function JournalTab({
         ) : null}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-white/10 bg-[#121214]">
-        <button
-          onClick={toggleCalendar}
-          className="flex w-full items-center justify-between gap-4 p-4 text-left hover:bg-white/5"
-        >
-          <span className="text-sm font-semibold text-zinc-300">Trading Calendar</span>
-          {calendarOpen ? (
-            <ChevronDown className="h-4 w-4 text-zinc-500" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-zinc-500" />
-          )}
-        </button>
-        <AnimatePresence mode="wait">
-          {calendarOpen ? (
-            <motion.div
-              key="calendar-open"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2, ease: 'easeInOut' }}
-              className="px-4 pb-4"
-            >
-              <TradingCalendar
-                trades={filteredTrades}
-                onDayClick={(dateKey) => setDrcDate(dateKey)}
-                onWeekClick={(start, end) => setWeekRange({ start, end })}
-                embedded
-              />
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-      </div>
+      <TradingCalendar
+        trades={filteredTrades}
+        onDayClick={(dateKey) => setDrcDate(dateKey)}
+        onWeekClick={(start, end) => setWeekRange({ start, end })}
+      />
 
       <div className="space-y-4">
         {dayCards.map((day) => {
@@ -298,6 +264,7 @@ export default function JournalTab({
                       onDeleteGlobalTag={onDeleteGlobalTag}
                       onTradeClick={onTradeClick}
                       globalTags={globalTags}
+                      hideSelection
                     />
 
                     <div className="space-y-3 rounded-xl border border-white/10 bg-[#121214] p-3">

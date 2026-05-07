@@ -52,6 +52,20 @@ function formatWinRate(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function formatTotalReturnR(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return '--';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(2)}R`;
+}
+
+function formatHoldTime(mins: number | null): string {
+  if (mins == null || !Number.isFinite(mins) || mins <= 0) return '--';
+  if (mins < 60) return `${Math.round(mins)}m`;
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return `${h}h ${m}m`;
+}
+
 export default function BacktestStatsView({
   backtestId,
   onBack,
@@ -157,175 +171,181 @@ export default function BacktestStatsView({
         </div>
       </div>
 
-      <div className="grid gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
-        {[
-          ['Total Return', formatCurrency(aggregateStats.totalReturn)],
-          ['Avg R', formatMetricNumber(aggregateStats.expectancyR)],
-          ['Win Rate', formatWinRate(aggregateStats.winRate)],
-          ['Profit Factor', formatMetricNumber(aggregateStats.profitFactor)],
-          ['Max Drawdown', formatCurrency(aggregateStats.maxDrawdown)],
-          ['Total Trades', String(aggregateStats.totalTrades)],
-        ].map(([label, value]) => (
-          <div key={label} className="rounded-md border border-white/10 bg-[#111319] p-3">
-            <div className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">{label}</div>
-            <div className="mt-2 font-mono text-lg text-white">{value}</div>
+      <div className="flex-1 overflow-auto">
+        <div className="mx-auto w-full max-w-[1400px] space-y-4 p-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ['Total Return', formatCurrency(aggregateStats.totalReturn)],
+              ['Total Return (R)', formatTotalReturnR(aggregateStats.totalReturnR)],
+              ['Avg R', formatMetricNumber(aggregateStats.expectancyR)],
+              ['Win Rate', formatWinRate(aggregateStats.winRate)],
+              ['Profit Factor', formatMetricNumber(aggregateStats.profitFactor)],
+              ['Max Drawdown', formatCurrency(aggregateStats.maxDrawdown)],
+              ['Avg Hold Time', formatHoldTime(aggregateStats.avgHoldMinutes)],
+              ['Total Trades', String(aggregateStats.totalTrades)],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-md border border-white/10 bg-[#111319] p-3">
+                <div className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">{label}</div>
+                <div className="mt-2 font-mono text-lg text-white">{value}</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      <div className="px-4">
-        <div className="h-64 rounded-md border border-white/10 bg-[#111319] p-3">
-          {aggregateStats.equityCurve.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-sm text-zinc-500">No reviewed sessions in this backtest yet. Launch the chart to start reviewing.</div>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={aggregateStats.equityCurve}>
-                <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fill: '#71717a', fontSize: 11 }}
-                  tickFormatter={(value) => {
-                    const parsed = Date.parse(value);
-                    return Number.isFinite(parsed) ? format(new Date(parsed), 'MM/dd') : value;
-                  }}
-                />
-                <YAxis tick={{ fill: '#71717a', fontSize: 11 }} tickFormatter={(value) => formatCurrency(Number(value))} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#111319',
-                    borderColor: 'rgba(255,255,255,0.1)',
-                    color: '#fff',
-                  }}
-                  formatter={(value) => [formatCurrency(Number(value ?? 0)), 'Cumulative PnL']}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="cumulativePnl"
-                  stroke="#10b981"
-                  strokeWidth={2}
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
-
-      <div className="border-b border-white/10 px-4 py-3">
-        <div className="flex flex-wrap gap-3">
-          {filterGroups.map(({ group, filters }) => (
-            <div key={group} className="flex flex-wrap items-center gap-2">
-              {filters.map((filterDef) => {
-                const active = activeFilterIds.has(filterDef.id);
-                return (
-                  <button
-                    key={filterDef.id}
-                    type="button"
-                    onClick={() => toggleFilter(filterDef.id)}
-                    className={
-                      active
-                        ? 'rounded-md border border-emerald-500 bg-emerald-500/20 px-2.5 py-1 text-xs text-emerald-300'
-                        : 'rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-400'
-                    }
-                  >
-                    {filterDef.label}
-                  </button>
-                );
-              })}
+          <div className="px-4">
+            <div className="h-64 rounded-md border border-white/10 bg-[#111319] p-3">
+              {aggregateStats.equityCurve.length === 0 ? (
+                <div className="flex h-full items-center justify-center text-sm text-zinc-500">No reviewed sessions in this backtest yet. Launch the chart to start reviewing.</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={aggregateStats.equityCurve}>
+                    <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fill: '#71717a', fontSize: 11 }}
+                      tickFormatter={(value) => {
+                        const parsed = Date.parse(value);
+                        return Number.isFinite(parsed) ? format(new Date(parsed), 'MM/dd') : value;
+                      }}
+                    />
+                    <YAxis tick={{ fill: '#71717a', fontSize: 11 }} tickFormatter={(value) => formatCurrency(Number(value))} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#111319',
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        color: '#fff',
+                      }}
+                      formatter={(value) => [formatCurrency(Number(value ?? 0)), 'Cumulative PnL']}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="cumulativePnl"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
-        {filteredReviews.length === 0 ? (
-          <div className="rounded-md border border-white/10 bg-[#111319] px-4 py-6 text-sm text-zinc-500">
-            No reviewed sessions in this backtest yet. Launch the chart to start reviewing.
           </div>
-        ) : (
-          <table className="min-w-full border-separate border-spacing-0 overflow-hidden rounded-md border border-white/10 bg-[#111319] text-left">
-            <thead>
-              <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.16em] text-zinc-500">
-                {['Ticker', 'Date', 'Direction', 'PnL', 'R-Mult', 'Grade', 'Setup', 'Notes', ''].map((heading) => (
-                  <th key={heading} className="border-b border-white/10 px-3 py-2 font-medium">
-                    {heading}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {[...filteredReviews]
-                .sort((a, b) => a.session.date.localeCompare(b.session.date))
-                .map((review) => {
-                  const isOwner = review.session.userId === currentUserId;
-                  const notesExcerpt = review.session.notes?.trim()
-                    ? `${review.session.notes.trim().slice(0, 40)}${review.session.notes.trim().length > 40 ? '...' : ''}`
-                    : '--';
 
-                  return (
-                    <tr key={review.session.id} className="text-sm text-zinc-200">
-                      <td className="border-b border-white/10 px-3 py-2 font-mono text-white">{review.session.ticker}</td>
-                      <td className="border-b border-white/10 px-3 py-2 font-mono text-xs text-zinc-400">{review.session.date}</td>
-                      <td className="border-b border-white/10 px-3 py-2">{review.stats.direction ?? '--'}</td>
-                      <td className="border-b border-white/10 px-3 py-2 font-mono">{formatCurrency(review.stats.realizedPnl)}</td>
-                      <td className="border-b border-white/10 px-3 py-2 font-mono">
-                        {review.stats.rMultiple == null ? '--' : formatR(review.stats.rMultiple)}
-                      </td>
-                      <td className="border-b border-white/10 px-3 py-2">{review.stats.grade ?? '--'}</td>
-                      <td className="border-b border-white/10 px-3 py-2">{review.stats.setupType ?? '--'}</td>
-                      <td className="border-b border-white/10 px-3 py-2 text-zinc-400">{notesExcerpt}</td>
-                      <td className="border-b border-white/10 px-3 py-2">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => onOpenInChart(review.session.ticker, review.session.date, {
-                              id: backtest.id,
-                              name: backtest.name,
-                              userId: backtest.ownerId ?? backtest.userId ?? null,
-                            })}
-                            className="h-7 border border-white/10 bg-white/5 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
-                          >
-                            Open
-                          </Button>
-                          {isOwner ? (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon-xs"
-                                  className="text-zinc-400 hover:bg-white/10 hover:text-white"
-                                  aria-label={`Manage ${review.session.ticker} review`}
-                                >
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="border-white/10 bg-[#111319] text-white">
-                                <DropdownMenuItem
-                                  onSelect={() => void handleEditNotes(review.session.id, review.session.notes)}
-                                  className="cursor-pointer text-xs"
-                                >
-                                  Edit Notes
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => void handleDeleteReview(review.session.id)}
-                                  className="cursor-pointer text-xs text-rose-300"
-                                >
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        )}
+          <div className="border-b border-white/10 px-4 py-3">
+            <div className="flex flex-wrap gap-3">
+              {filterGroups.map(({ group, filters }) => (
+                <div key={group} className="flex flex-wrap items-center gap-2">
+                  {filters.map((filterDef) => {
+                    const active = activeFilterIds.has(filterDef.id);
+                    return (
+                      <button
+                        key={filterDef.id}
+                        type="button"
+                        onClick={() => toggleFilter(filterDef.id)}
+                        className={
+                          active
+                            ? 'rounded-md border border-emerald-500 bg-emerald-500/20 px-2.5 py-1 text-xs text-emerald-300'
+                            : 'rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-400'
+                        }
+                      >
+                        {filterDef.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
+            {filteredReviews.length === 0 ? (
+              <div className="rounded-md border border-white/10 bg-[#111319] px-4 py-6 text-sm text-zinc-500">
+                No reviewed sessions in this backtest yet. Launch the chart to start reviewing.
+              </div>
+            ) : (
+              <table className="min-w-full border-separate border-spacing-0 overflow-hidden rounded-md border border-white/10 bg-[#111319] text-left">
+                <thead>
+                  <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.16em] text-zinc-500">
+                    {['Ticker', 'Date', 'Direction', 'PnL', 'R-Mult', 'Grade', 'Setup', 'Notes', ''].map((heading) => (
+                      <th key={heading} className="border-b border-white/10 px-3 py-2 font-medium">
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...filteredReviews]
+                    .sort((a, b) => a.session.date.localeCompare(b.session.date))
+                    .map((review) => {
+                      const isOwner = review.session.userId === currentUserId;
+                      const notesExcerpt = review.session.notes?.trim()
+                        ? `${review.session.notes.trim().slice(0, 40)}${review.session.notes.trim().length > 40 ? '...' : ''}`
+                        : '--';
+
+                      return (
+                        <tr key={review.session.id} className="text-sm text-zinc-200">
+                          <td className="border-b border-white/10 px-3 py-2 font-mono text-white">{review.session.ticker}</td>
+                          <td className="border-b border-white/10 px-3 py-2 font-mono text-xs text-zinc-400">{review.session.date}</td>
+                          <td className="border-b border-white/10 px-3 py-2">{review.stats.direction ?? '--'}</td>
+                          <td className="border-b border-white/10 px-3 py-2 font-mono">{formatCurrency(review.stats.realizedPnl)}</td>
+                          <td className="border-b border-white/10 px-3 py-2 font-mono">
+                            {review.stats.rMultiple == null ? '--' : formatR(review.stats.rMultiple)}
+                          </td>
+                          <td className="border-b border-white/10 px-3 py-2">{review.stats.grade ?? '--'}</td>
+                          <td className="border-b border-white/10 px-3 py-2">{review.stats.setupType ?? '--'}</td>
+                          <td className="border-b border-white/10 px-3 py-2 text-zinc-400">{notesExcerpt}</td>
+                          <td className="border-b border-white/10 px-3 py-2">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="xs"
+                                onClick={() => onOpenInChart(review.session.ticker, review.session.date, {
+                                  id: backtest.id,
+                                  name: backtest.name,
+                                  userId: backtest.ownerId ?? backtest.userId ?? null,
+                                })}
+                                className="h-7 border border-white/10 bg-white/5 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
+                              >
+                                Open
+                              </Button>
+                              {isOwner ? (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon-xs"
+                                      className="text-zinc-400 hover:bg-white/10 hover:text-white"
+                                      aria-label={`Manage ${review.session.ticker} review`}
+                                    >
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="border-white/10 bg-[#111319] text-white">
+                                    <DropdownMenuItem
+                                      onSelect={() => void handleEditNotes(review.session.id, review.session.notes)}
+                                      className="cursor-pointer text-xs"
+                                    >
+                                      Edit Notes
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onSelect={() => void handleDeleteReview(review.session.id)}
+                                      className="cursor-pointer text-xs text-rose-300"
+                                    >
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
       </div>
     </section>
   );

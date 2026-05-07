@@ -30,10 +30,12 @@ export type EquityPoint = {
 
 export type AggregateStats = {
   totalReturn: number;
+  totalReturnR: number | null;
   winRate: number;
   profitFactor: number | null;
   expectancyR: number | null;
   maxDrawdown: number;
+  avgHoldMinutes: number | null;
   totalTrades: number;
   equityCurve: EquityPoint[];
 };
@@ -124,10 +126,12 @@ export function computeAggregateStats(reviews: ReviewWithStats[]): AggregateStat
   if (reviews.length === 0) {
     return {
       totalReturn: 0,
+      totalReturnR: null,
       winRate: 0,
       profitFactor: null,
       expectancyR: null,
       maxDrawdown: 0,
+      avgHoldMinutes: null,
       totalTrades: 0,
       equityCurve: [],
     };
@@ -143,6 +147,10 @@ export function computeAggregateStats(reviews: ReviewWithStats[]): AggregateStat
   let winners = 0;
   let rMultipleSum = 0;
   let rMultipleCount = 0;
+  let totalReturnRSum = 0;
+  let totalReturnRCount = 0;
+  let holdMinutesSum = 0;
+  let holdMinutesCount = 0;
 
   const equityCurve: EquityPoint[] = [];
 
@@ -164,6 +172,16 @@ export function computeAggregateStats(reviews: ReviewWithStats[]): AggregateStat
       rMultipleCount += 1;
     }
 
+    if (review.session.riskDollars > 0) {
+      totalReturnRSum += pnl / review.session.riskDollars;
+      totalReturnRCount += 1;
+    }
+
+    if (review.stats.holdMinutes !== null) {
+      holdMinutesSum += review.stats.holdMinutes;
+      holdMinutesCount += 1;
+    }
+
     if (cumulativePnl > peak) peak = cumulativePnl;
     const drawdown = cumulativePnl - peak;
     if (drawdown < maxDrawdown) maxDrawdown = drawdown;
@@ -171,10 +189,12 @@ export function computeAggregateStats(reviews: ReviewWithStats[]): AggregateStat
 
   return {
     totalReturn: cumulativePnl,
+    totalReturnR: totalReturnRCount > 0 ? totalReturnRSum : null,
     winRate: winners / reviews.length,
     profitFactor: grossLosses > 0 ? grossWins / grossLosses : null,
     expectancyR: rMultipleCount > 0 ? rMultipleSum / rMultipleCount : null,
     maxDrawdown,
+    avgHoldMinutes: holdMinutesCount > 0 ? holdMinutesSum / holdMinutesCount : null,
     totalTrades: reviews.length,
     equityCurve,
   };

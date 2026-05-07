@@ -380,8 +380,8 @@ export default function BacktestingSidebar({
                   )}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-sm font-semibold text-zinc-100">{row.ticker}</span>
-                    <span className="font-mono text-[11px] tabular-nums text-zinc-500">{row.date}</span>
+                    <span className="font-mono text-base font-semibold text-zinc-100">{row.ticker}</span>
+                    <span className="font-mono text-xs tabular-nums text-zinc-500">{row.date}</span>
                   </div>
                 </button>
               );

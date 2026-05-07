@@ -2,7 +2,7 @@
 
 import { useRef, useState, type ChangeEvent } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { Search, TrendingUp } from 'lucide-react';
+import { Search, Trash2, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 
 import AddSampleSetDialog from '@/components/trading/AddSampleSetDialog';
@@ -37,6 +37,15 @@ function formatRelativeTimestamp(value: string | null) {
   if (!Number.isFinite(parsed)) return 'No activity';
 
   return `${formatDistanceToNow(new Date(parsed), { addSuffix: true })}`;
+}
+
+const deleteIconButtonClass =
+  'h-7 w-7 shrink-0 border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 focus-visible:ring-rose-500/40';
+
+function formatBacktestSampleSetLabel(backtest: BacktestListItem, isUncategorized: boolean) {
+  if (isUncategorized) return backtest.sampleSetName ?? 'No sample set';
+  if (!backtest.sampleSetId) return 'System Sheet';
+  return backtest.sampleSetName ?? 'Sample set unavailable';
 }
 
 export default function BacktestManagerView({
@@ -214,7 +223,7 @@ export default function BacktestManagerView({
                         </div>
                         <p className="text-xs text-zinc-500">
                           {backtest.reviewCount} review{backtest.reviewCount === 1 ? '' : 's'} ·{' '}
-                          {backtest.sampleSetName ?? 'No sample set'}
+                          {formatBacktestSampleSetLabel(backtest, isUncategorized)}
                         </p>
                         {backtest.description ? (
                           <p className="line-clamp-2 text-sm text-zinc-300">{backtest.description}</p>
@@ -262,11 +271,13 @@ export default function BacktestManagerView({
                           <Button
                             type="button"
                             variant="ghost"
-                            size="xs"
+                            size="icon-xs"
                             onClick={() => void handleDeleteBacktest(backtest)}
-                            className="h-7 border border-rose-500/30 bg-rose-500/10 text-[11px] text-rose-300 hover:bg-rose-500/20 hover:text-rose-200"
+                            aria-label={`Delete ${backtest.name}`}
+                            title="Delete"
+                            className={deleteIconButtonClass}
                           >
-                            Delete
+                            <Trash2 className="size-4" />
                           </Button>
                         </div>
                       ) : null}
@@ -346,11 +357,13 @@ export default function BacktestManagerView({
                         <Button
                           type="button"
                           variant="ghost"
-                          size="xs"
+                          size="icon-xs"
                           onClick={() => void handleDeleteSampleSet(sampleSet.id, sampleSet.name)}
-                          className="h-7 shrink-0 border border-rose-500/30 bg-rose-500/10 text-[11px] text-rose-300 hover:bg-rose-500/20 hover:text-rose-200"
+                          aria-label={`Delete ${sampleSet.name}`}
+                          title="Delete"
+                          className={deleteIconButtonClass}
                         >
-                          Delete
+                          <Trash2 className="size-4" />
                         </Button>
                       ) : null}
                     </div>

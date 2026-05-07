@@ -38,7 +38,7 @@ export default function NewBacktestDialog({
   const NONE_SAMPLE_SET = '__none__';
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [sampleSetId, setSampleSetId] = useState('');
+  const [sampleSetId, setSampleSetId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -46,7 +46,7 @@ export default function NewBacktestDialog({
     if (!open) {
       setName('');
       setDescription('');
-      setSampleSetId('');
+      setSampleSetId(null);
       setError(null);
       setIsSubmitting(false);
     }
@@ -59,6 +59,11 @@ export default function NewBacktestDialog({
       return;
     }
 
+    if (sampleSetId === null) {
+      setError('Select Sample Set to Create Backtest');
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
 
@@ -66,7 +71,7 @@ export default function NewBacktestDialog({
       await onSubmit({
         name: trimmedName,
         description: description.trim() || undefined,
-        sampleSetId: sampleSetId || undefined,
+        sampleSetId: sampleSetId === '' ? undefined : sampleSetId,
       });
       onOpenChange(false);
     } catch (submitError) {
@@ -107,14 +112,14 @@ export default function NewBacktestDialog({
           <div className="space-y-2">
             <Label htmlFor="new-backtest-sample-set">Sample Set</Label>
             <Select
-              value={sampleSetId || NONE_SAMPLE_SET}
+              value={sampleSetId === null ? '' : (sampleSetId === '' ? NONE_SAMPLE_SET : sampleSetId)}
               onValueChange={(value) => setSampleSetId(value === NONE_SAMPLE_SET ? '' : value)}
             >
               <SelectTrigger
                 aria-label="Sample Set"
                 className="w-full border-white/10 bg-black text-sm text-zinc-100"
               >
-                <SelectValue placeholder="System Sheet" />
+                <SelectValue placeholder="Select a sample set..." />
               </SelectTrigger>
               <SelectContent className="border-white/10 bg-black text-white">
                 <SelectItem value={NONE_SAMPLE_SET}>System Sheet</SelectItem>

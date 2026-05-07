@@ -241,6 +241,7 @@ describe('BacktestManagerView', () => {
     expect(screen.getByText('Alpha')).toBeTruthy();
     expect(screen.getByText('by Me')).toBeTruthy();
     expect(screen.getByText('by Other')).toBeTruthy();
+    expect(screen.getByText('1 review · System Sheet')).toBeTruthy();
   });
 
   it('renders section headings for the saved lists', () => {

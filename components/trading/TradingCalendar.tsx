@@ -101,13 +101,13 @@ export default function TradingCalendar({ trades, onDayClick, onWeekClick, embed
 
   return (
     <div className="space-y-6">
-      <div className={embedded ? '' : 'bg-[#121214] border border-white/5 rounded-2xl p-6'}>
+      <div>
         <div className={`flex items-center justify-between ${embedded ? 'mb-4' : 'mb-8'}`}>
           {embedded ? <div /> : (
-            <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">Trading Calendar</h3>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-white">Trading Calendar</h3>
           )}
           <div className="flex items-center gap-4">
-            <span className="text-sm font-medium">{format(currentMonth, 'MMMM yyyy')}</span>
+            <span className="text-base font-medium">{format(currentMonth, 'MMMM yyyy')}</span>
             <div className="flex items-center gap-1">
               <button onClick={prevMonth} className="p-1 hover:bg-white/5 rounded-md transition-colors">
                 <ChevronLeft className="w-4 h-4" />
@@ -152,16 +152,16 @@ export default function TradingCalendar({ trades, onDayClick, onWeekClick, embed
                       isOffDay ? 'bg-white/[0.01]' : ''
                     } ${isSelected ? 'bg-emerald-500/5 ring-1 ring-inset ring-emerald-500/30' : ''}`}
                   >
-                    <span className={`${isMobile ? 'text-[10px]' : 'text-[11px]'} font-mono ${isToday ? 'text-emerald-500 font-bold' : 'text-zinc-500'}`}>
+                    <span className={`${isMobile ? 'text-[11px]' : 'text-[12px]'} font-mono ${isToday ? 'text-emerald-500 font-bold' : 'text-zinc-500'}`}>
                       {format(day, 'd')}
                     </span>
                     
                     {stats && (stats.pnl !== 0 || stats.r !== 0) && (
                       <div className="mt-auto flex flex-col gap-0.5">
-                        <div className={`${isMobile ? 'text-[13px]' : 'text-[14px]'} font-bold ${getPnLColor(stats.pnl)}`}>
+                        <div className={`${isMobile ? 'text-[14px]' : 'text-[15px]'} font-bold ${getPnLColor(stats.pnl)}`}>
                           {stats.pnl >= 0 ? '+' : ''}{formatCurrency(stats.pnl)}
                         </div>
-                        <div className={`${isMobile ? 'text-[11px]' : 'text-[12px]'} font-medium opacity-60 ${stats.r > 0 ? 'text-emerald-400' : stats.r < 0 ? 'text-rose-400' : 'text-white'}`}>
+                        <div className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-medium opacity-60 ${stats.r > 0 ? 'text-emerald-400' : stats.r < 0 ? 'text-rose-400' : 'text-white'}`}>
                           {formatR(stats.r)}
                         </div>
                       </div>

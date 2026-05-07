@@ -19,6 +19,7 @@ interface TradeTableProps {
   onTradeClick?: (trade: Trade) => void;
   globalTags: string[];
   readOnly?: boolean;
+  hideSelection?: boolean;
   pnlMode?: 'net' | 'gross';
 }
 
@@ -33,6 +34,7 @@ export default function TradeTable({
   onTradeClick,
   globalTags,
   readOnly = false,
+  hideSelection = false,
   pnlMode = 'net',
 }: TradeTableProps) {
   const allSelected = trades.length > 0 && trades.every((trade) => selectedIds.has(trade.id));
@@ -47,7 +49,7 @@ export default function TradeTable({
       <table className="w-full tabular-nums text-left text-sm">
         <thead className="border-b border-white/5 bg-white/5 text-zinc-500 font-medium">
           <tr>
-            {!readOnly ? (
+            {!readOnly && !hideSelection ? (
               <th className="px-4 py-3 w-10">
                 <input
                   type="checkbox"
@@ -85,7 +87,7 @@ export default function TradeTable({
                   if (!readOnly) onTradeClick?.(trade);
                 }}
               >
-                {!readOnly ? (
+                {!readOnly && !hideSelection ? (
                   <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
                     <input
                       type="checkbox"
@@ -198,7 +200,7 @@ export default function TradeTable({
 
           {trades.length === 0 ? (
             <tr>
-              <td colSpan={readOnly ? 10 : 11} className="px-4 py-12 text-center text-zinc-500 italic">
+              <td colSpan={(readOnly || hideSelection) ? 10 : 11} className="px-4 py-12 text-center text-zinc-500 italic">
                 No trades found.
               </td>
             </tr>

@@ -242,8 +242,8 @@ export default function BacktestingTab() {
               <div className="flex min-w-0 items-center justify-center gap-2">
                 {selected ? (
                   <>
-                    <span className="font-mono text-sm font-semibold text-white">{selected.ticker}</span>
-                    <span className="font-mono text-xs tabular-nums text-zinc-500">{selected.date}</span>
+                    <span className="font-mono text-base font-semibold text-white">{selected.ticker}</span>
+                    <span className="font-mono text-sm tabular-nums text-zinc-500">{selected.date}</span>
                   </>
                 ) : null}
               </div>

@@ -6,7 +6,6 @@ import { toast } from 'sonner';
 import type { Trade } from '@/lib/types';
 import { buildTradeMarkers, formatCurrency, formatR, getPnLColor } from '@/lib/trading-utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -119,11 +118,11 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
           <div className="mt-2 flex min-h-0 flex-1 flex-col gap-4">
             <div className="flex items-center justify-between p-3">
               <div>
-                <p className="text-xs text-zinc-500">{format(new Date(trade.date), 'MMM dd, yyyy HH:mm')}</p>
+                <p className="text-sm text-zinc-500">{format(new Date(trade.date), 'MMM dd, yyyy HH:mm')}</p>
                 <p className="text-sm font-semibold">
                   {trade.symbol}{' '}
                   <span
-                    className={`ml-1 rounded px-2 py-0.5 text-[10px] ${
+                    className={`ml-1 rounded px-2 py-0.5 text-[12px] ${
                       trade.direction === 'LONG' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
                     }`}
                   >
@@ -133,18 +132,18 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
               </div>
               <div className="text-right">
                 <p className={`text-sm font-semibold ${getPnLColor(trade.netPnl)}`}>{formatCurrency(trade.netPnl)}</p>
-                <p className="text-[10px] text-zinc-500">Net PnL</p>
+                <p className="text-[12px] text-zinc-500">Net PnL</p>
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto px-1 pb-6">
               <div className="space-y-2">
-                <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Overview</h3>
+                <h3 className="text-base font-semibold uppercase tracking-wider text-white">Overview</h3>
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {overviewItems.map(([label, value]) => (
                       <div key={label} className="p-2">
-                        <p className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</p>
+                        <p className="text-[12px] uppercase tracking-wider text-zinc-500">{label}</p>
                         <p className="mt-1 text-sm font-medium">{value}</p>
                       </div>
                     ))}
@@ -153,12 +152,13 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                 </div>
               </div>
 
+              <div className="my-6 border-t border-white/10" />
               <div className="space-y-2">
-                <h3 className="mt-6 text-sm font-semibold uppercase tracking-wider text-zinc-400">Chart</h3>
+                <h3 className="text-base font-semibold uppercase tracking-wider text-white">Chart</h3>
                 <div className="space-y-3 p-3">
                   <div className="flex items-center justify-end gap-4">
                     <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TradeChartTimeframeKey)}>
-                      <SelectTrigger className="h-8 w-28 bg-white/5 border-white/10 text-xs">
+                      <SelectTrigger className="h-8 w-28 bg-white/5 border-white/10 text-sm">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="bg-[#121214] border-white/10 text-white">
@@ -194,10 +194,11 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                 </div>
               </div>
 
+              <div className="my-6 border-t border-white/10" />
               <div className="space-y-2">
-                <h3 className="mt-6 text-sm font-semibold uppercase tracking-wider text-zinc-400">Executions</h3>
+                <h3 className="text-base font-semibold uppercase tracking-wider text-white">Executions</h3>
                 <div className="overflow-x-auto p-3">
-                  <table className="w-full text-left text-xs">
+                  <table className="w-full text-left text-sm">
                     <thead className="text-zinc-500">
                       <tr>
                         <th className="px-3 py-2">Time</th>
@@ -237,11 +238,11 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                 </div>
               </div>
 
+              <div className="my-6 border-t border-white/10" />
               <div className="space-y-2">
-                <h3 className="mt-6 text-sm font-semibold uppercase tracking-wider text-zinc-400">Notes</h3>
+                <h3 className="text-base font-semibold uppercase tracking-wider text-white">Notes</h3>
                 <div className="space-y-3 p-3">
                   <div className="space-y-2">
-                    <Label htmlFor="trade-notes">Notes</Label>
                     <Textarea
                       id="trade-notes"
                       value={notes}

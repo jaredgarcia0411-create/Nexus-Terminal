@@ -354,7 +354,7 @@ export default function BacktestSimPanel({
             <DialogDescription className="text-sm text-zinc-400">
               {isReadOnly
                 ? 'Exit this saved review view? The saved review will remain available.'
-                : `Remove all simulation executions for ${ticker ?? '-'} ${date ?? '-'}? R$ setting kept.`}
+                : `Remove all simulation executions for ${ticker ?? '-'} ${date ?? '-'}?`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
