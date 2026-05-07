@@ -1013,7 +1013,7 @@ export function normalizeAskEdgarResponse(
     offeringFrequencyRating: getStringField(dilutionRating, ['offering_frequency', 'offeringFrequency']),
     offeringAbilityRating: getStringField(dilutionRating, ['offering_ability', 'offeringAbility']),
     warrantExerciseRating: getStringField(dilutionRating, ['warrant_exercise', 'warrantExercise']),
-    overallRisk: null,
+    overallRisk: getStringField(dilutionRating, ['overall_offering_risk', 'overallOfferingRisk', 'overall_risk', 'overallRisk']),
     regsho: getBooleanField(compliance, ['regsho']),
     nasdaqCompliance: getStringField(compliance, ['status', 'complianceStatus', 'rating', 'nasdaq_compliance', 'nasdaqCompliance']),
     dilutionDetails: {

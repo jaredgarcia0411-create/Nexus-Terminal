@@ -102,10 +102,14 @@ export default function ResearchTickerView({ ticker }: Props) {
   const hasChart = activeTab === 'overview' || activeTab === 'gap-stats';
 
   return (
-    <div className="flex flex-col">
-      <ResearchSubNav tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
+    <div className="flex h-full flex-col">
+      {/* Sub-nav stays pinned so the user can swap tabs without scrolling back up. shrink-0 keeps it
+          out of the flex distribution. */}
+      <div className="shrink-0">
+        <ResearchSubNav tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
+      </div>
 
-      {/* Top row: company info panel on the left, chart only where it supports the tab. */}
+      {/* Top row: company info panel on the left, chart only where it supports the tab. Pinned. */}
       <div className={`flex shrink-0 border-b border-white/10 ${hasChart ? 'h-[420px]' : ''}`}>
         <div className="w-[320px] shrink-0 overflow-y-auto">
           <ResearchCompanyHeader ticker={ticker} companyName={data.companyName ?? null} header={data.header} compact={!hasChart} />
@@ -121,7 +125,11 @@ export default function ResearchTickerView({ ticker }: Props) {
         ) : null}
       </div>
 
-      <ResearchReportSections ticker={ticker} data={data} activeTab={activeTab} onSelectGapDate={setHistoricalDate} />
+      {/* Only this section scrolls. min-h-0 is required so flex-1 can actually shrink below content
+          height inside a flex column — otherwise the parent grows and the outer scrollbar comes back. */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <ResearchReportSections ticker={ticker} data={data} activeTab={activeTab} onSelectGapDate={setHistoricalDate} />
+      </div>
     </div>
   );
 }

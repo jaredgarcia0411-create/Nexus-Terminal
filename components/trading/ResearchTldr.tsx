@@ -65,7 +65,7 @@ export default function ResearchTldr({ ticker }: Props) {
   if (loading) {
     return (
       <div>
-        <h4 className="mb-2 text-sm font-semibold text-zinc-200">TLDR</h4>
+        <h4 className="mb-2 text-base font-semibold text-zinc-200">TLDR</h4>
         <div className="text-sm text-zinc-500">Generating TLDR…</div>
       </div>
     );
@@ -73,7 +73,7 @@ export default function ResearchTldr({ ticker }: Props) {
   if (error) {
     return (
       <div>
-        <h4 className="mb-2 text-sm font-semibold text-zinc-200">TLDR</h4>
+        <h4 className="mb-2 text-base font-semibold text-zinc-200">TLDR</h4>
         <div className="text-sm text-rose-400">{error}</div>
       </div>
     );
@@ -87,7 +87,7 @@ export default function ResearchTldr({ ticker }: Props) {
   return (
     <div className="space-y-4">
       <div>
-        <h4 className="mb-2 text-sm font-semibold text-zinc-200">TLDR</h4>
+        <h4 className="mb-2 text-base font-semibold text-zinc-200">TLDR</h4>
         <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
           <p className="text-sm text-zinc-200">{data.tldr}</p>
         </div>

@@ -69,7 +69,9 @@ export default function ResearchTab({ pendingResearchTicker, onClearPendingTicke
         </div>
       </div>
 
-      <div className="h-[calc(100vh-120px)] overflow-y-auto">
+      {/* Height anchor only — no overflow here. ResearchTickerView owns the inner scroll, so the page
+          shows one scrollbar (inside the sections), not two stacked. */}
+      <div className="h-[calc(100vh-120px)]">
         {selectedTicker ? (
           <ResearchTickerView ticker={selectedTicker} />
         ) : (
