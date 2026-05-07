@@ -10,7 +10,7 @@
 ### Research Report wiring + TLDR risk-ranked refactor + empty-state polish
 
 > Generated: 2026-05-07 | Author: planning conversation (scope locked by user)
-> Status: IN PROGRESS — phases 1-5 implemented and code-validated 2026-05-07; phase 6 pending
+> Status: CODE-VALIDATED — phases 1-6 automated validation passed 2026-05-07; authenticated/manual smoke remains pending
 > Executor: Codex
 
 #### Goal
@@ -39,6 +39,8 @@ Phases 1 → 6 as ordered. Each phase runs `npm run lint && npx tsc --noEmit` be
 Checkpoint 2026-05-07 after Phase 2: `npm run lint`, `npx tsc --noEmit`, `npx vitest run __tests__/research-tab.test.tsx __tests__/askedgar-tldr-route.test.ts`, and `npm test` passed. Manual dev-server smoke remains unchecked.
 
 Checkpoint 2026-05-07 after Phase 5: `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npx vitest run __tests__/research-report-route.test.ts __tests__/agent-blueprints.test.ts`, and `npm test` passed. Phase 6 final/manual smoke remains pending.
+
+Checkpoint 2026-05-07 after Phase 6 automated validation: `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npm test`, and `npx vitest run __tests__/agent-blueprints.test.ts` passed. Local dev server started successfully after sandbox port approval; unauthenticated smoke confirmed protected API gating (`/api/research-report?ticker=ABCD` returned 401). Authenticated browser smoke remains unchecked because `agent-browser`/local browsers are unavailable in this shell and the Research workflow requires an authenticated session plus live DB/LLM access.
 
 Phase 3-5 implementation notes: `generateSmallCapResearchReport` keeps the blueprint's live `dilutionDetails` cash-position fallback and uses the existing top-level `callLlm(..., 'background')`. The site route calls `ensureUser()` before inserting into `research_reports` to satisfy the user foreign key; GET cache reads remain global per ticker.
 
