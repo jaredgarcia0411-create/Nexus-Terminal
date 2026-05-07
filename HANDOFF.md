@@ -3,298 +3,627 @@
 > Updated: 2026-05-07
 > Purpose: compact recent context and follow-ups. Older implementation detail lives in git history and `specs/`.
 
+> Historical completed sections were removed to keep this file focused. Use git history and the `specs/` directory for archived implementation detail.
+
 ## Active Execution Spec
 
-### UI Cleanup Pass — Trading Journal + Backtesting
+### Research Tab Refresh — 8 → 5 sub-pages, layout reorganization
 
 > Generated: 2026-05-07 | Author: planning conversation (scope locked by user)
-> Status: IMPLEMENTED - code validation and follow-up polish passed 2026-05-07; manual browser smoke pending user review
+> Status: IN PROGRESS - phases 1-7 implemented and code-validated 2026-05-07; stop for review/commit/compact before phases 8-10
 > Executor: Codex
 
 #### Goal
 
-Tighten readability and consistency across the Trading Journal and Backtesting tabs:
-- Bigger fonts in dense surfaces (calendar, trade detail, chart headers)
-- Remove redundant UI (calendar collapse, duplicate Notes label, replay-row checkboxes, "R$ setting kept" copy)
-- Add 2 stats and reflow the backtest review grid to 4×2 with a centered max-width container
-- Gate backtest creation on an explicit sample-set selection (System Sheet stays a valid choice)
+Condense the Research surface from 8 sub-pages to 5 (Overview, Dilution, News, Filings, Gap Stats), reorganize content so dilution detail consolidates into one tab, refresh the Overview layout with a side-by-side compact rating tile + auto-generated TLDR, and apply a set of UI cleanups (nav position, search bar, tab styles, outer container, badge styling). No new API endpoints. Company description is deferred to a follow-up PR.
 
-#### Phase order
+#### Locked decisions (from planning conversation)
 
-Phase 1 fully before Phase 2. Within Phase 2, do **2B before 2A** so TypeScript stays clean while the consumer is updated. All other Phase 2 items are independent.
+- **Q1**: `activeTab` state lives in `ResearchTickerView` (lifted from `ResearchReportSections`).
+- **Q2**: Auto-TLDR uses **0ms debounce** — fire immediately on ticker change. Just abort guard + module-level `Map<string, TldrResponse>` session cache.
+- **Q3**: **Skip** company description for v1. No Polygon fetch. No description slot in the layout.
+- **Q4**: Keep `nasdaqCompliance` — it's already in the snapshot. Add as 7th row in `DilutionRatingTile`.
+- **Q5**: Research Reports placeholder copy = `"Research Reports Coming Soon"`.
+- **Q6**: S-1 filings sourced via `data.filings.filter(f => f.formType.startsWith('S-1'))`.
+- **Q7**: `nasdaqCompliance` row label = `"Nasdaq Compliance"`, value = `data.nasdaqCompliance`.
+- **Q8**: `DilutionRatingTile` bar-chart icons are **color-coded** (green=Low, amber=Medium, red=High). Only the text labels and borders go neutral. Use `riskDotClass`-equivalent logic to pick icon color.
+- **Q9**: Reset `activeTab` to `'overview'` on ticker change.
 
----
+TLDR cost is moot — Jared uses a free Groq API key.
 
-#### Phase 1A — Calendar font bump
+#### Phase order (top-down execution)
 
-- **File:** `components/trading/TradingCalendar.tsx`
-- **Action:** MODIFY
-- **Steps:**
-  1. Line 110 (month header span): change `text-sm` → `text-base`.
-  2. Line 155 (day-number text): change isMobile branch `text-[10px]` → `text-[11px]`, desktop branch `text-[11px]` → `text-[12px]`.
-  3. Line 161 (daily PnL text): change isMobile `text-[13px]` → `text-[14px]`, desktop `text-[14px]` → `text-[15px]`.
-  4. Line 164 (R value text): change isMobile `text-[11px]` → `text-[12px]`, desktop `text-[12px]` → `text-[13px]`.
-- **Acceptance:**
-  - [x] Calendar text on Journal tab renders one step larger at every callout above
-  - [x] Mobile and desktop branches both bumped
-  - [x] No other classes touched in this file
+Phases 1 → 10 as ordered. Each phase is self-contained and validates with `npm run lint && npx tsc --noEmit` before moving on. Phase 1 is the foundation — Phases 5, 7, 8 all depend on it.
+
+Checkpoint 2026-05-07: phases 1-7 are implemented. Phase 8 (conditional chart rendering), Phase 9 (residual badge cleanup), Phase 10 (final cleanup pass), and browser smoke remain pending.
 
 ---
 
-#### Phase 1B — Remove calendar collapse, single-line header
+#### Phase 1 — Lift `activeTab` state + extract `ResearchSubNav`
 
-- **File:** `components/trading/JournalTab.tsx`
-- **Action:** MODIFY
-- **Steps:**
-  1. Delete the `calendarOpen` state declaration and its setter (~lines 75–86), including any `useEffect` / handlers that persist it to `localStorage` under the key `nexus.journal.calendarOpen`.
-  2. Add a one-time cleanup of the stale key. Inside an existing `useEffect(() => { ... }, [])` mount block (or a new one if none exists), call:
-     ```ts
-     if (typeof window !== 'undefined') {
-       window.localStorage.removeItem('nexus.journal.calendarOpen');
-     }
-     ```
-  3. Delete the toggle wrapper around the calendar (~lines 195–210): the `<span>Trading Calendar</span>` label, the `ChevronDown` indicator, the click handler that flips `calendarOpen`, and the `{calendarOpen ? <TradingCalendar ... /> : null}` conditional.
-  4. Always render `<TradingCalendar ... />` in that location. Pass `embedded={false}` (or remove `embedded` if its default is already `false`) so the component renders its own internal title + month + chevrons row. The result should be: a single horizontal line containing "Trading Calendar" on the left and the month name + nav chevrons on the right, sitting above the day grid.
-  5. Remove `ChevronDown` from the `lucide-react` import on line 6 if it has no other uses in this file. Verify `ChevronRight` is still imported (it is used at ~line 235 for the day-row expand indicator).
-- **Acceptance:**
-  - [x] No `calendarOpen` state, setter, persistence, or chevron toggle remain in `JournalTab.tsx`
-  - [x] Calendar is always rendered (no collapse interaction)
-  - [x] Calendar's internal header shows "Trading Calendar" left, month + chevrons right, on one row
-  - [x] `nexus.journal.calendarOpen` localStorage key is removed on first mount after deploy
-  - [x] Unused imports cleaned up
+**Goal:** Establish foundation. After this phase the app behaves identically to today — only the state location and nav markup location change.
 
----
+**File:** `components/trading/ResearchSubNav.tsx`
+**Action:** CREATE
 
-#### Phase 1C — Trade Details popout polish
+1. Create new file. Generic nav bar component:
+   ```tsx
+   interface Props<T extends string> {
+     tabs: Array<{ key: T; label: string }>;
+     activeTab: T;
+     onTabChange: (key: T) => void;
+   }
 
-- **File:** `components/trading/TradeDetailSheet.tsx`
-- **Action:** MODIFY
-- **Steps:**
-  1. Section titles at lines 142, 157, 198, 241: change `text-zinc-400` → `text-white`, `text-sm` → `text-base`. Keep the `font-semibold uppercase tracking-wider` classes.
-  2. Bump every small text class in this file by +1 step (do not modify other files):
-     - `text-[10px]` → `text-[11px]`
-     - `text-[11px]` → `text-[12px]`
-     - `text-xs` → `text-sm`
-  3. Inside the Notes section (around line 241–244), delete the `<Label htmlFor="trade-notes">Notes</Label>` line. Keep the `<h3>Notes</h3>` heading and the `<Textarea>` underneath.
-  4. Add dividers between sections. The Chart, Executions, and Notes section `<h3>` elements currently use `mt-6`. For each of those three:
-     - Drop the `mt-6` class from the `<h3>`.
-     - Insert immediately before that section's container: `<div className="my-6 border-t border-white/10" />`.
-     - Do **not** add a divider above the Overview section (it is the first section).
-- **Acceptance:**
-  - [x] All four section titles render in white at the new bumped size
-  - [x] No `text-[10px]`, `text-[11px]`, or `text-xs` classes remain in this file
-  - [x] Single "Notes" heading appears above the textarea (no duplicate label)
-  - [x] Horizontal dividers separate Overview→Chart, Chart→Executions, Executions→Notes
-  - [x] No divider above Overview
+   export default function ResearchSubNav<T extends string>({ tabs, activeTab, onTabChange }: Props<T>) {
+     return (
+       <div className="border-b border-white/10 px-3 py-2">
+         <div className="flex flex-wrap gap-1">
+           {tabs.map((tab) => (
+             <button
+               key={tab.key}
+               type="button"
+               onClick={() => onTabChange(tab.key)}
+               className={`rounded px-2.5 py-1 text-sm transition-colors ${
+                 activeTab === tab.key
+                   ? 'bg-emerald-500 text-black'
+                   : 'text-white hover:bg-white/10'
+               }`}
+             >
+               {tab.label}
+             </button>
+           ))}
+         </div>
+       </div>
+     );
+   }
+   ```
+   Note: button styling is restyled in Phase 2; keep current classes here for Phase 1.
 
----
+**File:** `components/trading/ResearchReportSections.tsx`
+**Action:** MODIFY
 
-#### Phase 1D — Trade Replay: remove checkboxes only in journal context
+1. Remove the local `useState<TabKey>('overview')` declaration at line 338 and any associated `useState` import if `useState` is unused elsewhere in this file (check `FilingsView` — it uses `useState` for the bucket filter, so keep the import).
+2. Add `activeTab: TabKey` to the existing `Props` interface (around line 25).
+3. Delete the inline nav bar JSX block at lines 368-384 entirely (the `<div className="border-b border-white/10 px-3 py-2">…</div>` block containing the tab buttons).
+4. The component now receives `activeTab` as a prop and uses it directly in the conditional render blocks below.
 
-**Why a new prop:** `readOnly` on `TradeTable` also disables row click-through, hover state, and tag editing. Trade replay should keep all of those — only the checkboxes need to disappear.
+**File:** `components/trading/ResearchTickerView.tsx`
+**Action:** MODIFY
 
-- **File:** `components/trading/TradeTable.tsx`
-- **Action:** MODIFY
-- **Steps:**
-  1. Add to the props interface (~line 21): `hideSelection?: boolean;`
-  2. Destructure with default in the component signature (~line 35): `hideSelection = false,`
-  3. Update the two checkbox-cell guards:
-     - Line ~50: `{!readOnly ? (` → `{!readOnly && !hideSelection ? (`
-     - Line ~88: `{!readOnly ? (` → `{!readOnly && !hideSelection ? (`
-  4. Update the empty-state colspan at line ~201: `readOnly ? 10 : 11` → `(readOnly || hideSelection) ? 10 : 11`
-  5. Do **not** modify any other guards in this file (lines 81, 82, 85, 116, 127 stay tied to `readOnly` only — they govern click/hover/tag-edit behavior we want to preserve).
+1. Add import: `import ResearchSubNav from '@/components/trading/ResearchSubNav';`
+2. Add the `TabKey` type and `TABS` array at module top (mirror the 8-tab versions from `ResearchReportSections.tsx` lines 31 and 283-292):
+   ```ts
+   type TabKey = 'overview' | 'offering-ability' | 'dilution' | 'news' | 'filings' | 'offerings' | 'history' | 'gap-stats';
 
-- **File:** `components/trading/JournalTab.tsx`
-- **Action:** MODIFY
-- **Steps:**
-  1. At the `<TradeTable ... />` invocation inside the journal-day rendering (~line 291), add the prop `hideSelection`. Do **not** modify any other `<TradeTable />` consumer in the codebase (Trade Management must keep checkboxes).
+   const TABS: Array<{ key: TabKey; label: string }> = [
+     { key: 'overview', label: 'Overview' },
+     { key: 'offering-ability', label: 'Offering Ability' },
+     { key: 'dilution', label: 'Dilution' },
+     { key: 'news', label: 'News' },
+     { key: 'filings', label: 'Filings' },
+     { key: 'offerings', label: 'Offerings' },
+     { key: 'history', label: 'History' },
+     { key: 'gap-stats', label: 'Gap Stats' },
+   ];
+   ```
+   These reduce to 5 in Phase 3.
+3. Inside the component, after the `historicalDate` state, add:
+   ```ts
+   const [activeTab, setActiveTab] = useState<TabKey>('overview');
+   useEffect(() => { setActiveTab('overview'); }, [ticker]);
+   ```
+4. In the JSX, render `<ResearchSubNav tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />` as the first child of the outermost layout `<div>` (above the 420px chart row).
+5. Pass `activeTab={activeTab}` to `<ResearchReportSections />` in its existing render call.
 
-- **Acceptance:**
-  - [x] Trade rows in the Journal day expansions render with no checkbox column (header or body)
-  - [x] Trade rows still navigate to the trade detail popout on click
-  - [x] Tag editing (add/remove tag) still works on journal trade rows
-  - [x] Trade Management tab still shows checkboxes (regression check)
-
----
-
-#### Phase 2B — Extend stats computation
-
-- **File:** `lib/backtest-stats.ts`
-- **Action:** MODIFY
-- **Steps:**
-  1. Add to the `AggregateStats` type (lines 31–39):
-     ```ts
-     totalReturnR: number | null;
-     avgHoldMinutes: number | null;
-     ```
-  2. Inside `computeAggregateStats()` (lines 123–181), reuse the existing per-session iteration:
-     - For `totalReturnR`: maintain a running sum and a contributing-session counter. For each session, if `session.riskDollars > 0`, add `session.realizedPnl / session.riskDollars` to the sum and increment the counter. After the loop, set `totalReturnR` to the sum if the counter > 0, else `null`.
-     - For `avgHoldMinutes`: maintain a running sum and counter for non-null `holdMinutes` values across reviewed sessions. After the loop, set `avgHoldMinutes` to `sum / counter` if counter > 0, else `null`.
-  3. Return both fields in the result object.
-  4. Run `npx tsc --noEmit` mid-phase to confirm no consumer breaks. `hooks/use-backtest-stats.ts` is the main consumer and just passes the object through, so no change expected there.
-- **Acceptance:**
-  - [x] `AggregateStats` includes `totalReturnR` and `avgHoldMinutes`
-  - [x] Both compute via the existing single iteration over sessions (no extra pass)
-  - [x] `tsc --noEmit` passes after this phase before Phase 2A starts
+**Validation:**
+- [ ] `npm run lint && npx tsc --noEmit` pass.
+- [ ] All 8 tabs still render. Clicking them switches content. Nav bar now appears above the chart.
+- [ ] TLDR button still works (TLDR still mounted in ResearchTickerView for now).
 
 ---
 
-#### Phase 2A — Stats view: 4×2 grid, centered max-width, 2 new boxes
+#### Phase 2 — Search bar cleanup + nav style + remove outer gray container
 
-- **File:** `components/trading/BacktestStatsView.tsx`
-- **Action:** MODIFY
-- **Steps:**
-  1. Add two local format helpers above the component definition (no separate util file):
-     ```ts
-     function formatTotalReturnR(value: number | null): string {
-       if (value == null || !Number.isFinite(value)) return '--';
-       const sign = value > 0 ? '+' : '';
-       return `${sign}${value.toFixed(2)}R`;
-     }
-     function formatHoldTime(mins: number | null): string {
-       if (mins == null || !Number.isFinite(mins) || mins <= 0) return '--';
-       if (mins < 60) return `${Math.round(mins)}m`;
-       const h = Math.floor(mins / 60);
-       const m = Math.round(mins % 60);
-       return `${h}h ${m}m`;
-     }
-     ```
-  2. Inside the `<section>` body (lines ~135–158), wrap all the children that currently sit directly under `<section>` (after the header bar) in a centered scroll container:
-     ```tsx
-     <div className="flex-1 overflow-auto">
-       <div className="mx-auto w-full max-w-[1400px] space-y-4 p-4">
-         {/* existing children: stats grid, chart, filter chips, sessions table */}
+**File:** `components/trading/ResearchTab.tsx`
+**Action:** MODIFY
+
+1. Search input (current lines 56-64). Wrap in a relative container and add a magnifying glass icon. Replace the existing input block with:
+   ```tsx
+   <div className="relative">
+     <svg
+       className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500"
+       fill="none"
+       stroke="currentColor"
+       viewBox="0 0 24 24"
+       xmlns="http://www.w3.org/2000/svg"
+     >
+       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+     </svg>
+     <input
+       type="text"
+       value={tickerInput}
+       onChange={(e) => setTickerInput(e.target.value)}
+       onKeyDown={(e) => { if (e.key === 'Enter') { /* existing handler logic */ } }}
+       placeholder="Search Symbol"
+       className="w-48 rounded-lg border border-white/10 bg-[#121214] pl-8 pr-3 py-1.5 text-sm text-zinc-200 transition-colors focus:border-emerald-500/50 focus:outline-none"
+     />
+   </div>
+   ```
+   Preserve the existing `onChange` and `onKeyDown` handler logic from the current input. Only change `placeholder`, the className (`px-3` → `pl-8 pr-3`), and add the wrapping `<div className="relative">` + icon.
+2. Delete the company name `<span>` block at lines 65-71 (`<span className="text-sm text-zinc-200">…</span>`).
+3. Remove the `companyName` state declaration, the `handleCompanyName` callback, and the `onCompanyName` prop passed to `<ResearchTickerView />`. The `companyName` state existed only to feed the now-deleted span.
+4. Outer container at line 74: change `<div className="h-[calc(100vh-120px)] overflow-y-auto rounded-lg border border-white/10 bg-[#121214]">` to `<div className="h-[calc(100vh-120px)] overflow-y-auto">`. Remove `rounded-lg`, `border`, `border-white/10`, `bg-[#121214]`.
+5. The "no ticker selected" empty state at line 78: keep the empty `<div>` but remove the inner text "Search a ticker above or click a row in the Scanner". Replace inner content with empty (`<div className="flex h-full items-center justify-center" />` or similar). Leaves the structural placeholder without prompting copy.
+
+**File:** `components/trading/ResearchTickerView.tsx`
+**Action:** MODIFY
+
+1. Remove the `onCompanyName?: (name: string \| null) => void;` field from the `Props` interface.
+2. Remove the corresponding destructure of `onCompanyName` from props.
+3. Remove the `onCompanyName?.(null)` call inside `fetchData` (start of try/fetch).
+4. Remove the `onCompanyName?.(result.companyName ?? null)` call (end of try/fetch).
+
+**File:** `components/trading/ResearchSubNav.tsx`
+**Action:** MODIFY
+
+1. Update the button className. Selected = `bg-emerald-500/10 text-emerald-500`. Unselected = `font-bold text-white hover:bg-white/10`:
+   ```tsx
+   className={`rounded px-2.5 py-1 text-sm transition-colors ${
+     activeTab === tab.key
+       ? 'bg-emerald-500/10 text-emerald-500'
+       : 'font-bold text-white hover:bg-white/10'
+   }`}
+   ```
+
+**Validation:**
+- [ ] `npm run lint && npx tsc --noEmit` pass.
+- [ ] Search bar shows magnifying glass icon, placeholder reads `"Search Symbol"`.
+- [ ] No company name text beside the search bar.
+- [ ] No gray box border/background around the entire Research surface.
+- [ ] Selected tab = translucent green text on subtle green bg. Unselected = bold white.
+- [ ] No "Search a ticker above" text in the empty state.
+
+---
+
+#### Phase 3 — Reduce 8 tabs to 5
+
+**File:** `components/trading/ResearchReportSections.tsx`
+**Action:** MODIFY
+
+1. Line 31: replace the `TabKey` union with:
+   ```ts
+   type TabKey = 'overview' | 'dilution' | 'news' | 'filings' | 'gap-stats';
+   ```
+2. Lines 283-292: replace the `TABS` array with:
+   ```ts
+   const TABS: Array<{ key: TabKey; label: string }> = [
+     { key: 'overview', label: 'Overview' },
+     { key: 'dilution', label: 'Dilution' },
+     { key: 'news', label: 'News' },
+     { key: 'filings', label: 'Filings' },
+     { key: 'gap-stats', label: 'Gap Stats' },
+   ];
+   ```
+3. Delete the entire conditional render blocks for the removed tabs:
+   - `activeTab === 'offering-ability'` block (current lines 485-530)
+   - `activeTab === 'offerings'` block (current lines 592-626)
+   - `activeTab === 'history'` block (current lines 628-741)
+   The content from these blocks is reincorporated into the new Dilution body in Phase 7. Keep the references handy.
+
+**File:** `components/trading/ResearchTickerView.tsx`
+**Action:** MODIFY
+
+1. Update the local `TabKey` type and `TABS` array to match the 5-tab versions above.
+
+**Validation:**
+- [ ] `npm run lint && npx tsc --noEmit` pass.
+- [ ] Only 5 tabs appear in the nav: Overview, Dilution, News, Filings, Gap Stats.
+- [ ] All 5 tabs render content. Dilution tab still shows the old sparse content (rewritten in Phase 7).
+- [ ] No console errors.
+
+---
+
+#### Phase 4 — Build `DilutionRatingTile`
+
+**File:** `components/trading/DilutionRatingTile.tsx`
+**Action:** CREATE
+
+1. Create new file. Component shows 7 rows: Ofr. Ability, Ofr. Freq., Dilution, Cash Need, Overall Ofr. Risk, Warrant Exercise, Nasdaq Compliance. Bar-chart icon is color-coded by risk; text and borders are neutral.
+   ```tsx
+   import { toStringValue } from '@/lib/askedgar-utils';
+
+   interface Props {
+     offeringAbilityRating: string | null;
+     offeringFrequencyRating: string | null;
+     dilutionRating: string | null;
+     cashNeedRating: string | null;
+     overallRisk: string | null;
+     warrantExerciseRating: string | null;
+     nasdaqCompliance: string | null;
+   }
+
+   function iconColorClass(value: string | null): string {
+     if (!value) return 'text-zinc-500';
+     const v = value.toLowerCase();
+     if (v.includes('low') || v.includes('compliant') || v.includes('positive')) return 'text-emerald-500';
+     if (v.includes('medium') || v.includes('watch') || v.includes('warning')) return 'text-amber-500';
+     if (v.includes('high') || v.includes('non-compliant') || v.includes('risk')) return 'text-rose-500';
+     return 'text-zinc-500';
+   }
+
+   function BarChartIcon({ colorClass }: { colorClass: string }) {
+     return (
+       <svg className={`h-3 w-3 ${colorClass}`} fill="currentColor" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg">
+         <rect x="1" y="7" width="2" height="4" />
+         <rect x="5" y="4" width="2" height="7" />
+         <rect x="9" y="1" width="2" height="10" />
+       </svg>
+     );
+   }
+
+   export default function DilutionRatingTile(props: Props) {
+     const rows = [
+       { label: 'Ofr. Ability', value: props.offeringAbilityRating },
+       { label: 'Ofr. Freq.', value: props.offeringFrequencyRating },
+       { label: 'Dilution', value: props.dilutionRating },
+       { label: 'Cash Need', value: props.cashNeedRating },
+       { label: 'Overall Ofr. Risk', value: props.overallRisk },
+       { label: 'Warrant Exercise', value: props.warrantExerciseRating },
+       { label: 'Nasdaq Compliance', value: props.nasdaqCompliance },
+     ];
+
+     return (
+       <div>
+         <h4 className="mb-2 text-sm font-semibold text-zinc-200">Dilution Rating</h4>
+         <div className="space-y-1.5">
+           {rows.map((row) => (
+             <div key={row.label} className="flex items-center justify-between gap-2">
+               <span className="text-xs text-zinc-400">{row.label}</span>
+               <div className="flex items-center gap-2">
+                 <BarChartIcon colorClass={iconColorClass(row.value)} />
+                 <span className="text-xs font-medium text-zinc-200">{toStringValue(row.value)}</span>
+               </div>
+             </div>
+           ))}
+         </div>
+       </div>
+     );
+   }
+   ```
+
+**Validation:**
+- [ ] `npm run lint && npx tsc --noEmit` pass.
+- [ ] Component compiles. Not yet rendered anywhere; smoke check happens in Phase 5.
+
+---
+
+#### Phase 5 — Rewrite Overview tab
+
+**File:** `components/trading/ResearchReportSections.tsx`
+**Action:** MODIFY
+
+1. Add imports at top of file:
+   ```ts
+   import DilutionRatingTile from '@/components/trading/DilutionRatingTile';
+   import ResearchTldr from '@/components/trading/ResearchTldr';
+   ```
+2. Confirm `ticker: string` is already in the `Props` interface (verify line ~26). It is.
+3. Remove the now-unused computed variables that fed the old Overview block:
+   - `ratings` array (current lines 344-351)
+   - `hasRatings` flag (line ~352)
+   - `hasCashPosition` flag — keep it; reused in Phase 7
+   - `hasMarketStats` flag (line ~358) and any related code
+4. Replace the entire `activeTab === 'overview'` conditional block (current lines 387-483) with the new layout:
+   ```tsx
+   {activeTab === 'overview' ? (
+     <div className="space-y-5 p-3">
+       <div className="flex gap-4">
+         <div className="w-64 shrink-0">
+           <DilutionRatingTile
+             offeringAbilityRating={data.offeringAbilityRating}
+             offeringFrequencyRating={data.offeringFrequencyRating}
+             dilutionRating={data.dilutionRating}
+             cashNeedRating={data.cashNeedRating}
+             overallRisk={data.overallRisk}
+             warrantExerciseRating={data.warrantExerciseRating}
+             nasdaqCompliance={data.nasdaqCompliance}
+           />
+         </div>
+         <div className="min-w-0 flex-1">
+           <ResearchTldr ticker={ticker} />
+         </div>
+       </div>
+
+       <div>
+         <h4 className="mb-2 text-sm font-semibold text-zinc-200">Research Reports</h4>
+         <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-zinc-500">
+           Research Reports Coming Soon
+         </div>
        </div>
      </div>
-     ```
-     Move the existing children inside the inner `<div>`. Do not change any of their internal padding/margins except what step 3 specifies. The header bar (back arrow, title, subtitle) stays full-width above the new wrapper.
-  3. Stats grid (lines 160–174): change container className from `grid gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6` → `grid gap-3 sm:grid-cols-2 lg:grid-cols-4` (drop the `p-4` since the wrapper supplies padding).
-  4. Update the stats array to 8 entries in this exact order:
-     ```ts
-     [
-       ['Total Return', formatCurrency(aggregateStats.totalReturn)],
-       ['Total Return (R)', formatTotalReturnR(aggregateStats.totalReturnR)],
-       ['Avg R', formatMetricNumber(aggregateStats.expectancyR)],
-       ['Win Rate', formatWinRate(aggregateStats.winRate)],
-       ['Profit Factor', formatMetricNumber(aggregateStats.profitFactor)],
-       ['Max Drawdown', formatCurrency(aggregateStats.maxDrawdown)],
-       ['Avg Hold Time', formatHoldTime(aggregateStats.avgHoldMinutes)],
-       ['Total Trades', String(aggregateStats.totalTrades)],
-     ]
-     ```
-- **Acceptance:**
-  - [x] Backtest review surface is centered with max-width 1400px and adapts to viewport like other dashboard pages
-  - [x] Stats render as a 4×2 grid on lg+ (2 cols on sm, 1 col on mobile)
-  - [x] All 8 boxes appear in the order specified
-  - [x] Total Return (R) displays as `+12.50R` / `-3.20R` / `--`
-  - [x] Avg Hold Time displays as `42m` (<60min) or `1h 23m` (≥60min) or `--`
+   ) : null}
+   ```
+
+**File:** `components/trading/ResearchTickerView.tsx`
+**Action:** MODIFY
+
+1. Remove the `<ResearchTldr ticker={ticker} />` mount (currently in a `border-t border-white/10` wrapper around lines 111-113). TLDR now lives inside the Overview tab body.
+2. Remove the `import ResearchTldr from '@/components/trading/ResearchTldr';` line.
+
+**Validation:**
+- [ ] `npm run lint && npx tsc --noEmit` pass.
+- [ ] Overview tab shows: side-by-side row with `DilutionRatingTile` (left, fixed width) and `ResearchTldr` (right, flex-1). Below: Research Reports placeholder card with "Research Reports Coming Soon".
+- [ ] No Market Stats grid anywhere on Overview.
+- [ ] Switching to Dilution/News/Filings/Gap Stats hides the TLDR and Research Reports placeholder.
+- [ ] Switching back to Overview re-shows them.
 
 ---
 
-#### Phase 2C — Drop "R$ setting kept" wording
+#### Phase 6 — Auto-TLDR refactor
 
-- **File:** `components/trading/BacktestSimPanel.tsx`
-- **Action:** MODIFY
-- **Steps:**
-  1. Line 357 (inside the non-readOnly branch of the `DialogDescription`): change
-     ```
-     `Remove all simulation executions for ${ticker ?? '-'} ${date ?? '-'}? R$ setting kept.`
-     ```
-     to
-     ```
-     `Remove all simulation executions for ${ticker ?? '-'} ${date ?? '-'}?`
-     ```
-- **Acceptance:**
-  - [x] Clear-simulation dialog no longer shows " R$ setting kept." trailing copy
-  - [x] The read-only branch of the description (`Exit this saved review view? ...`) is unchanged
+**File:** `components/trading/ResearchTldr.tsx`
+**Action:** MODIFY (full rewrite)
 
----
+1. Replace the file content. Key changes:
+   - Module-level `const tldrCache = new Map<string, TldrResponse>();` (declared outside the component function so it persists across remounts during the session).
+   - `useEffect` on `ticker` that fires the fetch immediately (no `setTimeout`/debounce).
+   - `AbortController` ref to cancel in-flight requests on ticker change.
+   - Remove the Generate button + "Click 'Generate TLDR'" prompt.
+   - Merge the existing `actionSteps` (Watch For) and `risks` lists into a single "Watch For & Risks" section. Use `•` bullet character. All items rendered with `text-zinc-300` (no color coding).
 
-#### Phase 2D — Sample-set delete → trash icon
+   Replace the file body with:
+   ```tsx
+   'use client';
 
-- **File:** `components/trading/BacktestManagerView.tsx`
-- **Action:** MODIFY
-- **Steps:**
-  1. Add `Trash2` to the existing `lucide-react` import at the top of the file.
-  2. Replace the Delete button block (lines 345–354) with:
-     ```tsx
-     <Button
-       type="button"
-       variant="ghost"
-       size="icon-xs"
-       onClick={() => void handleDeleteSampleSet(sampleSet.id, sampleSet.name)}
-       aria-label={`Delete ${sampleSet.name}`}
-       title="Delete"
-       className="shrink-0 text-rose-300 hover:bg-rose-500/10 hover:text-rose-200"
-     >
-       <Trash2 className="size-4" />
-     </Button>
-     ```
-     Use `size-4` on the `Trash2` (not `h-4 w-4`) — the `icon-xs` button variant has a CSS selector that auto-shrinks SVGs without `size-*` classes, and `size-4` opts out of that.
-- **Acceptance:**
-  - [x] Owner-visible delete control on each sample set is now a Trash2 icon button
-  - [x] Hover/focus states still surface the rose accent color
-  - [x] `aria-label` and `title` are present (accessibility / tooltip)
+   import { useEffect, useRef, useState } from 'react';
 
----
+   interface TldrResponse {
+     ticker: string;
+     tldr: string;
+     findings: string[];
+     actionSteps: string[];
+     risks: string[];
+     historicalContext?: string | null;
+     hasHistoricalData?: boolean;
+     generatedAt: string;
+   }
 
-#### Phase 2E — Require sample set on Create
+   const tldrCache = new Map<string, TldrResponse>();
 
-**Sentinel-based gating:** "System Sheet" must remain a valid choice, but the user must actively pick something (System Sheet or a real sample set). We use `null` to mean "not picked yet" and `''` to mean "System Sheet picked".
+   interface Props {
+     ticker: string;
+   }
 
-- **File:** `components/trading/NewBacktestDialog.tsx`
-- **Action:** MODIFY
-- **Steps:**
-  1. Change the `sampleSetId` state initial value from `''` to `null`. Type the state as `string | null`:
-     ```ts
-     const [sampleSetId, setSampleSetId] = useState<string | null>(null);
-     ```
-  2. Update the Select component:
-     - `value` prop: `value={sampleSetId === null ? '' : (sampleSetId === '' ? NONE_SAMPLE_SET : sampleSetId)}`
-       - When `null`, pass `''` so no item is selected and the placeholder shows.
-       - When `''` (System Sheet picked), pass the existing `NONE_SAMPLE_SET` sentinel so that item is highlighted.
-       - When a real id, pass it through unchanged.
-     - `onValueChange`: `(value) => setSampleSetId(value === NONE_SAMPLE_SET ? '' : value)`
-       - Picking System Sheet sets state to `''` (a real choice).
-       - Picking any sample set sets state to its id.
-     - `<SelectValue placeholder="Select a sample set..." />` — replace the existing `placeholder="System Sheet"` so the placeholder no longer implies a default selection.
-  3. In `handleSubmit` (lines 55–77), after the existing name check, add:
-     ```ts
-     if (sampleSetId === null) {
-       setError('Select Sample Set to Create Backtest');
-       return;
+   export default function ResearchTldr({ ticker }: Props) {
+     const [data, setData] = useState<TldrResponse | null>(null);
+     const [loading, setLoading] = useState(false);
+     const [error, setError] = useState<string | null>(null);
+     const abortRef = useRef<AbortController | null>(null);
+
+     useEffect(() => {
+       if (!ticker) return;
+
+       const cached = tldrCache.get(ticker);
+       if (cached) {
+         setData(cached);
+         setError(null);
+         setLoading(false);
+         return;
+       }
+
+       abortRef.current?.abort();
+       const controller = new AbortController();
+       abortRef.current = controller;
+       setLoading(true);
+       setError(null);
+       setData(null);
+
+       fetch('/api/askedgar/tldr', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ ticker }),
+         signal: controller.signal,
+       })
+         .then((res) => {
+           if (!res.ok) throw new Error(`TLDR request failed: ${res.status}`);
+           return res.json() as Promise<TldrResponse>;
+         })
+         .then((result) => {
+           tldrCache.set(ticker, result);
+           setData(result);
+         })
+         .catch((err: unknown) => {
+           if (err instanceof Error && err.name === 'AbortError') return;
+           setError(err instanceof Error ? err.message : 'TLDR generation failed');
+         })
+         .finally(() => {
+           if (controller.signal.aborted) return;
+           setLoading(false);
+         });
+
+       return () => {
+         controller.abort();
+       };
+     }, [ticker]);
+
+     if (loading) {
+       return <div className="text-sm text-zinc-500">Generating TLDR…</div>;
      }
-     ```
-  4. In the `onSubmit({...})` call, change `sampleSetId: sampleSetId || undefined` to `sampleSetId: sampleSetId === '' ? undefined : sampleSetId`. This preserves the existing wire behavior where System Sheet sends `undefined` while a real id is passed through.
-  5. If there is an existing dialog reset effect (clearing name/description on close), add `setSampleSetId(null)` to it. If no such effect exists, do not add one.
-  6. Do **not** add any pre-emptive copy. The existing `{error ? <p className="text-sm text-rose-400">{error}</p> : null}` only renders after a failed submit, which is the desired behavior.
-- **Acceptance:**
-  - [x] Dialog opens with no sample-set option selected (placeholder visible)
-  - [x] Clicking Create with no selection shows "Select Sample Set to Create Backtest" inline
-  - [x] Picking "System Sheet" + Create succeeds and sends `sampleSetId: undefined` to onSubmit (existing behavior)
-  - [x] Picking any real sample set + Create succeeds and sends its id
-  - [x] No validation copy is visible before the user clicks Create
+     if (error) {
+       return <div className="text-sm text-rose-400">{error}</div>;
+     }
+     if (!data) {
+       return null;
+     }
+
+     const watchAndRisks = [...(data.actionSteps ?? []), ...(data.risks ?? [])];
+
+     return (
+       <div className="space-y-4">
+         <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+           <p className="text-sm text-zinc-200">{data.tldr}</p>
+         </div>
+
+         {data.findings && data.findings.length > 0 ? (
+           <div>
+             <h4 className="mb-2 text-sm font-semibold text-zinc-200">Key Findings</h4>
+             <ul className="space-y-1">
+               {data.findings.map((item, i) => (
+                 <li key={i} className="text-sm text-zinc-300">• {item}</li>
+               ))}
+             </ul>
+           </div>
+         ) : null}
+
+         {watchAndRisks.length > 0 ? (
+           <div>
+             <h4 className="mb-2 text-sm font-semibold text-zinc-200">Watch For &amp; Risks</h4>
+             <ul className="space-y-1">
+               {watchAndRisks.map((item, i) => (
+                 <li key={i} className="text-sm text-zinc-300">• {item}</li>
+               ))}
+             </ul>
+           </div>
+         ) : null}
+       </div>
+     );
+   }
+   ```
+
+**Validation:**
+- [ ] `npm run lint && npx tsc --noEmit` pass.
+- [ ] Selecting a ticker fires the TLDR call automatically (no button visible). "Generating TLDR…" shows briefly, then result renders.
+- [ ] Selecting the same ticker again shows the cached result instantly (no spinner, no network call — verify in DevTools Network tab).
+- [ ] Selecting a different ticker mid-flight aborts the previous call (verify in DevTools).
+- [ ] Watch For & Risks renders as one section with `•` bullets, all `text-zinc-300`. No colored amber/rose text.
 
 ---
 
-#### Phase 2F — Chart text +1
+#### Phase 7 — Rewrite Dilution tab
 
-- **File:** `components/trading/BacktestingSidebar.tsx`
-- **Action:** MODIFY
-- **Steps:**
-  1. Line ~383 (ticker span): `text-sm` → `text-base`.
-  2. Line ~384 (date span): `text-[11px]` → `text-xs`.
+**File:** `components/trading/ResearchReportSections.tsx`
+**Action:** MODIFY
 
-- **File:** `components/trading/BacktestingTab.tsx`
-- **Action:** MODIFY
-- **Steps:**
-  1. Line ~245 (ticker span): `text-sm` → `text-base`.
-  2. Line ~246 (date span): `text-xs` → `text-sm`.
+1. Replace the entire `activeTab === 'dilution'` conditional block (current lines 532-561, now reduced after Phase 3) with the consolidated 11-section layout. Source content from the previously deleted blocks (kept handy for Phase 7).
+2. Wrap in `<div className="space-y-6 p-3">`. Each section uses `<h4 className="mb-2 text-base font-semibold text-zinc-200">` for section headers (Offering Risks uses `font-bold` to match the spec emphasis).
+3. Section order and content sources:
 
-- **Acceptance:**
-  - [x] Sample-list rows in the charts sidebar render ticker and date one step larger
-  - [x] Chart top-header ticker and date render one step larger
-  - [x] No other text in those files is changed
+   **1. Offering Risks** — header + 4-card grid from the old Dilution block (current lines 541-555). Header className: `text-base font-bold text-zinc-200`. Cards: Warrants / Convertibles / Auth Shares / Available, sourced from `data.dilutionDetails.{warrantInfo, convertibles, authorizedShares, sharesAvailable}`.
+
+   **2. Cash Position** — port the prose block from old Overview (lines 410-419). Recompute `hasCashPosition` inline. Heading "Cash Position" + the "X months of cash left based on quarterly burn $Y and estimated cash $Z" sentence, fields from `data.dilutionDetails.{cashRemainingMonths, cashBurn, estimatedCash}`.
+
+   **3. Financial Commentary** — Use the simpler Offering Ability format (previously lines 525-528):
+   ```tsx
+   <div>
+     <h4 className="mb-2 text-base font-semibold text-zinc-200">Financial Commentary</h4>
+     <p className="text-sm text-zinc-200">{toStringValue(data.dilutionDetails.managementCommentary)}</p>
+   </div>
+   ```
+
+   **4. Split History** — combines 4 sub-tables from old History block:
+   - Historical Float table (was lines 630-655) under sub-heading `Historical Float`
+   - Reverse Splits table (was 657-678) under `Reverse Splits`
+   - Split Status table (was 680-712) under `Split Status`
+   - Agreements table (was 714-739) under `Agreements`
+
+   Wrap all four under one `<h4>Split History</h4>` parent header. Sub-headings use `text-sm font-medium text-zinc-300`.
+
+   **5. S-1's** — Filter from `data.filings`:
+   ```tsx
+   <div>
+     <h4 className="mb-2 text-base font-semibold text-zinc-200">S-1's</h4>
+     <FilingsTable rows={data.filings.filter(f => f.formType.startsWith('S-1'))} />
+   </div>
+   ```
+   (`FilingsTable` is the existing helper used by `FilingsView`; if it isn't directly accessible, render the same column structure inline — Type, Headline link, Filed At.)
+
+   **6. Shelfs** — port the shelf registrations table from old Offering Ability block (was lines 491-523). Header "Shelfs". Same column structure (Headline / ATM / Amount / Remaining / Baby Shelf / Filed).
+
+   **7. ATM's** — `<ProgramSection title="ATM Programs" rows={atmRegistrations} />`. The `atmRegistrations` constant is `data.registrations.filter(r => r.isAtm === true)` — verify the existing definition still lives in this file; preserve it.
+
+   **8. Equity Lines** — `<ProgramSection title="Equity Lines" rows={data.equityLines} />`.
+
+   **9. Warrants** — both existing `<WarrantSection>` calls:
+   - `<WarrantSection title="Outstanding Warrants" rows={regularWarrants} />`
+   - `<WarrantSection title="Pre-funded Warrants" rows={prefundedWarrants} />`
+
+   `regularWarrants` and `prefundedWarrants` constants must still exist near the top of the component — preserve them.
+
+   **10. Past Offerings** — port the offerings table from old Offerings block (was lines 594-626). Wrap under `<h4>Past Offerings</h4>`. Columns: Date / Type / Shares / Price / Amount.
+
+   **11. Owners** — port the ownership groups section from old Overview (was lines 432-467). Wrap under `<h4>Owners</h4>`. Multiple tables, one per `data.ownershipGroups[]`, each with reported date + columns Name / Role / Common / Preferred / Options / Warrants.
+
+4. Remove the standalone `dilutionRating` badge row (was lines 534-539) — the rating is now visible in the Overview `DilutionRatingTile` and the 4-card grid covers Offering Risks.
+
+**Validation:**
+- [ ] `npm run lint && npx tsc --noEmit` pass.
+- [ ] Dilution tab renders all 11 sections in the listed order with no console errors.
+- [ ] Empty/missing data shows `NoDataBadge` (where existing code uses it) — no blank holes.
+- [ ] Spot-check a ticker with rich dilution data (any biotech micro-cap) — every section populates.
+
+---
+
+#### Phase 8 — Conditional chart rendering
+
+**File:** `components/trading/ResearchTickerView.tsx`
+**Action:** MODIFY
+
+1. Locate the 420px-height row that contains `<ResearchCompanyHeader />` and `<ResearchChart />` (currently around lines 96-107). The chart side currently always renders.
+2. Wrap the chart container with a conditional. Replace the current chart `<div className="min-h-0 flex-1 bg-[#0A0A0B]">` block with:
+   ```tsx
+   {(activeTab === 'overview' || activeTab === 'gap-stats') ? (
+     <div className="min-h-0 flex-1 bg-[#0A0A0B]">
+       <ResearchChart {/* preserve existing props */} />
+     </div>
+   ) : null}
+   ```
+3. Make the row height conditional so the company header doesn't sit alone in a 420px box on chart-less tabs:
+   ```tsx
+   <div className={`flex shrink-0 border-b border-white/10 ${(activeTab === 'overview' || activeTab === 'gap-stats') ? 'h-[420px]' : ''}`}>
+   ```
+   When the chart is hidden, the row collapses to the natural height of `ResearchCompanyHeader`.
+
+**Validation:**
+- [ ] `npm run lint && npx tsc --noEmit` pass.
+- [ ] Chart renders on Overview tab.
+- [ ] Chart renders on Gap Stats tab. Clicking a date row in the Gap Stats table still updates the chart correctly.
+- [ ] Chart is absent on Dilution, News, and Filings tabs. Company header collapses naturally — no big empty 420px box.
+
+---
+
+#### Phase 9 — Strip residual badge color/border
+
+**File:** `components/trading/ResearchReportSections.tsx`
+**Action:** MODIFY
+
+1. Audit remaining calls to `riskClass()` and `riskDotClass()` after Phases 5 and 7. Most should be gone.
+2. If any badge calls remain in the active code path that should be neutral per spec (Dilution Risk / High / Medium / Low text in any surviving location), replace `className={riskClass(value)}` with plain `className="text-sm text-zinc-200"` (no border, no bg, no colored text).
+3. Leave alone: `WarrantSection` status pills (use `getWarrantStatus().colorClass`, intentionally colored) and `ProgramSection` Active/Inactive badges (inline classes, intentional).
+4. If `riskClass` and/or `riskDotClass` are no longer called anywhere in this file, remove them from the import line:
+   ```ts
+   import { babyShelfBadge, detectFormType, formatDate, formatMoney, formatNumber, getWarrantStatus, riskClass, riskDotClass, toStringValue } from '@/lib/askedgar-utils';
+   ```
+5. Same audit for `detectFormType` — if unused in the active code path, remove from the import.
+
+**Validation:**
+- [ ] `npm run lint && npx tsc --noEmit` pass with no unused-import warnings.
+- [ ] No colored Dilution Risk badges in the new Overview/Dilution surfaces. Warrant status pills and ATM/Equity Active badges keep their colors (intentional).
+
+---
+
+#### Phase 10 — Final cleanup pass
+
+1. `components/trading/ResearchReportSections.tsx`: confirm the `ticker` prop is still actively used (it feeds the `<ResearchTldr ticker={ticker} />` in the Overview block). If not, remove from `Props` and from the call site in `ResearchTickerView.tsx`. (It IS used — verify, don't remove.)
+2. `components/trading/ResearchTickerView.tsx`: confirm the local `TabKey` and `TABS` definitions match `ResearchReportSections.tsx` exactly (5 tabs, identical labels). Optional cleanup: export `TabKey` and `TABS` from `ResearchReportSections.tsx` and import them in `ResearchTickerView.tsx` to dedupe. Skip if it complicates the diff.
+3. `components/trading/ResearchTab.tsx`: confirm `companyName` state, `handleCompanyName` callback, and `onCompanyName` prop chain are fully removed (Phase 2). No remnants.
+4. Run from repo root:
+   - `npm run lint`
+   - `npx tsc --noEmit`
+   - `npm test`
+   - `npm run typecheck:services` only if any `services/` files were touched (none expected)
+
+**Validation:**
+- [ ] All four commands pass with zero errors and zero warnings.
 
 ---
 
@@ -302,70 +631,62 @@ Phase 1 fully before Phase 2. Within Phase 2, do **2B before 2A** so TypeScript 
 
 | File | Change | Risk |
 |---|---|---|
-| `components/trading/TradingCalendar.tsx` | Tailwind size bumps (4 lines) | Low |
-| `components/trading/JournalTab.tsx` | Remove collapse state + toggle, restructure calendar header, pass `hideSelection`, cleanup imports | Med |
-| `components/trading/TradeDetailSheet.tsx` | Section titles white + bigger; +1 all small text; drop dup Notes label; add 3 dividers | Low |
-| `components/trading/TradeTable.tsx` | New `hideSelection` prop, guard the two checkbox cells + colspan | Low |
-| `components/trading/BacktestStatsView.tsx` | Add 2 format helpers, wrap children in centered max-width container, 4-col grid, 8-entry stats array | Med |
-| `lib/backtest-stats.ts` | Extend `AggregateStats` type + compute `totalReturnR` and `avgHoldMinutes` | Low |
-| `components/trading/BacktestSimPanel.tsx` | Drop trailing "R$ setting kept." copy (1 line) | Low |
-| `components/trading/BacktestManagerView.tsx` | Replace text Delete button with `Trash2` icon button | Low |
-| `components/trading/NewBacktestDialog.tsx` | Sentinel-based sample-set gating, placeholder, error path | Med |
-| `components/trading/BacktestingSidebar.tsx` | Two Tailwind size bumps | Low |
-| `components/trading/BacktestingTab.tsx` | Two Tailwind size bumps | Low |
+| `components/trading/ResearchSubNav.tsx` | CREATE — generic nav bar component | Low |
+| `components/trading/DilutionRatingTile.tsx` | CREATE — 7-row compact rating tile with color-coded bar-chart icons | Low |
+| `components/trading/ResearchTab.tsx` | Search bar magnifying glass + "Search Symbol", drop company-name span, drop gray container, drop empty-state copy, remove `companyName` state + `onCompanyName` chain | Med |
+| `components/trading/ResearchTickerView.tsx` | Lift `activeTab` state, mount `ResearchSubNav`, conditional chart rendering, remove TLDR mount, remove `onCompanyName` prop | Med |
+| `components/trading/ResearchReportSections.tsx` | Remove inline nav, accept `activeTab` prop, reduce TabKey 8→5, full Overview rewrite, full Dilution rewrite (11 sections), strip residual `riskClass` usage, clean unused imports | High |
+| `components/trading/ResearchTldr.tsx` | Full rewrite: auto-fire on ticker change, abort guard, module-level Map cache, merge Watch For + Risks into one bullet list, drop colored text | Med |
 
 #### Verification
 
-Code validation completed from repo root on 2026-05-07:
-- `npm run lint` - passed after Phase 1 and after Phase 2
-- `npx tsc --noEmit` - passed after Phase 1, after Phase 2B, and after Phase 2
-- `npm test` - passed after Phase 1 and after Phase 2 (84 files / 612 tests)
-- `npm run typecheck:services` - not run; no `services/` files were touched
-
-Follow-up UI polish validation completed from repo root on 2026-05-07:
-- `npx vitest run __tests__/backtest-manager-view.test.tsx` - passed (6 tests)
-- `npm run lint` - passed
-- `npx tsc --noEmit` - passed
+Checkpoint validation completed from repo root on 2026-05-07 after phases 1-7:
+- `npm run lint` - passed after each phase 1-7
+- `npx tsc --noEmit` - passed after each phase 1-7
+- `npx vitest run __tests__/research-tab.test.tsx` - passed (4 tests)
 - `npm test` - passed (84 files / 612 tests)
-- `npm run workflow:audit` - passed
-- `git diff --check` - passed
 - `npm run typecheck:services` - not run; no `services/` files were touched
+- Manual browser smoke remains pending for user/dev-server review
 
 Run from repo root after each phase, and again at the end:
 - `npm run lint`
 - `npx tsc --noEmit`
 - `npm test`
-- `npm run typecheck:services` only if any `services/` files were touched (none expected)
+- `npm run typecheck:services` only if any `services/` files were touched (none expected here)
 
 Manual smoke (cannot be auto-verified — flag in completion report):
-- Journal tab: calendar always visible; outer calendar border and gray background removed so the calendar expands into that space; calendar title is white; bigger fonts on calendar cells, trade detail popout, chart headers; trade detail has white section titles, dividers, no duplicate "Notes" label; trade replay rows have no checkboxes but click-through and tag editing still work.
-- Trade Management tab: checkboxes still present (regression).
-- Backtesting: review surface is centered max-width with 4×2 stats grid including Total Return (R) and Avg Hold Time; clear-review dialog has no "R$ setting kept" wording; sample-set and saved-test delete actions use matching bordered trash icons at the Edit button height; named System Sheet backtests display "System Sheet" instead of "No sample set"; "+ New Backtest" with no selection shows the new error only after clicking Create; charts sidebar dates and chart-header ticker/date are one step larger.
-- Confirm `nexus.journal.calendarOpen` is no longer in localStorage after first Journal mount.
+- Search a ticker (any micro-cap with rich dilution data, e.g., a biotech). Snapshot loads.
+- All 5 tabs appear in order: Overview → Dilution → News → Filings → Gap Stats.
+- Sub-page nav sits directly below the search bar (above the chart row).
+- Selected tab is translucent green text on subtle green bg; unselected is bold white.
+- Search bar shows magnifying glass icon and "Search Symbol" placeholder. No company name text beside it.
+- No gray box/border around the entire Research surface.
+- Overview: chart visible at top; below it, side-by-side row with `DilutionRatingTile` (7 rows including Nasdaq Compliance, color-coded bar-chart icons, neutral text) on the left and auto-generated TLDR on the right; Research Reports placeholder ("Research Reports Coming Soon") below.
+- TLDR fires immediately on ticker load (no button). Re-selecting the same ticker shows the cached result instantly (verify Network tab — no second POST to `/api/askedgar/tldr`).
+- TLDR Watch For & Risks: single section, `•` bullets, all neutral zinc text.
+- Market Stats grid is gone everywhere.
+- Dilution tab: scroll through 11 sections in order: Offering Risks → Cash Position → Financial Commentary → Split History (Historical Float + Reverse Splits + Split Status + Agreements) → S-1's → Shelfs → ATM's → Equity Lines → Warrants → Past Offerings → Owners. All populate or show NoDataBadge.
+- Chart is hidden on Dilution, News, Filings tabs. Company header row collapses to natural height.
+- Chart visible on Gap Stats tab; clicking a date row updates the chart to that date's intraday view.
+- News tab unchanged structurally; Filings tab unchanged structurally; Gap Stats tab unchanged structurally.
+- Switching tickers resets active tab to Overview.
+- No JavaScript console errors on any tab.
 
 #### Out of scope
 
-- Any logic changes outside the listed lines
-- Refactoring `TradeTable` beyond adding the `hideSelection` prop
-- Restyling other dashboard pages to match the new max-width pattern
-- Persisting the new sample-set-required behavior elsewhere — only the New Backtest dialog needs it
-- Tests for the two new format helpers (small enough to skip)
+- Adding company description (deferred to v2 — pick a source first).
+- Wiring the Research Reports placeholder to real data.
+- Deleting `ResearchGainersList.tsx` (dead code, but out of scope for this refresh).
+- Refactoring `lib/research.ts` `fetchAndCacheRawReport` (likely orphaned, but unchanged scope).
+- Persisting `activeTab` across sessions (intentional reset on ticker change).
+- Adding tests for `DilutionRatingTile` or the auto-TLDR cache (small enough to skip).
 
 ---
 
 ## Recently Completed Summary
 
-## Recently Completed Summary
-
-- 2026-05-05: Dashboard scanner completion implemented and visually validated. User reviewed the updated Dashboard scanner and confirmed the result looks materially better.
-  - `Gainers Scan - Day 1 Setup` now qualifies rows with separate PM/AH TradingView scans, merges by ticker, filters on best PM/AH move >= 40%, and requires combined AH+PM volume >= 2M before rows reach the dashboard.
-  - Dashboard Day 1 rows now display `AH+PM Vol`, use route-derived `dayOneMark`, `dayOneMovePercent`, and `extendedHoursVolume`, and use latch key `nexus-dashboard-day1-latched-v2` to flush stale rows from older criteria.
-  - `Potential MDR Setup` now runs live candidates through the full structural `d2_mdr` helper before returning rows, and recent DB-backed MDR rows are threshold-enriched server-side.
-  - `lib/massive-market.ts` now exposes shared MDR daily-series evaluation and ATR-based threshold helpers for `PM Price Needed`, `Opening Gap Needed`, and `Intraday Price Needed`.
-  - `DashboardScannerTable` now renders MDR threshold values as prices/percentages when available and keeps dashes only for null threshold data.
-  - Regression coverage added/updated in `__tests__/tradingview-gainers-route.test.ts`, `__tests__/dashboard-scanner-table.test.tsx`, `__tests__/massive-market.test.ts`, and `__tests__/tradingview-mdr-candidates-route.test.ts`.
-  - Validation passed: targeted scanner/helper tests (4 files / 21 tests), `npm run lint`, `npx tsc --noEmit`, `npm test` (84 files / 612 tests), and `npm run workflow:audit`.
-- 2026-05-05: MDR Scanner Expansion shipped in commits `cc19243`, `2a9e6b9`, and `a9a02de`. It split Day 1 and MDR feeds, added `mdr_triggers`, nightly `/api/cron/mdr-sweep`, `/api/scanner/mdr-recent`, a `from=` backfill parameter, and dashboard merging of live/recent MDR rows.
+- 2026-05-07: UI Cleanup Pass shipped — Trading Journal calendar always-on with bigger fonts; Trade Detail popout polish (white section titles, dividers, no duplicate Notes label); Trade Replay rows lose checkboxes only in journal context (preserves click-through and tag editing); Backtesting review surface centered max-width with 4×2 stats grid including new `Total Return (R)` and `Avg Hold Time` boxes; sample-set deletion uses Trash2 icon; New Backtest dialog gates Create on explicit sample-set selection (System Sheet remains a valid choice via sentinel-based gating). Validated with `npm run lint`, `npx tsc --noEmit`, `npm test` (84 files / 612 tests), `npm run workflow:audit`.
+- 2026-05-05: Dashboard scanner completion — split PM/AH gainers scan with combined volume gating, MDR scanner with `mdr_triggers` table + nightly cron + dashboard merging of live and recent rows. Threshold values render as prices/percentages.
 - 2026-05-04: Backtesting UI refinements plus grid layout and sample-set sidebar (`b03fa38`, `82bfa46`, `10e1071`, `82cca14`, `36a410b`).
 - 2026-05-03: Backtesting chart drawing/indicator persistence and review save-flow fixes (`82cbb55`, `88a4da4`, `6513e40`).
 - 2026-05-01: Backtest Manager landing page shipped: schema, API, manager, stats views.
@@ -377,3 +698,4 @@ Manual smoke (cannot be auto-verified — flag in completion report):
 - Filings v2/v3 remain deferred: in-app SEC filing viewer, then full-text filing search plus AI Copilot after cost analysis.
 - Auto stop-out for Backtesting remains deferred until requested.
 - Backtest Manager `broke_premarket_high` filter remains deferred. Data is not captured today; revisit once we decide whether to store it on the session at save time or derive from market data on stats load.
+- Research tab company description: deferred to a v2 pass. Pick a source (Polygon `/v3/reference/tickers` returns a usable description) before wiring.

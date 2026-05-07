@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import ResearchChart from '@/components/trading/ResearchChart';
 import ResearchCompanyHeader from '@/components/trading/ResearchCompanyHeader';
 import ResearchReportSections from '@/components/trading/ResearchReportSections';
-import ResearchTldr from '@/components/trading/ResearchTldr';
+import ResearchSubNav from '@/components/trading/ResearchSubNav';
 import type { ResearchSnapshot } from '@/lib/types';
 
 interface SnapshotErrorResponse {
@@ -16,22 +16,31 @@ interface SnapshotErrorResponse {
 
 interface Props {
   ticker: string;
-  onCompanyName?: (name: string | null) => void;
 }
 
-export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
+type TabKey = 'overview' | 'dilution' | 'news' | 'filings' | 'gap-stats';
+
+const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'dilution', label: 'Dilution' },
+  { key: 'news', label: 'News' },
+  { key: 'filings', label: 'Filings' },
+  { key: 'gap-stats', label: 'Gap Stats' },
+];
+
+export default function ResearchTickerView({ ticker }: Props) {
   const [data, setData] = useState<ResearchSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   // YYYY-MM-DD when the user clicks a gap-stat row; null = live chart.
   const [historicalDate, setHistoricalDate] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabKey>('overview');
 
   const fetchData = useCallback(async (selectedTicker: string) => {
     setLoading(true);
     setError(null);
     setStatusMessage(null);
-    onCompanyName?.(null);
     try {
       const response = await fetch(`/api/askedgar/snapshot?ticker=${encodeURIComponent(selectedTicker)}`);
 
@@ -57,7 +66,6 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
 
       const result = (await response.json()) as ResearchSnapshot;
       setData(result);
-      onCompanyName?.(result.companyName ?? null);
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : 'Lookup failed');
       setStatusMessage(null);
@@ -65,9 +73,10 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [onCompanyName]);
+  }, []);
 
   useEffect(() => {
+    setActiveTab('overview');
     setHistoricalDate(null);
     void fetchData(ticker);
   }, [ticker, fetchData]);
@@ -92,6 +101,8 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
 
   return (
     <div className="flex flex-col">
+      <ResearchSubNav tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
+
       {/* Top row: company info panel on the left, chart on the right — fixed height */}
       <div className="flex h-[420px] shrink-0 border-b border-white/10">
         <div className="w-[320px] shrink-0 overflow-y-auto">
@@ -106,11 +117,7 @@ export default function ResearchTickerView({ ticker, onCompanyName }: Props) {
         </div>
       </div>
 
-      <ResearchReportSections ticker={ticker} data={data} onSelectGapDate={setHistoricalDate} />
-
-      <div className="border-t border-white/10">
-        <ResearchTldr ticker={ticker} />
-      </div>
+      <ResearchReportSections ticker={ticker} data={data} activeTab={activeTab} onSelectGapDate={setHistoricalDate} />
     </div>
   );
 }
