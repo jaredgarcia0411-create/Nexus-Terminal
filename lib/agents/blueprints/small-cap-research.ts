@@ -23,7 +23,7 @@ const TRADINGVIEW_COLUMNS = [
   'EMA21',
 ];
 
-const researchTickerInputSchema = z.object({
+export const researchTickerInputSchema = z.object({
   ticker: z.string().regex(/^[A-Z]{1,5}$/),
 });
 
@@ -31,7 +31,7 @@ const rawResearchInputSchema = z.object({
   ticker: z.string().min(1),
 });
 
-const edgarSectionsSchema = z.object({
+export const edgarSectionsSchema = z.object({
   ticker: z.string(),
   gapStats: z.array(z.unknown()),
   offerings: z.array(z.unknown()),
@@ -51,7 +51,7 @@ const edgarSectionsSchema = z.object({
   managementCommentary: z.string().nullable().default(null),
 });
 
-const priceContextSchema = edgarSectionsSchema.extend({
+export const priceContextSchema = edgarSectionsSchema.extend({
   priceContext: z.object({
     price: z.number(),
     change: z.number().nullable(),
@@ -90,7 +90,7 @@ const deterministicAnalysisSchema = z.object({
   catalystCategories: z.array(z.string()),
 });
 
-const researchPipelineInputSchema = priceContextSchema.extend({
+export const researchPipelineInputSchema = priceContextSchema.extend({
   deterministicAnalysis: deterministicAnalysisSchema,
   gapStatsTable: z.array(z.object({
     date: z.string(),
@@ -113,7 +113,7 @@ const ratedCatalyst = z.object({
   rating: trafficLightRating,
 });
 
-const researchReportSchema = z.object({
+export const researchReportSchema = z.object({
   ticker: z.string(),
   newsWhyRunning: ratedSection,
   themeMatch: ratedSection,
@@ -171,7 +171,7 @@ function completedResult<T>(
   };
 }
 
-function parseJson(text: string): unknown {
+export function parseJson(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
@@ -184,7 +184,7 @@ function parseJson(text: string): unknown {
   throw new Error('LLM did not return valid JSON');
 }
 
-function readResults(
+export function readResults(
   value: unknown,
 ): unknown[] {
   if (!value || typeof value !== 'object') {
@@ -244,7 +244,7 @@ function getFieldValue(source: unknown, keys: string[]): unknown {
   return undefined;
 }
 
-function getStringField(source: unknown, keys: string[]): string | null {
+export function getStringField(source: unknown, keys: string[]): string | null {
   const value = getFieldValue(source, keys);
   if (typeof value !== 'string') {
     return null;
@@ -534,7 +534,7 @@ function extractNewsMetrics(newsItems: unknown[]): {
   };
 }
 
-function computeDeterministicAnalysis(
+export function computeDeterministicAnalysis(
   input: z.infer<typeof priceContextSchema>,
 ): z.infer<typeof deterministicAnalysisSchema> & { gapStatsTable: GapStatsRow[] } {
   const newsMetrics = extractNewsMetrics(asArray(input.news));
@@ -662,7 +662,7 @@ function formatPromptSection(label: string, value: unknown): string {
   return `${label}:\n${JSON.stringify(value, null, 2)}`;
 }
 
-async function fetchTradingViewPriceContext(ticker: string) {
+export async function fetchTradingViewPriceContext(ticker: string) {
   const sessionId = process.env.TRADINGVIEW_SESSION_ID?.trim() ?? '';
   const response = await fetch('https://scanner.tradingview.com/america/scan', {
     method: 'POST',
@@ -722,7 +722,7 @@ async function fetchTradingViewPriceContext(ticker: string) {
   };
 }
 
-function buildResearchPrompt(input: z.infer<typeof researchPipelineInputSchema>): string {
+export function buildResearchPrompt(input: z.infer<typeof researchPipelineInputSchema>): string {
   const gapTableSection = input.gapStatsTable.length === 0
     ? 'No historical gap data available.'
     : [
@@ -788,9 +788,95 @@ function buildResearchPrompt(input: z.infer<typeof researchPipelineInputSchema>)
   ].join('\n\n');
 }
 
-async function loadSmallCapSystemPrompt() {
+export async function loadSmallCapSystemPrompt() {
   const { buildLlmSystemPrompt } = await import('../prompts-loader');
   return buildLlmSystemPrompt('small-cap-trader');
+}
+
+/**
+ * Generate a small-cap research report for a single ticker.
+ * Reuses the agent's prompt + analysis pipeline but skips Discord delivery and memory persistence -
+ * intended for the Research tab's site-only API route. Uses the BACKGROUND_LLM_API_KEY (paid lane).
+ */
+export async function generateSmallCapResearchReport(
+  ticker: string,
+): Promise<z.infer<typeof researchReportSchema>> {
+  const normalized = ticker.trim().toUpperCase();
+  researchTickerInputSchema.parse({ ticker: normalized });
+
+  // 1. Fetch AskEdgar data (cached helper).
+  const askEdgarResult = await getCachedTickerData(normalized, { scope: 'small-cap-research' });
+  const rawData = askEdgarResult.rawData as Record<string, unknown>;
+  const dilutionRatingFirst = readResults(rawData['dilution-rating'])[0] ?? null;
+  const cashPosition = (askEdgarResult as { dilutionDetails?: unknown }).dilutionDetails
+    ?? readResults(rawData['dilution-data'])[0]
+    ?? readResults(rawData['screener'])[0]
+    ?? null;
+  const managementCommentary =
+    getStringField(dilutionRatingFirst, ['mgmt_commentary', 'managementCommentary', 'commentary'])
+    ?? getStringField(cashPosition, ['managementCommentary', 'management_commentary']);
+
+  const edgarSections = edgarSectionsSchema.parse({
+    ticker: normalized,
+    gapStats: readResults(rawData['gap-stats']),
+    offerings: readResults(rawData['offerings']),
+    registrations: readResults(rawData['registrations']),
+    equityLines: readResults(rawData['equity-lines']),
+    dilutionRating: dilutionRatingFirst,
+    dilutionData: readResults(rawData['dilution-data']),
+    ownership: readResults(rawData['ownership']),
+    historicalFloat: readResults(rawData['historical-float-pro']),
+    reverseSplits: readResults(rawData['reverse-splits']),
+    splitStatus: readResults(rawData['split-status']),
+    agreements: readResults(rawData['agreements']),
+    nasdaqCompliance: readResults(rawData['nasdaq-compliance'])[0] ?? null,
+    news: readResults(rawData['news']),
+    filingTitles: readResults(rawData['filing-titles']),
+    cashPosition,
+    managementCommentary,
+  });
+
+  // 2. Add price context.
+  const priceContext = await fetchTradingViewPriceContext(normalized);
+  const withPriceContext = priceContextSchema.parse({ ...edgarSections, priceContext });
+
+  // 3. Compute deterministic analysis + news feed.
+  const { gapStatsTable, ...deterministicAnalysis } = computeDeterministicAnalysis(withPriceContext);
+  const newsFeed = buildNewsFeedFromArrays(
+    Array.isArray(withPriceContext.news) ? withPriceContext.news : [],
+    Array.isArray(withPriceContext.filingTitles) ? withPriceContext.filingTitles : [],
+    { maxItems: 10, maxAgeDays: 30 },
+  );
+  const pipelineInput = researchPipelineInputSchema.parse({
+    ...withPriceContext,
+    deterministicAnalysis,
+    gapStatsTable,
+    newsFeed,
+  });
+
+  // 4. Call LLM via agent's background lane (paid Groq key).
+  const llmResponse = await callLlm({
+    systemPrompt: await loadSmallCapSystemPrompt(),
+    userMessage: buildResearchPrompt(pipelineInput),
+    temperature: 0.2,
+  }, 'background');
+
+  // 5. Parse + apply the same post-LLM commentary override the blueprint uses.
+  const parsed = researchReportSchema.parse(parseJson(llmResponse.content));
+  parsed.gapStatsTable = pipelineInput.gapStatsTable;
+
+  const verbatimCommentary = pipelineInput.managementCommentary?.trim();
+  if (verbatimCommentary) {
+    parsed.financialCommentary = {
+      ...parsed.financialCommentary,
+      explanation: verbatimCommentary,
+      source: 'verbatim',
+    };
+  } else {
+    parsed.financialCommentary.source = 'llm';
+  }
+
+  return parsed;
 }
 
 export const smallCapResearchBlueprint: Blueprint = {

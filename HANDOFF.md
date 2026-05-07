@@ -10,7 +10,7 @@
 ### Research Report wiring + TLDR risk-ranked refactor + empty-state polish
 
 > Generated: 2026-05-07 | Author: planning conversation (scope locked by user)
-> Status: IN PROGRESS — phases 1-2 implemented and code-validated 2026-05-07; phases 3-6 pending
+> Status: IN PROGRESS — phases 1-5 implemented and code-validated 2026-05-07; phase 6 pending
 > Executor: Codex
 
 #### Goal
@@ -37,6 +37,10 @@ Three things in one bundle:
 Phases 1 → 6 as ordered. Each phase runs `npm run lint && npx tsc --noEmit` before moving on. Phase 5 depends on Phase 3 + 4. Phase 6 is final validation only.
 
 Checkpoint 2026-05-07 after Phase 2: `npm run lint`, `npx tsc --noEmit`, `npx vitest run __tests__/research-tab.test.tsx __tests__/askedgar-tldr-route.test.ts`, and `npm test` passed. Manual dev-server smoke remains unchecked.
+
+Checkpoint 2026-05-07 after Phase 5: `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npx vitest run __tests__/research-report-route.test.ts __tests__/agent-blueprints.test.ts`, and `npm test` passed. Phase 6 final/manual smoke remains pending.
+
+Phase 3-5 implementation notes: `generateSmallCapResearchReport` keeps the blueprint's live `dilutionDetails` cash-position fallback and uses the existing top-level `callLlm(..., 'background')`. The site route calls `ensureUser()` before inserting into `research_reports` to satisfy the user foreign key; GET cache reads remain global per ticker.
 
 ---
 
@@ -327,9 +331,9 @@ Checkpoint 2026-05-07 after Phase 2: `npm run lint`, `npx tsc --noEmit`, `npx vi
 3. **Do not modify** the existing blueprint steps. The `synthesize-report` step continues to inline its own LLM call. We're not refactoring it to call `generateSmallCapResearchReport` — that's a follow-up if the team wants DRY later.
 
 **Validation:**
-- [ ] `npm run lint && npx tsc --noEmit` pass.
-- [ ] `npm run typecheck:services` passes (this file is touched and may be referenced from `services/agent-entrypoint.ts`).
-- [ ] No runtime change to the agent platform — the synthesize-report step still uses its existing inline call.
+- [x] `npm run lint && npx tsc --noEmit` pass.
+- [x] `npm run typecheck:services` passes (this file is touched and may be referenced from `services/agent-entrypoint.ts`).
+- [x] No runtime change to the agent platform — the synthesize-report step still uses its existing inline call.
 
 ---
 
@@ -463,7 +467,7 @@ Checkpoint 2026-05-07 after Phase 2: `npm run lint`, `npx tsc --noEmit`, `npx vi
 5. **No new env vars.** `generateSmallCapResearchReport` reaches into `lib/agents/llm-client.ts` which calls `getBackgroundLlmConfig()` and reads `BACKGROUND_LLM_API_KEY`. That env var is already in use by the agent platform.
 
 **Validation:**
-- [ ] `npm run lint && npx tsc --noEmit` pass.
+- [x] `npm run lint && npx tsc --noEmit` pass.
 - [ ] Manual: `curl -X POST http://localhost:3000/api/research-report -H 'Content-Type: application/json' --cookie '<auth>' -d '{"ticker":"<a known small-cap with rich data>"}'` returns a structured JSON with `report.overallOfferingRisk.rating` populated.
 - [ ] `curl http://localhost:3000/api/research-report?ticker=<same ticker>` returns `cached: true` and the same report.
 - [ ] Manually fast-forward by editing the row's `generated_at` to >16h ago in the DB → next GET returns `report: null` (cache miss).
@@ -730,7 +734,7 @@ Checkpoint 2026-05-07 after Phase 2: `npm run lint`, `npx tsc --noEmit`, `npx vi
    (The "Research Reports Coming Soon" copy is gone now.)
 
 **Validation:**
-- [ ] `npm run lint && npx tsc --noEmit` pass.
+- [x] `npm run lint && npx tsc --noEmit` pass.
 - [ ] First open of a new ticker on Overview → "Generating Research Report…" placeholder shows for 15-30s → structured report renders with Overall Offering Risk + other rated sections + financial commentary. No buttons visible at any point.
 - [ ] Reload page → report renders instantly from cache (no LLM call). Confidence + timestamp visible at top.
 - [ ] Open the same ticker as a different team member → renders the cached report instantly (global 16h cache).
@@ -775,6 +779,7 @@ Run from repo root after all phases:
 | `app/api/research-report/route.ts` | CREATE — GET (cached) + POST (generate) | Med |
 | `components/trading/ResearchReportPanel.tsx` | CREATE — fetches/generates and renders the structured report | Med |
 | `components/trading/ResearchReportSections.tsx` | Rename "Research Reports" → "Research Report"; mount `ResearchReportPanel` | Low |
+| `__tests__/research-report-route.test.ts` | CREATE — route coverage for cache hit, cache miss, POST insert, and validation | Low |
 
 #### Out of scope
 

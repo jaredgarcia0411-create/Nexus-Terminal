@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import DilutionRatingTile, { DilutionRatingPanel } from '@/components/trading/DilutionRatingTile';
+import ResearchReportPanel from '@/components/trading/ResearchReportPanel';
 import ResearchTldr from '@/components/trading/ResearchTldr';
 import {
   babyShelfBadge,
@@ -599,10 +600,8 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
             </div>
 
             <div>
-              <h4 className="mb-2 text-sm font-semibold text-zinc-200">Research Reports</h4>
-              <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-zinc-500">
-                Research Reports Coming Soon
-              </div>
+              <h4 className="mb-2 text-base font-semibold text-zinc-200">Research Report</h4>
+              <ResearchReportPanel ticker={ticker} />
             </div>
           </div>
         ) : null}
