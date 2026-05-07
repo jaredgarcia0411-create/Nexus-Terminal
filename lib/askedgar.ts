@@ -789,6 +789,7 @@ interface NormalizeAskEdgarOptions {
   companyName: string | null;
   fetchedAt: string;
   warnings: string[];
+  description?: string | null;
 }
 
 export function normalizeAskEdgarResponse(
@@ -1007,6 +1008,7 @@ export function normalizeAskEdgarResponse(
       price: currentPrice,
       shortInterest: toNumberValue(getField(screener, ['shortInterest', 'short_interest'])),
       volume: toNumberValue(getField(screener, ['today_volume', 'volume', 'totalVolume'])),
+      description: options.description ?? null,
     },
     dilutionRating: getStringField(dilutionRating, ['dilution', 'dilution_rating', 'rating', 'dilutionRating']),
     cashNeedRating: getStringField(dilutionRating, ['cash_need', 'cashNeed']),

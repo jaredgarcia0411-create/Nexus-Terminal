@@ -169,6 +169,36 @@ export async function fetchUnifiedSnapshot(tickers: string[]) {
   });
 }
 
+export interface MassiveTickerDetails {
+  description: string | null;
+  homepageUrl: string | null;
+  sicDescription: string | null;
+}
+
+// /v3/reference/tickers/{ticker} returns company profile data. Coverage isn't universal —
+// distressed/recently-renamed tickers often come back with description: null. Caller should
+// treat null as "no description available" and hide the UI block.
+export async function fetchTickerDetails(ticker: string): Promise<MassiveTickerDetails> {
+  const normalized = normalizeMassiveTicker(ticker);
+  const payload = await fetchMassiveJson<{
+    results?: {
+      description?: string | null;
+      homepage_url?: string | null;
+      sic_description?: string | null;
+    };
+  }>(`/v3/reference/tickers/${encodeURIComponent(normalized)}`, {});
+
+  const results = payload.results ?? {};
+  const description = typeof results.description === 'string' && results.description.trim().length > 0
+    ? results.description.trim()
+    : null;
+  return {
+    description,
+    homepageUrl: typeof results.homepage_url === 'string' ? results.homepage_url : null,
+    sicDescription: typeof results.sic_description === 'string' ? results.sic_description : null,
+  };
+}
+
 export async function fetchTopMarketMovers(direction: MassiveDirection) {
   return fetchMassiveJson<MassiveTopMoversResponse>(`/v2/snapshot/locale/us/markets/stocks/${direction}`, {
     include_otc: 'false',

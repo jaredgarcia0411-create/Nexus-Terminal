@@ -37,6 +37,7 @@ export default function ResearchCompanyHeader({ ticker, companyName, header, com
   const ipoDate = header.ipoDate;
   const industry = header.industry;
   const country = header.country;
+  const description = header.description;
 
   return (
     <div className="flex h-full flex-col gap-3 border-r border-white/10 bg-[#0f0f11] px-4 py-3">
@@ -53,13 +54,21 @@ export default function ResearchCompanyHeader({ ticker, companyName, header, com
 
       {/* Company Stats — hidden on tabs without a chart so we don't render a tall stat column next to nothing. */}
       {!compact ? (
-        <div className="flex flex-col gap-1 text-sm">
-          {statRow('MCap', `$${formatCompact(marketCap)}`)}
+        <div className="flex flex-col gap-1 text-base">
+          {statRow('MCap', formatCompact(marketCap))}
           {statRow('OS', formatCompact(outstanding))}
           {statRow('Float', formatCompact(float))}
           {exchange ? statRow('Exchange', String(exchange)) : null}
           {ipoDate ? statRow('IPO', String(ipoDate)) : null}
           {industry ? statRow('Industry', String(industry)) : null}
+        </div>
+      ) : null}
+
+      {/* Description sits below the stats with a divider + muted prose styling so it reads as
+          secondary narrative, not another stat row. Hidden on compact tabs and when null. */}
+      {!compact && description ? (
+        <div className="mt-2 border-t border-white/10 pt-3">
+          <p className="text-[13px] leading-relaxed text-zinc-400">{description}</p>
         </div>
       ) : null}
 

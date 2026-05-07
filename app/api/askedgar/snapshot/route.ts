@@ -4,7 +4,7 @@ import {
   getCachedTickerData,
   normalizeAskEdgarResponse,
 } from '@/lib/askedgar';
-import { fetchUnifiedSnapshot } from '@/lib/massive-market';
+import { fetchTickerDetails, fetchUnifiedSnapshot } from '@/lib/massive-market';
 import { requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';
@@ -22,9 +22,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [result, snapshot] = await Promise.all([
+    const [result, snapshot, tickerDetails] = await Promise.all([
       getCachedTickerData(ticker),
       fetchUnifiedSnapshot([ticker]).catch(() => ({ results: [] as unknown[] })),
+      fetchTickerDetails(ticker).catch(() => ({ description: null, homepageUrl: null, sicDescription: null })),
     ]);
 
     const availability = getAskEdgarSnapshotAvailability(result.rawData);
@@ -54,6 +55,7 @@ export async function GET(request: Request) {
       companyName,
       fetchedAt: result.fetchedAt,
       warnings: result.warnings,
+      description: tickerDetails.description,
     });
 
     // Strip rawData — it's the full 16-endpoint payload used server-side by the research pipeline.

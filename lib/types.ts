@@ -132,6 +132,7 @@ export interface ResearchSnapshotHeader {
   price: number | null;
   shortInterest: number | null;
   volume: number | null;
+  description: string | null;
 }
 
 export interface ResearchSnapshotWarrant {
