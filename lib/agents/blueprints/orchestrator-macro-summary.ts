@@ -390,6 +390,7 @@ function buildBriefingPrompt(
     '- deltas: 1–4 sentences. Each must reference a specific number and compare to prior day (e.g. "10Y at 4.35%, up 3bp from 4.32% yesterday"). Omit if no prior context.',
     '- sentimentData (when present): reference the score and classification in riskAssessment and deskImplications. High fear (score < 30) is often contrarian bullish for equities; extreme greed (score > 75) warrants caution. Note: this index tracks crypto sentiment correlates, not pure equities.',
     '- deskImplications: Frame as market-side observations, NOT trade recommendations. Use phrasing like "Possible buyers market for X" or "Possible sellers market for X" where X is a sector, asset, or theme — and back each one with a specific data point or driver. Do NOT say "buy", "sell", "short", "go long", "trim", "add", or any other action verb directed at the reader.',
+    '- Ticker references: Do NOT prefix ETF or index tickers with "the". Write "SPY is holding 520" not "the SPY is holding 520". Same for QQQ, IWM, DIA, XLE, XLF, XLK, GLD, USO, TLT, UVXY, UUP, SMH, IEF, HYG, EEM, BITO, and any other ticker symbol.',
     '- tldr: what someone reads if they read nothing else. Every bullet should be specific and actionable.',
     '',
     `Headlines:\n${wrapUntrusted('news', JSON.stringify(input.headlines, null, 2))}`,

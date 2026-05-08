@@ -247,10 +247,8 @@ export default function MacroSummaryPanel() {
           <SectionHeading>Top Drivers</SectionHeading>
           <ul className="space-y-1">
             {report.drivers.map((d, i) => (
-              <li key={i} className="flex items-start gap-2">
-                <span className="mt-1.5">
-                  <RatingDot rating={impactToRating(d.impact)} />
-                </span>
+              <li key={i} className="flex items-center gap-2">
+                <RatingDot rating={impactToRating(d.impact)} />
                 <span className="text-sm text-zinc-300">{d.driver}</span>
               </li>
             ))}
