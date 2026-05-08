@@ -187,7 +187,7 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
               type="button"
               onClick={() => setTimeframe(key)}
               className={`rounded px-2 py-1 text-xs transition-colors ${
-                timeframe === key ? 'bg-emerald-500 text-black' : 'text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
+                timeframe === key ? 'bg-emerald-500/10 text-emerald-500' : 'text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
               }`}
             >
               {RESEARCH_CHART_FRAME_CONFIG[key].label}
