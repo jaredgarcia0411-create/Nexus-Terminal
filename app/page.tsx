@@ -26,9 +26,9 @@ const VALID_TABS: TabKey[] = ['dashboard', 'performance', 'journal', 'filter', '
 
 const TAB_TITLES: Record<TabKey, string> = {
   dashboard: 'Dashboard',
-  performance: 'Performance Analytics',
-  journal: 'Trading Journal',
-  filter: 'Trades Management',
+  performance: 'Performance',
+  journal: 'Journal',
+  filter: 'Trades',
   backtesting: 'Backtesting',
   research: 'Research',
   archive: 'Archive',

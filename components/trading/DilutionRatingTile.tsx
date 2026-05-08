@@ -67,10 +67,10 @@ export default function DilutionRatingTile(props: TileProps) {
       <div className="space-y-1.5">
         {rows.map((row) => (
           <div key={row.label} className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-white">{row.label}</span>
+            <span className="text-sm font-medium text-white">{row.label}</span>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-zinc-200">{toStringValue(row.value)}</span>
-              <BarChartIcon level={ratingLevel(row.value)} />
+              <span className="text-sm font-medium text-zinc-200">{toStringValue(row.value)}</span>
+              <BarChartIcon level={ratingLevel(row.value)} size="md" />
             </div>
           </div>
         ))}

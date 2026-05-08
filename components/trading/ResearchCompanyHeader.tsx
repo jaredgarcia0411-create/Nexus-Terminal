@@ -40,7 +40,7 @@ export default function ResearchCompanyHeader({ ticker, companyName, header, com
   const description = header.description;
 
   return (
-    <div className="flex h-full flex-col gap-3 border-r border-white/10 bg-[#0f0f11] px-4 py-3">
+    <div className="flex h-full flex-col gap-3 px-4 py-3">
       {/* Ticker + Company Name */}
       <div>
         <div className="flex items-center gap-2">
@@ -68,7 +68,7 @@ export default function ResearchCompanyHeader({ ticker, companyName, header, com
           secondary narrative, not another stat row. Hidden on compact tabs and when null. */}
       {!compact && description ? (
         <div className="mt-2 border-t border-white/10 pt-3">
-          <p className="text-[13px] leading-relaxed text-zinc-400">{description}</p>
+          <p className="text-sm leading-relaxed text-white">{description}</p>
         </div>
       ) : null}
 

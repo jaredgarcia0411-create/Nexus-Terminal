@@ -1,6 +1,7 @@
 'use client';
 
 import { Maximize2 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 
 import DilutionRatingTile, { DilutionRatingPanel } from '@/components/trading/DilutionRatingTile';
@@ -22,6 +23,7 @@ import type {
   ResearchSnapshotFiling,
   ResearchSnapshotGapStat,
   ResearchSnapshotHistoricalFloatRow,
+  ResearchSnapshotNewsItem,
   ResearchSnapshotOffering,
   ResearchSnapshotOwnershipGroup,
   ResearchSnapshotRegistration,
@@ -86,13 +88,55 @@ function compareFiledAtDesc(a: { filedAt: string | null }, b: { filedAt: string 
   return b.filedAt.localeCompare(a.filedAt);
 }
 
+function NewsArticle({ item }: { item: ResearchSnapshotNewsItem }) {
+  const [open, setOpen] = useState(false);
+  const formType = item.formType ?? 'News';
+  const isGrok = formType.toLowerCase().includes('grok');
+
+  return (
+    <div className="p-2">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="w-full cursor-pointer text-left text-base font-bold text-zinc-200"
+      >
+        {item.title}
+      </button>
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            key="content"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="mt-2 space-y-2"
+          >
+            <div className="flex items-center gap-2">
+              {isGrok ? (
+                <span className="rounded border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-sm text-violet-300">
+                  {formType}
+                </span>
+              ) : (
+                <span className="text-sm text-white">{formType}</span>
+              )}
+              <span className="text-zinc-500">{formatDate(item.filedAt)}</span>
+            </div>
+            <p className="text-sm text-zinc-300">{item.summary || 'N/A'}</p>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function FilingsTable({ filings }: { filings: ResearchSnapshotFiling[] }) {
   if (filings.length === 0) {
     return <NoDataBadge />;
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="scrollbar-hidden overflow-x-auto">
       <table className="min-w-full">
         <thead>
           <tr className="border-b border-white/10 text-zinc-400">
@@ -146,7 +190,7 @@ function FilingsView({ filings }: { filings: ResearchSnapshotFiling[] }) {
               type="button"
               onClick={() => setBucket(option.key)}
               className={`rounded px-2.5 py-1 text-sm transition-colors ${
-                bucket === option.key ? 'bg-emerald-500 text-black' : 'text-white hover:bg-white/10'
+                bucket === option.key ? 'bg-emerald-500/10 text-emerald-500' : 'text-white hover:bg-white/10'
               }`}
             >
               {option.label}
@@ -177,7 +221,7 @@ function FilingsView({ filings }: { filings: ResearchSnapshotFiling[] }) {
             type="button"
             onClick={() => setBucket(option.key)}
             className={`rounded px-2.5 py-1 text-sm transition-colors ${
-              bucket === option.key ? 'bg-emerald-500 text-black' : 'text-white hover:bg-white/10'
+              bucket === option.key ? 'bg-emerald-500/10 text-emerald-500' : 'text-white hover:bg-white/10'
             }`}
           >
             {option.label}
@@ -254,7 +298,7 @@ function WarrantSection({
       {warrants.length === 0 ? (
         <p className="text-sm text-zinc-500">{emptyLabel}</p>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="scrollbar-hidden overflow-x-auto">
           <table className="min-w-full">
             <thead>
               <tr className="border-b border-white/10 text-zinc-400">
@@ -297,7 +341,7 @@ function ShelfRegistrationsTable({ rows }: { rows: ResearchSnapshotRegistration[
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="scrollbar-hidden overflow-x-auto">
       <table className="min-w-full">
         <thead>
           <tr className="border-b border-white/10 text-zinc-400">
@@ -332,7 +376,7 @@ function HistoricalFloatTable({ rows }: { rows: ResearchSnapshotHistoricalFloatR
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="scrollbar-hidden overflow-x-auto">
       <table className="min-w-full">
         <thead>
           <tr className="border-b border-white/10 text-zinc-400">
@@ -363,7 +407,7 @@ function ReverseSplitsTable({ rows }: { rows: ResearchSnapshotReverseSplit[] }) 
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="scrollbar-hidden overflow-x-auto">
       <table className="min-w-full">
         <thead>
           <tr className="border-b border-white/10 text-zinc-400">
@@ -390,7 +434,7 @@ function SplitStatusesTable({ rows }: { rows: ResearchSnapshotSplitStatus[] }) {
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="scrollbar-hidden overflow-x-auto">
       <table className="min-w-full">
         <thead>
           <tr className="border-b border-white/10 text-zinc-400">
@@ -425,7 +469,7 @@ function AgreementsTable({ rows }: { rows: ResearchSnapshotAgreement[] }) {
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="scrollbar-hidden overflow-x-auto">
       <table className="min-w-full">
         <thead>
           <tr className="border-b border-white/10 text-zinc-400">
@@ -456,7 +500,7 @@ function PastOfferingsTable({ rows }: { rows: ResearchSnapshotOffering[] }) {
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="scrollbar-hidden overflow-x-auto">
       <table className="min-w-full">
         <thead>
           <tr className="border-b border-white/10 text-zinc-400">
@@ -493,7 +537,7 @@ function OwnershipGroupsTables({ groups }: { groups: ResearchSnapshotOwnershipGr
       {groups.map((group, groupIndex) => (
         <div key={groupIndex} className="mb-3">
           {group.reportedDate ? <p className="mb-1 text-sm text-zinc-500">Reported: {formatDate(group.reportedDate)}</p> : null}
-          <div className="overflow-x-auto">
+          <div className="scrollbar-hidden overflow-x-auto">
             <table className="min-w-full">
               <thead>
                 <tr className="border-b border-white/10 text-zinc-400">
@@ -622,7 +666,7 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
                 module-level cache means the dialog instance gets the same report data
                 immediately — no refetch. */}
             <Dialog open={reportExpanded} onOpenChange={setReportExpanded}>
-              <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+              <DialogContent className="scrollbar-hidden max-h-[85vh] overflow-y-auto sm:max-w-3xl">
                 <DialogHeader>
                   <DialogTitle>Research Report — {ticker}</DialogTitle>
                 </DialogHeader>
@@ -727,26 +771,10 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
         ) : null}
 
         {activeTab === 'news' ? (
-          <div className="space-y-2 p-3">
-            {data.news.map((item, index) => {
-              const formType = item.formType ?? 'News';
-              const sourceClass = formType.toLowerCase().includes('grok')
-                ? 'border-violet-500/30 bg-violet-500/10 text-violet-300'
-                : 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300';
-
-              return (
-                <details key={`news-filing-${index}`} className="rounded border border-white/10 bg-white/5 p-2">
-                  <summary className="cursor-pointer text-zinc-200">{item.title}</summary>
-                  <div className="mt-2 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className={`rounded border px-2 py-0.5 text-sm ${sourceClass}`}>{formType}</span>
-                      <span className="text-zinc-500">{formatDate(item.filedAt)}</span>
-                    </div>
-                    <p className="text-zinc-300">{item.summary || 'N/A'}</p>
-                  </div>
-                </details>
-              );
-            })}
+          <div className="divide-y divide-white/5 p-3">
+            {data.news.map((item, index) => (
+              <NewsArticle key={`news-filing-${index}`} item={item} />
+            ))}
             {data.news.length === 0 ? <NoDataBadge /> : null}
           </div>
         ) : null}
@@ -764,7 +792,7 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
                 <p className="text-sm text-zinc-500">
                   Historical day-1 gap-ups only (excludes multi-day runs). Most recent first.
                 </p>
-                <div className="overflow-x-auto">
+                <div className="scrollbar-hidden overflow-x-auto">
                   <table className="min-w-full">
                     <thead>
                       <tr className="border-b border-white/10 text-zinc-400">

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
+import { Search } from 'lucide-react';
 
 import ResearchTickerView from '@/components/trading/ResearchTickerView';
 
@@ -47,15 +48,7 @@ export default function ResearchTab({ pendingResearchTicker, onClearPendingTicke
     >
       <div className="flex items-center gap-2 px-1">
         <div className="relative">
-          <svg
-            className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
-          </svg>
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
           <input
             type="text"
             value={tickerInput}
@@ -64,7 +57,7 @@ export default function ResearchTab({ pendingResearchTicker, onClearPendingTicke
               if (event.key === 'Enter') handleTickerSubmit();
             }}
             placeholder="Search Symbol"
-            className="w-48 rounded-lg border border-white/10 bg-[#121214] py-1.5 pr-3 pl-8 text-sm text-zinc-200 transition-colors focus:border-emerald-500/50 focus:outline-none"
+            className="w-48 rounded-lg border border-white/10 bg-[#121214] py-1.5 pl-10 pr-3 text-sm text-zinc-200 transition-colors focus:border-emerald-500/50 focus:outline-none"
           />
         </div>
       </div>
