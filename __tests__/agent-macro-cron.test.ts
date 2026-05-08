@@ -111,6 +111,20 @@ describe('startMacroCron', () => {
     await handle.stop();
   });
 
+  it('skips weekend ticks even when the trigger hour matches', async () => {
+    // 2026-04-11 is a Saturday. 10:00 UTC = 06:00 ET, matching the trigger hour.
+    vi.setSystemTime(new Date('2026-04-11T10:00:00.000Z'));
+    const db = createDb([[{ id: 'scheduled-run-row' }]]);
+    const handle = startMacroCron(db, { hourEt: 6, checkIntervalMs: 1_000 });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(db.execute).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
+
+    await handle.stop();
+  });
+
   it('claims the scheduled run, enqueues one macro-summary job, and marks the run completed', async () => {
     vi.setSystemTime(new Date('2026-04-07T10:00:00.000Z'));
     const db = createDb([[{ id: 'scheduled-run-row' }]]);
@@ -259,6 +273,20 @@ describe('startIntradayCron', () => {
     expect(db.transaction).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
+
+    await handle.stop();
+  });
+
+  it('skips weekend ticks even when the trigger hour matches', async () => {
+    // 2026-04-12 is a Sunday. 16:00 UTC = 12:00 ET, matching the intraday trigger hour.
+    vi.setSystemTime(new Date('2026-04-12T16:00:00.000Z'));
+    const db = createDb([[{ id: 'scheduled-run-row' }]]);
+    const handle = startIntradayCron(db, { hourEt: 12, checkIntervalMs: 1_000 });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(db.execute).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
 
     await handle.stop();
   });
