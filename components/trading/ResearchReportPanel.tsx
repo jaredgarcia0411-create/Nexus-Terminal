@@ -52,20 +52,30 @@ interface Props {
 // within a session so flipping between tickers doesn't refetch immediately.
 const reportCache = new Map<string, { report: ResearchReport; generatedAt: string | null }>();
 
-function pillClass(rating: Rating): string {
-  if (rating === 'red') return 'bg-rose-500/15 text-rose-300';
-  if (rating === 'yellow') return 'bg-amber-500/15 text-amber-300';
-  return 'bg-emerald-500/15 text-emerald-300';
+function dotClass(rating: Rating): string {
+  if (rating === 'red') return 'bg-rose-500';
+  if (rating === 'yellow') return 'bg-amber-500';
+  return 'bg-emerald-500';
+}
+
+function RatingDot({ rating }: { rating: Rating }) {
+  // 10px filled circle. aria-label keeps the signal accessible to screen readers since
+  // we dropped the text label.
+  return (
+    <span
+      role="img"
+      aria-label={`${rating} rating`}
+      className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${dotClass(rating)}`}
+    />
+  );
 }
 
 function RatedRow({ label, section }: { label: string; section: RatedSection }) {
   return (
     <div className="space-y-1">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
         <span className="text-sm font-semibold text-zinc-200">{label}</span>
-        <span className={`rounded px-2 py-0.5 text-xs font-medium uppercase ${pillClass(section.rating)}`}>
-          {section.rating}
-        </span>
+        <RatingDot rating={section.rating} />
       </div>
       <p className="text-sm text-zinc-300">{section.explanation}</p>
     </div>
@@ -201,11 +211,9 @@ export default function ResearchReportPanel({ ticker }: Props) {
           <h5 className="mb-1 text-sm font-semibold text-zinc-200">Other Catalysts</h5>
           <ul className="space-y-1">
             {report.otherCatalysts.map((c, i) => (
-              <li key={i} className="flex items-center justify-between gap-2">
+              <li key={i} className="flex items-center gap-2">
                 <span className="text-sm text-zinc-300">{c.catalyst}</span>
-                <span className={`rounded px-2 py-0.5 text-xs font-medium uppercase ${pillClass(c.rating)}`}>
-                  {c.rating}
-                </span>
+                <RatingDot rating={c.rating} />
               </li>
             ))}
           </ul>
@@ -213,11 +221,9 @@ export default function ResearchReportPanel({ ticker }: Props) {
       ) : null}
 
       <div>
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
           <h5 className="text-sm font-semibold text-zinc-200">Financial Commentary</h5>
-          <span className={`rounded px-2 py-0.5 text-xs font-medium uppercase ${pillClass(report.financialCommentary.rating)}`}>
-            {report.financialCommentary.rating}
-          </span>
+          <RatingDot rating={report.financialCommentary.rating} />
         </div>
         <p className="mt-1 text-sm text-zinc-300">
           {report.financialCommentary.explanation}
