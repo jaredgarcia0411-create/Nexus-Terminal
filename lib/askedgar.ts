@@ -418,7 +418,10 @@ async function fetchEquityLines(ticker: string) {
 async function fetchRegistrations(ticker: string) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
-  return requestAskEdgar<unknown>('/v1/registrations', { ticker: validated, effective_status: true });
+  // No effective_status filter: ATMs are 424B5 prospectus supplements that ride on a
+  // parent shelf and don't carry their own effective_status=true. Filtering by it
+  // would strip them out before they reach the Dilution page or scanner.
+  return requestAskEdgar<unknown>('/v1/registrations', { ticker: validated });
 }
 
 async function fetchNews(ticker: string, limit = 20) {
@@ -993,12 +996,16 @@ export function normalizeAskEdgarResponse(
     companyName: options.companyName,
     warnings: options.warnings,
     header: {
-      marketCap: toNumberValue(getField(screener, ['marketCap', 'market_cap', 'market_cap_final']))
-        ?? toNumberValue(getField(floatOutstanding, ['marketCap', 'market_cap', 'market_cap_final'])),
+      // market_cap_final is AE's canonical post-computation value (per AE_API_DOCS line 321);
+      // market_cap can lag or carry a stale price. Prefer _final.
+      marketCap: toNumberValue(getField(screener, ['market_cap_final', 'marketCapFinal', 'marketCap', 'market_cap']))
+        ?? toNumberValue(getField(floatOutstanding, ['market_cap_final', 'marketCapFinal', 'marketCap', 'market_cap'])),
       outstandingShares: toNumberValue(getField(screener, ['outstanding', 'outstandingShares', 'outstanding_shares', 'sharesOutstanding']))
         ?? toNumberValue(getField(floatOutstanding, ['outstanding', 'outstandingShares', 'outstanding_shares', 'outstanding_shares_final', 'sharesOutstanding'])),
-      float: toNumberValue(getField(screener, ['float', 'floatShares', 'tradable_float', 'float_shares']))
-        ?? toNumberValue(getField(floatOutstanding, ['float', 'tradableFloat', 'tradable_float', 'floatShares', 'float_shares'])),
+      // tradable_float is the "true" float (subtracts restricted/lock-up shares); plain `float`
+      // includes them and overstates what's actually trading. AE's UI uses tradable_float — match it.
+      float: toNumberValue(getField(screener, ['tradable_float', 'tradableFloat', 'float_shares', 'floatShares', 'float']))
+        ?? toNumberValue(getField(floatOutstanding, ['tradable_float', 'tradableFloat', 'float_shares', 'floatShares', 'float'])),
       exchange: getStringField(screener, ['exchange']),
       ipoDate: getStringField(screener, ['ipodate', 'ipo_date', 'ipoDate']),
       industry: getStringField(screener, ['industry'])
@@ -1339,14 +1346,26 @@ async function fetchScannerSummaryRaw(ticker: string): Promise<ScannerSummaryRes
   const registrationRows = registrationsResp.results.map((item, index) =>
     toRegistrationRow(toRecord(item), `Registration ${index + 1}`),
   );
-  const hasAtm = registrationRows.some((row) => row.isAtm);
-  const hasS1 = registrationRows.some((row) => {
+
+  // Now that fetchRegistrations returns everything (no effective_status filter),
+  // filter out clearly-expired rows so the scanner only flags usable programs.
+  // Rows with no expirationDate are kept (they're either active or unspecified).
+  const now = Date.now();
+  const isUsable = (row: { expirationDate: string | null }) => {
+    if (!row.expirationDate) return true;
+    const exp = Date.parse(row.expirationDate);
+    return !Number.isFinite(exp) || exp >= now;
+  };
+  const usableRows = registrationRows.filter(isUsable);
+
+  const hasAtm = usableRows.some((row) => row.isAtm);
+  const hasS1 = usableRows.some((row) => {
     const formType = row.formType ?? '';
     return /^S-1/i.test(formType);
   });
 
   const hasElFromEquityLines = equityLinesResp.results.length > 0;
-  const hasElFromRegistrations = registrationRows.some((row) => {
+  const hasElFromRegistrations = usableRows.some((row) => {
     if (row.isAtm) return false;
     const headline = row.headline.toLowerCase();
     return (

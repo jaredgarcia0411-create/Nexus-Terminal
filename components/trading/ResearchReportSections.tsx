@@ -648,7 +648,7 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
 
             <div>
               <div className="mb-2 flex items-center justify-between gap-2">
-                <h4 className="text-base font-semibold text-zinc-200">Research Report</h4>
+                <h4 className="text-lg font-semibold text-zinc-200">Research Report</h4>
                 <button
                   type="button"
                   onClick={() => setReportExpanded(true)}
@@ -735,7 +735,22 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
 
             <div>
               <h4 className="mb-2 text-base font-semibold text-zinc-200">S-1&apos;s</h4>
-              <FilingsTable filings={data.filings.filter((filing) => filing.formType.startsWith('S-1'))} />
+              {/* Source from registrations rather than filings so we catch S-1s
+                  filed more than 90 days ago — getRecentFilings has a 90-day
+                  window, but S-1s often stay effective for years. Same source
+                  the scanner's hasS1 column uses. */}
+              <FilingsTable
+                filings={data.registrations
+                  .filter((row) => row.formType?.startsWith('S-1') ?? false)
+                  .map((row) => ({
+                    formType: row.formType ?? 'S-1',
+                    bucket: 'registrations' as const,
+                    title: row.headline,
+                    filedAt: row.filedAt,
+                    url: null,
+                    accessionNumber: null,
+                  }))}
+              />
             </div>
 
             <div>

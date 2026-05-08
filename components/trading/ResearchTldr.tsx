@@ -62,7 +62,7 @@ export default function ResearchTldr({ ticker }: Props) {
   if (loading) {
     return (
       <div>
-        <h4 className="mb-2 text-base font-semibold text-zinc-200">TLDR</h4>
+        <h4 className="mb-2 border-b border-white/10 pb-2 text-lg font-semibold text-zinc-200">TLDR</h4>
         <div className="text-sm text-zinc-500">Generating TLDR…</div>
       </div>
     );
@@ -70,7 +70,7 @@ export default function ResearchTldr({ ticker }: Props) {
   if (error) {
     return (
       <div>
-        <h4 className="mb-2 text-base font-semibold text-zinc-200">TLDR</h4>
+        <h4 className="mb-2 border-b border-white/10 pb-2 text-lg font-semibold text-zinc-200">TLDR</h4>
         <div className="text-sm text-rose-400">{error}</div>
       </div>
     );
@@ -81,7 +81,7 @@ export default function ResearchTldr({ ticker }: Props) {
 
   return (
     <div>
-      <h4 className="mb-2 text-base font-semibold text-zinc-200">TLDR</h4>
+      <h4 className="mb-2 border-b border-white/10 pb-2 text-lg font-semibold text-zinc-200">TLDR</h4>
       <ul className="space-y-1">
         {data.findings.map((item, i) => (
           <li key={i} className="text-sm text-zinc-300">• {item}</li>

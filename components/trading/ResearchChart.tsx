@@ -15,6 +15,19 @@ function toTime(ms: number): Time {
   return Math.floor(ms / 1000) as unknown as Time;
 }
 
+// Used to bucket candle timestamps by NY trading day so we can zoom intraday
+// charts to just the most recent session's price action.
+const NY_DAY_KEY_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/New_York',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+function nyDateKey(epochMs: number): string {
+  return NY_DAY_KEY_FORMATTER.format(new Date(epochMs));
+}
+
 interface Props {
   ticker: string;
   historicalDate?: string | null;
@@ -22,7 +35,7 @@ interface Props {
 }
 
 export default function ResearchChart({ ticker, historicalDate, onClearHistorical }: Props) {
-  const [timeframe, setTimeframe] = useState<ResearchChartTimeframeKey>('1D');
+  const [timeframe, setTimeframe] = useState<ResearchChartTimeframeKey>('5m');
   const frame = RESEARCH_CHART_FRAME_CONFIG[timeframe];
 
   // When historicalDate is set, pin the fetch to that day's session window using the
@@ -161,8 +174,24 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
       volumeRef.current.setData(volumeData);
     }
 
-    chartRef.current?.timeScale().fitContent();
-  }, [candles]);
+    // For intraday views, zoom to just the latest NY trading day so the chart
+    // opens on today's price action instead of the full 5–10 day fetch window.
+    // Daily/weekly frames keep fitContent so the user sees the longer context.
+    const timeScale = chartRef.current?.timeScale();
+    if (!timeScale) return;
+    if (isIntraday && sorted.length > 0) {
+      const lastDayKey = nyDateKey(sorted[sorted.length - 1].datetime);
+      const firstSameDay = sorted.find((candle) => nyDateKey(candle.datetime) === lastDayKey);
+      if (firstSameDay) {
+        timeScale.setVisibleRange({
+          from: toTime(firstSameDay.datetime),
+          to: toTime(sorted[sorted.length - 1].datetime),
+        });
+        return;
+      }
+    }
+    timeScale.fitContent();
+  }, [candles, isIntraday]);
 
   return (
     <div className="flex h-full flex-col">

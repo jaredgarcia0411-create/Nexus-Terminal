@@ -47,13 +47,12 @@ OUTPUT FORMAT (strict JSON, no markdown):
 }
 
 RULES:
-- findings: maximum 10 bullets, ranked from highest dilution-trigger risk first to lowest at the bottom.
-- For the top bullets that represent imminent dilution risk, prefix with "**High Risk:**" (in bold markdown).
-- For the next tier of cautionary items (warrants near strike, recent offering pattern, compliance watch), prefix with "**Watch:**".
-- Below those, write plain factual bullets (cash on hand, share count growth, recent offering price, insider ownership, etc.) without prefixes.
-- Be specific with numbers (prices, dates, percentages, share counts) when available.
-- Never fabricate data. Use null or omit a bullet if the underlying field is missing.
-- JSON only, no explanation, no markdown fences.
+- findings: max 10 bullets, ranked highest dilution-trigger risk first.
+- Plain factual bullets only — never prefix with "High Risk", "Watch", or any risk label.
+- Format share counts and large dollar amounts with thousands separators (e.g., 12,345,678 — not 12345678 or 12.3M).
+- When mentioning warrants, include the strike price.
+- Be specific with numbers (prices, dates, percentages, share counts). Use null or omit a bullet if a field is missing — never fabricate.
+- JSON only, no markdown fences.
 
 <report_data>
 ${JSON.stringify(reportData)}

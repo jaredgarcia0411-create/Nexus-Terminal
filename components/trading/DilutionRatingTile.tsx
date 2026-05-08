@@ -63,7 +63,7 @@ export default function DilutionRatingTile(props: TileProps) {
 
   return (
     <div>
-      <h4 className="mb-2 text-base font-semibold text-zinc-200">Dilution Rating</h4>
+      <h4 className="mb-2 border-b border-white/10 pb-2 text-lg font-semibold text-zinc-200">Dilution Rating</h4>
       <div className="space-y-1.5">
         {rows.map((row) => (
           <div key={row.label} className="flex items-center justify-between gap-2">
