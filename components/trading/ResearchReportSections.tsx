@@ -130,6 +130,53 @@ function NewsArticle({ item }: { item: ResearchSnapshotNewsItem }) {
   );
 }
 
+// Heuristic for "this headline needs a Show more toggle". 120 chars ≈ two
+// comfortable lines at the table's typical width — anything longer would be
+// clipped by line-clamp-2 anyway, so we only show the button when there's
+// actually something hidden.
+const FILING_HEADLINE_TRUNCATE_AT = 120;
+
+function FilingsRow({ filing }: { filing: ResearchSnapshotFiling }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = (filing.title?.length ?? 0) > FILING_HEADLINE_TRUNCATE_AT;
+  const clamp = isLong && !expanded;
+
+  const titleNode = filing.url ? (
+    <a
+      href={filing.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-zinc-200 underline-offset-2 transition-colors hover:text-emerald-400 hover:underline"
+    >
+      {filing.title}
+    </a>
+  ) : (
+    <span className="text-zinc-200">{filing.title}</span>
+  );
+
+  return (
+    <tr className="border-b border-white/5 align-top text-zinc-300">
+      {/* whitespace-nowrap so form types like "20-F" never wrap to a second line */}
+      <td className="py-2 pr-3 align-top whitespace-nowrap font-bold text-white">
+        {filing.formType}
+      </td>
+      <td className="py-2 pr-3 align-top">
+        <div className={clamp ? 'line-clamp-2' : ''}>{titleNode}</div>
+        {isLong ? (
+          <button
+            type="button"
+            onClick={() => setExpanded((prev) => !prev)}
+            className="mt-1 text-xs text-zinc-500 underline-offset-2 transition-colors hover:text-zinc-200 hover:underline"
+          >
+            {expanded ? 'Show less' : 'Show full headline'}
+          </button>
+        ) : null}
+      </td>
+      <td className="py-2 align-top whitespace-nowrap">{formatDate(filing.filedAt)}</td>
+    </tr>
+  );
+}
+
 function FilingsTable({ filings }: { filings: ResearchSnapshotFiling[] }) {
   if (filings.length === 0) {
     return <NoDataBadge />;
@@ -147,28 +194,7 @@ function FilingsTable({ filings }: { filings: ResearchSnapshotFiling[] }) {
         </thead>
         <tbody>
           {filings.map((filing, index) => (
-            <tr key={`${filing.accessionNumber ?? filing.title}-${index}`} className="border-b border-white/5 text-zinc-300">
-              <td className="py-2 pr-3">
-                <span className="rounded border border-white/15 bg-white/5 px-2 py-0.5 text-sm text-white">
-                  {filing.formType}
-                </span>
-              </td>
-              <td className="py-2 pr-3">
-                {filing.url ? (
-                  <a
-                    href={filing.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-zinc-200 underline-offset-2 transition-colors hover:text-emerald-400 hover:underline"
-                  >
-                    {filing.title}
-                  </a>
-                ) : (
-                  <span className="text-zinc-200">{filing.title}</span>
-                )}
-              </td>
-              <td className="py-2">{formatDate(filing.filedAt)}</td>
-            </tr>
+            <FilingsRow key={`${filing.accessionNumber ?? filing.title}-${index}`} filing={filing} />
           ))}
         </tbody>
       </table>
@@ -189,8 +215,8 @@ function FilingsView({ filings }: { filings: ResearchSnapshotFiling[] }) {
               key={option.key}
               type="button"
               onClick={() => setBucket(option.key)}
-              className={`rounded px-2.5 py-1 text-sm transition-colors ${
-                bucket === option.key ? 'bg-emerald-500/10 text-emerald-500' : 'text-white hover:bg-white/10'
+              className={`rounded-sm px-2.5 py-1 text-sm transition-colors ${
+                bucket === option.key ? 'bg-zinc-700/60 text-zinc-100' : 'text-white hover:bg-white/10'
               }`}
             >
               {option.label}
@@ -329,7 +355,7 @@ function WarrantSection({
                     <td className="py-2 pr-3 text-zinc-300">{toStringValue(warrant.registered)}</td>
                     <td className="py-2 pr-3 text-zinc-300">{formatDate(warrant.exercisableDate)}</td>
                     <td className="py-2 pr-3 text-zinc-300">{formatDate(warrant.expirationDate)}</td>
-                    <td className={`py-2 text-xs font-semibold whitespace-nowrap ${status.colorClass}`}>{status.label}</td>
+                    <td className={`py-2 font-bold whitespace-nowrap ${status.colorClass}`}>{status.label}</td>
                   </tr>
                 );
               })}
@@ -355,7 +381,7 @@ function ShelfRegistrationsTable({ rows }: { rows: ResearchSnapshotRegistration[
             <th className="py-2 pr-3 text-left">ATM</th>
             <th className="py-2 pr-3 text-left">Amount</th>
             <th className="py-2 pr-3 text-left">Remaining</th>
-            <th className="py-2 pr-3 text-left">Baby Shelf</th>
+            <th className="py-2 pr-3 text-left whitespace-nowrap">Baby Shelf</th>
             <th className="py-2 text-left">Filed</th>
           </tr>
         </thead>
@@ -366,7 +392,7 @@ function ShelfRegistrationsTable({ rows }: { rows: ResearchSnapshotRegistration[
               <td className="py-2 pr-3">{row.isAtm ? <span className="font-semibold text-emerald-400">Yes</span> : 'No'}</td>
               <td className="py-2 pr-3">{formatMoney(row.offeringAmount)}</td>
               <td className="py-2 pr-3">{formatMoney(row.amountRemainingAtm)}</td>
-              <td className="py-2 pr-3">{row.overBabyShelf ? <span className="text-rose-300">Over Limit</span> : 'OK'}</td>
+              <td className="py-2 pr-3">{row.overBabyShelf ? <span className="font-semibold text-rose-500">Over Limit</span> : 'OK'}</td>
               <td className="py-2">{formatDate(row.filedAt)}</td>
             </tr>
           ))}
@@ -575,6 +601,30 @@ function OwnershipGroupsTables({ groups }: { groups: ResearchSnapshotOwnershipGr
   );
 }
 
+// Tags can stack to several pills per row, which made the table feel noisy.
+// A click-to-reveal toggle keeps the column compact while still letting the
+// user inspect the per-day catalysts on demand.
+function GapStatTags({ tags }: { tags: string[] }) {
+  const [open, setOpen] = useState(false);
+  if (tags.length === 0) {
+    return <span className="text-zinc-500">--</span>;
+  }
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="text-xs text-zinc-400 underline-offset-2 transition-colors hover:text-zinc-200 hover:underline"
+      >
+        {open ? 'Hide Tags' : `Show Tags (${tags.length})`}
+      </button>
+      {open ? (
+        <div className="mt-1 text-xs text-zinc-400">{tags.join(', ')}</div>
+      ) : null}
+    </div>
+  );
+}
+
 function GapStatRow({ row, onSelectDate }: { row: ResearchSnapshotGapStat; onSelectDate?: (date: string) => void }) {
   // Date upstream is YYYY-MM-DD (verified in __tests__/askedgar-client.test.ts).
   // Pass it straight through; ResearchChart will hand it to buildTradeChartOptions.
@@ -604,15 +654,7 @@ function GapStatRow({ row, onSelectDate }: { row: ResearchSnapshotGapStat; onSel
       <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(row.intradayLow)}</td>
       <td className="py-2 pr-3 text-right text-zinc-300">{formatNumber(row.volume)}</td>
       <td className="py-2 text-zinc-400">
-        {row.tags.length === 0 ? '--' : (
-          <div className="flex flex-wrap gap-1">
-            {row.tags.map((tag, index) => (
-              <span key={`${tag}-${index}`} className="rounded border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-xs text-zinc-400">
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
+        <GapStatTags tags={row.tags} />
       </td>
     </tr>
   );
@@ -652,13 +694,18 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
               </div>
             </div>
 
-            <div className="border-t border-white/5 pt-4">
-              <h4 className="mb-2 text-lg font-semibold text-zinc-200">Gap Up Days</h4>
+            {/* No top border — section heading + parent space-y-5 carries the separation.
+                Inner border-b under the title row still separates header from the table since
+                gap-stat rows already have their own row dividers. */}
+            <div className="pt-4">
+              <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-white/5 pb-2">
+                <h4 className="text-lg font-semibold text-zinc-200">Gap Up Days</h4>
+                <p className="text-sm text-zinc-500">
+                  Historical day-1 gap-ups only (excludes multi-day runs).
+                </p>
+              </div>
               {data.gapStats.length > 0 ? (
                 <div className="space-y-3">
-                  <p className="text-sm text-zinc-500">
-                    Historical day-1 gap-ups only (excludes multi-day runs). Most recent first.
-                  </p>
                   <div className="scrollbar-hidden overflow-x-auto">
                     <table className="min-w-full">
                       <thead>
@@ -686,7 +733,7 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
               )}
             </div>
 
-            <div className="border-t border-white/5 pt-4">
+            <div>
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h4 className="text-lg font-semibold text-zinc-200">Research Report</h4>
                 <button

@@ -151,7 +151,7 @@ export function DilutionRatingPanel({ data }: PanelProps) {
           return (
             <div key={item.label} className="flex items-center justify-between gap-3">
               <span className="text-sm font-medium text-white">{item.label}</span>
-              <span className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-sm font-medium ${pillClasses(level)}`}>
+              <span className={`inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 text-sm font-medium ${pillClasses(level)}`}>
                 <BarChartIcon level={level} size="md" />
                 {toStringValue(item.value)}
               </span>
