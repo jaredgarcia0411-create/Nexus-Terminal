@@ -6,10 +6,12 @@ const {
   requireUserMock,
   getCachedTickerDataMock,
   fetchUnifiedSnapshotMock,
+  fetchTickerDetailsMock,
 } = vi.hoisted(() => ({
   requireUserMock: vi.fn(),
   getCachedTickerDataMock: vi.fn(),
   fetchUnifiedSnapshotMock: vi.fn(),
+  fetchTickerDetailsMock: vi.fn(),
 }));
 
 vi.mock('@/lib/server-db-utils', () => ({
@@ -18,6 +20,7 @@ vi.mock('@/lib/server-db-utils', () => ({
 
 vi.mock('@/lib/massive-market', () => ({
   fetchUnifiedSnapshot: fetchUnifiedSnapshotMock,
+  fetchTickerDetails: fetchTickerDetailsMock,
 }));
 
 vi.mock('@/lib/askedgar', async () => {
@@ -65,6 +68,11 @@ describe('GET /api/askedgar/snapshot', () => {
     });
     fetchUnifiedSnapshotMock.mockResolvedValue({
       results: [{ name: 'Acme Biotech' }],
+    });
+    fetchTickerDetailsMock.mockResolvedValue({
+      description: null,
+      homepageUrl: null,
+      sicDescription: null,
     });
   });
 

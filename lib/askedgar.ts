@@ -66,7 +66,7 @@ const ASKEDGAR_BASE_URL = 'https://eapi.askedgar.io';
 const DEFAULT_DAILY_LIMIT = 50;
 const REQUEST_TIMEOUT_MS = 15_000;
 const TICKER_REGEX = /^[A-Z0-9.\-^]+$/;
-const TICKER_CACHE_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
+const TICKER_CACHE_TTL_MS = 16 * 60 * 60 * 1000; // 16 hours; news bypasses this cache so freshness on news is unaffected
 const GAINERS_CACHE_TTL_MS = 15 * 60 * 1000;   // 15 minutes
 
 const uniqueTickersToday = new Set<string>();
@@ -671,7 +671,19 @@ function mergeRawData(
   cached: Record<string, AskEdgarResponse<unknown>>,
   fresh: Record<string, AskEdgarResponse<unknown>>,
 ): Record<string, AskEdgarResponse<unknown>> {
-  return { ...cached, ...fresh };
+  // Only let a fresh entry replace a cached one when the fresh entry actually
+  // carries data. Without this, a transient rate-limit / network error would
+  // overwrite a previously-good cached endpoint with an error response and
+  // pin the broken state in cache (the news bypass would then keep refetching
+  // and keep clobbering, leaving news + filings empty for hours).
+  const merged: Record<string, AskEdgarResponse<unknown>> = { ...cached };
+  for (const [key, freshResponse] of Object.entries(fresh)) {
+    const cachedResponse = merged[key];
+    if (responseHasData(freshResponse) || !cachedResponse || !responseHasData(cachedResponse)) {
+      merged[key] = freshResponse;
+    }
+  }
+  return merged;
 }
 
 function getEndpointResponse(rawData: Record<string, AskEdgarResponse<unknown>>, keys: string[]): AskEdgarResponse<unknown> {
@@ -718,7 +730,19 @@ function detectFormType(row: Record<string, unknown>): string | null {
 }
 
 function normalizeHeadline(row: Record<string, unknown>, fallback: string): string {
-  return getStringField(row, ['headline', 'title']) ?? fallback;
+  // Most rows have a real `headline` or `title`. JMT-summary news rows
+  // (form_type "jmt415" / "grok") leave both null and stash the actual content
+  // in `summary`, often with the real headline wrapped in *asterisks*. Try the
+  // bolded text first, then the trimmed summary itself, then the fallback.
+  const direct = getStringField(row, ['headline', 'title']);
+  if (direct) return direct;
+  const summary = getStringField(row, ['summary', 'body']);
+  if (summary) {
+    const bolded = summary.match(/\*([^*]+)\*/);
+    if (bolded) return bolded[1].trim();
+    return summary.trim();
+  }
+  return fallback;
 }
 
 function dedupeByHeadline<T extends { headline: string }>(rows: T[]): T[] {
@@ -1192,7 +1216,7 @@ function logTickerCacheDecision(
 /**
  * Cached version of fetchTickerData(). Checks DB for a fresh cached response
  * before hitting Ask Edgar. Cache is shared across all users (same SEC data).
- * TTL: 3 hours.
+ * TTL: 16 hours (news endpoint bypasses cache and is always re-fetched).
  */
 export async function getCachedTickerData(
   ticker: string,

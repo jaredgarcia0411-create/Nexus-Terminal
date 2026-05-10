@@ -20,7 +20,8 @@ export function bucketForFormType(formType: string): FilingBucket {
 
   if (/^(DEF|PRE|DEFA|DEFM|DEFC|DFAN|DFRN|PREM|PREC|PRER)/.test(f) && /14[AC]/.test(f)) return 'proxies';
 
-  if (/^SC\s?13[GD](\/A)?$/.test(f)) return 'ownerships';
+  // Upstream returns either "SC 13G" or the verbatim "SCHEDULE 13G" — accept both.
+  if (/^(SC|SCHEDULE)\s?13[GD](\/A)?$/.test(f)) return 'ownerships';
   if (/^[345](\/A)?$/.test(f)) return 'ownerships';
 
   return 'other';
