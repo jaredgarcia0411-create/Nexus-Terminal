@@ -844,7 +844,6 @@ export async function generateSmallCapResearchReport(
   const { gapStatsTable, ...deterministicAnalysis } = computeDeterministicAnalysis(withPriceContext);
   const newsFeed = buildNewsFeedFromArrays(
     Array.isArray(withPriceContext.news) ? withPriceContext.news : [],
-    Array.isArray(withPriceContext.filingTitles) ? withPriceContext.filingTitles : [],
     { maxItems: 10, maxAgeDays: 30 },
   );
   const pipelineInput = researchPipelineInputSchema.parse({
@@ -973,7 +972,6 @@ export const smallCapResearchBlueprint: Blueprint = {
           gapStatsTable,
           newsFeed: buildNewsFeedFromArrays(
             asArray(input.news),
-            asArray(input.filingTitles),
             { maxItems: 10, maxAgeDays: 30 },
           ),
         }, {

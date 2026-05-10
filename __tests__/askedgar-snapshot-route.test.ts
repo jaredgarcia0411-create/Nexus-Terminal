@@ -132,23 +132,23 @@ describe('GET /api/askedgar/snapshot', () => {
       ticker: 'ACME',
       fetchedAt: '2026-04-06T00:00:00.000Z',
       rawData: {
-        screener: errorResponse('503 Request failed'),
-        'float-outstanding': successResponse([
+        screener: successResponse([
           {
             ticker: 'ACME',
             market_cap_final: 125000000,
             outstanding: 45000000,
-            float: 12000000,
+            tradable_float: 12000000,
             industry: 'Biotechnology',
             country: 'United States',
           },
         ]),
+        news: errorResponse('Request timed out after 15s'),
       },
       dataSources: [
-        { endpoint: 'screener', label: 'Screener', hasData: false, error: '503 Request failed' },
-        { endpoint: 'float-outstanding', label: 'Float Outstanding', hasData: true },
+        { endpoint: 'screener', label: 'Screener', hasData: true },
+        { endpoint: 'news', label: 'News', hasData: false, error: 'Request timed out after 15s' },
       ],
-      warnings: ['Screener unavailable: 503 Request failed'],
+      warnings: ['News unavailable: Request timed out after 15s'],
       hasAnyData: true,
     });
 
@@ -157,7 +157,7 @@ describe('GET /api/askedgar/snapshot', () => {
 
     expect(response.status).toBe(200);
     expect(payload.companyName).toBe('Acme Biotech');
-    expect(payload.warnings).toEqual(['Screener unavailable: 503 Request failed']);
+    expect(payload.warnings).toEqual(['News unavailable: Request timed out after 15s']);
     expect(payload.header).toMatchObject({
       marketCap: 125000000,
       outstandingShares: 45000000,

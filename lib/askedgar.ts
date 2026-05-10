@@ -7,7 +7,6 @@ import { bucketForFormType } from '@/lib/filings-bucket';
 import { getHistoricalOutstanding } from '@/lib/sec/companyfacts';
 import { getOfferings } from '@/lib/sec/offerings';
 import { getReverseSplits } from '@/lib/sec/reverse-splits';
-import { getRecentFilings } from '@/lib/sec/submissions';
 import type { RawOffering } from '@/lib/sec/offerings';
 import type {
   ResearchSnapshotFull,
@@ -60,7 +59,6 @@ export interface AskEdgarSnapshotAvailability {
 const SEC_BACKED_ENDPOINT_KEYS = new Set<string>([
   'historical-float-pro',
   'reverse-splits',
-  'filing-titles',
   'offerings',
 ]);
 
@@ -385,12 +383,6 @@ function toDataSource(state: EndpointState): DilutionDataSourceCheck {
   };
 }
 
-async function fetchFloatOutstanding(ticker: string) {
-  const validated = validateTickerOrError<unknown>(ticker);
-  if (typeof validated !== 'string') return validated;
-  return requestAskEdgar<unknown>('/v1/float-outstanding', { ticker: validated });
-}
-
 async function fetchScreenerByTicker(ticker: string) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
@@ -424,9 +416,11 @@ async function fetchRegistrations(ticker: string) {
   return requestAskEdgar<unknown>('/v1/registrations', { ticker: validated });
 }
 
-async function fetchNews(ticker: string, limit = 20) {
+async function fetchNews(ticker: string, limit = 40) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
+  // News endpoint returns both news articles AND SEC filings (split by form_type).
+  // Higher limit because filings now come from this same call.
   return requestAskEdgar<unknown>('/v1/news', { ticker: validated, limit });
 }
 
@@ -461,19 +455,17 @@ async function fetchSplitStatus(ticker: string) {
 }
 
 export const ENDPOINT_REGISTRY = {
-  'float-outstanding': { label: 'Float Outstanding', run: (ticker) => fetchFloatOutstanding(ticker) },
   screener: { label: 'Screener', run: (ticker) => fetchScreenerByTicker(ticker) },
   'dilution-rating': { label: 'Dilution Rating', run: (ticker) => fetchDilutionRating(ticker) },
   'dilution-data': { label: 'Dilution Data', run: (ticker) => fetchDilutionData(ticker) },
   offerings: { label: 'Offerings', run: (ticker) => getOfferings(ticker) },
   'equity-lines': { label: 'Equity Lines', run: (ticker) => fetchEquityLines(ticker) },
   registrations: { label: 'Registrations', run: (ticker) => fetchRegistrations(ticker) },
-  news: { label: 'News', run: (ticker) => fetchNews(ticker, 20) },
+  news: { label: 'News', run: (ticker) => fetchNews(ticker, 40) },
   'nasdaq-compliance': { label: 'Nasdaq Compliance', run: (ticker) => fetchNasdaqCompliance(ticker) },
   agreements: { label: 'Agreements', run: (ticker) => fetchAgreements(ticker) },
   'historical-float-pro': { label: 'Historical Float', run: (ticker) => getHistoricalOutstanding(ticker, { limit: 20 }) },
   'reverse-splits': { label: 'Reverse Splits', run: (ticker) => getReverseSplits(ticker) },
-  'filing-titles': { label: 'Filing Titles (SEC)', run: (ticker) => getRecentFilings(ticker, { limit: 20 }) },
   'gap-stats': { label: 'Gap Stats', run: (ticker) => fetchGapStats(ticker, 50) },
   ownership: { label: 'Ownership', run: (ticker) => fetchOwnership(ticker) },
   'split-status': { label: 'Split Status', run: (ticker) => fetchSplitStatus(ticker) },
@@ -492,12 +484,12 @@ export const ENDPOINT_SCOPES = {
   'small-cap-research': [
     'screener', 'dilution-rating', 'dilution-data', 'offerings', 'equity-lines',
     'registrations', 'news', 'nasdaq-compliance', 'agreements',
-    'historical-float-pro', 'reverse-splits', 'filing-titles', 'gap-stats',
+    'historical-float-pro', 'reverse-splits', 'gap-stats',
     'ownership', 'split-status',
   ],
   'swing-trader-research': [
     'dilution-data', 'dilution-rating', 'offerings', 'registrations',
-    'news', 'filing-titles', 'historical-float-pro', 'gap-stats', 'ownership',
+    'news', 'historical-float-pro', 'gap-stats', 'ownership',
   ],
 } as const satisfies Record<string, readonly EndpointKey[]>;
 
@@ -667,6 +659,10 @@ function cachedHasFreshEndpoint(
   rawData: Record<string, AskEdgarResponse<unknown>> | undefined,
   key: string,
 ): boolean {
+  // News changes throughout the trading day. Treat it as always missing so
+  // every fresh search re-fetches /v1/news (which now also carries filings),
+  // while everything else still serves from the cache.
+  if (key === 'news') return false;
   const entry = rawData?.[key];
   return Boolean(entry && entry.status !== 'error' && Array.isArray(entry.results));
 }
@@ -800,7 +796,6 @@ export function normalizeAskEdgarResponse(
   options: NormalizeAskEdgarOptions,
 ): ResearchSnapshotFull {
   const screener = firstResult(rawData, ['screener']);
-  const floatOutstanding = firstResult(rawData, ['float-outstanding', 'floatOutstanding']);
   const dilutionRating = firstResult(rawData, ['dilution-rating', 'dilutionRating']);
   const dilutionData = getEndpointResponse(rawData, ['dilution-data', 'dilutionData']);
   const dilutionDataFirst = toRecord(dilutionData.results[0]);
@@ -843,34 +838,35 @@ export function normalizeAskEdgarResponse(
     ...offeringEquityLines,
   ]);
 
-  const news: ResearchSnapshotNewsItem[] = [
-    ...getEndpointResponse(rawData, ['news']).results.map((item, index) => {
-      const row = toRecord(item);
-      return {
-        title: normalizeHeadline(row, `News item ${index + 1}`),
-        summary: getStringField(row, ['body', 'summary', 'details']) ?? '',
-        filedAt: getStringField(row, ['filedAt', 'filed_at', 'date']),
-        formType: getStringField(row, ['formType', 'form', 'source']) ?? 'News',
-        isNews: true,
-      } satisfies ResearchSnapshotNewsItem;
-    }),
-  ];
+  // The /v1/news endpoint returns news articles AND SEC filings in a single
+  // response, distinguished by `form_type` ("news"/"grok"/"jmt415" vs SEC types
+  // like "10-K", "8-K", "424B5"). JMT added `headline` to filing rows so we no
+  // longer need a separate /v1/filing-titles call to enrich filing titles.
+  const NON_FILING_FORM_TYPES = new Set(['news', 'grok', 'jmt415']);
+  const newsEndpointRows = getEndpointResponse(rawData, ['news']).results.map((item) => toRecord(item));
 
-  const filings: ResearchSnapshotFiling[] = getEndpointResponse(rawData, ['filing-titles', 'filingTitles'])
-    .results
-    .map((item) => {
-      const row = toRecord(item);
+  const news: ResearchSnapshotNewsItem[] = newsEndpointRows
+    .filter((row) => NON_FILING_FORM_TYPES.has((getStringField(row, ['form_type', 'formType']) ?? 'news').toLowerCase()))
+    .map((row, index) => ({
+      title: normalizeHeadline(row, `News item ${index + 1}`),
+      summary: getStringField(row, ['body', 'summary', 'details']) ?? '',
+      filedAt: getStringField(row, ['filedAt', 'filed_at', 'date']),
+      formType: getStringField(row, ['formType', 'form_type', 'form', 'source']) ?? 'News',
+      isNews: true,
+    } satisfies ResearchSnapshotNewsItem));
+
+  const filings: ResearchSnapshotFiling[] = newsEndpointRows
+    .filter((row) => !NON_FILING_FORM_TYPES.has((getStringField(row, ['form_type', 'formType']) ?? 'news').toLowerCase()))
+    .map((row) => {
       const formType = getStringField(row, ['form_type', 'formType', 'form']) ?? 'unknown';
-      const filedAt = getStringField(row, ['filed_at', 'filedAt', 'date']);
-      const title = getStringField(row, ['headline', 'title', 'primary_doc_description', 'primaryDocDescription'])
+      const title = getStringField(row, ['headline', 'title', 'summary', 'primary_doc_description', 'primaryDocDescription'])
         ?? `${formType} filing`;
-
       return {
         formType,
         bucket: bucketForFormType(formType),
         title,
-        filedAt,
-        url: getStringField(row, ['url', 'document_url', 'documentUrl']),
+        filedAt: getStringField(row, ['filed_at', 'filedAt', 'date']),
+        url: getStringField(row, ['document_url', 'documentUrl', 'url']),
         accessionNumber: getStringField(row, ['accession_number', 'accessionNumber', 'accn']),
       } satisfies ResearchSnapshotFiling;
     })
@@ -998,20 +994,15 @@ export function normalizeAskEdgarResponse(
     header: {
       // market_cap_final is AE's canonical post-computation value (per AE_API_DOCS line 321);
       // market_cap can lag or carry a stale price. Prefer _final.
-      marketCap: toNumberValue(getField(screener, ['market_cap_final', 'marketCapFinal', 'marketCap', 'market_cap']))
-        ?? toNumberValue(getField(floatOutstanding, ['market_cap_final', 'marketCapFinal', 'marketCap', 'market_cap'])),
-      outstandingShares: toNumberValue(getField(screener, ['outstanding', 'outstandingShares', 'outstanding_shares', 'sharesOutstanding']))
-        ?? toNumberValue(getField(floatOutstanding, ['outstanding', 'outstandingShares', 'outstanding_shares', 'outstanding_shares_final', 'sharesOutstanding'])),
+      marketCap: toNumberValue(getField(screener, ['market_cap_final', 'marketCapFinal', 'marketCap', 'market_cap'])),
+      outstandingShares: toNumberValue(getField(screener, ['outstanding', 'outstandingShares', 'outstanding_shares', 'sharesOutstanding'])),
       // tradable_float is the "true" float (subtracts restricted/lock-up shares); plain `float`
       // includes them and overstates what's actually trading. AE's UI uses tradable_float — match it.
-      float: toNumberValue(getField(screener, ['tradable_float', 'tradableFloat', 'float_shares', 'floatShares', 'float']))
-        ?? toNumberValue(getField(floatOutstanding, ['tradable_float', 'tradableFloat', 'float_shares', 'floatShares', 'float'])),
+      float: toNumberValue(getField(screener, ['tradable_float', 'tradableFloat', 'float_shares', 'floatShares', 'float'])),
       exchange: getStringField(screener, ['exchange']),
       ipoDate: getStringField(screener, ['ipodate', 'ipo_date', 'ipoDate']),
-      industry: getStringField(screener, ['industry'])
-        ?? getStringField(floatOutstanding, ['industry', 'sector']),
-      country: getStringField(screener, ['country'])
-        ?? getStringField(floatOutstanding, ['country']),
+      industry: getStringField(screener, ['industry']),
+      country: getStringField(screener, ['country']),
       price: currentPrice,
       shortInterest: toNumberValue(getField(screener, ['shortInterest', 'short_interest'])),
       volume: toNumberValue(getField(screener, ['today_volume', 'volume', 'totalVolume'])),

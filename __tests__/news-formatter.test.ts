@@ -40,24 +40,19 @@ describe('news formatter', () => {
     expectCleanHeadlines(feed.map((item) => item.headline));
   });
 
-  it('uses filing-titles headlines for matching SEC filings', () => {
+  it('uses the inline headline on filing rows from the news endpoint', () => {
+    // The /v1/news endpoint now includes a `headline` field on filing rows
+    // (JMT 2026-05-10), so we no longer need a separate filing-titles call.
     const news = [{
       accession_number: '000123',
       form_type: '8-K',
-      title: '',
+      headline: 'Announces $50M convertible financing facility',
       summary: 'Convertible financing summary',
       filed_at: '2026-04-15',
       document_url: 'https://sec.test/8k',
     }];
-    const filingTitles = [{
-      accession_number: '000123',
-      headline: 'Announces $50M convertible financing facility',
-      form_type: '8-K',
-      filed_at: '2026-04-15',
-      document_url: 'https://sec.test/8k',
-    }];
 
-    const feed = buildNewsFeedFromArrays(news, filingTitles, { nowMs: NOW_MS });
+    const feed = buildNewsFeedFromArrays(news, { nowMs: NOW_MS });
 
     expect(feed).toHaveLength(1);
     expect(feed[0]).toMatchObject({

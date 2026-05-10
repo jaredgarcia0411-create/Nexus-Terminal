@@ -193,8 +193,8 @@ describe('askedgar client', () => {
     const result = await client.fetchTickerData('AAPL');
 
     expect(result.ticker).toBe('AAPL');
-    expect(Object.keys(result.rawData)).toHaveLength(16);
-    expect(result.dataSources).toHaveLength(16);
+    expect(Object.keys(result.rawData)).toHaveLength(14);
+    expect(result.dataSources).toHaveLength(14);
   });
 
   it('only calls explicitly requested endpoints from fetchTickerData', async () => {
@@ -232,14 +232,17 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
 
     await client.getCachedTickerData('AAPL');
-    expect(fetchSpy).toHaveBeenCalledTimes(12);
+    expect(fetchSpy).toHaveBeenCalledTimes(11);
 
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    // News is intentionally cache-bypassed so a fresh search picks up new
+    // headlines; every other swing-scope endpoint is served from cache.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchCallUrls(fetchSpy).map((url) => url.pathname)).toEqual(['/v1/news']);
     expect(Object.keys(result.rawData)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
-    expect(cachedRawDataKeys(cacheDb)).toHaveLength(16);
+    expect(cachedRawDataKeys(cacheDb)).toHaveLength(14);
   });
 
   it('merges missing snapshot endpoints after a swing-trader scope populated the cache', async () => {
@@ -254,9 +257,11 @@ describe('askedgar client', () => {
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL');
 
+    // 5 endpoints not yet cached (screener, equity-lines, nasdaq-compliance,
+    // agreements, split-status) + 1 forced re-fetch of news = 6 total.
     expect(fetchSpy).toHaveBeenCalledTimes(6);
-    expect(Object.keys(result.rawData)).toHaveLength(16);
-    expect(cachedRawDataKeys(cacheDb)).toHaveLength(16);
+    expect(Object.keys(result.rawData)).toHaveLength(14);
+    expect(cachedRawDataKeys(cacheDb)).toHaveLength(14);
   });
 
   it('sums AskEdgar usage cost into the fan-out log', async () => {
@@ -283,18 +288,6 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
 
     await expect(client.fetchTickerData('AAPL', { endpoints: ['nope'] })).rejects.toThrow('[askedgar] Unknown endpoint key: nope');
-  });
-
-  it('routes filing-titles through getRecentFilings, not AskEdgar', async () => {
-    const fetchSpy = mockSuccessfulEndpointFetch();
-    const client = await import('@/lib/askedgar');
-
-    await client.fetchTickerData('AAPL', { endpoints: ['filing-titles'] });
-
-    expect(getRecentFilingsMock).toHaveBeenCalledWith('AAPL', { limit: 20 });
-    expect(fetchSpy).not.toHaveBeenCalled();
-    const calledUrls = fetchCallUrls(fetchSpy).map((url) => url.pathname);
-    expect(calledUrls.some((path) => path.includes('filing-titles'))).toBe(false);
   });
 
   it('routes reverse-splits through getReverseSplits, not AskEdgar', async () => {
@@ -392,7 +385,7 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
     await client.getCachedTickerData('AAPL');
 
-    expect(fetchSpy).toHaveBeenCalledTimes(9);
+    expect(fetchSpy).toHaveBeenCalledTimes(8);
     expect(cacheDb.getRows()).toHaveLength(1);
 
     vi.resetModules();
@@ -417,22 +410,24 @@ describe('askedgar client', () => {
       client.getCachedTickerData('MSFT'),
     ]);
 
+    // 11 fetches for the first call's full snapshot + 1 forced news re-fetch
+    // when the second call wakes from the in-flight dedupe (news bypass).
     expect(fetchSpy).toHaveBeenCalledTimes(12);
-    expect(first).toEqual(second);
+    expect(Object.keys(first.rawData)).toEqual(Object.keys(second.rawData));
+    expect(second.rawData.news).toBeDefined();
   });
 
-  it('falls back to float-outstanding header stats when screener data is sparse', async () => {
+  it('reads header stats (market cap, outstanding, float, industry, country) from the screener endpoint', async () => {
     const client = await import('@/lib/askedgar');
 
     const normalized = client.normalizeAskEdgarResponse({
-      screener: { status: 'success', count: 1, results: [{}] },
-      'float-outstanding': {
+      screener: {
         status: 'success',
         count: 1,
         results: [{
           market_cap_final: 123000000,
           outstanding: 45000000,
-          float: 12000000,
+          tradable_float: 12000000,
           industry: 'Biotechnology',
           country: 'United States',
         }],
@@ -441,7 +436,7 @@ describe('askedgar client', () => {
       ticker: 'AAPL',
       companyName: 'Acme Biotech',
       fetchedAt: '2026-04-06T00:00:00.000Z',
-      warnings: ['Screener unavailable: 503 Request failed'],
+      warnings: [],
     });
 
     expect(normalized.header).toMatchObject({
@@ -451,7 +446,6 @@ describe('askedgar client', () => {
       industry: 'Biotechnology',
       country: 'United States',
     });
-    expect(normalized.warnings).toEqual(['Screener unavailable: 503 Request failed']);
   });
 
   it('maps live /v1/gap-stats response shape to ResearchSnapshotGapStat', async () => {

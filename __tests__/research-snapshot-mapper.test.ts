@@ -13,7 +13,6 @@ describe('normalizeAskEdgarResponse', () => {
   it('splits filings out of news and preserves SEC filing metadata', () => {
     const rawData: Record<string, AskEdgarResponse<unknown>> = {
       screener: emptyResponse,
-      'float-outstanding': emptyResponse,
       'dilution-rating': emptyResponse,
       'dilution-data': emptyResponse,
       'nasdaq-compliance': emptyResponse,
@@ -22,66 +21,63 @@ describe('normalizeAskEdgarResponse', () => {
       offerings: emptyResponse,
       news: {
         status: 'success',
-        count: 1,
-        results: [{
-          title: 'Biotech announces trial milestone',
-          summary: 'Topline data expected next quarter.',
-          filed_at: '2026-04-25',
-          source: 'News',
-        }],
-      },
-      'filing-titles': {
-        status: 'success',
-        count: 7,
+        count: 8,
         results: [
+          {
+            title: 'Biotech announces trial milestone',
+            body: 'Topline data expected next quarter.',
+            summary: 'Topline data expected next quarter.',
+            filed_at: '2026-04-25',
+            form_type: 'news',
+          },
           {
             accession_number: '0000000001-26-000001',
             form_type: 'CORRESP',
             filed_at: '2026-04-18',
             headline: 'Staff correspondence',
-            url: 'https://www.sec.gov/Archives/edgar/data/1/correspondence.htm',
+            document_url: 'https://www.sec.gov/Archives/edgar/data/1/correspondence.htm',
           },
           {
             accession_number: '0000000001-26-000002',
             form_type: '10-K',
             filed_at: '2026-04-24',
             headline: 'Annual report',
-            url: 'https://www.sec.gov/Archives/edgar/data/1/10k.htm',
+            document_url: 'https://www.sec.gov/Archives/edgar/data/1/10k.htm',
           },
           {
             accession_number: '0000000001-26-000003',
             form_type: '8-K',
             filed_at: '2026-04-26',
             headline: 'Current report',
-            url: 'https://www.sec.gov/Archives/edgar/data/1/8k.htm',
+            document_url: 'https://www.sec.gov/Archives/edgar/data/1/8k.htm',
           },
           {
             accession_number: '0000000001-26-000004',
             form_type: 'S-1',
             filed_at: '2026-04-23',
             headline: 'Registration statement',
-            url: 'https://www.sec.gov/Archives/edgar/data/1/s1.htm',
+            document_url: 'https://www.sec.gov/Archives/edgar/data/1/s1.htm',
           },
           {
             accession_number: '0000000001-26-000005',
             form_type: '424B3',
             filed_at: '2026-04-22',
             headline: 'Prospectus supplement',
-            url: 'https://www.sec.gov/Archives/edgar/data/1/424b3.htm',
+            document_url: 'https://www.sec.gov/Archives/edgar/data/1/424b3.htm',
           },
           {
             accession_number: '0000000001-26-000006',
             form_type: 'DEF 14A',
             filed_at: '2026-04-21',
             headline: 'Definitive proxy statement',
-            url: 'https://www.sec.gov/Archives/edgar/data/1/def14a.htm',
+            document_url: 'https://www.sec.gov/Archives/edgar/data/1/def14a.htm',
           },
           {
             accession_number: '0000000001-26-000007',
             form_type: 'SC 13D',
             filed_at: '2026-04-20',
             headline: 'Beneficial ownership report',
-            url: 'https://www.sec.gov/Archives/edgar/data/1/sc13d.htm',
+            document_url: 'https://www.sec.gov/Archives/edgar/data/1/sc13d.htm',
           },
         ],
       },
@@ -112,7 +108,7 @@ describe('normalizeAskEdgarResponse', () => {
     expect(snapshot.news).toEqual([
       expect.objectContaining({
         title: 'Biotech announces trial milestone',
-        formType: 'News',
+        formType: 'news',
         isNews: true,
       }),
     ]);
@@ -154,7 +150,6 @@ describe('normalizeAskEdgarResponse', () => {
   it('maps SEC-backed offerings, filters resale rows, and derives risk fields from compliance only', () => {
     const rawData: Record<string, AskEdgarResponse<unknown>> = {
       screener: emptyResponse,
-      'float-outstanding': emptyResponse,
       'dilution-rating': emptyResponse,
       'dilution-data': emptyResponse,
       'nasdaq-compliance': {

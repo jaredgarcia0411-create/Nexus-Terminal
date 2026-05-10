@@ -838,7 +838,6 @@ export const swingTraderResearchBlueprint: Blueprint = {
         const dilutionRatingFirst = readNullableSectionFirst(rawData, 'dilution-rating', 'dilutionRating');
         const askEdgarNewsFeed = buildNewsFeedFromArrays(
           readResults(rawData['news']),
-          readResults(rawData['filing-titles']),
           { maxItems: 8, maxAgeDays: 30 },
         );
 

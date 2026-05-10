@@ -12,3 +12,4 @@ services/*/dist/
 services/**/__pycache__/
 .vercel
 scripts/trade-screenshots/
+.mcp.json

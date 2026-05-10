@@ -120,42 +120,6 @@ function normalizeDateKey(value: string | null): string | null {
   return value.trim() || null;
 }
 
-function buildFormTypeDateKey(formType: string | null, date: string | null): string | null {
-  const normalizedFormType = formType?.trim().toUpperCase() ?? '';
-  const normalizedDate = normalizeDateKey(date);
-  if (!normalizedFormType || !normalizedDate) {
-    return null;
-  }
-
-  return `${normalizedFormType}|${normalizedDate}`;
-}
-
-function buildFilingTitleLookup(filingTitles: unknown[]): Map<string, string> {
-  const lookup = new Map<string, string>();
-
-  for (const item of filingTitles) {
-    const headline = getStringField(item, ['headline', 'title']);
-    if (!headline) {
-      continue;
-    }
-
-    const accessionNumber = getStringField(item, ['accession_number', 'accessionNumber']);
-    if (accessionNumber) {
-      lookup.set(accessionNumber, headline);
-    }
-
-    const formTypeDateKey = buildFormTypeDateKey(
-      getStringField(item, ['form_type', 'formType']),
-      getStringField(item, ['filed_at', 'filedAt', 'date']),
-    );
-    if (formTypeDateKey) {
-      lookup.set(formTypeDateKey, headline);
-    }
-  }
-
-  return lookup;
-}
-
 function shouldKeepItem(itemDate: string, options: Required<BuildNewsFeedOptions>): boolean {
   if (!itemDate) {
     return true;
@@ -169,10 +133,7 @@ function shouldKeepItem(itemDate: string, options: Required<BuildNewsFeedOptions
   return timestamp >= options.nowMs - (options.maxAgeDays * 86400000);
 }
 
-function buildAskEdgarNewsItem(
-  item: unknown,
-  filingTitlesByKey: Map<string, string>,
-): NewsFeedItem | null {
+function buildAskEdgarNewsItem(item: unknown): NewsFeedItem | null {
   if (!isValidRecord(item)) {
     return null;
   }
@@ -183,19 +144,15 @@ function buildAskEdgarNewsItem(
   const filingSummary = getStringField(item, ['summary', 'details']);
   const url = getStringField(item, ['document_url', 'documentUrl']) ?? '';
   const tags = getStringArrayField(item, ['tags']);
-  const accessionNumber = getStringField(item, ['accession_number', 'accessionNumber']);
   const isNews = formType.toLowerCase() === 'news';
   const isFiling = !isNews;
 
+  // The /v1/news endpoint now includes `headline` directly on filing rows
+  // (JMT 2026-05-10 update), so we no longer need a separate filing-titles
+  // lookup to enrich filing headlines.
   const headline = isNews
     ? getStringField(item, ['title']) ?? toBodyHeadline(body) ?? 'News item'
-    : filingTitlesByKey.get(accessionNumber ?? '')
-      ?? (() => {
-        const formTypeDateKey = buildFormTypeDateKey(formType, date);
-        return formTypeDateKey ? filingTitlesByKey.get(formTypeDateKey) : undefined;
-      })()
-      ?? filingSummary
-      ?? `${formType} filing`;
+    : getStringField(item, ['headline', 'title']) ?? filingSummary ?? `${formType} filing`;
 
   return {
     headline,
@@ -259,7 +216,6 @@ function sortNewsFeed(left: NewsFeedItem, right: NewsFeedItem): number {
 
 export function buildNewsFeedFromArrays(
   newsItems: unknown[],
-  filingTitleItems: unknown[],
   options?: BuildNewsFeedOptions,
 ): NewsFeedItem[] {
   const normalizedOptions: Required<BuildNewsFeedOptions> = {
@@ -267,10 +223,9 @@ export function buildNewsFeedFromArrays(
     maxAgeDays: options?.maxAgeDays ?? DEFAULT_MAX_AGE_DAYS,
     nowMs: options?.nowMs ?? Date.now(),
   };
-  const filingTitlesByKey = buildFilingTitleLookup(newsItems.length > 0 ? filingTitleItems : []);
   const normalizedItems = newsItems
     .map((source) => {
-      const item = buildAskEdgarNewsItem(source, filingTitlesByKey);
+      const item = buildAskEdgarNewsItem(source);
       return item ? { item, source } : null;
     })
     .filter((entry): entry is { item: NewsFeedItem; source: unknown } => entry !== null);
@@ -288,7 +243,6 @@ export function buildNewsFeed(
 ): NewsFeedItem[] {
   return buildNewsFeedFromArrays(
     readResults(rawData.news ?? rawData['news']),
-    readResults(rawData['filing-titles'] ?? rawData.filingTitles),
     options,
   );
 }
