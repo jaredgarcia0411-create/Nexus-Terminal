@@ -39,7 +39,7 @@ interface Props {
   onSelectGapDate?: (date: string) => void;
 }
 
-type TabKey = 'overview' | 'dilution' | 'news' | 'filings' | 'gap-stats';
+type TabKey = 'overview' | 'dilution' | 'news' | 'filings';
 type FilingViewKey = 'all' | 'chronological' | FilingBucket;
 
 const FILING_BUCKET_LABELS: Record<FilingBucket, string> = {
@@ -254,6 +254,9 @@ function ProgramSection({
         <div className="divide-y divide-white/5">
           {rows.map((row, index) => {
             const badge = babyShelfBadge(row);
+            // ATM Remaining color tracks baby-shelf status: green when there's
+            // still room to raise, red when over the limit. Matches scanner.
+            const remainingColorClass = row.overBabyShelf ? 'text-rose-500' : 'text-emerald-400';
             return (
               <div key={`${title}-${index}`} className="py-2">
                 <div className="flex items-center gap-2">
@@ -261,12 +264,12 @@ function ProgramSection({
                     {row.isEffective ? 'Active' : 'Inactive'}
                   </span>
                   <span className="text-zinc-200">{row.headline}</span>
-                  {badge ? <span className={`ml-auto rounded border px-2 py-0.5 text-sm font-medium whitespace-nowrap ${badge.colorClass}`}>{badge.label}</span> : null}
+                  {badge ? <span className={`ml-auto text-sm font-semibold whitespace-nowrap ${badge.colorClass}`}>{badge.label}</span> : null}
                 </div>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   <div><span className="text-zinc-500">Total Registered:</span> <span className="text-zinc-200">{formatMoney(row.offeringAmount)}</span></div>
                   <div><span className="text-zinc-500">Raised So Far:</span> <span className="text-zinc-200">{formatMoney(row.totalRaised)}</span></div>
-                  <div><span className="text-zinc-500">{remainingLabel}:</span> <span className="font-medium text-amber-300">{formatMoney(row.amountRemainingAtm)}</span></div>
+                  <div><span className="text-zinc-500">{remainingLabel}:</span> <span className={`font-semibold ${remainingColorClass}`}>{formatMoney(row.amountRemainingAtm)}</span></div>
                   {row.bank ? <div><span className="text-zinc-500">Bank:</span> <span className="text-zinc-200">{row.bank}</span></div> : null}
                 </div>
                 <div className="mt-1 text-zinc-500">Filed: {formatDate(row.filedAt)} | Expires: {formatDate(row.expirationDate)}</div>
@@ -319,11 +322,14 @@ function WarrantSection({
                   <tr key={`${title}-${index}`} className="border-b border-white/5">
                     <td className="py-2 pr-3 text-zinc-300">{warrant.details}</td>
                     <td className="py-2 pr-3 text-zinc-200">{formatNumber(warrant.remaining)}</td>
-                    <td className="py-2 pr-3 text-zinc-200">{formatMoney(priceValue)}</td>
+                    {/* Strike price color-tracks the warrant status (in play /
+                        potentially / not) so the most actionable column reads
+                        at a glance. */}
+                    <td className={`py-2 pr-3 font-bold ${status.colorClass}`}>{formatMoney(priceValue)}</td>
                     <td className="py-2 pr-3 text-zinc-300">{toStringValue(warrant.registered)}</td>
                     <td className="py-2 pr-3 text-zinc-300">{formatDate(warrant.exercisableDate)}</td>
                     <td className="py-2 pr-3 text-zinc-300">{formatDate(warrant.expirationDate)}</td>
-                    <td className="py-2"><span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${status.colorClass}`}>{status.label}</span></td>
+                    <td className={`py-2 text-xs font-semibold whitespace-nowrap ${status.colorClass}`}>{status.label}</td>
                   </tr>
                 );
               })}
@@ -357,7 +363,7 @@ function ShelfRegistrationsTable({ rows }: { rows: ResearchSnapshotRegistration[
           {rows.map((row, index) => (
             <tr key={`registration-${index}`} className="border-b border-white/5 text-zinc-300">
               <td className="py-2 pr-3">{row.headline}</td>
-              <td className="py-2 pr-3">{row.isAtm ? <span className="text-amber-300">Yes</span> : 'No'}</td>
+              <td className="py-2 pr-3">{row.isAtm ? <span className="font-semibold text-emerald-400">Yes</span> : 'No'}</td>
               <td className="py-2 pr-3">{formatMoney(row.offeringAmount)}</td>
               <td className="py-2 pr-3">{formatMoney(row.amountRemainingAtm)}</td>
               <td className="py-2 pr-3">{row.overBabyShelf ? <span className="text-rose-300">Over Limit</span> : 'OK'}</td>
@@ -646,7 +652,41 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
               </div>
             </div>
 
-            <div>
+            <div className="border-t border-white/5 pt-4">
+              <h4 className="mb-2 text-lg font-semibold text-zinc-200">Gap Up Days</h4>
+              {data.gapStats.length > 0 ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-zinc-500">
+                    Historical day-1 gap-ups only (excludes multi-day runs). Most recent first.
+                  </p>
+                  <div className="scrollbar-hidden overflow-x-auto">
+                    <table className="min-w-full">
+                      <thead>
+                        <tr className="border-b border-white/10 text-zinc-400">
+                          <th className="py-2 pr-3 text-left">Date</th>
+                          <th className="py-2 pr-3 text-right">Gap %</th>
+                          <th className="py-2 pr-3 text-right">Open</th>
+                          <th className="py-2 pr-3 text-right">Close</th>
+                          <th className="py-2 pr-3 text-right">High</th>
+                          <th className="py-2 pr-3 text-right">Low</th>
+                          <th className="py-2 pr-3 text-right">Volume</th>
+                          <th className="py-2 text-left">Tags</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.gapStats.map((row, index) => (
+                          <GapStatRow key={index} row={row} onSelectDate={onSelectGapDate} />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <NoDataBadge />
+              )}
+            </div>
+
+            <div className="border-t border-white/5 pt-4">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h4 className="text-lg font-semibold text-zinc-200">Research Report</h4>
                 <button
@@ -797,41 +837,6 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
         {activeTab === 'filings' ? (
           <div className="p-3">
             <FilingsView filings={data.filings} />
-          </div>
-        ) : null}
-
-        {activeTab === 'gap-stats' ? (
-          <div className="space-y-3 p-3">
-            {data.gapStats.length > 0 ? (
-              <>
-                <p className="text-sm text-zinc-500">
-                  Historical day-1 gap-ups only (excludes multi-day runs). Most recent first.
-                </p>
-                <div className="scrollbar-hidden overflow-x-auto">
-                  <table className="min-w-full">
-                    <thead>
-                      <tr className="border-b border-white/10 text-zinc-400">
-                        <th className="py-2 pr-3 text-left">Date</th>
-                        <th className="py-2 pr-3 text-right">Gap %</th>
-                        <th className="py-2 pr-3 text-right">Open</th>
-                        <th className="py-2 pr-3 text-right">Close</th>
-                        <th className="py-2 pr-3 text-right">High</th>
-                        <th className="py-2 pr-3 text-right">Low</th>
-                        <th className="py-2 pr-3 text-right">Volume</th>
-                        <th className="py-2 text-left">Tags</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.gapStats.map((row, index) => (
-                        <GapStatRow key={index} row={row} onSelectDate={onSelectGapDate} />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            ) : (
-              <NoDataBadge />
-            )}
           </div>
         ) : null}
       </div>

@@ -198,13 +198,13 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
       <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
         {historicalDate ? (
           <>
-            <span className="rounded bg-emerald-500/10 px-2 py-1 text-xs text-emerald-400">
+            <span className="px-2 py-1 text-xs text-zinc-300">
               Viewing {historicalDate} · 5m
             </span>
             <button
               type="button"
               onClick={() => onClearHistorical?.()}
-              className="rounded px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+              className="rounded-sm px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
             >
               Back to live
             </button>
@@ -215,8 +215,8 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
               key={key}
               type="button"
               onClick={() => setTimeframe(key)}
-              className={`rounded px-2 py-1 text-xs transition-colors ${
-                timeframe === key ? 'bg-emerald-500/10 text-emerald-500' : 'text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
+              className={`rounded-sm px-2 py-1 text-xs transition-colors ${
+                timeframe === key ? 'bg-zinc-700/60 text-zinc-100' : 'text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
               }`}
             >
               {RESEARCH_CHART_FRAME_CONFIG[key].label}

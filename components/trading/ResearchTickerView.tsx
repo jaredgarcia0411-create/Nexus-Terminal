@@ -18,14 +18,13 @@ interface Props {
   ticker: string;
 }
 
-type TabKey = 'overview' | 'dilution' | 'news' | 'filings' | 'gap-stats';
+type TabKey = 'overview' | 'dilution' | 'news' | 'filings';
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'overview', label: 'Overview' },
   { key: 'dilution', label: 'Dilution' },
   { key: 'news', label: 'News' },
   { key: 'filings', label: 'Filings' },
-  { key: 'gap-stats', label: 'Gap Stats' },
 ];
 
 export default function ResearchTickerView({ ticker }: Props) {
@@ -99,7 +98,7 @@ export default function ResearchTickerView({ ticker }: Props) {
 
   if (!data) return null;
 
-  const hasChart = activeTab === 'overview' || activeTab === 'gap-stats';
+  const hasChart = activeTab === 'overview';
 
   return (
     <div className="flex h-full flex-col">

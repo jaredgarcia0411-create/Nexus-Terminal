@@ -103,13 +103,15 @@ export function detectFormType(row: ResearchSnapshotRegistration): string | null
 
 // Returns a label + color class for the baby shelf status badge on a registration row.
 // Returns null when no badge should be shown (S-1 exempt or no baby shelf).
+// colorClass is text-only (no border/bg) so the same value can be reused for
+// inline labels AND data cells (e.g., the ATM Remaining number).
 export function babyShelfBadge(row: ResearchSnapshotRegistration): { label: string; colorClass: string } | null {
   const formType = detectFormType(row);
   const raisable = row.babyShelfRaisableAmount;
 
-  const GREEN = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
-  const AMBER = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
-  const RED = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+  const GREEN = 'text-emerald-400';
+  const AMBER = 'text-amber-400';
+  const RED = 'text-rose-500';
 
   if (formType === 'S-1') return { label: 'S-1 Exempt', colorClass: GREEN };
   if (!row.overBabyShelf) return { label: 'No Baby Shelf', colorClass: GREEN };
@@ -119,6 +121,8 @@ export function babyShelfBadge(row: ResearchSnapshotRegistration): { label: stri
 
 // Returns a label + color class for a warrant's current status (In Play / Not In Play).
 // Depends on current stock price to determine if the exercise price has been crossed.
+// colorClass is text-only (no border/bg) so the same color can apply to both the
+// status label and the strike-price cell.
 export function getWarrantStatus(
   warrant: ResearchSnapshotWarrant,
   currentPrice: number | null,
@@ -128,9 +132,9 @@ export function getWarrantStatus(
   const exercisePrice = warrant.exercisePrice;
   const remaining = warrant.remaining;
 
-  const RED = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
-  const YELLOW = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
-  const GREEN = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+  const RED = 'text-rose-500';
+  const YELLOW = 'text-amber-400';
+  const GREEN = 'text-emerald-400';
 
   if (warrant.isPrefunded) return { label: 'Not In Play', colorClass: RED };
   if (remaining !== null && remaining <= 0) return { label: 'Not In Play', colorClass: RED };

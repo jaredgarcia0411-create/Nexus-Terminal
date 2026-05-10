@@ -15,9 +15,9 @@ export default function ResearchSubNav<T extends string>({ tabs, activeTab, onTa
             key={tab.key}
             type="button"
             onClick={() => onTabChange(tab.key)}
-            className={`grid place-items-center rounded px-2.5 py-1 text-sm transition-colors ${
+            className={`grid place-items-center rounded-sm px-2.5 py-1 text-sm transition-colors ${
               activeTab === tab.key
-                ? 'bg-emerald-500/10 text-emerald-500'
+                ? 'bg-zinc-700/60 text-zinc-100'
                 : 'text-white hover:bg-white/10'
             }`}
           >
