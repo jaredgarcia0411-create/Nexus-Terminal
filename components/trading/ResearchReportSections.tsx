@@ -619,7 +619,11 @@ function GapStatTags({ tags }: { tags: string[] }) {
         {open ? 'Hide Tags' : `Show Tags (${tags.length})`}
       </button>
       {open ? (
-        <div className="mt-1 text-xs text-zinc-400">{tags.join(', ')}</div>
+        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-zinc-400">
+          {tags.map((tag, index) => (
+            <li key={`${tag}-${index}`}>{tag}</li>
+          ))}
+        </ul>
       ) : null}
     </div>
   );

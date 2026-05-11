@@ -43,6 +43,10 @@ interface TickerDataResult {
   ticker: string;
   fetchedAt: string;
   rawData: Record<string, AskEdgarResponse<unknown>>;
+  // ISO timestamps for the last successful fetch of each endpoint. Used so
+  // /v1/news can carry its own 5-minute freshness window while the rest of the
+  // ticker row keeps the 16-hour TTL.
+  endpointFetchedAt: Record<string, string>;
   dataSources: DilutionDataSourceCheck[];
   warnings: string[];
   hasAnyData: boolean;
@@ -66,7 +70,8 @@ const ASKEDGAR_BASE_URL = 'https://eapi.askedgar.io';
 const DEFAULT_DAILY_LIMIT = 50;
 const REQUEST_TIMEOUT_MS = 15_000;
 const TICKER_REGEX = /^[A-Z0-9.\-^]+$/;
-const TICKER_CACHE_TTL_MS = 16 * 60 * 60 * 1000; // 16 hours; news bypasses this cache so freshness on news is unaffected
+const TICKER_CACHE_TTL_MS = 16 * 60 * 60 * 1000; // 16 hours; news has its own per-endpoint freshness window inside this row
+const NEWS_CACHE_TTL_MS = 5 * 60 * 1000;       // 5 minutes — news refreshes throughout the trading day, but simultaneous viewers should coalesce on one call
 const GAINERS_CACHE_TTL_MS = 15 * 60 * 1000;   // 15 minutes
 
 const uniqueTickersToday = new Set<string>();
@@ -383,6 +388,18 @@ function toDataSource(state: EndpointState): DilutionDataSourceCheck {
   };
 }
 
+// Build the per-endpoint timestamp map for endpoints that returned a non-error
+// response (including empty success). Errors are intentionally skipped so a
+// transient failure does not pin a "fresh" timestamp onto stale data.
+function buildEndpointFetchedAt(states: EndpointState[]): Record<string, string> {
+  const stampedAt = new Date().toISOString();
+  return Object.fromEntries(
+    states
+      .filter((state) => state.response.status !== 'error')
+      .map((state) => [state.key, stampedAt]),
+  );
+}
+
 async function fetchScreenerByTicker(ticker: string) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
@@ -508,6 +525,7 @@ export async function fetchTickerData(
       ticker: normalizedTicker,
       fetchedAt: new Date().toISOString(),
       rawData: {},
+      endpointFetchedAt: {},
       dataSources: [],
       warnings: [`AskEdgar daily unique ticker limit reached (${dailyLimit} tickers/day)`],
       hasAnyData: false,
@@ -553,6 +571,7 @@ export async function fetchTickerData(
     ticker: normalizedTicker,
     fetchedAt: new Date().toISOString(),
     rawData,
+    endpointFetchedAt: buildEndpointFetchedAt(endpointStates),
     dataSources: endpointStates.map(toDataSource),
     warnings,
     hasAnyData,
@@ -648,23 +667,49 @@ function subsetRawData(
   );
 }
 
+function subsetEndpointFetchedAt(
+  endpointFetchedAt: Record<string, string> | undefined,
+  requested: readonly string[],
+): Record<string, string> {
+  if (!endpointFetchedAt) return {};
+  return Object.fromEntries(
+    requested.flatMap((key) => {
+      const ts = endpointFetchedAt[key];
+      return ts ? [[key, ts] as const] : [];
+    }),
+  );
+}
+
 function subsetTickerDataResult(
   result: TickerDataResult,
   requested: readonly string[],
 ): TickerDataResult {
-  return rebuildTickerDataResult(result, subsetRawData(result.rawData, requested));
+  return rebuildTickerDataResult({
+    ...result,
+    endpointFetchedAt: subsetEndpointFetchedAt(result.endpointFetchedAt, requested),
+  }, subsetRawData(result.rawData, requested));
 }
 
 function cachedHasFreshEndpoint(
-  rawData: Record<string, AskEdgarResponse<unknown>> | undefined,
+  result: TickerDataResult | undefined,
   key: string,
 ): boolean {
-  // News changes throughout the trading day. Treat it as always missing so
-  // every fresh search re-fetches /v1/news (which now also carries filings),
-  // while everything else still serves from the cache.
-  if (key === 'news') return false;
-  const entry = rawData?.[key];
-  return Boolean(entry && entry.status !== 'error' && Array.isArray(entry.results));
+  const entry = result?.rawData?.[key];
+  if (!entry || entry.status === 'error' || !Array.isArray(entry.results)) return false;
+
+  // News changes throughout the trading day, so we cap its freshness at
+  // NEWS_CACHE_TTL_MS even though the row TTL is 16 hours. This lets
+  // simultaneous viewers coalesce on a single /v1/news call (which also
+  // carries filings) while still picking up new headlines within minutes.
+  if (key === 'news') {
+    const fetchedAtIso = result?.endpointFetchedAt?.[key];
+    if (!fetchedAtIso) return false;
+    const fetchedAtMs = Date.parse(fetchedAtIso);
+    if (!Number.isFinite(fetchedAtMs)) return false;
+    return Date.now() - fetchedAtMs < NEWS_CACHE_TTL_MS;
+  }
+
+  return true;
 }
 
 function mergeRawData(
@@ -684,6 +729,16 @@ function mergeRawData(
     }
   }
   return merged;
+}
+
+function mergeEndpointFetchedAt(
+  cached: Record<string, string> | undefined,
+  fresh: Record<string, string> | undefined,
+): Record<string, string> {
+  // Fresh map only contains keys that returned non-error responses (see
+  // buildEndpointFetchedAt), so we can safely overwrite. Cached timestamps for
+  // endpoints not refetched this round are preserved.
+  return { ...(cached ?? {}), ...(fresh ?? {}) };
 }
 
 function getEndpointResponse(rawData: Record<string, AskEdgarResponse<unknown>>, keys: string[]): AskEdgarResponse<unknown> {
@@ -1139,6 +1194,7 @@ async function fetchAndCacheTickerEndpoints(
   const mergedResult = rebuildTickerDataResult({
     ...cachedResult,
     fetchedAt: freshResult.fetchedAt,
+    endpointFetchedAt: mergeEndpointFetchedAt(cachedResult.endpointFetchedAt, freshResult.endpointFetchedAt),
   }, mergedRawData);
 
   if (db) {
@@ -1156,7 +1212,7 @@ async function completeTickerDataForScope(
 ): Promise<{ result: TickerDataResult; freshCount: number }> {
   let result = seedResult;
   let freshCount = 0;
-  let missing = requested.filter((key) => !cachedHasFreshEndpoint(result.rawData, key));
+  let missing = requested.filter((key) => !cachedHasFreshEndpoint(result, key));
 
   while (missing.length > 0) {
     // Scope-aware merge-on-write lets a ticker-level in-flight fetch seed later scoped reads.
@@ -1166,9 +1222,10 @@ async function completeTickerDataForScope(
       result = rebuildTickerDataResult({
         ...result,
         fetchedAt: inFlightResult.fetchedAt,
+        endpointFetchedAt: mergeEndpointFetchedAt(result.endpointFetchedAt, inFlightResult.endpointFetchedAt),
       }, mergeRawData(result.rawData, inFlightResult.rawData));
 
-      const remainingAfterInFlight = requested.filter((key) => !cachedHasFreshEndpoint(result.rawData, key));
+      const remainingAfterInFlight = requested.filter((key) => !cachedHasFreshEndpoint(result, key));
       if (remainingAfterInFlight.length === 0) {
         break;
       }
@@ -1247,7 +1304,7 @@ export async function getCachedTickerData(
       const fullyRateLimited = !cachedAvailability.hasAnyData && cachedAvailability.failureKind === 'rate-limited';
       const missing = fullyRateLimited
         ? []
-        : requested.filter((key) => !cachedHasFreshEndpoint(cachedResult.rawData, key));
+        : requested.filter((key) => !cachedHasFreshEndpoint(cachedResult, key));
 
       if (missing.length === 0) {
         logTickerCacheDecision(normalizedTicker, scope, 'full', 0, requested.length);
@@ -1264,6 +1321,7 @@ export async function getCachedTickerData(
     ticker: normalizedTicker,
     fetchedAt: new Date().toISOString(),
     rawData: {},
+    endpointFetchedAt: {},
     dataSources: [],
     warnings: [],
     hasAnyData: false,

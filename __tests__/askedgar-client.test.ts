@@ -237,10 +237,9 @@ describe('askedgar client', () => {
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
 
-    // News is intentionally cache-bypassed so a fresh search picks up new
-    // headlines; every other swing-scope endpoint is served from cache.
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchCallUrls(fetchSpy).map((url) => url.pathname)).toEqual(['/v1/news']);
+    // News now carries a 5-minute freshness window, so back-to-back reads
+    // serve every swing-scope endpoint (including news) from the cache.
+    expect(fetchSpy).toHaveBeenCalledTimes(0);
     expect(Object.keys(result.rawData)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
     expect(cachedRawDataKeys(cacheDb)).toHaveLength(14);
   });
@@ -258,8 +257,9 @@ describe('askedgar client', () => {
     const result = await client.getCachedTickerData('AAPL');
 
     // 5 endpoints not yet cached (screener, equity-lines, nasdaq-compliance,
-    // agreements, split-status) + 1 forced re-fetch of news = 6 total.
-    expect(fetchSpy).toHaveBeenCalledTimes(6);
+    // agreements, split-status). News is fresh in the cache from the first
+    // call, so no extra news fetch.
+    expect(fetchSpy).toHaveBeenCalledTimes(5);
     expect(Object.keys(result.rawData)).toHaveLength(14);
     expect(cachedRawDataKeys(cacheDb)).toHaveLength(14);
   });
@@ -410,9 +410,10 @@ describe('askedgar client', () => {
       client.getCachedTickerData('MSFT'),
     ]);
 
-    // 11 fetches for the first call's full snapshot + 1 forced news re-fetch
-    // when the second call wakes from the in-flight dedupe (news bypass).
-    expect(fetchSpy).toHaveBeenCalledTimes(12);
+    // 11 fetches for the first call's full snapshot; the second call wakes
+    // from in-flight dedupe with news already inside its 5-minute freshness
+    // window, so no extra news re-fetch.
+    expect(fetchSpy).toHaveBeenCalledTimes(11);
     expect(Object.keys(first.rawData)).toEqual(Object.keys(second.rawData));
     expect(second.rawData.news).toBeDefined();
   });
