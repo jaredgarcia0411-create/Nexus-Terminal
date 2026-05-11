@@ -2,28 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   requireUserMock,
-  getDbMock,
   getCachedTickerDataMock,
   runResearchTldrMock,
 } = vi.hoisted(() => ({
   requireUserMock: vi.fn(),
-  getDbMock: vi.fn(),
   getCachedTickerDataMock: vi.fn(),
   runResearchTldrMock: vi.fn(),
 }));
 
 vi.mock('@/lib/server-db-utils', () => ({
   requireUser: requireUserMock,
-  dbUnavailable: () => Response.json({ error: 'Database not configured' }, { status: 503 }),
 }));
-
-vi.mock('@/lib/db', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/db')>('@/lib/db');
-  return {
-    ...actual,
-    getDb: getDbMock,
-  };
-});
 
 vi.mock('@/lib/askedgar', async () => {
   const actual = await vi.importActual<typeof import('@/lib/askedgar')>('@/lib/askedgar');
@@ -48,32 +37,6 @@ function ensureResponse(response: Response | undefined): Response {
   return response;
 }
 
-function createDb({
-  summaryRows = [],
-  discordRows = [],
-}: {
-  summaryRows?: Array<{ historicalSummary: unknown }>;
-  discordRows?: Array<{ rawText: string; reportDate: Date }>;
-} = {}) {
-  let selectCallIndex = 0;
-
-  return {
-    select: vi.fn(() => {
-      selectCallIndex += 1;
-
-      const rows = selectCallIndex === 1 ? summaryRows : discordRows;
-      const limit = vi.fn(async (count: number) => rows.slice(0, count));
-      const orderBy = vi.fn(() => ({ limit }));
-
-      return {
-        from: vi.fn(() => ({
-          where: vi.fn(() => (selectCallIndex === 1 ? { limit } : { orderBy })),
-        })),
-      };
-    }),
-  };
-}
-
 function createJsonRequest(body: string) {
   return new Request('http://localhost/api/askedgar/tldr', {
     method: 'POST',
@@ -93,7 +56,6 @@ describe('POST /api/askedgar/tldr', () => {
         picture: null,
       },
     });
-    getDbMock.mockReturnValue(createDb());
     getCachedTickerDataMock.mockResolvedValue({
       ticker: 'AAPL',
       rawData: {
@@ -118,17 +80,7 @@ describe('POST /api/askedgar/tldr', () => {
     const response = ensureResponse(await POST(createJsonRequest(JSON.stringify({ ticker: 'AAPL' }))));
 
     expect(response.status).toBe(401);
-    expect(getDbMock).not.toHaveBeenCalled();
-  });
-
-  it('returns 503 when getDb returns undefined', async () => {
-    getDbMock.mockReturnValueOnce(undefined);
-
-    const response = ensureResponse(await POST(createJsonRequest(JSON.stringify({ ticker: 'AAPL' }))));
-    const payload = await response.json();
-
-    expect(response.status).toBe(503);
-    expect(payload).toEqual({ error: 'Database not configured' });
+    expect(getCachedTickerDataMock).not.toHaveBeenCalled();
   });
 
   it('returns 400 with invalid JSON body for malformed JSON', async () => {
@@ -155,14 +107,7 @@ describe('POST /api/askedgar/tldr', () => {
     });
   });
 
-  it('returns 200 with ticker, TLDR findings payload, generatedAt, and hasHistoricalData', async () => {
-    const historicalSummary = { summary: 'Two prior offerings' };
-    const latestDiscordDate = new Date('2026-04-05T15:30:00.000Z');
-    const latestDiscord = 'Discord report text';
-    const db = createDb({
-      summaryRows: [{ historicalSummary }],
-      discordRows: [{ rawText: latestDiscord, reportDate: latestDiscordDate }],
-    });
+  it('returns 200 with ticker, TLDR findings payload, and generatedAt', async () => {
     const rawData = {
       screener: {
         status: 'success',
@@ -171,7 +116,6 @@ describe('POST /api/askedgar/tldr', () => {
       },
     };
 
-    getDbMock.mockReturnValueOnce(db);
     getCachedTickerDataMock.mockResolvedValueOnce({ ticker: 'AAPL', rawData });
     runResearchTldrMock.mockResolvedValueOnce({
       findings: ['Finding 1'],
@@ -187,15 +131,8 @@ describe('POST /api/askedgar/tldr', () => {
       findings: ['Finding 1'],
       historicalContext: 'Risk has increased over time.',
       generatedAt: expect.any(String),
-      hasHistoricalData: true,
     });
-    expect(runResearchTldrMock).toHaveBeenCalledWith(rawData, 'AAPL', {
-      historicalSummary,
-      discordReport: {
-        date: '2026-04-05',
-        text: latestDiscord,
-      },
-    });
+    expect(runResearchTldrMock).toHaveBeenCalledWith(rawData, 'AAPL');
   });
 
   it('returns 500 when runResearchTldr throws', async () => {

@@ -136,35 +136,6 @@ export const researchReports = pgTable('research_reports', {
   index('research_reports_user_ticker_idx').on(table.userId, table.ticker, table.generatedAt),
 ]);
 
-export const importedResearchReports = pgTable('imported_research_reports', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  ticker: text('ticker').notNull(),
-  reportDate: timestamp('report_date', { withTimezone: true }).notNull(),
-  source: text('source').notNull().default('discord_import'),
-  discordMessageId: text('discord_message_id'),
-  rawText: text('raw_text').notNull(),
-  parsedJson: jsonb('parsed_json'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-}, (table) => [
-  unique().on(table.discordMessageId),
-  index('imported_research_user_ticker_idx').on(table.userId, table.ticker, table.reportDate),
-  index('imported_research_user_date_idx').on(table.userId, table.reportDate),
-]);
-
-export const tickerResearchSummaries = pgTable('ticker_research_summaries', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  ticker: text('ticker').notNull(),
-  reportCount: integer('report_count').notNull().default(0),
-  latestReportDate: timestamp('latest_report_date', { withTimezone: true }),
-  historicalSummary: jsonb('historical_summary'),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
-}, (table) => [
-  unique().on(table.userId, table.ticker),
-  index('ticker_research_summaries_user_idx').on(table.userId),
-]);
-
 export const dailyTickerSummaries = pgTable('daily_ticker_summaries', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

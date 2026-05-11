@@ -211,6 +211,13 @@
       "when": 1777986728560,
       "tag": "0029_harsh_spectrum",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1778543359642,
+      "tag": "0030_freezing_charles_xavier",
+      "breakpoints": true
     }
   ]
 }

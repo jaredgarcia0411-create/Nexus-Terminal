@@ -21,7 +21,6 @@
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
     "@neondatabase/serverless": "^1.0.2",
-    "@sudowealth/schwab-api": "^2.1.1",
     "@types/ws": "^8.18.1",
     "autoprefixer": "^10.4.21",
     "class-variance-authority": "^0.7.1",

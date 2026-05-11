@@ -480,7 +480,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                 <TH right>PDC</TH>
                 <TH right>Mark</TH>
                 <TH right>Mark % Chg</TH>
-                <TH right>Volume</TH>
+                <TH right>AH+PM Vol</TH>
                 <TH right>Cash (mo)</TH>
                 <TH right>ATM</TH>
                 <TH right>EL</TH>
@@ -498,8 +498,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
               ) : dayOneRows.map((gainer) => {
                 // Day 1 table is pre-market focused. During pre-market TV's `close` field
                 // returns yesterday's regular-session close — which is what we want for PDC.
-                // Mark / Mark % Chg / Volume use the dedicated pre-market columns; we fall
-                // back to TV's session-current values when pre-market data is missing.
+                // Mark / Mark % Chg / Volume use route-derived extended-hours fields.
                 const pdc = gainer.price;
                 const mark = dayOneMark(gainer);
                 const markChange = dayOneMarkChange(gainer);

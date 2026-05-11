@@ -34,7 +34,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function buildResearchTldrPrompt(
   reportData: Record<string, unknown[]>,
-  options?: { ticker?: string; historicalSummary?: unknown; discordReport?: { date: string; text: string } },
+  options?: { ticker?: string },
 ): string {
   const parts = [
     `Analyze this AskEdgar data and return a compact JSON research summary.`,
@@ -59,12 +59,6 @@ RULES:
 <report_data>
 ${JSON.stringify(reportData)}
 </report_data>`,
-    options?.historicalSummary
-      ? `\n<historical_summary>\n${JSON.stringify(options.historicalSummary, null, 1)}\n</historical_summary>`
-      : '',
-    options?.discordReport
-      ? `\n<latest_discord_report date="${options.discordReport.date}">\n${options.discordReport.text.slice(0, 2000)}\n</latest_discord_report>`
-      : '',
   ];
   return parts.filter(Boolean).join('\n');
 }
@@ -209,13 +203,10 @@ export async function fetchAndCacheRawReport(
 export async function runResearchTldr(
   rawData: Record<string, AskEdgarResponse<unknown>>,
   ticker: string,
-  context?: { historicalSummary?: unknown; discordReport?: { date: string; text: string } },
 ): Promise<ResearchTldr> {
   const trimmed = trimRawDataForLlm(rawData);
   const userPrompt = buildResearchTldrPrompt(trimmed, {
     ticker,
-    historicalSummary: context?.historicalSummary,
-    discordReport: context?.discordReport,
   });
   const reply = await callLlm(
     'You are a financial analyst specializing in small-cap dilution risk assessment. Return JSON only.',
