@@ -39,12 +39,12 @@ export function getField(record: Record<string, unknown>, keys: string[]): unkno
 
 export function formatNumber(value: unknown): string {
   const numeric = toNumberValue(value);
-  return numeric === null ? 'N/A' : numeric.toLocaleString();
+  return numeric === null ? '--' : numeric.toLocaleString();
 }
 
 export function formatMoney(value: unknown): string {
   const numeric = toNumberValue(value);
-  if (numeric === null) return 'N/A';
+  if (numeric === null) return '--';
   return `$${numeric.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
@@ -66,16 +66,16 @@ export function riskClass(value: unknown): string {
 
 // Converts an arbitrary value to a display string. Used in detail grids.
 export function toStringValue(value: string | number | boolean | null | undefined): string {
-  if (typeof value === 'string') return value || 'N/A';
+  if (typeof value === 'string') return value || '--';
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-  return 'N/A';
+  return '--';
 }
 
 // Formats an ISO date string as a locale date. Returns the original string if
 // it can't be parsed, so callers always get something displayable.
 export function formatDate(value: string | null | undefined): string {
-  if (!value) return 'N/A';
+  if (!value) return '--';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString();

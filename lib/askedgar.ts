@@ -986,14 +986,14 @@ export function normalizeAskEdgarResponse(
           const row = toRecord(owner);
           return {
             name: getStringField(row, ['owner_name', 'ownerName']) ?? 'Unknown owner',
-            role: getStringField(row, ['title', 'owner_type', 'ownerType']) ?? 'N/A',
+            role: getStringField(row, ['title', 'owner_type', 'ownerType']) ?? '--',
             common: toNumberValue(getField(row, ['common_shares_amount', 'commonSharesAmount'])),
             preferred: toNumberValue(getField(row, ['preferred_shares_amount', 'preferredSharesAmount'])),
             options: toNumberValue(getField(row, ['options_amount', 'optionsAmount'])),
             warrants: toNumberValue(getField(row, ['warrants_amount', 'warrantsAmount'])),
           } satisfies ResearchSnapshotOwner;
         })
-        .filter((owner) => owner.name !== 'Unknown owner' || owner.role !== 'N/A');
+        .filter((owner) => owner.name !== 'Unknown owner' || owner.role !== '--');
 
       return {
         reportedDate: getStringField(groupRecord, ['reported_date', 'reportedDate']),
@@ -1015,7 +1015,7 @@ export function normalizeAskEdgarResponse(
   const reverseSplits: ResearchSnapshotReverseSplit[] = getEndpointResponse(rawData, ['reverse-splits', 'reverseSplits']).results.map((item) => {
     const row = toRecord(item);
     const ratio = getStringField(row, ['ratio'])
-      ?? `${getStringField(row, ['splitFrom', 'split_from']) ?? 'N/A'}:${getStringField(row, ['splitTo', 'split_to']) ?? 'N/A'}`;
+      ?? `${getStringField(row, ['splitFrom', 'split_from']) ?? '--'}:${getStringField(row, ['splitTo', 'split_to']) ?? '--'}`;
     return {
       date: getStringField(row, ['executionDate', 'execution_date', 'date']),
       ratio,

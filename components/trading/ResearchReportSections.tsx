@@ -122,7 +122,7 @@ function NewsArticle({ item }: { item: ResearchSnapshotNewsItem }) {
               )}
               <span className="text-zinc-500">{formatDate(item.filedAt)}</span>
             </div>
-            <p className="text-sm text-zinc-300">{item.summary || 'N/A'}</p>
+            <p className="text-sm text-zinc-300">{item.summary || '--'}</p>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -650,7 +650,7 @@ function GapStatRow({ row, onSelectDate }: { row: ResearchSnapshotGapStat; onSel
         )}
       </td>
       <td className="py-2 pr-3 text-right font-medium text-emerald-400">
-        {row.gapPercentage !== null ? `+${row.gapPercentage.toFixed(0)}%` : 'N/A'}
+        {row.gapPercentage !== null ? `+${row.gapPercentage.toFixed(0)}%` : '--'}
       </td>
       <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(row.marketOpen)}</td>
       <td className="py-2 pr-3 text-right text-zinc-300">{formatMoney(row.marketClose)}</td>

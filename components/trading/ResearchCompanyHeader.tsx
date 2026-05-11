@@ -13,7 +13,7 @@ interface Props {
 
 function formatCompact(value: unknown): string {
   const num = typeof value === 'number' ? value : typeof value === 'string' ? parseFloat(value) : NaN;
-  if (!Number.isFinite(num)) return 'N/A';
+  if (!Number.isFinite(num)) return '--';
   if (num >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(2)}B`;
   if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(2)}M`;
   if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
