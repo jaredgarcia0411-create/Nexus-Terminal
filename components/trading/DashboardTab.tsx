@@ -23,7 +23,10 @@ export default function DashboardTab({ onNavigateToResearch }: DashboardTabProps
       exit={{ opacity: 0, y: -10 }}
       className="space-y-6"
     >
-      <DashboardScannerTable onNavigateToResearch={onNavigateToResearch} />
+      <div>
+        <h4 className="mb-2 text-lg font-semibold text-zinc-200">Scanners</h4>
+        <DashboardScannerTable onNavigateToResearch={onNavigateToResearch} />
+      </div>
 
       <div>
         <div className="mb-2 flex items-center justify-between gap-2">

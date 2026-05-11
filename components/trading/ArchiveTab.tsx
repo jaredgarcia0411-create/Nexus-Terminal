@@ -182,14 +182,14 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
             type="date"
             value={fromDate}
             onChange={(event) => setFromDate(event.target.value)}
-            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 focus:outline-none"
+            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 [color-scheme:dark] focus:outline-none"
           />
           <span className="text-zinc-500">to</span>
           <input
             type="date"
             value={toDate}
             onChange={(event) => setToDate(event.target.value)}
-            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 focus:outline-none"
+            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 [color-scheme:dark] focus:outline-none"
           />
         </div>
       </div>

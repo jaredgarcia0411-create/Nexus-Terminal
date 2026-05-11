@@ -454,7 +454,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
       <div className={tableCard}>
         <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
           <h2 className="text-base font-bold text-zinc-300">
-            Gainers Scan — Day 1 Setup
+            Day 1 Setup
           </h2>
           <span className={`text-[10px] font-medium ${isRealtime ? 'text-emerald-500' : 'text-amber-500'}`}>
             {isRealtime ? 'LIVE' : '15-MIN DELAY'}
@@ -480,7 +480,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                 <TH right>PDC</TH>
                 <TH right>Mark</TH>
                 <TH right>Mark % Chg</TH>
-                <TH right>AH+PM Vol</TH>
+                <TH right>Volume</TH>
                 <TH right>Cash (mo)</TH>
                 <TH right>ATM</TH>
                 <TH right>EL</TH>

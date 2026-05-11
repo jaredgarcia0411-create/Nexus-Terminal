@@ -101,7 +101,7 @@ export default function Toolbar({
                       type="date"
                       value={startDate}
                       onChange={(event) => onStartDateChange(event.target.value)}
-                      className="bg-transparent text-sm text-zinc-400 focus:outline-none"
+                      className="bg-transparent text-sm text-zinc-400 [color-scheme:dark] focus:outline-none"
                       title="Start date"
                     />
                     <span className="text-sm text-zinc-600">—</span>
@@ -109,7 +109,7 @@ export default function Toolbar({
                       type="date"
                       value={endDate}
                       onChange={(event) => onEndDateChange(event.target.value)}
-                      className="bg-transparent text-sm text-zinc-400 focus:outline-none"
+                      className="bg-transparent text-sm text-zinc-400 [color-scheme:dark] focus:outline-none"
                       title="End date"
                     />
                   </div>
