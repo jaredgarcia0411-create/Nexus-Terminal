@@ -72,7 +72,6 @@ const REQUEST_TIMEOUT_MS = 15_000;
 const TICKER_REGEX = /^[A-Z0-9.\-^]+$/;
 const TICKER_CACHE_TTL_MS = 16 * 60 * 60 * 1000; // 16 hours; news has its own per-endpoint freshness window inside this row
 const NEWS_CACHE_TTL_MS = 5 * 60 * 1000;       // 5 minutes — news refreshes throughout the trading day, but simultaneous viewers should coalesce on one call
-const GAINERS_CACHE_TTL_MS = 15 * 60 * 1000;   // 15 minutes
 
 const uniqueTickersToday = new Set<string>();
 let resetDate = '';
@@ -1071,8 +1070,8 @@ export function normalizeAskEdgarResponse(
     companyName: options.companyName,
     warnings: options.warnings,
     header: {
-      // market_cap_final is AE's canonical post-computation value (per AE_API_DOCS line 321);
-      // market_cap can lag or carry a stale price. Prefer _final.
+      // market_cap_final is AE's canonical post-computation value; plain market_cap
+      // can lag or carry a stale price. Prefer _final.
       marketCap: toNumberValue(getField(screener, ['market_cap_final', 'marketCapFinal', 'marketCap', 'market_cap'])),
       outstandingShares: toNumberValue(getField(screener, ['outstanding', 'outstandingShares', 'outstanding_shares', 'sharesOutstanding'])),
       // tradable_float is the "true" float (subtracts restricted/lock-up shares); plain `float`
@@ -1133,14 +1132,6 @@ export function getAskEdgarCallCount() {
 
 export function getAskEdgarDailyLimit() {
   return parseDailyLimit();
-}
-
-export async function fetchTopGainers(minGainPct = 20, limit = 25) {
-  return requestAskEdgar<unknown>('/v1/screener', {
-    min_gain_1_day: minGainPct,
-    isactivelytrading: true,
-    limit,
-  });
 }
 
 // --- Cache helpers: wrap the raw fetch functions with DB-backed TTL caching ---
@@ -1329,59 +1320,6 @@ export async function getCachedTickerData(
   const { result, freshCount } = await completeTickerDataForScope(normalizedTicker, requested, db, emptyResult);
   logTickerCacheDecision(normalizedTicker, scope, 'miss', freshCount, requested.length);
   return subsetTickerDataResult(result, requested);
-}
-
-/**
- * Cached version of fetchTopGainers(). Uses DB cache with 5-minute TTL.
- * Shared across all users.
- */
-export async function getCachedGainers(minGainPct = 20, limit = 25) {
-  const db = getDb();
-  if (!db) return fetchTopGainers(minGainPct, limit);
-
-  const now = new Date();
-  const cached = await db
-    .select()
-    .from(askedgarCache)
-    .where(
-      and(
-        eq(askedgarCache.cacheType, 'gainers'),
-        eq(askedgarCache.ticker, '__GAINERS__'),
-        gt(askedgarCache.expiresAt, now),
-      ),
-    )
-    .limit(1);
-
-  if (cached.length > 0) {
-    return cached[0].dataJson as AskEdgarResponse<unknown>;
-  }
-
-  const result = await fetchTopGainers(minGainPct, limit);
-
-  try {
-    await db
-      .insert(askedgarCache)
-      .values({
-        id: 'gainers',
-        cacheType: 'gainers',
-        ticker: '__GAINERS__',
-        dataJson: result,
-        fetchedAt: now,
-        expiresAt: new Date(now.getTime() + GAINERS_CACHE_TTL_MS),
-      })
-      .onConflictDoUpdate({
-        target: [askedgarCache.cacheType, askedgarCache.ticker],
-        set: {
-          dataJson: result,
-          fetchedAt: now,
-          expiresAt: new Date(now.getTime() + GAINERS_CACHE_TTL_MS),
-        },
-      });
-  } catch (err) {
-    console.warn('[askedgar-cache] Failed to write gainers cache:', err);
-  }
-
-  return result;
 }
 
 // ---------------------------------------------------------------------------

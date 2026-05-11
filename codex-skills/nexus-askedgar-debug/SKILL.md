@@ -14,9 +14,10 @@ Use this skill when the issue is specific to the Ask Edgar integration or the re
 
 - `AGENTS.md`
 - `HANDOFF.md`
-- `docs/AE_API_DOCS.md`
 - `lib/askedgar.ts`
 - the route, blueprint, or UI surface in scope
+
+For AskEdgar endpoint schemas, query the AskEdgar MCP server instead of a local docs file.
 
 ## Workflow
 
@@ -33,9 +34,9 @@ Use this skill when the issue is specific to the Ask Edgar integration or the re
    - normalization / summarization
    - response payload or downstream consumer
 3. Check the repo-specific invariants first.
-   - Use `getCachedTickerData` and `getCachedGainers` by default.
-   - Only tolerate raw `fetchTickerData` / `fetchTopGainers` usage when there is an explicit bypass reason.
-   - Confirm `askedgar_cache` behavior matches the intended TTL expectations.
+   - Use `getCachedTickerData` by default.
+   - Only tolerate raw `fetchTickerData` usage when there is an explicit bypass reason.
+   - Confirm `askedgar_cache` behavior matches the intended TTL expectations (16hr for ticker rows; 5min sub-TTL for the `news` endpoint inside that row; 3hr for `scanner-summary` rows).
 4. Audit the likely failure classes:
    - missing or server-side-only API key handling
    - DB unavailable path not handled

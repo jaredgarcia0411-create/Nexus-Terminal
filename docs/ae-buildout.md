@@ -51,7 +51,7 @@ Primary dependencies:
 - `filing-titles` should be split into basic SEC filing metadata versus AI/human catalyst headlines. Metadata is easy; headline parity requires summarization or rules.
 - `gap-stats` is replaceable in house, but not from SEC alone. It needs historical daily/intraday OHLC, premarket data, VWAP, market-cap snapshots, and catalyst tagging.
 - `dilution-rating` should be a Nexus-owned risk model with evidence and confidence, not a clone of Ask Edgar's proprietary rating.
-- Advanced endpoints from `docs/AE_API_DOCS.md` should be tracked separately even though they are not in the current 16-endpoint fan-out: `offerings-advanced`, `dilution-data-advanced`, `rofr`, `screener/options`, `ai-chart-analysis`, `research-reports`, `research-reports-short`, `research-reports-tldr`, and `market-strength`.
+- Advanced endpoints exposed by the AskEdgar MCP server should be tracked separately even though they are not in the current 16-endpoint fan-out: `offerings-advanced`, `dilution-data-advanced`, `rofr`, `screener/options`, `ai-chart-analysis`, `research-reports`, `research-reports-short`, `research-reports-tldr`, and `market-strength`.
 
 ### Best first-wave candidates
 
@@ -452,7 +452,6 @@ Repo grounding:
 - [lib/research.ts](/home/jared/Nexus-Terminal/lib/research.ts:139)
 - [lib/types.ts](/home/jared/Nexus-Terminal/lib/types.ts:222)
 - [app/api/askedgar/snapshot/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/snapshot/route.ts:25)
-- [docs/AE_API_DOCS.md](/home/jared/Nexus-Terminal/docs/AE_API_DOCS.md:169)
 - [docs/AGENTIC_EXPANSIONV2.md](/home/jared/Nexus-Terminal/docs/AGENTIC_EXPANSIONV2.md:646)
 - [lib/massive-market.ts](/home/jared/Nexus-Terminal/lib/massive-market.ts:139)
 - [app/api/tradingview/gainers/route.ts](/home/jared/Nexus-Terminal/app/api/tradingview/gainers/route.ts:17)

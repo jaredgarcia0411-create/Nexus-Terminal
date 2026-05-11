@@ -6,7 +6,7 @@ If no specific issue is given, run a full diagnostic of the pipeline.
 
 ### 1. Check API Integration
 - Read `lib/askedgar.ts` — verify API client is correctly configured
-- Read API docs at `docs/AE_API_DOCS.md` for expected endpoints and response formats
+- For endpoint schemas / response shapes, query the AskEdgar MCP server (no local docs file)
 - Check that `ASKEDGAR_API_KEY` is referenced only server-side (never in client components)
 - Verify base URL is `https://eapi.askedgar.io`
 

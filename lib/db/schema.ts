@@ -199,8 +199,8 @@ export const savedTickers = pgTable('saved_tickers', {
 // Shared cache for Ask Edgar API responses — no userId, shared across all users
 export const askedgarCache = pgTable('askedgar_cache', {
   id: text('id').primaryKey(),
-  cacheType: text('cache_type').notNull(),     // 'ticker' or 'gainers'
-  ticker: text('ticker').notNull(),             // uppercase ticker symbol or '__GAINERS__'
+  cacheType: text('cache_type').notNull(),     // 'ticker' or 'scanner-summary'
+  ticker: text('ticker').notNull(),             // uppercase ticker symbol
   dataJson: jsonb('data_json').notNull(),
   fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),

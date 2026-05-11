@@ -46,7 +46,7 @@ Use this skill to move from symptom to root cause with the smallest reliable sco
 
 - Do not add new logic to `hooks/use-trades.ts`; use a smaller helper or separate hook instead.
 - Keep auth fixes aligned with `requireUser()` and `parseAndValidate(...)` patterns.
-- Use `getCachedTickerData` and `getCachedGainers` unless there is an explicit reason to bypass Ask Edgar caching.
+- Use `getCachedTickerData` unless there is an explicit reason to bypass Ask Edgar caching.
 - Treat in-memory state as unreliable for anything that must persist on Vercel.
 
 ## Do Not
