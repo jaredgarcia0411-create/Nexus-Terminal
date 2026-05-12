@@ -10,7 +10,7 @@
 ### Cleanup Step 4: Cost/reliability fixes (POST idempotency, site-report telemetry, AskEdgar Postgres state, scanner aggregate)
 
 > Generated: 2026-05-13 | Author: planning conversation (cleanup roadmap step 4)
-> Status: IN PROGRESS — Phase 3 complete; stopped at third checkpoint for review.
+> Status: IN PROGRESS — Phase 4 complete; stopped at fourth checkpoint for review. Browser smoke will be run on the user dev server.
 > Executor: Codex
 > Commit strategy: **one commit per phase** (4 commits). Codex must stop and commit at each `# COMMIT POINT` marker, wait for human review before continuing.
 
@@ -596,6 +596,8 @@ These four are independent; each phase commits separately so we can bisect if a 
 #### Phase 4 — Dashboard scanner aggregate endpoint
 
 **# COMMIT POINT after Phase 4.**
+
+> Checkpoint status: COMPLETE — helper extraction, aggregate route, dashboard polling switch, and focused validation passed; browser smoke remains user-owned on the dev server.
 
 **Files:**
 - `app/api/tradingview/gainers/route.ts` (modify — extract helper, route delegates to it)

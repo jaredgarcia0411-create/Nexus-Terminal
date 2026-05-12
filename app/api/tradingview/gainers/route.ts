@@ -91,6 +91,14 @@ type TradingViewScanPayload = {
   data?: Array<{ s: string; d: unknown[] }>;
 };
 
+export interface DashboardGainersPayload {
+  gainers: TradingViewGainer[];
+  count: number;
+  totalCount: number;
+  isRealtime: boolean;
+  fetchedAt: string;
+}
+
 function toNum(d: unknown[], idx: number) {
   return d[idx] != null && Number.isFinite(Number(d[idx])) ? Number(d[idx]) : null;
 }
@@ -213,41 +221,45 @@ async function fetchScan(body: typeof PM_SCAN_BODY, sessionId: string) {
   return (await response.json()) as TradingViewScanPayload;
 }
 
+export async function fetchGainersForDashboard(): Promise<DashboardGainersPayload> {
+  const sessionId = process.env.TRADINGVIEW_SESSION_ID?.trim() ?? '';
+
+  const [pmPayload, ahPayload] = await Promise.all([
+    fetchScan(PM_SCAN_BODY, sessionId),
+    fetchScan(AH_SCAN_BODY, sessionId),
+  ]);
+
+  const byTicker = new Map<string, TradingViewGainer>();
+  for (const row of [...(pmPayload.data ?? []), ...(ahPayload.data ?? [])]) {
+    const normalized = normalizeTradingViewRow(row);
+    if (!normalized || !qualifiesDayOne(normalized)) continue;
+
+    const existing = byTicker.get(normalized.ticker);
+    byTicker.set(normalized.ticker, existing ? richerGainer(existing, normalized) : normalized);
+  }
+
+  const gainers = Array.from(byTicker.values()).sort((a, b) => (
+    b.dayOneMovePercent - a.dayOneMovePercent
+    || b.extendedHoursVolume - a.extendedHoursVolume
+    || a.ticker.localeCompare(b.ticker)
+  ));
+
+  return {
+    gainers,
+    count: gainers.length,
+    totalCount: (pmPayload.totalCount ?? pmPayload.data?.length ?? 0)
+      + (ahPayload.totalCount ?? ahPayload.data?.length ?? 0),
+    isRealtime: Boolean(sessionId),
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
 export async function GET() {
   const authState = await requireUser();
   if ('error' in authState) return authState.error;
 
-  const sessionId = process.env.TRADINGVIEW_SESSION_ID?.trim() ?? '';
-
   try {
-    const [pmPayload, ahPayload] = await Promise.all([
-      fetchScan(PM_SCAN_BODY, sessionId),
-      fetchScan(AH_SCAN_BODY, sessionId),
-    ]);
-
-    const byTicker = new Map<string, TradingViewGainer>();
-    for (const row of [...(pmPayload.data ?? []), ...(ahPayload.data ?? [])]) {
-      const normalized = normalizeTradingViewRow(row);
-      if (!normalized || !qualifiesDayOne(normalized)) continue;
-
-      const existing = byTicker.get(normalized.ticker);
-      byTicker.set(normalized.ticker, existing ? richerGainer(existing, normalized) : normalized);
-    }
-
-    const gainers = Array.from(byTicker.values()).sort((a, b) => (
-      b.dayOneMovePercent - a.dayOneMovePercent
-      || b.extendedHoursVolume - a.extendedHoursVolume
-      || a.ticker.localeCompare(b.ticker)
-    ));
-
-    return Response.json({
-      gainers,
-      count: gainers.length,
-      totalCount: (pmPayload.totalCount ?? pmPayload.data?.length ?? 0)
-        + (ahPayload.totalCount ?? ahPayload.data?.length ?? 0),
-      isRealtime: Boolean(sessionId),
-      fetchedAt: new Date().toISOString(),
-    });
+    return Response.json(await fetchGainersForDashboard());
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('TradingView scanner returned ')) {
       const status = error.message.replace('TradingView scanner returned ', '');

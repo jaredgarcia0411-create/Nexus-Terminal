@@ -91,20 +91,18 @@ function installFetchMock({
   const fetchMock = vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
 
-    if (url.startsWith('/api/tradingview/gainers')) {
+    if (url.startsWith('/api/dashboard/scanner-state')) {
       const batch = gainerBatches[Math.min(gainerIndex, gainerBatches.length - 1)] ?? [];
       gainerIndex += 1;
-      return jsonResponse({ gainers: batch, isRealtime: true });
-    }
-
-    if (url.startsWith('/api/tradingview/mdr-candidates')) {
-      const batch = mdrLiveBatches[Math.min(mdrLiveIndex, mdrLiveBatches.length - 1)] ?? [];
+      const mdrLiveBatch = mdrLiveBatches[Math.min(mdrLiveIndex, mdrLiveBatches.length - 1)] ?? [];
       mdrLiveIndex += 1;
-      return jsonResponse({ candidates: batch, isRealtime: true });
-    }
-
-    if (url.startsWith('/api/scanner/mdr-recent')) {
-      return jsonResponse({ rows: mdrRecentRows, fetchedAt: '2026-05-01T12:00:00.000Z' });
+      return jsonResponse({
+        gainers: batch,
+        isRealtime: true,
+        mdrLive: mdrLiveBatch,
+        mdrRecent: mdrRecentRows,
+        fetchedAt: '2026-05-01T12:00:00.000Z',
+      });
     }
 
     if (url.startsWith('/api/askedgar/scanner-summary')) {
@@ -219,6 +217,10 @@ describe('DashboardScannerTable', () => {
     expect(screen.getAllByText('$2.25').length).toBe(2);
     expect(screen.getByText('+125.00%')).toBeTruthy();
     expect(screen.queryByText('$9.00')).toBeNull();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/dashboard/scanner-state'))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/tradingview/gainers'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/tradingview/mdr-candidates'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/scanner/mdr-recent'))).toBe(false);
     expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/scanner/mdr-eligibility'))).toBe(false);
     expect(window.localStorage.getItem(MDR_STORAGE_KEY)).toBeNull();
     expect(setItemSpy).not.toHaveBeenCalledWith(MDR_STORAGE_KEY, expect.any(String));

@@ -289,13 +289,15 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
   const [mdrLive, setMdrLive] = useState<MdrCandidate[]>([]);
   const [mdrRecent, setMdrRecent] = useState<MdrRecentRow[]>([]);
 
-  const fetchGainers = useCallback(async () => {
+  const fetchScannerState = useCallback(async () => {
     try {
-      const res = await fetch('/api/tradingview/gainers');
+      const res = await fetch('/api/dashboard/scanner-state');
       if (!res.ok) return;
       const data = (await res.json()) as {
         gainers: TradingViewGainer[];
         isRealtime: boolean;
+        mdrLive: MdrCandidate[];
+        mdrRecent: MdrRecentRow[];
       };
       const nextGainers = data.gainers ?? [];
       const today = todayInNewYork();
@@ -305,46 +307,22 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
         today,
         nextGainers,
       ));
+      setMdrLive(data.mdrLive ?? []);
+      setMdrRecent(data.mdrRecent ?? []);
     } catch {
-      // Keep the last good scanner rows on transient polling failures.
+      // Keep last good scanner state on transient polling failures.
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const fetchMdrLive = useCallback(async () => {
-    try {
-      const res = await fetch('/api/tradingview/mdr-candidates');
-      if (!res.ok) return;
-      const data = (await res.json()) as { candidates: MdrCandidate[] };
-      setMdrLive(data.candidates ?? []);
-    } catch {
-      // Keep last good list on transient failures.
-    }
-  }, []);
-
-  const fetchMdrRecent = useCallback(async () => {
-    try {
-      const res = await fetch('/api/scanner/mdr-recent');
-      if (!res.ok) return;
-      const data = (await res.json()) as { rows: MdrRecentRow[] };
-      setMdrRecent(data.rows ?? []);
-    } catch {
-      // Keep last good list on transient failures.
-    }
-  }, []);
-
   useEffect(() => {
-    void fetchGainers();
-    void fetchMdrLive();
-    void fetchMdrRecent();
+    void fetchScannerState();
     const interval = setInterval(() => {
-      void fetchGainers();
-      void fetchMdrLive();
-      void fetchMdrRecent();
+      void fetchScannerState();
     }, 10_000);
     return () => clearInterval(interval);
-  }, [fetchGainers, fetchMdrLive, fetchMdrRecent]);
+  }, [fetchScannerState]);
 
   useEffect(() => {
     persistLatch(DASHBOARD_DAY1_LATCH_STORAGE_KEY, dayOneLatch);
