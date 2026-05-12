@@ -22,7 +22,6 @@ For AskEdgar endpoint schemas, query the AskEdgar MCP server instead of a local 
 ## Workflow
 
 1. Identify the failing surface:
-   - `/api/askedgar/lookup`
    - `/api/askedgar/snapshot`
    - `/api/askedgar/tldr`
    - `lib/research.ts`

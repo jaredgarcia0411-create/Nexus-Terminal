@@ -394,7 +394,7 @@ All four ride the same `agent_reports` / `agent_jobs` primitives — do not crea
 **2. Research Agent Desk** (submode of `Research`)
 - Left rail: recent jobs / recent reports. Main pane: selected report detail or explicit run actions.
 - Explicit actions (`Run small-cap research`, `Run swing research`) before freeform chat.
-- Read APIs already exist: `app/api/agents/reports/route.ts`, `app/api/agents/reports/[id]/route.ts`, `app/api/agents/research/route.ts`, `app/api/agents/macro-summary/latest/route.ts`.
+- Read APIs already exist: `app/api/agents/reports/route.ts`, `app/api/agents/reports/[id]/route.ts`, `app/api/agents/macro-summary/latest/route.ts`.
 
 **3. Scheduled Morning & EOD Briefs**
 - Home-server cron inside `services/` Docker stack (not Vercel). Two slots: ~8:00 AM ET (morning) and ~4:30 PM ET (EOD).
@@ -425,7 +425,6 @@ All four ride the same `agent_reports` / `agent_jobs` primitives — do not crea
 ### Architecture gaps to close along the way
 
 - **Discord-locked service route** — `app/api/agents/service/chat/route.ts` assumes `discord_user_id`, shared service auth, `channel: 'discord'`. The orchestrator blueprint already supports `channel: 'web' | 'discord'`, but the route hardcodes Discord.
-- **No user-facing job polling for research** — `POST /api/agents/research` queues but has no first-class status endpoint for the site.
 - **Conversation history scope too broad** — `buildContext()` loads by `userId + agentId`; needs session scope once both site and Discord are active chat surfaces.
 - **`agent_reports.status` overloaded** — a valid report becomes `delivery_failed` when Discord delivery fails. Wrong signal once the site is the primary surface.
 

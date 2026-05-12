@@ -107,21 +107,6 @@ export const brokerSyncLog = pgTable('broker_sync_log', {
   syncedAt: timestamp('synced_at', { withTimezone: true }).defaultNow(),
 });
 
-export const agentMemory = pgTable('agent_memory', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  category: text('category').notNull(),
-  key: text('key').notNull(),
-  value: text('value').notNull(),
-  valueJson: jsonb('value_json'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
-  expiresAt: timestamp('expires_at', { withTimezone: true }),
-}, (table) => [
-  unique().on(table.userId, table.category, table.key),
-  index('agent_memory_user_category_idx').on(table.userId, table.category),
-]);
-
 export const researchReports = pgTable('research_reports', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -134,37 +119,6 @@ export const researchReports = pgTable('research_reports', {
   generatedAt: timestamp('generated_at', { withTimezone: true }).defaultNow(),
 }, (table) => [
   index('research_reports_user_ticker_idx').on(table.userId, table.ticker, table.generatedAt),
-]);
-
-export const dailyTickerSummaries = pgTable('daily_ticker_summaries', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  ticker: text('ticker').notNull(),
-  date: text('date').notNull(),
-  open: doublePrecision('open'),
-  high: doublePrecision('high'),
-  low: doublePrecision('low'),
-  close: doublePrecision('close'),
-  volume: doublePrecision('volume'),
-  preMarket: doublePrecision('pre_market'),
-  afterHours: doublePrecision('after_hours'),
-  rawData: jsonb('raw_data'),
-  fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-  unique().on(table.userId, table.ticker, table.date),
-  index('daily_ticker_summaries_user_date_idx').on(table.userId, table.fetchedAt),
-]);
-
-export const savedTickers = pgTable('saved_tickers', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  ticker: text('ticker').notNull(),
-  category: text('category').notNull().default('watchlist'),
-  notes: text('notes'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-  unique().on(table.userId, table.ticker),
-  index('saved_tickers_user_created_idx').on(table.userId, table.createdAt),
 ]);
 
 // Shared cache for Ask Edgar API responses — no userId, shared across all users

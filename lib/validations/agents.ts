@@ -24,13 +24,6 @@ export const reportsListQuerySchema = z.object({
 
 export type ReportsListQueryInput = z.infer<typeof reportsListQuerySchema>;
 
-export const researchPostSchema = z.object({
-  ticker: z.string().regex(/^[A-Z]{1,5}$/),
-  agent_id: z.enum(['small-cap-trader', 'swing-trader']),
-});
-
-export type ResearchPostInput = z.infer<typeof researchPostSchema>;
-
 export const adminMemoryListQuerySchema = z.object({
   user_id: z.string().optional(),
   agent_id: z.enum(['orchestrator', 'small-cap-trader', 'swing-trader']).optional(),
