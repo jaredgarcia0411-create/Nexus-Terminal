@@ -501,14 +501,14 @@ All four ride the same `agent_reports` / `agent_jobs` primitives — do not crea
 ### Phase 5 — Deploy the app (~2–3 hrs)
 1. Create a `staging` branch off main.
 2. In Coolify, add the GitHub repo, point it at `staging`, set build command to `npm run build`, start command to `npm start`.
-3. Copy all env vars from Vercel to Coolify. Use **test API keys** wherever possible (Discord bot in a test server, separate Anthropic key with low limit, etc.).
+3. Copy all env vars from Vercel to Coolify. Use **test API keys** wherever possible (Discord delivery in a test server, separate LLM key with low limit, etc.).
 4. First deploy. Expect 2–3 issues on first run — `next build` OOM, missing env var, path case sensitivity (Linux vs macOS). Each failure is a learning moment; don't throw hardware at it before understanding.
 5. Verify the staging URL serves the app, login works, a basic page loads.
 
 **Why a `staging` branch:** Coolify auto-deploys on push. Keeping staging on its own branch means I can break it freely without touching what Vercel deploys from `main`.
 
 ### Phase 6 — Cron jobs (~1 hr)
-1. The two existing Vercel crons (`/api/discord/cron/sync`, `/api/cron/agent-retention`) need an equivalent scheduler off Vercel.
+1. The existing Vercel crons (`/api/cron/agent-retention`, `/api/cron/mdr-sweep`) need an equivalent scheduler off Vercel. Re-check `vercel.json` before implementation in case the list changes.
 2. Easiest path: a **systemd timer** on the VPS that `curl`s the internal endpoint with the `CRON_SECRET` header. Write one `.service` + one `.timer` file per job under `/etc/systemd/system/`.
 3. `systemctl enable --now <name>.timer`, then `systemctl list-timers` to confirm.
 4. Check `journalctl -u <name>.service` after the first fire to confirm it actually hit the endpoint.

@@ -2,11 +2,13 @@
 
 ## Default Repository Validation
 
-Run these from repository root:
+Run these from repository root, in order:
 
 ```bash
 npm run lint
 npx tsc --noEmit
+# If touched files include services/
+npm run typecheck:services
 npm test
 ```
 
@@ -14,28 +16,29 @@ npm test
 
 ```bash
 npm run db:generate
-# optionally, against a configured DB environment
+# apply generated migrations against a configured DB environment
 npm run db:migrate
 ```
 
-## Service Package Validation
+Use `npm run db:migrate` for migration application in normal cleanup and release work. `npm run db:push` is for development-only schema pushes and is not the default validation path.
 
-These run from repository root:
+## Service Validation
+
+The root `tsconfig.json` excludes `services/`. When a change touches `services/`, run:
 
 ```bash
-npm run build --prefix services/backtest-gateway
-python3 -m py_compile services/backtest-worker/main.py
+npm run typecheck:services
 ```
 
 ## Environment-Limited Checks
 
-In this workspace, service package builds may fail until service-specific dependencies are installed in each service package context.
+In this workspace, environment-backed checks may fail when credentials, external services, or local service dependencies are unavailable.
 
-When service dependencies are unavailable locally:
+When an environment-limited check cannot run locally:
 
 1. Treat root validation (`lint`, `tsc`, `test`) as baseline gate.
-2. Record service build status explicitly in handoff notes.
-3. Re-run service builds in CI or in a provisioned service environment before release.
+2. Record the skipped or blocked check explicitly in handoff notes.
+3. Re-run it in CI or in a provisioned environment before release.
 
 ## Artifact Policy
 

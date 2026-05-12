@@ -31,7 +31,7 @@ Use this skill for live Vercel work. Prefer the Vercel plugin skills and MCP too
    - Protected preview URL: use the Vercel access helper before assuming the preview is broken.
    - Docs or platform uncertainty: search Vercel documentation before guessing.
 4. Respect repo-specific config.
-   - `vercel.json` currently defines one cron job at `/api/discord/cron/sync` on `0 10 * * 1-5`.
+   - Read `vercel.json` at runtime before discussing cron configuration. Current known crons are `/api/cron/agent-retention` on `0 8 * * *` and `/api/cron/mdr-sweep` on `0 22 * * 1-5`.
    - After code changes, local validation still matters: `npm run lint`, `npx tsc --noEmit`, and `npm test`.
 
 ## Current Repo Reference Points

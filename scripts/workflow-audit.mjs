@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const failures = [];
+const includeCrossTool = process.argv.includes('--include-cross-tool');
 
 function read(relativePath) {
   return readFileSync(path.join(rootDir, relativePath), 'utf8');
@@ -25,46 +26,39 @@ check(
   'AGENTS.md should mention `npm run workflow:audit` for workflow asset changes.',
 );
 
-const claudeDoc = read('.claude/CLAUDE.md');
 check(
-  claudeDoc.includes('`AGENTS.md` is the canonical workflow and repo guidance.'),
-  '.claude/CLAUDE.md should declare AGENTS.md as the canonical source.',
+  agentsGuide.includes('lib/validations/') &&
+    !agentsGuide.includes('Schemas live in `lib/validations/trades.ts` and `lib/validations/system.ts`.'),
+  'AGENTS.md should describe `lib/validations/` generally instead of claiming only two schema files exist.',
 );
 
-const claudeSettings = JSON.parse(read('.claude/settings.json'));
-const preToolUseEntries = Array.isArray(claudeSettings.hooks?.PreToolUse)
-  ? claudeSettings.hooks.PreToolUse
-  : [];
+const readme = read('README.md');
 check(
-  preToolUseEntries.some((entry) => {
-    if (typeof entry.matcher !== 'string') return false;
-    return entry.matcher.split('|').includes('MultiEdit');
-  }),
-  '.claude/settings.json should cover MultiEdit in the pre-write env guard.',
+  !/Discord report import|JARVIS_/i.test(readme),
+  'README.md should not reference retired Discord import routes or JARVIS_* env vars.',
 );
 
-for (const hookPath of ['.claude/hooks/protect-env.sh', '.claude/hooks/migration-guard.sh']) {
-  const hookSource = read(hookPath);
-  check(!/\bjq\b/.test(hookSource), `${hookPath} should not depend on jq.`);
-}
-
-const opencodeCommandsDir = path.join(rootDir, '.opencode', 'commands');
-for (const fileName of readdirSync(opencodeCommandsDir)) {
-  if (!fileName.endsWith('.md')) continue;
-  const commandBody = read(path.join('.opencode', 'commands', fileName));
-  const match = /^agent:\s*([A-Za-z0-9_-]+)\s*$/m.exec(commandBody);
-  if (!match) continue;
-
-  const agentName = match[1];
-  check(
-    existsSync(path.join(rootDir, '.opencode', 'agents', `${agentName}.md`)),
-    `.opencode/commands/${fileName} references missing agent "${agentName}".`,
-  );
-}
-
+const validationMatrix = read('docs/VALIDATION_MATRIX.md');
 check(
-  !existsSync(path.join(rootDir, '.opencode', 'agents', 'remi.md')),
-  '.opencode/agents/remi.md should be removed or archived because it is not Nexus-specific.',
+  validationMatrix.includes('npm run typecheck:services') &&
+    !/services\/backtest-gateway|services\/backtest-worker/.test(validationMatrix),
+  'docs/VALIDATION_MATRIX.md should use `npm run typecheck:services`, not deleted service package paths.',
+);
+
+const vercelOpsSkill = read('codex-skills/nexus-vercel-ops/SKILL.md');
+check(
+  vercelOpsSkill.includes('/api/cron/agent-retention') &&
+    vercelOpsSkill.includes('/api/cron/mdr-sweep') &&
+    !vercelOpsSkill.includes('/api/discord/cron/sync'),
+  'codex-skills/nexus-vercel-ops/SKILL.md should match live vercel.json crons.',
+);
+
+const futurePlans = read('docs/FUTURE-PLANS.md');
+check(
+  futurePlans.includes('/api/cron/agent-retention') &&
+    futurePlans.includes('/api/cron/mdr-sweep') &&
+    !futurePlans.includes('/api/discord/cron/sync'),
+  'docs/FUTURE-PLANS.md staging cron notes should match live vercel.json crons.',
 );
 
 const deepResearchSkill = read('codex-skills/nexus-deep-research/SKILL.md');
@@ -76,6 +70,50 @@ check(
   !/do not skip delegation/i.test(deepResearchSkill),
   'codex-skills/nexus-deep-research/SKILL.md should allow local-only passes when delegation adds no value.',
 );
+
+if (includeCrossTool) {
+  const claudeDoc = read('.claude/CLAUDE.md');
+  check(
+    claudeDoc.includes('`AGENTS.md` is the canonical workflow and repo guidance.'),
+    '.claude/CLAUDE.md should declare AGENTS.md as the canonical source.',
+  );
+
+  const claudeSettings = JSON.parse(read('.claude/settings.json'));
+  const preToolUseEntries = Array.isArray(claudeSettings.hooks?.PreToolUse)
+    ? claudeSettings.hooks.PreToolUse
+    : [];
+  check(
+    preToolUseEntries.some((entry) => {
+      if (typeof entry.matcher !== 'string') return false;
+      return entry.matcher.split('|').includes('MultiEdit');
+    }),
+    '.claude/settings.json should cover MultiEdit in the pre-write env guard.',
+  );
+
+  for (const hookPath of ['.claude/hooks/protect-env.sh', '.claude/hooks/migration-guard.sh']) {
+    const hookSource = read(hookPath);
+    check(!/\bjq\b/.test(hookSource), `${hookPath} should not depend on jq.`);
+  }
+
+  const opencodeCommandsDir = path.join(rootDir, '.opencode', 'commands');
+  for (const fileName of readdirSync(opencodeCommandsDir)) {
+    if (!fileName.endsWith('.md')) continue;
+    const commandBody = read(path.join('.opencode', 'commands', fileName));
+    const match = /^agent:\s*([A-Za-z0-9_-]+)\s*$/m.exec(commandBody);
+    if (!match) continue;
+
+    const agentName = match[1];
+    check(
+      existsSync(path.join(rootDir, '.opencode', 'agents', `${agentName}.md`)),
+      `.opencode/commands/${fileName} references missing agent "${agentName}".`,
+    );
+  }
+
+  check(
+    !existsSync(path.join(rootDir, '.opencode', 'agents', 'remi.md')),
+    '.opencode/agents/remi.md should be removed or archived because it is not Nexus-specific.',
+  );
+}
 
 if (failures.length > 0) {
   console.error('workflow:audit failed');

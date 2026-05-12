@@ -70,7 +70,7 @@ Report pass/fail for each command.
   - `const db = getDb()`
   - guard with `if (!db) return dbUnavailable()`
   - call `ensureUser(db, authState.user)` when needed.
-- **Validate input with Zod** — Use `parseAndValidate(request, schema)` from `lib/api-route-utils.ts` with Zod schemas from `lib/validations/`. Returns `{ data }` or `{ error: Response }`. Schemas live in `lib/validations/trades.ts` and `lib/validations/system.ts`. This project uses **Zod v4** — use `z.flattenError(result.error)` (standalone function), NOT `result.error.flatten()` (v3 method).
+- **Validate input with Zod** — Use `parseAndValidate(request, schema)` from `lib/api-route-utils.ts` with Zod schemas from `lib/validations/` (for example `trades.ts`, `system.ts`, `agents.ts`, and feature-specific files). Returns `{ data }` or `{ error: Response }`. This project uses **Zod v4** — use `z.flattenError(result.error)` (standalone function), NOT `result.error.flatten()` (v3 method).
 - Return structured errors via `Response.json({ error: '...' }, { status })`.
 - In `catch`, log safely and return generic server errors (no secret leakage).
 

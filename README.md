@@ -9,7 +9,8 @@ Trading journal, analytics platform, and research tool built with Next.js, React
 - Performance analytics, replay charts, and charting tools
 - Tagging, filtering, and bulk trade actions
 - **Dilution research terminal** — full-page Research workspace with TradingView top gainers, live ticker lookup, chart, tabbed filing sections (including ownership + gap stats), and optional TLDR generation
-- **Discord report import** — backfill/sync research reports into `imported_research_reports` with parsed ticker metadata
+- **Backtesting workspace** — replay sessions, sample sets, review mode, and stats views
+- **Archive** — daily and weekly review history with saved journal context
 
 ## Core Product Areas
 
@@ -19,6 +20,8 @@ Trading journal, analytics platform, and research tool built with Next.js, React
 - **Trades** — trade management, bulk actions, tag filters
 - **Charts** — expanded charting workspace
 - **Research** — full-page dilution terminal (TradingView gainers, chart, risk header, AskEdgar sections, optional TLDR)
+- **Backtesting** — replay manager, sample sets, chart review, and trade simulation tools
+- **Archive** — daily and weekly review records
 
 ## Tech Stack
 
@@ -34,8 +37,8 @@ Trading journal, analytics platform, and research tool built with Next.js, React
 ## Research TLDR Pipeline
 
 - **LLM provider**: Groq-compatible OpenAI chat completion API
-- **Model**: `llama-3.3-70b-versatile` by default (configurable via `JARVIS_MODEL`)
-- **Research flow**: AskEdgar API powers the structured research UI; the optional TLDR endpoint combines AskEdgar data with Discord historical summary context
+- **Model**: `llama-3.3-70b-versatile` by default (configurable via `LLM_MODEL`)
+- **Research flow**: AskEdgar API powers the structured research UI; the optional TLDR endpoint summarizes the current AskEdgar snapshot/raw data
 
 ## Data + Auth Model
 
@@ -50,14 +53,17 @@ See `.env.example` for the full list.
 - `DATABASE_URL` — PostgreSQL connection string (Neon)
 - `NEXTAUTH_URL`, `NEXTAUTH_SECRET` — NextAuth config
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — OAuth provider
-- `JARVIS_API_KEY` — LLM provider API key for research TLDR generation
-- `JARVIS_API_BASE_URL` — LLM endpoint override
-- `JARVIS_MODEL` — LLM model ID
+- `LLM_API_KEY` — LLM provider API key for research TLDR generation
+- `LLM_API_BASE_URL` — LLM endpoint override for TLDR generation
+- `LLM_MODEL` — TLDR model ID
+- `BACKGROUND_LLM_API_KEY` — paid background LLM key for site research reports and agent work
+- `BACKGROUND_LLM_API_BASE_URL` — background LLM endpoint override
+- `BACKGROUND_LLM_MODEL` — background research report model ID
+- `BACKGROUND_LLM_TIMEOUT_MS` — background LLM timeout in milliseconds
+- `CRON_SECRET` — shared secret for cron-protected endpoints
 - `TRADINGVIEW_SESSION_ID` — enables live TradingView screener data for Research gainers (optional)
 - `ASKEDGAR_API_KEY` — AskEdgar API for dilution research
 - `MASSIVE_API_KEY` — Market data provider
-- `DISCORD_BOT_TOKEN` — Discord bot token for research report import routes
-- `DISCORD_CHANNEL_ID` — Discord channel containing research report messages
 
 ## Local Development
 
