@@ -73,6 +73,10 @@ const FILING_ALL_BUCKETS: FilingBucket[] = [
   'ownerships',
 ];
 
+const FILING_TAB_BASE_CLASS = 'grid place-items-center rounded-sm px-2.5 py-1 text-sm transition-colors';
+const FILING_TAB_ACTIVE_CLASS = 'bg-zinc-700/60 text-zinc-100';
+const FILING_TAB_INACTIVE_CLASS = 'text-white hover:bg-white/10';
+
 function NoDataBadge({ label = 'No data' }: { label?: string }) {
   return (
     <span className="inline-flex rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-sm text-zinc-400">
@@ -215,9 +219,7 @@ function FilingsView({ filings }: { filings: ResearchSnapshotFiling[] }) {
               key={option.key}
               type="button"
               onClick={() => setBucket(option.key)}
-              className={`rounded-sm px-2.5 py-1 text-sm transition-colors ${
-                bucket === option.key ? 'bg-zinc-700/60 text-zinc-100' : 'text-white hover:bg-white/10'
-              }`}
+              className={`${FILING_TAB_BASE_CLASS} ${bucket === option.key ? FILING_TAB_ACTIVE_CLASS : FILING_TAB_INACTIVE_CLASS}`}
             >
               {option.label}
             </button>
@@ -246,9 +248,7 @@ function FilingsView({ filings }: { filings: ResearchSnapshotFiling[] }) {
             key={option.key}
             type="button"
             onClick={() => setBucket(option.key)}
-            className={`rounded px-2.5 py-1 text-sm transition-colors ${
-              bucket === option.key ? 'bg-emerald-500/10 text-emerald-500' : 'text-white hover:bg-white/10'
-            }`}
+            className={`${FILING_TAB_BASE_CLASS} ${bucket === option.key ? FILING_TAB_ACTIVE_CLASS : FILING_TAB_INACTIVE_CLASS}`}
           >
             {option.label}
           </button>
