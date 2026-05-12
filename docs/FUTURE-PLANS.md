@@ -122,6 +122,7 @@ Current route (`/api/tradingview/gainers`) only pulls 7 fields. Expand to includ
 
 - **TradingView screener is live-only** — no historical lookback. Must snapshot and store daily. 90-day history builds up over time.
 - **Pre-market OHLC** (PM high/low/open) not available from screener — only PM change/volume. "% Broke Premarket High" stat needs Polygon intraday data ($29/mo).
+- **Market Pulse v1 exclusion:** "new HOD after 11am" and "broke premarket high" require intraday/premarket capture and are intentionally deferred to Phase 2.
 
 ### Cost Tiers
 

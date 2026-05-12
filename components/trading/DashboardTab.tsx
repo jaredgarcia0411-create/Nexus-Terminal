@@ -6,6 +6,7 @@ import { useState } from 'react';
 
 import DashboardScannerTable from '@/components/trading/DashboardScannerTable';
 import MacroSummaryPanel from '@/components/trading/MacroSummaryPanel';
+import MarketPulsePanel from '@/components/trading/MarketPulsePanel';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface DashboardTabProps {
@@ -14,6 +15,7 @@ interface DashboardTabProps {
 
 export default function DashboardTab({ onNavigateToResearch }: DashboardTabProps) {
   const [macroExpanded, setMacroExpanded] = useState(false);
+  const [marketPulseExpanded, setMarketPulseExpanded] = useState(false);
 
   return (
     <motion.div
@@ -26,6 +28,31 @@ export default function DashboardTab({ onNavigateToResearch }: DashboardTabProps
       <div>
         <h4 className="mb-2 text-lg font-semibold text-zinc-200">Scanners</h4>
         <DashboardScannerTable onNavigateToResearch={onNavigateToResearch} />
+      </div>
+
+      <div>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h4 className="text-lg font-semibold text-zinc-200">Market Strength</h4>
+          <button
+            type="button"
+            onClick={() => setMarketPulseExpanded(true)}
+            aria-label="Expand market strength"
+            title="Expand"
+            className="rounded p-1 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <Maximize2 className="h-4 w-4" />
+          </button>
+        </div>
+        <MarketPulsePanel />
+
+        <Dialog open={marketPulseExpanded} onOpenChange={setMarketPulseExpanded}>
+          <DialogContent className="scrollbar-hidden max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Market Strength</DialogTitle>
+            </DialogHeader>
+            <MarketPulsePanel />
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div>

@@ -239,6 +239,13 @@
       "when": 1778549116587,
       "tag": "0033_serious_veda",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1778618069367,
+      "tag": "0034_fixed_ulik",
+      "breakpoints": true
     }
   ]
 }

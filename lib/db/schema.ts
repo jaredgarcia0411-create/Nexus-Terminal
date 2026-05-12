@@ -155,6 +155,55 @@ export const askedgarRuntimeState = pgTable('askedgar_runtime_state', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const marketPulseDailyBars = pgTable('market_pulse_daily_bars', {
+  tradeDate: date('trade_date').notNull(),
+  ticker: text('ticker').notNull(),
+  open: doublePrecision('open').notNull(),
+  high: doublePrecision('high').notNull(),
+  low: doublePrecision('low').notNull(),
+  close: doublePrecision('close').notNull(),
+  volume: doublePrecision('volume').notNull(),
+  vwap: doublePrecision('vwap'),
+  dollarVolume: doublePrecision('dollar_volume').notNull(),
+  sourceTimestamp: timestamp('source_timestamp', { withTimezone: true }),
+  sector: text('sector'),
+  industry: text('industry'),
+  country: text('country'),
+  floatShares: doublePrecision('float_shares'),
+  marketCap: doublePrecision('market_cap'),
+  perf30d: doublePrecision('perf_30d'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.tradeDate, table.ticker] }),
+  index('market_pulse_daily_bars_ticker_date_idx').on(table.ticker, table.tradeDate),
+]);
+
+export const marketPulseDailyStats = pgTable('market_pulse_daily_stats', {
+  tradeDate: date('trade_date').primaryKey(),
+  tickerCount: integer('ticker_count').notNull(),
+  advancers: integer('advancers').notNull(),
+  decliners: integer('decliners').notNull(),
+  unchanged: integer('unchanged').notNull(),
+  advancerPct: doublePrecision('advancer_pct').notNull(),
+  declinerPct: doublePrecision('decliner_pct').notNull(),
+  upVolume: doublePrecision('up_volume').notNull(),
+  downVolume: doublePrecision('down_volume').notNull(),
+  totalVolume: doublePrecision('total_volume').notNull(),
+  medianChangePct: doublePrecision('median_change_pct'),
+  avgChangePct: doublePrecision('avg_change_pct'),
+  pctAbovePrevClose: doublePrecision('pct_above_prev_close'),
+  pctAboveDollarVolumeFloor: doublePrecision('pct_above_dollar_volume_floor'),
+  newHigh30dCount: integer('new_high_30d_count').notNull(),
+  newLow30dCount: integer('new_low_30d_count').notNull(),
+  rolling30Json: jsonb('rolling_30_json').notNull(),
+  overview90Json: jsonb('overview_90_json'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('market_pulse_daily_stats_created_idx').on(table.createdAt),
+]);
+
 // SEC ticker -> CIK identity map. Hydrated from
 // https://www.sec.gov/files/company_tickers_exchange.json with a 24h refresh.
 // Shared across all users; no userId.

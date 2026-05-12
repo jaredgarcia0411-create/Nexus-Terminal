@@ -71,6 +71,7 @@ describe('agent config registry', () => {
     vi.doUnmock('@/lib/agents/blueprints/orchestrator-chat');
     vi.doUnmock('@/lib/agents/blueprints/orchestrator-macro-summary');
     vi.doUnmock('@/lib/agents/blueprints/orchestrator-macro-intraday');
+    vi.doUnmock('@/lib/agents/blueprints/orchestrator-market-pulse');
     vi.doUnmock('@/lib/agents/blueprints/small-cap-research');
     vi.doUnmock('@/lib/agents/blueprints/swing-trader-research');
   });
@@ -96,6 +97,10 @@ describe('agent config registry', () => {
       jobType: 'macro-summary',
       input: { tradingDate: '2026-04-07', intradayUpdate: true },
     })).id).toBe('orchestrator:macro-intraday');
+    expect(resolveBlueprint(createJob({
+      agentId: 'orchestrator',
+      jobType: 'market-pulse',
+    })).id).toBe('orchestrator:market-pulse');
     expect(resolveBlueprint(createJob({
       agentId: 'small-cap-trader',
       jobType: 'research',
@@ -154,6 +159,9 @@ describe('agent config registry', () => {
     }));
     vi.doMock('@/lib/agents/blueprints/orchestrator-macro-intraday', () => ({
       orchestratorMacroIntradayBlueprint: mockBlueprint,
+    }));
+    vi.doMock('@/lib/agents/blueprints/orchestrator-market-pulse', () => ({
+      orchestratorMarketPulseBlueprint: mockBlueprint,
     }));
     vi.doMock('@/lib/agents/blueprints/small-cap-research', () => ({
       smallCapResearchBlueprint: mockBlueprint,

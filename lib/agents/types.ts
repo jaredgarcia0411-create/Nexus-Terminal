@@ -6,6 +6,7 @@ export type JobType =
   | 'chat'
   | 'research'
   | 'macro-summary'
+  | 'market-pulse'
   | 'pre-market-scan'
   | 'momentum-scan'
   | 'pattern-check';
@@ -139,6 +140,42 @@ export interface MacroSummaryReport {
   confidence: Confidence;
   tldr: string[];
   deltas?: string[];
+}
+
+export interface MarketPulseReport {
+  tradingDate: string;
+  marketStrength: 'strong' | 'mixed' | 'weak';
+  confidence: Confidence;
+  tldr: string[];
+  summary: string;
+  breadth: {
+    advancers: number;
+    decliners: number;
+    unchanged: number;
+    advancerPct: number;
+    upVolumePct: number | null;
+  };
+  rolling30: {
+    tradingDays: number;
+    avgAdvancerPct: number | null;
+    medianAdvancerPct: number | null;
+    strongDays: number;
+    weakDays: number;
+    newHigh30dAvg: number | null;
+    newLow30dAvg: number | null;
+  };
+  overview90?: {
+    tradingDays: number;
+    trend: 'improving' | 'flat' | 'deteriorating';
+    strongestDate: string | null;
+    weakestDate: string | null;
+    note: string;
+  };
+  leaders: Array<{ ticker: string; changePct: number; volume: number; dollarVolume: number; sector?: string | null }>;
+  laggards: Array<{ ticker: string; changePct: number; volume: number; dollarVolume: number; sector?: string | null }>;
+  sectorNotes: string[];
+  riskFlags: string[];
+  sourceIndex: Array<{ id: string; label: string; source: 'massive' | 'tradingview' | 'computed'; asOf: string }>;
 }
 
 export type StepType = 'code' | 'llm';
@@ -333,7 +370,7 @@ export interface ReportApiResponse {
   status: ReportStatus;
   delivery_error: string | null;
   created_at: string | null;
-  report_json: SmallCapResearchReport | SwingResearchReport | MacroSummaryReport | unknown;
+  report_json: SmallCapResearchReport | SwingResearchReport | MacroSummaryReport | MarketPulseReport | unknown;
 }
 
 export interface AgentMemoryRow {

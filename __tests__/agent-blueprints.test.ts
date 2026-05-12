@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentConfig, AgentContext, AgentJob, MacroSummaryReport, StepInput } from '@/lib/agents/types';
+import { agentReports, marketPulseDailyBars, marketPulseDailyStats } from '@/lib/db/schema';
 
 const randomUUIDMock = vi.hoisted(() => vi.fn(() => 'specialist-job-1'));
 const callLlmMock = vi.hoisted(() => vi.fn());
@@ -222,6 +223,74 @@ function createMacroReportsDb(reportJson: unknown[] = []) {
   };
 }
 
+function createMarketPulseBlueprintDb() {
+  const statsRow = {
+    tradeDate: '2026-05-08',
+    tickerCount: 3,
+    advancers: 2,
+    decliners: 1,
+    unchanged: 0,
+    advancerPct: 66.67,
+    declinerPct: 33.33,
+    upVolume: 2_000,
+    downVolume: 1_000,
+    totalVolume: 3_000,
+    medianChangePct: 5,
+    avgChangePct: 4,
+    pctAbovePrevClose: 66.67,
+    pctAboveDollarVolumeFloor: 100,
+    newHigh30dCount: 2,
+    newLow30dCount: 1,
+    rolling30Json: {
+      tradingDays: 30,
+      avgAdvancerPct: 54,
+      medianAdvancerPct: 55,
+      strongDays: 12,
+      weakDays: 7,
+      newHigh30dAvg: 10,
+      newLow30dAvg: 5,
+    },
+    overview90Json: null,
+  };
+  const barRows = [
+    { ticker: 'AAA', open: 10, close: 12, volume: 1000, dollarVolume: 12_000, sector: 'Tech' },
+    { ticker: 'BBB', open: 10, close: 11, volume: 1000, dollarVolume: 11_000, sector: null },
+    { ticker: 'CCC', open: 10, close: 8, volume: 1000, dollarVolume: 8_000, sector: 'Health' },
+  ];
+  const reportLimit = vi.fn().mockResolvedValue([]);
+  const statsLimit = vi.fn().mockResolvedValue([statsRow]);
+
+  const db = {
+    select: vi.fn(() => ({
+      from: vi.fn((table: unknown) => {
+        if (table === marketPulseDailyStats) {
+          return {
+            where: vi.fn(() => ({
+              orderBy: vi.fn(() => ({ limit: statsLimit })),
+            })),
+            orderBy: vi.fn(() => ({ limit: statsLimit })),
+          };
+        }
+        if (table === marketPulseDailyBars) {
+          return {
+            where: vi.fn().mockResolvedValue(barRows),
+          };
+        }
+        if (table === agentReports) {
+          return {
+            where: vi.fn(() => ({ limit: reportLimit })),
+          };
+        }
+        return {
+          where: vi.fn(() => ({ limit: vi.fn().mockResolvedValue([]) })),
+        };
+      }),
+    })),
+  };
+
+  return { db };
+}
+
 describe('extractGapStatsTable (gap-stats parser regression guard)', () => {
   // Canonical AskEdgar /v1/gap-stats row shape (confirmed from the live cache on 2026-04-22).
   // If this test fails, the extractor has drifted from the real API shape again.
@@ -297,7 +366,7 @@ describe('agent blueprints', () => {
     vi.restoreAllMocks();
   });
 
-  it('resolves all four implemented blueprints through the config registry', () => {
+  it('resolves all five implemented blueprints through the config registry', () => {
     const blueprints = [
       resolveBlueprint(createJob({
         agentId: 'orchestrator',
@@ -306,6 +375,11 @@ describe('agent blueprints', () => {
       resolveBlueprint(createJob({
         agentId: 'orchestrator',
         jobType: 'macro-summary',
+        input: {},
+      })),
+      resolveBlueprint(createJob({
+        agentId: 'orchestrator',
+        jobType: 'market-pulse',
         input: {},
       })),
       resolveBlueprint(createJob({
@@ -323,6 +397,7 @@ describe('agent blueprints', () => {
     expect(blueprints.map((blueprint) => blueprint.id)).toEqual([
       'orchestrator:chat',
       'orchestrator:macro-summary',
+      'orchestrator:market-pulse',
       'small-cap-trader:research',
       'swing-trader:research',
     ]);
@@ -1238,6 +1313,77 @@ describe('agent blueprints', () => {
       reportId: 'job-1:macro-summary',
       status: 'published',
       deliveryError: null,
+    });
+  });
+
+  it('runs market-pulse from stored stats, omits overview90 when unavailable, and persists site-first report', async () => {
+    const job = createJob({
+      agentId: 'orchestrator',
+      jobType: 'market-pulse',
+      input: { tradingDate: '2026-05-08' },
+    });
+    const agentConfig = AGENT_CONFIGS.orchestrator;
+    const blueprint = resolveBlueprint(job);
+    const { db } = createMarketPulseBlueprintDb();
+
+    expect(blueprint.steps.map((step) => step.name)).toEqual([
+      'load-market-pulse-context',
+      'generate-market-pulse-report',
+      'save-market-pulse-report',
+    ]);
+
+    callLlmMock.mockResolvedValueOnce({
+      content: JSON.stringify({
+        marketStrength: 'strong',
+        confidence: 'medium',
+        tldr: ['Breadth improved.'],
+        summary: 'Market strength was broad enough for a constructive read.',
+        sectorNotes: ['Tech led the tape.'],
+        riskFlags: ['90-day context is not available yet.'],
+      }),
+      modelUsed: 'test-model',
+      inputTokens: 10,
+      outputTokens: 20,
+      durationMs: 30,
+    });
+    writeAndDeliverReportMock.mockResolvedValueOnce({
+      reportId: 'job-1:market-pulse',
+      status: 'delivery_failed',
+      deliveryError: 'webhook unavailable',
+    });
+
+    const loadResult = await blueprint.steps[0].run(createStepInput(job, agentConfig, { db }));
+    const generateResult = await blueprint.steps[1].run(createStepInput(job, agentConfig, {
+      previousOutput: loadResult.data,
+      db,
+    }));
+    const saveResult = await blueprint.steps[2].run(createStepInput(job, agentConfig, {
+      previousOutput: generateResult.data,
+      db,
+    }));
+
+    expect(generateResult.data).toMatchObject({
+      tradingDate: '2026-05-08',
+      marketStrength: 'strong',
+      rolling30: expect.objectContaining({ tradingDays: 30 }),
+      breadth: expect.objectContaining({ advancers: 2, upVolumePct: 66.67 }),
+    });
+    expect((generateResult.data as { overview90?: unknown }).overview90).toBeUndefined();
+    expect(writeAndDeliverReportMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      userId: 'system-agent-user',
+      agentId: 'orchestrator',
+      reportType: 'market-pulse',
+      title: '2026-05-08 market pulse',
+      reportJson: expect.objectContaining({
+        tradingDate: '2026-05-08',
+        marketStrength: 'strong',
+      }),
+    }));
+    expect(saveResult.data).toMatchObject({
+      tradingDate: '2026-05-08',
+      reportId: 'job-1:market-pulse',
+      status: 'delivery_failed',
+      deliveryError: 'webhook unavailable',
     });
   });
 

@@ -8,6 +8,9 @@ import {
   orchestratorMacroIntradayBlueprint,
 } from './blueprints/orchestrator-macro-intraday';
 import {
+  orchestratorMarketPulseBlueprint,
+} from './blueprints/orchestrator-market-pulse';
+import {
   smallCapResearchBlueprint,
 } from './blueprints/small-cap-research';
 import {
@@ -63,11 +66,12 @@ export const AGENT_CONFIGS: Record<AgentId, AgentConfig> = {
     displayName: 'Orchestrator',
     llmLane: 'interactive',
     temperature: 0.3,
-    capabilities: ['chat', 'macro-summary'],
+    capabilities: ['chat', 'macro-summary', 'market-pulse'],
     rolePromptPath: 'lib/agents/prompts/orchestrator.md',
     blueprints: {
       chat: orchestratorChatBlueprint,
       'macro-summary': orchestratorMacroSummaryBlueprint,
+      'market-pulse': orchestratorMarketPulseBlueprint,
     },
     blueprintResolver: (job) => {
       if (job.jobType === 'macro-summary') {
