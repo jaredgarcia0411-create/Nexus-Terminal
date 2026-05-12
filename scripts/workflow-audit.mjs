@@ -53,6 +53,23 @@ check(
   'codex-skills/nexus-vercel-ops/SKILL.md should match live vercel.json crons.',
 );
 
+for (const skillName of [
+  'nexus-status',
+  'nexus-debug',
+  'nexus-review',
+  'nexus-security-audit',
+  'nexus-askedgar-debug',
+]) {
+  check(
+    existsSync(path.join(rootDir, 'codex-skills', skillName, 'SKILL.md')),
+    `codex-skills/${skillName}/SKILL.md should exist because AGENTS.md recommends $${skillName}.`,
+  );
+  check(
+    existsSync(path.join(rootDir, 'codex-skills', skillName, 'agents', 'openai.yaml')),
+    `codex-skills/${skillName}/agents/openai.yaml should exist for harness skill metadata.`,
+  );
+}
+
 const futurePlans = read('docs/FUTURE-PLANS.md');
 check(
   futurePlans.includes('/api/cron/agent-retention') &&
@@ -62,6 +79,8 @@ check(
 );
 
 const deepResearchSkill = read('codex-skills/nexus-deep-research/SKILL.md');
+const deepResearchMetadata = read('codex-skills/nexus-deep-research/agents/openai.yaml');
+const deepResearchSubagentPatterns = read('codex-skills/nexus-deep-research/references/subagent-patterns.md');
 check(
   !/always use parallel subagents/i.test(deepResearchSkill),
   'codex-skills/nexus-deep-research/SKILL.md should not require parallel subagents for every run.',
@@ -69,6 +88,14 @@ check(
 check(
   !/do not skip delegation/i.test(deepResearchSkill),
   'codex-skills/nexus-deep-research/SKILL.md should allow local-only passes when delegation adds no value.',
+);
+check(
+  !/Every invocation of this skill should use parallel subagents|do not skip delegation/i.test(deepResearchSubagentPatterns),
+  'codex-skills/nexus-deep-research/references/subagent-patterns.md should match optional delegation policy.',
+);
+check(
+  !/investigate a topic in parallel|Parallel research/i.test(deepResearchMetadata),
+  'codex-skills/nexus-deep-research/agents/openai.yaml should not present parallel work as mandatory.',
 );
 
 if (includeCrossTool) {

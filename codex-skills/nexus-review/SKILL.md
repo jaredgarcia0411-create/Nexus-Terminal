@@ -23,16 +23,16 @@ Use this skill for a focused implementation audit before handoff or merge.
    - ordered steps in the handoff/spec
    - acceptance criteria
    - repo invariants in `AGENTS.md`
-5. Run required validation in repo order:
-   - `npm run lint`
-   - `npx tsc --noEmit`
-   - `npm test`
-   - if the scope touches `services/`, also run the relevant service-local typecheck or test command
+5. Run validation that matches the review scope:
+   - Code or behavior changes: `npm run lint`, `npx tsc --noEmit`, and `npm test`.
+   - Workflow docs or repo-maintained skills: `npm run workflow:audit`.
+   - `services/` changes: `npm run typecheck:services` in addition to relevant root checks.
+   - Docs-only planning changes can skip lint/typecheck/tests when no executable code changed, but still run `npm run workflow:audit` if workflow docs or skills changed.
 6. Report findings in a strict structure:
    - **Spec Compliance** — pass / miss per step when a spec exists
    - **Acceptance Criteria** — pass / miss per criterion
    - **Issues Found** — severity, file path, concern, suggested fix
-   - **Validation** — pass / fail for each command
+   - **Validation** — pass / fail / skipped with reason for each relevant command
    - **Verdict** — `READY TO SHIP` or `NEEDS FIXES`
 
 ## What To Check Carefully
@@ -48,4 +48,4 @@ Use this skill for a focused implementation audit before handoff or merge.
 
 - Do not rewrite code during a review-only request.
 - Do not mark criteria as passed unless the code or validation actually proves it.
-- Do not ignore service-local validation when the changed files live under `services/`.
+- Do not ignore `npm run typecheck:services` when the changed files live under `services/`.

@@ -17,6 +17,7 @@ This is a read-only audit unless the user explicitly asks for fixes.
 - `codex-skills/**/SKILL.md`
 - `codex-skills/*/agents/openai.yaml`
 - Repo-maintained Codex reference docs under `codex-skills/**/references/`, if present
+- Installed copies under `~/.codex/skills/<skill-name>` when the user asks for live harness alignment
 
 Ignore `.claude/` and `.opencode/` unless the user explicitly asks for cross-tool alignment.
 
@@ -48,4 +49,5 @@ For each finding, provide:
 - Wrong validation helpers or test commands
 - Mismatches between `HANDOFF.md`, `AGENTS.md`, and repo structure
 - Stale `.claude` or `.opencode` references left inside Codex-facing docs
+- Repo-vs-installed skill drift for live Codex skills
 - Prompts that assume tools or subagents that do not exist in the current environment

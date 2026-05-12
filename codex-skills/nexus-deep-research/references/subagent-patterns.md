@@ -1,14 +1,14 @@
 # Parallel Research Patterns
 
-Use this file when deciding how to split a deep-research request into parallel passes.
+Use this file when deciding whether a deep-research request should be split into parallel passes.
 
-Every invocation of this skill should use parallel subagents. The only question is how many passes
-to run and what each pass owns.
+Use parallel subagents only when the user asked for deep research, delegation, or parallel work and
+the topic is broad enough for independent scopes. For narrow questions, a local-only pass is valid.
 
 ## Default Split
 
-Use the 2-pass split for purely repo-local topics. Use the 3-pass split when external research is
-material to the answer.
+Use the 2-pass split for broad repo-local topics. Use the 3-pass split when external research is
+material to the answer. Keep narrow topics local.
 
 1. Codebase pass
    - Goal: map current behavior, relevant files, constraints, and live patterns.
@@ -50,8 +50,8 @@ Use prompts like these, then replace the placeholders with the live topic and sc
 - Do not block on subagents before finishing your own first-pass reading.
 - Wait when the next synthesis step actually depends on the delegated result.
 - If one pass is clearly lagging and the memo can proceed without it, note the gap and continue.
-- If the environment cannot start the required parallel subagents at all, stop and report the
-  blocker rather than faking a complete deep-research run.
+- If delegated passes would materially help but the environment cannot start subagents, report the
+  blocker and continue locally only when the user accepts the degraded pass.
 
 ## Evidence Standard
 

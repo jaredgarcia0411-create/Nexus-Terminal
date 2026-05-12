@@ -28,7 +28,7 @@ Write or update a section in `HANDOFF.md` with:
 - Required changes grouped into ordered steps
 - Per-file actions: create, modify, or delete
 - Acceptance criteria that are concrete and testable
-- Testing requirements: `npm run lint`, `npx tsc --noEmit`, `npm test`
+- Testing requirements: `npm run lint`, `npx tsc --noEmit`, `npm test`, plus `npm run workflow:audit` for workflow docs/skills and `npm run typecheck:services` for `services/` changes
 - Security notes when auth, secrets, or external integrations are involved
 - Order of operations
 - Complexity estimate
@@ -46,4 +46,3 @@ Write or update a section in `HANDOFF.md` with:
 - State why the order matters when there are dependencies.
 - Call out risks, especially around auth, SSE routes, database access, or expensive third-party APIs.
 - Do not invent missing files or abstractions to make a plan look cleaner.
-

@@ -17,12 +17,16 @@ Treat this skill as the canonical commit workflow for Nexus Terminal. Any user-f
    - Run `git status --short`, `git diff --stat`, `git diff`, and `git log --oneline -5`.
    - If the worktree mixes unrelated changes, commit only the requested scope. Ask before bundling unrelated work into one commit.
 2. Enforce validation before commit.
-   - For code or behavior changes, run `npm run lint`, `npx tsc --noEmit`, and `npm test`.
+   - Match validation to the changed scope:
+     - Code or behavior changes: `npm run lint`, `npx tsc --noEmit`, and `npm test`.
+     - Workflow docs or repo-maintained skills: `npm run workflow:audit`.
+     - `services/` changes: `npm run typecheck:services` in addition to the relevant root checks.
+   - If those validations were already run after the current edits and passed, do not rerun them just for the commit. Confirm the tree still matches the reviewed scope, then stage and commit.
    - If a command fails, fix the issue before committing.
 3. Stage intentionally.
    - Prefer explicit `git add <paths>` when the worktree is mixed.
    - Never stage `.env*`, credentials, `.next/`, or other obvious local-only artifacts.
-   - Treat ad hoc scratch notes, one-off reports, and other workflow artifacts as opt-in commit material, not default commit material.
+   - Treat ad hoc scratch notes, one-off reports, and tool-specific historical artifacts as opt-in commit material, not default commit material.
 4. Write the message to match repo style.
    - Use `$ARGUMENTS` as a hint if provided; otherwise derive the message from the diff.
    - Keep the subject concise, imperative, and focused on why the change exists.
