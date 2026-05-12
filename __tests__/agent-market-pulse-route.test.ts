@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { agentReports } from '@/lib/db/schema';
 import type { MarketPulseReport } from '@/lib/agents/types';
 
 const {
@@ -35,17 +36,19 @@ import { GET } from '@/app/api/agents/market-pulse/latest/route';
 
 function createMarketPulseDb(row: Record<string, unknown> | null) {
   const limitMock = vi.fn().mockResolvedValue(row ? [row] : []);
+  const orderByMock = vi.fn(() => ({
+    limit: limitMock,
+  }));
 
   return {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
         where: vi.fn(() => ({
-          orderBy: vi.fn(() => ({
-            limit: limitMock,
-          })),
+          orderBy: orderByMock,
         })),
       })),
     })),
+    orderByMock,
   };
 }
 
@@ -77,12 +80,13 @@ describe('agent market pulse route', () => {
       riskFlags: [],
       sourceIndex: [],
     };
-    getAgentDbMock.mockReturnValueOnce(createMarketPulseDb({
+    const db = createMarketPulseDb({
       generatedAt: new Date('2026-05-08T22:00:00.000Z'),
       content: report,
       status: 'delivery_failed',
       deliveryError: 'discord missing',
-    }));
+    });
+    getAgentDbMock.mockReturnValueOnce(db);
 
     const response = await GET(new Request('http://localhost/api/agents/market-pulse/latest'));
     const payload = await response.json();
@@ -100,6 +104,20 @@ describe('agent market pulse route', () => {
     expect(eqMock).toHaveBeenCalledWith(expect.anything(), 'orchestrator');
     expect(eqMock).toHaveBeenCalledWith(expect.anything(), 'market-pulse');
     expect(andMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('orders by report trading date before generated timestamp', async () => {
+    const db = createMarketPulseDb(null);
+    getAgentDbMock.mockReturnValueOnce(db);
+
+    await GET(new Request('http://localhost/api/agents/market-pulse/latest'));
+
+    expect(descMock).toHaveBeenCalledTimes(2);
+    expect(descMock.mock.calls[1][0]).toBe(agentReports.createdAt);
+    expect(db.orderByMock).toHaveBeenCalledWith(
+      descMock.mock.results[0].value,
+      descMock.mock.results[1].value,
+    );
   });
 
   it('returns null when no market pulse report exists', async () => {

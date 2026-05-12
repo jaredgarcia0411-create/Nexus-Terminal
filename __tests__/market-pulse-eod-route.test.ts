@@ -97,8 +97,74 @@ describe('market pulse eod route', () => {
       barsUpserted: 2,
       statsUpserted: 1,
       jobsEnqueued: 1,
+      jobsEnqueuedDates: ['2026-05-08'],
       skippedNonTradingDays: 0,
+      skippedDates: [],
+      existingReportDates: [],
+      existingJobDates: [],
     });
+  });
+
+  it('supports enqueue=0 for stats-only backfills', async () => {
+    const db = createDb();
+    getDbMock.mockReturnValueOnce(db);
+
+    const response = await GET(new Request('http://localhost/api/cron/market-pulse-eod?date=2026-05-08&enqueue=0'));
+    const payload = await json(response);
+
+    expect(response.status).toBe(200);
+    expect(captureMarketPulseForDateMock).toHaveBeenCalledWith(db, '2026-05-08');
+    expect(db.select).not.toHaveBeenCalled();
+    expect(db.insertValuesMock).not.toHaveBeenCalled();
+    expect(payload).toMatchObject({
+      evaluatedDates: ['2026-05-08'],
+      jobsEnqueued: 0,
+      jobsEnqueuedDates: [],
+      existingReportDates: [],
+      existingJobDates: [],
+    });
+  });
+
+  it('reports existing market-pulse reports and jobs instead of enqueuing duplicates', async () => {
+    const db = createDb();
+    getDbMock.mockReturnValueOnce(db);
+    db.limitMock.mockResolvedValueOnce([{ id: 'report-1' }]);
+
+    const reportResponse = await GET(new Request('http://localhost/api/cron/market-pulse-eod?date=2026-05-08'));
+    const reportPayload = await json(reportResponse);
+
+    expect(reportPayload).toMatchObject({
+      jobsEnqueued: 0,
+      jobsEnqueuedDates: [],
+      existingReportDates: ['2026-05-08'],
+      existingJobDates: [],
+    });
+    expect(db.insertValuesMock).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    requireCronSecretMock.mockReturnValue(null);
+    captureMarketPulseForDateMock.mockResolvedValue({
+      skipped: false,
+      barsUpserted: 2,
+      statsUpserted: 1,
+      stats: { tradeDate: '2026-05-08' },
+    });
+    const dbWithJob = createDb();
+    getDbMock.mockReturnValueOnce(dbWithJob);
+    dbWithJob.limitMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'job-1' }]);
+
+    const jobResponse = await GET(new Request('http://localhost/api/cron/market-pulse-eod?date=2026-05-08'));
+    const jobPayload = await json(jobResponse);
+
+    expect(jobPayload).toMatchObject({
+      jobsEnqueued: 0,
+      jobsEnqueuedDates: [],
+      existingReportDates: [],
+      existingJobDates: ['2026-05-08'],
+    });
+    expect(dbWithJob.insertValuesMock).not.toHaveBeenCalled();
   });
 
   it('supports bounded backfill and caps days at 30', async () => {
@@ -110,6 +176,45 @@ describe('market pulse eod route', () => {
     expect(captureMarketPulseForDateMock).toHaveBeenCalledTimes(30);
     expect(captureMarketPulseForDateMock.mock.calls[0][1]).toBe('2026-05-08');
     expect(captureMarketPulseForDateMock.mock.calls[1][1]).toBe('2026-05-07');
+  });
+
+  it('does not let skipped non-trading dates consume the requested trading-day count', async () => {
+    const db = createDb();
+    getDbMock.mockReturnValueOnce(db);
+    captureMarketPulseForDateMock.mockImplementation((_db, tradeDate: string) => {
+      if (tradeDate === '2026-05-10' || tradeDate === '2026-05-09') {
+        return Promise.resolve({
+          skipped: true,
+          barsUpserted: 0,
+          statsUpserted: 0,
+          stats: null,
+        });
+      }
+
+      return Promise.resolve({
+        skipped: false,
+        barsUpserted: 2,
+        statsUpserted: 1,
+        stats: { tradeDate },
+      });
+    });
+
+    const response = await GET(new Request('http://localhost/api/cron/market-pulse-eod?from=2026-05-10&days=2&enqueue=0'));
+    const payload = await json(response);
+
+    expect(captureMarketPulseForDateMock).toHaveBeenCalledTimes(4);
+    expect(captureMarketPulseForDateMock.mock.calls.map((call) => call[1])).toEqual([
+      '2026-05-10',
+      '2026-05-09',
+      '2026-05-08',
+      '2026-05-07',
+    ]);
+    expect(payload).toMatchObject({
+      evaluatedDates: ['2026-05-08', '2026-05-07'],
+      jobsEnqueued: 0,
+      skippedNonTradingDays: 2,
+      skippedDates: ['2026-05-10', '2026-05-09'],
+    });
   });
 
   it('summarizes non-trading skips without enqueuing a job', async () => {
@@ -131,6 +236,7 @@ describe('market pulse eod route', () => {
       statsUpserted: 0,
       jobsEnqueued: 0,
       skippedNonTradingDays: 1,
+      skippedDates: ['2026-05-09'],
     });
     expect(db.insertValuesMock).not.toHaveBeenCalled();
   });

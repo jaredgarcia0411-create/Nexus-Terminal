@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getAgentDb } from '@/lib/agents/db';
@@ -24,7 +24,10 @@ export async function GET(request: Request) {
         eq(agentReports.agentId, 'orchestrator'),
         eq(agentReports.reportType, 'market-pulse'),
       ))
-      .orderBy(desc(agentReports.createdAt))
+      .orderBy(
+        desc(sql<string>`${agentReports.reportJson}->>'tradingDate'`),
+        desc(agentReports.createdAt),
+      )
       .limit(1);
 
     if (!pulseRow) {

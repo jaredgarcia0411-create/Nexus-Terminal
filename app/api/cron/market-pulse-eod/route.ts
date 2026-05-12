@@ -16,9 +16,15 @@ interface MarketPulseEodSummary {
   barsUpserted: number;
   statsUpserted: number;
   jobsEnqueued: number;
+  jobsEnqueuedDates: string[];
   skippedNonTradingDays: number;
+  skippedDates: string[];
+  existingReportDates: string[];
+  existingJobDates: string[];
   errors: Array<{ date: string; message: string }>;
 }
+
+type MarketPulseJobResult = 'enqueued' | 'existing_report' | 'existing_job';
 
 export async function GET(request: Request) {
   const authError = requireCronSecret(request);
@@ -29,29 +35,50 @@ export async function GET(request: Request) {
 
   try {
     const url = new URL(request.url);
-    const dates = getDatesToEvaluate(url);
+    const datePlan = getDatePlan(url);
+    const enqueueReports = shouldEnqueueReports(url);
     const summary: MarketPulseEodSummary = {
       evaluatedDates: [],
       barsUpserted: 0,
       statsUpserted: 0,
       jobsEnqueued: 0,
+      jobsEnqueuedDates: [],
       skippedNonTradingDays: 0,
+      skippedDates: [],
+      existingReportDates: [],
+      existingJobDates: [],
       errors: [],
     };
 
-    for (const tradeDate of dates) {
+    for (const tradeDate of datePlan.dates) {
+      if (
+        datePlan.requestedTradingDays !== null
+        && summary.evaluatedDates.length >= datePlan.requestedTradingDays
+      ) {
+        break;
+      }
+
       try {
         const result = await captureMarketPulseForDate(db, tradeDate);
         if (result.skipped) {
           summary.skippedNonTradingDays += 1;
+          summary.skippedDates.push(tradeDate);
           continue;
         }
 
         summary.evaluatedDates.push(tradeDate);
         summary.barsUpserted += result.barsUpserted;
         summary.statsUpserted += result.statsUpserted;
-        if (result.statsUpserted > 0 && await enqueueMarketPulseJobIfNeeded(db, tradeDate)) {
-          summary.jobsEnqueued += 1;
+        if (enqueueReports && result.statsUpserted > 0) {
+          const jobResult = await enqueueMarketPulseJobIfNeeded(db, tradeDate);
+          if (jobResult === 'enqueued') {
+            summary.jobsEnqueued += 1;
+            summary.jobsEnqueuedDates.push(tradeDate);
+          } else if (jobResult === 'existing_report') {
+            summary.existingReportDates.push(tradeDate);
+          } else {
+            summary.existingJobDates.push(tradeDate);
+          }
         }
       } catch (error) {
         summary.errors.push({
@@ -69,16 +96,29 @@ export async function GET(request: Request) {
   }
 }
 
-function getDatesToEvaluate(url: URL): string[] {
+function getDatePlan(url: URL): { dates: string[]; requestedTradingDays: number | null } {
   const explicitDate = parseDateParam(url.searchParams.get('date'));
-  if (explicitDate) return [explicitDate];
+  if (explicitDate) return { dates: [explicitDate], requestedTradingDays: null };
 
   const from = parseDateParam(url.searchParams.get('from'));
+  const hasDaysParam = url.searchParams.has('days');
   const daysParam = Number(url.searchParams.get('days') ?? '1');
   const days = Number.isFinite(daysParam) && daysParam > 0
     ? Math.min(30, Math.floor(daysParam))
     : 1;
-  return collectCalendarDates(from ?? yesterdayInNewYork(), days);
+  const startDate = from ?? yesterdayInNewYork();
+  if (!hasDaysParam) {
+    return { dates: collectCalendarDates(startDate, 1), requestedTradingDays: null };
+  }
+
+  return {
+    dates: collectCalendarDates(startDate, days * 2 + 10),
+    requestedTradingDays: days,
+  };
+}
+
+function shouldEnqueueReports(url: URL): boolean {
+  return url.searchParams.get('enqueue') !== '0';
 }
 
 function parseDateParam(raw: string | null): string | null {
@@ -110,7 +150,7 @@ function collectCalendarDates(from: string, days: number): string[] {
 async function enqueueMarketPulseJobIfNeeded(
   db: NonNullable<ReturnType<typeof getDb>>,
   tradeDate: string,
-): Promise<boolean> {
+): Promise<MarketPulseJobResult> {
   const [existingReport] = await db.select({ id: agentReports.id })
     .from(agentReports)
     .where(and(
@@ -120,7 +160,7 @@ async function enqueueMarketPulseJobIfNeeded(
       sql`${agentReports.reportJson}->>'tradingDate' = ${tradeDate}`,
     ))
     .limit(1);
-  if (existingReport) return false;
+  if (existingReport) return 'existing_report';
 
   const [existingJob] = await db.select({ id: agentJobs.id })
     .from(agentJobs)
@@ -132,7 +172,7 @@ async function enqueueMarketPulseJobIfNeeded(
       sql`${agentJobs.status} IN ('queued', 'processing', 'completed')`,
     ))
     .limit(1);
-  if (existingJob) return false;
+  if (existingJob) return 'existing_job';
 
   await db.insert(agentJobs).values({
     id: randomUUID(),
@@ -142,5 +182,5 @@ async function enqueueMarketPulseJobIfNeeded(
     status: 'queued',
     input: { tradingDate: tradeDate },
   });
-  return true;
+  return 'enqueued';
 }
