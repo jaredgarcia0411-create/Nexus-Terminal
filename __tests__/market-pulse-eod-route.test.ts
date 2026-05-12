@@ -167,6 +167,36 @@ describe('market pulse eod route', () => {
     expect(dbWithJob.insertValuesMock).not.toHaveBeenCalled();
   });
 
+  it('enqueues from an existing stats row when an explicit date recapture fails', async () => {
+    const db = createDb();
+    getDbMock.mockReturnValueOnce(db);
+    captureMarketPulseForDateMock.mockRejectedValueOnce(new Error('stored bars reload failed'));
+    db.limitMock
+      .mockResolvedValueOnce([{ tradeDate: '2026-05-08' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const response = await GET(new Request('http://localhost/api/cron/market-pulse-eod?date=2026-05-08&enqueue=1'));
+    const payload = await json(response);
+
+    expect(response.status).toBe(200);
+    expect(db.insertValuesMock).toHaveBeenCalledWith(expect.objectContaining({
+      agentId: 'orchestrator',
+      userId: 'system-agent-user',
+      jobType: 'market-pulse',
+      status: 'queued',
+      input: { tradingDate: '2026-05-08' },
+    }));
+    expect(payload).toMatchObject({
+      evaluatedDates: ['2026-05-08'],
+      barsUpserted: 0,
+      statsUpserted: 0,
+      jobsEnqueued: 1,
+      jobsEnqueuedDates: ['2026-05-08'],
+      errors: [],
+    });
+  });
+
   it('supports bounded backfill and caps days at 30', async () => {
     const db = createDb();
     getDbMock.mockReturnValueOnce(db);

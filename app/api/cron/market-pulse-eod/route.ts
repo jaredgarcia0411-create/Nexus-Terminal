@@ -3,7 +3,7 @@ import { and, eq, sql } from 'drizzle-orm';
 
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
-import { agentJobs, agentReports } from '@/lib/db/schema';
+import { agentJobs, agentReports, marketPulseDailyStats } from '@/lib/db/schema';
 import { captureMarketPulseForDate } from '@/lib/market-pulse/capture';
 import { dbUnavailable, requireCronSecret } from '@/lib/server-db-utils';
 
@@ -37,6 +37,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const datePlan = getDatePlan(url);
     const enqueueReports = shouldEnqueueReports(url);
+    const canEnqueueFromExistingStats = Boolean(datePlan.explicitDate && enqueueReports);
     const summary: MarketPulseEodSummary = {
       evaluatedDates: [],
       barsUpserted: 0,
@@ -81,6 +82,13 @@ export async function GET(request: Request) {
           }
         }
       } catch (error) {
+        if (
+          canEnqueueFromExistingStats
+          && await enqueueFromExistingStatsIfAvailable(db, tradeDate, summary)
+        ) {
+          continue;
+        }
+
         summary.errors.push({
           date: tradeDate,
           message: error instanceof Error ? error.message : String(error),
@@ -96,9 +104,13 @@ export async function GET(request: Request) {
   }
 }
 
-function getDatePlan(url: URL): { dates: string[]; requestedTradingDays: number | null } {
+function getDatePlan(url: URL): {
+  dates: string[];
+  requestedTradingDays: number | null;
+  explicitDate: boolean;
+} {
   const explicitDate = parseDateParam(url.searchParams.get('date'));
-  if (explicitDate) return { dates: [explicitDate], requestedTradingDays: null };
+  if (explicitDate) return { dates: [explicitDate], requestedTradingDays: null, explicitDate: true };
 
   const from = parseDateParam(url.searchParams.get('from'));
   const hasDaysParam = url.searchParams.has('days');
@@ -108,12 +120,13 @@ function getDatePlan(url: URL): { dates: string[]; requestedTradingDays: number 
     : 1;
   const startDate = from ?? yesterdayInNewYork();
   if (!hasDaysParam) {
-    return { dates: collectCalendarDates(startDate, 1), requestedTradingDays: null };
+    return { dates: collectCalendarDates(startDate, 1), requestedTradingDays: null, explicitDate: false };
   }
 
   return {
     dates: collectCalendarDates(startDate, days * 2 + 10),
     requestedTradingDays: days,
+    explicitDate: false,
   };
 }
 
@@ -183,4 +196,29 @@ async function enqueueMarketPulseJobIfNeeded(
     input: { tradingDate: tradeDate },
   });
   return 'enqueued';
+}
+
+async function enqueueFromExistingStatsIfAvailable(
+  db: NonNullable<ReturnType<typeof getDb>>,
+  tradeDate: string,
+  summary: MarketPulseEodSummary,
+): Promise<boolean> {
+  const [existingStats] = await db.select({ tradeDate: marketPulseDailyStats.tradeDate })
+    .from(marketPulseDailyStats)
+    .where(eq(marketPulseDailyStats.tradeDate, tradeDate))
+    .limit(1);
+
+  if (!existingStats) return false;
+
+  const jobResult = await enqueueMarketPulseJobIfNeeded(db, tradeDate);
+  summary.evaluatedDates.push(tradeDate);
+  if (jobResult === 'enqueued') {
+    summary.jobsEnqueued += 1;
+    summary.jobsEnqueuedDates.push(tradeDate);
+  } else if (jobResult === 'existing_report') {
+    summary.existingReportDates.push(tradeDate);
+  } else {
+    summary.existingJobDates.push(tradeDate);
+  }
+  return true;
 }
