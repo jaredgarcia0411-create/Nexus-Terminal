@@ -158,6 +158,35 @@ function normalizeJson<T>(value: unknown, fallback: T): T {
   return value && typeof value === 'object' ? value as T : fallback;
 }
 
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry).trim()).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/\n|(?:^|\s)[-*]\s+/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeMarketStrength(value: unknown, advancerPct: number): 'strong' | 'mixed' | 'weak' {
+  if (value === 'strong' || value === 'mixed' || value === 'weak') return value;
+  return strengthFromAdvancers(advancerPct);
+}
+
+function normalizeConfidence(value: unknown): 'high' | 'medium' | 'low' {
+  if (value === 'high' || value === 'medium' || value === 'low') return value;
+  return 'medium';
+}
+
 function buildChangeRows(
   bars: Array<{
     ticker: string;
@@ -319,6 +348,7 @@ export const orchestratorMarketPulseBlueprint: Blueprint = {
           userMessage: buildPrompt(context),
           temperature: 0.2,
         }, 'background');
+        const rawDraft = toRecord(parseJson(response.content));
         const draft = z.object({
           marketStrength: z.enum(['strong', 'mixed', 'weak']).default(strengthFromAdvancers(context.stats.advancerPct)),
           confidence: z.enum(['high', 'medium', 'low']).default('medium'),
@@ -326,7 +356,14 @@ export const orchestratorMarketPulseBlueprint: Blueprint = {
           summary: z.string().default('Market pulse summary unavailable.'),
           sectorNotes: z.array(z.string()).default([]),
           riskFlags: z.array(z.string()).default([]),
-        }).parse(parseJson(response.content));
+        }).parse({
+          ...rawDraft,
+          marketStrength: normalizeMarketStrength(rawDraft.marketStrength, context.stats.advancerPct),
+          confidence: normalizeConfidence(rawDraft.confidence),
+          tldr: normalizeStringArray(rawDraft.tldr),
+          sectorNotes: normalizeStringArray(rawDraft.sectorNotes),
+          riskFlags: normalizeStringArray(rawDraft.riskFlags),
+        });
 
         const report: MarketPulseReport = {
           tradingDate: context.tradingDate,

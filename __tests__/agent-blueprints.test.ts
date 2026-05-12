@@ -1387,6 +1387,46 @@ describe('agent blueprints', () => {
     });
   });
 
+  it('normalizes loose market-pulse LLM draft fields before report validation', async () => {
+    const job = createJob({
+      agentId: 'orchestrator',
+      jobType: 'market-pulse',
+      input: { tradingDate: '2026-05-08' },
+    });
+    const agentConfig = AGENT_CONFIGS.orchestrator;
+    const blueprint = resolveBlueprint(job);
+    const { db } = createMarketPulseBlueprintDb();
+
+    callLlmMock.mockResolvedValueOnce({
+      content: JSON.stringify({
+        marketStrength: 'constructive',
+        confidence: 'moderate',
+        tldr: 'Breadth improved across the tape.',
+        summary: 'Market strength was broad enough for a constructive read.',
+        sectorNotes: 'Technology leadership carried the day.',
+        riskFlags: '90-day context is not available yet.',
+      }),
+      modelUsed: 'test-model',
+      inputTokens: 10,
+      outputTokens: 20,
+      durationMs: 30,
+    });
+
+    const loadResult = await blueprint.steps[0].run(createStepInput(job, agentConfig, { db }));
+    const generateResult = await blueprint.steps[1].run(createStepInput(job, agentConfig, {
+      previousOutput: loadResult.data,
+      db,
+    }));
+
+    expect(generateResult.data).toMatchObject({
+      marketStrength: 'strong',
+      confidence: 'medium',
+      tldr: ['Breadth improved across the tape.'],
+      sectorNotes: ['Technology leadership carried the day.'],
+      riskFlags: ['90-day context is not available yet.'],
+    });
+  });
+
   it('uses the AskEdgar cache helper for small-cap research when data is available', async () => {
     getCachedTickerDataMock.mockResolvedValue({
       fetchedAt: '2026-04-07T12:00:00.000Z',
