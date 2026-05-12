@@ -55,15 +55,29 @@ interface AskedgarCacheRow {
 
 function createAskedgarCacheDb(initialRows: AskedgarCacheRow[] = []) {
   const rows = [...initialRows];
+  const dailyTickers = new Set<string>();
+  let rateLimitedUntil: Date | null = null;
 
   return {
-    select() {
+    select(selection?: Record<string, unknown>) {
+      const selectedKeys = selection ? Object.keys(selection) : [];
       return {
         from() {
           return {
             where() {
+              if (selectedKeys.includes('rateLimitedUntil')) {
+                return {
+                  limit: async () => (rateLimitedUntil ? [{ rateLimitedUntil }] : []),
+                };
+              }
+
+              const dailyRows = [...dailyTickers].map((ticker) => ({ ticker }));
               return {
                 limit: async (limit: number) => rows.slice(0, limit),
+                then: (
+                  resolve: (value: typeof dailyRows) => void,
+                  reject: (reason?: unknown) => void,
+                ) => Promise.resolve(dailyRows).then(resolve, reject),
               };
             },
           };
@@ -72,9 +86,28 @@ function createAskedgarCacheDb(initialRows: AskedgarCacheRow[] = []) {
     },
     insert() {
       return {
-        values(value: AskedgarCacheRow) {
+        values(value: AskedgarCacheRow | {
+          date?: string;
+          ticker?: string;
+          id?: string;
+          rateLimitedUntil?: Date | null;
+        }) {
           return {
+            onConflictDoNothing: async () => {
+              if ('date' in value && typeof value.date === 'string' && typeof value.ticker === 'string') {
+                dailyTickers.add(value.ticker);
+              }
+            },
             onConflictDoUpdate: async ({ set }: { set: Partial<AskedgarCacheRow> }) => {
+              if ('rateLimitedUntil' in value && value.id === 'global') {
+                rateLimitedUntil = value.rateLimitedUntil ?? null;
+                return;
+              }
+
+              if (!('cacheType' in value) || typeof value.cacheType !== 'string') {
+                return;
+              }
+
               const nextRow = { ...value, ...set } as AskedgarCacheRow;
               const index = rows.findIndex((row) => row.cacheType === value.cacheType && row.ticker === value.ticker);
               if (index >= 0) {
@@ -90,6 +123,12 @@ function createAskedgarCacheDb(initialRows: AskedgarCacheRow[] = []) {
     },
     getRows() {
       return rows;
+    },
+    getDailyTickers() {
+      return [...dailyTickers];
+    },
+    getRateLimitedUntil() {
+      return rateLimitedUntil;
     },
   };
 }
@@ -321,6 +360,38 @@ describe('askedgar client', () => {
     await client.fetchTickerData('MSFT');
     await client.fetchTickerData('MSFT');
     expect(client.getAskEdgarCallCount()).toBe(1);
+  });
+
+  it('persists unique ticker usage to the DB-backed daily state', async () => {
+    const cacheDb = createAskedgarCacheDb();
+    getDbMock.mockReturnValue(cacheDb);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ status: 'success', count: 1, results: [{}] })));
+    const client = await import('@/lib/askedgar');
+
+    await client.fetchTickerData('MSFT', { endpoints: ['gap-stats'] });
+
+    expect(cacheDb.getDailyTickers()).toEqual(['MSFT']);
+    expect(client.getAskEdgarCallCount()).toBe(1);
+  });
+
+  it('persists AskEdgar retry windows to the DB-backed runtime state', async () => {
+    const cacheDb = createAskedgarCacheDb();
+    getDbMock.mockReturnValue(cacheDb);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
+      error: {
+        code: 'rate_limit_exceeded',
+        message: 'AskEdgar rate limit exceeded',
+        details: { retry_after: 42 },
+      },
+    }), { status: 429 }));
+    const client = await import('@/lib/askedgar');
+
+    const result = await client.fetchTickerData('MSFT', { endpoints: ['gap-stats'] });
+    await Promise.resolve();
+
+    expect(result.rawData['gap-stats'].error).toContain('retry after 42s');
+    expect(cacheDb.getRateLimitedUntil()).toBeInstanceOf(Date);
+    expect(cacheDb.getRateLimitedUntil()?.getTime()).toBeGreaterThan(Date.now());
   });
 
   it('marks fully rate-limited AskEdgar snapshots as unusable', async () => {

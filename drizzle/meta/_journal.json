@@ -232,6 +232,13 @@
       "when": 1778548469296,
       "tag": "0032_previous_nocturne",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1778549116587,
+      "tag": "0033_serious_veda",
+      "breakpoints": true
     }
   ]
 }

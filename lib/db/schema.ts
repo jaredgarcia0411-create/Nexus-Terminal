@@ -138,6 +138,23 @@ export const askedgarCache = pgTable('askedgar_cache', {
   index('askedgar_cache_expires_idx').on(table.expiresAt),
 ]);
 
+// Daily ticker usage for the AskEdgar daily-unique-ticker cap.
+export const askedgarDailyTickers = pgTable('askedgar_daily_tickers', {
+  date: date('date').notNull(),
+  ticker: text('ticker').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.date, table.ticker] }),
+  index('askedgar_daily_tickers_date_idx').on(table.date),
+]);
+
+// Singleton runtime state for AskEdgar retry windows across cold starts.
+export const askedgarRuntimeState = pgTable('askedgar_runtime_state', {
+  id: text('id').primaryKey(),
+  rateLimitedUntil: timestamp('rate_limited_until', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 // SEC ticker -> CIK identity map. Hydrated from
 // https://www.sec.gov/files/company_tickers_exchange.json with a 24h refresh.
 // Shared across all users; no userId.

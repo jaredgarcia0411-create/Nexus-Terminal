@@ -2,7 +2,7 @@ import { and, eq, gt } from 'drizzle-orm';
 
 import { getField, toNumberValue, toRecord } from '@/lib/askedgar-utils';
 import { getDb } from '@/lib/db';
-import { askedgarCache } from '@/lib/db/schema';
+import { askedgarCache, askedgarDailyTickers, askedgarRuntimeState } from '@/lib/db/schema';
 import { bucketForFormType } from '@/lib/filings-bucket';
 import { getHistoricalOutstanding } from '@/lib/sec/companyfacts';
 import { getOfferings } from '@/lib/sec/offerings';
@@ -81,24 +81,94 @@ let resetDate = '';
 let rateLimitedUntil = 0; // Unix timestamp (ms) when we can resume
 
 const inFlightTickerRequests = new Map<string, Promise<TickerDataResult>>();
+const MODULE_RATE_LIMIT_REFRESH_MS = 5000;
+let rateLimitDbLastSyncedAt = 0;
 
-function isRateLimited(): boolean {
-  return Date.now() < rateLimitedUntil;
+async function syncRateLimitFromDb(): Promise<void> {
+  if (Date.now() - rateLimitDbLastSyncedAt < MODULE_RATE_LIMIT_REFRESH_MS) return;
+  const db = getDb();
+  if (!db) return;
+
+  try {
+    const [row] = await db
+      .select({ rateLimitedUntil: askedgarRuntimeState.rateLimitedUntil })
+      .from(askedgarRuntimeState)
+      .where(eq(askedgarRuntimeState.id, 'global'))
+      .limit(1);
+
+    rateLimitedUntil = row?.rateLimitedUntil ? row.rateLimitedUntil.getTime() : 0;
+    rateLimitDbLastSyncedAt = Date.now();
+  } catch (err) {
+    console.warn('[askedgar-state] rate-limit DB read failed; using module memory:', err);
+  }
+}
+
+async function persistRateLimit(untilMs: number): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+
+  try {
+    await db.insert(askedgarRuntimeState)
+      .values({
+        id: 'global',
+        rateLimitedUntil: new Date(untilMs),
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: askedgarRuntimeState.id,
+        set: { rateLimitedUntil: new Date(untilMs), updatedAt: new Date() },
+      });
+    rateLimitDbLastSyncedAt = Date.now();
+  } catch (err) {
+    console.warn('[askedgar-state] rate-limit DB write failed; module memory remains authoritative for this instance:', err);
+  }
 }
 
 function setRateLimited(retryAfterSeconds: number) {
   rateLimitedUntil = Date.now() + retryAfterSeconds * 1000;
+  void persistRateLimit(rateLimitedUntil);
 }
 
 function getCurrentUtcDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function resetCounterIfNeeded() {
+async function syncDailyTickersFromDb(): Promise<void> {
   const currentDate = getCurrentUtcDate();
-  if (resetDate !== currentDate) {
+  if (resetDate === currentDate && uniqueTickersToday.size > 0) return;
+
+  const db = getDb();
+  if (!db) {
     resetDate = currentDate;
     uniqueTickersToday.clear();
+    return;
+  }
+
+  try {
+    const rows = await db
+      .select({ ticker: askedgarDailyTickers.ticker })
+      .from(askedgarDailyTickers)
+      .where(eq(askedgarDailyTickers.date, currentDate));
+
+    resetDate = currentDate;
+    uniqueTickersToday.clear();
+    for (const row of rows) uniqueTickersToday.add(row.ticker);
+  } catch (err) {
+    console.warn('[askedgar-state] daily-tickers DB read failed; using module memory:', err);
+    resetDate = currentDate;
+  }
+}
+
+async function persistDailyTicker(ticker: string): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+
+  try {
+    await db.insert(askedgarDailyTickers)
+      .values({ date: getCurrentUtcDate(), ticker })
+      .onConflictDoNothing();
+  } catch (err) {
+    console.warn('[askedgar-state] daily-ticker DB write failed:', err);
   }
 }
 
@@ -127,7 +197,7 @@ function extractRetryAfterSeconds(error?: string): number | null {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }
 
-  if (/waiting for retry window/i.test(error) && isRateLimited()) {
+  if (/waiting for retry window/i.test(error) && Date.now() < rateLimitedUntil) {
     return Math.max(1, Math.ceil((rateLimitedUntil - Date.now()) / 1000));
   }
 
@@ -258,7 +328,7 @@ async function requestAskEdgar<T>(path: string, query: Record<string, string | n
   if (!apiKey) return toErrorResponse<T>('ASKEDGAR_API_KEY not configured');
 
   // If we recently got a 429, don't waste a call — fail fast
-  if (isRateLimited()) return toErrorResponse<T>('Rate limited — waiting for retry window');
+  if (Date.now() < rateLimitedUntil) return toErrorResponse<T>('Rate limited — waiting for retry window');
 
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
@@ -517,7 +587,8 @@ export async function fetchTickerData(
 ): Promise<TickerDataResult> {
   const startedAt = Date.now();
   const normalizedTicker = ticker.trim().toUpperCase();
-  resetCounterIfNeeded();
+  await syncDailyTickersFromDb();
+  await syncRateLimitFromDb();
   const dailyLimit = parseDailyLimit();
   if (!uniqueTickersToday.has(normalizedTicker) && uniqueTickersToday.size >= dailyLimit) {
     return {
@@ -531,6 +602,7 @@ export async function fetchTickerData(
     };
   }
   uniqueTickersToday.add(normalizedTicker);
+  void persistDailyTicker(normalizedTicker);
 
   const requested = opts?.endpoints ?? ENDPOINT_SCOPES.snapshot;
   const endpointConfigs: EndpointConfig[] = requested.map((key) => {
@@ -1126,7 +1198,7 @@ export function normalizeAskEdgarResponse(
 }
 
 export function getAskEdgarCallCount() {
-  resetCounterIfNeeded();
+  void syncDailyTickersFromDb();
   return uniqueTickersToday.size;
 }
 
@@ -1412,6 +1484,7 @@ const SCANNER_SUMMARY_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
  */
 export async function getCachedScannerSummary(ticker: string): Promise<ScannerSummaryResult> {
   const normalizedTicker = ticker.trim().toUpperCase();
+  await syncRateLimitFromDb();
   const db = getDb();
 
   if (db) {
