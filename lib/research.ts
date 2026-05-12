@@ -1,7 +1,3 @@
-import { and, desc, eq, gte } from 'drizzle-orm';
-
-import { getDb } from '@/lib/db';
-import { researchReports } from '@/lib/db/schema';
 import { getCachedTickerData } from '@/lib/askedgar';
 import type { AskEdgarResponse } from '@/lib/askedgar';
 import { callLlm } from '@/lib/llm-client';
@@ -123,82 +119,8 @@ function collectRawDataWarnings(rawData: unknown) {
 }
 
 /**
- * Fetch AskEdgar data for a ticker and cache it — no LLM call.
- * Used by the Research Tab to display raw structured data directly.
- */
-export async function fetchAndCacheRawReport(
-  userId: string,
-  ticker: string,
-): Promise<{
-  fromCache: boolean;
-  ticker: string;
-  rawData: Record<string, AskEdgarResponse<unknown>>;
-  warnings: string[];
-  generatedAt: string;
-}> {
-  const db = getDb();
-  if (!db) {
-    throw new Error('Database not configured');
-  }
-
-  const normalizedTicker = ticker.trim().toUpperCase();
-  if (!/^[A-Z0-9.\-^]+$/.test(normalizedTicker)) {
-    throw new Error('Invalid ticker');
-  }
-
-  const startOfDay = new Date();
-  startOfDay.setUTCHours(0, 0, 0, 0);
-
-  const [cached] = await db.select({
-    rawData: researchReports.rawData,
-    generatedAt: researchReports.generatedAt,
-  })
-    .from(researchReports)
-    .where(and(
-      eq(researchReports.userId, userId),
-      eq(researchReports.ticker, normalizedTicker),
-      gte(researchReports.generatedAt, startOfDay),
-    ))
-    .orderBy(desc(researchReports.generatedAt))
-    .limit(1);
-
-  if (isObject(cached?.rawData) && Object.keys(cached.rawData).length > 0) {
-    const generatedAt = cached.generatedAt ?? new Date();
-    return {
-      fromCache: true,
-      ticker: normalizedTicker,
-      rawData: cached.rawData as Record<string, AskEdgarResponse<unknown>>,
-      warnings: collectRawDataWarnings(cached.rawData),
-      generatedAt: generatedAt.toISOString(),
-    };
-  }
-
-  const result = await getCachedTickerData(normalizedTicker);
-  const generatedAt = new Date();
-
-  await db.insert(researchReports).values({
-    id: crypto.randomUUID(),
-    userId,
-    ticker: normalizedTicker,
-    status: 'complete',
-    rawData: result.rawData,
-    reportJson: null,
-    modelUsed: null,
-    generatedAt,
-  });
-
-  return {
-    fromCache: false,
-    ticker: normalizedTicker,
-    rawData: result.rawData,
-    warnings: result.warnings,
-    generatedAt: generatedAt.toISOString(),
-  };
-}
-
-/**
  * Generate a compact TLDR from AskEdgar data for the research tab display.
- * Expects rawData from fetchAndCacheRawReport() or fetchTickerData().
+ * Expects rawData from getCachedTickerData().
  */
 export async function runResearchTldr(
   rawData: Record<string, AskEdgarResponse<unknown>>,

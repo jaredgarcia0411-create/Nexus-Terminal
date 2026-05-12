@@ -49,8 +49,7 @@ export async function GET(request: Request) {
       .orderBy(desc(researchReports.generatedAt))
       .limit(1);
 
-    // Only return rows with a structured report_json - early-day rows seeded by
-    // fetchAndCacheRawReport() leave reportJson null. Treat those as "no fresh report".
+    // Older rows can have reportJson=null from legacy seeding; treat them as "no fresh report".
     if (latest?.reportJson) {
       return Response.json({
         ticker,

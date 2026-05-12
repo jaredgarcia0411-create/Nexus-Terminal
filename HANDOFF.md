@@ -1,187 +1,119 @@
 # Nexus Terminal - HANDOFF.md
 
-> Updated: 2026-05-11
+> Updated: 2026-05-12
 > Purpose: compact recent context and follow-ups. Older implementation detail lives in git history and `specs/`.
 
 > Historical completed sections were removed to keep this file focused. Use git history and the `specs/` directory for archived implementation detail.
 
 ## Active Execution Spec
 
-### Cleanup Step 1: Remove Discord research import stack + Schwab dead deps
+### Cleanup Step 2: Delete high-confidence dead components + `fetchAndCacheRawReport`
 
 > Generated: 2026-05-11 | Author: planning conversation (cleanup audit `docs/repo-cleanup.md`)
-> Status: COMPLETED — implemented and validated 2026-05-11
+> Status: COMPLETED — implemented and validated 2026-05-12
 > Executor: Codex
-> Validation: `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npm test`, `npm run db:migrate`, DB table check returned `[]`
+> Validation: Phase 1 `npx tsc --noEmit`; Phase 2 `npx tsc --noEmit`, `npm run lint`; final `npm run lint`, `npx tsc --noEmit`, `npm test`, dead-code grep returned zero matches.
 
 #### Goal
 
-This is the first step in a multi-step tech-debt cleanup. **Removals only — no refactors.** Two independent removals bundled into one PR because both are pure deletes with zero runtime risk:
+Step 2 of the cleanup roadmap. **Removals only — no refactors.** All four targets were verified dead with `rg` immediately before this spec was written:
 
-1. **Discord research import stack.** The historical Discord-channel import feature is being retired. Its only consumer was the AskEdgar TLDR route, which passed imported reports and a historical summary as extra LLM context. Nothing else writes to those tables. After this step, the TLDR runs on AskEdgar data alone (which is what the user expected it was already doing).
-2. **Schwab dependency + spec.** The `schwab_links` DB table was already dropped in migration `0018_nasty_warbird.sql`. Only the unused `@sudowealth/schwab-api` package and the never-shipped `specs/schwab-realtime-hybrid.md` spec remain. Both are pure deletes.
+- `WeeklyCalendar.tsx` — only self-references; Journal uses `TradingCalendar`.
+- `ResearchGainersList.tsx` — only self-references; current Research tab does not import it.
+- `HorizontalLinePrimitive.ts` — zero callers; horizontal lines are drawn via `series.createPriceLine()` in the chart component (the file is a stale type-only stub).
+- `fetchAndCacheRawReport()` in `lib/research.ts` — zero callers; the snapshot route uses `getCachedTickerData()` directly. Deleting it makes several `lib/research.ts` imports dead, which we drop in the same change.
 
-**What is NOT being removed here:**
-- `lib/agents/discord.ts` and `writeAndDeliverReport()` — this is the agent fan-out to Discord webhooks (small-cap-research, swing-trader-research, orchestrator-macro-summary, orchestrator-macro-intraday blueprints all call it). Different concern; stays.
-- `services/discord-bot/` — the standalone Discord bot service. Different concern; stays.
-- `__tests__/agent-discord.test.ts` — covers `lib/agents/discord.ts`, not the import stack.
+The stale comment in `app/api/research-report/route.ts:52` references `fetchAndCacheRawReport()` and gets updated since the function it cites is being deleted.
 
 #### Locked decisions
 
-- TLDR's `runResearchTldr` loses both `discordReport` and `historicalSummary` context params. The function signature, prompt builder, and route all drop those branches.
-- Both DB tables get dropped via a new Drizzle migration generated from the schema edit. Always use `npm run db:migrate` (never `db:push`).
-- The Vercel cron entry for `/api/discord/cron/sync` gets removed from `vercel.json`. `CRON_SECRET` stays in `.env.example` (still used by `mdr-sweep` and `agent-retention` crons), but its comment is updated.
-- Root `.env.example` loses `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID`. The `services/.env.example` keeps its own (separate set of) Discord vars for the bot service.
+- Sibling primitives (`FibonacciPrimitive.ts`, `RectanglePrimitive.ts`, `TrendLinePrimitive.ts`) **stay** — only `HorizontalLinePrimitive.ts` is dead.
+- The defensive `if (latest?.reportJson)` check in `app/api/research-report/route.ts` **stays** — older DB rows seeded by the old `fetchAndCacheRawReport()` may still have `reportJson = null`. Only the comment changes.
+- `lib/research.ts` keeps `getCachedTickerData`, `AskEdgarResponse`, `callLlm`, `isObject`, `parseJson`, `trimRawDataForLlm`, `collectRawDataWarnings`, `buildResearchTldrPrompt`, `runResearchTldr`. The drizzle/db imports become unused after the function is removed — they get dropped in the same edit.
+- No tests reference any of these symbols (verified). No test edits needed.
 
 ---
 
-#### Phase 1 — Delete the Discord import routes and library
+#### Phase 1 — Delete the three dead component files
 
-**Goal:** Remove the import surface area before touching consumers, so the next phases just delete dead-end imports.
+**Goal:** Remove dead UI files. Pure deletes; no consumers.
 
-1. Delete the following files:
-   - `app/api/discord/import/route.ts`
-   - `app/api/discord/sync/route.ts`
-   - `app/api/discord/cron/sync/route.ts`
-   - `lib/discord/parser.ts`
-   - `lib/discord/client.ts`
-   - `__tests__/discord-parser.test.ts`
-2. Delete the now-empty `app/api/discord/` tree (the `alerts/evaluate/` and `link/code/` directories under it are empty placeholders).
-3. Delete the now-empty `lib/discord/` directory.
+1. Delete `components/trading/WeeklyCalendar.tsx`.
+2. Delete `components/trading/ResearchGainersList.tsx`.
+3. Delete `components/trading/plugins/HorizontalLinePrimitive.ts`.
 
-**Validation after Phase 1:**
-- `npx tsc --noEmit` will fail because `app/api/askedgar/tldr/route.ts` still imports the deleted tables. That's expected; Phase 2 fixes it.
+**Validation after Phase 1:** `npx tsc --noEmit` should pass — none of these files are imported anywhere.
 
 ---
 
-#### Phase 2 — Remove Discord context from the TLDR route and `lib/research.ts`
-
-**Goal:** TLDR now only consumes AskEdgar data.
-
-**File:** `app/api/askedgar/tldr/route.ts`
-**Action:** MODIFY
-
-1. Remove these imports:
-   - `and, desc, eq` from `drizzle-orm` (the only remaining drizzle helper after this change is none — drop the import entirely)
-   - `importedResearchReports, tickerResearchSummaries` from `@/lib/db/schema`
-2. In the `POST` handler:
-   - Replace the `Promise.all([...])` block with a single `await getCachedTickerData(ticker)` call.
-   - Remove the `summaryRows`, `discordRows`, `historicalSummary`, `latestDiscord`, and `discordReport` locals.
-   - Remove `db.select(...)` calls entirely (the route no longer touches the DB).
-   - Call `runResearchTldr(askEdgarData.rawData, ticker)` without the third options arg.
-   - Drop `hasHistoricalData` from the response JSON.
-3. Also remove unused imports: `getDb`, `dbUnavailable`, the `db` local, and the `db == null` guard. The route only needs `requireUser`, `parseAndValidate`, `getCachedTickerData`, `runResearchTldr`, and the error helpers.
+#### Phase 2 — Delete `fetchAndCacheRawReport` and drop dead imports in `lib/research.ts`
 
 **File:** `lib/research.ts`
 **Action:** MODIFY
 
-1. Update `buildResearchTldrPrompt` signature — drop `historicalSummary` and `discordReport` from the options type. The new signature is:
+1. Delete the entire `fetchAndCacheRawReport` function (currently lines 125–197, including the `/** Fetch AskEdgar data... */` doc comment that precedes it on lines 125–128).
+2. Update the `runResearchTldr` doc comment (currently lines 199–202). Replace:
    ```ts
-   function buildResearchTldrPrompt(
-     reportData: Record<string, unknown[]>,
-     options?: { ticker?: string },
-   ): string
+   /**
+    * Generate a compact TLDR from AskEdgar data for the research tab display.
+    * Expects rawData from fetchAndCacheRawReport() or fetchTickerData().
+    */
    ```
-2. Inside `buildResearchTldrPrompt`, delete the two trailing template parts that append `<historical_summary>` and `<latest_discord_report>` blocks.
-3. Update `runResearchTldr` signature — drop the `context` parameter entirely. The new signature is:
+   with:
    ```ts
-   export async function runResearchTldr(
-     rawData: Record<string, AskEdgarResponse<unknown>>,
-     ticker: string,
-   ): Promise<ResearchTldr>
+   /**
+    * Generate a compact TLDR from AskEdgar data for the research tab display.
+    * Expects rawData from getCachedTickerData().
+    */
    ```
-4. Inside `runResearchTldr`, drop the `historicalSummary` and `discordReport` keys from the `buildResearchTldrPrompt` call.
+3. Drop the now-unused imports at the top of the file:
+   - Remove `and, desc, eq, gte` from the `drizzle-orm` import (line 1) — delete the whole import line; nothing else in this file uses drizzle helpers.
+   - Remove the `getDb` import from `@/lib/db` (line 3) — delete the whole line.
+   - Remove the `researchReports` import from `@/lib/db/schema` (line 4) — delete the whole line.
+4. The remaining imports at the top of the file should be exactly:
+   ```ts
+   import { getCachedTickerData } from '@/lib/askedgar';
+   import type { AskEdgarResponse } from '@/lib/askedgar';
+   import { callLlm } from '@/lib/llm-client';
+   ```
 
-**File:** `__tests__/askedgar-tldr-route.test.ts`
-**Action:** MODIFY
-
-1. Remove `summaryRows` and `discordRows` from the test mock helper signature.
-2. Remove the `selectCallIndex`-based mock that returns different rows depending on which query fires (the route no longer makes those queries).
-3. Drop assertions on `hasHistoricalData`, `historicalSummary`, and `discordReport` in `runResearchTldr` call args.
-4. Update the `it('returns 200 with ticker, TLDR findings payload, generatedAt, and hasHistoricalData', ...)` test name and assertions to reflect the new response shape (no `hasHistoricalData` field).
-
-**Validation after Phase 2:** `npm run lint && npx tsc --noEmit` should pass.
-
----
-
-#### Phase 3 — Drop the DB tables via migration
-
-**Goal:** Remove the now-unreferenced tables.
-
-**File:** `lib/db/schema.ts`
-**Action:** MODIFY
-
-1. Delete the `importedResearchReports` table export (currently at lines 139-153).
-2. Delete the `tickerResearchSummaries` table export (currently at lines 155-166).
-
-**Generate migration:**
-1. Run `npm run db:generate`. Drizzle Kit will create `drizzle/0030_<auto-name>.sql` containing `DROP TABLE` statements for both tables.
-2. Open the generated SQL file and confirm it contains:
-   - `DROP TABLE "imported_research_reports" CASCADE;`
-   - `DROP TABLE "ticker_research_summaries" CASCADE;`
-   - (and matching index/constraint drops if drizzle emits them)
-3. Run `npm run db:migrate` to apply. **Never use `db:push` on this repo** — it has a false-positive on composite PKs and corrupts the migration history.
-
-**Validation after Phase 3:** Local DB no longer has either table. `npx tsc --noEmit` still passes.
+**Validation after Phase 2:** `npx tsc --noEmit` and `npm run lint` should both pass.
 
 ---
 
-#### Phase 4 — Remove Vercel cron entry and env-var stubs
+#### Phase 3 — Update the stale comment in `app/api/research-report/route.ts`
 
-**File:** `vercel.json`
+**File:** `app/api/research-report/route.ts`
 **Action:** MODIFY
 
-Remove the first `crons` entry (`/api/discord/cron/sync`). The two remaining entries (`agent-retention`, `mdr-sweep`) stay. Final file:
+1. Replace the two-line comment at lines 52–53:
+   ```ts
+   // Only return rows with a structured report_json - early-day rows seeded by
+   // fetchAndCacheRawReport() leave reportJson null. Treat those as "no fresh report".
+   ```
+   with a single line:
+   ```ts
+   // Older rows can have reportJson=null from legacy seeding; treat them as "no fresh report".
+   ```
+2. Do not change the `if (latest?.reportJson)` check itself or any surrounding logic.
 
-```json
-{
-  "crons": [
-    {
-      "path": "/api/cron/agent-retention",
-      "schedule": "0 8 * * *"
-    },
-    {
-      "path": "/api/cron/mdr-sweep",
-      "schedule": "0 22 * * 1-5"
-    }
-  ]
-}
-```
-
-**File:** `.env.example`
-**Action:** MODIFY
-
-1. Delete the two-line block at the bottom for `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID` (plus their comment headers).
-2. Update the `CRON_SECRET` comment from `# Cron (required for Discord sync on Vercel)` to `# Cron (required for Vercel cron auth — mdr-sweep, agent-retention)`.
-3. `services/.env.example` is **not modified** — those Discord vars are for the standalone bot service.
-
-**Vercel dashboard cleanup (manual, do not script):** flag to the user that they should remove `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID` from the Vercel project's environment variables panel after this ships. Not a code change; goes in the commit message or PR body as a note.
+**Why we keep the null check:** historical rows in the `research_reports` table may still carry `reportJson = null` from past use of the deleted seeder. The defensive check is still correct; only the comment was citing a function that no longer exists.
 
 ---
 
-#### Phase 5 — Schwab cleanup
+#### Phase 4 — Final validation
 
-**File:** `package.json`
-**Action:** MODIFY
-
-Run `npm uninstall @sudowealth/schwab-api`. This removes the entry from `dependencies` and regenerates `package-lock.json`.
-
-**File:** `specs/schwab-realtime-hybrid.md`
-**Action:** DELETE
-
-The spec was never shipped (the `schwab_links` table it described was already dropped in migration 0018). Delete the file.
-
----
-
-#### Phase 6 — Final validation
-
-Run from repo root:
+Run from repo root, in order:
 
 1. `npm run lint`
 2. `npx tsc --noEmit`
-3. `npm run typecheck:services` (we didn't touch `services/`, but the migration ran so this confirms the services TS still resolves the schema)
-4. `npm test`
-5. `grep -rn "lib/discord\|importedResearchReports\|tickerResearchSummaries\|schwab" --include='*.ts' --include='*.tsx' .` should return only matches inside `drizzle/` migration history (which is correct — old migrations stay as history) and `lib/agents/discord.ts` (which is the agent fan-out, intentionally kept).
+3. `npm test`
+4. Final dead-code grep:
+   ```bash
+   grep -rn "WeeklyCalendar\|ResearchGainersList\|HorizontalLinePrimitive\|fetchAndCacheRawReport" \
+     --include='*.ts' --include='*.tsx' .
+   ```
+   Should return **zero matches** outside `.opencode/reports/` (which contains historical audit snapshots — intentionally left alone) and `docs/repo-cleanup.md` (the audit doc — historical reference, intentionally left alone).
 
 If anything fails, stop and surface the failure. Do not commit half-finished state.
 
@@ -191,30 +123,29 @@ If anything fails, stop and surface the failure. Do not commit half-finished sta
 
 | File | Change | Risk |
 |---|---|---|
-| `app/api/discord/import/route.ts` | DELETE | Low |
-| `app/api/discord/sync/route.ts` | DELETE | Low |
-| `app/api/discord/cron/sync/route.ts` | DELETE | Low |
-| `lib/discord/parser.ts` | DELETE | Low |
-| `lib/discord/client.ts` | DELETE | Low |
-| `__tests__/discord-parser.test.ts` | DELETE | Low |
-| `app/api/askedgar/tldr/route.ts` | Drop DB queries + Discord/historical context | Med |
-| `lib/research.ts` | Drop context params from `buildResearchTldrPrompt` + `runResearchTldr` | Med |
-| `__tests__/askedgar-tldr-route.test.ts` | Drop discord/summary mock paths + assertions | Low |
-| `lib/db/schema.ts` | Delete `importedResearchReports` + `tickerResearchSummaries` exports | Med |
-| `drizzle/0030_*.sql` | NEW — drop both tables (auto-generated) | Med |
-| `vercel.json` | Remove `/api/discord/cron/sync` cron entry | Low |
-| `.env.example` | Remove Discord vars + update CRON_SECRET comment | Low |
-| `package.json` + `package-lock.json` | `npm uninstall @sudowealth/schwab-api` | Low |
-| `specs/schwab-realtime-hybrid.md` | DELETE | Low |
+| `components/trading/WeeklyCalendar.tsx` | DELETE | Low |
+| `components/trading/ResearchGainersList.tsx` | DELETE | Low |
+| `components/trading/plugins/HorizontalLinePrimitive.ts` | DELETE | Low |
+| `lib/research.ts` | Delete `fetchAndCacheRawReport` + drop 3 dead import lines + docstring fix | Low |
+| `app/api/research-report/route.ts` | Replace stale 2-line comment with 1-line comment (line 52–53) | Low |
+
+#### Acceptance Criteria
+
+- [x] All three component files are deleted from the working tree.
+- [x] `lib/research.ts` no longer exports `fetchAndCacheRawReport`.
+- [x] `lib/research.ts` only imports `getCachedTickerData`, `AskEdgarResponse`, and `callLlm`.
+- [x] `runResearchTldr`'s doc comment no longer mentions `fetchAndCacheRawReport`.
+- [x] `app/api/research-report/route.ts` line 52 comment no longer mentions `fetchAndCacheRawReport`; the `if (latest?.reportJson)` check is unchanged.
+- [x] `npm run lint` passes.
+- [x] `npx tsc --noEmit` passes.
+- [x] `npm test` passes.
+- [x] Final grep for the four identifiers returns zero matches in `*.ts` / `*.tsx` outside `.opencode/reports/`.
 
 #### Out of scope
 
-- `lib/agents/discord.ts` and `writeAndDeliverReport` (agent fan-out to Discord webhooks — used by all blueprints; stays).
-- `services/discord-bot/` (standalone bot service; stays).
-- `__tests__/agent-discord.test.ts` (covers the agent fan-out, not the import stack; stays).
-- Cleaning up `HANDOFF.md` stale `fetchAndCacheRawReport()` comment in `app/api/research-report/route.ts:52` — happens in Step 2 when that function is deleted.
-- All medium-confidence removal candidates from `docs/repo-cleanup.md` (saved-tickers, daily-summary, agents/research direct route, askedgar/lookup, legacy `agentMemory` schema). Parked for a later decision.
-- Any refactor work (AskEdgar module split, TradingView client extraction, client cache hook, hooks/use-trades.ts decomposition).
+- Step 3 medium-confidence removals (`saved-tickers`, `daily-summary`, `/api/agents/research`, `/api/askedgar/lookup`, legacy `agentMemory` schema). Each needs a product-side decision first.
+- Any other entries in `docs/repo-cleanup.md` (cost/reliability fixes, refactors, docs drift). Those are Steps 4–6.
+- Updating `.opencode/reports/` historical audit snapshots — they are timestamped records and should not be edited retroactively.
 
 ---
 
@@ -223,11 +154,11 @@ If anything fails, stop and surface the failure. Do not commit half-finished sta
 The full cleanup is sequenced as removals first, then fixes, then refactors. Each step gets its own HANDOFF spec when we're ready to execute it.
 
 1. **Step 1 (COMPLETED 2026-05-11):** Discord research import stack + Schwab dead deps.
-2. **Step 2 — High-confidence dead code:** Delete `components/trading/WeeklyCalendar.tsx`, `components/trading/ResearchGainersList.tsx`, `components/trading/plugins/HorizontalLinePrimitive.ts`, and `fetchAndCacheRawReport()` in `lib/research.ts`. Fix the now-stale comment in `app/api/research-report/route.ts:52` that references it. Final `rg` verification before each delete.
+2. **Step 2 (COMPLETED 2026-05-12):** High-confidence dead code: `WeeklyCalendar`, `ResearchGainersList`, `HorizontalLinePrimitive`, `fetchAndCacheRawReport()`, plus the stale comment in `app/api/research-report/route.ts:52`.
 3. **Step 3 — Medium-confidence removals (decision pass):** Walk through saved-tickers, market-data/daily-summary, `/api/agents/research` direct route, `/api/askedgar/lookup`, and legacy `agentMemory` schema. Each needs a product-side decision before deletion. Backend-only routes may have manual cURL consumers you forgot about.
 4. **Step 4 — Cost/reliability fixes:** Make `/api/research-report` POST idempotent (DB-backed ticker claim to prevent duplicate paid LLM calls); route site-report LLM usage through `lib/agents/runtime-limits.ts` budget telemetry; move AskEdgar daily-cap + retry-window state into Postgres (module memory resets on Vercel cold start, so today's caps are advisory only). Add one short-TTL server aggregate endpoint for the dashboard scanner polling.
 5. **Step 5 — Refactors (only after pruning):** Split `lib/askedgar.ts` (1,462 lines) into `endpoints` / `fanout` / `cache` / `snapshot-normalizer`. Extract `lib/tradingview-client.ts` for shared TradingView scan logic. Replace module-level client caches in `ResearchTldr`, `ResearchReportPanel`, `MacroSummaryPanel`, `use-candle-data` with one TTL-aware resource hook.
-6. **Step 6 — Docs drift:** Compact `HANDOFF.md` after Step 5 (or sooner if it gets stale again). Update `README.md` env-var section (`JARVIS_*` → `LLM_*` / `BACKGROUND_LLM_*`). Update `docs/VALIDATION_MATRIX.md` (refs deleted `services/backtest-*`). Sync `codex-skills/nexus-vercel-ops/SKILL.md` and `docs/FUTURE-PLANS.md` cron counts (will be 2 after Step 1, not 3). Update `AGENTS.md` validation-file count.
+6. **Step 6 — Docs drift:** Compact `HANDOFF.md` after Step 5 (or sooner if it gets stale again). Update `README.md` env-var section (`JARVIS_*` → `LLM_*` / `BACKGROUND_LLM_*`). Update `docs/VALIDATION_MATRIX.md` (refs deleted `services/backtest-*`). Sync `codex-skills/nexus-vercel-ops/SKILL.md` and `docs/FUTURE-PLANS.md` cron counts (now 2 after Step 1, not 3). Update `AGENTS.md` validation-file count.
 
 Codex-skills sync work is intentionally **excluded** from this roadmap per user direction.
 
@@ -235,6 +166,7 @@ Codex-skills sync work is intentionally **excluded** from this roadmap per user 
 
 ## Recently Completed Summary
 
+- 2026-05-12: Cleanup Step 2 removed dead `WeeklyCalendar`, `ResearchGainersList`, and `HorizontalLinePrimitive` files; deleted `fetchAndCacheRawReport()` from `lib/research.ts`; and replaced the stale research-report route comment. Validation passed.
 - 2026-05-11: Cleanup Step 1 removed the retired Discord research import stack, dropped `imported_research_reports` and `ticker_research_summaries` via `drizzle/0030_freezing_charles_xavier.sql`, removed the Discord sync cron/root env stubs, and uninstalled the unused Schwab package/spec. TLDR now runs on AskEdgar data only.
 - 2026-05-07: Research Report wiring (site endpoint + auto-cache + Research tab panel), TLDR risk-ranked refactor (`{ findings, historicalContext }`), and Research-tab empty-state polish. Code-validated; authenticated/manual browser smoke pending.
 - 2026-05-07: Research tab refresh shipped (8 → 5 tabs, Dilution rewrite, auto-TLDR, Overview rebuild, conditional chart). Then Dilution Rating + chart-less header polish, `overall_offering_risk` mapped from AskEdgar dilution-rating endpoint, Overview titles bumped to `text-base`, inner-scroll restructure.
