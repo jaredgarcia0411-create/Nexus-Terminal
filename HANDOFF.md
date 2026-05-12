@@ -10,7 +10,7 @@
 ### Cleanup Step 4: Cost/reliability fixes (POST idempotency, site-report telemetry, AskEdgar Postgres state, scanner aggregate)
 
 > Generated: 2026-05-13 | Author: planning conversation (cleanup roadmap step 4)
-> Status: IN PROGRESS — Phase 1 complete; stopped at first checkpoint for review.
+> Status: IN PROGRESS — Phase 2 complete; stopped at second checkpoint for review.
 > Executor: Codex
 > Commit strategy: **one commit per phase** (4 commits). Codex must stop and commit at each `# COMMIT POINT` marker, wait for human review before continuing.
 
@@ -264,6 +264,8 @@ These four are independent; each phase commits separately so we can bisect if a 
 #### Phase 2 — Route site-report LLM usage through `runtime-limits.ts` telemetry
 
 **# COMMIT POINT after Phase 2.**
+
+> Checkpoint status: COMPLETE — `npx vitest run __tests__/research-report-route.test.ts`, `npm run lint`, `npx tsc --noEmit`, `npm test`, and `npm run workflow:audit` passed.
 
 **Files:**
 - `lib/agents/blueprints/small-cap-research.ts` (modify exported function only)

@@ -2,13 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   ensureUserMock,
+  estimateCostCentsMock,
   generateSmallCapResearchReportMock,
   getDbMock,
+  recordLlmAttemptMock,
   requireUserMock,
 } = vi.hoisted(() => ({
   ensureUserMock: vi.fn(),
+  estimateCostCentsMock: vi.fn(() => 12),
   generateSmallCapResearchReportMock: vi.fn(),
   getDbMock: vi.fn(),
+  recordLlmAttemptMock: vi.fn(async () => undefined),
   requireUserMock: vi.fn(),
 }));
 
@@ -30,6 +34,14 @@ vi.mock('@/lib/agents/blueprints/small-cap-research', () => ({
   generateSmallCapResearchReport: generateSmallCapResearchReportMock,
 }));
 
+vi.mock('@/lib/agents/runtime-limits', () => ({
+  recordLlmAttempt: recordLlmAttemptMock,
+}));
+
+vi.mock('@/lib/agents/model-pricing', () => ({
+  estimateCostCents: estimateCostCentsMock,
+}));
+
 import { GET, POST } from '@/app/api/research-report/route';
 
 const sampleReport = {
@@ -48,6 +60,13 @@ const sampleReport = {
   financialCommentary: { rating: 'yellow', explanation: 'Liquidity is tight.', source: 'llm' },
   confidence: 'high',
   evidenceIds: ['filing-1'],
+};
+
+const sampleLlmUsage = {
+  modelUsed: 'llama-3.3-70b-versatile',
+  inputTokens: 1200,
+  outputTokens: 800,
+  durationMs: 4500,
 };
 
 function createJsonRequest(body: string) {
@@ -140,7 +159,12 @@ describe('/api/research-report', () => {
       picture: null,
     });
     getDbMock.mockReturnValue(createSelectDb([]));
-    generateSmallCapResearchReportMock.mockResolvedValue(sampleReport);
+    generateSmallCapResearchReportMock.mockResolvedValue({
+      report: sampleReport,
+      llmUsage: sampleLlmUsage,
+    });
+    recordLlmAttemptMock.mockResolvedValue(undefined);
+    estimateCostCentsMock.mockReturnValue(12);
   });
 
   afterEach(() => {
@@ -210,6 +234,31 @@ describe('/api/research-report', () => {
       reportJson: sampleReport,
       modelUsed: 'small-cap-research',
     }));
+  });
+
+  it('records LLM telemetry after a successful generation', async () => {
+    const db = createMutationDb();
+    getDbMock.mockReturnValueOnce(db);
+
+    const response = ensureResponse(await POST(createJsonRequest(JSON.stringify({ ticker: 'AAPL' }))));
+    await response.json();
+
+    expect(response.status).toBe(200);
+    expect(recordLlmAttemptMock).toHaveBeenCalledTimes(1);
+    expect(recordLlmAttemptMock).toHaveBeenCalledWith(db, expect.objectContaining({
+      userId: 'user-canonical',
+      agentId: 'small-cap-trader',
+      mode: 'site-research-report',
+      lane: 'background',
+      success: true,
+      modelUsed: 'llama-3.3-70b-versatile',
+      inputTokens: 1200,
+      outputTokens: 800,
+      totalTokens: 2000,
+      estimatedCostCents: 12,
+      durationMs: 4500,
+    }));
+    expect(estimateCostCentsMock).toHaveBeenCalledWith('llama-3.3-70b-versatile', 1200, 800);
   });
 
   it('returns validation details for an invalid POST ticker', async () => {
@@ -288,6 +337,33 @@ describe('/api/research-report', () => {
 
     expect(response.status).toBe(500);
     expect(payload).toEqual({ error: 'Internal server error' });
+    expect(db.delete).toHaveBeenCalledTimes(2);
+    expect(db.deleteWhere).toHaveBeenCalledTimes(2);
+  });
+
+  it('records a failed LLM telemetry entry when generation throws', async () => {
+    const db = createMutationDb();
+    getDbMock.mockReturnValueOnce(db);
+    generateSmallCapResearchReportMock.mockRejectedValueOnce(new Error('LLM unavailable'));
+
+    const response = ensureResponse(await POST(createJsonRequest(JSON.stringify({ ticker: 'AAPL' }))));
+    await response.json();
+
+    expect(response.status).toBe(500);
+    expect(recordLlmAttemptMock).toHaveBeenCalledTimes(1);
+    expect(recordLlmAttemptMock).toHaveBeenCalledWith(db, expect.objectContaining({
+      userId: 'user-canonical',
+      agentId: 'small-cap-trader',
+      mode: 'site-research-report',
+      lane: 'background',
+      success: false,
+      modelUsed: 'unknown',
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      estimatedCostCents: 0,
+      durationMs: expect.any(Number),
+    }));
     expect(db.delete).toHaveBeenCalledTimes(2);
     expect(db.deleteWhere).toHaveBeenCalledTimes(2);
   });

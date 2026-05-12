@@ -2,6 +2,8 @@ import { and, desc, eq, gte, lt } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { generateSmallCapResearchReport } from '@/lib/agents/blueprints/small-cap-research';
+import { estimateCostCents } from '@/lib/agents/model-pricing';
+import { recordLlmAttempt } from '@/lib/agents/runtime-limits';
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { researchReports } from '@/lib/db/schema';
@@ -155,7 +157,47 @@ export async function POST(request: Request) {
     }
 
     try {
-      const report = await generateSmallCapResearchReport(ticker);
+      const telemetryDb = db as unknown as Parameters<typeof recordLlmAttempt>[0];
+      const generationStart = Date.now();
+      let generation: Awaited<ReturnType<typeof generateSmallCapResearchReport>>;
+      try {
+        generation = await generateSmallCapResearchReport(ticker);
+      } catch (genErr) {
+        await recordLlmAttempt(telemetryDb, {
+          userId: user.id,
+          agentId: 'small-cap-trader',
+          mode: 'site-research-report',
+          lane: 'background',
+          modelUsed: 'unknown',
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          estimatedCostCents: 0,
+          durationMs: Date.now() - generationStart,
+          success: false,
+        }).catch(() => undefined);
+        throw genErr;
+      }
+
+      const { report, llmUsage } = generation;
+      await recordLlmAttempt(telemetryDb, {
+        userId: user.id,
+        agentId: 'small-cap-trader',
+        mode: 'site-research-report',
+        lane: 'background',
+        modelUsed: llmUsage.modelUsed,
+        inputTokens: llmUsage.inputTokens,
+        outputTokens: llmUsage.outputTokens,
+        totalTokens: llmUsage.inputTokens + llmUsage.outputTokens,
+        estimatedCostCents: estimateCostCents(
+          llmUsage.modelUsed,
+          llmUsage.inputTokens,
+          llmUsage.outputTokens,
+        ),
+        durationMs: llmUsage.durationMs,
+        success: true,
+      }).catch(() => undefined);
+
       const generatedAt = new Date();
       await db.update(researchReports)
         .set({

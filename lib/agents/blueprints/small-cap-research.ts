@@ -798,9 +798,19 @@ export async function loadSmallCapSystemPrompt() {
  * Reuses the agent's prompt + analysis pipeline but skips Discord delivery and memory persistence -
  * intended for the Research tab's site-only API route. Uses the BACKGROUND_LLM_API_KEY (paid lane).
  */
+export interface ResearchReportGeneration {
+  report: z.infer<typeof researchReportSchema>;
+  llmUsage: {
+    modelUsed: string;
+    inputTokens: number;
+    outputTokens: number;
+    durationMs: number;
+  };
+}
+
 export async function generateSmallCapResearchReport(
   ticker: string,
-): Promise<z.infer<typeof researchReportSchema>> {
+): Promise<ResearchReportGeneration> {
   const normalized = ticker.trim().toUpperCase();
   researchTickerInputSchema.parse({ ticker: normalized });
 
@@ -875,7 +885,15 @@ export async function generateSmallCapResearchReport(
     parsed.financialCommentary.source = 'llm';
   }
 
-  return parsed;
+  return {
+    report: parsed,
+    llmUsage: {
+      modelUsed: llmResponse.modelUsed,
+      inputTokens: llmResponse.inputTokens,
+      outputTokens: llmResponse.outputTokens,
+      durationMs: llmResponse.durationMs,
+    },
+  };
 }
 
 export const smallCapResearchBlueprint: Blueprint = {
