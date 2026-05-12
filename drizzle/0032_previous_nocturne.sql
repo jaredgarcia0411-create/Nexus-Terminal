@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "research_reports_in_progress_ticker_idx" ON "research_reports" USING btree ("ticker") WHERE status = 'in_progress';

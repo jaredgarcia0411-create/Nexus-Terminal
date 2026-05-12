@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { pgTable, text, doublePrecision, integer, real, serial, timestamp, primaryKey, index, uniqueIndex, unique, foreignKey, jsonb, date, boolean } from 'drizzle-orm/pg-core';
 import { randomUUID } from 'crypto';
 
@@ -119,6 +120,9 @@ export const researchReports = pgTable('research_reports', {
   generatedAt: timestamp('generated_at', { withTimezone: true }).defaultNow(),
 }, (table) => [
   index('research_reports_user_ticker_idx').on(table.userId, table.ticker, table.generatedAt),
+  uniqueIndex('research_reports_in_progress_ticker_idx')
+    .on(table.ticker)
+    .where(sql`status = 'in_progress'`),
 ]);
 
 // Shared cache for Ask Edgar API responses — no userId, shared across all users

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   ensureUserMock,
@@ -72,10 +72,54 @@ function createSelectDb(rows: unknown[]) {
   return { select, from, where, orderBy, limit };
 }
 
-function createInsertDb() {
-  const values = vi.fn(async () => undefined);
-  const insert = vi.fn(() => ({ values }));
-  return { insert, values };
+function createMutationDb({
+  insertWillConflict = false,
+  selectRowsByCall = [[]],
+}: {
+  insertWillConflict?: boolean;
+  selectRowsByCall?: unknown[][];
+} = {}) {
+  const insertValues = vi.fn(async () => {
+    if (insertWillConflict) {
+      const err = new Error('duplicate key value violates unique constraint');
+      (err as Error & { code?: string }).code = '23505';
+      throw err;
+    }
+  });
+  const insert = vi.fn(() => ({ values: insertValues }));
+
+  const updateWhere = vi.fn(async () => undefined);
+  const updateSet = vi.fn(() => ({ where: updateWhere }));
+  const update = vi.fn(() => ({ set: updateSet }));
+
+  const deleteWhere = vi.fn(async () => undefined);
+  const del = vi.fn(() => ({ where: deleteWhere }));
+
+  let selectCall = 0;
+  const limit = vi.fn(async (count: number) => {
+    const rows = selectRowsByCall[Math.min(selectCall, selectRowsByCall.length - 1)] ?? [];
+    selectCall += 1;
+    return rows.slice(0, count);
+  });
+  const orderBy = vi.fn(() => ({ limit }));
+  const where = vi.fn(() => ({ orderBy }));
+  const from = vi.fn(() => ({ where }));
+  const select = vi.fn(() => ({ from }));
+
+  return {
+    delete: del,
+    deleteWhere,
+    from,
+    insert,
+    insertValues,
+    limit,
+    orderBy,
+    select,
+    update,
+    updateSet,
+    updateWhere,
+    where,
+  };
 }
 
 describe('/api/research-report', () => {
@@ -97,6 +141,10 @@ describe('/api/research-report', () => {
     });
     getDbMock.mockReturnValue(createSelectDb([]));
     generateSmallCapResearchReportMock.mockResolvedValue(sampleReport);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('returns cached reports from GET without generating', async () => {
@@ -131,8 +179,8 @@ describe('/api/research-report', () => {
     expect(payload).toEqual({ ticker: 'AAPL', report: null, generatedAt: null, cached: false });
   });
 
-  it('generates and stores a report from POST with the canonical user id', async () => {
-    const db = createInsertDb();
+  it('generates and stores a report from POST when no claim exists', async () => {
+    const db = createMutationDb();
     getDbMock.mockReturnValueOnce(db);
 
     const response = ensureResponse(await POST(createJsonRequest(JSON.stringify({ ticker: ' aapl ' }))));
@@ -146,12 +194,19 @@ describe('/api/research-report', () => {
       cached: false,
     });
     expect(ensureUserMock).toHaveBeenCalledWith(db, expect.objectContaining({ id: 'user-session' }));
-    expect(generateSmallCapResearchReportMock).toHaveBeenCalledWith('AAPL');
-    expect(db.values).toHaveBeenCalledWith(expect.objectContaining({
+    expect(db.delete).toHaveBeenCalledTimes(1);
+    expect(db.insertValues).toHaveBeenCalledWith(expect.objectContaining({
       userId: 'user-canonical',
       ticker: 'AAPL',
-      status: 'complete',
+      status: 'in_progress',
       rawData: null,
+      reportJson: null,
+      modelUsed: null,
+    }));
+    expect(generateSmallCapResearchReportMock).toHaveBeenCalledWith('AAPL');
+    expect(db.update).toHaveBeenCalledTimes(1);
+    expect(db.updateSet).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'complete',
       reportJson: sampleReport,
       modelUsed: 'small-cap-research',
     }));
@@ -171,5 +226,69 @@ describe('/api/research-report', () => {
       },
     });
     expect(generateSmallCapResearchReportMock).not.toHaveBeenCalled();
+  });
+
+  it('polls and returns the completed report when another caller holds the claim', async () => {
+    vi.useFakeTimers();
+    const generatedAt = new Date('2026-05-07T14:30:00.000Z');
+    const db = createMutationDb({
+      insertWillConflict: true,
+      selectRowsByCall: [
+        [],
+        [{
+          reportJson: sampleReport,
+          generatedAt,
+          modelUsed: 'small-cap-research',
+        }],
+      ],
+    });
+    getDbMock.mockReturnValueOnce(db);
+
+    const responsePromise = POST(createJsonRequest(JSON.stringify({ ticker: 'AAPL' })));
+    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(2000);
+    const response = ensureResponse(await responsePromise);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      ticker: 'AAPL',
+      report: sampleReport,
+      generatedAt: generatedAt.toISOString(),
+      modelUsed: 'small-cap-research',
+      cached: true,
+    });
+    expect(generateSmallCapResearchReportMock).not.toHaveBeenCalled();
+    expect(db.select).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns 503 when polling times out waiting for another caller', async () => {
+    vi.useFakeTimers();
+    const db = createMutationDb({ insertWillConflict: true });
+    getDbMock.mockReturnValueOnce(db);
+
+    const responsePromise = POST(createJsonRequest(JSON.stringify({ ticker: 'AAPL' })));
+    await vi.advanceTimersByTimeAsync(60_000);
+    const response = ensureResponse(await responsePromise);
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload).toEqual({ error: 'Report generation in progress; retry shortly.' });
+    expect(generateSmallCapResearchReportMock).not.toHaveBeenCalled();
+    expect(db.select).toHaveBeenCalledTimes(30);
+  });
+
+  it('drops the claim when LLM generation fails', async () => {
+    const db = createMutationDb();
+    getDbMock.mockReturnValueOnce(db);
+    generateSmallCapResearchReportMock.mockRejectedValueOnce(new Error('LLM unavailable'));
+
+    const response = ensureResponse(await POST(createJsonRequest(JSON.stringify({ ticker: 'AAPL' }))));
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(payload).toEqual({ error: 'Internal server error' });
+    expect(db.delete).toHaveBeenCalledTimes(2);
+    expect(db.deleteWhere).toHaveBeenCalledTimes(2);
   });
 });

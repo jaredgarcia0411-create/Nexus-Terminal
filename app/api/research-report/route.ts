@@ -1,4 +1,4 @@
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { and, desc, eq, gte, lt } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { generateSmallCapResearchReport } from '@/lib/agents/blueprints/small-cap-research';
@@ -19,6 +19,16 @@ const CACHE_TTL_HOURS = 16;
 const postSchema = z.object({
   ticker: z.string().trim().toUpperCase().regex(tickerPattern, 'Valid ticker required'),
 });
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const maybeError = err as { code?: unknown; cause?: { code?: unknown } };
+  return maybeError.code === '23505' || maybeError.cause?.code === '23505';
+}
 
 export async function GET(request: Request) {
   try {
@@ -44,6 +54,7 @@ export async function GET(request: Request) {
       .from(researchReports)
       .where(and(
         eq(researchReports.ticker, ticker),
+        eq(researchReports.status, 'complete'),
         gte(researchReports.generatedAt, freshSince),
       ))
       .orderBy(desc(researchReports.generatedAt))
@@ -80,28 +91,91 @@ export async function POST(request: Request) {
     const { ticker } = bodyState.data;
 
     const user = await ensureUser(db, authState.user);
-    const report = await generateSmallCapResearchReport(ticker);
-    const generatedAt = new Date();
 
-    // Audit trail: store who triggered the generation. The GET above ignores userId
-    // for cache reads so the row still satisfies the team-wide 16h cache window.
-    await db.insert(researchReports).values({
-      id: crypto.randomUUID(),
-      userId: user.id,
-      ticker,
-      status: 'complete',
-      rawData: null,
-      reportJson: report,
-      modelUsed: 'small-cap-research',
-      generatedAt,
-    });
+    const staleSince = new Date(Date.now() - 90_000);
+    await db.delete(researchReports).where(and(
+      eq(researchReports.ticker, ticker),
+      eq(researchReports.status, 'in_progress'),
+      lt(researchReports.generatedAt, staleSince),
+    ));
 
-    return Response.json({
-      ticker,
-      report,
-      generatedAt: generatedAt.toISOString(),
-      cached: false,
-    });
+    const claimId = crypto.randomUUID();
+    const claimedAt = new Date();
+    let isOwner = true;
+    try {
+      await db.insert(researchReports).values({
+        id: claimId,
+        userId: user.id,
+        ticker,
+        status: 'in_progress',
+        rawData: null,
+        reportJson: null,
+        modelUsed: null,
+        generatedAt: claimedAt,
+      });
+    } catch (insertError) {
+      if (!isUniqueViolation(insertError)) throw insertError;
+      isOwner = false;
+    }
+
+    if (!isOwner) {
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await sleep(2000);
+        const freshSince = new Date(Date.now() - CACHE_TTL_HOURS * 60 * 60 * 1000);
+        const [latest] = await db
+          .select({
+            reportJson: researchReports.reportJson,
+            generatedAt: researchReports.generatedAt,
+            modelUsed: researchReports.modelUsed,
+          })
+          .from(researchReports)
+          .where(and(
+            eq(researchReports.ticker, ticker),
+            eq(researchReports.status, 'complete'),
+            gte(researchReports.generatedAt, freshSince),
+          ))
+          .orderBy(desc(researchReports.generatedAt))
+          .limit(1);
+
+        if (latest?.reportJson) {
+          return Response.json({
+            ticker,
+            report: latest.reportJson,
+            generatedAt: latest.generatedAt?.toISOString() ?? null,
+            modelUsed: latest.modelUsed,
+            cached: true,
+          });
+        }
+      }
+
+      return Response.json(
+        { error: 'Report generation in progress; retry shortly.' },
+        { status: 503 },
+      );
+    }
+
+    try {
+      const report = await generateSmallCapResearchReport(ticker);
+      const generatedAt = new Date();
+      await db.update(researchReports)
+        .set({
+          status: 'complete',
+          reportJson: report,
+          modelUsed: 'small-cap-research',
+          generatedAt,
+        })
+        .where(eq(researchReports.id, claimId));
+
+      return Response.json({
+        ticker,
+        report,
+        generatedAt: generatedAt.toISOString(),
+        cached: false,
+      });
+    } catch (generationError) {
+      await db.delete(researchReports).where(eq(researchReports.id, claimId)).catch(() => undefined);
+      throw generationError;
+    }
   } catch (error) {
     logRouteError('research-report:post', error);
     return internalServerError();
