@@ -91,10 +91,13 @@ export default function DailyReportSheet({
           setExisting(found);
           setFields(cloneTemplateFields(found.templateSnapshot));
           const agg = aggregateDay(trades, date);
-          const merged: Record<string, unknown> = { ...found.reportData };
-          if (merged.grossResult == null) merged.grossResult = formatCurrency(agg.grossResult);
-          if (merged.netResult == null) merged.netResult = formatCurrency(agg.netResult);
-          if (merged.rTotal == null) merged.rTotal = `${agg.rTotal.toFixed(2)}R`;
+          // Auto fields are read-only (see TemplateFieldRenderer) — always overwrite so stale saved zeros don't shadow fresh aggregates.
+          const merged: Record<string, unknown> = {
+            ...found.reportData,
+            grossResult: formatCurrency(agg.grossResult),
+            netResult: formatCurrency(agg.netResult),
+            rTotal: `${agg.rTotal.toFixed(2)}R`,
+          };
           setReportData(merged);
         } else if (tmpl) {
           setFields(cloneTemplateFields(tmpl.fields));
