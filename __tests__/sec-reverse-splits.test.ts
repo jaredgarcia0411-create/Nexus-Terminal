@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getCikForTickerMock, getRecentFilingsMock, getFilingBodyMock } = vi.hoisted(() => ({
+const { getCikForTickerMock, getSecFilingsForProfileMock, getFilingBodyMock } = vi.hoisted(() => ({
   getCikForTickerMock: vi.fn(),
-  getRecentFilingsMock: vi.fn(),
+  getSecFilingsForProfileMock: vi.fn(),
   getFilingBodyMock: vi.fn(),
 }));
 
@@ -11,7 +11,13 @@ vi.mock('@/lib/sec/cik-map', () => ({
 }));
 
 vi.mock('@/lib/sec/submissions', () => ({
-  getRecentFilings: getRecentFilingsMock,
+  getSecFilingsForProfile: getSecFilingsForProfileMock,
+  getSecFilingPullProfileConfig: () => ({
+    limit: 1000,
+    sinceDays: 3650,
+    parseCandidateLimit: 200,
+    metadataOnly: false,
+  }),
 }));
 
 vi.mock('@/lib/sec/filing-body', () => ({
@@ -28,7 +34,7 @@ describe('getReverseSplits', () => {
       name: 'Galena',
       exchange: 'Nasdaq',
     });
-    getRecentFilingsMock.mockResolvedValue({
+    getSecFilingsForProfileMock.mockResolvedValue({
       status: 'success',
       count: 4,
       results: [
@@ -98,7 +104,7 @@ describe('getReverseSplits', () => {
 
     const result = await getReverseSplits('GLND');
 
-    expect(getRecentFilingsMock).toHaveBeenCalledWith('GLND', { limit: 200, sinceDays: 3650 });
+    expect(getSecFilingsForProfileMock).toHaveBeenCalledWith('GLND', 'reverse-splits');
     expect(getFilingBodyMock).toHaveBeenCalledTimes(2);
     expect(getFilingBodyMock).toHaveBeenNthCalledWith(1, {
       accessionNumber: '0001234567-26-000004',

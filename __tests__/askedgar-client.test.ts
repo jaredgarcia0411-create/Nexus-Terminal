@@ -12,12 +12,12 @@ vi.mock('@/lib/db', async () => {
   };
 });
 
-const { getRecentFilingsMock } = vi.hoisted(() => ({
-  getRecentFilingsMock: vi.fn(),
+const { getResearchFilingsMock } = vi.hoisted(() => ({
+  getResearchFilingsMock: vi.fn(),
 }));
 
 vi.mock('@/lib/sec/submissions', () => ({
-  getRecentFilings: getRecentFilingsMock,
+  getResearchFilings: getResearchFilingsMock,
 }));
 
 const { getHistoricalOutstandingMock } = vi.hoisted(() => ({
@@ -168,17 +168,25 @@ describe('askedgar client', () => {
     vi.resetModules();
     getDbMock.mockReset();
     getDbMock.mockReturnValue(undefined);
-    getRecentFilingsMock.mockReset();
-    getRecentFilingsMock.mockResolvedValue({
+    getResearchFilingsMock.mockReset();
+    getResearchFilingsMock.mockResolvedValue({
       status: 'success',
       count: 1,
       results: [{
         accession_number: '0001234567-26-000001',
+        cik: '0001234567',
+        ticker_requested: 'AAPL',
+        ticker_at_ingest: 'AAPL',
         form_type: '8-K',
         filed_at: '2026-04-20',
+        report_date: null,
+        acceptance_datetime: null,
         headline: '8-K filing',
         url: 'https://www.sec.gov/Archives/edgar/data/0/000123456726000001/doc.htm',
+        primary_document: 'doc.htm',
         primary_doc_description: null,
+        items: null,
+        archive_source: null,
       }],
     });
     getHistoricalOutstandingMock.mockReset();
@@ -232,8 +240,8 @@ describe('askedgar client', () => {
     const result = await client.fetchTickerData('AAPL');
 
     expect(result.ticker).toBe('AAPL');
-    expect(Object.keys(result.rawData)).toHaveLength(14);
-    expect(result.dataSources).toHaveLength(14);
+    expect(Object.keys(result.rawData)).toHaveLength(15);
+    expect(result.dataSources).toHaveLength(15);
   });
 
   it('only calls explicitly requested endpoints from fetchTickerData', async () => {
@@ -280,7 +288,7 @@ describe('askedgar client', () => {
     // serve every swing-scope endpoint (including news) from the cache.
     expect(fetchSpy).toHaveBeenCalledTimes(0);
     expect(Object.keys(result.rawData)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
-    expect(cachedRawDataKeys(cacheDb)).toHaveLength(14);
+    expect(cachedRawDataKeys(cacheDb)).toHaveLength(15);
   });
 
   it('merges missing snapshot endpoints after a swing-trader scope populated the cache', async () => {
@@ -295,12 +303,13 @@ describe('askedgar client', () => {
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL');
 
-    // 5 endpoints not yet cached (screener, equity-lines, nasdaq-compliance,
-    // agreements, split-status). News is fresh in the cache from the first
-    // call, so no extra news fetch.
+    // 7 endpoints not yet cached (screener, equity-lines, nasdaq-compliance,
+    // agreements, reverse-splits, sec-filings, split-status). Two are SEC-backed,
+    // and news is fresh in the cache from the first call, so only 5 AskEdgar
+    // fetches happen.
     expect(fetchSpy).toHaveBeenCalledTimes(5);
-    expect(Object.keys(result.rawData)).toHaveLength(14);
-    expect(cachedRawDataKeys(cacheDb)).toHaveLength(14);
+    expect(Object.keys(result.rawData)).toHaveLength(15);
+    expect(cachedRawDataKeys(cacheDb)).toHaveLength(15);
   });
 
   it('sums AskEdgar usage cost into the fan-out log', async () => {
@@ -351,6 +360,16 @@ describe('askedgar client', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     const calledUrls = fetchCallUrls(fetchSpy).map((url) => url.pathname);
     expect(calledUrls.some((path) => path.includes('offerings'))).toBe(false);
+  });
+
+  it('routes sec-filings through getResearchFilings, not AskEdgar', async () => {
+    const fetchSpy = mockSuccessfulEndpointFetch();
+    const client = await import('@/lib/askedgar');
+
+    await client.fetchTickerData('AAPL', { endpoints: ['sec-filings'] });
+
+    expect(getResearchFilingsMock).toHaveBeenCalledWith('AAPL');
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('does not send an effective_status filter when fetching registrations', async () => {
@@ -442,7 +461,7 @@ describe('askedgar client', () => {
   });
 
   it('marks fully rate-limited AskEdgar snapshots as unusable', async () => {
-    getRecentFilingsMock.mockResolvedValue({
+    getResearchFilingsMock.mockResolvedValue({
       status: 'error',
       count: 0,
       results: [],
@@ -479,7 +498,7 @@ describe('askedgar client', () => {
   it('caches fully rate-limited ticker results for the retry window', async () => {
     const cacheDb = createAskedgarCacheDb();
     getDbMock.mockReturnValue(cacheDb);
-    getRecentFilingsMock.mockResolvedValue({
+    getResearchFilingsMock.mockResolvedValue({
       status: 'error',
       count: 0,
       results: [],

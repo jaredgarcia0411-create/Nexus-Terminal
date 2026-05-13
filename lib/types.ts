@@ -283,7 +283,7 @@ export interface ResearchSnapshotGapStat {
 }
 
 // Client-safe shape — sent to the browser via /api/askedgar/snapshot.
-// Does NOT include rawData (full 16-endpoint payload). That lives in ResearchSnapshotFull.
+// Does NOT include rawData (full per-endpoint payload). That lives in ResearchSnapshotFull.
 export interface ResearchSnapshot {
   ticker: string;
   fetchedAt: string;
@@ -317,6 +317,6 @@ export interface ResearchSnapshot {
 // Server-side full shape — includes the raw per-endpoint API payloads used by
 // the LLM research pipeline (lib/research.ts). Never sent to the browser.
 export interface ResearchSnapshotFull extends ResearchSnapshot {
-  // Raw AskEdgar payload keyed by endpoint (full 16-endpoint payload).
+  // Raw AskEdgar/SEC payload keyed by endpoint.
   rawData: Record<string, { status: string; results: unknown[]; error?: string }>;
 }

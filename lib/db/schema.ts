@@ -244,6 +244,31 @@ export const secFilingBodyCache = pgTable('sec_filing_body_cache', {
   index('sec_filing_body_cache_fetched_idx').on(table.fetchedAt),
 ]);
 
+// Raw SEC filing metadata keyed by accession number. This stores submissions
+// metadata separately from body text and extracted event rows.
+export const secFilingsRaw = pgTable('sec_filings_raw', {
+  accessionNumber: text('accession_number').primaryKey(),
+  cik: text('cik').notNull(),
+  tickerRequested: text('ticker_requested').notNull(),
+  tickerAtIngest: text('ticker_at_ingest'),
+  formType: text('form_type').notNull(),
+  filedAt: text('filed_at').notNull(),
+  reportDate: text('report_date'),
+  acceptanceDateTime: text('acceptance_datetime'),
+  items: text('items'),
+  primaryDocument: text('primary_document'),
+  primaryDocDescription: text('primary_doc_description'),
+  secUrl: text('sec_url'),
+  archiveSource: text('archive_source'),
+  metadataJson: jsonb('metadata_json').notNull(),
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('sec_filings_raw_cik_filed_idx').on(table.cik, table.filedAt),
+  index('sec_filings_raw_ticker_filed_idx').on(table.tickerRequested, table.filedAt),
+  index('sec_filings_raw_form_idx').on(table.formType),
+]);
+
 export const agentRegistry = pgTable('agent_registry', {
   id: text('id').primaryKey(),
   displayName: text('display_name').notNull(),

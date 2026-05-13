@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getCikForTickerMock, getRecentFilingsMock, getFilingBodyMock } = vi.hoisted(() => ({
+const { getCikForTickerMock, getSecFilingsForProfileMock, getFilingBodyMock } = vi.hoisted(() => ({
   getCikForTickerMock: vi.fn(),
-  getRecentFilingsMock: vi.fn(),
+  getSecFilingsForProfileMock: vi.fn(),
   getFilingBodyMock: vi.fn(),
 }));
 
@@ -11,7 +11,13 @@ vi.mock('@/lib/sec/cik-map', () => ({
 }));
 
 vi.mock('@/lib/sec/submissions', () => ({
-  getRecentFilings: getRecentFilingsMock,
+  getSecFilingsForProfile: getSecFilingsForProfileMock,
+  getSecFilingPullProfileConfig: () => ({
+    limit: 1000,
+    sinceDays: 3650,
+    parseCandidateLimit: 300,
+    metadataOnly: false,
+  }),
 }));
 
 vi.mock('@/lib/sec/filing-body', () => ({
@@ -31,7 +37,7 @@ describe('getOfferings', () => {
   });
 
   it('scans mixed forms and returns newest-first SEC offering rows', async () => {
-    getRecentFilingsMock.mockResolvedValue({
+    getSecFilingsForProfileMock.mockResolvedValue({
       status: 'success',
       count: 4,
       results: [
@@ -110,7 +116,7 @@ describe('getOfferings', () => {
     const { getOfferings } = await import('@/lib/sec/offerings');
     const result = await getOfferings('GLND');
 
-    expect(getRecentFilingsMock).toHaveBeenCalledWith('GLND', { limit: 50, sinceDays: 730 });
+    expect(getSecFilingsForProfileMock).toHaveBeenCalledWith('GLND', 'completed-offerings');
     expect(result).toEqual({
       status: 'success',
       count: 3,
@@ -156,7 +162,7 @@ describe('getOfferings', () => {
   });
 
   it('includes resale 424B rows in raw results', async () => {
-    getRecentFilingsMock.mockResolvedValue({
+    getSecFilingsForProfileMock.mockResolvedValue({
       status: 'success',
       count: 1,
       results: [{
@@ -200,11 +206,11 @@ describe('getOfferings', () => {
     const result = await getOfferings('UNKNOWN');
 
     expect(result).toEqual({ status: 'success', count: 0, results: [] });
-    expect(getRecentFilingsMock).not.toHaveBeenCalled();
+    expect(getSecFilingsForProfileMock).not.toHaveBeenCalled();
   });
 
   it('returns SEC submissions errors directly', async () => {
-    getRecentFilingsMock.mockResolvedValue({
+    getSecFilingsForProfileMock.mockResolvedValue({
       status: 'error',
       count: 0,
       results: [],
@@ -223,7 +229,7 @@ describe('getOfferings', () => {
   });
 
   it('skips 424B filings that do not produce an offering extraction', async () => {
-    getRecentFilingsMock.mockResolvedValue({
+    getSecFilingsForProfileMock.mockResolvedValue({
       status: 'success',
       count: 1,
       results: [{
@@ -251,7 +257,7 @@ describe('getOfferings', () => {
   });
 
   it('skips filings when the SEC body fetch returns null', async () => {
-    getRecentFilingsMock.mockResolvedValue({
+    getSecFilingsForProfileMock.mockResolvedValue({
       status: 'success',
       count: 1,
       results: [{
@@ -287,7 +293,7 @@ describe('getOfferings', () => {
   });
 
   it('routes dual-item 8-K filings through the Item 3.02 extractor first', async () => {
-    getRecentFilingsMock.mockResolvedValue({
+    getSecFilingsForProfileMock.mockResolvedValue({
       status: 'success',
       count: 1,
       results: [{

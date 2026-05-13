@@ -5,7 +5,7 @@ import {
   extractOfferingFrom8K101,
   extractOfferingFrom8K302,
 } from '@/lib/sec/offerings-extractors';
-import { getRecentFilings } from '@/lib/sec/submissions';
+import { getSecFilingPullProfileConfig, getSecFilingsForProfile } from '@/lib/sec/submissions';
 import type { ExtractedOfferingFields, RawOffering } from '@/lib/sec/offerings-extractors';
 
 export type { RawOffering } from '@/lib/sec/offerings-extractors';
@@ -17,8 +17,8 @@ export interface OfferingsResponse {
   error?: string;
 }
 
-const DEFAULT_SINCE_DAYS = 730;
 const DEFAULT_LIMIT = 50;
+const OFFERING_PROFILE = getSecFilingPullProfileConfig('completed-offerings');
 const FORM_424B_REGEX = /^424B[1-7]$/i;
 const FORM_8K_REGEX = /^8-K(\/A)?$/i;
 
@@ -75,10 +75,18 @@ export async function getOfferings(
     return { status: 'success', count: 0, results: [] };
   }
 
-  const filings = await getRecentFilings(rawTicker, {
-    limit: options?.limit ?? DEFAULT_LIMIT,
-    sinceDays: options?.sinceDays ?? DEFAULT_SINCE_DAYS,
-  });
+  const filings = options
+    ? await getSecFilingsForProfile(rawTicker, 'completed-offerings').then((response) => ({
+        ...response,
+        results: response.results
+          .filter((filing) => {
+            if (options.sinceDays === undefined) return true;
+            const ts = new Date(filing.filed_at).getTime();
+            return Number.isFinite(ts) ? ts >= Date.now() - options.sinceDays * 86400000 : true;
+          })
+          .slice(0, options.limit ?? DEFAULT_LIMIT),
+      }))
+    : await getSecFilingsForProfile(rawTicker, 'completed-offerings');
   if (filings.status === 'error') {
     return {
       status: 'error',
@@ -88,7 +96,9 @@ export async function getOfferings(
     };
   }
 
-  const candidateFilings = filings.results.filter((filing) => isCandidateFiling(filing.form_type, filing.items));
+  const candidateFilings = filings.results
+    .filter((filing) => isCandidateFiling(filing.form_type, filing.items))
+    .slice(0, options?.limit ?? OFFERING_PROFILE.parseCandidateLimit);
   const results: RawOffering[] = [];
 
   for (const filing of candidateFilings) {

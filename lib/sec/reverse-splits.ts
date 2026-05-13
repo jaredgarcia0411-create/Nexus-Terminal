@@ -1,6 +1,6 @@
 import { getCikForTicker } from '@/lib/sec/cik-map';
 import { getFilingBody } from '@/lib/sec/filing-body';
-import { getRecentFilings } from '@/lib/sec/submissions';
+import { getSecFilingPullProfileConfig, getSecFilingsForProfile } from '@/lib/sec/submissions';
 
 export interface ReverseSplit {
   ratio: string;
@@ -24,6 +24,7 @@ interface RawSplit {
 
 const MAX_SCAN_CHARS = 50_000;
 const CONTEXT_WINDOW_CHARS = 200;
+const REVERSE_SPLIT_PROFILE = getSecFilingPullProfileConfig('reverse-splits');
 
 const RATIO_PATTERNS: RegExp[] = [
   /(\d+)\s*[-\s]?\s*(?:for|to|:)\s*[-\s]?\s*(\d+)\s+reverse\s+(?:stock\s+)?split/i,
@@ -238,10 +239,7 @@ export async function getReverseSplits(
     return { status: 'success', count: 0, results: [] };
   }
 
-  const filings = await getRecentFilings(rawTicker, {
-    limit: 200,
-    sinceDays: options?.sinceDays ?? 365 * 10,
-  });
+  const filings = await getSecFilingsForProfile(rawTicker, 'reverse-splits');
   if (filings.status === 'error') {
     return {
       status: 'error',
@@ -254,7 +252,11 @@ export async function getReverseSplits(
   const candidateFilings = filings.results.filter((filing) => (
     /^8-K(\/A)?$/i.test(filing.form_type)
       && (filing.items === null || filing.items.includes('5.03'))
-  ));
+      && (
+        options?.sinceDays === undefined
+        || new Date(filing.filed_at).getTime() >= Date.now() - options.sinceDays * 86400000
+      )
+  )).slice(0, REVERSE_SPLIT_PROFILE.parseCandidateLimit);
 
   const matches: ReverseSplit[] = [];
   for (const filing of candidateFilings) {

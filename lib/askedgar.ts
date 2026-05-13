@@ -7,6 +7,7 @@ import { bucketForFormType } from '@/lib/filings-bucket';
 import { getHistoricalOutstanding } from '@/lib/sec/companyfacts';
 import { getOfferings } from '@/lib/sec/offerings';
 import { getReverseSplits } from '@/lib/sec/reverse-splits';
+import { getResearchFilings } from '@/lib/sec/submissions';
 import type { RawOffering } from '@/lib/sec/offerings';
 import type {
   ResearchSnapshotFull,
@@ -65,6 +66,7 @@ const SEC_BACKED_ENDPOINT_KEYS = new Set<string>([
   'historical-float-pro',
   'reverse-splits',
   'offerings',
+  'sec-filings',
 ]);
 
 const ASKEDGAR_BASE_URL = 'https://eapi.askedgar.io';
@@ -546,6 +548,7 @@ export const ENDPOINT_REGISTRY = {
   'dilution-rating': { label: 'Dilution Rating', run: (ticker) => fetchDilutionRating(ticker) },
   'dilution-data': { label: 'Dilution Data', run: (ticker) => fetchDilutionData(ticker) },
   offerings: { label: 'Offerings', run: (ticker) => getOfferings(ticker) },
+  'sec-filings': { label: 'SEC Filings', run: (ticker) => getResearchFilings(ticker) },
   'equity-lines': { label: 'Equity Lines', run: (ticker) => fetchEquityLines(ticker) },
   registrations: { label: 'Registrations', run: (ticker) => fetchRegistrations(ticker) },
   news: { label: 'News', run: (ticker) => fetchNews(ticker, 40) },
@@ -571,7 +574,7 @@ export const ENDPOINT_SCOPES = {
   'small-cap-research': [
     'screener', 'dilution-rating', 'dilution-data', 'offerings', 'equity-lines',
     'registrations', 'news', 'nasdaq-compliance', 'agreements',
-    'historical-float-pro', 'reverse-splits', 'gap-stats',
+    'historical-float-pro', 'reverse-splits', 'sec-filings', 'gap-stats',
     'ownership', 'split-status',
   ],
   'swing-trader-research': [
@@ -615,7 +618,7 @@ export async function fetchTickerData(
   });
 
   // Run endpoints in batches of 10 to stay well within the 150/min API rate limit.
-  // 16 endpoints at batch size 10 = 2 batches, leaving ample headroom.
+  // The SEC-backed endpoints also use their own SEC request pacing.
   // Batching also lets the rate-limit guard kick in between batches if needed.
   const BATCH_SIZE = 10;
   const settledResults: PromiseSettledResult<AskEdgarResponse<unknown>>[] = [];
@@ -1021,10 +1024,9 @@ export function normalizeAskEdgarResponse(
     ...offeringEquityLines,
   ]);
 
-  // The /v1/news endpoint returns news articles AND SEC filings in a single
-  // response, distinguished by `form_type` ("news"/"grok"/"jmt415" vs SEC types
-  // like "10-K", "8-K", "424B5"). JMT added `headline` to filing rows so we no
-  // longer need a separate /v1/filing-titles call to enrich filing titles.
+  // The /v1/news endpoint can still return news articles and filing-like rows,
+  // but the Research Filings tab now prefers first-party SEC submissions
+  // metadata from the SEC-backed `sec-filings` endpoint.
   const NON_FILING_FORM_TYPES = new Set(['news', 'grok', 'jmt415']);
   const newsEndpointRows = getEndpointResponse(rawData, ['news']).results.map((item) => toRecord(item));
 
@@ -1038,7 +1040,7 @@ export function normalizeAskEdgarResponse(
       isNews: true,
     } satisfies ResearchSnapshotNewsItem));
 
-  const filings: ResearchSnapshotFiling[] = newsEndpointRows
+  const newsFilingRows: ResearchSnapshotFiling[] = newsEndpointRows
     .filter((row) => !NON_FILING_FORM_TYPES.has((getStringField(row, ['form_type', 'formType']) ?? 'news').toLowerCase()))
     .map((row) => {
       const formType = getStringField(row, ['form_type', 'formType', 'form']) ?? 'unknown';
@@ -1059,6 +1061,30 @@ export function normalizeAskEdgarResponse(
       if (!b.filedAt) return -1;
       return b.filedAt.localeCompare(a.filedAt);
     });
+
+  const secFilingRows: ResearchSnapshotFiling[] = getEndpointResponse(rawData, ['sec-filings', 'filings']).results
+    .map((item) => toRecord(item))
+    .map((row) => {
+      const formType = getStringField(row, ['form_type', 'formType', 'form']) ?? 'unknown';
+      const title = getStringField(row, ['headline', 'title', 'primary_doc_description', 'primaryDocDescription'])
+        ?? `${formType} filing`;
+      return {
+        formType,
+        bucket: bucketForFormType(formType),
+        title,
+        filedAt: getStringField(row, ['filed_at', 'filedAt', 'filingDate', 'date']),
+        url: getStringField(row, ['url', 'sec_url', 'secUrl', 'document_url', 'documentUrl']),
+        accessionNumber: getStringField(row, ['accession_number', 'accessionNumber', 'accn']),
+      } satisfies ResearchSnapshotFiling;
+    })
+    .sort((a, b) => {
+      if (!a.filedAt && !b.filedAt) return 0;
+      if (!a.filedAt) return 1;
+      if (!b.filedAt) return -1;
+      return b.filedAt.localeCompare(a.filedAt);
+    });
+
+  const filings = secFilingRows.length > 0 ? secFilingRows : newsFilingRows;
 
   const currentPrice = toNumberValue(getField(screener, ['price']));
   const warrants: ResearchSnapshotWarrant[] = dilutionData.results.reduce<ResearchSnapshotWarrant[]>((rows, item, index) => {

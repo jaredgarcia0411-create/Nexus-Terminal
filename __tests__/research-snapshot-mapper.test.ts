@@ -10,6 +10,111 @@ const emptyResponse: AskEdgarResponse<unknown> = {
 };
 
 describe('normalizeAskEdgarResponse', () => {
+  it('uses first-party SEC filing metadata for the filings tab while preserving news rows', () => {
+    const rawData: Record<string, AskEdgarResponse<unknown>> = {
+      screener: emptyResponse,
+      'dilution-rating': emptyResponse,
+      'dilution-data': emptyResponse,
+      'nasdaq-compliance': emptyResponse,
+      registrations: emptyResponse,
+      'equity-lines': emptyResponse,
+      offerings: emptyResponse,
+      news: {
+        status: 'success',
+        count: 2,
+        results: [
+          {
+            title: 'Biotech announces trial milestone',
+            body: 'Topline data expected next quarter.',
+            filed_at: '2026-04-25',
+            form_type: 'news',
+          },
+          {
+            accession_number: 'ask-edgar-filing',
+            form_type: '8-K',
+            filed_at: '2026-04-24',
+            headline: 'AskEdgar filing row should be fallback only',
+          },
+        ],
+      },
+      'sec-filings': {
+        status: 'success',
+        count: 2,
+        results: [
+          {
+            accession_number: '0000000001-26-000200',
+            cik: '0000000001',
+            ticker_requested: 'ABCD',
+            ticker_at_ingest: 'ABCD',
+            form_type: '10-K',
+            filed_at: '2026-04-22',
+            report_date: '2025-12-31',
+            acceptance_datetime: '2026-04-22T20:00:00.000Z',
+            headline: 'Annual report',
+            url: 'https://www.sec.gov/Archives/edgar/data/1/10k.htm',
+            primary_document: '10k.htm',
+            primary_doc_description: 'Annual report',
+            items: null,
+            archive_source: null,
+          },
+          {
+            accession_number: '0000000001-24-000010',
+            cik: '0000000001',
+            ticker_requested: 'ABCD',
+            ticker_at_ingest: 'ABCD',
+            form_type: 'S-1',
+            filed_at: '2024-12-15',
+            report_date: '2024-12-15',
+            acceptance_datetime: '2024-12-15T20:00:00.000Z',
+            headline: 'Registration statement',
+            url: 'https://www.sec.gov/Archives/edgar/data/1/s1.htm',
+            primary_document: 's1.htm',
+            primary_doc_description: 'Registration statement',
+            items: null,
+            archive_source: 'CIK0000000001-submissions-001.json',
+          },
+        ],
+      },
+      ownership: emptyResponse,
+      'historical-float-pro': emptyResponse,
+      'reverse-splits': emptyResponse,
+      'split-status': emptyResponse,
+      agreements: emptyResponse,
+      'gap-stats': emptyResponse,
+    };
+
+    const snapshot = normalizeAskEdgarResponse(rawData, {
+      ticker: 'ABCD',
+      companyName: 'Acme Biotech',
+      fetchedAt: '2026-04-29T00:00:00.000Z',
+      warnings: [],
+    });
+
+    expect(snapshot.news).toEqual([
+      expect.objectContaining({
+        title: 'Biotech announces trial milestone',
+        isNews: true,
+      }),
+    ]);
+    expect(snapshot.filings).toEqual([
+      expect.objectContaining({
+        accessionNumber: '0000000001-26-000200',
+        formType: '10-K',
+        bucket: 'financials',
+        title: 'Annual report',
+        filedAt: '2026-04-22',
+      }),
+      expect.objectContaining({
+        accessionNumber: '0000000001-24-000010',
+        formType: 'S-1',
+        bucket: 'registrations',
+        title: 'Registration statement',
+        filedAt: '2024-12-15',
+      }),
+    ]);
+    expect(snapshot.filings.some((filing) => filing.accessionNumber === 'ask-edgar-filing')).toBe(false);
+  });
+
   it('splits filings out of news and preserves SEC filing metadata', () => {
     const rawData: Record<string, AskEdgarResponse<unknown>> = {
       screener: emptyResponse,

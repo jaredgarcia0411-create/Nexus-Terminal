@@ -99,6 +99,18 @@ Phase 1 validation and checkpoint:
    `Expand SEC filing metadata contract`
 5. Stop and confirm the local commit exists before beginning Phase 2. Do not push.
 
+Phase 1 checkpoint status (2026-05-13):
+- Implemented expanded SEC submissions metadata support in `lib/sec/submissions.ts`: `filings.recent` plus archive shard hydration from `filings.files`, accession-number dedupe, richer metadata preservation, lazy profile contracts, and Research/offering/reverse-split pull profiles.
+- Added durable raw SEC metadata storage shape `sec_filings_raw` in `lib/db/schema.ts` with migration `drizzle/0035_red_ken_ellis.sql`; body text remains in the existing lazy `sec_filing_body_cache`.
+- Wired Research Filings to first-party SEC metadata through the SEC-backed `sec-filings` endpoint while preserving AskEdgar `news` for actual news rows and retaining news-row filing fallback when SEC metadata is absent.
+- Updated completed-offering and reverse-split callers to use the expanded 10-year metadata profiles while still fetching bodies only for filtered candidate filings.
+- Validation completed before checkpoint commit:
+  - `npx vitest run __tests__/sec-submissions.test.ts __tests__/research-snapshot-mapper.test.ts __tests__/askedgar-client.test.ts __tests__/sec-offerings.test.ts __tests__/sec-reverse-splits.test.ts` passed: 5 files, 41 tests.
+  - `npm run lint` passed.
+  - `npx tsc --noEmit` passed.
+  - `npm test` passed: 87 files, 630 tests.
+- Phase 2 AskEdgar module split has not started. Stop here after the local Phase 1 commit unless the user explicitly reopens Phase 2.
+
 Phase 2 - AskEdgar Module Split:
 Only after Phase 1 is locally committed, split the AskEdgar module enough to support the new SEC-backed architecture.
 
