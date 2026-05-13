@@ -242,4 +242,86 @@ describe('normalizeAskEdgarResponse', () => {
     expect(snapshot.regsho).toBe(true);
     expect(snapshot.nasdaqCompliance).toBe('Watch');
   });
+
+  it('preserves registration and warrant statuses and maps convertible note rows', () => {
+    const rawData: Record<string, AskEdgarResponse<unknown>> = {
+      screener: emptyResponse,
+      'dilution-rating': emptyResponse,
+      'dilution-data': {
+        status: 'success',
+        count: 2,
+        results: [
+          {
+            details: 'Series A warrants',
+            warrants_amount: 1_000_000,
+            warrants_remaining: 750_000,
+            warrants_exercise_price: 1.5,
+            warrant_status: 'Potentially in play',
+            filed_at: '2026-04-20',
+          },
+          {
+            convertible_note_details: 'Senior secured convertible note',
+            principal_amount: '$2,500,000',
+            conversion_price: '$0.75',
+            maturity_date: '2027-04-20',
+            note_status: 'Outstanding',
+            filed_at: '2026-04-21',
+          },
+        ],
+      },
+      'nasdaq-compliance': emptyResponse,
+      registrations: {
+        status: 'success',
+        count: 1,
+        results: [{
+          headline: 'At-the-market offering program',
+          is_atm: true,
+          effective_status: false,
+          status: 'Restricted by baby shelf',
+          line_amount: '$10,000,000',
+          remaining_capacity: '$4,500,000',
+          filed_at: '2026-04-19',
+        }],
+      },
+      'equity-lines': emptyResponse,
+      offerings: emptyResponse,
+      news: emptyResponse,
+      ownership: emptyResponse,
+      'historical-float-pro': emptyResponse,
+      'reverse-splits': emptyResponse,
+      'split-status': emptyResponse,
+      agreements: emptyResponse,
+      'gap-stats': emptyResponse,
+    };
+
+    const snapshot = normalizeAskEdgarResponse(rawData, {
+      ticker: 'ABCD',
+      companyName: 'Acme Biotech',
+      fetchedAt: '2026-04-29T00:00:00.000Z',
+      warnings: [],
+    });
+
+    expect(snapshot.registrations[0]).toMatchObject({
+      isAtm: true,
+      isEffective: false,
+      status: 'Restricted by baby shelf',
+      offeringAmount: 10_000_000,
+      amountRemainingAtm: 4_500_000,
+    });
+    expect(snapshot.warrants[0]).toMatchObject({
+      status: 'Potentially in play',
+      exercisePrice: 1.5,
+    });
+    expect(snapshot.convertibleNotes).toEqual([
+      {
+        details: 'Senior secured convertible note',
+        principalAmount: 2_500_000,
+        conversionPrice: 0.75,
+        maturityDate: '2027-04-20',
+        filedAt: '2026-04-21',
+        status: 'Outstanding',
+      },
+    ]);
+    expect(snapshot.dilutionDetails.convertibles).toBe('Senior secured convertible note');
+  });
 });

@@ -106,6 +106,7 @@ describe('GET /api/tradingview/gainers', () => {
         postMarketChange: 41.2,
         postMarketVolume: 950000,
         extendedHoursVolume: 2050000,
+        priorDayClose: expect.closeTo(12.293956043956044, 8),
         dayOneMovePercent: 45.6,
         dayOneMark: 17.9,
         dayOneMoveSource: 'pre-market',
@@ -147,6 +148,7 @@ describe('GET /api/tradingview/gainers', () => {
         postMarketChange: null,
         postMarketVolume: null,
         extendedHoursVolume: 2000000,
+        priorDayClose: 10,
         dayOneMovePercent: 50,
         dayOneMark: 15,
         dayOneMoveSource: 'pre-market',
@@ -164,7 +166,7 @@ describe('GET /api/tradingview/gainers', () => {
         },
         {
           s: 'NASDAQ:SHORT',
-          d: ['SHORT', 1, 45, 1000, null, 100000000, null, 1.45, 45, 1_999_999, null, null, null],
+          d: ['SHORT', 1, 45, 1000, null, 100000000, null, 1.45, 45, 999_999, null, null, null],
         },
         {
           s: 'NASDAQ:NOMOVE',
@@ -181,8 +183,99 @@ describe('GET /api/tradingview/gainers', () => {
     expect(payload.gainers[0]).toEqual(expect.objectContaining({
       ticker: 'COMBO',
       extendedHoursVolume: 2050000,
+      priorDayClose: 1,
       dayOneMovePercent: 45,
       dayOneMoveSource: 'pre-market',
+    }));
+  });
+
+  it('uses only the requested Day 1 scan prefilters', async () => {
+    const fetchSpy = mockTradingViewFetch({ data: [] }, { data: [] });
+
+    const response = ensureResponse(await GET());
+
+    expect(response.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    const scanBodies = fetchSpy.mock.calls.map(([, init]) => JSON.parse(String(init?.body)) as {
+      filter: Array<{ left: string; operation: string; right: unknown }>;
+      range: [number, number];
+    });
+    expect(scanBodies).toEqual([
+      expect.objectContaining({
+        filter: [{ left: 'premarket_change', operation: 'egreater', right: 40 }],
+        range: [0, 250],
+      }),
+      expect.objectContaining({
+        filter: [{ left: 'postmarket_change', operation: 'egreater', right: 40 }],
+        range: [0, 250],
+      }),
+    ]);
+    expect(scanBodies.flatMap((body) => body.filter.map((filter) => filter.left))).not.toEqual(
+      expect.arrayContaining(['market_cap_basic', 'exchange', 'close', 'volume']),
+    );
+  });
+
+  it('qualifies prior-session after-hours movers with missing regular change or volume', async () => {
+    mockTradingViewFetch({ data: [] }, {
+      totalCount: 1,
+      data: [{
+        s: 'NASDAQ:AHONLY',
+        d: [
+          'AHONLY',
+          0.8,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          1.2,
+          50,
+          1_000_001,
+        ],
+      }],
+    });
+
+    const response = ensureResponse(await GET());
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.gainers).toEqual([
+      expect.objectContaining({
+        ticker: 'AHONLY',
+        price: 0.8,
+        change: 50,
+        volume: 1_000_001,
+        extendedHoursVolume: 1_000_001,
+        priorDayClose: expect.closeTo(0.8, 8),
+        dayOneMovePercent: 50,
+        dayOneMark: 1.2,
+        dayOneMoveSource: 'after-hours',
+      }),
+    ]);
+  });
+
+  it('applies strict prior-close and AH plus PM volume floors after normalization', async () => {
+    mockTradingViewFetch({
+      data: [
+        { s: 'NASDAQ:LOWPDC', d: ['LOWPDC', 0.74, 50, 1_000_001, null, null, null, 1.11, 50, 1_000_001, null, null, null] },
+        { s: 'NASDAQ:LOWVOL', d: ['LOWVOL', 1, 50, 1_000_000, null, null, null, 1.5, 50, 1_000_000, null, null, null] },
+        { s: 'NASDAQ:GOOD', d: ['GOOD', 0.76, 40, 1_000_001, null, null, null, 1.064, 40, 1_000_001, null, null, null] },
+      ],
+    });
+
+    const response = ensureResponse(await GET());
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.gainers.map((row: { ticker: string }) => row.ticker)).toEqual(['GOOD']);
+    expect(payload.gainers[0]).toEqual(expect.objectContaining({
+      priorDayClose: expect.closeTo(0.76, 8),
+      extendedHoursVolume: 1_000_001,
+      dayOneMovePercent: 40,
     }));
   });
 

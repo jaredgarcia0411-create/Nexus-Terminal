@@ -119,6 +119,14 @@ export function babyShelfBadge(row: ResearchSnapshotRegistration): { label: stri
   return { label: 'Baby Shelf Exhausted', colorClass: RED };
 }
 
+function warrantStatusColor(label: string): string {
+  const normalized = label.toLowerCase();
+  if (normalized.includes('not')) return 'text-rose-500';
+  if (normalized.includes('potential')) return 'text-amber-400';
+  if (normalized.includes('in play')) return 'text-emerald-400';
+  return 'text-zinc-300';
+}
+
 // Returns a label + color class for a warrant's current status (In Play / Not In Play).
 // Depends on current stock price to determine if the exercise price has been crossed.
 // colorClass is text-only (no border/bg) so the same color can apply to both the
@@ -127,6 +135,11 @@ export function getWarrantStatus(
   warrant: ResearchSnapshotWarrant,
   currentPrice: number | null,
 ): { label: string; colorClass: string } {
+  if (warrant.status) {
+    const label = warrant.status.trim();
+    return { label, colorClass: warrantStatusColor(label) };
+  }
+
   const today = new Date().toISOString().slice(0, 10);
   const registered = warrant.registered ?? '';
   const exercisePrice = warrant.exercisePrice;
@@ -145,5 +158,5 @@ export function getWarrantStatus(
   if (currentPrice !== null && exercisePrice !== null && currentPrice >= exercisePrice) {
     return { label: 'In Play', colorClass: GREEN };
   }
-  return { label: 'Potentially in Play', colorClass: YELLOW };
+  return { label: 'Potentially In Play', colorClass: YELLOW };
 }

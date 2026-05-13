@@ -20,6 +20,7 @@ import type {
   FilingBucket,
   ResearchSnapshot,
   ResearchSnapshotAgreement,
+  ResearchSnapshotConvertibleNote,
   ResearchSnapshotFiling,
   ResearchSnapshotGapStat,
   ResearchSnapshotHistoricalFloatRow,
@@ -95,7 +96,12 @@ function compareFiledAtDesc(a: { filedAt: string | null }, b: { filedAt: string 
 function NewsArticle({ item }: { item: ResearchSnapshotNewsItem }) {
   const [open, setOpen] = useState(false);
   const formType = item.formType ?? 'News';
-  const isGrok = formType.toLowerCase().includes('grok');
+  const normalizedFormType = formType.toLowerCase();
+  const sourceLabel = normalizedFormType.includes('grok')
+    ? 'Groq'
+    : normalizedFormType.includes('jmt415') || normalizedFormType.includes('jmt-415')
+      ? 'JMT415'
+      : 'News';
 
   return (
     <div className="p-2">
@@ -117,16 +123,10 @@ function NewsArticle({ item }: { item: ResearchSnapshotNewsItem }) {
             className="mt-2 space-y-2"
           >
             <div className="flex items-center gap-2">
-              {isGrok ? (
-                <span className="rounded border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-sm text-violet-300">
-                  {formType}
-                </span>
-              ) : (
-                <span className="text-sm text-white">{formType}</span>
-              )}
+              <span className="text-sm font-medium text-zinc-200">{sourceLabel}</span>
               <span className="text-zinc-500">{formatDate(item.filedAt)}</span>
             </div>
-            <p className="text-sm text-zinc-300">{item.summary || '--'}</p>
+            <p className="rounded border border-white/10 bg-black p-2 text-sm text-zinc-300">{item.summary || '--'}</p>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -260,6 +260,19 @@ function FilingsView({ filings }: { filings: ResearchSnapshotFiling[] }) {
   );
 }
 
+function programStatusClass(statusLabel: string): string {
+  if (/inactive|expired|terminated|unavailable/i.test(statusLabel)) {
+    return 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+  }
+  if (/restricted|limited|baby shelf/i.test(statusLabel)) {
+    return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+  }
+  if (/active|effective|available/i.test(statusLabel)) {
+    return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+  }
+  return 'border-zinc-500/30 bg-zinc-500/10 text-zinc-400';
+}
+
 function ProgramSection({
   title,
   rows,
@@ -280,14 +293,16 @@ function ProgramSection({
         <div className="divide-y divide-white/5">
           {rows.map((row, index) => {
             const badge = babyShelfBadge(row);
+            const statusLabel = row.status ?? (row.isEffective ? 'Active' : 'Inactive');
+            const statusClass = programStatusClass(statusLabel);
             // ATM Remaining color tracks baby-shelf status: green when there's
             // still room to raise, red when over the limit. Matches scanner.
             const remainingColorClass = row.overBabyShelf ? 'text-rose-500' : 'text-emerald-400';
             return (
               <div key={`${title}-${index}`} className="py-2">
                 <div className="flex items-center gap-2">
-                  <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${row.isEffective ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-zinc-500/30 bg-zinc-500/10 text-zinc-400'}`}>
-                    {row.isEffective ? 'Active' : 'Inactive'}
+                  <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${statusClass}`}>
+                    {statusLabel}
                   </span>
                   <span className="text-zinc-200">{row.headline}</span>
                   {badge ? <span className={`ml-auto text-sm font-semibold whitespace-nowrap ${badge.colorClass}`}>{badge.label}</span> : null}
@@ -302,6 +317,44 @@ function ProgramSection({
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConvertibleNotesSection({ notes }: { notes: ResearchSnapshotConvertibleNote[] }) {
+  return (
+    <div className="space-y-2">
+      <h4 className="font-medium text-zinc-300">Convertible Notes</h4>
+      {notes.length === 0 ? (
+        <p className="text-sm text-zinc-500">No convertible notes found</p>
+      ) : (
+        <div className="scrollbar-hidden overflow-x-auto">
+          <table className="min-w-full">
+            <thead>
+              <tr className="border-b border-white/10 text-zinc-400">
+                <th className="py-2 pr-3 text-left">Details</th>
+                <th className="py-2 pr-3 text-left">Principal</th>
+                <th className="py-2 pr-3 text-left">Conversion</th>
+                <th className="py-2 pr-3 text-left">Maturity</th>
+                <th className="py-2 pr-3 text-left">Filed</th>
+                <th className="py-2 text-left">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {notes.map((note, index) => (
+                <tr key={`convertible-${index}`} className="border-b border-white/5">
+                  <td className="py-2 pr-3 text-zinc-300">{note.details}</td>
+                  <td className="py-2 pr-3 font-mono tabular-nums text-zinc-200">{formatMoney(note.principalAmount)}</td>
+                  <td className="py-2 pr-3 font-mono font-bold tabular-nums text-zinc-200">{formatMoney(note.conversionPrice)}</td>
+                  <td className="py-2 pr-3 text-zinc-300">{formatDate(note.maturityDate)}</td>
+                  <td className="py-2 pr-3 text-zinc-300">{formatDate(note.filedAt)}</td>
+                  <td className="py-2 text-zinc-300">{toStringValue(note.status)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -669,6 +722,7 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
   const atmRegistrations = data.registrations.filter((row) => row.isAtm === true);
   const regularWarrants = data.warrants.filter((row) => !row.isPrefunded);
   const prefundedWarrants = data.warrants.filter((row) => row.isPrefunded);
+  const convertibleNotes = data.convertibleNotes ?? [];
 
   const hasCashPosition = [
     data.dilutionDetails.cashRemainingMonths,
@@ -858,6 +912,8 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
               <WarrantSection title="Outstanding Warrants" warrants={regularWarrants} currentPrice={data.header.price} priceLabel="Strike" emptyLabel="No outstanding warrants found" />
               <WarrantSection title="Pre-funded Warrants" warrants={prefundedWarrants} currentPrice={data.header.price} priceLabel="Pre-funded Cost" emptyLabel="No pre-funded warrants found" />
             </div>
+
+            <ConvertibleNotesSection notes={convertibleNotes} />
 
             <div>
               <h4 className="mb-2 text-base font-semibold text-zinc-200">Past Offerings</h4>

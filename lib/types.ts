@@ -146,6 +146,7 @@ export interface ResearchSnapshotWarrant {
   expirationDate: string | null;
   filedAt: string | null;
   isPrefunded: boolean;
+  status: string | null;
 }
 
 export interface ResearchSnapshotRegistration {
@@ -162,6 +163,7 @@ export interface ResearchSnapshotRegistration {
   overBabyShelf: boolean;
   babyShelfRaisableAmount: number | null;
   formType: string | null;
+  status: string | null;
 }
 
 export interface ResearchSnapshotOffering {
@@ -211,6 +213,15 @@ export interface ResearchSnapshotDilutionDetails {
   convertibles: string | null;
   authorizedShares: number | null;
   sharesAvailable: number | null;
+}
+
+export interface ResearchSnapshotConvertibleNote {
+  details: string;
+  principalAmount: number | null;
+  conversionPrice: number | null;
+  maturityDate: string | null;
+  filedAt: string | null;
+  status: string | null;
 }
 
 export interface ResearchSnapshotOwner {
@@ -289,6 +300,7 @@ export interface ResearchSnapshot {
   nasdaqCompliance: string | null;
   dilutionDetails: ResearchSnapshotDilutionDetails;
   warrants: ResearchSnapshotWarrant[];
+  convertibleNotes: ResearchSnapshotConvertibleNote[];
   registrations: ResearchSnapshotRegistration[];
   equityLines: ResearchSnapshotRegistration[];
   offerings: ResearchSnapshotOffering[];

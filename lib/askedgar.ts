@@ -11,6 +11,7 @@ import type { RawOffering } from '@/lib/sec/offerings';
 import type {
   ResearchSnapshotFull,
   ResearchSnapshotAgreement,
+  ResearchSnapshotConvertibleNote,
   ResearchSnapshotFiling,
   ResearchSnapshotGapStat,
   ResearchSnapshotHistoricalFloatRow,
@@ -881,6 +882,17 @@ function dedupeByHeadline<T extends { headline: string }>(rows: T[]): T[] {
   });
 }
 
+function firstStringFromResults(
+  results: unknown[],
+  keys: string[],
+): string | null {
+  for (const item of results) {
+    const value = getStringField(toRecord(item), keys);
+    if (value) return value;
+  }
+  return null;
+}
+
 function toRegistrationRow(row: Record<string, unknown>, fallback: string): ResearchSnapshotRegistration {
   return {
     headline: normalizeHeadline(row, fallback),
@@ -888,14 +900,35 @@ function toRegistrationRow(row: Record<string, unknown>, fallback: string): Rese
     effectiveDate: getStringField(row, ['effective_date', 'effectiveDate']),
     expirationDate: getStringField(row, ['expiration_date', 'expirationDate']),
     isEffective: getBooleanField(row, ['effective_status', 'effectiveStatus']),
-    offeringAmount: toNumberValue(getField(row, ['offering_amount', 'offeringAmount', 'amount'])),
+    offeringAmount: toNumberValue(getField(row, [
+      'offering_amount',
+      'offeringAmount',
+      'line_amount',
+      'lineAmount',
+      'facility_amount',
+      'facilityAmount',
+      'capacity',
+      'amount',
+    ])),
     isAtm: getBooleanField(row, ['is_atm', 'isAtm']),
     bank: getStringField(row, ['bank']),
-    amountRemainingAtm: toNumberValue(getField(row, ['amount_remaining_atm', 'amountRemainingAtm'])),
+    amountRemainingAtm: toNumberValue(getField(row, [
+      'amount_remaining_atm',
+      'amountRemainingAtm',
+      'amount_remaining',
+      'amountRemaining',
+      'remaining_amount',
+      'remainingAmount',
+      'remaining_capacity',
+      'remainingCapacity',
+      'available_amount',
+      'availableAmount',
+    ])),
     totalRaised: toNumberValue(getField(row, ['total_raised', 'totalRaised'])),
     overBabyShelf: getBooleanField(row, ['over_baby_shelf', 'overBabyShelf']),
     babyShelfRaisableAmount: toNumberValue(getField(row, ['baby_shelf_raisable_amount', 'babyShelfRaisableAmount'])),
     formType: detectFormType(row),
+    status: getStringField(row, ['status', 'registration_status', 'registrationStatus', 'effective_status_label', 'effectiveStatusLabel']),
   };
 }
 
@@ -1045,6 +1078,48 @@ export function normalizeAskEdgarResponse(
       expirationDate: getStringField(row, ['expiration_date']),
       filedAt: getStringField(row, ['filed_at', 'filedAt', 'date']),
       isPrefunded: prefundedCost !== null && prefundedCost > 0,
+      status: getStringField(row, ['status', 'warrant_status', 'warrantStatus', 'in_play_status', 'inPlayStatus']),
+    });
+    return rows;
+  }, []);
+
+  const convertibleNotes: ResearchSnapshotConvertibleNote[] = dilutionData.results.reduce<ResearchSnapshotConvertibleNote[]>((rows, item, index) => {
+    const row = toRecord(item);
+    const details = getStringField(row, [
+      'convertibles',
+      'convertibleNotes',
+      'convertible_notes',
+      'convertible_note',
+      'convertibleNote',
+      'convertible_note_details',
+      'convertibleNoteDetails',
+    ]);
+    const principalAmount = toNumberValue(getField(row, [
+      'convertible_principal_amount',
+      'convertiblePrincipalAmount',
+      'principal_amount',
+      'principalAmount',
+      'note_amount',
+      'noteAmount',
+    ]));
+    const conversionPrice = toNumberValue(getField(row, [
+      'conversion_price',
+      'conversionPrice',
+      'convertible_conversion_price',
+      'convertibleConversionPrice',
+    ]));
+    const maturityDate = getStringField(row, ['maturity_date', 'maturityDate']);
+    if (!details && principalAmount === null && conversionPrice === null && !maturityDate) {
+      return rows;
+    }
+
+    rows.push({
+      details: details ?? `Convertible note ${index + 1}`,
+      principalAmount,
+      conversionPrice,
+      maturityDate,
+      filedAt: getStringField(row, ['filed_at', 'filedAt', 'date']),
+      status: getStringField(row, ['convertible_status', 'convertibleStatus', 'note_status', 'noteStatus', 'status']),
     });
     return rows;
   }, []);
@@ -1176,12 +1251,21 @@ export function normalizeAskEdgarResponse(
       managementCommentary: getStringField(dilutionRating, ['mgmt_commentary', 'managementCommentary', 'commentary']),
       cashNeedDescription: getStringField(dilutionRating, ['cash_need_desc', 'cashNeedDesc']),
       filedAt: getStringField(dilutionRating, ['filed_at', 'filedAt', 'lastUpdated']),
-      warrantInfo: getStringField(dilutionDataFirst, ['warrantExercise', 'warrantInfo', 'warrant_exercise']),
-      convertibles: getStringField(dilutionDataFirst, ['convertibles', 'convertibleNotes']),
+      warrantInfo: firstStringFromResults(dilutionData.results, ['warrantExercise', 'warrantInfo', 'warrant_exercise']),
+      convertibles: firstStringFromResults(dilutionData.results, [
+        'convertibles',
+        'convertibleNotes',
+        'convertible_notes',
+        'convertible_note',
+        'convertibleNote',
+        'convertible_note_details',
+        'convertibleNoteDetails',
+      ]),
       authorizedShares: toNumberValue(getField(dilutionDataFirst, ['authorizedShares', 'authorized_shares'])),
       sharesAvailable: toNumberValue(getField(dilutionDataFirst, ['sharesAvailable', 'availableShares'])),
     },
     warrants,
+    convertibleNotes,
     registrations,
     equityLines,
     offerings,
@@ -1430,25 +1514,16 @@ async function fetchScannerSummaryRaw(ticker: string): Promise<ScannerSummaryRes
     toRegistrationRow(toRecord(item), `Registration ${index + 1}`),
   );
 
-  // Now that fetchRegistrations returns everything (no effective_status filter),
-  // filter out clearly-expired rows so the scanner only flags usable programs.
-  // Rows with no expirationDate are kept (they're either active or unspecified).
-  const now = Date.now();
-  const isUsable = (row: { expirationDate: string | null }) => {
-    if (!row.expirationDate) return true;
-    const exp = Date.parse(row.expirationDate);
-    return !Number.isFinite(exp) || exp >= now;
-  };
-  const usableRows = registrationRows.filter(isUsable);
-
-  const hasAtm = usableRows.some((row) => row.isAtm);
-  const hasS1 = usableRows.some((row) => {
+  // Scanner flags should reflect Ask Edgar's surfaced data, not whether we
+  // think the company can currently use the program.
+  const hasAtm = registrationRows.some((row) => row.isAtm);
+  const hasS1 = registrationRows.some((row) => {
     const formType = row.formType ?? '';
     return /^S-1/i.test(formType);
   });
 
   const hasElFromEquityLines = equityLinesResp.results.length > 0;
-  const hasElFromRegistrations = usableRows.some((row) => {
+  const hasElFromRegistrations = registrationRows.some((row) => {
     if (row.isAtm) return false;
     const headline = row.headline.toLowerCase();
     return (

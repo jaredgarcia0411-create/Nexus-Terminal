@@ -20,6 +20,7 @@ type TestGainer = {
   postMarketChange: number | null;
   postMarketVolume: number | null;
   extendedHoursVolume: number;
+  priorDayClose?: number | null;
   dayOneMovePercent: number;
   dayOneMark: number;
   dayOneMoveSource: 'pre-market' | 'after-hours';
@@ -49,6 +50,7 @@ function makeGainer(overrides: Partial<TestGainer> & { ticker: string }): TestGa
     postMarketChange: 35,
     postMarketVolume: 1_000_000,
     extendedHoursVolume: 4_000_000,
+    priorDayClose: 1,
     dayOneMovePercent: 40,
     dayOneMark: 1.4,
     dayOneMoveSource: 'pre-market',
@@ -271,6 +273,7 @@ describe('DashboardScannerTable', () => {
           preMarketVolume: 3_000_000,
           postMarketVolume: 400_000,
           extendedHoursVolume: 3_400_000,
+          priorDayClose: 1.01,
           dayOneMovePercent: 42,
           dayOneMark: 1.42,
         }),
@@ -280,9 +283,10 @@ describe('DashboardScannerTable', () => {
     render(<DashboardScannerTable onNavigateToResearch={vi.fn()} />);
 
     await waitFor(() => expect(screen.getByText('BDRX')).toBeTruthy());
-    expect(screen.getByText('AH+PM Vol')).toBeTruthy();
+    expect(screen.getByText('Volume')).toBeTruthy();
     expect(screen.getByText('3.4M')).toBeTruthy();
     expect(screen.queryByText('7.7K')).toBeNull();
+    expect(screen.getByText('$1.010')).toBeTruthy();
     expect(screen.getByText('+42.00%')).toBeTruthy();
   });
 });

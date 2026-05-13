@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ColorType, CrosshairMode, type CandlestickData, type HistogramData, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts';
 
 import { useCandleData } from '@/hooks/use-candle-data';
-import { formatNyCrosshair, formatNyTime } from '@/lib/chart-time';
+import { buildExtendedHoursShadeSegments, buildSessionShadeRects, type SessionShadeRect } from '@/lib/chart-session-shading';
+import { formatNyCrosshair, formatNyTime, toEpochMs } from '@/lib/chart-time';
 import {
   RESEARCH_CHART_FRAME_CONFIG,
   buildTradeChartOptions,
@@ -72,10 +73,70 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const sessionAnimationFrameRef = useRef<number | null>(null);
+  const sortedCandlesRef = useRef<typeof candles>([]);
+  const isIntradayRef = useRef(isIntraday);
+  const [sessionShadeRects, setSessionShadeRects] = useState<SessionShadeRect[]>([]);
+  const sortedCandles = useMemo(() => [...candles].sort((a, b) => a.datetime - b.datetime), [candles]);
+
+  useEffect(() => {
+    sortedCandlesRef.current = sortedCandles;
+  }, [sortedCandles]);
+
+  useEffect(() => {
+    isIntradayRef.current = isIntraday;
+  }, [isIntraday]);
+
+  const clearSessionShadeRects = useCallback(() => {
+    queueMicrotask(() => setSessionShadeRects([]));
+  }, []);
+
+  const recalculateSessionShading = useCallback(() => {
+    const currentCandles = sortedCandlesRef.current;
+    if (!isIntradayRef.current) {
+      clearSessionShadeRects();
+      return;
+    }
+
+    const chart = chartRef.current;
+    const viewportWidth = containerRef.current?.clientWidth ?? 0;
+    if (!chart || currentCandles.length === 0 || !Number.isFinite(viewportWidth) || viewportWidth <= 0) {
+      clearSessionShadeRects();
+      return;
+    }
+
+    const visibleRange = chart.timeScale().getVisibleRange();
+    const visibleStart = toEpochMs(visibleRange?.from);
+    const visibleEnd = toEpochMs(visibleRange?.to);
+    const daySet = new Set(currentCandles.map((candle) => nyDateKey(candle.datetime)));
+
+    const rects = buildSessionShadeRects({
+      candles: currentCandles,
+      segments: buildExtendedHoursShadeSegments(daySet),
+      visibleStart,
+      visibleEnd,
+      viewportWidth,
+      timeToCoordinate: (epochMs) => chart.timeScale().timeToCoordinate(toTime(epochMs)),
+    });
+
+    queueMicrotask(() => setSessionShadeRects(rects));
+  }, [clearSessionShadeRects]);
+
+  const scheduleSessionShadeRecalculation = useCallback(() => {
+    if (sessionAnimationFrameRef.current != null) {
+      cancelAnimationFrame(sessionAnimationFrameRef.current);
+    }
+
+    sessionAnimationFrameRef.current = requestAnimationFrame(() => {
+      sessionAnimationFrameRef.current = null;
+      recalculateSessionShading();
+    });
+  }, [recalculateSessionShading]);
 
   useEffect(() => {
     let mounted = true;
     let resizeObserver: ResizeObserver | null = null;
+    let unsubscribeSessionRange: (() => void) | null = null;
 
     const setupChart = async () => {
       if (!containerRef.current) return;
@@ -130,12 +191,23 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
       seriesRef.current = series;
       volumeRef.current = volume;
 
+      const onRangeChange = () => {
+        scheduleSessionShadeRecalculation();
+      };
+      chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange);
+      chart.timeScale().subscribeVisibleTimeRangeChange(onRangeChange);
+      unsubscribeSessionRange = () => {
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRangeChange);
+        chart.timeScale().unsubscribeVisibleTimeRangeChange(onRangeChange);
+      };
+
       resizeObserver = new ResizeObserver(() => {
         if (!containerRef.current || !chartRef.current) return;
         chartRef.current.applyOptions({
           width: containerRef.current.clientWidth,
           height: containerRef.current.clientHeight,
         });
+        scheduleSessionShadeRecalculation();
       });
       resizeObserver.observe(containerRef.current);
     };
@@ -144,18 +216,23 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
 
     return () => {
       mounted = false;
+      unsubscribeSessionRange?.();
       resizeObserver?.disconnect();
+      if (sessionAnimationFrameRef.current != null) {
+        cancelAnimationFrame(sessionAnimationFrameRef.current);
+        sessionAnimationFrameRef.current = null;
+      }
+      clearSessionShadeRects();
       chartRef.current?.remove();
       chartRef.current = null;
       seriesRef.current = null;
       volumeRef.current = null;
     };
-  }, [isIntraday]);
+  }, [clearSessionShadeRects, isIntraday, scheduleSessionShadeRecalculation]);
 
   useEffect(() => {
     if (!seriesRef.current) return;
-    const sorted = [...candles].sort((a, b) => a.datetime - b.datetime);
-    const data: CandlestickData[] = sorted.map((candle) => ({
+    const data: CandlestickData[] = sortedCandles.map((candle) => ({
       time: toTime(candle.datetime),
       open: candle.open,
       high: candle.high,
@@ -166,7 +243,7 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
 
     // Volume bars — white-ish for up candles, blue-ish for down
     if (volumeRef.current) {
-      const volumeData: HistogramData[] = sorted.map((candle) => ({
+      const volumeData: HistogramData[] = sortedCandles.map((candle) => ({
         time: toTime(candle.datetime),
         value: candle.volume,
         color: candle.close >= candle.open ? '#ffffff33' : '#3b82f633',
@@ -179,19 +256,21 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
     // Daily/weekly frames keep fitContent so the user sees the longer context.
     const timeScale = chartRef.current?.timeScale();
     if (!timeScale) return;
-    if (isIntraday && sorted.length > 0) {
-      const lastDayKey = nyDateKey(sorted[sorted.length - 1].datetime);
-      const firstSameDay = sorted.find((candle) => nyDateKey(candle.datetime) === lastDayKey);
+    if (isIntraday && sortedCandles.length > 0) {
+      const lastDayKey = nyDateKey(sortedCandles[sortedCandles.length - 1].datetime);
+      const firstSameDay = sortedCandles.find((candle) => nyDateKey(candle.datetime) === lastDayKey);
       if (firstSameDay) {
         timeScale.setVisibleRange({
           from: toTime(firstSameDay.datetime),
-          to: toTime(sorted[sorted.length - 1].datetime),
+          to: toTime(sortedCandles[sortedCandles.length - 1].datetime),
         });
+        scheduleSessionShadeRecalculation();
         return;
       }
     }
     timeScale.fitContent();
-  }, [candles, isIntraday]);
+    scheduleSessionShadeRecalculation();
+  }, [isIntraday, scheduleSessionShadeRecalculation, sortedCandles]);
 
   return (
     <div className="flex h-full flex-col">
@@ -227,6 +306,21 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
 
       <div className="relative min-h-0 flex-1">
         <div ref={containerRef} className="absolute inset-0" />
+        {isIntraday && sessionShadeRects.length > 0 ? (
+          <div className="pointer-events-none absolute inset-0 z-10">
+            {sessionShadeRects.map((rect) => (
+              <div
+                key={rect.key}
+                className="absolute bottom-0 top-0"
+                style={{
+                  left: `${rect.left}px`,
+                  width: `${rect.width}px`,
+                  backgroundColor: 'rgba(148, 163, 184, 0.12)',
+                }}
+              />
+            ))}
+          </div>
+        ) : null}
         {isLoading ? (
           <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-500">Loading chart...</div>
         ) : null}

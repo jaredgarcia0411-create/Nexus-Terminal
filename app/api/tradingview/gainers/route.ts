@@ -28,38 +28,30 @@ const COLUMNS = [
   'postmarket_volume', // 12 — after-hours volume
 ];
 
-// Day 1 qualification rules (per user spec):
-//   - market cap < $300M
-//   - close >= $0.90  (defensive penny-stock floor; existing behavior)
-//   - NASDAQ or NYSE listed
+// Day 1 qualification rules:
+//   - prior regular-session close > $0.75
+//   - combined previous AH + current PM volume > 1M shares
 //   - best PM/AH move >= 40%
-//   - combined previous AH + current PM volume >= 2M shares
 //
 // Once a name passes server-side here it gets latched on the dashboard for the
 // rest of the day, even if the criteria stop holding (sticky semantics).
 //
 // TradingView cannot filter on PM volume + AH volume, so each scan is only a
-// broad PM/AH move prefilter. The final move + combined-volume qualification
-// happens after normalization.
+// broad PM/AH move prefilter. The final price, move, and combined-volume
+// qualification happens after normalization.
 const PM_GAP_THRESHOLD = 40;
 const AH_GAP_THRESHOLD = 40;
-const EXTENDED_HOURS_VOLUME_FLOOR = 2_000_000;
-
-const BASE_FILTERS = [
-  { left: 'close', operation: 'egreater', right: 0.9 },
-  { left: 'market_cap_basic', operation: 'eless', right: 300_000_000 },
-  { left: 'exchange', operation: 'in_range', right: ['NASDAQ', 'NYSE'] },
-] as const;
+const PRIOR_CLOSE_FLOOR = 0.75;
+const EXTENDED_HOURS_VOLUME_FLOOR = 1_000_000;
 
 function scanBody(changeColumn: 'premarket_change' | 'postmarket_change', threshold: number) {
   return {
     columns: COLUMNS,
     filter: [
-      ...BASE_FILTERS,
       { left: changeColumn, operation: 'egreater', right: threshold },
     ],
     sort: { sortBy: changeColumn, sortOrder: 'desc' },
-    range: [0, 100],
+    range: [0, 250],
   };
 }
 
@@ -81,6 +73,7 @@ export interface TradingViewGainer {
   postMarketChange: number | null;
   postMarketVolume: number | null;
   extendedHoursVolume: number;
+  priorDayClose: number | null;
   dayOneMovePercent: number;
   dayOneMark: number;
   dayOneMoveSource: 'pre-market' | 'after-hours';
@@ -120,6 +113,14 @@ function bestMove(
   return { percent: ah, source: 'after-hours' };
 }
 
+function derivedPriorClose(mark: number, movePercent: number) {
+  const denominator = 1 + movePercent / 100;
+  if (denominator <= 0) return null;
+
+  const priorClose = mark / denominator;
+  return Number.isFinite(priorClose) ? priorClose : null;
+}
+
 function normalizeTradingViewRow(row: { s: string; d: unknown[] }): TradingViewGainer | null {
   // row.s is "EXCHANGE:TICKER" — strip the exchange prefix
   const ticker = (row.s ?? '').split(':')[1];
@@ -127,12 +128,12 @@ function normalizeTradingViewRow(row: { s: string; d: unknown[] }): TradingViewG
 
   const d = row.d;
   const price = Number(d[1]);
-  const change = Number(d[2]);
-  const volume = Number(d[3]);
 
-  // Skip rows with bad price or change data
-  if (!Number.isFinite(price) || !Number.isFinite(change) || !Number.isFinite(volume)) return null;
+  // Skip rows without a usable close/price anchor.
+  if (!Number.isFinite(price)) return null;
 
+  const regularChange = toNum(d, 2);
+  const regularVolume = toNum(d, 3);
   const preMarketPrice = toNum(d, 7);
   const preMarketChange = toNum(d, 8);
   const preMarketVolume = toNum(d, 9);
@@ -144,12 +145,13 @@ function normalizeTradingViewRow(row: { s: string; d: unknown[] }): TradingViewG
   const dayOneMark = move.source === 'pre-market'
     ? preMarketPrice ?? price
     : postMarketPrice ?? price;
+  const priorDayClose = derivedPriorClose(dayOneMark, move.percent) ?? price;
 
   return {
     ticker,
     price,
-    change,
-    volume,
+    change: regularChange ?? move.percent,
+    volume: regularVolume ?? extendedHoursVolume,
     avgVolume90d: toNum(d, 4),
     marketCap: toNum(d, 5),
     sector: typeof d[6] === 'string' && d[6].trim() ? d[6].trim() : null,
@@ -160,6 +162,7 @@ function normalizeTradingViewRow(row: { s: string; d: unknown[] }): TradingViewG
     postMarketChange,
     postMarketVolume,
     extendedHoursVolume,
+    priorDayClose,
     dayOneMovePercent: move.percent,
     dayOneMark,
     dayOneMoveSource: move.source,
@@ -167,8 +170,10 @@ function normalizeTradingViewRow(row: { s: string; d: unknown[] }): TradingViewG
 }
 
 function qualifiesDayOne(row: TradingViewGainer) {
-  return row.dayOneMovePercent >= PM_GAP_THRESHOLD
-    && row.extendedHoursVolume >= EXTENDED_HOURS_VOLUME_FLOOR;
+  return row.priorDayClose !== null
+    && row.priorDayClose > PRIOR_CLOSE_FLOOR
+    && row.dayOneMovePercent >= PM_GAP_THRESHOLD
+    && row.extendedHoursVolume > EXTENDED_HOURS_VOLUME_FLOOR;
 }
 
 function richerGainer(a: TradingViewGainer, b: TradingViewGainer) {

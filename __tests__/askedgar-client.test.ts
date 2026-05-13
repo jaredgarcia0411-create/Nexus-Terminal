@@ -353,6 +353,53 @@ describe('askedgar client', () => {
     expect(calledUrls.some((path) => path.includes('offerings'))).toBe(false);
   });
 
+  it('does not send an effective_status filter when fetching registrations', async () => {
+    const fetchSpy = mockSuccessfulEndpointFetch();
+    const client = await import('@/lib/askedgar');
+
+    await client.fetchTickerData('AAPL', { endpoints: ['registrations'] });
+
+    const [registrationsUrl] = fetchCallUrls(fetchSpy);
+    expect(registrationsUrl.pathname).toBe('/v1/registrations');
+    expect(registrationsUrl.searchParams.get('ticker')).toBe('AAPL');
+    expect(registrationsUrl.searchParams.has('effective_status')).toBe(false);
+  });
+
+  it('keeps restricted or expired ATM registrations in scanner summary flags', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      const endpoint = url.pathname.replace('/v1/', '');
+
+      if (endpoint === 'registrations') {
+        return new Response(JSON.stringify({
+          status: 'success',
+          count: 1,
+          results: [{
+            headline: 'Expired ATM prospectus supplement',
+            is_atm: true,
+            effective_status: false,
+            status: 'Restricted by baby shelf',
+            expiration_date: '2020-01-01',
+            form_type: 'S-3',
+          }],
+        }));
+      }
+
+      return new Response(JSON.stringify({
+        status: 'success',
+        count: 0,
+        results: [],
+      }));
+    });
+    const client = await import('@/lib/askedgar');
+
+    const summary = await client.getCachedScannerSummary('AAPL');
+
+    expect(summary.hasAtm).toBe(true);
+    expect(summary.hasEl).toBe(false);
+    expect(summary.hasS1).toBe(false);
+  });
+
   it('tracks unique ticker count', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ status: 'success', count: 1, results: [{}] })));
     const client = await import('@/lib/askedgar');
