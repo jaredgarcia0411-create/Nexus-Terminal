@@ -136,6 +136,24 @@ Phase 2 validation and checkpoint:
    `Split AskEdgar data pipeline modules`
 5. Do not push.
 
+Phase 2 checkpoint status (2026-05-13):
+- Split the monolithic AskEdgar client into focused modules while preserving the compatibility barrel at `lib/askedgar.ts`:
+  - `lib/askedgar/types.ts`
+  - `lib/askedgar/runtime-state.ts`
+  - `lib/askedgar/endpoints.ts`
+  - `lib/askedgar/fanout.ts`
+  - `lib/askedgar/cache.ts`
+  - `lib/askedgar/snapshot-normalizer.ts`
+- Preserved existing import compatibility for callers that use `@/lib/askedgar`; no downstream import churn was required.
+- Kept endpoint registry, scope-aware fanout, cache merge semantics, scanner-summary cache, rate-limit/daily-ticker state, and snapshot normalization behavior equivalent.
+- Validation completed before checkpoint commit:
+  - `npx vitest run __tests__/askedgar-client.test.ts __tests__/research-snapshot-mapper.test.ts __tests__/askedgar-snapshot-route.test.ts __tests__/askedgar-tldr-route.test.ts __tests__/scanner-summary-route.test.ts` passed: 5 files, 37 tests.
+  - `npm run lint` passed.
+  - `npx tsc --noEmit` passed.
+  - `npm test` passed: 87 files, 630 tests.
+  - `npm run workflow:audit` passed.
+- Phase 3 completed-offerings expansion has not started. Stop here after the local Phase 2 commit unless the user explicitly reopens Phase 3.
+
 Phase 3 - Completed Offerings Expansion:
 Improve first-party completed offering extraction.
 
