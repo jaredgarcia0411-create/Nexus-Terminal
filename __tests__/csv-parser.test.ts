@@ -195,9 +195,9 @@ describe('processCsvData — basic FIFO pairing', () => {
     expect(result.warnings).toEqual([
       'Row 1: Unknown side "HOLD" for NVDA, skipping',
       'Row 2: Zero quantity for AMD, skipping',
-      'Skipped unmatched SHORT SELL execution for QQQ (no matching buy)',
-      'Skipped unmatched BUY execution for SPY (no matching short sell)',
-      'Skipped unmatched SELL execution for ORCL (no matching buy)',
+      'QQQ: 3 unmatched SHORT SELL shares (1 fill) — position may still be open short',
+      'SPY: 2 unmatched COVER BUY shares (1 fill) — no matching short entries (carry-over from earlier session?)',
+      'ORCL: 5 unmatched SELL shares (1 fill) — no matching long entries (carry-over from earlier session?)',
     ]);
   });
 
@@ -228,7 +228,7 @@ describe('processCsvData — basic FIFO pairing', () => {
     expect(result.trades).toHaveLength(0);
     expect(result.warnings).toEqual([
       'Row 2: Parse error — malformed row',
-      'Skipped unmatched BUY execution for AAPL (no matching sell)',
+      'AAPL: 10 unmatched BUY shares (1 fill) — position may still be open long',
     ]);
   });
 

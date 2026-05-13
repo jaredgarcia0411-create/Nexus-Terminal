@@ -304,18 +304,19 @@ export const processCsvData = (
       if (exitRemainder) lx.unshift(exitRemainder);
     }
 
-    se.forEach(() => {
-      warnings.push(`Skipped unmatched SHORT SELL execution for ${sym} (no matching buy)`);
-    });
-    sx.forEach(() => {
-      warnings.push(`Skipped unmatched BUY execution for ${sym} (no matching short sell)`);
-    });
-    le.forEach(() => {
-      warnings.push(`Skipped unmatched BUY execution for ${sym} (no matching sell)`);
-    });
-    lx.forEach(() => {
-      warnings.push(`Skipped unmatched SELL execution for ${sym} (no matching buy)`);
-    });
+    const pushUnmatched = (rows: RawExecution[], label: string, hint: string) => {
+      if (rows.length === 0) return;
+      const totalQty = rows.reduce((sum, r) => sum + r.qty, 0);
+      const qtyDisplay = Number.isInteger(totalQty) ? totalQty : Math.round(totalQty * 100) / 100;
+      const shares = qtyDisplay === 1 ? 'share' : 'shares';
+      const fills = rows.length === 1 ? 'fill' : 'fills';
+      warnings.push(`${sym}: ${qtyDisplay} unmatched ${label} ${shares} (${rows.length} ${fills}) — ${hint}`);
+    };
+
+    pushUnmatched(se, 'SHORT SELL', 'position may still be open short');
+    pushUnmatched(sx, 'COVER BUY', 'no matching short entries (carry-over from earlier session?)');
+    pushUnmatched(le, 'BUY', 'position may still be open long');
+    pushUnmatched(lx, 'SELL', 'no matching long entries (carry-over from earlier session?)');
   });
 
   const mergedMap: Record<string, Trade> = {};

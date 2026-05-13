@@ -244,7 +244,10 @@ export function useTrades() {
         resolveParser: options.resolveParser,
       });
 
-      if (warnings.length > 0) toast.warning(`${warnings.length} warning(s) during ${options.warningLabel} import`);
+      if (warnings.length > 0) {
+        console.warn(`[trade import] ${warnings.length} warning(s):`, warnings);
+        toast.warning(`${warnings.length} warning(s) during ${options.warningLabel} import (see DevTools console)`);
+      }
       if (allNewTrades.length === 0) {
         if (warnings.length === 0) toast.warning(options.emptyMessage);
         return;
@@ -273,7 +276,11 @@ export function useTrades() {
     const files = event.target.files;
     if (!files || files.length === 0) return;
     try {
-      await processImportFiles(files, { warningLabel: 'file', emptyMessage: 'No valid trade rows found to import', resolveParser: () => null });
+      await processImportFiles(files, {
+        warningLabel: 'file',
+        emptyMessage: 'No valid trade rows found to import',
+        resolveParser: (_file, rows) => detectParser(rows.length > 0 ? Object.keys(rows[0]) : [], rows),
+      });
     } finally {
       event.target.value = '';
     }
