@@ -24,6 +24,7 @@ import type {
   ResearchSnapshotFiling,
   ResearchSnapshotGapStat,
   ResearchSnapshotHistoricalFloatRow,
+  ResearchSnapshotIdentityEvent,
   ResearchSnapshotNewsItem,
   ResearchSnapshotOffering,
   ResearchSnapshotOwnershipGroup,
@@ -347,7 +348,7 @@ function ConvertibleNotesSection({ notes }: { notes: ResearchSnapshotConvertible
                 <tr key={`convertible-${index}`} className="border-b border-white/5">
                   <td className="py-2 pr-3 text-zinc-300">{note.details}</td>
                   <td className="py-2 pr-3 font-mono tabular-nums text-zinc-200">{formatMoney(note.principalAmount)}</td>
-                  <td className="py-2 pr-3 font-mono font-bold tabular-nums text-zinc-200">{formatMoney(note.conversionPrice)}</td>
+                  <td className="py-2 pr-3 font-bold text-zinc-200">{formatMoney(note.conversionPrice)}</td>
                   <td className="py-2 pr-3 text-zinc-300">{formatDate(note.maturityDate)}</td>
                   <td className="py-2 pr-3 text-zinc-300">{formatDate(note.filedAt)}</td>
                   <td className="py-2 text-zinc-300">{toStringValue(note.status)}</td>
@@ -507,6 +508,53 @@ function ReverseSplitsTable({ rows }: { rows: ResearchSnapshotReverseSplit[] }) 
               <td className="py-2">{toStringValue(row.ratio)}</td>
             </tr>
           ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FormerSymbolsTable({ rows }: { rows: ResearchSnapshotIdentityEvent[] }) {
+  if (rows.length === 0) {
+    return <NoDataBadge />;
+  }
+
+  return (
+    <div className="scrollbar-hidden overflow-x-auto">
+      <table className="min-w-full">
+        <thead>
+          <tr className="border-b border-white/10 text-zinc-400">
+            <th className="py-2 pr-3 text-left">Former</th>
+            <th className="py-2 pr-3 text-left">Current</th>
+            <th className="py-2 pr-3 text-left">Effective</th>
+            <th className="py-2 text-left">Filing</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => {
+            const formType = toStringValue(row.formType);
+            return (
+              <tr key={`${row.accessionNumber ?? row.previousTicker ?? 'symbol'}-${index}`} className="border-b border-white/5 text-zinc-300">
+                <td className="py-2 pr-3 font-medium text-zinc-100">{toStringValue(row.previousTicker)}</td>
+                <td className="py-2 pr-3">{toStringValue(row.currentTicker)}</td>
+                <td className="py-2 pr-3 whitespace-nowrap">{formatDate(row.effectiveDate ?? row.filedAt)}</td>
+                <td className="py-2">
+                  {row.url ? (
+                    <a
+                      href={row.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-zinc-200 underline-offset-2 transition-colors hover:text-emerald-400 hover:underline"
+                    >
+                      {formType}
+                    </a>
+                  ) : (
+                    formType
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -723,6 +771,7 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
   const regularWarrants = data.warrants.filter((row) => !row.isPrefunded);
   const prefundedWarrants = data.warrants.filter((row) => row.isPrefunded);
   const convertibleNotes = data.convertibleNotes ?? [];
+  const formerSymbolEvents = data.identityEvents.filter((row) => row.previousTicker !== null);
 
   const hasCashPosition = [
     data.dilutionDetails.cashRemainingMonths,
@@ -826,25 +875,6 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
             <DilutionRatingPanel data={data} />
 
             <div>
-              <h4 className="mb-2 text-base font-bold text-zinc-200">Offering Risks</h4>
-              {[
-                data.dilutionDetails.warrantInfo,
-                data.dilutionDetails.convertibles,
-                data.dilutionDetails.authorizedShares,
-                data.dilutionDetails.sharesAvailable,
-              ].some((value) => value !== null) ? (
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Warrants</p><p className="text-zinc-200">{toStringValue(data.dilutionDetails.warrantInfo)}</p></div>
-                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Convertibles</p><p className="text-zinc-200">{toStringValue(data.dilutionDetails.convertibles)}</p></div>
-                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Auth Shares</p><p className="text-zinc-200">{formatNumber(data.dilutionDetails.authorizedShares)}</p></div>
-                  <div className="rounded border border-white/10 bg-white/5 p-2"><p className="text-zinc-500">Available</p><p className="text-zinc-200">{formatNumber(data.dilutionDetails.sharesAvailable)}</p></div>
-                </div>
-              ) : (
-                <NoDataBadge />
-              )}
-            </div>
-
-            <div>
               <h4 className="mb-2 text-base font-semibold text-zinc-200">Cash Position</h4>
               {hasCashPosition ? (
                 <p className="text-sm text-zinc-300">
@@ -860,6 +890,11 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
             <div>
               <h4 className="mb-2 text-base font-semibold text-zinc-200">Financial Commentary</h4>
               <p className="text-sm text-zinc-200">{toStringValue(data.dilutionDetails.managementCommentary)}</p>
+            </div>
+
+            <div>
+              <h4 className="mb-2 text-base font-semibold text-zinc-200">Former Symbols</h4>
+              <FormerSymbolsTable rows={formerSymbolEvents} />
             </div>
 
             <div className="space-y-4">

@@ -119,4 +119,62 @@ describe('ResearchReportSections filings UI', () => {
     expect(chronologicalRows[2]).toContain('DEF 14ADefinitive proxy statement');
     expect(chronologicalRows[3]).toContain('S-1Registration statement from archive shard');
   });
+
+  it('renders former symbols below financial commentary without the redundant offering risks block', () => {
+    const data = buildSnapshot({
+      dilutionDetails: {
+        cashRemainingMonths: null,
+        cashBurn: null,
+        estimatedCash: null,
+        managementCommentary: 'Management flagged future financing needs.',
+        cashNeedDescription: null,
+        filedAt: null,
+        warrantInfo: null,
+        convertibles: null,
+        authorizedShares: null,
+        sharesAvailable: null,
+      },
+      identityEvents: [
+        {
+          previousTicker: 'OHAR',
+          currentTicker: 'NHBI',
+          previousCompanyName: 'Old Harbor Therapeutics Inc.',
+          currentCompanyName: 'New Harbor BioSciences Inc.',
+          effectiveDate: '2026-05-15',
+          exchangeMarket: 'Nasdaq Capital Market',
+          eventTypes: ['ticker_change', 'name_change'],
+          filedAt: '2026-05-14',
+          formType: '8-K',
+          accessionNumber: '0001234567-26-000006',
+          url: 'https://www.sec.gov/Archives/edgar/data/1234567/8k.htm',
+        },
+        {
+          previousTicker: null,
+          currentTicker: null,
+          previousCompanyName: 'Legacy Bio Inc.',
+          currentCompanyName: 'Acme Biotech',
+          effectiveDate: '2026-04-01',
+          exchangeMarket: null,
+          eventTypes: ['name_change'],
+          filedAt: '2026-04-01',
+          formType: 'S-1/A',
+          accessionNumber: '0001234567-26-000005',
+          url: 'https://www.sec.gov/Archives/edgar/data/1234567/s1a.htm',
+        },
+      ],
+    });
+
+    render(<ResearchReportSections ticker="NHBI" data={data} activeTab="dilution" />);
+
+    const pageText = document.body.textContent ?? '';
+    expect(pageText.indexOf('Financial Commentary')).toBeLessThan(pageText.indexOf('Former Symbols'));
+    expect(screen.queryByText('Offering Risks')).toBeNull();
+    expect(screen.queryByText('Auth Shares')).toBeNull();
+    expect(screen.getByText('Management flagged future financing needs.')).toBeTruthy();
+    expect(screen.getByText('Former Symbols')).toBeTruthy();
+    expect(screen.getByText('OHAR')).toBeTruthy();
+    expect(screen.getByText('NHBI')).toBeTruthy();
+    expect(screen.getByText('8-K')).toBeTruthy();
+    expect(screen.queryByText('Legacy Bio Inc.')).toBeNull();
+  });
 });

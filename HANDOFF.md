@@ -314,9 +314,13 @@ Phase 6 final status (2026-05-13):
   - Reverse splits use broader metadata/body candidate pipeline: verified through live code and targeted parser/pipeline tests, including broadened forms and candidate fetch cap.
   - Previous ticker/symbol/name changes are parsed and exposed: verified through parser, endpoint registry, snapshot normalizer, type contract, and mapper tests.
   - AskEdgar compatibility is preserved: SEC-backed endpoints remain registered through the AskEdgar runner/barrel contract, existing AskEdgar tests remain green, and `news` handling is preserved.
+- Post-Phase 6 UI polish (2026-05-13):
+  - Added a visible `Former Symbols` section directly below Financial Commentary on the Dilution tab in `components/trading/ResearchReportSections.tsx`, backed by normalized `identityEvents` rows that include a previous ticker.
+  - Removed the redundant `Offering Risks` block from the Dilution tab because the same rating content is already displayed by `DilutionRatingPanel`.
+  - Added `__tests__/research-report-sections.test.tsx` coverage for Former Symbols placement/rendering and the removed Offering Risks heading.
 - Residual risks / manual review notes:
   - Manual authenticated browser review was not run in this phase; code-side jsdom coverage verifies the existing Filings tab renders normalized SEC rows, but a browser smoke on the Research Filings tab is still recommended before pushing.
-  - Identity events remain normalized-only with no new visible UI section. Recommended placement is unchanged from Phase 5: a compact "Identity Events" table near Dilution > Split History or a future Filings v2 detail drawer.
+  - Identity events without a previous ticker remain normalized-only for now; the Former Symbols section intentionally filters to symbol-change rows.
   - SEC archive/body coverage depends on live SEC payload variety; tests cover representative recent/archive metadata, broadened forms, status extraction, limits, and normalization, but real tickers can still expose parser edge cases.
 
 Completion criteria:
