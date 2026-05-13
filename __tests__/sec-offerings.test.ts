@@ -496,4 +496,51 @@ describe('getOfferings', () => {
       }),
     ]);
   });
+
+  it('caps lazy body fetches at the completed-offerings candidate limit', async () => {
+    const candidateFilings = Array.from({ length: 301 }, (_, index) => ({
+      accession_number: `0001234567-26-${String(index + 100).padStart(6, '0')}`,
+      form_type: '424B5',
+      filed_at: '2026-05-01',
+      headline: `Prospectus supplement ${index + 1}`,
+      url: `https://www.sec.gov/Archives/edgar/data/1234567/424b5-${index + 1}.htm`,
+      primary_doc_description: '424B5 filing',
+      items: null,
+    }));
+    getSecFilingsForProfileMock.mockResolvedValue({
+      status: 'success',
+      count: candidateFilings.length + 1,
+      results: [
+        {
+          accession_number: '0001234567-26-000099',
+          form_type: '10-Q',
+          filed_at: '2026-05-02',
+          headline: 'Quarterly report',
+          url: 'https://www.sec.gov/Archives/edgar/data/1234567/10q.htm',
+          primary_doc_description: '10-Q filing',
+          items: null,
+        },
+        ...candidateFilings,
+      ],
+    });
+    getFilingBodyMock.mockResolvedValue({
+      accessionNumber: 'any',
+      cik: '0001234567',
+      formType: '424B5',
+      filedAt: '2026-05-01',
+      text: 'THE OFFERING We are offering 1,000,000 shares of common stock at $1.00 per share. We expect gross proceeds of $1 million.',
+    });
+
+    const { getOfferings } = await import('@/lib/sec/offerings');
+    const result = await getOfferings('GLND');
+
+    expect(getFilingBodyMock).toHaveBeenCalledTimes(300);
+    expect(getFilingBodyMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      accessionNumber: '0001234567-26-000099',
+    }));
+    expect(getFilingBodyMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      accessionNumber: '0001234567-26-000400',
+    }));
+    expect(result.count).toBe(300);
+  });
 });

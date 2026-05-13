@@ -168,4 +168,46 @@ describe('getIdentityEvents', () => {
       ],
     });
   });
+
+  it('caps lazy body fetches at the symbol-changes candidate limit', async () => {
+    const candidateFilings = Array.from({ length: 201 }, (_, index) => ({
+      accession_number: `0001234567-26-${String(index + 100).padStart(6, '0')}`,
+      form_type: '8-K',
+      filed_at: '2026-05-01',
+      headline: `Identity event ${index + 1}`,
+      url: `https://www.sec.gov/Archives/edgar/data/1234567/8k-${index + 1}.htm`,
+      items: '5.03',
+    }));
+    getSecFilingsForProfileMock.mockResolvedValue({
+      status: 'success',
+      count: candidateFilings.length + 1,
+      results: [
+        {
+          accession_number: '0001234567-26-000099',
+          form_type: '10-Q',
+          filed_at: '2026-05-02',
+          headline: 'Quarterly report',
+          url: 'https://www.sec.gov/Archives/edgar/data/1234567/10q.htm',
+          items: null,
+        },
+        ...candidateFilings,
+      ],
+    });
+    getFilingBodyMock.mockResolvedValue({
+      accessionNumber: 'any',
+      text: 'Effective May 1, 2026, the ticker symbol changed from OHAR to NHBI on the Nasdaq Capital Market.',
+    });
+
+    const { getIdentityEvents } = await import('@/lib/sec/identity-events');
+    const result = await getIdentityEvents('NHBI');
+
+    expect(getFilingBodyMock).toHaveBeenCalledTimes(200);
+    expect(getFilingBodyMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      accessionNumber: '0001234567-26-000099',
+    }));
+    expect(getFilingBodyMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      accessionNumber: '0001234567-26-000300',
+    }));
+    expect(result.count).toBe(200);
+  });
 });

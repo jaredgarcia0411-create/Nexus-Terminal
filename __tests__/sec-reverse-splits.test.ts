@@ -228,4 +228,51 @@ describe('getReverseSplits', () => {
       ],
     });
   });
+
+  it('caps lazy body fetches at the reverse-splits candidate limit', async () => {
+    const candidateFilings = Array.from({ length: 201 }, (_, index) => ({
+      accession_number: `0001234567-26-${String(index + 100).padStart(6, '0')}`,
+      form_type: '8-K',
+      filed_at: '2026-05-01',
+      headline: `Other events ${index + 1}`,
+      url: `https://www.sec.gov/Archives/edgar/data/1234567/8k-${index + 1}.htm`,
+      primary_doc_description: '8-K filing',
+      items: '8.01',
+    }));
+    getSecFilingsForProfileMock.mockResolvedValue({
+      status: 'success',
+      count: candidateFilings.length + 1,
+      results: [
+        {
+          accession_number: '0001234567-26-000099',
+          form_type: '10-Q',
+          filed_at: '2026-05-02',
+          headline: 'Quarterly report',
+          url: 'https://www.sec.gov/Archives/edgar/data/1234567/10q.htm',
+          primary_doc_description: '10-Q filing',
+          items: null,
+        },
+        ...candidateFilings,
+      ],
+    });
+    getFilingBodyMock.mockResolvedValue({
+      accessionNumber: 'any',
+      cik: '0001234567',
+      formType: '8-K',
+      filedAt: '2026-05-01',
+      text: 'The company effected a 1-for-25 reverse stock split, effective May 1, 2026.',
+    });
+
+    const { getReverseSplits } = await import('@/lib/sec/reverse-splits');
+    const result = await getReverseSplits('GLND');
+
+    expect(getFilingBodyMock).toHaveBeenCalledTimes(200);
+    expect(getFilingBodyMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      accessionNumber: '0001234567-26-000099',
+    }));
+    expect(getFilingBodyMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      accessionNumber: '0001234567-26-000300',
+    }));
+    expect(result.count).toBe(200);
+  });
 });

@@ -291,6 +291,34 @@ Phase 6 - Final Integration And Validation:
 7. Update `HANDOFF.md` with shipped behavior, validation evidence, residual risks, and any manual review notes.
 8. Create a final local commit. Do not push unless explicitly instructed.
 
+Phase 6 final status (2026-05-13):
+- Verified the Phase 1 through Phase 5 checkpoint chain against the live repo before editing. Local Phase 5 commit `bcf1ea1` (`Add SEC identity event extraction`) is `HEAD`, with Phase 1-4 commits immediately behind it.
+- Confirmed Research Filings uses the expanded first-party SEC metadata feed: `lib/askedgar/endpoints.ts` registers `sec-filings` to `getResearchFilings()`, `lib/sec/submissions.ts` profile `research-filings` reads recent submissions plus archive shards with a 300-row / 24-month metadata-only profile, and `lib/askedgar/snapshot-normalizer.ts` prefers `sec-filings` rows for normalized `ResearchSnapshot.filings` while preserving AskEdgar `news` rows as news and as a fallback filing source.
+- Confirmed completed offerings use the broader metadata/body candidate pipeline: `lib/sec/offerings.ts` calls `getSecFilingsForProfile(rawTicker, 'completed-offerings')`, filters the broadened candidate forms, and fetches filing bodies lazily only after candidate filtering, capped by the completed-offerings profile's `parseCandidateLimit`.
+- Confirmed reverse splits use the broader metadata/body candidate pipeline: `lib/sec/reverse-splits.ts` calls the `reverse-splits` SEC profile, includes 8-K Item 5.03/8.01, 6-K, proxy, and related proxy amendment candidates, and lazily body-fetches only filtered candidates, capped by the profile limit.
+- Confirmed previous ticker/symbol/name changes are parsed and exposed through the normalized contract: `lib/sec/identity-events.ts` uses the `symbol-changes` profile and candidate-body parsing, `lib/askedgar/endpoints.ts` exposes `identity-events`, `lib/askedgar/snapshot-normalizer.ts` maps it to `ResearchSnapshot.identityEvents`, and `lib/types.ts` defines the UI-safe `ResearchSnapshotIdentityEvent` contract.
+- Added final integration coverage:
+  - `__tests__/sec-offerings.test.ts`: completed-offerings candidate body-fetch cap and non-candidate skip.
+  - `__tests__/sec-reverse-splits.test.ts`: reverse-splits candidate body-fetch cap and non-candidate skip.
+  - `__tests__/sec-identity-events.test.ts`: symbol-changes candidate body-fetch cap and non-candidate skip.
+  - `__tests__/research-report-sections.test.tsx`: Research Filings UI renders normalized first-party SEC filing rows by bucket and chronological view.
+- Validation completed before final Phase 6 commit:
+  - `npx vitest run __tests__/sec-submissions.test.ts __tests__/sec-offerings-parser.test.ts __tests__/sec-offerings.test.ts __tests__/sec-reverse-splits-parser.test.ts __tests__/sec-reverse-splits.test.ts __tests__/sec-identity-events-parser.test.ts __tests__/sec-identity-events.test.ts __tests__/research-snapshot-mapper.test.ts __tests__/research-report-sections.test.tsx` passed: 9 files, 59 tests.
+  - `npm run lint` passed.
+  - `npx tsc --noEmit` passed.
+  - `npm test` passed: 90 files, 647 tests.
+  - `npm run workflow:audit` passed after the `HANDOFF.md` update.
+- Completion audit:
+  - Research Filings tab uses broader first-party SEC filing set: verified through endpoint registry, SEC profile, snapshot normalizer, mapper test, and UI render test.
+  - Completed offerings use broader metadata/body candidate pipeline: verified through live code and targeted parser/pipeline tests, including status extraction and candidate fetch cap.
+  - Reverse splits use broader metadata/body candidate pipeline: verified through live code and targeted parser/pipeline tests, including broadened forms and candidate fetch cap.
+  - Previous ticker/symbol/name changes are parsed and exposed: verified through parser, endpoint registry, snapshot normalizer, type contract, and mapper tests.
+  - AskEdgar compatibility is preserved: SEC-backed endpoints remain registered through the AskEdgar runner/barrel contract, existing AskEdgar tests remain green, and `news` handling is preserved.
+- Residual risks / manual review notes:
+  - Manual authenticated browser review was not run in this phase; code-side jsdom coverage verifies the existing Filings tab renders normalized SEC rows, but a browser smoke on the Research Filings tab is still recommended before pushing.
+  - Identity events remain normalized-only with no new visible UI section. Recommended placement is unchanged from Phase 5: a compact "Identity Events" table near Dilution > Split History or a future Filings v2 detail drawer.
+  - SEC archive/body coverage depends on live SEC payload variety; tests cover representative recent/archive metadata, broadened forms, status extraction, limits, and normalization, but real tickers can still expose parser edge cases.
+
 Completion criteria:
 - A ticker can retrieve substantially more SEC filing metadata than the old 20-row/90-day recent-only path.
 - Research Filings tab is backed by the expanded SEC metadata feed.
