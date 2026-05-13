@@ -384,7 +384,7 @@ export function normalizeAskEdgarResponse(
     const ratio = getStringField(row, ['ratio'])
       ?? `${getStringField(row, ['splitFrom', 'split_from']) ?? '--'}:${getStringField(row, ['splitTo', 'split_to']) ?? '--'}`;
     return {
-      date: getStringField(row, ['executionDate', 'execution_date', 'date']),
+      date: getStringField(row, ['executionDate', 'execution_date', 'effectiveDate', 'effective_date', 'date']),
       ratio,
     } satisfies ResearchSnapshotReverseSplit;
   });

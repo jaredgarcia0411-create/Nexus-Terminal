@@ -10,6 +10,33 @@ const emptyResponse: AskEdgarResponse<unknown> = {
 };
 
 describe('normalizeAskEdgarResponse', () => {
+  it('maps richer reverse-split effective dates into the existing snapshot shape', () => {
+    const rawData: Record<string, AskEdgarResponse<unknown>> = {
+      'reverse-splits': {
+        status: 'success',
+        count: 1,
+        results: [{
+          ratio: '1-for-20',
+          executionDate: null,
+          effectiveDate: '2026-05-21',
+          lifecycleStatus: 'completed',
+        }],
+      },
+    };
+
+    const snapshot = normalizeAskEdgarResponse(rawData, {
+      ticker: 'ABCD',
+      companyName: 'Acme Biotech',
+      fetchedAt: '2026-04-29T00:00:00.000Z',
+      warnings: [],
+    });
+
+    expect(snapshot.reverseSplits).toEqual([{
+      date: '2026-05-21',
+      ratio: '1-for-20',
+    }]);
+  });
+
   it('uses first-party SEC filing metadata for the filings tab while preserving news rows', () => {
     const rawData: Record<string, AskEdgarResponse<unknown>> = {
       screener: emptyResponse,

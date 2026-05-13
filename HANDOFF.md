@@ -219,6 +219,19 @@ Extract:
 
 Keep existing parser behavior but broaden candidate discovery.
 
+Phase 4 checkpoint status (2026-05-13):
+- Broadened reverse-split candidate discovery in `lib/sec/reverse-splits.ts` to include `8-K` / `8-K/A` Items `5.03` and `8.01`, `6-K` / `6-K/A`, `DEF 14A`, `PRE 14A`, `DEF 14C`, `PRE 14C`, and related proxy amendment forms while keeping body fetching lazy and candidate-based through the reverse-splits SEC pull profile.
+- Expanded first-party reverse-split extraction to return a richer internal event shape with lifecycle status (`proposed`, `approved`, `announced`, `effective`, `completed`), ratio, announcement date, effective/execution date, vote/approval date, source accession and URL, source snippet, and confidence.
+- Preserved existing normalized Research snapshot behavior by keeping `executionDate` in the reverse-splits endpoint output and mapping richer `effectiveDate` values down to the existing `ResearchSnapshotReverseSplit.date` field in `lib/askedgar/snapshot-normalizer.ts`.
+- Added focused coverage for parser lifecycle/date extraction, broadened candidate-form filtering, lazy body-fetch counts, and snapshot down-mapping.
+- Validation completed before checkpoint commit:
+  - `npx vitest run __tests__/sec-reverse-splits-parser.test.ts __tests__/sec-reverse-splits.test.ts __tests__/research-snapshot-mapper.test.ts` passed: 3 files, 17 tests.
+  - `npm run lint` passed.
+  - `npx tsc --noEmit` passed.
+  - `npm test` passed: 87 files, 637 tests.
+  - `npm run workflow:audit` passed.
+- Phase 5 previous ticker / symbol change extraction has not started. Stop here after the local Phase 4 commit unless the user explicitly reopens Phase 5.
+
 Phase 5 - Previous Ticker / Symbol Change Extraction:
 Add first-party identity event extraction.
 

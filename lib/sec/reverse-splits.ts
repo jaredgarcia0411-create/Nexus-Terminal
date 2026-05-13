@@ -2,12 +2,20 @@ import { getCikForTicker } from '@/lib/sec/cik-map';
 import { getFilingBody } from '@/lib/sec/filing-body';
 import { getSecFilingPullProfileConfig, getSecFilingsForProfile } from '@/lib/sec/submissions';
 
+export type ReverseSplitLifecycleStatus = 'proposed' | 'approved' | 'announced' | 'effective' | 'completed';
+export type ReverseSplitConfidence = 'high' | 'medium' | 'low';
+
 export interface ReverseSplit {
   ratio: string;
   executionDate: string | null;
+  effectiveDate: string | null;
+  voteApprovalDate: string | null;
   announcementDate: string;
+  lifecycleStatus: ReverseSplitLifecycleStatus;
   accessionNumber: string;
   url: string;
+  sourceSnippet: string | null;
+  confidence: ReverseSplitConfidence;
 }
 
 export interface ReverseSplitsResponse {
@@ -20,22 +28,33 @@ export interface ReverseSplitsResponse {
 interface RawSplit {
   ratio: string;
   executionDate: string | null;
+  effectiveDate: string | null;
+  announcementDate: string | null;
+  voteApprovalDate: string | null;
+  lifecycleStatus: ReverseSplitLifecycleStatus;
+  sourceSnippet: string | null;
+  confidence: ReverseSplitConfidence;
 }
 
 const MAX_SCAN_CHARS = 50_000;
 const CONTEXT_WINDOW_CHARS = 200;
 const REVERSE_SPLIT_PROFILE = getSecFilingPullProfileConfig('reverse-splits');
+const FORM_8K_REGEX = /^8-K(\/A)?$/i;
+const FORM_6K_REGEX = /^6-K(\/A)?$/i;
+const REVERSE_SPLIT_8K_ITEMS = ['5.03', '8.01'] as const;
 
 const RATIO_PATTERNS: RegExp[] = [
   /(\d+)\s*[-\s]?\s*(?:for|to|:)\s*[-\s]?\s*(\d+)\s+reverse\s+(?:stock\s+)?split/i,
   /reverse\s+(?:stock\s+)?split\s+(?:at\s+(?:a\s+)?ratio\s+of\s+)?(\d+)\s*[-\s]?\s*(?:for|to|:)\s*[-\s]?\s*(\d+)/i,
   /(\d+)\s*[-\s]?\s*(?:for|to)\s*[-\s]?\s*(\d+)\s+(?:share\s+)?consolidation/i,
+  /(?:one|1)\s+(?:post[-\s]split\s+)?share\s+for\s+every\s+(\d+)\s+(?:pre[-\s]split\s+)?shares?/i,
 ];
 
 const WORD_RATIO_PATTERNS: RegExp[] = [
   /\b([a-z-]+)\s*[-\s]?(?:for|to)\s*[-\s]?([a-z-]+)\s+reverse\s+(?:stock\s+)?split/i,
   /\breverse\s+(?:stock\s+)?split\s+(?:at\s+(?:a\s+)?ratio\s+of\s+)?([a-z-]+)\s*[-\s]?(?:for|to)\s*[-\s]?([a-z-]+)/i,
   /\b([a-z-]+)\s*[-\s]?(?:for|to)\s*[-\s]?([a-z-]+)\s+(?:share\s+)?consolidation/i,
+  /\bone\s+(?:post[-\s]split\s+)?share\s+for\s+every\s+([a-z-]+)\s+(?:pre[-\s]split\s+)?shares?/i,
 ];
 
 const DATE_PATTERNS: RegExp[] = [
@@ -43,6 +62,8 @@ const DATE_PATTERNS: RegExp[] = [
   /effective\s+(?:on\s+|as\s+of\s+)?(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
   /effective\s+(?:on\s+|as\s+of\s+)?(\d{4}-\d{2}-\d{2})/i,
 ];
+
+const ANY_DATE_PATTERN = /\b(?:[A-Z][a-z]+\s+\d{1,2},\s*\d{4}|\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2})\b/;
 
 const NUMBER_WORDS: Record<string, number> = {
   zero: 0,
@@ -83,6 +104,16 @@ function normalizeRatio(numerator: number, denominator: number): string | null {
   return `${numerator}-for-${denominator}`;
 }
 
+function compactWhitespace(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function getContextWindow(text: string, matchIndex: number, matchLength: number): string {
+  const start = Math.max(0, matchIndex - CONTEXT_WINDOW_CHARS);
+  const end = Math.min(text.length, matchIndex + matchLength + CONTEXT_WINDOW_CHARS);
+  return text.slice(start, end);
+}
+
 function parseWordNumber(value: string): number | null {
   // The caller's regex captures hyphens inside [a-z-]+, so values like "one-" can
   // arrive when the boundary hyphen is consumed by the word group. Trim again
@@ -112,9 +143,7 @@ function parseWordNumber(value: string): number | null {
 }
 
 function extractExecutionDate(text: string, matchIndex: number, matchLength: number): string | null {
-  const start = Math.max(0, matchIndex - CONTEXT_WINDOW_CHARS);
-  const end = Math.min(text.length, matchIndex + matchLength + CONTEXT_WINDOW_CHARS);
-  const context = text.slice(start, end);
+  const context = getContextWindow(text, matchIndex, matchLength);
 
   for (const pattern of DATE_PATTERNS) {
     const match = pattern.exec(context);
@@ -127,20 +156,91 @@ function extractExecutionDate(text: string, matchIndex: number, matchLength: num
   return null;
 }
 
+function extractDateNear(text: string, patterns: RegExp[]): string | null {
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (!match) continue;
+
+    const context = getContextWindow(text, match.index, match[0].length);
+    const dateMatch = ANY_DATE_PATTERN.exec(context);
+    if (!dateMatch?.[0]) continue;
+
+    const parsed = parseFlexibleDate(dateMatch[0]);
+    if (parsed) return parsed;
+  }
+
+  return null;
+}
+
+function inferLifecycleStatus(text: string): ReverseSplitLifecycleStatus {
+  if (/\b(?:effected|implemented|completed|consummated)\b[^.]{0,220}\b(?:reverse\s+(?:stock\s+)?split|share\s+consolidation)\b/i.test(text)) {
+    return 'completed';
+  }
+  if (/\b(?:reverse\s+(?:stock\s+)?split|share\s+consolidation)\b[^.]{0,220}\b(?:effected|implemented|completed|consummated)\b/i.test(text)) {
+    return 'completed';
+  }
+  if (/\beffective\b/i.test(text)) return 'effective';
+  if (/\b(?:stockholders?|shareholders?)\s+approved\b|\bapproved\s+by\s+(?:the\s+)?(?:stockholders?|shareholders?)\b|\bboard\s+approved\b|\bapproved\b[^.]{0,120}\breverse\s+(?:stock\s+)?split\b/i.test(text)) {
+    return 'approved';
+  }
+  if (/\b(?:proposed|proposal|proposing|seek(?:ing)?\s+(?:stockholder|shareholder)\s+approval|will\s+vote|to\s+approve)\b/i.test(text)) {
+    return 'proposed';
+  }
+
+  return 'announced';
+}
+
+function confidenceForSplit(
+  lifecycleStatus: ReverseSplitLifecycleStatus,
+  effectiveDate: string | null,
+  voteApprovalDate: string | null,
+): ReverseSplitConfidence {
+  if (effectiveDate !== null || voteApprovalDate !== null || lifecycleStatus === 'completed' || lifecycleStatus === 'effective') {
+    return 'high';
+  }
+  if (lifecycleStatus === 'approved' || lifecycleStatus === 'announced') return 'medium';
+  return 'low';
+}
+
+function buildRawSplit(text: string, matchIndex: number, matchLength: number, ratio: string): RawSplit {
+  const context = getContextWindow(text, matchIndex, matchLength);
+  const effectiveDate = extractExecutionDate(text, matchIndex, matchLength);
+  const voteApprovalDate = extractDateNear(text, [
+    /\b(?:stockholders?|shareholders?)\s+approved\b/i,
+    /\bapproved\s+by\s+(?:the\s+)?(?:stockholders?|shareholders?)\b/i,
+    /\b(?:annual|special)\s+meeting\b/i,
+    /\bboard\s+approved\b/i,
+    /\bapproved\s+(?:a|the)\s+reverse\s+(?:stock\s+)?split\b/i,
+  ]);
+  const announcementDate = extractDateNear(text, [
+    /\bannounced\b/i,
+    /\bpublicly\s+announced\b/i,
+  ]);
+  const lifecycleStatus = inferLifecycleStatus(context);
+
+  return {
+    ratio,
+    executionDate: effectiveDate,
+    effectiveDate,
+    announcementDate,
+    voteApprovalDate,
+    lifecycleStatus,
+    sourceSnippet: compactWhitespace(context).slice(0, 500),
+    confidence: confidenceForSplit(lifecycleStatus, effectiveDate, voteApprovalDate),
+  };
+}
+
 function tryDigitPatterns(text: string): RawSplit | null {
   for (const pattern of RATIO_PATTERNS) {
     const match = pattern.exec(text);
-    if (!match?.[1] || !match[2]) continue;
+    if (!match?.[1]) continue;
 
-    const numerator = Number.parseInt(match[1], 10);
-    const denominator = Number.parseInt(match[2], 10);
+    const numerator = match[2] ? Number.parseInt(match[1], 10) : 1;
+    const denominator = Number.parseInt(match[2] ?? match[1], 10);
     const ratio = normalizeRatio(numerator, denominator);
     if (!ratio) continue;
 
-    return {
-      ratio,
-      executionDate: extractExecutionDate(text, match.index, match[0].length),
-    };
+    return buildRawSplit(text, match.index, match[0].length, ratio);
   }
 
   return null;
@@ -149,19 +249,16 @@ function tryDigitPatterns(text: string): RawSplit | null {
 function tryWordPatterns(text: string): RawSplit | null {
   for (const pattern of WORD_RATIO_PATTERNS) {
     const match = pattern.exec(text);
-    if (!match?.[1] || !match[2]) continue;
+    if (!match?.[1]) continue;
 
-    const numerator = parseWordNumber(match[1]);
-    const denominator = parseWordNumber(match[2]);
+    const numerator = match[2] ? parseWordNumber(match[1]) : 1;
+    const denominator = parseWordNumber(match[2] ?? match[1]);
     if (numerator === null || denominator === null) continue;
 
     const ratio = normalizeRatio(numerator, denominator);
     if (!ratio) continue;
 
-    return {
-      ratio,
-      executionDate: extractExecutionDate(text, match.index, match[0].length),
-    };
+    return buildRawSplit(text, match.index, match[0].length, ratio);
   }
 
   return null;
@@ -197,6 +294,31 @@ export function parseFlexibleDate(value: string): string | null {
   }
 
   return null;
+}
+
+function hasItemCode(items: string | null, target: typeof REVERSE_SPLIT_8K_ITEMS[number]): boolean {
+  if (items === null) return true;
+  return items
+    .split(',')
+    .map((item) => item.trim().replace(/^Item\s+/i, ''))
+    .some((item) => item === target);
+}
+
+function hasAnyReverseSplit8KItem(items: string | null): boolean {
+  return REVERSE_SPLIT_8K_ITEMS.some((item) => hasItemCode(items, item));
+}
+
+function isProxyCandidateForm(formType: string): boolean {
+  const key = formType.toUpperCase().replace(/\s+/g, '');
+  return /^(?:DEF|PRE)14[AC](?:\/A)?$/.test(key)
+    || /^(?:DEFA|PREA|DFAN|DEFC|DEFR|PREC)14[AC]$/.test(key);
+}
+
+function isCandidateFiling(formType: string, items: string | null): boolean {
+  if (FORM_6K_REGEX.test(formType)) return true;
+  if (isProxyCandidateForm(formType)) return true;
+  if (!FORM_8K_REGEX.test(formType)) return false;
+  return hasAnyReverseSplit8KItem(items);
 }
 
 function monthNameToNumber(month: string): number | null {
@@ -250,8 +372,7 @@ export async function getReverseSplits(
   }
 
   const candidateFilings = filings.results.filter((filing) => (
-    /^8-K(\/A)?$/i.test(filing.form_type)
-      && (filing.items === null || filing.items.includes('5.03'))
+    isCandidateFiling(filing.form_type, filing.items)
       && (
         options?.sinceDays === undefined
         || new Date(filing.filed_at).getTime() >= Date.now() - options.sinceDays * 86400000
@@ -275,9 +396,14 @@ export async function getReverseSplits(
     matches.push({
       ratio: extracted.ratio,
       executionDate: extracted.executionDate,
-      announcementDate: filing.filed_at,
+      effectiveDate: extracted.effectiveDate,
+      voteApprovalDate: extracted.voteApprovalDate,
+      announcementDate: extracted.announcementDate ?? filing.filed_at,
+      lifecycleStatus: extracted.lifecycleStatus,
       accessionNumber: filing.accession_number,
       url: filing.url,
+      sourceSnippet: extracted.sourceSnippet,
+      confidence: extracted.confidence,
     });
   }
 
