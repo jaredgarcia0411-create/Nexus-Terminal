@@ -186,6 +186,19 @@ Important:
 - Completed/closed offerings should be distinguishable from mere registrations/resale prospectuses.
 - Keep existing `ResearchSnapshotOffering` compatibility or add a richer internal event shape and map down for UI.
 
+Phase 3 checkpoint status (2026-05-13):
+- Broadened completed-offering candidate discovery in `lib/sec/offerings.ts` to include `424B*`, `FWP`, `EFFECT`, `S-1`, `S-1/A`, `S-3`, `S-3/A`, `F-1`, `F-1/A`, `F-3`, `F-3/A`, and `8-K` / `8-K/A` Items `1.01`, `2.03`, `3.02`, `7.01`, `8.01`, and `9.01`.
+- Kept body fetching lazy and candidate-based through the completed-offerings SEC pull profile; non-candidate forms such as `10-Q` are not fetched for offering bodies.
+- Expanded `lib/sec/offerings-extractors.ts` to return richer raw offering event fields: status (`announced`, `priced`, `closed`, `terminated`, `resale_only`, `unknown`), securities amount, net proceeds, priced/closed dates when present, source snippets, and confidence.
+- Preserved `ResearchSnapshotOffering` compatibility in the snapshot normalizer while filtering `resale_only` raw offering events from the UI-facing past-offerings list.
+- Validation completed before checkpoint commit:
+  - `npx vitest run __tests__/sec-offerings-parser.test.ts __tests__/sec-offerings.test.ts __tests__/research-snapshot-mapper.test.ts` passed: 3 files, 29 tests.
+  - `npm run lint` passed.
+  - `npx tsc --noEmit` passed.
+  - `npm test` passed: 87 files, 634 tests.
+  - `npm run workflow:audit` passed.
+- Phase 4 reverse-split expansion has not started. Stop here after the local Phase 3 commit unless the user explicitly reopens Phase 4.
+
 Phase 4 - Reverse Split Expansion:
 Improve reverse split coverage.
 

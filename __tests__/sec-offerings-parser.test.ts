@@ -6,6 +6,8 @@ import {
   extractOfferingFrom424B,
   extractOfferingFrom8K101,
   extractOfferingFrom8K302,
+  extractOfferingFrom8KOtherItem,
+  extractOfferingFromRegistrationForm,
   extractShareCount,
 } from '@/lib/sec/offerings-extractors';
 
@@ -20,14 +22,21 @@ describe('SEC offerings extractors', () => {
       'We expect gross proceeds of $5.0 million before fees.',
     ].join(' ');
 
-    expect(extractOfferingFrom424B(body, '424B5')).toEqual({
+    expect(extractOfferingFrom424B(body, '424B5')).toEqual(expect.objectContaining({
+      status: 'priced',
       offeringType: 'ATM USED',
       sharesAmount: 2_000_000,
+      securitiesAmount: 2_000_000,
       sharePrice: 2.5,
       offeringAmount: 5_000_000,
+      netProceedsAmount: null,
       warrantsAmount: null,
       isSellingStockholderResale: false,
-    });
+      pricedDate: null,
+      closedDate: null,
+      sourceSnippet: expect.any(String),
+      confidence: 'high',
+    }));
   });
 
   it('extracts 424B3 registered direct fields including warrants', () => {
@@ -39,14 +48,17 @@ describe('SEC offerings extractors', () => {
       'Investors will also receive 5,000,000 warrants to purchase common stock.',
     ].join(' ');
 
-    expect(extractOfferingFrom424B(body, '424B3')).toEqual({
+    expect(extractOfferingFrom424B(body, '424B3')).toEqual(expect.objectContaining({
+      status: 'priced',
       offeringType: 'REGISTERED DIRECT',
       sharesAmount: 5_000_000,
+      securitiesAmount: 5_000_000,
       sharePrice: 1.25,
       offeringAmount: 6_250_000,
+      netProceedsAmount: null,
       warrantsAmount: 5_000_000,
       isSellingStockholderResale: false,
-    });
+    }));
   });
 
   it('keeps share and price fields when a 424B lacks a gross proceeds anchor', () => {
@@ -58,14 +70,17 @@ describe('SEC offerings extractors', () => {
       'Investors will also receive 4,000,000 warrants to purchase common stock.',
     ].join(' ');
 
-    expect(extractOfferingFrom424B(body, '424B5')).toEqual({
+    expect(extractOfferingFrom424B(body, '424B5')).toEqual(expect.objectContaining({
+      status: 'priced',
       offeringType: 'SHELF TAKEDOWN',
       sharesAmount: 4_000_000,
+      securitiesAmount: 4_000_000,
       sharePrice: 1.25,
       offeringAmount: null,
+      netProceedsAmount: null,
       warrantsAmount: 4_000_000,
       isSellingStockholderResale: false,
-    });
+    }));
   });
 
   it('returns null when a 424B fallback scan still has no offering signal', () => {
@@ -81,14 +96,17 @@ describe('SEC offerings extractors', () => {
       'The purchase price is $1.00 per share.',
     ].join(' ');
 
-    expect(extractOfferingFrom424B(body, '424B3')).toEqual({
+    expect(extractOfferingFrom424B(body, '424B3')).toEqual(expect.objectContaining({
+      status: 'resale_only',
       offeringType: 'REGISTERED DIRECT',
       sharesAmount: 3_000_000,
+      securitiesAmount: 3_000_000,
       sharePrice: 1,
       offeringAmount: null,
+      netProceedsAmount: null,
       warrantsAmount: null,
       isSellingStockholderResale: true,
-    });
+    }));
   });
 
   it('extracts 8-K Item 3.02 PIPE fields', () => {
@@ -99,25 +117,33 @@ describe('SEC offerings extractors', () => {
       'We expect gross proceeds of $3 million.',
     ].join(' ');
 
-    expect(extractOfferingFrom8K302(body)).toEqual({
+    expect(extractOfferingFrom8K302(body)).toEqual(expect.objectContaining({
+      status: 'announced',
       offeringType: 'PIPE',
       sharesAmount: 1_500_000,
+      securitiesAmount: 1_500_000,
       sharePrice: 2,
       offeringAmount: 3_000_000,
+      netProceedsAmount: null,
       warrantsAmount: null,
       isSellingStockholderResale: false,
-    });
+      confidence: 'medium',
+    }));
   });
 
   it('keeps Item 3.02 rows even when no numeric fields are extracted', () => {
-    expect(extractOfferingFrom8K302('Item 3.02 Unregistered Sales of Equity Securities.')).toEqual({
+    expect(extractOfferingFrom8K302('Item 3.02 Unregistered Sales of Equity Securities.')).toEqual(expect.objectContaining({
+      status: 'announced',
       offeringType: 'PIPE',
       sharesAmount: null,
+      securitiesAmount: null,
       sharePrice: null,
       offeringAmount: null,
+      netProceedsAmount: null,
       warrantsAmount: null,
       isSellingStockholderResale: false,
-    });
+      confidence: 'low',
+    }));
   });
 
   it('returns null for 8-K text without an Item 3.02 anchor', () => {
@@ -133,14 +159,18 @@ describe('SEC offerings extractors', () => {
       'We expect gross proceeds of $3 million.',
     ].join(' ');
 
-    expect(extractOfferingFrom8K101(body)).toEqual({
+    expect(extractOfferingFrom8K101(body)).toEqual(expect.objectContaining({
+      status: 'priced',
       offeringType: 'PRIVATE PLACEMENT',
       sharesAmount: 2_500_000,
+      securitiesAmount: 2_500_000,
       sharePrice: 1.2,
       offeringAmount: 3_000_000,
+      netProceedsAmount: null,
       warrantsAmount: null,
       isSellingStockholderResale: false,
-    });
+      confidence: 'high',
+    }));
   });
 
   it('returns null for Item 1.01 agreements that are not offering-related', () => {
@@ -177,5 +207,59 @@ describe('SEC offerings extractors', () => {
     ].join(' ');
 
     expect(extractShareCount(body)).toBe(5_000_000);
+  });
+
+  it('extracts closed offering details from broader 8-K item disclosures', () => {
+    const body = [
+      'Item 8.01 Other Events.',
+      'On May 12, 2026, the company closed its registered direct offering of 6,000,000 shares of common stock.',
+      'The offering price was $0.75 per share.',
+      'Gross proceeds were approximately $4.5 million and estimated net proceeds were approximately $4.1 million.',
+      'Investors also received 6,000,000 warrants to purchase common stock.',
+    ].join(' ');
+
+    expect(extractOfferingFrom8KOtherItem(body)).toEqual(expect.objectContaining({
+      status: 'closed',
+      offeringType: 'REGISTERED DIRECT',
+      sharesAmount: 6_000_000,
+      securitiesAmount: 6_000_000,
+      sharePrice: 0.75,
+      offeringAmount: 4_500_000,
+      netProceedsAmount: 4_100_000,
+      warrantsAmount: 6_000_000,
+      closedDate: '2026-05-12',
+      sourceSnippet: expect.stringContaining('closed its registered direct offering'),
+      confidence: 'high',
+    }));
+  });
+
+  it('marks registration resale prospectuses as resale-only instead of completed offerings', () => {
+    const body = [
+      'This prospectus relates to the resale by the selling stockholders named herein.',
+      'THE OFFERING',
+      'The selling stockholders may offer up to 8,000,000 shares of common stock from time to time.',
+    ].join(' ');
+
+    expect(extractOfferingFromRegistrationForm(body, 'S-1')).toEqual(expect.objectContaining({
+      status: 'resale_only',
+      offeringType: 'REGISTERED OFFERING',
+      sharesAmount: 8_000_000,
+      isSellingStockholderResale: true,
+      confidence: 'medium',
+    }));
+  });
+
+  it('captures terminated offering status without treating it as closed', () => {
+    const body = [
+      'Item 7.01 Regulation FD Disclosure.',
+      'The company terminated its previously announced public offering and will not proceed with the financing.',
+    ].join(' ');
+
+    expect(extractOfferingFrom8KOtherItem(body)).toEqual(expect.objectContaining({
+      status: 'terminated',
+      offeringType: 'PUBLIC OFFERING',
+      closedDate: null,
+      confidence: 'high',
+    }));
   });
 });

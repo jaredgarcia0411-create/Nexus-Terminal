@@ -199,7 +199,7 @@ export function normalizeAskEdgarResponse(
 
   const offerings = dedupeByHeadline(
     (getEndpointResponse(rawData, ['offerings']).results as RawOffering[])
-      .filter((row) => !row.isSellingStockholderResale)
+      .filter((row) => !row.isSellingStockholderResale && row.status !== 'resale_only')
       .map((row) => {
         return {
           headline: buildOfferingHeadline(row),
