@@ -1,127 +1,232 @@
 # Nexus Terminal - HANDOFF.md
 
-> Updated: 2026-05-12
-> Purpose: shipped-work summary and remaining follow-ups. Older implementation detail lives in git history and `specs/`.
+> Updated: 2026-05-13
+> Purpose: active execution spec for SEC filing expansion. Older implementation detail lives in git history, `specs/`, and `docs/repo-cleanup.md`.
 
-## Cleanup Roadmap Status
+## Current Context
 
-Source artifact: `docs/repo-cleanup.md`.
+- Cleanup roadmap Steps 1-6 are complete. Step 7 remains intentionally parked except for the AskEdgar split included in the active spec below.
+- Recent shipped work includes Market Pulse v1/v1.1, AskEdgar dilution/scanner recovery, the Day 1 scanner threshold fix, and final Research/scanner UI polish.
+- Commit `d545aea` pushed the latest scanner/dilution/Research polish work to `origin/main`.
+- Open parked items outside this spec: `split-status` endpoint usage audit, broader endpoint review, Filings v2/v3 viewer/search/Copilot work, auto stop-out, and Backtest Manager `broke_premarket_high`.
 
-1. **Step 1 complete:** retired Discord research import stack and unused Schwab dependency/spec removed. Agent Discord delivery remains intentionally live.
-2. **Step 2 complete:** cost/reliability fixes shipped for research-report idempotency, site-report telemetry, AskEdgar Postgres runtime state, and dashboard scanner aggregate polling.
-3. **Step 3 complete:** high-confidence dead code removed.
-4. **Step 4 complete:** backend-only/dead API and schema surfaces removed.
-5. **Step 5 complete:** repo docs and workflow audit drift cleaned; commit `bbf909f`.
-6. **Step 6 complete:** Codex harness skill alignment reviewed repo skills, synced repo-maintained installed copies, and patched stale installed-only legacy skill guidance where needed.
-7. **Step 7 parked:** broad refactors (`lib/askedgar.ts`, TradingView client extraction, client cache hook) should wait until feature work touches those areas.
-8. **Step 8 pending:** consider `npm run typecheck` / `npm run validate` convenience scripts after skill sync is settled.
+## Active Execution Spec
 
-## Shipped Work Summary
+Goal: Implement Nexus-native SEC filing expansion for the Research Filings tab and first-party event extraction for completed offerings, reverse splits, and previous ticker/symbol changes.
 
-### Market Pulse v1 and v1.1
+Read `HANDOFF.md` first, verify it against the live repo, and preserve existing architecture. This is an implementation goal, but it must be checkpointed. Do not push unless explicitly asked. Commit locally before moving from Phase 1 into Phase 2.
 
-> Generated: 2026-05-12
-> Status: COMPLETE — local validation and owner-run production validation are complete. Market Strength is populated from stored Market Pulse data and visible through the site report flow.
-> Commits: `bc7edc9` added Market Pulse v1, `383b525` enabled safe backfills and the production cron, `fa4a899` allowed enqueue from existing stats after production backfill, and `47a911f` normalized loose Market Pulse LLM drafts before report validation.
+Core objective:
+- Pull more SEC filings than the current recent-only path.
+- Use those filings to improve completed offering history, reverse split coverage, and previous ticker/symbol change history.
+- Keep the Research tab usable and compatible with the current normalized `ResearchSnapshot` shape.
+- Add the AskEdgar module split only after the SEC filing expansion contract is clear and locally committed.
 
-Market Pulse now stores normalized whole-market EOD bars and daily stats, generates a structured `market-pulse` report through the orchestrator worker, and reads the latest site report from `agent_reports` for Dashboard Market Strength.
+Constraints:
+- No secrets/env changes.
+- No broad cleanup beyond the named AskEdgar split.
+- Leave TradingView extraction, generic client cache hook, use-trades, and BacktestChart refactors out of scope.
+- Use existing SEC helpers and DB patterns where possible.
+- Keep raw SEC source data separate from extracted events and normalized UI snapshots.
+- Preserve AskEdgar compatibility while introducing first-party SEC-backed outputs.
+- Add focused tests for every new parser/helper and route/normalizer behavior touched.
+- Run required validation before each local commit: `npm run lint`, `npx tsc --noEmit`, and relevant tests; run full `npm test` before final handoff. If `HANDOFF.md` or workflow docs change, run `npm run workflow:audit`.
 
-Key shipped behavior:
+Phase 0 - Repo Review And Contract Confirmation:
+1. Inspect current files:
+   - `lib/sec/submissions.ts`
+   - `lib/sec/filing-body.ts`
+   - `lib/sec/offerings.ts`
+   - `lib/sec/reverse-splits.ts`
+   - `lib/sec/cik-map.ts`
+   - `lib/askedgar.ts`
+   - `lib/types.ts`
+   - `components/trading/ResearchReportSections.tsx`
+   - `app/api/askedgar/snapshot/route.ts`
+   - relevant tests under `__tests__/`
+2. Confirm current blockers:
+   - Research Filings tab is populated from normalized AskEdgar `news` filing rows, not a richer SEC metadata feed.
+   - `getRecentFilings()` only reads `filings.recent`, defaults to 20 rows / 90 days, and does not follow SEC submissions archive shards.
+   - Offerings scan is too narrow.
+   - Reverse split scan is too narrow.
+   - No previous ticker/symbol change parser or contract exists.
+3. If the live repo differs materially, update the plan before editing.
 
-- `GET /api/agents/market-pulse/latest` selects the newest `reportJson.tradingDate`, with `agent_reports.created_at` as the tie-breaker.
-- `GET /api/cron/market-pulse-eod` supports `enqueue=0|1`; operator backfills can populate bars/stats without creating historical LLM jobs.
-- `days=N` backfills target trading days, skipping weekends/holidays without consuming the requested quota.
-- `vercel.json` schedules `/api/cron/market-pulse-eod` at `30 22 * * 1-5`.
-- Explicit latest-date enqueue can create/reuse one `orchestrator/market-pulse` job for the selected trading date.
-- If explicit date recapture fails but `market_pulse_daily_stats` already has that date, the cron route can enqueue from the existing stats row.
-- The Market Pulse blueprint normalizes loose LLM draft fields into the strict report contract before saving.
+Phase 1 - SEC Filing Expansion Contract And Foundation:
+Implement the SEC filing metadata expansion first.
 
-Validation completed:
+Required behavior:
+1. Extend SEC submissions support to read both:
+   - `filings.recent`
+   - older archive shards from `filings.files`
+2. Dedupe filings by accession number.
+3. Preserve richer filing metadata:
+   - CIK
+   - ticker requested / ticker at ingest if available
+   - accession number
+   - form type
+   - filed date
+   - report date if present
+   - acceptance datetime if present
+   - SEC items
+   - primary document
+   - primary document description
+   - SEC URL
+   - archive source if from a shard
+4. Add/prepare a durable raw metadata storage layer if needed, following existing Drizzle conventions. Use a table shape aligned with the roadmap concept of `sec_filings_raw`.
+5. Add a contract/helper that supports distinct pull profiles:
+   - Research Filings tab: up to 300 newest filings or 24 months, whichever is smaller; metadata only by default.
+   - Completed offerings: 10 years metadata; parse up to 300 candidate filing bodies.
+   - Reverse splits: 10 years metadata; parse up to 200 candidate filing bodies.
+   - Symbol/name changes: 10 years metadata; parse up to 200 candidate filing bodies.
+6. Keep body fetching lazy and candidate-based. Do not fetch every filing body for the Research Filings tab.
 
-- Original v1 validation passed before `bc7edc9`: `npm run db:generate`, `npm run db:migrate`, targeted Market Pulse/scanner tests, `npm run lint`, `npx tsc --noEmit`, `npm test`, and `npm run workflow:audit`.
-- v1.1 code validation passed before `383b525`: `npx vitest run __tests__/market-pulse-eod-route.test.ts`, `npx vitest run __tests__/agent-market-pulse-route.test.ts`, `npx vitest run __tests__/market-pulse-panel.test.tsx`, scanner regression tests, `npm run lint`, `npx tsc --noEmit`, `npm test`, and `npm run workflow:audit`.
-- Production backfill populated `market_pulse_daily_bars` and `market_pulse_daily_stats` for the recent 30-trading-day window, including `2026-05-11`.
-- Production latest-date enqueue produced `jobsEnqueuedDates: ["2026-05-11"]`; follow-up patches covered the production enqueue and LLM draft validation failures.
-- Final owner-run production validation is complete: worker processing/report generation and Dashboard Market Strength readback are confirmed good to go.
-- Follow-up validation for `fa4a899`: `npm test` passed.
-- Follow-up validation for `47a911f`: `npx vitest run __tests__/agent-blueprints.test.ts`, `npm run lint`, `npx tsc --noEmit`, and `npm test` passed.
+Phase 1 UI/data integration:
+1. Feed the Research Filings tab from the expanded first-party SEC filing metadata path.
+2. Keep current buckets working.
+3. Add any new fields to `ResearchSnapshotFiling` only if needed and keep them client-safe.
+4. Preserve existing AskEdgar `news` handling for actual news rows.
 
-Operational notes:
+Phase 1 validation and checkpoint:
+1. Add/update tests for submissions archive shard hydration, dedupe, limits, metadata preservation, and Research snapshot mapping.
+2. Run:
+   - targeted tests for SEC submissions / snapshot mapper / filings bucket
+   - `npm run lint`
+   - `npx tsc --noEmit`
+   - relevant route/component tests
+3. Update `HANDOFF.md` with Phase 1 status and validation evidence.
+4. Commit locally with a clear message, for example:
+   `Expand SEC filing metadata contract`
+5. Stop and confirm the local commit exists before beginning Phase 2. Do not push.
 
-- Use `enqueue=0` for historical stats-only backfills to avoid generating one LLM report per old trading day.
-- Use `date=YYYY-MM-DD&enqueue=1` only for the latest completed trading day that should become visible on the site.
-- `agent_reports` remains the site source of truth; bars/stats alone do not render Dashboard Market Strength.
-- Missing Discord delivery can mark delivery as failed, but site readback should still work when the report row exists.
+Phase 2 - AskEdgar Module Split:
+Only after Phase 1 is locally committed, split the AskEdgar module enough to support the new SEC-backed architecture.
 
-There is no active execution spec at this time.
+Scope:
+- Split `lib/askedgar.ts` into focused modules such as:
+  - `lib/askedgar/endpoints.ts`
+  - `lib/askedgar/fanout.ts`
+  - `lib/askedgar/cache.ts`
+  - `lib/askedgar/snapshot-normalizer.ts`
+  - keep a compatibility barrel/export if needed so imports do not churn excessively.
+- Do not change behavior during this phase except where required to preserve existing tests.
+- Keep endpoint registry, scope-aware fanout, cache merge semantics, scanner-summary cache, and snapshot normalization behavior equivalent.
+- Add or update tests only where import paths/contracts change.
 
-### AskEdgar Dilution and Scanner Recovery
+Phase 2 validation and checkpoint:
+1. Run focused AskEdgar tests.
+2. Run:
+   - `npm run lint`
+   - `npx tsc --noEmit`
+   - `npm test`
+3. Update `HANDOFF.md`.
+4. Commit locally with a clear message, for example:
+   `Split AskEdgar data pipeline modules`
+5. Do not push.
 
-> Generated: 2026-05-13
-> Status: CODE COMPLETE — pending owner review/commit.
+Phase 3 - Completed Offerings Expansion:
+Improve first-party completed offering extraction.
 
-Recovered and completed the in-flight dilution/scanner edits:
+Candidate forms:
+- `424B*`
+- `FWP`
+- `EFFECT`
+- `S-1`, `S-1/A`
+- `S-3`, `S-3/A`
+- `F-1`, `F-1/A`
+- `F-3`, `F-3/A`
+- `8-K`, `8-K/A` with Items `1.01`, `2.03`, `3.02`, `7.01`, `8.01`, `9.01`
 
-- Dilution page preserves AskEdgar-provided registration statuses for ATM and equity-line rows instead of reducing them to only Active/Inactive.
-- Dilution page preserves AskEdgar-provided warrant status labels when present, while keeping the existing local price/date-derived fallback when no status is returned.
-- Dilution page now renders a dedicated Convertible Notes table from normalized `dilution-data` rows.
-- Registration normalization accepts broader amount/remaining-capacity field names so ATM and equity-line values display when AskEdgar uses alternate keys.
-- Scanner summary flags no longer drop registration rows because they are expired/restricted or not directly effective; ATM, S-1, and equity-line flags reflect surfaced registration data.
+Extract and store/return:
+- status: `announced`, `priced`, `closed`, `terminated`, `resale_only`, or `unknown`
+- offering type
+- filed date
+- closed/priced date if present
+- gross proceeds
+- net proceeds if present
+- shares/securities amount
+- price per share/unit
+- warrants if present
+- resale-only flag
+- source accession and URL
+- confidence/source text snippet if practical
 
-Validation completed:
+Important:
+- Prefer precision over overcounting.
+- Completed/closed offerings should be distinguishable from mere registrations/resale prospectuses.
+- Keep existing `ResearchSnapshotOffering` compatibility or add a richer internal event shape and map down for UI.
 
-- `npx vitest run __tests__/research-snapshot-mapper.test.ts __tests__/askedgar-client.test.ts __tests__/scanner-summary-route.test.ts` passed.
-- `npm run lint` passed.
-- `npx tsc --noEmit` passed.
-- `npm test` passed.
-- `npm run workflow:audit` passed.
+Phase 4 - Reverse Split Expansion:
+Improve reverse split coverage.
 
-### Day 1 Scanner Threshold Fix
+Candidate forms:
+- `8-K`, `8-K/A` with Items `5.03`, `8.01`
+- `6-K`
+- `DEF 14A`, `PRE 14A`, `DEF 14C`, `PRE 14C`
+- related proxy amendments where applicable
 
-> Generated: 2026-05-13
-> Status: CODE COMPLETE — pending owner review/commit.
+Extract:
+- lifecycle status: proposed, approved, announced, effective/completed
+- ratio
+- announcement date
+- effective date
+- vote/approval date if present
+- source accession and URL
+- confidence/source snippet if practical
 
-Investigation found the Day 1 TradingView scanner had several blockers that could drop names that should qualify from previous-session AH/PM action:
+Keep existing parser behavior but broaden candidate discovery.
 
-- Server prefilters still required `close >= $0.90`, market cap `< $300M`, and exchange in NASDAQ/NYSE, none of which are part of the current scan contract.
-- Server qualification required combined AH+PM volume `>= 2M`; the current contract is AH+PM volume `> 1M`.
-- Normalization rejected rows with missing regular-session `change` or `volume`, even when AH/PM change and volume were valid.
-- The UI displayed `close` as PDC, but TradingView's `close` is session-dependent. The route now derives prior day close from the chosen AH/PM mark and change percent when possible.
+Phase 5 - Previous Ticker / Symbol Change Extraction:
+Add first-party identity event extraction.
 
-Current Day 1 qualification:
+Candidate forms:
+- `8-K`, `8-K/A` with Items `5.03`, `8.01`
+- `6-K`
+- proxy forms
+- registration cover pages where they disclose former names/symbols
 
-- Prior day close `> $0.75`.
-- AH+PM volume `> 1,000,000`.
-- Best AH or PM change `>= +40%`.
-- Client-side Day 1 latch continues keeping qualifying rows visible for the ET day.
+Parse for:
+- previous ticker
+- new/current ticker
+- previous company name
+- new/current company name
+- effective date
+- exchange/market if present
+- source accession and URL
+- event type: ticker change, name change, CIK identity continuity, exchange/listing change if obvious
 
-Validation completed:
+Add a normalized UI-safe contract, likely:
+- `ResearchSnapshotIdentityEvent[]`
+or similar, and decide where it should display in Research. If UI placement is not obvious, add the normalized data and document the recommended placement rather than forcing a large UI redesign.
 
-- `npx vitest run __tests__/tradingview-gainers-route.test.ts __tests__/dashboard-scanner-table.test.tsx` passed.
+Phase 6 - Final Integration And Validation:
+1. Ensure Research Filings tab now shows a broader first-party SEC filing set.
+2. Ensure completed offerings use the broader metadata/body candidate pipeline.
+3. Ensure reverse splits use the broader metadata/body candidate pipeline.
+4. Ensure previous ticker/symbol changes are parsed and exposed in a normalized contract.
+5. Add tests for:
+   - archive shard metadata ingestion
+   - candidate filtering counts/limits
+   - completed offering status extraction
+   - reverse split broadened forms
+   - symbol/name change parser
+   - snapshot normalization
+6. Run:
+   - targeted SEC parser tests
+   - targeted Research snapshot/UI tests
+   - `npm run lint`
+   - `npx tsc --noEmit`
+   - `npm test`
+   - `npm run workflow:audit` if docs/handoff changed
+7. Update `HANDOFF.md` with shipped behavior, validation evidence, residual risks, and any manual review notes.
+8. Create a final local commit. Do not push unless explicitly instructed.
 
-### Final Research and Scanner UI Polish
-
-> Generated: 2026-05-13
-> Status: CODE COMPLETE — pending owner review/commit.
-
-Final narrow UI pass completed:
-
-- Day 1 Setup scanner column label changed from `AH+PM Vol` to `Volume`, while the value remains route-derived extended-hours volume.
-- Research chart now renders the same extended-hours shading used by the other intraday chart surfaces.
-- Research News rows now display normalized source labels (`News`, `JMT415`, `Groq`) without the old purple Groq treatment, and expanded article summaries use the standard `border-white/10` border on a black background.
-- Dilution Convertible Notes conversion price now uses bold mono styling to match the emphasis of warrant strike prices.
-
-Validation completed:
-
-- `npx vitest run __tests__/dashboard-scanner-table.test.tsx` passed.
-- `npm run lint` passed.
-- `npx tsc --noEmit` passed.
-- `npm test` passed.
-
-## Open Follow-Ups
-
-- AskEdgar Sprint 3 Part B (`split-status`) remains parked pending endpoint-usage audit.
-- Endpoint review still pending: `screener`, `ownership`, `nasdaq-compliance`, `historical-float-pro`, and `float-outstanding`.
-- Filings v2/v3 remain deferred: in-app SEC filing viewer, then full-text filing search plus AI Copilot after cost analysis.
-- Auto stop-out for Backtesting remains deferred until requested.
-- Backtest Manager `broke_premarket_high` filter remains deferred.
+Completion criteria:
+- A ticker can retrieve substantially more SEC filing metadata than the old 20-row/90-day recent-only path.
+- Research Filings tab is backed by the expanded SEC metadata feed.
+- Completed offering parser can identify more actual completed/closed financings and distinguish them from registrations/resale-only filings.
+- Reverse split parser covers more than only 8-K Item 5.03.
+- Previous ticker/symbol/name changes are parsed into a first-party normalized contract.
+- AskEdgar split is completed after Phase 1 and does not change behavior by itself.
+- Each checkpoint has a local commit before moving on.
+- Final working tree status and validation results are reported clearly.
