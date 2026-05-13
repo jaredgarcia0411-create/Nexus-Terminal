@@ -1,5 +1,6 @@
 import { toNumberValue, toRecord } from '@/lib/askedgar-utils';
 import { getHistoricalOutstanding } from '@/lib/sec/companyfacts';
+import { getIdentityEvents } from '@/lib/sec/identity-events';
 import { getOfferings } from '@/lib/sec/offerings';
 import { getReverseSplits } from '@/lib/sec/reverse-splits';
 import { getResearchFilings } from '@/lib/sec/submissions';
@@ -11,6 +12,7 @@ export const SEC_BACKED_ENDPOINT_KEYS = new Set<string>([
   'reverse-splits',
   'offerings',
   'sec-filings',
+  'identity-events',
 ]);
 
 const ASKEDGAR_BASE_URL = 'https://eapi.askedgar.io';
@@ -290,6 +292,7 @@ export const ENDPOINT_REGISTRY = {
   agreements: { label: 'Agreements', run: (ticker) => fetchAgreements(ticker) },
   'historical-float-pro': { label: 'Historical Float', run: (ticker) => getHistoricalOutstanding(ticker, { limit: 20 }) },
   'reverse-splits': { label: 'Reverse Splits', run: (ticker) => getReverseSplits(ticker) },
+  'identity-events': { label: 'Identity Events', run: (ticker) => getIdentityEvents(ticker) },
   'gap-stats': { label: 'Gap Stats', run: (ticker) => fetchGapStats(ticker, 50) },
   ownership: { label: 'Ownership', run: (ticker) => fetchOwnership(ticker) },
   'split-status': { label: 'Split Status', run: (ticker) => fetchSplitStatus(ticker) },
@@ -308,8 +311,8 @@ export const ENDPOINT_SCOPES = {
   'small-cap-research': [
     'screener', 'dilution-rating', 'dilution-data', 'offerings', 'equity-lines',
     'registrations', 'news', 'nasdaq-compliance', 'agreements',
-    'historical-float-pro', 'reverse-splits', 'sec-filings', 'gap-stats',
-    'ownership', 'split-status',
+    'historical-float-pro', 'reverse-splits', 'sec-filings', 'identity-events',
+    'gap-stats', 'ownership', 'split-status',
   ],
   'swing-trader-research': [
     'dilution-data', 'dilution-rating', 'offerings', 'registrations',

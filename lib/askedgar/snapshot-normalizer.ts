@@ -8,6 +8,8 @@ import type {
   ResearchSnapshotFiling,
   ResearchSnapshotGapStat,
   ResearchSnapshotHistoricalFloatRow,
+  ResearchSnapshotIdentityEvent,
+  ResearchSnapshotIdentityEventType,
   ResearchSnapshotNewsItem,
   ResearchSnapshotOffering,
   ResearchSnapshotOwnershipGroup,
@@ -97,6 +99,19 @@ function firstStringFromResults(
     if (value) return value;
   }
   return null;
+}
+
+function normalizeIdentityEventTypes(value: unknown): ResearchSnapshotIdentityEventType[] {
+  if (!Array.isArray(value)) return [];
+  const allowed = new Set<ResearchSnapshotIdentityEventType>([
+    'ticker_change',
+    'name_change',
+    'cik_identity_continuity',
+    'exchange_listing_change',
+  ]);
+  return value.filter((item): item is ResearchSnapshotIdentityEventType => (
+    typeof item === 'string' && allowed.has(item as ResearchSnapshotIdentityEventType)
+  ));
 }
 
 export function toRegistrationRow(row: Record<string, unknown>, fallback: string): ResearchSnapshotRegistration {
@@ -389,6 +404,23 @@ export function normalizeAskEdgarResponse(
     } satisfies ResearchSnapshotReverseSplit;
   });
 
+  const identityEvents: ResearchSnapshotIdentityEvent[] = getEndpointResponse(rawData, ['identity-events', 'identityEvents']).results.map((item) => {
+    const row = toRecord(item);
+    return {
+      previousTicker: getStringField(row, ['previousTicker', 'previous_ticker']),
+      currentTicker: getStringField(row, ['currentTicker', 'current_ticker', 'newTicker', 'new_ticker']),
+      previousCompanyName: getStringField(row, ['previousCompanyName', 'previous_company_name', 'formerName', 'former_name']),
+      currentCompanyName: getStringField(row, ['currentCompanyName', 'current_company_name', 'newCompanyName', 'new_company_name']),
+      effectiveDate: getStringField(row, ['effectiveDate', 'effective_date', 'date']),
+      exchangeMarket: getStringField(row, ['exchangeMarket', 'exchange_market', 'exchange', 'market']),
+      eventTypes: normalizeIdentityEventTypes(getField(row, ['eventTypes', 'event_types'])),
+      filedAt: getStringField(row, ['filedAt', 'filed_at']),
+      formType: getStringField(row, ['formType', 'form_type']),
+      accessionNumber: getStringField(row, ['accessionNumber', 'accession_number']),
+      url: getStringField(row, ['url', 'secUrl', 'sec_url', 'documentUrl', 'document_url']),
+    } satisfies ResearchSnapshotIdentityEvent;
+  });
+
   const splitStatuses: ResearchSnapshotSplitStatus[] = getEndpointResponse(rawData, ['split-status', 'splitStatus']).results.map((item) => {
     const row = toRecord(item);
     return {
@@ -495,6 +527,7 @@ export function normalizeAskEdgarResponse(
     ownershipGroups,
     historicalFloat,
     reverseSplits,
+    identityEvents,
     splitStatuses,
     agreements,
     gapStats,

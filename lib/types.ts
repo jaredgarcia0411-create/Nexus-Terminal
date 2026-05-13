@@ -250,6 +250,26 @@ export interface ResearchSnapshotReverseSplit {
   ratio: string | null;
 }
 
+export type ResearchSnapshotIdentityEventType =
+  | 'ticker_change'
+  | 'name_change'
+  | 'cik_identity_continuity'
+  | 'exchange_listing_change';
+
+export interface ResearchSnapshotIdentityEvent {
+  previousTicker: string | null;
+  currentTicker: string | null;
+  previousCompanyName: string | null;
+  currentCompanyName: string | null;
+  effectiveDate: string | null;
+  exchangeMarket: string | null;
+  eventTypes: ResearchSnapshotIdentityEventType[];
+  filedAt: string | null;
+  formType: string | null;
+  accessionNumber: string | null;
+  url: string | null;
+}
+
 export interface ResearchSnapshotSplitStatus {
   actionType: string | null;
   splitFrom: number | null;
@@ -309,6 +329,7 @@ export interface ResearchSnapshot {
   ownershipGroups: ResearchSnapshotOwnershipGroup[];
   historicalFloat: ResearchSnapshotHistoricalFloatRow[];
   reverseSplits: ResearchSnapshotReverseSplit[];
+  identityEvents: ResearchSnapshotIdentityEvent[];
   splitStatuses: ResearchSnapshotSplitStatus[];
   agreements: ResearchSnapshotAgreement[];
   gapStats: ResearchSnapshotGapStat[];

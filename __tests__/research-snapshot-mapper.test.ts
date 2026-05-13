@@ -10,6 +10,50 @@ const emptyResponse: AskEdgarResponse<unknown> = {
 };
 
 describe('normalizeAskEdgarResponse', () => {
+  it('maps SEC-backed identity events into the client-safe snapshot contract', () => {
+    const rawData: Record<string, AskEdgarResponse<unknown>> = {
+      'identity-events': {
+        status: 'success',
+        count: 1,
+        results: [{
+          previousTicker: 'OHAR',
+          currentTicker: 'NHBI',
+          previousCompanyName: 'Old Harbor Therapeutics Inc.',
+          currentCompanyName: 'New Harbor BioSciences Inc.',
+          effectiveDate: '2026-05-15',
+          exchangeMarket: 'Nasdaq Capital Market',
+          eventTypes: ['ticker_change', 'name_change', 'not_allowed'],
+          filedAt: '2026-05-14',
+          formType: '8-K',
+          accessionNumber: '0001234567-26-000006',
+          url: 'https://www.sec.gov/Archives/edgar/data/1234567/000123456726000006/8k.htm',
+          sourceSnippet: 'Server-only parser context is intentionally not mapped.',
+        }],
+      },
+    };
+
+    const snapshot = normalizeAskEdgarResponse(rawData, {
+      ticker: 'NHBI',
+      companyName: 'New Harbor BioSciences Inc.',
+      fetchedAt: '2026-05-15T00:00:00.000Z',
+      warnings: [],
+    });
+
+    expect(snapshot.identityEvents).toEqual([{
+      previousTicker: 'OHAR',
+      currentTicker: 'NHBI',
+      previousCompanyName: 'Old Harbor Therapeutics Inc.',
+      currentCompanyName: 'New Harbor BioSciences Inc.',
+      effectiveDate: '2026-05-15',
+      exchangeMarket: 'Nasdaq Capital Market',
+      eventTypes: ['ticker_change', 'name_change'],
+      filedAt: '2026-05-14',
+      formType: '8-K',
+      accessionNumber: '0001234567-26-000006',
+      url: 'https://www.sec.gov/Archives/edgar/data/1234567/000123456726000006/8k.htm',
+    }]);
+  });
+
   it('maps richer reverse-split effective dates into the existing snapshot shape', () => {
     const rawData: Record<string, AskEdgarResponse<unknown>> = {
       'reverse-splits': {

@@ -255,6 +255,20 @@ Add a normalized UI-safe contract, likely:
 - `ResearchSnapshotIdentityEvent[]`
 or similar, and decide where it should display in Research. If UI placement is not obvious, add the normalized data and document the recommended placement rather than forcing a large UI redesign.
 
+Phase 5 checkpoint status (2026-05-13):
+- Added first-party SEC-backed identity event extraction in `lib/sec/identity-events.ts`, using the existing `symbol-changes` SEC pull profile and lazy candidate-body fetching capped by the profile's `parseCandidateLimit`.
+- Candidate discovery covers `8-K` / `8-K/A` Items `5.03` and `8.01`, `6-K` / `6-K/A`, proxy forms, and registration forms (`S-1`, `S-3`, `S-4`, `F-1`, `F-3`, `F-4` plus amendments) where bodies disclose former/current names or symbols.
+- Extracted fields include previous/current ticker, previous/current company name, effective date, exchange/market, source accession and URL, and event types (`ticker_change`, `name_change`, `cik_identity_continuity`, `exchange_listing_change`) while preferring precision over generic SEC cover-page boilerplate.
+- Wired the SEC-backed `identity-events` endpoint through the AskEdgar-compatible endpoint registry and marked it as SEC-backed so AskEdgar availability/rate-limit behavior remains based on non-SEC AskEdgar endpoints.
+- Added normalized UI-safe `ResearchSnapshotIdentityEvent[]` as `identityEvents` in `lib/types.ts` and `lib/askedgar/snapshot-normalizer.ts`. No visible Research UI section was added in Phase 5; recommended placement is a compact "Identity Events" table in the existing Dilution tab's Split History area, near Reverse Splits and Split Status, or a future Filings v2 detail drawer.
+- Validation completed before checkpoint commit:
+  - `npx vitest run __tests__/sec-identity-events-parser.test.ts __tests__/sec-identity-events.test.ts __tests__/research-snapshot-mapper.test.ts __tests__/askedgar-client.test.ts` passed: 4 files, 31 tests.
+  - `npm run lint` passed.
+  - `npx tsc --noEmit` passed.
+  - `npm test` passed: 89 files, 643 tests.
+  - `npm run workflow:audit` passed.
+- Phase 6 final integration has not started. Stop here after the local Phase 5 commit unless the user explicitly reopens Phase 6.
+
 Phase 6 - Final Integration And Validation:
 1. Ensure Research Filings tab now shows a broader first-party SEC filing set.
 2. Ensure completed offerings use the broader metadata/body candidate pipeline.

@@ -44,6 +44,14 @@ vi.mock('@/lib/sec/offerings', () => ({
   getOfferings: getOfferingsMock,
 }));
 
+const { getIdentityEventsMock } = vi.hoisted(() => ({
+  getIdentityEventsMock: vi.fn(),
+}));
+
+vi.mock('@/lib/sec/identity-events', () => ({
+  getIdentityEvents: getIdentityEventsMock,
+}));
+
 interface AskedgarCacheRow {
   id: string;
   cacheType: string;
@@ -224,6 +232,24 @@ describe('askedgar client', () => {
         isSellingStockholderResale: false,
       }],
     });
+    getIdentityEventsMock.mockReset();
+    getIdentityEventsMock.mockResolvedValue({
+      status: 'success',
+      count: 1,
+      results: [{
+        previousTicker: 'OLD',
+        currentTicker: 'AAPL',
+        previousCompanyName: 'Old Apple Inc.',
+        currentCompanyName: 'Apple Inc.',
+        effectiveDate: '2026-04-21',
+        exchangeMarket: 'Nasdaq',
+        eventTypes: ['ticker_change', 'name_change'],
+        filedAt: '2026-04-20',
+        formType: '8-K',
+        accessionNumber: '0001234567-26-000030',
+        url: 'https://www.sec.gov/Archives/edgar/data/0/000123456726000030/doc.htm',
+      }],
+    });
     process.env.ASKEDGAR_API_KEY = 'test-key';
     process.env.ASKEDGAR_DAILY_LIMIT = '100';
   });
@@ -240,8 +266,8 @@ describe('askedgar client', () => {
     const result = await client.fetchTickerData('AAPL');
 
     expect(result.ticker).toBe('AAPL');
-    expect(Object.keys(result.rawData)).toHaveLength(15);
-    expect(result.dataSources).toHaveLength(15);
+    expect(Object.keys(result.rawData)).toHaveLength(16);
+    expect(result.dataSources).toHaveLength(16);
   });
 
   it('only calls explicitly requested endpoints from fetchTickerData', async () => {
@@ -288,7 +314,7 @@ describe('askedgar client', () => {
     // serve every swing-scope endpoint (including news) from the cache.
     expect(fetchSpy).toHaveBeenCalledTimes(0);
     expect(Object.keys(result.rawData)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
-    expect(cachedRawDataKeys(cacheDb)).toHaveLength(15);
+    expect(cachedRawDataKeys(cacheDb)).toHaveLength(16);
   });
 
   it('merges missing snapshot endpoints after a swing-trader scope populated the cache', async () => {
@@ -303,13 +329,13 @@ describe('askedgar client', () => {
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL');
 
-    // 7 endpoints not yet cached (screener, equity-lines, nasdaq-compliance,
-    // agreements, reverse-splits, sec-filings, split-status). Two are SEC-backed,
+    // 8 endpoints not yet cached (screener, equity-lines, nasdaq-compliance,
+    // agreements, reverse-splits, sec-filings, identity-events, split-status). Three are SEC-backed,
     // and news is fresh in the cache from the first call, so only 5 AskEdgar
     // fetches happen.
     expect(fetchSpy).toHaveBeenCalledTimes(5);
-    expect(Object.keys(result.rawData)).toHaveLength(15);
-    expect(cachedRawDataKeys(cacheDb)).toHaveLength(15);
+    expect(Object.keys(result.rawData)).toHaveLength(16);
+    expect(cachedRawDataKeys(cacheDb)).toHaveLength(16);
   });
 
   it('sums AskEdgar usage cost into the fan-out log', async () => {
@@ -369,6 +395,16 @@ describe('askedgar client', () => {
     await client.fetchTickerData('AAPL', { endpoints: ['sec-filings'] });
 
     expect(getResearchFilingsMock).toHaveBeenCalledWith('AAPL');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('routes identity-events through getIdentityEvents, not AskEdgar', async () => {
+    const fetchSpy = mockSuccessfulEndpointFetch();
+    const client = await import('@/lib/askedgar');
+
+    await client.fetchTickerData('AAPL', { endpoints: ['identity-events'] });
+
+    expect(getIdentityEventsMock).toHaveBeenCalledWith('AAPL');
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
