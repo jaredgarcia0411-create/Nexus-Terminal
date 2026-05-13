@@ -45,7 +45,7 @@ export default function TradeTable({
   const shouldScroll = trades.length > 20;
 
   return (
-    <div className={`overflow-x-auto rounded-xl border border-white/5 bg-[#121214] ${shouldScroll ? 'max-h-[46rem] overflow-y-auto' : ''}`}>
+    <div className={`overflow-x-auto rounded border border-white/5 bg-[#121214] ${shouldScroll ? 'max-h-[46rem] overflow-y-auto' : ''}`}>
       <table className="w-full tabular-nums text-left text-sm">
         <thead className="border-b border-white/5 bg-white/5 text-zinc-500 font-medium">
           <tr>
@@ -102,11 +102,11 @@ export default function TradeTable({
                 <td className="px-4 py-3 font-medium">{trade.symbol}</td>
                 <td className="px-4 py-3">
                   <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      trade.direction === 'LONG' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
+                    className={`text-sm font-bold ${
+                      trade.direction === 'LONG' ? 'text-emerald-500' : 'text-rose-500'
                     }`}
                   >
-                    {trade.direction}
+                    {trade.direction === 'LONG' ? 'L' : 'S'}
                   </span>
                 </td>
 

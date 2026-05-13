@@ -49,6 +49,7 @@ export default function BacktestingTab() {
   const currentUserId = (session?.user as { id?: string | null } | undefined)?.id ?? null;
 
   const [view, setView] = useState<View>({ kind: 'manager' });
+  const [rightCollapsed, setRightCollapsed] = useState(false);
   const [riskDollars, setRiskDollars] = useState(getInitialRiskDollars);
   const [armedAction, setArmedAction] = useState<BacktestActionType | null>(null);
   const [pendingOrder, setPendingOrder] = useState<BacktestOrderDraft | null>(null);
@@ -104,11 +105,13 @@ export default function BacktestingTab() {
     event.preventDefault();
     const ticker = lookupTicker.trim().toUpperCase();
     if (!ticker) return;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(lookupDate)) return;
-    handleSelect({ ticker, date: lookupDate });
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(lookupDate)
+      ? lookupDate
+      : new Date().toISOString().slice(0, 10);
+    handleSelect({ ticker, date });
   };
 
-  const lookupValid = lookupTicker.trim().length > 0 && /^\d{4}-\d{2}-\d{2}$/.test(lookupDate);
+  const lookupValid = lookupTicker.trim().length > 0;
 
   const handleAnchorChange = useCallback((newDate: string) => {
     setExtraSessionsForward(0);
@@ -222,7 +225,13 @@ export default function BacktestingTab() {
       ) : null}
 
       {view.kind === 'chart' ? (
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_220px] xl:grid-cols-[minmax(0,1fr)_280px]">
+        <div
+          className={
+            rightCollapsed
+              ? 'grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] transition-[grid-template-columns] duration-300'
+              : 'grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_220px] transition-[grid-template-columns] duration-300 xl:grid-cols-[minmax(0,1fr)_280px]'
+          }
+        >
           <main className="flex min-h-0 min-w-0 flex-col gap-0 overflow-hidden pr-2">
             <div className="grid h-7 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 px-3 text-xs text-zinc-500">
               <div className="flex min-w-0 items-center gap-2">
@@ -248,7 +257,19 @@ export default function BacktestingTab() {
                 ) : null}
               </div>
 
-              <div />
+              <div className="flex items-center justify-end pr-1">
+                {rightCollapsed ? (
+                  <button
+                    type="button"
+                    onClick={() => setRightCollapsed(false)}
+                    className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
+                    title="Expand panel"
+                    aria-label="Expand panel"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             <div className="grid h-10 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border-t border-white/10 px-1">
@@ -367,11 +388,13 @@ export default function BacktestingTab() {
             />
           </main>
 
-          <BacktestingSidebar
-            selected={selected}
-            onSelect={handleSelect}
-            activeBacktestId={view.id}
-            topPanel={(
+          {!rightCollapsed ? (
+            <BacktestingSidebar
+              selected={selected}
+              onSelect={handleSelect}
+              activeBacktestId={view.id}
+              onToggleCollapse={() => setRightCollapsed((current) => !current)}
+              topPanel={(
               <BacktestSimPanel
                 ticker={selected?.ticker ?? null}
                 date={selected?.date ?? null}
@@ -405,8 +428,9 @@ export default function BacktestingTab() {
                   await sessionState.deleteReview(reviewId);
                 }}
               />
-            )}
-          />
+              )}
+            />
+          ) : null}
         </div>
       ) : null}
 

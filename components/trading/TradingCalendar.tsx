@@ -104,7 +104,7 @@ export default function TradingCalendar({ trades, onDayClick, onWeekClick, embed
       <div>
         <div className={`flex items-center justify-between ${embedded ? 'mb-4' : 'mb-8'}`}>
           {embedded ? <div /> : (
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-white">Trading Calendar</h3>
+            <h3 className="text-sm font-semibold tracking-wider text-white">Trading Calendar</h3>
           )}
           <div className="flex items-center gap-4">
             <span className="text-base font-medium">{format(currentMonth, 'MMMM yyyy')}</span>
@@ -121,7 +121,7 @@ export default function TradingCalendar({ trades, onDayClick, onWeekClick, embed
 
         <div className={`grid gap-px overflow-hidden rounded-xl border border-white/5 bg-white/5 ${isMobile ? 'grid-cols-7' : 'grid-cols-8'}`}>
           {(isMobile ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Weekly']).map((day) => (
-            <div key={day} className="bg-[#18181b] py-3 text-center text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+            <div key={day} className="bg-[#18181b] py-3 text-center text-[10px] font-bold text-zinc-500 tracking-widest">
               {day}
             </div>
           ))}
@@ -152,13 +152,13 @@ export default function TradingCalendar({ trades, onDayClick, onWeekClick, embed
                       isOffDay ? 'bg-white/[0.01]' : ''
                     } ${isSelected ? 'bg-emerald-500/5 ring-1 ring-inset ring-emerald-500/30' : ''}`}
                   >
-                    <span className={`${isMobile ? 'text-[11px]' : 'text-[12px]'} font-mono ${isToday ? 'text-emerald-500 font-bold' : 'text-zinc-500'}`}>
+                    <span className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-mono ${isToday ? 'text-emerald-500 font-bold' : 'text-zinc-500'}`}>
                       {format(day, 'd')}
                     </span>
-                    
+
                     {stats && (stats.pnl !== 0 || stats.r !== 0) && (
                       <div className="mt-auto flex flex-col gap-0.5">
-                        <div className={`${isMobile ? 'text-[14px]' : 'text-[15px]'} font-bold ${getPnLColor(stats.pnl)}`}>
+                        <div className={`${isMobile ? 'text-[13px]' : 'text-[14px]'} font-bold ${getPnLColor(stats.pnl)}`}>
                           {stats.pnl >= 0 ? '+' : ''}{formatCurrency(stats.pnl)}
                         </div>
                         <div className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-medium opacity-60 ${stats.r > 0 ? 'text-emerald-400' : stats.r < 0 ? 'text-rose-400' : 'text-white'}`}>
@@ -185,10 +185,10 @@ export default function TradingCalendar({ trades, onDayClick, onWeekClick, embed
                   }}
                 >
                   <div className="flex h-full flex-col items-center justify-center gap-1">
-                    <div className={`text-[13px] font-bold ${getPnLColor(week.weeklyPnl)}`}>
+                    <div className={`text-[14px] font-bold ${getPnLColor(week.weeklyPnl)}`}>
                       {week.weeklyPnl >= 0 ? '+' : ''}{formatCurrency(week.weeklyPnl)}
                     </div>
-                    <div className={`text-[12px] font-medium opacity-70 ${week.weeklyR > 0 ? 'text-emerald-400' : week.weeklyR < 0 ? 'text-rose-400' : 'text-white'}`}>
+                    <div className={`text-[13px] font-medium opacity-70 ${week.weeklyR > 0 ? 'text-emerald-400' : week.weeklyR < 0 ? 'text-rose-400' : 'text-white'}`}>
                       {formatR(week.weeklyR)}
                     </div>
                     {onWeekClick && (

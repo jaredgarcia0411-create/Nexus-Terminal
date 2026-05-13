@@ -108,32 +108,32 @@ export default function PerformanceTab({
             <button
               type="button"
               onClick={() => setPnlMode('net')}
-              className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'net' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+              className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'net' ? 'bg-zinc-700/60 text-white' : 'text-zinc-500 hover:text-white'}`}
             >
-              Net PnL
+              Net
             </button>
             <button
               type="button"
               onClick={() => setPnlMode('gross')}
-              className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'gross' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+              className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'gross' ? 'bg-zinc-700/60 text-white' : 'text-zinc-500 hover:text-white'}`}
             >
-              Gross PnL
+              Gross
             </button>
           </div>
           <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
             <button
               type="button"
               onClick={() => onMetricChange('$')}
-              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === '$' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === '$' ? 'bg-zinc-700/60 text-white' : 'text-zinc-500 hover:text-white'}`}
             >
-              $ Metrics
+              $
             </button>
             <button
               type="button"
               onClick={() => onMetricChange('R')}
-              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === 'R' ? 'bg-emerald-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === 'R' ? 'bg-zinc-700/60 text-white' : 'text-zinc-500 hover:text-white'}`}
             >
-              R Metrics
+              R
             </button>
           </div>
         </div>

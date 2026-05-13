@@ -37,12 +37,12 @@ export interface CandleData {
   volume: number;
 }
 
-const UP_COLOR = '#ffffff';
-const DOWN_COLOR = '#3b82f6';
-const UP_VOLUME_COLOR = '#ffffff33';
-const DOWN_VOLUME_COLOR = '#3b82f633';
-const LONG_MARKER_COLOR = '#22c55e';
-const SHORT_MARKER_COLOR = '#ef4444';
+const UP_COLOR = '#22c55e';
+const DOWN_COLOR = '#ef4444';
+const UP_VOLUME_COLOR = '#22c55e33';
+const DOWN_VOLUME_COLOR = '#ef444433';
+const LONG_MARKER_COLOR = '#86efac';
+const SHORT_MARKER_COLOR = '#fca5a5';
 
 interface CandlestickChartProps extends CandlestickChartOptions {
   candles: CandleData[];

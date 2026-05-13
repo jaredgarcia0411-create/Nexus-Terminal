@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
+import { Trash2 } from 'lucide-react';
 import DailyReportSheet from '@/components/trading/DailyReportSheet';
 import WeeklyReviewSheet from '@/components/trading/WeeklyReviewSheet';
 import {
@@ -203,7 +204,7 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
       ) : (
         <div className="overflow-hidden rounded-xl border border-white/10 bg-[#121214]">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-white/10 text-xs uppercase tracking-wider text-zinc-500">
+            <thead className="border-b border-white/10 text-xs tracking-wider text-white">
               <tr>
                 <th className="px-4 py-3">Date / Range</th>
                 <th className="px-4 py-3">Type</th>
@@ -240,7 +241,7 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
                     <td className="px-4 py-3 font-mono text-zinc-200">{review.dateLabel}</td>
                     <td className="px-4 py-3">
                       <span
-                        className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${
+                        className={`rounded-sm px-2 py-0.5 text-xs font-bold capitalize ${
                           review.type === 'daily'
                             ? 'bg-emerald-500/15 text-emerald-400'
                             : 'bg-blue-500/15 text-blue-400'
@@ -268,9 +269,11 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
                             event.stopPropagation();
                             void deleteReview(review);
                           }}
-                          className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-zinc-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300"
+                          aria-label={`Delete ${review.type} review`}
+                          title="Delete"
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-rose-500/40 text-rose-400 transition-colors hover:bg-rose-500/10 hover:text-rose-300"
                         >
-                          Delete
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
                     </td>

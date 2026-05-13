@@ -170,12 +170,12 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
       });
 
       const series = chart.addSeries(CandlestickSeries, {
-        upColor: '#ffffff',
-        downColor: '#3b82f6',
-        borderUpColor: '#ffffff',
-        borderDownColor: '#3b82f6',
-        wickUpColor: '#ffffff',
-        wickDownColor: '#3b82f6',
+        upColor: '#22c55e',
+        downColor: '#ef4444',
+        borderUpColor: '#22c55e',
+        borderDownColor: '#ef4444',
+        wickUpColor: '#22c55e',
+        wickDownColor: '#ef4444',
       });
 
       // Volume histogram — rendered behind candles, scaled to bottom 20% of chart
@@ -246,7 +246,7 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
       const volumeData: HistogramData[] = sortedCandles.map((candle) => ({
         time: toTime(candle.datetime),
         value: candle.volume,
-        color: candle.close >= candle.open ? '#ffffff33' : '#3b82f633',
+        color: candle.close >= candle.open ? '#22c55e33' : '#ef444433',
       }));
       volumeRef.current.setData(volumeData);
     }

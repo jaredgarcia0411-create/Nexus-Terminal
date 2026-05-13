@@ -81,9 +81,9 @@ export default function Toolbar({
                 <button
                   key={preset.id}
                   onClick={() => onFilterPresetChange(preset.id as 'all' | '30' | '60' | '90')}
-                  className={`h-[38px] rounded-md px-3 text-xs font-semibold transition-colors ${
+                  className={`h-8 rounded-md px-2.5 text-[11px] font-semibold transition-colors ${
                     filterPreset === preset.id
-                      ? 'bg-emerald-500 text-black'
+                      ? 'bg-zinc-700/60 text-zinc-100'
                       : 'bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
                   }`}
                   title={`Filter ${preset.label}`}
@@ -95,21 +95,21 @@ export default function Toolbar({
               {!isMobile ? (
                 <>
                   <div className="mx-1 hidden h-4 w-px bg-white/10 sm:block" />
-                  <div className="flex h-[38px] items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3">
-                    <CalendarIcon className="h-4 w-4 text-zinc-500" />
+                  <div className="flex h-8 items-center gap-1 rounded-lg border border-white/10 bg-white/5 pl-2 pr-1.5">
+                    <CalendarIcon className="h-3.5 w-3.5 text-zinc-500" />
                     <input
                       type="date"
                       value={startDate}
                       onChange={(event) => onStartDateChange(event.target.value)}
-                      className="bg-transparent text-sm text-zinc-400 [color-scheme:dark] focus:outline-none"
+                      className="w-[6.25rem] bg-transparent text-xs text-zinc-400 [color-scheme:dark] focus:outline-none"
                       title="Start date"
                     />
-                    <span className="text-sm text-zinc-600">—</span>
+                    <span className="text-xs text-zinc-600">—</span>
                     <input
                       type="date"
                       value={endDate}
                       onChange={(event) => onEndDateChange(event.target.value)}
-                      className="bg-transparent text-sm text-zinc-400 [color-scheme:dark] focus:outline-none"
+                      className="w-[6.25rem] bg-transparent text-xs text-zinc-400 [color-scheme:dark] focus:outline-none"
                       title="End date"
                     />
                   </div>

@@ -125,8 +125,8 @@ interface BacktestChartProps {
   isReadOnly?: boolean;
 }
 
-const UP_COLOR = '#ffffff';
-const DOWN_COLOR = '#3b82f6';
+const UP_COLOR = '#22c55e';
+const DOWN_COLOR = '#ef4444';
 const ANCHOR_BAND_COLOR = 'rgba(56, 139, 253, 0.18)';
 
 const TIMEFRAME_OPTIONS = Object.entries(BACKTEST_FRAME_CONFIG) as Array<[BacktestTimeframeKey, (typeof BACKTEST_FRAME_CONFIG)[BacktestTimeframeKey]]>;
@@ -592,7 +592,7 @@ export default function BacktestChart({
       const values = frame.intraday
         ? sessionVwap(ohlc, (candle) => (Number.isFinite(candle.time) ? epochToNySortKey(candle.time) : null))
         : vwap(ohlc);
-      addLineOverlay(chart, sortedCandles, values, '#10b981');
+      addLineOverlay(chart, sortedCandles, values, '#15803d');
     }
 
     if (indicators.has('BB')) {
@@ -612,7 +612,7 @@ export default function BacktestChart({
       volumeSeries.setData(sortedCandles.map((candle) => ({
         time: toTime(candle.datetime),
         value: candle.volume,
-        color: candle.close >= candle.open ? 'rgba(255, 255, 255, 0.45)' : 'rgba(59, 130, 246, 0.55)',
+        color: candle.close >= candle.open ? 'rgba(34, 197, 94, 0.55)' : 'rgba(239, 68, 68, 0.55)',
       })));
     }
 
@@ -886,7 +886,7 @@ export default function BacktestChart({
           id: action.id,
           time,
           position: isUpArrow ? 'atPriceBottom' : 'atPriceTop',
-          color: isUpArrow ? '#22c55e' : '#ef4444',
+          color: isUpArrow ? '#86efac' : '#fca5a5',
           shape: isUpArrow ? 'arrowUp' : 'arrowDown',
           price: action.price,
           size: 1,

@@ -143,7 +143,7 @@ export default function Sidebar({
     {/* New Trade */}
     <button
       onClick={onNewTradeClick}
-      className="flex items-center gap-2 rounded-lg bg-emerald-500 px-3 py-2 text-sm font-medium text-black transition-colors hover:bg-emerald-400"
+      className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500/20"
       title="New Trade"
       aria-label="New Trade"
     >

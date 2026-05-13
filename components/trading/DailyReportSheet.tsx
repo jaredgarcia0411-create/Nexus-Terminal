@@ -338,7 +338,7 @@ export default function DailyReportSheet({
                 <Button
                   onClick={handleSave}
                   disabled={saving}
-                  className="bg-emerald-500 text-black hover:bg-emerald-400"
+                  className="bg-emerald-500/10 text-white hover:bg-emerald-500/20"
                 >
                   {saving ? 'Saving…' : isExistingReport ? 'Update Review' : 'Save Review'}
                 </Button>

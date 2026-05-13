@@ -152,7 +152,7 @@ export default function BacktestManagerView({
           <Button
             type="button"
             onClick={() => onLaunchChart(null, recentUncategorizedReview)}
-            className="bg-emerald-500 text-black hover:bg-emerald-400"
+            className="bg-emerald-500/10 text-white hover:bg-emerald-500/20"
           >
             <TrendingUp className="h-4 w-4" />
             Launch Chart
@@ -160,7 +160,7 @@ export default function BacktestManagerView({
           <Button
             type="button"
             onClick={() => setNewBacktestOpen(true)}
-            className="bg-emerald-500 text-black hover:bg-emerald-400"
+            className="bg-emerald-500/10 text-white hover:bg-emerald-500/20"
           >
             + New Backtest
           </Button>
@@ -252,7 +252,7 @@ export default function BacktestManagerView({
                             { id: backtest.id, name: backtest.name, ownerId: backtest.ownerId },
                             backtest.recentOwnerReview,
                           )}
-                          className="h-7 bg-emerald-500 text-[11px] text-black hover:bg-emerald-400"
+                          className="h-7 bg-emerald-500/10 text-[11px] text-white hover:bg-emerald-500/20"
                         >
                           Launch Chart
                         </Button>
