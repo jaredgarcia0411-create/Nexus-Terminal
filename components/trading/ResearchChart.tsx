@@ -1,7 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ColorType, CrosshairMode, type CandlestickData, type HistogramData, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts';
+import {
+  createSeriesMarkers,
+  ColorType,
+  CrosshairMode,
+  type CandlestickData,
+  type HistogramData,
+  type IChartApi,
+  type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type SeriesMarker,
+  type Time,
+} from 'lightweight-charts';
 
 import { useCandleData } from '@/hooks/use-candle-data';
 import { buildExtendedHoursShadeSegments, buildSessionShadeRects, type SessionShadeRect } from '@/lib/chart-session-shading';
@@ -11,6 +22,7 @@ import {
   buildTradeChartOptions,
   type ResearchChartTimeframeKey,
 } from '@/lib/chart-timeframes';
+import type { ResearchSnapshotGapStat } from '@/lib/types';
 
 function toTime(ms: number): Time {
   return Math.floor(ms / 1000) as unknown as Time;
@@ -32,11 +44,20 @@ function nyDateKey(epochMs: number): string {
 interface Props {
   ticker: string;
   historicalDate?: string | null;
+  gapStats?: ResearchSnapshotGapStat[];
   onClearHistorical?: () => void;
 }
 
-export default function ResearchChart({ ticker, historicalDate, onClearHistorical }: Props) {
-  const [timeframe, setTimeframe] = useState<ResearchChartTimeframeKey>('5m');
+function dailyCandleDateKey(epochMs: number): string {
+  return new Date(epochMs).toISOString().slice(0, 10);
+}
+
+function formatGapMarkerText(gapPercentage: number): string {
+  return `${gapPercentage.toFixed(0)}%`;
+}
+
+export default function ResearchChart({ ticker, historicalDate, gapStats = [], onClearHistorical }: Props) {
+  const [timeframe, setTimeframe] = useState<ResearchChartTimeframeKey>('1D');
   const frame = RESEARCH_CHART_FRAME_CONFIG[timeframe];
 
   // When historicalDate is set, pin the fetch to that day's session window using the
@@ -73,11 +94,37 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const gapMarkersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const sessionAnimationFrameRef = useRef<number | null>(null);
   const sortedCandlesRef = useRef<typeof candles>([]);
   const isIntradayRef = useRef(isIntraday);
   const [sessionShadeRects, setSessionShadeRects] = useState<SessionShadeRect[]>([]);
   const sortedCandles = useMemo(() => [...candles].sort((a, b) => a.datetime - b.datetime), [candles]);
+  const dailyGapMarkers = useMemo((): SeriesMarker<Time>[] => {
+    if (historicalDate || timeframe !== '1D' || sortedCandles.length === 0 || gapStats.length === 0) {
+      return [];
+    }
+
+    const candlesByDate = new Map(sortedCandles.map((candle) => [dailyCandleDateKey(candle.datetime), candle]));
+    return gapStats.flatMap((row, index) => {
+      if (!row.date || row.gapPercentage === null || !Number.isFinite(row.gapPercentage)) {
+        return [];
+      }
+
+      const candle = candlesByDate.get(row.date);
+      if (!candle) return [];
+
+      return [{
+        id: `gap:${row.date}:${index}`,
+        time: toTime(candle.datetime),
+        position: 'aboveBar',
+        color: '#86efac',
+        shape: 'arrowDown',
+        text: formatGapMarkerText(row.gapPercentage),
+        size: 1,
+      } satisfies SeriesMarker<Time>];
+    });
+  }, [gapStats, historicalDate, sortedCandles, timeframe]);
 
   useEffect(() => {
     sortedCandlesRef.current = sortedCandles;
@@ -223,6 +270,8 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
         sessionAnimationFrameRef.current = null;
       }
       clearSessionShadeRects();
+      gapMarkersPluginRef.current?.detach();
+      gapMarkersPluginRef.current = null;
       chartRef.current?.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -251,6 +300,18 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
       volumeRef.current.setData(volumeData);
     }
 
+    if (dailyGapMarkers.length > 0) {
+      if (gapMarkersPluginRef.current == null) {
+        gapMarkersPluginRef.current = createSeriesMarkers(seriesRef.current, dailyGapMarkers);
+      } else {
+        gapMarkersPluginRef.current.setMarkers(dailyGapMarkers);
+      }
+    } else if (gapMarkersPluginRef.current == null) {
+      gapMarkersPluginRef.current = createSeriesMarkers(seriesRef.current, []);
+    } else {
+      gapMarkersPluginRef.current.setMarkers([]);
+    }
+
     // For intraday views, zoom to just the latest NY trading day so the chart
     // opens on today's price action instead of the full 5–10 day fetch window.
     // Daily/weekly frames keep fitContent so the user sees the longer context.
@@ -270,7 +331,7 @@ export default function ResearchChart({ ticker, historicalDate, onClearHistorica
     }
     timeScale.fitContent();
     scheduleSessionShadeRecalculation();
-  }, [isIntraday, scheduleSessionShadeRecalculation, sortedCandles]);
+  }, [dailyGapMarkers, isIntraday, scheduleSessionShadeRecalculation, sortedCandles]);
 
   return (
     <div className="flex h-full flex-col">

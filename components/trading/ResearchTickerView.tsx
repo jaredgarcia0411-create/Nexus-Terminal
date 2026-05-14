@@ -118,6 +118,7 @@ export default function ResearchTickerView({ ticker }: Props) {
             <ResearchChart
               ticker={ticker}
               historicalDate={historicalDate}
+              gapStats={data.gapStats}
               onClearHistorical={() => setHistoricalDate(null)}
             />
           </div>

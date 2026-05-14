@@ -72,6 +72,47 @@ function buildSnapshot(overrides: Partial<ResearchSnapshot> = {}): ResearchSnaps
 }
 
 describe('ResearchReportSections filings UI', () => {
+  it('summarizes gap-up days that closed below the open', () => {
+    const data = buildSnapshot({
+      gapStats: [
+        {
+          date: '2026-02-25',
+          gapPercentage: 42,
+          marketOpen: 0.74,
+          marketClose: 1.08,
+          intradayHigh: 1.74,
+          intradayLow: 0.64,
+          volume: 209_971_651,
+          tags: [],
+        },
+        {
+          date: '2025-12-29',
+          gapPercentage: 51,
+          marketOpen: 1.71,
+          marketClose: 1.64,
+          intradayHigh: 2.47,
+          intradayLow: 1.64,
+          volume: 38_833_174,
+          tags: ['S-1'],
+        },
+        {
+          date: '2025-09-09',
+          gapPercentage: 123,
+          marketOpen: 8.24,
+          marketClose: null,
+          intradayHigh: 8.42,
+          intradayLow: 4,
+          volume: 10_326_625,
+          tags: [],
+        },
+      ],
+    });
+
+    render(<ResearchReportSections ticker="ABCD" data={data} activeTab="overview" />);
+
+    expect(document.body.textContent).toContain('Closed below open: 1/2 (50%)');
+  });
+
   it('renders first-party SEC filings across buckets and chronological view', () => {
     const data = buildSnapshot({
       filings: [

@@ -59,7 +59,6 @@ export default function TemplateFieldRenderer({
           onChange={(event) => onChange?.(event.target.value)}
           rows={3}
           className="border-white/10 bg-white/5 text-sm"
-          placeholder={readOnly ? '' : `Enter ${field.label.toLowerCase()}…`}
         />
       </div>
     );

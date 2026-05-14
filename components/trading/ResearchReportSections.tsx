@@ -765,6 +765,30 @@ function GapStatRow({ row, onSelectDate }: { row: ResearchSnapshotGapStat; onSel
   );
 }
 
+function computeCloseBelowOpenStats(rows: ResearchSnapshotGapStat[]) {
+  const evaluableRows = rows.filter((row) => (
+    row.marketOpen !== null
+    && row.marketClose !== null
+    && Number.isFinite(row.marketOpen)
+    && Number.isFinite(row.marketClose)
+  ));
+  const closedBelowOpen = evaluableRows.filter((row) => (
+    row.marketClose !== null
+    && row.marketOpen !== null
+    && row.marketClose < row.marketOpen
+  )).length;
+
+  return {
+    closedBelowOpen,
+    total: evaluableRows.length,
+    percentage: evaluableRows.length > 0 ? (closedBelowOpen / evaluableRows.length) * 100 : null,
+  };
+}
+
+function formatCompactPercent(value: number) {
+  return Number.isInteger(value) ? `${value.toFixed(0)}%` : `${value.toFixed(1)}%`;
+}
+
 export default function ResearchReportSections({ ticker, data, activeTab, onSelectGapDate }: Props) {
   const [reportExpanded, setReportExpanded] = useState(false);
   const atmRegistrations = data.registrations.filter((row) => row.isAtm === true);
@@ -772,6 +796,7 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
   const prefundedWarrants = data.warrants.filter((row) => row.isPrefunded);
   const convertibleNotes = data.convertibleNotes ?? [];
   const formerSymbolEvents = data.identityEvents.filter((row) => row.previousTicker !== null);
+  const closeBelowOpenStats = computeCloseBelowOpenStats(data.gapStats);
 
   const hasCashPosition = [
     data.dilutionDetails.cashRemainingMonths,
@@ -810,6 +835,15 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
                 <p className="text-sm text-zinc-500">
                   Historical day-1 gap-ups only (excludes multi-day runs).
                 </p>
+                {closeBelowOpenStats.total > 0 && closeBelowOpenStats.percentage !== null ? (
+                  <p className="ml-auto font-bold text-zinc-400">
+                    Closed below open:{' '}
+                    <span className="text-zinc-200">
+                      {closeBelowOpenStats.closedBelowOpen}/{closeBelowOpenStats.total}
+                    </span>{' '}
+                    ({formatCompactPercent(closeBelowOpenStats.percentage)})
+                  </p>
+                ) : null}
               </div>
               {data.gapStats.length > 0 ? (
                 <div className="space-y-3">
