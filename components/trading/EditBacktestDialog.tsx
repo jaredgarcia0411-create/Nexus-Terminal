@@ -145,7 +145,7 @@ export default function EditBacktestDialog({
             type="button"
             disabled={isSubmitting}
             onClick={() => void handleSubmit()}
-            className="bg-emerald-500 text-black hover:bg-emerald-400 disabled:opacity-40"
+            className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-40"
           >
             Save
           </Button>

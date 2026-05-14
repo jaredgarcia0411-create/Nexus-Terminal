@@ -136,26 +136,22 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-1 pb-6">
-              <div className="space-y-2">
+            <div className="flex-1 space-y-4 overflow-y-auto px-4 pb-6">
+              <section className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
                 <h3 className="text-base font-semibold uppercase tracking-wider text-white">Overview</h3>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {overviewItems.map(([label, value]) => (
-                      <div key={label} className="p-2">
-                        <p className="text-[12px] uppercase tracking-wider text-zinc-500">{label}</p>
-                        <p className="mt-1 text-sm font-medium">{value}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex justify-end" />
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {overviewItems.map(([label, value]) => (
+                    <div key={label}>
+                      <p className="text-[12px] uppercase tracking-wider text-zinc-500">{label}</p>
+                      <p className="mt-1 text-sm font-medium">{value}</p>
+                    </div>
+                  ))}
                 </div>
-              </div>
+              </section>
 
-              <div className="my-6 border-t border-white/10" />
-              <div className="space-y-2">
+              <section className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
                 <h3 className="text-base font-semibold uppercase tracking-wider text-white">Chart</h3>
-                <div className="space-y-3 p-3">
+                <div className="space-y-3">
                   <div className="flex items-center justify-end gap-4">
                     <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TradeChartTimeframeKey)}>
                       <SelectTrigger className="h-8 w-28 bg-white/5 border-white/10 text-sm">
@@ -192,12 +188,11 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                     />
                   )}
                 </div>
-              </div>
+              </section>
 
-              <div className="my-6 border-t border-white/10" />
-              <div className="space-y-2">
+              <section className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
                 <h3 className="text-base font-semibold uppercase tracking-wider text-white">Executions</h3>
-                <div className="overflow-x-auto p-3">
+                <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead className="text-zinc-500">
                       <tr>
@@ -236,12 +231,11 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </section>
 
-              <div className="my-6 border-t border-white/10" />
-              <div className="space-y-2">
+              <section className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
                 <h3 className="text-base font-semibold uppercase tracking-wider text-white">Notes</h3>
-                <div className="space-y-3 p-3">
+                <div className="space-y-3">
                   <div className="space-y-2">
                     <Textarea
                       id="trade-notes"
@@ -254,12 +248,12 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                   </div>
 
                   <div className="flex justify-end gap-2">
-                    <Button onClick={handleSave} className="bg-emerald-500 hover:bg-emerald-400 text-black">
+                    <Button onClick={handleSave} className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">
                       Save Notes
                     </Button>
                   </div>
                 </div>
-              </div>
+              </section>
             </div>
           </div>
         )}

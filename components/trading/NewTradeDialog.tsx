@@ -170,7 +170,7 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} className="bg-white/10 hover:bg-white/20">
               Cancel
             </Button>
-            <Button type="submit" className="bg-emerald-500 hover:bg-emerald-400 text-black">
+            <Button type="submit" className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">
               Save Trade
             </Button>
           </DialogFooter>

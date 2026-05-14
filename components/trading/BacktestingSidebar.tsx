@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, ChevronRight, Search } from 'lucide-react';
+import { ArrowDown, ArrowUp, Search } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -74,7 +74,6 @@ interface BacktestingSidebarProps {
   onSelect: (selection: BacktestSelection) => void;
   activeBacktestId: string | null;
   topPanel?: ReactNode;
-  onToggleCollapse?: () => void;
 }
 
 function useSystemTickers() {
@@ -118,7 +117,6 @@ export default function BacktestingSidebar({
   onSelect,
   activeBacktestId,
   topPanel,
-  onToggleCollapse,
 }: BacktestingSidebarProps) {
   const { rows, loading, error } = useSystemTickers();
   const [filter, setFilter] = useState('');
@@ -291,19 +289,6 @@ export default function BacktestingSidebar({
 
   return (
     <aside className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-white/10 bg-[#0A0A0B]">
-      {onToggleCollapse ? (
-        <div className="flex justify-end px-2 py-1">
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
-            title="Collapse panel"
-            aria-label="Collapse panel"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-      ) : null}
       {topPanel ? (
         <div className="scrollbar-thin max-h-[55%] shrink-0 overflow-y-auto border-b border-white/10">
           {topPanel}

@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import { ChevronDown, ChevronUp, Pencil, X } from 'lucide-react';
 import { toast } from 'sonner';
 import TemplateFieldRenderer from '@/components/trading/TemplateFieldRenderer';
+import WatchlistEditor, { type WatchlistRow } from '@/components/trading/WatchlistEditor';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { aggregateWeek } from '@/lib/journal-aggregates';
@@ -12,6 +13,7 @@ import { WEEKLY_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
 import { formatCurrency } from '@/lib/trading-utils';
 import type { Trade } from '@/lib/types';
 import type { TemplateField } from '@/lib/validations/reviews';
+import { coerceWatchlistRows, dedupeWatchlistRows, WATCHLIST_REPORT_KEY } from '@/lib/watchlist';
 
 const GRADE_FIELD: TemplateField = {
   id: 'grade',
@@ -70,6 +72,7 @@ export default function WeeklyReviewSheet({
   const [existing, setExisting] = useState<ReviewRow | null>(null);
   const [fields, setFields] = useState<TemplateField[]>([]);
   const [reportData, setReportData] = useState<Record<string, unknown>>({});
+  const [aggregatedWatchlist, setAggregatedWatchlist] = useState<WatchlistRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
@@ -84,16 +87,25 @@ export default function WeeklyReviewSheet({
     setTemplate(null);
     setFields([]);
     setReportData({});
+    setAggregatedWatchlist([]);
     setEditingTemplate(false);
 
     void Promise.all([
       fetch(`/api/weekly-reviews?from=${weekStart}&to=${weekEnd}`).then((response) => response.json()),
       fetch('/api/report-templates?type=weekly').then((response) => response.json()),
+      fetch(`/api/daily-reviews?from=${weekStart}&to=${weekEnd}`).then((response) => response.json()),
     ])
-      .then(([reviewsRes, templateRes]) => {
+      .then(([reviewsRes, templateRes, dailyRes]) => {
         const tmpl = templateRes.template as TemplateRow | undefined;
         const reviews = (reviewsRes.reviews ?? []) as ReviewRow[];
         const found = reviews[0] ?? null;
+        // Each daily review's reportData carries its own watchlist under WATCHLIST_REPORT_KEY.
+        const dailyReviews = (dailyRes?.reviews ?? []) as Array<{ date?: string; reportData?: Record<string, unknown> }>;
+        const collected = dailyReviews
+          .slice()
+          .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''))
+          .flatMap((row) => coerceWatchlistRows(row?.reportData?.[WATCHLIST_REPORT_KEY]));
+        setAggregatedWatchlist(dedupeWatchlistRows(collected));
 
         setTemplate(tmpl ?? null);
 
@@ -235,6 +247,13 @@ export default function WeeklyReviewSheet({
           <div className="flex h-32 items-center justify-center text-sm text-zinc-500">Loading…</div>
         ) : (
           <div className="mt-4 space-y-6 p-4">
+            <WatchlistEditor
+              title="Weekly Watchlist"
+              value={aggregatedWatchlist}
+              readOnly
+              emptyState="No watchlist entries logged in the daily reviews this week."
+            />
+
             {agg ? (
               <div className="grid gap-3 md:grid-cols-2">
                 {agg.perDayR.length > 0 ? (
@@ -246,7 +265,7 @@ export default function WeeklyReviewSheet({
                 )}
                 <div className="space-y-3">
                   <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    <p className="text-sm font-medium capitalize text-white">
                       Total for the Week
                     </p>
                     <p className="mt-2 text-sm font-medium text-zinc-100">
@@ -266,7 +285,7 @@ export default function WeeklyReviewSheet({
 
             {editingTemplate && !isExistingReport && !readOnly ? (
               <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Edit Template</p>
+                <p className="text-sm font-medium capitalize text-white">Edit Template</p>
                 {fields.map((field, index) => (
                   <div
                     key={field.id}
@@ -315,7 +334,7 @@ export default function WeeklyReviewSheet({
                   <Button
                     size="sm"
                     onClick={saveTemplate}
-                    className="bg-emerald-500 text-black hover:bg-emerald-400"
+                    className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
                   >
                     Save Template
                   </Button>
@@ -350,7 +369,7 @@ export default function WeeklyReviewSheet({
                 <Button
                   onClick={handleSave}
                   disabled={saving}
-                  className="bg-emerald-500/10 text-white hover:bg-emerald-500/20"
+                  className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
                 >
                   {saving ? 'Saving…' : isExistingReport ? 'Update Review' : 'Save Review'}
                 </Button>
@@ -368,7 +387,7 @@ function RBarStrip({ perDayR }: { perDayR: { date: string; r: number }[] }) {
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">R by Day</p>
+      <p className="mb-3 text-sm font-medium capitalize text-white">R by Day</p>
       <div className="flex items-end gap-2">
         {perDayR.map(({ date, r }) => {
           const heightPx = Math.round((Math.abs(r) / maxAbsR) * 48);

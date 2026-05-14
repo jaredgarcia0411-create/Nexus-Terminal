@@ -104,7 +104,7 @@ export default function TradingCalendar({ trades, onDayClick, onWeekClick, embed
       <div>
         <div className={`flex items-center justify-between ${embedded ? 'mb-4' : 'mb-8'}`}>
           {embedded ? <div /> : (
-            <h3 className="text-sm font-semibold tracking-wider text-white">Trading Calendar</h3>
+            <h3 className="text-base font-medium text-white">Trading Calendar</h3>
           )}
           <div className="flex items-center gap-4">
             <span className="text-base font-medium">{format(currentMonth, 'MMMM yyyy')}</span>

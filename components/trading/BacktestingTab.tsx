@@ -258,17 +258,19 @@ export default function BacktestingTab() {
               </div>
 
               <div className="flex items-center justify-end pr-1">
-                {rightCollapsed ? (
-                  <button
-                    type="button"
-                    onClick={() => setRightCollapsed(false)}
-                    className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
-                    title="Expand panel"
-                    aria-label="Expand panel"
-                  >
+                <button
+                  type="button"
+                  onClick={() => setRightCollapsed((current) => !current)}
+                  className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
+                  title={rightCollapsed ? 'Expand panel' : 'Collapse panel'}
+                  aria-label={rightCollapsed ? 'Expand panel' : 'Collapse panel'}
+                >
+                  {rightCollapsed ? (
+                    <ChevronLeft className="h-4 w-4" />
+                  ) : (
                     <ChevronRight className="h-4 w-4" />
-                  </button>
-                ) : null}
+                  )}
+                </button>
               </div>
             </div>
 
@@ -393,7 +395,6 @@ export default function BacktestingTab() {
               selected={selected}
               onSelect={handleSelect}
               activeBacktestId={view.id}
-              onToggleCollapse={() => setRightCollapsed((current) => !current)}
               topPanel={(
               <BacktestSimPanel
                 ticker={selected?.ticker ?? null}

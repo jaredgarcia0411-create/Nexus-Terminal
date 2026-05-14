@@ -160,7 +160,7 @@ export default function JournalTab({
                 onChange={(event) => onRiskInputChange(event.target.value)}
                 className="w-20 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
               />
-              <button onClick={onApplyRisk} className="rounded-md bg-emerald-500 px-2 py-1 text-[10px] font-bold uppercase text-black hover:bg-emerald-400">
+              <button onClick={onApplyRisk} className="rounded-md bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase text-emerald-500 hover:bg-emerald-500/20">
                 Apply
               </button>
             </div>
@@ -174,7 +174,7 @@ export default function JournalTab({
                 onChange={(event) => onBulkTagInputChange(event.target.value)}
                 className="w-24 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
               />
-              <button onClick={onBulkAddTag} className="rounded-md bg-emerald-500 px-2 py-1 text-[10px] font-bold uppercase text-black hover:bg-emerald-400">
+              <button onClick={onBulkAddTag} className="rounded-md bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase text-emerald-500 hover:bg-emerald-500/20">
                 Add
               </button>
             </div>

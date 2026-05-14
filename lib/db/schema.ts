@@ -88,6 +88,17 @@ export const tags = pgTable('tags', {
   index('idx_tags_user_id').on(table.userId),
 ]);
 
+// Reusable thesis options for the daily-review watchlist. Same shape as `tags` —
+// each user has their own list of named theses they can pick from in a dropdown.
+export const watchlistTheses = pgTable('watchlist_theses', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+}, (table) => [
+  unique().on(table.userId, table.name),
+  index('idx_watchlist_theses_user_id').on(table.userId),
+]);
+
 export const tradeImportBatches = pgTable('trade_import_batches', {
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   batchKey: text('batch_key').notNull(),

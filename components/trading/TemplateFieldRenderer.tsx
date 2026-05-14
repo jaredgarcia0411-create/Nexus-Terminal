@@ -20,7 +20,7 @@ export default function TemplateFieldRenderer({
   if (field.type === 'auto') {
     return (
       <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-        <p className="text-[10px] uppercase tracking-wider text-zinc-500">{field.label}</p>
+        <p className="text-xs font-medium capitalize text-white">{field.label}</p>
         <p className="mt-1 text-sm font-medium text-zinc-200">
           {value != null ? String(value) : '—'}
         </p>
@@ -51,7 +51,7 @@ export default function TemplateFieldRenderer({
   if (field.type === 'text') {
     return (
       <div className="space-y-1">
-        <p className="text-[10px] uppercase tracking-wider text-zinc-500">{field.label}</p>
+        <p className="text-xs font-medium capitalize text-white">{field.label}</p>
         <Textarea
           value={typeof value === 'string' ? value : ''}
           readOnly={readOnly}
@@ -68,7 +68,7 @@ export default function TemplateFieldRenderer({
   if (field.type === 'number') {
     return (
       <div className="space-y-1">
-        <p className="text-[10px] uppercase tracking-wider text-zinc-500">{field.label}</p>
+        <p className="text-xs font-medium capitalize text-white">{field.label}</p>
         <input
           type="number"
           value={typeof value === 'number' ? value : ''}
@@ -85,7 +85,7 @@ export default function TemplateFieldRenderer({
     if (readOnly) {
       return (
         <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-          <p className="text-[10px] uppercase tracking-wider text-zinc-500">{field.label}</p>
+          <p className="text-xs font-medium capitalize text-white">{field.label}</p>
           <p className="mt-1 text-sm font-medium text-zinc-200">{typeof value === 'string' ? value : '—'}</p>
         </div>
       );
@@ -93,7 +93,7 @@ export default function TemplateFieldRenderer({
 
     return (
       <div className="space-y-1">
-        <p className="text-[10px] uppercase tracking-wider text-zinc-500">{field.label}</p>
+        <p className="text-xs font-medium capitalize text-white">{field.label}</p>
         <Select value={typeof value === 'string' ? value : ''} onValueChange={(nextValue) => onChange?.(nextValue)}>
           <SelectTrigger className="border-white/10 bg-white/5 text-sm text-zinc-200">
             <SelectValue placeholder="Select…" />

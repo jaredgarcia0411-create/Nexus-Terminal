@@ -6,12 +6,14 @@ import { ChevronDown, ChevronUp, Pencil, X } from 'lucide-react';
 import { toast } from 'sonner';
 import JournalTradeChart from '@/components/trading/JournalTradeChart';
 import TemplateFieldRenderer from '@/components/trading/TemplateFieldRenderer';
+import WatchlistEditor, { type WatchlistRow } from '@/components/trading/WatchlistEditor';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { aggregateDay } from '@/lib/journal-aggregates';
 import { DAILY_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
 import type { Trade } from '@/lib/types';
 import { formatCurrency } from '@/lib/trading-utils';
+import { coerceWatchlistRows, WATCHLIST_REPORT_KEY } from '@/lib/watchlist';
 import type { TemplateField } from '@/lib/validations/reviews';
 
 const INITIAL_CHART_BATCH = 4;
@@ -58,6 +60,7 @@ export default function DailyReportSheet({
   const [existing, setExisting] = useState<ReviewRow | null>(null);
   const [fields, setFields] = useState<TemplateField[]>([]);
   const [reportData, setReportData] = useState<Record<string, unknown>>({});
+  const [watchlist, setWatchlist] = useState<WatchlistRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
@@ -73,6 +76,7 @@ export default function DailyReportSheet({
     setTemplate(null);
     setFields([]);
     setReportData({});
+    setWatchlist([]);
     setEditingTemplate(false);
     setChartCount(INITIAL_CHART_BATCH);
 
@@ -99,6 +103,7 @@ export default function DailyReportSheet({
             rTotal: `${agg.rTotal.toFixed(2)}R`,
           };
           setReportData(merged);
+          setWatchlist(coerceWatchlistRows(found.reportData?.[WATCHLIST_REPORT_KEY]));
         } else if (tmpl) {
           setFields(cloneTemplateFields(tmpl.fields));
           const agg = aggregateDay(trades, date);
@@ -108,6 +113,7 @@ export default function DailyReportSheet({
             rTotal: `${agg.rTotal.toFixed(2)}R`,
           };
           setReportData(initialData);
+          setWatchlist([]);
         }
       })
       .finally(() => setLoading(false));
@@ -125,7 +131,7 @@ export default function DailyReportSheet({
           date,
           templateId: template.id,
           templateSnapshot: fields,
-          reportData,
+          reportData: { ...reportData, [WATCHLIST_REPORT_KEY]: watchlist },
           tradeIds: agg.tradeIds,
         }),
       });
@@ -228,9 +234,15 @@ export default function DailyReportSheet({
           <div className="flex h-32 items-center justify-center text-sm text-zinc-500">Loading…</div>
         ) : (
           <div className="mt-4 space-y-6 p-4">
+            <WatchlistEditor
+              value={watchlist}
+              onChange={readOnly ? undefined : setWatchlist}
+              readOnly={readOnly}
+            />
+
             {editingTemplate && !isExistingReport && !readOnly ? (
               <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Edit Template</p>
+                <p className="text-sm font-medium capitalize text-white">Edit Template</p>
                 {fields.map((field, index) => (
                   <div
                     key={field.id}
@@ -279,7 +291,7 @@ export default function DailyReportSheet({
                   <Button
                     size="sm"
                     onClick={saveTemplate}
-                    className="bg-emerald-500 text-black hover:bg-emerald-400"
+                    className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
                   >
                     Save Template
                   </Button>
@@ -309,7 +321,7 @@ export default function DailyReportSheet({
 
             {chartTrades.length > 0 ? (
               <div className="space-y-3 rounded-xl border border-white/10 bg-[#121214] p-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Trade Replay Charts</p>
+                <p className="text-sm font-medium capitalize text-white">Trade Replay Charts</p>
                 <div className="space-y-3">
                   {chartTrades.slice(0, chartCount).map((trade) => (
                     <div key={trade.id} className="space-y-1">
@@ -338,7 +350,7 @@ export default function DailyReportSheet({
                 <Button
                   onClick={handleSave}
                   disabled={saving}
-                  className="bg-emerald-500/10 text-white hover:bg-emerald-500/20"
+                  className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
                 >
                   {saving ? 'Saving…' : isExistingReport ? 'Update Review' : 'Save Review'}
                 </Button>

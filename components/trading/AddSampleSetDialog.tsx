@@ -133,7 +133,7 @@ export default function AddSampleSetDialog({
             type="button"
             disabled={isSubmitting || rows.length === 0}
             onClick={() => void handleSubmit()}
-            className="bg-emerald-500 text-black hover:bg-emerald-400 disabled:opacity-40"
+            className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-40"
           >
             Add Sample
           </Button>
