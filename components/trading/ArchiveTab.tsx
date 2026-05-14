@@ -243,7 +243,7 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
                         className={`rounded-sm px-2 py-0.5 text-xs font-bold capitalize ${
                           review.type === 'daily'
                             ? 'bg-emerald-500/15 text-emerald-400'
-                            : 'bg-blue-500/15 text-blue-400'
+                            : 'bg-white/10 text-white'
                         }`}
                       >
                         {review.type}
@@ -261,7 +261,7 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
                           }}
                           aria-label={`Export ${review.type} review as PDF`}
                           title="Export as PDF"
-                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/10 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-500 transition-colors hover:bg-emerald-500/20"
                         >
                           <Download className="h-4 w-4" />
                         </button>

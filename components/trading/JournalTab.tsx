@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronDown, ChevronRight, Search, Tag as TagIcon, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, Tag as TagIcon } from 'lucide-react';
 import DailyReportSheet from '@/components/trading/DailyReportSheet';
 import TradingCalendar from '@/components/trading/TradingCalendar';
 import TradeTable from '@/components/trading/TradeTable';
@@ -198,45 +198,51 @@ export default function JournalTab({
         trades={filteredTrades}
         selectedDate={selectedDate}
         onDayClick={(dateKey) => {
-          // Toggle: clicking the same date again clears the filter and closes
-          // the DRC. Otherwise set both — DRC opens AND the journal narrows.
+          // Toggle: clicking the same date again clears the filter, closes
+          // the DRC, and collapses the day card so the journal returns to
+          // its prior state. Otherwise set both — DRC opens AND the journal
+          // narrows + auto-expands the matching day.
           if (selectedDate === dateKey) {
             setSelectedDate(null);
             setDrcDate(null);
+            setExpandedDays((prev) => {
+              const next = new Set(prev);
+              next.delete(dateKey);
+              return next;
+            });
           } else {
             setSelectedDate(dateKey);
             setDrcDate(dateKey);
-            // Auto-expand the matching day so the user sees its trades
-            // without an extra click.
             setExpandedDays((prev) => new Set(prev).add(dateKey));
           }
         }}
         onWeekClick={(start, end) => setWeekRange({ start, end })}
       />
 
-      {selectedDate ? (
-        <div className="flex">
-          <button
-            onClick={() => {
-              setSelectedDate(null);
-              setDrcDate(null);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20"
-          >
-            <X className="h-3 w-3" />
-            Filtering: {format(new Date(`${selectedDate}T00:00:00`), 'MMM d, yyyy')}
-          </button>
-        </div>
-      ) : null}
-
       <div className="space-y-4">
         {displayedDayCards.map((day) => {
           const expanded = expandedDays.has(day.sortKey);
           return (
             <div key={day.sortKey} className="overflow-hidden rounded-xl border border-white/10 bg-[#121214]">
-              <button
+              {/* Header acts like a button (click anywhere expands the day),
+                  but is rendered as a div so we can nest the "View Journal
+                  Log" button inside — nested <button> would be invalid HTML.
+                  role+tabIndex+onKeyDown give it the same keyboard semantics. */}
+              {/* 3-column grid: date on the left, View Journal Log dead-
+                  center, symbol tags + PnL on the right. Centering it via
+                  the grid (rather than a flex margin) keeps the button at
+                  the same x across every card automatically. */}
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => toggleDay(day.sortKey)}
-                className="flex w-full items-center justify-between gap-4 border-b border-white/10 p-4 text-left hover:bg-white/5"
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    toggleDay(day.sortKey);
+                  }
+                }}
+                className="grid w-full cursor-pointer grid-cols-3 items-center gap-4 border-b border-white/10 p-4 text-left hover:bg-white/5"
               >
                 <div className="flex items-center gap-3">
                   {expanded ? <ChevronDown className="h-4 w-4 text-zinc-500" /> : <ChevronRight className="h-4 w-4 text-zinc-500" />}
@@ -246,7 +252,18 @@ export default function JournalTab({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setDrcDate(day.sortKey);
+                  }}
+                  className="justify-self-center rounded-md bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-500 hover:bg-emerald-500/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500/50 focus-visible:ring-offset-0"
+                >
+                  View Journal Log
+                </button>
+
+                <div className="flex items-center justify-end gap-3">
                   <div className="hidden items-center gap-1.5 sm:flex">
                     {[...new Set(day.trades.map((t) => t.symbol))].map((sym) => (
                       <span key={sym} className="rounded bg-white/5 px-2 py-0.5 text-xs font-medium text-zinc-400">
@@ -258,7 +275,7 @@ export default function JournalTab({
                     {formatCurrency(day.dailyNetPnl)}
                   </p>
                 </div>
-              </button>
+              </div>
 
               <div className="grid grid-cols-2 gap-3 border-b border-white/10 bg-white/[0.02] p-3 text-sm sm:grid-cols-5">
                 <div>

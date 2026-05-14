@@ -70,8 +70,16 @@ export default function DailyReportSheet({
   const [saving, setSaving] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
   const [chartCount, setChartCount] = useState(INITIAL_CHART_BATCH);
+  // Saved reviews open in 'view' mode so URLs render as clickable anchors
+  // (the textarea swap happens via the `readOnly` prop on the renderers).
+  // Clicking "Edit Review" flips to 'edit' to expose the inputs and save
+  // button. New reviews open straight in 'edit' since there's nothing to view.
+  const [viewMode, setViewMode] = useState<'view' | 'edit'>('edit');
 
   const isExistingReport = existing !== null;
+  // The parent `readOnly` prop (Archive's PDF export) forces read-only and
+  // hides the Edit button entirely. Otherwise viewMode drives it.
+  const effectiveReadOnly = readOnly || viewMode === 'view';
 
   useEffect(() => {
     if (!open || !date) return;
@@ -84,6 +92,9 @@ export default function DailyReportSheet({
     setWatchlist([]);
     setEditingTemplate(false);
     setChartCount(INITIAL_CHART_BATCH);
+    // Default to edit; the fetch below flips this to 'view' if a saved
+    // review exists for this date.
+    setViewMode('edit');
 
     void Promise.all([
       fetch(`/api/daily-reviews?from=${date}&to=${date}`).then((response) => response.json()),
@@ -98,6 +109,7 @@ export default function DailyReportSheet({
 
         if (found) {
           setExisting(found);
+          setViewMode('view');
           setFields(cloneTemplateFields(found.templateSnapshot));
           const agg = aggregateDay(trades, date);
           // Auto fields are read-only (see TemplateFieldRenderer) — always overwrite so stale saved zeros don't shadow fresh aggregates.
@@ -250,8 +262,8 @@ export default function DailyReportSheet({
           <div className="mt-4 space-y-6 p-4">
             <WatchlistEditor
               value={watchlist}
-              onChange={readOnly ? undefined : setWatchlist}
-              readOnly={readOnly}
+              onChange={effectiveReadOnly ? undefined : setWatchlist}
+              readOnly={effectiveReadOnly}
             />
 
             {editingTemplate && !isExistingReport && !readOnly ? (
@@ -327,7 +339,7 @@ export default function DailyReportSheet({
                   key={field.id}
                   field={field}
                   value={reportData[field.id]}
-                  readOnly={readOnly}
+                  readOnly={effectiveReadOnly}
                   onChange={(nextValue) => setReportData((prev) => ({ ...prev, [field.id]: nextValue }))}
                 />
               ))}
@@ -361,13 +373,22 @@ export default function DailyReportSheet({
 
             {!readOnly ? (
               <div className="flex justify-end pt-2">
-                <Button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
-                >
-                  {saving ? 'Saving…' : isExistingReport ? 'Update Review' : 'Save Review'}
-                </Button>
+                {viewMode === 'view' ? (
+                  <Button
+                    onClick={() => setViewMode('edit')}
+                    className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                  >
+                    Edit Review
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                  >
+                    {saving ? 'Saving…' : isExistingReport ? 'Update Review' : 'Save Review'}
+                  </Button>
+                )}
               </div>
             ) : null}
           </div>

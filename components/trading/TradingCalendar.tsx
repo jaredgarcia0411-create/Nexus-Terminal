@@ -18,7 +18,6 @@ import {
   isWeekend
 } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
 
 interface TradingCalendarProps {
   trades: Trade[];
@@ -122,8 +121,6 @@ export default function TradingCalendar({
     }, 0);
   }, [calendarDays, monthStart, dailyStats]);
 
-  const selectedTrades = selectedDate ? dailyStats[selectedDate]?.trades || [] : [];
-
   return (
     <div className="space-y-6">
       <div>
@@ -180,11 +177,11 @@ export default function TradingCalendar({
                     }}
                     className={`${isMobile ? 'min-h-[60px] p-1.5' : 'min-h-[100px] p-2'} relative flex cursor-pointer flex-col gap-1 bg-[#121214] transition-all group ${
                       !isCurrentMonth ? 'opacity-20' : 'hover:bg-white/[0.03]'
-                    } ${isToday ? 'ring-1 ring-inset ring-emerald-500/50' : ''} ${
+                    } ${isToday ? 'ring-1 ring-inset ring-white/50' : ''} ${
                       isOffDay ? 'bg-white/[0.01]' : ''
                     } ${isSelected ? 'bg-emerald-500/5 ring-1 ring-inset ring-emerald-500/30' : ''}`}
                   >
-                    <span className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-mono ${isToday ? 'text-emerald-500 font-bold' : 'text-zinc-500'}`}>
+                    <span className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-mono ${isToday ? 'text-white font-bold' : 'text-zinc-500'}`}>
                       {format(day, 'd')}
                     </span>
 
@@ -233,66 +230,6 @@ export default function TradingCalendar({
           ))}
         </div>
       </div>
-
-      {/* Selected Date Trades Dropdown/List */}
-      <AnimatePresence mode="wait">
-        {selectedDate && (
-          <motion.div
-            key={selectedDate}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
-            className="overflow-hidden"
-          >
-            <div className="bg-[#121214] border border-white/5 rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">
-                  Trades for {format(new Date(selectedDate + 'T00:00:00'), 'MMMM d, yyyy')}
-                </h4>
-                <button 
-                  onClick={() => setInternalSelectedDate(null)}
-                  className="text-xs text-zinc-500 hover:text-white transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-              
-              <div className="space-y-2">
-                {selectedTrades.length > 0 ? (
-                  selectedTrades.map((trade) => (
-                    <div key={trade.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
-                      <div className="flex items-center gap-4">
-                        <span className={`w-1.5 h-8 rounded-full ${trade.direction === 'LONG' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                        <div>
-                          <div className="font-bold text-sm">{trade.symbol}</div>
-                          <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-tighter">
-                            {trade.direction} • {trade.totalQuantity} Shares
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className={`text-sm font-bold ${getPnLColor(trade.netPnl)}`}>
-                          {formatCurrency(trade.netPnl)}
-                        </div>
-                        {trade.initialRisk && (
-                          <div className="text-[10px] text-zinc-500 font-mono">
-                            {formatR(trade.netPnl / trade.initialRisk)}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8 text-zinc-500 text-sm italic">
-                    No trades recorded for this day.
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
