@@ -37,6 +37,10 @@ interface WeeklyReviewSheetProps {
   trades: Trade[];
   onSaved?: () => void;
   readOnly?: boolean;
+  // When true, fire window.print() once the review data has loaded. Used by
+  // Archive's PDF export — paired with the .print-target stylesheet in
+  // globals.css.
+  printOnReady?: boolean;
 }
 
 interface TemplateRow {
@@ -67,6 +71,7 @@ export default function WeeklyReviewSheet({
   trades,
   onSaved,
   readOnly = false,
+  printOnReady = false,
 }: WeeklyReviewSheetProps) {
   const [template, setTemplate] = useState<TemplateRow | null>(null);
   const [existing, setExisting] = useState<ReviewRow | null>(null);
@@ -128,6 +133,15 @@ export default function WeeklyReviewSheet({
       })
       .finally(() => setLoading(false));
   }, [open, weekEnd, weekStart, trades]);
+
+  // Auto-print once data has loaded. The 200ms delay gives the sheet
+  // animation time to settle so charts and layout are committed to the DOM
+  // before the browser snapshots the page for print.
+  useEffect(() => {
+    if (!printOnReady || !open || loading) return;
+    const timer = setTimeout(() => window.print(), 200);
+    return () => clearTimeout(timer);
+  }, [printOnReady, open, loading]);
 
   const handleSave = async () => {
     if (!weekStart || !weekEnd || !template) return;
@@ -219,7 +233,7 @@ export default function WeeklyReviewSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-full overflow-y-auto border-white/10 bg-[#121214] text-white sm:max-w-3xl"
+        className="print-target w-full overflow-y-auto border-white/10 bg-[#121214] text-white sm:max-w-3xl"
       >
         <SheetHeader>
           <div className="flex items-center justify-between">

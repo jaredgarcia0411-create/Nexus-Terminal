@@ -1,5 +1,6 @@
 'use client';
 
+import LinkifiedText from '@/components/ui/linkified-text';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import type { TemplateField } from '@/lib/validations/reviews';
@@ -49,13 +50,27 @@ export default function TemplateFieldRenderer({
   }
 
   if (field.type === 'text') {
+    const stringValue = typeof value === 'string' ? value : '';
+
+    // Read-only view (e.g. archived reviews) swaps the textarea for a div so
+    // URLs in the saved text become clickable anchors. whitespace-pre-wrap
+    // preserves the user's line breaks the same way a textarea would.
+    if (readOnly) {
+      return (
+        <div className="space-y-1">
+          <p className="text-xs font-medium capitalize text-white">{field.label}</p>
+          <div className="whitespace-pre-wrap break-words rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200">
+            {stringValue ? <LinkifiedText value={stringValue} /> : <span className="text-zinc-500">—</span>}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-1">
         <p className="text-xs font-medium capitalize text-white">{field.label}</p>
         <Textarea
-          value={typeof value === 'string' ? value : ''}
-          readOnly={readOnly}
-          disabled={readOnly}
+          value={stringValue}
           onChange={(event) => onChange?.(event.target.value)}
           rows={3}
           className="border-white/10 bg-white/5 text-sm"

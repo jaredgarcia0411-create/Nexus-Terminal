@@ -6,7 +6,7 @@ import { motion } from 'motion/react';
 import PerformanceCharts from '@/components/trading/PerformanceCharts';
 import PerformanceStatsTable from '@/components/trading/PerformanceStatsTable';
 import TagFilterDropdown from '@/components/trading/TagFilterDropdown';
-import { getPnLColor } from '@/lib/trading-utils';
+import { formatR, getPnLColor } from '@/lib/trading-utils';
 import type { Trade } from '@/lib/types';
 
 interface PerformanceTabProps {
@@ -36,6 +36,12 @@ export default function PerformanceTab({
     const pnlFor = (trade: Trade) => (pnlMode === 'gross' ? trade.grossPnl : trade.netPnl);
     const pnlValues = performanceTrades.map((trade) => pnlFor(trade));
     const totalPnl = pnlValues.reduce((sum, value) => sum + value, 0);
+    // Skip trades without initialRisk (R is undefined for those) — including
+    // them as 0R would understate realized risk-adjusted return.
+    const totalR = performanceTrades.reduce(
+      (sum, trade) => (trade.initialRisk ? sum + pnlFor(trade) / trade.initialRisk : sum),
+      0,
+    );
     const winningTrades = performanceTrades.filter((trade) => pnlFor(trade) > 0);
     const losingTrades = performanceTrades.filter((trade) => pnlFor(trade) < 0);
     const winRate = performanceTrades.length > 0 ? (winningTrades.length / performanceTrades.length) * 100 : 0;
@@ -64,6 +70,7 @@ export default function PerformanceTab({
 
     return {
       totalPnl,
+      totalR,
       winRate,
       profitFactor,
       averageMfe,
@@ -142,10 +149,14 @@ export default function PerformanceTab({
       <div className="mt-2 grid grid-cols-1 gap-6 md:grid-cols-3">
         <div className="rounded-xl border border-white/10 bg-[#121214] p-6">
           <div className="mb-2 text-xs font-mono uppercase tracking-wider text-zinc-500">
-            Total {pnlMode === 'net' ? 'Net' : 'Gross'} PnL
+            Total {pnlMode === 'net' ? 'Net' : 'Gross'} {performanceMetric === 'R' ? 'R' : 'PnL'}
           </div>
-          <div className={`text-3xl font-bold tracking-tight tabular-nums ${getPnLColor(stats.totalPnl)}`}>
-            {fmtCurrency(stats.totalPnl)}
+          <div
+            className={`text-3xl font-bold tracking-tight tabular-nums ${
+              performanceMetric === 'R' ? getPnLColor(stats.totalR) : getPnLColor(stats.totalPnl)
+            }`}
+          >
+            {performanceMetric === 'R' ? formatR(stats.totalR) : fmtCurrency(stats.totalPnl)}
           </div>
         </div>
         <div className="rounded-xl border border-white/10 bg-[#121214] p-6">

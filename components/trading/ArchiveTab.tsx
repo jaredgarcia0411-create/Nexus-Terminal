@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Trash2 } from 'lucide-react';
+import { Download, Trash2 } from 'lucide-react';
 import DailyReportSheet from '@/components/trading/DailyReportSheet';
 import WeeklyReviewSheet from '@/components/trading/WeeklyReviewSheet';
 import {
@@ -67,6 +67,10 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
   const [fromDate, setFromDate] = useState(ninetyDaysAgo());
   const [toDate, setToDate] = useState(todayStr());
   const [openReview, setOpenReview] = useState<AnyReview | null>(null);
+  // Tracks whether the currently-open review was opened via the export icon.
+  // The review sheet reads this as `printOnReady` and fires window.print()
+  // once its data finishes loading.
+  const [printingReview, setPrintingReview] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -126,17 +130,12 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
     [reviews, typeFilter],
   );
 
-  const exportReview = (review: AnyReview) => {
-    const json = JSON.stringify(review, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-
-    anchor.href = url;
-    anchor.download = review.type === 'daily' ? `drc-${review.date}.json` : `weekly-${review.date}.json`;
-    anchor.click();
-
-    URL.revokeObjectURL(url);
+  // Opens the review in read-only mode and flags it for auto-print. The
+  // sheet handles the actual window.print() call once its data is loaded.
+  // User picks "Save as PDF" in the resulting browser print dialog.
+  const handleExport = (review: AnyReview) => {
+    setPrintingReview(true);
+    setOpenReview(review);
   };
 
   const deleteReview = async (review: AnyReview) => {
@@ -258,11 +257,13 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
-                            exportReview(review);
+                            handleExport(review);
                           }}
-                          className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-zinc-400 hover:bg-white/10 hover:text-white"
+                          aria-label={`Export ${review.type} review as PDF`}
+                          title="Export as PDF"
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/10 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
                         >
-                          Export
+                          <Download className="h-4 w-4" />
                         </button>
                         <button
                           onClick={(event) => {
@@ -289,11 +290,15 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
         <DailyReportSheet
           open
           onOpenChange={(open) => {
-            if (!open) setOpenReview(null);
+            if (!open) {
+              setOpenReview(null);
+              setPrintingReview(false);
+            }
           }}
           date={openReview.date}
           trades={trades}
           readOnly
+          printOnReady={printingReview}
         />
       ) : null}
 
@@ -301,12 +306,16 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
         <WeeklyReviewSheet
           open
           onOpenChange={(open) => {
-            if (!open) setOpenReview(null);
+            if (!open) {
+              setOpenReview(null);
+              setPrintingReview(false);
+            }
           }}
           weekStart={openReview.date}
           weekEnd={openReview.weekEnd ?? openReview.date}
           trades={trades}
           readOnly
+          printOnReady={printingReview}
         />
       ) : null}
     </motion.div>

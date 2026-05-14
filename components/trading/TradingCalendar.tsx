@@ -25,6 +25,10 @@ interface TradingCalendarProps {
   onDayClick?: (dateKey: string) => void;
   onWeekClick?: (weekStart: string, weekEnd: string) => void;
   embedded?: boolean;
+  // Optional controlled selection. When provided, the calendar uses this for
+  // the highlight ring instead of its internal state — letting the parent
+  // (e.g. JournalTab's date filter) drive which day looks selected.
+  selectedDate?: string | null;
 }
 
 type WeekData = {
@@ -33,10 +37,20 @@ type WeekData = {
   weeklyR: number;
 };
 
-export default function TradingCalendar({ trades, onDayClick, onWeekClick, embedded = false }: TradingCalendarProps) {
+export default function TradingCalendar({
+  trades,
+  onDayClick,
+  onWeekClick,
+  embedded = false,
+  selectedDate: controlledSelectedDate,
+}: TradingCalendarProps) {
   const isMobile = useIsMobile();
   const [currentMonth, setCurrentMonth] = React.useState(new Date());
-  const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
+  const [internalSelectedDate, setInternalSelectedDate] = React.useState<string | null>(null);
+  // Prefer the controlled prop when the parent passes one; otherwise fall
+  // back to internal state. `undefined` means uncontrolled, `null` means
+  // explicitly "no selection."
+  const selectedDate = controlledSelectedDate !== undefined ? controlledSelectedDate : internalSelectedDate;
 
   const { monthStart, monthEnd, startDate, endDate } = useMemo(() => {
     const mStart = startOfMonth(currentMonth);
@@ -97,6 +111,17 @@ export default function TradingCalendar({ trades, onDayClick, onWeekClick, embed
     return w;
   }, [calendarDays, dailyStats]);
 
+  // Sum R only for days that actually fall in the visible month — the
+  // calendar grid includes leading/trailing days from neighboring months,
+  // and we don't want those leaking into the month total.
+  const monthlyR = useMemo(() => {
+    return calendarDays.reduce((sum, day) => {
+      if (!isSameMonth(day, monthStart)) return sum;
+      const key = format(day, 'yyyy-MM-dd');
+      return sum + (dailyStats[key]?.r || 0);
+    }, 0);
+  }, [calendarDays, monthStart, dailyStats]);
+
   const selectedTrades = selectedDate ? dailyStats[selectedDate]?.trades || [] : [];
 
   return (
@@ -107,6 +132,13 @@ export default function TradingCalendar({ trades, onDayClick, onWeekClick, embed
             <h3 className="text-base font-medium text-white">Trading Calendar</h3>
           )}
           <div className="flex items-center gap-4">
+            <span
+              className={`text-base font-medium tabular-nums ${
+                monthlyR > 0 ? 'text-emerald-400' : monthlyR < 0 ? 'text-rose-400' : 'text-white'
+              }`}
+            >
+              {formatR(monthlyR)}
+            </span>
             <span className="text-base font-medium">{format(currentMonth, 'MMMM yyyy')}</span>
             <div className="flex items-center gap-1">
               <button onClick={prevMonth} className="p-1 hover:bg-white/5 rounded-md transition-colors">
@@ -143,7 +175,7 @@ export default function TradingCalendar({ trades, onDayClick, onWeekClick, embed
                       if (onDayClick) {
                         onDayClick(dateKey);
                       } else {
-                        setSelectedDate(isSelected ? null : dateKey);
+                        setInternalSelectedDate(isSelected ? null : dateKey);
                       }
                     }}
                     className={`${isMobile ? 'min-h-[60px] p-1.5' : 'min-h-[100px] p-2'} relative flex cursor-pointer flex-col gap-1 bg-[#121214] transition-all group ${
@@ -219,7 +251,7 @@ export default function TradingCalendar({ trades, onDayClick, onWeekClick, embed
                   Trades for {format(new Date(selectedDate + 'T00:00:00'), 'MMMM d, yyyy')}
                 </h4>
                 <button 
-                  onClick={() => setSelectedDate(null)}
+                  onClick={() => setInternalSelectedDate(null)}
                   className="text-xs text-zinc-500 hover:text-white transition-colors"
                 >
                   Close

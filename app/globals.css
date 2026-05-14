@@ -104,3 +104,54 @@
 .scrollbar-hidden::-webkit-scrollbar {
   display: none;
 }
+
+/* ---------- Print styles ----------
+   Used by Archive PDF export. The export flow opens a review sheet, marks its
+   content with `.print-target`, then triggers window.print(). This block hides
+   everything else, repositions the sheet to fill the page, and forces a
+   light/printable color scheme so the saved PDF doesn't waste ink on a black
+   background. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-target,
+  .print-target * {
+    visibility: visible;
+  }
+  .print-target {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #111111 !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 1.5rem !important;
+    transform: none !important;
+  }
+  .print-target * {
+    color: #111111 !important;
+    background: transparent !important;
+    border-color: #cccccc !important;
+    box-shadow: none !important;
+  }
+  /* Hide every interactive control inside the printed sheet (close X, save
+     button, edit pencil, load-more buttons). The export view is read-only
+     so none of these belong on paper. */
+  .print-target button,
+  .print-target [role="button"] {
+    display: none !important;
+  }
+  /* Keep the linkified URLs visible and recognizable as links. */
+  .print-target a {
+    color: #047857 !important;
+    text-decoration: underline !important;
+  }
+}

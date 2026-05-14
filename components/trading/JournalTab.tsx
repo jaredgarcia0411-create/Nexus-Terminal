@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronDown, ChevronRight, Search, Tag as TagIcon } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, Tag as TagIcon, X } from 'lucide-react';
 import DailyReportSheet from '@/components/trading/DailyReportSheet';
 import TradingCalendar from '@/components/trading/TradingCalendar';
 import TradeTable from '@/components/trading/TradeTable';
@@ -74,6 +74,10 @@ export default function JournalTab({
   const [chartTimeframes, setChartTimeframes] = useState<Record<string, TradeChartTimeframeKey>>({});
   const [drcDate, setDrcDate] = useState<string | null>(null);
   const [weekRange, setWeekRange] = useState<{ start: string; end: string } | null>(null);
+  // When set, the journal list below the calendar filters down to this date
+  // and the matching card auto-expands. Cleared by clicking the same date
+  // again or the X chip rendered above the list.
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -114,6 +118,14 @@ export default function JournalTab({
         };
       });
   }, [filteredTrades]);
+
+  // dayCards already covers every date with trades; when the user picks a
+  // date on the calendar we narrow the visible list to just that day. Empty
+  // result is fine — it surfaces "No trades match the current filters."
+  const displayedDayCards = useMemo(() => {
+    if (!selectedDate) return dayCards;
+    return dayCards.filter((day) => day.sortKey === selectedDate);
+  }, [dayCards, selectedDate]);
 
   const toggleDay = (sortKey: string) => {
     const isCurrentlyExpanded = expandedDays.has(sortKey);
@@ -184,12 +196,41 @@ export default function JournalTab({
 
       <TradingCalendar
         trades={filteredTrades}
-        onDayClick={(dateKey) => setDrcDate(dateKey)}
+        selectedDate={selectedDate}
+        onDayClick={(dateKey) => {
+          // Toggle: clicking the same date again clears the filter and closes
+          // the DRC. Otherwise set both — DRC opens AND the journal narrows.
+          if (selectedDate === dateKey) {
+            setSelectedDate(null);
+            setDrcDate(null);
+          } else {
+            setSelectedDate(dateKey);
+            setDrcDate(dateKey);
+            // Auto-expand the matching day so the user sees its trades
+            // without an extra click.
+            setExpandedDays((prev) => new Set(prev).add(dateKey));
+          }
+        }}
         onWeekClick={(start, end) => setWeekRange({ start, end })}
       />
 
+      {selectedDate ? (
+        <div className="flex">
+          <button
+            onClick={() => {
+              setSelectedDate(null);
+              setDrcDate(null);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20"
+          >
+            <X className="h-3 w-3" />
+            Filtering: {format(new Date(`${selectedDate}T00:00:00`), 'MMM d, yyyy')}
+          </button>
+        </div>
+      ) : null}
+
       <div className="space-y-4">
-        {dayCards.map((day) => {
+        {displayedDayCards.map((day) => {
           const expanded = expandedDays.has(day.sortKey);
           return (
             <div key={day.sortKey} className="overflow-hidden rounded-xl border border-white/10 bg-[#121214]">
@@ -319,7 +360,7 @@ export default function JournalTab({
           );
         })}
 
-        {dayCards.length === 0 ? (
+        {displayedDayCards.length === 0 ? (
           <div className="rounded-2xl border border-white/10 bg-[#121214] p-10 text-center text-sm text-zinc-500">
             No trades match the current filters.
           </div>
