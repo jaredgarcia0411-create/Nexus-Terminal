@@ -49,6 +49,7 @@ function getInitialRiskDollars() {
 // hydrate the saved ticker (or fall back to AAPL on today's date) inside a
 // mount effect below.
 const CHARTS_LAST_TICKER_KEY = 'nexus.charts.lastTicker';
+const CHARTS_RIGHT_COLLAPSED_KEY = 'nexus.charts.rightCollapsed';
 
 function getPersistedTicker(): string {
   if (typeof window === 'undefined') return 'AAPL';
@@ -59,6 +60,17 @@ function getPersistedTicker(): string {
     // Ignore storage failures.
   }
   return 'AAPL';
+}
+
+function getInitialRightCollapsed(): boolean {
+  // SSR safety: window is undefined on the server. Default to collapsed so the
+  // first paint matches the persisted-collapsed common case.
+  if (typeof window === 'undefined') return true;
+  try {
+    return localStorage.getItem(CHARTS_RIGHT_COLLAPSED_KEY) !== 'false';
+  } catch {
+    return true;
+  }
 }
 
 function todayIsoDate(): string {
@@ -81,7 +93,18 @@ export default function BacktestingTab() {
     name: null,
     userId: null,
   });
-  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(getInitialRightCollapsed);
+
+  // Persist collapse state so the panel stays the way the user left it across
+  // tab switches and reloads. Effect-based sync (rather than wrapping the
+  // setter) keeps the toggle call site simple.
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHARTS_RIGHT_COLLAPSED_KEY, String(rightCollapsed));
+    } catch {
+      // Ignore storage failures — non-critical preference.
+    }
+  }, [rightCollapsed]);
   const [riskDollars, setRiskDollars] = useState(getInitialRiskDollars);
   const [armedAction, setArmedAction] = useState<BacktestActionType | null>(null);
   const [pendingOrder, setPendingOrder] = useState<BacktestOrderDraft | null>(null);
