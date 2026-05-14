@@ -68,6 +68,7 @@ export default function NexusTerminal() {
     error,
     importInputRef,
     folderInputRef,
+    traderVueInputRef,
     selectedIds,
     startDate,
     endDate,
@@ -102,6 +103,7 @@ export default function NexusTerminal() {
     handleClearAllData,
     handleFileUpload,
     handleFolderUpload,
+    handleTraderVueImport,
     fetchTradeDetail,
   } = useTrades();
 
@@ -162,6 +164,7 @@ export default function NexusTerminal() {
         onNewTradeClick={() => setIsManualTradeOpen(true)}
         onImportClick={() => importInputRef.current?.click()}
         onFolderImportClick={() => folderInputRef.current?.click()}
+        onTraderVueImportClick={() => traderVueInputRef.current?.click()}
         collapsed={sidebarCollapsed}
         onToggleCollapse={handleToggleSidebarCollapse}
       />
@@ -183,6 +186,7 @@ export default function NexusTerminal() {
         <input ref={importInputRef} type="file" accept=".csv" multiple className="hidden" onChange={handleFileUpload} />
         {/* @ts-expect-error webkitdirectory is non-standard but widely supported */}
         <input ref={folderInputRef} type="file" accept=".csv" multiple webkitdirectory="" className="hidden" onChange={handleFolderUpload} />
+        <input ref={traderVueInputRef} type="file" accept=".csv" multiple className="hidden" onChange={handleTraderVueImport} />
 
         <div className={activeTab === 'charts' || activeTab === 'research' ? 'px-3 py-4' : 'mx-auto max-w-7xl p-8'}>
           <AnimatePresence mode="wait">

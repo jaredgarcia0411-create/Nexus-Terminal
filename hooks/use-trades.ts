@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { toast } from 'sonner';
 import { detectParser, getParserById, type BrokerParserConfig } from '@/lib/parsers';
+import { parseTraderVueCsv } from '@/lib/parsers/tradervue';
 import type { ApiTrade, Trade } from '@/lib/types';
 import { useTradeFilters } from './use-trade-filters';
 import { useTradeSync } from './use-trade-sync';
@@ -27,6 +28,7 @@ export function useTrades() {
   const [defaultRisk, setDefaultRisk] = useState<number | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const traderVueInputRef = useRef<HTMLInputElement | null>(null);
   const tradesRef = useRef<Trade[]>([]);
   const defaultRiskHydratedRef = useRef(false);
   const sortTrades = sortTradesByDate;
@@ -306,13 +308,61 @@ export function useTrades() {
     }
   };
 
+  const handleTraderVueImport = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    setIsImporting(true);
+    setError(null);
+    try {
+      const allTrades: Trade[] = [];
+      const warnings: string[] = [];
+
+      // Each TraderVue CSV is already-aggregated trades, so we parse files
+      // in parallel and merge — much faster than the per-day pipeline.
+      const results = await Promise.all(Array.from(files).map((file) => parseTraderVueCsv(file)));
+      for (const result of results) {
+        allTrades.push(...result.trades);
+        warnings.push(...result.warnings);
+      }
+
+      if (warnings.length > 0) {
+        console.warn(`[TraderVue import] ${warnings.length} warning(s):`, warnings);
+        toast.warning(`${warnings.length} warning(s) during TraderVue import (see DevTools console)`);
+      }
+
+      if (allTrades.length === 0) {
+        if (warnings.length === 0) toast.warning('No valid TraderVue trades found to import');
+        return;
+      }
+
+      const importedTrades = allTrades.map((trade) => withDefaultRisk(trade));
+      const apiTrades = importedTrades.map(toApiTrade);
+      for (let offset = 0; offset < apiTrades.length; offset += IMPORT_CHUNK_SIZE) {
+        const chunk = apiTrades.slice(offset, offset + IMPORT_CHUNK_SIZE);
+        await apiRequest<{ trades: ApiTrade[] }>('/api/trades/import', {
+          method: 'POST',
+          body: JSON.stringify({ trades: chunk }),
+        });
+      }
+      await refreshTrades();
+      toast.success(`Imported ${importedTrades.length} trade${importedTrades.length === 1 ? '' : 's'} from TraderVue`);
+    } catch (uploadError) {
+      const msg = uploadError instanceof Error ? uploadError.message : 'Processing error';
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setIsImporting(false);
+      event.target.value = '';
+    }
+  };
+
   return {
-    status, user, trades, globalTags, filteredTrades, isImporting, mounted, error, importInputRef, folderInputRef,
+    status, user, trades, globalTags, filteredTrades, isImporting, mounted, error, importInputRef, folderInputRef, traderVueInputRef,
     selectedIds, startDate, endDate, riskInput, defaultRiskInput, defaultRisk, filterPreset, selectedFilterTags, bulkTagInput,
     searchQuery, hasActiveFilters, activeFilterCount, clearAllFilters, setStartDate, setEndDate, setRiskInput, setDefaultRiskInput,
     setFilterPreset, setSelectedFilterTags, setBulkTagInput, setSearchQuery, handleToggleSelect, handleSelectAll,
     handleCreateManualTrade, handleDeleteSelected, handleApplyRisk, handleSetDefaultRisk, handleSaveNotes, handleAddTag,
-    handleRemoveTag, handleDeleteGlobalTag, handleBulkAddTag, handleClearAllData, handleFileUpload, handleFolderUpload,
+    handleRemoveTag, handleDeleteGlobalTag, handleBulkAddTag, handleClearAllData, handleFileUpload, handleFolderUpload, handleTraderVueImport,
     fetchTradeDetail,
   };
 }

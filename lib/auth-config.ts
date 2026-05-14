@@ -21,6 +21,7 @@ const config: NextAuthConfig = {
           Google({
             clientId: googleClientId,
             clientSecret: googleClientSecret,
+            authorization: { params: { prompt: 'select_account' } },
           }),
         ]),
   ],

@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, ChartCandlestick, ChevronLeft, ChevronRight, File, Folder, LayoutGrid, List, Plus, Search, Upload, User } from 'lucide-react';
+import { Activity, ChartCandlestick, ChevronLeft, ChevronRight, File, FileSpreadsheet, Folder, LayoutGrid, List, Plus, Search, Upload, User } from 'lucide-react';
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import SettingsMenu from '@/components/trading/SettingsMenu';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -21,6 +21,7 @@ interface SidebarProps {
   onNewTradeClick: () => void;
   onImportClick: () => void;
   onFolderImportClick: () => void;
+  onTraderVueImportClick: () => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
 }
@@ -35,6 +36,7 @@ export default function Sidebar({
   onNewTradeClick,
   onImportClick,
   onFolderImportClick,
+  onTraderVueImportClick,
   collapsed,
   onToggleCollapse,
 }: SidebarProps) {
@@ -170,6 +172,10 @@ export default function Sidebar({
             <Folder className="h-4 w-4" />
             Import Folder
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={onTraderVueImportClick} className="cursor-pointer gap-2">
+            <FileSpreadsheet className="h-4 w-4" />
+            Import from TraderVue
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     ) : (
@@ -191,6 +197,10 @@ export default function Sidebar({
           <DropdownMenuItem onClick={onFolderImportClick} className="cursor-pointer gap-2">
             <Folder className="h-4 w-4" />
             Import Folder
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onTraderVueImportClick} className="cursor-pointer gap-2">
+            <FileSpreadsheet className="h-4 w-4" />
+            Import from TraderVue
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
