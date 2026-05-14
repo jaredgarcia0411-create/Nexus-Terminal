@@ -479,6 +479,22 @@ export const weeklyReviews = pgTable('weekly_reviews', {
   index('weekly_reviews_user_week_idx').on(t.userId, t.weekStart),
 ]);
 
+// Career P/L: one row per (user, calendar month). The `month` column is a date
+// pinned to the 1st of the month (e.g. 2026-05-01) so years are tracked
+// implicitly — June 2026 and June 2027 are separate rows.
+export const careerPnlEntries = pgTable('career_pnl_entries', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  month: date('month').notNull(),
+  amount: doublePrecision('amount').notNull(),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  unique().on(t.userId, t.month),
+  index('career_pnl_user_month_idx').on(t.userId, t.month),
+]);
+
 // Shared system-trades log from the team's Google Sheet — no userId, shared across all users
 export const systemTickers = pgTable('system_tickers', {
   id: text('id').primaryKey(),

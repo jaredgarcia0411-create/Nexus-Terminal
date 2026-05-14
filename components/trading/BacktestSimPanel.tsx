@@ -123,7 +123,7 @@ export default function BacktestSimPanel({
   const [reviewNotes, setReviewNotes] = useState('');
   const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null);
 
-  // LOAD REVIEW widens named backtest launches to every returned ticker/date
+  // Load Review widens named backtest launches to every returned ticker/date
   // review, while uncategorized launches stay scoped to the current viewer's
   // own free-form reviews.
   const visibleReviews = useMemo(() => {
@@ -147,8 +147,8 @@ export default function BacktestSimPanel({
   const pnlClass = getPnLColor(simPnl);
   const posValue = position.avgEntry != null ? position.avgEntry * position.totalShares : 0;
   const saveLabel = activeBacktest && activeBacktest.userId === currentUserId
-    ? `SAVE TO ${activeBacktest.name.toUpperCase().slice(0, 15)}${activeBacktest.name.length > 15 ? '...' : ''}`
-    : 'SAVE REVIEW';
+    ? `Save to ${activeBacktest.name.slice(0, 15)}${activeBacktest.name.length > 15 ? '…' : ''}`
+    : 'Save Review';
 
   const commitRisk = async (rawValue: string) => {
     const nextRisk = Number(rawValue);
@@ -319,7 +319,7 @@ export default function BacktestSimPanel({
             >
               {selectedReview
                 ? formatReviewLabel(selectedReview)
-                : 'LOAD REVIEW'}
+                : 'Load Review'}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-[240px] border-white/10 bg-[#111319] text-white">

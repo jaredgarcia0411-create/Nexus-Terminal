@@ -37,3 +37,14 @@ export const adminMemoryDeleteBodySchema = z.object({
 });
 
 export type AdminMemoryDeleteBody = z.infer<typeof adminMemoryDeleteBodySchema>;
+
+// Career P/L: client sends `month` as ISO date (YYYY-MM-DD), `amount` as a
+// finite number (positive or negative), `notes` optional. We coerce the date
+// to the 1st of the month server-side so the unique constraint can dedupe.
+export const careerPnlBodySchema = z.object({
+  month: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'month must be YYYY-MM-DD'),
+  amount: z.number().finite(),
+  notes: z.string().trim().max(2000).optional(),
+});
+
+export type CareerPnlBody = z.infer<typeof careerPnlBodySchema>;

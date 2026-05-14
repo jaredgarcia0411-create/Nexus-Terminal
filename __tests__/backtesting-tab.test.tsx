@@ -216,9 +216,21 @@ describe('BacktestingTab', () => {
     window.localStorage.clear();
   });
 
-  it('starts on the manager view and enters chart mode when a backtest is launched', () => {
+  // BacktestingTab now opens directly into the chart workspace (with AAPL
+  // hydrated from localStorage) rather than the manager. Tests that need the
+  // manager UI click "Back to backtest manager" first.
+  const goToManager = () => {
+    fireEvent.click(screen.getByLabelText('Back to backtest manager'));
+  };
+
+  it('starts on the chart view and can round-trip to the manager to launch a backtest', () => {
     render(<BacktestingTab />);
 
+    // Chart workspace renders immediately; manager is not visible.
+    expect(screen.queryByText('Manager View')).toBeNull();
+    expect(screen.getByText('Sidebar Active: none')).toBeTruthy();
+
+    goToManager();
     expect(screen.getByText('Manager View')).toBeTruthy();
 
     fireEvent.click(screen.getByText('Open Managed Chart'));
@@ -230,10 +242,14 @@ describe('BacktestingTab', () => {
   it('only shows manual ticker lookup for ad hoc chart launches', () => {
     render(<BacktestingTab />);
 
+    // Initial chart view has no backtest active — lookup form is visible.
+    expect(screen.getByLabelText('Lookup ticker on date')).toBeTruthy();
+
+    goToManager();
     fireEvent.click(screen.getByText('Open Managed Chart'));
     expect(screen.queryByLabelText('Lookup ticker on date')).toBeNull();
 
-    fireEvent.click(screen.getByLabelText('Back to backtest manager'));
+    goToManager();
     fireEvent.click(screen.getByText('Open Launch Charts'));
     expect(screen.getByLabelText('Lookup ticker on date')).toBeTruthy();
   });
@@ -242,6 +258,7 @@ describe('BacktestingTab', () => {
     useBacktestSessionMock.mockReturnValue(makeSessionState('LONG'));
 
     render(<BacktestingTab />);
+    goToManager();
     fireEvent.click(screen.getByText('Open Managed Chart'));
     fireEvent.click(screen.getByText('Select AAPL'));
 
@@ -255,6 +272,7 @@ describe('BacktestingTab', () => {
     useBacktestSessionMock.mockReturnValue(makeSessionState('SHORT'));
 
     render(<BacktestingTab />);
+    goToManager();
     fireEvent.click(screen.getByText('Open Managed Chart'));
     fireEvent.click(screen.getByText('Select AAPL'));
 
@@ -265,6 +283,7 @@ describe('BacktestingTab', () => {
 
   it('passes the global forward-day count to the chart grid', () => {
     render(<BacktestingTab />);
+    goToManager();
     fireEvent.click(screen.getByText('Open Managed Chart'));
     fireEvent.click(screen.getByText('Select AAPL'));
 
@@ -296,6 +315,7 @@ describe('BacktestingTab', () => {
     }));
 
     render(<BacktestingTab />);
+    goToManager();
     fireEvent.click(screen.getByText('Open Managed Chart'));
 
     expect((screen.getByRole('button', { name: 'Clear' }) as HTMLButtonElement).disabled).toBe(false);

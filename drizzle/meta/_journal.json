@@ -260,6 +260,13 @@
       "when": 1778722034761,
       "tag": "0036_parched_madame_hydra",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1778725617477,
+      "tag": "0037_loose_gamora",
+      "breakpoints": true
     }
   ]
 }

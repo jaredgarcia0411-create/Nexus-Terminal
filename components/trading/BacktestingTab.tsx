@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useSession } from 'next-auth/react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { motion } from 'motion/react';
-import { ArrowLeft, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 
 import BacktestChartGrid from '@/components/trading/BacktestChartGrid';
 import BacktestManagerView from '@/components/trading/BacktestManagerView';
@@ -44,11 +44,43 @@ function getInitialRiskDollars() {
   }
 }
 
+// Charts tab opens directly into the chart workspace. On first paint we don't
+// have access to localStorage (SSR), so we start with a placeholder view and
+// hydrate the saved ticker (or fall back to AAPL on today's date) inside a
+// mount effect below.
+const CHARTS_LAST_TICKER_KEY = 'nexus.charts.lastTicker';
+
+function getPersistedTicker(): string {
+  if (typeof window === 'undefined') return 'AAPL';
+  try {
+    const stored = localStorage.getItem(CHARTS_LAST_TICKER_KEY);
+    if (stored && /^[A-Z0-9.\-^]{1,10}$/.test(stored)) return stored;
+  } catch {
+    // Ignore storage failures.
+  }
+  return 'AAPL';
+}
+
+function todayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export default function BacktestingTab() {
   const { data: session } = useSession();
   const currentUserId = (session?.user as { id?: string | null } | undefined)?.id ?? null;
 
-  const [view, setView] = useState<View>({ kind: 'manager' });
+  // Default to the chart workspace (not the manager) so the Charts tab feels
+  // like a charting area first. The actual ticker/date is hydrated from
+  // localStorage in the mount effect below — we can't read it during initial
+  // render because that runs on the server.
+  const [view, setView] = useState<View>({
+    kind: 'chart',
+    ticker: null,
+    date: null,
+    id: null,
+    name: null,
+    userId: null,
+  });
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [riskDollars, setRiskDollars] = useState(getInitialRiskDollars);
   const [armedAction, setArmedAction] = useState<BacktestActionType | null>(null);
@@ -99,7 +131,25 @@ export default function BacktestingTab() {
     // the user has signaled they want a fresh chart, not the review we queued.
     setAutoLoadReviewId(null);
     openChartView(nextSelection, activeBacktest);
+
+    // Persist the ticker so the Charts tab reopens to the same symbol next
+    // session. Failures are non-fatal (private browsing etc.).
+    try {
+      localStorage.setItem(CHARTS_LAST_TICKER_KEY, nextSelection.ticker);
+    } catch {
+      // Ignore storage failures.
+    }
   }, [openChartView, view]);
+
+  // On first mount of the Charts tab, hydrate to the persisted ticker (or
+  // AAPL) on today's date. We only run this once — if the user navigates
+  // away and the user-id-less placeholder view ever re-mounts, the same
+  // effect fires again. That's fine: it produces a deterministic default.
+  useEffect(() => {
+    if (view.kind !== 'chart' || view.ticker || view.date) return;
+    handleSelect({ ticker: getPersistedTicker(), date: todayIsoDate() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleLookupSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -233,19 +283,18 @@ export default function BacktestingTab() {
           }
         >
           <main className="flex min-h-0 min-w-0 flex-col gap-0 overflow-hidden pr-2">
-            <div className="grid h-7 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 px-3 text-xs text-zinc-500">
+            <div className="grid h-7 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 px-1 text-xs text-zinc-500">
               <div className="flex min-w-0 items-center gap-2">
-                <Button
+                <button
                   type="button"
-                  variant="ghost"
-                  size="icon-xs"
                   onClick={() => setView({ kind: 'manager' })}
-                  className="text-white hover:bg-white/10 hover:text-white"
+                  className="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-500 transition-colors hover:bg-emerald-500/20"
                   aria-label="Back to backtest manager"
                   title="Back to backtest manager"
                 >
-                  <ArrowLeft className="h-4 w-4" />
-                </Button>
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  Backtest Manager
+                </button>
               </div>
 
               <div className="flex min-w-0 items-center justify-center gap-2">
