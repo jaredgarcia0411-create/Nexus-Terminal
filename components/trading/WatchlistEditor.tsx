@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 
 import {
@@ -266,7 +266,7 @@ function RowCells({
         </div>
         <div className={`${cellBase} text-xs text-zinc-200`}>{row.thesis || '—'}</div>
         <div className={`${cellBase} text-xs text-zinc-200`}>{row.grade || '—'}</div>
-        <div className={`${cellBase} whitespace-pre-wrap text-xs text-zinc-300`}>
+        <div className={`${cellBase} whitespace-pre-wrap text-sm text-zinc-300`}>
           {row.notes || '—'}
         </div>
       </>
@@ -367,13 +367,10 @@ function RowCells({
       </div>
 
       <div className={cellBase}>
-        <textarea
+        <AutoGrowNotes
           id={notesInputId}
           value={row.notes}
-          onChange={(event) => onChangeRow({ notes: event.target.value })}
-          rows={1}
-          placeholder="Quick notes…"
-          className="w-full resize-none rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500/40 focus:outline-none"
+          onChange={(next) => onChangeRow({ notes: next })}
         />
       </div>
 
@@ -389,5 +386,37 @@ function RowCells({
         </button>
       </div>
     </>
+  );
+}
+
+interface AutoGrowNotesProps {
+  id: string;
+  value: string;
+  onChange: (next: string) => void;
+}
+
+// Textarea that grows to fit its content. The effect resets height to 'auto' so it
+// can shrink when text is deleted, then sets it to scrollHeight (the exact pixel
+// height the browser would need to show every line without a scrollbar).
+function AutoGrowNotes({ id, value, onChange }: AutoGrowNotesProps) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      id={id}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      rows={1}
+      placeholder="Quick notes…"
+      className="block w-full resize-none overflow-hidden rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500/40 focus:outline-none"
+    />
   );
 }
