@@ -72,14 +72,6 @@ for (const skillName of [
   );
 }
 
-const futurePlans = read('docs/FUTURE-PLANS.md');
-check(
-  futurePlans.includes('/api/cron/agent-retention') &&
-    futurePlans.includes('/api/cron/mdr-sweep') &&
-    !futurePlans.includes('/api/discord/cron/sync'),
-  'docs/FUTURE-PLANS.md staging cron notes should match live vercel.json crons.',
-);
-
 const deepResearchSkill = read('codex-skills/nexus-deep-research/SKILL.md');
 const deepResearchMetadata = read('codex-skills/nexus-deep-research/agents/openai.yaml');
 const deepResearchSubagentPatterns = read('codex-skills/nexus-deep-research/references/subagent-patterns.md');

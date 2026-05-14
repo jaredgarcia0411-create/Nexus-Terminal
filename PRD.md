@@ -77,7 +77,7 @@ Autonomous AI agents running as Docker Compose services on a home server, coordi
 - Blueprint-driven handlers — typed step sequences (code vs LLM) keep costs low and results reliable
 - Provider-agnostic LLM wrapper — interchangeable providers (NVIDIA API, Groq, local llama.cpp)
 
-**Status:** Architecture spec at `docs/AGENTIC_EXPANSIONV2.md` (DRAFT R7). Nothing built yet.
+**Status:** Built and running. Agents live in `services/` (Docker Compose) and `lib/agents/`; schema in `lib/db/schema.ts`.
 
 ---
 
@@ -100,7 +100,7 @@ Autonomous AI agents running as Docker Compose services on a home server, coordi
 ## Priority Order
 
 1. **Finish research reports** (Sprint 8 — active)
-2. **Build agent framework** (architecture designed in `docs/AGENTIC_EXPANSIONV2.md`)
+2. **Build agent framework** (built — see `services/` and `lib/agents/`)
 3. **Launch Orchestrator + Small Cap Trader** (first two agents, validate before adding Swing Trader)
 4. **Polish trade logging & performance** (ongoing)
 5. **Launch Swing Trader** (after first two agents prove stable)

@@ -1,7 +1,7 @@
 ---
 name: aev2-sprint
 description: |
-  Nexus Terminal's AEV2 (Agent Expansion V2) sprint workflow. Use this skill whenever the user is drafting, reviewing, amending, or finalizing an AEV2 sprint spec — including: planning the next sprint, writing or revising the active section of HANDOFF.md, fanning out subagents to review a sprint contract, collapsing a completed sprint, or preparing work for Codex to execute. Trigger on: "sprint", "handoff", "AEV2", "next sprint", "sprint N", "draft the spec", "fan out review", "review the sprint", "collapse the sprint", "ready for codex", "AEV2_PLAN", "AGENTIC_EXPANSIONV2", or any mention of the agent expansion roadmap. Also trigger when the user asks you to spawn subagents to critique a long sprint document.
+  Nexus Terminal's sprint workflow (originally AEV2 / Agent Expansion V2). Use this skill whenever the user is drafting, reviewing, amending, or finalizing a sprint spec — including: planning the next sprint, writing or revising the active section of HANDOFF.md, fanning out subagents to review a sprint contract, collapsing a completed sprint, or preparing work for Codex to execute. Trigger on: "sprint", "handoff", "AEV2", "next sprint", "sprint N", "draft the spec", "fan out review", "review the sprint", "collapse the sprint", "ready for codex", or any mention of multi-step Codex execution. Also trigger when the user asks you to spawn subagents to critique a long sprint document.
 ---
 
 # AEV2 Sprint Workflow
@@ -22,18 +22,23 @@ The AEV2 buildout is a multi-sprint effort to ship Nexus Terminal's multi-agent 
 
 ## Inputs (Always Read First)
 
-When the user asks you to draft, review, or amend an AEV2 sprint, read these in this order:
+When the user asks you to draft, review, or amend a sprint, read these in this order:
 
-1. **`AEV2_PLAN.md`** — the full multi-sprint roadmap. Find the sprint you're working on. Use this for stories, scope, and dependencies.
-2. **`AGENTIC_EXPANSIONV2.md`** — the source-of-truth design doc. This has the contracts, schemas, response shapes, formulas, and architectural decisions the spec must conform to. Anything in HANDOFF.md that conflicts with this is wrong.
-3. **`HANDOFF.md`** — the current state. Look at:
+1. **`HANDOFF.md`** — the current state. Look at:
    - What's already collapsed (so you don't duplicate it)
    - What the active sprint section currently says (so you know what to amend)
    - Whether the previous sprint is COMPLETE and ready to be collapsed
+2. **`docs/FUTURE-PLANS.md`** — parked ideas and longer-horizon plans. The next sprint usually pulls from here.
+3. **Live code as source-of-truth.** Contracts, schemas, response shapes, and architectural decisions live in the codebase, not in a design doc. Grep these as needed:
+   - `lib/agents/` — agent runtime (LLM lanes, blueprints, queue, memory)
+   - `services/` — Docker Compose agent services (Orchestrator, Small Cap, Swing)
+   - `lib/db/schema.ts` — all DB tables and types
+   - `app/api/agents/**` — agent-facing API contracts
+   - `lib/validations/` — Zod request/response schemas
 4. **`git log --oneline -- HANDOFF.md` (last ~10 commits)** — recent edits show what's been moving and what was just collapsed. Useful when the user says "what changed since yesterday".
-5. **`.claude/CLAUDE.md`** — project-wide architecture rules and the lint/typecheck command.
+5. **`.claude/CLAUDE.md`** and **`AGENTS.md`** — project-wide architecture rules and validation commands.
 
-If the user mentions a specific story (e.g., "AEV2-308"), grep `AEV2_PLAN.md` and `AGENTIC_EXPANSIONV2.md` for that ID first — the surrounding context usually tells you everything you need.
+If the user mentions a specific story or feature, grep the codebase for that name first — the surrounding code usually tells you everything you need.
 
 ---
 
@@ -47,8 +52,8 @@ Use this when the previous sprint is COMPLETE and the user wants Sprint N+1 writ
 
 **Steps:**
 1. Read all inputs above.
-2. Identify the sprint number, title, and stories from AEV2_PLAN.md.
-3. For each story, find the corresponding section in AGENTIC_EXPANSIONV2.md and pull out: contracts, types, function signatures, env vars, response shapes, error classes, retry semantics. **Inline them into the spec** — do not say "see AGENTIC_EXPANSIONV2.md §11", because Codex will not chase the reference reliably.
+2. Identify the sprint number, title, and stories. Sprint numbering continues from the most recent COMPLETE sprint in HANDOFF.md. Pull candidate stories from `docs/FUTURE-PLANS.md` or from the user's brief.
+3. For each story, grep the live code for the relevant contracts, types, function signatures, env vars, response shapes, error classes, and retry semantics. **Inline them into the spec** verbatim — do not say "see `lib/agents/llm-client.ts`", because Codex will not chase the reference reliably.
 4. Verify every file path. For files being CREATED, mark them clearly. For files being MODIFIED, confirm they exist with Glob/Read first.
 5. Lock decisions. Walk the spec and find every place where Codex would need to make a judgment call. Convert each into a "Decision" with a fixed answer. The Sprint 3 section's "Decisions Locked For Sprint 3" block is the format — use D1/D2/D3 numbering and explain *why* the choice was made so future-you can revisit it.
 6. Write the spec into HANDOFF.md using the format below.
@@ -63,7 +68,7 @@ Use this when the user says "review the sprint", "spawn subagents to review", "l
 
 | Subagent | Job |
 |---|---|
-| Contract auditor | Read AGENTIC_EXPANSIONV2.md and HANDOFF.md side by side. Flag every place the spec deviates from the design doc (missing field, wrong type, different env var name, etc.). |
+| Contract auditor | Read the live code (`lib/agents/`, `lib/db/schema.ts`, `lib/validations/`) and HANDOFF.md side by side. Flag every place the spec deviates from what's actually in code (missing field, wrong type, different env var name, etc.). |
 | Path verifier | Take every file path the spec mentions. For CREATE files, confirm the parent directory exists. For MODIFY files, confirm the file exists and the function/section being modified is actually there. Report orphans. |
 | Decision auditor | Walk the spec for unspecified behavior. Anywhere Codex would have to guess (error message text, log format, retry count, default value), flag it as a missing decision. |
 | Scope creep checker | Read the previous sprint's "Out of scope" section and the current sprint's "In scope". Anything that should belong to a later sprint (Docker, Compose, prod hardening, scan blueprints, etc.) gets flagged. |
@@ -195,7 +200,7 @@ Run before marking the sprint COMPLETE:
 
 | Mistake | Why it bites | Fix |
 |---|---|---|
-| Referencing AGENTIC_EXPANSIONV2.md by section number | Codex will not chase references mid-task | Inline the contract/shape directly into the spec |
+| Referencing a code file by path instead of inlining the contract | Codex will not chase references mid-task | Inline the contract/shape directly into the spec |
 | Listing a file path without verifying it exists | Codex will either edit a phantom file or stall | Glob/Read every path before committing |
 | Letting two sprints share the same module | Creates merge friction and unclear ownership | Hard partition: each sprint owns specific paths |
 | Drafting Sprint N+1 while Sprint N is still IN PROGRESS in HANDOFF.md | Two READY-FOR-CODEX sections confuses Codex | Finish/collapse Sprint N first, then add Sprint N+1 |
@@ -209,11 +214,12 @@ Run before marking the sprint COMPLETE:
 ## Quick Reference
 
 **Files this skill expects to exist (verify if absent):**
-- `/home/jared/Nexus-Terminal/AEV2_PLAN.md`
-- `/home/jared/Nexus-Terminal/AGENTIC_EXPANSIONV2.md`
 - `/home/jared/Nexus-Terminal/HANDOFF.md`
-- `/home/jared/Nexus-Terminal/lib/agents/` — current AEV2 runtime modules
-- `/home/jared/Nexus-Terminal/.claude/CLAUDE.md`
+- `/home/jared/Nexus-Terminal/docs/FUTURE-PLANS.md`
+- `/home/jared/Nexus-Terminal/lib/agents/` — agent runtime modules
+- `/home/jared/Nexus-Terminal/services/` — Docker Compose agent services
+- `/home/jared/Nexus-Terminal/lib/db/schema.ts` — DB schema source of truth
+- `/home/jared/Nexus-Terminal/.claude/CLAUDE.md` and `AGENTS.md`
 
 **Baseline commands (run before any handoff to Codex):**
 ```bash

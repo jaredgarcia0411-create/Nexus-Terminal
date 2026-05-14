@@ -138,9 +138,7 @@ Do not refactor these speculatively. When touching them, split toward `useTradeM
 - [docs/VALIDATION_MATRIX.md](/home/jared/Nexus-Terminal/docs/VALIDATION_MATRIX.md:21) references deleted `services/backtest-gateway` and `services/backtest-worker`; live service validation is `npm run typecheck:services`.
 - [README.md](/home/jared/Nexus-Terminal/README.md:20) lists stale product areas and omits Backtesting/Archive. [README.md](/home/jared/Nexus-Terminal/README.md:37) still documents `JARVIS_*` env vars, while `.env.example` uses `LLM_*` and `BACKGROUND_LLM_*`: [.env.example](/home/jared/Nexus-Terminal/.env.example:11).
 - [codex-skills/nexus-vercel-ops/SKILL.md](/home/jared/Nexus-Terminal/codex-skills/nexus-vercel-ops/SKILL.md:34) says `vercel.json` defines one cron, but [vercel.json](/home/jared/Nexus-Terminal/vercel.json:2) defines three.
-- [docs/FUTURE-PLANS.md](/home/jared/Nexus-Terminal/docs/FUTURE-PLANS.md:512) says there are two existing Vercel crons, but there are three.
 - [AGENTS.md](/home/jared/Nexus-Terminal/AGENTS.md:73) says schemas live in two validation files, but `lib/validations/` now has multiple feature-specific files.
-- Root [FUTURE-PLANS.md](/home/jared/Nexus-Terminal/FUTURE-PLANS.md:3) is parked ideas; [docs/FUTURE-PLANS.md](/home/jared/Nexus-Terminal/docs/FUTURE-PLANS.md:3) is the broader backlog. Add an index or rename one to make the distinction explicit.
 
 ## Harness Skills
 

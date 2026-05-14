@@ -452,7 +452,6 @@ Repo grounding:
 - [lib/research.ts](/home/jared/Nexus-Terminal/lib/research.ts:139)
 - [lib/types.ts](/home/jared/Nexus-Terminal/lib/types.ts:222)
 - [app/api/askedgar/snapshot/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/snapshot/route.ts:25)
-- [docs/AGENTIC_EXPANSIONV2.md](/home/jared/Nexus-Terminal/docs/AGENTIC_EXPANSIONV2.md:646)
 - [lib/massive-market.ts](/home/jared/Nexus-Terminal/lib/massive-market.ts:139)
 - [app/api/tradingview/gainers/route.ts](/home/jared/Nexus-Terminal/app/api/tradingview/gainers/route.ts:17)
 
