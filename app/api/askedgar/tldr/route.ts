@@ -1,8 +1,7 @@
 import { z } from 'zod';
 
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
-import { getCachedTickerData } from '@/lib/askedgar';
-import { runResearchTldr } from '@/lib/research';
+import { getCachedResearchTldr } from '@/lib/research';
 import { requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';
@@ -21,8 +20,7 @@ export async function POST(request: Request) {
   const { ticker } = bodyState.data;
 
   try {
-    const askEdgarData = await getCachedTickerData(ticker);
-    const result = await runResearchTldr(askEdgarData.rawData, ticker);
+    const result = await getCachedResearchTldr(ticker);
 
     return Response.json({
       ticker,

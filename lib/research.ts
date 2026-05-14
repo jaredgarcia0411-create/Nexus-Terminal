@@ -1,11 +1,17 @@
+import { and, eq, gt } from 'drizzle-orm';
+
 import { getCachedTickerData } from '@/lib/askedgar';
 import type { AskEdgarResponse } from '@/lib/askedgar';
+import { getDb } from '@/lib/db';
+import { askedgarCache } from '@/lib/db/schema';
 import { callLlm } from '@/lib/llm-client';
 
 export interface ResearchTldr {
   findings: string[];
   historicalContext: string | null;
 }
+
+const TLDR_CACHE_TTL_MS = 16 * 60 * 60 * 1000; // 16 hours, matches AskEdgar ticker cache
 
 function parseJson(text: string): unknown {
   // Try raw JSON first
@@ -145,4 +151,67 @@ export async function runResearchTldr(
     findings: toStringArray(parsedObj.findings).slice(0, 10),
     historicalContext: typeof parsedObj.historicalContext === 'string' ? parsedObj.historicalContext : null,
   };
+}
+
+/**
+ * Cached wrapper around runResearchTldr.
+ *
+ * The TLDR is an LLM-derived summary of AskEdgar data — for a given ticker,
+ * regenerating it on every page visit is wasteful (slow + cost). We cache the
+ * result in the shared `askedgar_cache` table under cacheType='tldr' for 16
+ * hours, which matches the underlying ticker cache TTL.
+ *
+ * Returns the same shape as runResearchTldr; the route layer adds ticker /
+ * generatedAt fields.
+ */
+export async function getCachedResearchTldr(ticker: string): Promise<ResearchTldr> {
+  const normalizedTicker = ticker.trim().toUpperCase();
+  const db = getDb();
+
+  if (db) {
+    const now = new Date();
+    const cached = await db
+      .select()
+      .from(askedgarCache)
+      .where(
+        and(
+          eq(askedgarCache.cacheType, 'tldr'),
+          eq(askedgarCache.ticker, normalizedTicker),
+          gt(askedgarCache.expiresAt, now),
+        ),
+      )
+      .limit(1);
+
+    if (cached.length > 0) {
+      return cached[0].dataJson as ResearchTldr;
+    }
+  }
+
+  const askEdgarData = await getCachedTickerData(normalizedTicker);
+  const result = await runResearchTldr(askEdgarData.rawData, normalizedTicker);
+
+  if (db) {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + TLDR_CACHE_TTL_MS);
+    try {
+      await db
+        .insert(askedgarCache)
+        .values({
+          id: `tldr-${normalizedTicker}`,
+          cacheType: 'tldr',
+          ticker: normalizedTicker,
+          dataJson: result,
+          fetchedAt: now,
+          expiresAt,
+        })
+        .onConflictDoUpdate({
+          target: [askedgarCache.cacheType, askedgarCache.ticker],
+          set: { dataJson: result, fetchedAt: now, expiresAt },
+        });
+    } catch (err) {
+      console.warn('[research-tldr-cache] Failed to write tldr cache:', err);
+    }
+  }
+
+  return result;
 }

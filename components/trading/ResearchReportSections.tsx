@@ -109,7 +109,7 @@ function NewsArticle({ item }: { item: ResearchSnapshotNewsItem }) {
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="w-full cursor-pointer text-left text-base font-bold text-zinc-200"
+        className="w-full cursor-pointer text-left text-sm font-bold text-zinc-200"
       >
         {item.title}
       </button>
@@ -229,7 +229,7 @@ function FilingsView({ filings }: { filings: ResearchSnapshotFiling[] }) {
 
         {FILING_ALL_BUCKETS.map((bucketKey) => (
           <div key={bucketKey} className="space-y-2">
-            <h4 className="font-medium text-zinc-300">{FILING_BUCKET_LABELS[bucketKey]}</h4>
+            <h4 className="text-base font-medium text-zinc-300">{FILING_BUCKET_LABELS[bucketKey]}</h4>
             <FilingsTable filings={chronological.filter((filing) => filing.bucket === bucketKey)} />
           </div>
         ))}
@@ -327,7 +327,7 @@ function ProgramSection({
 function ConvertibleNotesSection({ notes }: { notes: ResearchSnapshotConvertibleNote[] }) {
   return (
     <div className="space-y-2">
-      <h4 className="font-medium text-zinc-300">Convertible Notes</h4>
+      <h4 className="text-base font-medium text-zinc-300">Convertible Notes</h4>
       {notes.length === 0 ? (
         <p className="text-sm text-zinc-500">No convertible notes found</p>
       ) : (
@@ -377,7 +377,7 @@ function WarrantSection({
 }) {
   return (
     <div className="space-y-2">
-      <h4 className="font-medium text-zinc-300">{title}</h4>
+      <h4 className="text-base font-medium text-zinc-300">{title}</h4>
       {warrants.length === 0 ? (
         <p className="text-sm text-zinc-500">{emptyLabel}</p>
       ) : (
@@ -797,6 +797,11 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
   const convertibleNotes = data.convertibleNotes ?? [];
   const formerSymbolEvents = data.identityEvents.filter((row) => row.previousTicker !== null);
   const closeBelowOpenStats = computeCloseBelowOpenStats(data.gapStats);
+  // Equity-line registrations have their own section below — drop them from
+  // Shelfs so a given filing only shows up once.
+  const equityLineKey = (row: ResearchSnapshotRegistration) => `${row.headline}::${row.filedAt ?? ''}`;
+  const equityLineKeys = new Set(data.equityLines.map(equityLineKey));
+  const shelfRegistrations = data.registrations.filter((row) => !equityLineKeys.has(equityLineKey(row)));
 
   const hasCashPosition = [
     data.dilutionDetails.cashRemainingMonths,
@@ -905,7 +910,7 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
         ) : null}
 
         {activeTab === 'dilution' ? (
-          <div className="space-y-6 p-3">
+          <div className="space-y-6 p-3 text-sm">
             <DilutionRatingPanel data={data} />
 
             <div>
@@ -969,7 +974,7 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
 
             <div>
               <h4 className="mb-2 text-base font-semibold text-zinc-200">Shelfs</h4>
-              <ShelfRegistrationsTable rows={data.registrations} />
+              <ShelfRegistrationsTable rows={shelfRegistrations} />
             </div>
 
             <ProgramSection title="ATM Programs" rows={atmRegistrations} emptyLabel="No active ATM programs found" remainingLabel="ATM Remaining" />
@@ -1011,7 +1016,7 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
         ) : null}
 
         {activeTab === 'filings' ? (
-          <div className="p-3">
+          <div className="p-3 text-sm">
             <FilingsView filings={data.filings} />
           </div>
         ) : null}

@@ -21,6 +21,20 @@ import type {
 } from '@/lib/types';
 import type { AskEdgarResponse, NormalizeAskEdgarOptions } from '@/lib/askedgar/types';
 
+// Detects equity-line registrations by headline. Used in both the snapshot
+// normalizer and the scanner-summary cache so they stay in sync.
+//
+// `spa` (Stock Purchase Agreement) needs a word boundary because it's only
+// three letters and could otherwise match unrelated words. "standby" catches
+// "Standby Equity Purchase Agreement" filings. "purchase agreement" stays as
+// a substring check since it appears with various prefixes.
+const EQUITY_LINE_HEADLINE_REGEX = /\b(equity line|eloc|spa|standby)\b|purchase agreement/;
+
+export function isEquityLineHeadline(headline: string | null | undefined): boolean {
+  if (!headline) return false;
+  return EQUITY_LINE_HEADLINE_REGEX.test(headline.toLowerCase());
+}
+
 function getEndpointResponse(rawData: Record<string, AskEdgarResponse<unknown>>, keys: string[]): AskEdgarResponse<unknown> {
   for (const key of keys) {
     if (rawData[key]) return rawData[key];
@@ -208,8 +222,7 @@ export function normalizeAskEdgarResponse(
 
   const registrationEquityLines = registrations.filter((row) => {
     if (row.isAtm) return false;
-    const headline = row.headline.toLowerCase();
-    return headline.includes('equity line') || headline.includes('eloc') || headline.includes('purchase agreement');
+    return isEquityLineHeadline(row.headline);
   });
 
   const offerings = dedupeByHeadline(

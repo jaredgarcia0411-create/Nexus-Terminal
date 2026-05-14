@@ -18,7 +18,7 @@ import {
 } from '@/lib/askedgar/endpoints';
 import { endpointWarning, fetchTickerData, toDataSource } from '@/lib/askedgar/fanout';
 import { syncRateLimitFromDb } from '@/lib/askedgar/runtime-state';
-import { toRegistrationRow } from '@/lib/askedgar/snapshot-normalizer';
+import { isEquityLineHeadline, toRegistrationRow } from '@/lib/askedgar/snapshot-normalizer';
 import type { EndpointScope } from '@/lib/askedgar/endpoints';
 import type { EndpointState } from '@/lib/askedgar/fanout';
 import type {
@@ -454,12 +454,7 @@ async function fetchScannerSummaryRaw(ticker: string): Promise<ScannerSummaryRes
   const hasElFromEquityLines = equityLinesResp.results.length > 0;
   const hasElFromRegistrations = registrationRows.some((row) => {
     if (row.isAtm) return false;
-    const headline = row.headline.toLowerCase();
-    return (
-      headline.includes('equity line') ||
-      headline.includes('eloc') ||
-      headline.includes('purchase agreement')
-    );
+    return isEquityLineHeadline(row.headline);
   });
   const hasEl = hasElFromEquityLines || hasElFromRegistrations;
 

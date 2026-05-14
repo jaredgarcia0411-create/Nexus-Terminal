@@ -2,31 +2,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   requireUserMock,
-  getCachedTickerDataMock,
-  runResearchTldrMock,
+  getCachedResearchTldrMock,
 } = vi.hoisted(() => ({
   requireUserMock: vi.fn(),
-  getCachedTickerDataMock: vi.fn(),
-  runResearchTldrMock: vi.fn(),
+  getCachedResearchTldrMock: vi.fn(),
 }));
 
 vi.mock('@/lib/server-db-utils', () => ({
   requireUser: requireUserMock,
 }));
 
-vi.mock('@/lib/askedgar', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/askedgar')>('@/lib/askedgar');
-  return {
-    ...actual,
-    getCachedTickerData: getCachedTickerDataMock,
-  };
-});
-
 vi.mock('@/lib/research', async () => {
   const actual = await vi.importActual<typeof import('@/lib/research')>('@/lib/research');
   return {
     ...actual,
-    runResearchTldr: runResearchTldrMock,
+    getCachedResearchTldr: getCachedResearchTldrMock,
   };
 });
 
@@ -56,17 +46,7 @@ describe('POST /api/askedgar/tldr', () => {
         picture: null,
       },
     });
-    getCachedTickerDataMock.mockResolvedValue({
-      ticker: 'AAPL',
-      rawData: {
-        screener: {
-          status: 'success',
-          count: 1,
-          results: [{ ticker: 'AAPL' }],
-        },
-      },
-    });
-    runResearchTldrMock.mockResolvedValue({
+    getCachedResearchTldrMock.mockResolvedValue({
       findings: ['Finding 1'],
       historicalContext: null,
     });
@@ -80,7 +60,7 @@ describe('POST /api/askedgar/tldr', () => {
     const response = ensureResponse(await POST(createJsonRequest(JSON.stringify({ ticker: 'AAPL' }))));
 
     expect(response.status).toBe(401);
-    expect(getCachedTickerDataMock).not.toHaveBeenCalled();
+    expect(getCachedResearchTldrMock).not.toHaveBeenCalled();
   });
 
   it('returns 400 with invalid JSON body for malformed JSON', async () => {
@@ -108,16 +88,7 @@ describe('POST /api/askedgar/tldr', () => {
   });
 
   it('returns 200 with ticker, TLDR findings payload, and generatedAt', async () => {
-    const rawData = {
-      screener: {
-        status: 'success',
-        count: 1,
-        results: [{ ticker: 'AAPL' }],
-      },
-    };
-
-    getCachedTickerDataMock.mockResolvedValueOnce({ ticker: 'AAPL', rawData });
-    runResearchTldrMock.mockResolvedValueOnce({
+    getCachedResearchTldrMock.mockResolvedValueOnce({
       findings: ['Finding 1'],
       historicalContext: 'Risk has increased over time.',
     });
@@ -132,11 +103,11 @@ describe('POST /api/askedgar/tldr', () => {
       historicalContext: 'Risk has increased over time.',
       generatedAt: expect.any(String),
     });
-    expect(runResearchTldrMock).toHaveBeenCalledWith(rawData, 'AAPL');
+    expect(getCachedResearchTldrMock).toHaveBeenCalledWith('AAPL');
   });
 
-  it('returns 500 when runResearchTldr throws', async () => {
-    runResearchTldrMock.mockRejectedValueOnce(new Error('LLM unavailable'));
+  it('returns 500 when getCachedResearchTldr throws', async () => {
+    getCachedResearchTldrMock.mockRejectedValueOnce(new Error('LLM unavailable'));
 
     const response = ensureResponse(await POST(createJsonRequest(JSON.stringify({ ticker: 'AAPL' }))));
     const payload = await response.json();

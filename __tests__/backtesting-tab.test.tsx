@@ -214,6 +214,10 @@ describe('BacktestingTab', () => {
     useSessionMock.mockReturnValue({ data: { user: { id: 'u1' } } });
     useBacktestSessionMock.mockReturnValue(makeSessionState('FLAT'));
     window.localStorage.clear();
+    // BacktestingTab's right panel is collapsed by default unless this key
+    // explicitly reads 'false'. Tests rely on the sidebar being mounted, so
+    // force it open here.
+    window.localStorage.setItem('nexus.charts.rightCollapsed', 'false');
   });
 
   // BacktestingTab now opens directly into the chart workspace (with AAPL
