@@ -157,7 +157,7 @@ export default function WatchlistEditor({
           <button
             type="button"
             onClick={addRow}
-            className="flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-500 hover:bg-emerald-500/20"
+            className="flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-500 hover:bg-emerald-500/20"
           >
             <Plus className="h-3 w-3" />
             Add Row

@@ -247,7 +247,7 @@ export default function CareerPnlTab() {
             <Button
               onClick={handleAdd}
               disabled={saving}
-              className="h-9 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+              className="h-9 border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
             >
               <Plus className="h-4 w-4" />
               Save

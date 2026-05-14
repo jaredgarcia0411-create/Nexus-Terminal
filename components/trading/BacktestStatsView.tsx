@@ -242,7 +242,7 @@ export default function BacktestStatsView({
                         onClick={() => toggleFilter(filterDef.id)}
                         className={
                           active
-                            ? 'rounded-md border border-emerald-500 bg-emerald-500/20 px-2.5 py-1 text-xs text-emerald-300'
+                            ? 'rounded-md border border-emerald-300/40 bg-emerald-500/20 px-2.5 py-1 text-xs text-emerald-300'
                             : 'rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-400'
                         }
                       >

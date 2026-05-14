@@ -148,7 +148,7 @@ export default function NewBacktestDialog({
             type="button"
             disabled={isSubmitting}
             onClick={() => void handleSubmit()}
-            className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-40"
+            className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-40"
           >
             Create
           </Button>

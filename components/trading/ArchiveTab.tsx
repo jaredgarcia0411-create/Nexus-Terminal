@@ -261,7 +261,7 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
                           }}
                           aria-label={`Export ${review.type} review as PDF`}
                           title="Export as PDF"
-                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-500 transition-colors hover:bg-emerald-500/20"
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 transition-colors hover:bg-emerald-500/20"
                         >
                           <Download className="h-4 w-4" />
                         </button>

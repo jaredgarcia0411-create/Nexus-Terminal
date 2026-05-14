@@ -248,7 +248,7 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                   </div>
 
                   <div className="flex justify-end gap-2">
-                    <Button onClick={handleSave} className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">
+                    <Button onClick={handleSave} className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">
                       Save Notes
                     </Button>
                   </div>

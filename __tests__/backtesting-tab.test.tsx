@@ -19,6 +19,7 @@ const { chartGridProps, useBacktestSessionMock, useSessionMock } = vi.hoisted(()
 }));
 
 vi.mock('motion/react', () => ({
+  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   motion: {
     div: ({ children, ...props }: React.ComponentProps<'div'>) => <div {...props}>{children}</div>,
   },

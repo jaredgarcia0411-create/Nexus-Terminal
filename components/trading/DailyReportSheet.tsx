@@ -265,7 +265,7 @@ export default function DailyReportSheet({
                 {viewMode === 'view' ? (
                   <Button
                     onClick={() => setViewMode('edit')}
-                    className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                    className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
                   >
                     Edit Review
                   </Button>
@@ -273,7 +273,7 @@ export default function DailyReportSheet({
                   <Button
                     onClick={handleSave}
                     disabled={saving}
-                    className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                    className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
                   >
                     {saving ? 'Saving…' : isExistingReport ? 'Update Review' : 'Save Review'}
                   </Button>
@@ -338,7 +338,7 @@ export default function DailyReportSheet({
                   <Button
                     size="sm"
                     onClick={saveTemplate}
-                    className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                    className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
                   >
                     Save Template
                   </Button>

@@ -172,7 +172,7 @@ export default function JournalTab({
                 onChange={(event) => onRiskInputChange(event.target.value)}
                 className="w-20 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
               />
-              <button onClick={onApplyRisk} className="rounded-md bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase text-emerald-500 hover:bg-emerald-500/20">
+              <button onClick={onApplyRisk} className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase text-emerald-500 hover:bg-emerald-500/20">
                 Apply
               </button>
             </div>
@@ -186,7 +186,7 @@ export default function JournalTab({
                 onChange={(event) => onBulkTagInputChange(event.target.value)}
                 className="w-24 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
               />
-              <button onClick={onBulkAddTag} className="rounded-md bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase text-emerald-500 hover:bg-emerald-500/20">
+              <button onClick={onBulkAddTag} className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase text-emerald-500 hover:bg-emerald-500/20">
                 Add
               </button>
             </div>
@@ -222,6 +222,7 @@ export default function JournalTab({
       <div className="space-y-4">
         {displayedDayCards.map((day) => {
           const expanded = expandedDays.has(day.sortKey);
+          const tradedSymbols = [...new Set(day.trades.map((trade) => trade.symbol))];
           return (
             <div key={day.sortKey} className="overflow-hidden rounded-xl border border-white/10 bg-[#121214]">
               {/* Header acts like a button (click anywhere expands the day),
@@ -263,14 +264,7 @@ export default function JournalTab({
                   View Journal Log
                 </button>
 
-                <div className="flex items-center justify-end gap-3">
-                  <div className="hidden items-center gap-1.5 sm:flex">
-                    {[...new Set(day.trades.map((t) => t.symbol))].map((sym) => (
-                      <span key={sym} className="rounded bg-white/5 px-2 py-0.5 text-xs font-medium text-zinc-400">
-                        {sym}
-                      </span>
-                    ))}
-                  </div>
+                <div className="flex items-center justify-end">
                   <p className={`text-base font-semibold ${getPnLColor(day.dailyNetPnl)}`}>
                     {formatCurrency(day.dailyNetPnl)}
                   </p>
@@ -295,9 +289,9 @@ export default function JournalTab({
                   <p className="font-medium">{day.mfeMaeRatio == null ? '-' : day.mfeMaeRatio.toFixed(2)}</p>
                 </div>
                 <div>
-                  <p className="text-zinc-500">Net PnL</p>
-                  <p className={`font-medium ${getPnLColor(day.dailyNetPnl)}`}>
-                    {formatCurrency(day.dailyNetPnl)}
+                  <p className="text-zinc-500">Tickers</p>
+                  <p className="font-medium text-white">
+                    {tradedSymbols.length > 0 ? tradedSymbols.join(', ') : '-'}
                   </p>
                 </div>
               </div>

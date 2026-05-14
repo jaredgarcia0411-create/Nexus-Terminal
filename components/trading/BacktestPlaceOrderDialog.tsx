@@ -303,7 +303,7 @@ export default function BacktestPlaceOrderDialog({
             type="button"
             disabled={!preview || isSubmitting}
             onClick={() => void placeOrder()}
-            className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+            className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
           >
             Place
           </Button>

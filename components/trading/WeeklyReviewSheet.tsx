@@ -266,7 +266,7 @@ export default function WeeklyReviewSheet({
                 <Button
                   onClick={handleSave}
                   disabled={saving}
-                  className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                  className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
                 >
                   {saving ? 'Saving…' : isExistingReport ? 'Update Review' : 'Save Review'}
                 </Button>
@@ -360,7 +360,7 @@ export default function WeeklyReviewSheet({
                   <Button
                     size="sm"
                     onClick={saveTemplate}
-                    className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                    className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
                   >
                     Save Template
                   </Button>

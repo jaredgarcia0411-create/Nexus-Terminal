@@ -54,7 +54,7 @@ export class TabErrorBoundary extends Component<TabErrorBoundaryProps, TabErrorB
 
           <button
             onClick={this.handleReset}
-            className="mt-6 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-black transition hover:bg-emerald-400"
+            className="mt-6 rounded-lg border border-emerald-300/70 bg-emerald-500 px-4 py-2 text-sm font-medium text-black transition hover:bg-emerald-400"
             type="button"
           >
             Try again

@@ -21,7 +21,7 @@ export default function LoginPage() {
 
         <Button
           onClick={() => signIn('google', { callbackUrl: '/' })}
-          className="mt-6 w-full bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+          className="mt-6 w-full border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
         >
           Sign in with Google
         </Button>

@@ -24,7 +24,7 @@ export default function Error({ error, reset }: ErrorBoundaryProps) {
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
             <button
               onClick={reset}
-              className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-black transition hover:bg-emerald-400"
+              className="rounded-lg border border-emerald-300/70 bg-emerald-500 px-4 py-2 text-sm font-medium text-black transition hover:bg-emerald-400"
               type="button"
             >
               Try again

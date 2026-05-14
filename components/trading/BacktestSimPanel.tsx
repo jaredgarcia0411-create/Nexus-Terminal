@@ -303,7 +303,7 @@ export default function BacktestSimPanel({
             type="button"
             disabled={!session || actions.length === 0 || isReadOnly || isMutating}
             onClick={() => setReviewOpen(true)}
-            className="h-8 bg-emerald-500/10 text-xs text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-40"
+            className="h-8 border border-emerald-500/40 bg-emerald-500/10 text-xs text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-40"
           >
             {saveLabel}
           </Button>
@@ -437,7 +437,7 @@ export default function BacktestSimPanel({
             <Button type="button" variant="secondary" onClick={() => setReviewOpen(false)} className="bg-white/10 hover:bg-white/20">
               Cancel
             </Button>
-            <Button type="button" onClick={() => void saveReview()} className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">
+            <Button type="button" onClick={() => void saveReview()} className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">
               Save
             </Button>
           </DialogFooter>
