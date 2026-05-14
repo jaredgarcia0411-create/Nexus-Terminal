@@ -1,0 +1,7 @@
+policy:
+  allow_implicit_invocation: false
+
+interface:
+  display_name: "Execute"
+  short_description: "Run phase-gated HANDOFF work"
+  default_prompt: "Use $nexus-execute to implement the opened HANDOFF phase or checkpoint, validate it, and stop at the requested boundary."

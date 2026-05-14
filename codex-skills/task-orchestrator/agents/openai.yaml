@@ -1,0 +1,7 @@
+policy:
+  allow_implicit_invocation: false
+
+interface:
+  display_name: "Task Orchestrator"
+  short_description: "Route Nexus work to the right workflow"
+  default_prompt: "Use $task-orchestrator to choose the right Nexus workflow, preserve boundaries, and execute with scoped validation."

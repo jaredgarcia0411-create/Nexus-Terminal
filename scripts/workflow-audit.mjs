@@ -54,6 +54,8 @@ check(
 );
 
 for (const skillName of [
+  'task-orchestrator',
+  'nexus-execute',
   'nexus-status',
   'nexus-debug',
   'nexus-review',
@@ -62,11 +64,11 @@ for (const skillName of [
 ]) {
   check(
     existsSync(path.join(rootDir, 'codex-skills', skillName, 'SKILL.md')),
-    `codex-skills/${skillName}/SKILL.md should exist because AGENTS.md recommends $${skillName}.`,
+    `codex-skills/${skillName}/SKILL.md should exist for tracked Codex workflow skills.`,
   );
   check(
     existsSync(path.join(rootDir, 'codex-skills', skillName, 'agents', 'openai.yaml')),
-    `codex-skills/${skillName}/agents/openai.yaml should exist for harness skill metadata.`,
+    `codex-skills/${skillName}/agents/openai.yaml should exist for tracked Codex workflow skill metadata.`,
   );
 }
 

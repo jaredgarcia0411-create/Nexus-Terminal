@@ -139,7 +139,7 @@ Report pass/fail for each command.
 - After completing session work, update checklist/status in `HANDOFF.md`.
 - Repo-maintained Codex skill sources live in `codex-skills/`; some also expose user-facing agent metadata in `codex-skills/*/agents/openai.yaml` when that file exists.
 - Repo-local skill files do not automatically make a skill callable in the current Codex session. To surface a repo-maintained skill in the skill list, install or sync it into `~/.codex/skills/<skill-name>` and restart Codex.
-- High-value repo-maintained Codex skills include `nexus-status`, `nexus-debug`, `nexus-review`, `nexus-security-audit`, and `nexus-askedgar-debug`; prefer them when the user explicitly asks for those workflows.
+- High-value repo-maintained Codex skills include `nexus-execute`, `nexus-status`, `nexus-debug`, `nexus-review`, `nexus-security-audit`, and `nexus-askedgar-debug`; prefer them when the user explicitly asks for those workflows.
 - Keep Codex skill text, agent metadata, `AGENTS.md`, and `HANDOFF.md` aligned when durable workflow behavior changes.
 - Ignore `.claude/` and `.opencode/` unless the user explicitly asks for cross-tool alignment work.
 - When aligning `.claude/` or `.opencode/`, treat `AGENTS.md` as the canonical source and keep tool-specific files thin.

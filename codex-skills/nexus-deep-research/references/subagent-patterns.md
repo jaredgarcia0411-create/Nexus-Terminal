@@ -2,13 +2,15 @@
 
 Use this file when deciding whether a deep-research request should be split into parallel passes.
 
-Use parallel subagents only when the user asked for deep research, delegation, or parallel work and
-the topic is broad enough for independent scopes. For narrow questions, a local-only pass is valid.
+Use parallel subagents only when the user explicitly asked for subagents, delegation, or parallel
+agent work and the topic is broad enough for independent scopes. Deep research by itself is not
+permission to spawn. For narrow questions, or when no delegation signal exists, use local passes.
 
 ## Default Split
 
 Use the 2-pass split for broad repo-local topics. Use the 3-pass split when external research is
-material to the answer. Keep narrow topics local.
+material to the answer. These can be local passes unless the user explicitly authorized subagents.
+Keep narrow topics local.
 
 1. Codebase pass
    - Goal: map current behavior, relevant files, constraints, and live patterns.

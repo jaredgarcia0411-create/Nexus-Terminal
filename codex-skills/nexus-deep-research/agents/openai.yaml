@@ -4,4 +4,4 @@ policy:
 interface:
   display_name: "Deep Research"
   short_description: "Repo-grounded research and review memos"
-  default_prompt: "Use $nexus-deep-research to investigate a topic, delegate parallel passes only when useful, and save a structured markdown brief only if I ask for an artifact."
+  default_prompt: "Use $nexus-deep-research to investigate a topic locally, use subagents only if I explicitly ask for delegation, and save a markdown brief only if I ask for an artifact."
