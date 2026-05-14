@@ -46,7 +46,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const body = bodyState.data;
 
     const [row] = await db
-      .select({ id: sampleSets.id, userId: sampleSets.userId })
+      .select({
+        id: sampleSets.id,
+        userId: sampleSets.userId,
+        rows: sampleSets.rows,
+        rowCount: sampleSets.rowCount,
+      })
       .from(sampleSets)
       .where(eq(sampleSets.id, id))
       .limit(1);
@@ -68,13 +73,29 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       }
     }
 
-    if (body.name === undefined) {
+    if (body.name === undefined && body.appendRows === undefined) {
       return Response.json({ sampleSet: row });
+    }
+
+    // Build the patch incrementally so callers can update just the name, just
+    // append rows, or do both in one PATCH without overwriting unrelated fields.
+    const updates: { name?: string; rows?: typeof row.rows; rowCount?: number; updatedAt: Date } = {
+      updatedAt: new Date(),
+    };
+
+    if (body.name !== undefined) {
+      updates.name = body.name;
+    }
+
+    if (body.appendRows !== undefined) {
+      const mergedRows = [...row.rows, ...body.appendRows];
+      updates.rows = mergedRows;
+      updates.rowCount = mergedRows.length;
     }
 
     const [updated] = await db
       .update(sampleSets)
-      .set({ name: body.name, updatedAt: new Date() })
+      .set(updates)
       .where(and(eq(sampleSets.id, id), eq(sampleSets.userId, authState.user.id)))
       .returning();
 

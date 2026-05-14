@@ -258,7 +258,7 @@ export default function JournalTab({
                     event.stopPropagation();
                     setDrcDate(day.sortKey);
                   }}
-                  className="justify-self-center rounded-md bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-500 hover:bg-emerald-500/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500/50 focus-visible:ring-offset-0"
+                  className="justify-self-center rounded-md bg-transparent px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 focus:outline-none focus-visible:ring-1 focus-visible:ring-white/40 focus-visible:ring-offset-0"
                 >
                   View Journal Log
                 </button>

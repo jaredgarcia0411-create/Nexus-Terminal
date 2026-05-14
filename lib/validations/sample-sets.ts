@@ -12,6 +12,7 @@ export const sampleSetCreateSchema = z.object({
 
 export const sampleSetPatchSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
+  appendRows: z.array(sampleSetRowSchema).min(1).optional(),
 });
 
 export const sampleSetDuplicateSchema = z.object({

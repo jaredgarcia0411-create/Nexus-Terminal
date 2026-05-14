@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useSession } from 'next-auth/react';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 
 import BacktestChartGrid from '@/components/trading/BacktestChartGrid';
@@ -275,30 +275,52 @@ export default function BacktestingTab() {
       exit={{ opacity: 0, y: -10 }}
       className="flex h-[calc(100dvh-6.5rem)] min-h-[620px] overflow-hidden bg-[#0A0A0B]"
     >
+      <AnimatePresence mode="wait">
       {view.kind === 'manager' ? (
-        <BacktestManagerView
-          onLaunchChart={(backtest, autoLoadReview) => openChartView(
-            autoLoadReview ? { ticker: autoLoadReview.ticker, date: autoLoadReview.date } : null,
-            backtest
-              ? { id: backtest.id, name: backtest.name, userId: backtest.ownerId }
-              : { id: null, name: null, userId: null },
-            autoLoadReview?.id ?? null,
-          )}
-          onViewStats={(backtestId) => setView({ kind: 'stats', backtestId })}
-        />
+        <motion.div
+          key="manager"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          className="flex min-h-0 min-w-0 flex-1"
+        >
+          <BacktestManagerView
+            onLaunchChart={(backtest, autoLoadReview) => openChartView(
+              autoLoadReview ? { ticker: autoLoadReview.ticker, date: autoLoadReview.date } : null,
+              backtest
+                ? { id: backtest.id, name: backtest.name, userId: backtest.ownerId }
+                : { id: null, name: null, userId: null },
+              autoLoadReview?.id ?? null,
+            )}
+            onOpenLastChart={() => handleSelect({ ticker: getPersistedTicker(), date: todayIsoDate() })}
+            onViewStats={(backtestId) => setView({ kind: 'stats', backtestId })}
+          />
+        </motion.div>
       ) : null}
 
       {view.kind === 'stats' ? (
-        <BacktestStatsView
-          backtestId={view.backtestId}
-          onBack={() => setView({ kind: 'manager' })}
-          onOpenInChart={(ticker, date, activeBacktest) => openChartView({ ticker, date }, activeBacktest)}
-          currentUserId={currentUserId}
-        />
+        <motion.div
+          key="stats"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          className="flex min-h-0 min-w-0 flex-1"
+        >
+          <BacktestStatsView
+            backtestId={view.backtestId}
+            onBack={() => setView({ kind: 'manager' })}
+            onOpenInChart={(ticker, date, activeBacktest) => openChartView({ ticker, date }, activeBacktest)}
+            currentUserId={currentUserId}
+          />
+        </motion.div>
       ) : null}
 
       {view.kind === 'chart' ? (
-        <div
+        <motion.div
+          key="chart"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
           className={
             rightCollapsed
               ? 'grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] transition-[grid-template-columns] duration-300'
@@ -504,8 +526,9 @@ export default function BacktestingTab() {
               )}
             />
           ) : null}
-        </div>
+        </motion.div>
       ) : null}
+      </AnimatePresence>
 
       <BacktestPlaceOrderDialog
         open={pendingOrder != null}

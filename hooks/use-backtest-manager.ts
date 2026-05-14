@@ -196,6 +196,15 @@ export function useBacktestManager() {
     return payload.sampleSet;
   }, [fetchLists]);
 
+  const appendSampleSetRows = useCallback(async (id: string, rows: SampleSetRow[]) => {
+    const payload = await apiRequest<SampleSetMutationPayload>(`/api/sample-sets/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ appendRows: rows }),
+    });
+    await fetchLists();
+    return payload.sampleSet;
+  }, [fetchLists]);
+
   const deleteSampleSet = useCallback(async (id: string) => {
     await apiRequest<{ deleted: boolean; id: string }>(`/api/sample-sets/${id}`, {
       method: 'DELETE',
@@ -234,6 +243,7 @@ export function useBacktestManager() {
     updateBacktest,
     deleteBacktest,
     createSampleSet,
+    appendSampleSetRows,
     deleteSampleSet,
     duplicateSampleSet,
   };

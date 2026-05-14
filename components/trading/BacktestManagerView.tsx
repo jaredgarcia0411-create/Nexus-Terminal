@@ -2,10 +2,11 @@
 
 import { useRef, useState, type ChangeEvent } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { Search, Trash2, TrendingUp } from 'lucide-react';
+import { Plus, Search, Trash2, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 
 import AddSampleSetDialog from '@/components/trading/AddSampleSetDialog';
+import AddSampleSetRowsDialog from '@/components/trading/AddSampleSetRowsDialog';
 import EditBacktestDialog from '@/components/trading/EditBacktestDialog';
 import NewBacktestDialog from '@/components/trading/NewBacktestDialog';
 import { Button } from '@/components/ui/button';
@@ -20,6 +21,7 @@ import {
 import {
   useBacktestManager,
   type BacktestListItem,
+  type SampleSetListItem,
 } from '@/hooks/use-backtest-manager';
 
 interface BacktestManagerViewProps {
@@ -27,6 +29,7 @@ interface BacktestManagerViewProps {
     backtest: { id: string; name: string; ownerId: string } | null,
     autoLoadReview: { id: string; ticker: string; date: string } | null,
   ) => void;
+  onOpenLastChart: () => void;
   onViewStats: (backtestId: string) => void;
 }
 
@@ -42,6 +45,9 @@ function formatRelativeTimestamp(value: string | null) {
 const deleteIconButtonClass =
   'h-7 w-7 shrink-0 border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 focus-visible:ring-rose-500/40';
 
+const addIconButtonClass =
+  'h-7 w-7 shrink-0 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 focus-visible:ring-emerald-500/40';
+
 function formatBacktestSampleSetLabel(backtest: BacktestListItem, isUncategorized: boolean) {
   if (isUncategorized) return backtest.sampleSetName ?? 'No sample set';
   if (!backtest.sampleSetId) return 'System Sheet';
@@ -50,13 +56,13 @@ function formatBacktestSampleSetLabel(backtest: BacktestListItem, isUncategorize
 
 export default function BacktestManagerView({
   onLaunchChart,
+  onOpenLastChart,
   onViewStats,
 }: BacktestManagerViewProps) {
   const {
     sampleSets,
     filteredBacktests,
     filteredSampleSets,
-    recentUncategorizedReview,
     isLoading,
     error,
     backtestSearch,
@@ -70,11 +76,13 @@ export default function BacktestManagerView({
     updateBacktest,
     deleteBacktest,
     createSampleSet,
+    appendSampleSetRows,
     deleteSampleSet,
   } = useBacktestManager();
 
   const [newBacktestOpen, setNewBacktestOpen] = useState(false);
   const [addSampleOpen, setAddSampleOpen] = useState(false);
+  const [appendRowsTarget, setAppendRowsTarget] = useState<SampleSetListItem | null>(null);
   const [editingBacktest, setEditingBacktest] = useState<BacktestListItem | null>(null);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -151,7 +159,7 @@ export default function BacktestManagerView({
         <div className="flex items-center gap-2">
           <Button
             type="button"
-            onClick={() => onLaunchChart(null, recentUncategorizedReview)}
+            onClick={onOpenLastChart}
             className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
           >
             <TrendingUp className="h-4 w-4" />
@@ -354,17 +362,30 @@ export default function BacktestManagerView({
                         <p className="text-xs text-zinc-500">{sampleSet.rowCount} rows</p>
                       </div>
                       {isOwner ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={() => void handleDeleteSampleSet(sampleSet.id, sampleSet.name)}
-                          aria-label={`Delete ${sampleSet.name}`}
-                          title="Delete"
-                          className={deleteIconButtonClass}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => setAppendRowsTarget(sampleSet)}
+                            aria-label={`Add row to ${sampleSet.name}`}
+                            title="Add row"
+                            className={addIconButtonClass}
+                          >
+                            <Plus className="size-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => void handleDeleteSampleSet(sampleSet.id, sampleSet.name)}
+                            aria-label={`Delete ${sampleSet.name}`}
+                            title="Delete"
+                            className={deleteIconButtonClass}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
                       ) : null}
                     </div>
                   </article>
@@ -393,6 +414,20 @@ export default function BacktestManagerView({
           toast.success('Sample set added');
         }}
       />
+
+      {appendRowsTarget ? (
+        <AddSampleSetRowsDialog
+          open={appendRowsTarget != null}
+          onOpenChange={(open) => {
+            if (!open) setAppendRowsTarget(null);
+          }}
+          sampleSetName={appendRowsTarget.name}
+          onSubmit={async (rows) => {
+            await appendSampleSetRows(appendRowsTarget.id, rows);
+            toast.success('Row added');
+          }}
+        />
+      ) : null}
 
       {editingBacktest ? (
         <EditBacktestDialog

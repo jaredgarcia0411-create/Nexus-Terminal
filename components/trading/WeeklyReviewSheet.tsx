@@ -261,6 +261,18 @@ export default function WeeklyReviewSheet({
           <div className="flex h-32 items-center justify-center text-sm text-zinc-500">Loading…</div>
         ) : (
           <div className="mt-4 space-y-6 p-4">
+            {!readOnly ? (
+              <div className="flex justify-end">
+                <Button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                >
+                  {saving ? 'Saving…' : isExistingReport ? 'Update Review' : 'Save Review'}
+                </Button>
+              </div>
+            ) : null}
+
             <WatchlistEditor
               title="Weekly Watchlist"
               value={aggregatedWatchlist}
@@ -378,17 +390,6 @@ export default function WeeklyReviewSheet({
                 ))}
             </div>
 
-            {!readOnly ? (
-              <div className="flex justify-end pt-2">
-                <Button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
-                >
-                  {saving ? 'Saving…' : isExistingReport ? 'Update Review' : 'Save Review'}
-                </Button>
-              </div>
-            ) : null}
           </div>
         )}
       </SheetContent>

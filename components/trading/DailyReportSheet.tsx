@@ -260,6 +260,27 @@ export default function DailyReportSheet({
           <div className="flex h-32 items-center justify-center text-sm text-zinc-500">Loading…</div>
         ) : (
           <div className="mt-4 space-y-6 p-4">
+            {!readOnly ? (
+              <div className="flex justify-end">
+                {viewMode === 'view' ? (
+                  <Button
+                    onClick={() => setViewMode('edit')}
+                    className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                  >
+                    Edit Review
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                  >
+                    {saving ? 'Saving…' : isExistingReport ? 'Update Review' : 'Save Review'}
+                  </Button>
+                )}
+              </div>
+            ) : null}
+
             <WatchlistEditor
               value={watchlist}
               onChange={effectiveReadOnly ? undefined : setWatchlist}
@@ -371,26 +392,6 @@ export default function DailyReportSheet({
               </div>
             ) : null}
 
-            {!readOnly ? (
-              <div className="flex justify-end pt-2">
-                {viewMode === 'view' ? (
-                  <Button
-                    onClick={() => setViewMode('edit')}
-                    className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
-                  >
-                    Edit Review
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
-                  >
-                    {saving ? 'Saving…' : isExistingReport ? 'Update Review' : 'Save Review'}
-                  </Button>
-                )}
-              </div>
-            ) : null}
           </div>
         )}
       </SheetContent>
