@@ -118,7 +118,7 @@ export default function ResearchChart({ ticker, historicalDate, gapStats = [], o
         id: `gap:${row.date}:${index}`,
         time: toTime(candle.datetime),
         position: 'aboveBar',
-        color: '#86efac',
+        color: '#34d399',
         shape: 'arrowDown',
         text: formatGapMarkerText(row.gapPercentage),
         size: 1,

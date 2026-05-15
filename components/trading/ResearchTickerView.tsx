@@ -26,7 +26,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'dilution', label: 'Dilution' },
   { key: 'news', label: 'News' },
   { key: 'filings', label: 'Filings' },
-  { key: 'research', label: 'Research' },
+  { key: 'research', label: 'Reports' },
 ];
 
 export default function ResearchTickerView({ ticker }: Props) {

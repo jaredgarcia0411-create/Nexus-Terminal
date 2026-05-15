@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { ChevronDown, ChevronUp, Pencil, X } from 'lucide-react';
 import { toast } from 'sonner';
+import JournalTradeChart from '@/components/trading/JournalTradeChart';
 import TemplateFieldRenderer from '@/components/trading/TemplateFieldRenderer';
 import WatchlistEditor, { type WatchlistRow } from '@/components/trading/WatchlistEditor';
+import WeeklyTradesPanel from '@/components/trading/WeeklyTradesPanel';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { aggregateWeek } from '@/lib/journal-aggregates';
@@ -24,6 +26,10 @@ const GRADE_FIELD: TemplateField = {
 };
 
 const HOISTED_FIELD_IDS = new Set(['weeklyTotal', 'netResult', 'rTotal', 'grade']);
+
+// Match DailyReportSheet's chart pagination so the two sheets feel identical.
+const INITIAL_CHART_BATCH = 4;
+const CHART_BATCH_STEP = 4;
 
 function formatRTotal(r: number): string {
   return `${r >= 0 ? '+' : ''}${r.toFixed(2)}R`;
@@ -81,6 +87,7 @@ export default function WeeklyReviewSheet({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
+  const [chartCount, setChartCount] = useState(INITIAL_CHART_BATCH);
 
   const isExistingReport = existing !== null;
 
@@ -94,6 +101,7 @@ export default function WeeklyReviewSheet({
     setReportData({});
     setAggregatedWatchlist([]);
     setEditingTemplate(false);
+    setChartCount(INITIAL_CHART_BATCH);
 
     void Promise.all([
       fetch(`/api/weekly-reviews?from=${weekStart}&to=${weekEnd}`).then((response) => response.json()),
@@ -228,6 +236,8 @@ export default function WeeklyReviewSheet({
   };
 
   const agg = weekStart && weekEnd ? aggregateWeek(trades, weekStart, weekEnd) : null;
+  // Mirror DailyReportSheet: every trade in the week's tradeIds gets a replay chart.
+  const chartTrades = agg ? trades.filter((trade) => agg.tradeIds.includes(trade.id)) : [];
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -279,6 +289,8 @@ export default function WeeklyReviewSheet({
               readOnly
               emptyState="No watchlist entries logged in the daily reviews this week."
             />
+
+            <WeeklyTradesPanel trades={chartTrades} />
 
             {agg ? (
               <div className="grid gap-3 md:grid-cols-2">
@@ -389,6 +401,32 @@ export default function WeeklyReviewSheet({
                   />
                 ))}
             </div>
+
+            {chartTrades.length > 0 ? (
+              <div className="space-y-3 rounded-xl border border-white/10 bg-[#121214] p-3">
+                <p className="text-sm font-medium capitalize text-white">Trade Replay Charts</p>
+                <div className="space-y-3">
+                  {chartTrades.slice(0, chartCount).map((trade) => (
+                    <div key={trade.id} className="space-y-1">
+                      <p className="text-xs font-semibold text-white">
+                        {trade.symbol} ({trade.direction})
+                      </p>
+                      <JournalTradeChart trade={trade} timeframe="5m" />
+                    </div>
+                  ))}
+                  {chartTrades.length > chartCount ? (
+                    <div className="flex justify-center">
+                      <button
+                        onClick={() => setChartCount((count) => Math.min(chartTrades.length, count + CHART_BATCH_STEP))}
+                        className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/10"
+                      >
+                        Load {Math.min(CHART_BATCH_STEP, chartTrades.length - chartCount)} more charts
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
 
           </div>
         )}
