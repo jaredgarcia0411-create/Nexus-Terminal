@@ -49,6 +49,7 @@ export async function GET(request: Request) {
     const freshSince = new Date(Date.now() - CACHE_TTL_HOURS * 60 * 60 * 1000);
     const [latest] = await db
       .select({
+        id: researchReports.id,
         reportJson: researchReports.reportJson,
         generatedAt: researchReports.generatedAt,
         modelUsed: researchReports.modelUsed,
@@ -66,6 +67,7 @@ export async function GET(request: Request) {
     if (latest?.reportJson) {
       return Response.json({
         ticker,
+        id: latest.id,
         report: latest.reportJson,
         generatedAt: latest.generatedAt?.toISOString() ?? null,
         modelUsed: latest.modelUsed,
@@ -73,7 +75,7 @@ export async function GET(request: Request) {
       });
     }
 
-    return Response.json({ ticker, report: null, generatedAt: null, cached: false });
+    return Response.json({ ticker, id: null, report: null, generatedAt: null, cached: false });
   } catch (error) {
     logRouteError('research-report:get', error);
     return internalServerError();
@@ -126,6 +128,7 @@ export async function POST(request: Request) {
         const freshSince = new Date(Date.now() - CACHE_TTL_HOURS * 60 * 60 * 1000);
         const [latest] = await db
           .select({
+            id: researchReports.id,
             reportJson: researchReports.reportJson,
             generatedAt: researchReports.generatedAt,
             modelUsed: researchReports.modelUsed,
@@ -142,6 +145,7 @@ export async function POST(request: Request) {
         if (latest?.reportJson) {
           return Response.json({
             ticker,
+            id: latest.id,
             report: latest.reportJson,
             generatedAt: latest.generatedAt?.toISOString() ?? null,
             modelUsed: latest.modelUsed,
@@ -210,6 +214,7 @@ export async function POST(request: Request) {
 
       return Response.json({
         ticker,
+        id: claimId,
         report,
         generatedAt: generatedAt.toISOString(),
         cached: false,

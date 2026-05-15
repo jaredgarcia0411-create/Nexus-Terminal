@@ -173,7 +173,9 @@ describe('/api/research-report', () => {
 
   it('returns cached reports from GET without generating', async () => {
     const generatedAt = new Date('2026-05-07T14:30:00.000Z');
+    const reportRowId = 'rpt-abc-123';
     getDbMock.mockReturnValueOnce(createSelectDb([{
+      id: reportRowId,
       reportJson: sampleReport,
       generatedAt,
       modelUsed: 'small-cap-research',
@@ -185,6 +187,7 @@ describe('/api/research-report', () => {
     expect(response.status).toBe(200);
     expect(payload).toEqual({
       ticker: 'AAPL',
+      id: reportRowId,
       report: sampleReport,
       generatedAt: generatedAt.toISOString(),
       modelUsed: 'small-cap-research',
@@ -200,7 +203,7 @@ describe('/api/research-report', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload).toEqual({ ticker: 'AAPL', report: null, generatedAt: null, cached: false });
+    expect(payload).toEqual({ ticker: 'AAPL', id: null, report: null, generatedAt: null, cached: false });
   });
 
   it('generates and stores a report from POST when no claim exists', async () => {
@@ -211,8 +214,12 @@ describe('/api/research-report', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
+    // id is the claimId the route assigns via crypto.randomUUID — we don't pin its
+    // value, only that it round-trips into the response so callers (e.g. the
+    // "+ Add to Watchlist" button) can later resolve the exact row by id.
     expect(payload).toEqual({
       ticker: 'AAPL',
+      id: expect.any(String),
       report: sampleReport,
       generatedAt: expect.any(String),
       cached: false,
@@ -280,11 +287,13 @@ describe('/api/research-report', () => {
   it('polls and returns the completed report when another caller holds the claim', async () => {
     vi.useFakeTimers();
     const generatedAt = new Date('2026-05-07T14:30:00.000Z');
+    const polledRowId = 'rpt-poll-456';
     const db = createMutationDb({
       insertWillConflict: true,
       selectRowsByCall: [
         [],
         [{
+          id: polledRowId,
           reportJson: sampleReport,
           generatedAt,
           modelUsed: 'small-cap-research',
@@ -302,6 +311,7 @@ describe('/api/research-report', () => {
     expect(response.status).toBe(200);
     expect(payload).toEqual({
       ticker: 'AAPL',
+      id: polledRowId,
       report: sampleReport,
       generatedAt: generatedAt.toISOString(),
       modelUsed: 'small-cap-research',

@@ -18,7 +18,9 @@ interface RatedCatalyst {
   rating: Rating;
 }
 
-interface ResearchReport {
+// Exported so the watchlist's by-id viewer can type the response from
+// /api/research-report/by-id without duplicating the shape.
+export interface ResearchReport {
   ticker: string;
   newsWhyRunning: RatedSection;
   themeMatch: RatedSection;
@@ -38,6 +40,10 @@ interface ResearchReport {
 
 interface ApiResponse {
   ticker: string;
+  // Server-issued primary key of the research_reports row backing this response.
+  // Null when no fresh report exists (the GET-no-cache case). The watchlist
+  // "+ Add" button captures this to bind a specific report to a watchlist row.
+  id: string | null;
   report: ResearchReport | null;
   generatedAt: string | null;
   cached: boolean;
@@ -50,7 +56,16 @@ interface Props {
 
 // Module-level cache mirrors the auto-TLDR's pattern - keyed by ticker, persists across remounts
 // within a session so flipping between tickers doesn't refetch immediately.
-const reportCache = new Map<string, { report: ResearchReport; generatedAt: string | null }>();
+// id is the research_reports row id — captured so the "+ Add to Watchlist" button can pin
+// a watchlist row to this exact report without a second round-trip.
+const reportCache = new Map<string, { id: string | null; report: ResearchReport; generatedAt: string | null }>();
+
+// Lets sibling components (e.g. the watchlist "+ Add" button on the research page) read the
+// already-cached report id for a ticker without re-fetching. Returns null if the panel hasn't
+// run for this ticker yet or the server returned no fresh report.
+export function getCachedReportId(ticker: string): string | null {
+  return reportCache.get(ticker)?.id ?? null;
+}
 
 // Tracks in-flight prefetches so multiple callers for the same ticker share one network round-trip.
 const prefetchInFlight = new Map<string, Promise<void>>();
@@ -69,7 +84,7 @@ export function prefetchResearchReport(ticker: string): Promise<void> {
       if (!getRes.ok) return;
       const getPayload = (await getRes.json()) as ApiResponse;
       if (getPayload.report) {
-        reportCache.set(ticker, { report: getPayload.report, generatedAt: getPayload.generatedAt });
+        reportCache.set(ticker, { id: getPayload.id, report: getPayload.report, generatedAt: getPayload.generatedAt });
         return;
       }
       const postRes = await fetch('/api/research-report', {
@@ -80,7 +95,7 @@ export function prefetchResearchReport(ticker: string): Promise<void> {
       if (!postRes.ok) return;
       const postPayload = (await postRes.json()) as ApiResponse;
       if (postPayload.report) {
-        reportCache.set(ticker, { report: postPayload.report, generatedAt: postPayload.generatedAt });
+        reportCache.set(ticker, { id: postPayload.id, report: postPayload.report, generatedAt: postPayload.generatedAt });
       }
     } catch {
       // Prefetch failures are silent — the panel itself will retry and surface the error when the user clicks the tab.
@@ -163,7 +178,7 @@ export default function ResearchReportPanel({ ticker }: Props) {
         const getPayload = (await getRes.json()) as ApiResponse;
 
         if (getPayload.report) {
-          reportCache.set(ticker, { report: getPayload.report, generatedAt: getPayload.generatedAt });
+          reportCache.set(ticker, { id: getPayload.id, report: getPayload.report, generatedAt: getPayload.generatedAt });
           setReport(getPayload.report);
           setGeneratedAt(getPayload.generatedAt);
           setStatus('idle');
@@ -181,7 +196,7 @@ export default function ResearchReportPanel({ ticker }: Props) {
         if (!postRes.ok) throw new Error(`Generation failed: ${postRes.status}`);
         const postPayload = (await postRes.json()) as ApiResponse;
         if (postPayload.report) {
-          reportCache.set(ticker, { report: postPayload.report, generatedAt: postPayload.generatedAt });
+          reportCache.set(ticker, { id: postPayload.id, report: postPayload.report, generatedAt: postPayload.generatedAt });
           setReport(postPayload.report);
           setGeneratedAt(postPayload.generatedAt);
         }
@@ -226,6 +241,19 @@ export default function ResearchReportPanel({ ticker }: Props) {
     return null;
   }
 
+  return <ResearchReportBody report={report} generatedAt={generatedAt} />;
+}
+
+// Pure render: takes an already-loaded report and shows the rated-row layout.
+// Exported so the watchlist eye-icon viewer can render the same body without
+// duplicating the JSX. Keeps fetch/cache logic separate from presentation.
+export function ResearchReportBody({
+  report,
+  generatedAt,
+}: {
+  report: ResearchReport;
+  generatedAt: string | null;
+}) {
   return (
     <div className="space-y-4 rounded border border-white/10 bg-white/5 p-4">
       <div className="flex items-center justify-between gap-2">

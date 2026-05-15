@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Eye, Plus, Trash2, X } from 'lucide-react';
 
+import WatchlistReportInline from '@/components/trading/WatchlistReportInline';
 import {
   Command,
   CommandEmpty,
@@ -29,6 +30,10 @@ export interface WatchlistRow {
   thesis: string;
   grade: string;
   notes: string;
+  // Set only when the row was created by the "+ Add to Watchlist" button on the
+  // research page. Points at a research_reports.id row so the eye-icon viewer
+  // can fetch the exact report from that day — even months later.
+  reportId?: string;
 }
 
 interface WatchlistEditorProps {
@@ -62,6 +67,8 @@ export default function WatchlistEditor({
   // Track which row's thesis popover is open. Only one open at a time.
   const [thesisOpenForRow, setThesisOpenForRow] = useState<string | null>(null);
   const [thesisQuery, setThesisQuery] = useState('');
+  // Which watchlist row currently has its saved-report viewer expanded. Only one open at a time.
+  const [reportOpenForRow, setReportOpenForRow] = useState<string | null>(null);
   const fieldIdPrefix = useId();
 
   // Load saved theses on mount; we re-fetch when this component remounts inside a
@@ -144,10 +151,14 @@ export default function WatchlistEditor({
   const rowCount = value.length;
   const showEmpty = rowCount === 0;
 
-  // Grid template: ticker (narrow) · thesis · grade (narrow) · notes (wide) · delete (icon).
-  const gridCols = readOnly
-    ? 'grid-cols-[80px_minmax(140px,1fr)_70px_minmax(160px,2fr)]'
-    : 'grid-cols-[80px_minmax(140px,1fr)_70px_minmax(160px,2fr)_28px]';
+  // Grid template: ticker (narrow) · thesis · grade (narrow) · notes (wide) · report (icon) · delete (icon).
+  // Inline style instead of a Tailwind arbitrary class so the JIT scanner can't
+  // miss the new column count — we hit that exact issue in WeeklyTradesPanel.
+  // The delete column is editable-only; report column is always present and
+  // shows a dash for rows without a saved reportId.
+  const gridTemplateColumns = readOnly
+    ? '80px minmax(140px, 1fr) 70px minmax(160px, 2fr) 28px'
+    : '80px minmax(140px, 1fr) 70px minmax(160px, 2fr) 28px 28px';
 
   return (
     <section className="space-y-2 rounded-xl border border-white/10 bg-white/[0.02] p-4">
@@ -166,7 +177,7 @@ export default function WatchlistEditor({
       </div>
 
       <div className="overflow-hidden rounded-lg border border-white/10">
-        <div className={`grid ${gridCols} gap-px bg-white/10`}>
+        <div className="grid gap-px bg-white/10" style={{ gridTemplateColumns }}>
           <div className="bg-[#121214] px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
             Ticker
           </div>
@@ -179,37 +190,54 @@ export default function WatchlistEditor({
           <div className="bg-[#121214] px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
             Notes
           </div>
+          <div className="bg-[#121214] px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            Rpt
+          </div>
           {!readOnly ? <div className="bg-[#121214]" /> : null}
 
           {showEmpty ? (
+            // gridColumn: '1 / -1' spans the row across all columns regardless of count —
+            // works for both readOnly (5) and editable (6) layouts without separate classes.
             <div
-              className={`bg-[#121214] px-3 py-4 text-xs italic text-zinc-500 ${
-                readOnly ? 'col-span-4' : 'col-span-5'
-              }`}
+              className="bg-[#121214] px-3 py-4 text-xs italic text-zinc-500"
+              style={{ gridColumn: '1 / -1' }}
             >
               {emptyState}
             </div>
           ) : (
             value.map((row) => (
-              <RowCells
-                key={row.id}
-                row={row}
-                readOnly={readOnly}
-                theses={theses}
-                thesisOpen={thesisOpenForRow === row.id}
-                thesisQuery={thesisOpenForRow === row.id ? thesisQuery : ''}
-                onOpenThesis={(open) => {
-                  setThesisOpenForRow(open ? row.id : null);
-                  if (!open) setThesisQuery('');
-                }}
-                onThesisQueryChange={setThesisQuery}
-                onPickThesis={(name) => void upsertThesis(row.id, name)}
-                onDeleteThesisOption={(name) => void deleteThesisOption(name)}
-                onChangeRow={(patch) => updateRow(row.id, patch)}
-                onRemoveRow={() => removeRow(row.id)}
-                tickerInputId={`${fieldIdPrefix}-${row.id}-ticker`}
-                notesInputId={`${fieldIdPrefix}-${row.id}-notes`}
-              />
+              <Fragment key={row.id}>
+                <RowCells
+                  row={row}
+                  readOnly={readOnly}
+                  theses={theses}
+                  thesisOpen={thesisOpenForRow === row.id}
+                  thesisQuery={thesisOpenForRow === row.id ? thesisQuery : ''}
+                  reportOpen={reportOpenForRow === row.id}
+                  onOpenThesis={(open) => {
+                    setThesisOpenForRow(open ? row.id : null);
+                    if (!open) setThesisQuery('');
+                  }}
+                  onThesisQueryChange={setThesisQuery}
+                  onPickThesis={(name) => void upsertThesis(row.id, name)}
+                  onDeleteThesisOption={(name) => void deleteThesisOption(name)}
+                  onChangeRow={(patch) => updateRow(row.id, patch)}
+                  onRemoveRow={() => removeRow(row.id)}
+                  onToggleReport={() =>
+                    setReportOpenForRow((current) => (current === row.id ? null : row.id))
+                  }
+                  tickerInputId={`${fieldIdPrefix}-${row.id}-ticker`}
+                  notesInputId={`${fieldIdPrefix}-${row.id}-notes`}
+                />
+                {reportOpenForRow === row.id && row.reportId ? (
+                  <div
+                    className="bg-[#121214] p-3"
+                    style={{ gridColumn: '1 / -1' }}
+                  >
+                    <WatchlistReportInline reportId={row.reportId} />
+                  </div>
+                ) : null}
+              </Fragment>
             ))
           )}
         </div>
@@ -224,12 +252,14 @@ interface RowCellsProps {
   theses: string[];
   thesisOpen: boolean;
   thesisQuery: string;
+  reportOpen: boolean;
   onOpenThesis: (open: boolean) => void;
   onThesisQueryChange: (next: string) => void;
   onPickThesis: (name: string) => void;
   onDeleteThesisOption: (name: string) => void;
   onChangeRow: (patch: Partial<WatchlistRow>) => void;
   onRemoveRow: () => void;
+  onToggleReport: () => void;
   tickerInputId: string;
   notesInputId: string;
 }
@@ -240,12 +270,14 @@ function RowCells({
   theses,
   thesisOpen,
   thesisQuery,
+  reportOpen,
   onOpenThesis,
   onThesisQueryChange,
   onPickThesis,
   onDeleteThesisOption,
   onChangeRow,
   onRemoveRow,
+  onToggleReport,
   tickerInputId,
   notesInputId,
 }: RowCellsProps) {
@@ -269,6 +301,7 @@ function RowCells({
         <div className={`${cellBase} whitespace-pre-wrap text-sm text-zinc-300`}>
           {row.notes || '—'}
         </div>
+        <ReportCell reportId={row.reportId} reportOpen={reportOpen} onToggle={onToggleReport} />
       </>
     );
   }
@@ -374,6 +407,8 @@ function RowCells({
         />
       </div>
 
+      <ReportCell reportId={row.reportId} reportOpen={reportOpen} onToggle={onToggleReport} />
+
       <div className={`${cellBase} flex items-center justify-center`}>
         <button
           type="button"
@@ -386,6 +421,44 @@ function RowCells({
         </button>
       </div>
     </>
+  );
+}
+
+// Renders the eye-icon button when the row has a saved reportId; otherwise a
+// muted dash. Toggled state controls the icon's emerald tint so the user can
+// see at a glance which row's report is currently expanded.
+function ReportCell({
+  reportId,
+  reportOpen,
+  onToggle,
+}: {
+  reportId: string | undefined;
+  reportOpen: boolean;
+  onToggle: () => void;
+}) {
+  if (!reportId) {
+    return (
+      <div className="flex items-center justify-center bg-[#121214] px-1 py-1.5 text-xs text-zinc-700">
+        —
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-center bg-[#121214] px-1 py-1.5">
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`rounded p-1 hover:bg-white/10 ${
+          reportOpen ? 'text-emerald-400' : 'text-zinc-400 hover:text-zinc-200'
+        }`}
+        title={reportOpen ? 'Hide saved report' : 'View saved report'}
+        aria-label={reportOpen ? 'Hide saved report' : 'View saved report'}
+        aria-expanded={reportOpen}
+      >
+        <Eye className="h-3.5 w-3.5" />
+      </button>
+    </div>
   );
 }
 

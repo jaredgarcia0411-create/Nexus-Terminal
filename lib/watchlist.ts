@@ -22,12 +22,16 @@ export function coerceWatchlistRows(input: unknown): WatchlistRow[] {
     if (!raw || typeof raw !== 'object') return [];
     const row = raw as Record<string, unknown>;
     const id = isString(row.id) && row.id.trim() ? row.id : nextRowId(index);
+    // reportId is optional — only present on rows added via the research page button.
+    // Older watchlist saves predate this field, so guard for missing/empty values.
+    const reportId = isString(row.reportId) && row.reportId.trim() ? row.reportId : undefined;
     return [{
       id,
       ticker: isString(row.ticker) ? row.ticker : '',
       thesis: isString(row.thesis) ? row.thesis : '',
       grade: isString(row.grade) ? row.grade : '',
       notes: isString(row.notes) ? row.notes : '',
+      ...(reportId ? { reportId } : {}),
     }];
   });
 }
@@ -47,12 +51,15 @@ export function dedupeWatchlistRows(rows: WatchlistRow[]): WatchlistRow[] {
       byKey.set(key, { ...row, ticker, thesis });
       continue;
     }
+    // Prefer the newer reportId when present; fall back to the older one.
+    // Either side may be missing since manual rows don't carry a reportId.
     byKey.set(key, {
       ...existing,
       ticker: existing.ticker || ticker,
       thesis: existing.thesis || thesis,
       grade: row.grade || existing.grade,
       notes: row.notes.trim() ? row.notes : existing.notes,
+      reportId: row.reportId ?? existing.reportId,
     });
   }
   return Array.from(byKey.values()).sort((a, b) => a.ticker.localeCompare(b.ticker));
