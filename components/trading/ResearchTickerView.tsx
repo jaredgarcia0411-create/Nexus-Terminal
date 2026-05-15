@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import ResearchChart from '@/components/trading/ResearchChart';
 import ResearchCompanyHeader from '@/components/trading/ResearchCompanyHeader';
+import { prefetchResearchReport } from '@/components/trading/ResearchReportPanel';
 import ResearchReportSections from '@/components/trading/ResearchReportSections';
 import ResearchSubNav from '@/components/trading/ResearchSubNav';
 import type { ResearchSnapshot } from '@/lib/types';
@@ -18,13 +19,14 @@ interface Props {
   ticker: string;
 }
 
-type TabKey = 'overview' | 'dilution' | 'news' | 'filings';
+type TabKey = 'overview' | 'dilution' | 'news' | 'filings' | 'research';
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'overview', label: 'Overview' },
   { key: 'dilution', label: 'Dilution' },
   { key: 'news', label: 'News' },
   { key: 'filings', label: 'Filings' },
+  { key: 'research', label: 'Research' },
 ];
 
 export default function ResearchTickerView({ ticker }: Props) {
@@ -78,6 +80,8 @@ export default function ResearchTickerView({ ticker }: Props) {
     setActiveTab('overview');
     setHistoricalDate(null);
     void fetchData(ticker);
+    // Warm the Research Report cache in the background so the Research tab renders instantly when clicked.
+    void prefetchResearchReport(ticker);
   }, [ticker, fetchData]);
 
   if (loading) {
@@ -109,8 +113,8 @@ export default function ResearchTickerView({ ticker }: Props) {
       </div>
 
       {/* Top row: company info panel on the left, chart only where it supports the tab. Pinned. */}
-      <div className={`flex shrink-0 border-b border-white/10 ${hasChart ? 'h-[420px]' : ''}`}>
-        <div className="scrollbar-hidden w-[360px] shrink-0 overflow-y-auto border-r border-white/10 bg-[#0f0f11]">
+      <div className={`flex shrink-0 border-b border-white/10 ${hasChart ? 'h-[380px]' : ''}`}>
+        <div className="scrollbar-hidden w-[320px] shrink-0 overflow-y-auto border-r border-white/10 bg-[#0f0f11]">
           <ResearchCompanyHeader ticker={ticker} companyName={data.companyName ?? null} header={data.header} compact={!hasChart} />
         </div>
         {hasChart ? (

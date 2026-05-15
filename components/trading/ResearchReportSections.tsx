@@ -41,7 +41,7 @@ interface Props {
   onSelectGapDate?: (date: string) => void;
 }
 
-type TabKey = 'overview' | 'dilution' | 'news' | 'filings';
+type TabKey = 'overview' | 'dilution' | 'news' | 'filings' | 'research';
 type FilingViewKey = 'all' | 'chronological' | FilingBucket;
 
 const FILING_BUCKET_LABELS: Record<FilingBucket, string> = {
@@ -94,8 +94,15 @@ function compareFiledAtDesc(a: { filedAt: string | null }, b: { filedAt: string 
   return b.filedAt.localeCompare(a.filedAt);
 }
 
-function NewsArticle({ item }: { item: ResearchSnapshotNewsItem }) {
-  const [open, setOpen] = useState(false);
+function NewsArticle({
+  item,
+  open,
+  onToggle,
+}: {
+  item: ResearchSnapshotNewsItem;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const formType = item.formType ?? 'News';
   const normalizedFormType = formType.toLowerCase();
   const sourceLabel = normalizedFormType.includes('grok')
@@ -108,7 +115,7 @@ function NewsArticle({ item }: { item: ResearchSnapshotNewsItem }) {
     <div className="p-2">
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={onToggle}
         className="w-full cursor-pointer text-left text-sm font-bold text-zinc-200"
       >
         {item.title}
@@ -791,6 +798,8 @@ function formatCompactPercent(value: number) {
 
 export default function ResearchReportSections({ ticker, data, activeTab, onSelectGapDate }: Props) {
   const [reportExpanded, setReportExpanded] = useState(false);
+  // Single-open accordion: only one news article expanded at a time. null = all collapsed.
+  const [openNewsIndex, setOpenNewsIndex] = useState<number | null>(null);
   const atmRegistrations = data.registrations.filter((row) => row.isAtm === true);
   const regularWarrants = data.warrants.filter((row) => !row.isPrefunded);
   const prefundedWarrants = data.warrants.filter((row) => row.isPrefunded);
@@ -851,7 +860,7 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
                 ) : null}
               </div>
               {data.gapStats.length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-3 text-sm">
                   <div className="scrollbar-hidden overflow-x-auto">
                     <table className="min-w-full">
                       <thead>
@@ -879,21 +888,24 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
               )}
             </div>
 
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <h4 className="text-lg font-semibold text-zinc-200">Research Report</h4>
-                <button
-                  type="button"
-                  onClick={() => setReportExpanded(true)}
-                  aria-label="Expand research report"
-                  title="Expand"
-                  className="rounded p-1 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
-                >
-                  <Maximize2 className="h-4 w-4" />
-                </button>
-              </div>
-              <ResearchReportPanel ticker={ticker} />
+          </div>
+        ) : null}
+
+        {activeTab === 'research' ? (
+          <div className="space-y-4 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h4 className="text-lg font-semibold text-zinc-200">Research Report</h4>
+              <button
+                type="button"
+                onClick={() => setReportExpanded(true)}
+                aria-label="Expand research report"
+                title="Expand"
+                className="rounded p-1 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </button>
             </div>
+            <ResearchReportPanel ticker={ticker} />
 
             {/* Same panel rendered inside a Dialog when expanded. ResearchReportPanel's
                 module-level cache means the dialog instance gets the same report data
@@ -1009,7 +1021,12 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
         {activeTab === 'news' ? (
           <div className="divide-y divide-white/5 p-3">
             {data.news.map((item, index) => (
-              <NewsArticle key={`news-filing-${index}`} item={item} />
+              <NewsArticle
+                key={`news-filing-${index}`}
+                item={item}
+                open={openNewsIndex === index}
+                onToggle={() => setOpenNewsIndex((prev) => (prev === index ? null : index))}
+              />
             ))}
             {data.news.length === 0 ? <NoDataBadge /> : null}
           </div>

@@ -45,7 +45,10 @@ export function formatNumber(value: unknown): string {
 export function formatMoney(value: unknown): string {
   const numeric = toNumberValue(value);
   if (numeric === null) return '--';
-  return `$${numeric.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  // Render negatives as -$X instead of $-X so the sign reads naturally as currency.
+  const sign = numeric < 0 ? '-' : '';
+  const absFormatted = Math.abs(numeric).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return `${sign}$${absFormatted}`;
 }
 
 // Returns Tailwind CSS classes for a dilution risk rating.

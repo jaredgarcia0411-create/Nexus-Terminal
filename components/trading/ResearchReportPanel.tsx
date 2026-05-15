@@ -52,6 +52,47 @@ interface Props {
 // within a session so flipping between tickers doesn't refetch immediately.
 const reportCache = new Map<string, { report: ResearchReport; generatedAt: string | null }>();
 
+// Tracks in-flight prefetches so multiple callers for the same ticker share one network round-trip.
+const prefetchInFlight = new Map<string, Promise<void>>();
+
+// Warms reportCache for a ticker by running the same GET-then-POST flow the panel uses on mount.
+// Called by ResearchTickerView as soon as a ticker loads so the Research tab renders instantly when clicked.
+export function prefetchResearchReport(ticker: string): Promise<void> {
+  if (!ticker) return Promise.resolve();
+  if (reportCache.has(ticker)) return Promise.resolve();
+  const existing = prefetchInFlight.get(ticker);
+  if (existing) return existing;
+
+  const task = (async () => {
+    try {
+      const getRes = await fetch(`/api/research-report?ticker=${encodeURIComponent(ticker)}`);
+      if (!getRes.ok) return;
+      const getPayload = (await getRes.json()) as ApiResponse;
+      if (getPayload.report) {
+        reportCache.set(ticker, { report: getPayload.report, generatedAt: getPayload.generatedAt });
+        return;
+      }
+      const postRes = await fetch('/api/research-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker }),
+      });
+      if (!postRes.ok) return;
+      const postPayload = (await postRes.json()) as ApiResponse;
+      if (postPayload.report) {
+        reportCache.set(ticker, { report: postPayload.report, generatedAt: postPayload.generatedAt });
+      }
+    } catch {
+      // Prefetch failures are silent — the panel itself will retry and surface the error when the user clicks the tab.
+    } finally {
+      prefetchInFlight.delete(ticker);
+    }
+  })();
+
+  prefetchInFlight.set(ticker, task);
+  return task;
+}
+
 function dotClass(rating: Rating): string {
   if (rating === 'red') return 'bg-rose-500';
   if (rating === 'yellow') return 'bg-amber-500';

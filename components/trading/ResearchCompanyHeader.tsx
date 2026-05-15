@@ -54,7 +54,7 @@ export default function ResearchCompanyHeader({ ticker, companyName, header, com
 
       {/* Company Stats — hidden on tabs without a chart so we don't render a tall stat column next to nothing. */}
       {!compact ? (
-        <div className="flex flex-col gap-1 text-base">
+        <div className="flex flex-col gap-1 text-sm">
           {statRow('MCap', formatCompact(marketCap))}
           {statRow('OS', formatCompact(outstanding))}
           {statRow('Float', formatCompact(float))}
