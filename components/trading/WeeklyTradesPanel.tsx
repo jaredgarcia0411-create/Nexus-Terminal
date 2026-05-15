@@ -47,7 +47,10 @@ export default function WeeklyTradesPanel({ trades }: WeeklyTradesPanelProps) {
   const showEmpty = rowCount === 0;
 
   // Three columns: ticker (narrow) · tags (wide) · R (narrow, right-aligned).
-  const gridCols = 'grid-cols-[80px_minmax(160px,1fr)_70px]';
+  // Using inline gridTemplateColumns instead of a Tailwind arbitrary class —
+  // Tailwind's JIT can miss dynamic class strings in newly-added files until
+  // the dev server is restarted, and we hit that here.
+  const gridTemplateColumns = '80px minmax(160px, 1fr) 70px';
 
   return (
     <section className="space-y-2 rounded-xl border border-white/10 bg-white/[0.02] p-4">
@@ -56,7 +59,7 @@ export default function WeeklyTradesPanel({ trades }: WeeklyTradesPanelProps) {
       </div>
 
       <div className="overflow-hidden rounded-lg border border-white/10">
-        <div className={`grid ${gridCols} gap-px bg-white/10`}>
+        <div className="grid gap-px bg-white/10" style={{ gridTemplateColumns }}>
           <div className="bg-[#121214] px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
             Ticker
           </div>
