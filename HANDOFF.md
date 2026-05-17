@@ -15,8 +15,8 @@
 ## Collaborative Sample-Set Building
 
 > Generated: 2026-05-16 | Author: claude (opus-4-7)
-> Status: PLANNED
-> Validation: `npm run lint`, `npx tsc --noEmit`, `npm test`. No services or workflow assets touched, so `typecheck:services` and `workflow:audit` are not required.
+> Status: IMPLEMENTED (2026-05-16; awaiting review/commit)
+> Validation: `npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run workflow:audit` when `HANDOFF.md` is updated. No services touched, so `typecheck:services` is not required.
 
 ### Goal
 
@@ -903,7 +903,7 @@ export default function SampleSetRowsBuilder({
   - `npx tsc --noEmit` passed.
   - `npm test` passed: 91 files, 659 tests.
   - `npm run workflow:audit` passed.
-- Step 12 and later remain unopened.
+- Steps 12-13 were completed in the final checkpoint below.
 
 ---
 
@@ -1224,6 +1224,22 @@ export default function WatchlistSavePicker({
 
 ---
 
+### Steps 12-13 Final Checkpoint Status (2026-05-16)
+
+- Updated `components/trading/WatchlistEditor.tsx` with daily-review Save and checkbox columns, per-row save buttons, bulk save selection, empty-ticker filtering, and seeded picker state.
+- Added `components/trading/WatchlistSavePicker.tsx` to list searchable sample sets, pin the caller's sets first, append seeded rows, and open seeded create-new sample set flow.
+- Added `__tests__/watchlist-editor.test.tsx` covering weekly/no-date gating, daily checkbox visibility, read-only checkbox hiding, per-row seeded save, and bulk filtering of empty tickers.
+- Validation completed for the full Collaborative Sample-Set Building spec:
+  - `npx vitest run __tests__/watchlist-editor.test.tsx` passed: 1 file, 4 tests.
+  - `npm run lint` passed.
+  - `npx tsc --noEmit` passed.
+  - `npx vitest run __tests__/sample-sets-route.test.ts __tests__/sample-sets-from-tags-route.test.ts __tests__/backtest-manager-view.test.tsx __tests__/watchlist-editor.test.tsx` passed: 4 files, 28 tests.
+  - `npm test` passed: 92 files, 663 tests.
+- Browser/manual smoke was not run in this session.
+- All implementation steps 1-13 are complete; no next phase remains unopened in this active spec.
+
+---
+
 ### Files Changed Summary
 
 | File | Action | Approx lines | Risk |
@@ -1241,8 +1257,9 @@ export default function WatchlistSavePicker({
 | `components/trading/BacktestManagerView.tsx` | MODIFY | +5 / -5 | Low |
 | `components/trading/WatchlistEditor.tsx` | MODIFY | +120 / -10 | **Medium** — grid template change has historically caused JIT misses |
 | `components/trading/WatchlistSavePicker.tsx` | CREATE | +160 | Low |
+| `__tests__/watchlist-editor.test.tsx` | CREATE | +100 | Low |
 
-**Total:** 4 new files, 9 modified.
+**Total:** 6 new files, 9 modified.
 
 ### Verification Steps
 
@@ -1250,8 +1267,9 @@ Required commands from repo root:
 
 1. `npm run lint`
 2. `npx tsc --noEmit`
-3. `npx vitest run __tests__/sample-sets-route.test.ts __tests__/sample-sets-from-tags-route.test.ts`
+3. `npx vitest run __tests__/sample-sets-route.test.ts __tests__/sample-sets-from-tags-route.test.ts __tests__/backtest-manager-view.test.tsx __tests__/watchlist-editor.test.tsx`
 4. `npm test`
+5. `npm run workflow:audit` if `HANDOFF.md` was updated
 
 Manual checks (browser, logged in as two different users in two browsers):
 

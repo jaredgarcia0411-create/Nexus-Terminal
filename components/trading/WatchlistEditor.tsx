@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } fr
 import { AnimatePresence, motion } from 'motion/react';
 import { Eye, LineChart, Plus, Trash2, X } from 'lucide-react';
 
+import WatchlistSavePicker from '@/components/trading/WatchlistSavePicker';
 import WatchlistReportInline from '@/components/trading/WatchlistReportInline';
 import WatchlistTickerChart from '@/components/trading/WatchlistTickerChart';
 import {
@@ -22,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import type { SampleSetRow } from '@/lib/sample-set-csv';
 
 // Grade options mirror weekly review's GRADE_FIELD so the dropdowns feel identical.
 export const WATCHLIST_GRADE_OPTIONS = ['A+', 'A', 'B+', 'B', 'C+', 'C', 'D', 'F'] as const;
@@ -79,8 +81,12 @@ export default function WatchlistEditor({
   const [reportOpenForRow, setReportOpenForRow] = useState<string | null>(null);
   // Mirrors reportOpenForRow but for the inline candlestick chart panel.
   const [chartOpenForRow, setChartOpenForRow] = useState<string | null>(null);
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [savePickerRows, setSavePickerRows] = useState<SampleSetRow[] | null>(null);
   const fieldIdPrefix = useId();
   const showChartColumn = Boolean(date);
+  const showSaveColumn = Boolean(date);
+  const showSelectColumn = showSaveColumn && !readOnly;
 
   // Load saved theses on mount; we re-fetch when this component remounts inside a
   // newly-opened sheet, which matches the rest of the app.
@@ -117,9 +123,46 @@ export default function WatchlistEditor({
   const removeRow = useCallback(
     (rowId: string) => {
       onChange?.(value.filter((row) => row.id !== rowId));
+      setSelectedRowIds((current) => {
+        if (!current.has(rowId)) return current;
+        const next = new Set(current);
+        next.delete(rowId);
+        return next;
+      });
     },
     [onChange, value],
   );
+
+  const selectedRows = useMemo(
+    () => (showSelectColumn ? value.filter((row) => selectedRowIds.has(row.id)) : []),
+    [selectedRowIds, showSelectColumn, value],
+  );
+
+  const toggleSelectedRow = useCallback((rowId: string) => {
+    setSelectedRowIds((current) => {
+      const next = new Set(current);
+      if (next.has(rowId)) {
+        next.delete(rowId);
+      } else {
+        next.add(rowId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleClickSave = useCallback((row: WatchlistRow) => {
+    if (!row.ticker.trim() || !date) return;
+    setSavePickerRows([{ ticker: row.ticker.toUpperCase(), date }]);
+  }, [date]);
+
+  const handleBulkSave = useCallback(() => {
+    if (!date) return;
+    const targetRows = selectedRows
+      .filter((row) => row.ticker.trim())
+      .map((row) => ({ ticker: row.ticker.toUpperCase(), date }));
+    if (targetRows.length === 0) return;
+    setSavePickerRows(targetRows);
+  }, [date, selectedRows]);
 
   const upsertThesis = useCallback(
     async (rowId: string, raw: string) => {
@@ -162,17 +205,19 @@ export default function WatchlistEditor({
   const rowCount = value.length;
   const showEmpty = rowCount === 0;
 
-  // Grid template: ticker (narrow) · thesis · grade (narrow) · notes (wide) · report · [chart] · [delete].
+  // Grid template: [select] · ticker (narrow) · thesis · grade (narrow) · notes (wide) · report · [chart] · [save] · [delete].
   // Inline style instead of a Tailwind arbitrary class so the JIT scanner can't
   // miss the new column count — we hit that exact issue in WeeklyTradesPanel.
   // The delete column is editable-only; report column is always present and
   // shows a dash for rows without a saved reportId. The chart column only
   // appears when `date` is provided (daily reviews). Report/Chart widths fit
   // the new "Report"/"Chart" header labels.
+  const selectColumn = showSelectColumn ? '28px ' : '';
   const baseColumns = '80px minmax(140px, 1fr) 70px minmax(160px, 2fr) 56px';
   const chartColumn = showChartColumn ? ' 56px' : '';
+  const saveColumn = showSaveColumn ? ' 56px' : '';
   const deleteColumn = readOnly ? '' : ' 28px';
-  const gridTemplateColumns = `${baseColumns}${chartColumn}${deleteColumn}`;
+  const gridTemplateColumns = `${selectColumn}${baseColumns}${chartColumn}${saveColumn}${deleteColumn}`;
 
   return (
     <section className="space-y-2 rounded-xl border border-white/10 bg-white/[0.02] p-4">
@@ -190,9 +235,34 @@ export default function WatchlistEditor({
         ) : null}
       </div>
 
+      {selectedRows.length > 0 ? (
+        <div className="flex items-center justify-between rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-300">
+          <span>
+            {selectedRows.length} row{selectedRows.length === 1 ? '' : 's'} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleBulkSave}
+              className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 hover:bg-emerald-500/20"
+            >
+              Save selected to sample set…
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedRowIds(new Set())}
+              className="text-zinc-400 hover:text-white"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="overflow-hidden rounded-lg border border-white/10">
         <div className="grid gap-px bg-white/10" style={{ gridTemplateColumns }}>
           {/* Headers a step smaller than body text (text-xs / 12px). Body cells stay at text-sm (Notes column). */}
+          {showSelectColumn ? <div className="bg-[#121214]" /> : null}
           <div className="bg-[#121214] px-3 py-2 text-xs font-semibold text-white">
             Ticker
           </div>
@@ -211,6 +281,11 @@ export default function WatchlistEditor({
           {showChartColumn ? (
             <div className="bg-[#121214] px-1 py-2 text-center text-xs font-semibold text-white">
               Chart
+            </div>
+          ) : null}
+          {showSaveColumn ? (
+            <div className="bg-[#121214] px-1 py-2 text-center text-xs font-semibold text-white">
+              Save
             </div>
           ) : null}
           {!readOnly ? <div className="bg-[#121214]" /> : null}
@@ -236,6 +311,9 @@ export default function WatchlistEditor({
                   reportOpen={reportOpenForRow === row.id}
                   chartOpen={chartOpenForRow === row.id}
                   showChartColumn={showChartColumn}
+                  showSaveColumn={showSaveColumn}
+                  showSelectColumn={showSelectColumn}
+                  isSelected={selectedRowIds.has(row.id)}
                   onOpenThesis={(open) => {
                     setThesisOpenForRow(open ? row.id : null);
                     if (!open) setThesisQuery('');
@@ -254,6 +332,8 @@ export default function WatchlistEditor({
                     setChartOpenForRow((current) => (current === row.id ? null : row.id));
                     setReportOpenForRow((current) => (current === row.id ? null : current));
                   }}
+                  onToggleSelected={() => toggleSelectedRow(row.id)}
+                  onClickSave={() => handleClickSave(row)}
                   tickerInputId={`${fieldIdPrefix}-${row.id}-ticker`}
                   notesInputId={`${fieldIdPrefix}-${row.id}-notes`}
                 />
@@ -297,6 +377,19 @@ export default function WatchlistEditor({
           )}
         </div>
       </div>
+
+      {savePickerRows ? (
+        <WatchlistSavePicker
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setSavePickerRows(null);
+              setSelectedRowIds(new Set());
+            }
+          }}
+          seedRows={savePickerRows}
+        />
+      ) : null}
     </section>
   );
 }
@@ -310,6 +403,9 @@ interface RowCellsProps {
   reportOpen: boolean;
   chartOpen: boolean;
   showChartColumn: boolean;
+  showSaveColumn: boolean;
+  showSelectColumn: boolean;
+  isSelected: boolean;
   onOpenThesis: (open: boolean) => void;
   onThesisQueryChange: (next: string) => void;
   onPickThesis: (name: string) => void;
@@ -318,6 +414,8 @@ interface RowCellsProps {
   onRemoveRow: () => void;
   onToggleReport: () => void;
   onToggleChart: () => void;
+  onToggleSelected: () => void;
+  onClickSave: () => void;
   tickerInputId: string;
   notesInputId: string;
 }
@@ -331,6 +429,9 @@ function RowCells({
   reportOpen,
   chartOpen,
   showChartColumn,
+  showSaveColumn,
+  showSelectColumn,
+  isSelected,
   onOpenThesis,
   onThesisQueryChange,
   onPickThesis,
@@ -339,6 +440,8 @@ function RowCells({
   onRemoveRow,
   onToggleReport,
   onToggleChart,
+  onToggleSelected,
+  onClickSave,
   tickerInputId,
   notesInputId,
 }: RowCellsProps) {
@@ -354,6 +457,7 @@ function RowCells({
   if (readOnly) {
     return (
       <>
+        {showSelectColumn ? <SelectCell checked={isSelected} onChange={onToggleSelected} /> : null}
         <div className={`${cellBase} font-mono text-sm font-semibold text-zinc-100`}>
           {row.ticker || '—'}
         </div>
@@ -366,12 +470,15 @@ function RowCells({
         {showChartColumn ? (
           <ChartCell ticker={row.ticker} chartOpen={chartOpen} onToggle={onToggleChart} />
         ) : null}
+        {showSaveColumn ? <SaveCell ticker={row.ticker} onClick={onClickSave} /> : null}
       </>
     );
   }
 
   return (
     <>
+      {showSelectColumn ? <SelectCell checked={isSelected} onChange={onToggleSelected} /> : null}
+
       <div className={cellBase}>
         <input
           id={tickerInputId}
@@ -477,6 +584,8 @@ function RowCells({
         <ChartCell ticker={row.ticker} chartOpen={chartOpen} onToggle={onToggleChart} />
       ) : null}
 
+      {showSaveColumn ? <SaveCell ticker={row.ticker} onClick={onClickSave} /> : null}
+
       <div className={`${cellBase} flex items-center justify-center`}>
         <button
           type="button"
@@ -489,6 +598,20 @@ function RowCells({
         </button>
       </div>
     </>
+  );
+}
+
+function SelectCell({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+  return (
+    <div className="flex items-center justify-center bg-[#121214] px-1 py-1.5">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="h-3.5 w-3.5 rounded border-white/10 bg-white/5 accent-emerald-500"
+        aria-label="Select watchlist row"
+      />
+    </div>
   );
 }
 
@@ -564,6 +687,30 @@ function ChartCell({
         aria-expanded={chartOpen}
       >
         <LineChart className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function SaveCell({ ticker, onClick }: { ticker: string; onClick: () => void }) {
+  if (!ticker.trim()) {
+    return (
+      <div className="flex items-center justify-center bg-[#121214] px-1 py-1.5 text-xs text-zinc-700">
+        —
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-center bg-[#121214] px-1 py-1.5">
+      <button
+        type="button"
+        onClick={onClick}
+        className="rounded p-1 text-zinc-400 hover:bg-white/10 hover:text-emerald-400"
+        title="Save to sample set"
+        aria-label="Save to sample set"
+      >
+        <Plus className="h-3.5 w-3.5" />
       </button>
     </div>
   );
