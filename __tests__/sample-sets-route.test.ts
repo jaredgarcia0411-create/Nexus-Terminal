@@ -4,10 +4,12 @@ const {
   requireUserMock,
   ensureUserMock,
   getDbMock,
+  getPoolDbMock,
 } = vi.hoisted(() => ({
   requireUserMock: vi.fn(),
   ensureUserMock: vi.fn(),
   getDbMock: vi.fn(),
+  getPoolDbMock: vi.fn(),
 }));
 
 vi.mock('@/lib/server-db-utils', () => ({
@@ -18,6 +20,7 @@ vi.mock('@/lib/server-db-utils', () => ({
 
 vi.mock('@/lib/db', () => ({
   getDb: getDbMock,
+  getPoolDb: getPoolDbMock,
 }));
 
 import { GET as getSampleSets, POST as postSampleSet } from '@/app/api/sample-sets/route';
@@ -36,6 +39,9 @@ function createDbMock(options: {
   const selectQueue = [...(options.selectQueue ?? [])];
   const insertResult = options.insertResult ?? [];
   const updateResult = options.updateResult ?? [];
+  const insertValuesMock = vi.fn(() => ({
+    returning: vi.fn(() => Promise.resolve(insertResult)),
+  }));
 
   return {
     select: vi.fn(() => {
@@ -53,9 +59,7 @@ function createDbMock(options: {
       return chain;
     }),
     insert: vi.fn(() => ({
-      values: vi.fn(() => ({
-        returning: vi.fn(() => Promise.resolve(insertResult)),
-      })),
+      values: insertValuesMock,
     })),
     update: vi.fn(() => ({
       set: vi.fn(() => ({
@@ -67,6 +71,44 @@ function createDbMock(options: {
     delete: vi.fn(() => ({
       where: vi.fn(() => Promise.resolve()),
     })),
+    _mocks: {
+      insertValuesMock,
+    },
+  };
+}
+
+function createPoolDbMock(options: {
+  lockRows?: Array<{ id: string; rows: unknown }>;
+  selectQueue?: unknown[][];
+  updateResult?: unknown[];
+}) {
+  const updateResult = options.updateResult ?? [];
+  const lockRows = options.lockRows ?? [];
+  const selectQueue = [...(options.selectQueue ?? [])];
+
+  const tx = {
+    execute: vi.fn(async () => ({ rows: lockRows })),
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn(() => Promise.resolve(selectQueue.shift() ?? [])),
+        })),
+      })),
+    })),
+    update: vi.fn(() => ({
+      set: vi.fn(() => ({
+        where: vi.fn(() => ({
+          returning: vi.fn(() => Promise.resolve(updateResult)),
+        })),
+      })),
+    })),
+  };
+
+  return {
+    transaction: vi.fn(async (fn: (txArg: typeof tx) => Promise<unknown>) => fn(tx)),
+    _mocks: {
+      tx,
+    },
   };
 }
 
@@ -104,7 +146,7 @@ describe('sample set routes', () => {
   });
 
   it('POST /api/sample-sets creates a sample set with rows', async () => {
-    getDbMock.mockReturnValue(createDbMock({
+    const db = createDbMock({
       selectQueue: [[]],
       insertResult: [{
         id: 'ss-1',
@@ -113,7 +155,8 @@ describe('sample set routes', () => {
         rows: [{ ticker: 'AAPL', date: '2026-05-01' }],
         rowCount: 1,
       }],
-    }));
+    });
+    getDbMock.mockReturnValue(db);
 
     const response = ensureResponse(await postSampleSet(new Request('http://localhost/api/sample-sets', {
       method: 'POST',
@@ -127,6 +170,53 @@ describe('sample set routes', () => {
 
     expect(response.status).toBe(201);
     expect(payload.sampleSet.rowCount).toBe(1);
+    expect(payload.skippedCount).toBe(0);
+    expect(db._mocks.insertValuesMock).toHaveBeenCalledWith(expect.objectContaining({
+      rows: [{ ticker: 'AAPL', date: '2026-05-01' }],
+      rowCount: 1,
+    }));
+  });
+
+  it('POST /api/sample-sets dedupes in-batch rows', async () => {
+    const db = createDbMock({
+      selectQueue: [[]],
+      insertResult: [{
+        id: 'ss-1',
+        userId: 'user-1',
+        name: 'Gappers',
+        rows: [
+          { ticker: 'AAPL', date: '2026-05-01' },
+          { ticker: 'TSLA', date: '2026-05-02' },
+        ],
+        rowCount: 2,
+      }],
+    });
+    getDbMock.mockReturnValue(db);
+
+    const response = ensureResponse(await postSampleSet(new Request('http://localhost/api/sample-sets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Gappers',
+        rows: [
+          { ticker: 'aapl', date: '2026-05-01' },
+          { ticker: 'AAPL', date: '2026-05-01' },
+          { ticker: 'TSLA', date: '2026-05-02' },
+        ],
+      }),
+    })));
+    const payload = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(payload.sampleSet.rowCount).toBe(2);
+    expect(payload.skippedCount).toBe(1);
+    expect(db._mocks.insertValuesMock).toHaveBeenCalledWith(expect.objectContaining({
+      rows: [
+        { ticker: 'AAPL', date: '2026-05-01' },
+        { ticker: 'TSLA', date: '2026-05-02' },
+      ],
+      rowCount: 2,
+    }));
   });
 
   it('POST /api/sample-sets returns 409 on name collision', async () => {
@@ -216,6 +306,105 @@ describe('sample set routes', () => {
 
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ error: 'Forbidden' });
+  });
+
+  it('PATCH appendRows succeeds for non-owner', async () => {
+    getPoolDbMock.mockReturnValue(createPoolDbMock({
+      lockRows: [{ id: 'ss-1', rows: [] }],
+      updateResult: [{
+        id: 'ss-1',
+        userId: 'user-2',
+        name: 'Shared',
+        rows: [{ ticker: 'AAPL', date: '2026-05-01' }],
+        rowCount: 1,
+      }],
+    }));
+
+    const response = ensureResponse(await patchSampleSet(new Request('http://localhost/api/sample-sets/ss-1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appendRows: [{ ticker: 'AAPL', date: '2026-05-01' }] }),
+    }), {
+      params: Promise.resolve({ id: 'ss-1' }),
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.sampleSet.rowCount).toBe(1);
+    expect(payload.skippedCount).toBe(0);
+  });
+
+  it('PATCH appendRows dedupes against existing rows', async () => {
+    const poolDb = createPoolDbMock({
+      lockRows: [{ id: 'ss-1', rows: [{ ticker: 'AAPL', date: '2026-05-01' }] }],
+      updateResult: [{
+        id: 'ss-1',
+        rows: [
+          { ticker: 'AAPL', date: '2026-05-01' },
+          { ticker: 'TSLA', date: '2026-05-02' },
+        ],
+        rowCount: 2,
+      }],
+    });
+    getPoolDbMock.mockReturnValue(poolDb);
+
+    const response = ensureResponse(await patchSampleSet(new Request('http://localhost/api/sample-sets/ss-1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        appendRows: [
+          { ticker: 'AAPL', date: '2026-05-01' },
+          { ticker: 'TSLA', date: '2026-05-02' },
+        ],
+      }),
+    }), {
+      params: Promise.resolve({ id: 'ss-1' }),
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.skippedCount).toBe(1);
+    expect(payload.sampleSet.rowCount).toBe(2);
+    expect(poolDb._mocks.tx.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('PATCH appendRows on missing set returns 404', async () => {
+    getPoolDbMock.mockReturnValue(createPoolDbMock({ lockRows: [] }));
+
+    const response = ensureResponse(await patchSampleSet(new Request('http://localhost/api/sample-sets/ss-1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appendRows: [{ ticker: 'AAPL', date: '2026-05-01' }] }),
+    }), {
+      params: Promise.resolve({ id: 'ss-1' }),
+    }));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Sample set not found' });
+  });
+
+  it('PATCH appendRows with rename keeps owner-only name collisions at 409', async () => {
+    getPoolDbMock.mockReturnValue(createPoolDbMock({
+      lockRows: [{ id: 'ss-1', rows: [] }],
+      selectQueue: [
+        [{ userId: 'user-1' }],
+        [{ id: 'ss-existing' }],
+      ],
+    }));
+
+    const response = ensureResponse(await patchSampleSet(new Request('http://localhost/api/sample-sets/ss-1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Existing',
+        appendRows: [{ ticker: 'AAPL', date: '2026-05-01' }],
+      }),
+    }), {
+      params: Promise.resolve({ id: 'ss-1' }),
+    }));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'A sample set with that name already exists' });
   });
 
   it('DELETE /api/sample-sets/[id] returns 403 when not owner', async () => {

@@ -19,6 +19,11 @@ export const sampleSetDuplicateSchema = z.object({
   name: z.string().trim().min(1, 'name is required').max(100),
 });
 
+export const sampleSetFromTagsSchema = z.object({
+  tags: z.array(z.string().trim().min(1)).min(1, 'at least one tag is required').max(20),
+});
+
 export type SampleSetCreateBody = z.infer<typeof sampleSetCreateSchema>;
 export type SampleSetPatchBody = z.infer<typeof sampleSetPatchSchema>;
 export type SampleSetDuplicateBody = z.infer<typeof sampleSetDuplicateSchema>;
+export type SampleSetFromTagsBody = z.infer<typeof sampleSetFromTagsSchema>;

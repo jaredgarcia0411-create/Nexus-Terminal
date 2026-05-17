@@ -3,6 +3,7 @@ import { desc, eq, sql } from 'drizzle-orm';
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { sampleSets, users } from '@/lib/db/schema';
+import { dedupeRows } from '@/lib/sample-set-rows';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { sampleSetCreateSchema } from '@/lib/validations/sample-sets';
 
@@ -60,18 +61,20 @@ export async function POST(request: Request) {
       return Response.json({ error: 'A sample set with that name already exists' }, { status: 409 });
     }
 
+    const { rows: dedupedRows, skippedCount } = dedupeRows(body.rows);
+
     const [created] = await db
       .insert(sampleSets)
       .values({
         userId: authState.user.id,
         name: body.name,
-        rows: body.rows,
-        rowCount: body.rows.length,
+        rows: dedupedRows,
+        rowCount: dedupedRows.length,
         updatedAt: new Date(),
       })
       .returning();
 
-    return Response.json({ sampleSet: created }, { status: 201 });
+    return Response.json({ sampleSet: created, skippedCount }, { status: 201 });
   } catch (error) {
     logRouteError('sample-sets.post', error);
     return internalServerError();
