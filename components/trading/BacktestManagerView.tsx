@@ -361,19 +361,19 @@ export default function BacktestManagerView({
                         <h3 className="truncate font-mono text-sm font-semibold text-white">{sampleSet.name}</h3>
                         <p className="text-xs text-zinc-500">{sampleSet.rowCount} rows</p>
                       </div>
-                      {isOwner ? (
-                        <div className="flex shrink-0 items-center gap-2">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={() => setAppendRowsTarget(sampleSet)}
-                            aria-label={`Add Row to ${sampleSet.name}`}
-                            title="Add Row"
-                            className={addIconButtonClass}
-                          >
-                            <Plus className="size-4" />
-                          </Button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => setAppendRowsTarget(sampleSet)}
+                          aria-label={`Add Row to ${sampleSet.name}`}
+                          title="Add Row"
+                          className={addIconButtonClass}
+                        >
+                          <Plus className="size-4" />
+                        </Button>
+                        {isOwner ? (
                           <Button
                             type="button"
                             variant="ghost"
@@ -385,8 +385,8 @@ export default function BacktestManagerView({
                           >
                             <Trash2 className="size-4" />
                           </Button>
-                        </div>
-                      ) : null}
+                        ) : null}
+                      </div>
                     </div>
                   </article>
                 );
@@ -424,7 +424,7 @@ export default function BacktestManagerView({
           sampleSetName={appendRowsTarget.name}
           onSubmit={async (rows) => {
             await appendSampleSetRows(appendRowsTarget.id, rows);
-            toast.success('Row added');
+            toast.success(rows.length === 1 ? 'Row added' : 'Rows added');
           }}
         />
       ) : null}

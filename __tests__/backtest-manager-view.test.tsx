@@ -5,6 +5,15 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type RecentOwnerReview = { id: string; ticker: string; date: string } | null;
+type SampleSetSeed = {
+  id: string;
+  name: string;
+  ownerId: string;
+  ownerName: string | null;
+  rowCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
 
 const { hookSeed } = vi.hoisted(() => ({
   hookSeed: {
@@ -38,7 +47,7 @@ const { hookSeed } = vi.hoisted(() => ({
         recentOwnerReview: null as RecentOwnerReview,
       },
     ],
-    sampleSets: [],
+    sampleSets: [] as SampleSetSeed[],
     recentUncategorizedReview: null as RecentOwnerReview,
     isLoading: false,
     error: null as string | null,
@@ -153,6 +162,12 @@ vi.mock('@/hooks/use-backtest-manager', async () => {
           return Date.parse(b.updatedAt ?? '') - Date.parse(a.updatedAt ?? '');
         });
 
+      const filteredSampleSets = hookSeed.sampleSets.filter((item) => {
+        const query = sampleSetSearch.trim().toLowerCase();
+        if (!query) return true;
+        return [item.name, item.ownerName ?? ''].some((value) => value.toLowerCase().includes(query));
+      });
+
       return {
         backtests: hookSeed.backtests,
         sampleSets: hookSeed.sampleSets,
@@ -167,12 +182,13 @@ vi.mock('@/hooks/use-backtest-manager', async () => {
         sortKey,
         setSortKey,
         filteredBacktests,
-        filteredSampleSets: [],
+        filteredSampleSets,
         currentUserId: hookSeed.currentUserId,
         createBacktest: vi.fn(),
         updateBacktest: vi.fn(),
         deleteBacktest: vi.fn(),
         createSampleSet: vi.fn(),
+        appendSampleSetRows: vi.fn(),
         deleteSampleSet: vi.fn(),
         duplicateSampleSet: vi.fn(),
       };
@@ -188,6 +204,13 @@ vi.mock('@/components/trading/NewBacktestDialog', () => ({
 vi.mock('@/components/trading/AddSampleSetDialog', () => ({
   __esModule: true,
   default: ({ open }: { open: boolean }) => (open ? <div>Add Sample Dialog</div> : null),
+}));
+
+vi.mock('@/components/trading/AddSampleSetRowsDialog', () => ({
+  __esModule: true,
+  default: ({ open, sampleSetName }: { open: boolean; sampleSetName: string }) => (
+    open ? <div>Add Rows Dialog {sampleSetName}</div> : null
+  ),
 }));
 
 vi.mock('@/components/trading/EditBacktestDialog', () => ({
@@ -230,8 +253,10 @@ describe('BacktestManagerView', () => {
       },
     ];
     hookSeed.recentUncategorizedReview = null;
+    hookSeed.sampleSets = [];
     hookSeed.isLoading = false;
     hookSeed.error = null;
+    hookSeed.currentUserId = 'me';
   });
 
   it('renders backtest cards with names and authors', () => {
@@ -290,5 +315,39 @@ describe('BacktestManagerView', () => {
     render(<BacktestManagerView onLaunchChart={vi.fn()} onOpenLastChart={vi.fn()} onViewStats={vi.fn()} />);
 
     expect(screen.getByText('No backtests yet. Create one to get started.')).toBeTruthy();
+  });
+
+  it('lets non-owners add rows to sample sets but hides delete', () => {
+    hookSeed.sampleSets = [
+      {
+        id: 'ss-owned',
+        name: 'Owned Set',
+        ownerId: 'me',
+        ownerName: 'Me',
+        rowCount: 2,
+        createdAt: '2026-05-01T00:00:00.000Z',
+        updatedAt: '2026-05-02T00:00:00.000Z',
+      },
+      {
+        id: 'ss-shared',
+        name: 'Shared Set',
+        ownerId: 'other',
+        ownerName: 'Other',
+        rowCount: 4,
+        createdAt: '2026-05-01T00:00:00.000Z',
+        updatedAt: '2026-05-02T00:00:00.000Z',
+      },
+    ];
+
+    render(<BacktestManagerView onLaunchChart={vi.fn()} onOpenLastChart={vi.fn()} onViewStats={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Add Row to Owned Set' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add Row to Shared Set' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete Owned Set' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Delete Shared Set' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Row to Shared Set' }));
+
+    expect(screen.getByText('Add Rows Dialog Shared Set')).toBeTruthy();
   });
 });

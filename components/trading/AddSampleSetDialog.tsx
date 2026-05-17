@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { useEffect, useState } from 'react';
 
+import SampleSetRowsBuilder from '@/components/trading/SampleSetRowsBuilder';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -12,22 +13,23 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { parseSampleSetCsv, type SampleSetRow } from '@/lib/sample-set-csv';
+import type { SampleSetRow } from '@/lib/sample-set-csv';
 
 interface AddSampleSetDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (body: { name: string; rows: SampleSetRow[] }) => Promise<void>;
+  initialSeedRows?: SampleSetRow[];
 }
 
 export default function AddSampleSetDialog({
   open,
   onOpenChange,
   onSubmit,
+  initialSeedRows,
 }: AddSampleSetDialogProps) {
   const [name, setName] = useState('');
   const [rows, setRows] = useState<SampleSetRow[]>([]);
-  const [skippedCount, setSkippedCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -35,29 +37,10 @@ export default function AddSampleSetDialog({
     if (!open) {
       setName('');
       setRows([]);
-      setSkippedCount(0);
       setError(null);
       setIsSubmitting(false);
     }
   }, [open]);
-
-  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-
-    try {
-      const text = await file.text();
-      const parsed = parseSampleSetCsv(text);
-      setRows(parsed.rows);
-      setSkippedCount(parsed.skippedCount);
-      setError(parsed.rows.length === 0 ? 'No valid rows found' : null);
-    } catch (parseError) {
-      setRows([]);
-      setSkippedCount(0);
-      setError(parseError instanceof Error ? parseError.message : 'Could not parse CSV');
-    }
-  };
 
   const handleSubmit = async () => {
     const trimmedName = name.trim();
@@ -66,7 +49,7 @@ export default function AddSampleSetDialog({
       return;
     }
     if (rows.length === 0) {
-      setError('No valid rows found');
+      setError('Stage at least one row');
       return;
     }
 
@@ -77,7 +60,12 @@ export default function AddSampleSetDialog({
       await onSubmit({ name: trimmedName, rows });
       onOpenChange(false);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Could not create sample set');
+      const message = submitError instanceof Error ? submitError.message : 'Could not create sample set';
+      setError(
+        message.includes('A sample set with that name already exists')
+          ? 'A sample set with that name already exists. Rename it or use Add Row from Backtest Manager.'
+          : message,
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -85,7 +73,7 @@ export default function AddSampleSetDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-white/10 bg-[#121214] text-white sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto border-white/10 bg-[#121214] text-white sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Add Sample Set</DialogTitle>
         </DialogHeader>
@@ -101,21 +89,11 @@ export default function AddSampleSetDialog({
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="sample-set-file">CSV</Label>
-            <Input
-              id="sample-set-file"
-              type="file"
-              accept=".csv,text/csv"
-              onChange={handleFileChange}
-              className="border-white/10 bg-white/5 text-zinc-100 file:mr-3 file:border-0 file:bg-transparent file:text-zinc-300"
-            />
-            <p className="text-xs text-zinc-500">
-              {rows.length > 0
-                ? `Imported ${rows.length} rows, skipped ${skippedCount} (invalid).`
-                : 'CSV must include ticker and date columns.'}
-            </p>
-          </div>
+          <SampleSetRowsBuilder
+            rows={rows}
+            onChange={setRows}
+            initialSeed={initialSeedRows}
+          />
 
           {error ? <p className="text-sm text-rose-400">{error}</p> : null}
         </div>

@@ -459,7 +459,7 @@ export async function POST(request: Request) {
   - `npx tsc --noEmit` passed.
   - `npm test` passed: 91 files, 658 tests.
   - `npm run workflow:audit` passed.
-- Step 7 and later remain unopened.
+- Steps 7-11 were completed in the next checkpoint below. Step 12 and later remain unopened.
 
 ---
 
@@ -887,6 +887,23 @@ export default function SampleSetRowsBuilder({
 - [ ] Non-owner sees "+ Add Row" on every sample set; clicking opens `AddSampleSetRowsDialog`.
 - [ ] Non-owner does not see the Delete trash icon.
 - [ ] Owner sees both.
+
+---
+
+### Steps 7-11 Checkpoint Status (2026-05-16)
+
+- Verified `hooks/use-backtest-manager.ts` already returns `currentUserId`; no hook code change was required for Step 7.
+- Added shared `components/trading/SampleSetRowsBuilder.tsx` with CSV, manual, tags, deduped staging, duplicate/invalid skip feedback, per-row removal, and optional seed rows.
+- Refactored `AddSampleSetDialog` and `AddSampleSetRowsDialog` to use the shared builder while preserving existing call-site contracts.
+- Updated `BacktestManagerView` so every sample set shows the append button while delete remains owner-only.
+- Added focused Backtest Manager coverage for non-owner append visibility and owner-only delete.
+- Validation completed for this checkpoint:
+  - `npx vitest run __tests__/sample-sets-route.test.ts __tests__/sample-sets-from-tags-route.test.ts __tests__/backtest-manager-view.test.tsx` passed: 3 files, 24 tests.
+  - `npm run lint` passed.
+  - `npx tsc --noEmit` passed.
+  - `npm test` passed: 91 files, 659 tests.
+  - `npm run workflow:audit` passed.
+- Step 12 and later remain unopened.
 
 ---
 
