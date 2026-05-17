@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Eye, LineChart, Plus, Trash2, X } from 'lucide-react';
+import { FileText, LineChart, Plus, Trash2, X } from 'lucide-react';
 
 import WatchlistSavePicker from '@/components/trading/WatchlistSavePicker';
 import WatchlistReportInline from '@/components/trading/WatchlistReportInline';
@@ -615,9 +615,6 @@ function SelectCell({ checked, onChange }: { checked: boolean; onChange: () => v
   );
 }
 
-// Renders the eye-icon button when the row has a saved reportId; otherwise a
-// muted dash. Toggled state controls the icon's emerald tint so the user can
-// see at a glance which row's report is currently expanded.
 function ReportCell({
   reportId,
   reportOpen,
@@ -640,14 +637,14 @@ function ReportCell({
       <button
         type="button"
         onClick={onToggle}
-        className={`rounded p-1 hover:bg-white/10 ${
-          reportOpen ? 'text-emerald-400' : 'text-zinc-400 hover:text-zinc-200'
+        className={`rounded-md p-1 hover:bg-white/10 ${
+          reportOpen ? 'text-emerald-400' : 'text-emerald-500 hover:text-emerald-400'
         }`}
         title={reportOpen ? 'Hide Report' : 'Show Report'}
         aria-label={reportOpen ? 'Hide Report' : 'Show Report'}
         aria-expanded={reportOpen}
       >
-        <Eye className="h-3.5 w-3.5" />
+        <FileText className="h-4 w-4" />
       </button>
     </div>
   );
@@ -679,14 +676,14 @@ function ChartCell({
       <button
         type="button"
         onClick={onToggle}
-        className={`rounded p-1 hover:bg-white/10 ${
-          chartOpen ? 'text-emerald-400' : 'text-zinc-400 hover:text-zinc-200'
+        className={`rounded-md p-1 hover:bg-white/10 ${
+          chartOpen ? 'text-emerald-400' : 'text-emerald-500 hover:text-emerald-400'
         }`}
         title={chartOpen ? 'Hide Chart' : 'Show Chart'}
         aria-label={chartOpen ? 'Hide Chart' : 'Show Chart'}
         aria-expanded={chartOpen}
       >
-        <LineChart className="h-3.5 w-3.5" />
+        <LineChart className="h-4 w-4" />
       </button>
     </div>
   );
@@ -706,11 +703,11 @@ function SaveCell({ ticker, onClick }: { ticker: string; onClick: () => void }) 
       <button
         type="button"
         onClick={onClick}
-        className="rounded p-1 text-zinc-400 hover:bg-white/10 hover:text-emerald-400"
+        className="rounded-md p-1 text-emerald-500 hover:bg-white/10 hover:text-emerald-400"
         title="Save to sample set"
         aria-label="Save to sample set"
       >
-        <Plus className="h-3.5 w-3.5" />
+        <Plus className="h-4 w-4" />
       </button>
     </div>
   );
