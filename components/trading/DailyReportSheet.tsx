@@ -285,6 +285,7 @@ export default function DailyReportSheet({
               value={watchlist}
               onChange={effectiveReadOnly ? undefined : setWatchlist}
               readOnly={effectiveReadOnly}
+              date={date ?? undefined}
             />
 
             {editingTemplate && !isExistingReport && !readOnly ? (

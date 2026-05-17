@@ -368,8 +368,8 @@ export default function BacktestManagerView({
                             variant="ghost"
                             size="icon-xs"
                             onClick={() => setAppendRowsTarget(sampleSet)}
-                            aria-label={`Add row to ${sampleSet.name}`}
-                            title="Add row"
+                            aria-label={`Add Row to ${sampleSet.name}`}
+                            title="Add Row"
                             className={addIconButtonClass}
                           >
                             <Plus className="size-4" />

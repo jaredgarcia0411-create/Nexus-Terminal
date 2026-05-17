@@ -96,7 +96,7 @@ export default function AddSampleSetRowsDialog({
               type="date"
               value={date}
               onChange={(event) => setDate(event.target.value)}
-              className="border-white/10 bg-white/5 text-zinc-100"
+              className="border-white/10 bg-white/5 text-zinc-100 [color-scheme:dark]"
             />
           </div>
 

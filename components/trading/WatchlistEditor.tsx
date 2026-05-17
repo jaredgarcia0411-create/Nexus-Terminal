@@ -1,9 +1,11 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Eye, Plus, Trash2, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { Eye, LineChart, Plus, Trash2, X } from 'lucide-react';
 
 import WatchlistReportInline from '@/components/trading/WatchlistReportInline';
+import WatchlistTickerChart from '@/components/trading/WatchlistTickerChart';
 import {
   Command,
   CommandEmpty,
@@ -42,6 +44,11 @@ interface WatchlistEditorProps {
   onChange?: (next: WatchlistRow[]) => void;
   readOnly?: boolean;
   emptyState?: string;
+  // YYYY-MM-DD of the daily review this watchlist belongs to. When provided,
+  // the Chart column renders and each row can expand an inline chart for that
+  // ticker on that day. Weekly aggregated watchlists pass no date — those rows
+  // don't have a single consistent session, so the Chart column is omitted.
+  date?: string;
 }
 
 function newRowId(): string {
@@ -62,6 +69,7 @@ export default function WatchlistEditor({
   onChange,
   readOnly = false,
   emptyState = 'No tickers on the watchlist yet.',
+  date,
 }: WatchlistEditorProps) {
   const [theses, setTheses] = useState<string[]>([]);
   // Track which row's thesis popover is open. Only one open at a time.
@@ -69,7 +77,10 @@ export default function WatchlistEditor({
   const [thesisQuery, setThesisQuery] = useState('');
   // Which watchlist row currently has its saved-report viewer expanded. Only one open at a time.
   const [reportOpenForRow, setReportOpenForRow] = useState<string | null>(null);
+  // Mirrors reportOpenForRow but for the inline candlestick chart panel.
+  const [chartOpenForRow, setChartOpenForRow] = useState<string | null>(null);
   const fieldIdPrefix = useId();
+  const showChartColumn = Boolean(date);
 
   // Load saved theses on mount; we re-fetch when this component remounts inside a
   // newly-opened sheet, which matches the rest of the app.
@@ -151,14 +162,17 @@ export default function WatchlistEditor({
   const rowCount = value.length;
   const showEmpty = rowCount === 0;
 
-  // Grid template: ticker (narrow) · thesis · grade (narrow) · notes (wide) · report (icon) · delete (icon).
+  // Grid template: ticker (narrow) · thesis · grade (narrow) · notes (wide) · report · [chart] · [delete].
   // Inline style instead of a Tailwind arbitrary class so the JIT scanner can't
   // miss the new column count — we hit that exact issue in WeeklyTradesPanel.
   // The delete column is editable-only; report column is always present and
-  // shows a dash for rows without a saved reportId.
-  const gridTemplateColumns = readOnly
-    ? '80px minmax(140px, 1fr) 70px minmax(160px, 2fr) 28px'
-    : '80px minmax(140px, 1fr) 70px minmax(160px, 2fr) 28px 28px';
+  // shows a dash for rows without a saved reportId. The chart column only
+  // appears when `date` is provided (daily reviews). Report/Chart widths fit
+  // the new "Report"/"Chart" header labels.
+  const baseColumns = '80px minmax(140px, 1fr) 70px minmax(160px, 2fr) 56px';
+  const chartColumn = showChartColumn ? ' 56px' : '';
+  const deleteColumn = readOnly ? '' : ' 28px';
+  const gridTemplateColumns = `${baseColumns}${chartColumn}${deleteColumn}`;
 
   return (
     <section className="space-y-2 rounded-xl border border-white/10 bg-white/[0.02] p-4">
@@ -178,21 +192,27 @@ export default function WatchlistEditor({
 
       <div className="overflow-hidden rounded-lg border border-white/10">
         <div className="grid gap-px bg-white/10" style={{ gridTemplateColumns }}>
-          <div className="bg-[#121214] px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          {/* Headers a step smaller than body text (text-xs / 12px). Body cells stay at text-sm (Notes column). */}
+          <div className="bg-[#121214] px-3 py-2 text-xs font-semibold text-white">
             Ticker
           </div>
-          <div className="bg-[#121214] px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          <div className="bg-[#121214] px-3 py-2 text-xs font-semibold text-white">
             Thesis
           </div>
-          <div className="bg-[#121214] px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          <div className="bg-[#121214] px-3 py-2 text-xs font-semibold text-white">
             Grade
           </div>
-          <div className="bg-[#121214] px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          <div className="bg-[#121214] px-3 py-2 text-xs font-semibold text-white">
             Notes
           </div>
-          <div className="bg-[#121214] px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-            Rpt
+          <div className="bg-[#121214] px-1 py-2 text-center text-xs font-semibold text-white">
+            Report
           </div>
+          {showChartColumn ? (
+            <div className="bg-[#121214] px-1 py-2 text-center text-xs font-semibold text-white">
+              Chart
+            </div>
+          ) : null}
           {!readOnly ? <div className="bg-[#121214]" /> : null}
 
           {showEmpty ? (
@@ -214,6 +234,8 @@ export default function WatchlistEditor({
                   thesisOpen={thesisOpenForRow === row.id}
                   thesisQuery={thesisOpenForRow === row.id ? thesisQuery : ''}
                   reportOpen={reportOpenForRow === row.id}
+                  chartOpen={chartOpenForRow === row.id}
+                  showChartColumn={showChartColumn}
                   onOpenThesis={(open) => {
                     setThesisOpenForRow(open ? row.id : null);
                     if (!open) setThesisQuery('');
@@ -223,20 +245,53 @@ export default function WatchlistEditor({
                   onDeleteThesisOption={(name) => void deleteThesisOption(name)}
                   onChangeRow={(patch) => updateRow(row.id, patch)}
                   onRemoveRow={() => removeRow(row.id)}
-                  onToggleReport={() =>
-                    setReportOpenForRow((current) => (current === row.id ? null : row.id))
-                  }
+                  onToggleReport={() => {
+                    setReportOpenForRow((current) => (current === row.id ? null : row.id));
+                    // Only one panel open per row at a time — opening the report closes the chart.
+                    setChartOpenForRow((current) => (current === row.id ? null : current));
+                  }}
+                  onToggleChart={() => {
+                    setChartOpenForRow((current) => (current === row.id ? null : row.id));
+                    setReportOpenForRow((current) => (current === row.id ? null : current));
+                  }}
                   tickerInputId={`${fieldIdPrefix}-${row.id}-ticker`}
                   notesInputId={`${fieldIdPrefix}-${row.id}-notes`}
                 />
-                {reportOpenForRow === row.id && row.reportId ? (
-                  <div
-                    className="bg-[#121214] p-3"
-                    style={{ gridColumn: '1 / -1' }}
-                  >
-                    <WatchlistReportInline reportId={row.reportId} />
-                  </div>
-                ) : null}
+                {/* AnimatePresence fades the inline report/chart panels in and out.
+                    `initial`/`animate`/`exit` opacity drives the transition; `mode="wait"`
+                    isn't needed because we render each row's panel independently. */}
+                <AnimatePresence initial={false}>
+                  {reportOpenForRow === row.id && row.reportId ? (
+                    <motion.div
+                      key={`report-${row.id}`}
+                      className="overflow-hidden bg-[#121214]"
+                      style={{ gridColumn: '1 / -1' }}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                    >
+                      <div className="p-3">
+                        <WatchlistReportInline reportId={row.reportId} />
+                      </div>
+                    </motion.div>
+                  ) : null}
+                  {chartOpenForRow === row.id && showChartColumn && date && row.ticker ? (
+                    <motion.div
+                      key={`chart-${row.id}`}
+                      className="overflow-hidden bg-[#121214]"
+                      style={{ gridColumn: '1 / -1' }}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                    >
+                      <div className="p-3">
+                        <WatchlistTickerChart ticker={row.ticker} date={date} />
+                      </div>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
               </Fragment>
             ))
           )}
@@ -253,6 +308,8 @@ interface RowCellsProps {
   thesisOpen: boolean;
   thesisQuery: string;
   reportOpen: boolean;
+  chartOpen: boolean;
+  showChartColumn: boolean;
   onOpenThesis: (open: boolean) => void;
   onThesisQueryChange: (next: string) => void;
   onPickThesis: (name: string) => void;
@@ -260,6 +317,7 @@ interface RowCellsProps {
   onChangeRow: (patch: Partial<WatchlistRow>) => void;
   onRemoveRow: () => void;
   onToggleReport: () => void;
+  onToggleChart: () => void;
   tickerInputId: string;
   notesInputId: string;
 }
@@ -271,6 +329,8 @@ function RowCells({
   thesisOpen,
   thesisQuery,
   reportOpen,
+  chartOpen,
+  showChartColumn,
   onOpenThesis,
   onThesisQueryChange,
   onPickThesis,
@@ -278,6 +338,7 @@ function RowCells({
   onChangeRow,
   onRemoveRow,
   onToggleReport,
+  onToggleChart,
   tickerInputId,
   notesInputId,
 }: RowCellsProps) {
@@ -293,15 +354,18 @@ function RowCells({
   if (readOnly) {
     return (
       <>
-        <div className={`${cellBase} font-mono text-xs font-semibold text-zinc-100`}>
+        <div className={`${cellBase} font-mono text-sm font-semibold text-zinc-100`}>
           {row.ticker || '—'}
         </div>
-        <div className={`${cellBase} text-xs text-zinc-200`}>{row.thesis || '—'}</div>
-        <div className={`${cellBase} text-xs text-zinc-200`}>{row.grade || '—'}</div>
+        <div className={`${cellBase} text-sm text-zinc-200`}>{row.thesis || '—'}</div>
+        <div className={`${cellBase} text-sm text-zinc-200`}>{row.grade || '—'}</div>
         <div className={`${cellBase} whitespace-pre-wrap text-sm text-zinc-300`}>
           {row.notes || '—'}
         </div>
         <ReportCell reportId={row.reportId} reportOpen={reportOpen} onToggle={onToggleReport} />
+        {showChartColumn ? (
+          <ChartCell ticker={row.ticker} chartOpen={chartOpen} onToggle={onToggleChart} />
+        ) : null}
       </>
     );
   }
@@ -314,7 +378,7 @@ function RowCells({
           value={row.ticker}
           onChange={(event) => onChangeRow({ ticker: event.target.value.toUpperCase() })}
           placeholder="AAPL"
-          className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-xs uppercase text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500/40 focus:outline-none"
+          className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-sm uppercase text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500/40 focus:outline-none"
         />
       </div>
 
@@ -323,7 +387,7 @@ function RowCells({
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="w-full truncate rounded border border-transparent px-1 py-0.5 text-left text-xs text-zinc-200 hover:border-emerald-500/30 hover:bg-white/5"
+              className="w-full truncate rounded border border-transparent px-1 py-0.5 text-left text-sm text-zinc-200 hover:border-emerald-500/30 hover:bg-white/5"
             >
               {row.thesis || <span className="text-zinc-600">Select thesis…</span>}
             </button>
@@ -386,7 +450,7 @@ function RowCells({
           value={row.grade || undefined}
           onValueChange={(value) => onChangeRow({ grade: value })}
         >
-          <SelectTrigger className="h-7 border-transparent bg-transparent px-1 text-xs text-zinc-200 hover:border-emerald-500/30 hover:bg-white/5">
+          <SelectTrigger className="h-7 border-transparent bg-transparent px-1 text-sm text-zinc-200 hover:border-emerald-500/30 hover:bg-white/5">
             <SelectValue placeholder="—" />
           </SelectTrigger>
           <SelectContent className="border-white/10 bg-[#18181b] text-white">
@@ -408,6 +472,10 @@ function RowCells({
       </div>
 
       <ReportCell reportId={row.reportId} reportOpen={reportOpen} onToggle={onToggleReport} />
+
+      {showChartColumn ? (
+        <ChartCell ticker={row.ticker} chartOpen={chartOpen} onToggle={onToggleChart} />
+      ) : null}
 
       <div className={`${cellBase} flex items-center justify-center`}>
         <button
@@ -452,11 +520,50 @@ function ReportCell({
         className={`rounded p-1 hover:bg-white/10 ${
           reportOpen ? 'text-emerald-400' : 'text-zinc-400 hover:text-zinc-200'
         }`}
-        title={reportOpen ? 'Hide saved report' : 'View saved report'}
-        aria-label={reportOpen ? 'Hide saved report' : 'View saved report'}
+        title={reportOpen ? 'Hide Report' : 'Show Report'}
+        aria-label={reportOpen ? 'Hide Report' : 'Show Report'}
         aria-expanded={reportOpen}
       >
         <Eye className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+// Chart-icon counterpart to ReportCell. Unlike the report viewer (which needs a
+// stored reportId), the chart only needs a ticker — any row with a non-empty
+// ticker can render a chart for the daily review's date. Empty ticker rows
+// show a muted dash so the column never looks broken.
+function ChartCell({
+  ticker,
+  chartOpen,
+  onToggle,
+}: {
+  ticker: string;
+  chartOpen: boolean;
+  onToggle: () => void;
+}) {
+  if (!ticker.trim()) {
+    return (
+      <div className="flex items-center justify-center bg-[#121214] px-1 py-1.5 text-xs text-zinc-700">
+        —
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-center bg-[#121214] px-1 py-1.5">
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`rounded p-1 hover:bg-white/10 ${
+          chartOpen ? 'text-emerald-400' : 'text-zinc-400 hover:text-zinc-200'
+        }`}
+        title={chartOpen ? 'Hide Chart' : 'Show Chart'}
+        aria-label={chartOpen ? 'Hide Chart' : 'Show Chart'}
+        aria-expanded={chartOpen}
+      >
+        <LineChart className="h-3.5 w-3.5" />
       </button>
     </div>
   );
