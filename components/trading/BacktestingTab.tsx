@@ -333,7 +333,7 @@ export default function BacktestingTab() {
                 <button
                   type="button"
                   onClick={() => setView({ kind: 'manager' })}
-                  className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5 hover:text-white"
+                  className="inline-flex h-7 items-center gap-0.5 rounded-md px-1.5 text-sm font-medium leading-none text-zinc-300 transition-colors hover:text-white"
                   aria-label="Back to backtest manager"
                   title="Back to backtest manager"
                 >
@@ -345,8 +345,8 @@ export default function BacktestingTab() {
               <div className="flex min-w-0 items-center justify-center gap-2">
                 {selected ? (
                   <>
-                    <span className="font-mono text-base font-semibold text-white">{selected.ticker}</span>
-                    <span className="font-mono text-sm tabular-nums text-zinc-500">{selected.date}</span>
+                    <span className="font-mono text-base font-semibold leading-none text-white">{selected.ticker}</span>
+                    <span className="font-mono text-sm leading-none tabular-nums text-zinc-500">{selected.date}</span>
                   </>
                 ) : null}
               </div>
@@ -355,7 +355,7 @@ export default function BacktestingTab() {
                 <button
                   type="button"
                   onClick={() => setRightCollapsed((current) => !current)}
-                  className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
                   title={rightCollapsed ? 'Expand panel' : 'Collapse panel'}
                   aria-label={rightCollapsed ? 'Expand panel' : 'Collapse panel'}
                 >

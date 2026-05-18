@@ -154,12 +154,12 @@ export default function BacktestManagerView({
 
   return (
     <section className="flex h-[calc(100dvh-6.5rem)] min-h-[620px] flex-1 flex-col overflow-hidden bg-[#0A0A0B]">
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-3 border-b border-white/10 px-4 py-1">
+      <div className="grid h-7 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-3 border-b border-white/10 px-4">
         <div className="flex min-w-0 items-center">
           <button
             type="button"
             onClick={onOpenLastChart}
-            className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5 hover:text-white"
+            className="inline-flex h-7 items-center gap-0.5 rounded-md px-1.5 text-sm font-medium leading-none text-zinc-300 transition-colors hover:text-white"
             aria-label="Back to charts"
             title="Back to charts"
           >
@@ -168,7 +168,7 @@ export default function BacktestManagerView({
           </button>
         </div>
         <div className="flex min-w-0 items-center justify-center">
-          <h2 className="font-mono text-lg font-semibold text-white">Backtest Manager</h2>
+          <h2 className="font-mono text-lg font-semibold leading-none text-white">Backtest Manager</h2>
         </div>
         <div />
       </div>
