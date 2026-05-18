@@ -38,6 +38,10 @@ export interface WatchlistRow {
   // research page. Points at a research_reports.id row so the eye-icon viewer
   // can fetch the exact report from that day — even months later.
   reportId?: string;
+  // YYYY-MM-DD of the daily review this row came from. Attached at aggregation
+  // time (e.g. weekly review) so each row carries its own session date for the
+  // Chart and Save columns when no editor-wide `date` prop is set.
+  sourceDate?: string;
 }
 
 interface WatchlistEditorProps {
@@ -84,8 +88,11 @@ export default function WatchlistEditor({
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [savePickerRows, setSavePickerRows] = useState<SampleSetRow[] | null>(null);
   const fieldIdPrefix = useId();
-  const showChartColumn = Boolean(date);
-  const showSaveColumn = Boolean(date);
+  // Show Chart/Save columns when the editor has a date (daily review) OR when
+  // individual rows carry their own sourceDate (weekly aggregated watchlist).
+  const hasRowDates = value.some((row) => Boolean(row.sourceDate));
+  const showChartColumn = Boolean(date) || hasRowDates;
+  const showSaveColumn = Boolean(date) || hasRowDates;
   const showSelectColumn = showSaveColumn && !readOnly;
 
   // Load saved theses on mount; we re-fetch when this component remounts inside a
@@ -151,15 +158,19 @@ export default function WatchlistEditor({
   }, []);
 
   const handleClickSave = useCallback((row: WatchlistRow) => {
-    if (!row.ticker.trim() || !date) return;
-    setSavePickerRows([{ ticker: row.ticker.toUpperCase(), date }]);
+    const effectiveDate = row.sourceDate ?? date;
+    if (!row.ticker.trim() || !effectiveDate) return;
+    setSavePickerRows([{ ticker: row.ticker.toUpperCase(), date: effectiveDate }]);
   }, [date]);
 
   const handleBulkSave = useCallback(() => {
-    if (!date) return;
     const targetRows = selectedRows
-      .filter((row) => row.ticker.trim())
-      .map((row) => ({ ticker: row.ticker.toUpperCase(), date }));
+      .map((row) => {
+        const effectiveDate = row.sourceDate ?? date;
+        if (!row.ticker.trim() || !effectiveDate) return null;
+        return { ticker: row.ticker.toUpperCase(), date: effectiveDate };
+      })
+      .filter((row): row is SampleSetRow => row !== null);
     if (targetRows.length === 0) return;
     setSavePickerRows(targetRows);
   }, [date, selectedRows]);
@@ -220,7 +231,7 @@ export default function WatchlistEditor({
   const gridTemplateColumns = `${selectColumn}${baseColumns}${chartColumn}${saveColumn}${deleteColumn}`;
 
   return (
-    <section className="space-y-2 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+    <section className="space-y-2">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-white">{title}</h3>
         {!readOnly ? (
@@ -356,7 +367,7 @@ export default function WatchlistEditor({
                       </div>
                     </motion.div>
                   ) : null}
-                  {chartOpenForRow === row.id && showChartColumn && date && row.ticker ? (
+                  {chartOpenForRow === row.id && showChartColumn && (row.sourceDate ?? date) && row.ticker ? (
                     <motion.div
                       key={`chart-${row.id}`}
                       className="overflow-hidden bg-[#121214]"
@@ -367,7 +378,7 @@ export default function WatchlistEditor({
                       transition={{ duration: 0.18, ease: 'easeOut' }}
                     >
                       <div className="p-3">
-                        <WatchlistTickerChart ticker={row.ticker} date={date} />
+                        <WatchlistTickerChart ticker={row.ticker} date={(row.sourceDate ?? date)!} />
                       </div>
                     </motion.div>
                   ) : null}
@@ -494,7 +505,7 @@ function RowCells({
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="w-full truncate rounded border border-transparent px-1 py-0.5 text-left text-sm text-zinc-200 hover:border-emerald-500/30 hover:bg-white/5"
+              className="w-full truncate rounded border border-transparent px-1 py-0.5 text-left text-sm text-zinc-200 hover:border-emerald-500/30 hover:bg-white/10"
             >
               {row.thesis || <span className="text-zinc-600">Select thesis…</span>}
             </button>
@@ -557,7 +568,7 @@ function RowCells({
           value={row.grade || undefined}
           onValueChange={(value) => onChangeRow({ grade: value })}
         >
-          <SelectTrigger className="h-7 border-transparent bg-transparent px-1 text-sm text-zinc-200 hover:border-emerald-500/30 hover:bg-white/5">
+          <SelectTrigger className="h-7 border-transparent bg-transparent px-1 text-sm text-zinc-200 hover:border-emerald-500/30 hover:bg-white/10">
             <SelectValue placeholder="—" />
           </SelectTrigger>
           <SelectContent className="border-white/10 bg-[#18181b] text-white">
@@ -608,7 +619,7 @@ function SelectCell({ checked, onChange }: { checked: boolean; onChange: () => v
         type="checkbox"
         checked={checked}
         onChange={onChange}
-        className="h-3.5 w-3.5 rounded border-white/10 bg-white/5 accent-emerald-500"
+        className="h-3.5 w-3.5 rounded border-white/10 bg-[#121214] accent-emerald-500"
         aria-label="Select watchlist row"
       />
     </div>
@@ -704,8 +715,8 @@ function SaveCell({ ticker, onClick }: { ticker: string; onClick: () => void }) 
         type="button"
         onClick={onClick}
         className="rounded-md p-1 text-emerald-500 hover:bg-white/10 hover:text-emerald-400"
-        title="Save to sample set"
-        aria-label="Save to sample set"
+        title="Save to Sample Set"
+        aria-label="Save to Sample Set"
       >
         <Plus className="h-4 w-4" />
       </button>

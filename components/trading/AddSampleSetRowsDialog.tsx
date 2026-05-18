@@ -59,7 +59,7 @@ export default function AddSampleSetRowsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto border-white/10 bg-[#121214] text-white sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto border-white/10 bg-[#121214] text-white sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add to &quot;{sampleSetName}&quot;</DialogTitle>
         </DialogHeader>

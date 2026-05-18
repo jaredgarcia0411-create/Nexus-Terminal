@@ -113,11 +113,14 @@ export default function WeeklyReviewSheet({
         const reviews = (reviewsRes.reviews ?? []) as ReviewRow[];
         const found = reviews[0] ?? null;
         // Each daily review's reportData carries its own watchlist under WATCHLIST_REPORT_KEY.
+        // Attach each daily's date as `sourceDate` so the aggregated rows still
+        // know their session for the Chart and Save columns.
         const dailyReviews = (dailyRes?.reviews ?? []) as Array<{ date?: string; reportData?: Record<string, unknown> }>;
         const collected = dailyReviews
           .slice()
           .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''))
-          .flatMap((row) => coerceWatchlistRows(row?.reportData?.[WATCHLIST_REPORT_KEY]));
+          .flatMap((daily) => coerceWatchlistRows(daily?.reportData?.[WATCHLIST_REPORT_KEY])
+            .map((row) => (daily.date ? { ...row, sourceDate: daily.date } : row)));
         setAggregatedWatchlist(dedupeWatchlistRows(collected));
 
         setTemplate(tmpl ?? null);

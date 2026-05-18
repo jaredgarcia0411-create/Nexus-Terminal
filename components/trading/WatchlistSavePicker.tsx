@@ -108,7 +108,7 @@ export default function WatchlistSavePicker({
       <Dialog open={open && !createOpen} onOpenChange={onOpenChange}>
         <DialogContent className="border-white/10 bg-[#121214] text-white sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Save to sample set</DialogTitle>
+            <DialogTitle>Save to Sample Set</DialogTitle>
           </DialogHeader>
 
           <Input
@@ -125,7 +125,7 @@ export default function WatchlistSavePicker({
               className="flex w-full items-center gap-2 rounded border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-left text-sm text-emerald-300 hover:bg-emerald-500/10"
             >
               <Plus className="h-4 w-4" />
-              Create new sample set...
+              Create New Sample Set
             </button>
 
             {sortedSets.length === 0 ? (

@@ -53,20 +53,20 @@ export default function WeeklyTradesPanel({ trades }: WeeklyTradesPanelProps) {
   const gridTemplateColumns = '80px minmax(160px, 1fr) 70px';
 
   return (
-    <section className="space-y-2 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+    <section className="space-y-2">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-white">Weekly Trades</h3>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-white/10">
         <div className="grid gap-px bg-white/10" style={{ gridTemplateColumns }}>
-          <div className="bg-[#121214] px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          <div className="bg-[#121214] px-3 py-2 text-xs font-semibold text-white">
             Ticker
           </div>
-          <div className="bg-[#121214] px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          <div className="bg-[#121214] px-3 py-2 text-xs font-semibold text-white">
             Tags
           </div>
-          <div className="bg-[#121214] px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          <div className="bg-[#121214] px-3 py-2 text-right text-xs font-semibold text-white">
             R
           </div>
 
@@ -86,7 +86,7 @@ export default function WeeklyTradesPanel({ trades }: WeeklyTradesPanelProps) {
 }
 
 function RowCells({ row }: { row: WeeklyTradeRow }) {
-  const cellBase = 'bg-[#121214] px-3 py-2 text-xs';
+  const cellBase = 'bg-[#121214] px-3 py-2 text-sm';
   // R color follows the same convention used elsewhere in the app:
   // green for positive, rose for negative, muted for null.
   const rColor =
@@ -101,16 +101,7 @@ function RowCells({ row }: { row: WeeklyTradeRow }) {
       <div className={`${cellBase} font-medium text-white`}>{row.ticker}</div>
       <div className={cellBase}>
         {row.tags.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {row.tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
+          <span className="text-white">{row.tags.join(', ')}</span>
         ) : (
           <span className="text-zinc-600">—</span>
         )}

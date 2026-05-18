@@ -60,6 +60,10 @@ export function dedupeWatchlistRows(rows: WatchlistRow[]): WatchlistRow[] {
       grade: row.grade || existing.grade,
       notes: row.notes.trim() ? row.notes : existing.notes,
       reportId: row.reportId ?? existing.reportId,
+      // Rows are passed in date-ascending order in the weekly aggregator, so
+      // the later (newer) `row.sourceDate` overwrites the earlier one — the
+      // chart and save buttons then point at the most-recent session.
+      sourceDate: row.sourceDate ?? existing.sourceDate,
     });
   }
   return Array.from(byKey.values()).sort((a, b) => a.ticker.localeCompare(b.ticker));

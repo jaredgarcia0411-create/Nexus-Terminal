@@ -150,7 +150,7 @@ export default function TradingCalendar({
 
         <div className={`grid gap-px overflow-hidden rounded-xl border border-white/5 bg-white/5 ${isMobile ? 'grid-cols-7' : 'grid-cols-8'}`}>
           {(isMobile ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Weekly']).map((day) => (
-            <div key={day} className="bg-[#18181b] py-3 text-center text-[10px] font-bold text-zinc-500 tracking-widest">
+            <div key={day} className="bg-[#18181b] py-3 text-center text-[11px] font-bold text-zinc-500 tracking-widest">
               {day}
             </div>
           ))}

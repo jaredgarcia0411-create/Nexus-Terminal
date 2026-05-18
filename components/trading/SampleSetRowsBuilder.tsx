@@ -187,7 +187,7 @@ export default function SampleSetRowsBuilder({
         </div>
       ) : null}
 
-      <section className="space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-3">
+      <section className="space-y-2">
         <Label className="text-xs font-semibold text-white">From CSV</Label>
         <Input
           type="file"
@@ -204,8 +204,8 @@ export default function SampleSetRowsBuilder({
         {csvError ? <p className="text-xs text-rose-400">{csvError}</p> : null}
       </section>
 
-      <section className="space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-3">
-        <Label className="text-xs font-semibold text-white">Manual entry</Label>
+      <section className="space-y-2">
+        <Label className="text-xs font-semibold text-white">Manual Entry</Label>
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
           <Input
             value={manualTicker}
@@ -231,8 +231,8 @@ export default function SampleSetRowsBuilder({
         {manualError ? <p className="text-xs text-rose-400">{manualError}</p> : null}
       </section>
 
-      <section className="space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-3">
-        <Label className="text-xs font-semibold text-white">From tags</Label>
+      <section className="space-y-2">
+        <Label className="text-xs font-semibold text-white">From Tags</Label>
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
           <Popover open={tagPickerOpen} onOpenChange={setTagPickerOpen}>
             <PopoverTrigger asChild>
@@ -246,7 +246,19 @@ export default function SampleSetRowsBuilder({
                 </span>
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-64 border-white/10 bg-[#18181b] p-0 text-white" align="start">
+            <PopoverContent
+              className="w-64 border-white/10 bg-[#18181b] p-0 text-white"
+              align="start"
+              onWheel={(event) => {
+                // Parent Dialog uses react-remove-scroll, which preventDefaults
+                // wheel events on portaled content (this popover). Manually
+                // scroll the cmdk list so wheel still works.
+                const list = event.currentTarget.querySelector(
+                  '[data-slot="command-list"]',
+                ) as HTMLElement | null;
+                if (list) list.scrollTop += event.deltaY;
+              }}
+            >
               <Command className="bg-transparent">
                 <CommandInput placeholder="Search tags" />
                 <CommandList>

@@ -66,7 +66,7 @@ describe('WatchlistEditor sample set save controls', () => {
 
     expect(screen.queryByText('Save')).toBeNull();
     expect(screen.queryByLabelText('Select watchlist row')).toBeNull();
-    expect(screen.queryByLabelText('Save to sample set')).toBeNull();
+    expect(screen.queryByLabelText('Save to Sample Set')).toBeNull();
   });
 
   it('opens the picker with a single seeded row from the daily save icon', () => {
@@ -75,7 +75,7 @@ describe('WatchlistEditor sample set save controls', () => {
     expect(screen.getByText('Save')).toBeTruthy();
     expect(screen.getAllByLabelText('Select watchlist row')).toHaveLength(2);
 
-    const saveButtons = screen.getAllByLabelText('Save to sample set');
+    const saveButtons = screen.getAllByLabelText('Save to Sample Set');
     expect(saveButtons).toHaveLength(1);
     fireEvent.click(saveButtons[0]);
 
@@ -102,6 +102,6 @@ describe('WatchlistEditor sample set save controls', () => {
 
     expect(screen.getByText('Save')).toBeTruthy();
     expect(screen.queryByLabelText('Select watchlist row')).toBeNull();
-    expect(screen.getAllByLabelText('Save to sample set')).toHaveLength(1);
+    expect(screen.getAllByLabelText('Save to Sample Set')).toHaveLength(1);
   });
 });
