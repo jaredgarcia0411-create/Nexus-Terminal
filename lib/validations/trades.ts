@@ -37,6 +37,9 @@ export const createTradeSchema = z.object({
   fees: z.number().finite().optional().default(0),
   notes: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
+  isOpen: z.boolean().optional().default(false),
+  closedAt: z.string().nullable().optional(),
+  remainingQty: z.number().finite().optional().default(0),
 });
 
 export type CreateTradeInput = z.infer<typeof createTradeSchema>;
@@ -83,6 +86,9 @@ export const importTradeItemSchema = z.object({
   fees: z.number().finite().optional().default(0),
   notes: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
+  isOpen: z.boolean().optional().default(false),
+  closedAt: z.string().nullable().optional(),
+  remainingQty: z.number().finite().optional().default(0),
 });
 
 export const importTradesSchema = z.object({
@@ -91,3 +97,17 @@ export const importTradesSchema = z.object({
 });
 
 export type ImportTradesInput = z.infer<typeof importTradesSchema>;
+
+export const closePositionSchema = z.object({
+  action: z.literal('close'),
+  exitPrice: z.number().finite().positive(),
+  exitTime: z.string().min(1),
+});
+
+export type ClosePositionInput = z.infer<typeof closePositionSchema>;
+
+export const mergeTradesSchema = z.object({
+  ids: z.array(z.string().min(1)).min(2, 'Select at least 2 trades to merge'),
+});
+
+export type MergeTradesInput = z.infer<typeof mergeTradesSchema>;

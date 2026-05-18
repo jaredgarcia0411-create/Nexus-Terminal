@@ -17,10 +17,13 @@ interface TradeTableProps {
   onRemoveTag: (tradeId: string, tagName: string) => void;
   onDeleteGlobalTag?: (tagName: string) => void;
   onTradeClick?: (trade: Trade) => void;
+  onMergeTrades?: (ids: string[]) => void;
   globalTags: string[];
   readOnly?: boolean;
   hideSelection?: boolean;
   pnlMode?: 'net' | 'gross';
+  positionFilter?: 'all' | 'open' | 'closed';
+  onPositionFilterChange?: (filter: 'all' | 'open' | 'closed') => void;
 }
 
 export default function TradeTable({
@@ -32,10 +35,13 @@ export default function TradeTable({
   onRemoveTag,
   onDeleteGlobalTag,
   onTradeClick,
+  onMergeTrades,
   globalTags,
   readOnly = false,
   hideSelection = false,
   pnlMode = 'net',
+  positionFilter = 'all',
+  onPositionFilterChange,
 }: TradeTableProps) {
   const allSelected = trades.length > 0 && trades.every((trade) => selectedIds.has(trade.id));
   const [tagPopoverTradeId, setTagPopoverTradeId] = useState<string | null>(null);
@@ -43,9 +49,40 @@ export default function TradeTable({
 
   const tableTradeIds = useMemo(() => trades.map((trade) => trade.id), [trades]);
   const shouldScroll = trades.length > 20;
+  const canMerge = !readOnly && onMergeTrades && selectedIds.size >= 2;
 
   return (
-    <div className={`overflow-x-auto rounded border border-white/5 bg-[#121214] ${shouldScroll ? 'max-h-[46rem] overflow-y-auto' : ''}`}>
+    <>
+      <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+        {onPositionFilterChange ? (
+          <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-0.5">
+            {(['all', 'open', 'closed'] as const).map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                onClick={() => onPositionFilterChange(filter)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                  positionFilter === filter
+                    ? 'bg-white/10 text-white'
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                {filter.charAt(0).toUpperCase() + filter.slice(1)}
+              </button>
+            ))}
+          </div>
+        ) : <div />}
+        {canMerge ? (
+          <button
+            type="button"
+            onClick={() => onMergeTrades?.(Array.from(selectedIds))}
+            className="px-3 py-1 rounded-md border border-white/10 bg-white/5 text-xs text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
+          >
+            Merge {selectedIds.size} trades
+          </button>
+        ) : null}
+      </div>
+      <div className={`overflow-x-auto rounded border border-white/5 bg-[#121214] ${shouldScroll ? 'max-h-[46rem] overflow-y-auto' : ''}`}>
       <table className="w-full tabular-nums text-left text-sm">
         <thead className="border-b border-white/5 bg-white/5 text-zinc-500 font-medium">
           <tr>
@@ -99,7 +136,14 @@ export default function TradeTable({
                 ) : null}
 
                 <td className="px-4 py-3 text-zinc-400 font-mono whitespace-nowrap">{format(new Date(trade.date), 'MMM dd, yyyy')}</td>
-                <td className="px-4 py-3 font-medium">{trade.symbol}</td>
+                <td className="px-4 py-3 font-medium">
+                  <span>{trade.symbol}</span>
+                  {trade.isOpen ? (
+                    <span className="ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/20 text-amber-400">
+                      OPEN
+                    </span>
+                  ) : null}
+                </td>
                 <td className="px-4 py-3">
                   <span
                     className={`text-sm font-bold ${
@@ -188,10 +232,16 @@ export default function TradeTable({
                 <td className="px-4 py-3 text-right font-mono">{formatCurrency(trade.avgExitPrice)}</td>
                 <td className="px-4 py-3 text-right font-mono text-zinc-400">{trade.totalQuantity}</td>
                 <td className="px-4 py-3 text-right font-mono text-zinc-500">{trade.initialRisk ? formatCurrency(trade.initialRisk) : '-'}</td>
-                <td className={`px-4 py-3 text-right font-mono font-medium ${getPnLColor(pnlValue)}`}>
+                <td className={`px-4 py-3 text-right font-mono font-medium ${trade.isOpen ? 'text-zinc-500' : getPnLColor(pnlValue)}`}>
                   <div className="flex flex-col items-end">
-                    <span>{formatCurrency(pnlValue)}</span>
-                    {trade.initialRisk ? <span className="text-[10px] opacity-70">{formatR(pnlValue / trade.initialRisk)}</span> : null}
+                    {trade.isOpen ? (
+                      <span className="text-zinc-500">-</span>
+                    ) : (
+                      <>
+                        <span>{formatCurrency(pnlValue)}</span>
+                        {trade.initialRisk ? <span className="text-[10px] opacity-70">{formatR(pnlValue / trade.initialRisk)}</span> : null}
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -207,6 +257,7 @@ export default function TradeTable({
           ) : null}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }

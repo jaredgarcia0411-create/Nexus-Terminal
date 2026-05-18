@@ -8,6 +8,7 @@ import { buildTradeMarkers, formatCurrency, formatR, getPnLColor } from '@/lib/t
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import CandlestickChart from '@/components/trading/CandlestickChart';
 import type { TradeMarker } from '@/lib/types';
@@ -24,6 +25,7 @@ interface TradeDetailSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaveNotes: (tradeId: string, notes: string) => Promise<void> | void;
+  onCloseTrade?: (tradeId: string, exitPrice: number, exitTime: string) => Promise<void>;
 }
 
 function timeValue(sortKey: string, time: string, timestamp?: string | Date) {
@@ -51,9 +53,12 @@ function prettyPct(value?: number | null) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNotes }: TradeDetailSheetProps) {
+export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNotes, onCloseTrade }: TradeDetailSheetProps) {
   const [notes, setNotes] = useState(trade?.notes ?? '');
   const [timeframe, setTimeframe] = useState<TradeChartTimeframeKey>('5m');
+  const [closeExitPrice, setCloseExitPrice] = useState('');
+  const [closeExitTime, setCloseExitTime] = useState('');
+  const [isClosing, setIsClosing] = useState(false);
 
   const chartOptions = useMemo(() => {
     if (!trade) return null;
@@ -85,6 +90,31 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
     } catch (error) {
       console.error(error);
       toast.error('Failed to save notes');
+    }
+  };
+
+  const handleClosePosition = async () => {
+    if (!trade || !onCloseTrade) return;
+    const exitPrice = parseFloat(closeExitPrice);
+    if (!Number.isFinite(exitPrice) || exitPrice <= 0) {
+      toast.error('Enter a valid exit price');
+      return;
+    }
+    if (!closeExitTime.trim()) {
+      toast.error('Enter a valid exit time');
+      return;
+    }
+    setIsClosing(true);
+    try {
+      await onCloseTrade(trade.id, exitPrice, closeExitTime.trim());
+      setCloseExitPrice('');
+      setCloseExitTime('');
+      toast.success('Position closed');
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to close position');
+    } finally {
+      setIsClosing(false);
     }
   };
 
@@ -131,8 +161,14 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                 </p>
               </div>
               <div className="text-right">
-                <p className={`text-sm font-semibold ${getPnLColor(trade.netPnl)}`}>{formatCurrency(trade.netPnl)}</p>
-                <p className="text-[12px] text-zinc-500">Net PnL</p>
+                {trade.isOpen ? (
+                  <span className="mb-1 inline-block rounded px-2 py-0.5 text-[11px] font-semibold bg-amber-500/20 text-amber-400">
+                    OPEN
+                  </span>
+                ) : (
+                  <p className={`text-sm font-semibold ${getPnLColor(trade.netPnl)}`}>{formatCurrency(trade.netPnl)}</p>
+                )}
+                <p className="text-[12px] text-zinc-500">{trade.isOpen ? 'Open Position' : 'Net PnL'}</p>
               </div>
             </div>
 
@@ -148,6 +184,44 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                   ))}
                 </div>
               </section>
+
+              {trade.isOpen && onCloseTrade ? (
+                <section className="space-y-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                  <h3 className="text-base font-semibold uppercase tracking-wider text-amber-400">Close Position</h3>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-[11px] uppercase tracking-wider text-zinc-500">Exit Price</label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={closeExitPrice}
+                        onChange={(event) => setCloseExitPrice(event.target.value)}
+                        className="bg-white/5 border-white/10 h-8 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] uppercase tracking-wider text-zinc-500">Exit Time</label>
+                      <Input
+                        type="text"
+                        placeholder="15:59:00"
+                        value={closeExitTime}
+                        onChange={(event) => setCloseExitTime(event.target.value)}
+                        className="bg-white/5 border-white/10 h-8 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={handleClosePosition}
+                      disabled={isClosing}
+                      className="border border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+                    >
+                      {isClosing ? 'Closing...' : 'Close Position (Full)'}
+                    </Button>
+                  </div>
+                </section>
+              ) : null}
 
               <section className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
                 <h3 className="text-base font-semibold uppercase tracking-wider text-white">Chart</h3>

@@ -38,6 +38,8 @@ export const normalizeTrade = (trade: TradeLike): Trade => {
     pnl: netPnl,
     executions: executionCount,
     tags: trade.tags ?? [],
+    isOpen: trade.isOpen ?? false,
+    remainingQty: trade.remainingQty ?? 0,
   };
 };
 

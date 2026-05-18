@@ -22,6 +22,8 @@ function makeTrade(overrides: Partial<Trade> & { date: Date; id: string }): Trad
     pnl: 100,
     executions: 1,
     tags: [],
+    isOpen: overrides.isOpen ?? false,
+    remainingQty: overrides.remainingQty ?? 0,
     sortKey: '2026-04-17',
     ...overrides,
   };
@@ -102,6 +104,31 @@ describe('aggregateDay', () => {
     const result = aggregateDay(trades, '2026-04-20');
 
     expect(result).toEqual({ grossResult: 0, netResult: 0, rTotal: 0, tradeIds: [] });
+  });
+});
+
+describe('aggregateDay - excludes open trades', () => {
+  it('does not count an open trade in netResult or tradeIds', () => {
+    const trades: Trade[] = [
+      makeTrade({ id: 'closed', date: new Date(2026, 3, 17, 10, 0), netPnl: 100, grossPnl: 100 }),
+      makeTrade({ id: 'open', date: new Date(2026, 3, 17, 11, 0), netPnl: 0, grossPnl: 0, isOpen: true }),
+    ];
+    const result = aggregateDay(trades, '2026-04-17');
+    expect(result.tradeIds).toEqual(['closed']);
+    expect(result.netResult).toBe(100);
+  });
+});
+
+describe('aggregateWeek - excludes open trades', () => {
+  it('does not count open trades in weekly totals', () => {
+    const trades: Trade[] = [
+      makeTrade({ id: 'c1', date: new Date(2026, 3, 14, 10, 0), netPnl: 200, grossPnl: 200, initialRisk: 100 }),
+      makeTrade({ id: 'o1', date: new Date(2026, 3, 15, 10, 0), netPnl: 0, grossPnl: 0, isOpen: true }),
+    ];
+    const result = aggregateWeek(trades, '2026-04-13', '2026-04-17');
+    expect(result.tradeIds).toEqual(['c1']);
+    expect(result.netResult).toBe(200);
+    expect(result.rTotal).toBeCloseTo(2, 10);
   });
 });
 

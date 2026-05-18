@@ -49,6 +49,8 @@ export function useTrades() {
     setFilterPreset,
     selectedFilterTags,
     setSelectedFilterTags,
+    positionFilter,
+    setPositionFilter,
     bulkTagInput,
     setBulkTagInput,
     filteredTrades,
@@ -71,6 +73,7 @@ export function useTrades() {
     setSelectedFilterTags(new Set());
     setStartDate('');
     setEndDate('');
+    setPositionFilter('all');
   };
 
   useEffect(() => {
@@ -159,6 +162,27 @@ export function useTrades() {
     setTrades((prev) => prev.map((trade) => (trade.id === tradeId ? fromApiTrade(result.trade) : trade)));
   };
 
+  const handleCloseTrade = async (tradeId: string, exitPrice: number, exitTime: string) => {
+    const result = await apiRequest<{ trade: ApiTrade }>(`/api/trades/${encodeURIComponent(tradeId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ action: 'close', exitPrice, exitTime }),
+    });
+    setTrades((prev) => prev.map((trade) => (trade.id === tradeId ? fromApiTrade(result.trade) : trade)));
+  };
+
+  const handleMergeTrades = async (ids: string[]) => {
+    const result = await apiRequest<{ trade: ApiTrade; deletedIds: string[] }>('/api/trades/merge', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+    const merged = fromApiTrade(result.trade);
+    setTrades((prev) => {
+      const without = prev.filter((trade) => !result.deletedIds.includes(trade.id));
+      return sortTrades([merged, ...without]);
+    });
+    setSelectedIds(new Set());
+  };
+
   const handleAddTag = (tradeId: string, tagName: string) => {
     const cleanTag = tagName.trim();
     if (!cleanTag) return;
@@ -210,6 +234,7 @@ export function useTrades() {
       setFilterPreset('all');
       setStartDate('');
       setEndDate('');
+      setPositionFilter('all');
     };
 
     withErrorToast('Failed to clear cloud data', async () => {
@@ -358,11 +383,11 @@ export function useTrades() {
 
   return {
     status, user, trades, globalTags, filteredTrades, isImporting, mounted, error, importInputRef, folderInputRef, traderVueInputRef,
-    selectedIds, startDate, endDate, riskInput, defaultRiskInput, defaultRisk, filterPreset, selectedFilterTags, bulkTagInput,
+    selectedIds, startDate, endDate, riskInput, defaultRiskInput, defaultRisk, filterPreset, selectedFilterTags, positionFilter, bulkTagInput,
     searchQuery, hasActiveFilters, activeFilterCount, clearAllFilters, setStartDate, setEndDate, setRiskInput, setDefaultRiskInput,
-    setFilterPreset, setSelectedFilterTags, setBulkTagInput, setSearchQuery, handleToggleSelect, handleSelectAll,
+    setFilterPreset, setSelectedFilterTags, setPositionFilter, setBulkTagInput, setSearchQuery, handleToggleSelect, handleSelectAll,
     handleCreateManualTrade, handleDeleteSelected, handleApplyRisk, handleSetDefaultRisk, handleSaveNotes, handleAddTag,
-    handleRemoveTag, handleDeleteGlobalTag, handleBulkAddTag, handleClearAllData, handleFileUpload, handleFolderUpload, handleTraderVueImport,
+    handleCloseTrade, handleMergeTrades, handleRemoveTag, handleDeleteGlobalTag, handleBulkAddTag, handleClearAllData, handleFileUpload, handleFolderUpload, handleTraderVueImport,
     fetchTradeDetail,
   };
 }

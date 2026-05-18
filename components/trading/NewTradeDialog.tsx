@@ -23,10 +23,13 @@ const tradeFormSchema = z.object({
   symbol: z.string().trim().min(1).transform((value) => value.toUpperCase()),
   direction: z.enum(['LONG', 'SHORT']),
   entryPrice: z.coerce.number().positive(),
-  exitPrice: z.coerce.number().positive(),
+  exitPrice: z.coerce.number().optional(),
   quantity: z.coerce.number().int().positive(),
   date: z.string().min(1),
+  entryTime: z.string().optional(),
+  exitTime: z.string().optional(),
   initialRisk: z.string().optional(),
+  isOpenPosition: z.boolean().optional().default(false),
 });
 
 type TradeFormInput = z.input<typeof tradeFormSchema>;
@@ -48,7 +51,10 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
       exitPrice: undefined,
       quantity: undefined,
       date: format(new Date(), 'yyyy-MM-dd'),
+      entryTime: '',
+      exitTime: '',
       initialRisk: '',
+      isOpenPosition: false,
     },
   });
 
@@ -57,35 +63,73 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
       const values: TradeFormValues = tradeFormSchema.parse(rawValues);
       const date = parseISO(values.date);
       const sortKey = format(date, 'yyyy-MM-dd');
-      const id = `${sortKey}|${values.symbol}|${values.direction}|manual-${values.entryPrice}-${values.exitPrice}-${values.quantity}`;
+      const timeOfDay = values.entryTime?.trim()
+        ? values.entryTime.trim().replace(/:/g, '')
+        : format(new Date(), 'HHmmss');
+      const suffix = Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
+      const id = `${sortKey}|${values.symbol}|${values.direction}|${timeOfDay}-${suffix}`;
       const initialRisk = values.initialRisk?.trim() ? Number(values.initialRisk) : undefined;
       if (initialRisk !== undefined && (!Number.isFinite(initialRisk) || initialRisk <= 0)) {
         throw new Error('Invalid initial risk');
       }
-      const netPnl = calculatePnL(values.direction, values.entryPrice, values.exitPrice, values.quantity);
 
-      const trade: Trade = {
-        id,
-        date,
-        sortKey,
-        symbol: values.symbol,
-        direction: values.direction,
-        avgEntryPrice: values.entryPrice,
-        avgExitPrice: values.exitPrice,
-        totalQuantity: values.quantity,
-        grossPnl: netPnl,
-        netPnl,
-        entryTime: '',
-        exitTime: '',
-        executionCount: 1,
-        rawExecutions: [],
-        pnl: netPnl,
-        executions: 1,
-        initialRisk,
-        commission: 0,
-        fees: 0,
-        tags: [],
-      };
+      let trade: Trade;
+      if (values.isOpenPosition) {
+        trade = {
+          id,
+          date,
+          sortKey,
+          symbol: values.symbol,
+          direction: values.direction,
+          avgEntryPrice: values.entryPrice,
+          avgExitPrice: 0,
+          totalQuantity: values.quantity,
+          grossPnl: 0,
+          netPnl: 0,
+          entryTime: values.entryTime?.trim() ?? '',
+          exitTime: '',
+          executionCount: 1,
+          rawExecutions: [],
+          pnl: 0,
+          executions: 1,
+          initialRisk,
+          commission: 0,
+          fees: 0,
+          tags: [],
+          isOpen: true,
+          remainingQty: values.quantity,
+        };
+      } else {
+        const exitPrice = values.exitPrice;
+        if (!exitPrice || exitPrice <= 0) {
+          throw new Error('Exit price is required for closed trades');
+        }
+        const netPnl = calculatePnL(values.direction, values.entryPrice, exitPrice, values.quantity);
+        trade = {
+          id,
+          date,
+          sortKey,
+          symbol: values.symbol,
+          direction: values.direction,
+          avgEntryPrice: values.entryPrice,
+          avgExitPrice: exitPrice,
+          totalQuantity: values.quantity,
+          grossPnl: netPnl,
+          netPnl,
+          entryTime: values.entryTime?.trim() ?? '',
+          exitTime: values.exitTime?.trim() ?? '',
+          executionCount: 1,
+          rawExecutions: [],
+          pnl: netPnl,
+          executions: 1,
+          initialRisk,
+          commission: 0,
+          fees: 0,
+          tags: [],
+          isOpen: false,
+          remainingQty: 0,
+        };
+      }
 
       await onCreateTrade(trade);
       form.reset({
@@ -95,16 +139,20 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
         exitPrice: undefined,
         quantity: undefined,
         date: format(new Date(), 'yyyy-MM-dd'),
+        entryTime: '',
+        exitTime: '',
         initialRisk: '',
+        isOpenPosition: false,
       });
       onOpenChange(false);
-      toast.success('Trade added');
+      toast.success(values.isOpenPosition ? 'Open position recorded' : 'Trade added');
     } catch (error) {
       console.error(error);
-      toast.error('Failed to add trade');
+      toast.error(error instanceof Error ? error.message : 'Failed to add trade');
     }
   });
   const direction = useWatch({ control: form.control, name: 'direction' }) ?? 'LONG';
+  const isOpenPosition = useWatch({ control: form.control, name: 'isOpenPosition' }) ?? false;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -142,11 +190,6 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="exitPrice">Exit Price</Label>
-              <Input id="exitPrice" type="number" step="0.01" {...form.register('exitPrice')} className="bg-white/5 border-white/10" />
-            </div>
-
-            <div className="space-y-2">
               <Label htmlFor="quantity">Quantity</Label>
               <Input id="quantity" type="number" step="1" {...form.register('quantity')} className="bg-white/5 border-white/10" />
             </div>
@@ -160,6 +203,38 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
               <Label htmlFor="initialRisk">Initial Risk (optional)</Label>
               <Input id="initialRisk" type="number" step="0.01" {...form.register('initialRisk')} className="bg-white/5 border-white/10" />
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="entryTime">Entry Time (optional)</Label>
+              <Input id="entryTime" type="text" placeholder="09:30:00" {...form.register('entryTime')} className="bg-white/5 border-white/10" />
+            </div>
+
+            {!isOpenPosition ? (
+              <div className="space-y-2">
+                <Label htmlFor="exitTime">Exit Time (optional)</Label>
+                <Input id="exitTime" type="text" placeholder="10:15:00" {...form.register('exitTime')} className="bg-white/5 border-white/10" />
+              </div>
+            ) : null}
+
+            <div className="flex items-center gap-2 md:col-span-2 pt-1">
+              <input
+                id="isOpenPosition"
+                type="checkbox"
+                checked={isOpenPosition}
+                onChange={(event) => form.setValue('isOpenPosition', event.target.checked, { shouldValidate: true })}
+                className="h-4 w-4 rounded border-white/20 bg-white/5 text-emerald-500 focus:ring-emerald-500/40"
+              />
+              <Label htmlFor="isOpenPosition" className="cursor-pointer text-sm text-zinc-300">
+                Open position (no exit yet)
+              </Label>
+            </div>
+
+            {!isOpenPosition ? (
+              <div className="space-y-2">
+                <Label htmlFor="exitPrice">Exit Price</Label>
+                <Input id="exitPrice" type="number" step="0.01" {...form.register('exitPrice')} className="bg-white/5 border-white/10" />
+              </div>
+            ) : null}
           </div>
 
           {Object.keys(form.formState.errors).length > 0 && (

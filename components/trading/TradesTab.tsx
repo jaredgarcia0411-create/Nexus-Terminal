@@ -27,7 +27,10 @@ interface TradesTabProps {
   onSelectAll: (ids: string[]) => void;
   onAddTag: (tradeId: string, tagName: string) => void;
   onRemoveTag: (tradeId: string, tagName: string) => void;
+  onMergeTrades?: (ids: string[]) => void;
   onTradeClick: (trade: Trade) => void;
+  positionFilter?: 'all' | 'open' | 'closed';
+  onPositionFilterChange?: (filter: 'all' | 'open' | 'closed') => void;
   onRiskInputChange: (value: string) => void;
   onDefaultRiskInputChange: (value: string) => void;
   onBulkTagInputChange: (value: string) => void;
@@ -54,7 +57,10 @@ export default function TradesTab({
   onSelectAll,
   onAddTag,
   onRemoveTag,
+  onMergeTrades,
   onTradeClick,
+  positionFilter,
+  onPositionFilterChange,
   riskInput,
   onDefaultRiskInputChange,
   bulkTagInput,
@@ -162,8 +168,11 @@ export default function TradesTab({
           onRemoveTag={onRemoveTag}
           onDeleteGlobalTag={onDeleteGlobalTag}
           onTradeClick={onTradeClick}
+          onMergeTrades={onMergeTrades}
           globalTags={globalTags}
           readOnly={false}
+          positionFilter={positionFilter}
+          onPositionFilterChange={onPositionFilterChange}
         />
       </div>
     </motion.div>

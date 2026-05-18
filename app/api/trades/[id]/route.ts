@@ -1,9 +1,10 @@
-import { and, asc, eq } from 'drizzle-orm';
-import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
+import { and, asc, eq, sql } from 'drizzle-orm';
+import { z } from 'zod';
+import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { tradeExecutions, trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser, toTrade } from '@/lib/server-db-utils';
-import { updateTradeSchema } from '@/lib/validations/trades';
+import { closePositionSchema, updateTradeSchema } from '@/lib/validations/trades';
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -61,9 +62,90 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     await ensureUser(db, authState.user);
 
     const { id } = await context.params;
-    const bodyState = await parseAndValidate(request, updateTradeSchema);
-    if (bodyState.error) return bodyState.error;
-    const body = bodyState.data;
+
+    let rawBody: unknown;
+    try {
+      rawBody = await request.json();
+    } catch {
+      return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+
+    const isCloseAction =
+      rawBody && typeof rawBody === 'object' && (rawBody as Record<string, unknown>)['action'] === 'close';
+
+    if (isCloseAction) {
+      const parsed = closePositionSchema.safeParse(rawBody);
+      if (!parsed.success) {
+        return Response.json(
+          { error: 'Validation failed', details: z.flattenError(parsed.error) },
+          { status: 400 },
+        );
+      }
+      const { exitPrice, exitTime } = parsed.data;
+
+      const [current] = await db.select().from(trades)
+        .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)))
+        .limit(1);
+
+      if (!current) return Response.json({ error: 'Trade not found' }, { status: 404 });
+      if (!current.isOpen) return Response.json({ error: 'Trade is already closed' }, { status: 400 });
+
+      const qty = current.totalQuantity;
+      const entryPrice = current.avgEntryPrice;
+      const commission = current.commission ?? 0;
+      const fees = current.fees ?? 0;
+      const grossPnl = current.direction === 'LONG'
+        ? (exitPrice - entryPrice) * qty
+        : (entryPrice - exitPrice) * qty;
+      const netPnl = grossPnl - commission - fees;
+
+      await db.update(trades).set({
+        avgExitPrice: exitPrice,
+        exitTime,
+        grossPnl,
+        netPnl,
+        pnl: netPnl,
+        isOpen: false,
+        closedAt: sql`now()`,
+        remainingQty: 0,
+      }).where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)));
+
+      const [updated] = await db.select().from(trades)
+        .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)))
+        .limit(1);
+      if (!updated) return Response.json({ error: 'Trade not found after update' }, { status: 404 });
+
+      const [tagRows, executionRows] = await Promise.all([
+        db.select({ tag: tradeTagsTable.tag })
+          .from(tradeTagsTable)
+          .where(and(eq(tradeTagsTable.userId, authState.user.id), eq(tradeTagsTable.tradeId, id))),
+        db.select().from(tradeExecutions)
+          .where(and(eq(tradeExecutions.userId, authState.user.id), eq(tradeExecutions.tradeId, id)))
+          .orderBy(asc(tradeExecutions.time), asc(tradeExecutions.id)),
+      ]);
+      const tagList = tagRows.map((row) => row.tag);
+      const rawExecutions = executionRows.map((row) => ({
+        id: row.id,
+        side: row.side,
+        price: row.price,
+        qty: row.qty,
+        time: row.time,
+        timestamp: row.timestamp ?? undefined,
+        commission: row.commission ?? 0,
+        fees: row.fees ?? 0,
+      }));
+
+      return Response.json({ trade: toTrade(updated, tagList, rawExecutions) });
+    }
+
+    const parseResult = updateTradeSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      return Response.json(
+        { error: 'Validation failed', details: z.flattenError(parseResult.error) },
+        { status: 400 },
+      );
+    }
+    const body = parseResult.data;
 
     const updateData: Partial<typeof trades.$inferInsert> = {};
 

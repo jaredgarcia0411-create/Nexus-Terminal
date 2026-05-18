@@ -116,6 +116,9 @@ export async function POST(request: Request) {
       commission,
       fees,
       notes: body.notes ?? null,
+      isOpen: body.isOpen ?? false,
+      closedAt: body.closedAt ? new Date(body.closedAt) : null,
+      remainingQty: body.remainingQty ?? 0,
     }).onConflictDoUpdate({
       target: [trades.userId, trades.id],
       set: {
@@ -141,6 +144,9 @@ export async function POST(request: Request) {
         commission,
         fees,
         notes: body.notes ?? null,
+        isOpen: body.isOpen ?? false,
+        closedAt: body.closedAt ? new Date(body.closedAt) : null,
+        remainingQty: body.remainingQty ?? 0,
       },
     });
 

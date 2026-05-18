@@ -39,6 +39,9 @@ export interface Trade {
   fees?: number;
   tags: string[];
   notes?: string;
+  isOpen?: boolean;
+  closedAt?: string | null;
+  remainingQty?: number;
 }
 
 /**
@@ -71,6 +74,9 @@ export type ApiTrade = {
   fees?: number;
   tags: string[];
   notes?: string;
+  isOpen?: boolean;
+  closedAt?: string | null;
+  remainingQty?: number;
 };
 
 export interface TradeMarker {

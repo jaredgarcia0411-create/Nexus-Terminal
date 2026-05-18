@@ -28,7 +28,7 @@ function toLocalDateKey(input: Date | string): string {
  * R is only counted for trades where initialRisk > 0.
  */
 export function aggregateDay(trades: Trade[], date: string): DayAggregate {
-  const matching = trades.filter((t) => toLocalDateKey(t.date) === date);
+  const matching = trades.filter((t) => toLocalDateKey(t.date) === date && !t.isOpen);
 
   let grossResult = 0;
   let netResult = 0;
@@ -57,7 +57,7 @@ export function aggregateWeek(
 ): WeekAggregate {
   const matching = trades.filter((t) => {
     const key = toLocalDateKey(t.date);
-    return key >= weekStart && key <= weekEnd;
+    return key >= weekStart && key <= weekEnd && !t.isOpen;
   });
 
   const dayRMap: Record<string, number> = {};

@@ -38,6 +38,9 @@ export const trades = pgTable('trades', {
   initialRisk: doublePrecision('initial_risk'),
   commission: doublePrecision('commission').default(0),
   fees: doublePrecision('fees').default(0),
+  isOpen: boolean('is_open').notNull().default(false),
+  closedAt: timestamp('closed_at', { withTimezone: true }),
+  remainingQty: doublePrecision('remaining_qty').notNull().default(0),
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 }, (table) => [

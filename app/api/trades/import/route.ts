@@ -285,6 +285,9 @@ export async function POST(request: Request) {
             commission,
             fees,
             notes: trade.notes ?? null,
+            isOpen: trade.isOpen ?? false,
+            closedAt: trade.closedAt ? new Date(trade.closedAt) : null,
+            remainingQty: trade.remainingQty ?? 0,
           }).onConflictDoUpdate({
             target: [trades.userId, trades.id],
             set: {

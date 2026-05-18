@@ -120,19 +120,26 @@ function clampProbability(value: number): number {
 }
 
 export default function PerformanceStatsTable({ trades, onTradeClick }: PerformanceStatsTableProps) {
+  const openCount = useMemo(() => trades.filter((trade) => trade.isOpen).length, [trades]);
+
   const stats = useMemo(() => {
     if (trades.length === 0) {
       return [] as StatsCell[];
     }
 
-    const totalGainLoss = trades.reduce((sum, trade) => sum + trade.netPnl, 0);
-    const winningTrades = trades.filter((trade) => trade.netPnl > 0);
-    const losingTrades = trades.filter((trade) => trade.netPnl < 0);
-    const scratchTrades = trades.filter((trade) => Math.abs(trade.netPnl) === 0);
+    const closedTrades = trades.filter((trade) => !trade.isOpen);
+    if (closedTrades.length === 0) {
+      return [] as StatsCell[];
+    }
+
+    const totalGainLoss = closedTrades.reduce((sum, trade) => sum + trade.netPnl, 0);
+    const winningTrades = closedTrades.filter((trade) => trade.netPnl > 0);
+    const losingTrades = closedTrades.filter((trade) => trade.netPnl < 0);
+    const scratchTrades = closedTrades.filter((trade) => Math.abs(trade.netPnl) === 0);
 
     const dailyTotals = new Map<string, number>();
     const dailyVolume = new Map<string, number>();
-    for (const trade of trades) {
+    for (const trade of closedTrades) {
       const key = trade.sortKey;
       dailyTotals.set(key, (dailyTotals.get(key) ?? 0) + trade.netPnl);
       dailyVolume.set(key, (dailyVolume.get(key) ?? 0) + trade.totalQuantity);
@@ -143,18 +150,18 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
     const averageDailyGainLoss = dailyValues.length > 0 ? dailyValues.reduce((sum, value) => sum + value, 0) / dailyValues.length : 0;
     const averageDailyVolume = dailyVolumeValues.length > 0 ? dailyVolumeValues.reduce((sum, value) => sum + value, 0) / dailyVolumeValues.length : 0;
 
-    const totalQuantity = trades.reduce((sum, trade) => sum + trade.totalQuantity, 0);
+    const totalQuantity = closedTrades.reduce((sum, trade) => sum + trade.totalQuantity, 0);
     const averagePerShareGainLoss = totalQuantity > 0 ? totalGainLoss / totalQuantity : 0;
-    const averageTradeGainLoss = trades.length > 0 ? totalGainLoss / trades.length : 0;
+    const averageTradeGainLoss = closedTrades.length > 0 ? totalGainLoss / closedTrades.length : 0;
     const averageWinningTrade = winningTrades.length > 0 ? winningTrades.reduce((sum, trade) => sum + trade.netPnl, 0) / winningTrades.length : 0;
     const averageLosingTrade = losingTrades.length > 0 ? losingTrades.reduce((sum, trade) => sum + trade.netPnl, 0) / losingTrades.length : 0;
 
     const winningCount = winningTrades.length;
     const losingCount = losingTrades.length;
-    const winPercent = trades.length > 0 ? (winningCount / trades.length) * 100 : 0;
-    const lossPercent = trades.length > 0 ? (losingCount / trades.length) * 100 : 0;
+    const winPercent = closedTrades.length > 0 ? (winningCount / closedTrades.length) * 100 : 0;
+    const lossPercent = closedTrades.length > 0 ? (losingCount / closedTrades.length) * 100 : 0;
 
-    const holdTradePairs = trades
+    const holdTradePairs = closedTrades
       .map((trade) => {
         const minutes = parseHoldMinutes(trade);
         return minutes == null ? null : { trade, minutes };
@@ -169,7 +176,7 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
     const averageWinningHoldTime = winningHoldTrades.length > 0 ? calculateMean(winningHoldTrades.map((entry) => entry.minutes)) : null;
     const averageLosingHoldTime = losingHoldTrades.length > 0 ? calculateMean(losingHoldTrades.map((entry) => entry.minutes)) : null;
 
-    const sortedByDate = [...trades].sort((a, b) => a.date.getTime() - b.date.getTime());
+    const sortedByDate = [...closedTrades].sort((a, b) => a.date.getTime() - b.date.getTime());
     let maxConsecutiveWins = 0;
     let maxConsecutiveLosses = 0;
     let maxConsecutiveWinTrade: Trade | null = null;
@@ -198,10 +205,10 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
       }
     }
 
-    const largestGainTrade = trades.slice().sort((a, b) => b.netPnl - a.netPnl)[0] ?? null;
-    const largestLossTrade = trades.slice().sort((a, b) => a.netPnl - b.netPnl)[0] ?? null;
+    const largestGainTrade = closedTrades.slice().sort((a, b) => b.netPnl - a.netPnl)[0] ?? null;
+    const largestLossTrade = closedTrades.slice().sort((a, b) => a.netPnl - b.netPnl)[0] ?? null;
 
-    const pnlValues = trades.map((trade) => trade.netPnl);
+    const pnlValues = closedTrades.map((trade) => trade.netPnl);
     const meanPnl = calculateMean(pnlValues);
     const pnlStdDev = calculateStdDev(pnlValues);
     const sqn = pnlValues.length > 0 && pnlStdDev > 0 ? (Math.sqrt(pnlValues.length) * meanPnl) / pnlStdDev : 0;
@@ -210,28 +217,28 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
     const grossLoss = Math.abs(losingTrades.reduce((sum, trade) => sum + trade.netPnl, 0));
     const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Number.POSITIVE_INFINITY : 0;
 
-    const pWin = trades.length > 0 ? winningTrades.length / trades.length : 0;
+    const pWin = closedTrades.length > 0 ? winningTrades.length / closedTrades.length : 0;
     const zDenom = Math.sqrt(Math.max(pWin * (1 - pWin), 1e-8));
-    const zScore = trades.length > 1 ? (pWin - 0.5) * Math.sqrt(trades.length) / zDenom : 0;
+    const zScore = closedTrades.length > 1 ? (pWin - 0.5) * Math.sqrt(closedTrades.length) / zDenom : 0;
     const randomChance = clampProbability(1 - erf(Math.abs(zScore) / Math.SQRT2));
 
     const avgWinAbs =
       winningTrades.length > 0 ? winningTrades.reduce((sum, trade) => sum + trade.netPnl, 0) / winningTrades.length : 0;
     const avgLossAbs =
       losingTrades.length > 0 ? Math.abs(losingTrades.reduce((sum, trade) => sum + trade.netPnl, 0) / losingTrades.length) : 0;
-    const winProb = trades.length > 0 ? winningTrades.length / trades.length : 0;
+    const winProb = closedTrades.length > 0 ? winningTrades.length / closedTrades.length : 0;
     const kellyPercentage =
       avgLossAbs > 0 && winProb > 0 && winProb < 1 ? winProb - (1 - winProb) / (avgWinAbs / avgLossAbs) : 0;
 
     const kRatio = pWin > 0 && pnlStdDev > 0 ? (avgWinAbs * winProb) / pnlStdDev : 0;
 
-    const totalCommissions = trades.reduce((sum, trade) => sum + (trade.commission ?? 0), 0);
-    const totalFees = trades.reduce((sum, trade) => sum + (trade.fees ?? 0), 0);
+    const totalCommissions = closedTrades.reduce((sum, trade) => sum + (trade.commission ?? 0), 0);
+    const totalFees = closedTrades.reduce((sum, trade) => sum + (trade.fees ?? 0), 0);
 
-    const maeValues = trades
+    const maeValues = closedTrades
       .map((trade) => trade.mae)
       .filter((mae): mae is number => typeof mae === 'number' && Number.isFinite(mae));
-    const mfeValues = trades
+    const mfeValues = closedTrades
       .map((trade) => trade.mfe)
       .filter((mfe): mfe is number => typeof mfe === 'number' && Number.isFinite(mfe));
 
@@ -248,7 +255,7 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
       { label: 'Average Trade Gain/Loss', value: formatCurrency(averageTradeGainLoss) },
       { label: 'Average Winning Trade', value: winningTrades.length > 0 ? formatCurrency(averageWinningTrade) : '-' },
       { label: 'Average Losing Trade', value: losingTrades.length > 0 ? formatCurrency(averageLosingTrade) : '-' },
-      { label: 'Total Number of Trades', value: `${trades.length}` },
+      { label: 'Total Number of Trades', value: `${closedTrades.length}` },
       { label: 'Number of Winning Trades', value: `${winningCount} (${formatPercent(winPercent)})` },
       { label: 'Number of Losing Trades', value: `${losingCount} (${formatPercent(lossPercent)})` },
       { label: 'Average Hold Time (Scratch)', value: formatHoldTime(scratchTrades.length > 0 ? averageScratchHoldTime : null) },
@@ -278,7 +285,7 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
       {
         label: 'Avg Risk per Trade',
         value: (() => {
-          const riskedTrades = trades.filter((trade) => trade.initialRisk);
+          const riskedTrades = closedTrades.filter((trade) => trade.initialRisk);
           if (riskedTrades.length === 0) return '-';
           const avg = riskedTrades.reduce((acc, trade) => acc + (trade.initialRisk ?? 0), 0) / riskedTrades.length;
           return formatCurrency(avg);
@@ -287,7 +294,7 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
       {
         label: 'Total R-Multiple',
         value: (() => {
-          const riskedTrades = trades.filter((trade) => trade.initialRisk);
+          const riskedTrades = closedTrades.filter((trade) => trade.initialRisk);
           if (riskedTrades.length === 0) return '-';
           const total = riskedTrades.reduce((acc, trade) => acc + trade.netPnl / (trade.initialRisk ?? 1), 0);
           return `${total.toFixed(2)}R`;
@@ -317,6 +324,11 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
       <div className="mb-6 flex items-center gap-2">
         <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Stats</h3>
         <Info className="h-3.5 w-3.5 text-zinc-600" />
+        {openCount > 0 ? (
+          <span className="ml-auto text-xs text-amber-400 font-medium">
+            {openCount} open position{openCount === 1 ? '' : 's'} excluded
+          </span>
+        ) : null}
       </div>
 
       <div className="divide-y divide-white/5">

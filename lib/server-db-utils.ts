@@ -165,6 +165,9 @@ export function toTrade(
     fees,
     tags,
     notes: row.notes ?? undefined,
+    isOpen: row.isOpen ?? false,
+    closedAt: row.closedAt ? row.closedAt.toISOString() : null,
+    remainingQty: row.remainingQty ?? 0,
   };
 }
 

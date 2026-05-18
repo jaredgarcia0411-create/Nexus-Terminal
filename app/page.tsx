@@ -76,6 +76,7 @@ export default function NexusTerminal() {
     defaultRiskInput,
     filterPreset,
     selectedFilterTags,
+    positionFilter,
     bulkTagInput,
     searchQuery,
     hasActiveFilters,
@@ -87,6 +88,7 @@ export default function NexusTerminal() {
     setDefaultRiskInput,
     setFilterPreset,
     setSelectedFilterTags,
+    setPositionFilter,
     setBulkTagInput,
     setSearchQuery,
     handleToggleSelect,
@@ -96,6 +98,8 @@ export default function NexusTerminal() {
     handleApplyRisk,
     handleSetDefaultRisk,
     handleSaveNotes,
+    handleCloseTrade,
+    handleMergeTrades,
     handleAddTag,
     handleRemoveTag,
     handleDeleteGlobalTag,
@@ -231,6 +235,9 @@ export default function NexusTerminal() {
                   handleAddTag={handleAddTag}
                   handleRemoveTag={handleRemoveTag}
                   handleDeleteGlobalTag={handleDeleteGlobalTag}
+                  onMergeTrades={handleMergeTrades}
+                  positionFilter={positionFilter}
+                  onPositionFilterChange={setPositionFilter}
                   onTradeClick={(trade) => setSelectedTradeId(trade.id)}
                 />
               </TabErrorBoundary>
@@ -263,6 +270,7 @@ export default function NexusTerminal() {
           if (!open) setSelectedTradeId(null);
         }}
         onSaveNotes={handleSaveNotes}
+        onCloseTrade={handleCloseTrade}
       />
       <CommandPalette
         open={commandPaletteOpen}
