@@ -1,6 +1,7 @@
 import { Trade, Direction } from './types';
 import { parsePrice } from './trading-utils';
 import { format } from 'date-fns';
+import { normalizeSide, type MatcherExecution } from '@/lib/position-matcher';
 import type { BrokerParserConfig, NormalizedExecution } from './parsers/types';
 import { SIDE_ALIASES, normalizeColumnNames, parseCost, parseTimeToSeconds } from './parsers/utils';
 
@@ -103,6 +104,62 @@ export const parseDateFromFilename = (filename: string) => {
     date,
     sortKey: format(date, 'yyyy-MM-dd'),
   };
+};
+
+export interface ExtractRawResult {
+  executions: MatcherExecution[];
+  warnings: string[];
+}
+
+export const extractRawExecutions = (
+  data: Record<string, string>[],
+  parser?: BrokerParserConfig,
+): ExtractRawResult => {
+  const warnings: string[] = [];
+  const executions: MatcherExecution[] = [];
+  const parserContext = parser?.buildContext?.(data as Record<string, unknown>[]);
+
+  data.forEach((rawRow, rowIndex) => {
+    try {
+      const exec = parser
+        ? parser.normalizeRow(rawRow as Record<string, unknown>, rowIndex, parserContext)
+        : builtinNormalizeRow(rawRow as Record<string, unknown>, rowIndex, warnings);
+
+      if (!exec) return;
+
+      const canonicalSide = normalizeSide(exec.side);
+      if (!canonicalSide) {
+        warnings.push(`Row ${rowIndex + 1}: Unknown side "${exec.side}" for ${exec.symbol}, skipping`);
+        return;
+      }
+
+      executions.push({
+        symbol: exec.symbol,
+        side: canonicalSide,
+        qty: exec.qty,
+        price: exec.price,
+        time: exec.time,
+        commission: exec.commission,
+        fees: exec.fees,
+      });
+    } catch (rowError) {
+      const msg = rowError instanceof Error ? rowError.message : 'Unknown error';
+      warnings.push(`Row ${rowIndex + 1}: Parse error — ${msg}`);
+    }
+  });
+
+  if (parserContext && typeof parserContext === 'object') {
+    const parserWarnings = (parserContext as { warnings?: unknown }).warnings;
+    if (Array.isArray(parserWarnings)) {
+      for (const warning of parserWarnings) {
+        if (typeof warning === 'string' && warning.trim()) {
+          warnings.push(warning);
+        }
+      }
+    }
+  }
+
+  return { executions, warnings };
 };
 
 function consolidateExecutions(

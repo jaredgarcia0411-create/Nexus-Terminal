@@ -7,7 +7,7 @@ import { parseTraderVueCsv } from '@/lib/parsers/tradervue';
 import type { ApiTrade, Trade } from '@/lib/types';
 import { useTradeFilters } from './use-trade-filters';
 import { useTradeSync } from './use-trade-sync';
-import { apiRequest, collectImportedTrades, fromApiTrade, sortTradesByDate, toApiTrade } from '@/lib/trade-utils';
+import { apiRequest, collectRawExecutions, fromApiTrade, sortTradesByDate, toApiTrade } from '@/lib/trade-utils';
 
 const IMPORT_CHUNK_SIZE = 200;
 const DEFAULT_RISK_STORAGE_KEY = 'nexus-default-risk';
@@ -266,7 +266,7 @@ export function useTrades() {
     setError(null);
 
     try {
-      const { trades: allNewTrades, warnings } = await collectImportedTrades(files, {
+      const { batches, warnings } = await collectRawExecutions(files, {
         includeFile: options.includeFile,
         resolveParser: options.resolveParser,
       });
@@ -275,20 +275,32 @@ export function useTrades() {
         console.warn(`[trade import] ${warnings.length} warning(s):`, warnings);
         toast.warning(`${warnings.length} warning(s) during ${options.warningLabel} import (see DevTools console)`);
       }
-      if (allNewTrades.length === 0) {
+      if (batches.length === 0) {
         if (warnings.length === 0) toast.warning(options.emptyMessage);
         return;
       }
 
-      const importedTrades = allNewTrades.map((trade) => withDefaultRisk(trade));
-      const apiTrades = importedTrades.map(toApiTrade);
-      for (let offset = 0; offset < apiTrades.length; offset += IMPORT_CHUNK_SIZE) {
-        const chunk = apiTrades.slice(offset, offset + IMPORT_CHUNK_SIZE);
-        await apiRequest<{ trades: ApiTrade[] }>('/api/trades/import', {
-          method: 'POST',
-          body: JSON.stringify({ trades: chunk }),
-        });
+      const allServerWarnings: string[] = [];
+      for (const batch of batches) {
+        const result = await apiRequest<{ trades: ApiTrade[]; warnings?: string[]; importSkipped?: boolean }>(
+          '/api/trades/import-raw',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              date: batch.date,
+              executions: batch.executions,
+              batchKey: batch.batchKey,
+            }),
+          },
+        );
+        if (Array.isArray(result.warnings)) allServerWarnings.push(...result.warnings);
       }
+
+      if (allServerWarnings.length > 0) {
+        console.warn('[trade import] server warnings:', allServerWarnings);
+        toast.warning(`${allServerWarnings.length} server warning(s) during import (see DevTools console)`);
+      }
+
       await refreshTrades();
     } catch (uploadError) {
       const msg = uploadError instanceof Error ? uploadError.message : 'Processing error';

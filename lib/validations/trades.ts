@@ -111,3 +111,19 @@ export const mergeTradesSchema = z.object({
 });
 
 export type MergeTradesInput = z.infer<typeof mergeTradesSchema>;
+
+export const importRawSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
+  executions: z.array(z.object({
+    symbol: z.string().min(1),
+    side: z.enum(['LONG_ENTRY', 'LONG_EXIT', 'SHORT_ENTRY', 'SHORT_EXIT']),
+    qty: z.number().finite().positive(),
+    price: z.number().finite(),
+    time: z.string().min(1),
+    commission: z.number().finite().optional().default(0),
+    fees: z.number().finite().optional().default(0),
+  })).min(1, 'executions must not be empty'),
+  batchKey: z.string().max(256).optional(),
+});
+
+export type ImportRawInput = z.infer<typeof importRawSchema>;

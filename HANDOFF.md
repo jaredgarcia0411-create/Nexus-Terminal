@@ -5,49 +5,76 @@
 
 ## Current Context
 
-- Completed spec below: **Multi-Day & Overnight Position Support — Phase 1**. Phase 1 shipped schema/migration, server matcher, close/merge/open-position UI, open/closed filtering, and closed-only stats/journal aggregation. Steps 8 and 19 remain explicitly deferred to Phase 2.
-- Validation completed 2026-05-18: `npm run lint`, `npx tsc --noEmit`, `npm run db:migrate`, and `npm test` all passed. `npm test` reported 94 files / 685 tests passing.
-- Phase 2 (cross-day auto-matcher, partial close UX, `realized_segments` JSONB, `closedAt`-based PnL bucketing, calendar/journal multi-day spans) is explicitly OUT of scope for this sprint.
-- Last shipped before this: Collaborative Sample-Set Building (commits `b3bd170`, `d512db9`, `dfe35b4`, `cc33025`).
+- Completed spec below: **Multi-Day & Overnight Position Support — Phase 2**. Phase 2 wires `lib/position-matcher.ts` (built in Phase 1) into a new server-side import route, switches CSV uploads to that route, and extends the matcher to consume pre-existing open positions for true cross-day matching. Partial-close UX on the TradeDetailSheet button remains out of scope (deferred).
+- Validation completed 2026-05-18: `npm run lint`, `npx tsc --noEmit`, and `npm test` all passed. `npm test` reported 94 files / 691 tests passing.
+- Just shipped: **Multi-Day & Overnight Position Support — Phase 1** at commit `62a641107` (2026-05-18). Schema/migration `0038`, server matcher (built, tests only), close/merge/open-position UI, open/closed filter chip, closed-only stats and journal aggregation. Validation: lint, types, `db:migrate`, and 685 tests across 94 files all passed.
+- Older shipped work: Collaborative Sample-Set Building (`b3bd170`, `d512db9`, `dfe35b4`, `cc33025`).
 - Open parked items unrelated to active work: `split-status` endpoint usage audit, broader endpoint review, Filings v2/v3 viewer/search/Copilot work, auto stop-out, Backtest Manager `broke_premarket_high`.
 
 ## Active Execution Spec
 
-## Multi-Day & Overnight Position Support — Phase 1
+## Multi-Day & Overnight Position Support — Phase 2
 
-> Generated: 2026-05-18 | Agent: nexus-architect
+> Generated: 2026-05-18 | Agent: claude (plan)
 > Status: COMPLETED — validated and locally committed by Codex on 2026-05-18
 
 ### Summary
 
-Adds three new columns to the `trades` table (`is_open`, `closed_at`, `remaining_qty`), extracts FIFO position-matching into a new server-side `lib/position-matcher.ts` module with unit tests (the matching algorithm currently lives in `lib/csv-parser.ts` and runs client-side; Phase 1 just lifts it out so Phase 2 can wire it to a new server endpoint without redesigning the algorithm — the new module is NOT yet called from anywhere), and delivers the full Phase 1 UI surface: "Open position" checkbox in NewTradeDialog, "Close Position" panel in TradeDetailSheet, "Merge" action in TradeTable, OPEN badge + filter chip in TradeTable, and closed-only filtering in PerformanceStatsTable/journal-aggregates. Phase 2 (cross-day auto-matching, server-side CSV import, partial close, realized_segments) is not in scope.
+Phase 1 created `lib/position-matcher.ts` with same-day FIFO matching and unit tests, but no caller. Phase 2:
+
+1. Extends the matcher to accept pre-existing open positions, FIFO-match new exits against them across days, and emit per-open-position closing instructions (full or partial).
+2. Builds the deferred Phase 1 Step 8 endpoint: `app/api/trades/import-raw/route.ts`. The route accepts raw broker executions for ONE day at a time, loads the user's open positions for the affected symbols, runs the matcher, and persists results in a transaction.
+3. Adds `extractRawExecutions` in `lib/csv-parser.ts` (the row-normalization step alone, without FIFO matching) and `collectRawExecutions` in `lib/trade-utils.ts` (the file-walking wrapper).
+4. Switches the CSV folder/file import path in `hooks/use-trades.ts` `processImportFiles` to use the new helper + endpoint. The TraderVue path is unchanged (TraderVue CSVs ship already-aggregated trade rows; they do not go through the matcher).
+5. Extends `__tests__/position-matcher.test.ts` with cross-day cases.
+
+**Out of scope (later sprints):**
+- Partial-close UX in the Close Position button (still full-close only — Phase 1's behavior). Note: partial closes happening *via CSV import* are handled by the matcher in this phase, since real-world CSV data produces them. The UI button stays full-close-only.
+- `realized_segments` JSONB column.
+- `closedAt`-based PnL bucketing for journal/calendar (multi-day spans still render against `date`, the entry day, in Phase 2).
+- Calendar/journal multi-day span views.
+- Auto stop-out and other unrelated items.
 
 ### Scope
 
-**In scope:**
-- Schema migration 0038 — 3 new columns + backfill
-- `lib/position-matcher.ts` — extracted, server-side FIFO matcher (used by Phase 2; built now with tests so Phase 2 can wire it without re-deriving the algorithm)
-- `lib/types.ts`, `lib/trade-utils.ts`, `lib/server-db-utils.ts` — surface new fields
-- `lib/validations/trades.ts` — new schemas for import-raw, close-position, merge
-- `app/api/trades/[id]/route.ts` PATCH — extend to handle close-position action
-- `app/api/trades/merge/route.ts` — new endpoint
-- `components/trading/NewTradeDialog.tsx` — open position checkbox
-- `components/trading/TradeDetailSheet.tsx` — Close Position panel
-- `components/trading/TradeTable.tsx` — OPEN badge, PnL `—`, filter chip, Merge button
-- `hooks/use-trade-filters.ts` — `positionFilter` state
-- `hooks/use-trades.ts` — `handleMergeTrades`, `handleCloseTrade` actions
-- `components/trading/PerformanceStatsTable.tsx` — exclude open trades, show indicator
-- `lib/journal-aggregates.ts` — exclude open trades
-- `__tests__/position-matcher.test.ts` — new unit tests
-- `__tests__/trade-merge.test.ts` — new unit tests
-- `__tests__/journal-aggregates.test.ts` — extend with open-trade exclusion cases
+**In scope (files touched):**
+- `lib/position-matcher.ts` — extend types and `matchExecutions`
+- `lib/validations/trades.ts` — add `importRawSchema`
+- `lib/csv-parser.ts` — add `extractRawExecutions` export
+- `lib/trade-utils.ts` — add `collectRawExecutions` helper
+- `app/api/trades/import-raw/route.ts` — CREATE
+- `hooks/use-trades.ts` — switch `processImportFiles` to new endpoint
+- `__tests__/position-matcher.test.ts` — extend with cross-day tests
 
-**Out of scope (Phase 2):**
-- Cross-day auto-matching in the CSV importer
-- `app/api/trades/import-raw/route.ts` — the server endpoint that consumes `lib/position-matcher.ts`. Deferred because the CSV import path can't be cleanly switched over until Phase 2 introduces a client-side raw-extraction helper. Phase 1 ships only the matcher module + tests.
-- Partial close UX
-- `realized_segments` JSONB column
-- Calendar / journal multi-day span views
+**Not touched in Phase 2:**
+- Schema (`is_open`, `closed_at`, `remaining_qty` already shipped in Phase 1 migration `0038`)
+- `app/api/trades/import/route.ts` (kept as-is — still used by the TraderVue import path)
+- `app/api/trades/route.ts`, `app/api/trades/[id]/route.ts`, `app/api/trades/merge/route.ts`
+- All UI components
+
+---
+
+### Design decisions baked into this spec
+
+These choices are non-obvious and worth understanding before reading the steps:
+
+1. **One CSV file = one API call, serialized.** Today `processImportFiles` batches client-side matched trades into 200-row POST chunks. The new path uploads one day's raw executions per call and processes them sequentially. This is slower but correct: each call needs to see DB state after prior calls (so Tuesday's CSV can match against the open position created by Monday's CSV).
+
+2. **The matcher handles partial closes from CSV.** Day 1 BUY 100 → Day 2 SELL 50 is real. The matcher emits a `ClosingFill` with `matchedQty: 50`. The route inserts a new closed trade for the 50-share realized portion AND updates the open position's `totalQuantity` and `remainingQty` to 50.
+
+3. **Fully-closed open positions are UPDATED, not deleted.** When `matchedQty === open.totalQuantity`, the matcher emits one `ClosingFill` and the route updates that row to `isOpen=false`, sets exit fields, and recomputes PnL. The trade ID does not change. Existing `trade_executions` for the open position stay; the closing executions are APPENDED to that same trade.
+
+4. **Newly-opened positions get auto-created.** Phase 1's matcher emitted a warning for unmatched entries ("position may still be open — use the checkbox"). Phase 2 changes that behavior: unmatched same-day entries become `isOpen=true` trade rows automatically. The "Open position" checkbox in `NewTradeDialog` stays for manual entry but isn't required for CSV uploads.
+
+5. **Trade ID conventions:**
+   - Same-day closed: `${sortKey}|${symbol}|${direction}` (matches current convention; allows re-import upsert).
+   - Newly-opened: `${sortKey}|${symbol}|${direction}|${HHMMSS}-${hex4}` (matches `NewTradeDialog` convention).
+   - Partial-close realized row: `${exitSortKey}|${symbol}|${direction}|p-${hex4}` (new — `p-` prefix differentiates from same-day).
+   - Full-close updates: no new ID, updates the existing open position.
+
+6. **Idempotency via `batchKey`.** The new route accepts an optional `batchKey` like `/api/trades/import` does. Re-uploading the same CSV with the same batchKey is a no-op. Without a batchKey, re-uploads can produce duplicates on `newOpenPositions` (their IDs include random suffixes). The client always sends a batchKey derived from filename + content hash.
+
+7. **`processCsvData` and `collectImportedTrades` become production-dead but stay alive.** The csv-parser tests (`__tests__/csv-parser.test.ts`, `__tests__/das-trader-parser.test.ts`) still exercise `processCsvData`. We leave the function in place — deleting it would require rewriting ~15 tests. Codex must NOT delete `processCsvData` or `collectImportedTrades`. A future cleanup sprint can prune them.
 
 ---
 
@@ -55,365 +82,102 @@ Adds three new columns to the `trades` table (`is_open`, `closed_at`, `remaining
 
 ---
 
-#### Step 1: Schema — add columns to `trades` table
-
-**File:** `lib/db/schema.ts`
-**Action:** MODIFY
-
-**Instructions:**
-1. On line 40 (after `fees: doublePrecision('fees').default(0),`), add three new column definitions before the closing of the `trades` pgTable call body:
-
-```ts
-  isOpen: boolean('is_open').notNull().default(false),
-  closedAt: timestamp('closed_at', { withTimezone: true }),
-  remainingQty: doublePrecision('remaining_qty').notNull().default(0),
-```
-
-The block from line 39 through the closing of the column list (line 42, `createdAt`) should now read:
-
-```ts
-  commission: doublePrecision('commission').default(0),
-  fees: doublePrecision('fees').default(0),
-  isOpen: boolean('is_open').notNull().default(false),
-  closedAt: timestamp('closed_at', { withTimezone: true }),
-  remainingQty: doublePrecision('remaining_qty').notNull().default(0),
-  notes: text('notes'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-```
-
-Note: `notes` is currently on line 41, between `fees` and `createdAt`. Insert the three new columns between `fees` and `notes`.
-
-2. `boolean` is already imported on line 2 — no import change needed.
-
-**Acceptance:**
-- [ ] `npx tsc --noEmit` passes
-- [ ] `npm run db:generate` produces a new SQL file in `drizzle/` prefixed `0038_`
-- [ ] The generated SQL contains `ALTER TABLE "trades" ADD COLUMN "is_open" boolean NOT NULL DEFAULT false`
-- [ ] The generated SQL contains `ALTER TABLE "trades" ADD COLUMN "closed_at" timestamp with time zone`
-- [ ] The generated SQL contains `ALTER TABLE "trades" ADD COLUMN "remaining_qty" double precision NOT NULL DEFAULT 0`
-
----
-
-#### Step 2: Migration file — generate + write backfill
-
-**File:** `drizzle/0038_<name>.sql` (name assigned by drizzle-kit)
-**Action:** MODIFY (append to the generated file after running generate)
-
-**Instructions:**
-1. Run `npm run db:generate`. Drizzle-kit will create `drizzle/0038_<marvel-name>.sql` — the exact name does not matter.
-2. Open the generated file. Verify it contains the three `ALTER TABLE "trades" ADD COLUMN` statements from Step 1.
-3. Append the following SQL at the end of the file, after the generated statements (before any trailing `-->` breakpoint comment if present, otherwise just at the end):
-
-```sql
---> statement-breakpoint
-UPDATE "trades" SET "closed_at" = (date::date)::timestamptz WHERE "closed_at" IS NULL;
-```
-
-`is_open` and `remaining_qty` already have `NOT NULL DEFAULT` clauses on the ALTER, so all existing rows pick up `false` / `0` automatically — no backfill needed for those.
-
-The `closed_at` backfill sets every pre-existing trade's close timestamp to its `date` value (cast `text` → `date` → `timestamptz`). Historical trades are all closed, so their close date is their trade date. This sets up Phase 2's `closedAt`-based PnL bucketing to work correctly for historical data without a separate backfill later. The cast is safe because `date` is validated as `YYYY-MM-DD` everywhere it's written (CSV parser, manual entry, TraderVue importer).
-
-**Acceptance:**
-- [ ] `npm run db:migrate` applies the migration without error
-- [ ] Running `SELECT is_open, closed_at, remaining_qty FROM trades LIMIT 5;` via any SQL client shows `is_open=false`, `closed_at` populated to each trade's date (e.g. `2026-05-15 00:00:00+00`), `remaining_qty=0` for all pre-existing rows
-
----
-
-#### Step 3: Types — add `isOpen`, `closedAt`, `remainingQty` to `Trade` and `ApiTrade`
-
-**File:** `lib/types.ts`
-**Action:** MODIFY
-
-**Instructions:**
-1. In the `Trade` interface (lines 14-42), add three fields after `notes?: string;` (currently line 41):
-
-```ts
-  isOpen?: boolean;
-  closedAt?: string | null;
-  remainingQty?: number;
-```
-
-2. In the `ApiTrade` type (lines 48-74), add the same three fields after `notes?: string;` (currently line 73):
-
-```ts
-  isOpen?: boolean;
-  closedAt?: string | null;
-  remainingQty?: number;
-```
-
-**Acceptance:**
-- [ ] `npx tsc --noEmit` passes
-
----
-
-#### Step 4: `normalizeTrade` — default new fields
-
-**File:** `lib/trade-utils.ts`
-**Action:** MODIFY
-
-**Instructions:**
-1. In `normalizeTrade` (lines 21-42), inside the returned object spread, add after `tags: trade.tags ?? [],`:
-
-```ts
-    isOpen: trade.isOpen ?? false,
-    remainingQty: trade.remainingQty ?? 0,
-```
-
-`closedAt` is already optional/nullable — no default needed.
-
-**Acceptance:**
-- [ ] `npx tsc --noEmit` passes
-
----
-
-#### Step 5: `toTrade` — surface new fields from DB row
-
-**File:** `lib/server-db-utils.ts`
-**Action:** MODIFY
-
-**Instructions:**
-1. In `toTrade` (lines 132-169), add three fields to the returned object after `notes: row.notes ?? undefined,`:
-
-```ts
-    isOpen: row.isOpen ?? false,
-    closedAt: row.closedAt ? row.closedAt.toISOString() : null,
-    remainingQty: row.remainingQty ?? 0,
-```
-
-**Acceptance:**
-- [ ] `npx tsc --noEmit` passes
-
----
-
-#### Step 6: Validations — extend schemas and add new ones
-
-**File:** `lib/validations/trades.ts`
-**Action:** MODIFY
-
-**Instructions:**
-
-1. In `createTradeSchema` (lines 14-40), add these three optional fields after `tags: z.array(z.string()).optional(),` (currently line 39):
-
-```ts
-  isOpen: z.boolean().optional().default(false),
-  closedAt: z.string().nullable().optional(),
-  remainingQty: z.number().finite().optional().default(0),
-```
-
-2. In `importTradeItemSchema` (lines 60-86), add the same three fields after `tags: z.array(z.string()).optional(),` (currently line 85):
-
-```ts
-  isOpen: z.boolean().optional().default(false),
-  closedAt: z.string().nullable().optional(),
-  remainingQty: z.number().finite().optional().default(0),
-```
-
-3. After the `importTradesSchema` block (currently ends at line 93), add these new schemas:
-
-```ts
-// Schema for the close-position action on PATCH /api/trades/[id]
-export const closePositionSchema = z.object({
-  action: z.literal('close'),
-  exitPrice: z.number().finite().positive(),
-  exitTime: z.string().min(1),
-});
-
-export type ClosePositionInput = z.infer<typeof closePositionSchema>;
-
-// Schema for POST /api/trades/merge
-export const mergeTradesSchema = z.object({
-  ids: z.array(z.string().min(1)).min(2, 'Select at least 2 trades to merge'),
-});
-
-export type MergeTradesInput = z.infer<typeof mergeTradesSchema>;
-```
-
-(Note: an `importRawSchema` was originally planned here to support a Phase 1 server-side CSV import endpoint. That endpoint is now deferred to Phase 2 — see Step 8 — so the schema is not added in Phase 1.)
-
-**Acceptance:**
-- [ ] `npx tsc --noEmit` passes
-- [ ] `npm run lint` passes
-
----
-
-#### Step 7: Create `lib/position-matcher.ts`
+#### Step 1: Extend `lib/position-matcher.ts` — accept open positions, return closing fills
 
 **File:** `lib/position-matcher.ts`
-**Action:** CREATE
+**Action:** MODIFY
+
+**Goal:** `matchExecutions` accepts an optional second argument `openPositions: OpenPositionInput[]`. When provided, the matcher FIFO-consumes those open positions with new exit executions before pairing same-day entries with exits. Unmatched same-day entries become `newOpenPositions` (no longer warnings).
 
 **Instructions:**
 
-Create this file with the following content. This is the FIFO matching logic extracted from `lib/csv-parser.ts:processCsvData` (lines 220-320), refactored to work on pre-normalized execution inputs instead of raw CSV rows. The file stands alone — no circular dependencies.
+1. **Add new exported types** at the top of the file, after the existing `MatchedTrade` interface (currently line 13-25):
 
 ```ts
-/**
- * lib/position-matcher.ts
- *
- * Server-side FIFO position matcher. Accepts a list of raw executions for a
- * single trading day and produces matched trade objects.
- *
- * Phase 1: same-day matching only (unmatched executions produce warnings).
- * Phase 2 will extend this to consume pre-existing open positions.
- */
-
-import type { Direction } from '@/lib/types';
-
-export interface MatcherExecution {
-  symbol: string;
-  /** Canonical side after broker normalization. */
-  side: 'LONG_ENTRY' | 'LONG_EXIT' | 'SHORT_ENTRY' | 'SHORT_EXIT';
-  qty: number;
-  price: number;
-  time: string;
-  commission: number;
-  fees: number;
-}
-
-export interface MatchedTrade {
+export interface OpenPositionInput {
+  /** trade.id of the existing open position in the DB. */
+  id: string;
   symbol: string;
   direction: Direction;
-  avgEntryPrice: number;
-  avgExitPrice: number;
+  /** Outstanding share count on this open position. */
   totalQuantity: number;
-  grossPnl: number;
-  netPnl: number;
+  avgEntryPrice: number;
   entryTime: string;
-  exitTime: string;
+  /** Used for FIFO ordering across days. */
+  entryDate: Date;
+  /** Total entry-side commission/fees already booked on this open position. */
   commission: number;
   fees: number;
 }
 
+export interface ClosingFill {
+  /** The open position being (fully or partially) closed. */
+  openPositionId: string;
+  /** Symbol/direction copied through so the route can route the update. */
+  symbol: string;
+  direction: Direction;
+  /** Weighted average of the closing executions' prices. */
+  exitPrice: number;
+  /** Latest closing execution time. */
+  exitTime: string;
+  /** Shares consumed from the open position. May be < open.totalQuantity (partial close). */
+  matchedQty: number;
+  /** PnL on the matched portion. */
+  grossPnl: number;
+  netPnl: number;
+  /** Proportional split of the open position's entry-side commission/fees,
+   *  scaled by matchedQty / open.totalQuantity. */
+  entryCommissionAllocated: number;
+  entryFeesAllocated: number;
+  /** Sum of commission/fees on the consumed exit executions. */
+  exitCommission: number;
+  exitFees: number;
+  /** Raw exit executions consumed (for trade_executions append). */
+  exitExecutions: MatcherExecution[];
+}
+```
+
+2. **Add an `isOpen` flag to `MatchedTrade`** so the route can tell apart same-day closed vs newly-opened positions. After `fees: number;` in `MatchedTrade` (currently line 24):
+
+```ts
+  /** True when this trade was produced from unmatched entries with no closing exit. */
+  isOpen?: boolean;
+  /** When true, equals totalQuantity. Helps the route persist remainingQty. */
+  remainingQty?: number;
+```
+
+3. **Extend `MatcherResult`** (currently line 27-30):
+
+```ts
 export interface MatcherResult {
+  /** Same-day matched closed trades. Each has isOpen omitted/false. */
   trades: MatchedTrade[];
+  /** Unmatched same-day entries — to be persisted as isOpen=true rows. */
+  newOpenPositions: MatchedTrade[];
+  /** Updates to existing open positions (full or partial closes). */
+  closingFills: ClosingFill[];
   warnings: string[];
 }
+```
 
-type RawBucket = { qty: number; price: number; time: string; commission: number; fees: number };
+4. **Replace `matchExecutions`** (currently line 152-183). The new implementation has THREE phases per (symbol, direction):
+   - PASS A: consume new exits against open positions FIFO. Each open position is closed fully or partially.
+   - PASS B: FIFO-match same-day entries vs remaining same-day exits (the existing Phase 1 logic).
+   - PASS C: any leftover entries become `newOpenPositions`; any leftover exits become warnings.
 
-function compareTimes(a: string, b: string): number {
-  const toSeconds = (t: string): number | null => {
-    const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(t);
-    if (!match) return null;
-    return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3] ?? 0);
-  };
-  const aSecs = toSeconds(a);
-  const bSecs = toSeconds(b);
-  if (aSecs != null && bSecs != null) return aSecs - bSecs;
-  if (aSecs != null) return -1;
-  if (bSecs != null) return 1;
-  return a.localeCompare(b);
-}
+The new signature:
 
-function remainder(exec: RawBucket, matched: number): RawBucket | null {
-  const rem = exec.qty - matched;
-  if (rem <= 0) return null;
-  const ratio = exec.qty > 0 ? rem / exec.qty : 0;
-  return { ...exec, qty: rem, commission: exec.commission * ratio, fees: exec.fees * ratio };
-}
-
-function fifoMatch(
-  entries: RawBucket[],
-  exits: RawBucket[],
-  direction: Direction,
-  symbol: string,
-  warnings: string[],
-): MatchedTrade[] {
-  const se = [...entries].sort((a, b) => compareTimes(a.time, b.time));
-  const sx = [...exits].sort((a, b) => compareTimes(a.time, b.time));
-  const trades: MatchedTrade[] = [];
-
-  // Accumulated running totals for the single merged trade row.
-  let totalQty = 0;
-  let entryValueSum = 0;
-  let exitValueSum = 0;
-  let totalGross = 0;
-  let totalNet = 0;
-  let totalCommission = 0;
-  let totalFees = 0;
-  let earliestEntry = '';
-  let latestExit = '';
-
-  while (se.length > 0 && sx.length > 0) {
-    const entry = se.shift()!;
-    const exit = sx.shift()!;
-    const q = Math.min(entry.qty, exit.qty);
-    if (q <= 0) {
-      const re = remainder(entry, q);
-      const rx = remainder(exit, q);
-      if (re) se.unshift(re);
-      if (rx) sx.unshift(rx);
-      continue;
-    }
-
-    const entryCommission = entry.qty > 0 ? (entry.commission / entry.qty) * q : 0;
-    const exitCommission = exit.qty > 0 ? (exit.commission / exit.qty) * q : 0;
-    const entryFees = entry.qty > 0 ? (entry.fees / entry.qty) * q : 0;
-    const exitFees = exit.qty > 0 ? (exit.fees / exit.qty) * q : 0;
-    const pairCommission = entryCommission + exitCommission;
-    const pairFees = entryFees + exitFees;
-    const gross = direction === 'LONG'
-      ? (exit.price - entry.price) * q
-      : (entry.price - exit.price) * q;
-    const net = gross - pairCommission - pairFees;
-
-    entryValueSum += entry.price * q;
-    exitValueSum += exit.price * q;
-    totalQty += q;
-    totalGross += gross;
-    totalNet += net;
-    totalCommission += pairCommission;
-    totalFees += pairFees;
-
-    if (!earliestEntry || compareTimes(entry.time, earliestEntry) < 0) earliestEntry = entry.time;
-    if (!latestExit || compareTimes(exit.time, latestExit) > 0) latestExit = exit.time;
-
-    const re = remainder(entry, q);
-    const rx = remainder(exit, q);
-    if (re) se.unshift(re);
-    if (rx) sx.unshift(rx);
-  }
-
-  if (totalQty > 0) {
-    trades.push({
-      symbol,
-      direction,
-      avgEntryPrice: entryValueSum / totalQty,
-      avgExitPrice: exitValueSum / totalQty,
-      totalQuantity: totalQty,
-      grossPnl: totalGross,
-      netPnl: totalNet,
-      entryTime: earliestEntry,
-      exitTime: latestExit,
-      commission: totalCommission,
-      fees: totalFees,
-    });
-  }
-
-  // Unmatched entries/exits — Phase 1 behavior: warn and drop.
-  if (se.length > 0) {
-    const unmatchedQty = se.reduce((s, e) => s + e.qty, 0);
-    const label = direction === 'LONG' ? 'BUY' : 'SHORT SELL';
-    const hint = 'position may still be open — use the "Open position" checkbox to record it manually';
-    warnings.push(`${symbol}: ${unmatchedQty} unmatched ${label} share(s) (${se.length} fill(s)) — ${hint}`);
-  }
-  if (sx.length > 0) {
-    const unmatchedQty = sx.reduce((s, e) => s + e.qty, 0);
-    const label = direction === 'LONG' ? 'SELL' : 'COVER BUY';
-    const hint = 'no matching entry fills for this day (carry-over from prior session?)';
-    warnings.push(`${symbol}: ${unmatchedQty} unmatched ${label} share(s) (${sx.length} fill(s)) — ${hint}`);
-  }
-
-  return trades;
-}
-
-/**
- * Match a flat list of normalized executions for a single day.
- * Returns one merged MatchedTrade per symbol+direction combination.
- */
-export function matchExecutions(executions: MatcherExecution[]): MatcherResult {
+```ts
+export function matchExecutions(
+  executions: MatcherExecution[],
+  openPositions: OpenPositionInput[] = [],
+): MatcherResult {
   const warnings: string[] = [];
+  const trades: MatchedTrade[] = [];
+  const newOpenPositions: MatchedTrade[] = [];
+  const closingFills: ClosingFill[] = [];
 
-  // Group by symbol + direction bucket.
+  // Bucket executions by symbol + side (existing behavior).
   const longEntries: Record<string, RawBucket[]> = {};
   const longExits: Record<string, RawBucket[]> = {};
   const shortEntries: Record<string, RawBucket[]> = {};
@@ -428,60 +192,289 @@ export function matchExecutions(executions: MatcherExecution[]): MatcherResult {
     else if (side === 'SHORT_EXIT') (shortExits[symbol] ??= []).push(bucket);
   }
 
-  const allSymbols = new Set([
-    ...Object.keys(longEntries),
-    ...Object.keys(longExits),
-    ...Object.keys(shortEntries),
-    ...Object.keys(shortExits),
+  // Bucket open positions by symbol + direction, FIFO by (entryDate, entryTime).
+  const longOpen: Record<string, OpenPositionInput[]> = {};
+  const shortOpen: Record<string, OpenPositionInput[]> = {};
+  for (const op of openPositions) {
+    if (op.direction === 'LONG') (longOpen[op.symbol] ??= []).push(op);
+    else (shortOpen[op.symbol] ??= []).push(op);
+  }
+  const sortFifo = (list: OpenPositionInput[]) =>
+    list.sort((a, b) => {
+      const d = a.entryDate.getTime() - b.entryDate.getTime();
+      if (d !== 0) return d;
+      return compareTimes(a.entryTime, b.entryTime);
+    });
+  for (const list of Object.values(longOpen)) sortFifo(list);
+  for (const list of Object.values(shortOpen)) sortFifo(list);
+
+  const allSymbols = new Set<string>([
+    ...Object.keys(longEntries), ...Object.keys(longExits),
+    ...Object.keys(shortEntries), ...Object.keys(shortExits),
+    ...Object.keys(longOpen), ...Object.keys(shortOpen),
   ]);
 
-  const trades: MatchedTrade[] = [];
   for (const symbol of allSymbols) {
-    const longMatched = fifoMatch(
-      longEntries[symbol] ?? [],
-      longExits[symbol] ?? [],
-      'LONG',
-      symbol,
-      warnings,
+    matchSide(
+      symbol, 'LONG',
+      longEntries[symbol] ?? [], longExits[symbol] ?? [], longOpen[symbol] ?? [],
+      trades, newOpenPositions, closingFills, warnings,
     );
-    const shortMatched = fifoMatch(
-      shortEntries[symbol] ?? [],
-      shortExits[symbol] ?? [],
-      'SHORT',
-      symbol,
-      warnings,
+    matchSide(
+      symbol, 'SHORT',
+      shortEntries[symbol] ?? [], shortExits[symbol] ?? [], shortOpen[symbol] ?? [],
+      trades, newOpenPositions, closingFills, warnings,
     );
-    trades.push(...longMatched, ...shortMatched);
   }
 
-  return { trades, warnings };
+  return { trades, newOpenPositions, closingFills, warnings };
 }
+```
 
-/**
- * Normalize broker-specific side codes into canonical MatcherExecution sides.
- * MARGIN / BUY -> LONG_ENTRY, S / SELL -> LONG_EXIT
- * SS / SHORT   -> SHORT_ENTRY, B / COVER -> SHORT_EXIT
- */
-export function normalizeSide(
-  raw: string,
-): 'LONG_ENTRY' | 'LONG_EXIT' | 'SHORT_ENTRY' | 'SHORT_EXIT' | null {
-  switch (raw.trim().toUpperCase()) {
-    case 'MARGIN':
-    case 'BUY':
-      return 'LONG_ENTRY';
-    case 'S':
-    case 'SELL':
-      return 'LONG_EXIT';
-    case 'SS':
-    case 'SHORT':
-      return 'SHORT_ENTRY';
-    case 'B':
-    case 'COVER':
-      return 'SHORT_EXIT';
-    default:
-      return null;
+5. **Add the `matchSide` helper** between `fifoMatch` and `matchExecutions`. This is where PASS A (consume open positions) happens, then PASS B/C reuse `fifoMatch` for same-day entries:
+
+```ts
+function matchSide(
+  symbol: string,
+  direction: Direction,
+  entries: RawBucket[],
+  exits: RawBucket[],
+  opens: OpenPositionInput[],
+  outTrades: MatchedTrade[],
+  outNewOpen: MatchedTrade[],
+  outClosing: ClosingFill[],
+  warnings: string[],
+): void {
+  const sortedEntries = [...entries].sort((a, b) => compareTimes(a.time, b.time));
+  const sortedExits = [...exits].sort((a, b) => compareTimes(a.time, b.time));
+
+  // PASS A: consume exits against open positions FIFO.
+  // We mutate sortedExits in place: fully-consumed exits are removed from the front,
+  // partially-consumed exits are replaced with their remainder.
+  for (const open of opens) {
+    let remainingToClose = open.totalQuantity;
+    const consumed: { price: number; qty: number; time: string; commission: number; fees: number }[] = [];
+
+    while (remainingToClose > 0 && sortedExits.length > 0) {
+      const exit = sortedExits[0];
+      const take = Math.min(remainingToClose, exit.qty);
+      const ratio = exit.qty > 0 ? take / exit.qty : 0;
+      const takeCommission = exit.commission * ratio;
+      const takeFees = exit.fees * ratio;
+      consumed.push({
+        price: exit.price,
+        qty: take,
+        time: exit.time,
+        commission: takeCommission,
+        fees: takeFees,
+      });
+
+      if (take >= exit.qty) {
+        sortedExits.shift();
+      } else {
+        sortedExits[0] = {
+          ...exit,
+          qty: exit.qty - take,
+          commission: exit.commission - takeCommission,
+          fees: exit.fees - takeFees,
+        };
+      }
+      remainingToClose -= take;
+    }
+
+    const matchedQty = open.totalQuantity - remainingToClose;
+    if (matchedQty <= 0) continue; // no exits available — open stays untouched.
+
+    // Build the ClosingFill.
+    const exitValueSum = consumed.reduce((s, c) => s + c.price * c.qty, 0);
+    const avgExitPrice = matchedQty > 0 ? exitValueSum / matchedQty : 0;
+    const latestExitTime = consumed.reduce((latest, c) =>
+      !latest || compareTimes(c.time, latest) > 0 ? c.time : latest, '');
+    const exitCommission = consumed.reduce((s, c) => s + c.commission, 0);
+    const exitFees = consumed.reduce((s, c) => s + c.fees, 0);
+
+    // Proportional split of the open position's entry commission/fees.
+    const entryRatio = open.totalQuantity > 0 ? matchedQty / open.totalQuantity : 0;
+    const entryCommissionAllocated = open.commission * entryRatio;
+    const entryFeesAllocated = open.fees * entryRatio;
+
+    const gross = direction === 'LONG'
+      ? (avgExitPrice - open.avgEntryPrice) * matchedQty
+      : (open.avgEntryPrice - avgExitPrice) * matchedQty;
+    const net = gross - entryCommissionAllocated - entryFeesAllocated - exitCommission - exitFees;
+
+    outClosing.push({
+      openPositionId: open.id,
+      symbol,
+      direction,
+      exitPrice: avgExitPrice,
+      exitTime: latestExitTime,
+      matchedQty,
+      grossPnl: gross,
+      netPnl: net,
+      entryCommissionAllocated,
+      entryFeesAllocated,
+      exitCommission,
+      exitFees,
+      exitExecutions: consumed.map((c) => ({
+        symbol,
+        side: direction === 'LONG' ? 'LONG_EXIT' : 'SHORT_EXIT',
+        qty: c.qty,
+        price: c.price,
+        time: c.time,
+        commission: c.commission,
+        fees: c.fees,
+      })),
+    });
+  }
+
+  // PASS B: FIFO-match remaining same-day entries against remaining same-day exits.
+  // Reuse the existing fifoMatch — it already does the right thing and warns on
+  // leftovers. But we DON'T want its leftover-entry warnings (Phase 2 turns those
+  // into newOpenPositions). So we inline a slightly modified version here, OR
+  // we let fifoMatch handle the trade and then check leftovers ourselves.
+  // Simpler: walk fifoMatch's algorithm inline so we can keep leftovers cleanly.
+
+  const se = [...sortedEntries];
+  const sx = sortedExits; // already mutated by PASS A
+
+  let totalQty = 0;
+  let entryValueSum = 0;
+  let exitValueSum = 0;
+  let totalGross = 0;
+  let totalNet = 0;
+  let totalCommission = 0;
+  let totalFees = 0;
+  let earliestEntry = '';
+  let latestExit = '';
+
+  while (se.length > 0 && sx.length > 0) {
+    const entry = se.shift()!;
+    const exit = sx.shift()!;
+    const qty = Math.min(entry.qty, exit.qty);
+    if (qty <= 0) {
+      const er = remainder(entry, qty);
+      const xr = remainder(exit, qty);
+      if (er) se.unshift(er);
+      if (xr) sx.unshift(xr);
+      continue;
+    }
+
+    const entryCommission = entry.qty > 0 ? (entry.commission / entry.qty) * qty : 0;
+    const exitCommission = exit.qty > 0 ? (exit.commission / exit.qty) * qty : 0;
+    const entryFees = entry.qty > 0 ? (entry.fees / entry.qty) * qty : 0;
+    const exitFees = exit.qty > 0 ? (exit.fees / exit.qty) * qty : 0;
+    const pairCommission = entryCommission + exitCommission;
+    const pairFees = entryFees + exitFees;
+    const gross = direction === 'LONG'
+      ? (exit.price - entry.price) * qty
+      : (entry.price - exit.price) * qty;
+    const net = gross - pairCommission - pairFees;
+
+    entryValueSum += entry.price * qty;
+    exitValueSum += exit.price * qty;
+    totalQty += qty;
+    totalGross += gross;
+    totalNet += net;
+    totalCommission += pairCommission;
+    totalFees += pairFees;
+
+    if (!earliestEntry || compareTimes(entry.time, earliestEntry) < 0) earliestEntry = entry.time;
+    if (!latestExit || compareTimes(exit.time, latestExit) > 0) latestExit = exit.time;
+
+    const er = remainder(entry, qty);
+    const xr = remainder(exit, qty);
+    if (er) se.unshift(er);
+    if (xr) sx.unshift(xr);
+  }
+
+  if (totalQty > 0) {
+    outTrades.push({
+      symbol, direction,
+      avgEntryPrice: entryValueSum / totalQty,
+      avgExitPrice: exitValueSum / totalQty,
+      totalQuantity: totalQty,
+      grossPnl: totalGross,
+      netPnl: totalNet,
+      entryTime: earliestEntry,
+      exitTime: latestExit,
+      commission: totalCommission,
+      fees: totalFees,
+    });
+  }
+
+  // PASS C: leftover entries become newOpenPositions; leftover exits become warnings.
+  if (se.length > 0) {
+    // Aggregate leftover entries into a single open-position MatchedTrade.
+    const totalOpenQty = se.reduce((s, e) => s + e.qty, 0);
+    const openValueSum = se.reduce((s, e) => s + e.price * e.qty, 0);
+    const openCommission = se.reduce((s, e) => s + e.commission, 0);
+    const openFees = se.reduce((s, e) => s + e.fees, 0);
+    const earliest = se.reduce((acc, e) =>
+      !acc || compareTimes(e.time, acc) < 0 ? e.time : acc, '');
+    outNewOpen.push({
+      symbol, direction,
+      avgEntryPrice: totalOpenQty > 0 ? openValueSum / totalOpenQty : 0,
+      avgExitPrice: 0,
+      totalQuantity: totalOpenQty,
+      grossPnl: 0,
+      netPnl: 0,
+      entryTime: earliest,
+      exitTime: '',
+      commission: openCommission,
+      fees: openFees,
+      isOpen: true,
+      remainingQty: totalOpenQty,
+    });
+  }
+  if (sx.length > 0) {
+    const unmatchedQty = sx.reduce((s, e) => s + e.qty, 0);
+    const label = direction === 'LONG' ? 'SELL' : 'COVER BUY';
+    warnings.push(
+      `${symbol}: ${unmatchedQty} unmatched ${label} share(s) (${sx.length} fill(s)) — no matching entry or open position`,
+    );
   }
 }
+```
+
+6. **Update the existing `fifoMatch` warning text** — since the new flow funnels open-entry leftovers through `matchSide`, the old `fifoMatch` is now only called by tests. Leave its warning text alone (don't change Phase 1's tests). The new `matchSide` is the production caller.
+
+**Acceptance:**
+- [ ] `npx tsc --noEmit` passes
+- [ ] `npm run lint` passes
+- [ ] Calling `matchExecutions(execs)` with no openPositions argument: previously-passing tests still pass (the new return shape is a superset — `trades` and `warnings` are unchanged for the same-day-only path). Exception: the existing Phase 1 tests expect unmatched LONG_ENTRY to produce a warning + zero trades; that behavior moved. **Update those tests in Step 7.**
+
+---
+
+#### Step 2: Add `importRawSchema` to `lib/validations/trades.ts`
+
+**File:** `lib/validations/trades.ts`
+**Action:** MODIFY
+
+**Instructions:**
+
+After the `mergeTradesSchema` block (currently line 109-113), append:
+
+```ts
+// Schema for POST /api/trades/import-raw.
+// One CSV file's worth of raw broker executions, all for the same trading day.
+export const importRawSchema = z.object({
+  /** Sortable day key (YYYY-MM-DD) the executions occurred on. */
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
+  executions: z.array(z.object({
+    symbol: z.string().min(1),
+    side: z.enum(['LONG_ENTRY', 'LONG_EXIT', 'SHORT_ENTRY', 'SHORT_EXIT']),
+    qty: z.number().finite().positive(),
+    price: z.number().finite(),
+    time: z.string().min(1),
+    commission: z.number().finite().optional().default(0),
+    fees: z.number().finite().optional().default(0),
+  })).min(1, 'executions must not be empty'),
+  /** Idempotency key — re-uploading the same CSV with the same key is a no-op. */
+  batchKey: z.string().max(256).optional(),
+});
+
+export type ImportRawInput = z.infer<typeof importRawSchema>;
 ```
 
 **Acceptance:**
@@ -490,235 +483,223 @@ export function normalizeSide(
 
 ---
 
-#### Step 8: (DEFERRED to Phase 2) — `app/api/trades/import-raw/route.ts`
+#### Step 3: Add `extractRawExecutions` to `lib/csv-parser.ts`
 
-**Action:** SKIP — do nothing in Phase 1.
+**File:** `lib/csv-parser.ts`
+**Action:** MODIFY (additive — do NOT touch existing exports)
 
-The original plan for this step was to create a new server endpoint that consumes the matcher built in Step 7. Phase 1 ships the matcher module + tests only; the route is deferred to Phase 2.
-
-**Why deferred:** The route can't be wired to the CSV import path without a client-side helper that extracts raw executions before FIFO matching. That helper is itself non-trivial (it has to parse every supported broker CSV format and stop *before* the matching pass that `processCsvData` currently does). Shipping the route now would mean shipping dead code — a route that no client ever calls. Phase 2 will build the client helper and the route together so they can be designed against each other.
-
-**For Codex:** Skip this step entirely. Do NOT create `app/api/trades/import-raw/route.ts`. Do NOT add `importRawSchema` to `lib/validations/trades.ts` (Step 6 already excludes it from the schemas to add — re-check Step 6 if uncertain). Continue to Step 9.
-
-**Acceptance:**
-- [ ] `app/api/trades/import-raw/route.ts` does NOT exist after this sprint
-- [ ] No reference to `importRawSchema` appears in `lib/validations/trades.ts`
-
----
-
-#### Step 9: Extend PATCH `/api/trades/[id]` — close-position action
-
-**File:** `app/api/trades/[id]/route.ts`
-**Action:** MODIFY
+**Goal:** Expose the row-normalization step (broker parser → side normalization → MatcherExecution shape) without running FIFO matching. The existing `processCsvData` stays in place for the csv-parser tests.
 
 **Instructions:**
 
-1. Add `closePositionSchema` to the import from `@/lib/validations/trades` (currently line 6):
+1. Add an import at the top of the file for the matcher types and `normalizeSide`:
 
 ```ts
-import { updateTradeSchema, closePositionSchema } from '@/lib/validations/trades';
+import { normalizeSide, type MatcherExecution } from '@/lib/position-matcher';
 ```
 
-2. Add `sql` to the import from `drizzle-orm` (currently line 1: `import { and, asc, eq } from 'drizzle-orm';`):
+2. After `parseDateFromFilename` (currently ends at line 106), add the new export. This function reuses the existing `builtinNormalizeRow` and `BrokerParserConfig` path — it just skips the matching pass:
 
 ```ts
-import { and, asc, eq, sql } from 'drizzle-orm';
-```
-
-3. Replace the entire `PATCH` handler (lines 54-131) with the following. The new handler tries to parse as `closePositionSchema` first; if the `action` field is not present, it falls back to `updateTradeSchema`. This keeps all existing notes/tags/risk functionality intact.
-
-```ts
-export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const authState = await requireUser();
-    if ('error' in authState) return authState.error;
-
-    const db = getDb();
-    if (!db) return dbUnavailable();
-    await ensureUser(db, authState.user);
-
-    const { id } = await context.params;
-
-    // Try close-position action first.
-    let rawBody: unknown;
-    try {
-      rawBody = await request.json();
-    } catch {
-      return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
-    }
-
-    const isCloseAction =
-      rawBody && typeof rawBody === 'object' && (rawBody as Record<string, unknown>)['action'] === 'close';
-
-    if (isCloseAction) {
-      const parsed = closePositionSchema.safeParse(rawBody);
-      if (!parsed.success) {
-        return Response.json(
-          { error: 'Validation failed', details: parsed.error.flatten() },
-          { status: 400 },
-        );
-      }
-      const { exitPrice, exitTime } = parsed.data;
-
-      // Load the trade to get current state.
-      const [current] = await db.select().from(trades)
-        .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)))
-        .limit(1);
-
-      if (!current) return Response.json({ error: 'Trade not found' }, { status: 404 });
-      if (!current.isOpen) return Response.json({ error: 'Trade is already closed' }, { status: 400 });
-
-      const qty = current.totalQuantity;
-      const entryPrice = current.avgEntryPrice;
-      const commission = current.commission ?? 0;
-      const fees = current.fees ?? 0;
-      const grossPnl = current.direction === 'LONG'
-        ? (exitPrice - entryPrice) * qty
-        : (entryPrice - exitPrice) * qty;
-      const netPnl = grossPnl - commission - fees;
-
-      await db.update(trades).set({
-        avgExitPrice: exitPrice,
-        exitTime,
-        grossPnl,
-        netPnl,
-        pnl: netPnl,
-        isOpen: false,
-        closedAt: sql`now()`,
-        remainingQty: 0,
-      }).where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)));
-
-      const [updated] = await db.select().from(trades)
-        .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)))
-        .limit(1);
-      if (!updated) return Response.json({ error: 'Trade not found after update' }, { status: 404 });
-
-      const [tagRows, executionRows] = await Promise.all([
-        db.select({ tag: tradeTagsTable.tag })
-          .from(tradeTagsTable)
-          .where(and(eq(tradeTagsTable.userId, authState.user.id), eq(tradeTagsTable.tradeId, id))),
-        db.select().from(tradeExecutions)
-          .where(and(eq(tradeExecutions.userId, authState.user.id), eq(tradeExecutions.tradeId, id)))
-          .orderBy(asc(tradeExecutions.time), asc(tradeExecutions.id)),
-      ]);
-      const tagList = tagRows.map((r) => r.tag);
-      const rawExecutions = executionRows.map((row) => ({
-        id: row.id,
-        side: row.side,
-        price: row.price,
-        qty: row.qty,
-        time: row.time,
-        timestamp: row.timestamp ?? undefined,
-        commission: row.commission ?? 0,
-        fees: row.fees ?? 0,
-      }));
-
-      return Response.json({ trade: toTrade(updated, tagList, rawExecutions) });
-    }
-
-    // Fall through to normal update (notes / initialRisk / tags).
-    const parseResult = updateTradeSchema.safeParse(rawBody);
-    if (!parseResult.success) {
-      return Response.json(
-        { error: 'Validation failed', details: parseResult.error.flatten() },
-        { status: 400 },
-      );
-    }
-    const body = parseResult.data;
-
-    const updateData: Partial<typeof trades.$inferInsert> = {};
-    if (Object.prototype.hasOwnProperty.call(body, 'notes')) {
-      updateData.notes = body.notes?.trim() || null;
-    }
-    if (Object.prototype.hasOwnProperty.call(body, 'initialRisk')) {
-      updateData.initialRisk = body.initialRisk ?? null;
-    }
-    if (Object.keys(updateData).length > 0) {
-      await db.update(trades)
-        .set(updateData)
-        .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)));
-    }
-
-    if (Array.isArray(body.tags)) {
-      await db.delete(tradeTagsTable).where(and(
-        eq(tradeTagsTable.userId, authState.user.id),
-        eq(tradeTagsTable.tradeId, id),
-      ));
-      for (const tag of body.tags) {
-        await db.insert(tradeTagsTable).values({
-          userId: authState.user.id,
-          tradeId: id,
-          tag,
-        }).onConflictDoNothing();
-        await db.insert(tagsTable).values({ userId: authState.user.id, name: tag }).onConflictDoNothing();
-      }
-    }
-
-    const [trade] = await db.select().from(trades)
-      .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)))
-      .limit(1);
-    if (!trade) return Response.json({ error: 'Trade not found' }, { status: 404 });
-
-    const [tagRows, executionRows] = await Promise.all([
-      db.select({ tag: tradeTagsTable.tag })
-        .from(tradeTagsTable)
-        .where(and(eq(tradeTagsTable.userId, authState.user.id), eq(tradeTagsTable.tradeId, id))),
-      db.select().from(tradeExecutions)
-        .where(and(eq(tradeExecutions.userId, authState.user.id), eq(tradeExecutions.tradeId, id)))
-        .orderBy(asc(tradeExecutions.time), asc(tradeExecutions.id)),
-    ]);
-    const tagList = tagRows.map((r) => r.tag);
-    const rawExecutions = executionRows.map((row) => ({
-      id: row.id,
-      side: row.side,
-      price: row.price,
-      qty: row.qty,
-      time: row.time,
-      timestamp: row.timestamp ?? undefined,
-      commission: row.commission ?? 0,
-      fees: row.fees ?? 0,
-    }));
-
-    return Response.json({ trade: toTrade(trade, tagList, rawExecutions) });
-  } catch (error) {
-    logRouteError('trades.id.patch', error);
-    return internalServerError();
-  }
+export interface ExtractRawResult {
+  executions: MatcherExecution[];
+  warnings: string[];
 }
+
+/**
+ * Parse a CSV's rows into MatcherExecution[] WITHOUT running FIFO matching.
+ * Used by the server-side import-raw path. Mirrors processCsvData's
+ * row-normalization, then maps the broker side codes (MARGIN/B/S/SS) to the
+ * matcher's canonical sides (LONG_ENTRY/etc) via `normalizeSide`.
+ */
+export const extractRawExecutions = (
+  data: Record<string, string>[],
+  parser?: BrokerParserConfig,
+): ExtractRawResult => {
+  const warnings: string[] = [];
+  const executions: MatcherExecution[] = [];
+  const parserContext = parser?.buildContext?.(data as Record<string, unknown>[]);
+
+  data.forEach((rawRow, rowIndex) => {
+    try {
+      const exec = parser
+        ? parser.normalizeRow(rawRow as Record<string, unknown>, rowIndex, parserContext)
+        : builtinNormalizeRow(rawRow as Record<string, unknown>, rowIndex, warnings);
+
+      if (!exec) return;
+
+      // exec.side is one of 'MARGIN' | 'B' | 'S' | 'SS' (or parser-specific aliases).
+      // normalizeSide maps it to 'LONG_ENTRY' | 'LONG_EXIT' | 'SHORT_ENTRY' | 'SHORT_EXIT'.
+      const canonicalSide = normalizeSide(exec.side);
+      if (!canonicalSide) {
+        warnings.push(`Row ${rowIndex + 1}: Unknown side "${exec.side}" for ${exec.symbol}, skipping`);
+        return;
+      }
+
+      executions.push({
+        symbol: exec.symbol,
+        side: canonicalSide,
+        qty: exec.qty,
+        price: exec.price,
+        time: exec.time,
+        commission: exec.commission,
+        fees: exec.fees,
+      });
+    } catch (rowError) {
+      const msg = rowError instanceof Error ? rowError.message : 'Unknown error';
+      warnings.push(`Row ${rowIndex + 1}: Parse error — ${msg}`);
+    }
+  });
+
+  // Propagate parser-level warnings (mirrors processCsvData behavior).
+  if (parserContext && typeof parserContext === 'object') {
+    const parserWarnings = (parserContext as { warnings?: unknown }).warnings;
+    if (Array.isArray(parserWarnings)) {
+      for (const w of parserWarnings) {
+        if (typeof w === 'string' && w.trim()) warnings.push(w);
+      }
+    }
+  }
+
+  return { executions, warnings };
+};
 ```
 
-Also add `toTrade` and `tradeTagsTable` to the imports from `@/lib/server-db-utils` and schema if not already present. Check current line 5: `import { dbUnavailable, ensureUser, requireUser, toTrade } from '@/lib/server-db-utils';` — `toTrade` is already there. Check current line 4: `import { tradeExecutions, trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';` — `tradeTagsTable` and `tagsTable` are already imported.
-
-4. **Remove the now-unused `parseAndValidate` import on line 2.** The new PATCH handler parses the JSON body manually (via `await request.json()`) so it can dispatch on the `action` field before validating, which means `parseAndValidate` is no longer called anywhere in this file. Leaving it imported will trip the lint rule for unused imports.
-
-The cleaned line 2 should read:
-
-```ts
-import { internalServerError, logRouteError } from '@/lib/api-route-utils';
-```
+3. Leave `processCsvData` (currently line 168) **unchanged**. It is still exercised by `__tests__/csv-parser.test.ts` and `__tests__/das-trader-parser.test.ts`. Future cleanup can prune it once those tests migrate.
 
 **Acceptance:**
 - [ ] `npx tsc --noEmit` passes
-- [ ] `npm run lint` passes (no unused-import warnings)
+- [ ] `npm run lint` passes
+- [ ] `__tests__/csv-parser.test.ts` still passes (unchanged)
+- [ ] `__tests__/das-trader-parser.test.ts` still passes (unchanged)
 
 ---
 
-#### Step 10: Create `app/api/trades/merge/route.ts`
+#### Step 4: Add `collectRawExecutions` to `lib/trade-utils.ts`
 
-**File:** `app/api/trades/merge/route.ts`
+**File:** `lib/trade-utils.ts`
+**Action:** MODIFY (additive)
+
+**Instructions:**
+
+1. Extend the existing csv-parser import (currently line 2) to add `extractRawExecutions`:
+
+```ts
+import { extractRawExecutions, parseDateFromFilename, processCsvData } from '@/lib/csv-parser';
+```
+
+(`processCsvData` stays in the import because `collectImportedTrades` still uses it.)
+
+2. Add an import for the matcher type:
+
+```ts
+import type { MatcherExecution } from '@/lib/position-matcher';
+```
+
+3. After `collectImportedTrades` (currently ends at line 139), add a new exported helper. Output shape: one batch per CSV file, each batch tagged with its parsed date. The route consumes one batch per HTTP call.
+
+```ts
+export interface RawExecutionBatch {
+  /** Parsed from filename (YYYY-MM-DD). */
+  date: string;
+  /** SHA-256-ish digest of the file name + execution payload, used as batchKey. */
+  batchKey: string;
+  executions: MatcherExecution[];
+}
+
+export interface CollectRawResult {
+  batches: RawExecutionBatch[];
+  warnings: string[];
+}
+
+/**
+ * Walk a FileList, parse each CSV with Papa, normalize rows via extractRawExecutions,
+ * and return one batch per file. Date comes from the filename (same convention as
+ * collectImportedTrades). The matching step happens server-side.
+ */
+export async function collectRawExecutions(
+  files: FileList,
+  options: CollectImportedTradesOptions,
+): Promise<CollectRawResult> {
+  const batches: RawExecutionBatch[] = [];
+  const warnings: string[] = [];
+
+  for (let i = 0; i < files.length; i += 1) {
+    const file = files[i];
+    if (options.includeFile && !options.includeFile(file)) continue;
+
+    const dateInfo = parseDateFromFilename(file.name);
+    if (!dateInfo) {
+      warnings.push(`Skipped ${file.name}: could not parse date from filename`);
+      continue;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          try {
+            const rows = results.data as Record<string, string>[];
+            const parseIssues = (results.errors ?? []) as CsvParseIssue[];
+            if (parseIssues.length > 0) appendCsvParseWarnings(file.name, parseIssues, warnings);
+
+            const parser = options.resolveParser(file, rows);
+            const extracted = extractRawExecutions(
+              rows,
+              parser && parser.id !== 'default' ? parser : undefined,
+            );
+
+            warnings.push(...extracted.warnings);
+            if (extracted.executions.length > 0) {
+              batches.push({
+                date: dateInfo.sortKey,
+                // Cheap, deterministic batchKey: filename + sortKey + row count + first/last times.
+                // Good enough for "same file uploaded twice" idempotency.
+                batchKey: `raw|${file.name}|${dateInfo.sortKey}|${extracted.executions.length}`,
+                executions: extracted.executions,
+              });
+            }
+            resolve();
+          } catch (parseError) {
+            reject(parseError);
+          }
+        },
+        error: (parseError) => reject(parseError),
+      });
+    });
+  }
+
+  return { batches, warnings };
+}
+```
+
+Note on `batchKey`: the simple concat (`raw|filename|date|count`) is intentionally lossy — re-uploading a corrected CSV with the same filename but different content WILL collide. That is acceptable for Phase 2 (matches `/api/trades/import`'s current trust model; the user is expected to rename or delete the prior import first). A future sprint can swap in a content hash if needed.
+
+**Acceptance:**
+- [ ] `npx tsc --noEmit` passes
+- [ ] `npm run lint` passes
+
+---
+
+#### Step 5: Create `app/api/trades/import-raw/route.ts`
+
+**File:** `app/api/trades/import-raw/route.ts`
 **Action:** CREATE
 
 **Instructions:**
 
+The route accepts ONE day's worth of raw executions, runs the matcher with the user's existing open positions for the affected symbols, and persists results in a transaction. Returns the full refreshed trade list (matches `/api/trades/import`'s return shape so the client can `refreshTrades()`-style re-render).
+
 ```ts
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getPoolDb } from '@/lib/db';
 import {
-  trades,
   tradeExecutions,
-  tradeTags as tradeTagsTable,
+  tradeImportBatches,
+  trades,
   tags as tagsTable,
 } from '@/lib/db/schema';
 import {
@@ -728,7 +709,27 @@ import {
   requireUser,
   toTrade,
 } from '@/lib/server-db-utils';
-import { mergeTradesSchema } from '@/lib/validations/trades';
+import { importRawSchema } from '@/lib/validations/trades';
+import {
+  matchExecutions,
+  type ClosingFill,
+  type MatchedTrade,
+  type OpenPositionInput,
+} from '@/lib/position-matcher';
+
+function makeId(parts: string[]): string {
+  return parts.join('|');
+}
+
+function hex4(): string {
+  return Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
+}
+
+function compactTimeForId(time: string): string {
+  // Strip non-digits so '09:31:05' -> '093105'. Falls back to '000000'.
+  const digits = time.replace(/\D/g, '');
+  return (digits.padEnd(6, '0')).slice(0, 6);
+}
 
 export async function POST(request: Request) {
   try {
@@ -739,1451 +740,514 @@ export async function POST(request: Request) {
     if (!db) return dbUnavailable();
     await ensureUser(db, authState.user);
 
-    const bodyState = await parseAndValidate(request, mergeTradesSchema);
+    const bodyState = await parseAndValidate(request, importRawSchema);
     if (bodyState.error) return bodyState.error;
-    const { ids } = bodyState.data;
+    const { date: sortKey, executions, batchKey } = bodyState.data;
 
-    // Load and verify ownership.
-    const tradeRows = await db.select().from(trades)
-      .where(and(eq(trades.userId, authState.user.id), inArray(trades.id, ids)));
+    // Build the Date object the schema's trade.date column expects.
+    // `date` is YYYY-MM-DD; we store it as 'YYYY-MM-DD' string in trade.date (per
+    // existing convention) — see app/api/trades/import/route.ts:266 where it
+    // writes `date: trade.date` from a string body. We persist a Date object
+    // for the row but use `sortKey` as the string for trade.sortKey.
+    const tradeDate = new Date(`${sortKey}T00:00:00Z`);
 
-    if (tradeRows.length !== ids.length) {
-      return Response.json(
-        { error: 'One or more trades not found or not owned by you' },
-        { status: 404 },
-      );
-    }
+    // Idempotency check — same as /api/trades/import.
+    let importSkipped = false;
 
-    if (tradeRows.length < 2) {
-      return Response.json({ error: 'Select at least 2 trades to merge' }, { status: 400 });
-    }
+    // Load existing open positions for the symbols in this batch.
+    const symbols = Array.from(new Set(executions.map((e) => e.symbol)));
+    const openRows = await db.select().from(trades).where(and(
+      eq(trades.userId, authState.user.id),
+      eq(trades.isOpen, true),
+      inArray(trades.symbol, symbols),
+    ));
 
-    // Validate: all same symbol.
-    const symbols = new Set(tradeRows.map((t) => t.symbol));
-    if (symbols.size > 1) {
-      return Response.json(
-        { error: 'Cannot merge trades with different symbols' },
-        { status: 400 },
-      );
-    }
+    const openPositions: OpenPositionInput[] = openRows.map((row) => ({
+      id: row.id,
+      symbol: row.symbol,
+      direction: row.direction as 'LONG' | 'SHORT',
+      totalQuantity: row.totalQuantity,
+      avgEntryPrice: row.avgEntryPrice,
+      entryTime: row.entryTime ?? '',
+      entryDate: row.date instanceof Date ? row.date : new Date(row.date as unknown as string),
+      commission: row.commission ?? 0,
+      fees: row.fees ?? 0,
+    }));
 
-    // Validate: all same direction (block opposite-direction merges).
-    const directions = new Set(tradeRows.map((t) => t.direction));
-    if (directions.size > 1) {
-      return Response.json(
-        { error: 'Cannot merge trades with opposite directions (LONG vs SHORT)' },
-        { status: 400 },
-      );
-    }
-
-    // Compute merged fields.
-    const symbol = tradeRows[0].symbol;
-    const direction = tradeRows[0].direction;
-
-    const totalQty = tradeRows.reduce((s, t) => s + t.totalQuantity, 0);
-
-    // Weighted-average entry and exit prices.
-    const avgEntryPrice = totalQty > 0
-      ? tradeRows.reduce((s, t) => s + t.avgEntryPrice * t.totalQuantity, 0) / totalQty
-      : 0;
-    const avgExitPrice = totalQty > 0
-      ? tradeRows.reduce((s, t) => s + t.avgExitPrice * t.totalQuantity, 0) / totalQty
-      : 0;
-
-    const totalGrossPnl = tradeRows.reduce((s, t) => s + t.grossPnl, 0);
-    const totalNetPnl = tradeRows.reduce((s, t) => s + t.netPnl, 0);
-    const totalCommission = tradeRows.reduce((s, t) => s + (t.commission ?? 0), 0);
-    const totalFees = tradeRows.reduce((s, t) => s + (t.fees ?? 0), 0);
-
-    // Earliest entry time, latest exit time (sort lexicographically — HH:MM:SS format is safe).
-    const entryTimes = tradeRows.map((t) => t.entryTime).filter(Boolean);
-    const exitTimes = tradeRows.map((t) => t.exitTime).filter(Boolean);
-    const entryTime = entryTimes.length > 0 ? entryTimes.sort()[0] : '';
-    const exitTime = exitTimes.length > 0 ? [...exitTimes].sort().reverse()[0] : '';
-
-    // Earliest-opened trade's sortKey and date (sort by date then entryTime).
-    const sorted = [...tradeRows].sort((a, b) => {
-      if (a.date < b.date) return -1;
-      if (a.date > b.date) return 1;
-      return (a.entryTime ?? '').localeCompare(b.entryTime ?? '');
-    });
-    const earliest = sorted[0];
-
-    // initialRisk from the earliest-opened trade.
-    const initialRisk = earliest.initialRisk ?? null;
-
-    // Any open position in the set makes the merged trade open.
-    const anyOpen = tradeRows.some((t) => t.isOpen);
-    const remainingQty = anyOpen ? tradeRows.reduce((s, t) => s + (t.remainingQty ?? 0), 0) : 0;
-
-    // Merged ID.
-    const mergedId = `merged|${randomUUID().slice(0, 8)}|${symbol}|${direction}`;
-
-    // Load all tags and executions for the source trades.
-    const tagMap = await loadTagsForTradeIds(db, authState.user.id, ids);
-    const unionTags = Array.from(new Set(ids.flatMap((id) => tagMap.get(id) ?? [])));
-
-    // Concatenate notes.
-    const noteFragments = tradeRows
-      .map((t) => t.notes?.trim())
-      .filter((n): n is string => !!n);
-    const mergedNotes = noteFragments.length > 0 ? noteFragments.join(' --- ') : null;
+    // Run the matcher.
+    const { trades: matchedClosed, newOpenPositions, closingFills, warnings } =
+      matchExecutions(executions, openPositions);
 
     await db.transaction(async (tx) => {
-      // Insert merged trade.
-      await tx.insert(trades).values({
-        id: mergedId,
-        userId: authState.user.id,
-        date: earliest.date,
-        sortKey: earliest.sortKey,
-        symbol,
-        direction,
-        avgEntryPrice,
-        avgExitPrice,
-        totalQuantity: totalQty,
-        grossPnl: totalGrossPnl,
-        netPnl: totalNetPnl,
-        entryTime,
-        exitTime,
-        executionCount: tradeRows.reduce((s, t) => s + t.executionCount, 0),
-        pnl: totalNetPnl,
-        executions: tradeRows.reduce((s, t) => s + t.executions, 0),
-        commission: totalCommission,
-        fees: totalFees,
-        initialRisk,
-        notes: mergedNotes,
-        isOpen: anyOpen,
-        remainingQty,
-      });
-
-      // Move all trade_executions to the merged trade.
-      await tx.update(tradeExecutions)
-        .set({ tradeId: mergedId })
-        .where(and(
-          eq(tradeExecutions.userId, authState.user.id),
-          inArray(tradeExecutions.tradeId, ids),
-        ));
-
-      // Insert unioned tags.
-      for (const tag of unionTags) {
-        await tx.insert(tagsTable)
-          .values({ userId: authState.user.id, name: tag })
-          .onConflictDoNothing();
-        await tx.insert(tradeTagsTable)
-          .values({ userId: authState.user.id, tradeId: mergedId, tag })
-          .onConflictDoNothing();
+      if (batchKey) {
+        const inserted = await tx.insert(tradeImportBatches)
+          .values({ userId: authState.user.id, batchKey })
+          .onConflictDoNothing()
+          .returning({ batchKey: tradeImportBatches.batchKey });
+        if (inserted.length === 0) {
+          importSkipped = true;
+          return;
+        }
       }
 
-      // Delete original trades (cascade will clean up trade_tags via FK).
-      await tx.delete(trades)
-        .where(and(eq(trades.userId, authState.user.id), inArray(trades.id, ids)));
+      // 1) Insert same-day closed trades. ID convention matches the existing
+      //    client-side path: `${sortKey}|${symbol}|${direction}`.
+      for (const t of matchedClosed) {
+        const tradeId = makeId([sortKey, t.symbol, t.direction]);
+        const grossPnl = t.grossPnl;
+        const netPnl = t.netPnl;
+
+        await tx.insert(trades).values({
+          id: tradeId,
+          userId: authState.user.id,
+          date: tradeDate,
+          sortKey,
+          symbol: t.symbol,
+          direction: t.direction,
+          avgEntryPrice: t.avgEntryPrice,
+          avgExitPrice: t.avgExitPrice,
+          totalQuantity: t.totalQuantity,
+          grossPnl,
+          netPnl,
+          entryTime: t.entryTime,
+          exitTime: t.exitTime,
+          executionCount: 1,
+          pnl: netPnl,
+          executions: 1,
+          commission: t.commission,
+          fees: t.fees,
+          isOpen: false,
+          closedAt: tradeDate,
+          remainingQty: 0,
+        }).onConflictDoUpdate({
+          target: [trades.userId, trades.id],
+          set: {
+            avgEntryPrice: t.avgEntryPrice,
+            avgExitPrice: t.avgExitPrice,
+            totalQuantity: t.totalQuantity,
+            grossPnl,
+            netPnl,
+            entryTime: t.entryTime,
+            exitTime: t.exitTime,
+            pnl: netPnl,
+            commission: t.commission,
+            fees: t.fees,
+            // NOTE: do NOT update isOpen/closedAt/remainingQty here. Same rule
+            // as /api/trades/import — re-imports must not flip an open trade
+            // (which shouldn't happen for same-day-closed IDs, but be safe).
+          },
+        });
+      }
+
+      // 2) Insert newly-opened positions.
+      for (const p of newOpenPositions) {
+        const tradeId = makeId([sortKey, p.symbol, p.direction, `${compactTimeForId(p.entryTime)}-${hex4()}`]);
+        await tx.insert(trades).values({
+          id: tradeId,
+          userId: authState.user.id,
+          date: tradeDate,
+          sortKey,
+          symbol: p.symbol,
+          direction: p.direction,
+          avgEntryPrice: p.avgEntryPrice,
+          avgExitPrice: 0,
+          totalQuantity: p.totalQuantity,
+          grossPnl: 0,
+          netPnl: 0,
+          entryTime: p.entryTime,
+          exitTime: '',
+          executionCount: 1,
+          pnl: 0,
+          executions: 1,
+          commission: p.commission,
+          fees: p.fees,
+          isOpen: true,
+          remainingQty: p.totalQuantity,
+        });
+      }
+
+      // 3) Apply closing fills (full + partial closes of pre-existing open positions).
+      for (const fill of closingFills) {
+        const open = openRows.find((r) => r.id === fill.openPositionId);
+        if (!open) continue; // shouldn't happen — matcher only emits fills for loaded opens.
+
+        const isFullClose = fill.matchedQty >= open.totalQuantity;
+
+        if (isFullClose) {
+          // UPDATE the open row to closed. PnL/exit fields reflect the full position.
+          await tx.update(trades).set({
+            avgExitPrice: fill.exitPrice,
+            exitTime: fill.exitTime,
+            grossPnl: fill.grossPnl,
+            netPnl: fill.netPnl,
+            pnl: fill.netPnl,
+            commission: open.commission + fill.exitCommission,
+            fees: open.fees + fill.exitFees,
+            isOpen: false,
+            closedAt: tradeDate,
+            remainingQty: 0,
+          }).where(and(
+            eq(trades.userId, authState.user.id),
+            eq(trades.id, open.id),
+          ));
+        } else {
+          // PARTIAL close. Reduce the open row's qty AND insert a new closed row
+          // for the realized portion.
+          const newOpenQty = open.totalQuantity - fill.matchedQty;
+          await tx.update(trades).set({
+            totalQuantity: newOpenQty,
+            remainingQty: newOpenQty,
+            // Reduce entry-side commission/fees proportionally — the realized
+            // portion's commission lives on the new closed row.
+            commission: open.commission - fill.entryCommissionAllocated,
+            fees: open.fees - fill.entryFeesAllocated,
+          }).where(and(
+            eq(trades.userId, authState.user.id),
+            eq(trades.id, open.id),
+          ));
+
+          const realizedId = makeId([sortKey, fill.symbol, fill.direction, `p-${hex4()}`]);
+          await tx.insert(trades).values({
+            id: realizedId,
+            userId: authState.user.id,
+            // Use the OPEN position's entry date so the trade row reflects its
+            // entry day. closedAt holds the exit day for Phase 2 -> later sprints
+            // can re-bucket on closedAt.
+            date: open.date,
+            sortKey: open.sortKey,
+            symbol: fill.symbol,
+            direction: fill.direction,
+            avgEntryPrice: open.avgEntryPrice,
+            avgExitPrice: fill.exitPrice,
+            totalQuantity: fill.matchedQty,
+            grossPnl: fill.grossPnl,
+            netPnl: fill.netPnl,
+            entryTime: open.entryTime ?? '',
+            exitTime: fill.exitTime,
+            executionCount: 1,
+            pnl: fill.netPnl,
+            executions: 1,
+            commission: fill.entryCommissionAllocated + fill.exitCommission,
+            fees: fill.entryFeesAllocated + fill.exitFees,
+            isOpen: false,
+            closedAt: tradeDate,
+            remainingQty: 0,
+          });
+        }
+
+        // Append the closing executions to the open position's trade_executions.
+        // We store them as plain EXIT rows. IDs are generated to avoid collision
+        // with existing executions on that trade.
+        const baseId = `${fill.openPositionId}|x|${sortKey}`;
+        for (let idx = 0; idx < fill.exitExecutions.length; idx += 1) {
+          const e = fill.exitExecutions[idx];
+          await tx.insert(tradeExecutions).values({
+            id: `${baseId}|${idx}-${hex4()}`,
+            userId: authState.user.id,
+            tradeId: fill.openPositionId,
+            side: 'EXIT',
+            price: e.price,
+            qty: e.qty,
+            time: e.time,
+            timestamp: null,
+            commission: e.commission ?? 0,
+            fees: e.fees ?? 0,
+          }).onConflictDoNothing();
+        }
+      }
     });
 
-    // Return the merged trade.
-    const [mergedRow] = await db.select().from(trades)
-      .where(and(eq(trades.id, mergedId), eq(trades.userId, authState.user.id)))
-      .limit(1);
+    // Reload the user's full trade list (mirrors /api/trades/import return shape).
+    const tradeRows = await db.select().from(trades)
+      .where(eq(trades.userId, authState.user.id))
+      .orderBy(desc(trades.date));
+    const tradeIds = tradeRows.map((row) => row.id);
+    const tagMap = await loadTagsForTradeIds(db, authState.user.id, tradeIds);
 
-    if (!mergedRow) {
-      return Response.json({ error: 'Merge succeeded but could not reload merged trade' }, { status: 500 });
-    }
-
-    const mergedTags = await loadTagsForTradeIds(db, authState.user.id, [mergedId]);
+    const tradeList = tradeRows.map((row) => toTrade(row, tagMap.get(row.id) ?? []));
     return Response.json({
-      trade: toTrade(mergedRow, mergedTags.get(mergedId) ?? []),
-      deletedIds: ids,
+      trades: tradeList,
+      warnings,
+      importSkipped,
     });
   } catch (error) {
-    logRouteError('trades.merge.post', error);
+    if (error instanceof Response) return error;
+    logRouteError('trades.import-raw.post', error);
     return internalServerError();
   }
 }
 ```
 
-**Acceptance:**
-- [ ] `npx tsc --noEmit` passes
-- [ ] `npm run lint` passes
-
----
-
-#### Step 11: `hooks/use-trade-filters.ts` — add `positionFilter`
-
-**File:** `hooks/use-trade-filters.ts`
-**Action:** MODIFY
-
-**Instructions:**
-
-1. After `type FilterPreset = 'all' | '30' | '60' | '90';` (line 5), add:
-
-```ts
-type PositionFilter = 'all' | 'open' | 'closed';
-```
-
-2. Inside `useTradeFilters`, after the `[bulkTagInput, setBulkTagInput]` state declaration (line 22), add:
-
-```ts
-  const [positionFilter, setPositionFilter] = useState<PositionFilter>('all');
-```
-
-3. In the `filteredTrades` `useMemo` filter chain (lines 26-48), add a new filter clause after the `selectedFilterTags` check and before the final `return true`. Insert:
-
-```ts
-          if (positionFilter === 'open' && !trade.isOpen) return false;
-          if (positionFilter === 'closed' && trade.isOpen) return false;
-```
-
-4. Add `positionFilter` to the `useMemo` dependency array (currently line 48: `[trades, searchQuery, startDate, endDate, filterPreset, selectedFilterTags]`):
-
-```ts
-    [trades, searchQuery, startDate, endDate, filterPreset, selectedFilterTags, positionFilter],
-```
-
-5. In the returned object (lines 100-122), add:
-
-```ts
-    positionFilter,
-    setPositionFilter,
-```
-
-6. Update the `hasActiveFilters` line (currently line 51) to also count an active positionFilter:
-
-```ts
-  const hasActiveFilters = !!startDate || !!endDate || filterPreset !== 'all' || selectedFilterTags.size > 0 || positionFilter !== 'all';
-```
-
-7. Update `activeFilterCount` (lines 52-53):
-
-```ts
-  const activeFilterCount =
-    (startDate ? 1 : 0) + (endDate ? 1 : 0) + (filterPreset !== 'all' ? 1 : 0) + selectedFilterTags.size + (positionFilter !== 'all' ? 1 : 0);
-```
+**Note on `tagsTable` import:** included for parity with the existing `import` route but not used in Phase 2 (no tag-assignment via CSV). It can be omitted if Codex prefers — the lint rule will flag unused imports. Either path is fine; if removing, also remove from the import line at the top.
 
 **Acceptance:**
 - [ ] `npx tsc --noEmit` passes
+- [ ] `npm run lint` passes (no unused-import warnings)
+- [ ] Body validation: posting an empty `executions` array returns 400
+- [ ] Body validation: posting a malformed `date` (e.g. "2026/05/18") returns 400
 
 ---
 
-#### Step 12: `hooks/use-trades.ts` — expose `positionFilter`, add `handleMergeTrades` and `handleCloseTrade`
+#### Step 6: Switch `processImportFiles` in `hooks/use-trades.ts` to the new endpoint
 
 **File:** `hooks/use-trades.ts`
 **Action:** MODIFY
 
 **Instructions:**
 
-1. In the destructuring from `useTradeFilters` (lines 39-67), add `positionFilter` and `setPositionFilter` to the destructured names:
+1. Update the import (currently line 10) to add `collectRawExecutions`:
 
 ```ts
-    positionFilter,
-    setPositionFilter,
+import { apiRequest, collectImportedTrades, collectRawExecutions, fromApiTrade, sortTradesByDate, toApiTrade } from '@/lib/trade-utils';
 ```
 
-2. After `handleSaveNotes` (lines 154-159), add two new action handlers:
+(`collectImportedTrades` stays imported — it's still used by no production caller after this change, but leaving it imported here would trip the unused-import lint. **Remove it from the import line** since it's no longer used in this file:)
 
 ```ts
-  const handleCloseTrade = async (tradeId: string, exitPrice: number, exitTime: string) => {
-    const result = await apiRequest<{ trade: ApiTrade }>(`/api/trades/${encodeURIComponent(tradeId)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ action: 'close', exitPrice, exitTime }),
-    });
-    setTrades((prev) => prev.map((trade) => (trade.id === tradeId ? fromApiTrade(result.trade) : trade)));
-  };
-
-  const handleMergeTrades = async (ids: string[]) => {
-    const result = await apiRequest<{ trade: ApiTrade; deletedIds: string[] }>('/api/trades/merge', {
-      method: 'POST',
-      body: JSON.stringify({ ids }),
-    });
-    const merged = fromApiTrade(result.trade);
-    setTrades((prev) => {
-      const without = prev.filter((trade) => !result.deletedIds.includes(trade.id));
-      return sortTrades([merged, ...without]);
-    });
-    setSelectedIds(new Set());
-  };
+import { apiRequest, collectRawExecutions, fromApiTrade, sortTradesByDate, toApiTrade } from '@/lib/trade-utils';
 ```
 
-3. In `clearAllFilters` (lines 69-74), also reset the position filter:
+2. Replace the body of `processImportFiles` (currently line 264-300) with the new implementation that uploads one batch per HTTP call, sequentially:
 
 ```ts
-    setPositionFilter('all');
-```
+  const processImportFiles = async (files: FileList, options: ImportOptions): Promise<void> => {
+    setIsImporting(true);
+    setError(null);
 
-4. Return `positionFilter`, `setPositionFilter`, `handleCloseTrade`, and `handleMergeTrades` from the `useTrades` hook (add them to the returned object at the bottom of the hook).
-
-**Acceptance:**
-- [ ] `npx tsc --noEmit` passes
-
----
-
-#### Step 13: `components/trading/NewTradeDialog.tsx` — "Open position" checkbox
-
-**File:** `components/trading/NewTradeDialog.tsx`
-**Action:** MODIFY
-
-**Instructions:**
-
-1. Add `isOpen` to the `tradeFormSchema` (lines 22-30). The schema currently has `exitPrice: z.coerce.number().positive()` as a required field. Change that field to conditional: when `isOpen` is true, exit price should be optional. The simplest approach for Phase 1 is to make `exitPrice` optional at the schema level and validate it manually in `handleSubmit`.
-
-Replace the existing schema (lines 22-30) with:
-
-```ts
-const tradeFormSchema = z.object({
-  symbol: z.string().trim().min(1).transform((value) => value.toUpperCase()),
-  direction: z.enum(['LONG', 'SHORT']),
-  entryPrice: z.coerce.number().positive(),
-  exitPrice: z.coerce.number().optional(),
-  quantity: z.coerce.number().int().positive(),
-  date: z.string().min(1),
-  entryTime: z.string().optional(),
-  exitTime: z.string().optional(),
-  initialRisk: z.string().optional(),
-  isOpenPosition: z.boolean().optional().default(false),
-});
-```
-
-2. Update the `defaultValues` object passed to `useForm` (currently lines 44-52) so the three new fields have initial values. Without this, RHF will treat them as `undefined` and the controlled `isOpenPosition` checkbox flickers between uncontrolled/controlled on the first toggle. Replace the existing `defaultValues` block with:
-
-```ts
-    defaultValues: {
-      symbol: '',
-      direction: 'LONG',
-      entryPrice: undefined,
-      exitPrice: undefined,
-      quantity: undefined,
-      date: format(new Date(), 'yyyy-MM-dd'),
-      entryTime: '',
-      exitTime: '',
-      initialRisk: '',
-      isOpenPosition: false,
-    },
-```
-
-3. Add `useWatch` (already imported on line 5) usage for `isOpenPosition`. After the existing `direction` watch (line 107), add:
-
-```ts
-  const isOpenPosition = useWatch({ control: form.control, name: 'isOpenPosition' }) ?? false;
-```
-
-4. Replace `handleSubmit` (lines 55-106) with the updated version that branches on `isOpenPosition`:
-
-```ts
-  const handleSubmit = form.handleSubmit(async (values) => {
     try {
-      const date = parseISO(values.date);
-      const sortKey = format(date, 'yyyy-MM-dd');
-      const timeOfDay = values.entryTime?.trim()
-        ? values.entryTime.trim().replace(/:/g, '')
-        : format(new Date(), 'HHmmss');
-      // 4-hex suffix prevents collisions when two open positions are created
-      // within the same second (rare today, but possible once broker sync runs).
-      const suffix = Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
-      const id = `${sortKey}|${values.symbol}|${values.direction}|${timeOfDay}-${suffix}`;
-      const initialRisk = values.initialRisk?.trim() ? Number(values.initialRisk) : undefined;
-      if (initialRisk !== undefined && (!Number.isFinite(initialRisk) || initialRisk <= 0)) {
-        throw new Error('Invalid initial risk');
-      }
-
-      let trade: Trade;
-      if (values.isOpenPosition) {
-        trade = {
-          id,
-          date,
-          sortKey,
-          symbol: values.symbol,
-          direction: values.direction,
-          avgEntryPrice: values.entryPrice,
-          avgExitPrice: 0,
-          totalQuantity: values.quantity,
-          grossPnl: 0,
-          netPnl: 0,
-          entryTime: values.entryTime?.trim() ?? '',
-          exitTime: '',
-          executionCount: 1,
-          rawExecutions: [],
-          pnl: 0,
-          executions: 1,
-          initialRisk,
-          commission: 0,
-          fees: 0,
-          tags: [],
-          isOpen: true,
-          remainingQty: values.quantity,
-        };
-      } else {
-        const exitPrice = values.exitPrice;
-        if (!exitPrice || exitPrice <= 0) {
-          throw new Error('Exit price is required for closed trades');
-        }
-        const netPnl = calculatePnL(values.direction, values.entryPrice, exitPrice, values.quantity);
-        trade = {
-          id,
-          date,
-          sortKey,
-          symbol: values.symbol,
-          direction: values.direction,
-          avgEntryPrice: values.entryPrice,
-          avgExitPrice: exitPrice,
-          totalQuantity: values.quantity,
-          grossPnl: netPnl,
-          netPnl,
-          entryTime: values.entryTime?.trim() ?? '',
-          exitTime: values.exitTime?.trim() ?? '',
-          executionCount: 1,
-          rawExecutions: [],
-          pnl: netPnl,
-          executions: 1,
-          initialRisk,
-          commission: 0,
-          fees: 0,
-          tags: [],
-          isOpen: false,
-          remainingQty: 0,
-        };
-      }
-
-      await onCreateTrade(trade);
-      form.reset({
-        symbol: '',
-        direction: 'LONG',
-        entryPrice: undefined,
-        exitPrice: undefined,
-        quantity: undefined,
-        date: format(new Date(), 'yyyy-MM-dd'),
-        entryTime: '',
-        exitTime: '',
-        initialRisk: '',
-        isOpenPosition: false,
+      const { batches, warnings } = await collectRawExecutions(files, {
+        includeFile: options.includeFile,
+        resolveParser: options.resolveParser,
       });
-      onOpenChange(false);
-      toast.success(values.isOpenPosition ? 'Open position recorded' : 'Trade added');
-    } catch (error) {
-      console.error(error);
-      toast.error(error instanceof Error ? error.message : 'Failed to add trade');
-    }
-  });
-```
 
-5. Add `Checkbox` to the import list. Add at the top of the file (after the existing Button import):
+      if (warnings.length > 0) {
+        console.warn(`[trade import] ${warnings.length} warning(s):`, warnings);
+        toast.warning(`${warnings.length} warning(s) during ${options.warningLabel} import (see DevTools console)`);
+      }
+      if (batches.length === 0) {
+        if (warnings.length === 0) toast.warning(options.emptyMessage);
+        return;
+      }
 
-```ts
-import { Checkbox } from '@/components/ui/checkbox';
-```
+      // Serialize per-batch so each call sees DB state from prior batches.
+      // Each batch corresponds to one CSV file (one trading day).
+      const allServerWarnings: string[] = [];
+      for (const batch of batches) {
+        const result = await apiRequest<{ trades: ApiTrade[]; warnings?: string[]; importSkipped?: boolean }>(
+          '/api/trades/import-raw',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              date: batch.date,
+              executions: batch.executions,
+              batchKey: batch.batchKey,
+            }),
+          },
+        );
+        if (Array.isArray(result.warnings)) allServerWarnings.push(...result.warnings);
+      }
 
-6. In the JSX form body, after the `initialRisk` input block (the `md:col-span-2` div, currently lines 159-162), add the checkbox and the conditional exit fields. The full replacement for the grid content after `initialRisk` and before the error message block:
+      if (allServerWarnings.length > 0) {
+        console.warn(`[trade import] server warnings:`, allServerWarnings);
+        toast.warning(`${allServerWarnings.length} server warning(s) during import (see DevTools console)`);
+      }
 
-```tsx
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="initialRisk">Initial Risk (optional)</Label>
-              <Input id="initialRisk" type="number" step="0.01" {...form.register('initialRisk')} className="bg-white/5 border-white/10" />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="entryTime">Entry Time (optional)</Label>
-              <Input id="entryTime" type="text" placeholder="09:30:00" {...form.register('entryTime')} className="bg-white/5 border-white/10" />
-            </div>
-
-            {!isOpenPosition && (
-              <div className="space-y-2">
-                <Label htmlFor="exitTime">Exit Time (optional)</Label>
-                <Input id="exitTime" type="text" placeholder="10:15:00" {...form.register('exitTime')} className="bg-white/5 border-white/10" />
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 md:col-span-2 pt-1">
-              <Checkbox
-                id="isOpenPosition"
-                checked={isOpenPosition}
-                onCheckedChange={(checked) =>
-                  form.setValue('isOpenPosition', checked === true, { shouldValidate: true })
-                }
-                className="border-white/20"
-              />
-              <Label htmlFor="isOpenPosition" className="cursor-pointer text-sm text-zinc-300">
-                Open position (no exit yet)
-              </Label>
-            </div>
-
-            {!isOpenPosition && (
-              <div className="space-y-2">
-                <Label htmlFor="exitPrice">Exit Price</Label>
-                <Input id="exitPrice" type="number" step="0.01" {...form.register('exitPrice')} className="bg-white/5 border-white/10" />
-              </div>
-            )}
-```
-
-Note: The existing `exitPrice` input block (lines 144-147) should be removed from its current position since it is now rendered conditionally above.
-
-**Acceptance:**
-- [ ] `npx tsc --noEmit` passes
-- [ ] `npm run lint` passes
-- [ ] Checking the "Open position" checkbox hides the Exit Price and Exit Time fields
-- [ ] Unchecking shows them again
-
----
-
-#### Step 14: `components/trading/TradeDetailSheet.tsx` — Close Position panel
-
-**File:** `components/trading/TradeDetailSheet.tsx`
-**Action:** MODIFY
-
-**Instructions:**
-
-1. Extend the `TradeDetailSheetProps` interface (line 22-27) to add the close handler:
-
-```ts
-interface TradeDetailSheetProps {
-  trade: Trade | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSaveNotes: (tradeId: string, notes: string) => Promise<void> | void;
-  onCloseTrade?: (tradeId: string, exitPrice: number, exitTime: string) => Promise<void>;
-}
-```
-
-2. Update the function signature (line 54) to destructure `onCloseTrade`:
-
-```ts
-export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNotes, onCloseTrade }: TradeDetailSheetProps) {
-```
-
-3. After the existing `useState` declarations (lines 55-56), add local state for the close form:
-
-```ts
-  const [closeExitPrice, setCloseExitPrice] = useState('');
-  const [closeExitTime, setCloseExitTime] = useState('');
-  const [isClosing, setIsClosing] = useState(false);
-```
-
-4. Add a `handleClosePosition` function after the `handleSave` function (after line 89):
-
-```ts
-  const handleClosePosition = async () => {
-    if (!trade || !onCloseTrade) return;
-    const exitPrice = parseFloat(closeExitPrice);
-    if (!Number.isFinite(exitPrice) || exitPrice <= 0) {
-      toast.error('Enter a valid exit price');
-      return;
-    }
-    if (!closeExitTime.trim()) {
-      toast.error('Enter a valid exit time (HH:MM or HH:MM:SS)');
-      return;
-    }
-    setIsClosing(true);
-    try {
-      await onCloseTrade(trade.id, exitPrice, closeExitTime.trim());
-      setCloseExitPrice('');
-      setCloseExitTime('');
-      toast.success('Position closed');
-    } catch (error) {
-      console.error(error);
-      toast.error('Failed to close position');
+      await refreshTrades();
+    } catch (uploadError) {
+      const msg = uploadError instanceof Error ? uploadError.message : 'Processing error';
+      setError(msg);
+      toast.error(msg);
     } finally {
-      setIsClosing(false);
+      setIsImporting(false);
     }
   };
 ```
 
-5. In the header section (lines 119-137), add an OPEN badge next to the PnL display when `trade.isOpen` is true. Replace the `<div className="text-right">` block with:
+3. **Do NOT touch `handleTraderVueImport`** (currently line 336+). TraderVue CSVs are pre-aggregated trade rows; they continue to POST to `/api/trades/import`.
 
-```tsx
-              <div className="text-right">
-                {trade.isOpen ? (
-                  <span className="inline-block rounded px-2 py-0.5 text-[11px] font-semibold bg-amber-500/20 text-amber-400 mb-1">
-                    OPEN
-                  </span>
-                ) : (
-                  <p className={`text-sm font-semibold ${getPnLColor(trade.netPnl)}`}>{formatCurrency(trade.netPnl)}</p>
-                )}
-                <p className="text-[12px] text-zinc-500">{trade.isOpen ? 'Open Position' : 'Net PnL'}</p>
-              </div>
-```
-
-6. Add the Close Position section to the scrollable content area. Insert it after the Overview section (`</section>` that closes the overview block, after line 150) and before the Chart section:
-
-```tsx
-              {trade.isOpen && onCloseTrade ? (
-                <section className="space-y-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
-                  <h3 className="text-base font-semibold uppercase tracking-wider text-amber-400">Close Position</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[11px] uppercase tracking-wider text-zinc-500">Exit Price</label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={closeExitPrice}
-                        onChange={(e) => setCloseExitPrice(e.target.value)}
-                        className="bg-white/5 border-white/10 h-8 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[11px] uppercase tracking-wider text-zinc-500">Exit Time (HH:MM:SS)</label>
-                      <Input
-                        type="text"
-                        placeholder="15:59:00"
-                        value={closeExitTime}
-                        onChange={(e) => setCloseExitTime(e.target.value)}
-                        className="bg-white/5 border-white/10 h-8 text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-end">
-                    <Button
-                      onClick={handleClosePosition}
-                      disabled={isClosing}
-                      className="border border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
-                    >
-                      {isClosing ? 'Closing...' : 'Close Position (Full)'}
-                    </Button>
-                  </div>
-                </section>
-              ) : null}
-```
-
-7. Add `Input` to imports (it's not currently imported in this file). Add at the top after Button import:
-
-```ts
-import { Input } from '@/components/ui/input';
-```
+4. The `IMPORT_CHUNK_SIZE` constant (currently line 12) is no longer referenced by `processImportFiles` after this change but is still used by `handleTraderVueImport`. **Leave it as-is.**
 
 **Acceptance:**
 - [ ] `npx tsc --noEmit` passes
-- [ ] `npm run lint` passes
-- [ ] Open trades show the amber OPEN badge and Close Position panel
-- [ ] Closed trades show PnL as before, no Close Position panel
+- [ ] `npm run lint` passes (no unused imports — `collectImportedTrades` is gone from this file)
+- [ ] CSV file upload still works in the UI (the import button → file picker → success toast)
+- [ ] CSV folder upload still works (the folder import button)
+- [ ] TraderVue CSV upload still works (untouched path)
 
 ---
 
-#### Step 15: `components/trading/TradeTable.tsx` — OPEN badge, PnL `—`, filter chip, Merge button
-
-**File:** `components/trading/TradeTable.tsx`
-**Action:** MODIFY
-
-**Instructions:**
-
-1. Extend `TradeTableProps` (lines 11-24) with new props:
-
-```ts
-interface TradeTableProps {
-  trades: Trade[];
-  selectedIds: Set<string>;
-  onToggleSelect: (id: string) => void;
-  onSelectAll: (ids: string[]) => void;
-  onAddTag: (tradeId: string, tagName: string) => void;
-  onRemoveTag: (tradeId: string, tagName: string) => void;
-  onDeleteGlobalTag?: (tagName: string) => void;
-  onTradeClick?: (trade: Trade) => void;
-  onMergeTrades?: (ids: string[]) => void;
-  globalTags: string[];
-  readOnly?: boolean;
-  hideSelection?: boolean;
-  pnlMode?: 'net' | 'gross';
-  positionFilter?: 'all' | 'open' | 'closed';
-  onPositionFilterChange?: (filter: 'all' | 'open' | 'closed') => void;
-}
-```
-
-2. Add `onMergeTrades`, `positionFilter`, `onPositionFilterChange` to the function destructuring (line 26-38):
-
-```ts
-  onMergeTrades,
-  positionFilter = 'all',
-  onPositionFilterChange,
-```
-
-3. Above the `return` statement (before line 47), add a computed `canMerge` variable:
-
-```ts
-  const canMerge = !readOnly && onMergeTrades && selectedIds.size >= 2;
-```
-
-4. Wrap the existing `return (...)` body in a React fragment and add the filter chip row + Merge button as a sibling above the existing `<div className="overflow-x-auto...">` wrapper. The component currently returns that wrapper directly, so this change is structural — without the fragment, JSX won't accept two sibling roots.
-
-Replace the existing `return (` line and the opening `<div className="overflow-x-auto...">` block so the top of the return reads like this (the existing table `<div>` continues unchanged underneath):
-
-```tsx
-  return (
-    <>
-      <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
-        {onPositionFilterChange ? (
-          <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-0.5">
-            {(['all', 'open', 'closed'] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => onPositionFilterChange(f)}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                  positionFilter === f
-                    ? 'bg-white/10 text-white'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
-                {f.charAt(0).toUpperCase() + f.slice(1)}
-              </button>
-            ))}
-          </div>
-        ) : <div />}
-        {canMerge ? (
-          <button
-            onClick={() => onMergeTrades?.(Array.from(selectedIds))}
-            className="px-3 py-1 rounded-md border border-white/10 bg-white/5 text-xs text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
-          >
-            Merge {selectedIds.size} trades
-          </button>
-        ) : null}
-      </div>
-      <div className={`overflow-x-auto rounded border border-white/5 bg-[#121214] ${shouldScroll ? 'max-h-[46rem] overflow-y-auto' : ''}`}>
-        {/* existing table contents unchanged */}
-```
-
-And close the fragment at the end of the existing return. The current return ends with `</div>\n  );` — change that to `</div>\n    </>\n  );`.
-
-5. In the PnL column cell (currently lines 191-195), change the rendering to show `—` for open trades:
-
-```tsx
-                <td className={`px-4 py-3 text-right font-mono font-medium ${trade.isOpen ? 'text-zinc-500' : getPnLColor(pnlValue)}`}>
-                  <div className="flex flex-col items-end">
-                    {trade.isOpen ? (
-                      <span className="text-zinc-500">—</span>
-                    ) : (
-                      <>
-                        <span>{formatCurrency(pnlValue)}</span>
-                        {trade.initialRisk ? <span className="text-[10px] opacity-70">{formatR(pnlValue / trade.initialRisk)}</span> : null}
-                      </>
-                    )}
-                  </div>
-                </td>
-```
-
-6. In the Symbol cell (currently lines 102-103), add the OPEN badge after the symbol text:
-
-```tsx
-                <td className="px-4 py-3 font-medium">
-                  <span>{trade.symbol}</span>
-                  {trade.isOpen ? (
-                    <span className="ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/20 text-amber-400">
-                      OPEN
-                    </span>
-                  ) : null}
-                </td>
-```
-
-**Acceptance:**
-- [ ] `npx tsc --noEmit` passes
-- [ ] `npm run lint` passes
-- [ ] OPEN badge visible on open trades in the table
-- [ ] PnL column shows `—` for open trades
-- [ ] Filter chips appear and filter correctly
-- [ ] Merge button appears when 2+ trades are selected
-
----
-
-#### Step 16: Wire the new props through the rendering chain
-
-**Files:**
-- `app/page.tsx` (renders `<TradeDetailSheet>` directly at ~line 258, and renders `<ManagementTab>` which transitively renders `<TradeTable>`)
-- `components/trading/ManagementTab.tsx` (renders `<TradesTab>`)
-- `components/trading/TradesTab.tsx` (renders `<TradeTable>` at ~line 156)
-
-`<TradeTable>` is also rendered by `components/trading/JournalTab.tsx` (~line 309), but in journal context we do NOT want the merge button or position-filter chip — leave that call site alone. The new props are all optional, so omitting them is correct.
-
-**Action:** MODIFY (three files, prop-drilled in sequence)
-
-**Instructions:**
-
-1. **In `app/page.tsx`**:
-
-   a. Add `handleCloseTrade`, `handleMergeTrades`, `positionFilter`, and `setPositionFilter` to the destructuring of `useTrades()` (currently lines 61-108). Insert them anywhere in the destructured list — order does not matter, but group them near the other `handle*` functions for readability.
-
-   b. Pass `onCloseTrade={handleCloseTrade}` to the `<TradeDetailSheet>` at ~line 258. The existing JSX is:
-
-   ```tsx
-         <TradeDetailSheet
-           key={selectedTrade?.id ?? 'no-trade'}
-           trade={selectedTrade}
-           open={!!selectedTrade}
-           onOpenChange={(open) => {
-             if (!open) setSelectedTradeId(null);
-           }}
-           onSaveNotes={handleSaveNotes}
-         />
-   ```
-
-   Add `onCloseTrade={handleCloseTrade}` as a new prop on this element.
-
-   c. Find the `<ManagementTab>` element (currently ~line 206) and pass through four new props: `onMergeTrades={handleMergeTrades}`, `positionFilter={positionFilter}`, `onPositionFilterChange={setPositionFilter}`. They will be forwarded to `<TradesTab>` in step 2.
-
-2. **In `components/trading/ManagementTab.tsx`**:
-
-   a. Extend the props interface to accept `onMergeTrades?: (ids: string[]) => void`, `positionFilter?: 'all' | 'open' | 'closed'`, `onPositionFilterChange?: (filter: 'all' | 'open' | 'closed') => void`.
-
-   b. Destructure them from props and forward to `<TradesTab>` at ~line 95.
-
-3. **In `components/trading/TradesTab.tsx`**:
-
-   a. Extend the `TradesTabProps` interface (currently lines 10-37) with the same three optional props.
-
-   b. Destructure them in the function signature (currently lines 39-62).
-
-   c. Pass them to `<TradeTable>` at ~line 156. The existing call is:
-
-   ```tsx
-   <TradeTable
-     trades={filteredTrades}
-     selectedIds={selectedIds}
-     onToggleSelect={onToggleSelect}
-     onSelectAll={onSelectAll}
-     onAddTag={onAddTag}
-     onRemoveTag={onRemoveTag}
-     onDeleteGlobalTag={onDeleteGlobalTag}
-     onTradeClick={onTradeClick}
-     globalTags={globalTags}
-     readOnly={false}
-   />
-   ```
-
-   Add three new prop lines: `onMergeTrades={onMergeTrades}`, `positionFilter={positionFilter}`, `onPositionFilterChange={onPositionFilterChange}`.
-
-4. **Do NOT modify `components/trading/JournalTab.tsx`.** Its `<TradeTable>` call site stays as-is. The new props default to `undefined`, which keeps the merge button and filter chip hidden in the journal view (matches existing behavior).
-
-**Acceptance:**
-- [ ] `npx tsc --noEmit` passes
-- [ ] `npm run lint` passes
-- [ ] In the main trades view (Management tab), the position filter chip row and Merge button render above the table
-- [ ] In the Journal tab, the trade table looks identical to before this sprint (no filter chip, no merge button)
-- [ ] Clicking an open trade in the table opens TradeDetailSheet with the Close Position panel visible
-
----
-
-#### Step 17: `components/trading/PerformanceStatsTable.tsx` — exclude open trades, show "N excluded" banner
-
-**File:** `components/trading/PerformanceStatsTable.tsx`
-**Action:** MODIFY
-
-**Goal:** Every stat in this table represents realized performance on closed trades only. Open positions have no realized PnL, so including them would skew win rate, average gain, profit factor, drawdown, etc. The user still sees how many open positions were excluded via a small amber banner next to the "Stats" header.
-
-**Design decisions baked into this step:**
-- `closedTrades` is derived **inside** the `stats` `useMemo`. Every existing `trades.{reduce,filter,map,slice,length}` call gets rerouted through `closedTrades`.
-- `openCount` is derived in a **separate `useMemo` outside** the stats memo, because the JSX needs to read it directly (the stats memo returns an array of cells, not the count).
-- "Total Number of Trades" intentionally changes meaning from "all trades" to "closed trades only" — this matches what every other stat in the table now reports. The amber banner above the table tells the user how many were excluded.
-- The empty-state guard (`if (trades.length === 0)`) is unchanged — it still fires only when there are zero trades total. When there are open trades but no closed ones, the stats memo returns its existing zero-trades path (`return [] as StatsCell[]`) once we also early-return on `closedTrades.length === 0` from inside the memo — see the snippet.
-
-**Instructions:**
-
-1. **Replace lines 122-303** (the entire `stats` `useMemo` block, ending at `}, [trades]);`) with the version below. Two structural changes vs the existing code: (a) add `const openCount = useMemo(...)` immediately before `const stats = useMemo(...)`, and (b) inside the stats memo body, derive `closedTrades` once and route every collection operation through it.
-
-```ts
-export default function PerformanceStatsTable({ trades, onTradeClick }: PerformanceStatsTableProps) {
-  const openCount = useMemo(() => trades.filter((t) => t.isOpen).length, [trades]);
-
-  const stats = useMemo(() => {
-    if (trades.length === 0) {
-      return [] as StatsCell[];
-    }
-
-    const closedTrades = trades.filter((trade) => !trade.isOpen);
-    if (closedTrades.length === 0) {
-      // All trades are open — no realized stats to compute. The banner in the
-      // JSX still tells the user how many open positions exist.
-      return [] as StatsCell[];
-    }
-
-    const totalGainLoss = closedTrades.reduce((sum, trade) => sum + trade.netPnl, 0);
-    const winningTrades = closedTrades.filter((trade) => trade.netPnl > 0);
-    const losingTrades = closedTrades.filter((trade) => trade.netPnl < 0);
-    const scratchTrades = closedTrades.filter((trade) => Math.abs(trade.netPnl) === 0);
-
-    const dailyTotals = new Map<string, number>();
-    const dailyVolume = new Map<string, number>();
-    for (const trade of closedTrades) {
-      const key = trade.sortKey;
-      dailyTotals.set(key, (dailyTotals.get(key) ?? 0) + trade.netPnl);
-      dailyVolume.set(key, (dailyVolume.get(key) ?? 0) + trade.totalQuantity);
-    }
-    const dailyValues = Array.from(dailyTotals.values());
-    const dailyVolumeValues = Array.from(dailyVolume.values());
-
-    const averageDailyGainLoss = dailyValues.length > 0 ? dailyValues.reduce((sum, value) => sum + value, 0) / dailyValues.length : 0;
-    const averageDailyVolume = dailyVolumeValues.length > 0 ? dailyVolumeValues.reduce((sum, value) => sum + value, 0) / dailyVolumeValues.length : 0;
-
-    const totalQuantity = closedTrades.reduce((sum, trade) => sum + trade.totalQuantity, 0);
-    const averagePerShareGainLoss = totalQuantity > 0 ? totalGainLoss / totalQuantity : 0;
-    const averageTradeGainLoss = closedTrades.length > 0 ? totalGainLoss / closedTrades.length : 0;
-    const averageWinningTrade = winningTrades.length > 0 ? winningTrades.reduce((sum, trade) => sum + trade.netPnl, 0) / winningTrades.length : 0;
-    const averageLosingTrade = losingTrades.length > 0 ? losingTrades.reduce((sum, trade) => sum + trade.netPnl, 0) / losingTrades.length : 0;
-
-    const winningCount = winningTrades.length;
-    const losingCount = losingTrades.length;
-    const winPercent = closedTrades.length > 0 ? (winningCount / closedTrades.length) * 100 : 0;
-    const lossPercent = closedTrades.length > 0 ? (losingCount / closedTrades.length) * 100 : 0;
-
-    const holdTradePairs = closedTrades
-      .map((trade) => {
-        const minutes = parseHoldMinutes(trade);
-        return minutes == null ? null : { trade, minutes };
-      })
-      .filter((entry): entry is HoldInfo => entry !== null);
-
-    const winningHoldTrades = holdTradePairs.filter((entry) => entry.trade.netPnl > 0);
-    const losingHoldTrades = holdTradePairs.filter((entry) => entry.trade.netPnl < 0);
-    const scratchHoldTrades = holdTradePairs.filter((entry) => Math.abs(entry.trade.netPnl) <= 1);
-
-    const averageScratchHoldTime = scratchHoldTrades.length > 0 ? calculateMean(scratchHoldTrades.map((entry) => entry.minutes)) : null;
-    const averageWinningHoldTime = winningHoldTrades.length > 0 ? calculateMean(winningHoldTrades.map((entry) => entry.minutes)) : null;
-    const averageLosingHoldTime = losingHoldTrades.length > 0 ? calculateMean(losingHoldTrades.map((entry) => entry.minutes)) : null;
-
-    const sortedByDate = [...closedTrades].sort((a, b) => a.date.getTime() - b.date.getTime());
-    let maxConsecutiveWins = 0;
-    let maxConsecutiveLosses = 0;
-    let maxConsecutiveWinTrade: Trade | null = null;
-    let maxConsecutiveLossTrade: Trade | null = null;
-    let currentWinStreak = 0;
-    let currentLossStreak = 0;
-
-    for (const trade of sortedByDate) {
-      if (trade.netPnl > 0) {
-        currentWinStreak += 1;
-        currentLossStreak = 0;
-        if (currentWinStreak > maxConsecutiveWins) {
-          maxConsecutiveWins = currentWinStreak;
-          maxConsecutiveWinTrade = trade;
-        }
-      } else if (trade.netPnl < 0) {
-        currentLossStreak += 1;
-        currentWinStreak = 0;
-        if (currentLossStreak > maxConsecutiveLosses) {
-          maxConsecutiveLosses = currentLossStreak;
-          maxConsecutiveLossTrade = trade;
-        }
-      } else {
-        currentWinStreak = 0;
-        currentLossStreak = 0;
-      }
-    }
-
-    const largestGainTrade = closedTrades.slice().sort((a, b) => b.netPnl - a.netPnl)[0] ?? null;
-    const largestLossTrade = closedTrades.slice().sort((a, b) => a.netPnl - b.netPnl)[0] ?? null;
-
-    const pnlValues = closedTrades.map((trade) => trade.netPnl);
-    const meanPnl = calculateMean(pnlValues);
-    const pnlStdDev = calculateStdDev(pnlValues);
-    const sqn = pnlValues.length > 0 && pnlStdDev > 0 ? (Math.sqrt(pnlValues.length) * meanPnl) / pnlStdDev : 0;
-
-    const grossProfit = winningTrades.reduce((sum, trade) => sum + trade.netPnl, 0);
-    const grossLoss = Math.abs(losingTrades.reduce((sum, trade) => sum + trade.netPnl, 0));
-    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Number.POSITIVE_INFINITY : 0;
-
-    const pWin = closedTrades.length > 0 ? winningTrades.length / closedTrades.length : 0;
-    const zDenom = Math.sqrt(Math.max(pWin * (1 - pWin), 1e-8));
-    const zScore = closedTrades.length > 1 ? (pWin - 0.5) * Math.sqrt(closedTrades.length) / zDenom : 0;
-    const randomChance = clampProbability(1 - erf(Math.abs(zScore) / Math.SQRT2));
-
-    const avgWinAbs =
-      winningTrades.length > 0 ? winningTrades.reduce((sum, trade) => sum + trade.netPnl, 0) / winningTrades.length : 0;
-    const avgLossAbs =
-      losingTrades.length > 0 ? Math.abs(losingTrades.reduce((sum, trade) => sum + trade.netPnl, 0) / losingTrades.length) : 0;
-    const winProb = closedTrades.length > 0 ? winningTrades.length / closedTrades.length : 0;
-    const kellyPercentage =
-      avgLossAbs > 0 && winProb > 0 && winProb < 1 ? winProb - (1 - winProb) / (avgWinAbs / avgLossAbs) : 0;
-
-    const kRatio = pWin > 0 && pnlStdDev > 0 ? (avgWinAbs * winProb) / pnlStdDev : 0;
-
-    const totalCommissions = closedTrades.reduce((sum, trade) => sum + (trade.commission ?? 0), 0);
-    const totalFees = closedTrades.reduce((sum, trade) => sum + (trade.fees ?? 0), 0);
-
-    const maeValues = closedTrades
-      .map((trade) => trade.mae)
-      .filter((mae): mae is number => typeof mae === 'number' && Number.isFinite(mae));
-    const mfeValues = closedTrades
-      .map((trade) => trade.mfe)
-      .filter((mfe): mfe is number => typeof mfe === 'number' && Number.isFinite(mfe));
-
-    const avgMae = maeValues.length > 0 ? maeValues.reduce((sum, value) => sum + value, 0) / maeValues.length : 0;
-    const avgMfe = mfeValues.length > 0 ? mfeValues.reduce((sum, value) => sum + value, 0) / mfeValues.length : 0;
-
-    const cells: StatsCell[] = [
-      { label: 'Total Gain/Loss', value: formatCurrency(totalGainLoss) },
-      { label: 'Largest Gain', value: largestGainTrade ? formatCurrency(largestGainTrade.netPnl) : '-', clickTrade: largestGainTrade ?? undefined },
-      { label: 'Largest Loss', value: largestLossTrade ? formatCurrency(largestLossTrade.netPnl) : '-', clickTrade: largestLossTrade ?? undefined },
-      { label: 'Average Daily Gain/Loss', value: formatCurrency(averageDailyGainLoss) },
-      { label: 'Average Daily Volume', value: averageDailyVolume.toFixed(0) },
-      { label: 'Average Per Share Gain/Loss', value: formatCurrency(averagePerShareGainLoss) },
-      { label: 'Average Trade Gain/Loss', value: formatCurrency(averageTradeGainLoss) },
-      { label: 'Average Winning Trade', value: winningTrades.length > 0 ? formatCurrency(averageWinningTrade) : '-' },
-      { label: 'Average Losing Trade', value: losingTrades.length > 0 ? formatCurrency(averageLosingTrade) : '-' },
-      { label: 'Total Number of Trades', value: `${closedTrades.length}` },
-      { label: 'Number of Winning Trades', value: `${winningCount} (${formatPercent(winPercent)})` },
-      { label: 'Number of Losing Trades', value: `${losingCount} (${formatPercent(lossPercent)})` },
-      { label: 'Average Hold Time (Scratch)', value: formatHoldTime(scratchTrades.length > 0 ? averageScratchHoldTime : null) },
-      { label: 'Average Hold Time (Winning)', value: formatHoldTime(averageWinningHoldTime) },
-      { label: 'Average Hold Time (Losing)', value: formatHoldTime(averageLosingHoldTime) },
-      { label: 'Number of Scratch Trades', value: `${scratchTrades.length}` },
-      {
-        label: 'Max Consecutive Wins',
-        value: maxConsecutiveWins > 0 ? String(maxConsecutiveWins) : '-',
-        clickTrade: maxConsecutiveWinTrade ?? undefined,
-      },
-      {
-        label: 'Max Consecutive Losses',
-        value: maxConsecutiveLosses > 0 ? String(maxConsecutiveLosses) : '-',
-        clickTrade: maxConsecutiveLossTrade ?? undefined,
-      },
-      { label: 'Trade P&L Std Dev', value: Number.isFinite(pnlStdDev) ? formatCurrency(pnlStdDev) : '-' },
-      { label: 'System Quality Number', value: Number.isFinite(sqn) ? sqn.toFixed(2) : '-' },
-      { label: 'Probability of Random Chance', value: `${(randomChance * 100).toFixed(1)}%` },
-      { label: 'Kelly Percentage', value: `${(kellyPercentage * 100).toFixed(2)}%` },
-      { label: 'K-Ratio', value: Number.isFinite(kRatio) ? kRatio.toFixed(2) : '-' },
-      { label: 'Profit Factor', value: profitFactor === Number.POSITIVE_INFINITY ? '∞' : profitFactor.toFixed(2) },
-      { label: 'Total Commissions', value: formatCurrency(totalCommissions) },
-      { label: 'Total Fees', value: formatCurrency(totalFees) },
-      { label: 'Average MAE', value: formatCurrency(avgMae) },
-      { label: 'Average MFE', value: formatCurrency(avgMfe) },
-      {
-        label: 'Avg Risk per Trade',
-        value: (() => {
-          const riskedTrades = closedTrades.filter((trade) => trade.initialRisk);
-          if (riskedTrades.length === 0) return '-';
-          const avg = riskedTrades.reduce((acc, trade) => acc + (trade.initialRisk ?? 0), 0) / riskedTrades.length;
-          return formatCurrency(avg);
-        })(),
-      },
-      {
-        label: 'Total R-Multiple',
-        value: (() => {
-          const riskedTrades = closedTrades.filter((trade) => trade.initialRisk);
-          if (riskedTrades.length === 0) return '-';
-          const total = riskedTrades.reduce((acc, trade) => acc + trade.netPnl / (trade.initialRisk ?? 1), 0);
-          return `${total.toFixed(2)}R`;
-        })(),
-      },
-    ];
-
-    while (cells.length < 30) {
-      cells.push({ label: '', value: '' });
-    }
-
-    return cells.slice(0, 30);
-  }, [trades]);
-```
-
-2. **Locate the header `<div>` that currently renders the "Stats" title** in the JSX render block (search for `tracking-wider text-zinc-400` — there's only one match). Replace that header `<div>` with the version below, which adds the amber banner. The rest of the JSX (the rows grid built from `stats`) is unchanged.
-
-```tsx
-      <div className="mb-6 flex items-center gap-2">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Stats</h3>
-        <Info className="h-3.5 w-3.5 text-zinc-600" />
-        {openCount > 0 ? (
-          <span className="ml-auto text-xs text-amber-400 font-medium">
-            {openCount} open position{openCount === 1 ? '' : 's'} excluded
-          </span>
-        ) : null}
-      </div>
-```
-
-3. **Leave the existing `if (trades.length === 0)` empty-state guard unchanged.** It correctly fires only when there are zero trades total. When there are open trades but no closed ones, the stats memo returns `[]`, the rows grid renders as blank padded cells, and the amber banner shows the excluded count — that's the desired UX.
-
-**Notes on intentional behavior changes:**
-- `Total Number of Trades` now reports the count of closed trades, not all trades. This is intentional — every other stat in this table already excludes open positions, and showing a mixed count next to win-rate stats would be misleading. The amber banner communicates the exclusion.
-- No new stat cell is added. (An earlier draft of this spec mentioned an "Open Positions" cell; we drop that in favor of the banner so all 30 grid slots stay reserved for performance stats.)
-
-**Acceptance:**
-- [ ] `npx tsc --noEmit` passes
-- [ ] `npm run lint` passes
-- [ ] With a mix of open and closed trades, win rate / averages / profit factor / streaks all compute on closed trades only
-- [ ] Amber "N open position(s) excluded" banner appears in the header when at least one trade is open
-- [ ] Banner is hidden when all trades are closed
-- [ ] Empty state ("Import trades to see statistics") still shows when there are zero total trades
-- [ ] When all trades are open, the stats cells render blank and the banner shows the count — no crash, no negative numbers
-
----
-
-#### Step 18: `lib/journal-aggregates.ts` — exclude open trades
-
-**File:** `lib/journal-aggregates.ts`
-**Action:** MODIFY
-
-**Instructions:**
-
-1. In `aggregateDay` (lines 30-48), add a filter at the top of the function body, after the `matching` filter, to exclude open trades:
-
-```ts
-export function aggregateDay(trades: Trade[], date: string): DayAggregate {
-  const matching = trades.filter((t) => toLocalDateKey(t.date) === date && !t.isOpen);
-  ...
-```
-
-2. In `aggregateWeek` (lines 53-86), do the same — add `&& !t.isOpen` to the `matching` filter:
-
-```ts
-  const matching = trades.filter((t) => {
-    const key = toLocalDateKey(t.date);
-    return key >= weekStart && key <= weekEnd && !t.isOpen;
-  });
-```
-
-**Acceptance:**
-- [ ] `npx tsc --noEmit` passes
-- [ ] Existing `__tests__/journal-aggregates.test.ts` tests still pass
-
----
-
-#### Step 19: (DEFERRED to Phase 2) — switch CSV import path to the server matcher
-
-**Action:** SKIP — do nothing in Phase 1.
-
-The original plan was to change `hooks/use-trades.ts` `processImportFiles` to send raw broker executions to a new `/api/trades/import-raw` endpoint (Step 8) instead of running client-side FIFO matching. Both Step 8 (the route) and this step are deferred to Phase 2 — see Step 8's body for the rationale.
-
-**For Codex:** Skip this step entirely. Do NOT modify `hooks/use-trades.ts` for the import path. `processImportFiles` continues to call `/api/trades/import` exactly as it does today (Step 12 still adds the new `handleCloseTrade` / `handleMergeTrades` functions to this file — those are separate changes and stay in scope).
-
-**Acceptance:**
-- [ ] `hooks/use-trades.ts` `processImportFiles` still calls `/api/trades/import` (not `/api/trades/import-raw`)
-- [ ] No `collectRawExecutions` helper is added to `lib/trade-utils.ts`
-
----
-
-#### Step 20: `app/api/trades/route.ts` — persist `isOpen`/`closedAt`/`remainingQty` on POST (manual create)
-
-**File:** `app/api/trades/route.ts`
-**Action:** MODIFY
-
-**Instructions:**
-
-The POST handler (lines 75-end) creates trades via `createTradeSchema`. That schema now accepts `isOpen`, `closedAt`, `remainingQty` (added in Step 6). The DB insert needs to write them.
-
-1. In the `db.insert(trades).values({...})` call (currently starting around line 94), add:
-
-```ts
-          isOpen: body.isOpen ?? false,
-          closedAt: body.closedAt ? new Date(body.closedAt) : null,
-          remainingQty: body.remainingQty ?? 0,
-```
-
-2. In the `.onConflictDoUpdate({ set: {...} })` block (lines 119-145), add the same three fields to the `set` object:
-
-```ts
-          isOpen: body.isOpen ?? false,
-          closedAt: body.closedAt ? new Date(body.closedAt) : null,
-          remainingQty: body.remainingQty ?? 0,
-```
-
-**Acceptance:**
-- [ ] `npx tsc --noEmit` passes
-- [ ] Creating a trade via `POST /api/trades` with `isOpen: true` stores it correctly
-
----
-
-#### Step 21: `app/api/trades/import/route.ts` — persist new fields on upsert
-
-**File:** `app/api/trades/import/route.ts`
-**Action:** MODIFY
-
-**Instructions:**
-
-The import route's `tx.insert(trades).values({...})` (lines 263-308) does not yet include the new columns. Add them to both the `values` and `onConflictDoUpdate.set` objects.
-
-1. In `values({...})` (starting line 263), after `notes: trade.notes ?? null,`, add:
-
-```ts
-            isOpen: trade.isOpen ?? false,
-            closedAt: trade.closedAt ? new Date(trade.closedAt) : null,
-            remainingQty: trade.remainingQty ?? 0,
-```
-
-2. **Do NOT add `isOpen`, `closedAt`, or `remainingQty` to the `onConflictDoUpdate({ set: {...} })` block** (lines 288-308). Leave the `set` object exactly as it is today — the existing field list (avgEntryPrice, avgExitPrice, totalQuantity, grossPnl, netPnl, entryTime, exitTime, executionCount, mfe, mae, bestExitPnl, exitEfficiency, pnl, executions, commission, fees) stays unchanged.
-
-**Why:** On a re-import collision, we want prices and PnL to refresh (in case the user re-imports a corrected CSV) but we do NOT want a re-import to flip an open position back to closed, or overwrite a user-edited `closedAt` timestamp. The close-position and merge actions are the only writers for those three fields. Omitting them from `set` is the actual mechanism for this — no comment is needed.
-
-**Acceptance:**
-- [ ] `npx tsc --noEmit` passes
-
----
-
-#### Step 22: Tests — `__tests__/position-matcher.test.ts`
+#### Step 7: Extend `__tests__/position-matcher.test.ts`
 
 **File:** `__tests__/position-matcher.test.ts`
-**Action:** CREATE
+**Action:** MODIFY
 
 **Instructions:**
 
+1. **Update the existing "unmatched entry" test** (currently around line 35 — the NVDA test). Its previous expectation (`trades.length === 0` + warning) is no longer correct: Phase 2 turns unmatched entries into `newOpenPositions`. Replace that test block:
+
 ```ts
-import { describe, it, expect } from 'vitest';
-import { matchExecutions, normalizeSide } from '@/lib/position-matcher';
-import type { MatcherExecution } from '@/lib/position-matcher';
-
-function exec(
-  symbol: string,
-  side: MatcherExecution['side'],
-  qty: number,
-  price: number,
-  time: string,
-  commission = 0,
-  fees = 0,
-): MatcherExecution {
-  return { symbol, side, qty, price, time, commission, fees };
-}
-
-describe('normalizeSide', () => {
-  it('maps MARGIN and BUY to LONG_ENTRY', () => {
-    expect(normalizeSide('MARGIN')).toBe('LONG_ENTRY');
-    expect(normalizeSide('BUY')).toBe('LONG_ENTRY');
-  });
-  it('maps S and SELL to LONG_EXIT', () => {
-    expect(normalizeSide('S')).toBe('LONG_EXIT');
-    expect(normalizeSide('SELL')).toBe('LONG_EXIT');
-  });
-  it('maps SS and SHORT to SHORT_ENTRY', () => {
-    expect(normalizeSide('SS')).toBe('SHORT_ENTRY');
-    expect(normalizeSide('SHORT')).toBe('SHORT_ENTRY');
-  });
-  it('maps B and COVER to SHORT_EXIT', () => {
-    expect(normalizeSide('B')).toBe('SHORT_EXIT');
-    expect(normalizeSide('COVER')).toBe('SHORT_EXIT');
-  });
-  it('returns null for unknown side', () => {
-    expect(normalizeSide('UNKNOWN')).toBeNull();
-  });
-});
-
-describe('matchExecutions — LONG round-trip', () => {
-  it('pairs a single buy+sell into one trade', () => {
-    const result = matchExecutions([
-      exec('AAPL', 'LONG_ENTRY', 100, 150, '09:30:00'),
-      exec('AAPL', 'LONG_EXIT', 100, 155, '10:00:00'),
-    ]);
-    expect(result.warnings).toHaveLength(0);
-    expect(result.trades).toHaveLength(1);
-    const trade = result.trades[0];
-    expect(trade.symbol).toBe('AAPL');
-    expect(trade.direction).toBe('LONG');
-    expect(trade.totalQuantity).toBe(100);
-    expect(trade.avgEntryPrice).toBeCloseTo(150);
-    expect(trade.avgExitPrice).toBeCloseTo(155);
-    expect(trade.grossPnl).toBeCloseTo(500);
-    expect(trade.netPnl).toBeCloseTo(500);
-    expect(trade.entryTime).toBe('09:30:00');
-    expect(trade.exitTime).toBe('10:00:00');
-  });
-});
-
-describe('matchExecutions — SHORT round-trip', () => {
-  it('pairs a single short sell + cover into one trade', () => {
-    const result = matchExecutions([
-      exec('TSLA', 'SHORT_ENTRY', 50, 200, '09:31:00'),
-      exec('TSLA', 'SHORT_EXIT', 50, 195, '09:45:00'),
-    ]);
-    expect(result.warnings).toHaveLength(0);
-    expect(result.trades).toHaveLength(1);
-    const trade = result.trades[0];
-    expect(trade.direction).toBe('SHORT');
-    expect(trade.grossPnl).toBeCloseTo(250); // (200-195)*50
-  });
-});
-
-describe('matchExecutions — unmatched entry', () => {
-  it('produces a warning for unmatched long entry', () => {
+describe('matchExecutions — unmatched entry becomes a new open position', () => {
+  it('emits a new open position for unmatched long entry (no warning)', () => {
     const result = matchExecutions([
       exec('NVDA', 'LONG_ENTRY', 200, 100, '09:30:00'),
     ]);
     expect(result.trades).toHaveLength(0);
+    expect(result.newOpenPositions).toHaveLength(1);
+    expect(result.warnings).toHaveLength(0);
+    const open = result.newOpenPositions[0];
+    expect(open.symbol).toBe('NVDA');
+    expect(open.direction).toBe('LONG');
+    expect(open.totalQuantity).toBe(200);
+    expect(open.avgEntryPrice).toBeCloseTo(100);
+    expect(open.isOpen).toBe(true);
+    expect(open.remainingQty).toBe(200);
+  });
+});
+```
+
+2. **Add new `describe` blocks at the end of the file** for cross-day cases:
+
+```ts
+import type { OpenPositionInput } from '@/lib/position-matcher';
+
+function openPos(
+  id: string,
+  symbol: string,
+  direction: 'LONG' | 'SHORT',
+  totalQuantity: number,
+  avgEntryPrice: number,
+  entryTime: string,
+  entryDate: Date,
+  commission = 0,
+  fees = 0,
+): OpenPositionInput {
+  return { id, symbol, direction, totalQuantity, avgEntryPrice, entryTime, entryDate, commission, fees };
+}
+
+describe('matchExecutions — cross-day full close', () => {
+  it('closes a prior-day open long with same-symbol sells, emits a ClosingFill', () => {
+    const opens = [openPos('open1', 'AAPL', 'LONG', 100, 150, '09:30:00', new Date('2026-05-15'))];
+    const result = matchExecutions([
+      exec('AAPL', 'LONG_EXIT', 100, 160, '10:00:00'),
+    ], opens);
+
+    expect(result.trades).toHaveLength(0);
+    expect(result.newOpenPositions).toHaveLength(0);
+    expect(result.warnings).toHaveLength(0);
+    expect(result.closingFills).toHaveLength(1);
+
+    const fill = result.closingFills[0];
+    expect(fill.openPositionId).toBe('open1');
+    expect(fill.matchedQty).toBe(100);
+    expect(fill.exitPrice).toBeCloseTo(160);
+    expect(fill.grossPnl).toBeCloseTo(1000); // (160-150)*100
+    expect(fill.netPnl).toBeCloseTo(1000);
+  });
+});
+
+describe('matchExecutions — cross-day partial close', () => {
+  it('partially closes a prior-day open long, emits a ClosingFill with matchedQty < totalQty', () => {
+    const opens = [openPos('open1', 'AAPL', 'LONG', 100, 150, '09:30:00', new Date('2026-05-15'))];
+    const result = matchExecutions([
+      exec('AAPL', 'LONG_EXIT', 40, 160, '10:00:00'),
+    ], opens);
+
+    expect(result.closingFills).toHaveLength(1);
+    const fill = result.closingFills[0];
+    expect(fill.matchedQty).toBe(40);
+    expect(fill.grossPnl).toBeCloseTo(400); // (160-150)*40
+    // No new open positions, no warnings — the matcher is fine with partials.
+    expect(result.newOpenPositions).toHaveLength(0);
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('matchExecutions — cross-day FIFO across multiple opens', () => {
+  it('consumes the OLDER open position first', () => {
+    const opens = [
+      openPos('open-newer', 'AAPL', 'LONG', 100, 160, '09:30:00', new Date('2026-05-16')),
+      openPos('open-older', 'AAPL', 'LONG', 100, 150, '09:30:00', new Date('2026-05-15')),
+    ];
+    const result = matchExecutions([
+      exec('AAPL', 'LONG_EXIT', 100, 170, '10:00:00'),
+    ], opens);
+
+    expect(result.closingFills).toHaveLength(1);
+    expect(result.closingFills[0].openPositionId).toBe('open-older');
+    // PnL uses the older's entry price (150), not the newer's (160).
+    expect(result.closingFills[0].grossPnl).toBeCloseTo(2000); // (170-150)*100
+  });
+});
+
+describe('matchExecutions — mixed same-day round-trip + cross-day close', () => {
+  it('closes the open position first, then matches any leftover same-day pairs', () => {
+    const opens = [openPos('open1', 'AAPL', 'LONG', 100, 150, '09:30:00', new Date('2026-05-15'))];
+    const result = matchExecutions([
+      // First exit consumes the open. Second pair is a same-day round trip.
+      exec('AAPL', 'LONG_EXIT', 100, 160, '09:31:00'),
+      exec('AAPL', 'LONG_ENTRY', 50, 161, '09:35:00'),
+      exec('AAPL', 'LONG_EXIT', 50, 165, '09:45:00'),
+    ], opens);
+
+    expect(result.closingFills).toHaveLength(1);
+    expect(result.closingFills[0].matchedQty).toBe(100);
+    expect(result.trades).toHaveLength(1);
+    expect(result.trades[0].totalQuantity).toBe(50);
+    expect(result.trades[0].grossPnl).toBeCloseTo(200); // (165-161)*50
+  });
+});
+
+describe('matchExecutions — opposite-direction open position is NOT consumed', () => {
+  it('does not match a long exit against a short open position', () => {
+    const opens = [openPos('open-short', 'AAPL', 'SHORT', 100, 150, '09:30:00', new Date('2026-05-15'))];
+    const result = matchExecutions([
+      exec('AAPL', 'LONG_EXIT', 100, 160, '10:00:00'),
+    ], opens);
+
+    // The long exit can't close a short open — it's unmatched and warns.
+    expect(result.closingFills).toHaveLength(0);
     expect(result.warnings.length).toBeGreaterThan(0);
-    expect(result.warnings[0]).toMatch(/NVDA/);
+    expect(result.warnings[0]).toMatch(/AAPL/);
     expect(result.warnings[0]).toMatch(/unmatched/i);
   });
 });
 
-describe('matchExecutions — unmatched exit', () => {
-  it('produces a warning for unmatched long exit (carry-over)', () => {
+describe('matchExecutions — proportional commission allocation on partial close', () => {
+  it('splits the open positions commission/fees proportionally to matchedQty', () => {
+    const opens = [openPos('open1', 'AAPL', 'LONG', 100, 150, '09:30:00', new Date('2026-05-15'), 10, 2)];
     const result = matchExecutions([
-      exec('AMD', 'LONG_EXIT', 100, 50, '09:35:00'),
-    ]);
-    expect(result.trades).toHaveLength(0);
-    expect(result.warnings.length).toBeGreaterThan(0);
-    expect(result.warnings[0]).toMatch(/AMD/);
-  });
-});
+      exec('AAPL', 'LONG_EXIT', 40, 160, '10:00:00', 4, 1), // 40% of the 100
+    ], opens);
 
-describe('matchExecutions — multi-symbol', () => {
-  it('produces separate trades for different symbols', () => {
-    const result = matchExecutions([
-      exec('AAPL', 'LONG_ENTRY', 100, 150, '09:30:00'),
-      exec('AAPL', 'LONG_EXIT', 100, 155, '10:00:00'),
-      exec('MSFT', 'SHORT_ENTRY', 50, 300, '09:31:00'),
-      exec('MSFT', 'SHORT_EXIT', 50, 290, '10:05:00'),
-    ]);
-    expect(result.warnings).toHaveLength(0);
-    expect(result.trades).toHaveLength(2);
-    const symbols = result.trades.map((t) => t.symbol).sort();
-    expect(symbols).toEqual(['AAPL', 'MSFT']);
-  });
-});
-
-describe('matchExecutions — commission and fees propagate', () => {
-  it('deducts commission and fees from netPnl', () => {
-    const result = matchExecutions([
-      exec('X', 'LONG_ENTRY', 100, 10, '09:30:00', 2, 0.5),
-      exec('X', 'LONG_EXIT', 100, 11, '10:00:00', 2, 0.5),
-    ]);
-    expect(result.trades).toHaveLength(1);
-    const trade = result.trades[0];
-    expect(trade.grossPnl).toBeCloseTo(100);   // (11-10)*100
-    expect(trade.commission).toBeCloseTo(4);    // 2+2
-    expect(trade.fees).toBeCloseTo(1);          // 0.5+0.5
-    expect(trade.netPnl).toBeCloseTo(95);       // 100-4-1
+    expect(result.closingFills).toHaveLength(1);
+    const fill = result.closingFills[0];
+    expect(fill.entryCommissionAllocated).toBeCloseTo(4);  // 10 * 0.4
+    expect(fill.entryFeesAllocated).toBeCloseTo(0.8);       // 2 * 0.4
+    expect(fill.exitCommission).toBeCloseTo(4);
+    expect(fill.exitFees).toBeCloseTo(1);
+    // netPnl = gross - allocatedCommission - allocatedFees - exitCommission - exitFees
+    //       = 400 - 4 - 0.8 - 4 - 1 = 390.2
+    expect(fill.netPnl).toBeCloseTo(390.2);
   });
 });
 ```
+
+3. **Existing `matchExecutions — unmatched exit` test (the AMD test)** still passes — Phase 2 still warns on unmatched exits. No change needed.
 
 **Acceptance:**
 - [ ] `npm test` — `position-matcher.test.ts` passes with 0 failures
+- [ ] All 11 pre-existing tests still pass (except the NVDA test, which was rewritten in this step)
+- [ ] All ~6 new cross-day tests pass
 
 ---
 
-#### Step 23: Tests — `__tests__/trade-merge.test.ts`
-
-**File:** `__tests__/trade-merge.test.ts`
-**Action:** CREATE
-
-**Coverage gap (deliberate, follow-up tracked):** The actual merge logic lives in `app/api/trades/merge/route.ts`, not in a standalone utility. These tests re-implement the math (weighted avg, tag union, note concatenation) inline and verify it in isolation — they prove the algorithm is correct but do NOT exercise the route. Auth, ownership checks, opposite-direction 400s, FK cascade behavior on `trade_executions`, and the transactional path are uncovered.
-
-This is intentional for Phase 1 — there's no route-level testing infra in this repo yet (no test DB harness, no in-memory PG mock). The "Follow-up Specs" section at the bottom of HANDOFF.md tracks this gap, and Phase 2 (or a dedicated test-infra sprint) should pick it up.
-
-```ts
-import { describe, it, expect } from 'vitest';
-
-// Pure helper: weighted average of entry/exit prices across merged trades.
-function weightedAvg(trades: { price: number; qty: number }[]): number {
-  const totalQty = trades.reduce((s, t) => s + t.qty, 0);
-  if (totalQty === 0) return 0;
-  return trades.reduce((s, t) => s + t.price * t.qty, 0) / totalQty;
-}
-
-// Pure helper: union of tag arrays.
-function unionTags(tagSets: string[][]): string[] {
-  return Array.from(new Set(tagSets.flat()));
-}
-
-// Pure helper: concatenate non-empty notes with separator.
-function mergeNotes(notes: (string | null | undefined)[]): string | null {
-  const fragments = notes.map((n) => n?.trim()).filter((n): n is string => !!n);
-  return fragments.length > 0 ? fragments.join(' --- ') : null;
-}
-
-describe('merge helpers — weightedAvg', () => {
-  it('computes weighted average entry price', () => {
-    const trades = [
-      { price: 100, qty: 200 },
-      { price: 120, qty: 100 },
-    ];
-    expect(weightedAvg(trades)).toBeCloseTo(106.67, 2);
-  });
-
-  it('returns 0 for zero total qty', () => {
-    expect(weightedAvg([])).toBe(0);
-  });
-});
-
-describe('merge helpers — unionTags', () => {
-  it('deduplicates tags across merged trades', () => {
-    const tags = unionTags([['momentum', 'breakout'], ['momentum', 'earnings']]);
-    expect(tags.sort()).toEqual(['breakout', 'earnings', 'momentum']);
-  });
-
-  it('handles empty tag sets', () => {
-    expect(unionTags([[], []])).toEqual([]);
-  });
-});
-
-describe('merge helpers — mergeNotes', () => {
-  it('joins non-empty notes with separator', () => {
-    expect(mergeNotes(['Good entry', 'Follow through'])).toBe('Good entry --- Follow through');
-  });
-
-  it('skips null/empty notes', () => {
-    expect(mergeNotes([null, 'Only this', ''])).toBe('Only this');
-  });
-
-  it('returns null when all notes are empty', () => {
-    expect(mergeNotes([null, '', undefined])).toBeNull();
-  });
-});
-
-describe('merge — direction validation (logic parity)', () => {
-  it('detects opposite directions', () => {
-    const directions = new Set(['LONG', 'SHORT']);
-    expect(directions.size).toBe(2); // would 400 in the route
-  });
-
-  it('allows same-direction merge', () => {
-    const directions = new Set(['LONG', 'LONG']);
-    expect(directions.size).toBe(1); // would proceed
-  });
-});
-```
-
-**Acceptance:**
-- [ ] `npm test` — `trade-merge.test.ts` passes with 0 failures
-
----
-
-#### Step 24: Extend `__tests__/journal-aggregates.test.ts` — open-trade exclusion
-
-**File:** `__tests__/journal-aggregates.test.ts`
-**Action:** MODIFY
-
-**Instructions:**
-
-The `makeTrade` helper at line 9 needs to support `isOpen`. Add `isOpen: overrides.isOpen ?? false` to the returned object in `makeTrade` (after `tags: [],`):
-
-```ts
-    isOpen: overrides.isOpen ?? false,
-    remainingQty: overrides.remainingQty ?? 0,
-```
-
-Then add a new `describe` block at the end of the file:
-
-```ts
-describe('aggregateDay — excludes open trades', () => {
-  it('does not count an open trade in netResult or tradeIds', () => {
-    const trades: Trade[] = [
-      makeTrade({ id: 'closed', date: new Date(2026, 3, 17, 10, 0), netPnl: 100, grossPnl: 100 }),
-      makeTrade({ id: 'open', date: new Date(2026, 3, 17, 11, 0), netPnl: 0, grossPnl: 0, isOpen: true }),
-    ];
-    const result = aggregateDay(trades, '2026-04-17');
-    expect(result.tradeIds).toEqual(['closed']);
-    expect(result.netResult).toBe(100);
-  });
-});
-
-describe('aggregateWeek — excludes open trades', () => {
-  it('does not count open trades in weekly totals', () => {
-    const trades: Trade[] = [
-      makeTrade({ id: 'c1', date: new Date(2026, 3, 14, 10, 0), netPnl: 200, grossPnl: 200, initialRisk: 100 }),
-      makeTrade({ id: 'o1', date: new Date(2026, 3, 15, 10, 0), netPnl: 0, grossPnl: 0, isOpen: true }),
-    ];
-    const result = aggregateWeek(trades, '2026-04-13', '2026-04-17');
-    expect(result.tradeIds).toEqual(['c1']);
-    expect(result.netResult).toBe(200);
-    expect(result.rTotal).toBeCloseTo(2, 10);
-  });
-});
-```
-
-**Acceptance:**
-- [ ] `npm test` — `journal-aggregates.test.ts` passes with 0 failures
-
----
-
-#### Step 25: Lint, typecheck, test, commit
+#### Step 8: Lint, typecheck, test, commit
 
 **Action:** RUN COMMANDS
-
-**Instructions:**
-
-Run in order from the repo root:
 
 ```
 npm run lint
 npx tsc --noEmit
-npm run db:migrate
 npm test
 ```
 
@@ -2191,7 +1255,7 @@ All must pass with 0 errors. Then commit:
 
 ```
 git add -A
-git commit -m "Phase 1: overnight position support — schema, server matcher, close/merge/open UI, filter chip, stats exclusion"
+git commit -m "Phase 2: cross-day position matching — server import route, raw-executions helper, matcher accepts open positions"
 ```
 
 Do NOT push.
@@ -2199,8 +1263,7 @@ Do NOT push.
 **Acceptance:**
 - [x] `npm run lint` — 0 errors
 - [x] `npx tsc --noEmit` — 0 errors
-- [x] `npm run db:migrate` — migration applies cleanly
-- [x] `npm test` — 0 failing tests (all new tests pass)
+- [x] `npm test` — 0 failing tests (94 files / 691 tests)
 - [x] `git log --oneline -1` shows the commit above
 - [x] `git status` is clean after the local commit
 
@@ -2210,32 +1273,15 @@ Do NOT push.
 
 | File | Action | Lines +/- est. | Risk |
 |---|---|---|---|
-| `lib/db/schema.ts` | MODIFY | +3 | LOW — additive schema only |
-| `drizzle/0038_*.sql` | CREATE (generated) | +~6 | MEDIUM — migration with closed_at backfill |
-| `lib/types.ts` | MODIFY | +6 | LOW |
-| `lib/trade-utils.ts` | MODIFY | +2 | LOW |
-| `lib/server-db-utils.ts` | MODIFY | +3 | LOW |
-| `lib/validations/trades.ts` | MODIFY | +~15 | LOW |
-| `lib/position-matcher.ts` | CREATE | +~170 | MEDIUM — new logic, covered by tests (no caller in Phase 1) |
-| `app/api/trades/[id]/route.ts` | MODIFY | +~80 | HIGH — replaces PATCH handler |
-| `app/api/trades/merge/route.ts` | CREATE | +~120 | HIGH — transactional, multi-table |
-| `app/api/trades/route.ts` | MODIFY | +6 | LOW |
-| `app/api/trades/import/route.ts` | MODIFY | +3 | LOW (insert only — re-import deliberately does not update isOpen/closedAt/remainingQty) |
-| `hooks/use-trade-filters.ts` | MODIFY | +12 | LOW |
-| `hooks/use-trades.ts` | MODIFY | +25 | MEDIUM |
-| `components/trading/NewTradeDialog.tsx` | MODIFY | +65 | MEDIUM — form schema change |
-| `components/trading/TradeDetailSheet.tsx` | MODIFY | +55 | MEDIUM |
-| `components/trading/TradeTable.tsx` | MODIFY | +45 | MEDIUM |
-| `components/trading/PerformanceStatsTable.tsx` | MODIFY | +20 | MEDIUM — stat exclusion logic |
-| `lib/journal-aggregates.ts` | MODIFY | +2 | LOW |
-| `__tests__/position-matcher.test.ts` | CREATE | +~100 | LOW |
-| `__tests__/trade-merge.test.ts` | CREATE | +~70 | LOW (coverage gap on the route is intentional — see Step 23) |
-| `__tests__/journal-aggregates.test.ts` | MODIFY | +~25 | LOW |
-| `app/page.tsx` | MODIFY | +6 | LOW — prop wiring |
-| `components/trading/ManagementTab.tsx` | MODIFY | +6 | LOW — prop pass-through |
-| `components/trading/TradesTab.tsx` | MODIFY | +9 | LOW — prop pass-through |
+| `lib/position-matcher.ts` | MODIFY | +~200 | HIGH — algorithm changes, new types, new return shape |
+| `lib/validations/trades.ts` | MODIFY | +~20 | LOW |
+| `lib/csv-parser.ts` | MODIFY | +~60 | LOW — additive only, existing exports untouched |
+| `lib/trade-utils.ts` | MODIFY | +~60 | LOW |
+| `app/api/trades/import-raw/route.ts` | CREATE | +~220 | HIGH — transactional, multi-row insert/update path |
+| `hooks/use-trades.ts` | MODIFY | +~10 / -~15 | MEDIUM — production import flow swap |
+| `__tests__/position-matcher.test.ts` | MODIFY | +~120 / -~10 | LOW — tests only |
 
-**Deferred to Phase 2 (NOT touched in Phase 1):** `app/api/trades/import-raw/route.ts` (would have been ~90 lines), `importRawSchema` block in `lib/validations/trades.ts` (~30 lines), `hooks/use-trades.ts` `processImportFiles` rewrite (~10 lines).
+**Not touched in Phase 2:** schema, `app/api/trades/import/route.ts`, manual trade routes, merge route, UI components, journal aggregates, stats table.
 
 ---
 
@@ -2244,26 +1290,24 @@ Do NOT push.
 **Automated:**
 - `npm run lint`
 - `npx tsc --noEmit`
-- `npm test` — covers position-matcher, trade-merge, journal-aggregates, and all pre-existing suites
-- `npm run db:migrate` — apply migration 0038
+- `npm test`
 
-**Manual checks:**
-- [ ] Import a CSV containing an unmatched BUY — confirm the same "X unmatched share(s)" warning toast appears (behavior preserved)
-- [ ] Create a closed trade via the dialog (no checkbox) — confirm it appears with PnL filled, no OPEN badge
-- [ ] Create an open position via the dialog checkbox — confirm it appears with OPEN badge and PnL `—`
-- [ ] Click Close Position on the open trade, supply exit price + time, confirm the trade flips to closed with correct PnL
-- [ ] Select 2 closed trades with the same symbol + direction, click Merge, confirm one merged row replaces them with summed qty, correct PnL, unioned tags, concatenated notes
-- [ ] Try to merge two trades of opposite direction — confirm the request 400s with "Cannot merge trades with opposite directions"
-- [ ] Filter chip: switch Open / Closed / All and confirm row visibility changes correctly
-- [ ] PerformanceStatsTable shows "N open positions excluded" indicator and stats reflect closed trades only
-- [ ] All pre-existing trades after migration show `isOpen=false` and `remainingQty=0` (spot-check via SQL: `SELECT id, is_open, remaining_qty FROM trades LIMIT 10;`)
+**Manual checks (Codex does NOT need to run these — they're for the user post-execution):**
+- [ ] Upload a single-day CSV with a round-trip (buy + sell same day) → one closed trade appears
+- [ ] Upload a single-day CSV with only buys → one open position appears (no warning)
+- [ ] Upload Monday's CSV (buy 100) then Tuesday's CSV (sell 100) → Monday's row flips to closed with the correct exit price; no duplicate row created
+- [ ] Upload Monday's CSV (buy 100) then Tuesday's CSV (sell 40) → Monday's row stays open with totalQuantity=60; a new closed row for 40 shares appears dated Monday
+- [ ] Upload the same CSV twice → second upload is a no-op (no duplicate rows; check DB)
+- [ ] Folder upload with mixed broker subdirs still works
+- [ ] TraderVue CSV upload still works (untouched path)
+- [ ] Stats table: closed trades count includes the cross-day closed row
 - [ ] DO NOT git push — verify Codex stopped after committing locally
 
 ---
 
 ### Complexity Estimate
 
-HIGH — ~22 files touched, 2 new endpoints (close-position action + merge), 1 migration with `closed_at` backfill, new server-side matching module (built + tested but not yet wired), significant UI changes across 4 components. Estimate 4-6 hours of Codex execution time assuming no major blockers. Steps 8 and 19 are deferred no-ops that should add negligible time.
+MEDIUM-HIGH — 7 files touched, 1 new route, significant matcher refactor with new return shape, partial-close arithmetic. Estimate 3-5 hours of Codex execution time. The matcher logic in Step 1 is the riskiest piece; Step 7's tests will catch most regressions.
 
 ---
 
@@ -2271,11 +1315,15 @@ HIGH — ~22 files touched, 2 new endpoints (close-position action + merge), 1 m
 
 ### Route-level testing infrastructure
 
-Stand up a test DB harness (Postgres in Docker via testcontainers, or a vitest setup that points at a disposable schema) so we can write real integration tests for API routes. Phase 1's `__tests__/trade-merge.test.ts` only covers the merge math in isolation — auth, ownership, opposite-direction 400s, and the FK cascade on `trade_executions` are uncovered today. Once the harness exists, the immediate target is `app/api/trades/merge/route.ts` and the close-position branch of `app/api/trades/[id]/route.ts`.
+Stand up a test DB harness (Postgres in Docker via testcontainers, or a vitest setup that points at a disposable schema) so we can write real integration tests for API routes. Phase 1's `__tests__/trade-merge.test.ts` only covers the merge math in isolation — auth, ownership, opposite-direction 400s, and the FK cascade on `trade_executions` are uncovered today. Phase 2 adds `/api/trades/import-raw` which similarly has only matcher-level tests. Once the harness exists, immediate targets are `app/api/trades/merge/route.ts`, the close-position branch of `app/api/trades/[id]/route.ts`, and `app/api/trades/import-raw/route.ts`.
 
-### Server-side CSV import + position matcher wiring (Phase 2 multi-day support)
+### Partial close UX on the Close Position button
 
-Phase 1 ships `lib/position-matcher.ts` with unit tests but no caller. Phase 2 should build the `app/api/trades/import-raw/route.ts` endpoint that was deferred from Phase 1 Step 8, plus the client-side `collectRawExecutions` helper in `lib/trade-utils.ts` (parses CSV → broker normalize → stops before FIFO matching). Then switch `hooks/use-trades.ts` `processImportFiles` to send raw executions to the new endpoint. This unlocks cross-day matching (the matcher will consume pre-existing open positions for the user before matching the day's executions).
+Phase 1 ships a "Close Position (Full)" button on `TradeDetailSheet`. Phase 2's matcher handles partial closes from CSV imports, but the UI button still closes the full position. A future sprint should let the user enter a quantity ≤ `remainingQty`, similar to how brokers offer partial fills. Touches `TradeDetailSheet.tsx`, the close-position schema, and the PATCH `/api/trades/[id]` branch.
+
+### `closedAt`-based PnL bucketing for journal / calendar
+
+Phase 1 backfilled `closed_at` for historical trades. Phase 2 sets `closed_at` correctly for cross-day closes. Both journal aggregation and the trading calendar still bucket by `date` (entry day). A future sprint should switch them to bucket by `closed_at` so a Monday-buy-Tuesday-sell shows up under Tuesday's PnL. Touches `lib/journal-aggregates.ts`, `components/trading/PerformanceCalendar.tsx`, and a handful of stats helpers.
 
 ### Auto-sync sample sets from tags
 

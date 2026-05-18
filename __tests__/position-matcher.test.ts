@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { matchExecutions, normalizeSide } from '@/lib/position-matcher';
-import type { MatcherExecution } from '@/lib/position-matcher';
+import type { MatcherExecution, OpenPositionInput } from '@/lib/position-matcher';
 
 function exec(
   symbol: string,
@@ -13,6 +13,20 @@ function exec(
   fees = 0,
 ): MatcherExecution {
   return { symbol, side, qty, price, time, commission, fees };
+}
+
+function openPos(
+  id: string,
+  symbol: string,
+  direction: 'LONG' | 'SHORT',
+  totalQuantity: number,
+  avgEntryPrice: number,
+  entryTime: string,
+  entryDate: Date,
+  commission = 0,
+  fees = 0,
+): OpenPositionInput {
+  return { id, symbol, direction, totalQuantity, avgEntryPrice, entryTime, entryDate, commission, fees };
 }
 
 describe('normalizeSide', () => {
@@ -78,16 +92,22 @@ describe('matchExecutions - SHORT round-trip', () => {
   });
 });
 
-describe('matchExecutions - unmatched entry', () => {
-  it('produces a warning for unmatched long entry', () => {
+describe('matchExecutions - unmatched entry becomes a new open position', () => {
+  it('emits a new open position for unmatched long entry with no warning', () => {
     const result = matchExecutions([
       exec('NVDA', 'LONG_ENTRY', 200, 100, '09:30:00'),
     ]);
 
     expect(result.trades).toHaveLength(0);
-    expect(result.warnings.length).toBeGreaterThan(0);
-    expect(result.warnings[0]).toMatch(/NVDA/);
-    expect(result.warnings[0]).toMatch(/unmatched/i);
+    expect(result.newOpenPositions).toHaveLength(1);
+    expect(result.warnings).toHaveLength(0);
+    const open = result.newOpenPositions[0];
+    expect(open.symbol).toBe('NVDA');
+    expect(open.direction).toBe('LONG');
+    expect(open.totalQuantity).toBe(200);
+    expect(open.avgEntryPrice).toBeCloseTo(100);
+    expect(open.isOpen).toBe(true);
+    expect(open.remainingQty).toBe(200);
   });
 });
 
@@ -132,5 +152,105 @@ describe('matchExecutions - commission and fees propagate', () => {
     expect(trade.commission).toBeCloseTo(4);
     expect(trade.fees).toBeCloseTo(1);
     expect(trade.netPnl).toBeCloseTo(95);
+  });
+});
+
+describe('matchExecutions - cross-day full close', () => {
+  it('closes a prior-day open long with same-symbol sells', () => {
+    const opens = [openPos('open1', 'AAPL', 'LONG', 100, 150, '09:30:00', new Date('2026-05-15'))];
+    const result = matchExecutions([
+      exec('AAPL', 'LONG_EXIT', 100, 160, '10:00:00'),
+    ], opens);
+
+    expect(result.trades).toHaveLength(0);
+    expect(result.newOpenPositions).toHaveLength(0);
+    expect(result.warnings).toHaveLength(0);
+    expect(result.closingFills).toHaveLength(1);
+    const fill = result.closingFills[0];
+    expect(fill.openPositionId).toBe('open1');
+    expect(fill.matchedQty).toBe(100);
+    expect(fill.exitPrice).toBeCloseTo(160);
+    expect(fill.grossPnl).toBeCloseTo(1000);
+    expect(fill.netPnl).toBeCloseTo(1000);
+  });
+});
+
+describe('matchExecutions - cross-day partial close', () => {
+  it('partially closes a prior-day open long', () => {
+    const opens = [openPos('open1', 'AAPL', 'LONG', 100, 150, '09:30:00', new Date('2026-05-15'))];
+    const result = matchExecutions([
+      exec('AAPL', 'LONG_EXIT', 40, 160, '10:00:00'),
+    ], opens);
+
+    expect(result.closingFills).toHaveLength(1);
+    const fill = result.closingFills[0];
+    expect(fill.matchedQty).toBe(40);
+    expect(fill.grossPnl).toBeCloseTo(400);
+    expect(result.newOpenPositions).toHaveLength(0);
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('matchExecutions - cross-day FIFO across multiple opens', () => {
+  it('consumes the older open position first', () => {
+    const opens = [
+      openPos('open-newer', 'AAPL', 'LONG', 100, 160, '09:30:00', new Date('2026-05-16')),
+      openPos('open-older', 'AAPL', 'LONG', 100, 150, '09:30:00', new Date('2026-05-15')),
+    ];
+    const result = matchExecutions([
+      exec('AAPL', 'LONG_EXIT', 100, 170, '10:00:00'),
+    ], opens);
+
+    expect(result.closingFills).toHaveLength(1);
+    expect(result.closingFills[0].openPositionId).toBe('open-older');
+    expect(result.closingFills[0].grossPnl).toBeCloseTo(2000);
+  });
+});
+
+describe('matchExecutions - mixed same-day round-trip and cross-day close', () => {
+  it('closes the open position first, then matches leftover same-day pairs', () => {
+    const opens = [openPos('open1', 'AAPL', 'LONG', 100, 150, '09:30:00', new Date('2026-05-15'))];
+    const result = matchExecutions([
+      exec('AAPL', 'LONG_EXIT', 100, 160, '09:31:00'),
+      exec('AAPL', 'LONG_ENTRY', 50, 161, '09:35:00'),
+      exec('AAPL', 'LONG_EXIT', 50, 165, '09:45:00'),
+    ], opens);
+
+    expect(result.closingFills).toHaveLength(1);
+    expect(result.closingFills[0].matchedQty).toBe(100);
+    expect(result.trades).toHaveLength(1);
+    expect(result.trades[0].totalQuantity).toBe(50);
+    expect(result.trades[0].grossPnl).toBeCloseTo(200);
+  });
+});
+
+describe('matchExecutions - opposite-direction open position is not consumed', () => {
+  it('does not match a long exit against a short open position', () => {
+    const opens = [openPos('open-short', 'AAPL', 'SHORT', 100, 150, '09:30:00', new Date('2026-05-15'))];
+    const result = matchExecutions([
+      exec('AAPL', 'LONG_EXIT', 100, 160, '10:00:00'),
+    ], opens);
+
+    expect(result.closingFills).toHaveLength(0);
+    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(result.warnings[0]).toMatch(/AAPL/);
+    expect(result.warnings[0]).toMatch(/unmatched/i);
+  });
+});
+
+describe('matchExecutions - proportional commission allocation on partial close', () => {
+  it('splits the open position commission and fees proportionally', () => {
+    const opens = [openPos('open1', 'AAPL', 'LONG', 100, 150, '09:30:00', new Date('2026-05-15'), 10, 2)];
+    const result = matchExecutions([
+      exec('AAPL', 'LONG_EXIT', 40, 160, '10:00:00', 4, 1),
+    ], opens);
+
+    expect(result.closingFills).toHaveLength(1);
+    const fill = result.closingFills[0];
+    expect(fill.entryCommissionAllocated).toBeCloseTo(4);
+    expect(fill.entryFeesAllocated).toBeCloseTo(0.8);
+    expect(fill.exitCommission).toBeCloseTo(4);
+    expect(fill.exitFees).toBeCloseTo(1);
+    expect(fill.netPnl).toBeCloseTo(390.2);
   });
 });
