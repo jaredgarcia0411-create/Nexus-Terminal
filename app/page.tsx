@@ -79,9 +79,6 @@ export default function NexusTerminal() {
     positionFilter,
     bulkTagInput,
     searchQuery,
-    hasActiveFilters,
-    activeFilterCount,
-    clearAllFilters,
     setStartDate,
     setEndDate,
     setRiskInput,
@@ -214,9 +211,6 @@ export default function NexusTerminal() {
                   selectedIds={selectedIds}
                   selectedFilterTags={selectedFilterTags}
                   setSelectedFilterTags={setSelectedFilterTags}
-                  hasActiveFilters={hasActiveFilters}
-                  activeFilterCount={activeFilterCount}
-                  clearAllFilters={clearAllFilters}
                   searchQuery={searchQuery}
                   riskInput={riskInput}
                   defaultRiskInput={defaultRiskInput}

@@ -2,7 +2,7 @@
 
 import { useRef, useState, type ChangeEvent } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { Plus, Search, Trash2, TrendingUp } from 'lucide-react';
+import { ChevronLeft, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import AddSampleSetDialog from '@/components/trading/AddSampleSetDialog';
@@ -48,6 +48,12 @@ const deleteIconButtonClass =
 const addIconButtonClass =
   'h-7 w-7 shrink-0 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 focus-visible:ring-emerald-500/40';
 
+const editIconButtonClass =
+  'h-7 w-7 shrink-0 border border-white/10 bg-white/5 text-white hover:bg-white/10 hover:text-white focus-visible:ring-white/20';
+
+const greenButtonClass =
+  'border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20';
+
 function formatBacktestSampleSetLabel(backtest: BacktestListItem, isUncategorized: boolean) {
   if (isUncategorized) return backtest.sampleSetName ?? 'No sample set';
   if (!backtest.sampleSetId) return 'System Sheet';
@@ -84,7 +90,6 @@ export default function BacktestManagerView({
   const [addSampleOpen, setAddSampleOpen] = useState(false);
   const [appendRowsTarget, setAppendRowsTarget] = useState<SampleSetListItem | null>(null);
   const [editingBacktest, setEditingBacktest] = useState<BacktestListItem | null>(null);
-  const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const syncInputRef = useRef<HTMLInputElement>(null);
 
@@ -94,7 +99,6 @@ export default function BacktestManagerView({
     if (!file) return;
 
     setSyncing(true);
-    setSyncStatus(null);
 
     try {
       const text = await file.text();
@@ -116,14 +120,12 @@ export default function BacktestManagerView({
         throw new Error(payload.error ?? `Sync failed with status ${response.status}`);
       }
 
-      setSyncStatus('Synced');
       toast.success('System sheet synced');
       if (warnings.length > 0) {
         toast.warning(`${warnings.length} warning(s) during sync`);
       }
     } catch (syncError) {
       const message = syncError instanceof Error ? syncError.message : 'System sheet sync failed';
-      setSyncStatus('Failed');
       toast.error(message);
     } finally {
       setSyncing(false);
@@ -152,27 +154,23 @@ export default function BacktestManagerView({
 
   return (
     <section className="flex h-[calc(100dvh-6.5rem)] min-h-[620px] flex-1 flex-col overflow-hidden bg-[#0A0A0B]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
-        <div>
-          <h2 className="font-mono text-lg font-semibold text-white">Backtest Manager</h2>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-3 border-b border-white/10 px-4 py-1">
+        <div className="flex min-w-0 items-center">
+          <button
             type="button"
             onClick={onOpenLastChart}
-            className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+            className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5 hover:text-white"
+            aria-label="Back to charts"
+            title="Back to charts"
           >
-            <TrendingUp className="h-4 w-4" />
-            Launch Chart
-          </Button>
-          <Button
-            type="button"
-            onClick={() => setNewBacktestOpen(true)}
-            className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
-          >
-            + New Backtest
-          </Button>
+            <ChevronLeft className="h-3.5 w-3.5" />
+            Charts
+          </button>
         </div>
+        <div className="flex min-w-0 items-center justify-center">
+          <h2 className="font-mono text-lg font-semibold text-white">Backtest Manager</h2>
+        </div>
+        <div />
       </div>
 
       <div className="grid min-h-0 flex-1 gap-4 p-4 sm:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)]">
@@ -180,21 +178,31 @@ export default function BacktestManagerView({
           <div className="border-b border-white/10 p-3">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h3 className="font-mono text-sm font-semibold text-white">Saved Tests</h3>
-              <Select
-                value={sortKey}
-                onValueChange={(value) => setSortKey(value as 'updatedAt' | 'name')}
-              >
-                <SelectTrigger
-                  className="h-8 w-[8.75rem] bg-black text-xs text-zinc-100"
-                  aria-label="Sort backtests"
+              <div className="flex items-center gap-2">
+                <Select
+                  value={sortKey}
+                  onValueChange={(value) => setSortKey(value as 'updatedAt' | 'name')}
                 >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="border-white/10 bg-black text-white">
-                  <SelectItem value="updatedAt">Last updated</SelectItem>
-                  <SelectItem value="name">Alphabetical</SelectItem>
-                </SelectContent>
-              </Select>
+                  <SelectTrigger
+                    className="h-8 w-[8.75rem] bg-black text-xs text-zinc-100"
+                    aria-label="Sort backtests"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="border-white/10 bg-black text-white">
+                    <SelectItem value="updatedAt">Last updated</SelectItem>
+                    <SelectItem value="name">Alphabetical</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  size="xs"
+                  onClick={() => setNewBacktestOpen(true)}
+                  className={`h-8 ${greenButtonClass}`}
+                >
+                  + New Backtest
+                </Button>
+              </div>
             </div>
             <div className="grid gap-2">
               <div className="relative">
@@ -270,11 +278,13 @@ export default function BacktestManagerView({
                           <Button
                             type="button"
                             variant="ghost"
-                            size="xs"
+                            size="icon-xs"
                             onClick={() => setEditingBacktest(backtest)}
-                            className="h-7 border border-white/10 bg-white/5 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
+                            aria-label={`Edit ${backtest.name}`}
+                            title="Edit"
+                            className={editIconButtonClass}
                           >
-                            Edit
+                            <Pencil className="size-4" />
                           </Button>
                           <Button
                             type="button"
@@ -295,44 +305,39 @@ export default function BacktestManagerView({
               })}
             </div>
           </div>
-
-          <div className="border-t border-white/10 p-3">
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                disabled={syncing}
-                onClick={() => syncInputRef.current?.click()}
-                className="h-8 border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-40"
-              >
-                {syncing ? 'Syncing...' : 'Sync Sheet'}
-              </Button>
-              <span className="text-xs text-zinc-500">{syncStatus ?? 'Import the latest system sheet.'}</span>
-            </div>
-            <input
-              ref={syncInputRef}
-              type="file"
-              accept=".csv,text/csv"
-              onChange={handleSyncSheetFile}
-              className="hidden"
-            />
-          </div>
         </div>
 
         <div className="flex min-h-0 flex-col rounded-md border border-white/10 bg-[#111319]">
           <div className="border-b border-white/10 p-3">
             <div className="flex items-center justify-between gap-3">
               <h3 className="font-mono text-sm font-semibold text-white">Sample Sets</h3>
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                onClick={() => setAddSampleOpen(true)}
-                className="h-8 border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white"
-              >
-                + Add Sample
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="xs"
+                  disabled={syncing}
+                  onClick={() => syncInputRef.current?.click()}
+                  className={`h-8 ${greenButtonClass} disabled:opacity-40`}
+                >
+                  <RefreshCw className={`h-3 w-3 ${syncing ? 'animate-spin' : ''}`} />
+                  {syncing ? 'Syncing...' : 'Sync Sheet'}
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  onClick={() => setAddSampleOpen(true)}
+                  className={`h-8 ${greenButtonClass}`}
+                >
+                  + Add Sample
+                </Button>
+              </div>
+              <input
+                ref={syncInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleSyncSheetFile}
+                className="hidden"
+              />
             </div>
             <div className="relative mt-3">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />

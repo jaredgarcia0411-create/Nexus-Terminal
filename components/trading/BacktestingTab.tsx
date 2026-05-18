@@ -333,11 +333,11 @@ export default function BacktestingTab() {
                 <button
                   type="button"
                   onClick={() => setView({ kind: 'manager' })}
-                  className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-xs font-medium text-zinc-300 transition-colors hover:bg-white/5 hover:text-white"
+                  className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5 hover:text-white"
                   aria-label="Back to backtest manager"
                   title="Back to backtest manager"
                 >
-                  <ChevronLeft className="h-3 w-3" />
+                  <ChevronLeft className="h-3.5 w-3.5" />
                   Backtest Manager
                 </button>
               </div>

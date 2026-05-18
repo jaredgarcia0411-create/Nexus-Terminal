@@ -30,9 +30,6 @@ interface ManagementTabProps {
   selectedIds: Set<string>;
   selectedFilterTags: Set<string>;
   setSelectedFilterTags: (next: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
-  hasActiveFilters: boolean;
-  activeFilterCount: number;
-  clearAllFilters: () => void;
   searchQuery: string;
   riskInput: string;
   defaultRiskInput: string;
@@ -97,11 +94,9 @@ export default function ManagementTab(props: ManagementTabProps) {
       {activeSubTab === 'trades' ? (
         <TradesTab
           filteredTrades={props.filteredTrades}
-          activeFilterCount={props.activeFilterCount}
           selectedIds={props.selectedIds}
           globalTags={props.globalTags}
           selectedFilterTags={props.selectedFilterTags}
-          hasActiveFilters={props.hasActiveFilters}
           searchQuery={props.searchQuery}
           onToggleFilterTag={(tag) => {
             props.setSelectedFilterTags((prev) => {
@@ -113,7 +108,6 @@ export default function ManagementTab(props: ManagementTabProps) {
           }}
           onClearFilterTags={() => props.setSelectedFilterTags(new Set())}
           onDeleteGlobalTag={props.handleDeleteGlobalTag}
-          onClearAllFilters={props.clearAllFilters}
           onToggleSelect={props.handleToggleSelect}
           onSelectAll={props.handleSelectAll}
           onAddTag={props.handleAddTag}

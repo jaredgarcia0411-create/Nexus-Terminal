@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'motion/react';
-import { Search, X } from 'lucide-react';
+import { Search } from 'lucide-react';
 import TradeTable from '@/components/trading/TradeTable';
 import TagFilterDropdown from '@/components/trading/TagFilterDropdown';
 import { Button } from '@/components/ui/button';
@@ -9,11 +9,9 @@ import type { Trade } from '@/lib/types';
 
 interface TradesTabProps {
   filteredTrades: Trade[];
-  activeFilterCount: number;
   selectedIds: Set<string>;
   globalTags: string[];
   selectedFilterTags: Set<string>;
-  hasActiveFilters: boolean;
   searchQuery: string;
   riskInput: string;
   defaultRiskInput: string;
@@ -22,7 +20,6 @@ interface TradesTabProps {
   onToggleFilterTag: (tag: string) => void;
   onClearFilterTags: () => void;
   onDeleteGlobalTag: (tagName: string) => void;
-  onClearAllFilters: () => void;
   onToggleSelect: (id: string) => void;
   onSelectAll: (ids: string[]) => void;
   onAddTag: (tradeId: string, tagName: string) => void;
@@ -41,18 +38,15 @@ interface TradesTabProps {
 
 export default function TradesTab({
   filteredTrades,
-  activeFilterCount,
   selectedIds,
   globalTags,
   selectedFilterTags,
-  hasActiveFilters,
   searchQuery,
   defaultRiskInput,
   onSearchQueryChange,
   onToggleFilterTag,
   onClearFilterTags,
   onDeleteGlobalTag,
-  onClearAllFilters,
   onToggleSelect,
   onSelectAll,
   onAddTag,
@@ -85,16 +79,6 @@ export default function TradesTab({
                 className="w-64 rounded-lg border border-white/10 bg-white/5 py-1.5 pl-10 pr-4 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
               />
             </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {hasActiveFilters ? (
-              <div className="flex items-center gap-2 rounded bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-400">
-                <span>Filtered ({activeFilterCount})</span>
-                <button onClick={onClearAllFilters} className="text-emerald-300 transition-colors hover:text-white" title="Clear filters">
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ) : null}
           </div>
         </div>
 
@@ -153,11 +137,6 @@ export default function TradesTab({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">Trades ({filteredTrades.length})</h3>
-          {hasActiveFilters ? (
-            <Button variant="ghost" onClick={onClearAllFilters} className="text-xs font-medium text-rose-500 hover:text-rose-400">
-              Clear All Filters
-            </Button>
-          ) : null}
         </div>
         <TradeTable
           trades={filteredTrades}

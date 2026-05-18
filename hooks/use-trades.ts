@@ -54,8 +54,6 @@ export function useTrades() {
     bulkTagInput,
     setBulkTagInput,
     filteredTrades,
-    hasActiveFilters,
-    activeFilterCount,
     handleToggleSelect,
     handleSelectAll,
     handleBulkAddTag,
@@ -67,14 +65,6 @@ export function useTrades() {
       await apiRequest('/api/trades/bulk', { method: 'POST', body: JSON.stringify({ action: 'addTag', ids, value: tag }) });
     },
   });
-
-  const clearAllFilters = () => {
-    setFilterPreset('all');
-    setSelectedFilterTags(new Set());
-    setStartDate('');
-    setEndDate('');
-    setPositionFilter('all');
-  };
 
   useEffect(() => {
     tradesRef.current = trades;
@@ -396,7 +386,7 @@ export function useTrades() {
   return {
     status, user, trades, globalTags, filteredTrades, isImporting, mounted, error, importInputRef, folderInputRef, traderVueInputRef,
     selectedIds, startDate, endDate, riskInput, defaultRiskInput, defaultRisk, filterPreset, selectedFilterTags, positionFilter, bulkTagInput,
-    searchQuery, hasActiveFilters, activeFilterCount, clearAllFilters, setStartDate, setEndDate, setRiskInput, setDefaultRiskInput,
+    searchQuery, setStartDate, setEndDate, setRiskInput, setDefaultRiskInput,
     setFilterPreset, setSelectedFilterTags, setPositionFilter, setBulkTagInput, setSearchQuery, handleToggleSelect, handleSelectAll,
     handleCreateManualTrade, handleDeleteSelected, handleApplyRisk, handleSetDefaultRisk, handleSaveNotes, handleAddTag,
     handleCloseTrade, handleMergeTrades, handleRemoveTag, handleDeleteGlobalTag, handleBulkAddTag, handleClearAllData, handleFileUpload, handleFolderUpload, handleTraderVueImport,

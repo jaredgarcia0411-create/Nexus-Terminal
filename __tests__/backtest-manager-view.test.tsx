@@ -304,7 +304,7 @@ describe('BacktestManagerView', () => {
 
     render(<BacktestManagerView onLaunchChart={vi.fn()} onOpenLastChart={onOpenLastChart} onViewStats={vi.fn()} />);
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Launch Chart' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to charts' }));
 
     expect(onOpenLastChart).toHaveBeenCalledTimes(1);
   });

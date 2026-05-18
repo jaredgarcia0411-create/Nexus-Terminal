@@ -52,10 +52,6 @@ export function useTradeFilters(trades: Trade[], options?: UseTradeFiltersOption
     [trades, searchQuery, startDate, endDate, filterPreset, selectedFilterTags, positionFilter],
   );
 
-  const hasActiveFilters = !!startDate || !!endDate || filterPreset !== 'all' || selectedFilterTags.size > 0 || positionFilter !== 'all';
-  const activeFilterCount =
-    (startDate ? 1 : 0) + (endDate ? 1 : 0) + (filterPreset !== 'all' ? 1 : 0) + selectedFilterTags.size + (positionFilter !== 'all' ? 1 : 0);
-
   const handleToggleSelect = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -119,8 +115,6 @@ export function useTradeFilters(trades: Trade[], options?: UseTradeFiltersOption
     bulkTagInput,
     setBulkTagInput,
     filteredTrades,
-    hasActiveFilters,
-    activeFilterCount,
     handleToggleSelect,
     handleSelectAll,
     handleBulkAddTag,
