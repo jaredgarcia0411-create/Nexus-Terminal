@@ -88,8 +88,16 @@ export default function WeeklyReviewSheet({
   const [saving, setSaving] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
   const [chartCount, setChartCount] = useState(INITIAL_CHART_BATCH);
+  // Mirror DailyReportSheet: saved reviews open in 'view' so URLs in the
+  // saved text render as clickable anchors (TemplateFieldRenderer swaps the
+  // textarea for an anchor-aware block when readOnly). Clicking "Edit Review"
+  // flips to 'edit' to expose the inputs and the save button.
+  const [viewMode, setViewMode] = useState<'view' | 'edit'>('edit');
 
   const isExistingReport = existing !== null;
+  // Parent `readOnly` (Archive's PDF export) forces read-only and hides
+  // Edit entirely; otherwise viewMode drives it.
+  const effectiveReadOnly = readOnly || viewMode === 'view';
 
   useEffect(() => {
     if (!open || !weekStart || !weekEnd) return;
@@ -102,6 +110,9 @@ export default function WeeklyReviewSheet({
     setAggregatedWatchlist([]);
     setEditingTemplate(false);
     setChartCount(INITIAL_CHART_BATCH);
+    // Default to edit; the fetch below flips this to 'view' if a saved
+    // review already exists for this week.
+    setViewMode('edit');
 
     void Promise.all([
       fetch(`/api/weekly-reviews?from=${weekStart}&to=${weekEnd}`).then((response) => response.json()),
@@ -129,6 +140,7 @@ export default function WeeklyReviewSheet({
 
         if (found) {
           setExisting(found);
+          setViewMode('view');
           setFields(cloneTemplateFields(found.templateSnapshot));
           const merged: Record<string, unknown> = { ...found.reportData };
           if (merged.netResult == null) merged.netResult = formatCurrency(agg.netResult);
@@ -276,13 +288,22 @@ export default function WeeklyReviewSheet({
           <div className="mt-4 space-y-6 p-4">
             {!readOnly ? (
               <div className="flex justify-end">
-                <Button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
-                >
-                  {saving ? 'Saving…' : isExistingReport ? 'Update Review' : 'Save Review'}
-                </Button>
+                {viewMode === 'view' ? (
+                  <Button
+                    onClick={() => setViewMode('edit')}
+                    className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                  >
+                    Edit Review
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                  >
+                    {saving ? 'Saving…' : isExistingReport ? 'Update Review' : 'Save Review'}
+                  </Button>
+                )}
               </div>
             ) : null}
 
@@ -317,7 +338,7 @@ export default function WeeklyReviewSheet({
                   <TemplateFieldRenderer
                     field={GRADE_FIELD}
                     value={reportData.grade}
-                    readOnly={readOnly}
+                    readOnly={effectiveReadOnly}
                     onChange={(nextValue) => setReportData((prev) => ({ ...prev, grade: nextValue }))}
                   />
                 </div>
@@ -399,7 +420,7 @@ export default function WeeklyReviewSheet({
                     key={field.id}
                     field={field}
                     value={reportData[field.id]}
-                    readOnly={readOnly}
+                    readOnly={effectiveReadOnly}
                     onChange={(nextValue) => setReportData((prev) => ({ ...prev, [field.id]: nextValue }))}
                   />
                 ))}

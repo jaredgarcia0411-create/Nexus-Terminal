@@ -188,7 +188,7 @@ export default function SampleSetRowsBuilder({
       ) : null}
 
       <section className="space-y-2">
-        <Label className="text-xs font-semibold text-white">From CSV</Label>
+        <Label className="text-sm font-medium text-white">From CSV</Label>
         <Input
           type="file"
           accept=".csv,text/csv"
@@ -205,34 +205,7 @@ export default function SampleSetRowsBuilder({
       </section>
 
       <section className="space-y-2">
-        <Label className="text-xs font-semibold text-white">Manual Entry</Label>
-        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-          <Input
-            value={manualTicker}
-            onChange={(event) => setManualTicker(event.target.value.toUpperCase())}
-            placeholder="AAPL"
-            className="border-white/10 bg-white/5 text-zinc-100"
-          />
-          <Input
-            type="date"
-            value={manualDate}
-            onChange={(event) => setManualDate(event.target.value)}
-            className="border-white/10 bg-white/5 text-zinc-100 [color-scheme:dark]"
-          />
-          <Button
-            type="button"
-            onClick={handleManualAdd}
-            className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
-          >
-            <Plus className="h-3 w-3" />
-            Add
-          </Button>
-        </div>
-        {manualError ? <p className="text-xs text-rose-400">{manualError}</p> : null}
-      </section>
-
-      <section className="space-y-2">
-        <Label className="text-xs font-semibold text-white">From Tags</Label>
+        <Label className="text-sm font-medium text-white">From Tags</Label>
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
           <Popover open={tagPickerOpen} onOpenChange={setTagPickerOpen}>
             <PopoverTrigger asChild>
@@ -306,9 +279,36 @@ export default function SampleSetRowsBuilder({
         {tagError ? <p className="text-xs text-rose-400">{tagError}</p> : null}
       </section>
 
+      <section className="space-y-2">
+        <Label className="text-sm font-medium text-white">Manual Entry</Label>
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <Input
+            value={manualTicker}
+            onChange={(event) => setManualTicker(event.target.value.toUpperCase())}
+            placeholder="AAPL"
+            className="border-white/10 bg-white/5 text-zinc-100"
+          />
+          <Input
+            type="date"
+            value={manualDate}
+            onChange={(event) => setManualDate(event.target.value)}
+            className="border-white/10 bg-white/5 text-zinc-100 [color-scheme:dark]"
+          />
+          <Button
+            type="button"
+            onClick={handleManualAdd}
+            className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+          >
+            <Plus className="h-3 w-3" />
+            Add
+          </Button>
+        </div>
+        {manualError ? <p className="text-xs text-rose-400">{manualError}</p> : null}
+      </section>
+
       <section className="space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-3">
         <div className="flex items-center justify-between gap-3">
-          <Label className="text-xs font-semibold text-white">
+          <Label className="text-sm font-medium text-white">
             Staging ({stagedRows.length} row{stagedRows.length === 1 ? '' : 's'})
           </Label>
           {stagedRows.length > 0 ? (
