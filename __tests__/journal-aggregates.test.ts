@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { aggregateDay, aggregateWeek } from '@/lib/journal-aggregates';
+import { aggregateDay, aggregateWeek, isCrossDayTrade } from '@/lib/journal-aggregates';
 import type { Trade } from '@/lib/types';
 
 // Build a Trade in local time so tests are stable regardless of host timezone.
@@ -257,5 +257,47 @@ describe('aggregateWeek', () => {
     expect(result.tradeIds).toEqual(['no-risk', 'with-risk']);
     expect(result.perDayR.map((entry) => entry.date)).toEqual(['2026-04-15']);
     expect(result.perDayR[0].r).toBeCloseTo(2, 10);
+  });
+});
+
+describe('isCrossDayTrade', () => {
+  it('returns false for a same-day trade', () => {
+    const trade = makeTrade({
+      id: 'same-day',
+      date: new Date(2026, 4, 18, 10, 0),
+    });
+
+    expect(isCrossDayTrade(trade)).toBe(false);
+  });
+
+  it('returns true for a cross-day-close trade', () => {
+    const trade = makeTrade({
+      id: 'cross-day',
+      date: new Date(2026, 4, 18, 14, 0),
+      closedAt: new Date(2026, 4, 19, 10, 0).toISOString(),
+    });
+
+    expect(isCrossDayTrade(trade)).toBe(true);
+  });
+
+  it('returns false for an open trade even if closedAt is set', () => {
+    const trade = makeTrade({
+      id: 'open',
+      date: new Date(2026, 4, 18, 10, 0),
+      closedAt: new Date(2026, 4, 19, 10, 0).toISOString(),
+      isOpen: true,
+    });
+
+    expect(isCrossDayTrade(trade)).toBe(false);
+  });
+
+  it('falls back to date when closedAt is null', () => {
+    const trade = makeTrade({
+      id: 'legacy',
+      date: new Date(2026, 4, 18, 10, 0),
+      closedAt: null,
+    });
+
+    expect(isCrossDayTrade(trade)).toBe(false);
   });
 });

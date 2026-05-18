@@ -34,6 +34,17 @@ export function bucketKey(trade: Pick<Trade, 'date' | 'closedAt'>): string {
 }
 
 /**
+ * True when a closed trade was opened on one local day and closed on another.
+ * Open trades return false because they have no realized close day yet.
+ */
+export function isCrossDayTrade(
+  trade: Pick<Trade, 'date' | 'closedAt' | 'isOpen'>,
+): boolean {
+  if (trade.isOpen) return false;
+  return bucketKey(trade) !== toLocalDateKey(trade.date);
+}
+
+/**
  * Aggregate all trades that fall on `date` (YYYY-MM-DD, local timezone).
  * R is only counted for trades where initialRisk > 0.
  */

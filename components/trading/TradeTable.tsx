@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { Plus, X } from 'lucide-react';
 import type { Trade } from '@/lib/types';
+import { isCrossDayTrade } from '@/lib/journal-aggregates';
 import { formatCurrency, formatR, getPnLColor } from '@/lib/trading-utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -141,6 +142,11 @@ export default function TradeTable({
                   {trade.isOpen ? (
                     <span className="ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/20 text-amber-400">
                       OPEN
+                    </span>
+                  ) : null}
+                  {isCrossDayTrade(trade) ? (
+                    <span className="ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold bg-violet-500/20 text-violet-400">
+                      OVERNIGHT
                     </span>
                   ) : null}
                 </td>

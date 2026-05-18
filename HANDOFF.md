@@ -5,65 +5,64 @@
 
 ## Current Context
 
-- Completed spec below: **Multi-Day & Overnight Position Support — Phase 3** (closedAt-based PnL bucketing). Journal aggregates, the trading calendar, and the daily-PnL view in the performance stats table now bucket realized PnL by `closedAt` with `date` as a fallback; open trades are excluded from the calendar roll-up. Out of scope stayed untouched: entry-time analyses (`PerformanceCharts` day-of-week / hour-of-day stats), the trade table's entry-date column, and `hooks/use-trade-filters.ts`.
-- Validation completed 2026-05-18: `npx vitest run __tests__/journal-aggregates.test.ts`, `npm run lint`, `npx tsc --noEmit`, `npm test` (94 files / 694 tests), and `npm run workflow:audit` all passed.
-- Prior shipped work: Phase 2 (`41cf32e`) — server-side `/api/trades/import-raw` route, matcher accepts pre-existing open positions, CSV upload flow swapped to the new endpoint. Phase 1 (`62a641107`) — schema/migration `0038`, close/merge/open-position UI, closed-only stats and journal aggregation. Collaborative Sample-Set Building (`b3bd170`, `d512db9`, `dfe35b4`, `cc33025`).
+- Completed spec below: **Multi-Day & Overnight Position Support — Phase 4** (multi-day span rendering on the calendar + an `OVERNIGHT` badge in the trade table). `isCrossDayTrade` is now shared from `lib/journal-aggregates.ts`; closed cross-day trades render span bars across their entry-to-close calendar cells; cross-day rows in `TradeTable` show a violet `OVERNIGHT` badge. Open positions still stay invisible to the calendar — surfacing them is a separate sprint.
+- Validation completed 2026-05-18: `npx vitest run __tests__/journal-aggregates.test.ts` (15 tests), `npm run lint`, `npx tsc --noEmit`, `npm test` (94 files / 698 tests), `npm run workflow:audit`, and `git diff --check` all passed.
+- Prior shipped work: Phase 3 (`3e6a0f2`) — `bucketKey` helper in `lib/journal-aggregates.ts`, calendar/journal/stats now bucket realized PnL by `closedAt`, open trades excluded from the calendar roll-up; validated 2026-05-18 with lint + tsc + 94 test files / 694 tests all green. Phase 2 (`41cf32e`) — server-side `/api/trades/import-raw` route, matcher accepts pre-existing open positions, CSV upload flow swapped to the new endpoint. Phase 1 (`62a641107`) — schema/migration `0038`, close/merge/open-position UI, closed-only stats and journal aggregation. Collaborative Sample-Set Building (`b3bd170`, `d512db9`, `dfe35b4`, `cc33025`).
 - Open parked items unrelated to active work: `split-status` endpoint usage audit, broader endpoint review, Filings v2/v3 viewer/search/Copilot work, auto stop-out, Backtest Manager `broke_premarket_high`.
 
 ## Active Execution Spec
 
-## Multi-Day & Overnight Position Support — Phase 3
+## Multi-Day & Overnight Position Support — Phase 4
 
 > Generated: 2026-05-18 | Agent: claude (plan)
 > Status: COMPLETED — validated and locally committed by Codex on 2026-05-18
 
 ### Summary
 
-Phase 1 backfilled `closed_at` on every closed trade in migration `0038`. Phase 2 set `closed_at` correctly when CSV imports close a prior-day open position. Phase 3 finally **uses** `closed_at` for time-of-realization bucketing in the three places it matters:
+Phase 3 made the *math* multi-day-aware (PnL realized on Tue counts against Tuesday). Phase 4 makes the *visualization* multi-day-aware. Two surfaces:
 
-1. **Journal aggregates** (`lib/journal-aggregates.ts`) — `aggregateDay` / `aggregateWeek` currently bucket on `t.date` (entry day). They will switch to a `bucketKey(t)` derived from `closedAt`, with `t.date` as a fallback for safety.
-2. **Trading calendar** (`components/trading/TradingCalendar.tsx`) — the daily PnL map at line 67–83 currently buckets on `trade.date`. It will use the same `bucketKey` and exclude `isOpen` trades (it does not exclude them today, even though they only contribute 0 PnL).
-3. **Performance stats table** (`components/trading/PerformanceStatsTable.tsx`) — `dailyTotals` / `dailyVolume` and the streak detector (`sortedByDate`) currently key off `trade.sortKey` and `trade.date`. They will switch to `bucketKey`.
+1. **Trading Calendar** (`components/trading/TradingCalendar.tsx`) — for closed cross-day trades, render a thin colored bar inside each day cell the position was open through (entry day, any in-between days, close day). The user sees at a glance that "TICK was held Fri → Mon" by reading the bars across the cells.
+2. **Trade Table** (`components/trading/TradeTable.tsx`) — add an `OVERNIGHT` badge next to the symbol when a trade entered on one day and closed on another. Mirrors the existing `OPEN` badge pattern at line 141–145.
 
-A Mon-buy/Tue-sell trade then shows its realized PnL under Tuesday everywhere users look at realized performance. Open trades stay invisible to PnL aggregates (already true for journal, becomes true for the calendar).
+A small helper `isCrossDayTrade(trade)` lands in `lib/journal-aggregates.ts` so both consumers (and the tests) share one definition of "cross-day."
 
 **Out of scope (deliberate, leave for later sprints):**
-- `components/trading/PerformanceCharts.tsx` day-of-week and hour-of-day stats — those describe **entry-time** patterns. Keep using `trade.date`.
-- `components/trading/TradeTable.tsx` Date column — shows the trade's entry day; that's correct for a trade list.
-- `hooks/use-trade-filters.ts` date-range filter — filters by entry day ("trades I took in May"); user expectation.
-- Multi-day span rendering on the calendar (a separate follow-up — Phase 3 only changes bucketing, not rendering).
-- New schema migration (no schema work needed — `closed_at` already exists).
+- Open-position spans on the calendar. Phase 3 hides open positions from the calendar entirely; Phase 4 keeps it that way. Rendering an "still open" span would require deciding what its end date is (today? indefinite?) and where its PnL lives. Separate sprint.
+- Journal day-card carry-over UI. The `OVERNIGHT` badge in `TradeTable` is enough surfacing for this phase — a full "this day card includes a trade that started on a different day" treatment in `JournalTab.tsx` can come later if needed.
+- The pre-existing inconsistency where clicking a calendar cell that owes its PnL to a cross-day close opens the *entry-day* journal card (because `JournalTab` groups by `sortKey`). Fixing this means changing journal grouping, which is a much bigger change. Left for a follow-up.
+- Mobile-specific layout polish. Cells on mobile are `min-h-[60px]`; the spec's bar height + endpoint glyphs fit but may look cramped. Acceptable for Phase 4 — revisit if it looks bad in practice.
+- Schema, API routes, new types. None of these change.
 
 ### Scope
 
 **In scope (files touched):**
-- `lib/journal-aggregates.ts` — add `bucketKey` helper, switch `aggregateDay` / `aggregateWeek` to use it
-- `components/trading/TradingCalendar.tsx` — bucket on `bucketKey`, skip `isOpen` trades
-- `components/trading/PerformanceStatsTable.tsx` — bucket on `bucketKey` for `dailyTotals` / `dailyVolume`, sort by `bucketKey` for streak detection
-- `__tests__/journal-aggregates.test.ts` — add cross-day-close cases
+- `lib/journal-aggregates.ts` — add `isCrossDayTrade` helper, export it.
+- `components/trading/TradingCalendar.tsx` — compute a `spanMap` (date → trades whose `[entry, close]` interval contains the date) and render bars per cell.
+- `components/trading/TradeTable.tsx` — render `OVERNIGHT` badge next to the symbol cell when `isCrossDayTrade(trade)` is true.
+- `__tests__/journal-aggregates.test.ts` — tests for `isCrossDayTrade` (same-day, cross-day, null `closedAt`, open trade).
 
 **Not touched:**
-- Schema, migrations, drizzle config
-- API routes (`app/api/**`) — all routes already write `closed_at` correctly per Phase 1/2
-- `lib/types.ts` — `Trade.closedAt` already exists as `string | null`
-- `lib/server-db-utils.ts` — `toTrade` already maps `closedAt`
-- `PerformanceCharts.tsx`, `TradeTable.tsx`, `hooks/use-trade-filters.ts` (see "Out of scope")
+- Schema, migrations, drizzle config.
+- API routes (`app/api/**`).
+- `lib/types.ts` — no new types.
+- `JournalTab.tsx`, `DailyReportSheet.tsx`, `WeeklyReviewSheet.tsx`, `PerformanceStatsTable.tsx` — Phase 3 already fixed the math; visual treatment in those surfaces is deferred.
+- `PerformanceCharts.tsx`, `hooks/use-trade-filters.ts` — these explicitly stay entry-day-keyed (see Phase 3 spec).
 
 ---
 
-### Design decisions baked into this spec
+### Decisions Locked For Phase 4
 
-1. **Helper goes in `lib/journal-aggregates.ts`, exported.** All three consumers import it from there. Naming it generically (`bucketKey`) keeps the dependency one-way: components depend on the lib, not vice versa.
+These remove ambiguity before Codex starts. If any of them is wrong, update this section before execution.
 
-2. **Fallback to `t.date` when `closedAt` is null.** Defensive — Phase 1's migration backfilled every `is_open=false` row, but if a future code path ever forgets to set `closedAt`, the trade still buckets somewhere sensible instead of falling out of the calendar entirely. `closedAt ?? date` is the rule.
-
-3. **Open trades are excluded from all PnL buckets.** Journal aggregates already do this. The calendar will start doing this — currently open trades contribute `netPnl = 0` to their entry day, which is technically a no-op for totals but does increment the day's trade-count display. After Phase 3, open trades don't appear in any daily roll-up. This matches user intuition ("the calendar shows realized PnL").
-
-4. **Timezone semantics are unchanged.** Both `t.date` (string `'2026-05-15'`) and `t.closedAt` (UTC ISO string) get fed to `new Date(...)` then `format(d, 'yyyy-MM-dd')` (date-fns local format). This mirrors the existing `toLocalDateKey` in `lib/journal-aggregates.ts`. Pre-existing edge cases around UTC-midnight strings rendering as the previous local day are not introduced or fixed here — Phase 3 explicitly preserves the current behavior.
-
-5. **`PerformanceStatsTable.dailyTotals` switches from `trade.sortKey` to `bucketKey`.** `sortKey` is always the entry-day key (e.g. `'2026-05-15'`). For a cross-day trade, that's the wrong day for a "daily PnL" stat. After this change, the same trade's realized PnL counts against its close day in average-daily-PnL and average-daily-volume metrics.
-
-6. **No new types.** `bucketKey` is a `string` (yyyy-MM-dd, local). The existing `toLocalDateKey` is exported as the underlying day-formatter and reused.
+- **D1. Span scope: closed cross-day trades only.** Open positions stay hidden on the calendar (Phase 3 behavior). The criterion for a "span" is `!isOpen && bucketKey(trade) !== toLocalDateKey(trade.date)`. Reasoning: open positions don't have a well-defined end and surfacing them is the next sprint's job; this phase is purely about visualizing already-closed cross-day exits.
+- **D2. Bar color: PnL color, not direction color.** A winning span is `bg-emerald-500/50`; a losing span is `bg-rose-500/50`; a scratch span (`netPnl === 0`) is `bg-zinc-500/40`. Reasoning: the calendar's dominant visual signal is already win/loss color (cell PnL number); introducing a separate LONG/SHORT color scheme for bars would clash and confuse. PnL color is also what the user actually cares about on a calendar.
+- **D3. Bar location inside the cell: vertically centered between the date number and the PnL block.** A new `<div className="flex flex-col gap-0.5">` lane sits between the day-number `<span>` and the bottom-aligned PnL block. Reasoning: keeps the existing PnL block at `mt-auto`; the lane just consumes some of the flex space that used to be empty. No need to refactor the cell's overall flex layout.
+- **D4. Maximum visible bars per cell: 2.** Trades sorted by `bucketKey` ascending (close day) so the earliest-closing position renders first. If 3+ cross-day positions overlap on a single day, render the first 2 bars and a `+N` text in zinc-500. Reasoning: prevents the lane from blowing past the cell height; rare in practice and the user can still click in to see all trades.
+- **D5. Endpoint markers: rounded edges, no glyphs.** On the entry-day cell, the bar gets `rounded-l-full` (closed on the left). On the close-day cell, the bar gets `rounded-r-full` (closed on the right). In-between days render the bar with no rounding at either edge. Reasoning: glyphs (`→`, `←`) at this size become illegible noise; rounded caps read as "this is where the position starts/ends" without adding text.
+- **D6. Cross-week handling: bar breaks at the Weekly column.** The 8-column grid (Sun–Sat + Weekly) means a Fri→Mon position renders bars on Fri, the *Weekly* column for that row is left untouched, and the bar resumes on the next row's Mon. The Fri bar gets `rounded-l-full` (entry cap) and no right rounding; the Mon bar gets `rounded-r-full` (close cap) and no left rounding. The Weekly cell never shows span bars. Reasoning: cleanly visualizing a span across the weekend gap would require breaking out of the grid flow; rounded endpoints already communicate the start/end visually.
+- **D7. Mobile (7-column grid, no Weekly column): identical rendering.** Bars render the same way; rounded endpoints on entry/close, no rounding in between. Cell `min-h-[60px]` is enough for date + 2 bars + (optional) `+N` chip + PnL block. If it overflows in practice we'll polish in a follow-up.
+- **D8. The `OVERNIGHT` badge style: violet, matching the OPEN badge pattern.** Use `bg-violet-500/20 text-violet-400` and the exact same `ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold` classes as the existing OPEN badge at `TradeTable.tsx:142–144`. Reasoning: copying the OPEN badge keeps visual consistency, and violet is unused elsewhere in the trade table — won't clash with the existing green/rose PnL signals or amber OPEN badge.
+- **D9. Hover affordance: native `title` attribute, not a custom tooltip.** Each bar has `title={`${trade.symbol} • opened ${entryDate}, closed ${closeDate}`}` (`MMM dd` format on both dates). Reasoning: a custom tooltip would pull in another dependency or wrapper; native `title` is enough for an at-a-glance affordance.
 
 ---
 
@@ -71,335 +70,275 @@ A Mon-buy/Tue-sell trade then shows its realized PnL under Tuesday everywhere us
 
 ---
 
-#### Step 1: Add `bucketKey` to `lib/journal-aggregates.ts`
+#### Step 1: Add `isCrossDayTrade` helper to `lib/journal-aggregates.ts`
 
 **File:** `lib/journal-aggregates.ts`
 **Action:** MODIFY
 
-**Goal:** Expose a single helper that returns the local-day key a trade should bucket into for PnL aggregation. Make `toLocalDateKey` exported (it's the underlying primitive) and add `bucketKey` on top.
+**Goal:** One shared definition of "this trade was held overnight." Used by the calendar's span computation and the trade table's badge.
 
 **Instructions:**
 
-1. **Export `toLocalDateKey`** (currently line 21–24 — local, not exported). Change `function toLocalDateKey(...)` to `export function toLocalDateKey(...)`. The body stays identical.
-
-2. **Add a new exported `bucketKey` helper** immediately after `toLocalDateKey`:
+1. Add the helper immediately after the `bucketKey` export (currently lines 26–34):
 
 ```ts
 /**
- * The local day key (yyyy-MM-dd) a trade should bucket into for realized PnL.
- * - Closed trades bucket on `closedAt` (the day PnL was realized).
- * - Falls back to `date` (entry day) for safety — should be unreachable for
- *   closed rows after migration 0038, but defensive.
- * - Open trades have no realized PnL; callers should exclude them BEFORE
- *   asking for a bucket key, but if asked, this returns the entry-day key.
+ * True when a closed trade was opened on one local day and closed on another.
+ * Open trades return false — they have no realized close day yet.
  */
-export function bucketKey(trade: Pick<Trade, 'date' | 'closedAt'>): string {
-  const source = trade.closedAt ?? trade.date;
-  return toLocalDateKey(source);
+export function isCrossDayTrade(
+  trade: Pick<Trade, 'date' | 'closedAt' | 'isOpen'>,
+): boolean {
+  if (trade.isOpen) return false;
+  return bucketKey(trade) !== toLocalDateKey(trade.date);
 }
 ```
 
-3. **Replace `aggregateDay`** (currently line 30–48) to use `bucketKey`:
-
-```ts
-export function aggregateDay(trades: Trade[], date: string): DayAggregate {
-  const matching = trades.filter((t) => !t.isOpen && bucketKey(t) === date);
-
-  let grossResult = 0;
-  let netResult = 0;
-  let rTotal = 0;
-  const tradeIds: string[] = [];
-
-  for (const t of matching) {
-    grossResult += t.grossPnl;
-    netResult += t.netPnl;
-    if (t.initialRisk && t.initialRisk > 0) {
-      rTotal += t.netPnl / t.initialRisk;
-    }
-    tradeIds.push(t.id);
-  }
-
-  return { grossResult, netResult, rTotal, tradeIds };
-}
-```
-
-4. **Replace `aggregateWeek`** (currently line 53–86) to use `bucketKey`:
-
-```ts
-export function aggregateWeek(
-  trades: Trade[],
-  weekStart: string,
-  weekEnd: string,
-): WeekAggregate {
-  const matching = trades.filter((t) => {
-    if (t.isOpen) return false;
-    const key = bucketKey(t);
-    return key >= weekStart && key <= weekEnd;
-  });
-
-  const dayRMap: Record<string, number> = {};
-  let grossResult = 0;
-  let netResult = 0;
-  let rTotal = 0;
-  const tradeIds: string[] = [];
-
-  for (const t of matching) {
-    const key = bucketKey(t);
-    grossResult += t.grossPnl;
-    netResult += t.netPnl;
-    if (t.initialRisk && t.initialRisk > 0) {
-      const r = t.netPnl / t.initialRisk;
-      rTotal += r;
-      dayRMap[key] = (dayRMap[key] ?? 0) + r;
-    }
-    tradeIds.push(t.id);
-  }
-
-  const perDayR = Object.entries(dayRMap)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, r]) => ({ date, r }));
-
-  return { grossResult, netResult, rTotal, perDayR, tradeIds };
-}
-```
-
-The only functional change versus today: a closed trade whose `closedAt` is on a different day than `date` now buckets on `closedAt`. Same-day round-trips and pre-Phase-1 backfilled trades behave identically (because Phase 1's migration set `closed_at = date` for those).
+That's the entire change to this file.
 
 **Acceptance:**
 - [x] `npx tsc --noEmit` passes
 - [x] `npm run lint` passes
-- [x] `bucketKey` is exported from `lib/journal-aggregates.ts`
-- [x] `toLocalDateKey` is exported from `lib/journal-aggregates.ts`
+- [x] `isCrossDayTrade` is exported from `lib/journal-aggregates.ts`
 
 ---
 
-#### Step 2: Switch `TradingCalendar.tsx` to `bucketKey` and exclude open trades
+#### Step 2: Add `OVERNIGHT` badge to `TradeTable.tsx`
+
+**File:** `components/trading/TradeTable.tsx`
+**Action:** MODIFY
+
+**Instructions:**
+
+1. Add an import for `isCrossDayTrade` near the top of the file. Look for any existing `@/lib/...` import line and add this next to it:
+
+```ts
+import { isCrossDayTrade } from '@/lib/journal-aggregates';
+```
+
+If `TradeTable.tsx` doesn't currently import from `@/lib/journal-aggregates` (it doesn't — confirmed by grep), add this as a new import line in the existing import block.
+
+2. Modify the symbol cell (currently `TradeTable.tsx:139–146`) to render the OVERNIGHT badge after the OPEN badge:
+
+```tsx
+                <td className="px-4 py-3 font-medium">
+                  <span>{trade.symbol}</span>
+                  {trade.isOpen ? (
+                    <span className="ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/20 text-amber-400">
+                      OPEN
+                    </span>
+                  ) : null}
+                  {isCrossDayTrade(trade) ? (
+                    <span className="ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold bg-violet-500/20 text-violet-400">
+                      OVERNIGHT
+                    </span>
+                  ) : null}
+                </td>
+```
+
+Notes:
+- Both badges can theoretically appear together if a trade is somehow `isOpen` AND has `closedAt` set, but that shouldn't happen in practice. `isCrossDayTrade` already short-circuits on `isOpen`, so an open position will only show the OPEN badge.
+- Don't touch any other cell in the row.
+
+**Acceptance:**
+- [x] `npx tsc --noEmit` passes
+- [x] `npm run lint` passes
+- [x] No regressions to existing columns
+- [x] `grep "OVERNIGHT" components/trading/TradeTable.tsx` returns the new badge
+
+---
+
+#### Step 3: Render multi-day span bars in `TradingCalendar.tsx`
 
 **File:** `components/trading/TradingCalendar.tsx`
 **Action:** MODIFY
 
 **Instructions:**
 
-1. **Add an import** for `bucketKey` from journal-aggregates. Add to the existing import block at the top of the file (after the date-fns import):
+1. Extend the existing `@/lib/journal-aggregates` import (currently `import { bucketKey } from '@/lib/journal-aggregates';` at line 5) to also import `isCrossDayTrade` and `toLocalDateKey`:
 
 ```ts
-import { bucketKey } from '@/lib/journal-aggregates';
+import { bucketKey, isCrossDayTrade, toLocalDateKey } from '@/lib/journal-aggregates';
 ```
 
-2. **Replace the `dailyStats` useMemo** (currently line 67–83). The two changes:
-   - Skip `isOpen` trades entirely.
-   - Use `bucketKey(trade)` instead of `format(new Date(trade.date), 'yyyy-MM-dd')`.
+2. Below the existing `dailyStats` useMemo (currently lines 68–85), add a new `spanMap` useMemo. This computes, for each local-day key, the list of cross-day trades whose `[entry, close]` interval includes that day:
 
 ```ts
-  const dailyStats = useMemo(() => {
-    const stats: Record<string, { pnl: number; r: number; trades: Trade[] }> = {};
-    trades.forEach((trade) => {
-      if (trade.isOpen) return;
-      const dateKey = bucketKey(trade);
-      if (!stats[dateKey]) {
-        stats[dateKey] = { pnl: 0, r: 0, trades: [] };
+  // For each local-day key, the cross-day trades whose [entry, close] window
+  // contains that day. We pre-sort by closeKey ascending so endpoint rendering
+  // is stable: the earliest-closing position renders first.
+  const spanMap = useMemo(() => {
+    const map: Record<
+      string,
+      Array<{
+        tradeId: string;
+        symbol: string;
+        netPnl: number;
+        entryKey: string;
+        closeKey: string;
+      }>
+    > = {};
+
+    const crossDayTrades = trades
+      .filter((t) => isCrossDayTrade(t))
+      .map((t) => ({
+        tradeId: t.id,
+        symbol: t.symbol,
+        netPnl: t.netPnl,
+        entryKey: toLocalDateKey(t.date),
+        closeKey: bucketKey(t),
+      }))
+      .sort((a, b) => a.closeKey.localeCompare(b.closeKey));
+
+    for (const span of crossDayTrades) {
+      // Walk from entryKey to closeKey inclusive in 1-day steps using a Date
+      // anchored at the entry day. addDays via date-fns keeps DST correct.
+      let cursor = new Date(`${span.entryKey}T00:00:00`);
+      const end = new Date(`${span.closeKey}T00:00:00`);
+      while (cursor.getTime() <= end.getTime()) {
+        const key = format(cursor, 'yyyy-MM-dd');
+        if (!map[key]) map[key] = [];
+        map[key].push(span);
+        cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
       }
-      stats[dateKey].pnl += trade.netPnl;
-      stats[dateKey].trades.push(trade);
-      // Sort by entry day descending so the day's trades render newest-first.
-      stats[dateKey].trades.sort((a, b) => b.date.getTime() - a.date.getTime());
-      if (trade.initialRisk) {
-        stats[dateKey].r += trade.netPnl / trade.initialRisk;
-      }
-    });
-    return stats;
+    }
+
+    return map;
   }, [trades]);
 ```
 
-Don't change `weeks`, `monthlyR`, or any of the cell-render code — they read from `dailyStats` and stay correct.
+Notes:
+- `new Date('${key}T00:00:00')` parses as local time (no `Z` suffix), which matches how the rest of the calendar treats day keys.
+- We step in 24-hour increments. This is correct for the day-key walk even across DST because we re-format with `format(cursor, 'yyyy-MM-dd')` each iteration — DST shifts only matter if you're doing arithmetic on the displayed time, which we're not.
+- The cursor exit condition is `<=` so the close day is included.
+
+3. Inside the cell render block, add the bar lane between the date number and the bottom-aligned PnL block. The existing cell JSX is at `TradingCalendar.tsx:170–204`. After the `<span>{format(day, 'd')}</span>` block (line 186–188) and before the `{stats && ...}` block (line 190), insert:
+
+```tsx
+                    {(() => {
+                      const spans = spanMap[dateKey];
+                      if (!spans || spans.length === 0) return null;
+                      const visible = spans.slice(0, 2);
+                      const overflow = spans.length - visible.length;
+                      return (
+                        <div className="mt-1 flex flex-col gap-0.5">
+                          {visible.map((span) => {
+                            const isStart = span.entryKey === dateKey;
+                            const isEnd = span.closeKey === dateKey;
+                            const color =
+                              span.netPnl > 0
+                                ? 'bg-emerald-500/50'
+                                : span.netPnl < 0
+                                  ? 'bg-rose-500/50'
+                                  : 'bg-zinc-500/40';
+                            const rounded =
+                              isStart && isEnd
+                                ? 'rounded-full'
+                                : isStart
+                                  ? 'rounded-l-full'
+                                  : isEnd
+                                    ? 'rounded-r-full'
+                                    : '';
+                            return (
+                              <div
+                                key={span.tradeId}
+                                className={`h-[3px] ${color} ${rounded}`}
+                                title={`${span.symbol} • opened ${format(new Date(`${span.entryKey}T00:00:00`), 'MMM dd')}, closed ${format(new Date(`${span.closeKey}T00:00:00`), 'MMM dd')}`}
+                              />
+                            );
+                          })}
+                          {overflow > 0 ? (
+                            <span className="text-[9px] text-zinc-500 leading-none">
+                              +{overflow}
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })()}
+```
+
+Notes:
+- The `isStart && isEnd` branch handles a same-week round-trip that we already filtered out (`isCrossDayTrade` is false for same-day), so this is unreachable in practice, but it falls through to `rounded-full` defensively if someone changes the upstream filter.
+- The IIFE pattern (`{(() => {...})()}`) keeps the per-cell computation inline without lifting `visible` and `overflow` into the outer scope, which would clutter the existing cell render. If you prefer, pull this into a helper component `SpanLane`, but the inline version is fine and matches the existing style of the file.
+
+4. **Do NOT** modify the existing `weeks` useMemo (lines 91–113), the `monthlyR` useMemo (lines 118–124), or the Weekly column render (lines 207–230). Span bars only appear in day cells; the Weekly column stays clean.
+
+5. **Do NOT** modify the cell-click behavior, the `selectedDate` ring, or any other existing styling. Span bars are an additive layer.
 
 **Acceptance:**
 - [x] `npx tsc --noEmit` passes
 - [x] `npm run lint` passes
-- [x] No other code in `TradingCalendar.tsx` references `format(new Date(trade.date), ...)` for bucketing — only the spot replaced above.
+- [x] A trade with entry on Mon and close on Tue renders bars on both the Mon and Tue cells
+- [x] A trade with entry on Fri and close on the next Mon renders bars on Fri, Sat, Sun, and Mon (Weekly column stays bar-free)
+- [x] No bars render on cells where no cross-day trade was open
 
 ---
 
-#### Step 3: Switch `PerformanceStatsTable.tsx` daily aggregates + streak sort to `bucketKey`
-
-**File:** `components/trading/PerformanceStatsTable.tsx`
-**Action:** MODIFY
-
-**Instructions:**
-
-1. **Add an import** for `bucketKey`. Add to the existing imports near the top of the file:
-
-```ts
-import { bucketKey } from '@/lib/journal-aggregates';
-```
-
-2. **Replace the `dailyTotals` / `dailyVolume` loop** (currently line 140–146):
-
-```ts
-    const dailyTotals = new Map<string, number>();
-    const dailyVolume = new Map<string, number>();
-    for (const trade of closedTrades) {
-      const key = bucketKey(trade);
-      dailyTotals.set(key, (dailyTotals.get(key) ?? 0) + trade.netPnl);
-      dailyVolume.set(key, (dailyVolume.get(key) ?? 0) + trade.totalQuantity);
-    }
-```
-
-This is the only change to the "daily averages" stats — they now reflect realized-per-day, not entry-per-day.
-
-3. **Replace the streak sort line** (currently line 179):
-
-```ts
-    const sortedByDate = [...closedTrades].sort((a, b) => {
-      const aKey = bucketKey(a);
-      const bKey = bucketKey(b);
-      if (aKey !== bKey) return aKey.localeCompare(bKey);
-      // Tie-break by exit time within the same close day so streaks are
-      // chronologically ordered by realization, not entry.
-      return a.exitTime.localeCompare(b.exitTime);
-    });
-```
-
-Rationale: streaks ("max consecutive wins/losses") should be ordered by when the trade was *closed* (realized), not when it was *opened*. A Mon-buy/Tue-sell that closes profitably belongs after Tuesday's earlier closes in the streak ordering.
-
-4. **Do NOT touch** the `parseHoldMinutes` calls (line 81–82) — those are computing hold duration from entry-day timestamps, which is correct.
-
-5. **Do NOT touch** `largestGainTrade` / `largestLossTrade` (line 208–209) — these sort on `netPnl`, not date.
-
-**Acceptance:**
-- [x] `npx tsc --noEmit` passes
-- [x] `npm run lint` passes
-- [x] No leftover `trade.sortKey` references in the `dailyTotals` block
-- [x] `parseHoldMinutes` is left alone
-
----
-
-#### Step 4: Extend `__tests__/journal-aggregates.test.ts` with cross-day-close cases
+#### Step 4: Add tests for `isCrossDayTrade` in `__tests__/journal-aggregates.test.ts`
 
 **File:** `__tests__/journal-aggregates.test.ts`
 **Action:** MODIFY
 
 **Instructions:**
 
-1. **Update `makeTrade`** (currently line 9–30) to accept and pass through `closedAt`. The current factory builds a Date in local time for `date` but doesn't set `closedAt`. Add a default that mirrors `date` so existing tests stay green:
+1. Update the import line (currently `import { aggregateDay, aggregateWeek } from '@/lib/journal-aggregates';`) to include the new helper:
 
 ```ts
-function makeTrade(overrides: Partial<Trade> & { date: Date; id: string }): Trade {
-  const closedAt = overrides.closedAt ?? overrides.date.toISOString();
-  return {
-    symbol: 'TEST',
-    direction: 'LONG',
-    avgEntryPrice: 100,
-    avgExitPrice: 101,
-    totalQuantity: 100,
-    grossPnl: 100,
-    netPnl: 100,
-    entryTime: overrides.date.toISOString(),
-    exitTime: overrides.date.toISOString(),
-    executionCount: 1,
-    rawExecutions: [],
-    pnl: 100,
-    executions: 1,
-    tags: [],
-    isOpen: overrides.isOpen ?? false,
-    remainingQty: overrides.remainingQty ?? 0,
-    sortKey: '2026-04-17',
-    closedAt,
-    ...overrides,
-  };
-}
+import { aggregateDay, aggregateWeek, isCrossDayTrade } from '@/lib/journal-aggregates';
 ```
 
-Notes:
-- The default `closedAt = date.toISOString()` keeps same-day-close trades bucketing on `date` (because `bucketKey` falls back to `date` when `closedAt` is the same day).
-- `overrides.closedAt` lets a test set a *different* close day to exercise the new bucketing.
-- `overrides.closedAt ?? overrides.date.toISOString()` is evaluated BEFORE the `...overrides` spread; the spread then re-applies any explicit `closedAt` from overrides. Both reach the same value, so the order is safe.
-
-2. **Add a new `describe` block at the end of the file** with cross-day cases:
+2. Append a new `describe` block at the end of the file (after the last `describe('aggregateWeek', ...)` block):
 
 ```ts
-describe('aggregateDay — closedAt-based bucketing', () => {
-  it('buckets a cross-day-close trade under its close day, not its entry day', () => {
-    const monEntry = new Date(2026, 4, 18, 14, 0); // Monday 2pm local
-    const tueClose = new Date(2026, 4, 19, 10, 0); // Tuesday 10am local
-    const trades: Trade[] = [
-      makeTrade({
-        id: 'cross-day',
-        date: monEntry,
-        closedAt: tueClose.toISOString(),
-        netPnl: 250,
-        grossPnl: 250,
-        initialRisk: 100,
-      }),
-    ];
-
-    // Monday: zero, because the trade's PnL realized on Tuesday.
-    expect(aggregateDay(trades, '2026-05-18').netResult).toBe(0);
-    expect(aggregateDay(trades, '2026-05-18').tradeIds).toEqual([]);
-
-    // Tuesday: the full $250.
-    const tue = aggregateDay(trades, '2026-05-19');
-    expect(tue.tradeIds).toEqual(['cross-day']);
-    expect(tue.netResult).toBe(250);
-    expect(tue.rTotal).toBeCloseTo(2.5, 10);
+describe('isCrossDayTrade', () => {
+  it('returns false for a same-day trade', () => {
+    const trade = makeTrade({
+      id: 'same-day',
+      date: new Date(2026, 4, 18, 10, 0),
+      // makeTrade defaults closedAt to date.toISOString() — same local day
+    });
+    expect(isCrossDayTrade(trade)).toBe(false);
   });
 
-  it('falls back to date when closedAt is null', () => {
-    const trades: Trade[] = [
-      makeTrade({
-        id: 'legacy',
-        date: new Date(2026, 4, 18, 10, 0),
-        closedAt: null,
-        netPnl: 100,
-        grossPnl: 100,
-      }),
-    ];
-
-    expect(aggregateDay(trades, '2026-05-18').netResult).toBe(100);
-    expect(aggregateDay(trades, '2026-05-18').tradeIds).toEqual(['legacy']);
+  it('returns true for a cross-day-close trade', () => {
+    const trade = makeTrade({
+      id: 'cross-day',
+      date: new Date(2026, 4, 18, 14, 0),
+      closedAt: new Date(2026, 4, 19, 10, 0).toISOString(),
+    });
+    expect(isCrossDayTrade(trade)).toBe(true);
   });
-});
 
-describe('aggregateWeek — closedAt-based bucketing', () => {
-  it('counts a Fri-buy/Mon-sell trade against the week containing the close day', () => {
-    // Entry on Friday 2026-05-15 (week 1), close on Monday 2026-05-18 (week 2).
-    const friEntry = new Date(2026, 4, 15, 14, 0);
-    const monClose = new Date(2026, 4, 18, 10, 0);
-    const trades: Trade[] = [
-      makeTrade({
-        id: 'span',
-        date: friEntry,
-        closedAt: monClose.toISOString(),
-        netPnl: 400,
-        grossPnl: 400,
-        initialRisk: 100,
-      }),
-    ];
+  it('returns false for an open trade even if closedAt is set (defensive)', () => {
+    const trade = makeTrade({
+      id: 'open',
+      date: new Date(2026, 4, 18, 10, 0),
+      closedAt: new Date(2026, 4, 19, 10, 0).toISOString(),
+      isOpen: true,
+    });
+    expect(isCrossDayTrade(trade)).toBe(false);
+  });
 
-    // Week 1 (Mon 5/11 – Fri 5/15): trade entered here but did NOT realize PnL.
-    const week1 = aggregateWeek(trades, '2026-05-11', '2026-05-15');
-    expect(week1.tradeIds).toEqual([]);
-    expect(week1.netResult).toBe(0);
-
-    // Week 2 (Mon 5/18 – Fri 5/22): trade closed here.
-    const week2 = aggregateWeek(trades, '2026-05-18', '2026-05-22');
-    expect(week2.tradeIds).toEqual(['span']);
-    expect(week2.netResult).toBe(400);
-    expect(week2.perDayR.map((d) => d.date)).toEqual(['2026-05-18']);
-    expect(week2.perDayR[0].r).toBeCloseTo(4, 10);
+  it('falls back to date when closedAt is null (legacy row → not cross-day)', () => {
+    const trade = makeTrade({
+      id: 'legacy',
+      date: new Date(2026, 4, 18, 10, 0),
+      closedAt: null,
+    });
+    expect(isCrossDayTrade(trade)).toBe(false);
   });
 });
 ```
 
-3. **Do NOT remove or change** the existing tests. They use `closedAt = date.toISOString()` by default (via the updated factory), so they continue to bucket on entry day — and pass.
+3. **Do NOT** remove or change any existing test. The `makeTrade` factory introduced in Phase 3 (lines 9–32) already handles `closedAt` correctly via `overrides.closedAt ?? overrides.date.toISOString()`, so these new tests slot in cleanly.
 
 **Acceptance:**
-- [x] `npm test` — `__tests__/journal-aggregates.test.ts` passes with 0 failures (existing tests + new cross-day tests)
-- [x] No other test file changes
+- [x] `npx vitest run __tests__/journal-aggregates.test.ts` — all tests pass, no failures
+- [x] No other test file is modified
 
 ---
 
-#### Step 5: Lint, typecheck, test, commit
+#### Step 5: Lint, typecheck, full test, commit
 
 **Action:** RUN COMMANDS
 
@@ -413,7 +352,7 @@ All must pass with 0 errors. Then commit:
 
 ```
 git add -A
-git commit -m "Phase 3: closedAt-based PnL bucketing — journal aggregates, trading calendar, performance stats"
+git commit -m "Phase 4: multi-day span rendering on calendar + OVERNIGHT badge in trade table"
 ```
 
 Do NOT push.
@@ -421,7 +360,7 @@ Do NOT push.
 **Acceptance:**
 - [x] `npm run lint` — 0 errors
 - [x] `npx tsc --noEmit` — 0 errors
-- [x] `npm test` — 0 failing tests (94 files / 694 tests)
+- [x] `npm test` — 0 failing tests
 - [x] `git log --oneline -1` shows the commit above
 - [x] `git status` is clean after the local commit
 
@@ -431,12 +370,12 @@ Do NOT push.
 
 | File | Action | Lines +/- est. | Risk |
 |---|---|---|---|
-| `lib/journal-aggregates.ts` | MODIFY | +~20 / -~5 | LOW — additive helper, two surgical filter swaps |
-| `components/trading/TradingCalendar.tsx` | MODIFY | +~3 / -~2 | LOW — one useMemo block touched |
-| `components/trading/PerformanceStatsTable.tsx` | MODIFY | +~10 / -~5 | LOW — two surgical replacements |
-| `__tests__/journal-aggregates.test.ts` | MODIFY | +~80 | LOW — tests only |
+| `lib/journal-aggregates.ts` | MODIFY | +~10 | LOW — pure additive helper |
+| `components/trading/TradeTable.tsx` | MODIFY | +~7 | LOW — single inline badge next to existing OPEN badge |
+| `components/trading/TradingCalendar.tsx` | MODIFY | +~60 | MED — one new useMemo + one IIFE block inside cell render; additive, no existing logic removed |
+| `__tests__/journal-aggregates.test.ts` | MODIFY | +~40 | LOW — new describe block only |
 
-**Not touched in Phase 3:** schema, migrations, API routes, `lib/types.ts`, `lib/server-db-utils.ts`, `PerformanceCharts.tsx`, `TradeTable.tsx`, `hooks/use-trade-filters.ts`, any UI outside the calendar / stats table.
+**Not touched in Phase 4:** schema, migrations, API routes, `lib/types.ts`, `JournalTab.tsx`, `DailyReportSheet.tsx`, `WeeklyReviewSheet.tsx`, `PerformanceStatsTable.tsx`, `PerformanceCharts.tsx`, `hooks/use-trade-filters.ts`, any agent or services code.
 
 ---
 
@@ -448,18 +387,19 @@ Do NOT push.
 - `npm test`
 
 **Manual checks (Codex does NOT need to run these — they're for the user post-execution):**
-- [ ] Open the Journal tab → daily aggregate for a known Mon-buy/Tue-sell trade shows the PnL under Tuesday, not Monday
-- [ ] Open the Performance tab → Trading Calendar shows the same trade colored on the Tuesday cell, not the Monday cell
-- [ ] Open the Performance Stats table → "Average Daily Gain/Loss" reflects the trade against its close day
-- [ ] Same-day round-trip trades still appear on their (single) day — no regression
-- [ ] Open positions do NOT appear in any calendar cell PnL or journal aggregate (Phase 3 also fixes the calendar's pre-existing "open trade leaks 0-pnl trade-count" bug)
-- [ ] DO NOT git push — verify Codex stopped after committing locally
+- [ ] Open the Performance tab → Trading Calendar. A trade you know spans two days renders thin colored bars on both cells (PnL color: green if it closed positive, red if it closed negative).
+- [ ] Hover one of the bars → tooltip shows symbol and `opened MMM DD, closed MMM DD`.
+- [ ] A Fri→Mon trade renders bars on Fri, Sat, Sun, Mon (4 cells). The Weekly column stays bar-free.
+- [ ] In any TradeTable view that shows a cross-day trade (Journal day card expansion, trade detail sheet, etc.), the symbol cell shows the violet `OVERNIGHT` badge.
+- [ ] Same-day round-trip trades show NO bars and NO OVERNIGHT badge.
+- [ ] Open positions still don't appear on the calendar at all (no bars, no PnL).
+- [ ] DO NOT git push — verify Codex stopped after committing locally.
 
 ---
 
 ### Complexity Estimate
 
-LOW — 4 files touched, no schema changes, no new API routes, no new types. The `bucketKey` helper is the central abstraction; the three call sites are surgical. Estimate 30–60 minutes of Codex execution time. The risk surface is small because most of the new behavior is opt-in via `closedAt`, which Phase 1 already backfilled.
+LOW–MED. 4 files touched, no schema/API/type changes. The bar render block in `TradingCalendar.tsx` is the largest single addition (~60 lines including the useMemo and the IIFE), and it's the only "thinking" the executor has to do — the other three files are surgical. Estimate 30–60 minutes of Codex execution time.
 
 ---
 
@@ -473,9 +413,13 @@ Stand up a test DB harness (Postgres in Docker via testcontainers, or a vitest s
 
 Phase 1 ships a "Close Position (Full)" button on `TradeDetailSheet`. Phase 2's matcher handles partial closes from CSV imports, but the UI button still closes the full position. A future sprint should let the user enter a quantity ≤ `remainingQty`, similar to how brokers offer partial fills. Touches `TradeDetailSheet.tsx`, the close-position schema, and the PATCH `/api/trades/[id]` branch.
 
-### Calendar / journal multi-day span views
+### Open-position visualization on the calendar
 
-Phase 3 buckets cross-day trades by `closedAt`. The trade still only renders as a single cell on the calendar (the close day). A future sprint could render multi-day positions as a horizontal span across the entry → close days, similar to how Gantt charts show duration. The same idea applies to the journal list, which today shows one row per trade with no visual cue that the trade was open overnight. Touches `TradingCalendar.tsx` (cell layout becomes harder — spans cross week boundaries), `JournalTab.tsx`, and likely a small CSS-grid refactor. Mostly a visual feature; depends on user feedback after Phase 3 ships.
+Phase 4 renders spans only for closed cross-day trades. Currently-open positions (still held today) are invisible to the calendar entirely. A follow-up could surface them — e.g. ghost bars from entry day through today, in a neutral color (zinc) since they have no realized PnL yet, with a tooltip showing days held. Touches `TradingCalendar.tsx` (extend `spanMap` to optionally include open trades with `closeKey = today`) and possibly a new toggle in the calendar header ("Show open positions"). Decide first whether open positions belong on the realized-PnL calendar at all, or whether they need their own view.
+
+### Journal day-card carry-over UI
+
+Phase 4 adds the OVERNIGHT badge to individual trade rows in `TradeTable`. The journal's *day-card grouping* still keys off `trade.sortKey` (entry day) — so clicking a Tuesday calendar cell whose PnL came from a Mon→Tue close opens a Tuesday day card that does NOT contain that trade (its sortKey is Monday). A future sprint should reconcile this: either group the journal day card by `bucketKey` too, or add a "carried over from Monday" panel inside the Tuesday card listing trades that realized PnL there but entered earlier. Touches `JournalTab.tsx` `dayCards` useMemo and the day-card render block. Decide first whether to flip grouping or to add a second panel — the former is simpler but changes long-standing behavior.
 
 ### Auto-sync sample sets from tags
 

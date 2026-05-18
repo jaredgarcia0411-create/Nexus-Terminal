@@ -2,10 +2,11 @@
 
 import React, { useMemo } from 'react';
 import { Trade } from '@/lib/types';
-import { bucketKey } from '@/lib/journal-aggregates';
+import { bucketKey, isCrossDayTrade, toLocalDateKey } from '@/lib/journal-aggregates';
 import { formatCurrency, formatR, getPnLColor } from '@/lib/trading-utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { 
+  addDays,
   format, 
   startOfMonth, 
   endOfMonth, 
@@ -82,6 +83,44 @@ export default function TradingCalendar({
       }
     });
     return stats;
+  }, [trades]);
+
+  // Cross-day closed trades whose [entry, close] window includes each day.
+  const spanMap = useMemo(() => {
+    const map: Record<
+      string,
+      Array<{
+        tradeId: string;
+        symbol: string;
+        netPnl: number;
+        entryKey: string;
+        closeKey: string;
+      }>
+    > = {};
+
+    const crossDayTrades = trades
+      .filter((trade) => isCrossDayTrade(trade))
+      .map((trade) => ({
+        tradeId: trade.id,
+        symbol: trade.symbol,
+        netPnl: trade.netPnl,
+        entryKey: toLocalDateKey(trade.date),
+        closeKey: bucketKey(trade),
+      }))
+      .sort((a, b) => a.closeKey.localeCompare(b.closeKey));
+
+    for (const span of crossDayTrades) {
+      let cursor = new Date(`${span.entryKey}T00:00:00`);
+      const end = new Date(`${span.closeKey}T00:00:00`);
+      while (cursor.getTime() <= end.getTime()) {
+        const key = format(cursor, 'yyyy-MM-dd');
+        if (!map[key]) map[key] = [];
+        map[key].push(span);
+        cursor = addDays(cursor, 1);
+      }
+    }
+
+    return map;
   }, [trades]);
 
   const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
@@ -186,6 +225,49 @@ export default function TradingCalendar({
                     <span className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-mono ${isToday ? 'text-white font-bold' : 'text-zinc-500'}`}>
                       {format(day, 'd')}
                     </span>
+
+                    {(() => {
+                      const spans = spanMap[dateKey];
+                      if (!spans || spans.length === 0) return null;
+                      const visible = spans.slice(0, 2);
+                      const overflow = spans.length - visible.length;
+                      return (
+                        <div className="mt-1 flex flex-col gap-0.5">
+                          {visible.map((span) => {
+                            const isStart = span.entryKey === dateKey;
+                            const isEnd = span.closeKey === dateKey;
+                            const color =
+                              span.netPnl > 0
+                                ? 'bg-emerald-500/50'
+                                : span.netPnl < 0
+                                  ? 'bg-rose-500/50'
+                                  : 'bg-zinc-500/40';
+                            const rounded =
+                              isStart && isEnd
+                                ? 'rounded-full'
+                                : isStart
+                                  ? 'rounded-l-full'
+                                  : isEnd
+                                    ? 'rounded-r-full'
+                                    : '';
+                            const entryLabel = format(new Date(`${span.entryKey}T00:00:00`), 'MMM dd');
+                            const closeLabel = format(new Date(`${span.closeKey}T00:00:00`), 'MMM dd');
+                            return (
+                              <div
+                                key={span.tradeId}
+                                className={`h-[3px] ${color} ${rounded}`}
+                                title={`${span.symbol} • opened ${entryLabel}, closed ${closeLabel}`}
+                              />
+                            );
+                          })}
+                          {overflow > 0 ? (
+                            <span className="text-[9px] leading-none text-zinc-500">
+                              +{overflow}
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })()}
 
                     {stats && (stats.pnl !== 0 || stats.r !== 0) && (
                       <div className="mt-auto flex flex-col gap-0.5">
