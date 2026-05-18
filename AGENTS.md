@@ -14,11 +14,12 @@ Follow these rules to match existing architecture and coding style.
 
 ## Required Workflow (Always)
 1. Read `HANDOFF.md` first to check for an active execution spec and recent repo context.
-2. Preserve architecture; do not refactor unrelated areas.
-3. If `HANDOFF.md` contains an active execution spec, implement changes in the exact order described there. If it does not, use live repo context plus this file.
-4. Never modify `.env`, `.env.local`, or secret files.
-5. After code changes, run lint, type-check, and tests.
-6. If a command fails, fix the issue before finishing.
+2. For codebase structure (where things live, which files pair together), consult `docs/ARCHITECTURE.md` — do not re-derive it by traversing the tree.
+3. Preserve architecture; do not refactor unrelated areas.
+4. If `HANDOFF.md` contains an active execution spec, implement changes in the exact order described there. If it does not, use live repo context plus this file.
+5. Never modify `.env`, `.env.local`, or secret files.
+6. After code changes, run lint, type-check, and tests.
+7. If a command fails, fix the issue before finishing.
 
 ## Core Commands
 - Install deps: `npm install`

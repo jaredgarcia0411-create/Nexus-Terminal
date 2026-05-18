@@ -4,6 +4,12 @@ Parked ideas and longer-horizon plans. Each entry should note **why it's parked*
 
 ---
 
+## Recurring chores (not parked — just a checklist)
+
+- **`docs/ARCHITECTURE.md` freshness** — review at the end of each sprint. Update only when structure changes meaningfully (new top-level concern, folder reorg, new agent surface, new convention). Skip if nothing structural shifted. Stale architecture docs are worse than no architecture docs.
+
+---
+
 ## Embed AskEdgar via iframe (parked 2026-05-01)
 
 ### The idea
