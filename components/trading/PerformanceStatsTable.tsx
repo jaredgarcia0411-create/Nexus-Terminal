@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { ArrowUpRight, Info } from 'lucide-react';
+import { bucketKey } from '@/lib/journal-aggregates';
 import { formatCurrency } from '@/lib/trading-utils';
 import { Trade } from '@/lib/types';
 
@@ -140,7 +141,7 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
     const dailyTotals = new Map<string, number>();
     const dailyVolume = new Map<string, number>();
     for (const trade of closedTrades) {
-      const key = trade.sortKey;
+      const key = bucketKey(trade);
       dailyTotals.set(key, (dailyTotals.get(key) ?? 0) + trade.netPnl);
       dailyVolume.set(key, (dailyVolume.get(key) ?? 0) + trade.totalQuantity);
     }
@@ -176,7 +177,14 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
     const averageWinningHoldTime = winningHoldTrades.length > 0 ? calculateMean(winningHoldTrades.map((entry) => entry.minutes)) : null;
     const averageLosingHoldTime = losingHoldTrades.length > 0 ? calculateMean(losingHoldTrades.map((entry) => entry.minutes)) : null;
 
-    const sortedByDate = [...closedTrades].sort((a, b) => a.date.getTime() - b.date.getTime());
+    const sortedByDate = [...closedTrades].sort((a, b) => {
+      const aKey = bucketKey(a);
+      const bKey = bucketKey(b);
+      if (aKey !== bKey) return aKey.localeCompare(bKey);
+      // Tie-break by exit time within the same close day so streaks are
+      // chronologically ordered by realization, not entry.
+      return a.exitTime.localeCompare(b.exitTime);
+    });
     let maxConsecutiveWins = 0;
     let maxConsecutiveLosses = 0;
     let maxConsecutiveWinTrade: Trade | null = null;

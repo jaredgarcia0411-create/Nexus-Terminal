@@ -2,6 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { Trade } from '@/lib/types';
+import { bucketKey } from '@/lib/journal-aggregates';
 import { formatCurrency, formatR, getPnLColor } from '@/lib/trading-utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { 
@@ -67,13 +68,14 @@ export default function TradingCalendar({
   const dailyStats = useMemo(() => {
     const stats: Record<string, { pnl: number; r: number; trades: Trade[] }> = {};
     trades.forEach((trade) => {
-      const dateKey = format(new Date(trade.date), 'yyyy-MM-dd');
+      if (trade.isOpen) return;
+      const dateKey = bucketKey(trade);
       if (!stats[dateKey]) {
         stats[dateKey] = { pnl: 0, r: 0, trades: [] };
       }
       stats[dateKey].pnl += trade.netPnl;
       stats[dateKey].trades.push(trade);
-      // Ensure trades for the day are sorted descending
+      // Sort by entry day descending so the day's trades render newest-first.
       stats[dateKey].trades.sort((a, b) => b.date.getTime() - a.date.getTime());
       if (trade.initialRisk) {
         stats[dateKey].r += trade.netPnl / trade.initialRisk;

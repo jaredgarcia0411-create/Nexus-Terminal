@@ -7,6 +7,7 @@ import type { Trade } from '@/lib/types';
 // `new Date(year, monthIdx, day, hour, ...)` always resolves in local time,
 // which matches how date-fns `format(d, 'yyyy-MM-dd')` buckets days.
 function makeTrade(overrides: Partial<Trade> & { date: Date; id: string }): Trade {
+  const closedAt = overrides.closedAt ?? overrides.date.toISOString();
   return {
     symbol: 'TEST',
     direction: 'LONG',
@@ -25,6 +26,7 @@ function makeTrade(overrides: Partial<Trade> & { date: Date; id: string }): Trad
     isOpen: overrides.isOpen ?? false,
     remainingQty: overrides.remainingQty ?? 0,
     sortKey: '2026-04-17',
+    closedAt,
     ...overrides,
   };
 }
@@ -104,6 +106,73 @@ describe('aggregateDay', () => {
     const result = aggregateDay(trades, '2026-04-20');
 
     expect(result).toEqual({ grossResult: 0, netResult: 0, rTotal: 0, tradeIds: [] });
+  });
+});
+
+describe('aggregateDay - closedAt-based bucketing', () => {
+  it('buckets a cross-day-close trade under its close day, not its entry day', () => {
+    const monEntry = new Date(2026, 4, 18, 14, 0);
+    const tueClose = new Date(2026, 4, 19, 10, 0);
+    const trades: Trade[] = [
+      makeTrade({
+        id: 'cross-day',
+        date: monEntry,
+        closedAt: tueClose.toISOString(),
+        netPnl: 250,
+        grossPnl: 250,
+        initialRisk: 100,
+      }),
+    ];
+
+    expect(aggregateDay(trades, '2026-05-18').netResult).toBe(0);
+    expect(aggregateDay(trades, '2026-05-18').tradeIds).toEqual([]);
+
+    const tue = aggregateDay(trades, '2026-05-19');
+    expect(tue.tradeIds).toEqual(['cross-day']);
+    expect(tue.netResult).toBe(250);
+    expect(tue.rTotal).toBeCloseTo(2.5, 10);
+  });
+
+  it('falls back to date when closedAt is null', () => {
+    const trades: Trade[] = [
+      makeTrade({
+        id: 'legacy',
+        date: new Date(2026, 4, 18, 10, 0),
+        closedAt: null,
+        netPnl: 100,
+        grossPnl: 100,
+      }),
+    ];
+
+    expect(aggregateDay(trades, '2026-05-18').netResult).toBe(100);
+    expect(aggregateDay(trades, '2026-05-18').tradeIds).toEqual(['legacy']);
+  });
+});
+
+describe('aggregateWeek - closedAt-based bucketing', () => {
+  it('counts a Fri-buy/Mon-sell trade against the week containing the close day', () => {
+    const friEntry = new Date(2026, 4, 15, 14, 0);
+    const monClose = new Date(2026, 4, 18, 10, 0);
+    const trades: Trade[] = [
+      makeTrade({
+        id: 'span',
+        date: friEntry,
+        closedAt: monClose.toISOString(),
+        netPnl: 400,
+        grossPnl: 400,
+        initialRisk: 100,
+      }),
+    ];
+
+    const week1 = aggregateWeek(trades, '2026-05-11', '2026-05-15');
+    expect(week1.tradeIds).toEqual([]);
+    expect(week1.netResult).toBe(0);
+
+    const week2 = aggregateWeek(trades, '2026-05-18', '2026-05-22');
+    expect(week2.tradeIds).toEqual(['span']);
+    expect(week2.netResult).toBe(400);
+    expect(week2.perDayR.map((entry) => entry.date)).toEqual(['2026-05-18']);
+    expect(week2.perDayR[0].r).toBeCloseTo(4, 10);
   });
 });
 

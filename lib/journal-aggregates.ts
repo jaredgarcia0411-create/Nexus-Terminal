@@ -18,9 +18,19 @@ export interface WeekAggregate {
 
 // Use local-timezone date keys (yyyy-MM-dd) so trades bucket into the same
 // day the user sees on TradingCalendar, which also uses date-fns `format`.
-function toLocalDateKey(input: Date | string): string {
+export function toLocalDateKey(input: Date | string): string {
   const d = input instanceof Date ? input : new Date(input);
   return format(d, 'yyyy-MM-dd');
+}
+
+/**
+ * The local day key (yyyy-MM-dd) a trade should bucket into for realized PnL.
+ * Closed trades bucket on closedAt; callers should exclude open trades before
+ * asking for a bucket key.
+ */
+export function bucketKey(trade: Pick<Trade, 'date' | 'closedAt'>): string {
+  const source = trade.closedAt ?? trade.date;
+  return toLocalDateKey(source);
 }
 
 /**
@@ -28,7 +38,7 @@ function toLocalDateKey(input: Date | string): string {
  * R is only counted for trades where initialRisk > 0.
  */
 export function aggregateDay(trades: Trade[], date: string): DayAggregate {
-  const matching = trades.filter((t) => toLocalDateKey(t.date) === date && !t.isOpen);
+  const matching = trades.filter((t) => !t.isOpen && bucketKey(t) === date);
 
   let grossResult = 0;
   let netResult = 0;
@@ -56,8 +66,9 @@ export function aggregateWeek(
   weekEnd: string,
 ): WeekAggregate {
   const matching = trades.filter((t) => {
-    const key = toLocalDateKey(t.date);
-    return key >= weekStart && key <= weekEnd && !t.isOpen;
+    if (t.isOpen) return false;
+    const key = bucketKey(t);
+    return key >= weekStart && key <= weekEnd;
   });
 
   const dayRMap: Record<string, number> = {};
@@ -67,7 +78,7 @@ export function aggregateWeek(
   const tradeIds: string[] = [];
 
   for (const t of matching) {
-    const key = toLocalDateKey(t.date);
+    const key = bucketKey(t);
     grossResult += t.grossPnl;
     netResult += t.netPnl;
     if (t.initialRisk && t.initialRisk > 0) {
