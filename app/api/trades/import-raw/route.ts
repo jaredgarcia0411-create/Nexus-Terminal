@@ -29,8 +29,11 @@ function compactTimeForId(time: string): string {
   return digits.padEnd(6, '0').slice(0, 6);
 }
 
+// Anchor closedAt at noon UTC so the calendar day is stable in any local
+// timezone — midnight UTC shifts to the previous day west of GMT, which
+// pushed trades onto Sunday in the journal calendar.
 function dayToClosedAt(day: string): Date {
-  return new Date(`${day}T00:00:00Z`);
+  return new Date(`${day}T12:00:00Z`);
 }
 
 export async function POST(request: Request) {
