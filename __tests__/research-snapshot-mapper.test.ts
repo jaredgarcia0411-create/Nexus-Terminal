@@ -497,6 +497,7 @@ describe('normalizeAskEdgarResponse', () => {
         maturityDate: '2027-04-20',
         filedAt: '2026-04-21',
         status: 'Outstanding',
+        documentUrl: null,
       },
     ]);
     expect(snapshot.dilutionDetails.convertibles).toBe('Senior secured convertible note');

@@ -68,11 +68,43 @@ function getBooleanField(record: Record<string, unknown>, keys: string[]): boole
   return false;
 }
 
+// Returns a direct SEC filing URL for a registration/warrant/convertible row.
+// Prefers a top-level `document_url` when the API provides one; otherwise
+// extracts and URL-decodes the `filingUrl=` query parameter from
+// `askedgar_url` (the Ask Edgar viewer wraps the real SEC URL inside its
+// own URL — that's where warrant rows store the link).
+function extractDocumentUrl(row: Record<string, unknown>): string | null {
+  const direct = getStringField(row, ['document_url', 'documentUrl', 'url']);
+  if (direct) return direct;
+  const askedgarUrl = getStringField(row, ['askedgar_url', 'askedgarUrl']);
+  if (askedgarUrl) {
+    const match = /[?&]filingUrl=([^&]+)/i.exec(askedgarUrl);
+    if (match) {
+      try {
+        return decodeURIComponent(match[1]);
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
 function detectFormType(row: Record<string, unknown>): string | null {
+  // The /v1/registrations endpoint doesn't expose form_type as a top-level
+  // field, but it encodes it in the askedgar_url query string, e.g.
+  // `...&formType=S-1` or `...&formType=F-1`. That's the authoritative signal
+  // — prefer it over the rare top-level field and headline-pattern fallbacks.
+  const askedgarUrl = getStringField(row, ['askedgar_url', 'askedgarUrl']);
+  if (askedgarUrl) {
+    const match = /[?&]formType=([^&]+)/i.exec(askedgarUrl);
+    if (match) return decodeURIComponent(match[1]).toUpperCase();
+  }
   const formType = getStringField(row, ['form_type', 'formType']);
   if (formType) return formType.toUpperCase();
   const headline = (getStringField(row, ['headline', 'title']) ?? '').toUpperCase();
   if (headline.includes('S-1')) return 'S-1';
+  if (headline.includes('F-1')) return 'F-1';
   if (headline.includes('S-3')) return 'S-3';
   if (headline.includes('F-3')) return 'F-3';
   return null;
@@ -164,6 +196,7 @@ export function toRegistrationRow(row: Record<string, unknown>, fallback: string
     babyShelfRaisableAmount: toNumberValue(getField(row, ['baby_shelf_raisable_amount', 'babyShelfRaisableAmount'])),
     formType: detectFormType(row),
     status: getStringField(row, ['status', 'registration_status', 'registrationStatus', 'effective_status_label', 'effectiveStatusLabel']),
+    documentUrl: extractDocumentUrl(row),
   };
 }
 
@@ -328,6 +361,7 @@ export function normalizeAskEdgarResponse(
       filedAt: getStringField(row, ['filed_at', 'filedAt', 'date']),
       isPrefunded: prefundedCost !== null && prefundedCost > 0,
       status: getStringField(row, ['status', 'warrant_status', 'warrantStatus', 'in_play_status', 'inPlayStatus']),
+      documentUrl: extractDocumentUrl(row),
     });
     return rows;
   }, []);
@@ -369,6 +403,7 @@ export function normalizeAskEdgarResponse(
       maturityDate,
       filedAt: getStringField(row, ['filed_at', 'filedAt', 'date']),
       status: getStringField(row, ['convertible_status', 'convertibleStatus', 'note_status', 'noteStatus', 'status']),
+      documentUrl: extractDocumentUrl(row),
     });
     return rows;
   }, []);

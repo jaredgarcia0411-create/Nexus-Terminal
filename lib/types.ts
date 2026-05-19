@@ -153,6 +153,7 @@ export interface ResearchSnapshotWarrant {
   filedAt: string | null;
   isPrefunded: boolean;
   status: string | null;
+  documentUrl: string | null;
 }
 
 export interface ResearchSnapshotRegistration {
@@ -170,6 +171,7 @@ export interface ResearchSnapshotRegistration {
   babyShelfRaisableAmount: number | null;
   formType: string | null;
   status: string | null;
+  documentUrl: string | null;
 }
 
 export interface ResearchSnapshotOffering {
@@ -228,6 +230,7 @@ export interface ResearchSnapshotConvertibleNote {
   maturityDate: string | null;
   filedAt: string | null;
   status: string | null;
+  documentUrl: string | null;
 }
 
 export interface ResearchSnapshotOwner {

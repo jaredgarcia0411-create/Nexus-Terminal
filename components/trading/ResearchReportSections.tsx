@@ -312,7 +312,18 @@ function ProgramSection({
                   <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${statusClass}`}>
                     {statusLabel}
                   </span>
-                  <span className="text-zinc-200">{row.headline}</span>
+                  {row.documentUrl ? (
+                    <a
+                      href={row.documentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-zinc-200 underline-offset-2 transition-colors hover:text-emerald-400 hover:underline"
+                    >
+                      {row.headline}
+                    </a>
+                  ) : (
+                    <span className="text-zinc-200">{row.headline}</span>
+                  )}
                   {badge ? <span className={`ml-auto text-sm font-semibold whitespace-nowrap ${badge.colorClass}`}>{badge.label}</span> : null}
                 </div>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -353,7 +364,20 @@ function ConvertibleNotesSection({ notes }: { notes: ResearchSnapshotConvertible
             <tbody>
               {notes.map((note, index) => (
                 <tr key={`convertible-${index}`} className="border-b border-white/5">
-                  <td className="py-2 pr-3 text-zinc-300">{note.details}</td>
+                  <td className="py-2 pr-3 text-zinc-300">
+                    {note.documentUrl ? (
+                      <a
+                        href={note.documentUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline-offset-2 transition-colors hover:text-emerald-400 hover:underline"
+                      >
+                        {note.details}
+                      </a>
+                    ) : (
+                      note.details
+                    )}
+                  </td>
                   <td className="py-2 pr-3 font-mono tabular-nums text-zinc-200">{formatMoney(note.principalAmount)}</td>
                   <td className="py-2 pr-3 font-bold text-zinc-200">{formatMoney(note.conversionPrice)}</td>
                   <td className="py-2 pr-3 text-zinc-300">{formatDate(note.maturityDate)}</td>
@@ -407,7 +431,20 @@ function WarrantSection({
                 const priceValue = warrant.isPrefunded ? warrant.prefundedCost : warrant.exercisePrice;
                 return (
                   <tr key={`${title}-${index}`} className="border-b border-white/5">
-                    <td className="py-2 pr-3 text-zinc-300">{warrant.details}</td>
+                    <td className="py-2 pr-3 text-zinc-300">
+                      {warrant.documentUrl ? (
+                        <a
+                          href={warrant.documentUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline-offset-2 transition-colors hover:text-emerald-400 hover:underline"
+                        >
+                          {warrant.details}
+                        </a>
+                      ) : (
+                        warrant.details
+                      )}
+                    </td>
                     <td className="py-2 pr-3 text-zinc-200">{formatNumber(warrant.remaining)}</td>
                     {/* Strike price color-tracks the warrant status (in play /
                         potentially / not) so the most actionable column reads
@@ -449,7 +486,20 @@ function ShelfRegistrationsTable({ rows }: { rows: ResearchSnapshotRegistration[
         <tbody>
           {rows.map((row, index) => (
             <tr key={`registration-${index}`} className="border-b border-white/5 text-zinc-300">
-              <td className="py-2 pr-3">{row.headline}</td>
+              <td className="py-2 pr-3">
+                {row.documentUrl ? (
+                  <a
+                    href={row.documentUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-zinc-200 underline-offset-2 transition-colors hover:text-emerald-400 hover:underline"
+                  >
+                    {row.headline}
+                  </a>
+                ) : (
+                  row.headline
+                )}
+              </td>
               <td className="py-2 pr-3">{row.isAtm ? <span className="font-semibold text-emerald-400">Yes</span> : 'No'}</td>
               <td className="py-2 pr-3">{formatMoney(row.offeringAmount)}</td>
               <td className="py-2 pr-3">{formatMoney(row.amountRemainingAtm)}</td>
@@ -806,11 +856,21 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
   const convertibleNotes = data.convertibleNotes ?? [];
   const formerSymbolEvents = data.identityEvents.filter((row) => row.previousTicker !== null);
   const closeBelowOpenStats = computeCloseBelowOpenStats(data.gapStats);
-  // Equity-line registrations have their own section below — drop them from
-  // Shelfs so a given filing only shows up once.
+  // Ask Edgar's /registrations endpoint returns S-1, F-1, S-3, F-3, and
+  // equity-line rows in a single bucket. The authoritative form_type comes
+  // from the `formType=` query string on each row's askedgar_url (extracted in
+  // detectFormType). Shelfs = S-3/F-3 only; S-1/F-1 render in their own
+  // section above; equity lines render in their own section below.
   const equityLineKey = (row: ResearchSnapshotRegistration) => `${row.headline}::${row.filedAt ?? ''}`;
   const equityLineKeys = new Set(data.equityLines.map(equityLineKey));
-  const shelfRegistrations = data.registrations.filter((row) => !equityLineKeys.has(equityLineKey(row)));
+  const primaryRegistrations = data.registrations.filter((row) => {
+    if (equityLineKeys.has(equityLineKey(row))) return false;
+    return row.formType?.startsWith('S-1') || row.formType?.startsWith('F-1');
+  });
+  const shelfRegistrations = data.registrations.filter((row) => {
+    if (equityLineKeys.has(equityLineKey(row))) return false;
+    return row.formType?.startsWith('S-3') || row.formType?.startsWith('F-3');
+  });
 
   const hasCashPosition = [
     data.dilutionDetails.cashRemainingMonths,
@@ -965,22 +1025,22 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
             </div>
 
             <div>
-              <h4 className="mb-2 text-base font-semibold text-zinc-200">S-1&apos;s</h4>
-              {/* Source from registrations rather than filings so we catch S-1s
-                  filed more than 90 days ago — getRecentFilings has a 90-day
-                  window, but S-1s often stay effective for years. Same source
-                  the scanner's hasS1 column uses. */}
+              <h4 className="mb-2 text-base font-semibold text-zinc-200">S-1 / F-1</h4>
+              {/* Source from registrations rather than filings so we catch
+                  primary registrations filed more than 90 days ago —
+                  getRecentFilings has a 90-day window, but S-1s/F-1s often
+                  stay effective for years. F-1 is the foreign-issuer
+                  equivalent of S-1; both create the same dilution risk so
+                  they share a bucket. */}
               <FilingsTable
-                filings={data.registrations
-                  .filter((row) => row.formType?.startsWith('S-1') ?? false)
-                  .map((row) => ({
-                    formType: row.formType ?? 'S-1',
-                    bucket: 'registrations' as const,
-                    title: row.headline,
-                    filedAt: row.filedAt,
-                    url: null,
-                    accessionNumber: null,
-                  }))}
+                filings={primaryRegistrations.map((row) => ({
+                  formType: row.formType ?? 'S-1',
+                  bucket: 'registrations' as const,
+                  title: row.headline,
+                  filedAt: row.filedAt,
+                  url: row.documentUrl,
+                  accessionNumber: null,
+                }))}
               />
             </div>
 
