@@ -13,10 +13,6 @@ export {
 export type { EndpointKey, EndpointScope } from '@/lib/askedgar/endpoints';
 export { fetchTickerData } from '@/lib/askedgar/fanout';
 export {
-  getAskEdgarCallCount,
-  getAskEdgarDailyLimit,
-} from '@/lib/askedgar/runtime-state';
-export {
   getAskEdgarSnapshotAvailability,
   getCachedScannerSummary,
   getCachedTickerData,

@@ -152,16 +152,6 @@ export const askedgarCache = pgTable('askedgar_cache', {
   index('askedgar_cache_expires_idx').on(table.expiresAt),
 ]);
 
-// Daily ticker usage for the AskEdgar daily-unique-ticker cap.
-export const askedgarDailyTickers = pgTable('askedgar_daily_tickers', {
-  date: date('date').notNull(),
-  ticker: text('ticker').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-  primaryKey({ columns: [table.date, table.ticker] }),
-  index('askedgar_daily_tickers_date_idx').on(table.date),
-]);
-
 // Singleton runtime state for AskEdgar retry windows across cold starts.
 export const askedgarRuntimeState = pgTable('askedgar_runtime_state', {
   id: text('id').primaryKey(),

@@ -65,7 +65,6 @@ function buildSnapshot(overrides: Partial<ResearchSnapshot> = {}): ResearchSnaps
     reverseSplits: [],
     identityEvents: [],
     splitStatuses: [],
-    agreements: [],
     gapStats: [],
     ...overrides,
   };

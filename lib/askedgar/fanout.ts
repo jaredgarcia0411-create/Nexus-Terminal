@@ -3,15 +3,7 @@ import {
   ENDPOINT_SCOPES,
   responseHasData,
 } from '@/lib/askedgar/endpoints';
-import {
-  addDailyTicker,
-  getDailyTickerCount,
-  hasDailyTicker,
-  parseDailyLimit,
-  persistDailyTicker,
-  syncDailyTickersFromDb,
-  syncRateLimitFromDb,
-} from '@/lib/askedgar/runtime-state';
+import { syncRateLimitFromDb } from '@/lib/askedgar/runtime-state';
 import type { AskEdgarResponse, DilutionDataSourceCheck, TickerDataResult } from '@/lib/askedgar/types';
 
 interface EndpointConfig {
@@ -101,22 +93,7 @@ export async function fetchTickerData(
 ): Promise<TickerDataResult> {
   const startedAt = Date.now();
   const normalizedTicker = ticker.trim().toUpperCase();
-  await syncDailyTickersFromDb();
   await syncRateLimitFromDb();
-  const dailyLimit = parseDailyLimit();
-  if (!hasDailyTicker(normalizedTicker) && getDailyTickerCount() >= dailyLimit) {
-    return {
-      ticker: normalizedTicker,
-      fetchedAt: new Date().toISOString(),
-      rawData: {},
-      endpointFetchedAt: {},
-      dataSources: [],
-      warnings: [`AskEdgar daily unique ticker limit reached (${dailyLimit} tickers/day)`],
-      hasAnyData: false,
-    };
-  }
-  addDailyTicker(normalizedTicker);
-  void persistDailyTicker(normalizedTicker);
 
   const requested = opts?.endpoints ?? ENDPOINT_SCOPES.snapshot;
   const endpointConfigs: EndpointConfig[] = requested.map((key) => {

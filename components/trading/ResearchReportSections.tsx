@@ -19,7 +19,6 @@ import {
 import type {
   FilingBucket,
   ResearchSnapshot,
-  ResearchSnapshotAgreement,
   ResearchSnapshotConvertibleNote,
   ResearchSnapshotFiling,
   ResearchSnapshotGapStat,
@@ -653,37 +652,6 @@ function SplitStatusesTable({ rows }: { rows: ResearchSnapshotSplitStatus[] }) {
   );
 }
 
-function AgreementsTable({ rows }: { rows: ResearchSnapshotAgreement[] }) {
-  if (rows.length === 0) {
-    return <NoDataBadge />;
-  }
-
-  return (
-    <div className="scrollbar-hidden overflow-x-auto">
-      <table className="min-w-full">
-        <thead>
-          <tr className="border-b border-white/10 text-zinc-400">
-            <th className="py-2 pr-3 text-left">Type</th>
-            <th className="py-2 pr-3 text-left">Investor</th>
-            <th className="py-2 pr-3 text-left">Date</th>
-            <th className="py-2 text-left">Details</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={`agreement-${index}`} className="border-b border-white/5 text-zinc-300">
-              <td className="py-2 pr-3">{toStringValue(row.type)}</td>
-              <td className="py-2 pr-3">{toStringValue(row.investor)}</td>
-              <td className="py-2 pr-3">{formatDate(row.date)}</td>
-              <td className="py-2">{toStringValue(row.details)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 function PastOfferingsTable({ rows }: { rows: ResearchSnapshotOffering[] }) {
   if (rows.length === 0) {
     return <NoDataBadge />;
@@ -1017,10 +985,6 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
               <div className="space-y-2">
                 <h5 className="text-sm font-medium text-zinc-300">Split Status</h5>
                 <SplitStatusesTable rows={data.splitStatuses} />
-              </div>
-              <div className="space-y-2">
-                <h5 className="text-sm font-medium text-zinc-300">Agreements</h5>
-                <AgreementsTable rows={data.agreements} />
               </div>
             </div>
 

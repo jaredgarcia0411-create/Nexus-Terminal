@@ -8,10 +8,6 @@ import {
   ENDPOINT_SCOPES,
   SEC_BACKED_ENDPOINT_KEYS,
   extractRetryAfterSeconds,
-  fetchDilutionData,
-  fetchDilutionRating,
-  fetchEquityLines,
-  fetchRegistrations,
   isRateLimitError,
   replaceRetryAfterSeconds,
   responseHasData,
@@ -29,7 +25,7 @@ import type {
 } from '@/lib/askedgar/types';
 
 const TICKER_CACHE_TTL_MS = 16 * 60 * 60 * 1000; // 16 hours; news has its own per-endpoint freshness window inside this row
-const NEWS_CACHE_TTL_MS = 5 * 60 * 1000;       // 5 minutes — news refreshes throughout the trading day, but simultaneous viewers should coalesce on one call
+const NEWS_CACHE_TTL_MS = 15 * 60 * 1000;       // 15 minutes — per-KB billing makes a longer coalesce window worth the small staleness; still well inside any active trading session
 const inFlightTickerRequests = new Map<string, Promise<TickerDataResult>>();
 
 export function getAskEdgarSnapshotAvailability(
@@ -414,23 +410,22 @@ export async function getCachedTickerData(
 }
 
 // ---------------------------------------------------------------------------
-// Scanner Summary Cache - 3-hour TTL, cacheType = 'scanner-summary'
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Scanner Summary Cache - 3-hour TTL, cacheType = 'scanner-summary'
+// Scanner Summary Cache - 24-hour TTL, cacheType = 'scanner-summary'
 // ---------------------------------------------------------------------------
 
 async function fetchScannerSummaryRaw(ticker: string): Promise<ScannerSummaryResult> {
   const normalizedTicker = ticker.trim().toUpperCase();
 
-  const [registrationsResp, dilutionRatingResp, dilutionDataResp, equityLinesResp] =
-    await Promise.all([
-      fetchRegistrations(normalizedTicker),
-      fetchDilutionRating(normalizedTicker),
-      fetchDilutionData(normalizedTicker),
-      fetchEquityLines(normalizedTicker),
-    ]);
+  // Route through the shared ticker cache. This writes the four endpoints we
+  // need into the cacheType='ticker' row so a later Research-page snapshot
+  // fanout only fetches the remaining endpoints instead of re-paying for
+  // these four. Reads honor the existing 16h TTL.
+  const result = await getCachedTickerData(normalizedTicker, { scope: 'scanner-summary' });
+
+  const registrationsResp = result.rawData.registrations ?? { status: 'error', count: 0, results: [] };
+  const dilutionRatingResp = result.rawData['dilution-rating'] ?? { status: 'error', count: 0, results: [] };
+  const dilutionDataResp = result.rawData['dilution-data'] ?? { status: 'error', count: 0, results: [] };
+  const equityLinesResp = result.rawData['equity-lines'] ?? { status: 'error', count: 0, results: [] };
 
   const dilutionRatingFirst = toRecord(dilutionRatingResp.results[0]);
   const dilutionDataFirst = toRecord(dilutionDataResp.results[0]);
@@ -443,8 +438,6 @@ async function fetchScannerSummaryRaw(ticker: string): Promise<ScannerSummaryRes
     toRegistrationRow(toRecord(item), `Registration ${index + 1}`),
   );
 
-  // Scanner flags should reflect Ask Edgar's surfaced data, not whether we
-  // think the company can currently use the program.
   const hasAtm = registrationRows.some((row) => row.isAtm);
   const hasS1 = registrationRows.some((row) => {
     const formType = row.formType ?? '';

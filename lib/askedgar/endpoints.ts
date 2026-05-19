@@ -244,21 +244,16 @@ export async function fetchRegistrations(ticker: string) {
 export async function fetchNews(ticker: string, limit = 40) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
-  // News endpoint returns both news articles AND SEC filings (split by form_type).
-  // Higher limit because filings now come from this same call.
-  return requestAskEdgar<unknown>('/v1/news', { ticker: validated, limit });
+  // SERVER-SIDE FILTER: only news + 8-K + S-1 form types. Per-KB billing
+  // makes this the highest-leverage payload-shaping change. Drop the LLM
+  // summary rows (`jmt415`, `grok`) and any form type we don't render.
+  return requestAskEdgar<unknown>('/v1/news', { ticker: validated, limit, form_type: 'news,8-K,S-1' });
 }
 
 export async function fetchNasdaqCompliance(ticker: string) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
   return requestAskEdgar<unknown>('/v1/nasdaq-compliance', { ticker: validated });
-}
-
-export async function fetchAgreements(ticker: string) {
-  const validated = validateTickerOrError<unknown>(ticker);
-  if (typeof validated !== 'string') return validated;
-  return requestAskEdgar<unknown>('/v1/agreements', { ticker: validated });
 }
 
 export async function fetchGapStats(ticker: string, limit = 50) {
@@ -289,7 +284,6 @@ export const ENDPOINT_REGISTRY = {
   registrations: { label: 'Registrations', run: (ticker) => fetchRegistrations(ticker) },
   news: { label: 'News', run: (ticker) => fetchNews(ticker, 40) },
   'nasdaq-compliance': { label: 'Nasdaq Compliance', run: (ticker) => fetchNasdaqCompliance(ticker) },
-  agreements: { label: 'Agreements', run: (ticker) => fetchAgreements(ticker) },
   'historical-float-pro': { label: 'Historical Float', run: (ticker) => getHistoricalOutstanding(ticker, { limit: 20 }) },
   'reverse-splits': { label: 'Reverse Splits', run: (ticker) => getReverseSplits(ticker) },
   'identity-events': { label: 'Identity Events', run: (ticker) => getIdentityEvents(ticker) },
@@ -306,11 +300,12 @@ export const ALL_ENDPOINT_KEYS = Object.keys(ENDPOINT_REGISTRY) as readonly Endp
 
 export const ENDPOINT_SCOPES = {
   snapshot: ALL_ENDPOINT_KEYS,
-  tldr: ALL_ENDPOINT_KEYS,
-  lookup: ALL_ENDPOINT_KEYS,
+  'scanner-summary': [
+    'registrations', 'dilution-rating', 'dilution-data', 'equity-lines',
+  ],
   'small-cap-research': [
     'screener', 'dilution-rating', 'dilution-data', 'offerings', 'equity-lines',
-    'registrations', 'news', 'nasdaq-compliance', 'agreements',
+    'registrations', 'news', 'nasdaq-compliance',
     'historical-float-pro', 'reverse-splits', 'sec-filings', 'identity-events',
     'gap-stats', 'ownership', 'split-status',
   ],

@@ -293,13 +293,6 @@ export interface ResearchSnapshotSplitStatus {
   lastUpdated: string | null;
 }
 
-export interface ResearchSnapshotAgreement {
-  type: string | null;
-  investor: string | null;
-  date: string | null;
-  details: string | null;
-}
-
 export interface ResearchSnapshotGapStat {
   date: string | null;
   gapPercentage: number | null;
@@ -340,7 +333,6 @@ export interface ResearchSnapshot {
   reverseSplits: ResearchSnapshotReverseSplit[];
   identityEvents: ResearchSnapshotIdentityEvent[];
   splitStatuses: ResearchSnapshotSplitStatus[];
-  agreements: ResearchSnapshotAgreement[];
   gapStats: ResearchSnapshotGapStat[];
 }
 

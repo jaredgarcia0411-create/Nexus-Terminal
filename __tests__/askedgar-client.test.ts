@@ -63,7 +63,6 @@ interface AskedgarCacheRow {
 
 function createAskedgarCacheDb(initialRows: AskedgarCacheRow[] = []) {
   const rows = [...initialRows];
-  const dailyTickers = new Set<string>();
   let rateLimitedUntil: Date | null = null;
 
   return {
@@ -79,13 +78,12 @@ function createAskedgarCacheDb(initialRows: AskedgarCacheRow[] = []) {
                 };
               }
 
-              const dailyRows = [...dailyTickers].map((ticker) => ({ ticker }));
               return {
                 limit: async (limit: number) => rows.slice(0, limit),
                 then: (
-                  resolve: (value: typeof dailyRows) => void,
+                  resolve: (value: never[]) => void,
                   reject: (reason?: unknown) => void,
-                ) => Promise.resolve(dailyRows).then(resolve, reject),
+                ) => Promise.resolve([]).then(resolve, reject),
               };
             },
           };
@@ -95,17 +93,10 @@ function createAskedgarCacheDb(initialRows: AskedgarCacheRow[] = []) {
     insert() {
       return {
         values(value: AskedgarCacheRow | {
-          date?: string;
-          ticker?: string;
           id?: string;
           rateLimitedUntil?: Date | null;
         }) {
           return {
-            onConflictDoNothing: async () => {
-              if ('date' in value && typeof value.date === 'string' && typeof value.ticker === 'string') {
-                dailyTickers.add(value.ticker);
-              }
-            },
             onConflictDoUpdate: async ({ set }: { set: Partial<AskedgarCacheRow> }) => {
               if ('rateLimitedUntil' in value && value.id === 'global') {
                 rateLimitedUntil = value.rateLimitedUntil ?? null;
@@ -131,9 +122,6 @@ function createAskedgarCacheDb(initialRows: AskedgarCacheRow[] = []) {
     },
     getRows() {
       return rows;
-    },
-    getDailyTickers() {
-      return [...dailyTickers];
     },
     getRateLimitedUntil() {
       return rateLimitedUntil;
@@ -251,12 +239,10 @@ describe('askedgar client', () => {
       }],
     });
     process.env.ASKEDGAR_API_KEY = 'test-key';
-    process.env.ASKEDGAR_DAILY_LIMIT = '100';
   });
 
   afterEach(() => {
     delete process.env.ASKEDGAR_API_KEY;
-    delete process.env.ASKEDGAR_DAILY_LIMIT;
   });
 
   it('returns endpoint payload map from fetchTickerData', async () => {
@@ -266,8 +252,8 @@ describe('askedgar client', () => {
     const result = await client.fetchTickerData('AAPL');
 
     expect(result.ticker).toBe('AAPL');
-    expect(Object.keys(result.rawData)).toHaveLength(16);
-    expect(result.dataSources).toHaveLength(16);
+    expect(Object.keys(result.rawData)).toHaveLength(15);
+    expect(result.dataSources).toHaveLength(15);
   });
 
   it('only calls explicitly requested endpoints from fetchTickerData', async () => {
@@ -305,16 +291,16 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
 
     await client.getCachedTickerData('AAPL');
-    expect(fetchSpy).toHaveBeenCalledTimes(11);
+    expect(fetchSpy).toHaveBeenCalledTimes(10);
 
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
 
-    // News now carries a 5-minute freshness window, so back-to-back reads
+    // News now carries a 15-minute freshness window, so back-to-back reads
     // serve every swing-scope endpoint (including news) from the cache.
     expect(fetchSpy).toHaveBeenCalledTimes(0);
     expect(Object.keys(result.rawData)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
-    expect(cachedRawDataKeys(cacheDb)).toHaveLength(16);
+    expect(cachedRawDataKeys(cacheDb)).toHaveLength(15);
   });
 
   it('merges missing snapshot endpoints after a swing-trader scope populated the cache', async () => {
@@ -329,13 +315,13 @@ describe('askedgar client', () => {
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL');
 
-    // 8 endpoints not yet cached (screener, equity-lines, nasdaq-compliance,
-    // agreements, reverse-splits, sec-filings, identity-events, split-status). Three are SEC-backed,
-    // and news is fresh in the cache from the first call, so only 5 AskEdgar
+    // 7 endpoints not yet cached (screener, equity-lines, nasdaq-compliance,
+    // reverse-splits, sec-filings, identity-events, split-status). Three are SEC-backed,
+    // and news is fresh in the cache from the first call, so only 4 AskEdgar
     // fetches happen.
-    expect(fetchSpy).toHaveBeenCalledTimes(5);
-    expect(Object.keys(result.rawData)).toHaveLength(16);
-    expect(cachedRawDataKeys(cacheDb)).toHaveLength(16);
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(Object.keys(result.rawData)).toHaveLength(15);
+    expect(cachedRawDataKeys(cacheDb)).toHaveLength(15);
   });
 
   it('sums AskEdgar usage cost into the fan-out log', async () => {
@@ -420,6 +406,17 @@ describe('askedgar client', () => {
     expect(registrationsUrl.searchParams.has('effective_status')).toBe(false);
   });
 
+  it('filters news requests to rendered form types', async () => {
+    const fetchSpy = mockSuccessfulEndpointFetch();
+    const client = await import('@/lib/askedgar');
+
+    await client.fetchTickerData('AAPL', { endpoints: ['news'] });
+
+    const [newsUrl] = fetchCallUrls(fetchSpy);
+    expect(newsUrl.pathname).toBe('/v1/news');
+    expect(newsUrl.searchParams.get('form_type')).toBe('news,8-K,S-1');
+  });
+
   it('keeps restricted or expired ATM registrations in scanner summary flags', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = new URL(String(input));
@@ -453,27 +450,6 @@ describe('askedgar client', () => {
     expect(summary.hasAtm).toBe(true);
     expect(summary.hasEl).toBe(false);
     expect(summary.hasS1).toBe(false);
-  });
-
-  it('tracks unique ticker count', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ status: 'success', count: 1, results: [{}] })));
-    const client = await import('@/lib/askedgar');
-
-    await client.fetchTickerData('MSFT');
-    await client.fetchTickerData('MSFT');
-    expect(client.getAskEdgarCallCount()).toBe(1);
-  });
-
-  it('persists unique ticker usage to the DB-backed daily state', async () => {
-    const cacheDb = createAskedgarCacheDb();
-    getDbMock.mockReturnValue(cacheDb);
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ status: 'success', count: 1, results: [{}] })));
-    const client = await import('@/lib/askedgar');
-
-    await client.fetchTickerData('MSFT', { endpoints: ['gap-stats'] });
-
-    expect(cacheDb.getDailyTickers()).toEqual(['MSFT']);
-    expect(client.getAskEdgarCallCount()).toBe(1);
   });
 
   it('persists AskEdgar retry windows to the DB-backed runtime state', async () => {
@@ -558,7 +534,7 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
     await client.getCachedTickerData('AAPL');
 
-    expect(fetchSpy).toHaveBeenCalledTimes(8);
+    expect(fetchSpy).toHaveBeenCalledTimes(7);
     expect(cacheDb.getRows()).toHaveLength(1);
 
     vi.resetModules();
@@ -583,10 +559,10 @@ describe('askedgar client', () => {
       client.getCachedTickerData('MSFT'),
     ]);
 
-    // 11 fetches for the first call's full snapshot; the second call wakes
-    // from in-flight dedupe with news already inside its 5-minute freshness
+    // 10 fetches for the first call's full snapshot; the second call wakes
+    // from in-flight dedupe with news already inside its 15-minute freshness
     // window, so no extra news re-fetch.
-    expect(fetchSpy).toHaveBeenCalledTimes(11);
+    expect(fetchSpy).toHaveBeenCalledTimes(10);
     expect(Object.keys(first.rawData)).toEqual(Object.keys(second.rawData));
     expect(second.rawData.news).toBeDefined();
   });

@@ -150,7 +150,6 @@ describe('normalizeAskEdgarResponse', () => {
       'historical-float-pro': emptyResponse,
       'reverse-splits': emptyResponse,
       'split-status': emptyResponse,
-      agreements: emptyResponse,
       'gap-stats': emptyResponse,
     };
 
@@ -186,7 +185,7 @@ describe('normalizeAskEdgarResponse', () => {
     expect(snapshot.filings.some((filing) => filing.accessionNumber === 'ask-edgar-filing')).toBe(false);
   });
 
-  it('splits filings out of news and preserves SEC filing metadata', () => {
+  it('keeps only rendered news fallback filing types from news', () => {
     const rawData: Record<string, AskEdgarResponse<unknown>> = {
       screener: emptyResponse,
       'dilution-rating': emptyResponse,
@@ -270,7 +269,6 @@ describe('normalizeAskEdgarResponse', () => {
       },
       'reverse-splits': emptyResponse,
       'split-status': emptyResponse,
-      agreements: emptyResponse,
       'gap-stats': emptyResponse,
     };
 
@@ -289,24 +287,14 @@ describe('normalizeAskEdgarResponse', () => {
       }),
     ]);
 
-    expect(snapshot.filings).toHaveLength(7);
+    expect(snapshot.filings).toHaveLength(2);
     expect(snapshot.filings.map((filing) => filing.formType)).toEqual([
       '8-K',
-      '10-K',
       'S-1',
-      '424B3',
-      'DEF 14A',
-      'SC 13D',
-      'CORRESP',
     ]);
     expect(snapshot.filings.map((filing) => filing.bucket)).toEqual([
       'news',
-      'financials',
       'registrations',
-      'prospectus',
-      'proxies',
-      'ownerships',
-      'other',
     ]);
     expect(snapshot.filings[0]).toMatchObject({
       title: 'Current report',
@@ -314,6 +302,8 @@ describe('normalizeAskEdgarResponse', () => {
       url: 'https://www.sec.gov/Archives/edgar/data/1/8k.htm',
       accessionNumber: '0000000001-26-000003',
     });
+    expect(snapshot.filings.some((filing) => filing.formType === '10-K')).toBe(false);
+    expect(snapshot.filings.some((filing) => filing.formType === 'CORRESP')).toBe(false);
     expect(snapshot.news.some((item) => item.title === 'Current report')).toBe(false);
     expect(snapshot.historicalFloat).toEqual([
       expect.objectContaining({
@@ -384,7 +374,6 @@ describe('normalizeAskEdgarResponse', () => {
       'historical-float-pro': emptyResponse,
       'reverse-splits': emptyResponse,
       'split-status': emptyResponse,
-      agreements: emptyResponse,
       'gap-stats': emptyResponse,
     };
 
@@ -467,7 +456,6 @@ describe('normalizeAskEdgarResponse', () => {
       'historical-float-pro': emptyResponse,
       'reverse-splits': emptyResponse,
       'split-status': emptyResponse,
-      agreements: emptyResponse,
       'gap-stats': emptyResponse,
     };
 
