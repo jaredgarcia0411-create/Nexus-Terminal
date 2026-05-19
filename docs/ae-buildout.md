@@ -1,165 +1,229 @@
 # Ask Edgar Buildout
 
-Date: 2026-04-24
+Updated: 2026-05-19
 
-## Summary
+Purpose: this file is the current source of truth for Nexus Terminal's Ask Edgar usage, cost controls, and first-party replacement roadmap. It supersedes the April 2026 replacement plan, which assumed an older 17-endpoint fan-out and a mostly monolithic `lib/askedgar.ts`.
 
-Nexus Terminal should not treat this as a full Ask Edgar replacement. The safer path is to replace the low-interpretation, SEC-derived surfaces first, keep the current UI contract stable, and leave the high-interpretation Ask Edgar features behind an adapter until a first-party pipeline is mature.
+## Pricing Model
 
-Current Ask Edgar usage is centralized in [lib/askedgar.ts](/home/jared/Nexus-Terminal/lib/askedgar.ts:465), which fans a ticker into 17 endpoint calls and serves two downstream contracts:
+Ask Edgar bills per KB of data returned, not per request. Failed requests are free. Published rates (verified 2026-05): `screener` $0.007/KB, `dilution-rating` $0.004/KB, `dilution-data` $0.018/KB, `offerings` $0.019/KB, `news` $0.013/KB. Six endpoints have no published rate: `registrations`, `nasdaq-compliance`, `agreements`, `gap-stats`, `ownership`, `split-status`. There is a `/v1/estimate` endpoint that previews cost before a real call. Retail rate limit is 200 req/min; we batch 10 at a time, so rate limit is not the constraint.
 
-- Normalized UI snapshot via [app/api/askedgar/snapshot/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/snapshot/route.ts:25)
-- Raw per-endpoint payloads for TLDR and agent flows via [lib/research.ts](/home/jared/Nexus-Terminal/lib/research.ts:139) and the agent blueprints
+Because billing is per-KB, the dominant levers are:
 
-That makes the server adapter layer the correct insertion point for any phased replacement.
+1. Call frequency (cache TTL per endpoint).
+2. Payload size (filter requests so we do not pay for rows we discard).
+3. Endpoint count in scope (do not request endpoints we will not render).
 
-## Current Ask Edgar Surface Used In Repo
+The free-tier daily 50 unique-ticker cap is a free-account guard; paid accounts have no daily ticker cap. The repo currently enforces this cap via `ASKEDGAR_DAILY_LIMIT`; it should be removed or set very high on paid plans.
 
-Active fan-out in [lib/askedgar.ts](/home/jared/Nexus-Terminal/lib/askedgar.ts:481):
+Invoice attribution gap: because six endpoints lack a public rate, the only authoritative way to know which endpoint dominates the bill is the Ask Edgar dashboard/invoice. Priority 0 telemetry should be designed to reconcile against that invoice.
 
-- `/v1/float-outstanding`
-- `/v1/screener`
-- `/v1/dilution-rating`
-- `/v1/dilution-data`
-- `/v1/offerings`
-- `/v1/offerings` with `offering_type=NEW EQUITY LINE`
-- `/v1/registrations`
-- `/v1/news`
-- `/v1/nasdaq-compliance`
-- `/v1/pump-and-dump-tracker`
-- `/v1/agreements`
-- `/v1/historical-float-pro`
-- `/v1/reverse-splits`
-- `/v1/filing-titles`
-- `/v1/gap-stats`
-- `/v1/ownership`
-- `/v1/split-status`
+## Current Status
 
-Primary dependencies:
+Nexus Terminal should not try to clone every Ask Edgar product surface. The useful target is narrower: keep the current Research UI and agent contracts stable while replacing low-interpretation, SEC-derived data with first-party parsers, and keep high-interpretation endpoints behind an adapter until Nexus has better evidence, confidence, and history.
 
-- Research ticker UI via [components/trading/ResearchTickerView.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchTickerView.tsx:34)
-- Snapshot route via [app/api/askedgar/snapshot/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/snapshot/route.ts:25)
-- TLDR route via [app/api/askedgar/tldr/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/tldr/route.ts:31)
-- Research blueprints via [lib/agents/blueprints/small-cap-research.ts](/home/jared/Nexus-Terminal/lib/agents/blueprints/small-cap-research.ts:808) and [lib/agents/blueprints/swing-trader-research.ts](/home/jared/Nexus-Terminal/lib/agents/blueprints/swing-trader-research.ts:828)
+The live code now has a split Ask Edgar adapter:
 
-## Recommended Replacement Order
+- Endpoint registry: [lib/askedgar/endpoints.ts](/home/jared/Nexus-Terminal/lib/askedgar/endpoints.ts)
+- Fan-out and cost log: [lib/askedgar/fanout.ts](/home/jared/Nexus-Terminal/lib/askedgar/fanout.ts)
+- Shared cache and scanner summary cache: [lib/askedgar/cache.ts](/home/jared/Nexus-Terminal/lib/askedgar/cache.ts)
+- Runtime daily ticker and rate-limit state: [lib/askedgar/runtime-state.ts](/home/jared/Nexus-Terminal/lib/askedgar/runtime-state.ts)
+- Snapshot normalizer: [lib/askedgar/snapshot-normalizer.ts](/home/jared/Nexus-Terminal/lib/askedgar/snapshot-normalizer.ts)
+- Compatibility barrel: [lib/askedgar.ts](/home/jared/Nexus-Terminal/lib/askedgar.ts)
 
-### Key refinements from follow-up review
+The live registry has 16 logical endpoint keys. Eleven currently call Ask Edgar. Five are already first-party SEC-backed and do not create Ask Edgar usage cost:
 
-- `agreements` should not be treated as directly replaceable. It is SEC-sourceable, but reliable extraction depends on exhibit parsing and contract-clause classification.
-- `registrations` should be split into two jobs: basic filing/effective-status metadata, then advanced capacity math such as baby-shelf limits, amount sold, ATM remaining, and raisable amount.
-- `filing-titles` should be split into basic SEC filing metadata versus AI/human catalyst headlines. Metadata is easy; headline parity requires summarization or rules.
-- `gap-stats` is replaceable in house, but not from SEC alone. It needs historical daily/intraday OHLC, premarket data, VWAP, market-cap snapshots, and catalyst tagging.
-- `dilution-rating` should be a Nexus-owned risk model with evidence and confidence, not a clone of Ask Edgar's proprietary rating.
-- Advanced endpoints exposed by the AskEdgar MCP server should be tracked separately even though they are not in the current 16-endpoint fan-out: `offerings-advanced`, `dilution-data-advanced`, `rofr`, `screener/options`, `ai-chart-analysis`, `research-reports`, `research-reports-short`, `research-reports-tldr`, and `market-strength`.
-
-### Best first-wave candidates
-
-- [x] `reverse-splits` — shipped 2026-04-29 (`003aa8c`) via `lib/sec/reverse-splits.ts` (8-K Item 5.03 parser)
-- [ ] `split-status`
-- [x] Basic `offerings` — shipped 2026-04-29 (`7e76375`) via `lib/sec/offerings.ts` (424B + 8-K Item 3.02 + 8-K Item 1.01 parser)
-- [ ] Insider `ownership`
-- [x] Historical outstanding-share snapshots from `historical-float-pro` — shipped 2026-04-27 (`cbde6ee`) via `lib/sec/companyfacts.ts`
-- [x] Basic filing metadata now coming from `filing-titles` and filing feeds — shipped 2026-04-27 (`b4a3e73`) via `lib/sec/submissions.ts`
-
-### Medium-complexity candidates
-
-- `float-outstanding`
-- Basic `registrations`
-- Basic `nasdaq-compliance`
-- Derived float/tradable-float snapshots
-- `dilution-data` issuance terms and security ledgers
-- `dilution-rating` as a new Nexus rating model, not a clone of Ask Edgar's proprietary score
-
-### Later or narrower replacements
-
-- `screener`
-- `pump-and-dump-tracker`
-- `news` summaries
-- `filing-titles` if we still want high-quality human headlines without building our own summarization/extraction layer
-- `gap-stats`
-- `market-strength`
-- `agreements`
-- `rofr`
-- `offerings-advanced`
-- `dilution-data-advanced`
-- `ai-chart-analysis`
-- `research-reports`, `research-reports-short`, and `research-reports-tldr`
-
-## SEC Coverage Matrix
-
-### Directly replaceable enough for first wave
-
-- `reverse-splits`
-- `split-status` with a state machine and source evidence
-- Basic `offerings`
-- Insider `ownership` from structured ownership filings
-- Basic filing metadata behind `filing-titles`
-
-### Replaceable with SEC plus market data plus derived logic
-
-- `float-outstanding`
+- `offerings`
+- `sec-filings`
 - `historical-float-pro`
-- `registrations`
-- `gap-stats`
-- `market-strength`
-- `screener` as a bounded Nexus subset
-- `nasdaq-compliance`
+- `reverse-splits`
+- `identity-events`
 
-### SEC-sourceable but extraction-heavy
+Legacy notes:
 
-- `dilution-data`
-- `agreements`
-- `rofr`
-- `offerings-advanced`
-- `dilution-data-advanced`
-- high-quality filing headlines and summaries
+- `filing-titles` is no longer in `ENDPOINT_REGISTRY`. It remains only as a compatibility read in the small-cap blueprint and old tests.
+- `float-outstanding` and `pump-and-dump-tracker` are not in the current live registry.
+- `sec-filings` is the current first-party replacement for Research Filings metadata.
 
-### Nexus-native AI/reporting surfaces
+## Product Call Graph
 
-- `dilution-rating`
-- `ai-chart-analysis`
-- `research-reports`
-- `research-reports-short`
-- `research-reports-tldr`
+Primary surfaces using the Ask Edgar adapter:
 
-These should be generated from first-party evidence packets and current market context. Do not preserve Ask Edgar wording or scoring semantics unless the output is explicitly marked as vendor-sourced.
+- Research snapshot UI: [app/api/askedgar/snapshot/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/snapshot/route.ts) calls `getCachedTickerData(ticker)` and normalizes into `ResearchSnapshot`.
+- Research ticker view: [components/trading/ResearchTickerView.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchTickerView.tsx) loads `/api/askedgar/snapshot`.
+- TLDR: [app/api/askedgar/tldr/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/tldr/route.ts) calls [lib/research.ts](/home/jared/Nexus-Terminal/lib/research.ts), which uses `getCachedTickerData`.
+- Dashboard scanner summary: [app/api/askedgar/scanner-summary/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/scanner-summary/route.ts) calls `getCachedScannerSummary`.
+- Site research report: [app/api/research-report/route.ts](/home/jared/Nexus-Terminal/app/api/research-report/route.ts) uses `generateSmallCapResearchReport`, which calls `getCachedTickerData(ticker, { scope: 'small-cap-research' })`.
+- Agent research: [lib/agents/blueprints/small-cap-research.ts](/home/jared/Nexus-Terminal/lib/agents/blueprints/small-cap-research.ts) and [lib/agents/blueprints/swing-trader-research.ts](/home/jared/Nexus-Terminal/lib/agents/blueprints/swing-trader-research.ts) call scoped `getCachedTickerData`.
 
-### Not worth full parity replacement
+## Current Cache And Cost Controls
 
-- `pump-and-dump-tracker`
-- full `screener` parity, especially borrow availability and fee-rate fields
-- proprietary `news` commentary sources such as analyst/social content not owned by Nexus
-- off-platform social/coordination evidence inside `pump-and-dump-tracker`
+Shared cache:
 
-## Official SEC Sources Worth Building Around
+- `askedgar_cache` is shared across users by `(cache_type, ticker)` in [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts).
+- `cacheType='ticker'` stores the merged raw endpoint payload for a ticker.
+- Ticker cache TTL is 16 hours.
+- `news` has a 5-minute freshness window inside the ticker cache row.
+- Fresh successful endpoint results merge into the cached superset. A transient error does not overwrite a previously good endpoint response.
+- Fully rate-limited results are cached only for the retry window.
 
-- `data.sec.gov` EDGAR APIs: submissions and XBRL/companyfacts
-- SEC filing indexes and raw filing directories
-- SEC full-text search for filing and exhibit discovery
-- Ownership technical specs and structured ownership filings
-- 13F datasets
-- Form D datasets
-- Regulation A datasets
-- Fails-to-deliver data
+Runtime state:
 
-## Non-SEC Sources Needed
+- Daily unique ticker usage lives in `askedgar_daily_tickers`.
+- Global rate-limit retry window lives in `askedgar_runtime_state`.
+- Module memory is still used as a fast path, but the DB is the durable state across cold starts.
+- `ASKEDGAR_DAILY_LIMIT` defaults to 50 when not configured.
 
-The target is an accurate dilution and capital-structure view, not an SEC-only clone. These data classes need external feeds or a deliberate no-parity decision:
+Cost telemetry:
 
-- Market data: daily and intraday OHLCV, premarket high/volume, VWAP, live/delayed quotes, market cap snapshots, top gainers, and multi-day performance. The repo already has Massive/Polygon-compatible helpers in [lib/massive-market.ts](/home/jared/Nexus-Terminal/lib/massive-market.ts:139) and TradingView gainers in [app/api/tradingview/gainers/route.ts](/home/jared/Nexus-Terminal/app/api/tradingview/gainers/route.ts:17).
-- Corporate actions and listings: Nasdaq Daily List or equivalent corporate-action data for split/effective-date validation, ticker changes, delistings, and market-tier changes.
-- Compliance data: Nasdaq noncompliance list plus issuer filings/press releases for deficiency and cure details.
-- Short/settlement data: FINRA short-interest files/API for periodic short interest, SEC fails-to-deliver files for FTD history, and threshold lists where available. These do not replace live borrow availability or fee rates.
-- News: Massive/Polygon news or another licensed news source for non-SEC news; SEC filings can be first-party.
-- Queue/cache infrastructure: Vercel Cron can trigger lightweight syncs, but larger ingestion should use a durable queue or worker path such as QStash, a dedicated worker, or another background job system. Upstash Redis is useful for rate-limit state, dedupe locks, and short-lived extraction queues.
-- Raw document storage: Postgres should own metadata, normalized facts, and extracted terms. Full raw filing text and exhibits may belong in object storage such as S3/R2/Vercel Blob if volume grows.
+- [lib/askedgar/fanout.ts](/home/jared/Nexus-Terminal/lib/askedgar/fanout.ts) logs `[askedgar-fanout]` with requested count, successful count, total `usage.cost_microdollars`, and duration.
+- This log is useful but not durable enough for product decisions.
+- `scanner-summary` bypasses the fan-out wrapper and directly calls four Ask Edgar-backed helper functions. It is cached for 24 hours but does not participate in the main fan-out cost log or daily ticker guard.
 
-## Storage Model
+Cost control gaps to fix first:
+
+- Persist endpoint-level telemetry: caller surface, scope, ticker, endpoint, cache hit/miss, cost, duration, and failure kind.
+- Route `scanner-summary` through the same metered path, or add equivalent persistent telemetry and daily ticker accounting there.
+- Split broad scopes so Research does not fetch every endpoint before the user opens every tab.
+- Add source-aware cache metadata so first-party SEC rows, Ask Edgar rows, market rows, and LLM-derived rows do not share ambiguous freshness semantics.
+
+### Recommended Per-Endpoint TTL Tuning
+
+The current 16h blanket TTL is conservative for endpoints whose underlying data only changes on filing events. Recommended TTLs once endpoint-level cache control is in place:
+
+| Endpoint | Current TTL | Proposed TTL | Reason |
+| --- | --- | --- | --- |
+| `news` | 5 min | 15 min | Headlines refresh through the trading day; 15 min is short enough for catalyst awareness without bursty re-fetches. In-flight coalescing already covers concurrent viewers. |
+| `dilution-rating` | 16 hr | 7 days | Composite score recomputed on new filings, not intraday. |
+| `dilution-data` | 16 hr | 7 days | Warrants/converts terms change on amendments only. |
+| `ownership` | 16 hr | 7 days | 13F/13D/13G are quarterly; Form 4 events bursty but rare per ticker. |
+| `historical-float-pro` | 16 hr | 7 days | XBRL outstanding-share series updates on 10-Q/10-K cadence. |
+| `gap-stats` | 16 hr | 24 hr | New trading day = new gap; daily refresh is enough. |
+| `screener` | 16 hr | 16 hr | Header/cash context; keep as-is. |
+| `registrations` | 16 hr | 24 hr | Active shelves rarely change intraday; new S-1/424B5 lands as an event. |
+| `nasdaq-compliance` | 16 hr | 7 days | Compliance status updates on 8-K Item 3.01 events. |
+| `split-status` | 16 hr | 24 hr | Vote / approval / effective events fire as filings. |
+
+Implementing this needs per-endpoint TTLs in `lib/askedgar/cache.ts` (currently only `news` has a custom window). Build it alongside Priority 0 telemetry so we can measure the cache-hit improvement.
+
+## Scope Inventory
+
+Current scopes in `ENDPOINT_SCOPES`:
+
+- `snapshot`: all 16 registry keys.
+- `tldr`: all 16 registry keys.
+- `lookup`: all 16 registry keys, but no live `/api/askedgar/lookup` route exists.
+- `small-cap-research`: all 16 registry keys.
+- `swing-trader-research`: `dilution-data`, `dilution-rating`, `offerings`, `registrations`, `news`, `historical-float-pro`, `gap-stats`, `ownership`.
+
+Recommended scope changes:
+
+- Split `snapshot` into smaller route scopes: overview/header, dilution, news, filings, and history.
+- Keep `sec-filings`, `historical-float-pro`, `reverse-splits`, and `identity-events` available to the UI, but do not include them in agent scopes unless the agent actually consumes them.
+- Remove the legacy `lookup` scope if no route or caller is restored.
+- Remove the dead `filing-titles` compatibility read from small-cap after prompt/tests stop expecting it.
+- Consider a cheap `scanner-summary` scope that goes through the main fan-out/cache path.
+
+## Endpoint Matrix
+
+| Registry key | Current backing | Main consumers | Current status | Recommendation |
+| --- | --- | --- | --- | --- |
+| `screener` | Ask Edgar `/v1/screener` | Research header; small-cap cash fallback | Required for header; fallback-only for agent cash context | Keep short term. Replace with a bounded Nexus header subset using Massive/TradingView for market data plus SEC companyfacts for shares. Do not chase full screener parity. |
+| `dilution-rating` | Ask Edgar `/v1/dilution-rating` | Rating tile, cash/runway, management commentary, scanner cash months, agents | Required | Keep until Nexus has an evidence-backed risk model. Build a Nexus score with evidence/confidence rather than cloning Ask Edgar labels. |
+| `dilution-data` | Ask Edgar `/v1/dilution-data` | Warrants, convertibles, cash fallback, scanner warrants, agents | Required | Keep for quality now. Replace incrementally with a first-party securities ledger for warrants, prefunded warrants, convertibles, amendments, exercises, conversions, and remaining balances. |
+| `offerings` | First-party SEC parser | Past offerings table; agents | Required conceptually; not Ask Edgar-billed | Keep first-party. Continue improving parser coverage and confidence metadata. |
+| `sec-filings` | First-party SEC submissions | Filings tab preferred source | Required; not Ask Edgar-billed | Keep first-party. This should fully own filing metadata. |
+| `equity-lines` | Ask Edgar `/v1/offerings?offering_type=NEW EQUITY LINE` | Equity Lines panel; scanner `hasEl`; small-cap prompt | Required for flags; optional as a visible row set | Medium-priority replacement from SEC registration/prospectus/8-K/SPAs. Cache longer than 16h unless a new filing lands. |
+| `registrations` | Ask Edgar `/v1/registrations` | Active shelves, S-1/F-1, ATM, baby shelf, scanner ATM/S-1/EL flags, agents | Required | High-priority replacement. Start with SEC metadata/effective status, then add capacity math, amount sold, amount remaining, ATM remaining, and baby-shelf rules. |
+| `news` | Ask Edgar `/v1/news?limit=40` | News tab, TLDR latest headline, agent catalyst feed; filing fallback | Required for non-SEC catalyst/news; fallback-only for filings | Short term: filter to `news`/`8-K`/`S-1` form types to drop payload (we already prefer `sec-filings` for the Filings tab). Evaluate `/v1/news-basic` as a smaller-payload drop-in. Long term: Polygon or another licensed news vendor for non-SEC news; keep `sec-filings` as the filing source. |
+| `nasdaq-compliance` | Ask Edgar `/v1/nasdaq-compliance` | Reg SHO/compliance fields; overview tile; small-cap prompt | Optional but active | First-pass replacement is cheap: parse 8-K Item 3.01 (deficiency notice) and Item 3.02 (cure) from submissions; surface the most recent event as `status`. Full lifecycle (lawsuit, hearing, granted extension) is a Priority 2 follow-up. |
+| `agreements` | Ask Edgar `/v1/agreements` | Agreements table; small-cap prompt | Optional but active | Keep for now. SEC-sourceable but extraction-heavy; needs exhibit parsing for registration rights, ROFR, participation rights, tail fees, restrictions, and price protection. |
+| `historical-float-pro` | First-party SEC companyfacts | Historical Float table; agents | Optional but active; not Ask Edgar-billed | Keep first-party. Treat current output as outstanding-share history, not true tradable float. Add methodology/confidence if displayed as float context. |
+| `reverse-splits` | First-party SEC parser | Reverse Splits table; small-cap prompt | Optional but active; not Ask Edgar-billed | Keep first-party. Fold into a broader `split-status` lifecycle. |
+| `identity-events` | First-party SEC parser | Former Symbols UI | Optional UI; not consumed by agents | Keep for UI. Remove from `small-cap-research` scope unless agent prompts start using former-symbol identity evidence. |
+| `gap-stats` | Ask Edgar `/v1/gap-stats?limit=50` | Gap Up Days table, chart date selection, small-cap and swing prompts | Required | Keep until Nexus owns market-derived history. Concrete replacement path: Polygon `/v2/aggs` for OHLCV history (Starter $29/mo includes 2 years daily, intraday, and premarket), then derive gap %, gap-fill, volume vs. avg, and tag with our `sec-filings` events. Reuses the Massive/Polygon helpers already in the repo. |
+| `ownership` | Ask Edgar `/v1/ownership` | Owners table; holder-overhang in agents | Optional but active | High-medium priority replacement. Start with Forms 3/4/5 and SC 13D/G. Treat 13F/institutional coverage as a separate tradeoff. |
+| `split-status` | Ask Edgar `/v1/split-status` | Split Status table; small-cap prompt | Optional but active | Best next replacement. Extend current reverse-split parser into lifecycle states: proposed, vote pending, approved, announced/effective, completed. |
+| `filing-titles` | Not in current registry | Legacy small-cap compatibility read only | Dead/legacy | Remove compatibility read/tests, or map explicitly to `sec-filings` if prompt wording still expects it. |
+
+## Endpoints Evaluated And Skipped
+
+Ask Edgar offers additional endpoints we have evaluated and intentionally do not adopt. Documented so future-us does not re-evaluate from scratch.
+
+| Endpoint | Why we skip |
+| --- | --- |
+| `/v1/float-outstanding` | Overlaps `historical-float-pro` (first-party) plus market-cap from Massive/TradingView. Adding it would be paying for a derivation we already compose. |
+| `/v1/historical-float`, `/v1/historical-float-market-cap` | Same reason as above. `historical-float-pro` (SEC companyfacts) covers outstanding-share history; we can compose market cap. |
+| `/v1/historical-dilution-rating` | We are explicitly avoiding cloning the Ask Edgar score (Priority 3 calls for our own evidence-backed model with versioning). Buying historical points of a score we plan to replace is wasted spend. |
+| `/v1/dilution-data-funds-underwriters` | Counterparty breakdown is nice-to-have, not load-bearing for any current UI/agent. Revisit if a fund-overlap feature is built. |
+| `/v1/market-strength`, `/v1/market-strength-analysis` | Composite "market strength" overlaps with our own chart/relative-volume work; out of scope for now. |
+| `/v1/pump-and-dump` | Heuristic flag with unclear methodology; we prefer our own filing+price-action signals once Priority 2 lands. |
+| `/v1/right-of-first-refusal` | Overlapping with `agreements`, which itself is being dropped from the fanout (see immediate-action plan). |
+| `/v1/research-report` | LLM-generated DD report; we already generate our own via `lib/research.ts` + `lib/agents/blueprints/*` so this would be duplicate AI cost. |
+| `/v1/historical-tickers` | `identity-events` already covers former tickers/company names from SEC submissions. |
+| `/v1/news-basic` | NOT YET EVALUATED — same per-KB rate as `/v1/news` but documented as a smaller payload. Worth a one-off test if `/v1/news` cost remains high after the form-type filter and 15-min TTL changes. |
+
+## Replacement Priorities
+
+### Priority 0 - Measurement and scope control
+
+This should happen before more endpoint replacement work.
+
+- Persist endpoint-level usage and cost telemetry.
+- Add caller attribution: `snapshot`, `tldr`, `scanner-summary`, `site-report`, `small-cap-agent`, `swing-agent`.
+- Account for `scanner-summary` direct calls.
+- Add endpoint-level cache hit/miss reporting.
+- Split broad scopes so visible tabs and agent jobs request only what they need.
+- Add source-aware cache metadata: `askedgar`, `nexus-sec`, `nexus-market`, `nexus-llm`, or `mixed`.
+
+### Priority 1 - Low-interpretation SEC replacements
+
+These reduce cost while improving auditability.
+
+- `split-status`: build on `reverse-splits` and maintain lifecycle state.
+- Basic `registrations`: registration forms, amendments, EFFECT notices, prospectus supplements, ATM/equity-line detection.
+- Basic `ownership`: Forms 3/4/5 and SC 13D/G.
+- Continue hardening `offerings`, `sec-filings`, `historical-float-pro`, `reverse-splits`, and `identity-events`.
+
+### Priority 2 - Capital structure and active dilution
+
+These are high product value but require state.
+
+- Registration capacity states.
+- Warrant, prefunded warrant, convertible, and note ledger.
+- Amendments, exercises, conversions, repricing, anti-dilution, remaining balances.
+- Cash, debt, burn, and runway inputs from XBRL plus filings.
+
+### Priority 3 - Nexus risk model
+
+Replace `dilution-rating` only after Priority 2 can provide durable inputs.
+
+The model should return:
+
+- Numeric score, such as `0-100`.
+- Band, such as `Low`, `Medium`, or `High`.
+- Confidence.
+- Missing-fact reasons.
+- Evidence IDs and source links.
+- Model version.
+
+Do not present precise ratings when inputs are incomplete. Low confidence is better than false precision.
+
+### Priority 4 - Market-derived replacement work
+
+Replace only the parts worth owning:
+
+- Bounded Nexus screener for fields the app and agents actually use.
+- `gap-stats` from market data plus catalyst tagging.
+- Filing/news catalyst timeline.
+
+Avoid full parity for borrow availability, borrow fee, broad market filters, social risk, and proprietary commentary unless measured usage justifies another paid data source.
+
+## First-Party Data Model Direction
 
 Use a three-layer model: raw source records, extracted facts/events, and point-in-time state snapshots.
 
-### Raw SEC layer
+Raw source records:
 
 - `sec_entities`
 - `sec_filings_raw`
@@ -168,9 +232,7 @@ Use a three-layer model: raw source records, extracted facts/events, and point-i
 - `sec_filing_documents`
 - `sec_exhibits_raw`
 
-Each record should preserve source metadata, ingestion time, accession number, and the raw upstream payload or extracted filing text.
-
-### Extracted facts and events layer
+Extracted facts and events:
 
 - `sec_split_events`
 - `sec_offering_events`
@@ -186,292 +248,71 @@ Each record should preserve source metadata, ingestion time, accession number, a
 - `market_gap_events`
 - `ticker_risk_snapshots`
 
-Keep raw SEC facts separate from Nexus inferences. Do not collapse extracted facts and scored opinions into the same fields.
-
-### As-of state layer
-
-To answer "what is the active dilution and company structure right now?" or "how has the story changed?", the app needs point-in-time state, not just latest rows.
-
-Recommended state tables:
-
-- `capital_structure_states`: one row per ticker/CIK/as-of timestamp with outstanding shares, authorized shares, public float, tradable float, market cap, source freshness, and confidence.
-- `dilution_overhang_states`: active warrants, prefunded warrants, convertibles, equity lines, ATM capacity, shelf capacity, registration effectiveness, shares underlying derivative securities, and dollar/share overhang.
-- `registration_capacity_states`: effective registrations, expiration dates, baby-shelf status, amount registered, amount sold, amount remaining, and evidence.
-- `ticker_story_events`: narrative timeline events such as offering announced, EFFECT filed, ATM used, reverse split approved, compliance deficiency, warrant repricing, or major holder disposal.
-- `risk_model_snapshots`: Nexus risk score, inputs, evidence IDs, model version, and confidence.
-
-Do store the data needed to reconstruct history. Do not rely only on latest cache rows. The value of this buildout is the ability to ask "as of this date, what could they sell, what was already registered, what derivative overhang existed, and what changed since the last run?"
-
-## Pipeline Shape
-
-### Ingestion
-
-- Poll `submissions/CIK##########.json` for watched names
-- Nightly backfill from SEC bulk archives
-- Import slower datasets like `13F`, `Form D`, `Reg A`, and FTD on their own schedule
-- Pull raw filing documents and exhibits only for forms/classes that matter to dilution, registrations, splits, ownership, agreements, and compliance
-- Keep a CIK/ticker/exchange identity map with former tickers and symbol changes
-
-### Parsing
-
-- Filing metadata parser
-- Filing text/exhibit extraction
-- Event extraction for offerings, splits, agreements, and ownership
-- Stateful security ledger for warrants, convertibles, and registration usage
-- XBRL fact extraction for cash, debt, shares outstanding, burn-rate inputs, and financial runway
-- Clause extraction for registration rights, participation rights, equity restrictions, ROFR, tail financing, anti-dilution, reset, and price-protection terms
-- Market-data enrichment for price, market cap, gap history, VWAP, premarket levels, and volume context
-
-### Serving
-
-- Preserve current `rawData` section keys where practical so existing TLDR and blueprint flows keep working
-- Normalize into the current `ResearchSnapshot` contract from [lib/types.ts](/home/jared/Nexus-Terminal/lib/types.ts:222)
-- Include source, freshness, parser version, and confidence metadata in internal server-side packets even if the first UI pass only displays a subset
-- Support `asOf` reads for agents and future UI views so reports can explain how structure changed over time
-
-## Site and Agent Integration
-
-### Adapter boundary
-
-Do not start by changing every UI component and blueprint. Add a provider layer behind [lib/askedgar.ts](/home/jared/Nexus-Terminal/lib/askedgar.ts:465) or a new sibling module that can return the same `rawData` keys from mixed sources.
-
-Recommended shape:
-
-- `getResearchData(ticker, { asOf, sources })` returns `{ rawData, normalizedSnapshot, evidence, freshness, warnings }`.
-- `rawData['offerings']`, `rawData['registrations']`, `rawData['dilution-data']`, and similar keys remain available while their source changes from Ask Edgar to Nexus tables.
-- Each endpoint section gets a `source` field internally: `askedgar`, `nexus-sec`, `nexus-market`, `nexus-llm`, or `mixed`.
-- Cache keys include source and parser/model versions so stale Ask Edgar semantics do not mix with first-party semantics.
-
-### Site surfaces
-
-Initial UI work should preserve the existing Research view, then add confidence and history where it matters.
-
-- Keep [app/api/askedgar/snapshot/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/snapshot/route.ts:25) returning the client-safe `ResearchSnapshot` contract until the replacement is stable.
-- Add a server-only evidence packet for TLDR and specialist agents; do not send raw filings or full raw endpoint payloads to the browser.
-- Add a "Capital Structure Timeline" section later: outstanding/float changes, active registrations, offerings, warrant/convertible changes, reverse splits, compliance events, and source links.
-- Add freshness badges: "SEC filing parsed 4h ago", "market data delayed", "Ask Edgar fallback", "low confidence extraction", or "manual review needed".
-- Keep the current `gap-stats` mapping issue in mind: canonical Ask Edgar raw rows use `high_price`, while the normalized mapper currently reads `intraday_high` first.
-
-### Research blueprints
-
-The blueprints currently read raw `rawData[...]` sections directly, so source swaps need compatibility.
-
-- Replace direct Ask Edgar fetches in `fetch-filings` steps with the new provider only after it can emit the old raw keys.
-- For `small-cap:research`, provide a structured dilution packet: active registrations, offering history, security ledger, current overhang, cash runway, compliance events, recent filings/news, and evidence IDs.
-- For `swing:research`, provide a lighter packet: recent filings/news, dilution rating, market theme context, gap/runner history, ownership/float context, and evidence IDs.
-- For autonomous scans, use the Nexus screener subset plus Massive/TradingView for candidates. Do not require full Ask Edgar screener parity before replacing filing/dilution context.
-- Prompt contracts should require agents to cite evidence IDs and mark `insufficientEvidence` when a registration capacity, remaining warrant balance, or market-data field is not reliable.
-- Report outputs should preserve deterministic facts from the provider. LLMs can interpret risk, but should not recalculate share counts, overhang, or registration capacity from raw prose.
-
-## Rating System Recommendation
-
-Build a first-party Nexus score instead of trying to recreate Ask Edgar's proprietary ratings.
-
-Suggested components:
-
-- Share structure pressure
-- Cash need
-- Financing ability
-- Warrant and convertible overhang
-- Registration readiness
-- Compliance and corporate-action risk
-
-Suggested output:
-
-- Numeric score `0-100`
-- Mapped band: `Low`, `Medium`, `High`
-- Confidence score
-- Evidence payload showing which filings and facts drove the score
-
-If evidence is weak or incomplete, return low confidence instead of a fake precise rating.
-
-### Minimum facts for accurate active dilution
-
-The rating is only as good as the state ledger. Minimum viable active-dilution inputs:
-
-- Current and historical outstanding shares, authorized shares, and share classes
-- Public float and tradable-float estimate with methodology version
-- Active shelves, S-1/F-1 registrations, EFFECT notices, ATMs, equity lines, resale registrations, and expiration dates
-- Amount registered, amount sold, amount remaining, and baby-shelf capacity when applicable
-- Warrants, prefunded warrants, convertibles, notes, exercise/conversion prices, repricing terms, maturities, registration status, and remaining balances
-- Recent offerings, warrant exercises, conversions, amendments, and share issuances
-- Cash, debt, burn rate, cash runway, and financing pressure
-- Nasdaq compliance status, reverse-split lifecycle, FTD/Reg SHO context, and short interest where available
-- Source links, extraction confidence, and the date each fact became known
-
-If a fact is not available, the UI and agents should say so. Guessing "remaining" warrant or ATM capacity from incomplete prose is worse than returning low confidence.
-
-## Key Risks
-
-- Many Ask Edgar endpoints are interpretation layers, not raw SEC transport
-- `registrations`, `agreements`, and `dilution-data` require stateful parsing across messy filings and exhibits
-- `gap-stats`, `screener`, and `market-strength` need non-SEC market data
-- Current raw payload consumers in [lib/research.ts](/home/jared/Nexus-Terminal/lib/research.ts:98) and the blueprints mean source swaps need adapter compatibility
-- Cache/versioning should become source-aware to avoid mixing incompatible semantics
-- Backend cost is not just hosting. The largest cost is engineering, parser maintenance, data-quality review, and market-data/news/LLM usage.
-- "Tradable float" and "remaining overhang" are derived estimates, not clean SEC fields. They need methodology and confidence, not false precision.
-- Vendor parity can become a trap. Replace endpoints only where first-party evidence creates a better product or materially lowers ongoing cost.
-
-## Recommended Phase Plan
-
-### Phase 0 - Scope, measurement, and fallback contract
-
-Goal: avoid a multi-month rebuild without knowing whether it beats Ask Edgar.
-
-- Measure current Ask Edgar usage: endpoint calls, unique tickers/day, cache hit rate, failed endpoint rate, and which endpoint fields actually drive UI/agent decisions.
-- Define the first target universe: watched tickers, current gainers, and recent agent report tickers. Do not ingest the whole market first.
-- Keep Ask Edgar as a source fallback behind the adapter until Nexus facts are at least as useful for the chosen fields.
-- Define source-aware response metadata: source, freshness, parser version, confidence, and evidence IDs.
-- Acceptance: the app can compare Ask Edgar output and Nexus-derived output for the same ticker without changing the UI.
-
-### Phase 1 - Raw SEC ingestion and identity layer
-
-Goal: own the filing feed and entity mapping.
-
-- Build a compliant SEC client with declared `User-Agent`, rate limiting, retries, and backoff.
-- Ingest ticker/CIK/exchange mapping, submissions JSON, companyfacts JSON, filing indexes, and raw filing document metadata.
-- Store raw metadata and relevant documents/exhibits by accession number.
-- Track former names, former tickers, exchange, CIK, accession number, filing date, report date, form type, file number, primary document URL, and source hash.
-- Acceptance: given a ticker, the app can list recent filings and source URLs without Ask Edgar.
-
-### Phase 2 - First-wave event extraction
-
-Goal: replace low-interpretation rows while keeping the current `rawData` contract.
-
-- Implement `reverse-splits`, `split-status`, basic `offerings`, insider ownership, and basic filing metadata.
-- Use explicit event tables keyed by CIK, ticker, accession, source document, and event date.
-- Keep split status as a lifecycle: pending vote, vote approved, announced/effective, completed.
-- Emit compatible raw keys: `reverse-splits`, `split-status`, `offerings`, `ownership`, and `filing-titles` metadata rows.
-- Acceptance: Research UI and agent fetch steps can consume first-party rows for these sections with Ask Edgar fallback.
-
-### Phase 3 - Share structure and registration lifecycle
-
-Goal: start answering "what can this company sell now?"
-
-- Build historical outstanding-share snapshots from XBRL/companyfacts, filing cover pages, and extracted share-count language.
-- Add float/tradable-float estimates only with methodology and confidence.
-- Parse registration statements, amendments, EFFECT notices, prospectus supplements, ATMs, equity lines, and resale registrations.
-- Track registration effective status, expiration, registered amount, amount sold, amount remaining, baby-shelf constraints, bank/agent where available, and source evidence.
-- Acceptance: the provider can return active registrations and a current share-structure snapshot as of a chosen date.
-
-### Phase 4 - Securities ledger for active dilution
-
-Goal: represent active overhang, not just historical offerings.
-
-- Parse warrants, prefunded warrants, convertibles, notes, SPA terms, exercise/conversion prices, maturities, anti-dilution terms, registration status, amendments, exercises, and conversions.
-- Store issuance events separately from balance events. Remaining balances must be stateful and time-aware.
-- Reconcile changes from amendments, prospectus supplements, 8-Ks, 10-Q/10-K notes, and ownership filings.
-- Emit compatible `dilution-data` rows plus a richer internal `dilution_overhang_state`.
-- Acceptance: the app can show current active warrants/convertibles and explain which filings changed the balance.
-
-### Phase 5 - Nexus risk model
-
-Goal: replace `dilution-rating` with an evidence-backed Nexus score.
-
-- Compute share-structure pressure, active overhang, registration readiness, offering frequency, cash need, compliance risk, reverse-split pressure, and market liquidity context.
-- Include confidence and missing-fact reasons. A low-confidence score is valid; a precise unsupported score is not.
-- Version the model and keep every input row/evidence ID used by each score.
-- Feed the score into small-cap and swing research prompts as deterministic input, not as prose for the LLM to reinterpret.
-- Acceptance: reports can cite the exact facts behind each dilution-risk conclusion.
-
-### Phase 6 - Market-derived history and bounded screener
-
-Goal: replace the market-dependent pieces that are worth owning.
-
-- Build `gap-stats` from historical daily/intraday OHLCV, premarket data, VWAP, volume, market cap, and filing/news catalyst tags.
-- Build a bounded Nexus screener around fields the agents actually need: market cap, price, volume, gain windows, float estimate, active registrations, overhang score, recent offering history, and compliance/split status.
-- Keep borrow availability and borrow fee out of first-party parity unless a reliable licensed source is added.
-- Acceptance: scans can find candidates and show gap history without Ask Edgar screener/gap-stats for the supported fields.
-
-### Phase 7 - Agreement, ROFR, and advanced extraction
-
-Goal: capture contract rights that materially affect dilution and future financing.
-
-- Extract registration rights, participation rights, equity restrictions, lockups, ROFR, tail financing, bank/agent names, investor/fund names, and price-protection clauses from exhibits.
-- Use LLM or NLP extraction only with source spans, confidence, schema validation, and regression fixtures.
-- Keep manual-review flags for ambiguous clauses.
-- Emit `agreements`, `rofr`, `offerings-advanced`, and `dilution-data-advanced` style rows only after precision is acceptable.
-- Acceptance: the provider can identify clause-driven dilution risk with source snippets and confidence.
-
-### Phase 8 - News, summaries, and Nexus-native reports
-
-Goal: replace AI/reporting surfaces with Nexus-owned outputs where they add value.
-
-- Replace SEC-filing parts of `news` with first-party filing feed and filing summaries.
-- Keep non-SEC news on Massive/Polygon or another licensed provider.
-- Generate `filing-titles` headlines, `ai-chart-analysis`, and research summaries from the same evidence packets used by agents.
-- Treat `research-reports`, `research-reports-short`, and `research-reports-tldr` as Nexus-native report products, not vendor endpoints to clone.
-- Acceptance: TLDR and specialist reports no longer need Ask Edgar for summaries once first-party evidence coverage is sufficient.
-
-### Phase 9 - Cost and quality gate
-
-Goal: decide whether to expand or stop.
-
-- Run a 30-60 day shadow comparison: Ask Edgar versus Nexus facts for active gainers and watched tickers.
-- Track parser precision/recall for key facts, manual-review rate, endpoint fallback rate, DB/storage growth, queue volume, market-data calls, LLM extraction cost, and report quality.
-- Expand only if the first-party pipeline either improves accuracy/evidence/history or materially reduces vendor dependency for the fields that matter.
-- Keep or restore vendor calls for endpoints where full replacement is expensive and low leverage.
-
-## Cost and Worth-It Assessment
-
-This is worthwhile only if the goal is the one stated here: an accurate, explainable, point-in-time representation of active dilution and company structure. It is not worthwhile as a pure cost-cutting clone of every Ask Edgar endpoint.
-
-Reasons it is likely worth building:
-
-- The highest-value product is not a single latest API response. It is the historical capital-structure ledger: what changed, when it became known, what could be sold, and what evidence supports it.
-- Owning raw filings, extracted terms, and state snapshots lets agents answer better questions than Ask Edgar parity: "what changed since last week?", "what is still active?", "what is stale?", and "what is low confidence?"
-- SEC data is free, public, auditable, and source-linkable. That matters for reports and agent trust.
-
-Reasons it can become unwise:
-
-- Full replacement of `pump-and-dump-tracker`, full `screener`, advanced agreement extraction, high-quality news, and AI reports can cost more in engineering/LLM/vendor data than using Ask Edgar.
-- Market data, news, borrow data, background workers, storage, and extraction evals are ongoing operating costs.
-- Parser maintenance is permanent. Financing terms change, companies use inconsistent language, and ADR/multi-class/foreign issuer cases will keep producing edge cases.
-
-Pragmatic rule:
-
-- Build the SEC ingestion, event ledger, registration capacity, securities ledger, and Nexus risk model because they directly support accurate active dilution.
-- Build `gap-stats` and a bounded screener only for fields your agents and trading workflow actually use.
-- Do not chase full parity for endpoints that depend on proprietary social evidence, borrow data, or broad market/news infrastructure unless the measured value justifies it.
-
-## Endpoints That May Not Be Worth Replacing
-
-- `pump-and-dump-tracker`: keep vendor-backed or replace with a narrower Nexus risk model. Full scam-risk parity needs social/coordination evidence and underwriter/entity graphs that are expensive and legally/ethically sensitive.
-- Full `screener`: build a Nexus subset, not full parity. Borrow fee, shares available, and all market/reference filters require separate licensed sources.
-- `news` as a complete product: replace SEC-filing news in house; keep a licensed news provider for non-SEC news.
-- `market-strength`: defer until the app owns daily gapper/runner history and catalyst tagging.
-- `research-reports*`: do not buy or clone if Nexus agents already generate reports from better evidence packets.
-- `offerings-advanced`, `dilution-data-advanced`, and `rofr`: defer until exhibit extraction is reliable; these are valuable, but not first-wave replacements.
-- `screener/options`: implement only if a Nexus screener UI needs dropdown filters.
-
-## Sources
-
-Repo grounding:
-
-- [lib/askedgar.ts](/home/jared/Nexus-Terminal/lib/askedgar.ts:465)
-- [lib/research.ts](/home/jared/Nexus-Terminal/lib/research.ts:139)
-- [lib/types.ts](/home/jared/Nexus-Terminal/lib/types.ts:222)
-- [app/api/askedgar/snapshot/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/snapshot/route.ts:25)
-- [lib/massive-market.ts](/home/jared/Nexus-Terminal/lib/massive-market.ts:139)
-- [app/api/tradingview/gainers/route.ts](/home/jared/Nexus-Terminal/app/api/tradingview/gainers/route.ts:17)
-
-External:
-
-- https://www.sec.gov/search-filings/edgar-application-programming-interfaces
-- https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data
-- https://www.sec.gov/edgar/search/efts-faq.html
-- https://www.sec.gov/submit-filings/technical-specifications
-- https://www.sec.gov/data-research/sec-markets-data/form-13f-data-sets
-- https://www.sec.gov/data-research/sec-markets-data/form-d-data-sets
-- https://www.sec.gov/data-research/sec-markets-data/regulation-data-sets
-- https://www.sec.gov/data-research/sec-markets-data/fails-deliver-data
-- https://www.sec.gov/file/company-tickers-exchange
-- https://www.finra.org/finra-data/browse-catalog/equity-short-interest
-- https://www.finra.org/finra-data/browse-catalog/otc-threshold
-- https://www.nasdaqtrader.com/trader.aspx/Trader.aspx?id=DailyListPD
-- https://www.nasdaq.com/market-activity/stocks/non-compliant-company-list
-- https://polygon.io/pricing
-- https://neon.com/pricing
-- https://vercel.com/docs/functions/usage-and-pricing
-- https://upstash.com/pricing/qstash
-- https://upstash.com/docs/redis/overall/pricing
+Point-in-time state:
+
+- `capital_structure_states`
+- `dilution_overhang_states`
+- `registration_capacity_states`
+- `ticker_story_events`
+- `risk_model_snapshots`
+
+Do not collapse raw SEC facts, extracted facts, and scored opinions into the same table fields. The app needs to answer as-of questions: what was active, what could be sold, what changed, and what evidence supports the answer.
+
+## Minimum Facts For Accurate Active Dilution
+
+The rating and agent conclusions are only as good as the ledger. Minimum durable inputs:
+
+- Current and historical outstanding shares, authorized shares, and share classes.
+- Public float and tradable-float estimates with methodology and confidence.
+- Active shelves, S-1/F-1 registrations, EFFECT notices, ATMs, equity lines, resale registrations, and expirations.
+- Amount registered, amount sold, amount remaining, and baby-shelf capacity where applicable.
+- Warrants, prefunded warrants, convertibles, notes, exercise/conversion prices, repricing terms, maturities, registration status, and remaining balances.
+- Recent offerings, warrant exercises, conversions, amendments, and share issuances.
+- Cash, debt, burn rate, cash runway, and financing pressure.
+- Nasdaq compliance status, reverse-split lifecycle, FTD/Reg SHO context, and short interest where available.
+- Source links, parser confidence, and date each fact became known.
+
+If a fact is missing, the UI and agents should say so. Do not infer remaining warrant, ATM, or registration capacity from incomplete prose without confidence and evidence.
+
+## Non-SEC Sources Needed
+
+SEC can replace many filing-derived rows, but not every Ask Edgar value.
+
+- Market data: daily and intraday OHLCV, premarket high/volume, VWAP, live/delayed quotes, market cap snapshots, top gainers, and multi-day performance. The repo already has Massive/Polygon-compatible helpers and TradingView gainers.
+- News: Massive/Polygon or another licensed source for non-SEC news. SEC filings should be first-party.
+- Corporate actions and listings: Nasdaq Daily List or equivalent for split/effective-date validation, ticker changes, delistings, and market-tier changes.
+- Compliance data: exchange compliance lists plus issuer filings and press releases.
+- Short/settlement data: FINRA short-interest files/API, SEC fails-to-deliver files, and threshold lists. These do not replace live borrow availability or fee rates.
+- Queue/cache infrastructure: Vercel Cron can trigger lightweight syncs, but larger ingestion should use a durable worker/queue path.
+- Raw document storage: Postgres should own metadata and normalized facts. Large filing text and exhibits may belong in object storage if volume grows.
+
+## Known Risks
+
+- `registrations`, `agreements`, and `dilution-data` require stateful parsing across messy filings and exhibits.
+- `gap-stats`, `screener`, and complete news coverage require non-SEC market/news data.
+- Current raw payload consumers read `rawData[...]` keys directly, so source swaps must preserve compatibility or intentionally update agents and tests together.
+- Source and parser versioning matter. A stale Ask Edgar row should not silently mix with a newer Nexus SEC row as if they had the same semantics.
+- Parser maintenance is permanent. Financing language changes, foreign issuers vary, and multi-class/ADR cases will keep creating edge cases.
+- Vendor parity can become a trap. Replace endpoints where first-party evidence improves product quality or materially lowers ongoing cost.
+
+## Implementation Rules
+
+- Keep [app/api/askedgar/snapshot/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/snapshot/route.ts) returning the client-safe `ResearchSnapshot` contract until replacement work is stable.
+- Preserve `rawData` section keys where practical so TLDR and agent flows keep working.
+- Add internal evidence packets for agents and TLDR, but do not send raw filings or full endpoint payloads to the browser.
+- For any endpoint source swap, update the registry, cache behavior, snapshot normalizer, blueprint consumers, and route/client tests together.
+- Track source, freshness, parser/model version, confidence, and evidence IDs internally.
+- LLMs may interpret risk, but deterministic facts such as share counts, overhang, and capacity should come from parsed evidence, not from prompt prose.
+
+## External References
+
+- SEC EDGAR APIs: https://www.sec.gov/search-filings/edgar-application-programming-interfaces
+- SEC EDGAR access guidance: https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data
+- SEC technical specs: https://www.sec.gov/submit-filings/technical-specifications
+- SEC 13F datasets: https://www.sec.gov/data-research/sec-markets-data/form-13f-data-sets
+- SEC Form D datasets: https://www.sec.gov/data-research/sec-markets-data/form-d-data-sets
+- SEC Reg A datasets: https://www.sec.gov/data-research/sec-markets-data/regulation-data-sets
+- SEC fails-to-deliver data: https://www.sec.gov/data-research/sec-markets-data/fails-deliver-data
+- SEC company tickers exchange file: https://www.sec.gov/file/company-tickers-exchange
+- FINRA short interest: https://www.finra.org/finra-data/browse-catalog/equity-short-interest
+- Nasdaq Daily List: https://www.nasdaqtrader.com/trader.aspx/Trader.aspx?id=DailyListPD
