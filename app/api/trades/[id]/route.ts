@@ -1,8 +1,8 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, like, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
-import { getDb } from '@/lib/db';
-import { tradeExecutions, trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
+import { getDb, getPoolDb } from '@/lib/db';
+import { tradeExecutions, tradeImportBatches, trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser, toTrade } from '@/lib/server-db-utils';
 import { closePositionSchema, updateTradeSchema } from '@/lib/validations/trades';
 
@@ -217,14 +217,40 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
     const authState = await requireUser();
     if ('error' in authState) return authState.error;
 
-    const db = getDb();
+    // getPoolDb() is required because we use db.transaction().
+    // getDb() uses the HTTP transport (NeonHttpDatabase) which does not
+    // support transactions; getPoolDb() uses the WebSocket pool (NeonDatabase),
+    // the same client used by import-raw/route.ts.
+    const db = getPoolDb();
     if (!db) return dbUnavailable();
     await ensureUser(db, authState.user);
 
     const { id } = await context.params;
 
-    await db.delete(trades)
-      .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)));
+    // Read sortKey before deleting so we can clear dedup rows.
+    const [row] = await db.select({ sortKey: trades.sortKey })
+      .from(trades)
+      .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)))
+      .limit(1);
+
+    await db.transaction(async (tx) => {
+      // Clear matching tradeImportBatches rows so the user can re-upload
+      // the same CSV after deleting this trade. The raw| prefix scopes
+      // the like() to CSV-import batches only, protecting against future
+      // batch-key formats that might share the same date string.
+      if (row?.sortKey) {
+        await tx.delete(tradeImportBatches).where(
+          and(
+            eq(tradeImportBatches.userId, authState.user.id),
+            like(tradeImportBatches.batchKey, `raw|${row.sortKey}|%`),
+          ),
+        );
+      }
+
+      await tx.delete(trades).where(
+        and(eq(trades.id, id), eq(trades.userId, authState.user.id)),
+      );
+    });
 
     return Response.json({ success: true, id });
   } catch (error) {

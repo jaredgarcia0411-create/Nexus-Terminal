@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { Trade } from '@/lib/types';
-import { bucketKey, isCrossDayTrade, toLocalDateKey } from '@/lib/journal-aggregates';
+import { bucketKey, isCrossDayTrade } from '@/lib/journal-aggregates';
 import { formatCurrency, formatR, getPnLColor } from '@/lib/trading-utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { 
@@ -104,7 +104,7 @@ export default function TradingCalendar({
         tradeId: trade.id,
         symbol: trade.symbol,
         netPnl: trade.netPnl,
-        entryKey: toLocalDateKey(trade.date),
+        entryKey: trade.sortKey,
         closeKey: bucketKey(trade),
       }))
       .sort((a, b) => a.closeKey.localeCompare(b.closeKey));

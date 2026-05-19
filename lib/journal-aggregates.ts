@@ -38,10 +38,10 @@ export function bucketKey(trade: Pick<Trade, 'date' | 'closedAt'>): string {
  * Open trades return false because they have no realized close day yet.
  */
 export function isCrossDayTrade(
-  trade: Pick<Trade, 'date' | 'closedAt' | 'isOpen'>,
+  trade: Pick<Trade, 'date' | 'closedAt' | 'isOpen' | 'sortKey'>,
 ): boolean {
   if (trade.isOpen) return false;
-  return bucketKey(trade) !== toLocalDateKey(trade.date);
+  return bucketKey(trade) !== trade.sortKey;
 }
 
 /**

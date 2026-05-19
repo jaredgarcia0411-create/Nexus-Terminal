@@ -265,6 +265,7 @@ describe('isCrossDayTrade', () => {
     const trade = makeTrade({
       id: 'same-day',
       date: new Date(2026, 4, 18, 10, 0),
+      sortKey: '2026-05-18',
     });
 
     expect(isCrossDayTrade(trade)).toBe(false);
@@ -274,6 +275,7 @@ describe('isCrossDayTrade', () => {
     const trade = makeTrade({
       id: 'cross-day',
       date: new Date(2026, 4, 18, 14, 0),
+      sortKey: '2026-05-18',
       closedAt: new Date(2026, 4, 19, 10, 0).toISOString(),
     });
 
@@ -284,6 +286,7 @@ describe('isCrossDayTrade', () => {
     const trade = makeTrade({
       id: 'open',
       date: new Date(2026, 4, 18, 10, 0),
+      sortKey: '2026-05-18',
       closedAt: new Date(2026, 4, 19, 10, 0).toISOString(),
       isOpen: true,
     });
@@ -295,9 +298,45 @@ describe('isCrossDayTrade', () => {
     const trade = makeTrade({
       id: 'legacy',
       date: new Date(2026, 4, 18, 10, 0),
+      sortKey: '2026-05-18',
       closedAt: null,
     });
 
     expect(isCrossDayTrade(trade)).toBe(false);
+  });
+});
+
+describe('isCrossDayTrade - production Date construction (ISO string)', () => {
+  // In production, trade.date is built via `new Date(row.date)` where row.date
+  // is a "YYYY-MM-DD" text column from the DB. `new Date("YYYY-MM-DD")` parses
+  // as midnight UTC. In timezones west of GMT (e.g. EST UTC-5, PST UTC-8),
+  // date-fns format(d, 'yyyy-MM-dd') returns the *previous* local calendar day
+  // for a midnight-UTC Date, which made the old toLocalDateKey(trade.date)
+  // comparison return "2026-05-18" instead of "2026-05-19", causing
+  // isCrossDayTrade to return true for every same-day trade.
+  //
+  // The fix compares bucketKey(trade) against trade.sortKey (never re-parsed),
+  // which is tz-agnostic. These tests use the exact production construction so
+  // they would fail under the old implementation on west-of-GMT hosts.
+  it('returns false for a same-day trade when date is constructed from an ISO date string', () => {
+    const trade = makeTrade({
+      id: 'iso-same-day',
+      date: new Date('2026-05-19'),
+      sortKey: '2026-05-19',
+      closedAt: '2026-05-19T12:00:00.000Z',
+    });
+
+    expect(isCrossDayTrade(trade)).toBe(false);
+  });
+
+  it('still returns true for a genuine cross-day trade when using ISO date string construction', () => {
+    const trade = makeTrade({
+      id: 'iso-cross-day',
+      date: new Date('2026-05-19'),
+      sortKey: '2026-05-19',
+      closedAt: '2026-05-20T12:00:00.000Z',
+    });
+
+    expect(isCrossDayTrade(trade)).toBe(true);
   });
 });

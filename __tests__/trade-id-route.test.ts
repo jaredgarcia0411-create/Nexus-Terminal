@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   tags as tagsTable,
   trades as tradesTable,
+  tradeImportBatches as tradeImportBatchesTable,
   tradeExecutions as tradeExecutionsTable,
   tradeTags as tradeTagsTable,
 } from '@/lib/db/schema';
@@ -11,17 +12,19 @@ const {
   dbUnavailableMock,
   ensureUserMock,
   getDbMock,
+  getPoolDbMock,
   requireUserMock,
   toTradeMock,
 } = vi.hoisted(() => ({
   dbUnavailableMock: vi.fn(() => Response.json({ error: 'Database not configured' }, { status: 503 })),
   ensureUserMock: vi.fn(),
   getDbMock: vi.fn(),
+  getPoolDbMock: vi.fn(),
   requireUserMock: vi.fn(),
   toTradeMock: vi.fn(),
 }));
 
-vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
+vi.mock('@/lib/db', () => ({ getDb: getDbMock, getPoolDb: getPoolDbMock }));
 vi.mock('@/lib/server-db-utils', () => ({
   dbUnavailable: dbUnavailableMock,
   ensureUser: ensureUserMock,
@@ -250,11 +253,24 @@ describe('trade-by-id route', () => {
   });
 
   it('deletes trade on DELETE', async () => {
-    const whereDelete = vi.fn().mockResolvedValue(undefined);
-    const db = {
-      delete: vi.fn(() => ({ where: whereDelete })),
+    const whereBatchDelete = vi.fn().mockResolvedValue(undefined);
+    const whereTradeDelete = vi.fn().mockResolvedValue(undefined);
+    const tx = {
+      delete: vi.fn((table: unknown) => {
+        if (table === tradeImportBatchesTable) {
+          return { where: whereBatchDelete };
+        }
+        if (table === tradesTable) {
+          return { where: whereTradeDelete };
+        }
+        return { where: vi.fn().mockResolvedValue(undefined) };
+      }),
     };
-    getDbMock.mockReturnValue(db);
+    const db = {
+      select: buildSelectChain([{ sortKey: '2026-05-19' }], [], []),
+      transaction: vi.fn(async (callback: (arg: typeof tx) => Promise<void>) => callback(tx)),
+    };
+    getPoolDbMock.mockReturnValue(db);
 
     const response = ensureResponse(await deleteTrade(new Request('http://localhost/api/trades/t-1', { method: 'DELETE' }), {
       params: Promise.resolve({ id: 't-1' }),
@@ -263,6 +279,8 @@ describe('trade-by-id route', () => {
 
     expect(response.status).toBe(200);
     expect(payload).toEqual({ success: true, id: 't-1' });
-    expect(whereDelete).toHaveBeenCalledTimes(1);
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(whereBatchDelete).toHaveBeenCalledTimes(1);
+    expect(whereTradeDelete).toHaveBeenCalledTimes(1);
   });
 });
