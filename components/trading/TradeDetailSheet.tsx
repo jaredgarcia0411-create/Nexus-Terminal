@@ -82,6 +82,9 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
     return buildTradeMarkers(trade);
   }, [trade]);
 
+  const tradeDateLabel = trade ? format(new Date(`${trade.sortKey}T00:00:00`), 'MMM dd, yyyy') : '';
+  const tradeTimeLabel = trade ? (trade.isOpen ? trade.entryTime : trade.exitTime) : '';
+
   const handleSave = async () => {
     if (!trade) return;
     try {
@@ -148,7 +151,9 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
           <div className="mt-2 flex min-h-0 flex-1 flex-col gap-4">
             <div className="flex items-center justify-between p-3">
               <div>
-                <p className="text-sm text-zinc-500">{format(new Date(trade.date), 'MMM dd, yyyy HH:mm')}</p>
+                <p className="text-sm text-zinc-500">
+                  {tradeDateLabel}{tradeTimeLabel ? ` ${tradeTimeLabel}` : ''}
+                </p>
                 <p className="text-sm font-semibold">
                   {trade.symbol}{' '}
                   <span

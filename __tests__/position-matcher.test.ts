@@ -74,6 +74,10 @@ describe('matchExecutions - LONG round-trip', () => {
     expect(trade.netPnl).toBeCloseTo(500);
     expect(trade.entryTime).toBe('09:30:00');
     expect(trade.exitTime).toBe('10:00:00');
+    expect(trade.rawExecutions).toEqual([
+      expect.objectContaining({ side: 'LONG_ENTRY', qty: 100, price: 150, time: '09:30:00' }),
+      expect.objectContaining({ side: 'LONG_EXIT', qty: 100, price: 155, time: '10:00:00' }),
+    ]);
   });
 });
 
@@ -108,6 +112,9 @@ describe('matchExecutions - unmatched entry becomes a new open position', () => 
     expect(open.avgEntryPrice).toBeCloseTo(100);
     expect(open.isOpen).toBe(true);
     expect(open.remainingQty).toBe(200);
+    expect(open.rawExecutions).toEqual([
+      expect.objectContaining({ side: 'LONG_ENTRY', qty: 200, price: 100, time: '09:30:00' }),
+    ]);
   });
 });
 

@@ -12,6 +12,7 @@ import {
 } from '@/lib/server-db-utils';
 import {
   matchExecutions,
+  type MatcherExecution,
   type OpenPositionInput,
 } from '@/lib/position-matcher';
 import { importRawSchema } from '@/lib/validations/trades';
@@ -34,6 +35,25 @@ function compactTimeForId(time: string): string {
 // pushed trades onto Sunday in the journal calendar.
 function dayToClosedAt(day: string): Date {
   return new Date(`${day}T12:00:00Z`);
+}
+
+function toStoredExecutionSide(side: MatcherExecution['side']): 'ENTRY' | 'EXIT' {
+  return side.endsWith('_ENTRY') ? 'ENTRY' : 'EXIT';
+}
+
+function toExecutionRows(userId: string, tradeId: string, rawExecutions: MatcherExecution[] = []) {
+  return rawExecutions.map((execution, index) => ({
+    id: `${tradeId}|raw|${index}-${hex4()}`,
+    userId,
+    tradeId,
+    side: toStoredExecutionSide(execution.side),
+    price: execution.price,
+    qty: execution.qty,
+    time: execution.time,
+    timestamp: null,
+    commission: execution.commission ?? 0,
+    fees: execution.fees ?? 0,
+  }));
 }
 
 export async function POST(request: Request) {
@@ -91,6 +111,7 @@ export async function POST(request: Request) {
 
       for (const trade of matchedClosed) {
         const tradeId = makeId([sortKey, trade.symbol, trade.direction]);
+        const executionRows = toExecutionRows(authState.user.id, tradeId, trade.rawExecutions);
 
         await tx.insert(trades).values({
           id: tradeId,
@@ -106,9 +127,9 @@ export async function POST(request: Request) {
           netPnl: trade.netPnl,
           entryTime: trade.entryTime,
           exitTime: trade.exitTime,
-          executionCount: 1,
+          executionCount: Math.max(1, executionRows.length),
           pnl: trade.netPnl,
-          executions: 1,
+          executions: Math.max(1, executionRows.length),
           commission: trade.commission,
           fees: trade.fees,
           isOpen: false,
@@ -124,13 +145,22 @@ export async function POST(request: Request) {
             netPnl: trade.netPnl,
             entryTime: trade.entryTime,
             exitTime: trade.exitTime,
-            executionCount: 1,
+            executionCount: Math.max(1, executionRows.length),
             pnl: trade.netPnl,
-            executions: 1,
+            executions: Math.max(1, executionRows.length),
             commission: trade.commission,
             fees: trade.fees,
           },
         });
+
+        if (executionRows.length > 0) {
+          await tx.delete(tradeExecutions).where(and(
+            eq(tradeExecutions.userId, authState.user.id),
+            eq(tradeExecutions.tradeId, tradeId),
+          ));
+
+          await tx.insert(tradeExecutions).values(executionRows);
+        }
       }
 
       for (const position of newOpenPositions) {
@@ -140,6 +170,7 @@ export async function POST(request: Request) {
           position.direction,
           `${compactTimeForId(position.entryTime)}-${hex4()}`,
         ]);
+        const executionRows = toExecutionRows(authState.user.id, tradeId, position.rawExecutions);
 
         await tx.insert(trades).values({
           id: tradeId,
@@ -155,15 +186,19 @@ export async function POST(request: Request) {
           netPnl: 0,
           entryTime: position.entryTime,
           exitTime: '',
-          executionCount: 1,
+          executionCount: Math.max(1, executionRows.length),
           pnl: 0,
-          executions: 1,
+          executions: Math.max(1, executionRows.length),
           commission: position.commission,
           fees: position.fees,
           isOpen: true,
           closedAt: null,
           remainingQty: position.remainingQty ?? position.totalQuantity,
         });
+
+        if (executionRows.length > 0) {
+          await tx.insert(tradeExecutions).values(executionRows);
+        }
       }
 
       for (const fill of closingFills) {

@@ -19,6 +19,16 @@ export type TradeLike = Partial<Omit<Trade, 'date'>> & {
 
 type ApiRequestError = Error & { status?: number };
 
+const SORT_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseTradeDate(date: string | Date, sortKey: string): Date {
+  if (SORT_KEY_PATTERN.test(sortKey)) {
+    return new Date(`${sortKey}T00:00:00`);
+  }
+
+  return new Date(date);
+}
+
 export const normalizeTrade = (trade: TradeLike): Trade => {
   const commission = trade.commission ?? 0;
   const fees = trade.fees ?? 0;
@@ -29,7 +39,7 @@ export const normalizeTrade = (trade: TradeLike): Trade => {
 
   return {
     ...trade,
-    date: new Date(trade.date),
+    date: parseTradeDate(trade.date, trade.sortKey),
     grossPnl,
     netPnl,
     entryTime: trade.entryTime ?? '',

@@ -24,6 +24,7 @@ export interface MatchedTrade {
   fees: number;
   isOpen?: boolean;
   remainingQty?: number;
+  rawExecutions?: MatcherExecution[];
 }
 
 export interface OpenPositionInput {
@@ -90,6 +91,25 @@ function remainder(exec: RawBucket, matched: number): RawBucket | null {
   return { ...exec, qty: rem, commission: exec.commission * ratio, fees: exec.fees * ratio };
 }
 
+function toMatcherExecution(
+  symbol: string,
+  direction: Direction,
+  side: 'ENTRY' | 'EXIT',
+  exec: RawBucket,
+): MatcherExecution {
+  return {
+    symbol,
+    side: direction === 'LONG'
+      ? (side === 'ENTRY' ? 'LONG_ENTRY' : 'LONG_EXIT')
+      : (side === 'ENTRY' ? 'SHORT_ENTRY' : 'SHORT_EXIT'),
+    qty: exec.qty,
+    price: exec.price,
+    time: exec.time,
+    commission: exec.commission,
+    fees: exec.fees,
+  };
+}
+
 function fifoMatch(
   entries: RawBucket[],
   exits: RawBucket[],
@@ -110,6 +130,7 @@ function fifoMatch(
   let totalFees = 0;
   let earliestEntry = '';
   let latestExit = '';
+  const rawExecutions: MatcherExecution[] = [];
 
   while (se.length > 0 && sx.length > 0) {
     const entry = se.shift()!;
@@ -129,6 +150,8 @@ function fifoMatch(
     const exitFees = exit.qty > 0 ? (exit.fees / exit.qty) * qty : 0;
     const pairCommission = entryCommission + exitCommission;
     const pairFees = entryFees + exitFees;
+    const matchedEntry: RawBucket = { ...entry, qty, commission: entryCommission, fees: entryFees };
+    const matchedExit: RawBucket = { ...exit, qty, commission: exitCommission, fees: exitFees };
     const gross = direction === 'LONG'
       ? (exit.price - entry.price) * qty
       : (entry.price - exit.price) * qty;
@@ -144,6 +167,10 @@ function fifoMatch(
 
     if (!earliestEntry || compareTimes(entry.time, earliestEntry) < 0) earliestEntry = entry.time;
     if (!latestExit || compareTimes(exit.time, latestExit) > 0) latestExit = exit.time;
+    rawExecutions.push(
+      toMatcherExecution(symbol, direction, 'ENTRY', matchedEntry),
+      toMatcherExecution(symbol, direction, 'EXIT', matchedExit),
+    );
 
     const entryRemainder = remainder(entry, qty);
     const exitRemainder = remainder(exit, qty);
@@ -164,6 +191,7 @@ function fifoMatch(
       exitTime: latestExit,
       commission: totalCommission,
       fees: totalFees,
+      rawExecutions,
     });
   }
 
@@ -281,6 +309,7 @@ function matchSide(
   let totalFees = 0;
   let earliestEntry = '';
   let latestExit = '';
+  const rawExecutions: MatcherExecution[] = [];
 
   while (sortedEntries.length > 0 && sortedExits.length > 0) {
     const entry = sortedEntries.shift()!;
@@ -301,6 +330,8 @@ function matchSide(
     const exitFees = exit.qty > 0 ? (exit.fees / exit.qty) * qty : 0;
     const pairCommission = entryCommission + exitCommission;
     const pairFees = entryFees + exitFees;
+    const matchedEntry: RawBucket = { ...entry, qty, commission: entryCommission, fees: entryFees };
+    const matchedExit: RawBucket = { ...exit, qty, commission: exitCommission, fees: exitFees };
     const gross = direction === 'LONG'
       ? (exit.price - entry.price) * qty
       : (entry.price - exit.price) * qty;
@@ -316,6 +347,10 @@ function matchSide(
 
     if (!earliestEntry || compareTimes(entry.time, earliestEntry) < 0) earliestEntry = entry.time;
     if (!latestExit || compareTimes(exit.time, latestExit) > 0) latestExit = exit.time;
+    rawExecutions.push(
+      toMatcherExecution(symbol, direction, 'ENTRY', matchedEntry),
+      toMatcherExecution(symbol, direction, 'EXIT', matchedExit),
+    );
 
     const entryRemainder = remainder(entry, qty);
     const exitRemainder = remainder(exit, qty);
@@ -336,6 +371,7 @@ function matchSide(
       exitTime: latestExit,
       commission: totalCommission,
       fees: totalFees,
+      rawExecutions,
     });
   }
 
@@ -363,6 +399,7 @@ function matchSide(
       fees: openFees,
       isOpen: true,
       remainingQty: totalOpenQty,
+      rawExecutions: sortedEntries.map((entry) => toMatcherExecution(symbol, direction, 'ENTRY', entry)),
     });
   }
 
