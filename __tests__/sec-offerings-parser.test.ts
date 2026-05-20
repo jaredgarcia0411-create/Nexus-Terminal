@@ -262,4 +262,54 @@ describe('SEC offerings extractors', () => {
       confidence: 'high',
     }));
   });
+
+  it('extracts ADS-denominated 424B5 fields for foreign issuers', () => {
+    const body = [
+      'THE OFFERING',
+      'We are offering 10,000,000 American Depositary Shares ("ADSs").',
+      'The purchase price is $1.52 per ADS.',
+      'We expect total proceeds of approximately $15.2 million.',
+    ].join(' ');
+
+    expect(extractOfferingFrom424B(body, '424B5')).toEqual(expect.objectContaining({
+      status: 'priced',
+      sharesAmount: 10_000_000,
+      securitiesAmount: 10_000_000,
+      sharePrice: 1.52,
+      offeringAmount: 15_200_000,
+      isSellingStockholderResale: false,
+    }));
+  });
+
+  it('extracts ordinary-shares offerings without "of common stock" anchor', () => {
+    const body = [
+      'PROSPECTUS SUPPLEMENT SUMMARY',
+      'We are offering 8,000,000 ordinary shares.',
+      'The purchase price is $0.80 per ordinary share.',
+      'Aggregate purchase price of $6.4 million.',
+    ].join(' ');
+
+    expect(extractOfferingFrom424B(body, '424B5')).toEqual(expect.objectContaining({
+      status: 'priced',
+      sharesAmount: 8_000_000,
+      sharePrice: 0.8,
+      offeringAmount: 6_400_000,
+    }));
+  });
+
+  it('extracts dual-class Class A common share fields', () => {
+    const body = [
+      'THE OFFERING',
+      'We are offering 4,000,000 shares of Class A common stock.',
+      'The purchase price is $2.50 per Class A common share.',
+      'Gross proceeds of $10 million.',
+    ].join(' ');
+
+    expect(extractOfferingFrom424B(body, '424B3')).toEqual(expect.objectContaining({
+      status: 'priced',
+      sharesAmount: 4_000_000,
+      sharePrice: 2.5,
+      offeringAmount: 10_000_000,
+    }));
+  });
 });

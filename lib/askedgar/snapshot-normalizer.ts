@@ -265,7 +265,14 @@ export function normalizeAskEdgarResponse(
           headline: buildOfferingHeadline(row),
           filedAt: row.filedAt,
           offeringType: row.offeringType,
-          sharesAmount: row.sharesAmount,
+          // Fall back to securitiesAmount (units / pre-funded warrants /
+          // generic "securities") when the more specific shares anchor
+          // didn't fire. The UI's "Shares" column would otherwise show "--"
+          // even though the extractor captured a value. The headline
+          // intentionally still uses row.sharesAmount only, so we don't
+          // claim "X shares" in the headline when only securitiesAmount
+          // was extracted.
+          sharesAmount: row.sharesAmount ?? row.securitiesAmount ?? null,
           warrantsAmount: row.warrantsAmount,
           sharePrice: row.sharePrice,
           offeringAmount: row.offeringAmount,

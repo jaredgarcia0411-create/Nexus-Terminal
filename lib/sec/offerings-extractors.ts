@@ -183,8 +183,13 @@ export function extractDollarAmount(text: string, anchorPatterns: RegExp[]): num
 }
 
 export function extractShareCount(text: string): number | null {
-  const anchorPattern = /shares?\s+of\s+(?:our\s+)?common\s+stock/gi;
-  const sharePattern = /([\d,]+(?:\.\d+)?)\s*(million|thousand)?\s+shares?\s+of\s+(?:our\s+)?common\s+stock/i;
+  // Equity-term group. Order matters within alternation: longer "shares of <X>
+  // (common|capital|Class A/B common) stock" phrases come first so they win
+  // over a bare "ordinary shares" fallback. Foreign issuers (e.g. CN ADRs)
+  // file in "ordinary shares" / "ADSs" terminology; dual-class US issuers
+  // use "Class A/B common stock"; some filers use "capital stock".
+  const anchorPattern = /(?:shares?\s+of\s+(?:our\s+)?(?:Class\s+[AB]\s+common|common|capital)\s+stock|ordinary\s+shares|American\s+Depositary\s+Shares|ADSs?)/gi;
+  const sharePattern = /([\d,]+(?:\.\d+)?)\s*(million|thousand)?\s+(?:shares?\s+of\s+(?:our\s+)?(?:Class\s+[AB]\s+common|common|capital)\s+stock|ordinary\s+shares|American\s+Depositary\s+Shares|ADSs?)/i;
 
   for (const anchorMatch of text.matchAll(anchorPattern)) {
     const index = anchorMatch.index ?? 0;
@@ -223,7 +228,10 @@ export function extractSecuritiesCount(text: string): number | null {
 }
 
 export function extractPricePerShare(text: string): number | null {
-  const match = /\$\s*([\d,.]+)\s+per\s+(?:share|unit|pre-funded\s+warrant|security)/i.exec(text);
+  // Per-unit price terms. ADS-issuing foreign filers quote "$X per ADS";
+  // dual-class issuers quote "per Class A (common) share"; the original
+  // (share|unit|pre-funded warrant|security) covers domestic single-class.
+  const match = /\$\s*([\d,.]+)\s+per\s+(?:share|unit|pre-funded\s+warrant|security|ADS|ordinary\s+share|Class\s+[AB]\s+(?:common\s+)?share)/i.exec(text);
   if (!match?.[1]) return null;
 
   const parsed = Number.parseFloat(match[1].replace(/,/g, ''));
@@ -336,6 +344,10 @@ function extractOfferingFieldsFromSection(args: {
     /gross\s+proceeds/i,
     /aggregate\s+gross\s+proceeds/i,
     /aggregate\s+offering\s+price/i,
+    /total\s+proceeds/i,
+    /aggregate\s+proceeds/i,
+    /(?:total|aggregate)\s+purchase\s+price/i,
+    /proceeds\s+(?:to\s+(?:the\s+)?(?:company|issuer)|from\s+the\s+offering)/i,
   ]);
   const netProceedsAmount = extractDollarAmount(section, [
     /net\s+proceeds/i,
