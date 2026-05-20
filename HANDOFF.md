@@ -19,6 +19,10 @@ Completion evidence:
 - Validation passed: `npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run workflow:audit`.
 - Manual browser smoke was not run in this session.
 
+Follow-up (open): Smoke check on a fresh ticker.
+- 2026-05-19 attempt: WNW Past Offerings table still rendered identically post-deploy because the snapshot was cached. Verify on a ticker whose snapshot hasn't been built yet (any ADS/FPI name — e.g. RUBI, or another fresh CN ADR). Confirm Shares / Price / Amount columns populate for at least one priced row; if all "--", capture the filing URL and open a follow-up spec.
+- Also worth re-checking on WNW once its cache TTL expires (per `lib/askedgar/cache-config.ts` defaults).
+
 The Past Offerings table on the Research tab shows correct dates and types for foreign issuers (e.g. WNW, a Chinese ADS issuer) but every numeric column is "--". Root cause: `lib/sec/offerings-extractors.ts` only recognizes US-domestic equity language ("shares of common stock", "per share", "gross proceeds"). Foreign issuers and dual-class US issuers use different terminology, so the extractors silently return `null` for every numeric field even when the filing contains the data.
 
 This spec broadens three extractor regexes (share count, per-share price, offering amount) to also match ADS / ordinary shares / Class A/B common / capital stock language, adds three test cases covering the new variants, and adds a one-line normalizer fallback so the UI's "Shares" column shows `securitiesAmount` when `sharesAmount` is null (e.g. units offerings). Row filtering and classification are unchanged.

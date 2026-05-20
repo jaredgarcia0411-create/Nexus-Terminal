@@ -1031,7 +1031,7 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
             </div>
 
             <div>
-              <h4 className="mb-2 text-base font-semibold text-zinc-200">Historical Float</h4>
+              <h4 className="mb-2 text-base font-semibold text-zinc-200">Historical Outstanding Shares</h4>
               <HistoricalFloatTable rows={data.historicalFloat} />
             </div>
 

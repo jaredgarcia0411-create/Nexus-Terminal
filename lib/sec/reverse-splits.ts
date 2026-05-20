@@ -100,8 +100,13 @@ const NUMBER_WORDS: Record<string, number> = {
 function normalizeRatio(numerator: number, denominator: number): string | null {
   if (!Number.isFinite(numerator) || !Number.isFinite(denominator)) return null;
   if (numerator <= 0 || denominator <= 0) return null;
-  if (numerator >= denominator) return null;
-  return `${numerator}-for-${denominator}`;
+  if (numerator === denominator) return null;
+  // Foreign issuers (esp. CN/HK ADRs) write ratios old:new ("100-to-1 share
+  // consolidation"); US convention is new:old ("1-for-100 reverse split").
+  // Both describe the same direction since this function only runs on
+  // reverse-split / consolidation matches, so canonicalize to new:old.
+  const [num, den] = numerator < denominator ? [numerator, denominator] : [denominator, numerator];
+  return `${num}-for-${den}`;
 }
 
 function compactWhitespace(text: string): string {
