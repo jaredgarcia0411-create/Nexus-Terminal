@@ -275,3 +275,88 @@ For a hobbyist platform with <50 known users:
 - Confirm `brokerSyncLog` still exists at `lib/db/schema.ts:111-120` and matches what we'd want.
 - Confirm `/api/trades/import` still accepts a `batchKey` for idempotency.
 - Verify Lightspeed Connect's historical-fill capability before designing around it.
+
+---
+
+## Share Issuance Restrictions in Research Reports (parked 2026-05-20)
+
+### The idea
+Add a "Share Issuance Restrictions" section to the small-cap research report that summarizes any lock-up, standstill, variable-rate-transaction prohibitions, or similar restrictions on subsequent equity issuances disclosed in SEC filings over the last 12 months. Output is a numbered list ordered newest-to-oldest with dates, durations, and exceptions — e.g.:
+
+> 1. Date: 1/13/2026
+>    Company is restricted from issuing common stock for 45 days following the closing date.
+>    Exceptions: Issuances under stock/option plans up to $50k per quarter, and securities for acquisitions approved by disinterested directors.
+
+The saved prompt (kept for reference): *"in short and simple terms, list out, in numbered list any restrictions on subsequent equity issuances that appear in the context, make sure to include dates and timelines, if applicable, regarding how long the restriction is or when it ends … And also indicate if there are exceptions. If there is no info on share issuance restrictions then say that there's no info on share issuance restrictions. (ONLY FOCUS ON DEVELOPMENTS IN THE LAST 12 MONTHS)"*
+
+### Why it's parked
+Approach not yet locked in. Need to decide between three implementation paths (below) before writing the spec. Also not blocking anything urgent — the existing research report already captures dilution risk via offerings/registrations/dilution rating.
+
+Inspired by Perplexity Finance's "Insights" feature (saved custom prompts per ticker), but scoped down to just this one prompt — building a full Insights feature for a single saved prompt would be overengineering for current needs.
+
+### Critical context — what the LLM actually sees today
+This is what made the original "just add a prompt line" idea not work, so it must be documented:
+
+- The research-report LLM call (`lib/agents/blueprints/small-cap-research.ts:736`) receives **structured fields**, not filing bodies.
+- `offerings` (`lib/sec/offerings.ts`) does read full filing text via `getFilingBody`, but the regex extractors anchor on **amount/price** language and only return a ~600-char `sourceSnippet` around the *offering match* — not around any lock-up/standstill language.
+- `news` items are truncated to a **280-char summary** (`MAX_SUMMARY_LENGTH` in `lib/agents/news-formatter.ts:38`).
+- **No raw 8-K, 424B, S-1, or exhibit body text** enters the prompt today.
+- Ask Edgar has **no clean field for restriction language**:
+  - `/v1/offerings` and `/v1/registrations` return amounts/dates/types only.
+  - `/v1/agreements` is the closest (per `docs/ae-buildout.md:140`, covers "registration rights, ROFR, participation rights, tail fees, restrictions, price protection") but is described as extraction-heavy, has been dropped from the `small-cap-research` scope, and isn't in `ENDPOINT_SCOPES` today.
+  - `dilution-rating.mgmt_commentary` sometimes mentions restrictions but is editorial — not structured.
+
+So the data simply isn't in the prompt — we'd need to extract it from filing bodies ourselves and feed it in.
+
+### Three implementation paths
+
+#### A.1 — Targeted restrictions parser (cleanest, most work)
+Build a new `lib/sec/share-issuance-restrictions.ts` modeled on `lib/sec/identity-events.ts` and `lib/sec/offerings.ts`.
+
+- Pull filings from `getSecFilingsForProfile` for forms `424B*`, `8-K` (Items 1.01, 2.03, 3.02), `S-1/F-1`, `S-3/F-3` over the last 365 days.
+- Use `getFilingBody` (already SEC-cached in the `sec_filing_body_cache` table) to read the body.
+- Regex-scan for restriction phrases: `lock-up period`, `standstill`, `shall not issue`, `agreed not to offer.{0,40}common stock`, `restricted from issuing`, `variable rate transaction`, `prohibited from entering into`, etc.
+- Return structured rows: `{ effectiveDate, durationDays, description, exceptions, formType, url, sourceSnippet, confidence }`.
+- Add a `'share-issuance-restrictions'` key to `ENDPOINT_REGISTRY` (`lib/askedgar/endpoints.ts`), include in `small-cap-research` scope, render it as a new section in the prompt.
+- LLM job becomes a thin formatting step over structured data.
+
+**Pros:** structured, cacheable, free (no Ask Edgar billing — same pattern as `offerings`/`reverse-splits`), reusable elsewhere (dilution panel, scanner). Matches existing parser patterns.
+**Cons:** ~300–500 lines of new parser code + regex tuning over real filings. This is the bulk of the effort.
+
+#### A.2 — Raw filing body injection (laziest, expensive)
+- For the last 12 months of `424B*` and `8-K` Item 1.01 filings, slice the body around "Lock-Up" / "Restrictions on Future Sales" / "Standstill" headings and dump the text into the prompt.
+- Let the LLM do all the parsing and formatting.
+
+**Pros:** ~80 lines of code — pick the filings, grep section headings, paste.
+**Cons:** token cost balloons (a 424B "Lock-Up" section is often 5–20KB; 5–10 filings per ticker → 50–200KB added per report). Latency rises. Lower reliability — model handles both extraction and formatting with nothing to validate against.
+
+#### A.3 — Extend the existing offerings parser (best balance)
+- Modify `lib/sec/offerings-extractors.ts` to ALSO capture a "restriction" snippet whenever it sees lock-up/standstill phrases within the same filing where it's extracting an offering.
+- Add an optional `restrictionSnippet` field to `RawOffering`.
+- Prompt asks the LLM to summarize any non-null restriction snippets into the numbered list.
+
+**Pros:** minimal new infrastructure, reuses the offerings filing scan already running (cached). Probably ~50–100 lines.
+**Cons:** misses restrictions in filings without an offering match (e.g., a 10.X exhibit, an S-1 amendment with no priced takedown). Coupling restriction extraction to offering extraction is brittle long-term.
+
+### Recommendation when this is unparked
+**Start with A.3, watch quality, promote to A.1 if you find gaps.** A.3 piggybacks on infrastructure that already works and already costs nothing. Captures the 80% case — most lock-ups are tied to an offering filing, which is exactly when the offerings parser is reading the body. A few weeks of usage tells you whether the gap to A.1 is worth the build.
+
+Avoid A.2 — raw filing text in prompts is the kind of cost growth that doesn't show up in any single line but creeps into the monthly bill.
+
+### Open questions to answer before writing the spec
+1. **Form scope.** Should restrictions show up from 8-Ks announcing PIPEs (lock-up on the *issuer*), from S-1s (lock-up on *insiders*), or both? They mean different things for dilution risk.
+2. **Date window.** "Last 12 months" — from today, or from the most recent filing? (Matters for stale tickers.)
+3. **Placement.** New tab vs. a card under the existing Dilution / Offering Risk sections in `ResearchReportSections.tsx`?
+4. **Caching.** Same 16h TTL as the rest of the report (`CACHE_TTL_HOURS` in `app/api/research-report/route.ts:19`), or shorter since a new 8-K can change the answer?
+
+### Triggers to revisit
+- A trade decision is missed because a lock-up/restriction wasn't surfaced in time.
+- Adding multiple new "insight" prompts becomes plausible — then it's worth building a generalized Insights feature (custom prompts table + UI) instead of bolting in one section. The Perplexity Insights model in the original screenshots is the reference for what that looks like.
+- Ask Edgar adds a structured restrictions field on `/v1/offerings` or `/v1/registrations` — that would change the build-vs-buy calculus.
+
+### What to check before acting
+- Confirm `getFilingBody` (`lib/sec/filing-body.ts`) and `sec_filing_body_cache` still work the same way.
+- Confirm `ENDPOINT_REGISTRY` and `ENDPOINT_SCOPES` in `lib/askedgar/endpoints.ts` still look the same.
+- Re-check Ask Edgar's endpoint list — `/v1/agreements` may have improved, or a new restrictions-focused endpoint may exist.
+- Sample 5–10 recent 424B and 8-K Item 1.01 filings from real small-cap tickers and confirm the restriction language matches the regex patterns planned for A.1/A.3.
+- Re-read the prompt language above — it may have evolved since 2026-05-20.
