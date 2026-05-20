@@ -126,6 +126,31 @@ function RatingDot({ rating }: { rating: Rating }) {
   );
 }
 
+// Detects a bullet-formatted explanation (every non-empty line starts with "- ",
+// "• ", or "* "). If so, renders as a <ul>; otherwise falls back to a paragraph.
+// This lets the LLM control the layout via prompt formatting (currently only
+// dilution.explanation is asked to return bullets) without a schema change, and
+// keeps stale 16h-cached paragraph reports rendering correctly.
+function ExplanationBody({ text }: { text: string }) {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const bulletPattern = /^[-•*]\s+/;
+  const isBulletList = lines.length > 1 && lines.every((l) => bulletPattern.test(l));
+
+  if (isBulletList) {
+    return (
+      <ul className="space-y-1 text-sm text-zinc-300">
+        {lines.map((line, i) => (
+          <li key={i} className="flex gap-2">
+            <span className="text-zinc-500">•</span>
+            <span>{line.replace(bulletPattern, '')}</span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  return <p className="text-sm text-zinc-300">{text}</p>;
+}
+
 function RatedRow({ label, section }: { label: string; section: RatedSection }) {
   return (
     <div className="space-y-1">
@@ -133,7 +158,7 @@ function RatedRow({ label, section }: { label: string; section: RatedSection }) 
         <span className="text-sm font-semibold text-zinc-200">{label}</span>
         <RatingDot rating={section.rating} />
       </div>
-      <p className="text-sm text-zinc-300">{section.explanation}</p>
+      <ExplanationBody text={section.explanation} />
     </div>
   );
 }
