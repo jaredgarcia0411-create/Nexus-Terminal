@@ -105,7 +105,7 @@ export default function TradeTable({
             <th className="px-4 py-3 text-right">Avg Exit</th>
             <th className="px-4 py-3 text-right">Qty</th>
             <th className="px-4 py-3 text-right">Risk ($)</th>
-            <th className="px-4 py-3 text-right">PnL</th>
+            <th className="px-4 py-3 text-right">P/L</th>
           </tr>
         </thead>
 

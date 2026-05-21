@@ -69,6 +69,50 @@ function cloneTemplateFields(fields: TemplateField[]): TemplateField[] {
   }));
 }
 
+// Normalize a stored template (live template row or a review's frozen
+// snapshot) against WEEKLY_DEFAULT_FIELDS. We do three things in memory so
+// existing users see the latest canonical structure without having to hit
+// "Reset to Defaults":
+//   1. Append any default fields that are missing from the stored list (so
+//      newly-added defaults like "Thoughts" appear).
+//   2. Rewrite labels for known IDs to the canonical label (so renames like
+//      "Goals next week" → "Goals For Next Week" propagate).
+//   3. Move known IDs to the bottom in canonical order if they aren't
+//      already (so reorders like Thoughts → Goals For Next Week stick).
+// Fields whose IDs aren't in WEEKLY_DEFAULT_FIELDS are preserved as-is at
+// their original position, so any custom field a user added survives.
+const REPOSITION_FIELD_IDS = new Set(['thoughts', 'goalsNextWeek']);
+function withMissingDefaults(fields: TemplateField[]): TemplateField[] {
+  const defaultLabels = new Map(WEEKLY_DEFAULT_FIELDS.map((field) => [field.id, field.label]));
+  const fieldsById = new Map(fields.map((field) => [field.id, field]));
+
+  // 1 + 2: pass through stored fields in their current order, but rewrite
+  // labels to canonical. Skip the fields we'll reposition at the end.
+  const passthrough = fields
+    .filter((field) => !REPOSITION_FIELD_IDS.has(field.id))
+    .map((field) => {
+      const canonicalLabel = defaultLabels.get(field.id);
+      return canonicalLabel && canonicalLabel !== field.label
+        ? { ...field, label: canonicalLabel }
+        : field;
+    });
+
+  // 3: append the repositioned IDs in their canonical order. Use the
+  // stored field's options/required if present; otherwise clone from
+  // defaults so a brand-new field still renders.
+  const repositioned = WEEKLY_DEFAULT_FIELDS
+    .filter((def) => REPOSITION_FIELD_IDS.has(def.id))
+    .map((def) => {
+      const existing = fieldsById.get(def.id);
+      if (existing) {
+        return { ...existing, label: def.label };
+      }
+      return cloneTemplateFields([def])[0];
+    });
+
+  return [...passthrough, ...repositioned];
+}
+
 export default function WeeklyReviewSheet({
   open,
   onOpenChange,
@@ -88,11 +132,11 @@ export default function WeeklyReviewSheet({
   const [saving, setSaving] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
   const [chartCount, setChartCount] = useState(INITIAL_CHART_BATCH);
-  // Mirror DailyReportSheet: saved reviews open in 'view' so URLs in the
-  // saved text render as clickable anchors (TemplateFieldRenderer swaps the
-  // textarea for an anchor-aware block when readOnly). Clicking "Edit Review"
-  // flips to 'edit' to expose the inputs and the save button.
-  const [viewMode, setViewMode] = useState<'view' | 'edit'>('edit');
+  // Mirror DailyReportSheet: every open defaults to 'view' so URLs render as
+  // clickable anchors (TemplateFieldRenderer swaps the textarea for an
+  // anchor-aware block when readOnly). Clicking "Edit Review" flips to 'edit'
+  // to expose the inputs and the save button.
+  const [viewMode, setViewMode] = useState<'view' | 'edit'>('view');
 
   const isExistingReport = existing !== null;
   // Parent `readOnly` (Archive's PDF export) forces read-only and hides
@@ -110,9 +154,8 @@ export default function WeeklyReviewSheet({
     setAggregatedWatchlist([]);
     setEditingTemplate(false);
     setChartCount(INITIAL_CHART_BATCH);
-    // Default to edit; the fetch below flips this to 'view' if a saved
-    // review already exists for this week.
-    setViewMode('edit');
+    // Always reset to view; user explicitly clicks "Edit Review" to mutate.
+    setViewMode('view');
 
     void Promise.all([
       fetch(`/api/weekly-reviews?from=${weekStart}&to=${weekEnd}`).then((response) => response.json()),
@@ -140,14 +183,13 @@ export default function WeeklyReviewSheet({
 
         if (found) {
           setExisting(found);
-          setViewMode('view');
-          setFields(cloneTemplateFields(found.templateSnapshot));
+          setFields(withMissingDefaults(cloneTemplateFields(found.templateSnapshot)));
           const merged: Record<string, unknown> = { ...found.reportData };
           if (merged.netResult == null) merged.netResult = formatCurrency(agg.netResult);
           if (merged.rTotal == null) merged.rTotal = formatRTotal(agg.rTotal);
           setReportData(merged);
         } else if (tmpl) {
-          setFields(cloneTemplateFields(tmpl.fields));
+          setFields(withMissingDefaults(cloneTemplateFields(tmpl.fields)));
           setReportData({
             netResult: formatCurrency(agg.netResult),
             rTotal: formatRTotal(agg.rTotal),
@@ -261,25 +303,14 @@ export default function WeeklyReviewSheet({
         className="print-target w-full overflow-y-auto border-white/10 bg-[#121214] text-white sm:max-w-3xl"
       >
         <SheetHeader>
-          <div className="flex items-center justify-between">
-            <SheetTitle className="text-base font-semibold">
-              Weekly Review
-              {weekStart
-                ? ` — ${format(new Date(`${weekStart}T00:00:00`), 'MMM d')} – ${
-                    weekEnd ? format(new Date(`${weekEnd}T00:00:00`), 'MMM d, yyyy') : ''
-                  }`
-                : ''}
-            </SheetTitle>
-            {!isExistingReport && !readOnly ? (
-              <button
-                onClick={() => setEditingTemplate(!editingTemplate)}
-                className="rounded-md p-1.5 text-zinc-400 hover:bg-white/10 hover:text-white"
-                title="Edit template"
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-            ) : null}
-          </div>
+          <SheetTitle className="text-base font-semibold">
+            Weekly Review
+            {weekStart
+              ? ` — ${format(new Date(`${weekStart}T00:00:00`), 'MMM d')} – ${
+                  weekEnd ? format(new Date(`${weekEnd}T00:00:00`), 'MMM d, yyyy') : ''
+                }`
+              : ''}
+          </SheetTitle>
         </SheetHeader>
 
         {loading ? (
@@ -287,7 +318,14 @@ export default function WeeklyReviewSheet({
         ) : (
           <div className="mt-4 space-y-6 p-4">
             {!readOnly ? (
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                <Button
+                  onClick={() => setEditingTemplate((flag) => !flag)}
+                  className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                >
+                  <Pencil className="mr-1.5 h-4 w-4" />
+                  Edit Template
+                </Button>
                 {viewMode === 'view' ? (
                   <Button
                     onClick={() => setViewMode('edit')}
@@ -345,7 +383,7 @@ export default function WeeklyReviewSheet({
               </div>
             ) : null}
 
-            {editingTemplate && !isExistingReport && !readOnly ? (
+            {editingTemplate && !readOnly ? (
               <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
                 <p className="text-sm font-medium capitalize text-white">Edit Template</p>
                 {fields.map((field, index) => (

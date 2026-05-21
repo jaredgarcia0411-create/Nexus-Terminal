@@ -6,6 +6,10 @@ import type { Trade } from '@/lib/types';
 
 interface WeeklyTradesPanelProps {
   trades: Trade[];
+  // Header + empty-state are overridable so the same panel can serve the
+  // Daily Review (passes "Daily Trades" / "No trades logged today.").
+  title?: string;
+  emptyState?: string;
 }
 
 interface WeeklyTradeRow {
@@ -31,7 +35,11 @@ function formatR(r: number): string {
   return `${r >= 0 ? '+' : ''}${r.toFixed(2)}R`;
 }
 
-export default function WeeklyTradesPanel({ trades }: WeeklyTradesPanelProps) {
+export default function WeeklyTradesPanel({
+  trades,
+  title = 'Weekly Trades',
+  emptyState = 'No trades logged this week.',
+}: WeeklyTradesPanelProps) {
   // Sort chronologically by sortKey so the order matches the Trade Replay Charts
   // section below it — same trades, same visual order.
   const rows = useMemo(
@@ -55,7 +63,7 @@ export default function WeeklyTradesPanel({ trades }: WeeklyTradesPanelProps) {
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white">Weekly Trades</h3>
+        <h3 className="text-sm font-semibold text-white">{title}</h3>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-white/10">
@@ -72,7 +80,7 @@ export default function WeeklyTradesPanel({ trades }: WeeklyTradesPanelProps) {
 
           {showEmpty ? (
             <div className="col-span-3 bg-[#121214] px-3 py-4 text-xs italic text-zinc-500">
-              No trades logged this week.
+              {emptyState}
             </div>
           ) : (
             rows.map((row) => (

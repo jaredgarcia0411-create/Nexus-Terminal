@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import JournalTradeChart from '@/components/trading/JournalTradeChart';
 import TemplateFieldRenderer from '@/components/trading/TemplateFieldRenderer';
 import WatchlistEditor, { type WatchlistRow } from '@/components/trading/WatchlistEditor';
+import WeeklyTradesPanel from '@/components/trading/WeeklyTradesPanel';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { aggregateDay } from '@/lib/journal-aggregates';
@@ -70,11 +71,11 @@ export default function DailyReportSheet({
   const [saving, setSaving] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
   const [chartCount, setChartCount] = useState(INITIAL_CHART_BATCH);
-  // Saved reviews open in 'view' mode so URLs render as clickable anchors
-  // (the textarea swap happens via the `readOnly` prop on the renderers).
-  // Clicking "Edit Review" flips to 'edit' to expose the inputs and save
-  // button. New reviews open straight in 'edit' since there's nothing to view.
-  const [viewMode, setViewMode] = useState<'view' | 'edit'>('edit');
+  // All sheets — saved or fresh — open in 'view' so URLs render as clickable
+  // anchors (the textarea swap happens via the `readOnly` prop on the
+  // renderers). Clicking "Edit Review" flips to 'edit' to expose the inputs
+  // and the save button.
+  const [viewMode, setViewMode] = useState<'view' | 'edit'>('view');
 
   const isExistingReport = existing !== null;
   // The parent `readOnly` prop (Archive's PDF export) forces read-only and
@@ -92,9 +93,8 @@ export default function DailyReportSheet({
     setWatchlist([]);
     setEditingTemplate(false);
     setChartCount(INITIAL_CHART_BATCH);
-    // Default to edit; the fetch below flips this to 'view' if a saved
-    // review exists for this date.
-    setViewMode('edit');
+    // Always reset to view; user explicitly clicks "Edit Review" to mutate.
+    setViewMode('view');
 
     void Promise.all([
       fetch(`/api/daily-reviews?from=${date}&to=${date}`).then((response) => response.json()),
@@ -109,7 +109,6 @@ export default function DailyReportSheet({
 
         if (found) {
           setExisting(found);
-          setViewMode('view');
           setFields(cloneTemplateFields(found.templateSnapshot));
           const agg = aggregateDay(trades, date);
           // Auto fields are read-only (see TemplateFieldRenderer) — always overwrite so stale saved zeros don't shadow fresh aggregates.
@@ -240,20 +239,9 @@ export default function DailyReportSheet({
         className="print-target w-full overflow-y-auto border-white/10 bg-[#121214] text-white sm:max-w-3xl"
       >
         <SheetHeader>
-          <div className="flex items-center justify-between">
-            <SheetTitle className="text-base font-semibold">
-              Daily Review — {date ? format(new Date(`${date}T00:00:00`), 'EEEE, MMM d yyyy') : ''}
-            </SheetTitle>
-            {!isExistingReport && !readOnly ? (
-              <button
-                onClick={() => setEditingTemplate(!editingTemplate)}
-                className="rounded-md p-1.5 text-zinc-400 hover:bg-white/10 hover:text-white"
-                title="Edit template"
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-            ) : null}
-          </div>
+          <SheetTitle className="text-base font-semibold">
+            Daily Review — {date ? format(new Date(`${date}T00:00:00`), 'EEEE, MMM d yyyy') : ''}
+          </SheetTitle>
         </SheetHeader>
 
         {loading ? (
@@ -261,7 +249,14 @@ export default function DailyReportSheet({
         ) : (
           <div className="mt-4 space-y-6 p-4">
             {!readOnly ? (
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                <Button
+                  onClick={() => setEditingTemplate((flag) => !flag)}
+                  className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                >
+                  <Pencil className="mr-1.5 h-4 w-4" />
+                  Edit Template
+                </Button>
                 {viewMode === 'view' ? (
                   <Button
                     onClick={() => setViewMode('edit')}
@@ -288,7 +283,13 @@ export default function DailyReportSheet({
               date={date ?? undefined}
             />
 
-            {editingTemplate && !isExistingReport && !readOnly ? (
+            <WeeklyTradesPanel
+              trades={chartTrades}
+              title="Daily Trades"
+              emptyState="No trades logged today."
+            />
+
+            {editingTemplate && !readOnly ? (
               <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
                 <p className="text-sm font-medium capitalize text-white">Edit Template</p>
                 {fields.map((field, index) => (

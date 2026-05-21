@@ -214,7 +214,7 @@ export default function BacktestStatsView({
                         borderColor: 'rgba(255,255,255,0.1)',
                         color: '#fff',
                       }}
-                      formatter={(value) => [formatCurrency(Number(value ?? 0)), 'Cumulative PnL']}
+                      formatter={(value) => [formatCurrency(Number(value ?? 0)), 'Cumulative P/L']}
                     />
                     <Line
                       type="monotone"
@@ -264,7 +264,7 @@ export default function BacktestStatsView({
               <table className="min-w-full border-separate border-spacing-0 overflow-hidden rounded-md border border-white/10 bg-[#111319] text-left">
                 <thead>
                   <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.16em] text-zinc-500">
-                    {['Ticker', 'Date', 'Direction', 'PnL', 'R-Mult', 'Grade', 'Setup', 'Notes', ''].map((heading) => (
+                    {['Ticker', 'Date', 'Direction', 'P/L', 'R-Mult', 'Grade', 'Setup', 'Notes', ''].map((heading) => (
                       <th key={heading} className="border-b border-white/10 px-3 py-2 font-medium">
                         {heading}
                       </th>

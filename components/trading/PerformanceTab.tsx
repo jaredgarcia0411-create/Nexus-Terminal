@@ -149,7 +149,7 @@ export default function PerformanceTab({
       <div className="mt-2 grid grid-cols-1 gap-6 md:grid-cols-3">
         <div className="rounded-xl border border-white/10 bg-[#121214] p-6">
           <div className="mb-2 text-xs font-mono uppercase tracking-wider text-zinc-500">
-            Total {pnlMode === 'net' ? 'Net' : 'Gross'} {performanceMetric === 'R' ? 'R' : 'PnL'}
+            Total {pnlMode === 'net' ? 'Net' : 'Gross'} {performanceMetric === 'R' ? 'R' : 'P/L'}
           </div>
           <div
             className={`text-3xl font-bold tracking-tight tabular-nums ${

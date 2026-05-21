@@ -22,7 +22,6 @@ export const WEEKLY_DEFAULT_FIELDS: TemplateField[] = [
   { id: 'whatWorked', label: 'What worked', type: 'text', required: false },
   { id: 'whatDidnt', label: "What didn't work", type: 'text', required: false },
   { id: 'cycleNotes', label: 'Cycle notes', type: 'text', required: false },
-  { id: 'goalsNextWeek', label: 'Goals next week', type: 'text', required: false },
   { id: 'enterTooSoon',      label: 'Did you enter trades too soon?',        type: 'text', required: false },
   { id: 'tookProfitTooLate', label: 'Did you take profit too late?',         type: 'text', required: false },
   { id: 'stopsTooTight',     label: 'Were stops too tight?',                 type: 'text', required: false },
@@ -30,4 +29,6 @@ export const WEEKLY_DEFAULT_FIELDS: TemplateField[] = [
   { id: 'riskTooMuch',       label: 'Did you risk too much?',                type: 'text', required: false },
   { id: 'riskTooLittle',     label: 'Did you risk too little?',              type: 'text', required: false },
   { id: 'missedTrades',      label: 'Did you miss any trades?',              type: 'text', required: false },
+  { id: 'thoughts',          label: 'Thoughts',                              type: 'text', required: false },
+  { id: 'goalsNextWeek',     label: 'Goals For Next Week',                   type: 'text', required: false },
 ];

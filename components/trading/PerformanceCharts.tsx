@@ -236,7 +236,7 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
                   <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
-                    formatter={(value?: number) => [formatValue(Number(value || 0)), 'PnL']}
+                    formatter={(value?: number) => [formatValue(Number(value || 0)), 'P/L']}
                   />
                   <Bar dataKey="value">
                     {dayOfWeekData.map((entry: PointValue, index: number) => (
@@ -256,7 +256,7 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
                   <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
-                    formatter={(value?: number) => [formatValue(Number(value || 0)), 'PnL']}
+                    formatter={(value?: number) => [formatValue(Number(value || 0)), 'P/L']}
                   />
                   <Bar dataKey="value">
                     {timeOfDayData.map((entry: PointValue, index: number) => (

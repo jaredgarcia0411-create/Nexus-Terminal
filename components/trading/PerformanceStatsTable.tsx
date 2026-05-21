@@ -280,7 +280,7 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
         value: maxConsecutiveLosses > 0 ? String(maxConsecutiveLosses) : '-',
         clickTrade: maxConsecutiveLossTrade ?? undefined,
       },
-      { label: 'Trade P&L Std Dev', value: Number.isFinite(pnlStdDev) ? formatCurrency(pnlStdDev) : '-' },
+      { label: 'Trade P/L Std Dev', value: Number.isFinite(pnlStdDev) ? formatCurrency(pnlStdDev) : '-' },
       { label: 'System Quality Number', value: Number.isFinite(sqn) ? sqn.toFixed(2) : '-' },
       { label: 'Probability of Random Chance', value: `${(randomChance * 100).toFixed(1)}%` },
       { label: 'Kelly Percentage', value: `${(kellyPercentage * 100).toFixed(2)}%` },

@@ -124,14 +124,14 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
   const overviewItems = trade
     ? [
         ['Shares Traded', trade.totalQuantity.toString()],
-        ['Closed Gross PnL', formatCurrency(trade.grossPnl)],
+        ['Closed Gross P/L', formatCurrency(trade.grossPnl)],
         ['Commissions + Fees', formatCurrency((trade.commission ?? 0) + (trade.fees ?? 0))],
-        ['Closed Net PnL', formatCurrency(trade.netPnl)],
+        ['Closed Net P/L', formatCurrency(trade.netPnl)],
         ['Gross Return (R)', trade.initialRisk ? formatR(trade.grossPnl / trade.initialRisk) : '-'],
         ['Net Return (R)', trade.initialRisk ? formatR(trade.netPnl / trade.initialRisk) : '-'],
         ['Position MFE', prettyNumber(trade.mfe)],
         ['Position MAE', prettyNumber(trade.mae)],
-        ['Best Exit PnL', prettyNumber(trade.bestExitPnl)],
+        ['Best Exit P/L', prettyNumber(trade.bestExitPnl)],
         ['Exit Efficiency', prettyPct(trade.exitEfficiency)],
         ['Entry Time', trade.entryTime || '-'],
         ['Exit Time', trade.exitTime || '-'],
@@ -173,7 +173,7 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                 ) : (
                   <p className={`text-sm font-semibold ${getPnLColor(trade.netPnl)}`}>{formatCurrency(trade.netPnl)}</p>
                 )}
-                <p className="text-[12px] text-zinc-500">{trade.isOpen ? 'Open Position' : 'Net PnL'}</p>
+                <p className="text-[12px] text-zinc-500">{trade.isOpen ? 'Open Position' : 'Net P/L'}</p>
               </div>
             </div>
 
