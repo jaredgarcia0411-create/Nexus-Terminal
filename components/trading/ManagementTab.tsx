@@ -141,7 +141,7 @@ export default function ManagementTab(props: ManagementTabProps) {
         />
       ) : null}
 
-      {activeSubTab === 'playbook' ? <PlaybookTab trades={props.trades} /> : null}
+      {activeSubTab === 'playbook' ? <PlaybookTab trades={props.trades} globalTags={props.globalTags} /> : null}
 
       {activeSubTab === 'career-pnl' ? <CareerPnlTab /> : null}
 

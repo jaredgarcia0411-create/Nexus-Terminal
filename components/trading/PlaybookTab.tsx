@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { ChevronRight, Plus, Save, Trash2 } from 'lucide-react';
+import { ChevronRight, Plus, Save, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { EMPTY_PLAYBOOK_SECTIONS, PLAYBOOK_SECTION_ORDER } from '@/lib/playbook-defaults';
 import { formatCurrency } from '@/lib/trading-utils';
@@ -25,6 +26,7 @@ interface Strategy {
 
 interface PlaybookTabProps {
   trades: Trade[];
+  globalTags: string[];
 }
 
 interface TagStats {
@@ -51,7 +53,7 @@ function computeStats(matching: Trade[]): TagStats {
   return { count: matching.length, wins, winRate, avgR, totalPnl };
 }
 
-export default function PlaybookTab({ trades }: PlaybookTabProps) {
+export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -200,22 +202,18 @@ export default function PlaybookTab({ trades }: PlaybookTabProps) {
       exit={{ opacity: 0, y: -10 }}
       className="grid grid-cols-1 gap-4 px-1 lg:grid-cols-[280px_1fr]"
     >
-      <div className="rounded-2xl border border-white/10 bg-[#121214] p-4">
-        <div className="flex items-baseline justify-between">
-          <p className="text-sm font-medium text-white">Strategies</p>
-          <p className="text-xs text-zinc-500">
-            {strategies.length} {strategies.length === 1 ? 'strategy' : 'strategies'}
-          </p>
+      <div className="rounded-md border border-white/10 bg-[#121214] p-4">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-medium capitalize text-white">Strategies</p>
+          <Button
+            onClick={handleCreate}
+            disabled={saving}
+            className="h-9 border border-emerald-500/40 bg-emerald-500/10 px-3 text-emerald-500 hover:bg-emerald-500/20"
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            New Strategy
+          </Button>
         </div>
-
-        <Button
-          onClick={handleCreate}
-          disabled={saving}
-          className="mt-3 w-full border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
-        >
-          <Plus className="mr-1.5 h-4 w-4" />
-          New Strategy
-        </Button>
 
         <div className="mt-3 flex flex-col gap-2">
           {strategies.map((strategy) => (
@@ -223,9 +221,9 @@ export default function PlaybookTab({ trades }: PlaybookTabProps) {
               key={strategy.id}
               type="button"
               onClick={() => setSelectedId(strategy.id)}
-              className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left transition-colors ${
+              className={`flex items-center justify-between rounded-md border px-3 py-2 text-left transition-colors ${
                 strategy.id === selectedId
-                  ? 'border-emerald-500/40 bg-emerald-500/10'
+                  ? 'border-white/10 bg-white/5'
                   : 'border-white/5 bg-white/5 hover:bg-white/10'
               }`}
             >
@@ -245,62 +243,78 @@ export default function PlaybookTab({ trades }: PlaybookTabProps) {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-[#121214] p-4">
+      <div className="rounded-md border border-white/10 bg-[#121214] p-4">
         {!selected ? (
           <div className="flex h-64 items-center justify-center text-sm text-zinc-500">
             {loading ? 'Loading...' : 'Select a strategy on the left, or create a new one.'}
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
                 <Input
                   value={selected.name}
                   onChange={(event) => updateSelected({ name: event.target.value })}
-                  placeholder="Strategy name"
-                  className="h-10 border-white/10 bg-white/5 text-base font-medium"
+                  placeholder="Strategy Name"
+                  className="h-9 flex-1 border-white/10 bg-white/5 text-base font-medium"
                 />
-                <Input
-                  value={selected.description}
-                  onChange={(event) => updateSelected({ description: event.target.value })}
-                  placeholder="One-line description"
-                  className="mt-2 h-9 border-white/10 bg-white/5 text-sm text-zinc-300"
-                />
-              </div>
-              <div className="flex gap-2">
+                <div className="flex w-44 shrink-0 items-center gap-2">
+                  <Select
+                    value={selected.tag}
+                    onValueChange={(nextValue) => updateSelected({ tag: nextValue })}
+                  >
+                    <SelectTrigger className="h-9 flex-1 border-white/10 bg-white/5 text-sm text-zinc-200">
+                      <SelectValue placeholder={globalTags.length === 0 ? 'No tags available' : 'Select a Tag'} />
+                    </SelectTrigger>
+                    <SelectContent className="border-white/10 bg-[#18181b] text-white">
+                      {globalTags.map((tag) => (
+                        <SelectItem key={tag} value={tag}>
+                          {tag}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selected.tag ? (
+                    <button
+                      type="button"
+                      onClick={() => updateSelected({ tag: '' })}
+                      aria-label="Clear tag"
+                      title="Clear tag"
+                      className="inline-flex h-9 w-8 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                </div>
                 <Button
                   onClick={handleSave}
                   disabled={saving}
-                  className="h-9 border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                  className="h-9 border border-emerald-500/40 bg-emerald-500/10 px-3 text-emerald-500 hover:bg-emerald-500/20"
                 >
-                  <Save className="mr-1.5 h-4 w-4" />
+                  <Save className="mr-1 h-4 w-4" />
                   Save
                 </Button>
-                <Button
+                <button
+                  type="button"
                   onClick={handleDelete}
-                  variant="ghost"
-                  className="h-9 text-zinc-500 hover:bg-rose-500/10 hover:text-rose-400"
+                  aria-label="Delete strategy"
+                  title="Delete strategy"
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-rose-500/40 text-rose-400 transition-colors hover:bg-rose-500/10 hover:text-rose-300"
                 >
                   <Trash2 className="h-4 w-4" />
-                </Button>
+                </button>
               </div>
-            </div>
-
-            <div>
-              <p className="mb-1 text-[11px] uppercase tracking-wider text-zinc-500">
-                Trade Tag (matches your existing trade tags exactly)
-              </p>
               <Input
-                value={selected.tag}
-                onChange={(event) => updateSelected({ tag: event.target.value })}
-                placeholder="e.g. ParabolicShort"
-                className="h-9 border-white/10 bg-white/5 text-sm"
+                value={selected.description}
+                onChange={(event) => updateSelected({ description: event.target.value })}
+                placeholder="One-line description"
+                className="h-9 border-white/10 bg-white/5 text-sm text-zinc-300"
               />
             </div>
 
             {PLAYBOOK_SECTION_ORDER.map((section) => (
-              <div key={section.key}>
-                <p className="mb-1 text-[11px] uppercase tracking-wider text-zinc-500">
+              <div key={section.key} className="space-y-1">
+                <p className="text-xs font-medium capitalize text-white">
                   {section.label}
                 </p>
                 <Textarea
@@ -312,9 +326,9 @@ export default function PlaybookTab({ trades }: PlaybookTabProps) {
               </div>
             ))}
 
-            <div className="rounded-lg border border-white/5 bg-white/5 p-3">
+            <div className="rounded-md border border-white/5 bg-white/5 p-3">
               <div className="flex items-baseline justify-between">
-                <p className="text-sm font-medium text-white">Recent Trades</p>
+                <p className="text-xs font-medium capitalize text-white">Recent Trades</p>
                 <p className="text-xs text-zinc-500">
                   {selected.tag ? `tag: ${selected.tag}` : 'set a tag above to populate'}
                 </p>

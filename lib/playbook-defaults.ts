@@ -17,7 +17,7 @@ export const EMPTY_PLAYBOOK_SECTIONS: PlaybookSections = {
 // should render them. Keys must match PlaybookSections.
 export const PLAYBOOK_SECTION_ORDER: Array<{ key: keyof PlaybookSections; label: string; placeholder: string }> = [
   { key: 'overview', label: 'Overview', placeholder: 'What is this strategy in one paragraph?' },
-  { key: 'checklist', label: 'Pre-trade Checklist', placeholder: 'One bullet per line. e.g. price > 200MA' },
+  { key: 'checklist', label: 'Pre-Trade Checklist', placeholder: 'One bullet per line. e.g. price > 200MA' },
   { key: 'entry', label: 'Entry Criteria', placeholder: 'When do you take the trade?' },
   { key: 'invalidation', label: 'Invalidation', placeholder: 'When do you NOT take the trade?' },
   { key: 'risk', label: 'Risk / Stop', placeholder: 'Where is the stop? How much do you risk?' },
