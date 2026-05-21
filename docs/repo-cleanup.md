@@ -1,173 +1,278 @@
 # Repo Cleanup Audit
 
-Date: 2026-05-11
+Date: 2026-05-21
 
-Read-only audit summary for codebase cleanup, feature pruning, workflow drift, and harness skill alignment. No files were changed during the audit.
+Current-state audit for making the codebase simpler and more efficient without removing features or reducing reliability. This pass used parallel read-only reviewers plus local verification. The only file edited in this pass is this document.
 
 ## Recommended Review Order
 
-1. Decide product removals first, especially whether Discord-imported research history still belongs in the Research/TLDR path.
-2. Fix cost and idempotency risks around AskEdgar, scanners, and paid Research Report generation.
-3. Remove high-confidence dead code and unused dependencies.
-4. Decide whether backend-only feature surfaces are parked, planned, or removable.
-5. Clean workflow/docs drift.
-6. Sync and align Codex harness skills.
-7. Decompose oversized modules only when touching those areas for feature or bug work.
-8. Improve personal workflow gates with scripts and shorter post-validation handoffs.
+1. Fix security and reliability issues that can affect production behavior.
+2. Reduce paid or noisy external work by adding durable claims, telemetry, and shared integration clients.
+3. Decide which public/backend-only route surfaces are intentionally supported, then delete or document the rest.
+4. Remove low-risk dependency and script dead weight.
+5. Add missing tests around newer feature surfaces before larger cleanup.
+6. Make workflow/docs guidance match live code so future cleanup work starts from correct instructions.
+7. Do frontend and oversized-module simplifications only when touching those areas for feature or bug work.
 
-## Product Decisions
+## Immediate Security And Reliability
 
-### Discord Research Import Stack
-
-Status: Product decision required.
+### Latest Agent Report Routes Need Auth
 
 Evidence:
-- `HANDOFF.md` locks the site Research Report endpoint to no Discord, no memory write, and no agent-platform integration: [HANDOFF.md](/home/jared/Nexus-Terminal/HANDOFF.md:32).
-- TLDR still reads imported Discord context and historical summaries: [app/api/askedgar/tldr/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/tldr/route.ts:30).
-- Discord import/sync routes remain live: [app/api/discord/import/route.ts](/home/jared/Nexus-Terminal/app/api/discord/import/route.ts:13), [app/api/discord/sync/route.ts](/home/jared/Nexus-Terminal/app/api/discord/sync/route.ts:13), [app/api/discord/cron/sync/route.ts](/home/jared/Nexus-Terminal/app/api/discord/cron/sync/route.ts:12).
-- The cron is scheduled in [vercel.json](/home/jared/Nexus-Terminal/vercel.json:2).
-- Parser/client helpers live at [lib/discord/parser.ts](/home/jared/Nexus-Terminal/lib/discord/parser.ts:1) and [lib/discord/client.ts](/home/jared/Nexus-Terminal/lib/discord/client.ts:1).
-- Tables are defined at [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts:139) and [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts:155).
+- Page middleware excludes `/api`: [middleware.ts](/home/jared/Nexus-Terminal/middleware.ts:4).
+- `/api/agents/macro-summary/latest` reads and returns `agent_reports.reportJson` without `requireUser()`: [app/api/agents/macro-summary/latest/route.ts](/home/jared/Nexus-Terminal/app/api/agents/macro-summary/latest/route.ts:7).
+- `/api/agents/market-pulse/latest` does the same for Market Pulse: [app/api/agents/market-pulse/latest/route.ts](/home/jared/Nexus-Terminal/app/api/agents/market-pulse/latest/route.ts:8).
+- The only known consumers are logged-in Dashboard panels: [components/trading/MacroSummaryPanel.tsx](/home/jared/Nexus-Terminal/components/trading/MacroSummaryPanel.tsx:152), [components/trading/MarketPulsePanel.tsx](/home/jared/Nexus-Terminal/components/trading/MarketPulsePanel.tsx:134).
 
 Recommendation:
-Decide whether TLDR still benefits from Discord historical context. If not, remove the import stack as one planned cleanup: routes, parser/client import helpers, cron entry, tests, TLDR context queries, and eventually the two DB tables via migration.
+Add `requireUser()` to both latest-report routes. Logged-in Dashboard behavior should not change; unauthenticated direct API reads would stop.
 
-Do not remove [lib/agents/discord.ts](/home/jared/Nexus-Terminal/lib/agents/discord.ts:807) or `agent_reports` wholesale. Agent blueprints still use `writeAndDeliverReport()` as downstream Discord fan-out: [lib/agents/blueprints/small-cap-research.ts](/home/jared/Nexus-Terminal/lib/agents/blueprints/small-cap-research.ts:1038), [lib/agents/blueprints/swing-trader-research.ts](/home/jared/Nexus-Terminal/lib/agents/blueprints/swing-trader-research.ts:1038), [lib/agents/blueprints/orchestrator-macro-summary.ts](/home/jared/Nexus-Terminal/lib/agents/blueprints/orchestrator-macro-summary.ts:773).
-
-## Cost And Reliability Risks
-
-### AskEdgar Runtime Controls
+### Expired Agent Job Leases Are Not Recovered
 
 Evidence:
-- Daily unique ticker tracking, rate-limit retry state, and in-flight dedupe use module-level state: [lib/askedgar.ts](/home/jared/Nexus-Terminal/lib/askedgar.ts:76).
-- Enforcement happens in `fetchTickerData`: [lib/askedgar.ts](/home/jared/Nexus-Terminal/lib/askedgar.ts:520).
-
-Risk:
-On Vercel, module memory resets on cold start and does not coordinate across instances. The daily cap and retry-window protection are advisory, not durable.
+- Queue claims only `status = 'queued'` jobs: [lib/agents/queue.ts](/home/jared/Nexus-Terminal/lib/agents/queue.ts:73).
+- Processing updates are fenced by worker lock, lease version, `status = 'processing'`, and unexpired `lock_expires_at`: [lib/agents/queue.ts](/home/jared/Nexus-Terminal/lib/agents/queue.ts:53).
+- Service chat exposes `processing` status while waiting: [app/api/agents/service/chat/route.ts](/home/jared/Nexus-Terminal/app/api/agents/service/chat/route.ts:171).
+- Discord bot polling eventually times out if no terminal state arrives: [services/discord-bot/index.ts](/home/jared/Nexus-Terminal/services/discord-bot/index.ts:305).
 
 Recommendation:
-Move durable daily usage, retry windows, and expensive request claims into Postgres or Redis/Upstash. Keep module-level in-flight dedupe only as a best-effort local optimization.
+Add a lease recovery path that requeues expired `processing` jobs when attempts remain, or marks them failed after max attempts. Keep the lease fencing; the cleanup is about making stale leases recoverable without manual DB intervention.
 
-### Dashboard Scanner Polling
+## Cost And External-Call Efficiency
+
+### Research TLDR Needs A Paid-Work Claim And Unified Telemetry
 
 Evidence:
-- Dashboard polls three endpoints every 10 seconds: [DashboardScannerTable.tsx](/home/jared/Nexus-Terminal/components/trading/DashboardScannerTable.tsx:337).
-- MDR candidates call Massive-backed evaluation: [app/api/tradingview/mdr-candidates/route.ts](/home/jared/Nexus-Terminal/app/api/tradingview/mdr-candidates/route.ts:61), [lib/massive-market.ts](/home/jared/Nexus-Terminal/lib/massive-market.ts:739).
-- Recent MDR rows recompute thresholds per row: [app/api/scanner/mdr-recent/route.ts](/home/jared/Nexus-Terminal/app/api/scanner/mdr-recent/route.ts:41).
+- Research TLDR auto-posts from the UI: [components/trading/ResearchTldr.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchTldr.tsx:34).
+- The route delegates to `getCachedResearchTldr()`: [app/api/askedgar/tldr/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/tldr/route.ts:23).
+- On cache miss, `getCachedResearchTldr()` reads cache, calls Ask Edgar data, runs the LLM, then upserts after generation: [lib/research.ts](/home/jared/Nexus-Terminal/lib/research.ts:171), [lib/research.ts](/home/jared/Nexus-Terminal/lib/research.ts:190), [lib/research.ts](/home/jared/Nexus-Terminal/lib/research.ts:197).
+- The cache unique key protects final storage but not the expensive generation window: [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts:150).
+- TLDR uses the standalone LLM client, whose result has no token usage or duration fields: [lib/research.ts](/home/jared/Nexus-Terminal/lib/research.ts:7), [lib/llm-client.ts](/home/jared/Nexus-Terminal/lib/llm-client.ts:42).
+- Agent LLM calls already return usage and duration for telemetry: [lib/agents/llm-client.ts](/home/jared/Nexus-Terminal/lib/agents/llm-client.ts:214).
 
 Recommendation:
-Create one short-TTL server aggregate endpoint for dashboard scanner data. Persist/cache MDR threshold enrichment per ticker/date so multiple viewers do not repeat the same work.
+Give TLDR generation the same shape as Research Report generation: a DB-backed per-ticker in-progress claim, retry/stale cleanup, and usage records in the existing LLM telemetry path. User-facing output should remain the same; duplicate cold-cache spend should drop.
 
-### Research Report Generation Race
+### Ask Edgar Needs Endpoint-Level Durable Telemetry
 
 Evidence:
-- Client probes GET then POSTs if empty: [ResearchReportPanel.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchReportPanel.tsx:116).
-- POST generates and inserts without a ticker-level claim: [app/api/research-report/route.ts](/home/jared/Nexus-Terminal/app/api/research-report/route.ts:83).
-- The site report LLM path does not flow through agent budget telemetry in [lib/agents/runtime-limits.ts](/home/jared/Nexus-Terminal/lib/agents/runtime-limits.ts:94).
-
-Risk:
-Two users can trigger duplicate paid report generation for the same ticker. Site-generated reports may also bypass the spend visibility used by the agent runtime.
+- The split adapter is now in place: [lib/askedgar/endpoints.ts](/home/jared/Nexus-Terminal/lib/askedgar/endpoints.ts:280), [lib/askedgar/fanout.ts](/home/jared/Nexus-Terminal/lib/askedgar/fanout.ts:90), [lib/askedgar/cache.ts](/home/jared/Nexus-Terminal/lib/askedgar/cache.ts:356).
+- Fan-out logs requested count, successful count, cost, and duration only to stdout: [lib/askedgar/fanout.ts](/home/jared/Nexus-Terminal/lib/askedgar/fanout.ts:125).
+- Cache metadata is still row-level by `(cache_type, ticker)`: [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts:143).
+- The registry contains a broad `snapshot` scope plus narrower scanner and agent scopes: [lib/askedgar/endpoints.ts](/home/jared/Nexus-Terminal/lib/askedgar/endpoints.ts:301).
 
 Recommendation:
-Make POST idempotent with a DB-backed fresh-row or `in_progress` claim and record site report LLM usage through the agent telemetry path.
+Persist per-endpoint telemetry with caller surface, scope, ticker, endpoint, cache hit/miss, duration, failure kind, and `usage.cost_microdollars`. Use that evidence before changing endpoint TTLs or splitting Research snapshot loading. This does not change UI output; it makes cost decisions measurable.
 
-## Dead Code And Cleanup Candidates
-
-### High Confidence
-
-- `fetchAndCacheRawReport()` appears unused: [lib/research.ts](/home/jared/Nexus-Terminal/lib/research.ts:135). The snapshot route uses `getCachedTickerData()` directly: [app/api/askedgar/snapshot/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/snapshot/route.ts:25).
-- `ResearchGainersList` appears unused by the current Research tab: [components/trading/ResearchGainersList.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchGainersList.tsx:29).
-- `WeeklyCalendar` appears unused; Journal uses `TradingCalendar`: [components/trading/WeeklyCalendar.tsx](/home/jared/Nexus-Terminal/components/trading/WeeklyCalendar.tsx:18), [JournalTab.tsx](/home/jared/Nexus-Terminal/components/trading/JournalTab.tsx:185).
-- `HorizontalLinePrimitive` appears unused: [components/trading/plugins/HorizontalLinePrimitive.ts](/home/jared/Nexus-Terminal/components/trading/plugins/HorizontalLinePrimitive.ts:1).
-- `@sudowealth/schwab-api` is installed but not used in live code; it appears tied to the Schwab spec only: [package.json](/home/jared/Nexus-Terminal/package.json:24), [specs/schwab-realtime-hybrid.md](/home/jared/Nexus-Terminal/specs/schwab-realtime-hybrid.md:7).
-
-Recommendation:
-Remove these in a focused dead-code PR after one final `rg` verification. If the Schwab sprint is not imminent, remove the dependency and lockfile entry.
-
-### Medium Confidence
-
-- `/api/askedgar/lookup` appears superseded by `/api/askedgar/snapshot`: [app/api/askedgar/lookup/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/lookup/route.ts:9), [ResearchTickerView.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchTickerView.tsx:44).
-- Saved tickers are backend-only: [app/api/saved-tickers/route.ts](/home/jared/Nexus-Terminal/app/api/saved-tickers/route.ts:8), [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts:187).
-- Daily ticker summaries are backend-only: [app/api/market-data/daily-summary/route.ts](/home/jared/Nexus-Terminal/app/api/market-data/daily-summary/route.ts:80), [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts:168).
-- Direct `/api/agents/research` may be redundant if the site uses `/api/research-report` and Discord uses service chat: [app/api/agents/research/route.ts](/home/jared/Nexus-Terminal/app/api/agents/research/route.ts:18), [services/discord-bot/index.ts](/home/jared/Nexus-Terminal/services/discord-bot/index.ts:12), [app/api/research-report/route.ts](/home/jared/Nexus-Terminal/app/api/research-report/route.ts:1).
-- Legacy `agentMemory` schema object appears unused now that active memory code uses `agentMemoryV2`: [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts:110), [lib/agents/memory.ts](/home/jared/Nexus-Terminal/lib/agents/memory.ts:3).
-
-Recommendation:
-Check production data and any external/manual consumers before deletion. Schema removals should be handled as explicit migrations.
-
-## Simplification Targets
-
-### AskEdgar Module Split
+### Dashboard Scanner Cache Is Only Per Warm Instance
 
 Evidence:
-- [lib/askedgar.ts](/home/jared/Nexus-Terminal/lib/askedgar.ts:1) is 1,462 lines and owns request transport, endpoint registry, scoped fan-out, cache merge semantics, snapshot normalization, scanner-summary cache, and rate-limit behavior.
-- There is local comment/constant drift around scanner-summary TTL: [lib/askedgar.ts](/home/jared/Nexus-Terminal/lib/askedgar.ts:1326), [lib/askedgar.ts](/home/jared/Nexus-Terminal/lib/askedgar.ts:1407).
+- Dashboard now uses one aggregate endpoint: [components/trading/DashboardScannerTable.tsx](/home/jared/Nexus-Terminal/components/trading/DashboardScannerTable.tsx:299).
+- The aggregate route fans out to TradingView gainers, MDR live candidates, and recent MDR rows: [app/api/dashboard/scanner-state/route.ts](/home/jared/Nexus-Terminal/app/api/dashboard/scanner-state/route.ts:51).
+- It caches for 8 seconds in a module-level `Map`: [app/api/dashboard/scanner-state/route.ts](/home/jared/Nexus-Terminal/app/api/dashboard/scanner-state/route.ts:33).
+- Vercel module memory is not durable across cold starts or instances.
 
 Recommendation:
-Split into `askedgar/endpoints`, `askedgar/fanout`, `askedgar/cache`, and `askedgar/snapshot-normalizer`. Do this only after product pruning decisions so the split does not preserve dead surfaces.
+Keep the aggregate endpoint contract, but move short-lived coalescing to a DB row or external cache if scanner traffic or upstream noise becomes a problem. This preserves the Dashboard response shape while making caching real across instances.
 
-### TradingView Client Extraction
+### MDR Threshold Enrichment Is Recomputed Per Request
 
 Evidence:
-- Similar scan/header/body/error handling appears in [app/api/tradingview/gainers/route.ts](/home/jared/Nexus-Terminal/app/api/tradingview/gainers/route.ts:193), [app/api/tradingview/mdr-candidates/route.ts](/home/jared/Nexus-Terminal/app/api/tradingview/mdr-candidates/route.ts:107), [lib/agents/blueprints/small-cap-research.ts](/home/jared/Nexus-Terminal/lib/agents/blueprints/small-cap-research.ts:665), and [lib/agents/blueprints/swing-trader-research.ts](/home/jared/Nexus-Terminal/lib/agents/blueprints/swing-trader-research.ts:658).
+- Recent MDR rows load active triggers from `mdr_triggers`: [app/api/scanner/mdr-recent/route.ts](/home/jared/Nexus-Terminal/app/api/scanner/mdr-recent/route.ts:77).
+- Each row then calls `evaluateLatestD2MdrTrigger()` in chunks: [app/api/scanner/mdr-recent/route.ts](/home/jared/Nexus-Terminal/app/api/scanner/mdr-recent/route.ts:48).
+- Dashboard aggregate calls that helper on each cache miss: [app/api/dashboard/scanner-state/route.ts](/home/jared/Nexus-Terminal/app/api/dashboard/scanner-state/route.ts:54).
 
 Recommendation:
-Extract a server-only `lib/tradingview-client.ts` for scan requests, headers, column mapping, and shared price-context helpers.
+Persist or cache MDR thresholds per `(ticker, trigger_date)`. The UI should show the same values; repeat dashboard requests should avoid recomputing the same historical thresholds.
 
-### Client Cache Hook
+### TradingView Scanner Calls Should Share One Client
 
 Evidence:
-- Module-level client caches appear in [ResearchTldr.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchTldr.tsx:13), [ResearchReportPanel.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchReportPanel.tsx:51), [MacroSummaryPanel.tsx](/home/jared/Nexus-Terminal/components/trading/MacroSummaryPanel.tsx:93), and [use-candle-data.ts](/home/jared/Nexus-Terminal/hooks/use-candle-data.ts:28).
+- A shared client already owns TradingView headers, session cookie use, price-context columns, and scanner request handling: [lib/tradingview-client.ts](/home/jared/Nexus-Terminal/lib/tradingview-client.ts:16), [lib/tradingview-client.ts](/home/jared/Nexus-Terminal/lib/tradingview-client.ts:42).
+- Gainers repeats TradingView columns and fetch wrapper: [app/api/tradingview/gainers/route.ts](/home/jared/Nexus-Terminal/app/api/tradingview/gainers/route.ts:15), [app/api/tradingview/gainers/route.ts](/home/jared/Nexus-Terminal/app/api/tradingview/gainers/route.ts:206).
+- MDR candidates repeats the same endpoint/header pattern: [app/api/tradingview/mdr-candidates/route.ts](/home/jared/Nexus-Terminal/app/api/tradingview/mdr-candidates/route.ts:8), [app/api/tradingview/mdr-candidates/route.ts](/home/jared/Nexus-Terminal/app/api/tradingview/mdr-candidates/route.ts:111).
 
 Recommendation:
-Replace repeated module-level caches with a small TTL-aware resource hook that supports aborting, stale-while-revalidate, and optional LRU caps.
+Move the generic scan request, header/session handling, response typing, and TradingView error mapping into `lib/tradingview-client.ts`. Keep route-specific columns and normalization near each route or move them into scanner-specific helpers. User-visible scanner output should not change.
 
-### Oversized Local Surfaces
+### Massive Market Data Has Two Client Paths
 
 Evidence:
-- [use-trades.ts](/home/jared/Nexus-Terminal/hooks/use-trades.ts:21) still handles sync, filtering, mutations, imports, default risk, tags, details, and returns a large object at [use-trades.ts](/home/jared/Nexus-Terminal/hooks/use-trades.ts:302).
-- [BacktestChart.tsx](/home/jared/Nexus-Terminal/components/trading/BacktestChart.tsx:366) owns chart creation, series type, indicators, prior close, drawings, session shading, order-click handling, markers, and resize lifecycle.
+- `/api/market-data` reads `MASSIVE_API_KEY` and hardcodes an aggregate URL directly: [app/api/market-data/route.ts](/home/jared/Nexus-Terminal/app/api/market-data/route.ts:68), [app/api/market-data/route.ts](/home/jared/Nexus-Terminal/app/api/market-data/route.ts:99).
+- `lib/massive-market.ts` also has the shared Massive client helper and base URL: [lib/massive-market.ts](/home/jared/Nexus-Terminal/lib/massive-market.ts:3), [lib/massive-market.ts](/home/jared/Nexus-Terminal/lib/massive-market.ts:149).
+- `services/.env.example` documents `MASSIVE_API_BASE_URL`, but current code does not read it.
 
 Recommendation:
-Do not refactor these speculatively. When touching them, split toward `useTradeMutations`, `useTradeImport`, `useDefaultRisk`, and focused chart lifecycle/indicator/marker hooks.
+Consolidate aggregate/candle requests into `lib/massive-market.ts` and either implement or remove the `MASSIVE_API_BASE_URL` knob. Chart data should remain identical; provider configuration and future retry/rate-limit behavior become one place.
+
+## Route And Product-Surface Cleanup
+
+### Remove Or Document Raw Scanner Routes
+
+Evidence:
+- Dashboard fetches only `/api/dashboard/scanner-state`: [components/trading/DashboardScannerTable.tsx](/home/jared/Nexus-Terminal/components/trading/DashboardScannerTable.tsx:299).
+- Tests assert Dashboard no longer fetches `/api/tradingview/gainers`, `/api/tradingview/mdr-candidates`, or `/api/scanner/mdr-recent` directly: [__tests__/dashboard-scanner-table.test.tsx](/home/jared/Nexus-Terminal/__tests__/dashboard-scanner-table.test.tsx:222).
+- The aggregate route imports helper functions directly from those public route modules: [app/api/dashboard/scanner-state/route.ts](/home/jared/Nexus-Terminal/app/api/dashboard/scanner-state/route.ts:1).
+- The scanner plan already calls for deleting or repurposing raw TradingView routes after audit: [docs/scanner-build.md](/home/jared/Nexus-Terminal/docs/scanner-build.md:214).
+
+Recommendation:
+Move helper code out of route modules into `lib/` or `app/api/dashboard/_shared`-style modules, then either delete the raw public route handlers or explicitly document them as supported debug/API surfaces. No Dashboard behavior should change if the aggregate JSON contract is preserved.
+
+### `/api/scanner/mdr-eligibility` Appears Deletion-Ready
+
+Evidence:
+- The route only wraps `computeMdrEligibility()`: [app/api/scanner/mdr-eligibility/route.ts](/home/jared/Nexus-Terminal/app/api/scanner/mdr-eligibility/route.ts:19), [app/api/scanner/mdr-eligibility/route.ts](/home/jared/Nexus-Terminal/app/api/scanner/mdr-eligibility/route.ts:38).
+- `rg` finds `computeMdrEligibility()` only in this route and its route test: [lib/massive-market.ts](/home/jared/Nexus-Terminal/lib/massive-market.ts:348), [__tests__/scanner-mdr-eligibility-route.test.ts](/home/jared/Nexus-Terminal/__tests__/scanner-mdr-eligibility-route.test.ts:35).
+- Dashboard tests assert the UI does not call the route: [__tests__/dashboard-scanner-table.test.tsx](/home/jared/Nexus-Terminal/__tests__/dashboard-scanner-table.test.tsx:226).
+
+Recommendation:
+Remove the route, its route test, and `computeMdrEligibility()` in a focused cleanup PR unless an external/manual consumer is confirmed. Expected user-visible change: none for the current app.
+
+### Agent Report List/Detail Routes Look Backend-Only
+
+Evidence:
+- `/api/agents/reports` and `/api/agents/reports/[id]` are protected readers: [app/api/agents/reports/route.ts](/home/jared/Nexus-Terminal/app/api/agents/reports/route.ts:26), [app/api/agents/reports/[id]/route.ts](/home/jared/Nexus-Terminal/app/api/agents/reports/[id]/route.ts:7).
+- Current Dashboard panels use report-type-specific latest routes instead.
+- Repo search found no current product consumer for `/api/agents/reports`.
+
+Recommendation:
+Decide whether a generic agent-report UI is planned. If not, remove these routes and tests after checking external/manual consumers. If yes, keep them and document their intended consumer.
+
+### Low-Priority Route Pattern Extraction
+
+Evidence:
+- Daily and weekly review routes have the same list/upsert shape with different date fields: [app/api/daily-reviews/route.ts](/home/jared/Nexus-Terminal/app/api/daily-reviews/route.ts:8), [app/api/weekly-reviews/route.ts](/home/jared/Nexus-Terminal/app/api/weekly-reviews/route.ts:8).
+- Tags and watchlist theses share a small option-list CRUD shape, except tags also delete `trade_tags`: [app/api/tags/route.ts](/home/jared/Nexus-Terminal/app/api/tags/route.ts:8), [app/api/watchlist-theses/route.ts](/home/jared/Nexus-Terminal/app/api/watchlist-theses/route.ts:8).
+
+Recommendation:
+Do not abstract these immediately. If another review or option-list route is added, extract focused route helpers for authenticated list/upsert/delete patterns. User-visible behavior should remain unchanged.
+
+## Frontend Simplification Targets
+
+### Management Trade Prop Surface
+
+Evidence:
+- `app/page.tsx` destructures the broad `useTrades()` surface and forwards many props into Management: [app/page.tsx](/home/jared/Nexus-Terminal/app/page.tsx:61), [app/page.tsx](/home/jared/Nexus-Terminal/app/page.tsx:207).
+- `ManagementTab` declares the same broad contract and repartitions it into Journal, Trades, Performance, Career P/L, Archive, and Playbook: [components/trading/ManagementTab.tsx](/home/jared/Nexus-Terminal/components/trading/ManagementTab.tsx:28).
+
+Recommendation:
+When Management is next touched, group props by purpose (`tradeFilters`, `tradeSelection`, `tradeBulkActions`, `tradePersistence`) or move more management-only wiring one level down. Expected user-visible change: none; fewer add-a-prop edits across parent and child components.
+
+### Journal And Trades Duplicate Controls
+
+Evidence:
+- Journal renders search/risk/tag controls and selected-trade actions: [components/trading/JournalTab.tsx](/home/jared/Nexus-Terminal/components/trading/JournalTab.tsx:152).
+- Trades renders similar search, risk, and tag controls with different layout: [components/trading/TradesTab.tsx](/home/jared/Nexus-Terminal/components/trading/TradesTab.tsx:68).
+
+Recommendation:
+Extract a shared trade action/search control with compact and full variants when either tab is next edited. Expected user-visible change: same controls; less markup drift between Journal and Trades.
+
+### Daily And Weekly Review Sheets Duplicate Template Lifecycle
+
+Evidence:
+- Both sheets define template/review row types, clone fields, load template + review data, auto-print, save review, reset/save template, move/remove fields, and chart pagination: [components/trading/DailyReportSheet.tsx](/home/jared/Nexus-Terminal/components/trading/DailyReportSheet.tsx:36), [components/trading/WeeklyReviewSheet.tsx](/home/jared/Nexus-Terminal/components/trading/WeeklyReviewSheet.tsx:52).
+- Matching open/load flows live at [components/trading/DailyReportSheet.tsx](/home/jared/Nexus-Terminal/components/trading/DailyReportSheet.tsx:85) and [components/trading/WeeklyReviewSheet.tsx](/home/jared/Nexus-Terminal/components/trading/WeeklyReviewSheet.tsx:146).
+
+Recommendation:
+Extract a review-template hook plus shared template editor and replay-chart-list components. Leave daily/weekly aggregation and weekly watchlist composition local. Expected user-visible change: none; parity fixes become smaller.
+
+### Backtesting Sample-Set Loading Is Split Across Client Paths
+
+Evidence:
+- `useBacktestManager()` loads backtests and sample sets together: [hooks/use-backtest-manager.ts](/home/jared/Nexus-Terminal/hooks/use-backtest-manager.ts:92).
+- `BacktestingSidebar` redeclares sample-set response types, fetches the list again, and fetches detail rows separately: [components/trading/BacktestingSidebar.tsx](/home/jared/Nexus-Terminal/components/trading/BacktestingSidebar.tsx:47), [components/trading/BacktestingSidebar.tsx](/home/jared/Nexus-Terminal/components/trading/BacktestingSidebar.tsx:130), [components/trading/BacktestingSidebar.tsx](/home/jared/Nexus-Terminal/components/trading/BacktestingSidebar.tsx:211).
+
+Recommendation:
+Share sample-set list/detail loaders or lift the list into `BacktestingTab` when the chart/sidebar flow is next touched. Expected user-visible change: fewer duplicate requests and less stale-list risk.
+
+### Chart Session Shading Is Reimplemented Three Times
+
+Evidence:
+- Session shade rect state and `buildSessionShadeRects` wiring appears in Research, live candlestick, and backtest charts: [components/trading/ResearchChart.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchChart.tsx:101), [components/trading/CandlestickChart.tsx](/home/jared/Nexus-Terminal/components/trading/CandlestickChart.tsx:232), [components/trading/BacktestChart.tsx](/home/jared/Nexus-Terminal/components/trading/BacktestChart.tsx:395).
+- Each component has its own scheduling/recalculation path: [components/trading/ResearchChart.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchChart.tsx:141), [components/trading/CandlestickChart.tsx](/home/jared/Nexus-Terminal/components/trading/CandlestickChart.tsx:317), [components/trading/BacktestChart.tsx](/home/jared/Nexus-Terminal/components/trading/BacktestChart.tsx:666).
+
+Recommendation:
+Extract a shared session-shading hook/helper around chart API, candles, viewport width, and intraday enablement. Expected user-visible change: same shading visuals.
+
+### Research Report Cache Readiness Uses Polling
+
+Evidence:
+- `ResearchReportPanel` owns module-level `reportCache`, `getCachedReportId()`, and `prefetchResearchReport()`: [components/trading/ResearchReportPanel.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchReportPanel.tsx:61).
+- `ResearchTickerView` prefetches the report, then the Add-to-Watchlist button polls the cache every 500ms: [components/trading/ResearchTickerView.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchTickerView.tsx:82), [components/trading/ResearchTickerView.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchTickerView.tsx:153).
+
+Recommendation:
+Expose report readiness through a small hook or have `prefetchResearchReport()` return/report the generated id directly to the button state. Expected user-visible change: same or faster Add button enablement, no timer polling.
+
+### Research Section Bundle Is Oversized
+
+Evidence:
+- News, filings, programs, warrants, ownership, gap stats, and tab orchestration live in one file: [components/trading/ResearchReportSections.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchReportSections.tsx:96), [components/trading/ResearchReportSections.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchReportSections.tsx:150), [components/trading/ResearchReportSections.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchReportSections.tsx:216), [components/trading/ResearchReportSections.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchReportSections.tsx:283), [components/trading/ResearchReportSections.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchReportSections.tsx:817).
+
+Recommendation:
+Split by active tab or data family only when making the next Research sub-surface change. Expected user-visible change: none; source-faithful Ask Edgar display work gets smaller review scopes.
+
+## Dead Weight And Tests
+
+### Remove Unused Dependency And Broken Clean Script
+
+Evidence:
+- `npm run clean` maps to `next clean`: [package.json](/home/jared/Nexus-Terminal/package.json:12). Current Next CLI does not expose a `clean` command in normal usage.
+- `@tailwindcss/typography` is installed as a dev dependency: [package.json](/home/jared/Nexus-Terminal/package.json:52).
+- Tailwind config only loads `@tailwindcss/postcss`, and app CSS imports Tailwind plus `tw-animate-css`: [postcss.config.mjs](/home/jared/Nexus-Terminal/postcss.config.mjs:4), [app/globals.css](/home/jared/Nexus-Terminal/app/globals.css:1).
+- Repo search found no Tailwind typography plugin import.
+
+Recommendation:
+Replace or remove `npm run clean`, and remove `@tailwindcss/typography` unless a near-term prose/markdown surface will use it. Expected user-visible change: none.
+
+### Add Playbook Coverage Before More Management Cleanup
+
+Evidence:
+- Playbook API exposes GET/POST/PATCH/DELETE: [app/api/playbook/route.ts](/home/jared/Nexus-Terminal/app/api/playbook/route.ts:10).
+- Playbook UI drives list/load/create/save/delete flows: [components/trading/PlaybookTab.tsx](/home/jared/Nexus-Terminal/components/trading/PlaybookTab.tsx:56).
+- `rg -n "playbook|Playbook|/api/playbook" __tests__` currently returns no test coverage.
+
+Recommendation:
+Add focused route tests for auth, validation, ownership, CRUD, and one UI smoke test for create/save/delete wiring before larger Management cleanup. This reduces regression risk without changing features.
 
 ## Docs And Workflow Drift
 
-- [HANDOFF.md](/home/jared/Nexus-Terminal/HANDOFF.md:8) still presents a full active execution spec for code-validated May 7 Research work. Compact to summary mode: outcome, validation snapshot, authenticated/manual smoke pending.
-- [HANDOFF.md](/home/jared/Nexus-Terminal/HANDOFF.md:813) still carries a deferred company-description note, but the live snapshot/header now pass and render description: [app/api/askedgar/snapshot/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/snapshot/route.ts:28), [ResearchCompanyHeader.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchCompanyHeader.tsx:69).
-- [docs/VALIDATION_MATRIX.md](/home/jared/Nexus-Terminal/docs/VALIDATION_MATRIX.md:21) references deleted `services/backtest-gateway` and `services/backtest-worker`; live service validation is `npm run typecheck:services`.
-- [README.md](/home/jared/Nexus-Terminal/README.md:20) lists stale product areas and omits Backtesting/Archive. [README.md](/home/jared/Nexus-Terminal/README.md:37) still documents `JARVIS_*` env vars, while `.env.example` uses `LLM_*` and `BACKGROUND_LLM_*`: [.env.example](/home/jared/Nexus-Terminal/.env.example:11).
-- [codex-skills/nexus-vercel-ops/SKILL.md](/home/jared/Nexus-Terminal/codex-skills/nexus-vercel-ops/SKILL.md:34) says `vercel.json` defines one cron, but [vercel.json](/home/jared/Nexus-Terminal/vercel.json:2) defines three.
-- [AGENTS.md](/home/jared/Nexus-Terminal/AGENTS.md:73) says schemas live in two validation files, but `lib/validations/` now has multiple feature-specific files.
+### Compact Completed Specs Out Of `HANDOFF.md`
 
-## Harness Skills
+Evidence:
+- `HANDOFF.md` still contains a completed Playbook execution spec: [HANDOFF.md](/home/jared/Nexus-Terminal/HANDOFF.md:16), [HANDOFF.md](/home/jared/Nexus-Terminal/HANDOFF.md:19).
+- Agents are required to read `HANDOFF.md` first and follow active execution specs in order: [AGENTS.md](/home/jared/Nexus-Terminal/AGENTS.md:16), [AGENTS.md](/home/jared/Nexus-Terminal/AGENTS.md:19).
 
-Findings:
-- AGENTS recommends `nexus-status`, `nexus-debug`, `nexus-review`, `nexus-security-audit`, and `nexus-askedgar-debug`: [AGENTS.md](/home/jared/Nexus-Terminal/AGENTS.md:142).
-- Those five exist under `codex-skills/`, but are not installed under `~/.codex/skills` in the current harness.
-- Installed copies differ from repo copies for `nexus-commit`, `nexus-deep-research`, `nexus-workflow-audit`, `test-auditor`, and frontend design reference docs.
-- `nexus-deep-research` policy differs between repo copy and installed/reference guidance: [codex-skills/nexus-deep-research/SKILL.md](/home/jared/Nexus-Terminal/codex-skills/nexus-deep-research/SKILL.md:29).
-- [scripts/workflow-audit.mjs](/home/jared/Nexus-Terminal/scripts/workflow-audit.mjs:28) still checks `.claude` and `.opencode` by default, while AGENTS says to ignore those unless explicitly requested: [AGENTS.md](/home/jared/Nexus-Terminal/AGENTS.md:144).
+Recommendation:
+Move completed Playbook detail to summary mode and keep only active follow-ups. This is not a product behavior change; it prevents future agents from treating completed work as current execution scope.
 
-Recommendations:
-1. Decide whether `nexus-deep-research` is parallel-by-default or optional. Given current preference, parallel-by-default is likely right.
-2. Update repo skill sources and `workflow:audit` to match that decision.
-3. Sync installed copies into `~/.codex/skills`.
-4. Install/sync `nexus-status`, `nexus-debug`, `nexus-review`, `nexus-security-audit`, and `nexus-askedgar-debug` so the harness can actually call what AGENTS recommends.
-5. Split `workflow:audit` into Codex-default checks and optional cross-tool checks if `.claude` / `.opencode` should stay out of normal Codex audits.
+### `workflow:audit` Is A Narrow Smoke Check, Not The Full Skill Audit
 
-Skills to use more once synced:
-- `nexus-status` for quick repo/HANDOFF state.
-- `nexus-review` before ship/commit decisions.
-- `nexus-debug` for concrete regressions.
-- `nexus-askedgar-debug` for research pipeline/cache/quota issues.
-- `nexus-security-audit` before protected route, service auth, or external integration changes.
-- `test-auditor` before large refactors or when deciding whether cleanup is safe.
+Evidence:
+- The workflow-audit skill lists `HANDOFF.md` and architecture claims as audit targets: [codex-skills/nexus-workflow-audit/SKILL.md](/home/jared/Nexus-Terminal/codex-skills/nexus-workflow-audit/SKILL.md:15), [codex-skills/nexus-workflow-audit/SKILL.md](/home/jared/Nexus-Terminal/codex-skills/nexus-workflow-audit/SKILL.md:26).
+- The script checks selected strings in `AGENTS.md`, `README.md`, `docs/VALIDATION_MATRIX.md`, Vercel ops skill, and skill files, but does not read `HANDOFF.md` or `docs/ARCHITECTURE.md`: [scripts/workflow-audit.mjs](/home/jared/Nexus-Terminal/scripts/workflow-audit.mjs:19), [scripts/workflow-audit.mjs](/home/jared/Nexus-Terminal/scripts/workflow-audit.mjs:35), [scripts/workflow-audit.mjs](/home/jared/Nexus-Terminal/scripts/workflow-audit.mjs:41).
+- `npm run workflow:audit` passes in the current tree.
 
-## Personal Workflow Improvements
+Recommendation:
+Either extend `scripts/workflow-audit.mjs` to cover the key handoff/architecture invariants, or document it as a narrow smoke check. The command is still useful, but it should not imply the full skill checklist ran.
 
-- Add `npm run typecheck` and `npm run validate` so specs can reference one command instead of repeating lint/typecheck/test chains.
-- Keep `HANDOFF.md` contract-level while work is active, then compact it after validation. Avoid leaving long implementation transcripts active.
-- Make stale follow-up cleanup part of closeout: grep deferred items against live code before commit.
-- Prefer route/unit tests over manual DB timestamp mutation for cache TTL behavior.
-- Keep broad refactors parked until product pruning is decided, especially around AskEdgar and Discord import history.
+### `docs/ARCHITECTURE.md` Has Helper And Migration Drift
+
+Evidence:
+- Architecture says `lib/api-route-utils.ts` owns auth helpers: [docs/ARCHITECTURE.md](/home/jared/Nexus-Terminal/docs/ARCHITECTURE.md:63).
+- Live route guidance correctly points server auth/db helpers to `lib/server-db-utils.ts`: [AGENTS.md](/home/jared/Nexus-Terminal/AGENTS.md:59).
+- Architecture says schema changes run `npm run db:migrate` and that this generates a new file: [docs/ARCHITECTURE.md](/home/jared/Nexus-Terminal/docs/ARCHITECTURE.md:153).
+- Live scripts separate generation and migration: [package.json](/home/jared/Nexus-Terminal/package.json:15), [package.json](/home/jared/Nexus-Terminal/package.json:16).
+
+Recommendation:
+Update the architecture map so `api-route-utils` owns validation/error helpers, `server-db-utils` owns auth/db helpers, and schema changes use `db:generate` then SQL inspection then `db:migrate`.
+
+### Ask Edgar Docs And Agent Guide Disagree With Current Registry
+
+Evidence:
+- `docs/ae-buildout.md` says daily unique ticker usage lives in `askedgar_daily_tickers`: [docs/ae-buildout.md](/home/jared/Nexus-Terminal/docs/ae-buildout.md:72). Current schema only has `askedgar_cache` and `askedgar_runtime_state` in this area: [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts:143), [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts:155).
+- `docs/ae-buildout.md` still mentions a `lookup` scope and `filing-titles` compatibility read: [docs/ae-buildout.md](/home/jared/Nexus-Terminal/docs/ae-buildout.md:115), [docs/ae-buildout.md](/home/jared/Nexus-Terminal/docs/ae-buildout.md:124).
+- Current `ENDPOINT_SCOPES` has `snapshot`, `scanner-summary`, `small-cap-research`, and `swing-trader-research`, with no `lookup`: [lib/askedgar/endpoints.ts](/home/jared/Nexus-Terminal/lib/askedgar/endpoints.ts:301).
+- `AGENTS.md` still says `filing-titles` lands in `rawData['filing-titles']`: [AGENTS.md](/home/jared/Nexus-Terminal/AGENTS.md:63). The current registry has `sec-filings`, not `filing-titles`: [lib/askedgar/endpoints.ts](/home/jared/Nexus-Terminal/lib/askedgar/endpoints.ts:282).
+
+Recommendation:
+Refresh Ask Edgar docs and AGENTS guidance to match the split adapter and current registry before the next Ask Edgar cleanup. This prevents agents from preserving dead compatibility concepts.
