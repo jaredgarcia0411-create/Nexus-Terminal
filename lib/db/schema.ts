@@ -601,3 +601,21 @@ export const mdrTriggers = pgTable('mdr_triggers', {
   index('mdr_triggers_trigger_date_idx').on(t.triggerDate),
   index('mdr_triggers_active_idx').on(t.invalidatedAt, t.triggerDate),
 ]);
+
+// Playbook strategies - one row per (user, strategy). The `sections` JSONB
+// holds all 7 free-form text sections so adding/removing a section later
+// doesn't require a migration. The `tag` column is plain text that must
+// match a trade tag (case-sensitive, exact) to drive the Recent Trades
+// panel on the Playbook page.
+export const playbookStrategies = pgTable('playbook_strategies', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  description: text('description').notNull().default(''),
+  tag: text('tag').notNull().default(''),
+  sections: jsonb('sections').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('playbook_strategies_user_created_idx').on(t.userId, t.createdAt),
+]);

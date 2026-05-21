@@ -6,19 +6,21 @@ import { motion } from 'motion/react';
 import ArchiveTab from '@/components/trading/ArchiveTab';
 import CareerPnlTab from '@/components/trading/CareerPnlTab';
 import JournalTab from '@/components/trading/JournalTab';
+import PlaybookTab from '@/components/trading/PlaybookTab';
 import PerformanceTab from '@/components/trading/PerformanceTab';
 import ResearchSubNav from '@/components/trading/ResearchSubNav';
 import TradesTab from '@/components/trading/TradesTab';
 import type { Trade } from '@/lib/types';
 
-type SubTabKey = 'journal' | 'trades' | 'performance' | 'career-pnl' | 'archive';
+type SubTabKey = 'journal' | 'trades' | 'performance' | 'playbook' | 'career-pnl' | 'archive';
 
 // Order matches the spec: Journal first, then Trades (formerly the standalone
-// "Management"/Trades tab), Performance, Career P/L, Archive.
+// "Management"/Trades tab), Performance, Playbook, Career P/L, Archive.
 const SUB_TABS: Array<{ key: SubTabKey; label: string }> = [
   { key: 'journal', label: 'Journal' },
   { key: 'trades', label: 'Trades' },
   { key: 'performance', label: 'Performance' },
+  { key: 'playbook', label: 'Playbook' },
   { key: 'career-pnl', label: 'Career P/L' },
   { key: 'archive', label: 'Archive' },
 ];
@@ -138,6 +140,8 @@ export default function ManagementTab(props: ManagementTabProps) {
           onTradeClick={props.onTradeClick}
         />
       ) : null}
+
+      {activeSubTab === 'playbook' ? <PlaybookTab trades={props.trades} /> : null}
 
       {activeSubTab === 'career-pnl' ? <CareerPnlTab /> : null}
 

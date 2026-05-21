@@ -288,6 +288,13 @@
       "when": 1779233042105,
       "tag": "0040_drop_askedgar_daily_tickers",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1779375762171,
+      "tag": "0041_volatile_sharon_ventura",
+      "breakpoints": true
     }
   ]
 }
