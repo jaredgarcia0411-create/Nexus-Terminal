@@ -13,7 +13,7 @@ describe('backtestSessionReviewSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts drawings and per-slot indicators', () => {
+  it('accepts legacy drawings and per-slot indicators', () => {
     const result = backtestSessionReviewSchema.safeParse({
       sessionId: 'session-1',
       chartState: {
@@ -25,7 +25,19 @@ describe('backtestSessionReviewSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects extra chart state fields', () => {
+  it('accepts bucketed drawings and per-slot indicators', () => {
+    const result = backtestSessionReviewSchema.safeParse({
+      sessionId: 'session-1',
+      chartState: {
+        drawings: { intraday: [{ id: 'drawing-1' }], higher: [] },
+        indicators: { intraday: { primary: ['VWAP'] }, higher: { daily: ['SMA50'] } },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('tolerates extra chart state fields for forward compatibility', () => {
     const result = backtestSessionReviewSchema.safeParse({
       sessionId: 'session-1',
       chartState: {
@@ -33,6 +45,6 @@ describe('backtestSessionReviewSchema', () => {
       },
     });
 
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 });

@@ -523,4 +523,68 @@ export function useChartDrawings(
   };
 }
 
+export type ChartBucket = 'intraday' | 'higher';
+
+export interface ChartLibraryEntry {
+  drawings: Drawing[];
+  indicators: Record<string, string[]>;
+}
+
+export interface ChartLibrarySnapshot {
+  intraday: ChartLibraryEntry;
+  higher: ChartLibraryEntry;
+}
+
+function emptyChartLibrarySnapshot(): ChartLibrarySnapshot {
+  return {
+    intraday: { drawings: [], indicators: {} },
+    higher: { drawings: [], indicators: {} },
+  };
+}
+
+export async function fetchChartLibrary(ticker: string): Promise<ChartLibrarySnapshot> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/chart-drawings?ticker=${encodeURIComponent(ticker)}`);
+  } catch {
+    return emptyChartLibrarySnapshot();
+  }
+  if (!response.ok) return emptyChartLibrarySnapshot();
+
+  const data = await response.json() as {
+    intraday?: { drawings?: unknown; indicators?: Record<string, string[]> };
+    higher?: { drawings?: unknown; indicators?: Record<string, string[]> };
+  };
+
+  return {
+    intraday: {
+      drawings: normalizeDrawings(data.intraday?.drawings ?? []),
+      indicators: data.intraday?.indicators ?? {},
+    },
+    higher: {
+      drawings: normalizeDrawings(data.higher?.drawings ?? []),
+      indicators: data.higher?.indicators ?? {},
+    },
+  };
+}
+
+export async function putChartLibraryEntry(
+  ticker: string,
+  bucket: ChartBucket,
+  entry: ChartLibraryEntry,
+): Promise<void> {
+  try {
+    await fetch(`/api/chart-drawings?ticker=${encodeURIComponent(ticker)}&bucket=${bucket}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        drawings: entry.drawings,
+        indicators: entry.indicators,
+      }),
+    });
+  } catch {
+    // Library writes are best-effort UI state.
+  }
+}
+
 export type ChartDrawingsController = ReturnType<typeof useChartDrawings>;

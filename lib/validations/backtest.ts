@@ -24,10 +24,30 @@ export const backtestActionCreateSchema = z.object({
 
 export type BacktestActionCreateBody = z.infer<typeof backtestActionCreateSchema>;
 
+// Drawings are validated structurally by `normalizeDrawings` on read.
+// Indicators are validated by `isIndicatorKey` on read. The schema only
+// enforces the outer envelope and accepts both the legacy flat shape and
+// the new bucketed shape; existing snapshots predate the migration.
+const drawingsField = z.union([
+  z.array(z.unknown()),
+  z.object({
+    intraday: z.array(z.unknown()).optional(),
+    higher: z.array(z.unknown()).optional(),
+  }),
+]).optional();
+
+const indicatorsField = z.union([
+  z.record(z.string(), z.array(z.string())),
+  z.object({
+    intraday: z.record(z.string(), z.array(z.string())).optional(),
+    higher: z.record(z.string(), z.array(z.string())).optional(),
+  }),
+]).optional();
+
 export const chartStateSchema = z.object({
-  drawings: z.array(z.unknown()).optional(),
-  indicators: z.record(z.string(), z.array(z.string())).optional(),
-}).strict();
+  drawings: drawingsField,
+  indicators: indicatorsField,
+});
 
 export type ChartStateBody = z.infer<typeof chartStateSchema>;
 

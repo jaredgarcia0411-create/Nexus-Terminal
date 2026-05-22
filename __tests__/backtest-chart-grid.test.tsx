@@ -71,14 +71,14 @@ describe('BacktestChartGrid', () => {
     expect(screen.queryByTestId('chart-1D')).toBeNull();
   });
 
-  it('passes shared drawing control to intraday charts only', () => {
+  it('passes bucketed drawing controls to every chart', () => {
     renderGrid();
 
     const firstRender = chartProps.slice(0, 4);
     expect(firstRender.find((props) => props.timeframe === '5m')?.drawingsController).toBeTruthy();
     expect(firstRender.find((props) => props.timeframe === '15m')?.drawingsController).toBeTruthy();
     expect(firstRender.find((props) => props.timeframe === '1h')?.drawingsController).toBeTruthy();
-    expect(firstRender.find((props) => props.timeframe === '1D')?.drawingsController).toBeNull();
+    expect(firstRender.find((props) => props.timeframe === '1D')?.drawingsController).toBeTruthy();
   });
 
   it('passes the global forward-session count to every visible chart', () => {
@@ -183,7 +183,9 @@ describe('BacktestChartGrid', () => {
 
     await waitFor(() => {
       expect(onChartStateChange).toHaveBeenCalledWith(expect.objectContaining({
-        indicators: expect.objectContaining({ primary: ['EMA9'] }),
+        indicators: expect.objectContaining({
+          intraday: expect.objectContaining({ primary: ['EMA9'] }),
+        }),
       }));
     });
   });

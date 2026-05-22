@@ -111,7 +111,10 @@ export default function BacktestingTab() {
   const [extraSessionsForward, setExtraSessionsForward] = useState(0);
   const [lookupTicker, setLookupTicker] = useState('');
   const [lookupDate, setLookupDate] = useState('');
-  const latestChartStateRef = useRef<BacktestChartState>({ drawings: [], indicators: {} });
+  const latestChartStateRef = useRef<BacktestChartState>({
+    drawings: { intraday: [], higher: [] },
+    indicators: { intraday: {}, higher: {} },
+  });
   // When the user clicks Launch Chart with a known recent review, we set this
   // to the review id. The effect below picks it up once the sessions GET
   // resolves and drops the user into read-only review mode automatically.
@@ -205,7 +208,10 @@ export default function BacktestingTab() {
 
   useEffect(() => {
     if (sessionState.isReadOnly) return;
-    latestChartStateRef.current = { drawings: [], indicators: {} };
+    latestChartStateRef.current = {
+      drawings: { intraday: [], higher: [] },
+      indicators: { intraday: {}, higher: {} },
+    };
   }, [sessionState.session?.id, sessionState.isReadOnly]);
 
   const handleChartStateChange = useCallback((nextChartState: BacktestChartState) => {

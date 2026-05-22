@@ -580,6 +580,17 @@ export const backtestActions = pgTable('backtest_actions', {
   index('backtest_actions_user_session_seq_idx').on(t.userId, t.sessionId, t.sequence),
 ]);
 
+export const chartDrawings = pgTable('chart_drawings', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  ticker: text('ticker').notNull(),
+  bucket: text('bucket', { enum: ['intraday', 'higher'] }).notNull(),
+  drawings: jsonb('drawings').default([]).notNull(),
+  indicators: jsonb('indicators').default({}).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.ticker, t.bucket] }),
+]);
+
 // MDR scanner triggers — one row per ticker per trigger date.
 // Populated by the nightly cron (/api/cron/mdr-sweep) and read by
 // /api/scanner/mdr-recent. Shared across all users; no userId.

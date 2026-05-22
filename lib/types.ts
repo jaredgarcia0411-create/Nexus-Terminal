@@ -90,8 +90,19 @@ export type BacktestActionType = 'LONG' | 'LONG_ADD' | 'SELL' | 'SHORT' | 'SHORT
 export type BacktestSessionStatus = 'ACTIVE' | 'REVIEWED';
 
 export interface BacktestChartState {
-  drawings?: unknown[];
-  indicators?: Record<string, string[]>;
+  // Two readable shapes:
+  //   Legacy flat: { drawings: Drawing[], indicators: Record<SlotId, string[]> }
+  //   New bucketed: { drawings: { intraday, higher }, indicators: { intraday, higher } }
+  // `normalizeChartState` in BacktestChartGrid handles coercion on read.
+  // Writers emit the bucketed shape.
+  drawings?: unknown[] | {
+    intraday?: unknown[];
+    higher?: unknown[];
+  };
+  indicators?: Record<string, string[]> | {
+    intraday?: Record<string, string[]>;
+    higher?: Record<string, string[]>;
+  };
 }
 
 export interface BacktestSession {

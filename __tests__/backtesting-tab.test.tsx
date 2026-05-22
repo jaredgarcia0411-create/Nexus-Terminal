@@ -310,7 +310,10 @@ describe('BacktestingTab', () => {
         riskDollars: 100,
         label: null,
         notes: null,
-        chartState: { drawings: [], indicators: { primary: ['VWAP'] } },
+        chartState: {
+          drawings: { intraday: [], higher: [] },
+          indicators: { intraday: { primary: ['VWAP'] }, higher: {} },
+        },
         backtestId: 'bt-1',
         reviewedAt: '2026-04-29T12:00:00.000Z',
         createdAt: '2026-04-28T12:00:00.000Z',
@@ -327,6 +330,9 @@ describe('BacktestingTab', () => {
     expect(screen.queryByRole('button', { name: 'New' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Delete review' })).toBeTruthy();
     expect(chartGridProps.at(-1)?.isReadOnly).toBe(true);
-    expect(chartGridProps.at(-1)?.loadedChartState).toEqual({ drawings: [], indicators: { primary: ['VWAP'] } });
+    expect(chartGridProps.at(-1)?.loadedChartState).toEqual({
+      drawings: { intraday: [], higher: [] },
+      indicators: { intraday: { primary: ['VWAP'] }, higher: {} },
+    });
   });
 });

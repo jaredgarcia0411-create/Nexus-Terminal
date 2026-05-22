@@ -261,7 +261,10 @@ describe('backtest session routes', () => {
         sessionId: createPayload.session.id,
         label: 'A setup',
         notes: 'clean move',
-        chartState: { drawings: [{ id: 'txt-1', type: 'text', position: { time: 1, price: 10 }, text: 'test' }], indicators: { primary: ['VWAP'] } },
+        chartState: {
+          drawings: { intraday: [{ id: 'txt-1', type: 'text', position: { time: 1, price: 10 }, text: 'test' }], higher: [] },
+          indicators: { intraday: { primary: ['VWAP'] }, higher: {} },
+        },
       }),
     }), {
       params: Promise.resolve({ id: createPayload.session.id }),
@@ -272,8 +275,8 @@ describe('backtest session routes', () => {
     expect(reviewPayload.session.status).toBe('REVIEWED');
     expect(reviewPayload.session.label).toBe('A setup');
     expect(reviewPayload.session.chartState).toEqual({
-      drawings: [{ id: 'txt-1', type: 'text', position: { time: 1, price: 10 }, text: 'test' }],
-      indicators: { primary: ['VWAP'] },
+      drawings: { intraday: [{ id: 'txt-1', type: 'text', position: { time: 1, price: 10 }, text: 'test' }], higher: [] },
+      indicators: { intraday: { primary: ['VWAP'] }, higher: {} },
     });
 
     const listResponse = ensureResponse(await getSessions(new Request('http://localhost/api/backtest/sessions?ticker=AAPL&date=2026-04-28')));

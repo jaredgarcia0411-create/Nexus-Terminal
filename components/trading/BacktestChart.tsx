@@ -421,7 +421,7 @@ export default function BacktestChart({
   );
   const priorClose = usePriorDailyClose(ticker, anchorDate, frame.intraday);
   const drawingScope = `${ticker}:${anchorDate}:${timeframe}`;
-  const canDraw = frame.intraday && drawingsController != null && onDrawingToolChange != null;
+  const canDraw = drawingsController != null && onDrawingToolChange != null;
   const previousTimeframe = getSteppedTimeframe(timeframe, -1);
   const nextTimeframe = getSteppedTimeframe(timeframe, 1);
   const handleDrawingToolChange = useCallback((tool: DrawingTool) => {
