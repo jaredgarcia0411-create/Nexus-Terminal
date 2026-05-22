@@ -2,17 +2,19 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { ChevronRight, Plus, Save, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { EMPTY_PLAYBOOK_SECTIONS, PLAYBOOK_SECTION_ORDER } from '@/lib/playbook-defaults';
+import { PLAYBOOK_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
+import { emptySectionsForTemplate } from '@/lib/playbook-defaults';
 import { formatCurrency } from '@/lib/trading-utils';
 import type { Trade } from '@/lib/types';
 import type { PlaybookSections } from '@/lib/validations/playbook';
+import type { TemplateField } from '@/lib/validations/reviews';
 
 interface Strategy {
   id: string;
@@ -22,6 +24,11 @@ interface Strategy {
   sections: PlaybookSections;
   createdAt: string;
   updatedAt: string;
+}
+
+interface TemplateRow {
+  id: string;
+  fields: TemplateField[];
 }
 
 interface PlaybookTabProps {
@@ -53,26 +60,60 @@ function computeStats(matching: Trade[]): TagStats {
   return { count: matching.length, wins, winRate, avgR, totalPnl };
 }
 
+function cloneTemplateFields(fields: TemplateField[]): TemplateField[] {
+  return fields.map((field) => ({
+    ...field,
+    options: field.options ? [...field.options] : undefined,
+  }));
+}
+
+// Generates a stable-ish id for a brand-new section the user adds in the
+// template editor. ID just needs to be unique across the current fields list;
+// reportData is keyed by these IDs so a clean slug + counter is enough.
+function nextFieldId(existing: TemplateField[]): string {
+  const base = 'section';
+  let counter = existing.length + 1;
+  while (existing.some((field) => field.id === `${base}${counter}`)) {
+    counter += 1;
+  }
+  return `${base}${counter}`;
+}
+
 export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [fields, setFields] = useState<TemplateField[]>(PLAYBOOK_DEFAULT_FIELDS);
+  const [editingTemplate, setEditingTemplate] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       try {
-        const response = await fetch('/api/playbook');
-        if (!response.ok) throw new Error(`fetch failed: ${response.status}`);
-        const data = (await response.json()) as { strategies: Strategy[] };
+        const [stratResponse, templateResponse] = await Promise.all([
+          fetch('/api/playbook'),
+          fetch('/api/report-templates?type=playbook'),
+        ]);
+
+        if (!stratResponse.ok) throw new Error(`fetch failed: ${stratResponse.status}`);
+        const stratData = (await stratResponse.json()) as { strategies: Strategy[] };
+
+        let tmpl: TemplateRow | null = null;
+        if (templateResponse.ok) {
+          const tmplData = (await templateResponse.json()) as { template: TemplateRow | null };
+          tmpl = tmplData.template ?? null;
+        }
 
         if (!cancelled) {
-          const nextStrategies = data.strategies ?? [];
+          const nextStrategies = stratData.strategies ?? [];
           setStrategies(nextStrategies);
           if (nextStrategies.length > 0) {
             setSelectedId(nextStrategies[0].id);
+          }
+          if (tmpl) {
+            setFields(cloneTemplateFields(tmpl.fields));
           }
         }
       } catch (error) {
@@ -115,7 +156,7 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
           name: 'New Strategy',
           description: '',
           tag: '',
-          sections: EMPTY_PLAYBOOK_SECTIONS,
+          sections: emptySectionsForTemplate(fields),
         }),
       });
       if (!response.ok) throw new Error(`create failed: ${response.status}`);
@@ -189,9 +230,75 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
     )));
   };
 
-  const updateSection = (key: keyof PlaybookSections, value: string) => {
+  const updateSection = (key: string, value: string) => {
     if (!selected) return;
     updateSelected({ sections: { ...selected.sections, [key]: value } });
+  };
+
+  // --- Template editor handlers ------------------------------------------
+
+  const saveTemplate = async () => {
+    if (fields.length === 0) {
+      toast.error('Template needs at least one section');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/report-templates', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'playbook', fields }),
+      });
+
+      if (!response.ok) throw new Error('Save failed');
+
+      const data = (await response.json()) as { template: TemplateRow };
+      setFields(cloneTemplateFields(data.template.fields));
+      setEditingTemplate(false);
+      toast.success('Template saved');
+    } catch {
+      toast.error('Failed to save template');
+    }
+  };
+
+  const handleResetTemplate = async () => {
+    const nextFields = cloneTemplateFields(PLAYBOOK_DEFAULT_FIELDS);
+    setFields(nextFields);
+
+    try {
+      const response = await fetch('/api/report-templates', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'playbook', fields: nextFields }),
+      });
+
+      if (!response.ok) throw new Error('Reset failed');
+
+      const data = (await response.json()) as { template: TemplateRow };
+      setFields(cloneTemplateFields(data.template.fields));
+      toast.success('Template reset');
+    } catch {
+      toast.error('Failed to reset template');
+    }
+  };
+
+  const moveField = (index: number, direction: -1 | 1) => {
+    const copy = [...fields];
+    const swapIndex = index + direction;
+    if (swapIndex < 0 || swapIndex >= copy.length) return;
+    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+    setFields(copy);
+  };
+
+  const addField = () => {
+    setFields((current) => [
+      ...current,
+      { id: nextFieldId(current), label: 'New Section', type: 'text', required: false },
+    ]);
+  };
+
+  const removeField = (index: number) => {
+    setFields(fields.filter((_, currentIndex) => currentIndex !== index));
   };
 
   return (
@@ -304,23 +411,111 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>
-              <Input
-                value={selected.description}
-                onChange={(event) => updateSelected({ description: event.target.value })}
-                placeholder="One-line description"
-                className="h-9 border-white/10 bg-white/5 text-sm text-zinc-300"
-              />
+              {/* Description row: edit-template button sits to the right at
+                  the same height (h-9) so it lines up with the inputs above. */}
+              <div className="flex items-center gap-2">
+                <Input
+                  value={selected.description}
+                  onChange={(event) => updateSelected({ description: event.target.value })}
+                  placeholder="One-line description"
+                  className="h-9 flex-1 border-white/10 bg-white/5 text-sm text-zinc-300"
+                />
+                <Button
+                  onClick={() => setEditingTemplate((flag) => !flag)}
+                  className="h-9 border border-emerald-500/40 bg-emerald-500/10 px-3 text-emerald-500 hover:bg-emerald-500/20"
+                >
+                  <Pencil className="mr-1.5 h-4 w-4" />
+                  Edit Template
+                </Button>
+              </div>
             </div>
 
-            {PLAYBOOK_SECTION_ORDER.map((section) => (
-              <div key={section.key} className="space-y-1">
+            {editingTemplate ? (
+              <div className="space-y-3 rounded-md border border-white/10 bg-white/5 p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium capitalize text-white">Edit Template</p>
+                  <p className="text-xs text-zinc-500">
+                    Sections apply to every strategy in your playbook.
+                  </p>
+                </div>
+                {fields.map((field, index) => (
+                  <div
+                    key={field.id}
+                    className="flex items-center gap-2 rounded-md border border-white/10 bg-[#121214] p-2"
+                  >
+                    <div className="flex flex-col gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => moveField(index, -1)}
+                        className="rounded p-0.5 hover:bg-white/10"
+                        aria-label="Move up"
+                      >
+                        <ChevronUp className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveField(index, 1)}
+                        className="rounded p-0.5 hover:bg-white/10"
+                        aria-label="Move down"
+                      >
+                        <ChevronDown className="h-3 w-3" />
+                      </button>
+                    </div>
+                    <input
+                      value={field.label}
+                      onChange={(event) => {
+                        const copy = [...fields];
+                        copy[index] = { ...copy[index], label: event.target.value };
+                        setFields(copy);
+                      }}
+                      className="flex-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-200 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeField(index)}
+                      className="rounded p-0.5 text-rose-400 hover:bg-rose-500/20"
+                      aria-label="Remove section"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    onClick={addField}
+                    className="border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"
+                  >
+                    <Plus className="mr-1 h-3 w-3" />
+                    Add Section
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={saveTemplate}
+                    className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                  >
+                    Save Template
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleResetTemplate}
+                    className="border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"
+                  >
+                    Reset to Defaults
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {fields.map((field) => (
+              <div key={field.id} className="space-y-1">
                 <p className="text-xs font-medium capitalize text-white">
-                  {section.label}
+                  {field.label}
                 </p>
                 <Textarea
-                  value={selected.sections[section.key]}
-                  onChange={(event) => updateSection(section.key, event.target.value)}
-                  placeholder={section.placeholder}
+                  value={selected.sections[field.id] ?? ''}
+                  onChange={(event) => updateSection(field.id, event.target.value)}
                   className="min-h-[80px] border-white/10 bg-white/5 text-sm"
                 />
               </div>
@@ -388,3 +583,4 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
     </motion.div>
   );
 }
+

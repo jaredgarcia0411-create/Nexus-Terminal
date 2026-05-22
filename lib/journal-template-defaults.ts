@@ -18,6 +18,20 @@ export const DAILY_DEFAULT_FIELDS: TemplateField[] = [
   },
 ];
 
+// Playbook strategies are free-form: every section is a single text
+// textarea. Keys match the original hard-coded PlaybookSections shape so
+// existing rows (which stored these exact keys) keep rendering after the
+// switch to the template-driven UI.
+export const PLAYBOOK_DEFAULT_FIELDS: TemplateField[] = [
+  { id: 'overview',     label: 'Overview',            type: 'text', required: false },
+  { id: 'checklist',    label: 'Pre-Trade Checklist', type: 'text', required: false },
+  { id: 'entry',        label: 'Entry Criteria',      type: 'text', required: false },
+  { id: 'invalidation', label: 'Invalidation',        type: 'text', required: false },
+  { id: 'risk',         label: 'Risk / Stop',         type: 'text', required: false },
+  { id: 'targets',      label: 'Profit Targets',      type: 'text', required: false },
+  { id: 'notes',        label: 'Notes',               type: 'text', required: false },
+];
+
 export const WEEKLY_DEFAULT_FIELDS: TemplateField[] = [
   { id: 'whatWorked', label: 'What worked', type: 'text', required: false },
   { id: 'whatDidnt', label: "What didn't work", type: 'text', required: false },

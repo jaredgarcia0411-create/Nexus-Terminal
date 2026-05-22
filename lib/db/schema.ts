@@ -431,7 +431,7 @@ export const agentJobCheckpoints = pgTable('agent_job_checkpoints', {
 export const reportTemplates = pgTable('report_templates', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  type: text('type', { enum: ['daily', 'weekly'] }).notNull(),
+  type: text('type', { enum: ['daily', 'weekly', 'playbook'] }).notNull(),
   fields: jsonb('fields').notNull(),
   isDefault: boolean('is_default').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),

@@ -11,7 +11,7 @@ export const templateFieldSchema = z.object({
 export type TemplateField = z.infer<typeof templateFieldSchema>;
 
 export const upsertTemplateSchema = z.object({
-  type: z.enum(['daily', 'weekly']),
+  type: z.enum(['daily', 'weekly', 'playbook']),
   fields: z.array(templateFieldSchema).min(1),
 });
 

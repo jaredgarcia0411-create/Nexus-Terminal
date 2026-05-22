@@ -1,26 +1,16 @@
+import { PLAYBOOK_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
+import type { TemplateField } from '@/lib/validations/reviews';
 import type { PlaybookSections } from '@/lib/validations/playbook';
 
-// Used when the user clicks "+ New Strategy" - every section starts empty
-// so the form renders all seven textareas without the user having to
-// delete placeholder text.
-export const EMPTY_PLAYBOOK_SECTIONS: PlaybookSections = {
-  overview: '',
-  checklist: '',
-  entry: '',
-  invalidation: '',
-  risk: '',
-  targets: '',
-  notes: '',
-};
+// "+ New Strategy" creates a row pre-seeded with every section the user's
+// template defines, all empty. Computed from the template's fields so renaming
+// or adding a section in the template editor automatically flows through to
+// new strategies.
+export function emptySectionsForTemplate(fields: TemplateField[]): PlaybookSections {
+  return Object.fromEntries(fields.map((field) => [field.id, '']));
+}
 
-// Display labels for the 7 sections, in the order the right panel
-// should render them. Keys must match PlaybookSections.
-export const PLAYBOOK_SECTION_ORDER: Array<{ key: keyof PlaybookSections; label: string; placeholder: string }> = [
-  { key: 'overview', label: 'Overview', placeholder: 'What is this strategy in one paragraph?' },
-  { key: 'checklist', label: 'Pre-Trade Checklist', placeholder: 'One bullet per line. e.g. price > 200MA' },
-  { key: 'entry', label: 'Entry Criteria', placeholder: 'When do you take the trade?' },
-  { key: 'invalidation', label: 'Invalidation', placeholder: 'When do you NOT take the trade?' },
-  { key: 'risk', label: 'Risk / Stop', placeholder: 'Where is the stop? How much do you risk?' },
-  { key: 'targets', label: 'Profit Targets', placeholder: 'Where do you scale or take full profit?' },
-  { key: 'notes', label: 'Notes', placeholder: 'Anything else worth remembering.' },
-];
+// Used when no template has loaded yet (e.g. very first create) — falls back
+// to the default 7 sections so a new strategy is never created with zero
+// fields.
+export const EMPTY_PLAYBOOK_SECTIONS: PlaybookSections = emptySectionsForTemplate(PLAYBOOK_DEFAULT_FIELDS);

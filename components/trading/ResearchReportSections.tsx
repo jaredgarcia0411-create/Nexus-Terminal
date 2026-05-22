@@ -168,10 +168,10 @@ function FilingsRow({ filing }: { filing: ResearchSnapshotFiling }) {
   return (
     <tr className="border-b border-white/5 align-top text-zinc-300">
       {/* whitespace-nowrap so form types like "20-F" never wrap to a second line */}
-      <td className="py-2 pr-3 align-top whitespace-nowrap font-bold text-white">
+      <td className="px-3 py-2 align-top whitespace-nowrap font-bold text-white">
         {filing.formType}
       </td>
-      <td className="py-2 pr-3 align-top">
+      <td className="px-3 py-2 text-center align-top">
         <div className={clamp ? 'line-clamp-2' : ''}>{titleNode}</div>
         {isLong ? (
           <button
@@ -183,7 +183,9 @@ function FilingsRow({ filing }: { filing: ResearchSnapshotFiling }) {
           </button>
         ) : null}
       </td>
-      <td className="py-2 align-top whitespace-nowrap">{formatDate(filing.filedAt)}</td>
+      {/* text-right pushes the date to the right edge so it reads symmetric
+          against the form-type column on the left and the card border. */}
+      <td className="px-3 py-2 align-top whitespace-nowrap text-right">{formatDate(filing.filedAt)}</td>
     </tr>
   );
 }
@@ -198,9 +200,9 @@ function FilingsTable({ filings }: { filings: ResearchSnapshotFiling[] }) {
       <table className="min-w-full">
         <thead>
           <tr className="border-b border-white/10 text-zinc-400">
-            <th className="py-2 pr-3 text-left">Type</th>
-            <th className="py-2 pr-3 text-left">Headline</th>
-            <th className="py-2 text-left">Filed At</th>
+            <th className="px-3 py-2 text-left">Type</th>
+            <th className="px-3 py-2 text-center">Headline</th>
+            <th className="px-3 py-2 text-right">Filed At</th>
           </tr>
         </thead>
         <tbody>
@@ -213,32 +215,90 @@ function FilingsTable({ filings }: { filings: ResearchSnapshotFiling[] }) {
   );
 }
 
+// Cap each card around 6 rows tall. Past that, the inner area scrolls with a
+// thin scrollbar instead of paginating. 280px ≈ 6 rows + sticky header on
+// typical row heights; the cards in the 2-col grid stay the same height even
+// when their row counts differ.
+const FILING_CARD_MAX_HEIGHT = 280;
+
+function BucketCard({ title, filings }: { title: string; filings: ResearchSnapshotFiling[] }) {
+  return (
+    <div className="overflow-hidden rounded-md border border-white/10">
+      <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-zinc-900/70 px-3 py-2">
+        <p className="text-sm font-medium text-zinc-200">{title}</p>
+      </div>
+
+      {filings.length === 0 ? (
+        <div className="px-3 py-4 text-sm text-zinc-500">No filings.</div>
+      ) : (
+        // Vertical scroll replaces the prev/next arrows. `scrollbar-thin` is
+        // the project's existing utility (defined in globals.css) — thin
+        // gray-zinc thumb on a near-black track.
+        <div
+          className="scrollbar-thin overflow-y-auto"
+          style={{ maxHeight: `${FILING_CARD_MAX_HEIGHT}px` }}
+        >
+          <table className="min-w-full">
+            {/* Sticky needs to live on each <th>, not on <thead> or <tr> —
+                most browsers ignore position:sticky on table-row-group /
+                table-row. The bg must be fully opaque (bg-zinc-900, no alpha)
+                so scrolled rows can't bleed through under the header.
+                box-shadow stands in for a bottom border because table-cell
+                borders collapse with the next row in default border-collapse
+                tables, which made the divider disappear on scroll. */}
+            <thead>
+              <tr className="text-[11px] uppercase tracking-wider text-zinc-500">
+                <th className="sticky top-0 z-10 bg-zinc-900 px-3 py-2 text-left font-medium shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.1)]">Type</th>
+                <th className="sticky top-0 z-10 bg-zinc-900 px-3 py-2 text-center font-medium shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.1)]">Headline</th>
+                <th className="sticky top-0 z-10 bg-zinc-900 px-3 py-2 text-right font-medium shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.1)]">Filed At</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filings.map((filing, index) => (
+                <FilingsRow key={`${filing.accessionNumber ?? filing.title}-${index}`} filing={filing} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FilingsView({ filings }: { filings: ResearchSnapshotFiling[] }) {
   const [bucket, setBucket] = useState<FilingViewKey>('all');
   const chronological = [...filings].sort(compareFiledAtDesc);
 
+  const tabRow = (
+    <div className="flex flex-wrap gap-1">
+      {FILING_TAB_OPTIONS.map((option) => (
+        <button
+          key={option.key}
+          type="button"
+          onClick={() => setBucket(option.key)}
+          className={`${FILING_TAB_BASE_CLASS} ${bucket === option.key ? FILING_TAB_ACTIVE_CLASS : FILING_TAB_INACTIVE_CLASS}`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+
   if (bucket === 'all') {
     return (
       <div className="space-y-4">
-        <div className="flex flex-wrap gap-1">
-          {FILING_TAB_OPTIONS.map((option) => (
-            <button
-              key={option.key}
-              type="button"
-              onClick={() => setBucket(option.key)}
-              className={`${FILING_TAB_BASE_CLASS} ${bucket === option.key ? FILING_TAB_ACTIVE_CLASS : FILING_TAB_INACTIVE_CLASS}`}
-            >
-              {option.label}
-            </button>
+        {tabRow}
+        {/* 2-col grid on lg+ mirrors the screenshot. Each card is independent
+            so its pagination doesn't affect neighbors. */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {FILING_ALL_BUCKETS.map((bucketKey) => (
+            <BucketCard
+              key={bucketKey}
+              title={FILING_BUCKET_LABELS[bucketKey]}
+              filings={chronological.filter((filing) => filing.bucket === bucketKey)}
+            />
           ))}
         </div>
-
-        {FILING_ALL_BUCKETS.map((bucketKey) => (
-          <div key={bucketKey} className="space-y-2">
-            <h4 className="text-base font-medium text-zinc-300">{FILING_BUCKET_LABELS[bucketKey]}</h4>
-            <FilingsTable filings={chronological.filter((filing) => filing.bucket === bucketKey)} />
-          </div>
-        ))}
       </div>
     );
   }
@@ -246,23 +306,12 @@ function FilingsView({ filings }: { filings: ResearchSnapshotFiling[] }) {
   const filtered = bucket === 'chronological'
     ? chronological
     : chronological.filter((filing) => filing.bucket === bucket);
+  const cardTitle = bucket === 'chronological' ? 'All Filings' : FILING_BUCKET_LABELS[bucket];
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-1">
-        {FILING_TAB_OPTIONS.map((option) => (
-          <button
-            key={option.key}
-            type="button"
-            onClick={() => setBucket(option.key)}
-            className={`${FILING_TAB_BASE_CLASS} ${bucket === option.key ? FILING_TAB_ACTIVE_CLASS : FILING_TAB_INACTIVE_CLASS}`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-
-      <FilingsTable filings={filtered} />
+      {tabRow}
+      <BucketCard title={cardTitle} filings={filtered} />
     </div>
   );
 }
@@ -957,7 +1006,7 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
               <h4 className="mb-2 text-base font-semibold text-zinc-200">Cash Position</h4>
               {hasCashPosition ? (
                 <p className="text-sm text-zinc-300">
-                  The company has ~<span className="font-bold text-zinc-100">{toStringValue(data.dilutionDetails.cashRemainingMonths)}</span> months of cash left
+                  The company has <span className="font-bold text-zinc-100">{toStringValue(data.dilutionDetails.cashRemainingMonths)}</span> months of cash left
                   based on the quarterly cash burn of <span className="font-bold text-zinc-100">{formatMoney(data.dilutionDetails.cashBurn)}</span>
                   {' '}and estimated current cash of <span className="font-bold text-zinc-100">{formatMoney(data.dilutionDetails.estimatedCash)}</span>
                 </p>

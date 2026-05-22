@@ -789,11 +789,15 @@ export async function generateSmallCapResearchReport(
   });
 
   // 4. Call LLM via agent's background lane (paid Groq key).
+  // Override the lane's default 60s timeout — the research route's
+  // maxDuration is 300s, and small-cap dilution prompts can spike to
+  // 90-120s on slower models. 240s leaves ~60s of headroom under the
+  // Vercel function cap for AskEdgar/TradingView fetch + JSON parsing.
   const llmResponse = await callLlm({
     systemPrompt: await loadSmallCapSystemPrompt(),
     userMessage: buildResearchPrompt(pipelineInput),
     temperature: 0.2,
-  }, 'background');
+  }, 'background', { timeoutMs: 240_000 });
 
   // 5. Parse + apply the same post-LLM commentary override the blueprint uses.
   const parsed = researchReportSchema.parse(parseJson(llmResponse.content));

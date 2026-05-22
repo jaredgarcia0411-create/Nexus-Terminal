@@ -2,7 +2,11 @@ import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { reportTemplates } from '@/lib/db/schema';
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
-import { DAILY_DEFAULT_FIELDS, WEEKLY_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
+import {
+  DAILY_DEFAULT_FIELDS,
+  PLAYBOOK_DEFAULT_FIELDS,
+  WEEKLY_DEFAULT_FIELDS,
+} from '@/lib/journal-template-defaults';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { upsertTemplateSchema } from '@/lib/validations/reviews';
 
@@ -17,8 +21,8 @@ export async function GET(request: Request) {
 
     const url = new URL(request.url);
     const type = url.searchParams.get('type');
-    if (type !== 'daily' && type !== 'weekly') {
-      return Response.json({ error: 'type must be daily or weekly' }, { status: 400 });
+    if (type !== 'daily' && type !== 'weekly' && type !== 'playbook') {
+      return Response.json({ error: 'type must be daily, weekly, or playbook' }, { status: 400 });
     }
 
     const [existing] = await db
@@ -31,7 +35,11 @@ export async function GET(request: Request) {
       return Response.json({ template: existing });
     }
 
-    const defaultFields = type === 'daily' ? DAILY_DEFAULT_FIELDS : WEEKLY_DEFAULT_FIELDS;
+    const defaultFields = type === 'daily'
+      ? DAILY_DEFAULT_FIELDS
+      : type === 'weekly'
+        ? WEEKLY_DEFAULT_FIELDS
+        : PLAYBOOK_DEFAULT_FIELDS;
     const id = `${authState.user.id}:template:${type}`;
 
     await db

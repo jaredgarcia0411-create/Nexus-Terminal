@@ -1,17 +1,12 @@
 import { z } from 'zod';
 
-// All sections are free-form text. Stored together as JSONB so adding
-// a new section is a code change, not a migration. Empty strings are
-// valid - a user can save a strategy with only Overview filled in.
-export const playbookSectionsSchema = z.object({
-  overview: z.string(),
-  checklist: z.string(),
-  entry: z.string(),
-  invalidation: z.string(),
-  risk: z.string(),
-  targets: z.string(),
-  notes: z.string(),
-});
+// Sections are stored as a flexible map so the playbook template (managed via
+// /api/report-templates?type=playbook) can rename / add / remove sections
+// without a schema migration. Keys are TemplateField.id values; values are
+// the user's free-form text for that section. Existing rows that used the old
+// fixed-shape (overview, checklist, entry, invalidation, risk, targets, notes)
+// keep working because those keys are still strings → strings.
+export const playbookSectionsSchema = z.record(z.string(), z.string());
 
 export type PlaybookSections = z.infer<typeof playbookSectionsSchema>;
 

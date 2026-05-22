@@ -10,7 +10,11 @@ import { researchReports } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// Vercel kills the function at this boundary. AskEdgar fanout (14 endpoints
+// on a cold cache) can take 15-25s and the LLM call up to 60s+ on its own —
+// the previous 60s cap meant any cold-cache ticker would 504 mid-LLM.
+// Cron routes already use 300s; the research POST belongs in the same bucket.
+export const maxDuration = 300;
 
 const tickerPattern = /^[A-Z0-9.\-^]{1,10}$/;
 // Reuse the same row across users for 16 hours - typical small-cap dilution data
