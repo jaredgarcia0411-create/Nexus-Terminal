@@ -34,6 +34,21 @@ Validation:
 - `npm run db:migrate` applied `drizzle/0042_happy_felicia_hardy.sql`.
 - Manual smoke (Step 8 paths) still pending user-run dev-server validation.
 
+### Sprint 1 — Pre-Light-Mode Refactors
+
+Status: completed 2026-05-22.
+
+Outcome:
+- Added shared `toTime()` in `lib/chart-time.ts` and extracted session-shading rect state/recalculation into `hooks/use-session-shading.ts`.
+- Migrated `ResearchChart`, `CandlestickChart`, and `BacktestChart` to the hook while keeping their existing range-change, resize, and initial-layout scheduling triggers.
+- Split `ResearchReportSections.tsx` into a thin 41-line dispatcher plus six tab/shared modules under `components/trading/research-report-sections/`; the default export path and caller set stayed unchanged.
+
+Validation:
+- Interim `npx tsc --noEmit` passed after Step 2 before any chart call site was migrated.
+- `npm run lint`, `npx tsc --noEmit`, `npm test` — all green (98 files, 714 tests).
+- Static acceptance checks passed: no local `function toTime` / `function toUTCSeconds` in `components/trading/`, one `useSessionShading` hook call per chart file, exactly six research section files, and unchanged `ResearchReportSections` callers.
+- Manual browser smoke for chart shading and five Research sub-tabs remains post-merge/user-run; no dev-server smoke was run in this session.
+
 ---
 
 ## Session Maintenance

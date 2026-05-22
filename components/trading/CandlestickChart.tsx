@@ -23,10 +23,9 @@ import {
   type SeriesMarkerPrice,
   type Time,
 } from 'lightweight-charts';
+import { useSessionShading } from '@/hooks/use-session-shading';
 import type { TradeMarker } from '@/lib/types';
-import { buildExtendedHoursShadeSegments, buildSessionShadeRects, type SessionShadeRect } from '@/lib/chart-session-shading';
-import { epochToNySortKey } from '@/lib/time-utils';
-import { formatNyCrosshair, formatNyTime, toEpochMs } from '@/lib/chart-time';
+import { formatNyCrosshair, formatNyTime, toEpochMs, toTime } from '@/lib/chart-time';
 
 export interface CandleData {
   datetime: number;
@@ -75,10 +74,6 @@ type NativePriceLine = {
 export interface CandlestickChartOptions {
   priceLines?: NativePriceLine[];
   showCrosshairLegend?: boolean;
-}
-
-function toUTCSeconds(ms: number): Time {
-  return Math.floor(ms / 1000) as unknown as Time;
 }
 
 function findNearestTimestamp(target: number, sortedTimestamps: number[]): number | null {
@@ -227,9 +222,7 @@ export default function CandlestickChart({
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
-  const sessionAnimationFrameRef = useRef<number | null>(null);
-  const [containerWidth, setContainerWidth] = useState(0);
-  const [sessionShadeRects, setSessionShadeRects] = useState<SessionShadeRect[]>([]);
+  const [, setContainerWidth] = useState(0);
   const [crosshairPoint, setCrosshairPoint] = useState<NativeCrosshairPoint | null>(null);
 
   const sortedCandles = useMemo(() => [...candles].sort((a, b) => a.datetime - b.datetime), [candles]);
@@ -237,6 +230,10 @@ export default function CandlestickChart({
     if (sortedCandles.length < 2) return false;
     const spacingMs = sortedCandles[1].datetime - sortedCandles[0].datetime;
     return Number.isFinite(spacingMs) && spacingMs > 0 && spacingMs < 24 * 60 * 60 * 1000;
+  }, [sortedCandles]);
+  const sortedCandlesRef = useRef<typeof sortedCandles>([]);
+  useEffect(() => {
+    sortedCandlesRef.current = sortedCandles;
   }, [sortedCandles]);
 
   const candleByEpoch = useMemo(() => {
@@ -247,9 +244,12 @@ export default function CandlestickChart({
     return map;
   }, [sortedCandles]);
 
-  const clearSessionShadeRects = useCallback(() => {
-    queueMicrotask(() => setSessionShadeRects([]));
-  }, []);
+  const { rects: sessionShadeRects, schedule: scheduleSessionShadeRecalculation } = useSessionShading({
+    enabled: showSessionShading && isIntraday,
+    chartRef,
+    containerRef,
+    candlesRef: sortedCandlesRef,
+  });
 
   const clearCrosshairPoint = useCallback(() => {
     setCrosshairPoint(null);
@@ -291,7 +291,7 @@ export default function CandlestickChart({
         if (exactPriceMarkers) {
           markers.push({
             id: `${marker.time}:${marker.price}:${index}`,
-            time: toUTCSeconds(nearestTimestamp),
+            time: toTime(nearestTimestamp),
             position: marker.direction === 'LONG' ? 'atPriceBottom' : 'atPriceTop',
             color: marker.direction === 'LONG' ? LONG_MARKER_COLOR : SHORT_MARKER_COLOR,
             shape: marker.direction === 'LONG' ? 'arrowUp' : 'arrowDown',
@@ -303,7 +303,7 @@ export default function CandlestickChart({
 
         markers.push({
           id: `${marker.time}:${marker.price}:${index}`,
-          time: toUTCSeconds(nearestTimestamp),
+          time: toTime(nearestTimestamp),
           position: marker.direction === 'LONG' ? 'belowBar' : 'aboveBar',
           color: marker.direction === 'LONG' ? LONG_MARKER_COLOR : SHORT_MARKER_COLOR,
           shape: marker.direction === 'LONG' ? 'arrowUp' : 'arrowDown',
@@ -313,56 +313,6 @@ export default function CandlestickChart({
 
     return markers;
   }, [exactPriceMarkers, sortedCandles, tradeMarkers]);
-
-  const recalculateSessionShading = useCallback(() => {
-    if (!showSessionShading || !isIntraday) {
-      clearSessionShadeRects();
-      return;
-    }
-
-    const chart = chartRef.current;
-    if (!chart || sortedCandles.length === 0) {
-      clearSessionShadeRects();
-      return;
-    }
-
-    const viewportWidth = containerRef.current?.clientWidth ?? containerWidth;
-    if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
-      clearSessionShadeRects();
-      return;
-    }
-
-    const visibleRange = chart.timeScale().getVisibleRange();
-    const visibleStart = toEpochMs(visibleRange?.from);
-    const visibleEnd = toEpochMs(visibleRange?.to);
-
-    const daySet = new Set<string>();
-    for (const candle of sortedCandles) {
-      daySet.add(epochToNySortKey(candle.datetime));
-    }
-
-    const rects = buildSessionShadeRects({
-      candles: sortedCandles,
-      segments: buildExtendedHoursShadeSegments(daySet),
-      visibleStart,
-      visibleEnd,
-      viewportWidth,
-      timeToCoordinate: (epochMs) => chart.timeScale().timeToCoordinate(toUTCSeconds(epochMs)),
-    });
-
-    queueMicrotask(() => setSessionShadeRects(rects));
-  }, [clearSessionShadeRects, containerWidth, isIntraday, showSessionShading, sortedCandles]);
-
-  const scheduleSessionShadeRecalculation = useCallback(() => {
-    if (sessionAnimationFrameRef.current != null) {
-      cancelAnimationFrame(sessionAnimationFrameRef.current);
-    }
-
-    sessionAnimationFrameRef.current = requestAnimationFrame(() => {
-      sessionAnimationFrameRef.current = null;
-      recalculateSessionShading();
-    });
-  }, [recalculateSessionShading]);
 
   const findCrosshairCandle = useCallback((time: Time): CandleData | null => {
     const epoch = toEpochMs(time);
@@ -456,11 +406,6 @@ export default function CandlestickChart({
       }
       detachSeriesMarkers();
       removePriceLines();
-      if (sessionAnimationFrameRef.current != null) {
-        cancelAnimationFrame(sessionAnimationFrameRef.current);
-        sessionAnimationFrameRef.current = null;
-      }
-      clearSessionShadeRects();
       clearCrosshairPoint();
       lifecycle.cleanup();
       chartRef.current = null;
@@ -469,7 +414,6 @@ export default function CandlestickChart({
     };
   }, [
     clearCrosshairPoint,
-    clearSessionShadeRects,
     detachSeriesMarkers,
     height,
     removePriceLines,
@@ -492,12 +436,14 @@ export default function CandlestickChart({
       candleSeries.setData([]);
       volumeSeries.setData([]);
       detachSeriesMarkers();
-      clearSessionShadeRects();
+      if (showSessionShading) {
+        scheduleSessionShadeRecalculation();
+      }
       return;
     }
 
     const candleData: CandlestickData[] = sortedCandles.map((candle) => ({
-      time: toUTCSeconds(candle.datetime),
+      time: toTime(candle.datetime),
       open: candle.open,
       high: candle.high,
       low: candle.low,
@@ -505,7 +451,7 @@ export default function CandlestickChart({
     }));
 
     const volumeData: HistogramData[] = sortedCandles.map((candle) => ({
-      time: toUTCSeconds(candle.datetime),
+      time: toTime(candle.datetime),
       value: candle.volume,
       color: candle.close >= candle.open ? UP_VOLUME_COLOR : DOWN_VOLUME_COLOR,
     }));
@@ -533,7 +479,6 @@ export default function CandlestickChart({
     }
   }, [
     buildMarkers,
-    clearSessionShadeRects,
     clearCrosshairPoint,
     detachSeriesMarkers,
     scheduleSessionShadeRecalculation,

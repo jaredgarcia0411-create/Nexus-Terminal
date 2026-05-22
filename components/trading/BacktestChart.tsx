@@ -38,7 +38,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useCandleData } from '@/hooks/use-candle-data';
 import type { ChartDrawingsController, DrawingTool } from '@/hooks/use-chart-drawings';
-import { buildExtendedHoursShadeSegments, buildSessionShadeRects, type SessionShadeRect } from '@/lib/chart-session-shading';
+import { useSessionShading } from '@/hooks/use-session-shading';
 import { BACKTEST_FRAME_CONFIG, BACKTEST_TIMEFRAME_STEP_ORDER, type BacktestTimeframeKey } from '@/lib/chart-timeframes';
 import {
   atr,
@@ -56,7 +56,7 @@ import {
   type OHLCData,
 } from '@/lib/indicators';
 import { epochToNySortKey, getNextTradingSession, getPreviousTradingSession, nyDateTimeToEpoch, parseSortKey } from '@/lib/time-utils';
-import { formatNyCrosshair, formatNyTime } from '@/lib/chart-time';
+import { formatNyCrosshair, formatNyTime, toTime } from '@/lib/chart-time';
 import type { BacktestAction, BacktestActionType } from '@/lib/types';
 
 export type IndicatorKey =
@@ -160,10 +160,6 @@ const LOOKBACK_WINDOWS: Record<BacktestTimeframeKey, { tradingSessionsBack?: num
   '1W': { calendarYearsBack: 2 },
   '1M': { calendarYearsBack: 5 },
 };
-
-function toTime(ms: number): Time {
-  return Math.floor(ms / 1000) as unknown as Time;
-}
 
 function toEpochMs(time: Time | null | undefined): number | null {
   if (time == null) return null;
@@ -392,7 +388,6 @@ export default function BacktestChart({
   const [chartInstance, setChartInstance] = useState<IChartApi | null>(null);
   const [seriesInstance, setSeriesInstance] = useState<MainSeriesApi | null>(null);
   const [dailyAnchorRect, setDailyAnchorRect] = useState<DailyAnchorRect | null>(null);
-  const [sessionShadeRects, setSessionShadeRects] = useState<SessionShadeRect[]>([]);
   const [hoverOhlc, setHoverOhlc] = useState<HoverOhlc | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -419,6 +414,20 @@ export default function BacktestChart({
     () => candles.map((candle) => candle.datetime).sort((a, b) => a - b),
     [candles],
   );
+  const sortedCandles = useMemo(
+    () => [...candles].sort((a, b) => a.datetime - b.datetime),
+    [candles],
+  );
+  const sortedCandlesRef = useRef<typeof sortedCandles>([]);
+  useEffect(() => {
+    sortedCandlesRef.current = sortedCandles;
+  }, [sortedCandles]);
+  const { rects: sessionShadeRects, schedule: scheduleSessionShadeRecalc } = useSessionShading({
+    enabled: frame.intraday,
+    chartRef,
+    containerRef: chartWrapRef,
+    candlesRef: sortedCandlesRef,
+  });
   const priorClose = usePriorDailyClose(ticker, anchorDate, frame.intraday);
   const drawingScope = `${ticker}:${anchorDate}:${timeframe}`;
   const canDraw = drawingsController != null && onDrawingToolChange != null;
@@ -478,7 +487,6 @@ export default function BacktestChart({
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const sortedCandles = [...candles].sort((a, b) => a.datetime - b.datetime);
     const chart = createChart(containerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: '#121214' },
@@ -548,7 +556,6 @@ export default function BacktestChart({
     }
 
     let disposed = false;
-    let sessionShadeAnimationFrame: number | null = null;
     queueMicrotask(() => {
       if (disposed) return;
       setChartInstance(chart);
@@ -662,63 +669,6 @@ export default function BacktestChart({
     }
 
     chart.timeScale().fitContent();
-
-    const clearSessionShadeRects = () => {
-      queueMicrotask(() => {
-        if (disposed) return;
-        setSessionShadeRects([]);
-      });
-    };
-
-    const recalcSessionShadeRects = () => {
-      if (disposed) return;
-      if (!frame.intraday || sortedCandles.length === 0 || !chartWrapRef.current) {
-        clearSessionShadeRects();
-        return;
-      }
-
-      const viewportWidth = chartWrapRef.current.clientWidth;
-      if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
-        clearSessionShadeRects();
-        return;
-      }
-
-      const visibleRange = chart.timeScale().getVisibleRange();
-      const visibleStart = toEpochMs(visibleRange?.from);
-      const visibleEnd = toEpochMs(visibleRange?.to);
-
-      const daySet = new Set<string>();
-      for (const candle of sortedCandles) {
-        daySet.add(epochToNySortKey(candle.datetime));
-      }
-
-      const rects = buildSessionShadeRects({
-        candles: sortedCandles,
-        segments: buildExtendedHoursShadeSegments(daySet),
-        visibleStart,
-        visibleEnd,
-        viewportWidth,
-        timeToCoordinate: (epochMs) => chart.timeScale().timeToCoordinate(toTime(epochMs)),
-      });
-
-      queueMicrotask(() => {
-        if (disposed) return;
-        setSessionShadeRects(rects);
-      });
-    };
-
-    const scheduleSessionShadeRecalc = () => {
-      if (disposed) return;
-      if (sessionShadeAnimationFrame != null) {
-        cancelAnimationFrame(sessionShadeAnimationFrame);
-      }
-
-      sessionShadeAnimationFrame = requestAnimationFrame(() => {
-        sessionShadeAnimationFrame = null;
-        if (disposed) return;
-        recalcSessionShadeRects();
-      });
-    };
 
     const recalcDailyAnchorRect = () => {
       if (disposed) return;
@@ -838,14 +788,9 @@ export default function BacktestChart({
       chart.unsubscribeClick(handleClick);
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
       resizeObserver.disconnect();
-      if (sessionShadeAnimationFrame != null) {
-        cancelAnimationFrame(sessionShadeAnimationFrame);
-        sessionShadeAnimationFrame = null;
-      }
       setChartInstance((current) => (current === chart ? null : current));
       setSeriesInstance((current) => (current === baseSeries ? null : current));
       setDailyAnchorRect(null);
-      setSessionShadeRects([]);
       updateHoverOhlc(null);
       setIsDrawingInteractionActive(false);
       try {
@@ -856,12 +801,13 @@ export default function BacktestChart({
     };
   }, [
     anchorDate,
-    candles,
     frame.intraday,
     indicators,
     isDailyAnchorCell,
     priorClose,
+    scheduleSessionShadeRecalc,
     seriesType,
+    sortedCandles,
     updateHoverOhlc,
   ]);
 

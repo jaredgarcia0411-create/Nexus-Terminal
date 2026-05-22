@@ -15,18 +15,14 @@ import {
 } from 'lightweight-charts';
 
 import { useCandleData } from '@/hooks/use-candle-data';
-import { buildExtendedHoursShadeSegments, buildSessionShadeRects, type SessionShadeRect } from '@/lib/chart-session-shading';
-import { formatNyCrosshair, formatNyTime, toEpochMs } from '@/lib/chart-time';
+import { useSessionShading } from '@/hooks/use-session-shading';
+import { formatNyCrosshair, formatNyTime, toTime } from '@/lib/chart-time';
 import {
   RESEARCH_CHART_FRAME_CONFIG,
   buildTradeChartOptions,
   type ResearchChartTimeframeKey,
 } from '@/lib/chart-timeframes';
 import type { ResearchSnapshotGapStat } from '@/lib/types';
-
-function toTime(ms: number): Time {
-  return Math.floor(ms / 1000) as unknown as Time;
-}
 
 // Used to bucket candle timestamps by NY trading day so we can zoom intraday
 // charts to just the most recent session's price action.
@@ -95,10 +91,7 @@ export default function ResearchChart({ ticker, historicalDate, gapStats = [], o
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const gapMarkersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
-  const sessionAnimationFrameRef = useRef<number | null>(null);
   const sortedCandlesRef = useRef<typeof candles>([]);
-  const isIntradayRef = useRef(isIntraday);
-  const [sessionShadeRects, setSessionShadeRects] = useState<SessionShadeRect[]>([]);
   const sortedCandles = useMemo(() => [...candles].sort((a, b) => a.datetime - b.datetime), [candles]);
   const dailyGapMarkers = useMemo((): SeriesMarker<Time>[] => {
     if (historicalDate || timeframe !== '1D' || sortedCandles.length === 0 || gapStats.length === 0) {
@@ -130,55 +123,12 @@ export default function ResearchChart({ ticker, historicalDate, gapStats = [], o
     sortedCandlesRef.current = sortedCandles;
   }, [sortedCandles]);
 
-  useEffect(() => {
-    isIntradayRef.current = isIntraday;
-  }, [isIntraday]);
-
-  const clearSessionShadeRects = useCallback(() => {
-    queueMicrotask(() => setSessionShadeRects([]));
-  }, []);
-
-  const recalculateSessionShading = useCallback(() => {
-    const currentCandles = sortedCandlesRef.current;
-    if (!isIntradayRef.current) {
-      clearSessionShadeRects();
-      return;
-    }
-
-    const chart = chartRef.current;
-    const viewportWidth = containerRef.current?.clientWidth ?? 0;
-    if (!chart || currentCandles.length === 0 || !Number.isFinite(viewportWidth) || viewportWidth <= 0) {
-      clearSessionShadeRects();
-      return;
-    }
-
-    const visibleRange = chart.timeScale().getVisibleRange();
-    const visibleStart = toEpochMs(visibleRange?.from);
-    const visibleEnd = toEpochMs(visibleRange?.to);
-    const daySet = new Set(currentCandles.map((candle) => nyDateKey(candle.datetime)));
-
-    const rects = buildSessionShadeRects({
-      candles: currentCandles,
-      segments: buildExtendedHoursShadeSegments(daySet),
-      visibleStart,
-      visibleEnd,
-      viewportWidth,
-      timeToCoordinate: (epochMs) => chart.timeScale().timeToCoordinate(toTime(epochMs)),
-    });
-
-    queueMicrotask(() => setSessionShadeRects(rects));
-  }, [clearSessionShadeRects]);
-
-  const scheduleSessionShadeRecalculation = useCallback(() => {
-    if (sessionAnimationFrameRef.current != null) {
-      cancelAnimationFrame(sessionAnimationFrameRef.current);
-    }
-
-    sessionAnimationFrameRef.current = requestAnimationFrame(() => {
-      sessionAnimationFrameRef.current = null;
-      recalculateSessionShading();
-    });
-  }, [recalculateSessionShading]);
+  const { rects: sessionShadeRects, schedule: scheduleSessionShadeRecalculation } = useSessionShading({
+    enabled: isIntraday,
+    chartRef,
+    containerRef,
+    candlesRef: sortedCandlesRef,
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -265,11 +215,6 @@ export default function ResearchChart({ ticker, historicalDate, gapStats = [], o
       mounted = false;
       unsubscribeSessionRange?.();
       resizeObserver?.disconnect();
-      if (sessionAnimationFrameRef.current != null) {
-        cancelAnimationFrame(sessionAnimationFrameRef.current);
-        sessionAnimationFrameRef.current = null;
-      }
-      clearSessionShadeRects();
       gapMarkersPluginRef.current?.detach();
       gapMarkersPluginRef.current = null;
       chartRef.current?.remove();
@@ -277,7 +222,7 @@ export default function ResearchChart({ ticker, historicalDate, gapStats = [], o
       seriesRef.current = null;
       volumeRef.current = null;
     };
-  }, [clearSessionShadeRects, isIntraday, scheduleSessionShadeRecalculation]);
+  }, [isIntraday, scheduleSessionShadeRecalculation]);
 
   useEffect(() => {
     if (!seriesRef.current) return;

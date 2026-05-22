@@ -48,6 +48,10 @@ export function toEpochMs(time: Time | null | undefined): number | null {
   return null;
 }
 
+export function toTime(epochMs: number): Time {
+  return Math.floor(epochMs / 1000) as unknown as Time;
+}
+
 export function formatNyTime(time: Time, showTime: boolean): string {
   const epochMs = toEpochMs(time);
   if (epochMs == null) return '';
