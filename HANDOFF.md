@@ -38,7 +38,7 @@ Stand up the plumbing that makes a future light/dark theme switch possible — w
 
 ### Decisions Locked For Sprint 2
 
-- **D1. Library choice.** Use `next-themes` (latest, ^0.4) instead of rolling our own. **Why:** it handles the SSR no-flash inline script, hydration, and storage; rolling our own is ~30 lines that would still need the inline script to avoid the FOUC. Adds one ~3KB client dep.
+- **D1. Library choice and version range.** Use `next-themes` in the `^0.4` range. **Why:** it handles the SSR no-flash inline script, hydration, and storage; rolling our own is ~30 lines that would still need the inline script to avoid the FOUC. Adds one ~3KB client dep. **If `npm install next-themes` resolves to anything outside `^0.4` (e.g. an unreleased 1.x), stop and flag — do not upgrade the major.**
 - **D2. Default theme.** `defaultTheme="dark"`. **Why:** preserves current behavior. Existing users see no change on first paint.
 - **D3. System theme detection.** Disabled (`enableSystem={false}`). **Why:** infrastructure-only sprint; user-controlled toggle is Sprint 3. Avoids surprise theme flips for users on macOS light-mode systems.
 - **D4. Light token values.** Identical to dark values for Sprint 2. **Why:** the explicit acceptance criterion is "zero visual change in either mode." Sprint 3 picks real light palette.
@@ -51,6 +51,8 @@ Stand up the plumbing that makes a future light/dark theme switch possible — w
 - **D11. `suppressHydrationWarning`.** Add to `<html>` (currently only on `<body>`). **Why:** next-themes mutates the `<html>` class before React hydrates; without the suppression React will log a hydration mismatch on every page load.
 
 ### Step 0 — Worktree Setup (User, BEFORE Codex starts)
+
+**Codex: do NOT execute Step 0. It is a manual user step performed before you receive this spec. Start at Step 1.**
 
 User runs from `/home/jared/Nexus-Terminal` (main checkout):
 
@@ -113,10 +115,9 @@ Create the directory if it doesn't exist, then create the file with this exact c
 ```tsx
 'use client';
 
-import { ThemeProvider as NextThemesProvider } from 'next-themes';
-import type { ComponentProps } from 'react';
+import { ThemeProvider as NextThemesProvider, type ThemeProviderProps } from 'next-themes';
 
-export function ThemeProvider({ children, ...props }: ComponentProps<typeof NextThemesProvider>) {
+export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
   return (
     <NextThemesProvider
       attribute="class"
@@ -135,6 +136,7 @@ export function ThemeProvider({ children, ...props }: ComponentProps<typeof Next
 - `attribute="class"` makes next-themes toggle the `dark` class on `<html>`, which matches the `@custom-variant dark (&:is(.dark *))` declaration in `globals.css`.
 - `disableTransitionOnChange` prevents CSS transitions from animating during a theme swap (would look glitchy when the toggle ships in Sprint 3).
 - Spreading `{...props}` after our defaults lets callers override later (Sprint 3 may want different defaults on a specific subtree); for this sprint nothing overrides.
+- `ThemeProviderProps` is a direct named export from `next-themes` ^0.4. If for any reason that import fails to resolve, do NOT fall back to a ComponentProps trick — stop and report, because the version range is wrong.
 
 ### Step 4 — Update `app/layout.tsx`
 
@@ -178,11 +180,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 - `Toaster` keeps `theme="dark"` hardcoded (D6).
 - `SessionProvider` and `MotionConfig` are now children of `ThemeProvider` so any descendant can call `useTheme()`.
 
+**Provider order is locked**: `ThemeProvider` > `SessionProvider` > `MotionConfig`, with `Toaster` sibling to `MotionConfig` inside `SessionProvider`. Do not reorder. ThemeProvider must be outermost so any client component (including the future toggle in Sprint 3) can read theme state.
+
 ### Step 5 — Restructure `app/globals.css`
 
 Goal: every color token currently in `@theme inline` becomes a reference to a CSS variable defined in BOTH `:root` and `.dark` with identical values. `--radius` stays inline (D9).
 
-Replace the existing `@theme inline { ... }` block (currently lines 5–41) with the three blocks below. Everything OUTSIDE this block (the `@import` lines, `@custom-variant dark`, `@layer base`, scrollbar utilities, print styles — lines 1–3 and 43 onward) is unchanged.
+**Identify the block by content, not by line number.** Find the existing block that opens with `@theme inline {` (immediately after the `@custom-variant dark (&:is(.dark *));` line and a blank line) and closes with the matching `}` (immediately before a blank line and the `@layer base {` block). Replace that block — and only that block — with the three blocks below. Everything OUTSIDE this block (`@import` lines, `@custom-variant dark`, `@layer base`, scrollbar utilities, print styles) is unchanged. Do not edit any other part of the file.
 
 ```css
 @theme inline {
@@ -304,9 +308,8 @@ Replace the existing `@theme inline { ... }` block (currently lines 5–41) with
 - [ ] `grep -c "next-themes" package.json` returns `1`.
 - [ ] Worktree `npm run dev` boots without console errors or hydration warnings.
 - [ ] Worktree at http://localhost:3001 is visually indistinguishable from main at http://localhost:3000 across: Dashboard, Trading tab (chart + research), Backtests, Management. (User-run; report a brief "matches main on N screens" line.)
-- [ ] DevTools test on worktree: open console, run `localStorage.setItem('theme', 'light'); location.reload();`. Confirm app still renders the dark palette (because `:root` values equal `.dark` values). No console errors.
+- [ ] DevTools test on worktree: open console, run `localStorage.removeItem('theme'); location.reload();` (clears any stale value from a prior dry-run). Then run `localStorage.setItem('theme', 'light'); location.reload();`. Confirm app still renders the dark palette (because `:root` values equal `.dark` values). No console errors.
 - [ ] Revert test: `localStorage.setItem('theme', 'dark'); location.reload();`. Confirm `<html class="dark">` re-appears in DevTools Elements panel.
-- [ ] `useTheme()` from `next-themes` is callable from any client component (smoke test: Codex does not need to add a caller, just confirm the export resolves by running `npx tsc --noEmit`).
 
 ### Validation
 
