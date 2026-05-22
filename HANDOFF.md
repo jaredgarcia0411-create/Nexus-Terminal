@@ -60,8 +60,9 @@ These remove ambiguity before Codex starts. If any is wrong, amend before execut
 - **D1. Light palette is warm off-white.** Exact hex values listed under "Light Palette Values" below. Reasoning: User selected from a 3-way prompt; warm off-white (`#FAFAF9` bg, `#1C1917` fg, slightly darker emerald `#059669` for primary) reads better than pure white for long sessions.
 - **D2. Theme toggle lives in `SettingsMenu.tsx` dropdown, not a new page or the header.** Reasoning: User chose "Settings page only" from the 3-way prompt; the dropdown IS the de-facto settings UI today, building a new `/settings` route is out of scope.
 - **D3. Migration target is `:root` semantic tokens, not `dark:` qualifiers everywhere.** Reasoning: shadcn pattern. Components reference `bg-background`, `text-foreground`, `border-border`, etc., which automatically resolve via `:root` (light) or `.dark` (dark). Adding `dark:` prefix to 800+ utilities would be more code and harder to maintain than swapping to semantic tokens once.
-- **D4. The 4 chart files stay hardcoded dark in both modes.** Files: `components/trading/BacktestChart.tsx`, `components/trading/ResearchChart.tsx`, `components/trading/CandlestickChart.tsx`, `components/trading/ChartDrawings.tsx`. Reasoning: User selected "Keep charts dark in both modes" — trader convention, lightweight-charts doesn't reactively swap palettes, and the dark-on-light boundary is intentional (Bloomberg style). Do not touch ANY hex value, `bg-[#...]`, `border-white/...`, or `text-zinc-*` inside these files.
-- **D5. Trading-domain colors stay hardcoded everywhere.** Specifically: green for positive P/L (`text-emerald-*`, `text-green-*`), red for negative P/L (`text-rose-*`, `text-red-*` when used for losses), bullish/bearish candle markers, long/short indicators. Reasoning: These are domain semantics, not UI chrome. A profit must look like profit in both themes. ~129 occurrences in `components/trading/`.
+- **D4. The 4 chart files stay hardcoded dark in both modes.** Files: `components/trading/BacktestChart.tsx`, `components/trading/ResearchChart.tsx`, `components/trading/CandlestickChart.tsx`, `components/trading/ChartDrawings.tsx`. Reasoning: User selected "Keep charts dark in both modes" — trader convention, lightweight-charts doesn't reactively swap palettes, and the dark-on-light boundary is intentional (Bloomberg style). Do not touch ANY hex value, `bg-[#...]`, `border-white/...`, or `text-zinc-*` inside these files — **with one exception**: `ResearchChart.tsx` line ~282's outermost JSX element is `<div className="flex h-full flex-col">` with NO background of its own. BacktestChart has its own `bg-[#121214]` wrapper (line 853) and is self-contained, but ResearchChart inherits its background from the parent. To keep ResearchChart visually dark in light mode, ADD `bg-[#121214] border border-white/10` to that outer div (one-line change inside an otherwise untouched file). Do not change anything else in `ResearchChart.tsx`.
+- **D5. Trading-domain colors stay hardcoded everywhere.** Specifically: green for positive P/L (`text-emerald-*`, `text-green-*`), red for negative P/L (`text-rose-*`, `text-red-*` when used for losses), bullish/bearish candle markers, long/short indicators. Reasoning: These are domain semantics, not UI chrome. A profit must look like profit in both themes. Estimate-only: roughly 129 `text-(emerald|green|rose|red)-*` occurrences across `components/trading/` — the exact count is not a checklist target, just an indicator of effort.
+- **D5a. Brand-green accents on non-trading UI controls migrate to `primary` tokens.** When emerald is used as a *brand accent* on UI chrome (active-tab indicator, selected-state badge, checkbox check state, primary CTA save button, nav highlight) — not as P/L signaling — replace with the `primary` family: `text-emerald-500` → `text-primary`, `bg-emerald-500/10` → `bg-primary/10`, `border-emerald-500` → `border-primary`, `shadow-emerald-500/*` → `shadow-primary/*`, `focus:ring-emerald-500` → `focus:ring-ring`, `ring-emerald-500/30` → `ring-primary/30`. The light palette's `--primary` is `#059669` (slightly darker emerald) so contrast on `#FAFAF9` is correct. Reasoning: The emerald IS the brand color; tying it to `--primary` makes the brand adapt cleanly between themes. The distinguishing test: "Does this color signal trading profit/long/bull?" → keep hardcoded (D5). "Is this color a UI accent that happens to be brand-green?" → migrate to `primary` (D5a).
 - **D6. Toaster reads `useTheme()` from next-themes.** `theme` prop becomes `{theme === 'dark' ? 'dark' : 'light'}`. Reasoning: Sonner natively supports `theme="light" | "dark" | "system"`. Sprint 2 deferred this; this sprint owns it.
 - **D7. Scrollbar uses CSS vars, not hardcoded `#000000`.** Add `--scrollbar-track` and `--scrollbar-thumb` to both `:root` and `.dark` blocks; reference them in the four `*::-webkit-scrollbar-*` rules and the `scrollbar-color` declarations. Reasoning: A pure-black scrollbar on a `#FAFAF9` background looks like a bug.
 - **D8. Migration is one Codex pass, not split sub-sprints.** The diff will be huge (~824 utility swaps + ~30 hex container swaps). Reasoning: User selected "Full migration" — splitting introduces merge friction without reducing risk.
@@ -127,8 +128,12 @@ Then ADD matching scrollbar vars to the existing `.dark` block (do not change ot
 | `bg-[#121214]` | `bg-card` |
 | `bg-[#111319]` | `bg-popover` |
 | `bg-[#0d1017]` | `bg-popover` |
+| `bg-[#0f0f11]`, `bg-[#0f0f12]` | `bg-card` |
+| `bg-[#18181b]` | `bg-card` (if used inside a `DropdownMenuContent` / `PopoverContent` / `DialogContent`, use `bg-popover` instead) |
 | `bg-white/5` | `bg-accent` |
 | `bg-white/10` | `bg-accent` (`/20` on hover → `bg-accent/80`) |
+| `bg-zinc-500`, `bg-zinc-600` | `bg-muted` |
+| `bg-zinc-700`, `bg-zinc-800`, `bg-zinc-900` | `bg-card` |
 | `border-white/5` | `border-border` |
 | `border-white/10` | `border-border` |
 | `border-white/15` | `border-border` |
@@ -139,11 +144,26 @@ Then ADD matching scrollbar vars to the existing `.dark` block (do not change ot
 | `text-zinc-300` | `text-muted-foreground` |
 | `text-zinc-400` | `text-muted-foreground` |
 | `text-zinc-500` | `text-muted-foreground` |
+| `text-zinc-600`, `text-zinc-700`, `text-zinc-800`, `text-zinc-900` | `text-muted-foreground` (these are already dark; check after migration that they read on `--background` in light mode — should be fine since `--muted-foreground` is `#57534E`) |
+| `placeholder:text-zinc-*` (any shade) | `placeholder:text-muted-foreground` |
 | `hover:bg-white/5` | `hover:bg-accent` |
 | `hover:bg-white/10` | `hover:bg-accent` |
 | `hover:text-white` | `hover:text-foreground` |
 | `bg-black/60` (modal backdrop) | `bg-background/80` |
+| `shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.1)]` | `shadow-[inset_0_-1px_0_0_var(--border)]` (or replace with `border-b border-border` if simpler) |
 | `selection:bg-emerald-500/30` | leave as-is (selection accent is fine across themes) |
+
+**Brand-green accent migration (per D5a) — these are UI chrome, not trading-domain:**
+
+| Hardcoded | Replace with |
+|---|---|
+| `text-emerald-500` (on active tabs, badges, checkbox checks, nav highlights, CTA save buttons) | `text-primary` |
+| `bg-emerald-500/10`, `bg-emerald-500/20` (selected-state backgrounds) | `bg-primary/10`, `bg-primary/20` |
+| `border-emerald-500` (selected-state borders) | `border-primary` |
+| `shadow-emerald-500/*` (on primary CTAs) | `shadow-primary/*` |
+| `focus:ring-emerald-500`, `focus-visible:ring-emerald-500` | `focus:ring-ring`, `focus-visible:ring-ring` |
+| `ring-emerald-500/20`, `ring-emerald-500/30`, `ring-emerald-500/40` (non-focus rings) | `ring-primary/20`, `ring-primary/30`, `ring-primary/40` |
+| `text-emerald-500` USED FOR P/L "gain" cells, trade direction "long", bullish markers | LEAVE HARDCODED (D5) |
 
 **For `text-emerald-*` / `text-green-*` / `text-rose-*` / `text-red-*`:**
 - If the context is **profit/loss display, P/L cells, candle markers, long/short labels, trading-domain status** → LEAVE HARDCODED (per D5).
@@ -163,11 +183,11 @@ Then ADD matching scrollbar vars to the existing `.dark` block (do not change ot
 4. `components/trading/Sidebar.tsx`
 5. `components/trading/SettingsMenu.tsx` (also gets toggle in Story 402)
 6. `components/trading/BacktestSimPanel.tsx`
-7. `components/trading/BacktestManager.tsx`
-8. `components/trading/BacktestChartGrid.tsx` — this is the GRID container, NOT the chart itself; the chart panels remain dark per D4 but the grid background themes
+7. `components/trading/BacktestManagerView.tsx`
+8. `components/trading/BacktestChartGrid.tsx` — this is the GRID container, NOT the chart itself; the chart panels remain dark per D4 but the grid background themes. Specifically, the empty-state placeholder around line 528 (`border-white/10 bg-[#121214] text-zinc-500`) migrates to `border-border bg-card text-muted-foreground`.
 9. Remaining files in `components/trading/` EXCEPT the 4 chart files in D4
 10. `components/trading/research-report-sections/**`
-11. `components/ui/**` — these are mostly fine (5 already use `dark:` prefix correctly). For any UI primitive that still uses `bg-white/*` or `text-zinc-*` for non-variant default state, migrate.
+11. `components/ui/**` — most are fine. Open each of these and check ONLY their top-level default styles (the `cn(...)` base classes before any variant maps): `command.tsx`, `dialog.tsx`, `label.tsx`, `popover.tsx`, `sheet.tsx`, `TabErrorBoundary.tsx`, `linkified-text.tsx`. If a base class uses a hardcoded `bg-white/*`, `border-white/*`, or `text-zinc-*` value, migrate per the table. Do NOT touch `button.tsx`, `input.tsx`, `textarea.tsx`, `select.tsx`, `dropdown-menu.tsx` (per D9 — they use `dark:` correctly).
 12. `components/theme/**` — only one file, no chrome to migrate
 13. Anything in `components/` not yet covered
 
@@ -182,41 +202,41 @@ Modify `components/trading/SettingsMenu.tsx`:
   const { theme, setTheme } = useTheme();
   const isDark = theme === 'dark';
   ```
-- In the `DropdownMenuContent` (line 86 area), ABOVE the existing "Export Trades (JSON)" item, add:
+- Inside the `DropdownMenuContent`, ABOVE the existing "Export Trades (JSON)" `DropdownMenuItem`, add:
   ```tsx
   <DropdownMenuItem
     onClick={(e) => { e.preventDefault(); setTheme(isDark ? 'light' : 'dark'); }}
     className="cursor-pointer"
   >
     {isDark ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
-    {isDark ? 'Light mode' : 'Dark mode'}
+    {isDark ? 'Switch to light mode' : 'Switch to dark mode'}
   </DropdownMenuItem>
   <DropdownMenuSeparator className="bg-border" />
   ```
 - `e.preventDefault()` keeps the dropdown open so the user sees the icon swap before the menu closes.
+- The label phrasing ("Switch to …") names the *target* state, not the current state, so the click action is unambiguous.
 
 ### Themed Toaster (Story 403) — implementation detail
 
-Convert `app/layout.tsx` Toaster line. Currently:
+Convert `app/layout.tsx:22` Toaster line. Live code:
 ```tsx
-<Toaster theme="dark" position="top-right" />
+<Toaster theme="dark" richColors position="bottom-right" />
 ```
-The Toaster is in a server component (`app/layout.tsx`). `useTheme()` is a client hook. Two options — D6 mandates option A:
-- **Option A (use this):** Extract a small client wrapper component, e.g. `components/theme/themed-toaster.tsx`:
-  ```tsx
-  'use client';
-  import { Toaster } from 'sonner';
-  import { useTheme } from 'next-themes';
-  export function ThemedToaster() {
-    const { theme } = useTheme();
-    return <Toaster theme={theme === 'light' ? 'light' : 'dark'} position="top-right" />;
-  }
-  ```
-  Then replace `<Toaster theme="dark" position="top-right" />` in `layout.tsx` with `<ThemedToaster />` (import from the new file).
+The Toaster is in a server component (`app/layout.tsx`). `useTheme()` is a client hook, so it must be extracted into a client wrapper. Create `components/theme/themed-toaster.tsx`:
+```tsx
+'use client';
+import { Toaster } from 'sonner';
+import { useTheme } from 'next-themes';
+export function ThemedToaster() {
+  const { theme } = useTheme();
+  return <Toaster theme={theme === 'light' ? 'light' : 'dark'} richColors position="bottom-right" />;
+}
+```
+Then in `app/layout.tsx`: remove the `import { Toaster } from 'sonner';` line, add `import { ThemedToaster } from '@/components/theme/themed-toaster';`, and replace `<Toaster theme="dark" richColors position="bottom-right" />` with `<ThemedToaster />`. Preserve `richColors` and `position="bottom-right"` exactly — these are the live props.
 
 ### Scrollbar Tokenization (Story 405) — globals.css edits
 
-Replace the four hardcoded scrollbar usages with CSS vars. The current hardcoded values are at lines 116, 122, 135, 139, 140, 145, 153, 160, 163, 168.
+Replace ALL hardcoded scrollbar color values with CSS vars. The current hardcoded values appear in two blocks — the global `html` + `*` rules in `@layer base` (approximate lines 116, 122, 135, 139–140, 145) and the `.scrollbar-thin` utility class (approximate lines 153, 160, 163–164, 168). Match by selector pattern rather than by line number.
 
 For the `html` block (line ~113) and `*` block (line ~119), change:
 ```css
@@ -246,7 +266,7 @@ Leave `.scrollbar-hidden` alone (it doesn't use color vars).
 - `app/globals.css` — replace `:root` block with warm off-white palette; add scrollbar CSS vars to both `:root` and `.dark`; swap four scrollbar hardcoded values to use vars (Stories 401, 405)
 - `app/layout.tsx` — replace `<Toaster theme="dark" ... />` with `<ThemedToaster />` (Story 403)
 - `components/trading/SettingsMenu.tsx` — add theme toggle item to dropdown; also migrate its hardcoded chrome colors to semantic tokens (Stories 402, 404)
-- `app/page.tsx`, `components/trading/Sidebar.tsx`, `components/trading/BacktestSimPanel.tsx`, `components/trading/BacktestManager.tsx`, `components/trading/BacktestChartGrid.tsx`, plus every other `components/**/*.tsx` file that contains a hardcoded color matching the Migration Mapping table — semantic-token sweep (Story 404)
+- `app/page.tsx`, `components/trading/Sidebar.tsx`, `components/trading/BacktestSimPanel.tsx`, `components/trading/BacktestManagerView.tsx`, `components/trading/BacktestChartGrid.tsx`, plus every other `components/**/*.tsx` file that contains a hardcoded color matching the Migration Mapping table — semantic-token sweep (Story 404)
 
 **Files Codex must NOT modify (per D4 and D5):**
 - `components/trading/BacktestChart.tsx`
@@ -266,7 +286,7 @@ Leave `.scrollbar-hidden` alone (it doesn't use color vars).
 - [ ] Toaster background follows the theme (white-ish on light, dark on dark) — visible by triggering any `toast()` call after toggling.
 - [ ] Charts (Backtest, Research, Candlestick, ChartDrawings) stay dark in both modes; surrounding card containers theme.
 - [ ] A grep for `bg-\[#` in `app/` and `components/` returns ONLY occurrences inside the 4 chart files in D4 (plus print-style hex values).
-- [ ] A grep for `bg-zinc-9\|bg-white/[0-9]\|border-white/[0-9]\|text-zinc-[345]` in `app/` and `components/` returns ONLY occurrences inside the 4 chart files in D4, the 5 shadcn primitives that use `dark:` prefix correctly (per D9), and any line annotated with the `// theme: domain color — leave hardcoded` marker.
+- [ ] A grep for `bg-zinc-[5-9]\|bg-white/[0-9]\|border-white/[0-9]\|text-zinc-[3-9]` in `app/` and `components/` returns ONLY: (a) occurrences inside the 4 chart files in D4, (b) the 5 shadcn primitives that use `dark:` prefix correctly per D9, and (c) lines annotated with `// theme: domain color — leave hardcoded`. To verify, run `grep -rn --include='*.tsx' -E 'bg-zinc-[5-9]|bg-white/[0-9]|border-white/[0-9]|text-zinc-[3-9]' app components | grep -v 'BacktestChart\.tsx\|ResearchChart\.tsx\|CandlestickChart\.tsx\|ChartDrawings\.tsx\|components/ui/button\.tsx\|components/ui/input\.tsx\|components/ui/textarea\.tsx\|components/ui/select\.tsx\|components/ui/dropdown-menu\.tsx\|theme: domain color'` and confirm the result is empty (or only contains trading-domain occurrences carrying the marker comment).
 - [ ] All trading P/L green/red colors visibly indicate profit/loss in BOTH light and dark modes (manual smoke).
 - [ ] No new TypeScript errors; no new ESLint warnings.
 - [ ] All 714 existing tests still pass (no test changes expected).
@@ -280,17 +300,20 @@ Run before marking the sprint COMPLETE:
 - `npm run workflow:audit` (HANDOFF.md is a workflow asset)
 
 Manual smoke (user-run after the Codex pass):
-1. Start dev server. Toggle theme via SettingsMenu dropdown. Confirm:
+1. In DevTools Application tab, clear `localStorage` key `theme` and reload — confirm app loads in dark mode (the `defaultTheme="dark"` from Sprint 2's D3).
+2. Toggle theme via SettingsMenu dropdown. Confirm:
    - Background flips from dark to warm off-white.
    - Sidebar, top bar, modals, dialogs, dropdowns all flip correctly.
-   - Charts stay dark in both modes.
-   - Toaster background flips (trigger any toast).
-   - Scrollbar flips.
+   - Charts stay dark in both modes (including ResearchChart's outer panel after D4's one-line exception is applied).
+   - Toaster background flips (trigger any toast — e.g. trigger any save action).
+   - Scrollbar flips (dark thumb on dark mode, gray-on-warm-gray on light).
    - P/L colors stay green/red in both modes.
+   - Brand-green UI accents (active tabs, badges, primary CTAs) shift slightly darker in light mode (because `--primary` is `#059669` light vs `#10b981` dark) — should still look like the same brand color, not "off".
    - No visible "leaked" dark backgrounds inside light-mode panels (other than charts).
    - No visible "leaked" light text on dark backgrounds.
-2. Refresh the page in each mode. Confirm no flash-of-wrong-theme.
-3. Open every major surface: Sidebar, Backtest Manager, Backtest Sim Panel, Research, Settings dropdown, every modal. Each should look intentional in both modes.
+3. Refresh the page in each mode. Confirm no flash-of-wrong-theme.
+4. Set `localStorage.theme = 'light'` manually in DevTools, reload — confirm light loads cleanly with no flash.
+5. Open every major surface: Sidebar, Backtest Manager, Backtest Sim Panel, Research (chart + sub-tabs), Settings dropdown, every modal. Each should look intentional in both modes.
 
 ### Implementation Style
 
