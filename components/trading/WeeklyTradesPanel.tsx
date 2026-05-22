@@ -63,23 +63,23 @@ export default function WeeklyTradesPanel({
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white">{title}</h3>
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-white/10">
-        <div className="grid gap-px bg-white/10" style={{ gridTemplateColumns }}>
-          <div className="bg-[#121214] px-3 py-2 text-xs font-semibold text-white">
+      <div className="overflow-hidden rounded-lg border border-border">
+        <div className="grid gap-px bg-accent" style={{ gridTemplateColumns }}>
+          <div className="bg-card px-3 py-2 text-xs font-semibold text-foreground">
             Ticker
           </div>
-          <div className="bg-[#121214] px-3 py-2 text-xs font-semibold text-white">
+          <div className="bg-card px-3 py-2 text-xs font-semibold text-foreground">
             Tags
           </div>
-          <div className="bg-[#121214] px-3 py-2 text-right text-xs font-semibold text-white">
+          <div className="bg-card px-3 py-2 text-right text-xs font-semibold text-foreground">
             R
           </div>
 
           {showEmpty ? (
-            <div className="col-span-3 bg-[#121214] px-3 py-4 text-xs italic text-zinc-500">
+            <div className="col-span-3 bg-card px-3 py-4 text-xs italic text-muted-foreground">
               {emptyState}
             </div>
           ) : (
@@ -94,24 +94,24 @@ export default function WeeklyTradesPanel({
 }
 
 function RowCells({ row }: { row: WeeklyTradeRow }) {
-  const cellBase = 'bg-[#121214] px-3 py-2 text-sm';
+  const cellBase = 'bg-card px-3 py-2 text-sm';
   // R color follows the same convention used elsewhere in the app:
   // green for positive, rose for negative, muted for null.
   const rColor =
     row.r === null
-      ? 'text-zinc-500'
+      ? 'text-muted-foreground'
       : row.r >= 0
         ? 'text-emerald-400'
         : 'text-rose-400';
 
   return (
     <>
-      <div className={`${cellBase} font-medium text-white`}>{row.ticker}</div>
+      <div className={`${cellBase} font-medium text-foreground`}>{row.ticker}</div>
       <div className={cellBase}>
         {row.tags.length > 0 ? (
-          <span className="text-white">{row.tags.join(', ')}</span>
+          <span className="text-foreground">{row.tags.join(', ')}</span>
         ) : (
-          <span className="text-zinc-600">—</span>
+          <span className="text-muted-foreground">—</span>
         )}
       </div>
       <div className={`${cellBase} text-right font-medium ${rColor}`}>

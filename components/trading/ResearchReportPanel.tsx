@@ -138,24 +138,24 @@ function ExplanationBody({ text }: { text: string }) {
 
   if (isBulletList) {
     return (
-      <ul className="space-y-1 text-sm text-zinc-300">
+      <ul className="space-y-1 text-sm text-muted-foreground">
         {lines.map((line, i) => (
           <li key={i} className="flex gap-2">
-            <span className="text-zinc-500">•</span>
+            <span className="text-muted-foreground">•</span>
             <span>{line.replace(bulletPattern, '')}</span>
           </li>
         ))}
       </ul>
     );
   }
-  return <p className="text-sm text-zinc-300">{text}</p>;
+  return <p className="text-sm text-muted-foreground">{text}</p>;
 }
 
 function RatedRow({ label, section }: { label: string; section: RatedSection }) {
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold text-zinc-200">{label}</span>
+        <span className="text-sm font-semibold text-foreground">{label}</span>
         <RatingDot rating={section.rating} />
       </div>
       <ExplanationBody text={section.explanation} />
@@ -240,7 +240,7 @@ export default function ResearchReportPanel({ ticker }: Props) {
 
   if (status === 'loading') {
     return (
-      <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-zinc-500">
+      <div className="rounded border border-border bg-accent px-4 py-6 text-center text-sm text-muted-foreground">
         Loading report…
       </div>
     );
@@ -248,7 +248,7 @@ export default function ResearchReportPanel({ ticker }: Props) {
 
   if (status === 'generating') {
     return (
-      <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-zinc-500">
+      <div className="rounded border border-border bg-accent px-4 py-6 text-center text-sm text-muted-foreground">
         Generating Research Report…
       </div>
     );
@@ -256,7 +256,7 @@ export default function ResearchReportPanel({ ticker }: Props) {
 
   if (error) {
     return (
-      <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-rose-400">
+      <div className="rounded border border-border bg-accent px-4 py-6 text-center text-sm text-rose-400">
         {error}
       </div>
     );
@@ -280,15 +280,15 @@ export function ResearchReportBody({
   generatedAt: string | null;
 }) {
   return (
-    <div className="space-y-4 rounded border border-white/10 bg-white/5 p-4">
+    <div className="space-y-4 rounded border border-border bg-accent p-4">
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-2">
-          <span className="text-xs uppercase tracking-wide text-zinc-500">Confidence</span>
-          <span className="rounded bg-zinc-700/40 px-2 py-0.5 text-xs font-medium uppercase text-zinc-200">
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">Confidence</span>
+          <span className="rounded bg-card/40 px-2 py-0.5 text-xs font-medium uppercase text-foreground">
             {report.confidence}
           </span>
         </span>
-        {generatedAt ? <span className="text-xs text-zinc-500">{new Date(generatedAt).toLocaleString()}</span> : null}
+        {generatedAt ? <span className="text-xs text-muted-foreground">{new Date(generatedAt).toLocaleString()}</span> : null}
       </div>
 
       <RatedRow label="Overall Offering Risk" section={report.overallOfferingRisk} />
@@ -302,11 +302,11 @@ export function ResearchReportBody({
 
       {report.otherCatalysts.length > 0 ? (
         <div>
-          <h5 className="mb-1 text-sm font-semibold text-zinc-200">Other Catalysts</h5>
+          <h5 className="mb-1 text-sm font-semibold text-foreground">Other Catalysts</h5>
           <ul className="space-y-1">
             {report.otherCatalysts.map((c, i) => (
               <li key={i} className="flex items-center gap-2">
-                <span className="text-sm text-zinc-300">{c.catalyst}</span>
+                <span className="text-sm text-muted-foreground">{c.catalyst}</span>
                 <RatingDot rating={c.rating} />
               </li>
             ))}
@@ -316,26 +316,26 @@ export function ResearchReportBody({
 
       <div>
         <div className="flex items-center gap-2">
-          <h5 className="text-sm font-semibold text-zinc-200">Financial Commentary</h5>
+          <h5 className="text-sm font-semibold text-foreground">Financial Commentary</h5>
           <RatingDot rating={report.financialCommentary.rating} />
         </div>
-        <p className="mt-1 text-sm text-zinc-300">
+        <p className="mt-1 text-sm text-muted-foreground">
           {report.financialCommentary.explanation}
           {report.financialCommentary.source === 'verbatim' ? (
-            <span className="ml-1 text-xs text-zinc-500">(verbatim from filings)</span>
+            <span className="ml-1 text-xs text-muted-foreground">(verbatim from filings)</span>
           ) : null}
         </p>
       </div>
 
       {report.jmt415Commentary ? (
         <div>
-          <h5 className="mb-1 text-sm font-semibold text-zinc-200">JMT415 Commentary</h5>
-          <p className="text-sm text-zinc-300">{report.jmt415Commentary}</p>
+          <h5 className="mb-1 text-sm font-semibold text-foreground">JMT415 Commentary</h5>
+          <p className="text-sm text-muted-foreground">{report.jmt415Commentary}</p>
         </div>
       ) : null}
 
       {report.evidenceIds.length > 0 ? (
-        <p className="text-xs text-zinc-500">Evidence: {report.evidenceIds.join(', ')}</p>
+        <p className="text-xs text-muted-foreground">Evidence: {report.evidenceIds.join(', ')}</p>
       ) : null}
     </div>
   );

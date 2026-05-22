@@ -151,42 +151,42 @@ export default function JournalTab({
     <motion.div key="journal" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             placeholder="Search symbol..."
             value={searchQuery}
             onChange={(event) => onSearchQueryChange(event.target.value)}
-            className="w-64 rounded-lg border border-white/10 bg-white/5 py-1.5 pl-10 pr-4 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+            className="w-64 rounded-lg border border-border bg-accent py-1.5 pl-10 pr-4 text-sm transition-colors focus:border-ring/50 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-card"
           />
         </div>
 
         {selectedIds.size > 0 ? (
           <div className="animate-in slide-in-from-right-2 fade-in flex items-center gap-2">
-            <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1">
-              <span className="text-[10px] font-bold uppercase text-zinc-500">Set Risk:</span>
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-accent px-2 py-1">
+              <span className="text-[10px] font-bold uppercase text-muted-foreground">Set Risk:</span>
               <input
                 type="number"
                 placeholder="$500"
                 value={riskInput}
                 onChange={(event) => onRiskInputChange(event.target.value)}
-                className="w-20 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+                className="w-20 rounded-lg border border-border bg-accent px-2 py-1 text-xs transition-colors focus:border-ring/50 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-card"
               />
-              <button onClick={onApplyRisk} className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase text-emerald-500 hover:bg-emerald-500/20">
+              <button onClick={onApplyRisk} className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[10px] font-bold uppercase text-primary hover:bg-primary/20">
                 Apply
               </button>
             </div>
 
-            <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1">
-              <TagIcon className="h-3 w-3 text-zinc-500" />
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-accent px-2 py-1">
+              <TagIcon className="h-3 w-3 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Add Tag..."
                 value={bulkTagInput}
                 onChange={(event) => onBulkTagInputChange(event.target.value)}
-                className="w-24 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+                className="w-24 rounded-lg border border-border bg-accent px-2 py-1 text-xs transition-colors focus:border-ring/50 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-card"
               />
-              <button onClick={onBulkAddTag} className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase text-emerald-500 hover:bg-emerald-500/20">
+              <button onClick={onBulkAddTag} className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[10px] font-bold uppercase text-primary hover:bg-primary/20">
                 Add
               </button>
             </div>
@@ -224,7 +224,7 @@ export default function JournalTab({
           const expanded = expandedDays.has(day.sortKey);
           const tradedSymbols = [...new Set(day.trades.map((trade) => trade.symbol))];
           return (
-            <div key={day.sortKey} className="overflow-hidden rounded-xl border border-white/10 bg-[#121214]">
+            <div key={day.sortKey} className="overflow-hidden rounded-xl border border-border bg-card">
               {/* Header acts like a button (click anywhere expands the day),
                   but is rendered as a div so we can nest the "View Journal
                   Log" button inside — nested <button> would be invalid HTML.
@@ -243,13 +243,13 @@ export default function JournalTab({
                     toggleDay(day.sortKey);
                   }
                 }}
-                className="grid w-full cursor-pointer grid-cols-3 items-center gap-4 border-b border-white/10 p-4 text-left hover:bg-white/5"
+                className="grid w-full cursor-pointer grid-cols-3 items-center gap-4 border-b border-border p-4 text-left hover:bg-accent"
               >
                 <div className="flex items-center gap-3">
-                  {expanded ? <ChevronDown className="h-4 w-4 text-zinc-500" /> : <ChevronRight className="h-4 w-4 text-zinc-500" />}
+                  {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                   <div>
                     <p className="text-base font-semibold">{format(day.date, 'EEEE, MMM dd yyyy')}</p>
-                    <p className="text-sm text-zinc-500">{day.trades.length} trades</p>
+                    <p className="text-sm text-muted-foreground">{day.trades.length} trades</p>
                   </div>
                 </div>
 
@@ -259,7 +259,7 @@ export default function JournalTab({
                     event.stopPropagation();
                     setDrcDate(day.sortKey);
                   }}
-                  className="justify-self-center rounded-md bg-transparent px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 focus:outline-none focus-visible:ring-1 focus-visible:ring-white/40 focus-visible:ring-offset-0"
+                  className="justify-self-center rounded-md bg-transparent px-3 py-1.5 text-sm font-medium text-foreground hover:bg-card focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0"
                 >
                   View Journal Log
                 </button>
@@ -271,26 +271,26 @@ export default function JournalTab({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 border-b border-white/10 bg-white/[0.02] p-3 text-sm sm:grid-cols-5">
+              <div className="grid grid-cols-2 gap-3 border-b border-border bg-accent/50 p-3 text-sm sm:grid-cols-5">
                 <div>
-                  <p className="text-zinc-500">Total Trades</p>
+                  <p className="text-muted-foreground">Total Trades</p>
                   <p className="font-medium">{day.trades.length}</p>
                 </div>
                 <div>
-                  <p className="text-zinc-500">Win %</p>
+                  <p className="text-muted-foreground">Win %</p>
                   <p className="font-medium">{day.winRate.toFixed(1)}%</p>
                 </div>
                 <div>
-                  <p className="text-zinc-500">Commissions</p>
+                  <p className="text-muted-foreground">Commissions</p>
                   <p className="font-medium">{formatCurrency(day.totalCommissions)}</p>
                 </div>
                 <div>
-                  <p className="text-zinc-500">MFE/MAE Ratio</p>
+                  <p className="text-muted-foreground">MFE/MAE Ratio</p>
                   <p className="font-medium">{day.mfeMaeRatio == null ? '-' : day.mfeMaeRatio.toFixed(2)}</p>
                 </div>
                 <div>
-                  <p className="text-zinc-500">Tickers</p>
-                  <p className="font-medium text-white">
+                  <p className="text-muted-foreground">Tickers</p>
+                  <p className="font-medium text-foreground">
                     {tradedSymbols.length > 0 ? tradedSymbols.join(', ') : '-'}
                   </p>
                 </div>
@@ -319,22 +319,22 @@ export default function JournalTab({
                       hideSelection
                     />
 
-                    <div className="space-y-3 rounded-xl border border-white/10 bg-[#121214] p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Trade Replay Charts</p>
+                    <div className="space-y-3 rounded-xl border border-border bg-card p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Trade Replay Charts</p>
                       <div className="space-y-3">
                         {day.trades.slice(0, chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH).map((trade) => (
                           <div key={`chart-${trade.id}`} className="space-y-2">
                             <div className="flex items-center justify-between gap-2 text-xs">
-                              <p className="font-semibold text-white">{trade.symbol} ({trade.direction})</p>
-                              <p className="font-mono text-zinc-500">{trade.entryTime || '--:--'} - {trade.exitTime || '--:--'}</p>
+                              <p className="font-semibold text-foreground">{trade.symbol} ({trade.direction})</p>
+                              <p className="font-mono text-muted-foreground">{trade.entryTime || '--:--'} - {trade.exitTime || '--:--'}</p>
                               <Select
                                 value={chartTimeframes[trade.id] ?? '5m'}
                                 onValueChange={(value) => setChartTimeframes((prev) => ({ ...prev, [trade.id]: value as TradeChartTimeframeKey }))}
                               >
-                                <SelectTrigger className="h-7 w-24 bg-white/5 border-white/10 text-xs">
+                                <SelectTrigger className="h-7 w-24 bg-accent border-border text-xs">
                                   <SelectValue />
                                 </SelectTrigger>
-                                <SelectContent className="bg-[#18181b] border-white/10 text-white">
+                                <SelectContent className="bg-card border-border text-foreground">
                                   {Object.entries(TRADE_CHART_TIMEFRAME_CONFIG).map(([value, cfg]) => (
                                     <SelectItem key={value} value={value}>
                                       {cfg.label}
@@ -356,7 +356,7 @@ export default function JournalTab({
                                   [day.sortKey]: Math.min(day.trades.length, (counts[day.sortKey] ?? INITIAL_CHART_BATCH) + CHART_BATCH_STEP),
                                 }));
                               }}
-                              className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/10"
+                              className="rounded-lg border border-border bg-accent px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent"
                             >
                               Load {Math.min(CHART_BATCH_STEP, Math.max(0, day.trades.length - (chartCountByDay[day.sortKey] ?? INITIAL_CHART_BATCH)))} more charts
                             </button>
@@ -372,7 +372,7 @@ export default function JournalTab({
         })}
 
         {displayedDayCards.length === 0 ? (
-          <div className="rounded-2xl border border-white/10 bg-[#121214] p-10 text-center text-sm text-zinc-500">
+          <div className="rounded-2xl border border-border bg-card p-10 text-center text-sm text-muted-foreground">
             No trades match the current filters.
           </div>
         ) : null}

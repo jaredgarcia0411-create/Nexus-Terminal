@@ -192,7 +192,7 @@ export default function BacktestPlaceOrderDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-white/10 bg-[#121214] text-white sm:max-w-md">
+      <DialogContent className="border-border bg-card text-foreground sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Place {order?.actionType.replace('_', ' ')}</DialogTitle>
         </DialogHeader>
@@ -201,19 +201,19 @@ export default function BacktestPlaceOrderDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Action</Label>
-              <div className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200">
+              <div className="rounded-md border border-border bg-accent px-3 py-2 text-sm text-foreground">
                 {order?.actionType.replace('_', ' ') ?? '-'}
               </div>
             </div>
             <div className="space-y-1.5">
               <Label>Entry Price</Label>
-              <div className="rounded-md border border-white/10 bg-white/5 px-3 py-2 font-mono text-sm tabular-nums text-zinc-100">
+              <div className="rounded-md border border-border bg-accent px-3 py-2 font-mono text-sm tabular-nums text-foreground">
                 {order ? formatCurrency(order.price) : '-'}
               </div>
             </div>
           </div>
 
-          {order ? <p className="font-mono text-[11px] text-zinc-500">{formatTimestamp(order.barTime)}</p> : null}
+          {order ? <p className="font-mono text-[11px] text-muted-foreground">{formatTimestamp(order.barTime)}</p> : null}
 
           {order?.actionType === 'LONG' || order?.actionType === 'SHORT' || order?.actionType === 'LONG_ADD' || order?.actionType === 'SHORT_ADD' ? (
             <div className="space-y-2">
@@ -226,7 +226,7 @@ export default function BacktestPlaceOrderDialog({
                 step="0.01"
                 value={stopInput}
                 onChange={(event) => setStopInput(event.target.value)}
-                className="border-white/10 bg-white/5 text-zinc-100"
+                className="border-border bg-accent text-foreground"
               />
             </div>
           ) : null}
@@ -243,8 +243,8 @@ export default function BacktestPlaceOrderDialog({
                     size="xs"
                     onClick={() => setSizePercent(option)}
                     className={sizePercent === option
-                      ? 'border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/20 hover:text-emerald-200'
-                      : 'border border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white'}
+                      ? 'border border-primary/40 bg-primary/15 text-primary hover:bg-primary/20'
+                      : 'border border-border bg-accent text-muted-foreground hover:bg-accent hover:text-foreground'}
                   >
                     {option}%
                   </Button>
@@ -253,28 +253,28 @@ export default function BacktestPlaceOrderDialog({
             </div>
           ) : null}
 
-          <div className="rounded-md border border-white/10 bg-[#0A0A0B] p-3 text-sm">
+          <div className="rounded-md border border-border bg-background p-3 text-sm">
             {preview ? (
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">Shares</span>
-                  <span className="font-mono tabular-nums text-zinc-100">{preview.shares}</span>
+                  <span className="text-muted-foreground">Shares</span>
+                  <span className="font-mono tabular-nums text-foreground">{preview.shares}</span>
                 </div>
                 {preview.totalRisk != null ? (
                   <div className="flex items-center justify-between">
-                    <span className="text-zinc-500">Total Risk</span>
-                    <span className="font-mono tabular-nums text-zinc-100">{formatCurrency(preview.totalRisk)}</span>
+                    <span className="text-muted-foreground">Total Risk</span>
+                    <span className="font-mono tabular-nums text-foreground">{formatCurrency(preview.totalRisk)}</span>
                   </div>
                 ) : null}
                 {preview.resultingAvgEntry != null ? (
                   <div className="flex items-center justify-between">
-                    <span className="text-zinc-500">Resulting Avg Entry</span>
-                    <span className="font-mono tabular-nums text-zinc-100">{formatCurrency(preview.resultingAvgEntry)}</span>
+                    <span className="text-muted-foreground">Resulting Avg Entry</span>
+                    <span className="font-mono tabular-nums text-foreground">{formatCurrency(preview.resultingAvgEntry)}</span>
                   </div>
                 ) : null}
                 {preview.realizedPnl != null ? (
                   <div className="flex items-center justify-between">
-                    <span className="text-zinc-500">Realized P&amp;L</span>
+                    <span className="text-muted-foreground">Realized P&amp;L</span>
                     <span className={`font-mono tabular-nums ${preview.realizedPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {formatCurrency(preview.realizedPnl)}
                     </span>
@@ -282,7 +282,7 @@ export default function BacktestPlaceOrderDialog({
                 ) : null}
               </div>
             ) : (
-              <div className="text-zinc-500">Enter the remaining fields to preview this action.</div>
+              <div className="text-muted-foreground">Enter the remaining fields to preview this action.</div>
             )}
           </div>
 
@@ -295,7 +295,7 @@ export default function BacktestPlaceOrderDialog({
             type="button"
             variant="secondary"
             onClick={() => onOpenChange(false)}
-            className="bg-white/10 hover:bg-white/20"
+            className="bg-accent hover:bg-accent/80"
           >
             Cancel
           </Button>
@@ -303,7 +303,7 @@ export default function BacktestPlaceOrderDialog({
             type="button"
             disabled={!preview || isSubmitting}
             onClick={() => void placeOrder()}
-            className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+            className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
           >
             Place
           </Button>

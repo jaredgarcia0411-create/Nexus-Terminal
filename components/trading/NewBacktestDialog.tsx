@@ -83,7 +83,7 @@ export default function NewBacktestDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-white/10 bg-[#121214] text-white sm:max-w-lg">
+      <DialogContent className="border-border bg-card text-foreground sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New Backtest</DialogTitle>
         </DialogHeader>
@@ -95,7 +95,7 @@ export default function NewBacktestDialog({
               id="new-backtest-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              className="border-white/10 bg-white/5 text-zinc-100"
+              className="border-border bg-accent text-foreground"
             />
           </div>
 
@@ -105,7 +105,7 @@ export default function NewBacktestDialog({
               id="new-backtest-description"
               value={description}
               onChange={(event) => setDescription(event.target.value)}
-              className="min-h-24 border-white/10 bg-white/5 text-zinc-100"
+              className="min-h-24 border-border bg-accent text-foreground"
             />
           </div>
 
@@ -117,11 +117,11 @@ export default function NewBacktestDialog({
             >
               <SelectTrigger
                 aria-label="Sample Set"
-                className="w-full border-white/10 bg-black text-sm text-zinc-100"
+                className="w-full border-border bg-black text-sm text-foreground"
               >
                 <SelectValue placeholder="Select a sample set..." />
               </SelectTrigger>
-              <SelectContent className="border-white/10 bg-black text-white">
+              <SelectContent className="border-border bg-black text-foreground">
                 <SelectItem value={NONE_SAMPLE_SET}>System Sheet</SelectItem>
                 {sampleSets.map((sampleSet) => (
                   <SelectItem key={sampleSet.id} value={sampleSet.id}>
@@ -140,7 +140,7 @@ export default function NewBacktestDialog({
             type="button"
             variant="secondary"
             onClick={() => onOpenChange(false)}
-            className="bg-white/10 hover:bg-white/20"
+            className="bg-accent hover:bg-accent/80"
           >
             Cancel
           </Button>
@@ -148,7 +148,7 @@ export default function NewBacktestDialog({
             type="button"
             disabled={isSubmitting}
             onClick={() => void handleSubmit()}
-            className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-40"
+            className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40"
           >
             Create
           </Button>

@@ -279,7 +279,7 @@ export default function BacktestingTab() {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
-      className="flex h-[calc(100dvh-6.5rem)] min-h-[620px] overflow-hidden bg-[#0A0A0B]"
+      className="flex h-[calc(100dvh-6.5rem)] min-h-[620px] overflow-hidden bg-background"
     >
       <AnimatePresence mode="wait">
       {view.kind === 'manager' ? (
@@ -334,12 +334,12 @@ export default function BacktestingTab() {
           }
         >
           <main className="flex min-h-0 min-w-0 flex-col gap-0 overflow-hidden pr-2">
-            <div className="grid h-7 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 px-1 text-xs text-zinc-500">
+            <div className="grid h-7 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 px-1 text-xs text-muted-foreground">
               <div className="flex min-w-0 items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setView({ kind: 'manager' })}
-                  className="inline-flex h-7 items-center gap-0.5 rounded-md px-1.5 text-sm font-medium leading-none text-zinc-300 transition-colors hover:text-white"
+                  className="inline-flex h-7 items-center gap-0.5 rounded-md px-1.5 text-sm font-medium leading-none text-muted-foreground transition-colors hover:text-foreground"
                   aria-label="Back to backtest manager"
                   title="Back to backtest manager"
                 >
@@ -351,8 +351,8 @@ export default function BacktestingTab() {
               <div className="flex min-w-0 items-center justify-center gap-2">
                 {selected ? (
                   <>
-                    <span className="font-mono text-base font-semibold leading-none text-white">{selected.ticker}</span>
-                    <span className="font-mono text-sm leading-none tabular-nums text-zinc-500">{selected.date}</span>
+                    <span className="font-mono text-base font-semibold leading-none text-foreground">{selected.ticker}</span>
+                    <span className="font-mono text-sm leading-none tabular-nums text-muted-foreground">{selected.date}</span>
                   </>
                 ) : null}
               </div>
@@ -361,7 +361,7 @@ export default function BacktestingTab() {
                 <button
                   type="button"
                   onClick={() => setRightCollapsed((current) => !current)}
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                   title={rightCollapsed ? 'Expand panel' : 'Collapse panel'}
                   aria-label={rightCollapsed ? 'Expand panel' : 'Collapse panel'}
                 >
@@ -374,7 +374,7 @@ export default function BacktestingTab() {
               </div>
             </div>
 
-            <div className="grid h-10 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border-t border-white/10 px-1">
+            <div className="grid h-10 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border-t border-border px-1">
               {!view.id ? (
                 <form
                   onSubmit={handleLookupSubmit}
@@ -382,33 +382,33 @@ export default function BacktestingTab() {
                   aria-label="Lookup ticker on date"
                 >
                   <div className="relative">
-                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       value={lookupTicker}
                       onChange={(event) => setLookupTicker(event.target.value.toUpperCase())}
                       placeholder="TICKER"
-                      className="h-7 w-[8.25rem] border-white/10 bg-white/5 pl-7 font-mono text-xs uppercase text-zinc-100 placeholder:text-zinc-600"
+                      className="h-7 w-[8.25rem] border-border bg-accent pl-7 font-mono text-xs uppercase text-foreground placeholder:text-muted-foreground"
                     />
                   </div>
                   <input
                     type="date"
                     value={lookupDate}
                     onChange={(event) => setLookupDate(event.target.value)}
-                    className="h-7 w-[8.25rem] rounded-md border border-white/10 bg-white/5 px-2 font-mono text-xs text-zinc-100 [color-scheme:dark]"
+                    className="h-7 w-[8.25rem] rounded-md border border-border bg-accent px-2 font-mono text-xs text-foreground [color-scheme:dark]"
                   />
                   <Button
                     type="submit"
                     variant="ghost"
                     size="xs"
                     disabled={!lookupValid}
-                    className="h-7 text-[11px] text-zinc-300 hover:bg-transparent hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    className="h-7 text-[11px] text-muted-foreground hover:bg-transparent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Load
                   </Button>
                 </form>
               ) : (
                 <div className="flex min-w-0 items-center px-2">
-                  <span className="truncate text-sm font-medium text-zinc-200">
+                  <span className="truncate text-sm font-medium text-foreground">
                     {view.name ?? 'Backtest'}
                   </span>
                 </div>
@@ -424,13 +424,13 @@ export default function BacktestingTab() {
                     size="icon-xs"
                     disabled={!selected || extraSessionsForward <= 0}
                     onClick={() => setExtraSessionsForward((current) => Math.max(0, current - 1))}
-                    className="text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-30"
+                    className="text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
                     title="Remove one forward day"
                     aria-label="Remove one forward day"
                   >
                     <ChevronLeft className="h-3.5 w-3.5" />
                   </Button>
-                  <span className="min-w-9 text-center font-mono text-xs tabular-nums text-zinc-400">
+                  <span className="min-w-9 text-center font-mono text-xs tabular-nums text-muted-foreground">
                     +{extraSessionsForward}D
                   </span>
                   <Button
@@ -439,7 +439,7 @@ export default function BacktestingTab() {
                     size="icon-xs"
                     disabled={!selected}
                     onClick={() => setExtraSessionsForward((current) => current + 1)}
-                    className="text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-30"
+                    className="text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
                     title="Add one forward day"
                     aria-label="Add one forward day"
                   >
@@ -467,7 +467,7 @@ export default function BacktestingTab() {
                   variant="ghost"
                   size="xs"
                   onClick={() => setArmedAction(null)}
-                  className="border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white"
+                  className="border border-border bg-accent text-muted-foreground hover:bg-accent hover:text-foreground"
                 >
                   Cancel
                 </Button>

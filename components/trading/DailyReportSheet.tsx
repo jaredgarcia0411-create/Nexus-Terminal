@@ -236,7 +236,7 @@ export default function DailyReportSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="print-target w-full overflow-y-auto border-white/10 bg-[#121214] text-white sm:max-w-3xl"
+        className="print-target w-full overflow-y-auto border-border bg-card text-foreground sm:max-w-3xl"
       >
         <SheetHeader>
           <SheetTitle className="text-base font-semibold">
@@ -245,14 +245,14 @@ export default function DailyReportSheet({
         </SheetHeader>
 
         {loading ? (
-          <div className="flex h-32 items-center justify-center text-sm text-zinc-500">Loading…</div>
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">Loading…</div>
         ) : (
           <div className="mt-4 space-y-6 p-4">
             {!readOnly ? (
               <div className="flex justify-end gap-2">
                 <Button
                   onClick={() => setEditingTemplate((flag) => !flag)}
-                  className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                  className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
                 >
                   <Pencil className="mr-1.5 h-4 w-4" />
                   Edit Template
@@ -260,7 +260,7 @@ export default function DailyReportSheet({
                 {viewMode === 'view' ? (
                   <Button
                     onClick={() => setViewMode('edit')}
-                    className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                    className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
                   >
                     Edit Review
                   </Button>
@@ -268,7 +268,7 @@ export default function DailyReportSheet({
                   <Button
                     onClick={handleSave}
                     disabled={saving}
-                    className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                    className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
                   >
                     {saving ? 'Saving…' : isExistingReport ? 'Update Review' : 'Save Review'}
                   </Button>
@@ -290,18 +290,18 @@ export default function DailyReportSheet({
             />
 
             {editingTemplate && !readOnly ? (
-              <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
-                <p className="text-sm font-medium capitalize text-white">Edit Template</p>
+              <div className="space-y-3 rounded-xl border border-border bg-accent p-4">
+                <p className="text-sm font-medium capitalize text-foreground">Edit Template</p>
                 {fields.map((field, index) => (
                   <div
                     key={field.id}
-                    className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#121214] p-2"
+                    className="flex items-center gap-2 rounded-lg border border-border bg-card p-2"
                   >
                     <div className="flex flex-col gap-0.5">
-                      <button onClick={() => moveField(index, -1)} className="rounded p-0.5 hover:bg-white/10">
+                      <button onClick={() => moveField(index, -1)} className="rounded p-0.5 hover:bg-accent">
                         <ChevronUp className="h-3 w-3" />
                       </button>
-                      <button onClick={() => moveField(index, 1)} className="rounded p-0.5 hover:bg-white/10">
+                      <button onClick={() => moveField(index, 1)} className="rounded p-0.5 hover:bg-accent">
                         <ChevronDown className="h-3 w-3" />
                       </button>
                     </div>
@@ -312,10 +312,10 @@ export default function DailyReportSheet({
                         copy[index] = { ...copy[index], label: event.target.value };
                         setFields(copy);
                       }}
-                      className="flex-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-200 focus:outline-none"
+                      className="flex-1 rounded border border-border bg-accent px-2 py-1 text-xs text-foreground focus:outline-none"
                     />
-                    <span className="w-12 text-center text-[10px] text-zinc-500">{field.type}</span>
-                    <label className="flex items-center gap-1 text-[10px] text-zinc-400">
+                    <span className="w-12 text-center text-[10px] text-muted-foreground">{field.type}</span>
+                    <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
                       <input
                         type="checkbox"
                         checked={field.required}
@@ -324,7 +324,7 @@ export default function DailyReportSheet({
                           copy[index] = { ...copy[index], required: event.target.checked };
                           setFields(copy);
                         }}
-                        className="accent-emerald-500"
+                        className="accent-primary"
                       />
                       Req
                     </label>
@@ -340,7 +340,7 @@ export default function DailyReportSheet({
                   <Button
                     size="sm"
                     onClick={saveTemplate}
-                    className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                    className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
                   >
                     Save Template
                   </Button>
@@ -348,7 +348,7 @@ export default function DailyReportSheet({
                     size="sm"
                     variant="outline"
                     onClick={handleResetTemplate}
-                    className="border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"
+                    className="border-border bg-accent text-muted-foreground hover:bg-accent"
                   >
                     Reset to Defaults
                   </Button>
@@ -369,12 +369,12 @@ export default function DailyReportSheet({
             </div>
 
             {chartTrades.length > 0 ? (
-              <div className="space-y-3 rounded-xl border border-white/10 bg-[#121214] p-3">
-                <p className="text-sm font-medium capitalize text-white">Trade Replay Charts</p>
+              <div className="space-y-3 rounded-xl border border-border bg-card p-3">
+                <p className="text-sm font-medium capitalize text-foreground">Trade Replay Charts</p>
                 <div className="space-y-3">
                   {chartTrades.slice(0, chartCount).map((trade) => (
                     <div key={trade.id} className="space-y-1">
-                      <p className="text-xs font-semibold text-white">
+                      <p className="text-xs font-semibold text-foreground">
                         {trade.symbol} ({trade.direction})
                       </p>
                       <JournalTradeChart trade={trade} timeframe="5m" />
@@ -384,7 +384,7 @@ export default function DailyReportSheet({
                     <div className="flex justify-center">
                       <button
                         onClick={() => setChartCount((count) => Math.min(chartTrades.length, count + CHART_BATCH_STEP))}
-                        className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/10"
+                        className="rounded-lg border border-border bg-accent px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent"
                       >
                         Load {Math.min(CHART_BATCH_STEP, chartTrades.length - chartCount)} more charts
                       </button>

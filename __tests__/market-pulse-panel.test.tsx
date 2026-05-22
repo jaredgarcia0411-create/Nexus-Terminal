@@ -72,7 +72,7 @@ describe('MarketPulsePanel', () => {
     render(<MarketPulsePanel />);
 
     const empty = await screen.findByText('Market pulse not available yet.');
-    expect(empty.className).toContain('rounded border border-white/10 bg-white/5');
+    expect(empty.className).toContain('rounded border border-border bg-accent');
   });
 
   it('is placed in DashboardTab with the expand dialog pattern', async () => {

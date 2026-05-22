@@ -65,7 +65,7 @@ export default function WatchlistReportInline({ reportId }: Props) {
 
   if (loading) {
     return (
-      <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-zinc-500">
+      <div className="rounded border border-border bg-accent px-4 py-6 text-center text-sm text-muted-foreground">
         Loading report…
       </div>
     );
@@ -73,7 +73,7 @@ export default function WatchlistReportInline({ reportId }: Props) {
 
   if (error) {
     return (
-      <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-rose-400">
+      <div className="rounded border border-border bg-accent px-4 py-6 text-center text-sm text-rose-400">
         {error}
       </div>
     );

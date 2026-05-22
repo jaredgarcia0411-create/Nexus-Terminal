@@ -39,13 +39,13 @@ const deleteIconButtonClass =
   'h-7 w-7 shrink-0 border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 focus-visible:ring-rose-500/40';
 
 const addIconButtonClass =
-  'h-7 w-7 shrink-0 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 focus-visible:ring-emerald-500/40';
+  'h-7 w-7 shrink-0 border border-primary/40 text-primary hover:bg-primary/10 hover:text-primary/80 focus-visible:ring-ring';
 
 const editIconButtonClass =
-  'h-7 w-7 shrink-0 border border-white/10 bg-white/5 text-white hover:bg-white/10 hover:text-white focus-visible:ring-white/20';
+  'h-7 w-7 shrink-0 border border-border bg-accent text-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring/30';
 
 const greenButtonClass =
-  'border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20';
+  'border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20';
 
 function formatBacktestSampleSetLabel(backtest: BacktestListItem, isUncategorized: boolean) {
   if (isUncategorized) return backtest.sampleSetName ?? 'No sample set';
@@ -144,13 +144,13 @@ export default function BacktestManagerView({
   };
 
   return (
-    <section className="flex h-[calc(100dvh-6.5rem)] min-h-[620px] flex-1 flex-col overflow-hidden bg-[#0A0A0B]">
-      <div className="grid h-7 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-3 border-b border-white/10 px-4">
+    <section className="flex h-[calc(100dvh-6.5rem)] min-h-[620px] flex-1 flex-col overflow-hidden bg-background">
+      <div className="grid h-7 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-3 border-b border-border px-4">
         <div className="flex min-w-0 items-center">
           <button
             type="button"
             onClick={onOpenLastChart}
-            className="inline-flex h-7 items-center gap-0.5 rounded-md px-1.5 text-sm font-medium leading-none text-zinc-300 transition-colors hover:text-white"
+            className="inline-flex h-7 items-center gap-0.5 rounded-md px-1.5 text-sm font-medium leading-none text-muted-foreground transition-colors hover:text-foreground"
             aria-label="Back to charts"
             title="Back to charts"
           >
@@ -159,16 +159,16 @@ export default function BacktestManagerView({
           </button>
         </div>
         <div className="flex min-w-0 items-center justify-center">
-          <h2 className="text-lg font-semibold leading-none text-white">Backtest Manager</h2>
+          <h2 className="text-lg font-semibold leading-none text-foreground">Backtest Manager</h2>
         </div>
         <div />
       </div>
 
       <div className="grid min-h-0 flex-1 gap-4 p-4 sm:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)]">
-        <div className="flex min-h-0 flex-col rounded-md border border-white/10 bg-[#111319]">
-          <div className="border-b border-white/10 p-3">
+        <div className="flex min-h-0 flex-col rounded-md border border-border bg-popover">
+          <div className="border-b border-border p-3">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-white">Saved Tests</h3>
+              <h3 className="text-sm font-semibold text-foreground">Saved Tests</h3>
               <Button
                 type="button"
                 size="xs"
@@ -180,22 +180,22 @@ export default function BacktestManagerView({
             </div>
             <div className="grid gap-2">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={backtestSearch}
                   onChange={(event) => setBacktestSearch(event.target.value)}
                   placeholder="Search backtests"
-                  className="h-8 border-white/10 bg-white/5 pl-8 text-xs text-zinc-100 placeholder:text-zinc-600"
+                  className="h-8 border-border bg-accent pl-8 text-xs text-foreground placeholder:text-muted-foreground"
                 />
               </div>
             </div>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {isLoading ? <div className="px-4 py-6 text-sm text-zinc-500">Loading backtests...</div> : null}
+            {isLoading ? <div className="px-4 py-6 text-sm text-muted-foreground">Loading backtests...</div> : null}
             {!isLoading && error ? <div className="px-4 py-6 text-sm text-rose-400">{error}</div> : null}
             {!isLoading && !error && filteredBacktests.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-zinc-500">No backtests yet. Create one to get started.</div>
+              <div className="px-4 py-6 text-sm text-muted-foreground">No backtests yet. Create one to get started.</div>
             ) : null}
 
             <div className="flex flex-col">
@@ -204,22 +204,22 @@ export default function BacktestManagerView({
                 const isUncategorized = backtest.id.startsWith('uncat-');
 
                 return (
-                  <article key={backtest.id} className="border-b border-white/10 px-4 py-3">
+                  <article key={backtest.id} className="border-b border-border px-4 py-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 space-y-1">
                         <div className="flex items-center gap-2">
-                          <h3 className="truncate text-sm font-semibold text-white">{backtest.name}</h3>
-                          <span className="text-xs text-zinc-500">by {backtest.ownerName ?? 'Unknown'}</span>
+                          <h3 className="truncate text-sm font-semibold text-foreground">{backtest.name}</h3>
+                          <span className="text-xs text-muted-foreground">by {backtest.ownerName ?? 'Unknown'}</span>
                         </div>
-                        <p className="text-xs text-zinc-500">
+                        <p className="text-xs text-muted-foreground">
                           {backtest.reviewCount} review{backtest.reviewCount === 1 ? '' : 's'} ·{' '}
                           {formatBacktestSampleSetLabel(backtest, isUncategorized)}
                         </p>
                         {backtest.description ? (
-                          <p className="line-clamp-2 text-sm text-zinc-300">{backtest.description}</p>
+                          <p className="line-clamp-2 text-sm text-muted-foreground">{backtest.description}</p>
                         ) : null}
                       </div>
-                      <span className="shrink-0 text-[11px] text-zinc-500">
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
                         {formatRelativeTimestamp(backtest.updatedAt)}
                       </span>
                     </div>
@@ -230,7 +230,7 @@ export default function BacktestManagerView({
                         variant="ghost"
                         size="xs"
                         onClick={() => onViewStats(backtest.id)}
-                        className="h-7 border border-white/10 bg-white/5 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
+                        className="h-7 border border-border bg-accent text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
                       >
                         View Stats
                       </Button>
@@ -242,7 +242,7 @@ export default function BacktestManagerView({
                             { id: backtest.id, name: backtest.name, ownerId: backtest.ownerId },
                             backtest.recentOwnerReview,
                           )}
-                          className="h-7 border border-emerald-500/40 bg-emerald-500/10 text-[11px] text-emerald-500 hover:bg-emerald-500/20"
+                          className="h-7 border border-primary/40 bg-primary/10 text-[11px] text-primary hover:bg-primary/20"
                         >
                           Launch Chart
                         </Button>
@@ -281,10 +281,10 @@ export default function BacktestManagerView({
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-col rounded-md border border-white/10 bg-[#111319]">
-          <div className="border-b border-white/10 p-3">
+        <div className="flex min-h-0 flex-col rounded-md border border-border bg-popover">
+          <div className="border-b border-border p-3">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-white">Sample Sets</h3>
+              <h3 className="text-sm font-semibold text-foreground">Sample Sets</h3>
               <div className="flex items-center gap-2">
                 <Button
                   type="button"
@@ -314,19 +314,19 @@ export default function BacktestManagerView({
               />
             </div>
             <div className="relative mt-3">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={sampleSetSearch}
                 onChange={(event) => setSampleSetSearch(event.target.value)}
                 placeholder="Search sample sets"
-                className="h-8 border-white/10 bg-white/5 pl-8 text-xs text-zinc-100 placeholder:text-zinc-600"
+                className="h-8 border-border bg-accent pl-8 text-xs text-foreground placeholder:text-muted-foreground"
               />
             </div>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
             {!isLoading && filteredSampleSets.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-zinc-500">No sample sets yet. Add one to import a trade list.</div>
+              <div className="px-4 py-6 text-sm text-muted-foreground">No sample sets yet. Add one to import a trade list.</div>
             ) : null}
 
             <div className="flex flex-col">
@@ -334,11 +334,11 @@ export default function BacktestManagerView({
                 const isOwner = currentUserId === sampleSet.ownerId;
 
                 return (
-                  <article key={sampleSet.id} className="border-b border-white/10 px-4 py-3">
+                  <article key={sampleSet.id} className="border-b border-border px-4 py-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 space-y-1">
-                        <h3 className="truncate text-sm font-semibold text-white">{sampleSet.name}</h3>
-                        <p className="text-xs text-zinc-500">{sampleSet.rowCount} rows</p>
+                        <h3 className="truncate text-sm font-semibold text-foreground">{sampleSet.name}</h3>
+                        <p className="text-xs text-muted-foreground">{sampleSet.rowCount} rows</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <Button

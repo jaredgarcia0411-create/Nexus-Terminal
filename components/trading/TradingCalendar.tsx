@@ -167,31 +167,31 @@ export default function TradingCalendar({
       <div>
         <div className={`flex items-center justify-between ${embedded ? 'mb-4' : 'mb-8'}`}>
           {embedded ? <div /> : (
-            <h3 className="text-base font-medium text-white">Trading Calendar</h3>
+            <h3 className="text-base font-medium text-foreground">Trading Calendar</h3>
           )}
           <div className="flex items-center gap-4">
             <span
               className={`text-base font-medium tabular-nums ${
-                monthlyR > 0 ? 'text-emerald-400' : monthlyR < 0 ? 'text-rose-400' : 'text-white'
+                monthlyR > 0 ? 'text-emerald-400' : monthlyR < 0 ? 'text-rose-400' : 'text-foreground'
               }`}
             >
               {formatR(monthlyR)}
             </span>
             <span className="text-base font-medium">{format(currentMonth, 'MMMM yyyy')}</span>
             <div className="flex items-center gap-1">
-              <button onClick={prevMonth} className="p-1 hover:bg-white/5 rounded-md transition-colors">
+              <button onClick={prevMonth} className="p-1 hover:bg-accent rounded-md transition-colors">
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <button onClick={nextMonth} className="p-1 hover:bg-white/5 rounded-md transition-colors">
+              <button onClick={nextMonth} className="p-1 hover:bg-accent rounded-md transition-colors">
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
           </div>
         </div>
 
-        <div className={`grid gap-px overflow-hidden rounded-xl border border-white/5 bg-white/5 ${isMobile ? 'grid-cols-7' : 'grid-cols-8'}`}>
+        <div className={`grid gap-px overflow-hidden rounded-xl border border-border bg-accent ${isMobile ? 'grid-cols-7' : 'grid-cols-8'}`}>
           {(isMobile ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Weekly']).map((day) => (
-            <div key={day} className="bg-[#18181b] py-3 text-center text-[11px] font-bold text-zinc-500 tracking-widest">
+            <div key={day} className="bg-card py-3 text-center text-[11px] font-bold text-muted-foreground tracking-widest">
               {day}
             </div>
           ))}
@@ -216,13 +216,13 @@ export default function TradingCalendar({
                         setInternalSelectedDate(isSelected ? null : dateKey);
                       }
                     }}
-                    className={`${isMobile ? 'min-h-[60px] p-1.5' : 'min-h-[100px] p-2'} relative flex cursor-pointer flex-col gap-1 bg-[#121214] transition-all group ${
-                      !isCurrentMonth ? 'opacity-20' : 'hover:bg-white/[0.03]'
+                    className={`${isMobile ? 'min-h-[60px] p-1.5' : 'min-h-[100px] p-2'} relative flex cursor-pointer flex-col gap-1 bg-card transition-all group ${
+                      !isCurrentMonth ? 'opacity-20' : 'hover:bg-accent/80'
                     } ${isToday ? 'ring-1 ring-inset ring-white/50' : ''} ${
-                      isOffDay ? 'bg-white/[0.01]' : ''
-                    } ${isSelected ? 'bg-emerald-500/5 ring-1 ring-inset ring-emerald-500/30' : ''}`}
+                      isOffDay ? 'bg-accent/40' : ''
+                    } ${isSelected ? 'bg-primary/5 ring-1 ring-inset ring-primary/30' : ''}`}
                   >
-                    <span className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-mono ${isToday ? 'text-white font-bold' : 'text-zinc-500'}`}>
+                    <span className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-mono ${isToday ? 'text-foreground font-bold' : 'text-muted-foreground'}`}>
                       {format(day, 'd')}
                     </span>
 
@@ -241,7 +241,7 @@ export default function TradingCalendar({
                                 ? 'bg-emerald-500/50'
                                 : span.netPnl < 0
                                   ? 'bg-rose-500/50'
-                                  : 'bg-zinc-500/40';
+                                  : 'bg-muted/40';
                             const rounded =
                               isStart && isEnd
                                 ? 'rounded-full'
@@ -261,7 +261,7 @@ export default function TradingCalendar({
                             );
                           })}
                           {overflow > 0 ? (
-                            <span className="text-[9px] leading-none text-zinc-500">
+                            <span className="text-[9px] leading-none text-muted-foreground">
                               +{overflow}
                             </span>
                           ) : null}
@@ -274,21 +274,21 @@ export default function TradingCalendar({
                         <div className={`${isMobile ? 'text-[13px]' : 'text-[14px]'} font-bold ${getPnLColor(stats.pnl)}`}>
                           {stats.pnl >= 0 ? '+' : ''}{formatCurrency(stats.pnl)}
                         </div>
-                        <div className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-medium opacity-60 ${stats.r > 0 ? 'text-emerald-400' : stats.r < 0 ? 'text-rose-400' : 'text-white'}`}>
+                        <div className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-medium opacity-60 ${stats.r > 0 ? 'text-emerald-400' : stats.r < 0 ? 'text-rose-400' : 'text-foreground'}`}>
                           {formatR(stats.r)}
                         </div>
                       </div>
                     )}
 
                     {/* Hover indicator */}
-                    <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                 );
               })}
               
               {!isMobile ? (
                 <div
-                  className={`min-h-[100px] border-l border-white/5 bg-white/5 p-2 ${onWeekClick ? 'cursor-pointer hover:bg-white/[0.08] transition-colors' : ''}`}
+                  className={`min-h-[100px] border-l border-border bg-accent p-2 ${onWeekClick ? 'cursor-pointer hover:bg-accent/80 transition-colors' : ''}`}
                   onClick={() => {
                     if (!onWeekClick) return;
                     const weekStartDate = week.days[0];
@@ -301,11 +301,11 @@ export default function TradingCalendar({
                     <div className={`text-[14px] font-bold ${getPnLColor(week.weeklyPnl)}`}>
                       {week.weeklyPnl >= 0 ? '+' : ''}{formatCurrency(week.weeklyPnl)}
                     </div>
-                    <div className={`text-[13px] font-medium opacity-70 ${week.weeklyR > 0 ? 'text-emerald-400' : week.weeklyR < 0 ? 'text-rose-400' : 'text-white'}`}>
+                    <div className={`text-[13px] font-medium opacity-70 ${week.weeklyR > 0 ? 'text-emerald-400' : week.weeklyR < 0 ? 'text-rose-400' : 'text-foreground'}`}>
                       {formatR(week.weeklyR)}
                     </div>
                     {onWeekClick && (
-                      <div className="text-[9px] text-zinc-600 uppercase tracking-widest mt-1">Review</div>
+                      <div className="text-[9px] text-muted-foreground uppercase tracking-widest mt-1">Review</div>
                     )}
                   </div>
                 </div>

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { MotionConfig } from 'motion/react';
 import { SessionProvider } from 'next-auth/react';
-import { Toaster } from 'sonner';
+import { ThemedToaster } from '@/components/theme/themed-toaster';
 import { ThemeProvider } from '@/components/theme/theme-provider';
 import './globals.css';
 
@@ -19,7 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <MotionConfig reducedMotion="user">
               {children}
             </MotionConfig>
-            <Toaster theme="dark" richColors position="bottom-right" />
+            <ThemedToaster />
           </SessionProvider>
         </ThemeProvider>
       </body>

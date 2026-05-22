@@ -142,7 +142,7 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="min-h-0 w-full sm:max-w-3xl bg-[#121214] border-white/10 text-white">
+      <SheetContent side="right" className="min-h-0 w-full sm:max-w-3xl bg-card border-border text-foreground">
         <SheetHeader>
           <SheetTitle className="text-xl">Trade Details</SheetTitle>
         </SheetHeader>
@@ -151,7 +151,7 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
           <div className="mt-2 flex min-h-0 flex-1 flex-col gap-4">
             <div className="flex items-center justify-between p-3">
               <div>
-                <p className="text-sm text-zinc-500">
+                <p className="text-sm text-muted-foreground">
                   {tradeDateLabel}{tradeTimeLabel ? ` ${tradeTimeLabel}` : ''}
                 </p>
                 <p className="text-sm font-semibold">
@@ -173,17 +173,17 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                 ) : (
                   <p className={`text-sm font-semibold ${getPnLColor(trade.netPnl)}`}>{formatCurrency(trade.netPnl)}</p>
                 )}
-                <p className="text-[12px] text-zinc-500">{trade.isOpen ? 'Open Position' : 'Net P/L'}</p>
+                <p className="text-[12px] text-muted-foreground">{trade.isOpen ? 'Open Position' : 'Net P/L'}</p>
               </div>
             </div>
 
             <div className="flex-1 space-y-4 overflow-y-auto px-4 pb-6">
-              <section className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                <h3 className="text-base font-semibold uppercase tracking-wider text-white">Overview</h3>
+              <section className="space-y-3 rounded-xl border border-border bg-accent/50 p-4">
+                <h3 className="text-base font-semibold uppercase tracking-wider text-foreground">Overview</h3>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {overviewItems.map(([label, value]) => (
                     <div key={label}>
-                      <p className="text-[12px] uppercase tracking-wider text-zinc-500">{label}</p>
+                      <p className="text-[12px] uppercase tracking-wider text-muted-foreground">{label}</p>
                       <p className="mt-1 text-sm font-medium">{value}</p>
                     </div>
                   ))}
@@ -195,24 +195,24 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                   <h3 className="text-base font-semibold uppercase tracking-wider text-amber-400">Close Position</h3>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
-                      <label className="text-[11px] uppercase tracking-wider text-zinc-500">Exit Price</label>
+                      <label className="text-[11px] uppercase tracking-wider text-muted-foreground">Exit Price</label>
                       <Input
                         type="number"
                         step="0.01"
                         placeholder="0.00"
                         value={closeExitPrice}
                         onChange={(event) => setCloseExitPrice(event.target.value)}
-                        className="bg-white/5 border-white/10 h-8 text-sm"
+                        className="bg-accent border-border h-8 text-sm"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[11px] uppercase tracking-wider text-zinc-500">Exit Time</label>
+                      <label className="text-[11px] uppercase tracking-wider text-muted-foreground">Exit Time</label>
                       <Input
                         type="text"
                         placeholder="15:59:00"
                         value={closeExitTime}
                         onChange={(event) => setCloseExitTime(event.target.value)}
-                        className="bg-white/5 border-white/10 h-8 text-sm"
+                        className="bg-accent border-border h-8 text-sm"
                       />
                     </div>
                   </div>
@@ -228,15 +228,15 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                 </section>
               ) : null}
 
-              <section className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                <h3 className="text-base font-semibold uppercase tracking-wider text-white">Chart</h3>
+              <section className="space-y-3 rounded-xl border border-border bg-accent/50 p-4">
+                <h3 className="text-base font-semibold uppercase tracking-wider text-foreground">Chart</h3>
                 <div className="space-y-3">
                   <div className="flex items-center justify-end gap-4">
                     <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TradeChartTimeframeKey)}>
-                      <SelectTrigger className="h-8 w-28 bg-white/5 border-white/10 text-sm">
+                      <SelectTrigger className="h-8 w-28 bg-accent border-border text-sm">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-[#121214] border-white/10 text-white">
+                      <SelectContent className="bg-card border-border text-foreground">
                         {Object.entries(TRADE_CHART_TIMEFRAME_CONFIG).map(([value, cfg]) => (
                           <SelectItem key={value} value={value}>
                             {cfg.label}
@@ -247,13 +247,13 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                   </div>
 
                   {loadingCandles ? (
-                    <div className="flex h-[640px] items-center justify-center text-sm text-zinc-400">Loading candles...</div>
+                    <div className="flex h-[640px] items-center justify-center text-sm text-muted-foreground">Loading candles...</div>
                   ) : candlesError ? (
-                    <div className="flex h-[640px] items-center justify-center text-sm text-zinc-400">
+                    <div className="flex h-[640px] items-center justify-center text-sm text-muted-foreground">
                       {candlesError}
                     </div>
                   ) : candles.length === 0 ? (
-                    <div className="flex h-[640px] items-center justify-center text-sm text-zinc-400">
+                    <div className="flex h-[640px] items-center justify-center text-sm text-muted-foreground">
                       No candle data available for this trade window.
                     </div>
                   ) : (
@@ -269,11 +269,11 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                 </div>
               </section>
 
-              <section className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                <h3 className="text-base font-semibold uppercase tracking-wider text-white">Executions</h3>
+              <section className="space-y-3 rounded-xl border border-border bg-accent/50 p-4">
+                <h3 className="text-base font-semibold uppercase tracking-wider text-foreground">Executions</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
-                    <thead className="text-zinc-500">
+                    <thead className="text-muted-foreground">
                       <tr>
                         <th className="px-3 py-2">Time</th>
                         <th className="px-3 py-2">Side</th>
@@ -304,7 +304,7 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                       ))}
                       {sortedExecutions.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-3 py-6 text-center text-zinc-500">No execution rows available.</td>
+                          <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">No execution rows available.</td>
                         </tr>
                       ) : null}
                     </tbody>
@@ -312,8 +312,8 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                 </div>
               </section>
 
-              <section className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                <h3 className="text-base font-semibold uppercase tracking-wider text-white">Notes</h3>
+              <section className="space-y-3 rounded-xl border border-border bg-accent/50 p-4">
+                <h3 className="text-base font-semibold uppercase tracking-wider text-foreground">Notes</h3>
                 <div className="space-y-3">
                   <div className="space-y-2">
                     <Textarea
@@ -321,13 +321,13 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                       value={notes}
                       onChange={(event) => setNotes(event.target.value)}
                       rows={10}
-                      className="bg-white/5 border-white/10"
+                      className="bg-accent border-border"
                       placeholder="Add notes about setup quality, execution, emotions, and lessons learned..."
                     />
                   </div>
 
                   <div className="flex justify-end gap-2">
-                    <Button onClick={handleSave} className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">
+                    <Button onClick={handleSave} className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20">
                       Save Notes
                     </Button>
                   </div>

@@ -20,9 +20,9 @@ export default function TemplateFieldRenderer({
 }: TemplateFieldRendererProps) {
   if (field.type === 'auto') {
     return (
-      <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-        <p className="text-xs font-medium capitalize text-white">{field.label}</p>
-        <p className="mt-1 text-sm font-medium text-zinc-200">
+      <div className="rounded-lg border border-border bg-accent p-3">
+        <p className="text-xs font-medium capitalize text-foreground">{field.label}</p>
+        <p className="mt-1 text-sm font-medium text-foreground">
           {value != null ? String(value) : '—'}
         </p>
       </div>
@@ -33,8 +33,8 @@ export default function TemplateFieldRenderer({
     const checked = Boolean(value);
     return (
       <label
-        className={`flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 p-3 ${
-          readOnly ? '' : 'cursor-pointer hover:bg-white/[0.07]'
+        className={`flex items-center gap-3 rounded-lg border border-border bg-accent p-3 ${
+          readOnly ? '' : 'cursor-pointer hover:bg-accent/80'
         }`}
       >
         <input
@@ -42,9 +42,9 @@ export default function TemplateFieldRenderer({
           checked={checked}
           disabled={readOnly}
           onChange={(event) => onChange?.(event.target.checked)}
-          className="h-4 w-4 accent-emerald-500"
+          className="h-4 w-4 accent-primary"
         />
-        <span className="text-sm text-zinc-200">{field.label}</span>
+        <span className="text-sm text-foreground">{field.label}</span>
       </label>
     );
   }
@@ -58,9 +58,9 @@ export default function TemplateFieldRenderer({
     if (readOnly) {
       return (
         <div className="space-y-1">
-          <p className="text-xs font-medium capitalize text-white">{field.label}</p>
-          <div className="whitespace-pre-wrap break-words rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200">
-            {stringValue ? <LinkifiedText value={stringValue} /> : <span className="text-zinc-500">—</span>}
+          <p className="text-xs font-medium capitalize text-foreground">{field.label}</p>
+          <div className="whitespace-pre-wrap break-words rounded-md border border-border bg-accent px-3 py-2 text-sm text-foreground">
+            {stringValue ? <LinkifiedText value={stringValue} /> : <span className="text-muted-foreground">—</span>}
           </div>
         </div>
       );
@@ -68,12 +68,12 @@ export default function TemplateFieldRenderer({
 
     return (
       <div className="space-y-1">
-        <p className="text-xs font-medium capitalize text-white">{field.label}</p>
+        <p className="text-xs font-medium capitalize text-foreground">{field.label}</p>
         <Textarea
           value={stringValue}
           onChange={(event) => onChange?.(event.target.value)}
           rows={3}
-          className="border-white/10 bg-white/5 text-sm"
+          className="border-border bg-accent text-sm"
         />
       </div>
     );
@@ -82,14 +82,14 @@ export default function TemplateFieldRenderer({
   if (field.type === 'number') {
     return (
       <div className="space-y-1">
-        <p className="text-xs font-medium capitalize text-white">{field.label}</p>
+        <p className="text-xs font-medium capitalize text-foreground">{field.label}</p>
         <input
           type="number"
           value={typeof value === 'number' ? value : ''}
           readOnly={readOnly}
           disabled={readOnly}
           onChange={(event) => onChange?.(Number(event.target.value))}
-          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 focus:border-emerald-500/50 focus:outline-none"
+          className="w-full rounded-lg border border-border bg-accent px-3 py-2 text-sm text-foreground focus:border-ring/50 focus:outline-none"
         />
       </div>
     );
@@ -98,21 +98,21 @@ export default function TemplateFieldRenderer({
   if (field.type === 'enum' && Array.isArray(field.options)) {
     if (readOnly) {
       return (
-        <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-          <p className="text-xs font-medium capitalize text-white">{field.label}</p>
-          <p className="mt-1 text-sm font-medium text-zinc-200">{typeof value === 'string' ? value : '—'}</p>
+        <div className="rounded-lg border border-border bg-accent p-3">
+          <p className="text-xs font-medium capitalize text-foreground">{field.label}</p>
+          <p className="mt-1 text-sm font-medium text-foreground">{typeof value === 'string' ? value : '—'}</p>
         </div>
       );
     }
 
     return (
       <div className="space-y-1">
-        <p className="text-xs font-medium capitalize text-white">{field.label}</p>
+        <p className="text-xs font-medium capitalize text-foreground">{field.label}</p>
         <Select value={typeof value === 'string' ? value : ''} onValueChange={(nextValue) => onChange?.(nextValue)}>
-          <SelectTrigger className="border-white/10 bg-white/5 text-sm text-zinc-200">
+          <SelectTrigger className="border-border bg-accent text-sm text-foreground">
             <SelectValue placeholder="Select…" />
           </SelectTrigger>
-          <SelectContent className="border-white/10 bg-[#18181b] text-white">
+          <SelectContent className="border-border bg-card text-foreground">
             {field.options.map((option) => (
               <SelectItem key={option} value={option}>
                 {option}

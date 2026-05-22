@@ -309,13 +309,13 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
       exit={{ opacity: 0, y: -10 }}
       className="grid grid-cols-1 gap-4 px-1 lg:grid-cols-[280px_1fr]"
     >
-      <div className="rounded-md border border-white/10 bg-[#121214] p-4">
+      <div className="rounded-md border border-border bg-card p-4">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-medium capitalize text-white">Strategies</p>
+          <p className="text-sm font-medium capitalize text-foreground">Strategies</p>
           <Button
             onClick={handleCreate}
             disabled={saving}
-            className="h-9 border border-emerald-500/40 bg-emerald-500/10 px-3 text-emerald-500 hover:bg-emerald-500/20"
+            className="h-9 border border-primary/40 bg-primary/10 px-3 text-primary hover:bg-primary/20"
           >
             <Plus className="mr-1 h-4 w-4" />
             New Strategy
@@ -330,29 +330,29 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
               onClick={() => setSelectedId(strategy.id)}
               className={`flex items-center justify-between rounded-md border px-3 py-2 text-left transition-colors ${
                 strategy.id === selectedId
-                  ? 'border-white/10 bg-white/5'
-                  : 'border-white/5 bg-white/5 hover:bg-white/10'
+                  ? 'border-border bg-accent'
+                  : 'border-border bg-accent hover:bg-accent'
               }`}
             >
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-zinc-100">{strategy.name}</p>
-                <p className="truncate text-xs text-zinc-500">{strategy.description || '--'}</p>
+                <p className="truncate text-sm font-medium text-foreground">{strategy.name}</p>
+                <p className="truncate text-xs text-muted-foreground">{strategy.description || '--'}</p>
               </div>
-              <ChevronRight className="h-4 w-4 flex-shrink-0 text-zinc-500" />
+              <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
             </button>
           ))}
 
           {strategies.length === 0 && !loading ? (
-            <p className="px-1 py-4 text-center text-xs text-zinc-500">
+            <p className="px-1 py-4 text-center text-xs text-muted-foreground">
               Create your first strategy with the button above.
             </p>
           ) : null}
         </div>
       </div>
 
-      <div className="rounded-md border border-white/10 bg-[#121214] p-4">
+      <div className="rounded-md border border-border bg-card p-4">
         {!selected ? (
-          <div className="flex h-64 items-center justify-center text-sm text-zinc-500">
+          <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
             {loading ? 'Loading...' : 'Select a strategy on the left, or create a new one.'}
           </div>
         ) : (
@@ -363,17 +363,17 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
                   value={selected.name}
                   onChange={(event) => updateSelected({ name: event.target.value })}
                   placeholder="Strategy Name"
-                  className="h-9 flex-1 border-white/10 bg-white/5 text-base font-medium"
+                  className="h-9 flex-1 border-border bg-accent text-base font-medium"
                 />
                 <div className="flex w-44 shrink-0 items-center gap-2">
                   <Select
                     value={selected.tag}
                     onValueChange={(nextValue) => updateSelected({ tag: nextValue })}
                   >
-                    <SelectTrigger className="h-9 flex-1 border-white/10 bg-white/5 text-sm text-zinc-200">
+                    <SelectTrigger className="h-9 flex-1 border-border bg-accent text-sm text-foreground">
                       <SelectValue placeholder={globalTags.length === 0 ? 'No tags available' : 'Select a Tag'} />
                     </SelectTrigger>
-                    <SelectContent className="border-white/10 bg-[#18181b] text-white">
+                    <SelectContent className="border-border bg-card text-foreground">
                       {globalTags.map((tag) => (
                         <SelectItem key={tag} value={tag}>
                           {tag}
@@ -387,7 +387,7 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
                       onClick={() => updateSelected({ tag: '' })}
                       aria-label="Clear tag"
                       title="Clear tag"
-                      className="inline-flex h-9 w-8 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+                      className="inline-flex h-9 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-accent text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -396,7 +396,7 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
                 <Button
                   onClick={handleSave}
                   disabled={saving}
-                  className="h-9 border border-emerald-500/40 bg-emerald-500/10 px-3 text-emerald-500 hover:bg-emerald-500/20"
+                  className="h-9 border border-primary/40 bg-primary/10 px-3 text-primary hover:bg-primary/20"
                 >
                   <Save className="mr-1 h-4 w-4" />
                   Save
@@ -418,11 +418,11 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
                   value={selected.description}
                   onChange={(event) => updateSelected({ description: event.target.value })}
                   placeholder="One-line description"
-                  className="h-9 flex-1 border-white/10 bg-white/5 text-sm text-zinc-300"
+                  className="h-9 flex-1 border-border bg-accent text-sm text-muted-foreground"
                 />
                 <Button
                   onClick={() => setEditingTemplate((flag) => !flag)}
-                  className="h-9 border border-emerald-500/40 bg-emerald-500/10 px-3 text-emerald-500 hover:bg-emerald-500/20"
+                  className="h-9 border border-primary/40 bg-primary/10 px-3 text-primary hover:bg-primary/20"
                 >
                   <Pencil className="mr-1.5 h-4 w-4" />
                   Edit Template
@@ -431,23 +431,23 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
             </div>
 
             {editingTemplate ? (
-              <div className="space-y-3 rounded-md border border-white/10 bg-white/5 p-4">
+              <div className="space-y-3 rounded-md border border-border bg-accent p-4">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium capitalize text-white">Edit Template</p>
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-sm font-medium capitalize text-foreground">Edit Template</p>
+                  <p className="text-xs text-muted-foreground">
                     Sections apply to every strategy in your playbook.
                   </p>
                 </div>
                 {fields.map((field, index) => (
                   <div
                     key={field.id}
-                    className="flex items-center gap-2 rounded-md border border-white/10 bg-[#121214] p-2"
+                    className="flex items-center gap-2 rounded-md border border-border bg-card p-2"
                   >
                     <div className="flex flex-col gap-0.5">
                       <button
                         type="button"
                         onClick={() => moveField(index, -1)}
-                        className="rounded p-0.5 hover:bg-white/10"
+                        className="rounded p-0.5 hover:bg-accent"
                         aria-label="Move up"
                       >
                         <ChevronUp className="h-3 w-3" />
@@ -455,7 +455,7 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
                       <button
                         type="button"
                         onClick={() => moveField(index, 1)}
-                        className="rounded p-0.5 hover:bg-white/10"
+                        className="rounded p-0.5 hover:bg-accent"
                         aria-label="Move down"
                       >
                         <ChevronDown className="h-3 w-3" />
@@ -468,7 +468,7 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
                         copy[index] = { ...copy[index], label: event.target.value };
                         setFields(copy);
                       }}
-                      className="flex-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-200 focus:outline-none"
+                      className="flex-1 rounded border border-border bg-accent px-2 py-1 text-xs text-foreground focus:outline-none"
                     />
                     <button
                       type="button"
@@ -484,7 +484,7 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
                   <Button
                     size="sm"
                     onClick={addField}
-                    className="border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"
+                    className="border border-border bg-accent text-muted-foreground hover:bg-accent"
                   >
                     <Plus className="mr-1 h-3 w-3" />
                     Add Section
@@ -492,7 +492,7 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
                   <Button
                     size="sm"
                     onClick={saveTemplate}
-                    className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                    className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
                   >
                     Save Template
                   </Button>
@@ -500,7 +500,7 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
                     size="sm"
                     variant="outline"
                     onClick={handleResetTemplate}
-                    className="border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"
+                    className="border-border bg-accent text-muted-foreground hover:bg-accent"
                   >
                     Reset to Defaults
                   </Button>
@@ -510,34 +510,34 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
 
             {fields.map((field) => (
               <div key={field.id} className="space-y-1">
-                <p className="text-xs font-medium capitalize text-white">
+                <p className="text-xs font-medium capitalize text-foreground">
                   {field.label}
                 </p>
                 <Textarea
                   value={selected.sections[field.id] ?? ''}
                   onChange={(event) => updateSection(field.id, event.target.value)}
-                  className="min-h-[80px] border-white/10 bg-white/5 text-sm"
+                  className="min-h-[80px] border-border bg-accent text-sm"
                 />
               </div>
             ))}
 
-            <div className="rounded-md border border-white/5 bg-white/5 p-3">
+            <div className="rounded-md border border-border bg-accent p-3">
               <div className="flex items-baseline justify-between">
-                <p className="text-xs font-medium capitalize text-white">Recent Trades</p>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs font-medium capitalize text-foreground">Recent Trades</p>
+                <p className="text-xs text-muted-foreground">
                   {selected.tag ? `tag: ${selected.tag}` : 'set a tag above to populate'}
                 </p>
               </div>
 
               {selected.tag && stats.count > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-zinc-400">
+                <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
                   <span>{stats.count} trades</span>
                   <span>
-                    Win rate: <span className="font-mono text-zinc-200">{stats.winRate.toFixed(0)}%</span>
+                    Win rate: <span className="font-mono text-foreground">{stats.winRate.toFixed(0)}%</span>
                   </span>
                   <span>
                     Avg R:{' '}
-                    <span className="font-mono text-zinc-200">
+                    <span className="font-mono text-foreground">
                       {stats.avgR === null ? '--' : stats.avgR.toFixed(2)}
                     </span>
                   </span>
@@ -552,17 +552,17 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
 
               {selected.tag && lastTen.length > 0 ? (
                 <table className="mt-3 w-full text-left text-xs">
-                  <thead className="text-[10px] uppercase tracking-wider text-zinc-500">
-                    <tr className="border-b border-white/5">
+                  <thead className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <tr className="border-b border-border">
                       <th className="px-2 py-1.5">Date</th>
                       <th className="px-2 py-1.5">Symbol</th>
                       <th className="px-2 py-1.5">Dir</th>
                       <th className="px-2 py-1.5 text-right">P/L</th>
                     </tr>
                   </thead>
-                  <tbody className="text-zinc-300">
+                  <tbody className="text-muted-foreground">
                     {lastTen.map((trade) => (
-                      <tr key={trade.id} className="border-b border-white/5 last:border-b-0">
+                      <tr key={trade.id} className="border-b border-border last:border-b-0">
                         <td className="px-2 py-1.5 font-mono">{trade.sortKey}</td>
                         <td className="px-2 py-1.5 font-medium">{trade.symbol}</td>
                         <td className="px-2 py-1.5">{trade.direction}</td>
@@ -574,7 +574,7 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
                   </tbody>
                 </table>
               ) : selected.tag && stats.count === 0 ? (
-                <p className="mt-3 text-xs text-zinc-500">No trades found with this tag yet.</p>
+                <p className="mt-3 text-xs text-muted-foreground">No trades found with this tag yet.</p>
               ) : null}
             </div>
           </div>

@@ -188,15 +188,15 @@ export default function SampleSetRowsBuilder({
       ) : null}
 
       <section className="space-y-2">
-        <Label className="text-sm font-medium text-white">From CSV</Label>
+        <Label className="text-sm font-medium text-foreground">From CSV</Label>
         <Input
           type="file"
           accept=".csv,text/csv"
           onChange={(event) => void handleCsv(event)}
-          className="border-white/10 bg-white/5 text-zinc-100 file:mr-3 file:border-0 file:bg-transparent file:text-zinc-300"
+          className="border-border bg-accent text-foreground file:mr-3 file:border-0 file:bg-transparent file:text-muted-foreground"
         />
         {lastCsvImport ? (
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-muted-foreground">
             Added {lastCsvImport.added}
             {lastCsvImport.skipped > 0 ? `, skipped ${lastCsvImport.skipped}` : ''}.
           </p>
@@ -205,14 +205,14 @@ export default function SampleSetRowsBuilder({
       </section>
 
       <section className="space-y-2">
-        <Label className="text-sm font-medium text-white">From Tags</Label>
+        <Label className="text-sm font-medium text-foreground">From Tags</Label>
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
           <Popover open={tagPickerOpen} onOpenChange={setTagPickerOpen}>
             <PopoverTrigger asChild>
               <Button
                 type="button"
                 variant="ghost"
-                className="min-w-0 justify-start border border-white/10 bg-white/5 text-left text-zinc-200 hover:bg-white/10"
+                className="min-w-0 justify-start border border-border bg-accent text-left text-foreground hover:bg-accent"
               >
                 <span className="truncate">
                   {selectedTags.length > 0 ? selectedTags.join(', ') : 'Select tag(s)'}
@@ -220,7 +220,7 @@ export default function SampleSetRowsBuilder({
               </Button>
             </PopoverTrigger>
             <PopoverContent
-              className="w-64 border-white/10 bg-[#18181b] p-0 text-white"
+              className="w-64 border-border bg-card p-0 text-foreground"
               align="start"
               onWheel={(event) => {
                 // Parent Dialog uses react-remove-scroll, which preventDefaults
@@ -252,7 +252,7 @@ export default function SampleSetRowsBuilder({
                           }}
                         >
                           <span className="flex-1 truncate">{tag}</span>
-                          {selected ? <X className="h-3 w-3 text-emerald-400" /> : null}
+                          {selected ? <X className="h-3 w-3 text-primary" /> : null}
                         </CommandItem>
                       );
                     })}
@@ -265,13 +265,13 @@ export default function SampleSetRowsBuilder({
             type="button"
             disabled={selectedTags.length === 0 || tagFetching}
             onClick={() => void handleAddFromTags()}
-            className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-40"
+            className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40"
           >
             {tagFetching ? 'Loading' : 'Add to set'}
           </Button>
         </div>
         {lastTagImport ? (
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-muted-foreground">
             Added {lastTagImport.added}
             {lastTagImport.skipped > 0 ? `, skipped ${lastTagImport.skipped}` : ''}.
           </p>
@@ -280,24 +280,24 @@ export default function SampleSetRowsBuilder({
       </section>
 
       <section className="space-y-2">
-        <Label className="text-sm font-medium text-white">Manual Entry</Label>
+        <Label className="text-sm font-medium text-foreground">Manual Entry</Label>
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
           <Input
             value={manualTicker}
             onChange={(event) => setManualTicker(event.target.value.toUpperCase())}
             placeholder="AAPL"
-            className="border-white/10 bg-white/5 text-zinc-100"
+            className="border-border bg-accent text-foreground"
           />
           <Input
             type="date"
             value={manualDate}
             onChange={(event) => setManualDate(event.target.value)}
-            className="border-white/10 bg-white/5 text-zinc-100 [color-scheme:dark]"
+            className="border-border bg-accent text-foreground [color-scheme:dark]"
           />
           <Button
             type="button"
             onClick={handleManualAdd}
-            className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+            className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
           >
             <Plus className="h-3 w-3" />
             Add
@@ -306,23 +306,23 @@ export default function SampleSetRowsBuilder({
         {manualError ? <p className="text-xs text-rose-400">{manualError}</p> : null}
       </section>
 
-      <section className="space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-3">
+      <section className="space-y-2 rounded-md border border-border bg-accent/50 p-3">
         <div className="flex items-center justify-between gap-3">
-          <Label className="text-sm font-medium text-white">
+          <Label className="text-sm font-medium text-foreground">
             Staging ({stagedRows.length} row{stagedRows.length === 1 ? '' : 's'})
           </Label>
           {stagedRows.length > 0 ? (
             <button
               type="button"
               onClick={() => onChange([])}
-              className="text-[11px] text-zinc-500 hover:text-rose-400"
+              className="text-[11px] text-muted-foreground hover:text-rose-400"
             >
               Clear all
             </button>
           ) : null}
         </div>
         {stagedRows.length === 0 ? (
-          <p className="text-xs italic text-zinc-500">No rows staged yet.</p>
+          <p className="text-xs italic text-muted-foreground">No rows staged yet.</p>
         ) : (
           <ul className="max-h-60 space-y-1 overflow-y-auto pr-1">
             {sortedRows.map((row) => {
@@ -330,14 +330,14 @@ export default function SampleSetRowsBuilder({
               return (
                 <li
                   key={key}
-                  className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded border border-white/5 bg-[#121214] px-2 py-1 text-xs"
+                  className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded border border-border bg-card px-2 py-1 text-xs"
                 >
-                  <span className="truncate font-mono text-zinc-100">{row.ticker}</span>
-                  <span className="font-mono tabular-nums text-zinc-400">{row.date}</span>
+                  <span className="truncate font-mono text-foreground">{row.ticker}</span>
+                  <span className="font-mono tabular-nums text-muted-foreground">{row.date}</span>
                   <button
                     type="button"
                     onClick={() => removeRow(key)}
-                    className="rounded p-1 text-zinc-500 hover:bg-rose-500/10 hover:text-rose-400"
+                    className="rounded p-1 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-400"
                     aria-label={`Remove ${row.ticker} ${row.date}`}
                   >
                     <Trash2 className="h-3 w-3" />

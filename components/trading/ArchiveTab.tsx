@@ -167,10 +167,10 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
     >
       <div className="flex flex-wrap items-center gap-4">
         <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value as 'all' | ReviewType)}>
-          <SelectTrigger className="h-9 w-24 bg-black text-sm text-zinc-100" aria-label="Filter review type">
+          <SelectTrigger className="h-9 w-24 bg-black text-sm text-foreground" aria-label="Filter review type">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="border-white/10 bg-black text-white">
+          <SelectContent className="border-border bg-black text-foreground">
             <SelectItem value="all">All</SelectItem>
             <SelectItem value="daily">Daily</SelectItem>
             <SelectItem value="weekly">Weekly</SelectItem>
@@ -182,28 +182,28 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
             type="date"
             value={fromDate}
             onChange={(event) => setFromDate(event.target.value)}
-            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 [color-scheme:dark] focus:outline-none"
+            className="rounded-lg border border-border bg-accent px-3 py-1.5 text-sm text-foreground [color-scheme:dark] focus:outline-none"
           />
-          <span className="text-zinc-500">to</span>
+          <span className="text-muted-foreground">to</span>
           <input
             type="date"
             value={toDate}
             onChange={(event) => setToDate(event.target.value)}
-            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 [color-scheme:dark] focus:outline-none"
+            className="rounded-lg border border-border bg-accent px-3 py-1.5 text-sm text-foreground [color-scheme:dark] focus:outline-none"
           />
         </div>
       </div>
 
       {loading ? (
-        <div className="flex h-32 items-center justify-center text-sm text-zinc-500">Loading reviews…</div>
+        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">Loading reviews…</div>
       ) : filteredReviews.length === 0 ? (
-        <div className="rounded-2xl border border-white/10 bg-[#121214] p-10 text-center text-sm text-zinc-500">
+        <div className="rounded-2xl border border-border bg-card p-10 text-center text-sm text-muted-foreground">
           No reviews in this range.
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-white/10 bg-[#121214]">
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-white/10 text-xs tracking-wider text-white">
+            <thead className="border-b border-border text-xs tracking-wider text-foreground">
               <tr>
                 <th className="px-4 py-3">Date / Range</th>
                 <th className="px-4 py-3">Type</th>
@@ -234,24 +234,24 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
                 return (
                   <tr
                     key={review.id}
-                    className="cursor-pointer border-b border-white/5 transition-colors last:border-b-0 hover:bg-white/[0.03]"
+                    className="cursor-pointer border-b border-border transition-colors last:border-b-0 hover:bg-accent/80"
                     onClick={() => setOpenReview(review)}
                   >
-                    <td className="px-4 py-3 font-mono text-zinc-200">{review.dateLabel}</td>
+                    <td className="px-4 py-3 font-mono text-foreground">{review.dateLabel}</td>
                     <td className="px-4 py-3">
                       <span
                         className={`rounded-sm px-2 py-0.5 text-xs font-bold capitalize ${
                           review.type === 'daily'
                             ? 'bg-emerald-500/15 text-emerald-400'
-                            : 'bg-white/10 text-white'
+                            : 'bg-accent text-foreground'
                         }`}
                       >
                         {review.type}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-zinc-300">{grade ?? '—'}</td>
-                    <td className="px-4 py-3 text-zinc-300">{rResult}</td>
-                    <td className="px-4 py-3 text-zinc-300">{net}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{grade ?? '—'}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{rResult}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{net}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
@@ -261,7 +261,7 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
                           }}
                           aria-label={`Export ${review.type} review as PDF`}
                           title="Export as PDF"
-                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 transition-colors hover:bg-emerald-500/20"
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-primary/40 bg-primary/10 text-primary transition-colors hover:bg-primary/20"
                         >
                           <Download className="h-4 w-4" />
                         </button>

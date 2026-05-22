@@ -16,13 +16,13 @@ export default function ResearchSection({ ticker }: Props) {
   return (
     <div className="space-y-4 p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h4 className="text-lg font-semibold text-zinc-200">Research Report</h4>
+        <h4 className="text-lg font-semibold text-foreground">Research Report</h4>
         <button
           type="button"
           onClick={() => setReportExpanded(true)}
           aria-label="Expand research report"
           title="Expand"
-          className="rounded p-1 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <Maximize2 className="h-4 w-4" />
         </button>

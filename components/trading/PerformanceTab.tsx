@@ -95,7 +95,7 @@ export default function PerformanceTab({
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className="text-xs font-mono uppercase tracking-wider text-zinc-500">Tag Filter</span>
+          <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Tag Filter</span>
           <TagFilterDropdown
             globalTags={globalTags}
             selectedTags={selectedTagFilters}
@@ -111,34 +111,34 @@ export default function PerformanceTab({
           />
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-accent p-1">
             <button
               type="button"
               onClick={() => setPnlMode('net')}
-              className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'net' ? 'bg-zinc-700/60 text-white' : 'text-zinc-500 hover:text-white'}`}
+              className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'net' ? 'bg-card/60 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
             >
               Net
             </button>
             <button
               type="button"
               onClick={() => setPnlMode('gross')}
-              className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'gross' ? 'bg-zinc-700/60 text-white' : 'text-zinc-500 hover:text-white'}`}
+              className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'gross' ? 'bg-card/60 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
             >
               Gross
             </button>
           </div>
-          <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-accent p-1">
             <button
               type="button"
               onClick={() => onMetricChange('$')}
-              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === '$' ? 'bg-zinc-700/60 text-white' : 'text-zinc-500 hover:text-white'}`}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === '$' ? 'bg-card/60 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
             >
               $
             </button>
             <button
               type="button"
               onClick={() => onMetricChange('R')}
-              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === 'R' ? 'bg-zinc-700/60 text-white' : 'text-zinc-500 hover:text-white'}`}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === 'R' ? 'bg-card/60 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
             >
               R
             </button>
@@ -147,8 +147,8 @@ export default function PerformanceTab({
       </div>
 
       <div className="mt-2 grid grid-cols-1 gap-6 md:grid-cols-3">
-        <div className="rounded-xl border border-white/10 bg-[#121214] p-6">
-          <div className="mb-2 text-xs font-mono uppercase tracking-wider text-zinc-500">
+        <div className="rounded-xl border border-border bg-card p-6">
+          <div className="mb-2 text-xs font-mono uppercase tracking-wider text-muted-foreground">
             Total {pnlMode === 'net' ? 'Net' : 'Gross'} {performanceMetric === 'R' ? 'R' : 'P/L'}
           </div>
           <div
@@ -159,12 +159,12 @@ export default function PerformanceTab({
             {performanceMetric === 'R' ? formatR(stats.totalR) : fmtCurrency(stats.totalPnl)}
           </div>
         </div>
-        <div className="rounded-xl border border-white/10 bg-[#121214] p-6">
-          <div className="mb-2 text-xs font-mono uppercase tracking-wider text-zinc-500">Win Rate</div>
+        <div className="rounded-xl border border-border bg-card p-6">
+          <div className="mb-2 text-xs font-mono uppercase tracking-wider text-muted-foreground">Win Rate</div>
           <div className="text-3xl font-bold tracking-tight tabular-nums">{stats.winRate.toFixed(1)}%</div>
         </div>
-        <div className="rounded-xl border border-white/10 bg-[#121214] p-6">
-          <div className="mb-2 text-xs font-mono uppercase tracking-wider text-zinc-500">Profit Factor</div>
+        <div className="rounded-xl border border-border bg-card p-6">
+          <div className="mb-2 text-xs font-mono uppercase tracking-wider text-muted-foreground">Profit Factor</div>
           <div className="text-3xl font-bold tracking-tight tabular-nums">
             {Number.isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : '∞'}
           </div>
@@ -172,20 +172,20 @@ export default function PerformanceTab({
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl border border-white/10 bg-[#121214] p-5">
-          <p className="text-xs font-mono uppercase tracking-wider text-zinc-500">Average MFE</p>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Average MFE</p>
           <p className="mt-2 text-xl font-semibold tabular-nums">{fmtCurrency(stats.averageMfe)}</p>
         </div>
-        <div className="rounded-xl border border-white/10 bg-[#121214] p-5">
-          <p className="text-xs font-mono uppercase tracking-wider text-zinc-500">Average MAE</p>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Average MAE</p>
           <p className="mt-2 text-xl font-semibold tabular-nums">{fmtCurrency(stats.averageMae)}</p>
         </div>
-        <div className="rounded-xl border border-white/10 bg-[#121214] p-5">
-          <p className="text-xs font-mono uppercase tracking-wider text-zinc-500">Average Exit Efficiency</p>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Average Exit Efficiency</p>
           <p className="mt-2 text-xl font-semibold tabular-nums">{fmtPct(stats.averageExitEfficiency)}</p>
         </div>
-        <div className="rounded-xl border border-white/10 bg-[#121214] p-5">
-          <p className="text-xs font-mono uppercase tracking-wider text-zinc-500">Largest Win / Loss</p>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Largest Win / Loss</p>
           <div className="mt-2 space-y-1 text-sm">
             <p className="text-emerald-500">
               {stats.largestWin ? `${stats.largestWin.symbol} ${fmtCurrency(stats.largestWin.value)}` : '-'}

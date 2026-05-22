@@ -70,13 +70,13 @@ export default function TradesTab({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-4">
               <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Search symbol..."
                 value={searchQuery}
                 onChange={(event) => onSearchQueryChange(event.target.value)}
-                className="w-64 rounded-lg border border-white/10 bg-white/5 py-1.5 pl-10 pr-4 text-sm transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+                className="w-64 rounded-lg border border-border bg-accent py-1.5 pl-10 pr-4 text-sm transition-colors focus:border-ring/50 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-card"
               />
             </div>
           </div>
@@ -89,9 +89,9 @@ export default function TradesTab({
               placeholder="Add risk ($) to selected"
               value={riskInput}
               onChange={(e) => onRiskInputChange(e.target.value)}
-              className="w-full md:w-48 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+              className="w-full md:w-48 rounded-lg border border-border bg-accent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-card"
             />
-            <Button onClick={onApplyRisk} className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">
+            <Button onClick={onApplyRisk} className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20">
               Apply Risk
             </Button>
           </div>
@@ -101,16 +101,16 @@ export default function TradesTab({
               placeholder="Set automatic risk ($)"
               value={defaultRiskInput}
               onChange={(event) => onDefaultRiskInputChange(event.target.value)}
-              className="w-full md:w-48 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+              className="w-full md:w-48 rounded-lg border border-border bg-accent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-card"
             />
-            <Button onClick={onSetDefaultRisk} className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">
+            <Button onClick={onSetDefaultRisk} className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20">
               Set Auto Risk
             </Button>
           </div>
         </div>
 
         <div className="space-y-4">
-          <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-500">Tag Filters</h3>
+          <h3 className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Tag Filters</h3>
           <div className="flex flex-wrap items-center gap-3">
             <TagFilterDropdown
               globalTags={globalTags}
@@ -124,9 +124,9 @@ export default function TradesTab({
                 placeholder="Add tag to selected"
                 value={bulkTagInput}
                 onChange={(e) => onBulkTagInputChange(e.target.value)}
-                className="w-full md:w-48 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]"
+                className="w-full md:w-48 rounded-lg border border-border bg-accent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-card"
               />
-              <Button onClick={onBulkAddTag} className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">
+              <Button onClick={onBulkAddTag} className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20">
                 Add Tag
               </Button>
             </div>

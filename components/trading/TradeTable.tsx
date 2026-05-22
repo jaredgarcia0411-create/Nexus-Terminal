@@ -55,7 +55,7 @@ export default function TradeTable({
     <>
       <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
         {onPositionFilterChange ? (
-          <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-0.5">
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-accent p-0.5">
             {(['all', 'open', 'closed'] as const).map((filter) => (
               <button
                 key={filter}
@@ -63,8 +63,8 @@ export default function TradeTable({
                 onClick={() => onPositionFilterChange(filter)}
                 className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
                   positionFilter === filter
-                    ? 'bg-white/10 text-white'
-                    : 'text-zinc-500 hover:text-zinc-300'
+                    ? 'bg-accent text-foreground'
+                    : 'text-muted-foreground hover:text-muted-foreground'
                 }`}
               >
                 {filter.charAt(0).toUpperCase() + filter.slice(1)}
@@ -76,21 +76,21 @@ export default function TradeTable({
           <button
             type="button"
             onClick={() => onMergeTrades?.(Array.from(selectedIds))}
-            className="px-3 py-1 rounded-md border border-white/10 bg-white/5 text-xs text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
+            className="px-3 py-1 rounded-md border border-border bg-accent text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
           >
             Merge {selectedIds.size} trades
           </button>
         ) : null}
       </div>
-      <div className={`overflow-x-auto rounded border border-white/5 bg-[#121214] ${shouldScroll ? 'max-h-[46rem] overflow-y-auto' : ''}`}>
+      <div className={`overflow-x-auto rounded border border-border bg-card ${shouldScroll ? 'max-h-[46rem] overflow-y-auto' : ''}`}>
       <table className="w-full tabular-nums text-left text-sm">
-        <thead className="border-b border-white/5 bg-white/5 text-zinc-500 font-medium">
+        <thead className="border-b border-border bg-accent text-muted-foreground font-medium">
           <tr>
             {!readOnly && !hideSelection ? (
               <th className="px-4 py-3 w-10">
                 <input
                   type="checkbox"
-                  className="rounded border-white/10 bg-white/5 text-emerald-500 focus:ring-emerald-500/20"
+                  className="rounded border-border bg-accent text-primary focus:ring-ring"
                   checked={allSelected}
                   onChange={() => onSelectAll(tableTradeIds)}
                 />
@@ -109,7 +109,7 @@ export default function TradeTable({
           </tr>
         </thead>
 
-        <tbody className="divide-y divide-white/5">
+        <tbody className="divide-y divide-border">
           {trades.map((trade) => {
             const availableTags = globalTags.filter((tag) => !(trade.tags ?? []).includes(tag));
             const pnlValue = pnlMode === 'gross' ? trade.grossPnl : trade.netPnl;
@@ -117,8 +117,8 @@ export default function TradeTable({
             return (
               <tr
                 key={trade.id}
-                className={`transition-colors group ${onTradeClick && !readOnly ? 'hover:bg-white/5 cursor-pointer' : ''} ${
-                  !readOnly && selectedIds.has(trade.id) ? 'bg-emerald-500/5' : ''
+                className={`transition-colors group ${onTradeClick && !readOnly ? 'hover:bg-accent cursor-pointer' : ''} ${
+                  !readOnly && selectedIds.has(trade.id) ? 'bg-primary/5' : ''
                 }`}
                 onClick={() => {
                   if (!readOnly) onTradeClick?.(trade);
@@ -128,14 +128,14 @@ export default function TradeTable({
                   <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
                     <input
                       type="checkbox"
-                      className="rounded border-white/10 bg-white/5 text-emerald-500 focus:ring-emerald-500/20"
+                      className="rounded border-border bg-accent text-primary focus:ring-ring"
                       checked={selectedIds.has(trade.id)}
                       onChange={() => onToggleSelect(trade.id)}
                     />
                   </td>
                 ) : null}
 
-                <td className="px-4 py-3 text-zinc-400 font-mono whitespace-nowrap">{format(new Date(trade.date), 'MMM dd, yyyy')}</td>
+                <td className="px-4 py-3 text-muted-foreground font-mono whitespace-nowrap">{format(new Date(trade.date), 'MMM dd, yyyy')}</td>
                 <td className="px-4 py-3 font-medium">
                   <span>{trade.symbol}</span>
                   {trade.isOpen ? (
@@ -157,7 +157,7 @@ export default function TradeTable({
                 <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
                   <div className="flex flex-wrap gap-1 items-center max-w-[220px]">
                     {(trade.tags ?? []).map((tag) => (
-                      <span key={tag} className="flex items-center gap-1 px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-zinc-400 group/tag">
+                      <span key={tag} className="flex items-center gap-1 px-1.5 py-0.5 bg-accent border border-border rounded text-[10px] text-muted-foreground group/tag">
                         {tag}
                         {!readOnly ? (
                           <button
@@ -173,11 +173,11 @@ export default function TradeTable({
                     {!readOnly ? (
                       <Popover open={tagPopoverTradeId === trade.id} onOpenChange={(open) => setTagPopoverTradeId(open ? trade.id : null)}>
                         <PopoverTrigger asChild>
-                          <button className="p-1 hover:bg-white/10 rounded text-zinc-500 hover:text-emerald-500 transition-colors" title="Add Tag">
+                          <button className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-primary transition-colors" title="Add Tag">
                             <Plus className="w-3 h-3" />
                           </button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-56 p-0 bg-[#18181b] border-white/10 text-white" align="start">
+                        <PopoverContent className="w-56 p-0 bg-card border-border text-foreground" align="start">
                           <Command className="bg-transparent">
                             <CommandInput
                               placeholder="Search or create tag..."
@@ -211,7 +211,7 @@ export default function TradeTable({
                                           event.stopPropagation();
                                           onDeleteGlobalTag(tag);
                                         }}
-                                        className="text-zinc-500 hover:text-rose-500"
+                                        className="text-muted-foreground hover:text-rose-500"
                                       >
                                         <X className="w-3 h-3" />
                                       </button>
@@ -227,15 +227,15 @@ export default function TradeTable({
                   </div>
                 </td>
 
-                <td className="px-4 py-3 max-w-[220px] text-xs text-zinc-400 line-clamp-2">{trade.notes?.trim() || '-'}</td>
+                <td className="px-4 py-3 max-w-[220px] text-xs text-muted-foreground line-clamp-2">{trade.notes?.trim() || '-'}</td>
                 <td className="px-4 py-3 text-right font-mono">{formatCurrency(trade.avgEntryPrice)}</td>
                 <td className="px-4 py-3 text-right font-mono">{formatCurrency(trade.avgExitPrice)}</td>
-                <td className="px-4 py-3 text-right font-mono text-zinc-400">{trade.totalQuantity}</td>
-                <td className="px-4 py-3 text-right font-mono text-zinc-500">{trade.initialRisk ? formatCurrency(trade.initialRisk) : '-'}</td>
-                <td className={`px-4 py-3 text-right font-mono font-medium ${trade.isOpen ? 'text-zinc-500' : getPnLColor(pnlValue)}`}>
+                <td className="px-4 py-3 text-right font-mono text-muted-foreground">{trade.totalQuantity}</td>
+                <td className="px-4 py-3 text-right font-mono text-muted-foreground">{trade.initialRisk ? formatCurrency(trade.initialRisk) : '-'}</td>
+                <td className={`px-4 py-3 text-right font-mono font-medium ${trade.isOpen ? 'text-muted-foreground' : getPnLColor(pnlValue)}`}>
                   <div className="flex flex-col items-end">
                     {trade.isOpen ? (
-                      <span className="text-zinc-500">-</span>
+                      <span className="text-muted-foreground">-</span>
                     ) : (
                       <>
                         <span>{formatCurrency(pnlValue)}</span>
@@ -250,7 +250,7 @@ export default function TradeTable({
 
           {trades.length === 0 ? (
             <tr>
-              <td colSpan={(readOnly || hideSelection) ? 10 : 11} className="px-4 py-12 text-center text-zinc-500 italic">
+              <td colSpan={(readOnly || hideSelection) ? 10 : 11} className="px-4 py-12 text-center text-muted-foreground italic">
                 No trades found.
               </td>
             </tr>

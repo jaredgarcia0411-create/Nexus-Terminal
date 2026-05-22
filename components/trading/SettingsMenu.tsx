@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
+import { useTheme } from 'next-themes';
 import type { Trade } from '@/lib/types';
-import { Settings } from 'lucide-react';
+import { Moon, Settings, Sun } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -16,6 +17,8 @@ interface SettingsMenuProps {
 
 export default function SettingsMenu({ trades, onClearAllData, collapsed }: SettingsMenuProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const { theme, setTheme } = useTheme();
+  const isDark = theme === 'dark';
 
   const csvPayload = useMemo(() => {
     const header = [
@@ -76,14 +79,22 @@ export default function SettingsMenu({ trades, onClearAllData, collapsed }: Sett
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button 
-            className={`rounded-lg transition-colors hover:text-white text-zinc-500 ${collapsed ? 'flex items-center justify-center px-2 py-2' : 'p-2'}`}
+            className={`rounded-lg text-muted-foreground transition-colors hover:text-foreground ${collapsed ? 'flex items-center justify-center px-2 py-2' : 'p-2'}`}
             title="Settings" 
             aria-label="Settings"
           >
             <Settings className="w-5 h-5" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align={collapsed ? 'start' : 'start'} side={collapsed ? 'right' : 'bottom'} className="w-52 bg-[#121214] border-white/10 text-white">
+        <DropdownMenuContent align={collapsed ? 'start' : 'start'} side={collapsed ? 'right' : 'bottom'} className="w-52 border-border bg-popover text-popover-foreground">
+          <DropdownMenuItem
+            onClick={(e) => { e.preventDefault(); setTheme(isDark ? 'light' : 'dark'); }}
+            className="cursor-pointer"
+          >
+            {isDark ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
+            {isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator className="bg-border" />
           <DropdownMenuItem
             onClick={() =>
               download(
@@ -108,7 +119,7 @@ export default function SettingsMenu({ trades, onClearAllData, collapsed }: Sett
         >
           Export Trades (CSV)
         </DropdownMenuItem>
-        <DropdownMenuSeparator className="bg-white/10" />
+        <DropdownMenuSeparator className="bg-border" />
         <DropdownMenuItem onClick={() => setConfirmOpen(true)} className="cursor-pointer text-rose-400">
           Clear All Data
         </DropdownMenuItem>
@@ -116,13 +127,13 @@ export default function SettingsMenu({ trades, onClearAllData, collapsed }: Sett
       </DropdownMenu>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="bg-[#121214] border-white/10 text-white">
+        <DialogContent className="border-border bg-popover text-popover-foreground">
           <DialogHeader>
             <DialogTitle>Clear all data?</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-zinc-400">This deletes all trades and tags. This action cannot be undone.</p>
+          <p className="text-sm text-muted-foreground">This deletes all trades and tags. This action cannot be undone.</p>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setConfirmOpen(false)} className="bg-white/10 hover:bg-white/20">
+            <Button variant="secondary" onClick={() => setConfirmOpen(false)} className="bg-secondary hover:bg-secondary/80">
               Cancel
             </Button>
             <Button
@@ -130,7 +141,7 @@ export default function SettingsMenu({ trades, onClearAllData, collapsed }: Sett
                 onClearAllData();
                 setConfirmOpen(false);
               }}
-              className="bg-rose-500 hover:bg-rose-400 text-white"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Clear Data
             </Button>

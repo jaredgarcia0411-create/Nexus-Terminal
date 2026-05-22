@@ -156,21 +156,21 @@ export default function CareerPnlTab() {
       className="flex flex-col gap-4 px-1"
     >
       {/* Header tile: total cumulative */}
-      <div className="rounded-2xl border border-white/10 bg-[#121214] p-4">
+      <div className="rounded-2xl border border-border bg-card p-4">
         <div className="flex items-baseline justify-between">
           <div>
-            <p className="text-xs uppercase tracking-wider text-zinc-500">Career P/L</p>
-            <p className={`mt-1 text-3xl font-semibold ${totalCumulative > 0 ? 'text-emerald-400' : totalCumulative < 0 ? 'text-rose-400' : 'text-zinc-200'}`}>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">Career P/L</p>
+            <p className={`mt-1 text-3xl font-semibold ${totalCumulative > 0 ? 'text-emerald-400' : totalCumulative < 0 ? 'text-rose-400' : 'text-foreground'}`}>
               {formatCurrency(totalCumulative)}
             </p>
           </div>
-          <p className="text-xs text-zinc-500">{entries.length} {entries.length === 1 ? 'month logged' : 'months logged'}</p>
+          <p className="text-xs text-muted-foreground">{entries.length} {entries.length === 1 ? 'month logged' : 'months logged'}</p>
         </div>
 
         {/* Equity curve. height fixed so it doesn't get squashed inside the parent grid. */}
         <div className="mt-4 h-64 w-full">
           {chartData.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               {loading ? 'Loading…' : 'Add your first month below to see the curve.'}
             </div>
           ) : (
@@ -211,43 +211,43 @@ export default function CareerPnlTab() {
       </div>
 
       {/* Add row */}
-      <div className="rounded-2xl border border-white/10 bg-[#121214] p-4">
-        <p className="text-sm font-medium text-white">Add Month</p>
+      <div className="rounded-2xl border border-border bg-card p-4">
+        <p className="text-sm font-medium text-foreground">Add Month</p>
         <div className="mt-3 grid grid-cols-[160px_minmax(120px,180px)_1fr_auto] gap-3">
           <div>
-            <p className="mb-1 text-[11px] uppercase tracking-wider text-zinc-500">Month</p>
+            <p className="mb-1 text-[11px] uppercase tracking-wider text-muted-foreground">Month</p>
             <input
               type="month"
               value={draftMonth.slice(0, 7)}
               onChange={(event) => setDraftMonth(`${event.target.value}-01`)}
-              className="h-9 w-full rounded-md border border-white/10 bg-white/5 px-2 text-sm text-zinc-100 [color-scheme:dark]"
+              className="h-9 w-full rounded-md border border-border bg-accent px-2 text-sm text-foreground [color-scheme:dark]"
             />
           </div>
           <div>
-            <p className="mb-1 text-[11px] uppercase tracking-wider text-zinc-500">Amount</p>
+            <p className="mb-1 text-[11px] uppercase tracking-wider text-muted-foreground">Amount</p>
             <Input
               type="number"
               step="0.01"
               value={draftAmount}
               onChange={(event) => setDraftAmount(event.target.value)}
               placeholder="e.g. 1500 or -250.50"
-              className="h-9 border-white/10 bg-white/5 text-sm"
+              className="h-9 border-border bg-accent text-sm"
             />
           </div>
           <div>
-            <p className="mb-1 text-[11px] uppercase tracking-wider text-zinc-500">Notes (optional)</p>
+            <p className="mb-1 text-[11px] uppercase tracking-wider text-muted-foreground">Notes (optional)</p>
             <Input
               value={draftNotes}
               onChange={(event) => setDraftNotes(event.target.value)}
               placeholder="What's included this month?"
-              className="h-9 border-white/10 bg-white/5 text-sm"
+              className="h-9 border-border bg-accent text-sm"
             />
           </div>
           <div className="flex items-end">
             <Button
               onClick={handleAdd}
               disabled={saving}
-              className="h-9 border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+              className="h-9 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
             >
               <Plus className="h-4 w-4" />
               Save
@@ -257,12 +257,12 @@ export default function CareerPnlTab() {
       </div>
 
       {/* Table of months */}
-      <div className="rounded-2xl border border-white/10 bg-[#121214] p-4">
-        <p className="text-sm font-medium text-white">All Months</p>
+      <div className="rounded-2xl border border-border bg-card p-4">
+        <p className="text-sm font-medium text-foreground">All Months</p>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="text-[11px] uppercase tracking-wider text-zinc-500">
-              <tr className="border-b border-white/5">
+            <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
+              <tr className="border-b border-border">
                 <th className="px-3 py-2">Month</th>
                 <th className="px-3 py-2 text-right">Amount</th>
                 <th className="px-3 py-2">Result</th>
@@ -270,9 +270,9 @@ export default function CareerPnlTab() {
                 <th className="px-3 py-2 text-right" aria-label="Actions" />
               </tr>
             </thead>
-            <tbody className="text-zinc-200">
+            <tbody className="text-foreground">
               {sortDesc(entries).map((entry) => (
-                <tr key={entry.id} className="border-b border-white/5 last:border-b-0">
+                <tr key={entry.id} className="border-b border-border last:border-b-0">
                   <td className="px-3 py-2 font-medium">{format(parseISO(entry.month), 'MMMM yyyy')}</td>
                   <td className={`px-3 py-2 text-right font-mono ${entry.amount >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {formatCurrency(entry.amount)}
@@ -288,12 +288,12 @@ export default function CareerPnlTab() {
                       {entry.amount >= 0 ? 'Green' : 'Red'}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-zinc-400">{entry.notes ?? ''}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{entry.notes ?? ''}</td>
                   <td className="px-3 py-2 text-right">
                     <button
                       type="button"
                       onClick={() => handleDelete(entry.id)}
-                      className="rounded p-1 text-zinc-500 transition-colors hover:bg-rose-500/10 hover:text-rose-400"
+                      className="rounded p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400"
                       aria-label="Delete month"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -303,7 +303,7 @@ export default function CareerPnlTab() {
               ))}
               {entries.length === 0 && !loading ? (
                 <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-zinc-500">
+                  <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
                     No months logged yet.
                   </td>
                 </tr>

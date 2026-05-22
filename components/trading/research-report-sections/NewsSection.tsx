@@ -34,7 +34,7 @@ function NewsArticle({
       <button
         type="button"
         onClick={onToggle}
-        className="w-full cursor-pointer text-left text-sm font-bold text-zinc-200"
+        className="w-full cursor-pointer text-left text-sm font-bold text-foreground"
       >
         {item.title}
       </button>
@@ -49,10 +49,10 @@ function NewsArticle({
             className="mt-2 space-y-2"
           >
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-zinc-200">{sourceLabel}</span>
-              <span className="text-zinc-500">{formatDate(item.filedAt)}</span>
+              <span className="text-sm font-medium text-foreground">{sourceLabel}</span>
+              <span className="text-muted-foreground">{formatDate(item.filedAt)}</span>
             </div>
-            <p className="rounded border border-white/10 bg-black p-2 text-sm text-zinc-300">{item.summary || '--'}</p>
+            <p className="rounded border border-border bg-black p-2 text-sm text-muted-foreground">{item.summary || '--'}</p>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -64,7 +64,7 @@ export default function NewsSection({ news }: Props) {
   const [openNewsIndex, setOpenNewsIndex] = useState<number | null>(null);
 
   return (
-    <div className="divide-y divide-white/5 p-3">
+    <div className="divide-y divide-border p-3">
       {news.map((item, index) => (
         <NewsArticle
           key={`news-filing-${index}`}

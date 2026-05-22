@@ -89,7 +89,7 @@ export default function ResearchTickerView({ ticker }: Props) {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         Loading {ticker} data...
       </div>
     );
@@ -100,7 +100,7 @@ export default function ResearchTickerView({ ticker }: Props) {
   }
 
   if (statusMessage) {
-    return <div className="flex h-full items-center justify-center text-sm text-zinc-500">{statusMessage}</div>;
+    return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{statusMessage}</div>;
   }
 
   if (!data) return null;
@@ -120,12 +120,12 @@ export default function ResearchTickerView({ ticker }: Props) {
       </div>
 
       {/* Top row: company info panel on the left, chart only where it supports the tab. Pinned. */}
-      <div className={`flex shrink-0 border-b border-white/10 ${hasChart ? 'h-[380px]' : ''}`}>
-        <div className="scrollbar-hidden w-[320px] shrink-0 overflow-y-auto border-r border-white/10 bg-[#0f0f11]">
+      <div className={`flex shrink-0 border-b border-border ${hasChart ? 'h-[380px]' : ''}`}>
+        <div className="scrollbar-hidden w-[320px] shrink-0 overflow-y-auto border-r border-border bg-card">
           <ResearchCompanyHeader ticker={ticker} companyName={data.companyName ?? null} header={data.header} compact={!hasChart} />
         </div>
         {hasChart ? (
-          <div className="min-h-0 flex-1 bg-[#0A0A0B]">
+          <div className="min-h-0 flex-1 bg-background">
             <ResearchChart
               ticker={ticker}
               historicalDate={historicalDate}
@@ -204,8 +204,8 @@ function AddToWatchlistButton({ ticker }: { ticker: string }) {
       title={!reportId ? 'Research report is still loading' : "Add to today's watchlist"}
       className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
         disabled
-          ? 'cursor-not-allowed border-white/10 bg-white/5 text-zinc-500'
-          : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20'
+          ? 'cursor-not-allowed border-border bg-accent text-muted-foreground'
+          : 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/20'
       }`}
     >
       <Plus className="h-3.5 w-3.5" />

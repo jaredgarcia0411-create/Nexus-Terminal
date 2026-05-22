@@ -33,19 +33,19 @@ export default function TagFilterDropdown({ globalTags, selectedTags, onToggleTa
           type="button"
           className={
             triggerClassName ??
-            'flex h-8 w-56 items-center justify-between rounded-md border border-white/10 bg-white/5 px-3 text-xs text-zinc-200 transition-colors hover:bg-white/10'
+            'flex h-8 w-56 items-center justify-between rounded-md border border-border bg-accent px-3 text-xs text-foreground transition-colors hover:bg-accent'
           }
         >
           <span className="truncate">{triggerLabel}</span>
-          <span className="ml-2 flex items-center gap-1 text-zinc-400">
-            {selectedCount > 2 ? <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400">{selectedCount}</span> : null}
+          <span className="ml-2 flex items-center gap-1 text-muted-foreground">
+            {selectedCount > 2 ? <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">{selectedCount}</span> : null}
             <ChevronDown className="h-3.5 w-3.5" />
           </span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56 border-white/10 bg-[#18181b] text-white" align="start">
-        <DropdownMenuLabel className="text-xs font-mono uppercase tracking-wider text-zinc-500">Select tags</DropdownMenuLabel>
-        <DropdownMenuSeparator className="bg-white/10" />
+      <DropdownMenuContent className="w-56 border-border bg-card text-foreground" align="start">
+        <DropdownMenuLabel className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Select tags</DropdownMenuLabel>
+        <DropdownMenuSeparator className="bg-accent" />
 
         {selectedCount > 0 ? (
           <>
@@ -54,11 +54,11 @@ export default function TagFilterDropdown({ globalTags, selectedTags, onToggleTa
                 event.preventDefault();
                 onClearTags();
               }}
-              className="text-xs text-zinc-300"
+              className="text-xs text-muted-foreground"
             >
               Clear tag filters
             </DropdownMenuItem>
-            <DropdownMenuSeparator className="bg-white/10" />
+            <DropdownMenuSeparator className="bg-accent" />
           </>
         ) : null}
 
@@ -68,13 +68,13 @@ export default function TagFilterDropdown({ globalTags, selectedTags, onToggleTa
             checked={selectedTags.has(tag)}
             onCheckedChange={() => onToggleTag(tag)}
             onSelect={(event) => event.preventDefault()}
-            className="text-xs data-[state=checked]:text-emerald-400"
+            className="text-xs data-[state=checked]:text-primary"
           >
             {tag}
           </DropdownMenuCheckboxItem>
         ))}
 
-        {globalTags.length === 0 ? <DropdownMenuItem disabled className="text-xs italic text-zinc-500">No tags created yet.</DropdownMenuItem> : null}
+        {globalTags.length === 0 ? <DropdownMenuItem disabled className="text-xs italic text-muted-foreground">No tags created yet.</DropdownMenuItem> : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -26,19 +26,19 @@ export default function DashboardTab({ onNavigateToResearch }: DashboardTabProps
       className="space-y-6"
     >
       <div>
-        <h4 className="mb-2 text-lg font-semibold text-zinc-200">Scanners</h4>
+        <h4 className="mb-2 text-lg font-semibold text-foreground">Scanners</h4>
         <DashboardScannerTable onNavigateToResearch={onNavigateToResearch} />
       </div>
 
       <div>
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h4 className="text-lg font-semibold text-zinc-200">Macro Summary</h4>
+          <h4 className="text-lg font-semibold text-foreground">Macro Summary</h4>
           <button
             type="button"
             onClick={() => setMacroExpanded(true)}
             aria-label="Expand macro summary"
             title="Expand"
-            className="rounded p-1 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <Maximize2 className="h-4 w-4" />
           </button>
@@ -57,13 +57,13 @@ export default function DashboardTab({ onNavigateToResearch }: DashboardTabProps
 
       <div>
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h4 className="text-lg font-semibold text-zinc-200">Market Strength</h4>
+          <h4 className="text-lg font-semibold text-foreground">Market Strength</h4>
           <button
             type="button"
             onClick={() => setMarketPulseExpanded(true)}
             aria-label="Expand market strength"
             title="Expand"
-            className="rounded p-1 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <Maximize2 className="h-4 w-4" />
           </button>

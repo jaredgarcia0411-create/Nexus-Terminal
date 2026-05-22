@@ -233,12 +233,12 @@ export default function WatchlistEditor({
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white">{title}</h3>
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
         {!readOnly ? (
           <button
             type="button"
             onClick={addRow}
-            className="flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-500 hover:bg-emerald-500/20"
+            className="flex items-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary hover:bg-primary/20"
           >
             <Plus className="h-3 w-3" />
             Add Row
@@ -255,14 +255,14 @@ export default function WatchlistEditor({
             <button
               type="button"
               onClick={handleBulkSave}
-              className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 hover:bg-emerald-500/20"
+              className="rounded border border-primary/40 bg-primary/10 px-2 py-1 hover:bg-primary/20"
             >
               Save selected to sample set…
             </button>
             <button
               type="button"
               onClick={() => setSelectedRowIds(new Set())}
-              className="text-zinc-400 hover:text-white"
+              className="text-muted-foreground hover:text-foreground"
             >
               Clear
             </button>
@@ -270,42 +270,42 @@ export default function WatchlistEditor({
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-lg border border-white/10">
-        <div className="grid gap-px bg-white/10" style={{ gridTemplateColumns }}>
+      <div className="overflow-hidden rounded-lg border border-border">
+        <div className="grid gap-px bg-accent" style={{ gridTemplateColumns }}>
           {/* Headers a step smaller than body text (text-xs / 12px). Body cells stay at text-sm (Notes column). */}
-          {showSelectColumn ? <div className="bg-[#121214]" /> : null}
-          <div className="bg-[#121214] px-3 py-2 text-xs font-semibold text-white">
+          {showSelectColumn ? <div className="bg-card" /> : null}
+          <div className="bg-card px-3 py-2 text-xs font-semibold text-foreground">
             Ticker
           </div>
-          <div className="bg-[#121214] px-3 py-2 text-xs font-semibold text-white">
+          <div className="bg-card px-3 py-2 text-xs font-semibold text-foreground">
             Thesis
           </div>
-          <div className="bg-[#121214] px-3 py-2 text-xs font-semibold text-white">
+          <div className="bg-card px-3 py-2 text-xs font-semibold text-foreground">
             Grade
           </div>
-          <div className="bg-[#121214] px-3 py-2 text-xs font-semibold text-white">
+          <div className="bg-card px-3 py-2 text-xs font-semibold text-foreground">
             Notes
           </div>
-          <div className="bg-[#121214] px-1 py-2 text-center text-xs font-semibold text-white">
+          <div className="bg-card px-1 py-2 text-center text-xs font-semibold text-foreground">
             Report
           </div>
           {showChartColumn ? (
-            <div className="bg-[#121214] px-1 py-2 text-center text-xs font-semibold text-white">
+            <div className="bg-card px-1 py-2 text-center text-xs font-semibold text-foreground">
               Chart
             </div>
           ) : null}
           {showSaveColumn ? (
-            <div className="bg-[#121214] px-1 py-2 text-center text-xs font-semibold text-white">
+            <div className="bg-card px-1 py-2 text-center text-xs font-semibold text-foreground">
               Save
             </div>
           ) : null}
-          {!readOnly ? <div className="bg-[#121214]" /> : null}
+          {!readOnly ? <div className="bg-card" /> : null}
 
           {showEmpty ? (
             // gridColumn: '1 / -1' spans the row across all columns regardless of count —
             // works for both readOnly (5) and editable (6) layouts without separate classes.
             <div
-              className="bg-[#121214] px-3 py-4 text-xs italic text-zinc-500"
+              className="bg-card px-3 py-4 text-xs italic text-muted-foreground"
               style={{ gridColumn: '1 / -1' }}
             >
               {emptyState}
@@ -355,7 +355,7 @@ export default function WatchlistEditor({
                   {reportOpenForRow === row.id && row.reportId ? (
                     <motion.div
                       key={`report-${row.id}`}
-                      className="overflow-hidden bg-[#121214]"
+                      className="overflow-hidden bg-card"
                       style={{ gridColumn: '1 / -1' }}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
@@ -370,7 +370,7 @@ export default function WatchlistEditor({
                   {chartOpenForRow === row.id && showChartColumn && (row.sourceDate ?? date) && row.ticker ? (
                     <motion.div
                       key={`chart-${row.id}`}
-                      className="overflow-hidden bg-[#121214]"
+                      className="overflow-hidden bg-card"
                       style={{ gridColumn: '1 / -1' }}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
@@ -463,18 +463,18 @@ function RowCells({
   }, [theses, thesisQuery]);
 
   // Cell base style — matches the dark calendar cells in the rest of the app.
-  const cellBase = 'bg-[#121214] px-2 py-1.5';
+  const cellBase = 'bg-card px-2 py-1.5';
 
   if (readOnly) {
     return (
       <>
         {showSelectColumn ? <SelectCell checked={isSelected} onChange={onToggleSelected} /> : null}
-        <div className={`${cellBase} font-mono text-sm font-semibold text-zinc-100`}>
+        <div className={`${cellBase} font-mono text-sm font-semibold text-foreground`}>
           {row.ticker || '—'}
         </div>
-        <div className={`${cellBase} text-sm text-zinc-200`}>{row.thesis || '—'}</div>
-        <div className={`${cellBase} text-sm text-zinc-200`}>{row.grade || '—'}</div>
-        <div className={`${cellBase} whitespace-pre-wrap text-sm text-zinc-300`}>
+        <div className={`${cellBase} text-sm text-foreground`}>{row.thesis || '—'}</div>
+        <div className={`${cellBase} text-sm text-foreground`}>{row.grade || '—'}</div>
+        <div className={`${cellBase} whitespace-pre-wrap text-sm text-muted-foreground`}>
           {row.notes || '—'}
         </div>
         <ReportCell reportId={row.reportId} reportOpen={reportOpen} onToggle={onToggleReport} />
@@ -496,7 +496,7 @@ function RowCells({
           value={row.ticker}
           onChange={(event) => onChangeRow({ ticker: event.target.value.toUpperCase() })}
           placeholder="AAPL"
-          className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-sm uppercase text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500/40 focus:outline-none"
+          className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-sm uppercase text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none"
         />
       </div>
 
@@ -505,13 +505,13 @@ function RowCells({
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="w-full truncate rounded border border-transparent px-1 py-0.5 text-left text-sm text-zinc-200 hover:border-emerald-500/30 hover:bg-white/10"
+              className="w-full truncate rounded border border-transparent px-1 py-0.5 text-left text-sm text-foreground hover:border-emerald-500/30 hover:bg-accent"
             >
-              {row.thesis || <span className="text-zinc-600">Select thesis…</span>}
+              {row.thesis || <span className="text-muted-foreground">Select thesis…</span>}
             </button>
           </PopoverTrigger>
           <PopoverContent
-            className="w-64 border-white/10 bg-[#18181b] p-0 text-white"
+            className="w-64 border-border bg-card p-0 text-foreground"
             align="start"
           >
             <Command className="bg-transparent">
@@ -547,7 +547,7 @@ function RowCells({
                             event.stopPropagation();
                             onDeleteThesisOption(option);
                           }}
-                          className="text-zinc-500 hover:text-rose-500"
+                          className="text-muted-foreground hover:text-rose-500"
                           title="Remove from saved list"
                           aria-label={`Remove ${option} from saved theses`}
                         >
@@ -568,10 +568,10 @@ function RowCells({
           value={row.grade || undefined}
           onValueChange={(value) => onChangeRow({ grade: value })}
         >
-          <SelectTrigger className="h-7 border-transparent bg-transparent px-1 text-sm text-zinc-200 hover:border-emerald-500/30 hover:bg-white/10">
+          <SelectTrigger className="h-7 border-transparent bg-transparent px-1 text-sm text-foreground hover:border-emerald-500/30 hover:bg-accent">
             <SelectValue placeholder="—" />
           </SelectTrigger>
-          <SelectContent className="border-white/10 bg-[#18181b] text-white">
+          <SelectContent className="border-border bg-card text-foreground">
             {WATCHLIST_GRADE_OPTIONS.map((option) => (
               <SelectItem key={option} value={option}>
                 {option}
@@ -601,7 +601,7 @@ function RowCells({
         <button
           type="button"
           onClick={onRemoveRow}
-          className="rounded p-1 text-zinc-500 hover:bg-rose-500/10 hover:text-rose-400"
+          className="rounded p-1 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-400"
           title="Remove row"
           aria-label="Remove row"
         >
@@ -614,12 +614,12 @@ function RowCells({
 
 function SelectCell({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
-    <div className="flex items-center justify-center bg-[#121214] px-1 py-1.5">
+    <div className="flex items-center justify-center bg-card px-1 py-1.5">
       <input
         type="checkbox"
         checked={checked}
         onChange={onChange}
-        className="h-3.5 w-3.5 rounded border-white/10 bg-[#121214] accent-emerald-500"
+        className="h-3.5 w-3.5 rounded border-border bg-card accent-primary"
         aria-label="Select watchlist row"
       />
     </div>
@@ -637,19 +637,19 @@ function ReportCell({
 }) {
   if (!reportId) {
     return (
-      <div className="flex items-center justify-center bg-[#121214] px-1 py-1.5 text-xs text-zinc-700">
+      <div className="flex items-center justify-center bg-card px-1 py-1.5 text-xs text-muted-foreground">
         —
       </div>
     );
   }
 
   return (
-    <div className="flex items-center justify-center bg-[#121214] px-1 py-1.5">
+    <div className="flex items-center justify-center bg-card px-1 py-1.5">
       <button
         type="button"
         onClick={onToggle}
-        className={`rounded-md p-1 hover:bg-white/10 ${
-          reportOpen ? 'text-emerald-400' : 'text-emerald-500 hover:text-emerald-400'
+        className={`rounded-md p-1 hover:bg-accent ${
+          reportOpen ? 'text-emerald-400' : 'text-primary hover:text-primary/80'
         }`}
         title={reportOpen ? 'Hide Report' : 'Show Report'}
         aria-label={reportOpen ? 'Hide Report' : 'Show Report'}
@@ -676,19 +676,19 @@ function ChartCell({
 }) {
   if (!ticker.trim()) {
     return (
-      <div className="flex items-center justify-center bg-[#121214] px-1 py-1.5 text-xs text-zinc-700">
+      <div className="flex items-center justify-center bg-card px-1 py-1.5 text-xs text-muted-foreground">
         —
       </div>
     );
   }
 
   return (
-    <div className="flex items-center justify-center bg-[#121214] px-1 py-1.5">
+    <div className="flex items-center justify-center bg-card px-1 py-1.5">
       <button
         type="button"
         onClick={onToggle}
-        className={`rounded-md p-1 hover:bg-white/10 ${
-          chartOpen ? 'text-emerald-400' : 'text-emerald-500 hover:text-emerald-400'
+        className={`rounded-md p-1 hover:bg-accent ${
+          chartOpen ? 'text-emerald-400' : 'text-primary hover:text-primary/80'
         }`}
         title={chartOpen ? 'Hide Chart' : 'Show Chart'}
         aria-label={chartOpen ? 'Hide Chart' : 'Show Chart'}
@@ -703,18 +703,18 @@ function ChartCell({
 function SaveCell({ ticker, onClick }: { ticker: string; onClick: () => void }) {
   if (!ticker.trim()) {
     return (
-      <div className="flex items-center justify-center bg-[#121214] px-1 py-1.5 text-xs text-zinc-700">
+      <div className="flex items-center justify-center bg-card px-1 py-1.5 text-xs text-muted-foreground">
         —
       </div>
     );
   }
 
   return (
-    <div className="flex items-center justify-center bg-[#121214] px-1 py-1.5">
+    <div className="flex items-center justify-center bg-card px-1 py-1.5">
       <button
         type="button"
         onClick={onClick}
-        className="rounded-md p-1 text-emerald-500 hover:bg-white/10 hover:text-emerald-400"
+        className="rounded-md p-1 text-primary hover:bg-accent hover:text-emerald-400"
         title="Save to Sample Set"
         aria-label="Save to Sample Set"
       >
@@ -751,7 +751,7 @@ function AutoGrowNotes({ id, value, onChange }: AutoGrowNotesProps) {
       onChange={(event) => onChange(event.target.value)}
       rows={1}
       placeholder="Quick notes…"
-      className="block w-full resize-none overflow-hidden rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500/40 focus:outline-none"
+      className="block w-full resize-none overflow-hidden rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none"
     />
   );
 }

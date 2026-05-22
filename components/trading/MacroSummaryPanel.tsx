@@ -116,7 +116,7 @@ function RatingDot({ rating }: { rating: Rating }) {
 }
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
-  return <h5 className="mb-1 text-sm font-semibold text-zinc-200">{children}</h5>;
+  return <h5 className="mb-1 text-sm font-semibold text-foreground">{children}</h5>;
 }
 
 function formatFredValue(point: FredDataPoint): string {
@@ -176,7 +176,7 @@ export default function MacroSummaryPanel() {
 
   if (status === 'loading') {
     return (
-      <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-zinc-500">
+      <div className="rounded border border-border bg-accent px-4 py-6 text-center text-sm text-muted-foreground">
         Loading macro briefing…
       </div>
     );
@@ -184,7 +184,7 @@ export default function MacroSummaryPanel() {
 
   if (error) {
     return (
-      <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-rose-400">
+      <div className="rounded border border-border bg-accent px-4 py-6 text-center text-sm text-rose-400">
         {error}
       </div>
     );
@@ -192,26 +192,26 @@ export default function MacroSummaryPanel() {
 
   if (!report) {
     return (
-      <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-zinc-500">
+      <div className="rounded border border-border bg-accent px-4 py-6 text-center text-sm text-muted-foreground">
         Macro briefing not available yet.
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 rounded border border-white/10 bg-white/5 p-4">
+    <div className="space-y-4 rounded border border-border bg-accent p-4">
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-2">
-          <span className="text-xs uppercase tracking-wide text-zinc-500">Bias</span>
-          <span className="rounded bg-zinc-700/40 px-2 py-0.5 text-xs font-medium uppercase text-zinc-200">
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">Bias</span>
+          <span className="rounded bg-card/40 px-2 py-0.5 text-xs font-medium uppercase text-foreground">
             {report.marketBias}
           </span>
-          <span className="ml-2 text-xs uppercase tracking-wide text-zinc-500">Confidence</span>
-          <span className="rounded bg-zinc-700/40 px-2 py-0.5 text-xs font-medium uppercase text-zinc-200">
+          <span className="ml-2 text-xs uppercase tracking-wide text-muted-foreground">Confidence</span>
+          <span className="rounded bg-card/40 px-2 py-0.5 text-xs font-medium uppercase text-foreground">
             {report.confidence}
           </span>
         </span>
-        <span className="flex items-center gap-2 text-xs text-zinc-500">
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>{report.tradingDate}</span>
           {generatedAt ? <span>· {new Date(generatedAt).toLocaleString()}</span> : null}
         </span>
@@ -220,7 +220,7 @@ export default function MacroSummaryPanel() {
       {report.tldr.length > 0 ? (
         <div>
           <SectionHeading>TLDR</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-300">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             {report.tldr.map((line, i) => (
               <li key={i}>{line}</li>
             ))}
@@ -231,14 +231,14 @@ export default function MacroSummaryPanel() {
       {report.summary ? (
         <div>
           <SectionHeading>Summary</SectionHeading>
-          <p className="text-sm text-zinc-300">{report.summary}</p>
+          <p className="text-sm text-muted-foreground">{report.summary}</p>
         </div>
       ) : null}
 
       {report.riskAssessment ? (
         <div>
           <SectionHeading>Risk Assessment</SectionHeading>
-          <p className="text-sm text-zinc-300">{report.riskAssessment}</p>
+          <p className="text-sm text-muted-foreground">{report.riskAssessment}</p>
         </div>
       ) : null}
 
@@ -249,7 +249,7 @@ export default function MacroSummaryPanel() {
             {report.drivers.map((d, i) => (
               <li key={i} className="flex items-center gap-2">
                 <RatingDot rating={impactToRating(d.impact)} />
-                <span className="text-sm text-zinc-300">{d.driver}</span>
+                <span className="text-sm text-muted-foreground">{d.driver}</span>
               </li>
             ))}
           </ul>
@@ -259,13 +259,13 @@ export default function MacroSummaryPanel() {
       {report.keyLevels.length > 0 ? (
         <div>
           <SectionHeading>Key Levels</SectionHeading>
-          <ul className="space-y-1 text-sm text-zinc-300">
+          <ul className="space-y-1 text-sm text-muted-foreground">
             {report.keyLevels.map((level, i) => (
               <li key={i}>
-                <span className="font-semibold text-zinc-200">{level.ticker}</span>
-                <span className="text-zinc-400"> · </span>
+                <span className="font-semibold text-foreground">{level.ticker}</span>
+                <span className="text-muted-foreground"> · </span>
                 <span>{level.support} / {level.resistance}</span>
-                {level.note ? <span className="text-zinc-400"> — {level.note}</span> : null}
+                {level.note ? <span className="text-muted-foreground"> — {level.note}</span> : null}
               </li>
             ))}
           </ul>
@@ -276,12 +276,12 @@ export default function MacroSummaryPanel() {
         <div>
           <SectionHeading>Rates</SectionHeading>
           {report.fredData.length > 0 ? (
-            <p className="text-sm text-zinc-300">
+            <p className="text-sm text-muted-foreground">
               {report.fredData.map((p) => `${p.label}: ${formatFredValue(p)}`).join(' | ')}
             </p>
           ) : null}
           {report.ratesOutlook ? (
-            <p className="mt-1 text-sm text-zinc-300">{report.ratesOutlook}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{report.ratesOutlook}</p>
           ) : null}
         </div>
       ) : null}
@@ -289,9 +289,9 @@ export default function MacroSummaryPanel() {
       {report.sentimentData ? (
         <div>
           <SectionHeading>Fear &amp; Greed</SectionHeading>
-          <p className="text-sm text-zinc-300">
+          <p className="text-sm text-muted-foreground">
             {report.sentimentData.score}/100 — {report.sentimentData.classification}
-            <span className="text-zinc-500"> ({report.sentimentData.source})</span>
+            <span className="text-muted-foreground"> ({report.sentimentData.source})</span>
           </p>
         </div>
       ) : null}
@@ -299,12 +299,12 @@ export default function MacroSummaryPanel() {
       {report.scheduledCatalysts.length > 0 ? (
         <div>
           <SectionHeading>Scheduled Catalysts</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-300">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             {report.scheduledCatalysts.map((c, i) => (
               <li key={i}>
-                {c.date ? <span className="text-zinc-400">{c.date} · </span> : null}
+                {c.date ? <span className="text-muted-foreground">{c.date} · </span> : null}
                 <span>{c.event}</span>
-                {c.expectedImpact ? <span className="text-zinc-400"> — {c.expectedImpact}</span> : null}
+                {c.expectedImpact ? <span className="text-muted-foreground"> — {c.expectedImpact}</span> : null}
               </li>
             ))}
           </ul>
@@ -314,7 +314,7 @@ export default function MacroSummaryPanel() {
       {report.sectorRotation.length > 0 ? (
         <div>
           <SectionHeading>Sector Rotation</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-300">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             {report.sectorRotation.map((s, i) => (
               <li key={i}>{s}</li>
             ))}
@@ -326,14 +326,14 @@ export default function MacroSummaryPanel() {
         <div>
           <SectionHeading>Scenario Analysis</SectionHeading>
           {report.scenarioAnalysis.consensus ? (
-            <p className="text-sm text-zinc-300">
-              <span className="font-semibold text-zinc-200">Consensus: </span>
+            <p className="text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">Consensus: </span>
               {report.scenarioAnalysis.consensus}
             </p>
           ) : null}
           {report.scenarioAnalysis.disruption ? (
-            <p className="mt-1 text-sm text-zinc-300">
-              <span className="font-semibold text-zinc-200">Disruption: </span>
+            <p className="mt-1 text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">Disruption: </span>
               {report.scenarioAnalysis.disruption}
             </p>
           ) : null}
@@ -343,7 +343,7 @@ export default function MacroSummaryPanel() {
       {report.deskImplications.length > 0 ? (
         <div>
           <SectionHeading>Desk Implications</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-300">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             {report.deskImplications.map((d, i) => (
               <li key={i}>{d}</li>
             ))}
@@ -358,15 +358,15 @@ export default function MacroSummaryPanel() {
             {report.crossAssetSnapshot.map((entry) => (
               <div
                 key={entry.ticker}
-                className="rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-300"
+                className="rounded border border-border bg-accent px-2 py-1 text-xs text-muted-foreground"
               >
-                <div className="font-semibold text-zinc-200">{entry.ticker}</div>
+                <div className="font-semibold text-foreground">{entry.ticker}</div>
                 <div className="flex items-center justify-between gap-2">
                   <span>{entry.price !== null ? entry.price.toFixed(2) : 'n/a'}</span>
                   <span
                     className={
                       entry.changePercent === null
-                        ? 'text-zinc-500'
+                        ? 'text-muted-foreground'
                         : entry.changePercent >= 0
                           ? 'text-emerald-400'
                           : 'text-rose-400'
@@ -384,7 +384,7 @@ export default function MacroSummaryPanel() {
       {report.deltas && report.deltas.length > 0 ? (
         <div>
           <SectionHeading>Deltas</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-300">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             {report.deltas.map((d, i) => (
               <li key={i}>{d}</li>
             ))}
@@ -393,7 +393,7 @@ export default function MacroSummaryPanel() {
       ) : null}
 
       {report.sourceIndex.length > 0 ? (
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-muted-foreground">
           Sources: {report.sourceIndex.length}
         </p>
       ) : null}

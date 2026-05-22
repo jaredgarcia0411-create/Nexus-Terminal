@@ -106,7 +106,7 @@ export default function WatchlistSavePicker({
   return (
     <>
       <Dialog open={open && !createOpen} onOpenChange={onOpenChange}>
-        <DialogContent className="border-white/10 bg-[#121214] text-white sm:max-w-md">
+        <DialogContent className="border-border bg-card text-foreground sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Save to Sample Set</DialogTitle>
           </DialogHeader>
@@ -116,12 +116,12 @@ export default function WatchlistSavePicker({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search Sample Sets"
-              className="flex-1 border-white/10 bg-white/5 text-zinc-100"
+              className="flex-1 border-border bg-accent text-foreground"
             />
             <button
               type="button"
               onClick={() => setCreateOpen(true)}
-              className="flex h-9 flex-1 items-center justify-center gap-2 rounded-[6px] border border-emerald-500/30 bg-emerald-500/5 px-3 text-sm text-emerald-300 hover:bg-emerald-500/10"
+              className="flex h-9 flex-1 items-center justify-center gap-2 rounded-[6px] border border-emerald-500/30 bg-emerald-500/5 px-3 text-sm text-emerald-300 hover:bg-primary/10"
             >
               <Plus className="h-4 w-4" />
               Create New Sample Set
@@ -130,7 +130,7 @@ export default function WatchlistSavePicker({
 
           <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
             {sortedSets.length === 0 ? (
-              <p className="px-3 py-4 text-xs italic text-zinc-500">No sample sets found.</p>
+              <p className="px-3 py-4 text-xs italic text-muted-foreground">No sample sets found.</p>
             ) : (
               sortedSets.map((set) => {
                 const isMine = set.ownerId === currentUserId;
@@ -140,16 +140,16 @@ export default function WatchlistSavePicker({
                     type="button"
                     disabled={appending === set.id}
                     onClick={() => void handlePick(set)}
-                    className="flex w-full items-center justify-between rounded border border-white/5 bg-[#0f0f12] px-3 py-2 text-left text-sm text-zinc-100 hover:bg-white/5 disabled:opacity-40"
+                    className="flex w-full items-center justify-between rounded border border-border bg-card px-3 py-2 text-left text-sm text-foreground hover:bg-accent disabled:opacity-40"
                   >
                     <span className="flex flex-col">
                       <span className="font-mono">{set.name}</span>
-                      <span className="text-[11px] text-zinc-500">
+                      <span className="text-[11px] text-muted-foreground">
                         {set.rowCount} row{set.rowCount === 1 ? '' : 's'}
                         {isMine ? ' - yours' : ` - by ${set.ownerName ?? 'Unknown'}`}
                       </span>
                     </span>
-                    {appending === set.id ? <span className="text-xs text-zinc-400">Adding...</span> : null}
+                    {appending === set.id ? <span className="text-xs text-muted-foreground">Adding...</span> : null}
                   </button>
                 );
               })

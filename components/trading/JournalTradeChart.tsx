@@ -29,15 +29,15 @@ function JournalTradeChart({ trade, timeframe }: JournalTradeChartProps) {
   const tradeMarkers = useMemo<TradeMarker[]>(() => buildTradeMarkers(trade), [trade]);
 
   if (isLoading) {
-    return <div className="flex h-[612px] items-center justify-center text-sm text-zinc-400">Loading chart...</div>;
+    return <div className="flex h-[612px] items-center justify-center text-sm text-muted-foreground">Loading chart...</div>;
   }
 
   if (error) {
-    return <div className="flex h-[612px] items-center justify-center text-sm text-zinc-400">{error}</div>;
+    return <div className="flex h-[612px] items-center justify-center text-sm text-muted-foreground">{error}</div>;
   }
 
   if (candles.length === 0) {
-    return <div className="flex h-[612px] items-center justify-center text-sm text-zinc-500">No intraday candles for this trade day.</div>;
+    return <div className="flex h-[612px] items-center justify-center text-sm text-muted-foreground">No intraday candles for this trade day.</div>;
   }
 
   return (

@@ -156,7 +156,7 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg bg-[#121214] border-white/10 text-white">
+      <DialogContent className="sm:max-w-lg bg-card border-border text-foreground">
         <DialogHeader>
           <DialogTitle>New Manual Trade</DialogTitle>
         </DialogHeader>
@@ -165,7 +165,7 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor="symbol">Symbol</Label>
-              <Input id="symbol" {...form.register('symbol')} className="bg-white/5 border-white/10" />
+              <Input id="symbol" {...form.register('symbol')} className="bg-accent border-border" />
             </div>
 
             <div className="space-y-2">
@@ -174,10 +174,10 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
                 value={direction}
                 onValueChange={(value: 'LONG' | 'SHORT') => form.setValue('direction', value, { shouldValidate: true })}
               >
-                <SelectTrigger className="bg-white/5 border-white/10">
+                <SelectTrigger className="bg-accent border-border">
                   <SelectValue placeholder="Direction" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#121214] border-white/10 text-white">
+                <SelectContent className="bg-card border-border text-foreground">
                   <SelectItem value="LONG">LONG</SelectItem>
                   <SelectItem value="SHORT">SHORT</SelectItem>
                 </SelectContent>
@@ -186,33 +186,33 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
 
             <div className="space-y-2">
               <Label htmlFor="entryPrice">Entry Price</Label>
-              <Input id="entryPrice" type="number" step="0.01" {...form.register('entryPrice')} className="bg-white/5 border-white/10" />
+              <Input id="entryPrice" type="number" step="0.01" {...form.register('entryPrice')} className="bg-accent border-border" />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="quantity">Quantity</Label>
-              <Input id="quantity" type="number" step="1" {...form.register('quantity')} className="bg-white/5 border-white/10" />
+              <Input id="quantity" type="number" step="1" {...form.register('quantity')} className="bg-accent border-border" />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="date">Date</Label>
-              <Input id="date" type="date" {...form.register('date')} className="bg-white/5 border-white/10" />
+              <Input id="date" type="date" {...form.register('date')} className="bg-accent border-border" />
             </div>
 
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="initialRisk">Initial Risk (optional)</Label>
-              <Input id="initialRisk" type="number" step="0.01" {...form.register('initialRisk')} className="bg-white/5 border-white/10" />
+              <Input id="initialRisk" type="number" step="0.01" {...form.register('initialRisk')} className="bg-accent border-border" />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="entryTime">Entry Time (optional)</Label>
-              <Input id="entryTime" type="text" placeholder="09:30:00" {...form.register('entryTime')} className="bg-white/5 border-white/10" />
+              <Input id="entryTime" type="text" placeholder="09:30:00" {...form.register('entryTime')} className="bg-accent border-border" />
             </div>
 
             {!isOpenPosition ? (
               <div className="space-y-2">
                 <Label htmlFor="exitTime">Exit Time (optional)</Label>
-                <Input id="exitTime" type="text" placeholder="10:15:00" {...form.register('exitTime')} className="bg-white/5 border-white/10" />
+                <Input id="exitTime" type="text" placeholder="10:15:00" {...form.register('exitTime')} className="bg-accent border-border" />
               </div>
             ) : null}
 
@@ -222,9 +222,9 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
                 type="checkbox"
                 checked={isOpenPosition}
                 onChange={(event) => form.setValue('isOpenPosition', event.target.checked, { shouldValidate: true })}
-                className="h-4 w-4 rounded border-white/20 bg-white/5 text-emerald-500 focus:ring-emerald-500/40"
+                className="h-4 w-4 rounded border-border bg-accent text-primary focus:ring-ring"
               />
-              <Label htmlFor="isOpenPosition" className="cursor-pointer text-sm text-zinc-300">
+              <Label htmlFor="isOpenPosition" className="cursor-pointer text-sm text-muted-foreground">
                 Open position (no exit yet)
               </Label>
             </div>
@@ -232,7 +232,7 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
             {!isOpenPosition ? (
               <div className="space-y-2">
                 <Label htmlFor="exitPrice">Exit Price</Label>
-                <Input id="exitPrice" type="number" step="0.01" {...form.register('exitPrice')} className="bg-white/5 border-white/10" />
+                <Input id="exitPrice" type="number" step="0.01" {...form.register('exitPrice')} className="bg-accent border-border" />
               </div>
             ) : null}
           </div>
@@ -242,10 +242,10 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
           )}
 
           <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} className="bg-white/10 hover:bg-white/20">
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} className="bg-accent hover:bg-accent/80">
               Cancel
             </Button>
-            <Button type="submit" className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">
+            <Button type="submit" className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20">
               Save Trade
             </Button>
           </DialogFooter>

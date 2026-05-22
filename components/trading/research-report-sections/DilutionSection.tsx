@@ -39,7 +39,7 @@ function programStatusClass(statusLabel: string): string {
   if (/active|effective|available/i.test(statusLabel)) {
     return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
   }
-  return 'border-zinc-500/30 bg-zinc-500/10 text-zinc-400';
+  return 'border-zinc-500/30 bg-muted/10 text-muted-foreground';
 }
 
 function ProgramSection({
@@ -55,11 +55,11 @@ function ProgramSection({
 }) {
   return (
     <div>
-      <h4 className="mb-2 text-base font-semibold text-zinc-200">{title}</h4>
+      <h4 className="mb-2 text-base font-semibold text-foreground">{title}</h4>
       {rows.length === 0 ? (
-        <p className="py-2 text-zinc-400">{emptyLabel}</p>
+        <p className="py-2 text-muted-foreground">{emptyLabel}</p>
       ) : (
-        <div className="divide-y divide-white/5">
+        <div className="divide-y divide-border">
           {rows.map((row, index) => {
             const badge = babyShelfBadge(row);
             const statusLabel = row.status ?? (row.isEffective ? 'Active' : 'Inactive');
@@ -78,22 +78,22 @@ function ProgramSection({
                       href={row.documentUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-zinc-200 underline-offset-2 transition-colors hover:text-emerald-400 hover:underline"
+                      className="text-foreground underline-offset-2 transition-colors hover:text-primary hover:underline"
                     >
                       {row.headline}
                     </a>
                   ) : (
-                    <span className="text-zinc-200">{row.headline}</span>
+                    <span className="text-foreground">{row.headline}</span>
                   )}
                   {badge ? <span className={`ml-auto text-sm font-semibold whitespace-nowrap ${badge.colorClass}`}>{badge.label}</span> : null}
                 </div>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  <div><span className="text-zinc-500">Total Registered:</span> <span className="text-zinc-200">{formatMoney(row.offeringAmount)}</span></div>
-                  <div><span className="text-zinc-500">Raised So Far:</span> <span className="text-zinc-200">{formatMoney(row.totalRaised)}</span></div>
-                  <div><span className="text-zinc-500">{remainingLabel}:</span> <span className={`font-semibold ${remainingColorClass}`}>{formatMoney(row.amountRemainingAtm)}</span></div>
-                  {row.bank ? <div><span className="text-zinc-500">Bank:</span> <span className="text-zinc-200">{row.bank}</span></div> : null}
+                  <div><span className="text-muted-foreground">Total Registered:</span> <span className="text-foreground">{formatMoney(row.offeringAmount)}</span></div>
+                  <div><span className="text-muted-foreground">Raised So Far:</span> <span className="text-foreground">{formatMoney(row.totalRaised)}</span></div>
+                  <div><span className="text-muted-foreground">{remainingLabel}:</span> <span className={`font-semibold ${remainingColorClass}`}>{formatMoney(row.amountRemainingAtm)}</span></div>
+                  {row.bank ? <div><span className="text-muted-foreground">Bank:</span> <span className="text-foreground">{row.bank}</span></div> : null}
                 </div>
-                <div className="mt-1 text-zinc-500">Filed: {formatDate(row.filedAt)} | Expires: {formatDate(row.expirationDate)}</div>
+                <div className="mt-1 text-muted-foreground">Filed: {formatDate(row.filedAt)} | Expires: {formatDate(row.expirationDate)}</div>
               </div>
             );
           })}
@@ -106,14 +106,14 @@ function ProgramSection({
 function ConvertibleNotesSection({ notes }: { notes: ResearchSnapshotConvertibleNote[] }) {
   return (
     <div className="space-y-2">
-      <h4 className="text-base font-medium text-zinc-300">Convertible Notes</h4>
+      <h4 className="text-base font-medium text-muted-foreground">Convertible Notes</h4>
       {notes.length === 0 ? (
-        <p className="text-sm text-zinc-500">No convertible notes found</p>
+        <p className="text-sm text-muted-foreground">No convertible notes found</p>
       ) : (
         <div className="scrollbar-hidden overflow-x-auto">
           <table className="min-w-full">
             <thead>
-              <tr className="border-b border-white/10 text-zinc-400">
+              <tr className="border-b border-border text-muted-foreground">
                 <th className="py-2 pr-3 text-left">Details</th>
                 <th className="py-2 pr-3 text-left">Principal</th>
                 <th className="py-2 pr-3 text-left">Conversion</th>
@@ -124,14 +124,14 @@ function ConvertibleNotesSection({ notes }: { notes: ResearchSnapshotConvertible
             </thead>
             <tbody>
               {notes.map((note, index) => (
-                <tr key={`convertible-${index}`} className="border-b border-white/5">
-                  <td className="py-2 pr-3 text-zinc-300">
+                <tr key={`convertible-${index}`} className="border-b border-border">
+                  <td className="py-2 pr-3 text-muted-foreground">
                     {note.documentUrl ? (
                       <a
                         href={note.documentUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="underline-offset-2 transition-colors hover:text-emerald-400 hover:underline"
+                        className="underline-offset-2 transition-colors hover:text-primary hover:underline"
                       >
                         {note.details}
                       </a>
@@ -139,11 +139,11 @@ function ConvertibleNotesSection({ notes }: { notes: ResearchSnapshotConvertible
                       note.details
                     )}
                   </td>
-                  <td className="py-2 pr-3 font-mono tabular-nums text-zinc-200">{formatMoney(note.principalAmount)}</td>
-                  <td className="py-2 pr-3 font-bold text-zinc-200">{formatMoney(note.conversionPrice)}</td>
-                  <td className="py-2 pr-3 text-zinc-300">{formatDate(note.maturityDate)}</td>
-                  <td className="py-2 pr-3 text-zinc-300">{formatDate(note.filedAt)}</td>
-                  <td className="py-2 text-zinc-300">{toStringValue(note.status)}</td>
+                  <td className="py-2 pr-3 font-mono tabular-nums text-foreground">{formatMoney(note.principalAmount)}</td>
+                  <td className="py-2 pr-3 font-bold text-foreground">{formatMoney(note.conversionPrice)}</td>
+                  <td className="py-2 pr-3 text-muted-foreground">{formatDate(note.maturityDate)}</td>
+                  <td className="py-2 pr-3 text-muted-foreground">{formatDate(note.filedAt)}</td>
+                  <td className="py-2 text-muted-foreground">{toStringValue(note.status)}</td>
                 </tr>
               ))}
             </tbody>
@@ -169,14 +169,14 @@ function WarrantSection({
 }) {
   return (
     <div className="space-y-2">
-      <h4 className="text-base font-medium text-zinc-300">{title}</h4>
+      <h4 className="text-base font-medium text-muted-foreground">{title}</h4>
       {warrants.length === 0 ? (
-        <p className="text-sm text-zinc-500">{emptyLabel}</p>
+        <p className="text-sm text-muted-foreground">{emptyLabel}</p>
       ) : (
         <div className="scrollbar-hidden overflow-x-auto">
           <table className="min-w-full">
             <thead>
-              <tr className="border-b border-white/10 text-zinc-400">
+              <tr className="border-b border-border text-muted-foreground">
                 <th className="py-2 pr-3 text-left">Details</th>
                 <th className="py-2 pr-3 text-left">Remaining</th>
                 <th className="py-2 pr-3 text-left">{priceLabel}</th>
@@ -191,14 +191,14 @@ function WarrantSection({
                 const status = getWarrantStatus(warrant, currentPrice);
                 const priceValue = warrant.isPrefunded ? warrant.prefundedCost : warrant.exercisePrice;
                 return (
-                  <tr key={`${title}-${index}`} className="border-b border-white/5">
-                    <td className="py-2 pr-3 text-zinc-300">
+                  <tr key={`${title}-${index}`} className="border-b border-border">
+                    <td className="py-2 pr-3 text-muted-foreground">
                       {warrant.documentUrl ? (
                         <a
                           href={warrant.documentUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="underline-offset-2 transition-colors hover:text-emerald-400 hover:underline"
+                          className="underline-offset-2 transition-colors hover:text-primary hover:underline"
                         >
                           {warrant.details}
                         </a>
@@ -206,14 +206,14 @@ function WarrantSection({
                         warrant.details
                       )}
                     </td>
-                    <td className="py-2 pr-3 text-zinc-200">{formatNumber(warrant.remaining)}</td>
+                    <td className="py-2 pr-3 text-foreground">{formatNumber(warrant.remaining)}</td>
                     {/* Strike price color-tracks the warrant status (in play /
                         potentially / not) so the most actionable column reads
                         at a glance. */}
                     <td className={`py-2 pr-3 font-bold ${status.colorClass}`}>{formatMoney(priceValue)}</td>
-                    <td className="py-2 pr-3 text-zinc-300">{toStringValue(warrant.registered)}</td>
-                    <td className="py-2 pr-3 text-zinc-300">{formatDate(warrant.exercisableDate)}</td>
-                    <td className="py-2 pr-3 text-zinc-300">{formatDate(warrant.expirationDate)}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{toStringValue(warrant.registered)}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{formatDate(warrant.exercisableDate)}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{formatDate(warrant.expirationDate)}</td>
                     <td className={`py-2 font-bold whitespace-nowrap ${status.colorClass}`}>{status.label}</td>
                   </tr>
                 );
@@ -235,7 +235,7 @@ function ShelfRegistrationsTable({ rows }: { rows: ResearchSnapshotRegistration[
     <div className="scrollbar-hidden overflow-x-auto">
       <table className="min-w-full">
         <thead>
-          <tr className="border-b border-white/10 text-zinc-400">
+          <tr className="border-b border-border text-muted-foreground">
             <th className="py-2 pr-3 text-left">Headline</th>
             <th className="py-2 pr-3 text-left">ATM</th>
             <th className="py-2 pr-3 text-left">Amount</th>
@@ -246,14 +246,14 @@ function ShelfRegistrationsTable({ rows }: { rows: ResearchSnapshotRegistration[
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={`registration-${index}`} className="border-b border-white/5 text-zinc-300">
+            <tr key={`registration-${index}`} className="border-b border-border text-muted-foreground">
               <td className="py-2 pr-3">
                 {row.documentUrl ? (
                   <a
                     href={row.documentUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-zinc-200 underline-offset-2 transition-colors hover:text-emerald-400 hover:underline"
+                    className="text-foreground underline-offset-2 transition-colors hover:text-primary hover:underline"
                   >
                     {row.headline}
                   </a>
@@ -283,7 +283,7 @@ function HistoricalFloatTable({ rows }: { rows: ResearchSnapshotHistoricalFloatR
     <div className="scrollbar-hidden overflow-x-auto">
       <table className="min-w-full">
         <thead>
-          <tr className="border-b border-white/10 text-zinc-400">
+          <tr className="border-b border-border text-muted-foreground">
             <th className="py-2 pr-3 text-left">Date</th>
             <th className="py-2 pr-3 text-left">Outstanding</th>
             <th className="py-2 pr-3 text-left">Float</th>
@@ -292,7 +292,7 @@ function HistoricalFloatTable({ rows }: { rows: ResearchSnapshotHistoricalFloatR
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={`historical-${index}`} className="border-b border-white/5 text-zinc-300">
+            <tr key={`historical-${index}`} className="border-b border-border text-muted-foreground">
               <td className="py-2 pr-3">{formatDate(row.date)}</td>
               <td className="py-2 pr-3">{formatNumber(row.outstanding)}</td>
               <td className="py-2 pr-3">{formatNumber(row.float)}</td>
@@ -314,14 +314,14 @@ function ReverseSplitsTable({ rows }: { rows: ResearchSnapshotReverseSplit[] }) 
     <div className="scrollbar-hidden overflow-x-auto">
       <table className="min-w-full">
         <thead>
-          <tr className="border-b border-white/10 text-zinc-400">
+          <tr className="border-b border-border text-muted-foreground">
             <th className="py-2 pr-3 text-left">Date</th>
             <th className="py-2 text-left">Ratio</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={`split-${index}`} className="border-b border-white/5 text-zinc-300">
+            <tr key={`split-${index}`} className="border-b border-border text-muted-foreground">
               <td className="py-2 pr-3">{formatDate(row.date)}</td>
               <td className="py-2">{toStringValue(row.ratio)}</td>
             </tr>
@@ -341,7 +341,7 @@ function FormerSymbolsTable({ rows }: { rows: ResearchSnapshotIdentityEvent[] })
     <div className="scrollbar-hidden overflow-x-auto">
       <table className="min-w-full">
         <thead>
-          <tr className="border-b border-white/10 text-zinc-400">
+          <tr className="border-b border-border text-muted-foreground">
             <th className="py-2 pr-3 text-left">Former</th>
             <th className="py-2 pr-3 text-left">Current</th>
             <th className="py-2 pr-3 text-left">Effective</th>
@@ -352,8 +352,8 @@ function FormerSymbolsTable({ rows }: { rows: ResearchSnapshotIdentityEvent[] })
           {rows.map((row, index) => {
             const formType = toStringValue(row.formType);
             return (
-              <tr key={`${row.accessionNumber ?? row.previousTicker ?? 'symbol'}-${index}`} className="border-b border-white/5 text-zinc-300">
-                <td className="py-2 pr-3 font-medium text-zinc-100">{toStringValue(row.previousTicker)}</td>
+              <tr key={`${row.accessionNumber ?? row.previousTicker ?? 'symbol'}-${index}`} className="border-b border-border text-muted-foreground">
+                <td className="py-2 pr-3 font-medium text-foreground">{toStringValue(row.previousTicker)}</td>
                 <td className="py-2 pr-3">{toStringValue(row.currentTicker)}</td>
                 <td className="py-2 pr-3 whitespace-nowrap">{formatDate(row.effectiveDate ?? row.filedAt)}</td>
                 <td className="py-2">
@@ -362,7 +362,7 @@ function FormerSymbolsTable({ rows }: { rows: ResearchSnapshotIdentityEvent[] })
                       href={row.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-zinc-200 underline-offset-2 transition-colors hover:text-emerald-400 hover:underline"
+                      className="text-foreground underline-offset-2 transition-colors hover:text-primary hover:underline"
                     >
                       {formType}
                     </a>
@@ -388,7 +388,7 @@ function SplitStatusesTable({ rows }: { rows: ResearchSnapshotSplitStatus[] }) {
     <div className="scrollbar-hidden overflow-x-auto">
       <table className="min-w-full">
         <thead>
-          <tr className="border-b border-white/10 text-zinc-400">
+          <tr className="border-b border-border text-muted-foreground">
             <th className="py-2 pr-3 text-left">Status</th>
             <th className="py-2 pr-3 text-left">Ratio</th>
             <th className="py-2 pr-3 text-left">Vote Date</th>
@@ -398,7 +398,7 @@ function SplitStatusesTable({ rows }: { rows: ResearchSnapshotSplitStatus[] }) {
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={`split-status-${index}`} className="border-b border-white/5 text-zinc-300">
+            <tr key={`split-status-${index}`} className="border-b border-border text-muted-foreground">
               <td className="py-2 pr-3">{toStringValue(row.actionType)}</td>
               <td className="py-2 pr-3">
                 {row.splitFrom != null && row.splitTo != null ? `${row.splitFrom}:${row.splitTo}` : '—'}
@@ -423,7 +423,7 @@ function PastOfferingsTable({ rows }: { rows: ResearchSnapshotOffering[] }) {
     <div className="scrollbar-hidden overflow-x-auto">
       <table className="min-w-full">
         <thead>
-          <tr className="border-b border-white/10 text-zinc-400">
+          <tr className="border-b border-border text-muted-foreground">
             <th className="py-2 pr-3 text-left">Date</th>
             <th className="py-2 pr-3 text-left">Type</th>
             <th className="py-2 pr-3 text-left">Shares</th>
@@ -433,7 +433,7 @@ function PastOfferingsTable({ rows }: { rows: ResearchSnapshotOffering[] }) {
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={`offering-${index}`} className="border-b border-white/5 text-zinc-300">
+            <tr key={`offering-${index}`} className="border-b border-border text-muted-foreground">
               <td className="py-2 pr-3">{formatDate(row.filedAt)}</td>
               <td className="py-2 pr-3">{toStringValue(row.offeringType)}</td>
               <td className="py-2 pr-3">{formatNumber(row.sharesAmount)}</td>
@@ -456,11 +456,11 @@ function OwnershipGroupsTables({ groups }: { groups: ResearchSnapshotOwnershipGr
     <>
       {groups.map((group, groupIndex) => (
         <div key={groupIndex} className="mb-3">
-          {group.reportedDate ? <p className="mb-1 text-sm text-zinc-500">Reported: {formatDate(group.reportedDate)}</p> : null}
+          {group.reportedDate ? <p className="mb-1 text-sm text-muted-foreground">Reported: {formatDate(group.reportedDate)}</p> : null}
           <div className="scrollbar-hidden overflow-x-auto">
             <table className="min-w-full">
               <thead>
-                <tr className="border-b border-white/10 text-zinc-400">
+                <tr className="border-b border-border text-muted-foreground">
                   <th className="py-1.5 pr-3 text-left text-sm">Name</th>
                   <th className="py-1.5 pr-3 text-left text-sm">Role</th>
                   <th className="py-1.5 pr-3 text-right text-sm">Common</th>
@@ -471,13 +471,13 @@ function OwnershipGroupsTables({ groups }: { groups: ResearchSnapshotOwnershipGr
               </thead>
               <tbody>
                 {group.owners.map((owner, ownerIndex) => (
-                  <tr key={ownerIndex} className="border-b border-white/5">
-                    <td className="py-1.5 pr-3 text-sm text-zinc-200">{owner.name}</td>
-                    <td className="py-1.5 pr-3 text-sm text-zinc-400">{owner.role}</td>
-                    <td className="py-1.5 pr-3 text-right text-sm text-zinc-300">{formatNumber(owner.common)}</td>
-                    <td className="py-1.5 pr-3 text-right text-sm text-zinc-300">{formatNumber(owner.preferred)}</td>
-                    <td className="py-1.5 pr-3 text-right text-sm text-zinc-300">{formatNumber(owner.options)}</td>
-                    <td className="py-1.5 text-right text-sm text-zinc-300">{formatNumber(owner.warrants)}</td>
+                  <tr key={ownerIndex} className="border-b border-border">
+                    <td className="py-1.5 pr-3 text-sm text-foreground">{owner.name}</td>
+                    <td className="py-1.5 pr-3 text-sm text-muted-foreground">{owner.role}</td>
+                    <td className="py-1.5 pr-3 text-right text-sm text-muted-foreground">{formatNumber(owner.common)}</td>
+                    <td className="py-1.5 pr-3 text-right text-sm text-muted-foreground">{formatNumber(owner.preferred)}</td>
+                    <td className="py-1.5 pr-3 text-right text-sm text-muted-foreground">{formatNumber(owner.options)}</td>
+                    <td className="py-1.5 text-right text-sm text-muted-foreground">{formatNumber(owner.warrants)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -517,12 +517,12 @@ export default function DilutionSection({ data }: Props) {
       <DilutionRatingPanel data={data} />
 
       <div>
-        <h4 className="mb-2 text-base font-semibold text-zinc-200">Cash Position</h4>
+        <h4 className="mb-2 text-base font-semibold text-foreground">Cash Position</h4>
         {hasCashPosition ? (
-          <p className="text-sm text-zinc-300">
-            The company has <span className="font-bold text-zinc-100">{toStringValue(data.dilutionDetails.cashRemainingMonths)}</span> months of cash left
-            based on the quarterly cash burn of <span className="font-bold text-zinc-100">{formatMoney(data.dilutionDetails.cashBurn)}</span>
-            {' '}and estimated current cash of <span className="font-bold text-zinc-100">{formatMoney(data.dilutionDetails.estimatedCash)}</span>
+          <p className="text-sm text-muted-foreground">
+            The company has <span className="font-bold text-foreground">{toStringValue(data.dilutionDetails.cashRemainingMonths)}</span> months of cash left
+            based on the quarterly cash burn of <span className="font-bold text-foreground">{formatMoney(data.dilutionDetails.cashBurn)}</span>
+            {' '}and estimated current cash of <span className="font-bold text-foreground">{formatMoney(data.dilutionDetails.estimatedCash)}</span>
           </p>
         ) : (
           <NoDataBadge />
@@ -530,29 +530,29 @@ export default function DilutionSection({ data }: Props) {
       </div>
 
       <div>
-        <h4 className="mb-2 text-base font-semibold text-zinc-200">Financial Commentary</h4>
-        <p className="text-sm text-zinc-200">{toStringValue(data.dilutionDetails.managementCommentary)}</p>
+        <h4 className="mb-2 text-base font-semibold text-foreground">Financial Commentary</h4>
+        <p className="text-sm text-foreground">{toStringValue(data.dilutionDetails.managementCommentary)}</p>
       </div>
 
       <div>
-        <h4 className="mb-2 text-base font-semibold text-zinc-200">Former Symbols</h4>
+        <h4 className="mb-2 text-base font-semibold text-foreground">Former Symbols</h4>
         <FormerSymbolsTable rows={formerSymbolEvents} />
       </div>
 
       <div className="space-y-4">
-        <h4 className="mb-2 text-base font-semibold text-zinc-200">Split History</h4>
+        <h4 className="mb-2 text-base font-semibold text-foreground">Split History</h4>
         <div className="space-y-2">
-          <h5 className="text-sm font-medium text-zinc-300">Reverse Splits</h5>
+          <h5 className="text-sm font-medium text-muted-foreground">Reverse Splits</h5>
           <ReverseSplitsTable rows={data.reverseSplits} />
         </div>
         <div className="space-y-2">
-          <h5 className="text-sm font-medium text-zinc-300">Split Status</h5>
+          <h5 className="text-sm font-medium text-muted-foreground">Split Status</h5>
           <SplitStatusesTable rows={data.splitStatuses} />
         </div>
       </div>
 
       <div>
-        <h4 className="mb-2 text-base font-semibold text-zinc-200">S-1 / F-1</h4>
+        <h4 className="mb-2 text-base font-semibold text-foreground">S-1 / F-1</h4>
         {/* Source from registrations rather than filings so we catch
             primary registrations filed more than 90 days ago —
             getRecentFilings has a 90-day window, but S-1s/F-1s often
@@ -572,7 +572,7 @@ export default function DilutionSection({ data }: Props) {
       </div>
 
       <div>
-        <h4 className="mb-2 text-base font-semibold text-zinc-200">Shelfs</h4>
+        <h4 className="mb-2 text-base font-semibold text-foreground">Shelfs</h4>
         <ShelfRegistrationsTable rows={shelfRegistrations} />
       </div>
 
@@ -581,7 +581,7 @@ export default function DilutionSection({ data }: Props) {
       <ProgramSection title="Equity Lines" rows={data.equityLines} emptyLabel="No equity lines found" remainingLabel="Remaining" />
 
       <div className="space-y-3">
-        <h4 className="mb-2 text-base font-semibold text-zinc-200">Warrants</h4>
+        <h4 className="mb-2 text-base font-semibold text-foreground">Warrants</h4>
         <WarrantSection title="Outstanding Warrants" warrants={regularWarrants} currentPrice={data.header.price} priceLabel="Strike" emptyLabel="No outstanding warrants found" />
         <WarrantSection title="Pre-funded Warrants" warrants={prefundedWarrants} currentPrice={data.header.price} priceLabel="Pre-funded Cost" emptyLabel="No pre-funded warrants found" />
       </div>
@@ -589,17 +589,17 @@ export default function DilutionSection({ data }: Props) {
       <ConvertibleNotesSection notes={convertibleNotes} />
 
       <div>
-        <h4 className="mb-2 text-base font-semibold text-zinc-200">Past Offerings</h4>
+        <h4 className="mb-2 text-base font-semibold text-foreground">Past Offerings</h4>
         <PastOfferingsTable rows={data.offerings} />
       </div>
 
       <div>
-        <h4 className="mb-2 text-base font-semibold text-zinc-200">Historical Outstanding Shares</h4>
+        <h4 className="mb-2 text-base font-semibold text-foreground">Historical Outstanding Shares</h4>
         <HistoricalFloatTable rows={data.historicalFloat} />
       </div>
 
       <div>
-        <h4 className="mb-2 text-base font-semibold text-zinc-200">Owners</h4>
+        <h4 className="mb-2 text-base font-semibold text-foreground">Owners</h4>
         <OwnershipGroupsTables groups={data.ownershipGroups} />
       </div>
     </div>

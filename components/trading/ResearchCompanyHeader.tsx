@@ -23,8 +23,8 @@ function formatCompact(value: unknown): string {
 function statRow(label: string, value: string) {
   return (
     <div className="flex justify-between gap-2">
-      <span className="shrink-0 text-white">{label}</span>
-      <span className="text-right text-zinc-200">{value}</span>
+      <span className="shrink-0 text-foreground">{label}</span>
+      <span className="text-right text-foreground">{value}</span>
     </div>
   );
 }
@@ -44,11 +44,11 @@ export default function ResearchCompanyHeader({ ticker, companyName, header, com
       {/* Ticker + Company Name */}
       <div>
         <div className="flex items-center gap-2">
-          <span className="text-base font-bold text-zinc-100">{ticker}</span>
-          {country ? <span className="text-[11px] text-zinc-500">{String(country)}</span> : null}
+          <span className="text-base font-bold text-foreground">{ticker}</span>
+          {country ? <span className="text-[11px] text-muted-foreground">{String(country)}</span> : null}
         </div>
         {companyName ? (
-          <p className="mt-0.5 text-base font-bold leading-snug text-zinc-200">{companyName}</p>
+          <p className="mt-0.5 text-base font-bold leading-snug text-foreground">{companyName}</p>
         ) : null}
       </div>
 
@@ -67,8 +67,8 @@ export default function ResearchCompanyHeader({ ticker, companyName, header, com
       {/* Description sits below the stats with a divider + muted prose styling so it reads as
           secondary narrative, not another stat row. Hidden on compact tabs and when null. */}
       {!compact && description ? (
-        <div className="mt-2 border-t border-white/10 pt-3">
-          <p className="text-sm leading-relaxed text-white">{description}</p>
+        <div className="mt-2 border-t border-border pt-3">
+          <p className="text-sm leading-relaxed text-foreground">{description}</p>
         </div>
       ) : null}
 

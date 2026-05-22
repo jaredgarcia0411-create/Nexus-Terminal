@@ -39,7 +39,7 @@ export default function Toolbar({
 
   return (
     <>
-      <header className="sticky top-0 z-40 flex min-h-16 flex-wrap items-center gap-2 border-b border-white/5 bg-[#0A0A0B]/80 px-4 py-2 backdrop-blur-md sm:h-16 sm:flex-nowrap sm:justify-between sm:gap-3 sm:px-8 sm:py-0">
+      <header className="sticky top-0 z-40 flex min-h-16 flex-wrap items-center gap-2 border-b border-border bg-background/80 px-4 py-2 backdrop-blur-md sm:h-16 sm:flex-nowrap sm:justify-between sm:gap-3 sm:px-8 sm:py-0">
         {/* Left: Animated Page Title */}
         <div className="flex min-w-0 flex-1 items-center">
           <motion.h1
@@ -48,7 +48,7 @@ export default function Toolbar({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
-            className="text-2xl font-semibold text-white"
+            className="text-2xl font-semibold text-foreground"
           >
             {pageTitle}
           </motion.h1>
@@ -58,7 +58,7 @@ export default function Toolbar({
         <div className="flex items-center gap-2 sm:gap-3">
           {selectedCount > 0 ? (
             <div className="animate-in slide-in-from-right-2 fade-in flex items-center gap-2 sm:gap-3">
-              <span className="text-xs font-medium text-zinc-500">{selectedCount} selected</span>
+              <span className="text-xs font-medium text-muted-foreground">{selectedCount} selected</span>
               <button
                 onClick={() => setConfirmDeleteOpen(true)}
                 className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-2 text-rose-500 transition-colors hover:bg-rose-500/20"
@@ -83,8 +83,8 @@ export default function Toolbar({
                   onClick={() => onFilterPresetChange(preset.id as 'all' | '30' | '60' | '90')}
                   className={`h-8 rounded-md px-2.5 text-[11px] font-semibold transition-colors ${
                     filterPreset === preset.id
-                      ? 'bg-zinc-700/60 text-zinc-100'
-                      : 'bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
+                      ? 'bg-card/60 text-foreground'
+                      : 'bg-accent text-muted-foreground hover:bg-accent hover:text-foreground'
                   }`}
                   title={`Filter ${preset.label}`}
                 >
@@ -94,22 +94,22 @@ export default function Toolbar({
 
               {!isMobile ? (
                 <>
-                  <div className="mx-1 hidden h-4 w-px bg-white/10 sm:block" />
-                  <div className="flex h-8 items-center gap-1 rounded-lg border border-white/10 bg-white/5 pl-2 pr-1.5">
-                    <CalendarIcon className="h-3.5 w-3.5 text-zinc-500" />
+                  <div className="mx-1 hidden h-4 w-px bg-accent sm:block" />
+                  <div className="flex h-8 items-center gap-1 rounded-lg border border-border bg-accent pl-2 pr-1.5">
+                    <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
                     <input
                       type="date"
                       value={startDate}
                       onChange={(event) => onStartDateChange(event.target.value)}
-                      className="w-[6.25rem] bg-transparent text-xs text-zinc-400 [color-scheme:dark] focus:outline-none"
+                      className="w-[6.25rem] bg-transparent text-xs text-muted-foreground [color-scheme:dark] focus:outline-none"
                       title="Start date"
                     />
-                    <span className="text-xs text-zinc-600">—</span>
+                    <span className="text-xs text-muted-foreground">—</span>
                     <input
                       type="date"
                       value={endDate}
                       onChange={(event) => onEndDateChange(event.target.value)}
-                      className="w-[6.25rem] bg-transparent text-xs text-zinc-400 [color-scheme:dark] focus:outline-none"
+                      className="w-[6.25rem] bg-transparent text-xs text-muted-foreground [color-scheme:dark] focus:outline-none"
                       title="End date"
                     />
                   </div>
@@ -127,13 +127,13 @@ export default function Toolbar({
       </header>
 
       <Dialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
-        <DialogContent className="border-white/10 bg-[#121214] text-white">
+        <DialogContent className="border-border bg-card text-foreground">
           <DialogHeader>
             <DialogTitle>Delete selected trades?</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-zinc-400">{selectedCount} trade(s) will be permanently deleted. This action cannot be undone.</p>
+          <p className="text-sm text-muted-foreground">{selectedCount} trade(s) will be permanently deleted. This action cannot be undone.</p>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setConfirmDeleteOpen(false)} className="bg-white/10 hover:bg-white/20">
+            <Button variant="secondary" onClick={() => setConfirmDeleteOpen(false)} className="bg-accent hover:bg-accent/80">
               Cancel
             </Button>
             <Button
@@ -141,7 +141,7 @@ export default function Toolbar({
                 onDeleteSelected();
                 setConfirmDeleteOpen(false);
               }}
-              className="bg-rose-500 text-white hover:bg-rose-400"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
             </Button>

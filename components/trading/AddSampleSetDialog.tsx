@@ -73,7 +73,7 @@ export default function AddSampleSetDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto border-white/10 bg-[#121214] text-white sm:max-w-md">
+      <DialogContent className="max-h-[90vh] overflow-y-auto border-border bg-card text-foreground sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add Sample Set</DialogTitle>
         </DialogHeader>
@@ -85,7 +85,7 @@ export default function AddSampleSetDialog({
               id="sample-set-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              className="border-white/10 bg-white/5 text-zinc-100"
+              className="border-border bg-accent text-foreground"
             />
           </div>
 
@@ -103,7 +103,7 @@ export default function AddSampleSetDialog({
             type="button"
             variant="secondary"
             onClick={() => onOpenChange(false)}
-            className="bg-white/10 hover:bg-white/20"
+            className="bg-accent hover:bg-accent/80"
           >
             Cancel
           </Button>
@@ -111,7 +111,7 @@ export default function AddSampleSetDialog({
             type="button"
             disabled={isSubmitting || rows.length === 0}
             onClick={() => void handleSubmit()}
-            className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-40"
+            className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40"
           >
             Add Sample
           </Button>

@@ -168,10 +168,10 @@ export default function BacktestSimPanel({
   };
 
   return (
-    <section className="flex flex-col bg-[#0A0A0B]">
+    <section className="flex flex-col bg-background">
       {isReadOnly ? (
-        <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-[#111319] px-3 py-2">
-          <div className="flex items-center gap-2 text-xs text-zinc-300">
+        <div className="flex items-center justify-between gap-2 border-b border-border bg-popover px-3 py-2">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Eye className="h-3.5 w-3.5 text-emerald-400" />
             <span>Viewing review</span>
           </div>
@@ -202,12 +202,12 @@ export default function BacktestSimPanel({
               defaultValue={riskDollars > 0 ? String(Math.round(riskDollars)) : ''}
               disabled={!ticker || !date || isReadOnly || isLoading}
               onBlur={(event) => void commitRisk(event.currentTarget.value)}
-              className="h-8 border-white/10 bg-white/5 font-mono text-xs text-zinc-100"
+              className="h-8 border-border bg-accent font-mono text-xs text-foreground"
             />
           </div>
           <div className="space-y-1.5">
             <Label>Status</Label>
-            <div className="flex h-8 items-center rounded-md border border-white/10 bg-white/5 px-3 font-mono text-xs text-zinc-100">
+            <div className="flex h-8 items-center rounded-md border border-border bg-accent px-3 font-mono text-xs text-foreground">
               {status}
             </div>
           </div>
@@ -215,69 +215,69 @@ export default function BacktestSimPanel({
 
         <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
           <div>
-            <div className="text-zinc-500">AVG ENTRY</div>
-            <div className="font-mono tabular-nums text-zinc-100">{position.avgEntry != null ? formatCurrency(position.avgEntry) : '-'}</div>
+            <div className="text-muted-foreground">AVG ENTRY</div>
+            <div className="font-mono tabular-nums text-foreground">{position.avgEntry != null ? formatCurrency(position.avgEntry) : '-'}</div>
           </div>
           <div>
-            <div className="text-zinc-500">SHARES</div>
-            <div className="font-mono tabular-nums text-zinc-100">{position.totalShares || '-'}</div>
+            <div className="text-muted-foreground">SHARES</div>
+            <div className="font-mono tabular-nums text-foreground">{position.totalShares || '-'}</div>
           </div>
           <div>
-            <div className="text-zinc-500">STOP</div>
-            <div className="font-mono tabular-nums text-zinc-100">{displayStop != null ? formatCurrency(displayStop) : '-'}</div>
+            <div className="text-muted-foreground">STOP</div>
+            <div className="font-mono tabular-nums text-foreground">{displayStop != null ? formatCurrency(displayStop) : '-'}</div>
           </div>
           <div>
-            <div className="text-zinc-500">RISK</div>
-            <div className="font-mono tabular-nums text-zinc-100">
+            <div className="text-muted-foreground">RISK</div>
+            <div className="font-mono tabular-nums text-foreground">
               {currentOpenRisk > 0
                 ? `${formatCurrency(currentOpenRisk)} ${formatR(currentOpenRisk / riskDollars)}`
                 : '-'}
             </div>
           </div>
           <div>
-            <div className="text-zinc-500">AVG EXIT</div>
-            <div className="font-mono tabular-nums text-zinc-100">{avgExit != null ? formatCurrency(avgExit) : '-'}</div>
+            <div className="text-muted-foreground">AVG EXIT</div>
+            <div className="font-mono tabular-nums text-foreground">{avgExit != null ? formatCurrency(avgExit) : '-'}</div>
           </div>
           <div>
-            <div className="text-zinc-500">LAST EXIT</div>
-            <div className="font-mono tabular-nums text-zinc-100">{position.lastExitPrice != null ? formatCurrency(position.lastExitPrice) : '-'}</div>
+            <div className="text-muted-foreground">LAST EXIT</div>
+            <div className="font-mono tabular-nums text-foreground">{position.lastExitPrice != null ? formatCurrency(position.lastExitPrice) : '-'}</div>
           </div>
           <div>
-            <div className="text-zinc-500">SIM PNL</div>
+            <div className="text-muted-foreground">SIM PNL</div>
             <div className={`font-mono tabular-nums ${pnlClass}`}>
               {actions.length > 0 ? `${formatCurrency(simPnl)} ${formatR(simPnl / riskDollars)}` : '-'}
             </div>
           </div>
           <div>
-            <div className="text-zinc-500">POS VALUE</div>
-            <div className="font-mono tabular-nums text-zinc-100">{position.totalShares > 0 ? formatCurrency(posValue) : '-'}</div>
+            <div className="text-muted-foreground">POS VALUE</div>
+            <div className="font-mono tabular-nums text-foreground">{position.totalShares > 0 ? formatCurrency(posValue) : '-'}</div>
           </div>
         </div>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">Ledger</span>
+            <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">Ledger</span>
             <Button
               type="button"
               variant="ghost"
               size="xs"
               disabled={isReadOnly || actions.length === 0 || isMutating}
               onClick={() => void onUndoLast()}
-              className="h-7 border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-40"
+              className="h-7 border border-border bg-accent text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
             >
               <RotateCcw className="h-3 w-3" />
               Undo last
             </Button>
           </div>
-          <div className="max-h-48 overflow-y-auto rounded-md border border-white/10 bg-[#111319]">
+          <div className="max-h-48 overflow-y-auto rounded-md border border-border bg-popover">
             {actions.length === 0 ? (
-              <div className="px-3 py-3 text-xs text-zinc-500">No simulation actions yet</div>
+              <div className="px-3 py-3 text-xs text-muted-foreground">No simulation actions yet</div>
             ) : (
-              <div className="divide-y divide-white/5">
+              <div className="divide-y divide-border">
                 {actions.map((action) => (
                   <div key={action.id} className="px-3 py-2 text-xs">
-                    <div className="font-mono text-zinc-400">{formatLedgerTime(action.barTime)}</div>
-                    <div className="mt-0.5 font-mono tabular-nums text-zinc-100">
+                    <div className="font-mono text-muted-foreground">{formatLedgerTime(action.barTime)}</div>
+                    <div className="mt-0.5 font-mono tabular-nums text-foreground">
                       {action.actionType} · {action.shares} @ {formatCurrency(action.price)}
                       {action.stopPrice != null ? ` · stop ${formatCurrency(action.stopPrice)}` : ''}
                     </div>
@@ -294,7 +294,7 @@ export default function BacktestSimPanel({
             variant="ghost"
             disabled={!session || isMutating || (!isReadOnly && actions.length === 0)}
             onClick={() => setClearOpen(true)}
-            className="h-8 border border-white/10 bg-white/5 text-xs text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-40"
+            className="h-8 border border-border bg-accent text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
           >
             <Trash2 className="h-3.5 w-3.5" />
             Clear
@@ -303,7 +303,7 @@ export default function BacktestSimPanel({
             type="button"
             disabled={!session || actions.length === 0 || isReadOnly || isMutating}
             onClick={() => setReviewOpen(true)}
-            className="h-8 border border-emerald-500/40 bg-emerald-500/10 text-xs text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-40"
+            className="h-8 border border-primary/40 bg-primary/10 text-xs text-primary hover:bg-primary/20 disabled:opacity-40"
           >
             {saveLabel}
           </Button>
@@ -315,14 +315,14 @@ export default function BacktestSimPanel({
               type="button"
               variant="ghost"
               disabled={!ticker || !date || visibleReviews.length === 0 || isLoading}
-              className="h-8 w-full justify-between border border-white/10 bg-white/5 text-xs text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-40"
+              className="h-8 w-full justify-between border border-border bg-accent text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
             >
               {selectedReview
                 ? formatReviewLabel(selectedReview)
                 : 'Load Review'}
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-[240px] border-white/10 bg-[#111319] text-white">
+          <DropdownMenuContent align="end" className="w-[240px] border-border bg-popover text-foreground">
             {visibleReviews.map((review) => (
               <DropdownMenuItem
                 key={review.id}
@@ -342,17 +342,17 @@ export default function BacktestSimPanel({
       </div>
 
       <Dialog open={clearOpen} onOpenChange={setClearOpen}>
-        <DialogContent className="border-white/10 bg-[#121214] text-white">
+        <DialogContent className="border-border bg-card text-foreground">
           <DialogHeader>
             <DialogTitle>{isReadOnly ? 'Clear review view?' : 'Clear simulation?'}</DialogTitle>
-            <DialogDescription className="text-sm text-zinc-400">
+            <DialogDescription className="text-sm text-muted-foreground">
               {isReadOnly
                 ? 'Exit this saved review view? The saved review will remain available.'
                 : `Remove all simulation executions for ${ticker ?? '-'} ${date ?? '-'}?`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setClearOpen(false)} className="bg-white/10 hover:bg-white/20">
+            <Button type="button" variant="secondary" onClick={() => setClearOpen(false)} className="bg-accent hover:bg-accent/80">
               Cancel
             </Button>
             <Button
@@ -362,7 +362,7 @@ export default function BacktestSimPanel({
                 void onClear();
                 setClearOpen(false);
               }}
-              className="bg-rose-500 text-white hover:bg-rose-400"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Clear
             </Button>
@@ -371,15 +371,15 @@ export default function BacktestSimPanel({
       </Dialog>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="border-white/10 bg-[#121214] text-white">
+        <DialogContent className="border-border bg-card text-foreground">
           <DialogHeader>
             <DialogTitle>Delete review?</DialogTitle>
-            <DialogDescription className="text-sm text-zinc-400">
+            <DialogDescription className="text-sm text-muted-foreground">
               Permanently delete this saved review and its execution ledger. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setDeleteOpen(false)} className="bg-white/10 hover:bg-white/20">
+            <Button type="button" variant="secondary" onClick={() => setDeleteOpen(false)} className="bg-accent hover:bg-accent/80">
               Cancel
             </Button>
             <Button
@@ -391,7 +391,7 @@ export default function BacktestSimPanel({
                 void onDeleteReview(session.id);
                 setDeleteOpen(false);
               }}
-              className="bg-rose-500 text-white hover:bg-rose-400 disabled:opacity-40"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-40"
             >
               Delete
             </Button>
@@ -400,10 +400,10 @@ export default function BacktestSimPanel({
       </Dialog>
 
       <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
-        <DialogContent className="border-white/10 bg-[#121214] text-white">
+        <DialogContent className="border-border bg-card text-foreground">
           <DialogHeader>
             <DialogTitle>Save Review</DialogTitle>
-            <DialogDescription className="text-sm text-zinc-400">
+            <DialogDescription className="text-sm text-muted-foreground">
               Save the current simulation ledger as a read-only review.
             </DialogDescription>
           </DialogHeader>
@@ -414,7 +414,7 @@ export default function BacktestSimPanel({
                 id="backtest-review-label"
                 value={reviewLabel}
                 onChange={(event) => setReviewLabel(event.target.value)}
-                className="border-white/10 bg-white/5 text-zinc-100"
+                className="border-border bg-accent text-foreground"
               />
             </div>
             <div className="space-y-2">
@@ -423,15 +423,15 @@ export default function BacktestSimPanel({
                 id="backtest-review-notes"
                 value={reviewNotes}
                 onChange={(event) => setReviewNotes(event.target.value)}
-                className="min-h-24 border-white/10 bg-white/5 text-zinc-100"
+                className="min-h-24 border-border bg-accent text-foreground"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setReviewOpen(false)} className="bg-white/10 hover:bg-white/20">
+            <Button type="button" variant="secondary" onClick={() => setReviewOpen(false)} className="bg-accent hover:bg-accent/80">
               Cancel
             </Button>
-            <Button type="button" onClick={() => void saveReview()} className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">
+            <Button type="button" onClick={() => void saveReview()} className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20">
               Save
             </Button>
           </DialogFooter>

@@ -525,7 +525,7 @@ export default function BacktestChartGrid({
 
   if (!ticker || !date) {
     return (
-      <div className="flex min-h-[520px] items-center justify-center border border-white/10 bg-[#121214] text-sm text-zinc-500">
+      <div className="flex min-h-[520px] items-center justify-center border border-border bg-card text-sm text-muted-foreground">
         Pick a ticker on the right
       </div>
     );

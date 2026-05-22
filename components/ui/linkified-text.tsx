@@ -60,7 +60,7 @@ export default function LinkifiedText({ value, className }: LinkifiedTextProps) 
               href={segment.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-emerald-400 underline decoration-emerald-400/40 underline-offset-2 hover:text-emerald-300 hover:decoration-emerald-300"
+              className="text-primary underline decoration-primary/40 underline-offset-2 hover:text-primary/80 hover:decoration-primary/60"
             >
               {segment.text}
             </a>

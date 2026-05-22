@@ -61,7 +61,7 @@ interface ApiResponse {
 let cachedReport: { report: MarketPulseReport; generatedAt: string | null } | null = null;
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
-  return <h5 className="mb-1 text-sm font-semibold text-zinc-200">{children}</h5>;
+  return <h5 className="mb-1 text-sm font-semibold text-foreground">{children}</h5>;
 }
 
 function formatPct(value: number | null): string {
@@ -85,9 +85,9 @@ function strengthClass(strength: MarketStrength): string {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-white/10 bg-white/5 px-2 py-1">
-      <div className="text-[11px] uppercase tracking-wide text-zinc-500">{label}</div>
-      <div className="font-mono text-sm tabular-nums text-zinc-200">{value}</div>
+    <div className="rounded border border-border bg-accent px-2 py-1">
+      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="font-mono text-sm tabular-nums text-foreground">{value}</div>
     </div>
   );
 }
@@ -97,16 +97,16 @@ function LeaderList({ title, rows }: { title: string; rows: MarketPulseLeader[] 
   return (
     <div>
       <SectionHeading>{title}</SectionHeading>
-      <ul className="space-y-1 text-sm text-zinc-300">
+      <ul className="space-y-1 text-sm text-muted-foreground">
         {rows.slice(0, 3).map((row) => (
           <li key={`${title}-${row.ticker}`} className="flex items-center justify-between gap-3">
             <span>
-              <span className="font-semibold text-zinc-200">{row.ticker}</span>
-              {row.sector ? <span className="text-zinc-500"> · {row.sector}</span> : null}
+              <span className="font-semibold text-foreground">{row.ticker}</span>
+              {row.sector ? <span className="text-muted-foreground"> · {row.sector}</span> : null}
             </span>
             <span className="shrink-0 font-mono tabular-nums">
               {formatPct(row.changePct)}
-              <span className="ml-2 text-zinc-500">{formatCompact(row.volume)} vol</span>
+              <span className="ml-2 text-muted-foreground">{formatCompact(row.volume)} vol</span>
             </span>
           </li>
         ))}
@@ -158,7 +158,7 @@ export default function MarketPulsePanel() {
 
   if (status === 'loading') {
     return (
-      <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-zinc-500">
+      <div className="rounded border border-border bg-accent px-4 py-6 text-center text-sm text-muted-foreground">
         Loading market pulse...
       </div>
     );
@@ -166,7 +166,7 @@ export default function MarketPulsePanel() {
 
   if (error) {
     return (
-      <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-rose-400">
+      <div className="rounded border border-border bg-accent px-4 py-6 text-center text-sm text-rose-400">
         {error}
       </div>
     );
@@ -174,26 +174,26 @@ export default function MarketPulsePanel() {
 
   if (!report) {
     return (
-      <div className="rounded border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-zinc-500">
+      <div className="rounded border border-border bg-accent px-4 py-6 text-center text-sm text-muted-foreground">
         Market pulse not available yet.
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 rounded border border-white/10 bg-white/5 p-4">
+    <div className="space-y-4 rounded border border-border bg-accent p-4">
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-2">
-          <span className="text-xs uppercase tracking-wide text-zinc-500">Strength</span>
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">Strength</span>
           <span className={`rounded px-2 py-0.5 text-xs font-medium uppercase ${strengthClass(report.marketStrength)}`}>
             {report.marketStrength}
           </span>
-          <span className="ml-2 text-xs uppercase tracking-wide text-zinc-500">Confidence</span>
-          <span className="rounded bg-zinc-700/40 px-2 py-0.5 text-xs font-medium uppercase text-zinc-200">
+          <span className="ml-2 text-xs uppercase tracking-wide text-muted-foreground">Confidence</span>
+          <span className="rounded bg-card/40 px-2 py-0.5 text-xs font-medium uppercase text-foreground">
             {report.confidence}
           </span>
         </span>
-        <span className="flex items-center gap-2 text-xs text-zinc-500">
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>{report.tradingDate}</span>
           {generatedAt ? <span>· {new Date(generatedAt).toLocaleString()}</span> : null}
         </span>
@@ -202,7 +202,7 @@ export default function MarketPulsePanel() {
       {report.tldr.length > 0 ? (
         <div>
           <SectionHeading>TLDR</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-300">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             {report.tldr.map((line, i) => (
               <li key={i}>{line}</li>
             ))}
@@ -213,7 +213,7 @@ export default function MarketPulsePanel() {
       {report.summary ? (
         <div>
           <SectionHeading>Summary</SectionHeading>
-          <p className="text-sm text-zinc-300">{report.summary}</p>
+          <p className="text-sm text-muted-foreground">{report.summary}</p>
         </div>
       ) : null}
 
@@ -240,9 +240,9 @@ export default function MarketPulsePanel() {
       {report.overview90 ? (
         <div>
           <SectionHeading>90-Day Overview</SectionHeading>
-          <p className="text-sm text-zinc-300">
-            <span className="font-semibold capitalize text-zinc-200">{report.overview90.trend}</span>
-            <span className="text-zinc-500"> · </span>
+          <p className="text-sm text-muted-foreground">
+            <span className="font-semibold capitalize text-foreground">{report.overview90.trend}</span>
+            <span className="text-muted-foreground"> · </span>
             {report.overview90.note}
           </p>
         </div>
@@ -256,7 +256,7 @@ export default function MarketPulsePanel() {
       {report.riskFlags.length > 0 ? (
         <div>
           <SectionHeading>Risk Flags</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-300">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             {report.riskFlags.map((flag, i) => (
               <li key={i}>{flag}</li>
             ))}

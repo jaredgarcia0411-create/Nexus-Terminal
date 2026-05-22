@@ -254,7 +254,7 @@ function BoolCell({ value }: { value: boolean }) {
 function TH({ children, right }: { children: ReactNode; right?: boolean }) {
   return (
     <th
-      className={`px-3 py-2 text-sm font-medium text-zinc-300 ${right ? 'text-right' : 'text-left'}`}
+      className={`px-3 py-2 text-sm font-medium text-muted-foreground ${right ? 'text-right' : 'text-left'}`}
     >
       {children}
     </th>
@@ -280,7 +280,7 @@ function fmtPercentOrDash(value: number | null | undefined): string {
 }
 
 function thresholdClass(value: number | null | undefined, tone?: 'percent'): string | undefined {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return 'text-zinc-600';
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'text-muted-foreground';
   if (tone === 'percent') return value >= 0 ? 'text-emerald-400' : 'text-rose-500';
   return undefined;
 }
@@ -362,9 +362,9 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
     }
   }, [dayOneRows]);
 
-  const tableCard = 'overflow-hidden rounded-xl border border-white/10 bg-[#121214]';
-  const headerRow = 'border-b border-white/5 bg-[#0f0f11]';
-  const bodyRow = 'cursor-pointer border-b border-white/5 transition-colors hover:bg-white/5';
+  const tableCard = 'overflow-hidden rounded-xl border border-border bg-card';
+  const headerRow = 'border-b border-border bg-card';
+  const bodyRow = 'cursor-pointer border-b border-border transition-colors hover:bg-accent';
 
   const handleRowKeyDown = (event: KeyboardEvent<HTMLTableRowElement>, ticker: string) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -426,7 +426,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
     return (
       <div className="space-y-6">
         <div className={tableCard}>
-          <p className="px-4 py-6 text-sm text-zinc-500">Loading gainers...</p>
+          <p className="px-4 py-6 text-sm text-muted-foreground">Loading gainers...</p>
         </div>
       </div>
     );
@@ -435,11 +435,11 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
   return (
     <div className="space-y-6">
       <div className={tableCard}>
-        <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
-          <h2 className="text-base font-bold text-zinc-300">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <h2 className="text-base font-bold text-muted-foreground">
             Day 1 Setup
           </h2>
-          <span className={`text-[10px] font-medium ${isRealtime ? 'text-emerald-500' : 'text-amber-500'}`}>
+          <span className={`text-[10px] font-medium ${isRealtime ? 'text-primary' : 'text-amber-500'}`}>
             {isRealtime ? 'LIVE' : '15-MIN DELAY'}
           </span>
         </div>
@@ -474,7 +474,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
             <tbody>
               {dayOneRows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-6 text-center text-sm text-zinc-500">
+                  <td colSpan={10} className="px-4 py-6 text-center text-sm text-muted-foreground">
                     No Day 1 gainers detected.
                   </td>
                 </tr>
@@ -498,7 +498,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                     title={`Open ${gainer.ticker} in Research`}
                   >
                     <TD>
-                      <span className="text-zinc-100">{gainer.ticker}</span>
+                      <span className="text-foreground">{gainer.ticker}</span>
                     </TD>
                     <TD right>${pdc.toFixed(3)}</TD>
                     <TD right>${mark.toFixed(3)}</TD>
@@ -509,19 +509,19 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                     </TD>
                     <TD right>{fmtVolume(vol)}</TD>
                     <TD right>
-                      {summary ? fmtMonths(summary.cashRemainingMonths) : <span className="text-zinc-600">...</span>}
+                      {summary ? fmtMonths(summary.cashRemainingMonths) : <span className="text-muted-foreground">...</span>}
                     </TD>
                     <TD right>
-                      {summary ? <BoolCell value={summary.hasAtm} /> : <span className="text-zinc-600">...</span>}
+                      {summary ? <BoolCell value={summary.hasAtm} /> : <span className="text-muted-foreground">...</span>}
                     </TD>
                     <TD right>
-                      {summary ? <BoolCell value={summary.hasEl} /> : <span className="text-zinc-600">...</span>}
+                      {summary ? <BoolCell value={summary.hasEl} /> : <span className="text-muted-foreground">...</span>}
                     </TD>
                     <TD right>
-                      {summary ? <BoolCell value={summary.hasWarrants} /> : <span className="text-zinc-600">...</span>}
+                      {summary ? <BoolCell value={summary.hasWarrants} /> : <span className="text-muted-foreground">...</span>}
                     </TD>
                     <TD right>
-                      {summary ? <BoolCell value={summary.hasS1} /> : <span className="text-zinc-600">...</span>}
+                      {summary ? <BoolCell value={summary.hasS1} /> : <span className="text-muted-foreground">...</span>}
                     </TD>
                   </tr>
                 );
@@ -532,8 +532,8 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
       </div>
 
       <div className={tableCard}>
-        <div className="border-b border-white/5 px-4 py-3">
-          <h2 className="text-base font-bold text-zinc-300">
+        <div className="border-b border-border px-4 py-3">
+          <h2 className="text-base font-bold text-muted-foreground">
             Potential MDR Setup
           </h2>
         </div>
@@ -562,7 +562,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
             <tbody>
               {mdrRows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-sm text-zinc-500">
+                  <td colSpan={7} className="px-4 py-6 text-center text-sm text-muted-foreground">
                     No MDR setups detected.
                   </td>
                 </tr>
@@ -578,7 +578,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                     title={`Open ${row.ticker} in Research`}
                   >
                     <TD>
-                      <span className="text-zinc-100">{row.ticker}</span>
+                      <span className="text-foreground">{row.ticker}</span>
                     </TD>
                     <TD right>${row.pdc.toFixed(3)}</TD>
                     <TD right>${row.mark.toFixed(3)}</TD>

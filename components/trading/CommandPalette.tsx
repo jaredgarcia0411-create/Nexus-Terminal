@@ -46,12 +46,12 @@ export default function CommandPalette({
       onOpenChange={onOpenChange}
       title="Command Palette"
       description="Search for a command to run..."
-      className="border-white/10 bg-[#121214]"
+      className="border-border bg-card"
       showCloseButton={false}
     >
-      <CommandInput placeholder="Type a command or search..." className="text-zinc-200" />
-      <CommandList className="text-zinc-300">
-        <CommandEmpty className="text-zinc-500">No results found.</CommandEmpty>
+      <CommandInput placeholder="Type a command or search..." className="text-foreground" />
+      <CommandList className="text-muted-foreground">
+        <CommandEmpty className="text-muted-foreground">No results found.</CommandEmpty>
 
         <CommandGroup heading="Navigation">
           {NAV_ITEMS.map((item) => {
@@ -60,9 +60,9 @@ export default function CommandPalette({
               <CommandItem
                 key={item.tab}
                 onSelect={() => runCommand(() => setActiveTab(item.tab))}
-                className="data-[selected=true]:bg-white/10"
+                className="data-[selected=true]:bg-accent"
               >
-                <Icon className="mr-2 h-4 w-4 text-zinc-400" />
+                <Icon className="mr-2 h-4 w-4 text-muted-foreground" />
                 {item.label}
                 <CommandShortcut>{item.shortcut}</CommandShortcut>
               </CommandItem>
@@ -73,16 +73,16 @@ export default function CommandPalette({
         <CommandGroup heading="Actions">
           <CommandItem
             onSelect={() => runCommand(onNewTradeClick)}
-            className="data-[selected=true]:bg-white/10"
+            className="data-[selected=true]:bg-accent"
           >
-            <Plus className="mr-2 h-4 w-4 text-zinc-400" />
+            <Plus className="mr-2 h-4 w-4 text-muted-foreground" />
             New Trade
           </CommandItem>
           <CommandItem
             onSelect={() => runCommand(onImportClick)}
-            className="data-[selected=true]:bg-white/10"
+            className="data-[selected=true]:bg-accent"
           >
-            <Upload className="mr-2 h-4 w-4 text-zinc-400" />
+            <Upload className="mr-2 h-4 w-4 text-muted-foreground" />
             Import CSV
           </CommandItem>
         </CommandGroup>

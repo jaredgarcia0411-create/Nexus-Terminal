@@ -7,7 +7,7 @@ import type { ResearchSnapshotFiling } from '@/lib/types';
 
 export function NoDataBadge({ label = 'No data' }: { label?: string }) {
   return (
-    <span className="inline-flex rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-sm text-zinc-400">
+    <span className="inline-flex rounded-md border border-zinc-700 bg-card/60 px-2 py-1 text-sm text-muted-foreground">
       {label}
     </span>
   );
@@ -36,18 +36,18 @@ export function FilingsRow({ filing }: { filing: ResearchSnapshotFiling }) {
       href={filing.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-zinc-200 underline-offset-2 transition-colors hover:text-emerald-400 hover:underline"
+      className="text-foreground underline-offset-2 transition-colors hover:text-primary hover:underline"
     >
       {filing.title}
     </a>
   ) : (
-    <span className="text-zinc-200">{filing.title}</span>
+    <span className="text-foreground">{filing.title}</span>
   );
 
   return (
-    <tr className="border-b border-white/5 align-top text-zinc-300">
+    <tr className="border-b border-border align-top text-muted-foreground">
       {/* whitespace-nowrap so form types like "20-F" never wrap to a second line */}
-      <td className="px-3 py-2 align-top whitespace-nowrap font-bold text-white">
+      <td className="px-3 py-2 align-top whitespace-nowrap font-bold text-foreground">
         {filing.formType}
       </td>
       <td className="px-3 py-2 text-center align-top">
@@ -56,7 +56,7 @@ export function FilingsRow({ filing }: { filing: ResearchSnapshotFiling }) {
           <button
             type="button"
             onClick={() => setExpanded((prev) => !prev)}
-            className="mt-1 text-xs text-zinc-500 underline-offset-2 transition-colors hover:text-zinc-200 hover:underline"
+            className="mt-1 text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
           >
             {expanded ? 'Show less' : 'Show full headline'}
           </button>
@@ -78,7 +78,7 @@ export function FilingsTable({ filings }: { filings: ResearchSnapshotFiling[] })
     <div className="scrollbar-hidden overflow-x-auto">
       <table className="min-w-full">
         <thead>
-          <tr className="border-b border-white/10 text-zinc-400">
+          <tr className="border-b border-border text-muted-foreground">
             <th className="px-3 py-2 text-left">Type</th>
             <th className="px-3 py-2 text-center">Headline</th>
             <th className="px-3 py-2 text-right">Filed At</th>

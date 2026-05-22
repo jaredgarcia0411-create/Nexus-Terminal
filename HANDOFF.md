@@ -8,7 +8,7 @@
 ## Sprint 3 — Visual Light Mode (Full Token Migration)
 
 > Generated: 2026-05-22 | Agent: Claude (Plan)
-> Status: READY FOR CODEX
+> Status: CODEX PASS COMPLETE — USER SMOKE PASSED
 
 ### Objective
 
@@ -278,18 +278,18 @@ Leave `.scrollbar-hidden` alone (it doesn't use color vars).
 
 ### Acceptance Criteria
 
-- [ ] `app/globals.css` `:root` block contains the warm off-white palette exactly as specified.
-- [ ] `app/globals.css` `.dark` block is unchanged except for the three new scrollbar vars appended.
-- [ ] Scrollbar in light mode is light gray-on-warm-gray (not black).
-- [ ] Theme toggle appears as the first item in the `SettingsMenu` dropdown with a Sun (in dark mode) or Moon (in light mode) icon and a label that flips.
-- [ ] Clicking the toggle flips the theme without closing the dropdown (`e.preventDefault()` confirmed).
-- [ ] Toaster background follows the theme (white-ish on light, dark on dark) — visible by triggering any `toast()` call after toggling.
-- [ ] Charts (Backtest, Research, Candlestick, ChartDrawings) stay dark in both modes; surrounding card containers theme.
-- [ ] A grep for `bg-\[#` in `app/` and `components/` returns ONLY occurrences inside the 4 chart files in D4 (plus print-style hex values).
-- [ ] A grep for `bg-zinc-[5-9]\|bg-white/[0-9]\|border-white/[0-9]\|text-zinc-[3-9]` in `app/` and `components/` returns ONLY: (a) occurrences inside the 4 chart files in D4, (b) the 5 shadcn primitives that use `dark:` prefix correctly per D9, and (c) lines annotated with `// theme: domain color — leave hardcoded`. To verify, run `grep -rn --include='*.tsx' -E 'bg-zinc-[5-9]|bg-white/[0-9]|border-white/[0-9]|text-zinc-[3-9]' app components | grep -v 'BacktestChart\.tsx\|ResearchChart\.tsx\|CandlestickChart\.tsx\|ChartDrawings\.tsx\|components/ui/button\.tsx\|components/ui/input\.tsx\|components/ui/textarea\.tsx\|components/ui/select\.tsx\|components/ui/dropdown-menu\.tsx\|theme: domain color'` and confirm the result is empty (or only contains trading-domain occurrences carrying the marker comment).
-- [ ] All trading P/L green/red colors visibly indicate profit/loss in BOTH light and dark modes (manual smoke).
-- [ ] No new TypeScript errors; no new ESLint warnings.
-- [ ] All 714 existing tests still pass (no test changes expected).
+- [x] `app/globals.css` `:root` block contains the warm off-white palette exactly as specified.
+- [x] `app/globals.css` `.dark` block is unchanged except for the three new scrollbar vars appended.
+- [x] Scrollbar in light mode is light gray-on-warm-gray (not black).
+- [x] Theme toggle appears as the first item in the `SettingsMenu` dropdown with a Sun (in dark mode) or Moon (in light mode) icon and a label that flips.
+- [x] Clicking the toggle flips the theme without closing the dropdown (`e.preventDefault()` confirmed).
+- [x] Toaster background follows the theme (white-ish on light, dark on dark) — visible by triggering any `toast()` call after toggling. **User-run dev-server smoke passed.**
+- [x] Charts (Backtest, Research, Candlestick, ChartDrawings) stay dark in both modes; surrounding card containers theme.
+- [x] A grep for `bg-\[#` in `app/` and `components/` returns ONLY occurrences inside the 4 chart files in D4 (plus print-style hex values).
+- [x] A grep for `bg-zinc-[5-9]\|bg-white/[0-9]\|border-white/[0-9]\|text-zinc-[3-9]` in `app/` and `components/` returns ONLY: (a) occurrences inside the 4 chart files in D4, (b) the 5 shadcn primitives that use `dark:` prefix correctly per D9, and (c) lines annotated with `// theme: domain color — leave hardcoded`. To verify, run `grep -rn --include='*.tsx' -E 'bg-zinc-[5-9]|bg-white/[0-9]|border-white/[0-9]|text-zinc-[3-9]' app components | grep -v 'BacktestChart\.tsx\|ResearchChart\.tsx\|CandlestickChart\.tsx\|ChartDrawings\.tsx\|components/ui/button\.tsx\|components/ui/input\.tsx\|components/ui/textarea\.tsx\|components/ui/select\.tsx\|components/ui/dropdown-menu\.tsx\|theme: domain color'` and confirm the result is empty (or only contains trading-domain occurrences carrying the marker comment).
+- [x] All trading P/L green/red colors visibly indicate profit/loss in BOTH light and dark modes (user-run dev-server smoke passed).
+- [x] No new TypeScript errors; no new ESLint warnings.
+- [x] All 714 existing tests still pass (updated one stale class assertion to the semantic-token contract).
 
 ### Validation
 
@@ -298,6 +298,16 @@ Run before marking the sprint COMPLETE:
 - `npx tsc --noEmit`
 - `npm test`
 - `npm run workflow:audit` (HANDOFF.md is a workflow asset)
+
+Codex validation evidence (2026-05-22):
+- `git diff --check` — pass.
+- Static acceptance grep for `bg-\[#` — only the four chart files listed in D4.
+- Static acceptance grep for hardcoded zinc/white chrome after D4/D9 exclusions — empty.
+- `npm run lint` — pass.
+- `npx tsc --noEmit` — pass.
+- `npm test` — pass (98 files, 714 tests).
+- `npm run workflow:audit` — pass.
+- User-run dev-server visual smoke — pass.
 
 Manual smoke (user-run after the Codex pass):
 1. In DevTools Application tab, clear `localStorage` key `theme` and reload — confirm app loads in dark mode (the `defaultTheme="dark"` from Sprint 2's D3).

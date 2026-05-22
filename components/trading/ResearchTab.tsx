@@ -48,7 +48,7 @@ export default function ResearchTab({ pendingResearchTicker, onClearPendingTicke
     >
       <div className="flex items-center gap-2 px-1">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             value={tickerInput}
@@ -57,7 +57,7 @@ export default function ResearchTab({ pendingResearchTicker, onClearPendingTicke
               if (event.key === 'Enter') handleTickerSubmit();
             }}
             placeholder="Search Symbol"
-            className="w-48 rounded-lg border border-white/10 bg-[#121214] py-1.5 pl-10 pr-3 text-sm text-zinc-200 transition-colors focus:border-emerald-500/50 focus:outline-none"
+            className="w-48 rounded-lg border border-border bg-card py-1.5 pl-10 pr-3 text-sm text-foreground transition-colors focus:border-ring/50 focus:outline-none"
           />
         </div>
       </div>
@@ -68,7 +68,7 @@ export default function ResearchTab({ pendingResearchTicker, onClearPendingTicke
         {selectedTicker ? (
           <ResearchTickerView ticker={selectedTicker} />
         ) : (
-          <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             Search a Ticker or Select One From The Scanner in Dashboard
           </div>
         )}

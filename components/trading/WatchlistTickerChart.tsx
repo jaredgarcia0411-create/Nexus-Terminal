@@ -22,23 +22,23 @@ export default function WatchlistTickerChart({ ticker, date }: WatchlistTickerCh
 
   if (!ticker) {
     return (
-      <div className="flex h-[360px] items-center justify-center text-sm text-zinc-500">
+      <div className="flex h-[360px] items-center justify-center text-sm text-muted-foreground">
         Add a ticker to load a chart.
       </div>
     );
   }
 
   if (isLoading) {
-    return <div className="flex h-[360px] items-center justify-center text-sm text-zinc-400">Loading chart…</div>;
+    return <div className="flex h-[360px] items-center justify-center text-sm text-muted-foreground">Loading chart…</div>;
   }
 
   if (error) {
-    return <div className="flex h-[360px] items-center justify-center text-sm text-zinc-400">{error}</div>;
+    return <div className="flex h-[360px] items-center justify-center text-sm text-muted-foreground">{error}</div>;
   }
 
   if (candles.length === 0) {
     return (
-      <div className="flex h-[360px] items-center justify-center text-sm text-zinc-500">
+      <div className="flex h-[360px] items-center justify-center text-sm text-muted-foreground">
         No intraday candles for this day.
       </div>
     );

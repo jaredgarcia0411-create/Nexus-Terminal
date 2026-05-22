@@ -63,13 +63,13 @@ export default function DilutionRatingTile(props: TileProps) {
 
   return (
     <div>
-      <h4 className="mb-2 border-b border-white/10 pb-2 text-lg font-semibold text-zinc-200">Dilution Rating</h4>
+      <h4 className="mb-2 border-b border-border pb-2 text-lg font-semibold text-foreground">Dilution Rating</h4>
       <div className="space-y-1.5">
         {rows.map((row) => (
           <div key={row.label} className="flex items-center justify-between gap-2">
-            <span className="text-sm font-medium text-white">{row.label}</span>
+            <span className="text-sm font-medium text-foreground">{row.label}</span>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-zinc-200">{toStringValue(row.value)}</span>
+              <span className="text-sm font-medium text-foreground">{toStringValue(row.value)}</span>
               <BarChartIcon level={ratingLevel(row.value)} size="md" />
             </div>
           </div>
@@ -86,14 +86,14 @@ function pillClasses(level: RatingLevel): string {
   if (level === 'high') return 'bg-rose-500/15 text-rose-300';
   if (level === 'medium') return 'bg-amber-500/15 text-amber-300';
   if (level === 'low') return 'bg-emerald-500/15 text-emerald-300';
-  return 'bg-zinc-700/40 text-zinc-400';
+  return 'bg-card/40 text-muted-foreground';
 }
 
 function bannerClasses(level: RatingLevel): string {
   if (level === 'high') return 'border-rose-500/30 bg-rose-500/5 text-rose-300';
   if (level === 'medium') return 'border-amber-500/30 bg-amber-500/5 text-amber-300';
   if (level === 'low') return 'border-emerald-500/30 bg-emerald-500/5 text-emerald-300';
-  return 'border-zinc-500/30 bg-zinc-500/5 text-zinc-400';
+  return 'border-zinc-500/30 bg-muted/5 text-muted-foreground';
 }
 
 function BannerIcon() {
@@ -150,7 +150,7 @@ export function DilutionRatingPanel({ data }: PanelProps) {
           const level = ratingLevel(item.value);
           return (
             <div key={item.label} className="flex items-center justify-between gap-3">
-              <span className="text-sm font-medium text-white">{item.label}</span>
+              <span className="text-sm font-medium text-foreground">{item.label}</span>
               <span className={`inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 text-sm font-medium ${pillClasses(level)}`}>
                 <BarChartIcon level={level} size="md" />
                 {toStringValue(item.value)}

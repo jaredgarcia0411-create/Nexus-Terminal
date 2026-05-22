@@ -50,13 +50,13 @@ export default function BacktestTradeMenu({
           variant="ghost"
           size="sm"
           disabled={disabled}
-          className="h-8 text-xs text-zinc-300 hover:bg-transparent hover:text-white disabled:opacity-40"
+          className="h-8 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground disabled:opacity-40"
         >
           <TrendingUp className="h-3.5 w-3.5" />
           {armedAction ? ACTION_LABELS[armedAction] : 'Trade'}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="border-white/10 bg-[#111319] text-white">
+      <DropdownMenuContent align="end" className="border-border bg-popover text-foreground">
         {ACTION_ORDER.map((actionType) => {
           const enabled = isEnabled(direction, actionType);
           return (

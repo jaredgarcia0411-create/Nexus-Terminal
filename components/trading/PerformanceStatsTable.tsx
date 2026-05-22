@@ -319,8 +319,8 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
 
   if (trades.length === 0) {
     return (
-      <div className="rounded-2xl border border-white/5 bg-[#121214] p-6">
-        <p className="text-center text-sm text-zinc-500">Import trades to see statistics</p>
+      <div className="rounded-2xl border border-border bg-card p-6">
+        <p className="text-center text-sm text-muted-foreground">Import trades to see statistics</p>
       </div>
     );
   }
@@ -328,10 +328,10 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
   const rows: StatsCell[][] = Array.from({ length: 10 }, (_, rowIndex) => stats.slice(rowIndex * 3, rowIndex * 3 + 3));
 
   return (
-    <div className="rounded-2xl border border-white/5 bg-[#121214] p-6 tabular-nums">
+    <div className="rounded-2xl border border-border bg-card p-6 tabular-nums">
       <div className="mb-6 flex items-center gap-2">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Stats</h3>
-        <Info className="h-3.5 w-3.5 text-zinc-600" />
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Stats</h3>
+        <Info className="h-3.5 w-3.5 text-muted-foreground" />
         {openCount > 0 ? (
           <span className="ml-auto text-xs text-amber-400 font-medium">
             {openCount} open position{openCount === 1 ? '' : 's'} excluded
@@ -339,20 +339,20 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
         ) : null}
       </div>
 
-      <div className="divide-y divide-white/5">
+      <div className="divide-y divide-border">
         {rows.map((row, rowIndex) => (
           <div key={`row-${rowIndex}`} className="grid grid-cols-3 gap-4 py-3 text-sm sm:text-xs">
             {row.map((cell, cellIndex) => (
               <div key={`cell-${rowIndex}-${cellIndex}`} className="flex items-center justify-between gap-2">
-                <span className="text-xs text-zinc-500">{cell.label}</span>
+                <span className="text-xs text-muted-foreground">{cell.label}</span>
                 <div className="flex items-center gap-1">
-                  <span className={`font-mono text-sm font-medium ${cell.value.startsWith('-') ? 'text-rose-500' : 'text-white'}`}>
+                  <span className={`font-mono text-sm font-medium ${cell.value.startsWith('-') ? 'text-rose-500' : 'text-foreground'}`}>
                     {cell.value}
                   </span>
                   {cell.clickTrade ? (
                     <button
                       onClick={() => onTradeClick(cell.clickTrade as Trade)}
-                      className="text-emerald-500 hover:text-emerald-400"
+                      className="text-primary hover:text-primary/80"
                       type="button"
                       title={`Open trade ${cell.clickTrade?.symbol}`}
                     >
