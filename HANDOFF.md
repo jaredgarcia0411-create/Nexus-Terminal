@@ -8,7 +8,7 @@
 ## Sprint 2 — Light Mode Infrastructure
 
 > Generated: 2026-05-22 | Agent: Claude (Plan)
-> Status: READY FOR CODEX
+> Status: CODE COMPLETE — automated validation passed; manual A/B browser smoke pending
 > Executes on worktree (see Step 0). Worktree branch: `sprint-2-light-infra`.
 
 ### Objective
@@ -319,6 +319,14 @@ Run before marking the sprint COMPLETE:
 - `npx tsc --noEmit`
 - `npm test`
 - Manual A/B browser smoke vs main (acceptance criteria above).
+
+Codex code pass 2026-05-22:
+- `npm run lint` — passed.
+- `npx tsc --noEmit` — passed after Step 1 and after full implementation.
+- `npm test` — passed (98 files, 714 tests).
+- Static acceptance checks passed: no local `function toEpochMs`, `toEpochMs` appears only at the import plus three call sites, `className="dark"` count is `0`, `next-themes` appears once in `package.json` at `^0.4.6`.
+- Worktree dev server started on `http://localhost:3001` after sandbox escalation. `agent-browser` CLI was not available on PATH, so visual A/B and DevTools localStorage checks remain user-run/pending.
+- `/login` returned HTTP 200 from the worktree dev server, and rendered HTML includes the `next-themes` pre-paint script with `defaultTheme="dark"`.
 
 ### Notes for Codex
 

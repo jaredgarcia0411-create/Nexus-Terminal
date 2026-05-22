@@ -56,7 +56,7 @@ import {
   type OHLCData,
 } from '@/lib/indicators';
 import { epochToNySortKey, getNextTradingSession, getPreviousTradingSession, nyDateTimeToEpoch, parseSortKey } from '@/lib/time-utils';
-import { formatNyCrosshair, formatNyTime, toTime } from '@/lib/chart-time';
+import { formatNyCrosshair, formatNyTime, toEpochMs, toTime } from '@/lib/chart-time';
 import type { BacktestAction, BacktestActionType } from '@/lib/types';
 
 export type IndicatorKey =
@@ -160,24 +160,6 @@ const LOOKBACK_WINDOWS: Record<BacktestTimeframeKey, { tradingSessionsBack?: num
   '1W': { calendarYearsBack: 2 },
   '1M': { calendarYearsBack: 5 },
 };
-
-function toEpochMs(time: Time | null | undefined): number | null {
-  if (time == null) return null;
-  if (typeof time === 'number') return Number.isFinite(time) ? time * 1000 : null;
-  if (typeof time === 'string') {
-    const parsed = Date.parse(time);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  const businessDay = time as { year?: number; month?: number; day?: number };
-  if (
-    Number.isFinite(businessDay.year)
-    && Number.isFinite(businessDay.month)
-    && Number.isFinite(businessDay.day)
-  ) {
-    return Date.UTC(Number(businessDay.year), Number(businessDay.month) - 1, Number(businessDay.day));
-  }
-  return null;
-}
 
 function shiftCalendarDays(dateKey: string, days: number) {
   const parsed = parseSortKey(dateKey);
