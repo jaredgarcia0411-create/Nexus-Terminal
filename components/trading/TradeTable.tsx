@@ -63,8 +63,8 @@ export default function TradeTable({
                 onClick={() => onPositionFilterChange(filter)}
                 className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
                   positionFilter === filter
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground hover:text-muted-foreground'
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {filter.charAt(0).toUpperCase() + filter.slice(1)}

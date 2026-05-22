@@ -81,10 +81,10 @@ export default function Toolbar({
                 <button
                   key={preset.id}
                   onClick={() => onFilterPresetChange(preset.id as 'all' | '30' | '60' | '90')}
-                  className={`h-8 rounded-md px-2.5 text-[11px] font-semibold transition-colors ${
+                  className={`h-8 rounded-md border px-2.5 text-[11px] font-semibold transition-colors ${
                     filterPreset === preset.id
-                      ? 'bg-card/60 text-foreground'
-                      : 'bg-accent text-muted-foreground hover:bg-accent hover:text-foreground'
+                      ? 'border-primary/40 bg-primary/15 text-primary'
+                      : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground'
                   }`}
                   title={`Filter ${preset.label}`}
                 >

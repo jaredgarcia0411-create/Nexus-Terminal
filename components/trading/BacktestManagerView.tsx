@@ -35,17 +35,16 @@ function formatRelativeTimestamp(value: string | null) {
   return `${formatDistanceToNow(new Date(parsed), { addSuffix: true })}`;
 }
 
+const greenButtonClass =
+  'border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20';
+
 const deleteIconButtonClass =
   'h-7 w-7 shrink-0 border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 focus-visible:ring-rose-500/40';
 
-const addIconButtonClass =
-  'h-7 w-7 shrink-0 border border-primary/40 text-primary hover:bg-primary/10 hover:text-primary/80 focus-visible:ring-ring';
+const addIconButtonClass = `h-7 w-7 shrink-0 ${greenButtonClass} focus-visible:ring-ring`;
 
 const editIconButtonClass =
   'h-7 w-7 shrink-0 border border-border bg-accent text-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring/30';
-
-const greenButtonClass =
-  'border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20';
 
 function formatBacktestSampleSetLabel(backtest: BacktestListItem, isUncategorized: boolean) {
   if (isUncategorized) return backtest.sampleSetName ?? 'No sample set';

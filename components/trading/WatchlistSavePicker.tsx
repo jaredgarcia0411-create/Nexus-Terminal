@@ -121,7 +121,7 @@ export default function WatchlistSavePicker({
             <button
               type="button"
               onClick={() => setCreateOpen(true)}
-              className="flex h-9 flex-1 items-center justify-center gap-2 rounded-[6px] border border-emerald-500/30 bg-emerald-500/5 px-3 text-sm text-emerald-300 hover:bg-primary/10"
+              className="flex h-9 flex-1 items-center justify-center gap-2 rounded-[6px] border border-primary/30 bg-primary/5 px-3 text-sm text-primary hover:bg-primary/10"
             >
               <Plus className="h-4 w-4" />
               Create New Sample Set

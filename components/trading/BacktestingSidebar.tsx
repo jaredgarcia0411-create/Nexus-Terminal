@@ -312,11 +312,11 @@ export default function BacktestingSidebar({
           >
             <SelectTrigger
               aria-label="Select Sample Set"
-              className="mt-2 h-8 w-full border-border bg-black text-xs text-foreground"
+              className="mt-2 h-8 w-full border-border text-xs"
             >
               <SelectValue placeholder="Select Sample Set" />
             </SelectTrigger>
-            <SelectContent className="border-border bg-black text-foreground">
+            <SelectContent>
               <SelectItem value={SAMPLE_SELECT_PLACEHOLDER}>Select Sample Set</SelectItem>
               <SelectItem value={SYSTEM_SAMPLE_SET}>System Sheet</SelectItem>
               {availableSampleSets.map((sampleSet) => (

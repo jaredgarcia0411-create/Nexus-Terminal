@@ -15,10 +15,10 @@ export default function ResearchSubNav<T extends string>({ tabs, activeTab, onTa
             key={tab.key}
             type="button"
             onClick={() => onTabChange(tab.key)}
-            className={`rounded-sm px-2.5 py-1 text-sm font-bold transition-colors ${
+            className={`rounded-sm px-2.5 py-1 text-sm font-semibold transition-colors ${
               activeTab === tab.key
-                ? 'bg-card/60 text-foreground'
-                : 'text-foreground hover:bg-accent'
+                ? 'bg-accent text-foreground'
+                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
             }`}
           >
             {tab.label}

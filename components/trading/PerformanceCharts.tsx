@@ -191,11 +191,11 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
                   <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-              <XAxis dataKey="date" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
-              <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="date" stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} />
+              <YAxis stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
               <Tooltip
-                contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                contentStyle={{ backgroundColor: 'var(--popover)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--popover-foreground)' }}
                 itemStyle={{ color: '#10b981' }}
                 formatter={(value?: number) => [formatValue(Number(value || 0)), 'Equity']}
               />
@@ -208,11 +208,11 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
           <h3 className="text-sm font-semibold mb-6 text-muted-foreground uppercase tracking-wider">Daily Performance ({metricLabel})</h3>
           <ResponsiveContainer width="100%" height="85%">
             <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-              <XAxis dataKey="date" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
-              <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="date" stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} />
+              <YAxis stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
               <Tooltip
-                contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                contentStyle={{ backgroundColor: 'var(--popover)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--popover-foreground)' }}
                 formatter={(value?: number) => [formatValue(Number(value || 0)), 'Performance']}
               />
               <Bar dataKey="value">
@@ -231,11 +231,11 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
               <h3 className="text-sm font-semibold mb-6 text-muted-foreground uppercase tracking-wider">Performance by Day of Week ({metricLabel})</h3>
               <ResponsiveContainer width="100%" height="85%">
                 <BarChart data={dayOfWeekData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                  <XAxis dataKey="name" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="name" stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                    contentStyle={{ backgroundColor: 'var(--popover)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--popover-foreground)' }}
                     formatter={(value?: number) => [formatValue(Number(value || 0)), 'P/L']}
                   />
                   <Bar dataKey="value">
@@ -251,11 +251,11 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
               <h3 className="text-sm font-semibold mb-6 text-muted-foreground uppercase tracking-wider">Performance by Time of Day ({metricLabel})</h3>
               <ResponsiveContainer width="100%" height="85%">
                 <BarChart data={timeOfDayData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                  <XAxis dataKey="name" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="name" stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                    contentStyle={{ backgroundColor: 'var(--popover)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--popover-foreground)' }}
                     formatter={(value?: number) => [formatValue(Number(value || 0)), 'P/L']}
                   />
                   <Bar dataKey="value">
@@ -273,11 +273,11 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
               <h3 className="text-sm font-semibold mb-6 text-muted-foreground uppercase tracking-wider">Win vs Loss Days</h3>
               <ResponsiveContainer width="100%" height="85%">
                 <BarChart data={winLossDayData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                  <XAxis dataKey="name" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="name" stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                    contentStyle={{ backgroundColor: 'var(--popover)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--popover-foreground)' }}
                     formatter={(value?: number) => [`${Number(value || 0)} days`, 'Count']}
                   />
                   <Bar dataKey="value">
@@ -299,12 +299,12 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
                       <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                  <XAxis dataKey="date" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
-                  <ReferenceLine y={0} stroke="#ffffff22" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatValue(Number(v))} />
+                  <ReferenceLine y={0} stroke="var(--border)" />
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                    contentStyle={{ backgroundColor: 'var(--popover)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--popover-foreground)' }}
                     formatter={(value?: number) => [formatValue(Number(value || 0)), 'Drawdown']}
                   />
                   <Area type="monotone" dataKey="drawdown" stroke="#f43f5e" fillOpacity={1} fill="url(#colorDrawdown)" strokeWidth={2} />
@@ -319,11 +319,11 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
               ) : (
                 <ResponsiveContainer width="100%" height="85%">
                   <BarChart data={tagBreakdownData} layout="vertical" margin={{ left: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" horizontal={false} />
-                    <XAxis type="number" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
-                    <YAxis dataKey="tag" type="category" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} width={85} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                    <XAxis type="number" stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <YAxis dataKey="tag" type="category" stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} width={85} />
                     <Tooltip
-                      contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                      contentStyle={{ backgroundColor: 'var(--popover)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--popover-foreground)' }}
                       formatter={(value?: number) => [`${Number(value || 0)} trades`, 'Tagged Trades']}
                     />
                     <Bar dataKey="count" fill="#10b981" />

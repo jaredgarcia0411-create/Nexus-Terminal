@@ -115,14 +115,14 @@ export default function PerformanceTab({
             <button
               type="button"
               onClick={() => setPnlMode('net')}
-              className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'net' ? 'bg-card/60 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${pnlMode === 'net' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
             >
               Net
             </button>
             <button
               type="button"
               onClick={() => setPnlMode('gross')}
-              className={`rounded-md px-3 py-1 text-xs font-medium ${pnlMode === 'gross' ? 'bg-card/60 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${pnlMode === 'gross' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
             >
               Gross
             </button>
@@ -131,14 +131,14 @@ export default function PerformanceTab({
             <button
               type="button"
               onClick={() => onMetricChange('$')}
-              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === '$' ? 'bg-card/60 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === '$' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
             >
               $
             </button>
             <button
               type="button"
               onClick={() => onMetricChange('R')}
-              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === 'R' ? 'bg-card/60 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${performanceMetric === 'R' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
             >
               R
             </button>

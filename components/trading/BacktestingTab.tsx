@@ -458,8 +458,8 @@ export default function BacktestingTab() {
             </div>
 
             {armedAction ? (
-              <div className="flex h-9 shrink-0 items-center justify-between border border-emerald-500/20 bg-emerald-500/8 px-3">
-                <span className="text-sm text-emerald-300">
+              <div className="flex h-9 shrink-0 items-center justify-between border border-primary/20 bg-primary/8 px-3">
+                <span className="text-sm text-primary">
                   Click chart to place {armedAction.replace('_', ' ')} entry. ESC to cancel.
                 </span>
                 <Button

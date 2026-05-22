@@ -44,8 +44,8 @@ const FILING_ALL_BUCKETS: FilingBucket[] = [
 ];
 
 const FILING_TAB_BASE_CLASS = 'grid place-items-center rounded-sm px-2.5 py-1 text-sm transition-colors';
-const FILING_TAB_ACTIVE_CLASS = 'bg-card/60 text-foreground';
-const FILING_TAB_INACTIVE_CLASS = 'text-foreground hover:bg-accent';
+const FILING_TAB_ACTIVE_CLASS = 'bg-accent text-foreground';
+const FILING_TAB_INACTIVE_CLASS = 'text-muted-foreground hover:bg-accent hover:text-foreground';
 // Cap each card around 6 rows tall. Past that, the inner area scrolls with a
 // thin scrollbar instead of paginating. 280px ≈ 6 rows + sticky header on
 // typical row heights; the cards in the 2-col grid stay the same height even

@@ -247,7 +247,7 @@ export default function WatchlistEditor({
       </div>
 
       {selectedRows.length > 0 ? (
-        <div className="flex items-center justify-between rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-300">
+        <div className="flex items-center justify-between rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary">
           <span>
             {selectedRows.length} row{selectedRows.length === 1 ? '' : 's'} selected
           </span>
@@ -648,8 +648,8 @@ function ReportCell({
       <button
         type="button"
         onClick={onToggle}
-        className={`rounded-md p-1 hover:bg-accent ${
-          reportOpen ? 'text-emerald-400' : 'text-primary hover:text-primary/80'
+        className={`rounded-md p-1 ${
+          reportOpen ? 'bg-primary/15 text-primary' : 'text-primary hover:bg-accent hover:text-primary/80'
         }`}
         title={reportOpen ? 'Hide Report' : 'Show Report'}
         aria-label={reportOpen ? 'Hide Report' : 'Show Report'}
@@ -687,8 +687,8 @@ function ChartCell({
       <button
         type="button"
         onClick={onToggle}
-        className={`rounded-md p-1 hover:bg-accent ${
-          chartOpen ? 'text-emerald-400' : 'text-primary hover:text-primary/80'
+        className={`rounded-md p-1 ${
+          chartOpen ? 'bg-primary/15 text-primary' : 'text-primary hover:bg-accent hover:text-primary/80'
         }`}
         title={chartOpen ? 'Hide Chart' : 'Show Chart'}
         aria-label={chartOpen ? 'Hide Chart' : 'Show Chart'}
@@ -714,7 +714,7 @@ function SaveCell({ ticker, onClick }: { ticker: string; onClick: () => void }) 
       <button
         type="button"
         onClick={onClick}
-        className="rounded-md p-1 text-primary hover:bg-accent hover:text-emerald-400"
+        className="rounded-md p-1 text-primary hover:bg-accent hover:text-primary/80"
         title="Save to Sample Set"
         aria-label="Save to Sample Set"
       >

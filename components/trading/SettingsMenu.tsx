@@ -78,12 +78,13 @@ export default function SettingsMenu({ trades, onClearAllData, collapsed }: Sett
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button 
-            className={`rounded-lg text-muted-foreground transition-colors hover:text-foreground ${collapsed ? 'flex items-center justify-center px-2 py-2' : 'p-2'}`}
-            title="Settings" 
+          <button
+            className={`flex items-center gap-3 rounded-lg transition-colors hover:bg-accent hover:text-foreground ${collapsed ? 'justify-center px-2 py-2' : 'px-3 py-2'}`}
+            title="Settings"
             aria-label="Settings"
           >
-            <Settings className="w-5 h-5" />
+            <Settings className="h-5 w-5 shrink-0" />
+            {!collapsed && <span className="text-sm font-medium">Settings</span>}
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align={collapsed ? 'start' : 'start'} side={collapsed ? 'right' : 'bottom'} className="w-52 border-border bg-popover text-popover-foreground">
