@@ -60,7 +60,7 @@ app/
 lib/
 ├── db.ts                   ← Drizzle client + pooled connection
 ├── db/schema.ts            ← single source of truth for schema (drizzle-kit generates SQL from this)
-├── api-route-utils.ts      ← requireUser, requireAgentAdmin, requireServiceAuth helpers
+├── api-route-utils.ts      ← parseAndValidate, logRouteError, internalServerError, ticker helpers
 ├── auth-config.ts          ← NextAuth options
 ├── sse.ts                  ← Server-Sent Events helper for streaming routes
 ├── llm-client.ts           ← shared LLM call wrapper (used by askedgar + agents)
@@ -77,7 +77,8 @@ lib/
 ├── system-sheet-parser.ts, journal-aggregates.ts, journal-template-defaults.ts  ← journal logic
 ├── trade-utils.ts, trading-utils.ts  ← shared trade math
 ├── chart-time.ts, chart-timeframes.ts, chart-session-shading.ts, indicators.ts  ← chart helpers
-└── time-utils.ts, types.ts, utils.ts, research.ts, server-db-utils.ts  ← misc shared
+├── server-db-utils.ts      ← requireUser, requireCronSecret, ensureUser, dbUnavailable
+└── time-utils.ts, types.ts, utils.ts, research.ts  ← misc shared
 ```
 
 ### Agent layer — `lib/agents/`
@@ -150,7 +151,7 @@ Small on purpose. Each hook has a clear domain:
 
 ## "If you change X, also touch Y"
 
-- **`lib/db/schema.ts`** → run `npm run db:migrate` (never `db:push` — see `MEMORY.md`). Generates a new file in `drizzle/`.
+- **`lib/db/schema.ts`** → run `npm run db:generate` to create a numbered SQL file in `drizzle/`, inspect the SQL, then `npm run db:migrate` to apply it. Never `db:push` — see `MEMORY.md`.
 - **New API route** → confirm auth helper (requireUser / requireCronSecret / requireAgentAdmin / requireServiceAuth). Add Zod validation via `parseAndValidate()`.
 - **New SSE route** → add `export const dynamic = 'force-dynamic'` and `export const maxDuration = 60`; use `lib/sse.ts`.
 - **Agent config change** (`lib/agents/config.ts`) → restart services (`docker compose down && up -d`); env vars in `services/.env` must match.

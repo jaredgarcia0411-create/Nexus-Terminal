@@ -3,12 +3,15 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getAgentDb } from '@/lib/agents/db';
 import { agentReports } from '@/lib/db/schema';
-import { dbUnavailable } from '@/lib/server-db-utils';
+import { dbUnavailable, requireUser } from '@/lib/server-db-utils';
 
 export async function GET(request: Request) {
   void request;
 
   try {
+    const authState = await requireUser();
+    if ('error' in authState) return authState.error;
+
     const db = getAgentDb();
     if (!db) return dbUnavailable();
 

@@ -16,17 +16,6 @@ Current-state audit for making the codebase simpler and more efficient without r
 
 ## Immediate Security And Reliability
 
-### Latest Agent Report Routes Need Auth
-
-Evidence:
-- Page middleware excludes `/api`: [middleware.ts](/home/jared/Nexus-Terminal/middleware.ts:4).
-- `/api/agents/macro-summary/latest` reads and returns `agent_reports.reportJson` without `requireUser()`: [app/api/agents/macro-summary/latest/route.ts](/home/jared/Nexus-Terminal/app/api/agents/macro-summary/latest/route.ts:7).
-- `/api/agents/market-pulse/latest` does the same for Market Pulse: [app/api/agents/market-pulse/latest/route.ts](/home/jared/Nexus-Terminal/app/api/agents/market-pulse/latest/route.ts:8).
-- The only known consumers are logged-in Dashboard panels: [components/trading/MacroSummaryPanel.tsx](/home/jared/Nexus-Terminal/components/trading/MacroSummaryPanel.tsx:152), [components/trading/MarketPulsePanel.tsx](/home/jared/Nexus-Terminal/components/trading/MarketPulsePanel.tsx:134).
-
-Recommendation:
-Add `requireUser()` to both latest-report routes. Logged-in Dashboard behavior should not change; unauthenticated direct API reads would stop.
-
 ### Expired Agent Job Leases Are Not Recovered
 
 Evidence:
@@ -213,17 +202,6 @@ Split by active tab or data family only when making the next Research sub-surfac
 
 ## Dead Weight And Tests
 
-### Remove Unused Dependency And Broken Clean Script
-
-Evidence:
-- `npm run clean` maps to `next clean`: [package.json](/home/jared/Nexus-Terminal/package.json:12). Current Next CLI does not expose a `clean` command in normal usage.
-- `@tailwindcss/typography` is installed as a dev dependency: [package.json](/home/jared/Nexus-Terminal/package.json:52).
-- Tailwind config only loads `@tailwindcss/postcss`, and app CSS imports Tailwind plus `tw-animate-css`: [postcss.config.mjs](/home/jared/Nexus-Terminal/postcss.config.mjs:4), [app/globals.css](/home/jared/Nexus-Terminal/app/globals.css:1).
-- Repo search found no Tailwind typography plugin import.
-
-Recommendation:
-Replace or remove `npm run clean`, and remove `@tailwindcss/typography` unless a near-term prose/markdown surface will use it. Expected user-visible change: none.
-
 ### Add Playbook Coverage Before More Management Cleanup
 
 Evidence:
@@ -236,15 +214,6 @@ Add focused route tests for auth, validation, ownership, CRUD, and one UI smoke 
 
 ## Docs And Workflow Drift
 
-### Compact Completed Specs Out Of `HANDOFF.md`
-
-Evidence:
-- `HANDOFF.md` still contains a completed Playbook execution spec: [HANDOFF.md](/home/jared/Nexus-Terminal/HANDOFF.md:16), [HANDOFF.md](/home/jared/Nexus-Terminal/HANDOFF.md:19).
-- Agents are required to read `HANDOFF.md` first and follow active execution specs in order: [AGENTS.md](/home/jared/Nexus-Terminal/AGENTS.md:16), [AGENTS.md](/home/jared/Nexus-Terminal/AGENTS.md:19).
-
-Recommendation:
-Move completed Playbook detail to summary mode and keep only active follow-ups. This is not a product behavior change; it prevents future agents from treating completed work as current execution scope.
-
 ### `workflow:audit` Is A Narrow Smoke Check, Not The Full Skill Audit
 
 Evidence:
@@ -254,25 +223,3 @@ Evidence:
 
 Recommendation:
 Either extend `scripts/workflow-audit.mjs` to cover the key handoff/architecture invariants, or document it as a narrow smoke check. The command is still useful, but it should not imply the full skill checklist ran.
-
-### `docs/ARCHITECTURE.md` Has Helper And Migration Drift
-
-Evidence:
-- Architecture says `lib/api-route-utils.ts` owns auth helpers: [docs/ARCHITECTURE.md](/home/jared/Nexus-Terminal/docs/ARCHITECTURE.md:63).
-- Live route guidance correctly points server auth/db helpers to `lib/server-db-utils.ts`: [AGENTS.md](/home/jared/Nexus-Terminal/AGENTS.md:59).
-- Architecture says schema changes run `npm run db:migrate` and that this generates a new file: [docs/ARCHITECTURE.md](/home/jared/Nexus-Terminal/docs/ARCHITECTURE.md:153).
-- Live scripts separate generation and migration: [package.json](/home/jared/Nexus-Terminal/package.json:15), [package.json](/home/jared/Nexus-Terminal/package.json:16).
-
-Recommendation:
-Update the architecture map so `api-route-utils` owns validation/error helpers, `server-db-utils` owns auth/db helpers, and schema changes use `db:generate` then SQL inspection then `db:migrate`.
-
-### Ask Edgar Docs And Agent Guide Disagree With Current Registry
-
-Evidence:
-- `docs/ae-buildout.md` says daily unique ticker usage lives in `askedgar_daily_tickers`: [docs/ae-buildout.md](/home/jared/Nexus-Terminal/docs/ae-buildout.md:72). Current schema only has `askedgar_cache` and `askedgar_runtime_state` in this area: [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts:143), [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts:155).
-- `docs/ae-buildout.md` still mentions a `lookup` scope and `filing-titles` compatibility read: [docs/ae-buildout.md](/home/jared/Nexus-Terminal/docs/ae-buildout.md:115), [docs/ae-buildout.md](/home/jared/Nexus-Terminal/docs/ae-buildout.md:124).
-- Current `ENDPOINT_SCOPES` has `snapshot`, `scanner-summary`, `small-cap-research`, and `swing-trader-research`, with no `lookup`: [lib/askedgar/endpoints.ts](/home/jared/Nexus-Terminal/lib/askedgar/endpoints.ts:301).
-- `AGENTS.md` still says `filing-titles` lands in `rawData['filing-titles']`: [AGENTS.md](/home/jared/Nexus-Terminal/AGENTS.md:63). The current registry has `sec-filings`, not `filing-titles`: [lib/askedgar/endpoints.ts](/home/jared/Nexus-Terminal/lib/askedgar/endpoints.ts:282).
-
-Recommendation:
-Refresh Ask Edgar docs and AGENTS guidance to match the split adapter and current registry before the next Ask Edgar cleanup. This prevents agents from preserving dead compatibility concepts.

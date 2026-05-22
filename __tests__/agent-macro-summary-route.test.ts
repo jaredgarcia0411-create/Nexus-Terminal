@@ -3,11 +3,13 @@ import type { MacroSummaryReport } from '@/lib/agents/types';
 
 const {
   getAgentDbMock,
+  requireUserMock,
   andMock,
   descMock,
   eqMock,
 } = vi.hoisted(() => ({
   getAgentDbMock: vi.fn(),
+  requireUserMock: vi.fn(),
   andMock: vi.fn((...conditions: unknown[]) => ({ type: 'and', conditions })),
   descMock: vi.fn((field: unknown) => ({ type: 'desc', field })),
   eqMock: vi.fn((field: unknown, value: unknown) => ({ type: 'eq', field, value })),
@@ -29,6 +31,7 @@ vi.mock('@/lib/agents/db', () => ({
 
 vi.mock('@/lib/server-db-utils', () => ({
   dbUnavailable: () => Response.json({ error: 'Database not configured' }, { status: 503 }),
+  requireUser: requireUserMock,
 }));
 
 import { GET } from '@/app/api/agents/macro-summary/latest/route';
@@ -57,6 +60,7 @@ function createMacroSummaryDb(row: Record<string, unknown> | null) {
 describe('agent macro summary route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    requireUserMock.mockResolvedValue({ user: { id: 'user-1' } });
   });
 
   it('returns the latest macro summary and targets the system-owned macro report query', async () => {
@@ -151,5 +155,18 @@ describe('agent macro summary route', () => {
 
     expect(response.status).toBe(503);
     expect(payload).toEqual({ error: 'Database not configured' });
+  });
+
+  it('requires an authenticated user before reading the latest macro summary', async () => {
+    requireUserMock.mockResolvedValueOnce({
+      error: Response.json({ error: 'Unauthorized' }, { status: 401 }),
+    });
+
+    const response = ensureResponse(await GET(new Request('http://localhost/api/agents/macro-summary/latest')));
+    const payload = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(payload).toEqual({ error: 'Unauthorized' });
+    expect(getAgentDbMock).not.toHaveBeenCalled();
   });
 });

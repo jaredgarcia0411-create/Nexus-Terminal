@@ -69,10 +69,8 @@ Shared cache:
 
 Runtime state:
 
-- Daily unique ticker usage lives in `askedgar_daily_tickers`.
 - Global rate-limit retry window lives in `askedgar_runtime_state`.
 - Module memory is still used as a fast path, but the DB is the durable state across cold starts.
-- `ASKEDGAR_DAILY_LIMIT` defaults to 50 when not configured.
 
 Cost telemetry:
 
@@ -110,10 +108,9 @@ Implementing this needs per-endpoint TTLs in `lib/askedgar/cache.ts` (currently 
 
 Current scopes in `ENDPOINT_SCOPES`:
 
-- `snapshot`: all 16 registry keys.
-- `tldr`: all 16 registry keys.
-- `lookup`: all 16 registry keys, but no live `/api/askedgar/lookup` route exists.
-- `small-cap-research`: all 16 registry keys.
+- `snapshot`: all 15 registry keys.
+- `scanner-summary`: `registrations`, `dilution-rating`, `dilution-data`, `equity-lines`.
+- `small-cap-research`: all 15 registry keys.
 - `swing-trader-research`: `dilution-data`, `dilution-rating`, `offerings`, `registrations`, `news`, `historical-float-pro`, `gap-stats`, `ownership`.
 
 Recommended scope changes:
