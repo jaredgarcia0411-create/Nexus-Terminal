@@ -40,6 +40,22 @@ Append the new spec to `HANDOFF.md` with:
 - The full spec from Step 2
 - A "Files Changed Summary" table (file, lines added/removed, risk level)
 - A "Verification Steps" section (lint, type-check, test commands + manual checks)
+- An "Implementation Style" section, included verbatim in every spec:
+
+  ```markdown
+  ## Implementation Style
+
+  Write the simplest correct code that satisfies this spec. Specifically:
+
+  - Match the existing conventions in the file you're editing. Do not introduce new patterns, helpers, abstractions, or file layouts unless this spec explicitly calls for them.
+  - No future-proofing. No feature flags, no "in case we need it later" parameters, no extracted helpers that have a single caller. If a value is only used once, inline it.
+  - No defensive code at internal boundaries. Trust your own code and framework guarantees; validate only at system boundaries (user input, external APIs, DB reads of untrusted JSON).
+  - No comments unless the *why* is non-obvious (a hidden constraint, a workaround, a surprising invariant). Don't restate what the code says.
+  - If a step in this spec looks more complex than it needs to be, flag it and propose the simpler version before implementing — don't silently "improve" the spec, but don't write code that's more elaborate than the problem requires either.
+  - If you spot an existing simpler pattern in the codebase that fits, use it instead of writing new code.
+
+  This is a personal trading platform built solo. Readability > cleverness; debuggable > elegant; small diff > sweeping refactor. Three similar lines beats a premature abstraction.
+  ```
 
 ### Step 4: Update AGENTS.md if needed
 

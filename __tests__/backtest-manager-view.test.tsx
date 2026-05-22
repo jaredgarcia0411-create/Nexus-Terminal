@@ -276,21 +276,6 @@ describe('BacktestManagerView', () => {
     expect(screen.getByText('Sample Sets')).toBeTruthy();
   });
 
-  it('changes order when the sort dropdown is updated', () => {
-    render(<BacktestManagerView onLaunchChart={vi.fn()} onOpenLastChart={vi.fn()} onViewStats={vi.fn()} />);
-
-    const getBacktestHeadings = () => screen
-      .getAllByRole('heading', { level: 3 })
-      .map((node) => node.textContent)
-      .filter((text) => text === 'Bravo' || text === 'Alpha');
-
-    expect(getBacktestHeadings()).toEqual(['Bravo', 'Alpha']);
-
-    fireEvent.change(screen.getByLabelText('Sort backtests'), { target: { value: 'name' } });
-
-    expect(getBacktestHeadings()).toEqual(['Alpha', 'Bravo']);
-  });
-
   it('opens the new backtest dialog from the header button', () => {
     render(<BacktestManagerView onLaunchChart={vi.fn()} onOpenLastChart={vi.fn()} onViewStats={vi.fn()} />);
 

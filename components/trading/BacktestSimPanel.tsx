@@ -338,12 +338,6 @@ export default function BacktestSimPanel({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {ticker && date ? (
-          <div className="font-mono text-[11px] text-zinc-500">
-            {ticker} · {date}
-          </div>
-        ) : null}
-
         {error ? <p className="text-xs text-rose-400">{error}</p> : null}
       </div>
 

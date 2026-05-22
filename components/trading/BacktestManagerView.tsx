@@ -12,13 +12,6 @@ import NewBacktestDialog from '@/components/trading/NewBacktestDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   useBacktestManager,
   type BacktestListItem,
   type SampleSetListItem,
@@ -75,8 +68,6 @@ export default function BacktestManagerView({
     setBacktestSearch,
     sampleSetSearch,
     setSampleSetSearch,
-    sortKey,
-    setSortKey,
     currentUserId,
     createBacktest,
     updateBacktest,
@@ -168,7 +159,7 @@ export default function BacktestManagerView({
           </button>
         </div>
         <div className="flex min-w-0 items-center justify-center">
-          <h2 className="font-mono text-lg font-semibold leading-none text-white">Backtest Manager</h2>
+          <h2 className="text-lg font-semibold leading-none text-white">Backtest Manager</h2>
         </div>
         <div />
       </div>
@@ -177,32 +168,15 @@ export default function BacktestManagerView({
         <div className="flex min-h-0 flex-col rounded-md border border-white/10 bg-[#111319]">
           <div className="border-b border-white/10 p-3">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="font-mono text-sm font-semibold text-white">Saved Tests</h3>
-              <div className="flex items-center gap-2">
-                <Select
-                  value={sortKey}
-                  onValueChange={(value) => setSortKey(value as 'updatedAt' | 'name')}
-                >
-                  <SelectTrigger
-                    className="h-8 w-[8.75rem] bg-black text-xs text-zinc-100"
-                    aria-label="Sort backtests"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="border-white/10 bg-black text-white">
-                    <SelectItem value="updatedAt">Last updated</SelectItem>
-                    <SelectItem value="name">Alphabetical</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  size="xs"
-                  onClick={() => setNewBacktestOpen(true)}
-                  className={`h-8 ${greenButtonClass}`}
-                >
-                  + New Backtest
-                </Button>
-              </div>
+              <h3 className="text-sm font-semibold text-white">Saved Tests</h3>
+              <Button
+                type="button"
+                size="xs"
+                onClick={() => setNewBacktestOpen(true)}
+                className={`h-8 ${greenButtonClass}`}
+              >
+                + New Backtest
+              </Button>
             </div>
             <div className="grid gap-2">
               <div className="relative">
@@ -234,7 +208,7 @@ export default function BacktestManagerView({
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 space-y-1">
                         <div className="flex items-center gap-2">
-                          <h3 className="truncate font-mono text-sm font-semibold text-white">{backtest.name}</h3>
+                          <h3 className="truncate text-sm font-semibold text-white">{backtest.name}</h3>
                           <span className="text-xs text-zinc-500">by {backtest.ownerName ?? 'Unknown'}</span>
                         </div>
                         <p className="text-xs text-zinc-500">
@@ -310,7 +284,7 @@ export default function BacktestManagerView({
         <div className="flex min-h-0 flex-col rounded-md border border-white/10 bg-[#111319]">
           <div className="border-b border-white/10 p-3">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="font-mono text-sm font-semibold text-white">Sample Sets</h3>
+              <h3 className="text-sm font-semibold text-white">Sample Sets</h3>
               <div className="flex items-center gap-2">
                 <Button
                   type="button"
@@ -363,7 +337,7 @@ export default function BacktestManagerView({
                   <article key={sampleSet.id} className="border-b border-white/10 px-4 py-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 space-y-1">
-                        <h3 className="truncate font-mono text-sm font-semibold text-white">{sampleSet.name}</h3>
+                        <h3 className="truncate text-sm font-semibold text-white">{sampleSet.name}</h3>
                         <p className="text-xs text-zinc-500">{sampleSet.rowCount} rows</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">

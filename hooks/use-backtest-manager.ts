@@ -34,8 +34,6 @@ export type SampleSetListItem = {
   updatedAt: string;
 };
 
-export type BacktestSortKey = 'updatedAt' | 'name';
-
 type BacktestsResponse = {
   backtests: BacktestListItem[];
   currentUserId?: string | null;
@@ -87,7 +85,6 @@ export function useBacktestManager() {
   const [backtestSearch, setBacktestSearch] = useState('');
   const [sampleSetSearch, setSampleSetSearch] = useState('');
   const [mineOnly, setMineOnly] = useState(false);
-  const [sortKey, setSortKey] = useState<BacktestSortKey>('updatedAt');
 
   const fetchLists = useCallback(async () => {
     setIsLoading(true);
@@ -137,13 +134,10 @@ export function useBacktestManager() {
     const regular = filtered.filter((item) => !item.id.startsWith('uncat-'));
     const uncategorized = filtered.filter((item) => item.id.startsWith('uncat-'));
 
-    regular.sort((a, b) => {
-      if (sortKey === 'name') return a.name.localeCompare(b.name);
-      return compareNullableDates(a.updatedAt, b.updatedAt);
-    });
+    regular.sort((a, b) => compareNullableDates(a.updatedAt, b.updatedAt));
 
     return [...regular, ...uncategorized];
-  }, [backtestSearch, backtests, currentUserId, mineOnly, sortKey]);
+  }, [backtestSearch, backtests, currentUserId, mineOnly]);
 
   const filteredSampleSets = useMemo(() => {
     const query = sampleSetSearch.trim().toLowerCase();
@@ -234,8 +228,6 @@ export function useBacktestManager() {
     setSampleSetSearch,
     mineOnly,
     setMineOnly,
-    sortKey,
-    setSortKey,
     filteredBacktests,
     filteredSampleSets,
     currentUserId,

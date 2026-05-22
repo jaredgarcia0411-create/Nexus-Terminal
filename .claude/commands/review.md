@@ -50,3 +50,29 @@ Present findings as:
 - Tests: PASS/FAIL
 
 **Verdict:** READY TO SHIP / NEEDS FIXES (list what)
+
+### Step 5: Condense HANDOFF.md (only if verdict is READY TO SHIP)
+
+If the verdict is **NEEDS FIXES**, skip this step — leave the active spec in place so the next pass has the full instructions.
+
+If the verdict is **READY TO SHIP**, replace the active spec section in `HANDOFF.md` with a short summary entry under "Recently Completed", matching the existing entries' shape:
+
+```markdown
+### {Spec Title}
+
+Status: completed {YYYY-MM-DD}.
+
+Outcome:
+- {1–3 bullets: what shipped, in one line each}
+
+Validation:
+- {one line per validation gate that passed, e.g., `npm run lint`, `npx tsc --noEmit`, `npm test`}
+- {manual smoke results in one line, if any}
+```
+
+Rules:
+- Preserve the "Open Follow-Ups" section verbatim — only the just-completed active spec is condensed.
+- Preserve the "Session Maintenance" section verbatim.
+- If there's a "Notes for Codex" subsection inside the active spec, drop it — it's no longer relevant once shipped.
+- Keep the condensed entry under ~12 lines. Detail lives in git history; this file is for active context.
+- After editing, run `npm run workflow:audit` since `HANDOFF.md` is a workflow asset.
