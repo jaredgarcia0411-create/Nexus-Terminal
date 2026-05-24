@@ -52,7 +52,7 @@ function NewsArticle({
               <span className="text-sm font-medium text-foreground">{sourceLabel}</span>
               <span className="text-muted-foreground">{formatDate(item.filedAt)}</span>
             </div>
-            <p className="rounded border border-border bg-black p-2 text-sm text-muted-foreground">{item.summary || '--'}</p>
+            <p className="rounded border border-border bg-muted p-2 text-sm text-foreground">{item.summary || '--'}</p>
           </motion.div>
         ) : null}
       </AnimatePresence>

@@ -192,14 +192,6 @@ Evidence:
 Recommendation:
 Expose report readiness through a small hook or have `prefetchResearchReport()` return/report the generated id directly to the button state. Expected user-visible change: same or faster Add button enablement, no timer polling.
 
-### Research Section Bundle Is Oversized
-
-Evidence:
-- News, filings, programs, warrants, ownership, gap stats, and tab orchestration live in one file: [components/trading/ResearchReportSections.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchReportSections.tsx:96), [components/trading/ResearchReportSections.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchReportSections.tsx:150), [components/trading/ResearchReportSections.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchReportSections.tsx:216), [components/trading/ResearchReportSections.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchReportSections.tsx:283), [components/trading/ResearchReportSections.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchReportSections.tsx:817).
-
-Recommendation:
-Split by active tab or data family only when making the next Research sub-surface change. Expected user-visible change: none; source-faithful Ask Edgar display work gets smaller review scopes.
-
 ## Dead Weight And Tests
 
 ### Add Playbook Coverage Before More Management Cleanup

@@ -20,7 +20,6 @@ const rawResearchInputSchema = z.object({
 const filingsSchema = z.object({
   ticker: z.string(),
   gapStats: z.array(z.unknown()),
-  ownership: z.array(z.unknown()),
   historicalFloat: z.array(z.unknown()),
   dilutionRating: z.unknown().nullable(),
   registrations: z.array(z.unknown()),
@@ -79,13 +78,11 @@ const runnerQualitySchema = z.object({
   sameDayFadeRate: z.number().nullable(),
   avgHighExtension: z.number().nullable(),
   priorGapDayAvgReturn: z.number().nullable(),
-  ownership: z.array(z.unknown()),
   historicalFloat: z.array(z.unknown()),
   dilutionRating: z.unknown().nullable(),
   registrations: z.array(z.unknown()),
   offerings: z.array(z.unknown()),
   floatTrend: z.enum(['increasing', 'decreasing', 'stable']).nullable(),
-  knownHolderOverhang: z.number().nullable(),
 });
 
 const swingPipelineInputSchema = newsEnrichedSchema.extend({
@@ -403,26 +400,6 @@ export function extractGapStatsTable(rawRows: unknown[]): GapStatsRow[] {
   return rows.slice(0, 10);
 }
 
-function flattenOwnershipRecords(value: unknown): Record<string, unknown>[] {
-  const rows: Record<string, unknown>[] = [];
-
-  for (const entry of toUnknownCollection(value)) {
-    if (!isValidRecord(entry)) {
-      continue;
-    }
-
-    const owners = Array.isArray(entry.owners) ? entry.owners : null;
-    if (owners) {
-      rows.push(...flattenOwnershipRecords(owners));
-      continue;
-    }
-
-    rows.push(entry);
-  }
-
-  return rows;
-}
-
 function normalizeHistoricalFloatRow(value: unknown): {
   date: Date;
   float: number;
@@ -468,21 +445,6 @@ function computeFloatTrend(historicalFloat: unknown): 'increasing' | 'decreasing
   }
 
   return 'stable';
-}
-
-function computeKnownHolderOverhang(ownership: unknown): number | null {
-  const ownershipRows = flattenOwnershipRecords(ownership);
-  if (ownershipRows.length === 0) {
-    return null;
-  }
-
-  return Math.min(
-    100,
-    ownershipRows.reduce((sum, row) => {
-      const percentage = getNumberField(row, ['percentage', 'percent_held', 'percentHeld']);
-      return sum + (percentage ?? 0);
-    }, 0),
-  );
 }
 
 function normalizeOhlcHistory(history: z.infer<typeof ohlcBarSchema>[]): z.infer<typeof ohlcBarSchema>[] {
@@ -624,13 +586,11 @@ function computeSwingTechnicals(input: z.infer<typeof newsEnrichedSchema>): z.in
     runnerQuality: {
       gapStats: asArray(input.gapStats),
       ...computeGapDayStats(input.gapStats),
-      ownership: asArray(input.ownership),
       historicalFloat: asArray(input.historicalFloat),
       dilutionRating: input.dilutionRating,
       registrations: asArray(input.registrations),
       offerings: asArray(input.offerings),
       floatTrend: computeFloatTrend(input.historicalFloat),
-      knownHolderOverhang: computeKnownHolderOverhang(input.ownership),
     },
     gapStatsTable,
   };
@@ -676,14 +636,12 @@ function buildResearchPrompt(input: z.infer<typeof swingPipelineInputSchema>): s
     [
       'Runner quality:',
       `gapStats:\n${wrapUntrusted('filing', gapTableSection)}`,
-      `ownership:\n${wrapUntrusted('filing', JSON.stringify(input.runnerQuality.ownership, null, 2))}`,
       `historicalFloat:\n${wrapUntrusted('filing', JSON.stringify(input.runnerQuality.historicalFloat, null, 2))}`,
       `dilutionRating:\n${wrapUntrusted('filing', JSON.stringify(input.runnerQuality.dilutionRating, null, 2))}`,
       `registrations:\n${wrapUntrusted('filing', JSON.stringify(input.runnerQuality.registrations, null, 2))}`,
       `offerings:\n${wrapUntrusted('filing', JSON.stringify(input.runnerQuality.offerings, null, 2))}`,
       `Management Commentary (from SEC filings / earnings):\n${wrapUntrusted('filing', commentaryText)}`,
       `floatTrend:\n${wrapUntrusted('deterministic-technicals', JSON.stringify(input.runnerQuality.floatTrend, null, 2))}`,
-      `knownHolderOverhang:\n${wrapUntrusted('deterministic-technicals', JSON.stringify(input.runnerQuality.knownHolderOverhang, null, 2))}`,
       `gapDayStats (precomputed):\n${wrapUntrusted('deterministic-technicals', JSON.stringify({
         gapCount: input.runnerQuality.gapCount,
         sameDayFadeRate: input.runnerQuality.sameDayFadeRate,
@@ -780,7 +738,6 @@ export const swingTraderResearchBlueprint: Blueprint = {
         return completedResult({
           ticker,
           gapStats: readSection(rawData, 'gap-stats', 'gapStats'),
-          ownership: readSection(rawData, 'ownership'),
           historicalFloat: readSection(rawData, 'historical-float-pro', 'historicalFloatPro'),
           dilutionRating: dilutionRatingFirst,
           registrations: readSection(rawData, 'registrations'),

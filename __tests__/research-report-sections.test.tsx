@@ -60,11 +60,9 @@ function buildSnapshot(overrides: Partial<ResearchSnapshot> = {}): ResearchSnaps
     offerings: [],
     news: [],
     filings: [],
-    ownershipGroups: [],
     historicalFloat: [],
     reverseSplits: [],
-    identityEvents: [],
-    splitStatuses: [],
+    historicalTickers: [],
     gapStats: [],
     ...overrides,
   };
@@ -72,6 +70,11 @@ function buildSnapshot(overrides: Partial<ResearchSnapshot> = {}): ResearchSnaps
 
 describe('ResearchReportSections filings UI', () => {
   it('summarizes gap-up days that closed below the open', () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      ticker: 'ABCD',
+      date: '2026-02-25',
+      rating: { status: 'success', count: 0, results: [] },
+    })));
     const data = buildSnapshot({
       gapStats: [
         {
@@ -174,32 +177,10 @@ describe('ResearchReportSections filings UI', () => {
         authorizedShares: null,
         sharesAvailable: null,
       },
-      identityEvents: [
+      historicalTickers: [
         {
-          previousTicker: 'OHAR',
-          currentTicker: 'NHBI',
-          previousCompanyName: 'Old Harbor Therapeutics Inc.',
-          currentCompanyName: 'New Harbor BioSciences Inc.',
-          effectiveDate: '2026-05-15',
-          exchangeMarket: 'Nasdaq Capital Market',
-          eventTypes: ['ticker_change', 'name_change'],
-          filedAt: '2026-05-14',
-          formType: '8-K',
-          accessionNumber: '0001234567-26-000006',
-          url: 'https://www.sec.gov/Archives/edgar/data/1234567/8k.htm',
-        },
-        {
-          previousTicker: null,
-          currentTicker: null,
-          previousCompanyName: 'Legacy Bio Inc.',
-          currentCompanyName: 'Acme Biotech',
-          effectiveDate: '2026-04-01',
-          exchangeMarket: null,
-          eventTypes: ['name_change'],
-          filedAt: '2026-04-01',
-          formType: 'S-1/A',
-          accessionNumber: '0001234567-26-000005',
-          url: 'https://www.sec.gov/Archives/edgar/data/1234567/s1a.htm',
+          ticker: 'OHAR',
+          dateChanged: '2026-05-15',
         },
       ],
     });
@@ -213,8 +194,6 @@ describe('ResearchReportSections filings UI', () => {
     expect(screen.getByText('Management flagged future financing needs.')).toBeTruthy();
     expect(screen.getByText('Former Symbols')).toBeTruthy();
     expect(screen.getByText('OHAR')).toBeTruthy();
-    expect(screen.getByText('NHBI')).toBeTruthy();
-    expect(screen.getByText('8-K')).toBeTruthy();
-    expect(screen.queryByText('Legacy Bio Inc.')).toBeNull();
+    expect(screen.getByText('5/14/2026')).toBeTruthy();
   });
 });

@@ -1531,9 +1531,6 @@ describe('agent blueprints', () => {
         'gap-stats': {
           results: [{ open: 10, close: 11 }],
         },
-        ownership: {
-          results: [{ holder: 'Fund A' }],
-        },
       },
       warnings: [],
       hasAnyData: true,
@@ -1602,10 +1599,8 @@ describe('agent blueprints', () => {
         equityLines: [],
         dilutionRating: null,
         dilutionData: [{ cash_burn: 'high' }],
-        ownership: [{ percentage: 42 }],
         historicalFloat: [{ date: '2026-01-01', float: 100 }],
         reverseSplits: [],
-        splitStatus: [{ status: 'approved pending' }],
         nasdaqCompliance: [{ deadline: '2026-04-15' }],
         news: [{ title: 'Shelf filing' }],
         cashPosition: { estimatedCash: 1000000 },
@@ -1633,11 +1628,8 @@ describe('agent blueprints', () => {
           hasActiveShelf: true,
           hasActiveAtm: true,
           amountRemainingAtm: 1000000,
-          splitApproved: true,
-          splitEffectivePending: true,
           daysToComplianceDeadline: 3,
           floatTrend: 'stable',
-          knownHolderOverhang: 42,
           newsCount: 1,
           mostRecentNewsDate: '2026-04-12',
           daysSinceLastNews: 1,
@@ -1843,7 +1835,6 @@ describe('agent blueprints', () => {
       previousOutput: {
         ticker: 'AAPL',
         gapStats: [],
-        ownership: [],
         historicalFloat: [],
         dilutionRating: null,
         registrations: [],
@@ -1916,7 +1907,6 @@ describe('agent blueprints', () => {
       previousOutput: {
         ticker: 'AAPL',
         gapStats: [],
-        ownership: [],
         historicalFloat: [],
         dilutionRating: null,
         registrations: [],
@@ -1964,7 +1954,6 @@ describe('agent blueprints', () => {
       previousOutput: {
         ticker: 'AAPL',
         gapStats: [],
-        ownership: [],
         historicalFloat: [],
         dilutionRating: null,
         registrations: [],
@@ -1996,7 +1985,7 @@ describe('agent blueprints', () => {
         gapStatsTable: [{ date: '1999-01-01', gapPct: 99, open: 99, close: 99 }],
         financialCommentary: { rating: 'yellow', explanation: 'Commentary was mixed.' },
         confidence: 'high',
-        evidenceIds: ['gap-stats', 'ownership'],
+        evidenceIds: ['gap-stats', 'historical-float-pro'],
       }),
       modelUsed: 'background-model',
       inputTokens: 24,
@@ -2019,7 +2008,6 @@ describe('agent blueprints', () => {
       previousOutput: {
         ticker: 'AAPL',
         gapStats: [{ open: 10, close: 11, high: 12 }],
-        ownership: [{ percentage: 32 }],
         historicalFloat: [
           { date: '2026-01-01', float: 100 },
           { date: '2026-04-01', float: 112 },
@@ -2075,7 +2063,6 @@ describe('agent blueprints', () => {
         },
         runnerQuality: {
           gapStats: [{ open: 10, close: 11, high: 12 }],
-          ownership: [{ percentage: 32 }],
           historicalFloat: [
             { date: '2026-01-01', float: 100 },
             { date: '2026-04-01', float: 112 },
@@ -2084,7 +2071,6 @@ describe('agent blueprints', () => {
           registrations: [{ status: 'effective' }],
           offerings: [{ offering_type: 'ATM', status: 'active' }],
           floatTrend: 'increasing',
-          knownHolderOverhang: 32,
           gapCount: 1,
           sameDayFadeRate: 0,
           avgHighExtension: 20,
@@ -2182,7 +2168,6 @@ describe('agent blueprints', () => {
       previousOutput: {
         ticker: 'AAPL',
         gapStats: [],
-        ownership: [],
         historicalFloat: [],
         dilutionRating: null,
         registrations: [],
@@ -2213,13 +2198,11 @@ describe('agent blueprints', () => {
         },
         runnerQuality: {
           gapStats: [],
-          ownership: [],
           historicalFloat: [],
           dilutionRating: null,
           registrations: [],
           offerings: [],
           floatTrend: null,
-          knownHolderOverhang: null,
           gapCount: 0,
           sameDayFadeRate: null,
           avgHighExtension: null,
@@ -2525,10 +2508,8 @@ describe('agent blueprints', () => {
         equityLines: [],
         dilutionRating: null,
         dilutionData: [],
-        ownership: [],
         historicalFloat: [],
         reverseSplits: [],
-        splitStatus: [],
         nasdaqCompliance: null,
         news: [],
         cashPosition: null,
@@ -2537,8 +2518,8 @@ describe('agent blueprints', () => {
         deterministicAnalysis: {
           gapCount: 0, sameDayFadeRate: null, avgCloseVsOpen: null, avgHighExtension: null,
           recentOfferingCount: 0, hasActiveShelf: false, hasActiveAtm: false, amountRemainingAtm: null,
-          splitApproved: false, splitEffectivePending: false, daysToComplianceDeadline: null,
-          floatTrend: null, knownHolderOverhang: null, newsCount: 0, mostRecentNewsDate: null,
+          daysToComplianceDeadline: null,
+          floatTrend: null, newsCount: 0, mostRecentNewsDate: null,
           daysSinceLastNews: null, hasFilingCatalyst: false, hasJmt415Content: false, catalystCategories: [],
         },
         gapStatsTable: [],
@@ -2602,7 +2583,6 @@ describe('agent blueprints', () => {
       previousOutput: {
         ticker: 'TSLA',
         gapStats: [],
-        ownership: [],
         historicalFloat: [],
         dilutionRating: null,
         registrations: [],
@@ -2617,8 +2597,8 @@ describe('agent blueprints', () => {
         },
         runnerQuality: {
           gapStats: [], gapCount: 0, sameDayFadeRate: null, avgHighExtension: null, priorGapDayAvgReturn: null,
-          ownership: [], historicalFloat: [], dilutionRating: null, registrations: [], offerings: [],
-          floatTrend: null, knownHolderOverhang: null,
+          historicalFloat: [], dilutionRating: null, registrations: [], offerings: [],
+          floatTrend: null,
         },
         gapStatsTable: [],
       },

@@ -244,20 +244,6 @@ export interface ResearchSnapshotConvertibleNote {
   documentUrl: string | null;
 }
 
-export interface ResearchSnapshotOwner {
-  name: string;
-  role: string;
-  common: number | null;
-  preferred: number | null;
-  options: number | null;
-  warrants: number | null;
-}
-
-export interface ResearchSnapshotOwnershipGroup {
-  reportedDate: string | null;
-  owners: ResearchSnapshotOwner[];
-}
-
 export interface ResearchSnapshotHistoricalFloatRow {
   date: string | null;
   outstanding: number | null;
@@ -267,41 +253,12 @@ export interface ResearchSnapshotHistoricalFloatRow {
 
 export interface ResearchSnapshotReverseSplit {
   date: string | null;
-  ratio: string | null;
+  ratio: string;
 }
 
-export type ResearchSnapshotIdentityEventType =
-  | 'ticker_change'
-  | 'name_change'
-  | 'cik_identity_continuity'
-  | 'exchange_listing_change';
-
-export interface ResearchSnapshotIdentityEvent {
-  previousTicker: string | null;
-  currentTicker: string | null;
-  previousCompanyName: string | null;
-  currentCompanyName: string | null;
-  effectiveDate: string | null;
-  exchangeMarket: string | null;
-  eventTypes: ResearchSnapshotIdentityEventType[];
-  filedAt: string | null;
-  formType: string | null;
-  accessionNumber: string | null;
-  url: string | null;
-}
-
-export interface ResearchSnapshotSplitStatus {
-  actionType: string | null;
-  splitFrom: number | null;
-  splitTo: number | null;
-  voteDate: string | null;
-  approvedDate: string | null;
-  effectiveDate: string | null;
-  details: string | null;
-  filedAt: string | null;
-  formType: string | null;
-  documentUrl: string | null;
-  lastUpdated: string | null;
+export interface ResearchSnapshotHistoricalTicker {
+  ticker: string;
+  dateChanged: string | null;
 }
 
 export interface ResearchSnapshotGapStat {
@@ -339,11 +296,9 @@ export interface ResearchSnapshot {
   offerings: ResearchSnapshotOffering[];
   news: ResearchSnapshotNewsItem[];
   filings: ResearchSnapshotFiling[];
-  ownershipGroups: ResearchSnapshotOwnershipGroup[];
   historicalFloat: ResearchSnapshotHistoricalFloatRow[];
   reverseSplits: ResearchSnapshotReverseSplit[];
-  identityEvents: ResearchSnapshotIdentityEvent[];
-  splitStatuses: ResearchSnapshotSplitStatus[];
+  historicalTickers: ResearchSnapshotHistoricalTicker[];
   gapStats: ResearchSnapshotGapStat[];
 }
 

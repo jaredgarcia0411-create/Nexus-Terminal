@@ -142,8 +142,8 @@ export const researchReports = pgTable('research_reports', {
 // Shared cache for Ask Edgar API responses — no userId, shared across all users
 export const askedgarCache = pgTable('askedgar_cache', {
   id: text('id').primaryKey(),
-  cacheType: text('cache_type').notNull(),     // 'ticker' or 'scanner-summary'
-  ticker: text('ticker').notNull(),             // uppercase ticker symbol
+  cacheType: text('cache_type').notNull(),     // 'ticker', 'scanner-summary', or 'historical-dilution-rating'
+  ticker: text('ticker').notNull(),             // uppercase ticker symbol, or cache-specific composite key
   dataJson: jsonb('data_json').notNull(),
   fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),

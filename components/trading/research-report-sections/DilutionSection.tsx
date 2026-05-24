@@ -13,12 +13,10 @@ import type {
   ResearchSnapshot,
   ResearchSnapshotConvertibleNote,
   ResearchSnapshotHistoricalFloatRow,
-  ResearchSnapshotIdentityEvent,
+  ResearchSnapshotHistoricalTicker,
   ResearchSnapshotOffering,
-  ResearchSnapshotOwnershipGroup,
   ResearchSnapshotRegistration,
   ResearchSnapshotReverseSplit,
-  ResearchSnapshotSplitStatus,
   ResearchSnapshotWarrant,
 } from '@/lib/types';
 
@@ -332,7 +330,7 @@ function ReverseSplitsTable({ rows }: { rows: ResearchSnapshotReverseSplit[] }) 
   );
 }
 
-function FormerSymbolsTable({ rows }: { rows: ResearchSnapshotIdentityEvent[] }) {
+function HistoricalTickersTable({ rows }: { rows: ResearchSnapshotHistoricalTicker[] }) {
   if (rows.length === 0) {
     return <NoDataBadge />;
   }
@@ -342,70 +340,15 @@ function FormerSymbolsTable({ rows }: { rows: ResearchSnapshotIdentityEvent[] })
       <table className="min-w-full">
         <thead>
           <tr className="border-b border-border text-muted-foreground">
-            <th className="py-2 pr-3 text-left">Former</th>
-            <th className="py-2 pr-3 text-left">Current</th>
-            <th className="py-2 pr-3 text-left">Effective</th>
-            <th className="py-2 text-left">Filing</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => {
-            const formType = toStringValue(row.formType);
-            return (
-              <tr key={`${row.accessionNumber ?? row.previousTicker ?? 'symbol'}-${index}`} className="border-b border-border text-muted-foreground">
-                <td className="py-2 pr-3 font-medium text-foreground">{toStringValue(row.previousTicker)}</td>
-                <td className="py-2 pr-3">{toStringValue(row.currentTicker)}</td>
-                <td className="py-2 pr-3 whitespace-nowrap">{formatDate(row.effectiveDate ?? row.filedAt)}</td>
-                <td className="py-2">
-                  {row.url ? (
-                    <a
-                      href={row.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-foreground underline-offset-2 transition-colors hover:text-primary hover:underline"
-                    >
-                      {formType}
-                    </a>
-                  ) : (
-                    formType
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function SplitStatusesTable({ rows }: { rows: ResearchSnapshotSplitStatus[] }) {
-  if (rows.length === 0) {
-    return <NoDataBadge />;
-  }
-
-  return (
-    <div className="scrollbar-hidden overflow-x-auto">
-      <table className="min-w-full">
-        <thead>
-          <tr className="border-b border-border text-muted-foreground">
-            <th className="py-2 pr-3 text-left">Status</th>
-            <th className="py-2 pr-3 text-left">Ratio</th>
-            <th className="py-2 pr-3 text-left">Vote Date</th>
-            <th className="py-2 pr-3 text-left">Effective Date</th>
-            <th className="py-2 text-left">Details</th>
+            <th className="py-2 pr-3 text-left">Former Ticker</th>
+            <th className="py-2 text-left">Date Changed</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={`split-status-${index}`} className="border-b border-border text-muted-foreground">
-              <td className="py-2 pr-3">{toStringValue(row.actionType)}</td>
-              <td className="py-2 pr-3">
-                {row.splitFrom != null && row.splitTo != null ? `${row.splitFrom}:${row.splitTo}` : '—'}
-              </td>
-              <td className="py-2 pr-3">{formatDate(row.voteDate)}</td>
-              <td className="py-2 pr-3">{formatDate(row.effectiveDate)}</td>
-              <td className="py-2">{toStringValue(row.details)}</td>
+            <tr key={`${row.ticker}-${index}`} className="border-b border-border text-muted-foreground">
+              <td className="py-2 pr-3 font-medium text-foreground">{row.ticker}</td>
+              <td className="py-2">{formatDate(row.dateChanged)}</td>
             </tr>
           ))}
         </tbody>
@@ -447,54 +390,11 @@ function PastOfferingsTable({ rows }: { rows: ResearchSnapshotOffering[] }) {
   );
 }
 
-function OwnershipGroupsTables({ groups }: { groups: ResearchSnapshotOwnershipGroup[] }) {
-  if (groups.length === 0) {
-    return <NoDataBadge />;
-  }
-
-  return (
-    <>
-      {groups.map((group, groupIndex) => (
-        <div key={groupIndex} className="mb-3">
-          {group.reportedDate ? <p className="mb-1 text-sm text-muted-foreground">Reported: {formatDate(group.reportedDate)}</p> : null}
-          <div className="scrollbar-hidden overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground">
-                  <th className="py-1.5 pr-3 text-left text-sm">Name</th>
-                  <th className="py-1.5 pr-3 text-left text-sm">Role</th>
-                  <th className="py-1.5 pr-3 text-right text-sm">Common</th>
-                  <th className="py-1.5 pr-3 text-right text-sm">Preferred</th>
-                  <th className="py-1.5 pr-3 text-right text-sm">Options</th>
-                  <th className="py-1.5 text-right text-sm">Warrants</th>
-                </tr>
-              </thead>
-              <tbody>
-                {group.owners.map((owner, ownerIndex) => (
-                  <tr key={ownerIndex} className="border-b border-border">
-                    <td className="py-1.5 pr-3 text-sm text-foreground">{owner.name}</td>
-                    <td className="py-1.5 pr-3 text-sm text-muted-foreground">{owner.role}</td>
-                    <td className="py-1.5 pr-3 text-right text-sm text-muted-foreground">{formatNumber(owner.common)}</td>
-                    <td className="py-1.5 pr-3 text-right text-sm text-muted-foreground">{formatNumber(owner.preferred)}</td>
-                    <td className="py-1.5 pr-3 text-right text-sm text-muted-foreground">{formatNumber(owner.options)}</td>
-                    <td className="py-1.5 text-right text-sm text-muted-foreground">{formatNumber(owner.warrants)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ))}
-    </>
-  );
-}
-
 export default function DilutionSection({ data }: Props) {
   const atmRegistrations = data.registrations.filter((row) => row.isAtm === true);
   const regularWarrants = data.warrants.filter((row) => !row.isPrefunded);
   const prefundedWarrants = data.warrants.filter((row) => row.isPrefunded);
   const convertibleNotes = data.convertibleNotes ?? [];
-  const formerSymbolEvents = data.identityEvents.filter((row) => row.previousTicker !== null);
   const equityLineKey = (row: ResearchSnapshotRegistration) => `${row.headline}::${row.filedAt ?? ''}`;
   const equityLineKeys = new Set(data.equityLines.map(equityLineKey));
   const primaryRegistrations = data.registrations.filter((row) => {
@@ -536,19 +436,12 @@ export default function DilutionSection({ data }: Props) {
 
       <div>
         <h4 className="mb-2 text-base font-semibold text-foreground">Former Symbols</h4>
-        <FormerSymbolsTable rows={formerSymbolEvents} />
+        <HistoricalTickersTable rows={data.historicalTickers} />
       </div>
 
       <div className="space-y-4">
         <h4 className="mb-2 text-base font-semibold text-foreground">Split History</h4>
-        <div className="space-y-2">
-          <h5 className="text-sm font-medium text-muted-foreground">Reverse Splits</h5>
-          <ReverseSplitsTable rows={data.reverseSplits} />
-        </div>
-        <div className="space-y-2">
-          <h5 className="text-sm font-medium text-muted-foreground">Split Status</h5>
-          <SplitStatusesTable rows={data.splitStatuses} />
-        </div>
+        <ReverseSplitsTable rows={data.reverseSplits} />
       </div>
 
       <div>
@@ -598,10 +491,6 @@ export default function DilutionSection({ data }: Props) {
         <HistoricalFloatTable rows={data.historicalFloat} />
       </div>
 
-      <div>
-        <h4 className="mb-2 text-base font-semibold text-foreground">Owners</h4>
-        <OwnershipGroupsTables groups={data.ownershipGroups} />
-      </div>
     </div>
   );
 }

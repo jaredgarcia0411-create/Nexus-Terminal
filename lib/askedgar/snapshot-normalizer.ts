@@ -1,21 +1,16 @@
 import { getField, toNumberValue, toRecord } from '@/lib/askedgar-utils';
 import { bucketForFormType } from '@/lib/filings-bucket';
-import type { RawOffering } from '@/lib/sec/offerings';
 import type {
   ResearchSnapshotFull,
   ResearchSnapshotConvertibleNote,
   ResearchSnapshotFiling,
   ResearchSnapshotGapStat,
   ResearchSnapshotHistoricalFloatRow,
-  ResearchSnapshotIdentityEvent,
-  ResearchSnapshotIdentityEventType,
+  ResearchSnapshotHistoricalTicker,
   ResearchSnapshotNewsItem,
   ResearchSnapshotOffering,
-  ResearchSnapshotOwnershipGroup,
-  ResearchSnapshotOwner,
   ResearchSnapshotRegistration,
   ResearchSnapshotReverseSplit,
-  ResearchSnapshotSplitStatus,
   ResearchSnapshotWarrant,
 } from '@/lib/types';
 import type { AskEdgarResponse, NormalizeAskEdgarOptions } from '@/lib/askedgar/types';
@@ -146,19 +141,6 @@ function firstStringFromResults(
   return null;
 }
 
-function normalizeIdentityEventTypes(value: unknown): ResearchSnapshotIdentityEventType[] {
-  if (!Array.isArray(value)) return [];
-  const allowed = new Set<ResearchSnapshotIdentityEventType>([
-    'ticker_change',
-    'name_change',
-    'cik_identity_continuity',
-    'exchange_listing_change',
-  ]);
-  return value.filter((item): item is ResearchSnapshotIdentityEventType => (
-    typeof item === 'string' && allowed.has(item as ResearchSnapshotIdentityEventType)
-  ));
-}
-
 export function toRegistrationRow(row: Record<string, unknown>, fallback: string): ResearchSnapshotRegistration {
   return {
     headline: normalizeHeadline(row, fallback),
@@ -199,40 +181,6 @@ export function toRegistrationRow(row: Record<string, unknown>, fallback: string
   };
 }
 
-function buildOfferingHeadline(row: {
-  offeringType: string | null;
-  sharesAmount: number | null;
-  sharePrice: number | null;
-  offeringAmount: number | null;
-  formType: string;
-}): string {
-  const hasFields = row.sharesAmount !== null || row.sharePrice !== null || row.offeringAmount !== null;
-  if (!hasFields) {
-    const typeLabel = row.offeringType ?? 'Offering';
-    const normalizedFormType = row.formType.toUpperCase();
-    if (/^8-K(?:\/A)?$/.test(normalizedFormType)) {
-      const itemCode = row.offeringType === 'PIPE' ? '3.02' : '1.01';
-      return `${typeLabel} (${normalizedFormType} Item ${itemCode})`;
-    }
-    return `${typeLabel} (${row.formType})`;
-  }
-
-  const parts: string[] = [row.offeringType ?? 'Offering'];
-  if (row.sharesAmount !== null) parts.push(`${row.sharesAmount.toLocaleString('en-US')} shares`);
-  if (row.sharePrice !== null) parts.push(`@ $${row.sharePrice.toFixed(2)}`);
-  if (row.offeringAmount !== null) {
-    const amount = row.offeringAmount;
-    const formatted = amount >= 1_000_000_000
-      ? `$${(amount / 1_000_000_000).toFixed(1)}B`
-      : amount >= 1_000_000
-        ? `$${(amount / 1_000_000).toFixed(1)}M`
-        : `$${amount.toLocaleString('en-US')}`;
-    parts.push(formatted);
-  }
-
-  return parts.join(' — ');
-}
-
 export function normalizeAskEdgarResponse(
   rawData: Record<string, AskEdgarResponse<unknown>>,
   options: NormalizeAskEdgarOptions,
@@ -257,29 +205,17 @@ export function normalizeAskEdgarResponse(
     return isEquityLineHeadline(row.headline);
   });
 
-  const offerings = dedupeByHeadline(
-    (getEndpointResponse(rawData, ['offerings']).results as RawOffering[])
-      .filter((row) => !row.isSellingStockholderResale && row.status !== 'resale_only')
-      .map((row) => {
-        return {
-          headline: buildOfferingHeadline(row),
-          filedAt: row.filedAt,
-          offeringType: row.offeringType,
-          // Fall back to securitiesAmount (units / pre-funded warrants /
-          // generic "securities") when the more specific shares anchor
-          // didn't fire. The UI's "Shares" column would otherwise show "--"
-          // even though the extractor captured a value. The headline
-          // intentionally still uses row.sharesAmount only, so we don't
-          // claim "X shares" in the headline when only securitiesAmount
-          // was extracted.
-          sharesAmount: row.sharesAmount ?? row.securitiesAmount ?? null,
-          warrantsAmount: row.warrantsAmount,
-          sharePrice: row.sharePrice,
-          offeringAmount: row.offeringAmount,
-        } satisfies ResearchSnapshotOffering;
-      })
-      .filter((row) => !String(row.offeringType ?? '').toUpperCase().includes('EQUITY LINE')),
-  );
+  const offerings = (getEndpointResponse(rawData, ['offerings']).results as Record<string, unknown>[])
+    .map((row) => ({
+      headline: getStringField(row, ['headline']) ?? 'Offering',
+      filedAt: getStringField(row, ['filed_at', 'filedAt']),
+      offeringType: getStringField(row, ['offering_type', 'offeringType']),
+      sharesAmount: toNumberValue(getField(row, ['shares_amount', 'sharesAmount'])),
+      warrantsAmount: toNumberValue(getField(row, ['warrants_amount', 'warrantsAmount'])),
+      sharePrice: toNumberValue(getField(row, ['share_price', 'sharePrice'])),
+      offeringAmount: toNumberValue(getField(row, ['offering_amount', 'offeringAmount'])),
+    } satisfies ResearchSnapshotOffering))
+    .filter((row) => !String(row.offeringType ?? '').toUpperCase().includes('EQUITY LINE'));
 
   const equityLines = dedupeByHeadline([
     ...registrationEquityLines,
@@ -418,30 +354,6 @@ export function normalizeAskEdgarResponse(
     return rows;
   }, []);
 
-  const ownershipGroups: ResearchSnapshotOwnershipGroup[] = getEndpointResponse(rawData, ['ownership']).results
-    .map((group) => {
-      const groupRecord = toRecord(group);
-      const owners = (Array.isArray(groupRecord.owners) ? groupRecord.owners : [])
-        .map((owner) => {
-          const row = toRecord(owner);
-          return {
-            name: getStringField(row, ['owner_name', 'ownerName']) ?? 'Unknown owner',
-            role: getStringField(row, ['title', 'owner_type', 'ownerType']) ?? '--',
-            common: toNumberValue(getField(row, ['common_shares_amount', 'commonSharesAmount'])),
-            preferred: toNumberValue(getField(row, ['preferred_shares_amount', 'preferredSharesAmount'])),
-            options: toNumberValue(getField(row, ['options_amount', 'optionsAmount'])),
-            warrants: toNumberValue(getField(row, ['warrants_amount', 'warrantsAmount'])),
-          } satisfies ResearchSnapshotOwner;
-        })
-        .filter((owner) => owner.name !== 'Unknown owner' || owner.role !== '--');
-
-      return {
-        reportedDate: getStringField(groupRecord, ['reported_date', 'reportedDate']),
-        owners,
-      } satisfies ResearchSnapshotOwnershipGroup;
-    })
-    .filter((group) => group.owners.length > 0);
-
   const historicalFloat: ResearchSnapshotHistoricalFloatRow[] = getEndpointResponse(rawData, ['historical-float-pro', 'historicalFloatPro']).results.map((item) => {
     const row = toRecord(item);
     return {
@@ -455,46 +367,22 @@ export function normalizeAskEdgarResponse(
   const reverseSplits: ResearchSnapshotReverseSplit[] = getEndpointResponse(rawData, ['reverse-splits', 'reverseSplits']).results.map((item) => {
     const row = toRecord(item);
     const ratio = getStringField(row, ['ratio'])
-      ?? `${getStringField(row, ['splitFrom', 'split_from']) ?? '--'}:${getStringField(row, ['splitTo', 'split_to']) ?? '--'}`;
+      ?? `${getStringField(row, ['splitFrom', 'split_from']) ?? '--'}-for-${getStringField(row, ['splitTo', 'split_to']) ?? '--'}`;
     return {
       date: getStringField(row, ['executionDate', 'execution_date', 'effectiveDate', 'effective_date', 'date']),
       ratio,
     } satisfies ResearchSnapshotReverseSplit;
   });
 
-  const identityEvents: ResearchSnapshotIdentityEvent[] = getEndpointResponse(rawData, ['identity-events', 'identityEvents']).results.map((item) => {
-    const row = toRecord(item);
-    return {
-      previousTicker: getStringField(row, ['previousTicker', 'previous_ticker']),
-      currentTicker: getStringField(row, ['currentTicker', 'current_ticker', 'newTicker', 'new_ticker']),
-      previousCompanyName: getStringField(row, ['previousCompanyName', 'previous_company_name', 'formerName', 'former_name']),
-      currentCompanyName: getStringField(row, ['currentCompanyName', 'current_company_name', 'newCompanyName', 'new_company_name']),
-      effectiveDate: getStringField(row, ['effectiveDate', 'effective_date', 'date']),
-      exchangeMarket: getStringField(row, ['exchangeMarket', 'exchange_market', 'exchange', 'market']),
-      eventTypes: normalizeIdentityEventTypes(getField(row, ['eventTypes', 'event_types'])),
-      filedAt: getStringField(row, ['filedAt', 'filed_at']),
-      formType: getStringField(row, ['formType', 'form_type']),
-      accessionNumber: getStringField(row, ['accessionNumber', 'accession_number']),
-      url: getStringField(row, ['url', 'secUrl', 'sec_url', 'documentUrl', 'document_url']),
-    } satisfies ResearchSnapshotIdentityEvent;
-  });
-
-  const splitStatuses: ResearchSnapshotSplitStatus[] = getEndpointResponse(rawData, ['split-status', 'splitStatus']).results.map((item) => {
-    const row = toRecord(item);
-    return {
-      actionType: getStringField(row, ['action_type', 'actionType']),
-      splitFrom: toNumberValue(getField(row, ['split_from', 'splitFrom'])),
-      splitTo: toNumberValue(getField(row, ['split_to', 'splitTo'])),
-      voteDate: getStringField(row, ['vote_date', 'voteDate']),
-      approvedDate: getStringField(row, ['approved_date', 'approvedDate']),
-      effectiveDate: getStringField(row, ['effective_date', 'effectiveDate']),
-      details: getStringField(row, ['details']),
-      filedAt: getStringField(row, ['filed_at', 'filedAt']),
-      formType: getStringField(row, ['form_type', 'formType']),
-      documentUrl: getStringField(row, ['document_url', 'documentUrl']),
-      lastUpdated: getStringField(row, ['last_updated', 'lastUpdated']),
-    } satisfies ResearchSnapshotSplitStatus;
-  });
+  const historicalTickersResult = firstResult(rawData, ['historical-tickers', 'historicalTickers']);
+  const historicalTickers: ResearchSnapshotHistoricalTicker[] = Array.isArray(historicalTickersResult.historical_tickers)
+    ? (historicalTickersResult.historical_tickers as Record<string, unknown>[])
+        .map((row) => ({
+          ticker: getStringField(row, ['ticker']),
+          dateChanged: getStringField(row, ['date_changed', 'dateChanged']),
+        }))
+        .filter((row): row is ResearchSnapshotHistoricalTicker => row.ticker !== null)
+    : [];
 
   const gapStats: ResearchSnapshotGapStat[] = getEndpointResponse(rawData, ['gap-stats', 'gapStats']).results.map((item) => {
     const row = toRecord(item);
@@ -572,11 +460,9 @@ export function normalizeAskEdgarResponse(
     offerings,
     news,
     filings,
-    ownershipGroups,
     historicalFloat,
     reverseSplits,
-    identityEvents,
-    splitStatuses,
+    historicalTickers,
     gapStats,
     rawData,
   };

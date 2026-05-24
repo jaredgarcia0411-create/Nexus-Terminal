@@ -1,18 +1,12 @@
 import { toNumberValue, toRecord } from '@/lib/askedgar-utils';
 import { getHistoricalOutstanding } from '@/lib/sec/companyfacts';
-import { getIdentityEvents } from '@/lib/sec/identity-events';
-import { getOfferings } from '@/lib/sec/offerings';
-import { getReverseSplits } from '@/lib/sec/reverse-splits';
 import { getResearchFilings } from '@/lib/sec/submissions';
 import { getRateLimitedUntil, setRateLimited } from '@/lib/askedgar/runtime-state';
 import type { AskEdgarResponse } from '@/lib/askedgar/types';
 
 export const SEC_BACKED_ENDPOINT_KEYS = new Set<string>([
   'historical-float-pro',
-  'reverse-splits',
-  'offerings',
   'sec-filings',
-  'identity-events',
 ]);
 
 const ASKEDGAR_BASE_URL = 'https://eapi.askedgar.io';
@@ -232,6 +226,31 @@ export async function fetchEquityLines(ticker: string) {
   return requestAskEdgar<unknown>('/v1/offerings', { ticker: validated, offering_type: 'NEW EQUITY LINE', limit: 50 });
 }
 
+export async function fetchOfferings(ticker: string, limit = 50) {
+  const validated = validateTickerOrError<unknown>(ticker);
+  if (typeof validated !== 'string') return validated;
+  return requestAskEdgar<unknown>('/v1/offerings', { ticker: validated, limit });
+}
+
+export async function fetchReverseSplits(ticker: string) {
+  const validated = validateTickerOrError<unknown>(ticker);
+  if (typeof validated !== 'string') return validated;
+  return requestAskEdgar<unknown>('/v1/reverse-splits', { ticker: validated });
+}
+
+export async function fetchHistoricalTickers(ticker: string) {
+  const validated = validateTickerOrError<unknown>(ticker);
+  if (typeof validated !== 'string') return validated;
+  return requestAskEdgar<unknown>('/v1/historical-tickers', { ticker: validated });
+}
+
+export async function fetchHistoricalDilutionRating(ticker: string, date: string) {
+  const validated = validateTickerOrError<unknown>(ticker);
+  if (typeof validated !== 'string') return validated;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return toErrorResponse<unknown>('Invalid date format');
+  return requestAskEdgar<unknown>('/v1/historical-dilution', { ticker: validated, date });
+}
+
 export async function fetchRegistrations(ticker: string) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
@@ -262,34 +281,20 @@ export async function fetchGapStats(ticker: string, limit = 50) {
   return requestAskEdgar<unknown>('/v1/gap-stats', { ticker: validated, limit });
 }
 
-export async function fetchOwnership(ticker: string) {
-  const validated = validateTickerOrError<unknown>(ticker);
-  if (typeof validated !== 'string') return validated;
-  return requestAskEdgar<unknown>('/v1/ownership', { ticker: validated });
-}
-
-export async function fetchSplitStatus(ticker: string) {
-  const validated = validateTickerOrError<unknown>(ticker);
-  if (typeof validated !== 'string') return validated;
-  return requestAskEdgar<unknown>('/v1/split-status', { ticker: validated });
-}
-
 export const ENDPOINT_REGISTRY = {
   screener: { label: 'Screener', run: (ticker) => fetchScreenerByTicker(ticker) },
   'dilution-rating': { label: 'Dilution Rating', run: (ticker) => fetchDilutionRating(ticker) },
   'dilution-data': { label: 'Dilution Data', run: (ticker) => fetchDilutionData(ticker) },
-  offerings: { label: 'Offerings', run: (ticker) => getOfferings(ticker) },
+  offerings: { label: 'Offerings', run: (ticker) => fetchOfferings(ticker, 50) },
   'sec-filings': { label: 'SEC Filings', run: (ticker) => getResearchFilings(ticker) },
   'equity-lines': { label: 'Equity Lines', run: (ticker) => fetchEquityLines(ticker) },
   registrations: { label: 'Registrations', run: (ticker) => fetchRegistrations(ticker) },
   news: { label: 'News', run: (ticker) => fetchNews(ticker, 40) },
   'nasdaq-compliance': { label: 'Nasdaq Compliance', run: (ticker) => fetchNasdaqCompliance(ticker) },
   'historical-float-pro': { label: 'Historical Outstanding Shares', run: (ticker) => getHistoricalOutstanding(ticker, { limit: 20 }) },
-  'reverse-splits': { label: 'Reverse Splits', run: (ticker) => getReverseSplits(ticker) },
-  'identity-events': { label: 'Identity Events', run: (ticker) => getIdentityEvents(ticker) },
+  'reverse-splits': { label: 'Reverse Splits', run: (ticker) => fetchReverseSplits(ticker) },
+  'historical-tickers': { label: 'Historical Tickers', run: (ticker) => fetchHistoricalTickers(ticker) },
   'gap-stats': { label: 'Gap Stats', run: (ticker) => fetchGapStats(ticker, 50) },
-  ownership: { label: 'Ownership', run: (ticker) => fetchOwnership(ticker) },
-  'split-status': { label: 'Split Status', run: (ticker) => fetchSplitStatus(ticker) },
 } satisfies Record<string, EndpointRegistryEntry>;
 
 export type EndpointKey = keyof typeof ENDPOINT_REGISTRY;
@@ -306,12 +311,12 @@ export const ENDPOINT_SCOPES = {
   'small-cap-research': [
     'screener', 'dilution-rating', 'dilution-data', 'offerings', 'equity-lines',
     'registrations', 'news', 'nasdaq-compliance',
-    'historical-float-pro', 'reverse-splits', 'sec-filings', 'identity-events',
-    'gap-stats', 'ownership', 'split-status',
+    'historical-float-pro', 'reverse-splits', 'sec-filings', 'historical-tickers',
+    'gap-stats',
   ],
   'swing-trader-research': [
     'dilution-data', 'dilution-rating', 'offerings', 'registrations',
-    'news', 'historical-float-pro', 'gap-stats', 'ownership',
+    'news', 'historical-float-pro', 'gap-stats',
   ],
 } as const satisfies Record<string, readonly EndpointKey[]>;
 

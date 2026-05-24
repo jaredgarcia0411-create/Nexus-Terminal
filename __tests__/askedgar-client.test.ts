@@ -28,30 +28,6 @@ vi.mock('@/lib/sec/companyfacts', () => ({
   getHistoricalOutstanding: getHistoricalOutstandingMock,
 }));
 
-const { getReverseSplitsMock } = vi.hoisted(() => ({
-  getReverseSplitsMock: vi.fn(),
-}));
-
-vi.mock('@/lib/sec/reverse-splits', () => ({
-  getReverseSplits: getReverseSplitsMock,
-}));
-
-const { getOfferingsMock } = vi.hoisted(() => ({
-  getOfferingsMock: vi.fn(),
-}));
-
-vi.mock('@/lib/sec/offerings', () => ({
-  getOfferings: getOfferingsMock,
-}));
-
-const { getIdentityEventsMock } = vi.hoisted(() => ({
-  getIdentityEventsMock: vi.fn(),
-}));
-
-vi.mock('@/lib/sec/identity-events', () => ({
-  getIdentityEvents: getIdentityEventsMock,
-}));
-
 interface AskedgarCacheRow {
   id: string;
   cacheType: string;
@@ -191,53 +167,6 @@ describe('askedgar client', () => {
       count: 1,
       results: [{ date: '2026-01-01', outstanding: 1_000_000 }],
     });
-    getReverseSplitsMock.mockReset();
-    getReverseSplitsMock.mockResolvedValue({
-      status: 'success',
-      count: 1,
-      results: [{
-        ratio: '1-for-25',
-        executionDate: '2026-04-21',
-        announcementDate: '2026-04-20',
-        accessionNumber: '0001234567-26-000010',
-        url: 'https://www.sec.gov/Archives/edgar/data/0/000123456726000010/doc.htm',
-      }],
-    });
-    getOfferingsMock.mockReset();
-    getOfferingsMock.mockResolvedValue({
-      status: 'success',
-      count: 1,
-      results: [{
-        accessionNumber: '0001234567-26-000020',
-        formType: '424B5',
-        filedAt: '2026-04-20',
-        url: 'https://www.sec.gov/Archives/edgar/data/0/000123456726000020/offerings.htm',
-        offeringType: 'ATM USED',
-        sharesAmount: 1_000_000,
-        sharePrice: 1,
-        offeringAmount: 1_000_000,
-        warrantsAmount: null,
-        isSellingStockholderResale: false,
-      }],
-    });
-    getIdentityEventsMock.mockReset();
-    getIdentityEventsMock.mockResolvedValue({
-      status: 'success',
-      count: 1,
-      results: [{
-        previousTicker: 'OLD',
-        currentTicker: 'AAPL',
-        previousCompanyName: 'Old Apple Inc.',
-        currentCompanyName: 'Apple Inc.',
-        effectiveDate: '2026-04-21',
-        exchangeMarket: 'Nasdaq',
-        eventTypes: ['ticker_change', 'name_change'],
-        filedAt: '2026-04-20',
-        formType: '8-K',
-        accessionNumber: '0001234567-26-000030',
-        url: 'https://www.sec.gov/Archives/edgar/data/0/000123456726000030/doc.htm',
-      }],
-    });
     process.env.ASKEDGAR_API_KEY = 'test-key';
   });
 
@@ -252,22 +181,22 @@ describe('askedgar client', () => {
     const result = await client.fetchTickerData('AAPL');
 
     expect(result.ticker).toBe('AAPL');
-    expect(Object.keys(result.rawData)).toHaveLength(15);
-    expect(result.dataSources).toHaveLength(15);
+    expect(Object.keys(result.rawData)).toHaveLength(13);
+    expect(result.dataSources).toHaveLength(13);
   });
 
   it('only calls explicitly requested endpoints from fetchTickerData', async () => {
     const fetchSpy = mockSuccessfulEndpointFetch();
     const client = await import('@/lib/askedgar');
 
-    const result = await client.fetchTickerData('AAPL', { endpoints: ['gap-stats', 'ownership'] });
+    const result = await client.fetchTickerData('AAPL', { endpoints: ['gap-stats', 'news'] });
 
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(fetchCallUrls(fetchSpy).map((url) => url.pathname)).toEqual([
       '/v1/gap-stats',
-      '/v1/ownership',
+      '/v1/news',
     ]);
-    expect(Object.keys(result.rawData)).toEqual(['gap-stats', 'ownership']);
+    expect(Object.keys(result.rawData)).toEqual(['gap-stats', 'news']);
     expect(result.dataSources).toHaveLength(2);
   });
 
@@ -291,7 +220,7 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
 
     await client.getCachedTickerData('AAPL');
-    expect(fetchSpy).toHaveBeenCalledTimes(10);
+    expect(fetchSpy).toHaveBeenCalledTimes(11);
 
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL', { scope: 'swing-trader-research' });
@@ -300,7 +229,7 @@ describe('askedgar client', () => {
     // serve every swing-scope endpoint (including news) from the cache.
     expect(fetchSpy).toHaveBeenCalledTimes(0);
     expect(Object.keys(result.rawData)).toEqual([...client.ENDPOINT_SCOPES['swing-trader-research']]);
-    expect(cachedRawDataKeys(cacheDb)).toHaveLength(15);
+    expect(cachedRawDataKeys(cacheDb)).toHaveLength(13);
   });
 
   it('merges missing snapshot endpoints after a swing-trader scope populated the cache', async () => {
@@ -315,13 +244,13 @@ describe('askedgar client', () => {
     fetchSpy.mockClear();
     const result = await client.getCachedTickerData('AAPL');
 
-    // 7 endpoints not yet cached (screener, equity-lines, nasdaq-compliance,
-    // reverse-splits, sec-filings, identity-events, split-status). Three are SEC-backed,
-    // and news is fresh in the cache from the first call, so only 4 AskEdgar
+    // 6 endpoints not yet cached (screener, equity-lines, nasdaq-compliance,
+    // reverse-splits, sec-filings, historical-tickers). One is SEC-backed,
+    // and news is fresh in the cache from the first call, so only 5 AskEdgar
     // fetches happen.
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
-    expect(Object.keys(result.rawData)).toHaveLength(15);
-    expect(cachedRawDataKeys(cacheDb)).toHaveLength(15);
+    expect(fetchSpy).toHaveBeenCalledTimes(5);
+    expect(Object.keys(result.rawData)).toHaveLength(13);
+    expect(cachedRawDataKeys(cacheDb)).toHaveLength(13);
   });
 
   it('sums AskEdgar usage cost into the fan-out log', async () => {
@@ -338,7 +267,7 @@ describe('askedgar client', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const client = await import('@/lib/askedgar');
 
-    await client.fetchTickerData('AAPL', { endpoints: ['gap-stats', 'ownership'] });
+    await client.fetchTickerData('AAPL', { endpoints: ['gap-stats', 'news'] });
 
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('costUsd=0.0040'));
@@ -350,28 +279,25 @@ describe('askedgar client', () => {
     await expect(client.fetchTickerData('AAPL', { endpoints: ['nope'] })).rejects.toThrow('[askedgar] Unknown endpoint key: nope');
   });
 
-  it('routes reverse-splits through getReverseSplits, not AskEdgar', async () => {
+  it('routes reverse-splits through AskEdgar', async () => {
     const fetchSpy = mockSuccessfulEndpointFetch();
     const client = await import('@/lib/askedgar');
 
     await client.fetchTickerData('AAPL', { endpoints: ['reverse-splits'] });
 
-    expect(getReverseSplitsMock).toHaveBeenCalledWith('AAPL');
-    expect(fetchSpy).not.toHaveBeenCalled();
     const calledUrls = fetchCallUrls(fetchSpy).map((url) => url.pathname);
-    expect(calledUrls.some((path) => path.includes('reverse-splits'))).toBe(false);
+    expect(calledUrls).toEqual(['/v1/reverse-splits']);
   });
 
-  it('routes offerings through getOfferings, not AskEdgar', async () => {
+  it('routes offerings through AskEdgar with the default limit', async () => {
     const fetchSpy = mockSuccessfulEndpointFetch();
     const client = await import('@/lib/askedgar');
 
     await client.fetchTickerData('AAPL', { endpoints: ['offerings'] });
 
-    expect(getOfferingsMock).toHaveBeenCalledWith('AAPL');
-    expect(fetchSpy).not.toHaveBeenCalled();
-    const calledUrls = fetchCallUrls(fetchSpy).map((url) => url.pathname);
-    expect(calledUrls.some((path) => path.includes('offerings'))).toBe(false);
+    const [offeringsUrl] = fetchCallUrls(fetchSpy);
+    expect(offeringsUrl.pathname).toBe('/v1/offerings');
+    expect(offeringsUrl.searchParams.get('limit')).toBe('50');
   });
 
   it('routes sec-filings through getResearchFilings, not AskEdgar', async () => {
@@ -384,14 +310,14 @@ describe('askedgar client', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('routes identity-events through getIdentityEvents, not AskEdgar', async () => {
+  it('routes historical-tickers through AskEdgar', async () => {
     const fetchSpy = mockSuccessfulEndpointFetch();
     const client = await import('@/lib/askedgar');
 
-    await client.fetchTickerData('AAPL', { endpoints: ['identity-events'] });
+    await client.fetchTickerData('AAPL', { endpoints: ['historical-tickers'] });
 
-    expect(getIdentityEventsMock).toHaveBeenCalledWith('AAPL');
-    expect(fetchSpy).not.toHaveBeenCalled();
+    const [historicalTickersUrl] = fetchCallUrls(fetchSpy);
+    expect(historicalTickersUrl.pathname).toBe('/v1/historical-tickers');
   });
 
   it('does not send an effective_status filter when fetching registrations', async () => {
@@ -497,7 +423,7 @@ describe('askedgar client', () => {
     const result = await client.fetchTickerData('AAPL');
     const availability = client.getAskEdgarSnapshotAvailability(result.rawData);
 
-    expect(result.hasAnyData).toBe(true);
+    expect(result.hasAnyData).toBe(false);
     expect(availability).toEqual({
       hasAnyData: false,
       hasUsableSnapshotData: false,
@@ -534,7 +460,7 @@ describe('askedgar client', () => {
     const client = await import('@/lib/askedgar');
     await client.getCachedTickerData('AAPL');
 
-    expect(fetchSpy).toHaveBeenCalledTimes(7);
+    expect(fetchSpy).toHaveBeenCalledTimes(8);
     expect(cacheDb.getRows()).toHaveLength(1);
 
     vi.resetModules();
@@ -559,10 +485,10 @@ describe('askedgar client', () => {
       client.getCachedTickerData('MSFT'),
     ]);
 
-    // 10 fetches for the first call's full snapshot; the second call wakes
+    // 11 AskEdgar fetches for the first call's full snapshot; the second call wakes
     // from in-flight dedupe with news already inside its 15-minute freshness
     // window, so no extra news re-fetch.
-    expect(fetchSpy).toHaveBeenCalledTimes(10);
+    expect(fetchSpy).toHaveBeenCalledTimes(11);
     expect(Object.keys(first.rawData)).toEqual(Object.keys(second.rawData));
     expect(second.rawData.news).toBeDefined();
   });

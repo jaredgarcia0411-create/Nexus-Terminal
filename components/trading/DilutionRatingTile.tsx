@@ -1,5 +1,6 @@
 'use client';
 
+import { pillClasses, ratingLevel, type RatingLevel } from '@/components/trading/research-report-sections/_shared';
 import { toStringValue } from '@/lib/askedgar-utils';
 import type { ResearchSnapshot } from '@/lib/types';
 
@@ -11,19 +12,6 @@ interface TileProps {
   overallRisk: string | null;
   warrantExerciseRating: string | null;
   nasdaqCompliance: string | null;
-}
-
-type RatingLevel = 'low' | 'medium' | 'high' | 'na';
-
-// Decide which traffic-light tier a free-text rating falls into.
-// We check "high" before "low" so values like "High Risk" never accidentally hit the "low/positive" branch.
-function ratingLevel(value: string | null): RatingLevel {
-  if (!value) return 'na';
-  const v = value.toLowerCase();
-  if (v.includes('non-compliant') || v.includes('high') || v.includes('risk')) return 'high';
-  if (v.includes('medium') || v.includes('watch') || v.includes('warning')) return 'medium';
-  if (v.includes('low') || v.includes('compliant') || v.includes('positive')) return 'low';
-  return 'na';
 }
 
 // Three vertical bars with progressive height. Active bars get the level color; inactive bars stay dim grey.
@@ -80,14 +68,6 @@ export default function DilutionRatingTile(props: TileProps) {
 }
 
 // --- Larger Dilution-tab panel: dynamic banner + 6-tile grid ---
-
-// Subtle colored bg per tier. No border per spec ("traffic lights with no border").
-function pillClasses(level: RatingLevel): string {
-  if (level === 'high') return 'bg-rose-500/15 text-rose-300';
-  if (level === 'medium') return 'bg-amber-500/15 text-amber-300';
-  if (level === 'low') return 'bg-emerald-500/15 text-emerald-300';
-  return 'bg-card/40 text-muted-foreground';
-}
 
 function bannerClasses(level: RatingLevel): string {
   if (level === 'high') return 'border-rose-500/30 bg-rose-500/5 text-rose-300';

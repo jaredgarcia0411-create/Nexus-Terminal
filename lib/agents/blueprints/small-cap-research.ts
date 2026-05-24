@@ -26,10 +26,8 @@ export const edgarSectionsSchema = z.object({
   equityLines: z.array(z.unknown()),
   dilutionRating: z.unknown().nullable(),
   dilutionData: z.unknown().nullable(),
-  ownership: z.unknown().nullable(),
   historicalFloat: z.array(z.unknown()),
   reverseSplits: z.array(z.unknown()),
-  splitStatus: z.unknown().nullable(),
   nasdaqCompliance: z.unknown().nullable(),
   news: z.array(z.unknown()),
   filingTitles: z.array(z.unknown()).default([]),
@@ -63,11 +61,8 @@ const deterministicAnalysisSchema = z.object({
   hasActiveShelf: z.boolean(),
   hasActiveAtm: z.boolean(),
   amountRemainingAtm: z.number().nullable(),
-  splitApproved: z.boolean(),
-  splitEffectivePending: z.boolean(),
   daysToComplianceDeadline: z.number().nullable(),
   floatTrend: z.enum(['increasing', 'decreasing', 'stable']).nullable(),
-  knownHolderOverhang: z.number().nullable(),
   newsCount: z.number(),
   mostRecentNewsDate: z.string().nullable(),
   daysSinceLastNews: z.number().nullable(),
@@ -276,26 +271,6 @@ function isValidRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function flattenOwnershipRecords(value: unknown): Record<string, unknown>[] {
-  const rows: Record<string, unknown>[] = [];
-
-  for (const entry of toUnknownCollection(value)) {
-    if (!isValidRecord(entry)) {
-      continue;
-    }
-
-    const owners = Array.isArray(entry.owners) ? entry.owners : null;
-    if (owners) {
-      rows.push(...flattenOwnershipRecords(owners));
-      continue;
-    }
-
-    rows.push(entry);
-  }
-
-  return rows;
-}
-
 function normalizeGapRow(value: unknown): {
   open: number;
   close: number;
@@ -431,18 +406,6 @@ function normalizeOfferingRow(value: unknown): {
   };
 }
 
-function normalizeSplitStatusRow(value: unknown): {
-  status: string | null;
-} | null {
-  if (!isValidRecord(value)) {
-    return null;
-  }
-
-  return {
-    status: getStringField(value, ['status', 'details', 'actionType']),
-  };
-}
-
 function normalizeComplianceRow(value: unknown): {
   deadline: Date | null;
 } | null {
@@ -575,12 +538,6 @@ export function computeDeterministicAnalysis(
     ? null
     : activeAtmOfferings.reduce((sum, row) => sum + (row.remainingAmount ?? 0), 0);
 
-  const splitStatusRows = toUnknownCollection(input.splitStatus)
-    .map(normalizeSplitStatusRow)
-    .filter((row): row is NonNullable<typeof row> => row !== null);
-  const splitApproved = splitStatusRows.some((row) => row.status?.toLowerCase().includes('approved') ?? false);
-  const splitEffectivePending = splitStatusRows.some((row) => row.status?.toLowerCase().includes('pending') ?? false);
-
   const complianceRow = toUnknownCollection(input.nasdaqCompliance)
     .map(normalizeComplianceRow)
     .find((row): row is NonNullable<typeof row> => row !== null) ?? null;
@@ -614,17 +571,6 @@ export function computeDeterministicAnalysis(
     return 'stable' as const;
   })();
 
-  const ownershipRows = flattenOwnershipRecords(input.ownership);
-  const knownHolderOverhang = ownershipRows.length === 0
-    ? null
-    : Math.min(
-        100,
-        ownershipRows.reduce((sum, row) => {
-          const percentage = getNumberField(row, ['percentage', 'percent_held', 'percentHeld']);
-          return sum + (percentage ?? 0);
-        }, 0),
-      );
-
   return {
     gapCount,
     sameDayFadeRate,
@@ -634,11 +580,8 @@ export function computeDeterministicAnalysis(
     hasActiveShelf,
     hasActiveAtm,
     amountRemainingAtm,
-    splitApproved,
-    splitEffectivePending,
     daysToComplianceDeadline,
     floatTrend,
-    knownHolderOverhang,
     gapStatsTable,
     ...newsMetrics,
   };
@@ -692,10 +635,8 @@ export function buildResearchPrompt(input: z.infer<typeof researchPipelineInputS
       `equityLines:\n${wrapUntrusted('filing', JSON.stringify(input.equityLines, null, 2))}`,
       `dilutionRating:\n${wrapUntrusted('filing', JSON.stringify(input.dilutionRating, null, 2))}`,
       `dilutionData:\n${wrapUntrusted('filing', JSON.stringify(input.dilutionData, null, 2))}`,
-      `ownership:\n${wrapUntrusted('filing', JSON.stringify(input.ownership, null, 2))}`,
       `historicalFloat:\n${wrapUntrusted('filing', JSON.stringify(input.historicalFloat, null, 2))}`,
       `reverseSplits:\n${wrapUntrusted('filing', JSON.stringify(input.reverseSplits, null, 2))}`,
-      `splitStatus:\n${wrapUntrusted('filing', JSON.stringify(input.splitStatus, null, 2))}`,
       `nasdaqCompliance:\n${wrapUntrusted('filing', JSON.stringify(input.nasdaqCompliance, null, 2))}`,
       `Recent news & filings (headline, date, formType, summary):\n${wrapUntrusted('news', JSON.stringify(input.newsFeed, null, 2))}`,
       `cashPosition:\n${wrapUntrusted('filing', JSON.stringify(input.cashPosition, null, 2))}`,
@@ -760,10 +701,8 @@ export async function generateSmallCapResearchReport(
     equityLines: readResults(rawData['equity-lines']),
     dilutionRating: dilutionRatingFirst,
     dilutionData: readResults(rawData['dilution-data']),
-    ownership: readResults(rawData['ownership']),
     historicalFloat: readResults(rawData['historical-float-pro']),
     reverseSplits: readResults(rawData['reverse-splits']),
-    splitStatus: readResults(rawData['split-status']),
     nasdaqCompliance: readResults(rawData['nasdaq-compliance'])[0] ?? null,
     news: readResults(rawData['news']),
     filingTitles: readResults(rawData['filing-titles']),
@@ -861,10 +800,8 @@ export const smallCapResearchBlueprint: Blueprint = {
           equityLines: readResults(rawData['equity-lines']),
           dilutionRating: dilutionRatingFirst,
           dilutionData: readResults(rawData['dilution-data']),
-          ownership: readResults(rawData['ownership']),
           historicalFloat: readResults(rawData['historical-float-pro']),
           reverseSplits: readResults(rawData['reverse-splits']),
-          splitStatus: readResults(rawData['split-status']),
           nasdaqCompliance: readResults(rawData['nasdaq-compliance'])[0] ?? null,
           news: readResults(rawData['news']),
           filingTitles: readResults(rawData['filing-titles']),

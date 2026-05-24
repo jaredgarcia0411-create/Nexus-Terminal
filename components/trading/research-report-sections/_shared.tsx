@@ -7,10 +7,31 @@ import type { ResearchSnapshotFiling } from '@/lib/types';
 
 export function NoDataBadge({ label = 'No data' }: { label?: string }) {
   return (
-    <span className="inline-flex rounded-md border border-zinc-700 bg-card/60 px-2 py-1 text-sm text-muted-foreground">
+    <span className="inline-flex rounded-md border border-border bg-card/60 px-2 py-1 text-sm text-muted-foreground">
       {label}
     </span>
   );
+}
+
+export type RatingLevel = 'low' | 'medium' | 'high' | 'na';
+
+// Decide which traffic-light tier a free-text rating falls into.
+// We check "high" before "low" so values like "High Risk" never accidentally hit the "low/positive" branch.
+export function ratingLevel(value: string | null): RatingLevel {
+  if (!value) return 'na';
+  const v = value.toLowerCase();
+  if (v.includes('non-compliant') || v.includes('high') || v.includes('risk')) return 'high';
+  if (v.includes('medium') || v.includes('watch') || v.includes('warning')) return 'medium';
+  if (v.includes('low') || v.includes('compliant') || v.includes('positive')) return 'low';
+  return 'na';
+}
+
+// Subtle colored bg per tier. No border per spec ("traffic lights with no border").
+export function pillClasses(level: RatingLevel): string {
+  if (level === 'high') return 'bg-rose-500/15 text-rose-300';
+  if (level === 'medium') return 'bg-amber-500/15 text-amber-300';
+  if (level === 'low') return 'bg-emerald-500/15 text-emerald-300';
+  return 'bg-card/40 text-muted-foreground';
 }
 
 export function compareFiledAtDesc(a: { filedAt: string | null }, b: { filedAt: string | null }) {

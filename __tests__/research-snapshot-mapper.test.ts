@@ -10,24 +10,14 @@ const emptyResponse: AskEdgarResponse<unknown> = {
 };
 
 describe('normalizeAskEdgarResponse', () => {
-  it('maps SEC-backed identity events into the client-safe snapshot contract', () => {
+  it('maps AE historical tickers into the client-safe snapshot contract', () => {
     const rawData: Record<string, AskEdgarResponse<unknown>> = {
-      'identity-events': {
+      'historical-tickers': {
         status: 'success',
         count: 1,
         results: [{
-          previousTicker: 'OHAR',
-          currentTicker: 'NHBI',
-          previousCompanyName: 'Old Harbor Therapeutics Inc.',
-          currentCompanyName: 'New Harbor BioSciences Inc.',
-          effectiveDate: '2026-05-15',
-          exchangeMarket: 'Nasdaq Capital Market',
-          eventTypes: ['ticker_change', 'name_change', 'not_allowed'],
-          filedAt: '2026-05-14',
-          formType: '8-K',
-          accessionNumber: '0001234567-26-000006',
-          url: 'https://www.sec.gov/Archives/edgar/data/1234567/000123456726000006/8k.htm',
-          sourceSnippet: 'Server-only parser context is intentionally not mapped.',
+          current_ticker: 'BINI',
+          historical_tickers: [{ ticker: 'MULN', date_changed: '2025-07-28' }],
         }],
       },
     };
@@ -39,31 +29,23 @@ describe('normalizeAskEdgarResponse', () => {
       warnings: [],
     });
 
-    expect(snapshot.identityEvents).toEqual([{
-      previousTicker: 'OHAR',
-      currentTicker: 'NHBI',
-      previousCompanyName: 'Old Harbor Therapeutics Inc.',
-      currentCompanyName: 'New Harbor BioSciences Inc.',
-      effectiveDate: '2026-05-15',
-      exchangeMarket: 'Nasdaq Capital Market',
-      eventTypes: ['ticker_change', 'name_change'],
-      filedAt: '2026-05-14',
-      formType: '8-K',
-      accessionNumber: '0001234567-26-000006',
-      url: 'https://www.sec.gov/Archives/edgar/data/1234567/000123456726000006/8k.htm',
+    expect(snapshot.historicalTickers).toEqual([{
+      ticker: 'MULN',
+      dateChanged: '2025-07-28',
     }]);
   });
 
-  it('maps richer reverse-split effective dates into the existing snapshot shape', () => {
+  it('maps AE reverse-split rows into the existing snapshot shape', () => {
     const rawData: Record<string, AskEdgarResponse<unknown>> = {
       'reverse-splits': {
         status: 'success',
         count: 1,
         results: [{
-          ratio: '1-for-20',
-          executionDate: null,
-          effectiveDate: '2026-05-21',
-          lifecycleStatus: 'completed',
+          ticker: 'TNXP',
+          execution_date: '2025-02-05',
+          split_from: 100,
+          split_to: 1,
+          last_updated: '2026-05-24T00:00:00Z',
         }],
       },
     };
@@ -76,8 +58,8 @@ describe('normalizeAskEdgarResponse', () => {
     });
 
     expect(snapshot.reverseSplits).toEqual([{
-      date: '2026-05-21',
-      ratio: '1-for-20',
+      date: '2025-02-05',
+      ratio: '100-for-1',
     }]);
   });
 
@@ -146,10 +128,8 @@ describe('normalizeAskEdgarResponse', () => {
           },
         ],
       },
-      ownership: emptyResponse,
       'historical-float-pro': emptyResponse,
       'reverse-splits': emptyResponse,
-      'split-status': emptyResponse,
       'gap-stats': emptyResponse,
     };
 
@@ -256,7 +236,6 @@ describe('normalizeAskEdgarResponse', () => {
           },
         ],
       },
-      ownership: emptyResponse,
       'historical-float-pro': {
         status: 'success',
         count: 1,
@@ -268,7 +247,6 @@ describe('normalizeAskEdgarResponse', () => {
         }],
       },
       'reverse-splits': emptyResponse,
-      'split-status': emptyResponse,
       'gap-stats': emptyResponse,
     };
 
@@ -313,7 +291,7 @@ describe('normalizeAskEdgarResponse', () => {
     ]);
   });
 
-  it('maps SEC-backed offerings, filters resale rows, and derives risk fields from compliance only', () => {
+  it('maps AE offerings and derives risk fields from compliance only', () => {
     const rawData: Record<string, AskEdgarResponse<unknown>> = {
       screener: emptyResponse,
       'dilution-rating': emptyResponse,
@@ -327,54 +305,39 @@ describe('normalizeAskEdgarResponse', () => {
       'equity-lines': emptyResponse,
       offerings: {
         status: 'success',
-        count: 3,
+        count: 2,
         results: [
           {
-            accessionNumber: '0000000001-26-000100',
-            formType: '424B5',
-            filedAt: '2026-04-25',
-            url: 'https://www.sec.gov/Archives/edgar/data/1/atm.htm',
-            offeringType: 'ATM USED',
-            sharesAmount: 2_000_000,
-            sharePrice: 2.5,
-            offeringAmount: 5_000_000,
-            warrantsAmount: null,
-            isSellingStockholderResale: false,
+            ticker: 'TNXP',
+            headline: 'ATM USED',
+            filed_at: '2026-05-11',
+            form_type: 'news',
+            offering_type: ' S-3',
+            askedgar_url: 'https://app.askedgar.io/filing',
+            selling_shareholder_details: 'None',
+            shares_amount: 2_000_000,
+            warrants_amount: null,
+            share_price: 2.5,
+            offering_amount: 5_000_000,
+            conversion_price: null,
+            last_updated: '2026-05-24T00:00:00Z',
           },
           {
-            accessionNumber: '0000000001-26-000101',
-            formType: '424B3',
-            filedAt: '2026-04-24',
-            url: 'https://www.sec.gov/Archives/edgar/data/1/resale.htm',
-            status: 'resale_only',
-            offeringType: 'REGISTERED DIRECT',
-            sharesAmount: 3_000_000,
-            sharePrice: 1,
-            offeringAmount: null,
-            warrantsAmount: null,
-            isSellingStockholderResale: false,
-          },
-          {
-            accessionNumber: '0000000001-26-000102',
-            formType: '8-K',
-            filedAt: '2026-04-23',
-            url: 'https://www.sec.gov/Archives/edgar/data/1/pipe.htm',
-            offeringType: 'PIPE',
-            sharesAmount: null,
-            securitiesAmount: 100_000,
-            sharePrice: null,
-            offeringAmount: null,
-            warrantsAmount: null,
-            isSellingStockholderResale: false,
+            ticker: 'TNXP',
+            headline: 'EQUITY LINE USED',
+            filed_at: '2026-05-10',
+            offering_type: 'EQUITY LINE',
+            shares_amount: 100_000,
+            warrants_amount: null,
+            share_price: null,
+            offering_amount: null,
           },
         ],
       },
       news: emptyResponse,
       'filing-titles': emptyResponse,
-      ownership: emptyResponse,
       'historical-float-pro': emptyResponse,
       'reverse-splits': emptyResponse,
-      'split-status': emptyResponse,
       'gap-stats': emptyResponse,
     };
 
@@ -387,22 +350,13 @@ describe('normalizeAskEdgarResponse', () => {
 
     expect(snapshot.offerings).toEqual([
       {
-        headline: 'ATM USED — 2,000,000 shares — @ $2.50 — $5.0M',
-        filedAt: '2026-04-25',
-        offeringType: 'ATM USED',
+        headline: 'ATM USED',
+        filedAt: '2026-05-11',
+        offeringType: 'S-3',
         sharesAmount: 2_000_000,
         warrantsAmount: null,
         sharePrice: 2.5,
         offeringAmount: 5_000_000,
-      },
-      {
-        headline: 'PIPE (8-K Item 3.02)',
-        filedAt: '2026-04-23',
-        offeringType: 'PIPE',
-        sharesAmount: 100_000,
-        warrantsAmount: null,
-        sharePrice: null,
-        offeringAmount: null,
       },
     ]);
     expect(snapshot.overallRisk).toBeNull();
@@ -453,10 +407,8 @@ describe('normalizeAskEdgarResponse', () => {
       'equity-lines': emptyResponse,
       offerings: emptyResponse,
       news: emptyResponse,
-      ownership: emptyResponse,
       'historical-float-pro': emptyResponse,
       'reverse-splits': emptyResponse,
-      'split-status': emptyResponse,
       'gap-stats': emptyResponse,
     };
 

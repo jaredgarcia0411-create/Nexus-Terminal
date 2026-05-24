@@ -92,8 +92,8 @@ export default function SettingsMenu({ trades, onClearAllData, collapsed }: Sett
             onClick={(e) => { e.preventDefault(); setTheme(isDark ? 'light' : 'dark'); }}
             className="cursor-pointer"
           >
-            {isDark ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
             {isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            {isDark ? <Sun className="ml-auto h-4 w-4" /> : <Moon className="ml-auto h-4 w-4" />}
           </DropdownMenuItem>
           <DropdownMenuSeparator className="bg-border" />
           <DropdownMenuItem
