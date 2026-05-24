@@ -3,5 +3,5 @@ policy:
 
 interface:
   display_name: "Nexus Commit"
-  short_description: "Canonical safe commit workflow for this repo"
-  default_prompt: "Use $nexus-commit to review scope, validate the worktree, create a safe commit, and push only when requested."
+  short_description: "Canonical local commit workflow for this repo"
+  default_prompt: "Use $nexus-commit to review scope, validate the worktree, create a safe local commit, and push only when the user explicitly says push origin main."

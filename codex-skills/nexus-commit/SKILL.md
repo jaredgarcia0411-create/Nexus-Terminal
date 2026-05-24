@@ -1,13 +1,13 @@
 ---
 name: nexus-commit
 description: >
-  Safe Nexus Terminal commit and push workflow. Use only when the user explicitly asks to create
-  a commit or publish the current branch.
+  Safe Nexus Terminal local commit workflow. Use only when the user explicitly asks to create
+  a commit; push only when the user explicitly says to push origin main.
 ---
 
 # Nexus Terminal Commit
 
-Use this skill only when the user explicitly asks for a commit or push. The repo default still applies: do not create commits unless asked.
+Use this skill only when the user explicitly asks for a commit or push. The repo default still applies: do not create commits unless asked, and do not push unless the user explicitly says to push origin main.
 
 Treat this skill as the canonical commit workflow for Nexus Terminal. Any user-facing `commit` alias should defer to this process rather than maintain a second copy of the rules.
 
@@ -33,10 +33,10 @@ Treat this skill as the canonical commit workflow for Nexus Terminal. Any user-f
 5. Commit safely.
    - Create a normal commit.
    - If a hook fails, fix the issue and retry. Do not bypass hooks.
-6. Push safely.
-   - If the user asked only for a local commit, stop after the commit.
-   - Otherwise push the current branch to its remote.
-   - If no upstream exists, push with upstream tracking.
+6. Push only on explicit publish instruction.
+   - Default to a local commit and stop after the commit.
+   - Push only when the user explicitly says to `push origin main`.
+   - When publishing is explicitly requested, push `main` to `origin`.
    - Never force-push unless explicitly instructed.
 7. Confirm the result.
    - Run `git status --short` after the commit or push.

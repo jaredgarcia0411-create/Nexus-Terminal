@@ -8,7 +8,6 @@ import { formatDate, formatMoney, formatNumber } from '@/lib/askedgar-utils';
 import type { ResearchSnapshot, ResearchSnapshotGapStat } from '@/lib/types';
 
 import { NoDataBadge } from './_shared';
-import HistoricalDilutionRatingCard from './HistoricalDilutionRatingCard';
 
 interface Props {
   ticker: string;
@@ -105,7 +104,6 @@ function formatCompactPercent(value: number) {
 
 export default function OverviewSection({ ticker, data, onSelectGapDate }: Props) {
   const closeBelowOpenStats = computeCloseBelowOpenStats(data.gapStats);
-  const latestGapDate = data.gapStats[0]?.date ?? null;
 
   return (
     <div className="space-y-5 p-3">
@@ -129,56 +127,42 @@ export default function OverviewSection({ ticker, data, onSelectGapDate }: Props
       {/* No top border — section heading + parent space-y-5 carries the separation.
           Inner border-b under the title row still separates header from the table since
           gap-stat rows already have their own row dividers. */}
-      <div className="flex flex-col gap-4 pt-4 lg:flex-row lg:items-start">
-        <div className="min-w-0 flex-1">
-          <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border pb-2">
-            <h4 className="text-lg font-semibold text-foreground">Gap Up Days</h4>
-            <p className="text-sm text-muted-foreground">
-              Historical day-1 gap-ups only (excludes multi-day runs).
+      <div className="pt-4">
+        <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border pb-2">
+          <h4 className="text-lg font-semibold text-foreground">Gap Up Days</h4>
+          {closeBelowOpenStats.total > 0 && closeBelowOpenStats.percentage !== null ? (
+            <p className="ml-auto font-bold text-foreground">
+              Closed Below Open: {closeBelowOpenStats.closedBelowOpen}/{closeBelowOpenStats.total} ({formatCompactPercent(closeBelowOpenStats.percentage)})
             </p>
-            {closeBelowOpenStats.total > 0 && closeBelowOpenStats.percentage !== null ? (
-              <p className="ml-auto font-bold text-muted-foreground">
-                Closed below open:{' '}
-                <span className="text-foreground">
-                  {closeBelowOpenStats.closedBelowOpen}/{closeBelowOpenStats.total}
-                </span>{' '}
-                ({formatCompactPercent(closeBelowOpenStats.percentage)})
-              </p>
-            ) : null}
-          </div>
-          {data.gapStats.length > 0 ? (
-            <div className="space-y-3 text-sm">
-              <div className="scrollbar-hidden overflow-x-auto">
-                <table className="min-w-full">
-                  <thead>
-                    <tr className="border-b border-border text-muted-foreground">
-                      <th className="py-2 pr-3 text-left">Date</th>
-                      <th className="py-2 pr-3 text-right">Gap %</th>
-                      <th className="py-2 pr-3 text-right">Open</th>
-                      <th className="py-2 pr-3 text-right">Close</th>
-                      <th className="py-2 pr-3 text-right">High</th>
-                      <th className="py-2 pr-3 text-right">Low</th>
-                      <th className="py-2 pr-3 text-right">Volume</th>
-                      <th className="py-2 text-left">Tags</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.gapStats.map((row, index) => (
-                      <GapStatRow key={index} row={row} onSelectDate={onSelectGapDate} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : (
-            <NoDataBadge />
-          )}
+          ) : null}
         </div>
-        {latestGapDate ? (
-          <div className="w-full shrink-0 lg:w-80">
-            <HistoricalDilutionRatingCard ticker={ticker} date={latestGapDate} />
+        {data.gapStats.length > 0 ? (
+          <div className="space-y-3 text-sm">
+            <div className="scrollbar-hidden overflow-x-auto">
+              <table className="min-w-full">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground">
+                    <th className="py-2 pr-3 text-left">Date</th>
+                    <th className="py-2 pr-3 text-right">Gap %</th>
+                    <th className="py-2 pr-3 text-right">Open</th>
+                    <th className="py-2 pr-3 text-right">Close</th>
+                    <th className="py-2 pr-3 text-right">High</th>
+                    <th className="py-2 pr-3 text-right">Low</th>
+                    <th className="py-2 pr-3 text-right">Volume</th>
+                    <th className="py-2 text-left">Tags</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.gapStats.map((row, index) => (
+                    <GapStatRow key={index} row={row} onSelectDate={onSelectGapDate} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        ) : null}
+        ) : (
+          <NoDataBadge />
+        )}
       </div>
 
     </div>

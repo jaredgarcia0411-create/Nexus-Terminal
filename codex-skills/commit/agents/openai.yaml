@@ -3,5 +3,5 @@ policy:
 
 interface:
   display_name: "Commit"
-  short_description: "Review, validate, commit, and push safely"
-  default_prompt: "Use $commit to follow the Nexus Terminal commit workflow, validate changes, create a safe commit, and push when requested."
+  short_description: "Review, validate, and commit locally"
+  default_prompt: "Use $commit to follow the Nexus Terminal commit workflow, validate changes, create a safe local commit, and push only when the user explicitly says push origin main."

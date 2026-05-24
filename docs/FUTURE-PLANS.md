@@ -360,3 +360,43 @@ Avoid A.2 — raw filing text in prompts is the kind of cost growth that doesn't
 - Re-check Ask Edgar's endpoint list — `/v1/agreements` may have improved, or a new restrictions-focused endpoint may exist.
 - Sample 5–10 recent 424B and 8-K Item 1.01 filings from real small-cap tickers and confirm the restriction language matches the regex patterns planned for A.1/A.3.
 - Re-read the prompt language above — it may have evolved since 2026-05-20.
+
+---
+
+## Historical Dilution Rating card (parked 2026-05-24)
+
+### The idea
+Render a "Dilution Rating as of {gap date}" card next to the Gap Up Days table on the Research tab, backed by Ask Edgar's `/v1/historical-dilution?ticker=X&date=YYYY-MM-DD` endpoint. Lets the user see what the dilution risk looked like on the specific day a ticker gapped — useful for backtest-style "was this trade trapped from the start" analysis.
+
+### Why it's parked
+**Cost.** AE bills $0.30 per cold call (verified live 2026-05-24 via throwaway probe — see commit `0d114bc` validation block in git history). Solo use can't justify that — one cold ticker view = $0.30, and the natural extension (one card per gap-row instead of just the most recent) would be 5–10× that per ticker. 30-day cache softens repeat views but every new ticker still re-pays.
+
+Coworkers may want it badly enough to chip in. Revisit when the conversation happens.
+
+### What was built (commit `0d114bc`, parked in commit that follows)
+- **Route:** `app/api/historical-dilution-rating/route.ts` — `requireUser()` gate, Zod schema with 10-year date window refine (so an authed user can't burn $0.30 with `?date=1900-01-01`), reuses `askedgar_cache` table with `cache_type = 'historical-dilution-rating'` and composite key `${ticker}:${date}`, 30-day TTL, AE 429 → 429 response, AE other error → 503, DB write failure does not fail the user request.
+- **Card:** `components/trading/research-report-sections/HistoricalDilutionRatingCard.tsx` — client component, `AbortController` cleanup for rapid ticker/date changes, 6×2 grid with `min-h-[280px]` for CLS prevention, uses `ratingLevel` + `pillClasses` from `_shared.tsx`.
+- **Mount:** `OverviewSection.tsx` wrapped Gap Up Days in a `lg:flex-row` container and mounted the card to the right using `data.gapStats[0]?.date` (most recent gap only).
+- **Tests:** `__tests__/historical-dilution-rating-route.test.ts` covered 9 cases — unauth 401, malformed date 400, out-of-window date 400, cache hit skips AE, cache miss calls AE + writes row, case-insensitive ticker, AE 429, AE 503, DB write failure still returns AE payload.
+
+### What's still in the repo (safe to leave in place)
+- `fetchHistoricalDilutionRating(ticker, date)` in `lib/askedgar/endpoints.ts` — small, not in `ENDPOINT_REGISTRY`, costs nothing if not called.
+- `ratingLevel` + `pillClasses` exported from `components/trading/research-report-sections/_shared.tsx` — also consumed by `DilutionRatingTile.tsx`, so the extraction stands on its own.
+
+### How to bring it back
+1. `git show 0d114bc -- app/api/historical-dilution-rating/route.ts > app/api/historical-dilution-rating/route.ts` (recreate the route).
+2. `git show 0d114bc -- components/trading/research-report-sections/HistoricalDilutionRatingCard.tsx > .../HistoricalDilutionRatingCard.tsx`.
+3. `git show 0d114bc -- __tests__/historical-dilution-rating-route.test.ts > __tests__/historical-dilution-rating-route.test.ts`.
+4. Re-add the import + mount in `OverviewSection.tsx` (wrap Gap Up Days in `lg:flex-row` and mount the card on the right — see commit `0d114bc` for the exact JSX).
+5. Re-add `'historical-dilution-rating'` to the `cacheType` comment at `lib/db/schema.ts:145`.
+6. Run `npm run lint && npx tsc --noEmit && npm test`.
+
+### Triggers to revisit
+- A coworker commits to splitting the AE bill for this surface.
+- AE drops the per-call price on `/v1/historical-dilution` (it's noticeably more expensive than other AE endpoints today — most are $0.01).
+- A trade decision is missed because a historical rating wasn't visible at the right gap date.
+
+### What to check before acting
+- Confirm AE endpoint path + response shape haven't changed (`/v1/historical-dilution?ticker=X&date=YYYY-MM-DD`).
+- Re-probe the cost via a throwaway script against a fresh ticker (the AE `usage.duplicate: true` dedup will return $0 for recently-queried tickers — pick something cold).
+- Confirm `askedgar_cache` schema is unchanged (unbounded `ticker text`, unique on `(cacheType, ticker)`).

@@ -112,7 +112,7 @@ describe('ResearchReportSections filings UI', () => {
 
     render(<ResearchReportSections ticker="ABCD" data={data} activeTab="overview" />);
 
-    expect(document.body.textContent).toContain('Closed below open: 1/2 (50%)');
+    expect(document.body.textContent).toContain('Closed Below Open: 1/2 (50%)');
   });
 
   it('renders first-party SEC filings across buckets and chronological view', () => {

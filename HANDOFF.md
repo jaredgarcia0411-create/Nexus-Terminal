@@ -16,6 +16,15 @@ Validation:
 - `npm run workflow:audit` — passed.
 - Manual Research smoke remains user-run; no dev server/browser smoke was run in this session.
 
+## Workflow Maintenance — `nexus-commit` Publish Default
+
+Status: completed 2026-05-24.
+
+- Updated repo-maintained `codex-skills/nexus-commit` plus the installed copy at `~/.codex/skills/nexus-commit`.
+- Default behavior is now local commit only.
+- Pushes are only allowed when the user explicitly says to `push origin main`.
+- Updated the `/commit` alias metadata to match the same boundary.
+
 ### Why
 
 Four of our SEC-backed parsers consistently miss data the Ask Edgar (AE) endpoints capture cleanly (historical tickers, past offerings, reverse splits). The user wants to pay for AE coverage on those surfaces. Two AE endpoints we currently call (`ownership`, `split-status`) are never looked at in practice — drop the calls. AE shipped a new `/v1/historical-dilution` endpoint that returns the dilution-rating snapshot as of a given date; we want to render it next to Gap Up Days for the most recent gap. Plus two tiny UI tweaks (theme-toggle icon position and a leftover Open Follow-Up).
