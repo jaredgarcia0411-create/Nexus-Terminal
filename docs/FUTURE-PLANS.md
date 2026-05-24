@@ -10,6 +10,168 @@ Parked ideas and longer-horizon plans. Each entry should note **why it's parked*
 
 ---
 
+## Commercialization paths for Nexus Terminal (parked 2026-05-24)
+
+### The idea
+There are two plausible ways to monetize the repo without first turning it into a broad venture-backed SaaS:
+
+1. **Source-access / self-hosted starter kit** — sell a sanitized private repo as a jumping-off point. Customers bring their own Vercel, Neon, Massive/Polygon, AskEdgar, broker exports, and LLM keys. They manage their own env vars, spend, deployment, and custom parser tweaks.
+2. **Managed SaaS** — run one hosted Nexus Terminal service, maintain the codebase/backend/frontend, pay or manage shared vendor integrations, and charge users a monthly fee.
+
+### Current recommendation
+**Start with the source-access / self-hosted product.** It fits the current codebase and avoids the hardest support, vendor-licensing, and on-call burden.
+
+The managed SaaS path is possible, but it should not be attempted until the vendor licensing questions are solved in writing and the product is narrowed to a supportable offer.
+
+### Part 1 — Source-access / self-hosted starter kit
+
+#### What to sell
+Package a separate repo, for example `nexus-terminal-starter`, as:
+
+> A self-hosted Next.js trading journal, research, scanner, and AI-agent scaffold for traders who want their own private trading system instead of another SaaS dashboard.
+
+This should not be the live personal repo. Create a sanitized duplicate with:
+- No personal agent configs, local workflow artifacts, private email gates, or old experiments.
+- A clean `.env.example` and `ENVIRONMENT.md` covering required vs optional providers.
+- `DEPLOY.md` for Vercel + Neon + migrations + local dev.
+- A broker parser adapter interface and examples.
+- Options import support as a value-add feature.
+- Scanner defaults as editable JSONLogic presets, not blank parameters that feel broken.
+- AI customization recipes, e.g. "paste your broker CSV/sample into Codex and implement this parser interface."
+
+#### Pricing hypothesis
+For a first version:
+- **Founder source license:** `$499-$1,499` one-time.
+- **Setup package:** `$1,000-$3,000` for guided install, Vercel/Neon wiring, env vars, first deploy, and one broker parser.
+- **Optional update access:** `$199-$499/year` or bundled for 6-12 months.
+- **Optional paid modules:** broker parser packs, options import, scanner rule packs, AskEdgar report templates, research prompt packs.
+
+This is not priced against normal trading journals. It is priced against "I want a private AI-modifiable system without starting from zero."
+
+#### Delivery model
+- Private GitHub repo access, preferably under a commercial source license with no redistribution/resale.
+- Consider Polar for payment + automated private GitHub repository access. Polar explicitly supports GitHub repo access as an automated benefit: https://docs.polar.sh/features/benefits/introduction
+- GitHub outside collaborator access works, but org-owned private repos can consume paid seats depending on plan: https://docs.github.com/organizations/managing-user-access-to-your-organizations-repositories/managing-outside-collaborators/adding-outside-collaborators-to-repositories-in-your-organization/
+- Vercel Deploy Button / clone flow can prompt for env var keys, but it works best for public/template repos. For a paid private repo, the realistic path is: customer receives repo access -> forks/clones -> imports into Vercel -> sets env vars. Vercel env docs: https://vercel.com/docs/environment-variables
+
+#### Pros
+- Lowest ongoing support obligation.
+- Customers own their data, API keys, infra bills, and deployment risk.
+- Avoids reselling market data or AskEdgar data through a shared app.
+- Better fit for AI-agent users who expect to modify source.
+- Can be sold before the app is polished enough for mainstream SaaS onboarding.
+
+#### Cons
+- Source code can leak after purchase. A license helps but does not technically prevent copying.
+- Market is smaller: the buyer needs to be technical or comfortable using Codex/Claude.
+- Documentation quality becomes the product.
+- Every buyer's local changes can diverge, making support harder unless support is scoped tightly.
+- Some buyers will expect "SaaS support" even though they bought source access; terms need to be explicit.
+
+#### Before launch
+1. Create a clean commercial branch/repo with no personal data, secrets, or unnecessary workflow baggage.
+2. Write a commercial source license and support boundary. Have counsel review it.
+3. Add `ENVIRONMENT.md`, `DEPLOY.md`, `CUSTOMIZE.md`, and parser examples.
+4. Build options trade import and a parser adapter contract.
+5. Create a setup checklist that assumes the customer has their own provider keys.
+6. Avoid bundling AskEdgar, Massive/Polygon, TradingView, broker, or LLM credentials.
+
+### Part 2 — Managed SaaS
+
+#### What it would be
+Run Nexus Terminal as a hosted monthly product where users log in and use the app without managing Vercel, Neon, migrations, env vars, or code changes.
+
+This is closer to TradeZella/TraderSync, but with a more opinionated small-cap research/scanner angle.
+
+#### Competitive pricing baseline
+Current trading-journal pricing researched 2026-05-24:
+- TradeZella lists monthly plans around `$29` and `$49`: https://www.tradezella.com/pricing
+- TraderSync is commonly described around `$29.95`, `$49.95`, and `$79.95` monthly tiers, with Elite near `$79.95/mo`: https://tradingjournal.com/review/tradersync
+- Vercel Pro starts at `$20/mo + usage`: https://vercel.com/pricing
+- Neon Launch is usage-based with a typical spend around `$15/mo` for light usage: https://neon.com/pricing
+- Massive/Polygon Stocks Advanced was listed at `$199/mo` for real-time stocks, but the individual market-data terms are personal/non-commercial and do not cover building an app for other end users: https://polygon.io/legal/market-data-terms-of-service
+- OpenAI API pricing is usage-based and model-dependent; current flagship prices vary materially by model: https://platform.openai.com/docs/pricing
+
+#### Realistic pricing
+If this is only a better trading journal, the market anchors it around `$29-$79/mo`. That is probably too low for the support and vendor complexity of this repo.
+
+More realistic SaaS packaging:
+
+| Tier | Price | Shape |
+|---|---:|---|
+| Journal Lite | `$29-$49/mo` | Trade journal, CSV import, calendar, reviews, playbooks. No bundled premium data. |
+| Research Pro, BYO keys | `$79-$149/mo` | User supplies AskEdgar/Massive/LLM keys. App provides workflows, prompts, reports, scanner UI, and usage controls. |
+| Managed Research | `$149-$299/mo+` | You bundle licensed data and LLM usage with hard quotas. Only viable after written vendor agreements. |
+| Concierge / cohort | `$500-$1,500/mo` | Small number of users, setup help, parser customization, direct support, possibly trading-team workflows. |
+
+For a one-person operator, the strongest managed offer would be **small, expensive, and constrained**: a private beta at `$149-$299/mo` with strict quotas and 5-10 known users. A broad `$29/mo` SaaS would likely create more support than profit.
+
+#### AskEdgar resale / redistribution answer
+Under the current AskEdgar Terms of Service, **do not resell, display, or otherwise make AskEdgar API data available to customers through a SaaS using a normal personal/API account.**
+
+Key current terms checked 2026-05-24:
+- The AskEdgar API is licensed for personal, individual use only, and that definition excludes business, commercial, revenue-generating, client, customer, organizational, and third-party use.
+- API credentials may only be used personally. Employees, contractors, agents, clients, or customers cannot use your credentials.
+- API content and output derived from the API cannot be shared, displayed, published, resold, sublicensed, syndicated, or incorporated into a third-party-facing product.
+- Commercial or third-party-facing use requires a separate written business license or commercial API agreement.
+- Unauthorized data redistribution is treated as a material breach with account termination and legal remedies.
+
+Source: https://www.askedgar.io/legal/terms
+
+Conclusion: a managed SaaS can only use AskEdgar data if:
+1. AskEdgar signs a written business/commercial API agreement allowing this product, or
+2. each customer connects their own AskEdgar account/API key and the app is designed so their use is between them and AskEdgar, subject to AskEdgar's terms.
+
+Even option 2 needs legal review because AskEdgar's API terms are currently strict about personal/non-commercial use.
+
+#### Massive/Polygon data caveat
+The same issue likely applies to real-time market data. Massive/Polygon's individual market-data terms grant personal, non-commercial use and explicitly say the data may not be used to build an application for end users other than the subscriber. Their business terms are the correct path for commercial apps and downstream users.
+
+Source: https://polygon.io/legal/market-data-terms-of-service
+
+Conclusion: do not assume a `$199/mo` individual Stocks Advanced plan can power a hosted scanner for paying customers.
+
+#### Pros
+- Recurring revenue and higher long-term upside.
+- Easier user onboarding than self-hosted source access.
+- Centralized updates, migrations, and bug fixes.
+- Better for non-technical traders.
+- Can enforce a consistent product experience and usage quotas.
+
+#### Cons
+- You become responsible for uptime, auth, data privacy, migrations, support, billing, refunds, and incident response.
+- Vendor licensing becomes a blocker, not a detail.
+- Shared vendor keys create cost abuse risk unless every expensive route has quotas and telemetry.
+- Financial-advice/regulatory positioning becomes more sensitive once users pay for hosted research, scanners, alerts, or AI summaries.
+- You would need tenant isolation, per-user cost accounting, admin tools, support workflows, onboarding, cancellation, and data export/delete flows.
+- Current services/agent architecture includes long-running workers and usage-billed research paths that would need multi-tenant hardening before hosting strangers.
+
+#### Minimum SaaS-safe architecture before beta
+1. Multi-tenant user/org model and tenant-scoped data access audit.
+2. Billing integration with plan limits.
+3. Per-user quotas for AskEdgar, LLM calls, scanner runs, and expensive reports.
+4. Cost ledger visible to admin and ideally to users.
+5. Provider-key strategy: business licenses or BYO keys, not personal shared keys.
+6. Data export and account deletion workflow.
+7. Terms, privacy policy, no-investment-advice language, and lawyer-reviewed marketing copy.
+8. Error budget and support policy: what is supported, response times, and refund rules.
+9. Production observability for failed imports, failed agent jobs, API spend spikes, and stale scanner health.
+
+#### Triggers to revisit
+- AskEdgar offers or signs a commercial API/business license for this use.
+- Massive/Polygon business pricing is known and affordable for a small hosted product.
+- The self-hosted product proves demand from at least 5-10 paying users.
+- The app has options import, cleaner onboarding, usage quotas, and parser customization docs.
+- There is a concrete buyer willing to pay `$149+/mo` for managed hosting.
+
+#### What to check before acting
+- Re-read AskEdgar, Massive/Polygon, OpenAI, Vercel, and Neon terms/pricing; they change.
+- Email AskEdgar before writing SaaS code that depends on redistributed AE data.
+- Email Massive/Polygon or use their business sales path before bundling scanner data.
+- Have a lawyer review investment-adviser, data-redistribution, and commercial-source-license language.
+
+---
+
 ## Embed AskEdgar via iframe (parked 2026-05-01)
 
 ### The idea

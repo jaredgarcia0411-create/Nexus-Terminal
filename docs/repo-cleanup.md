@@ -215,3 +215,57 @@ Evidence:
 
 Recommendation:
 Either extend `scripts/workflow-audit.mjs` to cover the key handoff/architecture invariants, or document it as a narrow smoke check. The command is still useful, but it should not imply the full skill checklist ran.
+
+---
+
+## LOC Reduction Deep Research
+
+I ran the deep-research pass with 3 parallel subagents and did not edit files.
+
+**Bottom line:** frameworks are absolutely used to reduce code, but reliably only when they replace repeated plumbing. They do not erase domain logic. In Nexus, the target should be “less duplicated lifecycle/fetch/form/route boilerplate,” not raw LOC.
+
+**Current LOC**
+- `587` tracked files.
+- `227,366` tracked lines total.
+- `drizzle/`: `123,195` lines, mostly generated `drizzle/meta/*.json`.
+- Excluding `package-lock.json` and `drizzle/meta`: `91,559` lines.
+- Maintained TS/JS source across `app/`, `components/`, `hooks/`, `lib/`, `services/`, `scripts/`, `middleware.ts`: `48,028` lines.
+- Tests: `21,218` lines.
+- API routes: `6,805` lines.
+- `components/trading`: `17,484` lines.
+- `lib/agents`: `8,250` lines.
+
+**Where The Real Bloat Is**
+- Generated Drizzle metadata is the raw LOC monster. It is not product complexity.
+- `.opencode/` and `.claude/` are tracked workflow/tooling weight. AGENTS says ignore them unless explicitly aligning tools, but they do inflate repo size.
+- Repeated API route shells are real but mostly healthy convention: `requireUser`, `getDb`, `ensureUser`, `parseAndValidate`.
+- Actual redundancy worth acting on:
+  - TradingView scan fetch/header logic repeats in [gainers route](/home/jared/Nexus-Terminal/app/api/tradingview/gainers/route.ts:1) and [MDR candidates route](/home/jared/Nexus-Terminal/app/api/tradingview/mdr-candidates/route.ts:1) despite `lib/tradingview-client.ts`.
+  - Massive API logic is split between [market-data route](/home/jared/Nexus-Terminal/app/api/market-data/route.ts:68) and [lib/massive-market.ts](/home/jared/Nexus-Terminal/lib/massive-market.ts:149).
+  - Daily/weekly review sheets duplicate template lifecycle around [DailyReportSheet](/home/jared/Nexus-Terminal/components/trading/DailyReportSheet.tsx:49) and [WeeklyReviewSheet](/home/jared/Nexus-Terminal/components/trading/WeeklyReviewSheet.tsx:65).
+  - Backtesting sample-set loading repeats between [use-backtest-manager](/home/jared/Nexus-Terminal/hooks/use-backtest-manager.ts:89) and [BacktestingSidebar](/home/jared/Nexus-Terminal/components/trading/BacktestingSidebar.tsx:130).
+  - `/api/scanner/mdr-eligibility`, its test, and `computeMdrEligibility()` look deletion-ready after external-consumer confirmation.
+
+**Framework Fit**
+- **TanStack Query** is the best candidate if you want reliable LOC reduction. Its docs explicitly target caching, deduping, stale state, background updates, pagination, mutations, and optimistic updates. This maps well to Nexus fetch-heavy hooks and polling/cache code. Source: [TanStack Query overview](https://tanstack.com/query/docs/docs).
+- **React 19 / Next forms with Server Actions** can reduce form mutation state using `useActionState`, `useFormStatus`, and server-side validation. Good for internal explicit-save CRUD forms, not agent/service/cron/public API contracts. Sources: [React `useActionState`](https://react.dev/reference/react/useActionState), [Next forms guide](https://nextjs.org/docs/guides/building-forms).
+- **React Hook Form + Zod** is already installed and barely used. Good for complex dialogs/sheets, not tiny forms.
+- **TanStack Table/Virtual** can reduce table state logic, but not JSX. TanStack Table is headless, so markup and styling remain yours. Sources: [TanStack Table intro](https://tanstack.com/table/v7/docs/overview), [TanStack Virtual docs](https://tanstack.com/virtual/latest/docs).
+- **shadcn/Radix** reduces accessibility and interaction code, but shadcn copies code into the repo, so raw LOC can rise while bespoke code falls.
+- **Drizzle/Zod/Auth.js** are already doing the right kind of framework work here. Do not migrate auth or ORM just to reduce lines. Source: [Drizzle overview](https://orm.drizzle.team/docs/overview), [Auth.js](https://authjs.dev/).
+
+**What I Would Not Cut**
+- AskEdgar/agent blueprint verbosity in `lib/agents/blueprints/*`: that is domain contract, prompt behavior, and source-faithful parsing.
+- AE endpoint-swap tests: they encode expensive external data contracts.
+- Chart teardown/guard code in the big chart components: risky to compress for aesthetics.
+- Broad route factories: small helpers are fine, but hiding auth/ownership/validation can make route behavior harder to audit.
+
+**Recommendation**
+Do not run a “reduce LOC” rewrite. Run 4 focused cleanup passes:
+
+1. Delete confirmed dead surfaces: start with `/api/scanner/mdr-eligibility`.
+2. Consolidate provider clients: TradingView and Massive.
+3. Extract shared review-template lifecycle for daily/weekly sheets.
+4. Pilot TanStack Query in one fetch-heavy area before adopting it broadly.
+
+No validation commands were run because this was read-only research.
