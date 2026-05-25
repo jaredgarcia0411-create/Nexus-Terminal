@@ -1,18 +1,20 @@
 # Repo Cleanup Audit
 
-Date: 2026-05-21
+Date: 2026-05-21 | Updated: 2026-05-25
 
-Current-state audit for making the codebase simpler and more efficient without removing features or reducing reliability. This pass used parallel read-only reviewers plus local verification. The only file edited in this pass is this document.
+Current-state audit for making the codebase simpler and more efficient without removing features or reducing reliability. Updated 2026-05-25 with findings from a parallel four-agent health audit (Claude/Codex utilization, monetization, engineering principles, codebase health).
 
 ## Recommended Review Order
 
 1. Fix security and reliability issues that can affect production behavior.
-2. Reduce paid or noisy external work by adding durable claims, telemetry, and shared integration clients.
-3. Decide which public/backend-only route surfaces are intentionally supported, then delete or document the rest.
-4. Remove low-risk dependency and script dead weight.
-5. Add missing tests around newer feature surfaces before larger cleanup.
-6. Make workflow/docs guidance match live code so future cleanup work starts from correct instructions.
-7. Do frontend and oversized-module simplifications only when touching those areas for feature or bug work.
+2. Fix data-integrity and error-handling gaps that affect user experience.
+3. Reduce paid or noisy external work by adding durable claims, telemetry, and shared integration clients.
+4. Decide which public/backend-only route surfaces are intentionally supported, then delete or document the rest.
+5. Remove low-risk dependency and script dead weight.
+6. Add missing tests around newer feature surfaces before larger cleanup.
+7. Make workflow/docs guidance match live code so future cleanup work starts from correct instructions.
+8. Do frontend and oversized-module simplifications only when touching those areas for feature or bug work.
+9. Tighten TypeScript safety and remove legacy schema columns.
 
 ## Immediate Security And Reliability
 
@@ -26,6 +28,146 @@ Evidence:
 
 Recommendation:
 Add a lease recovery path that requeues expired `processing` jobs when attempts remain, or marks them failed after max attempts. Keep the lease fencing; the cleanup is about making stale leases recoverable without manual DB intervention.
+
+## Data Integrity And Error Handling (added 2026-05-25)
+
+### Rate Limiting On Expensive Endpoints
+
+Evidence:
+- `POST /api/research-report` can make 14+ external API calls plus an LLM call per invocation: [app/api/research-report/route.ts](/home/jared/Nexus-Terminal/app/api/research-report/route.ts).
+- The route has a per-ticker in-progress claim that prevents duplicate concurrent generations for the same ticker, but nothing prevents a user from generating reports for 100 different tickers in quick succession.
+- `POST /api/askedgar/tldr` has no per-user throttle either.
+- AskEdgar bills per-KB of response. A useEffect bug or curious user can run up unbounded cost.
+
+Recommendation:
+Add a simple DB-backed counter per user per hour for LLM-triggering endpoints. No Redis required — a `rate_limits` table with `(user_id, endpoint, window_start, count)` is sufficient. Return 429 when exceeded.
+
+### Async Error Handling Inconsistency In Hooks
+
+Evidence:
+- `handleDeleteSelected`, `handleApplyRisk`, `handleAddTag` all use `withErrorToast`: [hooks/use-trades.ts](/home/jared/Nexus-Terminal/hooks/use-trades.ts:128), [hooks/use-trades.ts](/home/jared/Nexus-Terminal/hooks/use-trades.ts:139), [hooks/use-trades.ts](/home/jared/Nexus-Terminal/hooks/use-trades.ts:182).
+- `handleCreateManualTrade` at line 116 does NOT wrap in `withErrorToast`. If the API call fails, the user sees nothing.
+- `handleSaveNotes`, `handleCloseTrade`, `handleMergeTrades` are also async without error feedback.
+
+Recommendation:
+Wrap all data-writing async functions in `withErrorToast`. This is a 30-minute fix across `use-trades.ts`. Any operation that persists data should give the user feedback on failure.
+
+### Input Validation Missing String Length Constraints
+
+Evidence:
+- `symbol: z.string().min(1)` in [lib/validations/trades.ts](/home/jared/Nexus-Terminal/lib/validations/trades.ts) has no `.max()`.
+- `notes: z.string()` has no max length.
+- PostgreSQL `text` columns have no inherent length limit.
+
+Recommendation:
+Add `.max()` to all user-controlled string fields in Zod schemas: `.max(20)` for symbols, `.max(10000)` for notes, `.max(200)` for tag names, etc. Quick pass across `lib/validations/`.
+
+### Unbounded GET /api/trades Query
+
+Evidence:
+- `GET /api/trades` fetches ALL trades for a user with no LIMIT: [app/api/trades/route.ts](/home/jared/Nexus-Terminal/app/api/trades/route.ts).
+- At 500 trades this is fine. At 10,000 trades after 2 years of daily trading, this becomes a slow query with a massive payload.
+
+Recommendation:
+Add cursor-based pagination. Drizzle supports `.limit(n).offset(m)` directly. The UI currently loads all trades at once, so the frontend needs a corresponding fetch-more pattern (or load the most recent 500 and fetch older on demand).
+
+### import-raw Returns Entire Trade List
+
+Evidence:
+- After inserting a batch, `import-raw/route.ts` fetches every trade for the user and returns them all: [app/api/import-raw/route.ts](/home/jared/Nexus-Terminal/app/api/import-raw/route.ts).
+- For a user with 2,000+ trades, this is a large payload on every CSV import.
+
+Recommendation:
+Return only the newly created/modified trades from the import. The client can merge them into its existing state.
+
+### refreshTrades Does Not Deduplicate In-Flight Requests
+
+Evidence:
+- If `refreshTrades()` in [hooks/use-trade-sync.ts](/home/jared/Nexus-Terminal/hooks/use-trade-sync.ts) is called twice quickly, two concurrent requests go to `/api/trades`.
+
+Recommendation:
+Add an in-flight ref: `if (refreshInFlight.current) return;` at the top of `refreshTrades`. Set it true on entry, false in `finally`.
+
+## TypeScript Safety (added 2026-05-25)
+
+### Type Assertions Hiding Real Type Problems
+
+Evidence:
+- `lib/market-pulse/capture.ts` lines 101 and 117: Drizzle builder chains cast via `as unknown as { ... }`.
+- `app/api/research-report/route.ts` line 168: `db as unknown as Parameters<typeof recordLlmAttempt>[0]`.
+- `lib/trading-utils.ts` line 23: `parsePrice(val: any)` — should be `val: unknown` with a type guard.
+
+Recommendation:
+Investigate each `as unknown as` and either properly type the function signatures or document as an accepted Drizzle typing limitation. Fix `parsePrice` to use `unknown` with runtime checks.
+
+### Remove Redundant Legacy DB Columns
+
+Evidence:
+- `pnl` duplicates `netPnl`, `executions` duplicates `executionCount` in [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts).
+- Comment says "transitional legacy retained for one release cycle" — that cycle has passed.
+- `toTrade()` runs fallback logic on every trade read to reconcile the two sources.
+
+Recommendation:
+Write a migration that drops the legacy columns (`pnl`, `executions`) and remove the fallback logic in `toTrade()`. This simplifies every trade read path.
+
+### useSession User Type Asserted Without Validation
+
+Evidence:
+- [hooks/use-trade-sync.ts](/home/jared/Nexus-Terminal/hooks/use-trade-sync.ts) line 10: `session?.user as | { id?: string; ... } | undefined` — TypeScript assertion without runtime check.
+
+Recommendation:
+Add a runtime check: `if (!user || typeof user.id !== 'string') return;` before using the user object.
+
+## Naming And Dependencies (added 2026-05-25)
+
+### Rename trading-utils.ts To Disambiguate From trade-utils.ts
+
+Evidence:
+- `lib/trading-utils.ts` contains UI formatting helpers (formatCurrency, formatR, getPnLColor).
+- `lib/trade-utils.ts` contains pure business logic from the god-hook decomposition.
+- The names are confusingly similar. 19 files import `trading-utils.ts`.
+
+Recommendation:
+Rename `lib/trading-utils.ts` → `lib/ui-trade-utils.ts`. Update all 19 import sites. The name makes the UI-formatting purpose clear.
+
+### Move ws And dotenv To devDependencies
+
+Evidence:
+- `ws` is used only by Docker agent services, not the Next.js app.
+- `dotenv` is used only by `scripts/db-migrate-safe.mjs`.
+- Neither needs to be a prod dependency in package.json.
+
+Recommendation:
+Move both to devDependencies. No runtime behavior change.
+
+### Add Lazy Dynamic Imports For BacktestingTab
+
+Evidence:
+- `BacktestingTab.tsx` imports 8+ heavy sub-components plus `motion` and `react-hotkeys-hook` eagerly.
+- If the Charts tab is rarely the first tab visited, this is dead weight in the initial bundle.
+
+Recommendation:
+Wrap heavy sub-components with `next/dynamic`. Only worth doing after running `ANALYZE=true npm run build` to confirm bundle impact.
+
+## Test Coverage Gaps (added 2026-05-25)
+
+### Missing GET Test For Trades Route
+
+Evidence:
+- `__tests__/trades-route.test.ts` only tests POST, not GET.
+- GET is the most-called route in the app (every page load). The multi-query coordination (Promise.all of trades + executions + tags) is untested.
+
+Recommendation:
+Add at least one happy-path test and one auth-rejection test for the GET handler.
+
+### Missing Component-Level Tests For Complex UI
+
+Evidence:
+- `TradesTab`, `TradeDetailSheet`, `ResearchTickerView` have no dedicated test files.
+- These components involve money-related operations (closing trades, recording P&L).
+
+Recommendation:
+Add 3-5 focused component tests for the highest-value user interactions in these components.
 
 ## Cost And External-Call Efficiency
 

@@ -62,7 +62,7 @@ Report pass/fail for each command.
 - **Keyboard shortcuts** use `react-hotkeys-hook`. Global shortcuts are registered in `hooks/use-global-shortcuts.ts` and called once from `app/page.tsx`. The command palette component lives at `components/trading/CommandPalette.tsx`.
 - **Ask Edgar API is usage-billed** — always use `getCachedTickerData` from `lib/askedgar.ts` instead of the raw `fetchTickerData`. The cached version uses a DB-backed TTL of 16hr per-ticker row, with a 15min sub-TTL on the `news` endpoint inside that row, via the shared `askedgar_cache` table. Only call the raw function if you have an explicit reason to bypass the cache. The `sec-filings` endpoint is sourced from SEC EDGAR (not AskEdgar) via `lib/sec/submissions.ts`; the result lands in `rawData['sec-filings']`. Current `ENDPOINT_SCOPES` in `lib/askedgar/endpoints.ts`: `snapshot`, `scanner-summary`, `small-cap-research`, `swing-trader-research`.
 - **SEC EDGAR fetches go through `lib/sec/`** — use `getRecentFilings(ticker, opts)` from `lib/sec/submissions.ts` for filings, `getCikForTicker(ticker)` from `lib/sec/cik-map.ts` for ticker→CIK lookups, and `secFetchJson(url)` from `lib/sec/client.ts` for any other SEC endpoint. The shared client enforces SEC's User-Agent requirement (`Nexus Terminal jared.garcia0411@gmail.com`), the 10 req/sec rate limit, and 429/503 retries. Do not call SEC URLs with `fetch()` directly.
-- **Do not add logic to `hooks/use-trades.ts`** — it is a god hook being decomposed into `lib/trade-utils.ts` (pure functions), `hooks/use-trade-filters.ts` (filter/search state), and `hooks/use-trade-sync.ts` (persistence). If you need new trade-related state, create a separate hook in `hooks/`.
+- **Do not add logic to `hooks/use-trades.ts`** — it is a god hook being decomposed into `lib/trade-utils.ts` (pure business logic), `hooks/use-trade-filters.ts` (filter/search state), and `hooks/use-trade-sync.ts` (persistence). If you need new trade-related state, create a separate hook in `hooks/`. Note: `lib/trading-utils.ts` is a separate file containing **UI formatting helpers** (formatCurrency, formatR, getPnLColor) — do not confuse it with `lib/trade-utils.ts`.
 - **In-memory state is unreliable on Vercel** — module-level `Map`s, objects, or variables reset on every cold start. Use the database or an external store (e.g., Upstash Redis) for any state that must persist across requests.
 
 ## API Route Conventions
@@ -71,7 +71,7 @@ Report pass/fail for each command.
   - `const db = getDb()`
   - guard with `if (!db) return dbUnavailable()`
   - call `ensureUser(db, authState.user)` when needed.
-- **Validate input with Zod** — Use `parseAndValidate(request, schema)` from `lib/api-route-utils.ts` with Zod schemas from `lib/validations/` (for example `trades.ts`, `system.ts`, `agents.ts`, and feature-specific files). Returns `{ data }` or `{ error: Response }`. This project uses **Zod v4** — use `z.flattenError(result.error)` (standalone function), NOT `result.error.flatten()` (v3 method).
+- **Validate input with Zod** — Use `parseAndValidate(request, schema)` from `lib/api-route-utils.ts` with Zod schemas from `lib/validations/` (for example `trades.ts`, `system.ts`, `agents.ts`, and feature-specific files). Returns `{ data }` or `{ error: Response }`. This project uses **Zod v4** — use `z.flattenError(result.error)` (standalone function), NOT `result.error.flatten()` (v3 method). Always add `.max()` bounds on user-controlled string fields (e.g., `.max(20)` for symbols, `.max(10000)` for notes) — PostgreSQL `text` has no inherent limit.
 - Return structured errors via `Response.json({ error: '...' }, { status })`.
 - In `catch`, log safely and return generic server errors (no secret leakage).
 
@@ -117,7 +117,7 @@ Report pass/fail for each command.
 - Fail fast on invalid input with 4xx responses.
 - Use defaults with `??` for optional numeric fields when appropriate.
 - Preserve useful user-facing error messages without exposing internals.
-- In UI hooks/components, surface actionable errors (toast/state) and avoid crashes.
+- In UI hooks/components, surface actionable errors (toast/state) and avoid crashes. Wrap **all** data-writing async functions in `withErrorToast` from `use-trades.ts` — silent failures on saves/deletes are the worst UX. If a hook function calls an API that persists data, it must have error feedback.
 - In server routes, prefer consistent generic 500 responses for unexpected errors.
 
 ## Testing Conventions
@@ -138,6 +138,7 @@ Report pass/fail for each command.
 
 ## Docs and Handoff Updates
 - After completing session work, update checklist/status in `HANDOFF.md`.
+- For cleanup or tech-debt work, check `docs/repo-cleanup.md` first — it is the canonical prioritized list of cleanup items maintained across audit sessions.
 - Repo-maintained Codex skill sources live in `codex-skills/`; some also expose user-facing agent metadata in `codex-skills/*/agents/openai.yaml` when that file exists.
 - Repo-local skill files do not automatically make a skill callable in the current Codex session. To surface a repo-maintained skill in the skill list, install or sync it into `~/.codex/skills/<skill-name>` and restart Codex.
 - High-value repo-maintained Codex skills include `nexus-execute`, `nexus-status`, `nexus-debug`, `nexus-review`, `nexus-security-audit`, and `nexus-askedgar-debug`; prefer them when the user explicitly asks for those workflows.
