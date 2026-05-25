@@ -6,7 +6,7 @@ import { motion } from 'motion/react';
 import PerformanceCharts from '@/components/trading/PerformanceCharts';
 import PerformanceStatsTable from '@/components/trading/PerformanceStatsTable';
 import TagFilterDropdown from '@/components/trading/TagFilterDropdown';
-import { formatR, getPnLColor } from '@/lib/trading-utils';
+import { formatR, getPnLColor } from '@/lib/ui-trade-utils';
 import type { Trade } from '@/lib/types';
 
 interface PerformanceTabProps {

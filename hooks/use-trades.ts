@@ -113,13 +113,15 @@ export function useTrades() {
     [setTrades],
   );
 
-  const handleCreateManualTrade = async (trade: Trade) => {
+  const handleCreateManualTrade = (trade: Trade) => {
     const nextTrade = withDefaultRisk(trade);
-    const result = await apiRequest<{ trade: ApiTrade }>('/api/trades', {
-      method: 'POST',
-      body: JSON.stringify(toApiTrade(nextTrade)),
+    withErrorToast('Failed to create trade', async () => {
+      const result = await apiRequest<{ trade: ApiTrade }>('/api/trades', {
+        method: 'POST',
+        body: JSON.stringify(toApiTrade(nextTrade)),
+      });
+      setTrades((prev) => sortTrades([fromApiTrade(result.trade), ...prev.filter((item) => item.id !== result.trade.id)]));
     });
-    setTrades((prev) => sortTrades([fromApiTrade(result.trade), ...prev.filter((item) => item.id !== result.trade.id)]));
   };
 
   const handleDeleteSelected = () => {
@@ -144,33 +146,39 @@ export function useTrades() {
     });
   };
 
-  const handleSaveNotes = async (tradeId: string, notes: string) => {
-    const result = await apiRequest<{ trade: ApiTrade }>(`/api/trades/${encodeURIComponent(tradeId)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ notes }),
+  const handleSaveNotes = (tradeId: string, notes: string) => {
+    withErrorToast('Failed to save notes', async () => {
+      const result = await apiRequest<{ trade: ApiTrade }>(`/api/trades/${encodeURIComponent(tradeId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ notes }),
+      });
+      setTrades((prev) => prev.map((trade) => (trade.id === tradeId ? fromApiTrade(result.trade) : trade)));
     });
-    setTrades((prev) => prev.map((trade) => (trade.id === tradeId ? fromApiTrade(result.trade) : trade)));
   };
 
-  const handleCloseTrade = async (tradeId: string, exitPrice: number, exitTime: string) => {
-    const result = await apiRequest<{ trade: ApiTrade }>(`/api/trades/${encodeURIComponent(tradeId)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ action: 'close', exitPrice, exitTime }),
+  const handleCloseTrade = (tradeId: string, exitPrice: number, exitTime: string) => {
+    withErrorToast('Failed to close trade', async () => {
+      const result = await apiRequest<{ trade: ApiTrade }>(`/api/trades/${encodeURIComponent(tradeId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'close', exitPrice, exitTime }),
+      });
+      setTrades((prev) => prev.map((trade) => (trade.id === tradeId ? fromApiTrade(result.trade) : trade)));
     });
-    setTrades((prev) => prev.map((trade) => (trade.id === tradeId ? fromApiTrade(result.trade) : trade)));
   };
 
-  const handleMergeTrades = async (ids: string[]) => {
-    const result = await apiRequest<{ trade: ApiTrade; deletedIds: string[] }>('/api/trades/merge', {
-      method: 'POST',
-      body: JSON.stringify({ ids }),
+  const handleMergeTrades = (ids: string[]) => {
+    withErrorToast('Failed to merge trades', async () => {
+      const result = await apiRequest<{ trade: ApiTrade; deletedIds: string[] }>('/api/trades/merge', {
+        method: 'POST',
+        body: JSON.stringify({ ids }),
+      });
+      const merged = fromApiTrade(result.trade);
+      setTrades((prev) => {
+        const without = prev.filter((trade) => !result.deletedIds.includes(trade.id));
+        return sortTrades([merged, ...without]);
+      });
+      setSelectedIds(new Set());
     });
-    const merged = fromApiTrade(result.trade);
-    setTrades((prev) => {
-      const without = prev.filter((trade) => !result.deletedIds.includes(trade.id));
-      return sortTrades([merged, ...without]);
-    });
-    setSelectedIds(new Set());
   };
 
   const handleAddTag = (tradeId: string, tagName: string) => {
@@ -272,7 +280,7 @@ export function useTrades() {
 
       const allServerWarnings: string[] = [];
       for (const batch of batches) {
-        const result = await apiRequest<{ trades: ApiTrade[]; warnings?: string[]; importSkipped?: boolean }>(
+        const result = await apiRequest<{ warnings?: string[]; importSkipped?: boolean }>(
           '/api/trades/import-raw',
           {
             method: 'POST',

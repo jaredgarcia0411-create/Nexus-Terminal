@@ -13,7 +13,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { aggregateDay } from '@/lib/journal-aggregates';
 import { DAILY_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
 import type { Trade } from '@/lib/types';
-import { formatCurrency } from '@/lib/trading-utils';
+import { formatCurrency } from '@/lib/ui-trade-utils';
 import { coerceWatchlistRows, WATCHLIST_REPORT_KEY } from '@/lib/watchlist';
 import type { TemplateField } from '@/lib/validations/reviews';
 

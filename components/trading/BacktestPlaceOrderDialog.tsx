@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { PlaceBacktestActionInput } from '@/hooks/use-backtest-session';
 import { sizeForAdd, sizeForOpen, type SimPosition } from '@/lib/backtest-math';
-import { formatCurrency } from '@/lib/trading-utils';
+import { formatCurrency } from '@/lib/ui-trade-utils';
 import type { BacktestActionType } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import {

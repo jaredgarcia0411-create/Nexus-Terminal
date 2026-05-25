@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { formatCurrency } from '@/lib/trading-utils';
+import { formatCurrency } from '@/lib/ui-trade-utils';
 import type { Trade } from '@/lib/types';
 
 interface ArchiveTabProps {

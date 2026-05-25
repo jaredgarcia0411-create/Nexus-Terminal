@@ -5,7 +5,7 @@ import { format, parseISO } from 'date-fns';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { calculatePnL } from '@/lib/trading-utils';
+import { calculatePnL } from '@/lib/ui-trade-utils';
 import type { Trade } from '@/lib/types';
 import {
   Dialog,

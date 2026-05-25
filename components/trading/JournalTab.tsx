@@ -10,7 +10,7 @@ import TradeTable from '@/components/trading/TradeTable';
 import WeeklyReviewSheet from '@/components/trading/WeeklyReviewSheet';
 import JournalTradeChart from '@/components/trading/JournalTradeChart';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { formatCurrency, getPnLColor } from '@/lib/trading-utils';
+import { formatCurrency, getPnLColor } from '@/lib/ui-trade-utils';
 import {
   TRADE_CHART_TIMEFRAME_CONFIG,
   type TradeChartTimeframeKey,

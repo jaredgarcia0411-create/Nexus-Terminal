@@ -1,31 +1,43 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import type { ApiTrade, Trade } from '@/lib/types';
 import { apiRequest, fromApiTrade, sortTradesByDate } from '@/lib/trade-utils';
 
 export function useTradeSync() {
   const { data: session, status } = useSession();
-  const user = session?.user as
-    | { id?: string; name?: string | null; email?: string | null; image?: string | null }
-    | undefined;
+  const rawUser = session?.user;
+  const user = (
+    rawUser &&
+    typeof rawUser === 'object' &&
+    'id' in rawUser &&
+    typeof (rawUser as Record<string, unknown>).id === 'string'
+  ) ? (rawUser as { id: string; name?: string | null; email?: string | null; image?: string | null })
+    : undefined;
 
   const [trades, setTrades] = useState<Trade[]>([]);
   const [globalTags, setGlobalTags] = useState<string[]>([]);
   const [mounted, setMounted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const refreshInFlight = useRef(false);
 
   const sortTrades = sortTradesByDate;
 
   const refreshTrades = useCallback(async () => {
-    const [tradesRes, tagsRes] = await Promise.all([
-      apiRequest<{ trades: ApiTrade[] }>('/api/trades'),
-      apiRequest<{ tags: string[] }>('/api/tags'),
-    ]);
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    try {
+      const [tradesRes, tagsRes] = await Promise.all([
+        apiRequest<{ trades: ApiTrade[] }>('/api/trades'),
+        apiRequest<{ tags: string[] }>('/api/tags'),
+      ]);
 
-    setTrades(sortTrades(tradesRes.trades.map(fromApiTrade)));
-    setGlobalTags(tagsRes.tags);
+      setTrades(sortTrades(tradesRes.trades.map(fromApiTrade)));
+      setGlobalTags(tagsRes.tags);
+    } finally {
+      refreshInFlight.current = false;
+    }
   }, [sortTrades]);
 
   useEffect(() => {

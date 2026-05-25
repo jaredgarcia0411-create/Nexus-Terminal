@@ -9,7 +9,7 @@ import {
   type TradeChartTimeframeKey,
 } from '@/lib/chart-timeframes';
 import { useCandleData } from '@/hooks/use-candle-data';
-import { buildTradeMarkers } from '@/lib/trading-utils';
+import { buildTradeMarkers } from '@/lib/ui-trade-utils';
 
 interface JournalTradeChartProps {
   trade: Trade;

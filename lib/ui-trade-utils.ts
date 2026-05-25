@@ -20,8 +20,9 @@ export const calculatePnL = (direction: Direction, entry: number, exit: number, 
   }
 };
 
-export const parsePrice = (val: any): number => {
+export const parsePrice = (val: unknown): number => {
   if (typeof val === 'number') return val;
+  if (val == null) return 0;
   return parseFloat(String(val).replace(/[$,]/g, '')) || 0;
 };
 

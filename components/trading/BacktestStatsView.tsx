@@ -24,7 +24,7 @@ import {
 import { useBacktestStats } from '@/hooks/use-backtest-stats';
 import { FILTER_REGISTRY } from '@/lib/backtest-filters';
 import { apiRequest } from '@/lib/trade-utils';
-import { formatCurrency, formatR } from '@/lib/trading-utils';
+import { formatCurrency, formatR } from '@/lib/ui-trade-utils';
 
 interface BacktestStatsViewProps {
   backtestId: string;

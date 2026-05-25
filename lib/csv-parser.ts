@@ -1,5 +1,5 @@
 import { Trade, Direction } from './types';
-import { parsePrice } from './trading-utils';
+import { parsePrice } from './ui-trade-utils';
 import { format } from 'date-fns';
 import { normalizeSide, type MatcherExecution } from '@/lib/position-matcher';
 import type { BrokerParserConfig, NormalizedExecution } from './parsers/types';

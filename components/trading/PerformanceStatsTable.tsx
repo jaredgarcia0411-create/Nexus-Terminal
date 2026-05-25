@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { ArrowUpRight, Info } from 'lucide-react';
 import { bucketKey } from '@/lib/journal-aggregates';
-import { formatCurrency } from '@/lib/trading-utils';
+import { formatCurrency } from '@/lib/ui-trade-utils';
 import { Trade } from '@/lib/types';
 
 interface PerformanceStatsTableProps {

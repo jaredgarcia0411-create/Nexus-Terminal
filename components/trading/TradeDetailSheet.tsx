@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import type { Trade } from '@/lib/types';
-import { buildTradeMarkers, formatCurrency, formatR, getPnLColor } from '@/lib/trading-utils';
+import { buildTradeMarkers, formatCurrency, formatR, getPnLColor } from '@/lib/ui-trade-utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -25,7 +25,7 @@ interface TradeDetailSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaveNotes: (tradeId: string, notes: string) => Promise<void> | void;
-  onCloseTrade?: (tradeId: string, exitPrice: number, exitTime: string) => Promise<void>;
+  onCloseTrade?: (tradeId: string, exitPrice: number, exitTime: string) => Promise<void> | void;
 }
 
 function timeValue(sortKey: string, time: string, timestamp?: string | Date) {

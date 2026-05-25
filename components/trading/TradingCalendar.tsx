@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react';
 import { Trade } from '@/lib/types';
 import { bucketKey, isCrossDayTrade } from '@/lib/journal-aggregates';
-import { formatCurrency, formatR, getPnLColor } from '@/lib/trading-utils';
+import { formatCurrency, formatR, getPnLColor } from '@/lib/ui-trade-utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { 
   addDays,

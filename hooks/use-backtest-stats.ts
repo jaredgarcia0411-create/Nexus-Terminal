@@ -46,7 +46,10 @@ type BacktestDetailResponse = {
 function normalizeSessionUser(
   session: ReturnType<typeof useSession>['data'],
 ): { id?: string | null } | undefined {
-  return session?.user as { id?: string | null } | undefined;
+  const rawUser = session?.user;
+  if (!rawUser || typeof rawUser !== 'object' || !('id' in rawUser)) return undefined;
+  const id = (rawUser as Record<string, unknown>).id;
+  return typeof id === 'string' || id === null ? { id } : undefined;
 }
 
 export function useBacktestStats(backtestId: string) {

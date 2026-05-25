@@ -1,4 +1,4 @@
-import { parsePrice } from '../trading-utils';
+import { parsePrice } from '../ui-trade-utils';
 import type { BrokerParserConfig, NormalizedExecution } from './types';
 import { SIDE_ALIASES, normalizeColumnNames, parseCost } from './utils';
 

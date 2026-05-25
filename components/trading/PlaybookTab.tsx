@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { PLAYBOOK_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
 import { emptySectionsForTemplate } from '@/lib/playbook-defaults';
-import { formatCurrency } from '@/lib/trading-utils';
+import { formatCurrency } from '@/lib/ui-trade-utils';
 import type { Trade } from '@/lib/types';
 import type { PlaybookSections } from '@/lib/validations/playbook';
 import type { TemplateField } from '@/lib/validations/reviews';

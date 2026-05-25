@@ -75,7 +75,7 @@ lib/
 ├── validations/            ← Zod schemas
 ├── sample-set-rows.ts, sample-set-csv.ts, watchlist.ts  ← journaling data shapes
 ├── system-sheet-parser.ts, journal-aggregates.ts, journal-template-defaults.ts  ← journal logic
-├── trade-utils.ts, trading-utils.ts  ← shared trade math
+├── trade-utils.ts, ui-trade-utils.ts ← trade business logic + UI trade formatting
 ├── chart-time.ts, chart-timeframes.ts, chart-session-shading.ts, indicators.ts  ← chart helpers
 ├── server-db-utils.ts      ← requireUser, requireCronSecret, ensureUser, dbUnavailable
 └── time-utils.ts, types.ts, utils.ts, research.ts  ← misc shared

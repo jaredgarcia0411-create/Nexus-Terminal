@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { Plus, X } from 'lucide-react';
 import type { Trade } from '@/lib/types';
-import { formatCurrency, formatR, getPnLColor } from '@/lib/trading-utils';
+import { formatCurrency, formatR, getPnLColor } from '@/lib/ui-trade-utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 

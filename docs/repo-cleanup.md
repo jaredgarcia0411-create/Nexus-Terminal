@@ -42,26 +42,6 @@ Evidence:
 Recommendation:
 Add a simple DB-backed counter per user per hour for LLM-triggering endpoints. No Redis required — a `rate_limits` table with `(user_id, endpoint, window_start, count)` is sufficient. Return 429 when exceeded.
 
-### Async Error Handling Inconsistency In Hooks
-
-Evidence:
-- `handleDeleteSelected`, `handleApplyRisk`, `handleAddTag` all use `withErrorToast`: [hooks/use-trades.ts](/home/jared/Nexus-Terminal/hooks/use-trades.ts:128), [hooks/use-trades.ts](/home/jared/Nexus-Terminal/hooks/use-trades.ts:139), [hooks/use-trades.ts](/home/jared/Nexus-Terminal/hooks/use-trades.ts:182).
-- `handleCreateManualTrade` at line 116 does NOT wrap in `withErrorToast`. If the API call fails, the user sees nothing.
-- `handleSaveNotes`, `handleCloseTrade`, `handleMergeTrades` are also async without error feedback.
-
-Recommendation:
-Wrap all data-writing async functions in `withErrorToast`. This is a 30-minute fix across `use-trades.ts`. Any operation that persists data should give the user feedback on failure.
-
-### Input Validation Missing String Length Constraints
-
-Evidence:
-- `symbol: z.string().min(1)` in [lib/validations/trades.ts](/home/jared/Nexus-Terminal/lib/validations/trades.ts) has no `.max()`.
-- `notes: z.string()` has no max length.
-- PostgreSQL `text` columns have no inherent length limit.
-
-Recommendation:
-Add `.max()` to all user-controlled string fields in Zod schemas: `.max(20)` for symbols, `.max(10000)` for notes, `.max(200)` for tag names, etc. Quick pass across `lib/validations/`.
-
 ### Unbounded GET /api/trades Query
 
 Evidence:
@@ -71,23 +51,6 @@ Evidence:
 Recommendation:
 Add cursor-based pagination. Drizzle supports `.limit(n).offset(m)` directly. The UI currently loads all trades at once, so the frontend needs a corresponding fetch-more pattern (or load the most recent 500 and fetch older on demand).
 
-### import-raw Returns Entire Trade List
-
-Evidence:
-- After inserting a batch, `import-raw/route.ts` fetches every trade for the user and returns them all: [app/api/import-raw/route.ts](/home/jared/Nexus-Terminal/app/api/import-raw/route.ts).
-- For a user with 2,000+ trades, this is a large payload on every CSV import.
-
-Recommendation:
-Return only the newly created/modified trades from the import. The client can merge them into its existing state.
-
-### refreshTrades Does Not Deduplicate In-Flight Requests
-
-Evidence:
-- If `refreshTrades()` in [hooks/use-trade-sync.ts](/home/jared/Nexus-Terminal/hooks/use-trade-sync.ts) is called twice quickly, two concurrent requests go to `/api/trades`.
-
-Recommendation:
-Add an in-flight ref: `if (refreshInFlight.current) return;` at the top of `refreshTrades`. Set it true on entry, false in `finally`.
-
 ## TypeScript Safety (added 2026-05-25)
 
 ### Type Assertions Hiding Real Type Problems
@@ -95,10 +58,9 @@ Add an in-flight ref: `if (refreshInFlight.current) return;` at the top of `refr
 Evidence:
 - `lib/market-pulse/capture.ts` lines 101 and 117: Drizzle builder chains cast via `as unknown as { ... }`.
 - `app/api/research-report/route.ts` line 168: `db as unknown as Parameters<typeof recordLlmAttempt>[0]`.
-- `lib/trading-utils.ts` line 23: `parsePrice(val: any)` — should be `val: unknown` with a type guard.
 
 Recommendation:
-Investigate each `as unknown as` and either properly type the function signatures or document as an accepted Drizzle typing limitation. Fix `parsePrice` to use `unknown` with runtime checks.
+Investigate each `as unknown as` and either properly type the function signatures or document as an accepted Drizzle typing limitation.
 
 ### Remove Redundant Legacy DB Columns
 
@@ -110,35 +72,7 @@ Evidence:
 Recommendation:
 Write a migration that drops the legacy columns (`pnl`, `executions`) and remove the fallback logic in `toTrade()`. This simplifies every trade read path.
 
-### useSession User Type Asserted Without Validation
-
-Evidence:
-- [hooks/use-trade-sync.ts](/home/jared/Nexus-Terminal/hooks/use-trade-sync.ts) line 10: `session?.user as | { id?: string; ... } | undefined` — TypeScript assertion without runtime check.
-
-Recommendation:
-Add a runtime check: `if (!user || typeof user.id !== 'string') return;` before using the user object.
-
 ## Naming And Dependencies (added 2026-05-25)
-
-### Rename trading-utils.ts To Disambiguate From trade-utils.ts
-
-Evidence:
-- `lib/trading-utils.ts` contains UI formatting helpers (formatCurrency, formatR, getPnLColor).
-- `lib/trade-utils.ts` contains pure business logic from the god-hook decomposition.
-- The names are confusingly similar. 19 files import `trading-utils.ts`.
-
-Recommendation:
-Rename `lib/trading-utils.ts` → `lib/ui-trade-utils.ts`. Update all 19 import sites. The name makes the UI-formatting purpose clear.
-
-### Move ws And dotenv To devDependencies
-
-Evidence:
-- `ws` is used only by Docker agent services, not the Next.js app.
-- `dotenv` is used only by `scripts/db-migrate-safe.mjs`.
-- Neither needs to be a prod dependency in package.json.
-
-Recommendation:
-Move both to devDependencies. No runtime behavior change.
 
 ### Add Lazy Dynamic Imports For BacktestingTab
 

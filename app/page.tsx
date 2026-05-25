@@ -114,7 +114,9 @@ export default function NexusTerminal() {
 
   useEffect(() => {
     if (!selectedTradeId) return;
-    void fetchTradeDetail(selectedTradeId);
+    fetchTradeDetail(selectedTradeId).catch(() => {
+      toast.error('Failed to load trade details');
+    });
   }, [selectedTradeId, fetchTradeDetail]);
 
   const handleSignOut = () => {

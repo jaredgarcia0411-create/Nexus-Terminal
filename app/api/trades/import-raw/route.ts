@@ -1,14 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getPoolDb } from '@/lib/db';
 import { tradeExecutions, tradeImportBatches, trades } from '@/lib/db/schema';
 import {
   dbUnavailable,
   ensureUser,
-  loadTagsForTradeIds,
   requireUser,
-  toTrade,
 } from '@/lib/server-db-utils';
 import {
   matchExecutions,
@@ -281,14 +279,7 @@ export async function POST(request: Request) {
       }
     });
 
-    const tradeRows = await db.select().from(trades)
-      .where(eq(trades.userId, authState.user.id))
-      .orderBy(desc(trades.date));
-    const tradeIds = tradeRows.map((row) => row.id);
-    const tagMap = await loadTagsForTradeIds(db, authState.user.id, tradeIds);
-    const tradeList = tradeRows.map((row) => toTrade(row, tagMap.get(row.id) ?? []));
-
-    return Response.json({ trades: tradeList, warnings, importSkipped });
+    return Response.json({ warnings, importSkipped });
   } catch (error) {
     if (error instanceof Response) return error;
     logRouteError('trades.import-raw.post', error);

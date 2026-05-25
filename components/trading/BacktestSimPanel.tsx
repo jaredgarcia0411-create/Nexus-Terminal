@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Eye, RotateCcw, Trash2 } from 'lucide-react';
 
 import type { SimPosition } from '@/lib/backtest-math';
-import { formatCurrency, formatR, getPnLColor } from '@/lib/trading-utils';
+import { formatCurrency, formatR, getPnLColor } from '@/lib/ui-trade-utils';
 import type { BacktestAction, BacktestSession } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import {

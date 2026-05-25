@@ -1,21 +1,21 @@
 import { z } from 'zod';
 
 const executionSchema = z.object({
-  id: z.string(),
+  id: z.string().min(1).max(256),
   side: z.enum(['ENTRY', 'EXIT']),
   price: z.number().finite(),
   qty: z.number().finite().positive(),
-  time: z.string().min(1),
-  timestamp: z.union([z.string(), z.date()]).optional(),
+  time: z.string().min(1).max(50),
+  timestamp: z.union([z.string().max(50), z.date()]).optional(),
   commission: z.number().finite().optional().default(0),
   fees: z.number().finite().optional().default(0),
 });
 
 export const createTradeSchema = z.object({
-  id: z.string().min(1),
-  date: z.string().min(1),
-  sortKey: z.string().min(1),
-  symbol: z.string().min(1),
+  id: z.string().min(1).max(256),
+  date: z.string().min(1).max(50),
+  sortKey: z.string().min(1).max(20),
+  symbol: z.string().min(1).max(20),
   direction: z.enum(['LONG', 'SHORT']),
   avgEntryPrice: z.number().finite().optional().default(0),
   avgExitPrice: z.number().finite().optional().default(0),
@@ -23,11 +23,11 @@ export const createTradeSchema = z.object({
   grossPnl: z.number().finite().optional(),
   netPnl: z.number().finite().optional(),
   pnl: z.number().finite().optional(),
-  entryTime: z.string().optional().default(''),
-  exitTime: z.string().optional().default(''),
+  entryTime: z.string().max(50).optional().default(''),
+  exitTime: z.string().max(50).optional().default(''),
   executionCount: z.number().int().optional(),
   executions: z.number().int().optional(),
-  rawExecutions: z.array(executionSchema).optional(),
+  rawExecutions: z.array(executionSchema).max(5000).optional(),
   mfe: z.number().finite().nullable().optional(),
   mae: z.number().finite().nullable().optional(),
   bestExitPnl: z.number().finite().nullable().optional(),
@@ -35,36 +35,36 @@ export const createTradeSchema = z.object({
   initialRisk: z.number().finite().nullable().optional(),
   commission: z.number().finite().optional().default(0),
   fees: z.number().finite().optional().default(0),
-  notes: z.string().nullable().optional(),
-  tags: z.array(z.string()).optional(),
+  notes: z.string().max(10000).nullable().optional(),
+  tags: z.array(z.string().max(200)).max(100).optional(),
   isOpen: z.boolean().optional().default(false),
-  closedAt: z.string().nullable().optional(),
+  closedAt: z.string().max(50).nullable().optional(),
   remainingQty: z.number().finite().optional().default(0),
 });
 
 export type CreateTradeInput = z.infer<typeof createTradeSchema>;
 
 export const updateTradeSchema = z.object({
-  notes: z.string().optional(),
+  notes: z.string().max(10000).optional(),
   initialRisk: z.number().finite().nullable().optional(),
-  tags: z.array(z.string()).optional(),
+  tags: z.array(z.string().max(200)).max(100).optional(),
 });
 
 export type UpdateTradeInput = z.infer<typeof updateTradeSchema>;
 
 export const bulkTradeSchema = z.object({
   action: z.enum(['delete', 'applyRisk', 'addTag']),
-  ids: z.array(z.string().min(1)).min(1, 'ids are required'),
-  value: z.union([z.number(), z.string()]).optional(),
+  ids: z.array(z.string().min(1).max(256)).max(500).min(1, 'ids are required'),
+  value: z.union([z.number().finite(), z.string().max(200)]).optional(),
 });
 
 export type BulkTradeInput = z.infer<typeof bulkTradeSchema>;
 
 export const importTradeItemSchema = z.object({
-  id: z.string().min(1),
-  date: z.string().min(1),
-  sortKey: z.string().min(1),
-  symbol: z.string().min(1),
+  id: z.string().min(1).max(256),
+  date: z.string().min(1).max(50),
+  sortKey: z.string().min(1).max(20),
+  symbol: z.string().min(1).max(20),
   direction: z.enum(['LONG', 'SHORT']),
   avgEntryPrice: z.number().finite(),
   avgExitPrice: z.number().finite(),
@@ -72,11 +72,11 @@ export const importTradeItemSchema = z.object({
   grossPnl: z.number().finite().optional(),
   netPnl: z.number().finite().optional(),
   pnl: z.number().finite().optional(),
-  entryTime: z.string().optional().default(''),
-  exitTime: z.string().optional().default(''),
+  entryTime: z.string().max(50).optional().default(''),
+  exitTime: z.string().max(50).optional().default(''),
   executionCount: z.number().int().optional(),
   executions: z.number().int().optional(),
-  rawExecutions: z.array(executionSchema).optional(),
+  rawExecutions: z.array(executionSchema).max(5000).optional(),
   mfe: z.number().finite().nullable().optional(),
   mae: z.number().finite().nullable().optional(),
   bestExitPnl: z.number().finite().nullable().optional(),
@@ -84,15 +84,15 @@ export const importTradeItemSchema = z.object({
   initialRisk: z.number().finite().nullable().optional(),
   commission: z.number().finite().optional().default(0),
   fees: z.number().finite().optional().default(0),
-  notes: z.string().nullable().optional(),
-  tags: z.array(z.string()).optional(),
+  notes: z.string().max(10000).nullable().optional(),
+  tags: z.array(z.string().max(200)).max(100).optional(),
   isOpen: z.boolean().optional().default(false),
-  closedAt: z.string().nullable().optional(),
+  closedAt: z.string().max(50).nullable().optional(),
   remainingQty: z.number().finite().optional().default(0),
 });
 
 export const importTradesSchema = z.object({
-  trades: z.array(importTradeItemSchema).min(1, 'trades array must not be empty'),
+  trades: z.array(importTradeItemSchema).max(5000).min(1, 'trades array must not be empty'),
   batchKey: z.string().max(256).optional(),
 });
 
@@ -101,13 +101,13 @@ export type ImportTradesInput = z.infer<typeof importTradesSchema>;
 export const closePositionSchema = z.object({
   action: z.literal('close'),
   exitPrice: z.number().finite().positive(),
-  exitTime: z.string().min(1),
+  exitTime: z.string().min(1).max(50),
 });
 
 export type ClosePositionInput = z.infer<typeof closePositionSchema>;
 
 export const mergeTradesSchema = z.object({
-  ids: z.array(z.string().min(1)).min(2, 'Select at least 2 trades to merge'),
+  ids: z.array(z.string().min(1).max(256)).max(500).min(2, 'Select at least 2 trades to merge'),
 });
 
 export type MergeTradesInput = z.infer<typeof mergeTradesSchema>;
@@ -115,14 +115,14 @@ export type MergeTradesInput = z.infer<typeof mergeTradesSchema>;
 export const importRawSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
   executions: z.array(z.object({
-    symbol: z.string().min(1),
+    symbol: z.string().min(1).max(20),
     side: z.enum(['LONG_ENTRY', 'LONG_EXIT', 'SHORT_ENTRY', 'SHORT_EXIT']),
     qty: z.number().finite().positive(),
     price: z.number().finite(),
-    time: z.string().min(1),
+    time: z.string().min(1).max(50),
     commission: z.number().finite().optional().default(0),
     fees: z.number().finite().optional().default(0),
-  })).min(1, 'executions must not be empty'),
+  })).max(5000).min(1, 'executions must not be empty'),
   batchKey: z.string().max(256).optional(),
 });
 

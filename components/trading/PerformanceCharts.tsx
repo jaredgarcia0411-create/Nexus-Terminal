@@ -16,7 +16,7 @@ import {
 } from 'recharts';
 import { BarChart3 } from 'lucide-react';
 import { Trade } from '@/lib/types';
-import { formatCurrency, formatR, getPnLHex } from '@/lib/trading-utils';
+import { formatCurrency, formatR, getPnLHex } from '@/lib/ui-trade-utils';
 import { format } from 'date-fns';
 
 interface PerformanceChartsProps {
