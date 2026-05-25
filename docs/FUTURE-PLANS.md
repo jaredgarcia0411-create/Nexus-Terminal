@@ -10,6 +10,125 @@ Parked ideas and longer-horizon plans. Each entry should note **why it's parked*
 
 ---
 
+## Filing headline parser for Research Filings (parked 2026-05-25)
+
+### The idea
+Improve the Research > Filings headline column so every filing has a compact one-line explanation instead of falling back to generic SEC metadata like `10-Q filing` or `Form 425 - Prospectuses and communications, business combinations`.
+
+Target shape:
+- `8-K: Item 5.03 - charter/bylaw amendment or fiscal year change`
+- `S-1/A: amended registration statement`
+- `424B5: prospectus supplement`
+- `10-Q: quarterly report`
+- `SC 13G/A: amended beneficial ownership report`
+
+This is intentionally not the same as a full AI filing summary. It is a deterministic, trader-readable headline built from SEC metadata first.
+
+### LLM answer
+To produce genuinely semantic headlines like "Auddia announces 1-for-77 reverse stock split" or "Auddia enters exchange agreement to retire Series C preferred stock" for arbitrary filings, we usually need one of:
+
+1. A source headline already present in the filing payload or primary document title.
+2. A targeted parser for that specific form/event pattern.
+3. An LLM call over selected filing text.
+
+The parser can cover generic one-line labels and many common small-cap filing patterns, but it should not pretend to understand every filing body. For arbitrary event-specific prose, use a cached LLM summary lane later.
+
+### Current repo seams
+- `lib/sec/submissions.ts` builds first-party SEC filing rows. It currently sets `headline` to `primaryDocDescription` or `${formType} filing`.
+- `lib/askedgar/snapshot-normalizer.ts` maps SEC filing rows into `ResearchSnapshotFiling.title`.
+- `components/trading/research-report-sections/_shared.tsx` renders `filing.title` in the Filings table headline column.
+- `lib/sec/filing-body.ts` can fetch and cache primary-document text by accession number, but the Filings tab currently does not use it.
+- `sec_filings_raw` stores metadata separately from `sec_filing_body_cache`, which is the right split for parser-first work.
+
+### Parser-first implementation strategy
+1. Add a helper such as `lib/sec/filing-summary.ts`.
+2. Export a pure function like:
+   ```ts
+   summarizeFilingMetadata({
+     formType,
+     items,
+     primaryDocDescription,
+     headline,
+   }): string
+   ```
+3. Keep it metadata-only for v1. Do not fetch filing bodies in the Filings tab path.
+4. Add an optional `summary` or `displayHeadline` field to `SecFiling` and `ResearchSnapshotFiling`, leaving `title` available as the source/raw headline.
+5. In `lib/sec/submissions.ts`, compute the parser headline when zipping SEC filing columns.
+6. In `lib/askedgar/snapshot-normalizer.ts`, prefer `summary` / `displayHeadline`, then source `headline`, then `${formType} filing`.
+7. In the UI, render the parser headline in the existing Headline column. Consider preserving the original SEC title in a tooltip or secondary muted text later.
+
+### Parser rules to start with
+Use a small explicit taxonomy. Prefer boring correctness over clever inference.
+
+| Source | Rule |
+|---|---|
+| `10-Q`, `10-Q/A` | quarterly report / amended quarterly report |
+| `10-K`, `10-K/A` | annual report / amended annual report |
+| `8-K`, `8-K/A` + `items` | current report with item labels |
+| `6-K`, `6-K/A` | foreign issuer current report |
+| `S-1`, `S-1/A`, `S-3`, `S-3/A`, `F-1`, `F-3` | registration statement, amended when `/A` |
+| `424B*` | prospectus supplement |
+| `425` | merger/business-combination communication |
+| `DEF 14A`, `PRE 14A` | proxy statement / preliminary proxy statement |
+| `SC 13G`, `SC 13D`, amendments | beneficial ownership report |
+| `3`, `4`, `5` | insider ownership / transaction report |
+| `144` | proposed sale of securities |
+
+For 8-K items, map common item codes:
+- `1.01` - material definitive agreement
+- `2.02` - results of operations / financial condition
+- `3.01` - exchange listing notice
+- `3.02` - unregistered sale of equity securities
+- `5.02` - director/officer change or compensation arrangement
+- `5.03` - charter/bylaw amendment or fiscal-year change
+- `7.01` - Regulation FD disclosure
+- `8.01` - other event
+- `9.01` - financial statements and exhibits
+
+If multiple 8-K items are present, include up to two business-relevant items and drop `9.01` when it is only an exhibit companion to another item.
+
+### Body-parser extension
+After the metadata parser is stable, add lazy body parsing only for high-value candidates:
+- `8-K` / `8-K/A`
+- `S-1`, `S-1/A`, `S-3`, `S-3/A`, `F-1`, `F-3`
+- `424B*`
+- `425`
+
+Use `lib/sec/filing-body.ts` and `sec_filing_body_cache`; keep body fetching candidate-based and never fetch bodies for every row in a 300-filing Research Filings response.
+
+Parser examples:
+- reverse split ratio from 8-K Item 5.03 body text
+- registration / resale / ATM / shelf keywords from S-1/S-3/424B bodies
+- merger or acquisition keywords from 425 bodies
+- executive change names from 8-K Item 5.02 bodies, only if confidently matched
+
+### Optional LLM extension
+Add LLM summaries only after parser output is useful and cached:
+1. Create a `sec_filing_summaries` table keyed by accession number.
+2. Store `parserSummary`, `llmSummary`, `source`, `model`, token/cost metadata, `createdAt`, and `updatedAt`.
+3. Generate LLM summaries asynchronously or behind an explicit "summarize filing" action.
+4. Use strict prompts: one sentence, no advice, quote only supported facts, include form/date/item context.
+5. Fall back to parser output on timeout, missing API key, or budget exhaustion.
+6. Put route-level rate limiting in place before exposing batch LLM summaries.
+
+### Acceptance criteria for parser v1
+- No LLM API call is required.
+- No filing body fetch is required in the default Filings tab render path.
+- Existing SEC source fields remain available for debugging and future parser work.
+- The headline column no longer shows unhelpful fallbacks for common forms.
+- Unit tests cover common form types, 8-K item combinations, amendments, unknown forms, and missing metadata.
+
+### Why it is parked
+This is valuable UI polish, but it should be a focused filings sprint. It touches the SEC data contract, normalized Research snapshot shape, and Filings UI display. It should not be bundled with unrelated cleanup or rate-limiting work.
+
+### Triggers to revisit
+- The Filings tab becomes a daily workflow surface.
+- Generic SEC headlines are slowing down review.
+- We need to reduce AskEdgar headline reliance without losing readability.
+- We are ready to add cached LLM summaries with rate limits and cost accounting.
+
+---
+
 ## Commercialization paths for Nexus Terminal (parked 2026-05-24)
 
 ### The idea
