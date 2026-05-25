@@ -28,7 +28,13 @@ Validation:
 
 No manual smoke was run; this sprint had no visual behavior or dev-server requirement.
 
-Next cleanup work remains unopened. Use `docs/repo-cleanup.md` as the durable backlog before starting another cleanup sprint.
+---
+
+## Next Up: Sprint 6 — Rate Limiting
+
+> Status: NOT YET SPECCED
+
+Scope: DB-backed sliding-window rate limiter for expensive endpoints (`/api/research-report`, `/api/askedgar/tldr`). New `rate_limit_hits` table, shared `lib/rate-limit.ts` helper, integration into target routes, 429 responses with standard headers. See `docs/repo-cleanup.md` § "Rate Limiting On Expensive Endpoints" for the finding.
 
 ---
 
