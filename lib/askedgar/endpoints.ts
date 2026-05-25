@@ -263,10 +263,10 @@ export async function fetchRegistrations(ticker: string) {
 export async function fetchNews(ticker: string, limit = 40) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
-  // SERVER-SIDE FILTER: only news + 8-K + S-1 form types. Per-KB billing
+  // SERVER-SIDE FILTER: only news + selected current/registration filing types. Per-KB billing
   // makes this the highest-leverage payload-shaping change. Drop the LLM
   // summary rows (`jmt415`, `grok`) and any form type we don't render.
-  return requestAskEdgar<unknown>('/v1/news', { ticker: validated, limit, form_type: 'news,8-K,S-1' });
+  return requestAskEdgar<unknown>('/v1/news', { ticker: validated, limit, form_type: 'news,8-K,S-1,6-K,6-K/A,S-1/A' });
 }
 
 export async function fetchNasdaqCompliance(ticker: string) {

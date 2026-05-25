@@ -340,7 +340,7 @@ describe('askedgar client', () => {
 
     const [newsUrl] = fetchCallUrls(fetchSpy);
     expect(newsUrl.pathname).toBe('/v1/news');
-    expect(newsUrl.searchParams.get('form_type')).toBe('news,8-K,S-1');
+    expect(newsUrl.searchParams.get('form_type')).toBe('news,8-K,S-1,6-K,6-K/A,S-1/A');
   });
 
   it('keeps restricted or expired ATM registrations in scanner summary flags', async () => {

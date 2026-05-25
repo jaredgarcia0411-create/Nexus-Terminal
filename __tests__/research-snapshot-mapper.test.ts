@@ -214,6 +214,27 @@ describe('normalizeAskEdgarResponse', () => {
             document_url: 'https://www.sec.gov/Archives/edgar/data/1/s1.htm',
           },
           {
+            accession_number: '0000000001-26-000008',
+            form_type: '6-K',
+            filed_at: '2026-04-27',
+            headline: 'Foreign issuer report',
+            document_url: 'https://www.sec.gov/Archives/edgar/data/1/6k.htm',
+          },
+          {
+            accession_number: '0000000001-26-000009',
+            form_type: '6-K/A',
+            filed_at: '2026-04-28',
+            headline: 'Foreign issuer report amendment',
+            document_url: 'https://www.sec.gov/Archives/edgar/data/1/6ka.htm',
+          },
+          {
+            accession_number: '0000000001-26-000010',
+            form_type: 'S-1/A',
+            filed_at: '2026-04-29',
+            headline: 'Registration statement amendment',
+            document_url: 'https://www.sec.gov/Archives/edgar/data/1/s1a.htm',
+          },
+          {
             accession_number: '0000000001-26-000005',
             form_type: '424B3',
             filed_at: '2026-04-22',
@@ -265,16 +286,22 @@ describe('normalizeAskEdgarResponse', () => {
       }),
     ]);
 
-    expect(snapshot.filings).toHaveLength(2);
+    expect(snapshot.filings).toHaveLength(5);
     expect(snapshot.filings.map((filing) => filing.formType)).toEqual([
+      'S-1/A',
+      '6-K/A',
+      '6-K',
       '8-K',
       'S-1',
     ]);
     expect(snapshot.filings.map((filing) => filing.bucket)).toEqual([
+      'registrations',
+      'news',
+      'news',
       'news',
       'registrations',
     ]);
-    expect(snapshot.filings[0]).toMatchObject({
+    expect(snapshot.filings.find((filing) => filing.formType === '8-K')).toMatchObject({
       title: 'Current report',
       filedAt: '2026-04-26',
       url: 'https://www.sec.gov/Archives/edgar/data/1/8k.htm',

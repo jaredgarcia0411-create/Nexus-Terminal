@@ -229,7 +229,7 @@ export function normalizeAskEdgarResponse(
   // `grok` and `jmt415` add payload cost and are not rendered as news.
   const NEWS_FORM_TYPES = new Set(['news']);
   // Filings fallback bucket from /v1/news: only forms we render from this path.
-  const ALLOWED_NEWS_FILING_TYPES = new Set(['8-k', 's-1']);
+  const ALLOWED_NEWS_FILING_TYPES = new Set(['8-k', 's-1', '6-k', '6-k/a', 's-1/a']);
   const newsEndpointRows = getEndpointResponse(rawData, ['news']).results.map((item) => toRecord(item));
 
   const news: ResearchSnapshotNewsItem[] = newsEndpointRows

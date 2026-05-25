@@ -30,6 +30,26 @@ No manual smoke was run; this sprint had no visual behavior or dev-server requir
 
 ---
 
+## AskEdgar News Filter Expansion
+
+Status: completed 2026-05-25.
+
+Completed scope:
+- Expanded `/v1/news` `form_type` filtering from `news,8-K,S-1` to `news,8-K,S-1,6-K,6-K/A,S-1/A`.
+- Updated the AskEdgar snapshot fallback filing mapper so `6-K`, `6-K/A`, and `S-1/A` rows fetched through the news endpoint are retained instead of dropped.
+- Updated regression coverage for the outbound AskEdgar news query and normalized fallback filing output.
+
+Validation:
+- `npx vitest run __tests__/askedgar-client.test.ts __tests__/research-snapshot-mapper.test.ts` - passed.
+- `npm run lint` - passed.
+- `npx tsc --noEmit` - passed.
+- `npm test` - passed (92 files, 667 tests).
+- `npm run workflow:audit` - passed.
+
+No AskEdgar MCP/API call was made; this change used local code and fixtures only.
+
+---
+
 ## Next Up: Sprint 6 — Rate Limiting
 
 > Status: NOT YET SPECCED
