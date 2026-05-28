@@ -84,7 +84,7 @@ export default function ResearchTldr({ ticker }: Props) {
       <h4 className="mb-2 border-b border-border pb-2 text-lg font-semibold text-foreground">TLDR</h4>
       <ul className="space-y-1">
         {data.findings.map((item, i) => (
-          <li key={i} className="text-sm text-muted-foreground">• {item}</li>
+          <li key={i} className="text-sm text-foreground">• {item}</li>
         ))}
       </ul>
     </div>

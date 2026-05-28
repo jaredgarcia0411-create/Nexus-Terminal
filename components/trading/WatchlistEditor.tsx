@@ -474,7 +474,7 @@ function RowCells({
         </div>
         <div className={`${cellBase} text-sm text-foreground`}>{row.thesis || '—'}</div>
         <div className={`${cellBase} text-sm text-foreground`}>{row.grade || '—'}</div>
-        <div className={`${cellBase} whitespace-pre-wrap text-sm text-muted-foreground`}>
+        <div className={`${cellBase} whitespace-pre-wrap text-sm text-foreground`}>
           {row.notes || '—'}
         </div>
         <ReportCell reportId={row.reportId} reportOpen={reportOpen} onToggle={onToggleReport} />

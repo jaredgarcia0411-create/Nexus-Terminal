@@ -436,7 +436,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
     <div className="space-y-6">
       <div className={tableCard}>
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="text-base font-bold text-muted-foreground">
+          <h2 className="text-base font-bold text-foreground">
             Day 1 Setup
           </h2>
           <span className={`text-[10px] font-medium ${isRealtime ? 'text-primary' : 'text-amber-500'}`}>
@@ -533,7 +533,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
 
       <div className={tableCard}>
         <div className="border-b border-border px-4 py-3">
-          <h2 className="text-base font-bold text-muted-foreground">
+          <h2 className="text-base font-bold text-foreground">
             Potential MDR Setup
           </h2>
         </div>

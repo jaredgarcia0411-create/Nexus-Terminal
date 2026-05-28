@@ -122,11 +122,14 @@ export default function PerformanceCharts({ trades, metric, pnlMode = 'net', var
     }));
 
     trades.forEach((trade) => {
-      const hour = new Date(trade.date).getHours();
-      stats[hour].value += metricValue(trade);
+      const match = /^(\d{1,2}):/.exec(trade.entryTime);
+      const hour = match ? Number(match[1]) : -1;
+      if (hour >= 0 && hour < 24) {
+        stats[hour].value += metricValue(trade);
+      }
     });
 
-    return stats.filter((slot) => trades.some((trade) => new Date(trade.date).getHours() === slot.hour));
+    return stats.filter((slot) => slot.value !== 0);
   }, [trades, metricValue, isSummary]);
 
   const winLossDayData = useMemo(() => {

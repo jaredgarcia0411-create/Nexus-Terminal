@@ -220,7 +220,7 @@ export default function MacroSummaryPanel() {
       {report.tldr.length > 0 ? (
         <div>
           <SectionHeading>TLDR</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
             {report.tldr.map((line, i) => (
               <li key={i}>{line}</li>
             ))}
@@ -231,14 +231,14 @@ export default function MacroSummaryPanel() {
       {report.summary ? (
         <div>
           <SectionHeading>Summary</SectionHeading>
-          <p className="text-sm text-muted-foreground">{report.summary}</p>
+          <p className="text-sm text-foreground">{report.summary}</p>
         </div>
       ) : null}
 
       {report.riskAssessment ? (
         <div>
           <SectionHeading>Risk Assessment</SectionHeading>
-          <p className="text-sm text-muted-foreground">{report.riskAssessment}</p>
+          <p className="text-sm text-foreground">{report.riskAssessment}</p>
         </div>
       ) : null}
 
@@ -249,7 +249,7 @@ export default function MacroSummaryPanel() {
             {report.drivers.map((d, i) => (
               <li key={i} className="flex items-center gap-2">
                 <RatingDot rating={impactToRating(d.impact)} />
-                <span className="text-sm text-muted-foreground">{d.driver}</span>
+                <span className="text-sm text-foreground">{d.driver}</span>
               </li>
             ))}
           </ul>
@@ -259,13 +259,13 @@ export default function MacroSummaryPanel() {
       {report.keyLevels.length > 0 ? (
         <div>
           <SectionHeading>Key Levels</SectionHeading>
-          <ul className="space-y-1 text-sm text-muted-foreground">
+          <ul className="space-y-1 text-sm text-foreground">
             {report.keyLevels.map((level, i) => (
               <li key={i}>
-                <span className="font-semibold text-foreground">{level.ticker}</span>
-                <span className="text-muted-foreground"> · </span>
+                <span className="font-semibold">{level.ticker}</span>
+                <span> · </span>
                 <span>{level.support} / {level.resistance}</span>
-                {level.note ? <span className="text-muted-foreground"> — {level.note}</span> : null}
+                {level.note ? <span> — {level.note}</span> : null}
               </li>
             ))}
           </ul>
@@ -276,12 +276,12 @@ export default function MacroSummaryPanel() {
         <div>
           <SectionHeading>Rates</SectionHeading>
           {report.fredData.length > 0 ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-foreground">
               {report.fredData.map((p) => `${p.label}: ${formatFredValue(p)}`).join(' | ')}
             </p>
           ) : null}
           {report.ratesOutlook ? (
-            <p className="mt-1 text-sm text-muted-foreground">{report.ratesOutlook}</p>
+            <p className="mt-1 text-sm text-foreground">{report.ratesOutlook}</p>
           ) : null}
         </div>
       ) : null}
@@ -289,9 +289,9 @@ export default function MacroSummaryPanel() {
       {report.sentimentData ? (
         <div>
           <SectionHeading>Fear &amp; Greed</SectionHeading>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-foreground">
             {report.sentimentData.score}/100 — {report.sentimentData.classification}
-            <span className="text-muted-foreground"> ({report.sentimentData.source})</span>
+            <span> ({report.sentimentData.source})</span>
           </p>
         </div>
       ) : null}
@@ -299,12 +299,12 @@ export default function MacroSummaryPanel() {
       {report.scheduledCatalysts.length > 0 ? (
         <div>
           <SectionHeading>Scheduled Catalysts</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
             {report.scheduledCatalysts.map((c, i) => (
               <li key={i}>
-                {c.date ? <span className="text-muted-foreground">{c.date} · </span> : null}
+                {c.date ? <span>{c.date} · </span> : null}
                 <span>{c.event}</span>
-                {c.expectedImpact ? <span className="text-muted-foreground"> — {c.expectedImpact}</span> : null}
+                {c.expectedImpact ? <span> — {c.expectedImpact}</span> : null}
               </li>
             ))}
           </ul>
@@ -314,7 +314,7 @@ export default function MacroSummaryPanel() {
       {report.sectorRotation.length > 0 ? (
         <div>
           <SectionHeading>Sector Rotation</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
             {report.sectorRotation.map((s, i) => (
               <li key={i}>{s}</li>
             ))}
@@ -326,14 +326,14 @@ export default function MacroSummaryPanel() {
         <div>
           <SectionHeading>Scenario Analysis</SectionHeading>
           {report.scenarioAnalysis.consensus ? (
-            <p className="text-sm text-muted-foreground">
-              <span className="font-semibold text-foreground">Consensus: </span>
+            <p className="text-sm text-foreground">
+              <span className="font-semibold">Consensus: </span>
               {report.scenarioAnalysis.consensus}
             </p>
           ) : null}
           {report.scenarioAnalysis.disruption ? (
-            <p className="mt-1 text-sm text-muted-foreground">
-              <span className="font-semibold text-foreground">Disruption: </span>
+            <p className="mt-1 text-sm text-foreground">
+              <span className="font-semibold">Disruption: </span>
               {report.scenarioAnalysis.disruption}
             </p>
           ) : null}
@@ -343,7 +343,7 @@ export default function MacroSummaryPanel() {
       {report.deskImplications.length > 0 ? (
         <div>
           <SectionHeading>Desk Implications</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
             {report.deskImplications.map((d, i) => (
               <li key={i}>{d}</li>
             ))}
@@ -358,9 +358,9 @@ export default function MacroSummaryPanel() {
             {report.crossAssetSnapshot.map((entry) => (
               <div
                 key={entry.ticker}
-                className="rounded border border-border bg-accent px-2 py-1 text-xs text-muted-foreground"
+                className="rounded border border-border bg-accent px-2 py-1 text-xs text-foreground"
               >
-                <div className="font-semibold text-foreground">{entry.ticker}</div>
+                <div className="font-semibold">{entry.ticker}</div>
                 <div className="flex items-center justify-between gap-2">
                   <span>{entry.price !== null ? entry.price.toFixed(2) : 'n/a'}</span>
                   <span
@@ -384,7 +384,7 @@ export default function MacroSummaryPanel() {
       {report.deltas && report.deltas.length > 0 ? (
         <div>
           <SectionHeading>Deltas</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
             {report.deltas.map((d, i) => (
               <li key={i}>{d}</li>
             ))}

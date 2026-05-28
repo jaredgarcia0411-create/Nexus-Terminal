@@ -97,12 +97,12 @@ function LeaderList({ title, rows }: { title: string; rows: MarketPulseLeader[] 
   return (
     <div>
       <SectionHeading>{title}</SectionHeading>
-      <ul className="space-y-1 text-sm text-muted-foreground">
+      <ul className="space-y-1 text-sm text-foreground">
         {rows.slice(0, 3).map((row) => (
           <li key={`${title}-${row.ticker}`} className="flex items-center justify-between gap-3">
             <span>
-              <span className="font-semibold text-foreground">{row.ticker}</span>
-              {row.sector ? <span className="text-muted-foreground"> · {row.sector}</span> : null}
+              <span className="font-semibold">{row.ticker}</span>
+              {row.sector ? <span> · {row.sector}</span> : null}
             </span>
             <span className="shrink-0 font-mono tabular-nums">
               {formatPct(row.changePct)}
@@ -202,7 +202,7 @@ export default function MarketPulsePanel() {
       {report.tldr.length > 0 ? (
         <div>
           <SectionHeading>TLDR</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
             {report.tldr.map((line, i) => (
               <li key={i}>{line}</li>
             ))}
@@ -213,7 +213,7 @@ export default function MarketPulsePanel() {
       {report.summary ? (
         <div>
           <SectionHeading>Summary</SectionHeading>
-          <p className="text-sm text-muted-foreground">{report.summary}</p>
+          <p className="text-sm text-foreground">{report.summary}</p>
         </div>
       ) : null}
 
@@ -240,9 +240,9 @@ export default function MarketPulsePanel() {
       {report.overview90 ? (
         <div>
           <SectionHeading>90-Day Overview</SectionHeading>
-          <p className="text-sm text-muted-foreground">
-            <span className="font-semibold capitalize text-foreground">{report.overview90.trend}</span>
-            <span className="text-muted-foreground"> · </span>
+          <p className="text-sm text-foreground">
+            <span className="font-semibold capitalize">{report.overview90.trend}</span>
+            <span> · </span>
             {report.overview90.note}
           </p>
         </div>
@@ -256,7 +256,7 @@ export default function MarketPulsePanel() {
       {report.riskFlags.length > 0 ? (
         <div>
           <SectionHeading>Risk Flags</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
             {report.riskFlags.map((flag, i) => (
               <li key={i}>{flag}</li>
             ))}

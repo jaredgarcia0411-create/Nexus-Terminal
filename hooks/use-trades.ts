@@ -278,6 +278,8 @@ export function useTrades() {
         return;
       }
 
+      const prevIds = new Set(tradesRef.current.map((t) => t.id));
+
       const allServerWarnings: string[] = [];
       for (const batch of batches) {
         const result = await apiRequest<{ warnings?: string[]; importSkipped?: boolean }>(
@@ -299,7 +301,23 @@ export function useTrades() {
         toast.warning(`${allServerWarnings.length} server warning(s) during import (see DevTools console)`);
       }
 
-      await refreshTrades();
+      const freshTrades = await refreshTrades();
+
+      if (defaultRisk != null && freshTrades.length > 0) {
+        const needRisk = freshTrades.filter(
+          (t) => !prevIds.has(t.id) && (typeof t.initialRisk !== 'number' || !Number.isFinite(t.initialRisk) || t.initialRisk <= 0),
+        );
+        if (needRisk.length > 0) {
+          const ids = needRisk.map((t) => t.id);
+          await apiRequest('/api/trades/bulk', {
+            method: 'POST',
+            body: JSON.stringify({ action: 'applyRisk', ids, value: defaultRisk }),
+          });
+          setTrades((prev) =>
+            prev.map((t) => (ids.includes(t.id) ? { ...t, initialRisk: defaultRisk } : t)),
+          );
+        }
+      }
     } catch (uploadError) {
       const msg = uploadError instanceof Error ? uploadError.message : 'Processing error';
       setError(msg);

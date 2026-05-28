@@ -95,7 +95,7 @@ export default function Toolbar({
               {!isMobile ? (
                 <>
                   <div className="mx-1 hidden h-4 w-px bg-accent sm:block" />
-                  <div className="flex h-8 items-center gap-1 rounded-lg border border-border bg-accent pl-2 pr-1.5">
+                  <div className="flex h-8 items-center gap-1 rounded-lg border border-emerald-500 bg-accent pl-2 pr-1.5">
                     <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
                     <input
                       type="date"

@@ -48,7 +48,7 @@ export default function DrawingToolbar({
           className={`${
             activeTool
               ? 'bg-card text-foreground hover:bg-muted'
-              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+              : 'text-foreground hover:bg-accent hover:text-foreground'
           } disabled:cursor-not-allowed disabled:opacity-40`}
           title={activeLabel}
           aria-label="Drawing tools"

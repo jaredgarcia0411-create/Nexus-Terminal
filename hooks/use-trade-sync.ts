@@ -24,8 +24,8 @@ export function useTradeSync() {
 
   const sortTrades = sortTradesByDate;
 
-  const refreshTrades = useCallback(async () => {
-    if (refreshInFlight.current) return;
+  const refreshTrades = useCallback(async (): Promise<Trade[]> => {
+    if (refreshInFlight.current) return [];
     refreshInFlight.current = true;
     try {
       const [tradesRes, tagsRes] = await Promise.all([
@@ -33,8 +33,10 @@ export function useTradeSync() {
         apiRequest<{ tags: string[] }>('/api/tags'),
       ]);
 
-      setTrades(sortTrades(tradesRes.trades.map(fromApiTrade)));
+      const fresh = sortTrades(tradesRes.trades.map(fromApiTrade));
+      setTrades(fresh);
       setGlobalTags(tagsRes.tags);
+      return fresh;
     } finally {
       refreshInFlight.current = false;
     }

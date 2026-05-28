@@ -361,7 +361,7 @@ export default function BacktestingTab() {
                 <button
                   type="button"
                   onClick={() => setRightCollapsed((current) => !current)}
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
                   title={rightCollapsed ? 'Expand panel' : 'Collapse panel'}
                   aria-label={rightCollapsed ? 'Expand panel' : 'Collapse panel'}
                 >

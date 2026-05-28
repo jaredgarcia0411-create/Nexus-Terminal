@@ -26,6 +26,7 @@ interface AnyReview {
   type: ReviewType;
   dateLabel: string;
   date: string;
+  sortDate: string;
   weekEnd?: string;
   reportData: Record<string, unknown>;
   templateSnapshot: unknown[];
@@ -96,6 +97,7 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
           type: 'daily',
           dateLabel: review.date,
           date: review.date,
+          sortDate: review.date,
           reportData: review.reportData,
           templateSnapshot: review.templateSnapshot,
         }));
@@ -105,12 +107,13 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
           type: 'weekly',
           dateLabel: `${review.weekStart} – ${review.weekEnd}`,
           date: review.weekStart,
+          sortDate: review.weekEnd,
           weekEnd: review.weekEnd,
           reportData: review.reportData,
           templateSnapshot: review.templateSnapshot,
         }));
 
-        setReviews([...daily, ...weekly].sort((left, right) => right.date.localeCompare(left.date)));
+        setReviews([...daily, ...weekly].sort((left, right) => right.sortDate.localeCompare(left.sortDate)));
       } finally {
         if (active) {
           setLoading(false);

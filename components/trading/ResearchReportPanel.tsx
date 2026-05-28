@@ -138,17 +138,17 @@ function ExplanationBody({ text }: { text: string }) {
 
   if (isBulletList) {
     return (
-      <ul className="space-y-1 text-sm text-muted-foreground">
+      <ul className="space-y-1 text-sm text-foreground">
         {lines.map((line, i) => (
           <li key={i} className="flex gap-2">
-            <span className="text-muted-foreground">•</span>
+            <span>•</span>
             <span>{line.replace(bulletPattern, '')}</span>
           </li>
         ))}
       </ul>
     );
   }
-  return <p className="text-sm text-muted-foreground">{text}</p>;
+  return <p className="text-sm text-foreground">{text}</p>;
 }
 
 function RatedRow({ label, section }: { label: string; section: RatedSection }) {
@@ -306,7 +306,7 @@ export function ResearchReportBody({
           <ul className="space-y-1">
             {report.otherCatalysts.map((c, i) => (
               <li key={i} className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">{c.catalyst}</span>
+                <span className="text-sm text-foreground">{c.catalyst}</span>
                 <RatingDot rating={c.rating} />
               </li>
             ))}
@@ -319,7 +319,7 @@ export function ResearchReportBody({
           <h5 className="text-sm font-semibold text-foreground">Financial Commentary</h5>
           <RatingDot rating={report.financialCommentary.rating} />
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-sm text-foreground">
           {report.financialCommentary.explanation}
           {report.financialCommentary.source === 'verbatim' ? (
             <span className="ml-1 text-xs text-muted-foreground">(verbatim from filings)</span>
@@ -330,7 +330,7 @@ export function ResearchReportBody({
       {report.jmt415Commentary ? (
         <div>
           <h5 className="mb-1 text-sm font-semibold text-foreground">JMT415 Commentary</h5>
-          <p className="text-sm text-muted-foreground">{report.jmt415Commentary}</p>
+          <p className="text-sm text-foreground">{report.jmt415Commentary}</p>
         </div>
       ) : null}
 
