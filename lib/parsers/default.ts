@@ -23,7 +23,7 @@ export const defaultParser: BrokerParserConfig = {
     return upper.includes('SYMBOL') && (upper.includes('SIDE') || upper.includes('ACTION'));
   },
 
-  buildContext: (rawRows) => {
+  buildContext: (rawRows, openPositions) => {
     const inputs: PositionResolverRow[] = [];
 
     rawRows.forEach((rawRow, rowIndex) => {
@@ -45,7 +45,7 @@ export const defaultParser: BrokerParserConfig = {
       });
     });
 
-    return resolveSidesByPositionState(inputs);
+    return resolveSidesByPositionState(inputs, openPositions);
   },
 
   normalizeRow: (rawRow, rowIndex, context): NormalizedExecution | null => {

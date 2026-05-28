@@ -91,6 +91,7 @@ export default function NexusTerminal() {
     handleToggleSelect,
     handleSelectAll,
     handleCreateManualTrade,
+    handleCoverPosition,
     handleDeleteSelected,
     handleApplyRisk,
     handleSetDefaultRisk,
@@ -257,7 +258,13 @@ export default function NexusTerminal() {
         </div>
       </main>
 
-      <NewTradeDialog open={isManualTradeOpen} onOpenChange={setIsManualTradeOpen} onCreateTrade={handleCreateManualTrade} />
+      <NewTradeDialog
+        open={isManualTradeOpen}
+        onOpenChange={setIsManualTradeOpen}
+        onCreateTrade={handleCreateManualTrade}
+        openPositions={trades.filter((trade) => trade.isOpen)}
+        onCoverPosition={handleCoverPosition}
+      />
       <TradeDetailSheet
         key={selectedTrade?.id ?? 'no-trade'}
         trade={selectedTrade}

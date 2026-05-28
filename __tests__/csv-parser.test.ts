@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { processCsvData, parseDateFromFilename } from '@/lib/csv-parser';
+import { extractRawExecutions, processCsvData, parseDateFromFilename } from '@/lib/csv-parser';
 import type { BrokerParserConfig } from '@/lib/parsers/types';
 
 describe('parseDateFromFilename', () => {
@@ -398,5 +398,28 @@ describe('processCsvData — position-tracking B resolution', () => {
     expect(result.warnings).toContain(
       'ARM: 500 unmatched BUY shares (1 fill) — position may still be open long',
     );
+  });
+
+  it('resolves a raw B as a short cover when seeded with an open short', () => {
+    const rows = [
+      { Symbol: 'ARM', Side: 'B', Qty: '500', Price: '315', Time: '09:32:00', Commission: '0', Fees: '0' },
+    ];
+
+    const result = extractRawExecutions(rows as Record<string, string>[], undefined, [
+      { symbol: 'ARM', direction: 'SHORT', qty: 500 },
+    ]);
+
+    expect(result.warnings).toHaveLength(0);
+    expect(result.executions).toEqual([
+      {
+        symbol: 'ARM',
+        side: 'SHORT_EXIT',
+        qty: 500,
+        price: 315,
+        time: '09:32:00',
+        commission: 0,
+        fees: 0,
+      },
+    ]);
   });
 });

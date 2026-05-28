@@ -8,6 +8,12 @@ export interface NormalizedExecution {
   fees: number;
 }
 
+export interface OpenPositionSeed {
+  symbol: string;
+  direction: 'LONG' | 'SHORT';
+  qty: number;
+}
+
 export interface BrokerParserConfig {
   id: string;
   name: string;
@@ -16,7 +22,7 @@ export interface BrokerParserConfig {
   /** Optionally extract a date from the filename or row data */
   extractDate?: (filename: string, rows: Record<string, unknown>[]) => { date: Date; sortKey: string } | null;
   /** Optionally pre-scan rows and build parser-specific context */
-  buildContext?: (rows: Record<string, unknown>[]) => Record<string, unknown>;
+  buildContext?: (rows: Record<string, unknown>[], openPositions?: OpenPositionSeed[]) => Record<string, unknown>;
   /** Normalize a single CSV row into a standardized execution */
   normalizeRow: (
     row: Record<string, unknown>,

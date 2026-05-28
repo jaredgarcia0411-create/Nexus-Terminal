@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { detectParser, getParserById, type BrokerParserConfig } from '@/lib/parsers';
 import { parseTraderVueCsv } from '@/lib/parsers/tradervue';
 import type { ApiTrade, Trade } from '@/lib/types';
+import type { CoverPositionInput } from '@/lib/validations/trades';
 import { useTradeFilters } from './use-trade-filters';
 import { useTradeSync } from './use-trade-sync';
 import { apiRequest, collectRawExecutions, fromApiTrade, sortTradesByDate, toApiTrade } from '@/lib/trade-utils';
@@ -121,6 +122,18 @@ export function useTrades() {
         body: JSON.stringify(toApiTrade(nextTrade)),
       });
       setTrades((prev) => sortTrades([fromApiTrade(result.trade), ...prev.filter((item) => item.id !== result.trade.id)]));
+    });
+  };
+
+  const handleCoverPosition = (input: CoverPositionInput) => {
+    withErrorToast('Failed to close position', async () => {
+      const result = await apiRequest<{ affected: ApiTrade[] }>('/api/trades/cover', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      });
+      const affected = result.affected.map(fromApiTrade);
+      const affectedIds = new Set(affected.map((trade) => trade.id));
+      setTrades((prev) => sortTrades([...affected, ...prev.filter((trade) => !affectedIds.has(trade.id))]));
     });
   };
 
@@ -264,9 +277,18 @@ export function useTrades() {
     setError(null);
 
     try {
+      const openPositions = tradesRef.current
+        .filter((trade) => trade.isOpen)
+        .map((trade) => ({
+          symbol: trade.symbol,
+          direction: trade.direction,
+          qty: (trade.remainingQty ?? 0) > 0 ? trade.remainingQty ?? 0 : trade.totalQuantity,
+        }));
+
       const { batches, warnings } = await collectRawExecutions(files, {
         includeFile: options.includeFile,
         resolveParser: options.resolveParser,
+        openPositions,
       });
 
       if (warnings.length > 0) {
@@ -414,7 +436,7 @@ export function useTrades() {
     selectedIds, startDate, endDate, riskInput, defaultRiskInput, defaultRisk, filterPreset, selectedFilterTags, positionFilter, bulkTagInput,
     searchQuery, setStartDate, setEndDate, setRiskInput, setDefaultRiskInput,
     setFilterPreset, setSelectedFilterTags, setPositionFilter, setBulkTagInput, setSearchQuery, handleToggleSelect, handleSelectAll,
-    handleCreateManualTrade, handleDeleteSelected, handleApplyRisk, handleSetDefaultRisk, handleSaveNotes, handleAddTag,
+    handleCreateManualTrade, handleCoverPosition, handleDeleteSelected, handleApplyRisk, handleSetDefaultRisk, handleSaveNotes, handleAddTag,
     handleCloseTrade, handleMergeTrades, handleRemoveTag, handleDeleteGlobalTag, handleBulkAddTag, handleClearAllData, handleFileUpload, handleFolderUpload, handleTraderVueImport,
     fetchTradeDetail,
   };

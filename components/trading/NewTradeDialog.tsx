@@ -2,11 +2,13 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { format, parseISO } from 'date-fns';
+import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { toast } from 'sonner';
 import { calculatePnL } from '@/lib/ui-trade-utils';
 import type { Trade } from '@/lib/types';
+import type { CoverPositionInput } from '@/lib/validations/trades';
 import {
   Dialog,
   DialogContent,
@@ -39,9 +41,17 @@ interface NewTradeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreateTrade: (trade: Trade) => Promise<void> | void;
+  openPositions: Trade[];
+  onCoverPosition: (input: CoverPositionInput) => Promise<void> | void;
 }
 
-export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: NewTradeDialogProps) {
+export default function NewTradeDialog({
+  open,
+  onOpenChange,
+  onCreateTrade,
+  openPositions,
+  onCoverPosition,
+}: NewTradeDialogProps) {
   const form = useForm<TradeFormInput>({
     resolver: zodResolver(tradeFormSchema),
     defaultValues: {
@@ -57,6 +67,92 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
       isOpenPosition: false,
     },
   });
+  const [pendingCover, setPendingCover] = useState<{
+    openDirection: 'LONG' | 'SHORT';
+    openQty: number;
+    coverInput: CoverPositionInput;
+    build: { values: TradeFormValues; id: string; sortKey: string; date: Date; initialRisk: number | undefined };
+  } | null>(null);
+
+  const resetForm = () => {
+    form.reset({
+      symbol: '',
+      direction: 'LONG',
+      entryPrice: undefined,
+      exitPrice: undefined,
+      quantity: undefined,
+      date: format(new Date(), 'yyyy-MM-dd'),
+      entryTime: '',
+      exitTime: '',
+      initialRisk: '',
+      isOpenPosition: false,
+    });
+  };
+
+  const buildTrade = (
+    values: TradeFormValues,
+    id: string,
+    sortKey: string,
+    date: Date,
+    initialRisk: number | undefined,
+  ): Trade => {
+    if (values.isOpenPosition) {
+      return {
+        id,
+        date,
+        sortKey,
+        symbol: values.symbol,
+        direction: values.direction,
+        avgEntryPrice: values.entryPrice,
+        avgExitPrice: 0,
+        totalQuantity: values.quantity,
+        grossPnl: 0,
+        netPnl: 0,
+        entryTime: values.entryTime?.trim() ?? '',
+        exitTime: '',
+        executionCount: 1,
+        rawExecutions: [],
+        pnl: 0,
+        executions: 1,
+        initialRisk,
+        commission: 0,
+        fees: 0,
+        tags: [],
+        isOpen: true,
+        remainingQty: values.quantity,
+      };
+    }
+
+    const exitPrice = values.exitPrice;
+    if (!exitPrice || exitPrice <= 0) {
+      throw new Error('Exit price is required for closed trades');
+    }
+    const netPnl = calculatePnL(values.direction, values.entryPrice, exitPrice, values.quantity);
+    return {
+      id,
+      date,
+      sortKey,
+      symbol: values.symbol,
+      direction: values.direction,
+      avgEntryPrice: values.entryPrice,
+      avgExitPrice: exitPrice,
+      totalQuantity: values.quantity,
+      grossPnl: netPnl,
+      netPnl,
+      entryTime: values.entryTime?.trim() ?? '',
+      exitTime: values.exitTime?.trim() ?? '',
+      executionCount: 1,
+      rawExecutions: [],
+      pnl: netPnl,
+      executions: 1,
+      initialRisk,
+      commission: 0,
+      fees: 0,
+      tags: [],
+      isOpen: false,
+      remainingQty: 0,
+    };
+  };
 
   const handleSubmit = form.handleSubmit(async (rawValues) => {
     try {
@@ -73,77 +169,30 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
         throw new Error('Invalid initial risk');
       }
 
-      let trade: Trade;
-      if (values.isOpenPosition) {
-        trade = {
-          id,
-          date,
-          sortKey,
-          symbol: values.symbol,
-          direction: values.direction,
-          avgEntryPrice: values.entryPrice,
-          avgExitPrice: 0,
-          totalQuantity: values.quantity,
-          grossPnl: 0,
-          netPnl: 0,
-          entryTime: values.entryTime?.trim() ?? '',
-          exitTime: '',
-          executionCount: 1,
-          rawExecutions: [],
-          pnl: 0,
-          executions: 1,
-          initialRisk,
-          commission: 0,
-          fees: 0,
-          tags: [],
-          isOpen: true,
-          remainingQty: values.quantity,
-        };
-      } else {
-        const exitPrice = values.exitPrice;
-        if (!exitPrice || exitPrice <= 0) {
-          throw new Error('Exit price is required for closed trades');
-        }
-        const netPnl = calculatePnL(values.direction, values.entryPrice, exitPrice, values.quantity);
-        trade = {
-          id,
-          date,
-          sortKey,
-          symbol: values.symbol,
-          direction: values.direction,
-          avgEntryPrice: values.entryPrice,
-          avgExitPrice: exitPrice,
-          totalQuantity: values.quantity,
-          grossPnl: netPnl,
-          netPnl,
-          entryTime: values.entryTime?.trim() ?? '',
-          exitTime: values.exitTime?.trim() ?? '',
-          executionCount: 1,
-          rawExecutions: [],
-          pnl: netPnl,
-          executions: 1,
-          initialRisk,
-          commission: 0,
-          fees: 0,
-          tags: [],
-          isOpen: false,
-          remainingQty: 0,
-        };
+      const offsetting = openPositions.filter(
+        (position) => position.isOpen && position.symbol === values.symbol && position.direction !== values.direction,
+      );
+      if (offsetting.length > 0) {
+        const openQty = offsetting.reduce((sum, position) => sum + position.totalQuantity, 0);
+        setPendingCover({
+          openDirection: offsetting[0].direction,
+          openQty,
+          coverInput: {
+            symbol: values.symbol,
+            coverDirection: values.direction,
+            price: values.entryPrice,
+            qty: values.quantity,
+            time: values.entryTime?.trim() || format(new Date(), 'HH:mm:ss'),
+            date: values.date,
+            sortKey,
+          },
+          build: { values, id, sortKey, date, initialRisk },
+        });
+        return;
       }
 
-      await onCreateTrade(trade);
-      form.reset({
-        symbol: '',
-        direction: 'LONG',
-        entryPrice: undefined,
-        exitPrice: undefined,
-        quantity: undefined,
-        date: format(new Date(), 'yyyy-MM-dd'),
-        entryTime: '',
-        exitTime: '',
-        initialRisk: '',
-        isOpenPosition: false,
-      });
+      await onCreateTrade(buildTrade(values, id, sortKey, date, initialRisk));
+      resetForm();
       onOpenChange(false);
       toast.success(values.isOpenPosition ? 'Open position recorded' : 'Trade added');
     } catch (error) {
@@ -151,16 +200,77 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
       toast.error(error instanceof Error ? error.message : 'Failed to add trade');
     }
   });
+
+  const confirmCover = async () => {
+    if (!pendingCover) return;
+    try {
+      await onCoverPosition(pendingCover.coverInput);
+      setPendingCover(null);
+      resetForm();
+      onOpenChange(false);
+      toast.success('Open position closed');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to close position');
+    }
+  };
+
+  const declineCover = async () => {
+    if (!pendingCover) return;
+    const { values, id, sortKey, date, initialRisk } = pendingCover.build;
+    try {
+      await onCreateTrade(buildTrade(values, id, sortKey, date, initialRisk));
+      setPendingCover(null);
+      resetForm();
+      onOpenChange(false);
+      toast.success(values.isOpenPosition ? 'Open position recorded' : 'Trade added');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to add trade');
+    }
+  };
+
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) setPendingCover(null);
+    onOpenChange(nextOpen);
+  };
+
   const direction = useWatch({ control: form.control, name: 'direction' }) ?? 'LONG';
   const isOpenPosition = useWatch({ control: form.control, name: 'isOpenPosition' }) ?? false;
+  const coverQuantityHint = pendingCover
+    ? pendingCover.coverInput.qty < pendingCover.openQty
+      ? `Closes ${pendingCover.coverInput.qty} of ${pendingCover.openQty}; ${pendingCover.openQty - pendingCover.coverInput.qty} stays open.`
+      : pendingCover.coverInput.qty > pendingCover.openQty
+        ? `Closes all ${pendingCover.openQty}; the remaining ${pendingCover.coverInput.qty - pendingCover.openQty} opens a new ${pendingCover.coverInput.coverDirection} position.`
+        : 'This fully closes the position.'
+    : '';
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="sm:max-w-lg bg-card border-border text-foreground">
         <DialogHeader>
-          <DialogTitle>New Manual Trade</DialogTitle>
+          <DialogTitle>{pendingCover ? 'Close Open Position' : 'New Manual Trade'}</DialogTitle>
         </DialogHeader>
 
+        {pendingCover ? (
+          <div className="space-y-4">
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p>
+                You hold an open {pendingCover.openDirection} position in {pendingCover.coverInput.symbol} of{' '}
+                {pendingCover.openQty} shares. Close it at ${pendingCover.coverInput.price} instead of logging a new{' '}
+                {pendingCover.coverInput.coverDirection} trade?
+              </p>
+              <p className="font-medium text-foreground">{coverQuantityHint}</p>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="secondary" onClick={declineCover} className="bg-accent hover:bg-accent/80">
+                No, log as new trade
+              </Button>
+              <Button type="button" onClick={confirmCover} className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20">
+                Close position
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
         <form className="space-y-4" onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-2">
@@ -242,7 +352,7 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
           )}
 
           <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} className="bg-accent hover:bg-accent/80">
+            <Button type="button" variant="secondary" onClick={() => handleDialogOpenChange(false)} className="bg-accent hover:bg-accent/80">
               Cancel
             </Button>
             <Button type="submit" className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20">
@@ -250,6 +360,7 @@ export default function NewTradeDialog({ open, onOpenChange, onCreateTrade }: Ne
             </Button>
           </DialogFooter>
         </form>
+        )}
       </DialogContent>
     </Dialog>
   );

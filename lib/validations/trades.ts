@@ -112,6 +112,18 @@ export const mergeTradesSchema = z.object({
 
 export type MergeTradesInput = z.infer<typeof mergeTradesSchema>;
 
+export const coverPositionSchema = z.object({
+  symbol: z.string().trim().min(1).max(20).transform((value) => value.toUpperCase()),
+  coverDirection: z.enum(['LONG', 'SHORT']),
+  price: z.number().finite().positive(),
+  qty: z.number().int().positive(),
+  time: z.string().min(1).max(50),
+  date: z.string().min(1).max(20),
+  sortKey: z.string().min(1).max(20),
+});
+
+export type CoverPositionInput = z.infer<typeof coverPositionSchema>;
+
 export const importRawSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
   executions: z.array(z.object({

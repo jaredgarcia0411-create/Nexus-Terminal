@@ -31,7 +31,7 @@ export const dasTraderParser: BrokerParserConfig = {
     return upper.includes('ROUTE') && upper.includes('ACCOUNT') && upper.includes('TYPE');
   },
 
-  buildContext: (rows) => {
+  buildContext: (rows, openPositions) => {
     const inputs: PositionResolverRow[] = [];
 
     rows.forEach((row, rowIndex) => {
@@ -51,7 +51,7 @@ export const dasTraderParser: BrokerParserConfig = {
       });
     });
 
-    return resolveSidesByPositionState(inputs);
+    return resolveSidesByPositionState(inputs, openPositions);
   },
 
   normalizeRow: (row, rowIndex, context): NormalizedExecution | null => {

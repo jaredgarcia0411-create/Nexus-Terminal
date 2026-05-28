@@ -1,6 +1,7 @@
 import Papa from 'papaparse';
 import { extractRawExecutions, parseDateFromFilename, processCsvData } from '@/lib/csv-parser';
 import type { BrokerParserConfig } from '@/lib/parsers';
+import type { OpenPositionSeed } from '@/lib/parsers/types';
 import type { MatcherExecution } from '@/lib/position-matcher';
 import type { ApiTrade, Trade } from '@/lib/types';
 
@@ -100,6 +101,7 @@ export function appendCsvParseWarnings(fileName: string, issues: CsvParseIssue[]
 type CollectImportedTradesOptions = {
   includeFile?: (file: File) => boolean;
   resolveParser: (file: File, rows: Record<string, string>[]) => BrokerParserConfig | null;
+  openPositions?: OpenPositionSeed[];
 };
 
 export interface RawExecutionBatch {
@@ -206,7 +208,7 @@ export async function collectRawExecutions(
             if (parseIssues.length > 0) appendCsvParseWarnings(file.name, parseIssues, warnings);
 
             const parser = options.resolveParser(file, rows);
-            const extracted = extractRawExecutions(rows, parser ?? undefined);
+            const extracted = extractRawExecutions(rows, parser ?? undefined, options.openPositions ?? []);
 
             warnings.push(...extracted.warnings);
             if (extracted.executions.length > 0) {

@@ -1,7 +1,7 @@
 import { format } from 'date-fns';
 import { normalizeSide, type MatcherExecution } from '@/lib/position-matcher';
 import { defaultParser } from './parsers/default';
-import type { BrokerParserConfig } from './parsers/types';
+import type { BrokerParserConfig, OpenPositionSeed } from './parsers/types';
 import { parseTimeToSeconds } from './parsers/utils';
 import { Trade, Direction } from './types';
 
@@ -114,11 +114,12 @@ export interface ExtractRawResult {
 export const extractRawExecutions = (
   data: Record<string, string>[],
   parser?: BrokerParserConfig,
+  openPositions: OpenPositionSeed[] = [],
 ): ExtractRawResult => {
   const warnings: string[] = [];
   const executions: MatcherExecution[] = [];
   const activeParser = parser ?? defaultParser;
-  const parserContext = activeParser.buildContext?.(data as Record<string, unknown>[]);
+  const parserContext = activeParser.buildContext?.(data as Record<string, unknown>[], openPositions);
 
   data.forEach((rawRow, rowIndex) => {
     try {

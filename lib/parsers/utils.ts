@@ -1,4 +1,4 @@
-import type { NormalizedExecution } from './types';
+import type { NormalizedExecution, OpenPositionSeed } from './types';
 
 /** Maps various broker side strings to our canonical side values. */
 export const SIDE_ALIASES: Record<string, NormalizedExecution['side']> = {
@@ -98,7 +98,10 @@ export interface PositionResolverResult {
 /**
  * Walks executions in chronological order to disambiguate each raw `B`.
  */
-export function resolveSidesByPositionState(rows: PositionResolverRow[]): PositionResolverResult {
+export function resolveSidesByPositionState(
+  rows: PositionResolverRow[],
+  seed: OpenPositionSeed[] = [],
+): PositionResolverResult {
   const ordered = [...rows].sort((a, b) => {
     if (a.timeRank != null && b.timeRank != null && a.timeRank !== b.timeRank) {
       return a.timeRank - b.timeRank;
@@ -109,6 +112,12 @@ export function resolveSidesByPositionState(rows: PositionResolverRow[]): Positi
   });
 
   const stateBySymbol = new Map<string, { longQty: number; shortQty: number }>();
+  for (const position of seed) {
+    const state = stateBySymbol.get(position.symbol) ?? { longQty: 0, shortQty: 0 };
+    if (position.direction === 'LONG') state.longQty += position.qty;
+    else state.shortQty += position.qty;
+    stateBySymbol.set(position.symbol, state);
+  }
   const resolvedSideByRow: Record<number, NormalizedExecution['side']> = {};
   const warnings: string[] = [];
 
