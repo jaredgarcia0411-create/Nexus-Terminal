@@ -10,6 +10,7 @@ import { nyDateTimeToEpoch } from '@/lib/time-utils';
 describe('chart-timeframes', () => {
   it('keeps daily timeframe detached from intraday session windows', () => {
     const options = buildTradeChartOptions('2026-03-10', '1d');
+    const multiDayOptions = buildTradeChartOptions('2026-03-10', '1d', '2026-03-12');
 
     expect(options).toEqual({
       periodType: 'year',
@@ -17,6 +18,7 @@ describe('chart-timeframes', () => {
       frequencyType: 'daily',
       frequency: '1',
     });
+    expect(multiDayOptions).toEqual(options);
   });
 
   it('adds NY pre/post session window for intraday frames', () => {
@@ -31,6 +33,14 @@ describe('chart-timeframes', () => {
       startDate: String(nyDateTimeToEpoch('2026-03-09', '04:00:00')),
       endDate: String(nyDateTimeToEpoch('2026-03-10', '20:00:00')),
     });
+  });
+
+  it('widens the intraday window to the exit day when endSortKey is later', () => {
+    const single = buildTradeChartOptions('2026-05-26', '5m');
+    const multi = buildTradeChartOptions('2026-05-26', '5m', '2026-05-28');
+
+    expect(multi.startDate).toBe(single.startDate);
+    expect(Number(multi.endDate)).toBeGreaterThan(Number(single.endDate));
   });
 
   it('normalizes weekend sort keys to prior trading session for intraday', () => {

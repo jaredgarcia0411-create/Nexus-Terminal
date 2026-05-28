@@ -11,6 +11,7 @@ import WeeklyReviewSheet from '@/components/trading/WeeklyReviewSheet';
 import JournalTradeChart from '@/components/trading/JournalTradeChart';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatCurrency, getPnLColor } from '@/lib/ui-trade-utils';
+import { bucketKey, isCrossDayTrade } from '@/lib/journal-aggregates';
 import {
   TRADE_CHART_TIMEFRAME_CONFIG,
   type TradeChartTimeframeKey,
@@ -326,7 +327,11 @@ export default function JournalTab({
                           <div key={`chart-${trade.id}`} className="space-y-2">
                             <div className="flex items-center justify-between gap-2 text-xs">
                               <p className="font-semibold text-foreground">{trade.symbol} ({trade.direction})</p>
-                              <p className="font-mono text-muted-foreground">{trade.entryTime || '--:--'} - {trade.exitTime || '--:--'}</p>
+                              <p className="font-mono text-muted-foreground">
+                                {isCrossDayTrade(trade)
+                                  ? `${format(new Date(`${trade.sortKey}T00:00:00`), 'MMM dd')} ${trade.entryTime || '--:--'} → ${format(new Date(`${bucketKey(trade)}T00:00:00`), 'MMM dd')} ${trade.exitTime || '--:--'}`
+                                  : `${trade.entryTime || '--:--'} - ${trade.exitTime || '--:--'}`}
+                              </p>
                               <Select
                                 value={chartTimeframes[trade.id] ?? '5m'}
                                 onValueChange={(value) => setChartTimeframes((prev) => ({ ...prev, [trade.id]: value as TradeChartTimeframeKey }))}

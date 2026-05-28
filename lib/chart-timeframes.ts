@@ -21,7 +21,11 @@ export const TRADE_CHART_TIMEFRAME_CONFIG: Record<TradeChartTimeframeKey, TradeC
   '1d': { label: 'Daily', periodType: 'year', period: '1', frequencyType: 'daily', frequency: '1' },
 };
 
-export function buildTradeChartOptions(sortKey: string, timeframe: TradeChartTimeframeKey): TradeChartRequestOptions {
+export function buildTradeChartOptions(
+  sortKey: string,
+  timeframe: TradeChartTimeframeKey,
+  endSortKey?: string,
+): TradeChartRequestOptions {
   const base = TRADE_CHART_TIMEFRAME_CONFIG[timeframe];
   const baseOptions: TradeChartRequestOptions = {
     periodType: base.periodType,
@@ -34,11 +38,14 @@ export function buildTradeChartOptions(sortKey: string, timeframe: TradeChartTim
     return baseOptions;
   }
 
-  const marketWindow = getIntradaySessionWindow(sortKey, true);
+  const startWindow = getIntradaySessionWindow(sortKey, true);
+  const endWindow = endSortKey && endSortKey !== sortKey
+    ? getIntradaySessionWindow(endSortKey, false)
+    : startWindow;
   return {
     ...baseOptions,
-    startDate: marketWindow?.startDate,
-    endDate: marketWindow?.endDate,
+    startDate: startWindow?.startDate,
+    endDate: endWindow?.endDate,
     includePrePost: true,
   };
 }

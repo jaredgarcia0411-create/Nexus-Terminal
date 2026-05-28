@@ -9,6 +9,7 @@ import {
   type TradeChartTimeframeKey,
 } from '@/lib/chart-timeframes';
 import { useCandleData } from '@/hooks/use-candle-data';
+import { bucketKey, isCrossDayTrade } from '@/lib/journal-aggregates';
 import { buildTradeMarkers } from '@/lib/ui-trade-utils';
 
 interface JournalTradeChartProps {
@@ -18,8 +19,12 @@ interface JournalTradeChartProps {
 
 function JournalTradeChart({ trade, timeframe }: JournalTradeChartProps) {
   const chartOptions = useMemo(() => {
-    return buildTradeChartOptions(trade.sortKey, timeframe);
-  }, [trade.sortKey, timeframe]);
+    return buildTradeChartOptions(
+      trade.sortKey,
+      timeframe,
+      isCrossDayTrade(trade) ? bucketKey(trade) : undefined,
+    );
+  }, [trade, timeframe]);
 
   const { candles, isLoading, error } = useCandleData(
     trade.symbol,

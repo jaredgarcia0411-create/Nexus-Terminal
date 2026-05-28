@@ -1,3 +1,4 @@
+import { bucketKey, isCrossDayTrade } from '@/lib/journal-aggregates';
 import { nyDateTimeToEpoch, parseAbsoluteTimestampMs } from '@/lib/time-utils';
 import type { Direction, Trade, TradeMarker } from '@/lib/types';
 
@@ -41,10 +42,13 @@ export const getPnLHex = (value: number) => {
 // Converts a trade's executions (or entry/exit times) into candlestick chart markers.
 // Filters out executions whose timestamp cannot be resolved to avoid epoch-time markers.
 export function buildTradeMarkers(trade: Trade): TradeMarker[] {
+  const exitDay = isCrossDayTrade(trade) ? bucketKey(trade) : trade.sortKey;
+
   if (trade.rawExecutions.length > 0) {
     return trade.rawExecutions.flatMap((execution) => {
+      const dayKey = execution.side === 'EXIT' ? exitDay : trade.sortKey;
       const abs = parseAbsoluteTimestampMs(execution.timestamp);
-      const time = abs ?? nyDateTimeToEpoch(trade.sortKey, execution.time);
+      const time = abs ?? nyDateTimeToEpoch(dayKey, execution.time);
       if (time == null || !Number.isFinite(time)) return [];
       const direction = execution.side === 'ENTRY'
         ? trade.direction
@@ -55,7 +59,7 @@ export function buildTradeMarkers(trade: Trade): TradeMarker[] {
 
   const markers: TradeMarker[] = [];
   const entry = nyDateTimeToEpoch(trade.sortKey, trade.entryTime);
-  const exit = nyDateTimeToEpoch(trade.sortKey, trade.exitTime);
+  const exit = nyDateTimeToEpoch(exitDay, trade.exitTime);
   if (entry != null) {
     markers.push({ time: entry, direction: trade.direction, price: trade.avgEntryPrice, label: 'ENTRY' });
   }

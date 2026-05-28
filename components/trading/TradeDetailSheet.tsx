@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import CandlestickChart from '@/components/trading/CandlestickChart';
 import type { TradeMarker } from '@/lib/types';
 import { useCandleData } from '@/hooks/use-candle-data';
+import { bucketKey, isCrossDayTrade } from '@/lib/journal-aggregates';
 import {
   buildTradeChartOptions,
   TRADE_CHART_TIMEFRAME_CONFIG,
@@ -62,7 +63,11 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
 
   const chartOptions = useMemo(() => {
     if (!trade) return null;
-    return buildTradeChartOptions(trade.sortKey, timeframe);
+    return buildTradeChartOptions(
+      trade.sortKey,
+      timeframe,
+      isCrossDayTrade(trade) ? bucketKey(trade) : undefined,
+    );
   }, [trade, timeframe]);
 
   const { candles, isLoading: loadingCandles, error: candlesError } = useCandleData(
@@ -72,8 +77,11 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
 
   const sortedExecutions = useMemo(() => {
     if (!trade) return [];
+    const exitDay = isCrossDayTrade(trade) ? bucketKey(trade) : trade.sortKey;
     return [...(trade.rawExecutions ?? [])].sort(
-      (a, b) => timeValue(trade.sortKey, a.time, a.timestamp) - timeValue(trade.sortKey, b.time, b.timestamp),
+      (a, b) =>
+        timeValue(a.side === 'EXIT' ? exitDay : trade.sortKey, a.time, a.timestamp) -
+        timeValue(b.side === 'EXIT' ? exitDay : trade.sortKey, b.time, b.timestamp),
     );
   }, [trade]);
 
@@ -82,7 +90,11 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
     return buildTradeMarkers(trade);
   }, [trade]);
 
-  const tradeDateLabel = trade ? format(new Date(`${trade.sortKey}T00:00:00`), 'MMM dd, yyyy') : '';
+  const tradeDateLabel = trade
+    ? isCrossDayTrade(trade)
+      ? `${format(new Date(`${trade.sortKey}T00:00:00`), 'MMM dd')} – ${format(new Date(`${bucketKey(trade)}T00:00:00`), 'MMM dd, yyyy')}`
+      : format(new Date(`${trade.sortKey}T00:00:00`), 'MMM dd, yyyy')
+    : '';
   const tradeTimeLabel = trade ? (trade.isOpen ? trade.entryTime : trade.exitTime) : '';
 
   const handleSave = async () => {
