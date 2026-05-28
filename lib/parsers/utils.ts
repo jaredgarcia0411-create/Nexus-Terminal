@@ -80,3 +80,73 @@ export function parseTimeToSeconds(value: string): number | null {
 
   return hours * 3600 + minutes * 60 + seconds;
 }
+
+export interface PositionResolverRow {
+  rowIndex: number;
+  symbol: string;
+  rawSide: 'SS' | 'S' | 'B' | 'MARGIN';
+  qty: number;
+  timeRank: number | null;
+}
+
+export interface PositionResolverResult {
+  [key: string]: unknown;
+  resolvedSideByRow: Record<number, NormalizedExecution['side']>;
+  warnings: string[];
+}
+
+/**
+ * Walks executions in chronological order to disambiguate each raw `B`.
+ */
+export function resolveSidesByPositionState(rows: PositionResolverRow[]): PositionResolverResult {
+  const ordered = [...rows].sort((a, b) => {
+    if (a.timeRank != null && b.timeRank != null && a.timeRank !== b.timeRank) {
+      return a.timeRank - b.timeRank;
+    }
+    if (a.timeRank != null && b.timeRank == null) return -1;
+    if (a.timeRank == null && b.timeRank != null) return 1;
+    return a.rowIndex - b.rowIndex;
+  });
+
+  const stateBySymbol = new Map<string, { longQty: number; shortQty: number }>();
+  const resolvedSideByRow: Record<number, NormalizedExecution['side']> = {};
+  const warnings: string[] = [];
+
+  for (const row of ordered) {
+    const state = stateBySymbol.get(row.symbol) ?? { longQty: 0, shortQty: 0 };
+    stateBySymbol.set(row.symbol, state);
+
+    if (row.rawSide === 'SS') {
+      state.shortQty += row.qty;
+      resolvedSideByRow[row.rowIndex] = 'SS';
+      continue;
+    }
+
+    if (row.rawSide === 'MARGIN') {
+      state.longQty += row.qty;
+      resolvedSideByRow[row.rowIndex] = 'MARGIN';
+      continue;
+    }
+
+    if (row.rawSide === 'S') {
+      state.longQty = Math.max(0, state.longQty - row.qty);
+      resolvedSideByRow[row.rowIndex] = 'S';
+      continue;
+    }
+
+    if (state.shortQty > 0) {
+      if (row.qty > state.shortQty + 1e-9) {
+        warnings.push(
+          `Row ${row.rowIndex + 1}: Ambiguous BUY for ${row.symbol}; qty ${row.qty} exceeds open short ${state.shortQty}. Treating as short cover.`,
+        );
+      }
+      state.shortQty = Math.max(0, state.shortQty - row.qty);
+      resolvedSideByRow[row.rowIndex] = 'B';
+    } else {
+      state.longQty += row.qty;
+      resolvedSideByRow[row.rowIndex] = 'MARGIN';
+    }
+  }
+
+  return { resolvedSideByRow, warnings };
+}

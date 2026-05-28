@@ -1,9 +1,9 @@
-import { Trade, Direction } from './types';
-import { parsePrice } from './ui-trade-utils';
 import { format } from 'date-fns';
 import { normalizeSide, type MatcherExecution } from '@/lib/position-matcher';
-import type { BrokerParserConfig, NormalizedExecution } from './parsers/types';
-import { SIDE_ALIASES, normalizeColumnNames, parseCost, parseTimeToSeconds } from './parsers/utils';
+import { defaultParser } from './parsers/default';
+import type { BrokerParserConfig } from './parsers/types';
+import { parseTimeToSeconds } from './parsers/utils';
+import { Trade, Direction } from './types';
 
 export interface RawExecution {
   qty: number;
@@ -117,13 +117,12 @@ export const extractRawExecutions = (
 ): ExtractRawResult => {
   const warnings: string[] = [];
   const executions: MatcherExecution[] = [];
-  const parserContext = parser?.buildContext?.(data as Record<string, unknown>[]);
+  const activeParser = parser ?? defaultParser;
+  const parserContext = activeParser.buildContext?.(data as Record<string, unknown>[]);
 
   data.forEach((rawRow, rowIndex) => {
     try {
-      const exec = parser
-        ? parser.normalizeRow(rawRow as Record<string, unknown>, rowIndex, parserContext)
-        : builtinNormalizeRow(rawRow as Record<string, unknown>, rowIndex, warnings);
+      const exec = activeParser.normalizeRow(rawRow as Record<string, unknown>, rowIndex, parserContext);
 
       if (!exec) return;
 
@@ -193,35 +192,6 @@ function consolidateExecutions(
     }));
 }
 
-/** Built-in row normalization (used when no parser plugin is provided) */
-function builtinNormalizeRow(rawRow: Record<string, unknown>, rowIndex: number, warnings: string[]): NormalizedExecution | null {
-  const row = normalizeColumnNames(rawRow);
-  const sym = String(row.Symbol ?? '').toUpperCase().trim();
-  const rawSide = String(row.Side ?? row.Action ?? row.Type ?? '').trim();
-  const side = SIDE_ALIASES[rawSide.toUpperCase()] ?? null;
-  const qty = parseFloat(String(row.Qty ?? row.Quantity ?? '')) || 0;
-  const price = parsePrice(row.Price);
-  const time = String(row.Time ?? '');
-  const commission = parseCost(row.Commission ?? row.Comm);
-  const fees = parseCost(row.Fees ?? row.Fee);
-
-  if (!sym) return null;
-
-  if (!side) {
-    if (rawSide) {
-      warnings.push(`Row ${rowIndex + 1}: Unknown side "${rawSide}" for ${sym}, skipping`);
-    }
-    return null;
-  }
-
-  if (qty === 0) {
-    warnings.push(`Row ${rowIndex + 1}: Zero quantity for ${sym}, skipping`);
-    return null;
-  }
-
-  return { symbol: sym, side: side as NormalizedExecution['side'], qty, price, time, commission, fees };
-}
-
 export const processCsvData = (
   data: Record<string, string>[],
   dateInfo: { date: Date; sortKey: string },
@@ -229,13 +199,12 @@ export const processCsvData = (
 ): ProcessedCsvResult => {
   const symbolMap: Record<string, SymbolExecutions> = {};
   const warnings: string[] = [];
-  const parserContext = parser?.buildContext?.(data as Record<string, unknown>[]);
+  const activeParser = parser ?? defaultParser;
+  const parserContext = activeParser.buildContext?.(data as Record<string, unknown>[]);
 
   data.forEach((rawRow, rowIndex) => {
     try {
-      const exec = parser
-        ? parser.normalizeRow(rawRow as Record<string, unknown>, rowIndex, parserContext)
-        : builtinNormalizeRow(rawRow as Record<string, unknown>, rowIndex, warnings);
+      const exec = activeParser.normalizeRow(rawRow as Record<string, unknown>, rowIndex, parserContext);
 
       if (!exec) return;
 

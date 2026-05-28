@@ -193,10 +193,8 @@ describe('processCsvData — basic FIFO pairing', () => {
 
     expect(result.trades).toHaveLength(0);
     expect(result.warnings).toEqual([
-      'Row 1: Unknown side "HOLD" for NVDA, skipping',
-      'Row 2: Zero quantity for AMD, skipping',
       'QQQ: 3 unmatched SHORT SELL shares (1 fill) — position may still be open short',
-      'SPY: 2 unmatched COVER BUY shares (1 fill) — no matching short entries (carry-over from earlier session?)',
+      'SPY: 2 unmatched BUY shares (1 fill) — position may still be open long',
       'ORCL: 5 unmatched SELL shares (1 fill) — no matching long entries (carry-over from earlier session?)',
     ]);
   });
@@ -340,5 +338,65 @@ describe('processCsvData — basic FIFO pairing', () => {
     expect(trade.executionCount).toBe(1);
     expect(trade.rawExecutions).toHaveLength(2);
     expect(trade.netPnl).toBeCloseTo(500 - 2 - 0.2);
+  });
+});
+
+describe('processCsvData — position-tracking B resolution', () => {
+  const dateInfo = { date: new Date('2025-01-15'), sortKey: '2025-01-15' };
+
+  it('treats lone B/S pair (no SS) as a long round-trip', () => {
+    const rows = [
+      { Symbol: 'ASTC', Side: 'B', Qty: '100', Price: '27', Time: '09:30:00', Commission: '0', Fees: '0' },
+      { Symbol: 'ASTC', Side: 'S', Qty: '100', Price: '29', Time: '10:00:00', Commission: '0', Fees: '0' },
+    ];
+
+    const result = processCsvData(rows as Record<string, string>[], dateInfo);
+    expect(result.warnings).toHaveLength(0);
+    expect(result.trades).toHaveLength(1);
+    expect(result.trades[0].direction).toBe('LONG');
+    expect(result.trades[0].pnl).toBeCloseTo(200);
+  });
+
+  it('treats SS-then-B as a short cover, not a long open', () => {
+    const rows = [
+      { Symbol: 'NCT', Side: 'SS', Qty: '100', Price: '5.50', Time: '08:56:00', Commission: '0', Fees: '0' },
+      { Symbol: 'NCT', Side: 'B', Qty: '100', Price: '4.00', Time: '14:02:00', Commission: '0', Fees: '0' },
+    ];
+
+    const result = processCsvData(rows as Record<string, string>[], dateInfo);
+    expect(result.warnings).toHaveLength(0);
+    expect(result.trades).toHaveLength(1);
+    expect(result.trades[0].direction).toBe('SHORT');
+    expect(result.trades[0].pnl).toBeCloseTo(150);
+  });
+
+  it('splits SS→B→B→S into one short and one long', () => {
+    const rows = [
+      { Symbol: 'SPRC', Side: 'SS', Qty: '100', Price: '12', Time: '09:24:00', Commission: '0', Fees: '0' },
+      { Symbol: 'SPRC', Side: 'B', Qty: '100', Price: '15', Time: '09:46:00', Commission: '0', Fees: '0' },
+      { Symbol: 'SPRC', Side: 'B', Qty: '50', Price: '12.50', Time: '11:46:00', Commission: '0', Fees: '0' },
+      { Symbol: 'SPRC', Side: 'S', Qty: '50', Price: '10.30', Time: '12:58:00', Commission: '0', Fees: '0' },
+    ];
+
+    const result = processCsvData(rows as Record<string, string>[], dateInfo);
+    expect(result.trades).toHaveLength(2);
+    const short = result.trades.find((t) => t.direction === 'SHORT');
+    const long = result.trades.find((t) => t.direction === 'LONG');
+    expect(short?.totalQuantity).toBe(100);
+    expect(short?.pnl).toBeCloseTo(-300);
+    expect(long?.totalQuantity).toBe(50);
+    expect(long?.pnl).toBeCloseTo(-110);
+  });
+
+  it('emits an open-position warning when B has no matching S in the same file', () => {
+    const rows = [
+      { Symbol: 'ARM', Side: 'B', Qty: '500', Price: '315', Time: '09:32:00', Commission: '0', Fees: '0' },
+    ];
+
+    const result = processCsvData(rows as Record<string, string>[], dateInfo);
+    expect(result.trades).toHaveLength(0);
+    expect(result.warnings).toContain(
+      'ARM: 500 unmatched BUY shares (1 fill) — position may still be open long',
+    );
   });
 });

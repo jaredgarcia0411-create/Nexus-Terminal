@@ -160,7 +160,7 @@ export async function collectImportedTrades(
             if (parseIssues.length > 0) appendCsvParseWarnings(file.name, parseIssues, warnings);
 
             const parser = options.resolveParser(file, rows);
-            const parsed = processCsvData(rows, dateInfo, parser && parser.id !== 'default' ? parser : undefined);
+            const parsed = processCsvData(rows, dateInfo, parser ?? undefined);
 
             if (parsed.trades.length > 0) processedDates.add(dateInfo.sortKey);
             trades.push(...parsed.trades);
@@ -206,10 +206,7 @@ export async function collectRawExecutions(
             if (parseIssues.length > 0) appendCsvParseWarnings(file.name, parseIssues, warnings);
 
             const parser = options.resolveParser(file, rows);
-            const extracted = extractRawExecutions(
-              rows,
-              parser && parser.id !== 'default' ? parser : undefined,
-            );
+            const extracted = extractRawExecutions(rows, parser ?? undefined);
 
             warnings.push(...extracted.warnings);
             if (extracted.executions.length > 0) {
