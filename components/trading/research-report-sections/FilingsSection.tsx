@@ -51,8 +51,9 @@ const FILING_TAB_INACTIVE_CLASS = 'text-muted-foreground hover:bg-accent hover:t
 // typical row heights; the cards in the 2-col grid stay the same height even
 // when their row counts differ.
 const FILING_CARD_MAX_HEIGHT = 280;
+const FILING_CARD_MAX_HEIGHT_EXPANDED = 560;
 
-function BucketCard({ title, filings }: { title: string; filings: ResearchSnapshotFiling[] }) {
+function BucketCard({ title, filings, maxHeight = FILING_CARD_MAX_HEIGHT }: { title: string; filings: ResearchSnapshotFiling[]; maxHeight?: number }) {
   return (
     <div className="overflow-hidden rounded-md border border-border">
       <div className="flex items-center justify-between gap-2 border-b border-border bg-card/70 px-3 py-2">
@@ -62,12 +63,9 @@ function BucketCard({ title, filings }: { title: string; filings: ResearchSnapsh
       {filings.length === 0 ? (
         <div className="px-3 py-4 text-sm text-muted-foreground">No filings.</div>
       ) : (
-        // Vertical scroll replaces the prev/next arrows. `scrollbar-thin` is
-        // the project's existing utility (defined in globals.css) — thin
-        // gray-zinc thumb on a near-black track.
         <div
           className="scrollbar-thin overflow-y-auto"
-          style={{ maxHeight: `${FILING_CARD_MAX_HEIGHT}px` }}
+          style={{ maxHeight: `${maxHeight}px` }}
         >
           <table className="min-w-full">
             {/* Sticky needs to live on each <th>, not on <thead> or <tr> —
@@ -142,7 +140,7 @@ function FilingsView({ filings }: { filings: ResearchSnapshotFiling[] }) {
   return (
     <div className="space-y-4">
       {tabRow}
-      <BucketCard title={cardTitle} filings={filtered} />
+      <BucketCard title={cardTitle} filings={filtered} maxHeight={FILING_CARD_MAX_HEIGHT_EXPANDED} />
     </div>
   );
 }

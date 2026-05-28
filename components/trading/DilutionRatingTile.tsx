@@ -70,9 +70,9 @@ export default function DilutionRatingTile(props: TileProps) {
 // --- Larger Dilution-tab panel: dynamic banner + 6-tile grid ---
 
 function bannerClasses(level: RatingLevel): string {
-  if (level === 'high') return 'border-rose-500/30 bg-rose-500/5 text-rose-300';
-  if (level === 'medium') return 'border-amber-500/30 bg-amber-500/5 text-amber-300';
-  if (level === 'low') return 'border-emerald-500/30 bg-emerald-500/5 text-emerald-300';
+  if (level === 'high') return 'border-rose-500/30 bg-rose-500/5 text-rose-700 dark:text-rose-300';
+  if (level === 'medium') return 'border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300';
+  if (level === 'low') return 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300';
   return 'border-zinc-500/30 bg-muted/5 text-muted-foreground';
 }
 

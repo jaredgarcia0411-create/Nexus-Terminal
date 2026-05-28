@@ -28,9 +28,9 @@ export function ratingLevel(value: string | null): RatingLevel {
 
 // Subtle colored bg per tier. No border per spec ("traffic lights with no border").
 export function pillClasses(level: RatingLevel): string {
-  if (level === 'high') return 'bg-rose-500/15 text-rose-300';
-  if (level === 'medium') return 'bg-amber-500/15 text-amber-300';
-  if (level === 'low') return 'bg-emerald-500/15 text-emerald-300';
+  if (level === 'high') return 'bg-rose-500/15 text-foreground';
+  if (level === 'medium') return 'bg-amber-500/15 text-foreground';
+  if (level === 'low') return 'bg-emerald-500/15 text-foreground';
   return 'bg-card/40 text-muted-foreground';
 }
 
