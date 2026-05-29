@@ -9,6 +9,7 @@ import {
   type TradeChartTimeframeKey,
 } from '@/lib/chart-timeframes';
 import { useCandleData } from '@/hooks/use-candle-data';
+import { useTradeExecutions } from '@/hooks/use-trade-executions';
 import { bucketKey, isCrossDayTrade } from '@/lib/journal-aggregates';
 import { buildTradeMarkers } from '@/lib/ui-trade-utils';
 
@@ -31,7 +32,11 @@ function JournalTradeChart({ trade, timeframe }: JournalTradeChartProps) {
     chartOptions,
   );
 
-  const tradeMarkers = useMemo<TradeMarker[]>(() => buildTradeMarkers(trade), [trade]);
+  const executions = useTradeExecutions(trade.id, trade.rawExecutions);
+  const tradeMarkers = useMemo<TradeMarker[]>(
+    () => buildTradeMarkers({ ...trade, rawExecutions: executions }),
+    [trade, executions],
+  );
 
   if (isLoading) {
     return <div className="flex h-[612px] items-center justify-center text-sm text-muted-foreground">Loading chart...</div>;

@@ -6,12 +6,14 @@ const {
   getDbMock,
   requireUserMock,
   ensureUserMock,
+  loadTagsForTradeIdsMock,
   toTradeMock,
   toExecutionRowIdMock,
 } = vi.hoisted(() => ({
   getDbMock: vi.fn(),
   requireUserMock: vi.fn(),
   ensureUserMock: vi.fn(),
+  loadTagsForTradeIdsMock: vi.fn(),
   toTradeMock: vi.fn(),
   toExecutionRowIdMock: vi.fn(),
 }));
@@ -23,13 +25,13 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/server-db-utils', () => ({
   dbUnavailable: () => Response.json({ error: 'Database not configured' }, { status: 503 }),
   ensureUser: ensureUserMock,
-  loadTagsForTradeIds: vi.fn(),
+  loadTagsForTradeIds: loadTagsForTradeIdsMock,
   requireUser: requireUserMock,
   toExecutionRowId: toExecutionRowIdMock,
   toTrade: toTradeMock,
 }));
 
-import { POST } from '@/app/api/trades/route';
+import { GET, POST } from '@/app/api/trades/route';
 
 function makeDb() {
   const tradeInsertValuesMock = vi.fn(() => ({
@@ -85,6 +87,73 @@ function makeDb() {
 
   return db;
 }
+
+function makeGetDb(rows: Array<{ id: string }>) {
+  const selectMock = vi.fn(() => ({
+    from: vi.fn(() => ({
+      where: vi.fn(() => ({
+        orderBy: vi.fn(async () => rows),
+      })),
+    })),
+  }));
+
+  return { select: selectMock, _mocks: { selectMock } };
+}
+
+describe('GET /api/trades', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireUserMock.mockResolvedValue({ user: { id: 'user-1', email: 'u@example.com', name: null, picture: null } });
+    ensureUserMock.mockResolvedValue(undefined);
+    loadTagsForTradeIdsMock.mockResolvedValue(new Map());
+    toTradeMock.mockImplementation((row, tags, executions) => ({ id: row.id, tags, rawExecutions: executions }));
+  });
+
+  it('returns 401 when auth rejects the request', async () => {
+    requireUserMock.mockResolvedValue({ error: Response.json({ error: 'Unauthorized' }, { status: 401 }) });
+
+    const response = await GET(new Request('http://localhost/api/trades'));
+    if (!response) throw new Error('Expected response');
+    const payload = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(payload).toEqual({ error: 'Unauthorized' });
+    expect(getDbMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 when the database is unavailable', async () => {
+    getDbMock.mockReturnValue(null);
+
+    const response = await GET(new Request('http://localhost/api/trades'));
+    if (!response) throw new Error('Expected response');
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload).toEqual({ error: 'Database not configured' });
+    expect(ensureUserMock).not.toHaveBeenCalled();
+  });
+
+  it('returns trade rows with tags and no bulk executions query', async () => {
+    const db = makeGetDb([{ id: 'trade-1' }, { id: 'trade-2' }]);
+    getDbMock.mockReturnValue(db);
+    loadTagsForTradeIdsMock.mockResolvedValue(new Map([
+      ['trade-1', ['gap-up']],
+      ['trade-2', ['continuation']],
+    ]));
+
+    const response = await GET(new Request('http://localhost/api/trades'));
+    if (!response) throw new Error('Expected response');
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.trades).toHaveLength(2);
+    expect(db._mocks.selectMock).toHaveBeenCalledTimes(1);
+    expect(loadTagsForTradeIdsMock).toHaveBeenCalledTimes(1);
+    expect(loadTagsForTradeIdsMock).toHaveBeenCalledWith(db, 'user-1', ['trade-1', 'trade-2']);
+    expect(toTradeMock).toHaveBeenCalledWith({ id: 'trade-1' }, ['gap-up'], []);
+    expect(toTradeMock).toHaveBeenCalledWith({ id: 'trade-2' }, ['continuation'], []);
+  });
+});
 
 describe('POST /api/trades', () => {
   beforeEach(() => {

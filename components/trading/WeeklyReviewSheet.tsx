@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { ChevronDown, ChevronUp, Pencil, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -10,6 +10,7 @@ import WatchlistEditor, { type WatchlistRow } from '@/components/trading/Watchli
 import WeeklyTradesPanel from '@/components/trading/WeeklyTradesPanel';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { prefetchTradeExecutions } from '@/hooks/use-trade-executions';
 import { aggregateWeek } from '@/lib/journal-aggregates';
 import { WEEKLY_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
 import { formatCurrency } from '@/lib/ui-trade-utils';
@@ -199,14 +200,35 @@ export default function WeeklyReviewSheet({
       .finally(() => setLoading(false));
   }, [open, weekEnd, weekStart, trades]);
 
+  const agg = useMemo(
+    () => (weekStart && weekEnd ? aggregateWeek(trades, weekStart, weekEnd) : null),
+    [trades, weekEnd, weekStart],
+  );
+  // Mirror DailyReportSheet: every trade in the week's tradeIds gets a replay chart.
+  const chartTrades = useMemo(
+    () => (agg ? trades.filter((trade) => agg.tradeIds.includes(trade.id)) : []),
+    [agg, trades],
+  );
+
   // Auto-print once data has loaded. The 200ms delay gives the sheet
   // animation time to settle so charts and layout are committed to the DOM
   // before the browser snapshots the page for print.
   useEffect(() => {
     if (!printOnReady || !open || loading) return;
-    const timer = setTimeout(() => window.print(), 200);
-    return () => clearTimeout(timer);
-  }, [printOnReady, open, loading]);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Executions were dropped from the bulk trades payload, so make sure the
+    // replay charts have their per-fill markers loaded before we snapshot for print.
+    void prefetchTradeExecutions(chartTrades.slice(0, chartCount).map((trade) => trade.id))
+      .then(() => {
+        if (cancelled) return;
+        timer = setTimeout(() => window.print(), 200);
+      });
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [printOnReady, open, loading, chartTrades, chartCount]);
 
   const handleSave = async () => {
     if (!weekStart || !weekEnd || !template) return;
@@ -291,10 +313,6 @@ export default function WeeklyReviewSheet({
   const removeField = (index: number) => {
     setFields(fields.filter((_, currentIndex) => currentIndex !== index));
   };
-
-  const agg = weekStart && weekEnd ? aggregateWeek(trades, weekStart, weekEnd) : null;
-  // Mirror DailyReportSheet: every trade in the week's tradeIds gets a replay chart.
-  const chartTrades = agg ? trades.filter((trade) => agg.tradeIds.includes(trade.id)) : [];
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
