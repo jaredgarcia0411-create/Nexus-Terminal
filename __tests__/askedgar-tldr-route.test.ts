@@ -3,17 +3,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   checkRateLimitMock,
   getDbMock,
+  ensureUserMock,
   requireUserMock,
   getCachedResearchTldrMock,
 } = vi.hoisted(() => ({
   checkRateLimitMock: vi.fn(),
   getDbMock: vi.fn(),
+  ensureUserMock: vi.fn(),
   requireUserMock: vi.fn(),
   getCachedResearchTldrMock: vi.fn(),
 }));
 
 vi.mock('@/lib/server-db-utils', () => ({
   requireUser: requireUserMock,
+  ensureUser: ensureUserMock,
   dbUnavailable: () => Response.json({ error: 'Database not configured' }, { status: 503 }),
 }));
 
@@ -64,6 +67,12 @@ describe('POST /api/askedgar/tldr', () => {
       },
     });
     getDbMock.mockReturnValue({ id: 'db' });
+    ensureUserMock.mockResolvedValue({
+      id: 'user-1',
+      email: 'user@example.com',
+      name: 'Test User',
+      picture: null,
+    });
     checkRateLimitMock.mockResolvedValue({
       limited: false,
       limit: 30,
@@ -86,6 +95,7 @@ describe('POST /api/askedgar/tldr', () => {
 
     expect(response.status).toBe(401);
     expect(getDbMock).not.toHaveBeenCalled();
+    expect(ensureUserMock).not.toHaveBeenCalled();
     expect(checkRateLimitMock).not.toHaveBeenCalled();
     expect(getCachedResearchTldrMock).not.toHaveBeenCalled();
   });
@@ -96,6 +106,7 @@ describe('POST /api/askedgar/tldr', () => {
 
     expect(response.status).toBe(400);
     expect(payload).toEqual({ error: 'Invalid JSON body' });
+    expect(ensureUserMock).not.toHaveBeenCalled();
     expect(checkRateLimitMock).not.toHaveBeenCalled();
     expect(getCachedResearchTldrMock).not.toHaveBeenCalled();
   });
@@ -114,6 +125,7 @@ describe('POST /api/askedgar/tldr', () => {
         formErrors: [],
       },
     });
+    expect(ensureUserMock).not.toHaveBeenCalled();
     expect(checkRateLimitMock).not.toHaveBeenCalled();
     expect(getCachedResearchTldrMock).not.toHaveBeenCalled();
   });
@@ -126,6 +138,7 @@ describe('POST /api/askedgar/tldr', () => {
 
     expect(response.status).toBe(503);
     expect(payload).toEqual({ error: 'Database not configured' });
+    expect(ensureUserMock).not.toHaveBeenCalled();
     expect(checkRateLimitMock).not.toHaveBeenCalled();
     expect(getCachedResearchTldrMock).not.toHaveBeenCalled();
   });
@@ -149,6 +162,7 @@ describe('POST /api/askedgar/tldr', () => {
     expect(response.headers.get('X-RateLimit-Remaining')).toBe('0');
     expect(response.headers.get('X-RateLimit-Reset')).toBe('1780066800');
     expect(checkRateLimitMock).toHaveBeenCalledWith({ id: 'db' }, 'user-1', 'askedgar-tldr');
+    expect(ensureUserMock).not.toHaveBeenCalled();
     expect(getCachedResearchTldrMock).not.toHaveBeenCalled();
   });
 
@@ -168,7 +182,13 @@ describe('POST /api/askedgar/tldr', () => {
       historicalContext: 'Risk has increased over time.',
       generatedAt: expect.any(String),
     });
-    expect(getCachedResearchTldrMock).toHaveBeenCalledWith('AAPL');
+    expect(ensureUserMock).toHaveBeenCalledWith({ id: 'db' }, {
+      id: 'user-1',
+      email: 'user@example.com',
+      name: 'Test User',
+      picture: null,
+    });
+    expect(getCachedResearchTldrMock).toHaveBeenCalledWith('AAPL', 'user-1');
     expect(checkRateLimitMock).toHaveBeenCalledWith({ id: 'db' }, 'user-1', 'askedgar-tldr');
   });
 

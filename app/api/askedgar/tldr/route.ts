@@ -4,7 +4,7 @@ import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-
 import { getDb } from '@/lib/db';
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
 import { getCachedResearchTldr } from '@/lib/research';
-import { dbUnavailable, requireUser } from '@/lib/server-db-utils';
+import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -28,7 +28,8 @@ export async function POST(request: Request) {
     const rate = await checkRateLimit(db, authState.user.id, 'askedgar-tldr');
     if (rate.limited) return rateLimitResponse(rate);
 
-    const result = await getCachedResearchTldr(ticker);
+    const user = await ensureUser(db, authState.user);
+    const result = await getCachedResearchTldr(ticker, user.id);
 
     return Response.json({
       ticker,

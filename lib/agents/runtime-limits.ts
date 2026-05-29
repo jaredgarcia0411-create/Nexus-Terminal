@@ -193,3 +193,24 @@ export async function recordLlmAttempt(db: AgentDb, entry: TokenTrackingEntry): 
 
   await recordBreakerFailure(db, entry.agentId);
 }
+
+// Telemetry-only sibling of recordLlmAttempt: insert usage without touching the
+// agent circuit breaker for site-owned LLM calls.
+export async function recordSiteLlmUsage(db: AgentDb, entry: TokenTrackingEntry): Promise<void> {
+  await db.insert(agentRequestLog).values({
+    id: randomUUID(),
+    userId: entry.userId,
+    agentId: entry.agentId,
+    mode: entry.mode,
+    lane: entry.lane,
+    modelUsed: entry.modelUsed,
+    inputTokens: entry.inputTokens,
+    outputTokens: entry.outputTokens,
+    totalTokens: entry.totalTokens,
+    estimatedCostCents: entry.estimatedCostCents,
+    durationMs: entry.durationMs,
+    success: entry.success ? 1 : 0,
+    sourceCount: 0,
+    chunkCount: 0,
+  });
+}

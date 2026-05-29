@@ -13,6 +13,7 @@ import {
   checkRateLimit,
   recordBreakerSuccess,
   recordLlmAttempt,
+  recordSiteLlmUsage,
 } from '@/lib/agents/runtime-limits';
 
 function createDb(tableRows: Map<unknown, unknown[][]> = new Map()) {
@@ -225,6 +226,70 @@ describe('agent runtime limits', () => {
       chunkCount: 0,
     });
     expect((db._state.insertedValues[0] as { id?: string }).id).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+
+  describe('recordSiteLlmUsage', () => {
+    it('records successful site usage without touching the circuit breaker', async () => {
+      const db = createDb();
+
+      await recordSiteLlmUsage(db as never, {
+        userId: 'user-1',
+        agentId: 'small-cap-trader',
+        mode: 'site-research-tldr',
+        lane: 'background',
+        modelUsed: 'llama-3.3-70b-versatile',
+        inputTokens: 10,
+        outputTokens: 20,
+        totalTokens: 30,
+        estimatedCostCents: 0.12,
+        durationMs: 900,
+        success: true,
+      });
+
+      expect(db.insert).toHaveBeenCalledTimes(1);
+      expect(db.execute).not.toHaveBeenCalled();
+      expect(db._state.insertedValues[0]).toMatchObject({
+        userId: 'user-1',
+        agentId: 'small-cap-trader',
+        mode: 'site-research-tldr',
+        lane: 'background',
+        modelUsed: 'llama-3.3-70b-versatile',
+        inputTokens: 10,
+        outputTokens: 20,
+        totalTokens: 30,
+        estimatedCostCents: 0.12,
+        durationMs: 900,
+        success: 1,
+        sourceCount: 0,
+        chunkCount: 0,
+      });
+    });
+
+    it('records failed site usage without touching the circuit breaker', async () => {
+      const db = createDb();
+
+      await recordSiteLlmUsage(db as never, {
+        userId: 'user-1',
+        agentId: 'small-cap-trader',
+        mode: 'site-research-tldr',
+        lane: 'background',
+        modelUsed: 'unknown',
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        estimatedCostCents: 0,
+        durationMs: 0,
+        success: false,
+      });
+
+      expect(db.insert).toHaveBeenCalledTimes(1);
+      expect(db.execute).not.toHaveBeenCalled();
+      expect(db._state.insertedValues[0]).toMatchObject({
+        agentId: 'small-cap-trader',
+        mode: 'site-research-tldr',
+        success: 0,
+      });
+    });
   });
 
   it('resets the breaker state through the success helper', async () => {

@@ -39,9 +39,15 @@ function getTimeoutMs() {
   return Math.floor(parsed);
 }
 
+export interface LlmUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface LlmClientResult {
   content: string;
   modelUsed: string;
+  usage: LlmUsage;
 }
 
 async function requestLlm(systemPrompt: string, userMessage: string, temperature: number): Promise<LlmClientResult> {
@@ -90,6 +96,7 @@ async function requestLlm(systemPrompt: string, userMessage: string, temperature
 
   const payload = (await response.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
   };
 
   const content = payload.choices?.[0]?.message?.content?.trim();
@@ -97,7 +104,14 @@ async function requestLlm(systemPrompt: string, userMessage: string, temperature
     throw new Error('LLM returned empty content');
   }
 
-  return { content, modelUsed: model };
+  return {
+    content,
+    modelUsed: model,
+    usage: {
+      inputTokens: payload.usage?.prompt_tokens ?? 0,
+      outputTokens: payload.usage?.completion_tokens ?? 0,
+    },
+  };
 }
 
 export async function callLlm(systemPrompt: string, userMessage: string, temperature = 0.2): Promise<LlmClientResult> {

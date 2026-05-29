@@ -162,6 +162,13 @@ export const askedgarCache = pgTable('askedgar_cache', {
   index('askedgar_cache_expires_idx').on(table.expiresAt),
 ]);
 
+// One row per ticker whose TLDR is currently being generated. The row's
+// existence is the claim, so concurrent cold-cache misses avoid duplicate LLM work.
+export const researchTldrClaims = pgTable('research_tldr_claims', {
+  ticker: text('ticker').primaryKey(),
+  claimedAt: timestamp('claimed_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Singleton runtime state for AskEdgar retry windows across cold starts.
 export const askedgarRuntimeState = pgTable('askedgar_runtime_state', {
   id: text('id').primaryKey(),

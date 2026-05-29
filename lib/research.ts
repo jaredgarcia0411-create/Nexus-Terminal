@@ -1,17 +1,39 @@
-import { and, eq, gt } from 'drizzle-orm';
+import { and, eq, gt, lt } from 'drizzle-orm';
 
 import { getCachedTickerData } from '@/lib/askedgar';
 import type { AskEdgarResponse } from '@/lib/askedgar';
+import { estimateCostCents } from '@/lib/agents/model-pricing';
+import { recordSiteLlmUsage } from '@/lib/agents/runtime-limits';
 import { getDb } from '@/lib/db';
-import { askedgarCache } from '@/lib/db/schema';
-import { callLlm } from '@/lib/llm-client';
+import { askedgarCache, researchTldrClaims } from '@/lib/db/schema';
+import { callLlm, type LlmUsage } from '@/lib/llm-client';
 
 export interface ResearchTldr {
   findings: string[];
   historicalContext: string | null;
 }
 
+export interface ResearchTldrGeneration {
+  tldr: ResearchTldr;
+  usage: LlmUsage;
+  modelUsed: string;
+  durationMs: number;
+}
+
 const TLDR_CACHE_TTL_MS = 16 * 60 * 60 * 1000; // 16 hours, matches AskEdgar ticker cache
+const CLAIM_STALE_MS = 90_000;
+const POLL_ATTEMPTS = 8;
+const POLL_INTERVAL_MS = 1500;
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const maybeError = err as { code?: unknown; cause?: { code?: unknown } };
+  return maybeError.code === '23505' || maybeError.cause?.code === '23505';
+}
 
 function parseJson(text: string): unknown {
   // Try raw JSON first
@@ -131,15 +153,17 @@ function collectRawDataWarnings(rawData: unknown) {
 export async function runResearchTldr(
   rawData: Record<string, AskEdgarResponse<unknown>>,
   ticker: string,
-): Promise<ResearchTldr> {
+): Promise<ResearchTldrGeneration> {
   const trimmed = trimRawDataForLlm(rawData);
   const userPrompt = buildResearchTldrPrompt(trimmed, {
     ticker,
   });
+  const start = Date.now();
   const reply = await callLlm(
     'You are a financial analyst specializing in small-cap dilution risk assessment. Return JSON only.',
     userPrompt,
   );
+  const durationMs = Date.now() - start;
 
   const parsed = parseJson(reply.content);
   const parsedObj = isObject(parsed) ? parsed : {};
@@ -148,8 +172,13 @@ export async function runResearchTldr(
     Array.isArray(val) ? val.filter((item): item is string => typeof item === 'string') : [];
 
   return {
-    findings: toStringArray(parsedObj.findings).slice(0, 10),
-    historicalContext: typeof parsedObj.historicalContext === 'string' ? parsedObj.historicalContext : null,
+    tldr: {
+      findings: toStringArray(parsedObj.findings).slice(0, 10),
+      historicalContext: typeof parsedObj.historicalContext === 'string' ? parsedObj.historicalContext : null,
+    },
+    usage: reply.usage,
+    modelUsed: reply.modelUsed,
+    durationMs,
   };
 }
 
@@ -164,54 +193,141 @@ export async function runResearchTldr(
  * Returns the same shape as runResearchTldr; the route layer adds ticker /
  * generatedAt fields.
  */
-export async function getCachedResearchTldr(ticker: string): Promise<ResearchTldr> {
+async function readFreshTldr(
+  db: NonNullable<ReturnType<typeof getDb>>,
+  ticker: string,
+): Promise<ResearchTldr | null> {
+  const rows = await db
+    .select()
+    .from(askedgarCache)
+    .where(
+      and(
+        eq(askedgarCache.cacheType, 'tldr'),
+        eq(askedgarCache.ticker, ticker),
+        gt(askedgarCache.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+
+  return rows.length > 0 ? (rows[0].dataJson as ResearchTldr) : null;
+}
+
+async function generateAndCacheTldr(
+  db: NonNullable<ReturnType<typeof getDb>>,
+  ticker: string,
+  userId: string,
+): Promise<ResearchTldr> {
+  const telemetryDb = db as unknown as Parameters<typeof recordSiteLlmUsage>[0];
+  const askEdgarData = await getCachedTickerData(ticker);
+
+  let generation: ResearchTldrGeneration;
+  try {
+    generation = await runResearchTldr(askEdgarData.rawData, ticker);
+  } catch (genErr) {
+    await recordSiteLlmUsage(telemetryDb, {
+      userId,
+      agentId: 'small-cap-trader',
+      mode: 'site-research-tldr',
+      lane: 'background',
+      modelUsed: 'unknown',
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      estimatedCostCents: 0,
+      durationMs: 0,
+      success: false,
+    }).catch(() => undefined);
+    throw genErr;
+  }
+
+  const { tldr, usage, modelUsed, durationMs } = generation;
+  await recordSiteLlmUsage(telemetryDb, {
+    userId,
+    agentId: 'small-cap-trader',
+    mode: 'site-research-tldr',
+    lane: 'background',
+    modelUsed,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.inputTokens + usage.outputTokens,
+    estimatedCostCents: estimateCostCents(modelUsed, usage.inputTokens, usage.outputTokens),
+    durationMs,
+    success: true,
+  }).catch(() => undefined);
+
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + TLDR_CACHE_TTL_MS);
+  try {
+    await db
+      .insert(askedgarCache)
+      .values({
+        id: `tldr-${ticker}`,
+        cacheType: 'tldr',
+        ticker,
+        dataJson: tldr,
+        fetchedAt: now,
+        expiresAt,
+      })
+      .onConflictDoUpdate({
+        target: [askedgarCache.cacheType, askedgarCache.ticker],
+        set: { dataJson: tldr, fetchedAt: now, expiresAt },
+      });
+  } catch (err) {
+    console.warn('[research-tldr-cache] Failed to write tldr cache:', err);
+  }
+
+  return tldr;
+}
+
+export async function getCachedResearchTldr(ticker: string, userId: string): Promise<ResearchTldr> {
   const normalizedTicker = ticker.trim().toUpperCase();
   const db = getDb();
 
-  if (db) {
-    const now = new Date();
-    const cached = await db
-      .select()
-      .from(askedgarCache)
-      .where(
-        and(
-          eq(askedgarCache.cacheType, 'tldr'),
-          eq(askedgarCache.ticker, normalizedTicker),
-          gt(askedgarCache.expiresAt, now),
-        ),
-      )
-      .limit(1);
+  if (!db) {
+    const askEdgarData = await getCachedTickerData(normalizedTicker);
+    const { tldr } = await runResearchTldr(askEdgarData.rawData, normalizedTicker);
+    return tldr;
+  }
 
-    if (cached.length > 0) {
-      return cached[0].dataJson as ResearchTldr;
+  const hit = await readFreshTldr(db, normalizedTicker);
+  if (hit) return hit;
+
+  await db
+    .delete(researchTldrClaims)
+    .where(lt(researchTldrClaims.claimedAt, new Date(Date.now() - CLAIM_STALE_MS)))
+    .catch(() => undefined);
+
+  let isOwner = true;
+  let shouldReleaseClaim = false;
+  try {
+    await db.insert(researchTldrClaims).values({ ticker: normalizedTicker, claimedAt: new Date() });
+    shouldReleaseClaim = true;
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      isOwner = false;
+    } else {
+      console.warn('[research-tldr-claim] Failed to claim tldr generation:', err);
     }
   }
 
-  const askEdgarData = await getCachedTickerData(normalizedTicker);
-  const result = await runResearchTldr(askEdgarData.rawData, normalizedTicker);
+  if (!isOwner) {
+    for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
+      await sleep(POLL_INTERVAL_MS);
+      const cached = await readFreshTldr(db, normalizedTicker);
+      if (cached) return cached;
+    }
 
-  if (db) {
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + TLDR_CACHE_TTL_MS);
-    try {
+    return generateAndCacheTldr(db, normalizedTicker, userId);
+  }
+
+  try {
+    return await generateAndCacheTldr(db, normalizedTicker, userId);
+  } finally {
+    if (shouldReleaseClaim) {
       await db
-        .insert(askedgarCache)
-        .values({
-          id: `tldr-${normalizedTicker}`,
-          cacheType: 'tldr',
-          ticker: normalizedTicker,
-          dataJson: result,
-          fetchedAt: now,
-          expiresAt,
-        })
-        .onConflictDoUpdate({
-          target: [askedgarCache.cacheType, askedgarCache.ticker],
-          set: { dataJson: result, fetchedAt: now, expiresAt },
-        });
-    } catch (err) {
-      console.warn('[research-tldr-cache] Failed to write tldr cache:', err);
+        .delete(researchTldrClaims)
+        .where(eq(researchTldrClaims.ticker, normalizedTicker))
+        .catch(() => undefined);
     }
   }
-
-  return result;
 }
