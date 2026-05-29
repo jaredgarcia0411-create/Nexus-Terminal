@@ -7,6 +7,7 @@ import { recordLlmAttempt } from '@/lib/agents/runtime-limits';
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { researchReports } from '@/lib/db/schema';
+import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';
@@ -97,6 +98,9 @@ export async function POST(request: Request) {
     const bodyState = await parseAndValidate(request, postSchema);
     if (bodyState.error) return bodyState.error;
     const { ticker } = bodyState.data;
+
+    const rate = await checkRateLimit(db, authState.user.id, 'research-report');
+    if (rate.limited) return rateLimitResponse(rate);
 
     const user = await ensureUser(db, authState.user);
 

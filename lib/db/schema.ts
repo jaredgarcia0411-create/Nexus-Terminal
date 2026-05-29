@@ -139,6 +139,16 @@ export const researchReports = pgTable('research_reports', {
     .where(sql`status = 'in_progress'`),
 ]);
 
+export const rateLimits = pgTable('rate_limits', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  endpoint: text('endpoint').notNull(),
+  windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+  count: integer('count').notNull().default(0),
+}, (table) => [
+  index('rate_limits_user_endpoint_idx').on(table.userId, table.endpoint, table.windowStart),
+]);
+
 // Shared cache for Ask Edgar API responses — no userId, shared across all users
 export const askedgarCache = pgTable('askedgar_cache', {
   id: text('id').primaryKey(),

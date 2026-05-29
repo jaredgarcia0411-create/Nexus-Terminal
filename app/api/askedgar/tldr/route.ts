@@ -1,8 +1,10 @@
 import { z } from 'zod';
 
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
+import { getDb } from '@/lib/db';
+import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
 import { getCachedResearchTldr } from '@/lib/research';
-import { requireUser } from '@/lib/server-db-utils';
+import { dbUnavailable, requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -12,14 +14,20 @@ const tldrSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const authState = await requireUser();
-  if ('error' in authState) return authState.error;
-
-  const bodyState = await parseAndValidate(request, tldrSchema);
-  if (bodyState.error) return bodyState.error;
-  const { ticker } = bodyState.data;
-
   try {
+    const authState = await requireUser();
+    if ('error' in authState) return authState.error;
+
+    const db = getDb();
+    if (!db) return dbUnavailable();
+
+    const bodyState = await parseAndValidate(request, tldrSchema);
+    if (bodyState.error) return bodyState.error;
+    const { ticker } = bodyState.data;
+
+    const rate = await checkRateLimit(db, authState.user.id, 'askedgar-tldr');
+    if (rate.limited) return rateLimitResponse(rate);
+
     const result = await getCachedResearchTldr(ticker);
 
     return Response.json({

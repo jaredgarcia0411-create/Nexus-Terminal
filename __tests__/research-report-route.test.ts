@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
+  checkRateLimitMock,
   ensureUserMock,
   estimateCostCentsMock,
   generateSmallCapResearchReportMock,
@@ -8,6 +9,7 @@ const {
   recordLlmAttemptMock,
   requireUserMock,
 } = vi.hoisted(() => ({
+  checkRateLimitMock: vi.fn(),
   ensureUserMock: vi.fn(),
   estimateCostCentsMock: vi.fn(() => 12),
   generateSmallCapResearchReportMock: vi.fn(),
@@ -41,6 +43,14 @@ vi.mock('@/lib/agents/runtime-limits', () => ({
 vi.mock('@/lib/agents/model-pricing', () => ({
   estimateCostCents: estimateCostCentsMock,
 }));
+
+vi.mock('@/lib/rate-limit', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/rate-limit')>('@/lib/rate-limit');
+  return {
+    ...actual,
+    checkRateLimit: checkRateLimitMock,
+  };
+});
 
 import { GET, POST } from '@/app/api/research-report/route';
 
@@ -159,6 +169,13 @@ describe('/api/research-report', () => {
       picture: null,
     });
     getDbMock.mockReturnValue(createSelectDb([]));
+    checkRateLimitMock.mockResolvedValue({
+      limited: false,
+      limit: 20,
+      remaining: 20,
+      resetAt: new Date('2026-05-29T15:00:00.000Z'),
+      retryAfterSeconds: 0,
+    });
     generateSmallCapResearchReportMock.mockResolvedValue({
       report: sampleReport,
       llmUsage: sampleLlmUsage,
@@ -235,6 +252,7 @@ describe('/api/research-report', () => {
       modelUsed: null,
     }));
     expect(generateSmallCapResearchReportMock).toHaveBeenCalledWith('AAPL');
+    expect(checkRateLimitMock).toHaveBeenCalledWith(db, 'user-session', 'research-report');
     expect(db.update).toHaveBeenCalledTimes(1);
     expect(db.updateSet).toHaveBeenCalledWith(expect.objectContaining({
       status: 'complete',
@@ -281,6 +299,32 @@ describe('/api/research-report', () => {
         },
       },
     });
+    expect(generateSmallCapResearchReportMock).not.toHaveBeenCalled();
+    expect(checkRateLimitMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 429 from POST when the user has exceeded the report limit', async () => {
+    const db = createMutationDb();
+    getDbMock.mockReturnValueOnce(db);
+    checkRateLimitMock.mockResolvedValueOnce({
+      limited: true,
+      limit: 20,
+      remaining: 0,
+      resetAt: new Date('2026-05-29T15:00:00.000Z'),
+      retryAfterSeconds: 1800,
+    });
+
+    const response = ensureResponse(await POST(createJsonRequest(JSON.stringify({ ticker: 'AAPL' }))));
+    const payload = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(payload).toEqual({ error: 'Rate limit exceeded. Try again later.' });
+    expect(response.headers.get('Retry-After')).toBe('1800');
+    expect(response.headers.get('X-RateLimit-Limit')).toBe('20');
+    expect(response.headers.get('X-RateLimit-Remaining')).toBe('0');
+    expect(response.headers.get('X-RateLimit-Reset')).toBe('1780066800');
+    expect(checkRateLimitMock).toHaveBeenCalledWith(db, 'user-session', 'research-report');
+    expect(ensureUserMock).not.toHaveBeenCalled();
     expect(generateSmallCapResearchReportMock).not.toHaveBeenCalled();
   });
 
