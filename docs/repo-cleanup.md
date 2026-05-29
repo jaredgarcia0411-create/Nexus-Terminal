@@ -31,25 +31,13 @@ Add a lease recovery path that requeues expired `processing` jobs when attempts 
 
 ## Data Integrity And Error Handling (added 2026-05-25)
 
-### Rate Limiting On Expensive Endpoints
+### Rate Limiting On Expensive Endpoints — DONE (Sprint 6, 2026-05-29, commit 644dc24)
 
-Evidence:
-- `POST /api/research-report` can make 14+ external API calls plus an LLM call per invocation: [app/api/research-report/route.ts](/home/jared/Nexus-Terminal/app/api/research-report/route.ts).
-- The route has a per-ticker in-progress claim that prevents duplicate concurrent generations for the same ticker, but nothing prevents a user from generating reports for 100 different tickers in quick succession.
-- `POST /api/askedgar/tldr` has no per-user throttle either.
-- AskEdgar bills per-KB of response. A useEffect bug or curious user can run up unbounded cost.
+Shipped a DB-backed fixed-window (UTC clock-hour) per-user counter: `rate_limits` table + shared `lib/rate-limit.ts`, returning 429 with `Retry-After` / `X-RateLimit-*` headers. Caps: `POST /api/research-report` 20/hr, `POST /api/askedgar/tldr` 30/hr. Not-done knobs left for later if volume grows: a prune cron for old rows and an external store.
 
-Recommendation:
-Add a simple DB-backed counter per user per hour for LLM-triggering endpoints. No Redis required — a `rate_limits` table with `(user_id, endpoint, window_start, count)` is sufficient. Return 429 when exceeded.
+### Unbounded GET /api/trades Query — DONE (Sprint 7, 2026-05-29, commit 757cd32)
 
-### Unbounded GET /api/trades Query
-
-Evidence:
-- `GET /api/trades` fetches ALL trades for a user with no LIMIT: [app/api/trades/route.ts](/home/jared/Nexus-Terminal/app/api/trades/route.ts).
-- At 500 trades this is fine. At 10,000 trades after 2 years of daily trading, this becomes a slow query with a massive payload.
-
-Recommendation:
-Add cursor-based pagination. Drizzle supports `.limit(n).offset(m)` directly. The UI currently loads all trades at once, so the frontend needs a corresponding fetch-more pattern (or load the most recent 500 and fetch older on demand).
+Resolved via slim-payload (not pagination). `GET /api/trades` no longer joins `tradeExecutions` — it returns summary rows + tags only; per-trade executions lazy-load via `/api/trades/[id]` (`hooks/use-trade-executions.ts`). Dropping the executions join removes the bulk of the payload and the heaviest query. True pagination was deliberately deferred: all analytics (Career P/L, Performance, Calendar) run client-side off the full trade array, so paginating rows would silently break them until aggregation moves server-side (a separate multi-sprint effort).
 
 ## TypeScript Safety (added 2026-05-25)
 
@@ -85,14 +73,9 @@ Wrap heavy sub-components with `next/dynamic`. Only worth doing after running `A
 
 ## Test Coverage Gaps (added 2026-05-25)
 
-### Missing GET Test For Trades Route
+### Missing GET Test For Trades Route — DONE (Sprint 7, 2026-05-29, commit 757cd32)
 
-Evidence:
-- `__tests__/trades-route.test.ts` only tests POST, not GET.
-- GET is the most-called route in the app (every page load). The multi-query coordination (Promise.all of trades + executions + tags) is untested.
-
-Recommendation:
-Add at least one happy-path test and one auth-rejection test for the GET handler.
+`__tests__/trades-route.test.ts` now covers GET: happy path (also asserts `select` ran exactly once, proving the executions query was removed), 401 auth rejection, and 503 db-unavailable.
 
 ### Missing Component-Level Tests For Complex UI
 
