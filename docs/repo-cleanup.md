@@ -88,7 +88,7 @@ Add 3-5 focused component tests for the highest-value user interactions in these
 
 ## Cost And External-Call Efficiency
 
-### Research TLDR Needs A Paid-Work Claim And Unified Telemetry
+### Research TLDR Needs A Paid-Work Claim And Unified Telemetry — DONE (Sprint 8, commit 458a0a9)
 
 Evidence:
 - Research TLDR auto-posts from the UI: [components/trading/ResearchTldr.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchTldr.tsx:34).
