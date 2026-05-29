@@ -25,10 +25,13 @@ export async function POST(request: Request) {
     if (bodyState.error) return bodyState.error;
     const { ticker } = bodyState.data;
 
-    const rate = await checkRateLimit(db, authState.user.id, 'askedgar-tldr');
+    const user = await ensureUser(db, authState.user);
+
+    // Must run after ensureUser: rate_limits has an FK to users.id, and
+    // ensureUser is what guarantees (and may remap) the canonical user row.
+    const rate = await checkRateLimit(db, user.id, 'askedgar-tldr');
     if (rate.limited) return rateLimitResponse(rate);
 
-    const user = await ensureUser(db, authState.user);
     const result = await getCachedResearchTldr(ticker, user.id);
 
     return Response.json({

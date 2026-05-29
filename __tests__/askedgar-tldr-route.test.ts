@@ -162,7 +162,7 @@ describe('POST /api/askedgar/tldr', () => {
     expect(response.headers.get('X-RateLimit-Remaining')).toBe('0');
     expect(response.headers.get('X-RateLimit-Reset')).toBe('1780066800');
     expect(checkRateLimitMock).toHaveBeenCalledWith({ id: 'db' }, 'user-1', 'askedgar-tldr');
-    expect(ensureUserMock).not.toHaveBeenCalled();
+    expect(ensureUserMock).toHaveBeenCalled();
     expect(getCachedResearchTldrMock).not.toHaveBeenCalled();
   });
 

@@ -252,7 +252,7 @@ describe('/api/research-report', () => {
       modelUsed: null,
     }));
     expect(generateSmallCapResearchReportMock).toHaveBeenCalledWith('AAPL');
-    expect(checkRateLimitMock).toHaveBeenCalledWith(db, 'user-session', 'research-report');
+    expect(checkRateLimitMock).toHaveBeenCalledWith(db, 'user-canonical', 'research-report');
     expect(db.update).toHaveBeenCalledTimes(1);
     expect(db.updateSet).toHaveBeenCalledWith(expect.objectContaining({
       status: 'complete',
@@ -323,8 +323,8 @@ describe('/api/research-report', () => {
     expect(response.headers.get('X-RateLimit-Limit')).toBe('20');
     expect(response.headers.get('X-RateLimit-Remaining')).toBe('0');
     expect(response.headers.get('X-RateLimit-Reset')).toBe('1780066800');
-    expect(checkRateLimitMock).toHaveBeenCalledWith(db, 'user-session', 'research-report');
-    expect(ensureUserMock).not.toHaveBeenCalled();
+    expect(checkRateLimitMock).toHaveBeenCalledWith(db, 'user-canonical', 'research-report');
+    expect(ensureUserMock).toHaveBeenCalled();
     expect(generateSmallCapResearchReportMock).not.toHaveBeenCalled();
   });
 
