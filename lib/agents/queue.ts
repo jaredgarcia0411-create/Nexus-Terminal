@@ -70,6 +70,49 @@ export function calculateBackoffMs(attempt: number): number {
   return Math.pow(4, attempt - 1) * 2000;
 }
 
+export async function recoverExpiredJobs(
+  db: AgentDb,
+  agentId: AgentId,
+): Promise<{ requeued: number; failed: number }> {
+  const failedRows = await db.update(agentJobs)
+    .set({
+      status: 'failed',
+      errorMessage: 'Job lease expired; worker did not finish (max attempts reached)',
+      completedAt: sql`now()`,
+      lockedBy: null,
+      lockExpiresAt: null,
+      lastHeartbeatAt: null,
+      nextRetryAt: null,
+    })
+    .where(and(
+      eq(agentJobs.agentId, agentId),
+      eq(agentJobs.status, 'processing'),
+      sql`${agentJobs.lockExpiresAt} < now()`,
+      sql`${agentJobs.attempt} >= ${agentJobs.maxAttempts}`,
+    ))
+    .returning({ id: agentJobs.id });
+
+  const requeuedRows = await db.update(agentJobs)
+    .set({
+      status: 'queued',
+      nextRetryAt: null,
+      completedAt: null,
+      result: null,
+      lockedBy: null,
+      lockExpiresAt: null,
+      lastHeartbeatAt: null,
+    })
+    .where(and(
+      eq(agentJobs.agentId, agentId),
+      eq(agentJobs.status, 'processing'),
+      sql`${agentJobs.lockExpiresAt} < now()`,
+      sql`${agentJobs.attempt} < ${agentJobs.maxAttempts}`,
+    ))
+    .returning({ id: agentJobs.id });
+
+  return { requeued: requeuedRows.length, failed: failedRows.length };
+}
+
 export async function claimNextQueuedJob(
   db: AgentDb,
   agentId: AgentId,

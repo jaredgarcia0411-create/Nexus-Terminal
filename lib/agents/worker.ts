@@ -9,6 +9,7 @@ import {
   completeJob,
   failJob,
   heartbeatJob,
+  recoverExpiredJobs,
   scheduleJobRetry,
 } from './queue';
 import type {
@@ -336,6 +337,15 @@ export async function startWorker(
   const loopPromise = (async () => {
     try {
       while (!shuttingDown) {
+        try {
+          const recovered = await recoverExpiredJobs(db, config.agentId);
+          if (recovered.requeued > 0 || recovered.failed > 0) {
+            console.warn(`agent worker recovered expired jobs for ${config.agentId}`, recovered);
+          }
+        } catch (error) {
+          console.error(`agent worker recovery failed for ${config.agentId}`, error);
+        }
+
         let claim: QueueClaimResult | null;
 
         try {

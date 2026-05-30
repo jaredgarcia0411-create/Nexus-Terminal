@@ -7,6 +7,7 @@ import {
   failJob,
   heartbeatJob,
   persistStepLog,
+  recoverExpiredJobs,
   renewJobLease,
   scheduleJobRetry,
 } from '@/lib/agents/queue';
@@ -43,23 +44,29 @@ function createJobRow(overrides: Partial<AgentJob> = {}): AgentJob {
 function createQueueDb({
   executeRows = [],
   returningRows = [{ id: 'job-1' }],
+  returningResults = [],
 }: {
   executeRows?: unknown[];
   returningRows?: Array<{ id: string }>;
+  returningResults?: Array<Array<{ id: string }>>;
 } = {}) {
   const state = {
     lastSet: null as Record<string, unknown> | null,
     lastWhere: null as unknown,
+    setCalls: [] as Record<string, unknown>[],
   };
 
   const execute = vi.fn(async () => executeRows);
-  const returning = vi.fn(async () => returningRows);
+  const returning = vi.fn(async () => (
+    returningResults.length > 0 ? returningResults.shift() : returningRows
+  ));
   const where = vi.fn((condition: unknown) => {
     state.lastWhere = condition;
     return { returning };
   });
   const set = vi.fn((value: Record<string, unknown>) => {
     state.lastSet = value;
+    state.setCalls.push(value);
     return { where };
   });
   const update = vi.fn(() => ({ set }));
@@ -194,6 +201,53 @@ describe('agent queue helpers', () => {
     expect(db._state.lastSet).not.toHaveProperty('stepLog');
   });
 
+  it('recovers expired jobs by failing exhausted rows and requeueing rows with attempts left', async () => {
+    const db = createQueueDb({
+      returningResults: [[{ id: 'a' }], [{ id: 'b' }, { id: 'c' }]],
+    });
+
+    await expect(recoverExpiredJobs(db, 'orchestrator')).resolves.toEqual({
+      requeued: 2,
+      failed: 1,
+    });
+
+    expect(db._state.setCalls[0]).toEqual({
+      status: 'failed',
+      errorMessage: 'Job lease expired; worker did not finish (max attempts reached)',
+      completedAt: expect.any(Object),
+      lockedBy: null,
+      lockExpiresAt: null,
+      lastHeartbeatAt: null,
+      nextRetryAt: null,
+    });
+    expect(db._state.setCalls[0]).not.toHaveProperty('result');
+
+    expect(db._state.setCalls[1]).toEqual({
+      status: 'queued',
+      nextRetryAt: null,
+      completedAt: null,
+      result: null,
+      lockedBy: null,
+      lockExpiresAt: null,
+      lastHeartbeatAt: null,
+    });
+    expect(db._state.setCalls[1]).not.toHaveProperty('leaseVersion');
+    expect(db._state.setCalls[1]).not.toHaveProperty('startedAt');
+    expect(db._state.setCalls[1]).not.toHaveProperty('attempt');
+    expect(db._state.setCalls[1]).not.toHaveProperty('errorMessage');
+  });
+
+  it('returns empty recovery counts when no expired jobs match either branch', async () => {
+    const db = createQueueDb({
+      returningResults: [[], []],
+    });
+
+    await expect(recoverExpiredJobs(db, 'orchestrator')).resolves.toEqual({
+      requeued: 0,
+      failed: 0,
+    });
+  });
+
   it('persists the step log through the fenced queue helper', async () => {
     const db = createQueueDb();
     const stepLog: StepLogEntry[] = [{
@@ -225,5 +279,13 @@ describe('agent queue helpers', () => {
   it('keeps live-lease fencing in the update helpers', () => {
     expect(queueSource).toContain("eq(agentJobs.status, 'processing')");
     expect(queueSource).toContain('lockExpiresAt} > now()');
+  });
+
+  it('keeps expired-job recovery scoped to the owning agent and expired lease branches', () => {
+    expect(queueSource).toContain('eq(agentJobs.agentId, agentId)');
+    expect(queueSource).toContain("eq(agentJobs.status, 'processing')");
+    expect(queueSource).toContain('lockExpiresAt} < now()');
+    expect(queueSource).toContain('agentJobs.attempt} >= ${agentJobs.maxAttempts}');
+    expect(queueSource).toContain('agentJobs.attempt} < ${agentJobs.maxAttempts}');
   });
 });
