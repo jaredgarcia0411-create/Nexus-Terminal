@@ -1,143 +1,27 @@
 # Nexus Terminal - HANDOFF.md
 
-> Updated: 2026-05-29
+> Updated: 2026-05-30
 > Purpose: active execution context for Codex. Older implementation detail lives in git history, `specs/`, and durable docs such as `docs/repo-cleanup.md`.
 
 Historical completed sections (Sprints 1-5, Tier 1 Cleanup, Chart Drawings, Workflow Maintenance, AskEdgar News Filter Expansion) were removed to keep this file focused. Use git history for archived implementation detail.
 
 ---
 
-## Sprint 10 — Dead-Code Purge + Type-Cast Documentation + Audit Coverage
-
-> Generated: 2026-05-30 | Agent: Claude (Plan)
-> Status: READY FOR CODEX
-
-(Second of the remaining `docs/repo-cleanup.md` cleanup batch — see the "Remaining Sprint Plan" there. All deletions and mechanical edits; no user-facing behavior change. Baseline is green as of the Sprint 9 review on 2026-05-30: `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npm test` (98 files, 707 tests) all passed.)
-
-### Objective
-
-Remove two confirmed-dead route surfaces and their orphaned helpers, convert three silent `as unknown as` casts into documented accepted-limitation comments, and extend `scripts/workflow-audit.mjs` so it actually checks the `HANDOFF.md` and `docs/ARCHITECTURE.md` invariants the audit skill claims it covers. Nothing here changes runtime behavior — it shrinks dead surface area and closes three `docs/repo-cleanup.md` findings (the `mdr-eligibility` deletion, the agent-reports route decision, the `as unknown as` finding, and the `workflow:audit` narrow-check finding).
-
-### Stories
-
-- CLEAN-1001 — Delete `/api/scanner/mdr-eligibility` route + its test, and remove `computeMdrEligibility()` + `MdrEligibilityResult` from `lib/massive-market.ts`.
-- CLEAN-1002 — Delete `/api/agents/reports` and `/api/agents/reports/[id]` routes + `__tests__/agent-reports-route.test.ts`, and remove the now-orphaned `reportsListQuerySchema` + `ReportsListQueryInput` from `lib/validations/agents.ts`.
-- CLEAN-1003 — Replace the three `as unknown as` casts with the same code plus an explanatory comment documenting the accepted limitation (no signature refactor).
-- CLEAN-1004 — Extend `scripts/workflow-audit.mjs` with stable invariant checks for `HANDOFF.md` and `docs/ARCHITECTURE.md`.
-
-### Current State
-
-- **mdr-eligibility (CLEAN-1001):** `app/api/scanner/mdr-eligibility/route.ts` is a thin `GET` wrapper over `computeMdrEligibility(ticker, mark)`. Repo-wide, `computeMdrEligibility` is referenced only by that route + `__tests__/scanner-mdr-eligibility-route.test.ts`. `MdrEligibilityResult` (the interface above it) is used only by `computeMdrEligibility`. The dashboard test (`__tests__/dashboard-scanner-table.test.tsx:226`) asserts the UI never fetches `/api/scanner/mdr-eligibility` — that assertion stays valid (and passing) after the route is gone. **`fetchDailyAggregates` is used widely (swing-trader/orchestrator blueprints, `cron/mdr-sweep`, `massive-market.ts:745`) — do NOT remove it.**
-- **agents/reports (CLEAN-1002):** `app/api/agents/reports/route.ts` (list) and `app/api/agents/reports/[id]/route.ts` (detail) are `requireUser`-protected readers of the `agentReports` table. No product/UI code fetches them (verified: the only references outside the route files are inside `__tests__/agent-reports-route.test.ts`). The Research section UI (`ResearchReportPanel`, `ResearchTickerView`, `ResearchTldr`) uses `/api/research-report`, `/api/askedgar/tldr`, `/api/askedgar/snapshot` — none of which touch these routes. The `agentReports` table itself is read by the type-specific `latest` routes (`agents/market-pulse/latest`, `agents/macro-summary/latest`, `agents/admin/stats`, `agents/admin/redeliver`, `cron/market-pulse-eod`), which query the table directly and do NOT go through `/api/agents/reports`. So deleting these two generic routes leaves the table and every live reader intact. `reportsListQuerySchema` and its inferred type `ReportsListQueryInput` (`lib/validations/agents.ts:19,25`) are imported only by the list route → orphaned once it's gone.
-- **Casts (CLEAN-1003):** Three `as unknown as` sites: `lib/market-pulse/capture.ts:101` (`db.select()` chain) and `:117` (`db.insert()` chain) — both exist because `MarketPulseDb = Pick<Db, 'insert' | 'select'> & Partial<Pick<Db, 'execute'>>` (line 9) narrows the db so tests can pass a partial mock, but `Pick` drops Drizzle's fluent builder return types so the `.from().where()` / `.values().onConflictDoUpdate()` chains must be typed by hand. `app/api/research-report/route.ts:174` (`db as unknown as Parameters<typeof recordLlmAttempt>[0]`) — `getDb()` returns the site `Db`, while `recordLlmAttempt` (`lib/agents/runtime-limits.ts:171`) takes `AgentDb`; both are the same Drizzle instance over the same schema, just different brand types. None of the three is a hidden bug.
-- **Audit script (CLEAN-1004):** `scripts/workflow-audit.mjs` (147 lines) string-checks `AGENTS.md`, `README.md`, `docs/VALIDATION_MATRIX.md`, the vercel-ops skill, and skill-file existence, but never reads `HANDOFF.md` or `docs/ARCHITECTURE.md` — even though `codex-skills/nexus-workflow-audit/SKILL.md` lists both as audit targets. The script uses a simple `read(rel)` + `check(condition, message)` pattern and exits non-zero with a failure list. `docs/ARCHITECTURE.md` exists (the route-auth conventions are stated at its line 53; "Never `db:push`" at line 154). `HANDOFF.md` ends with a `## Session Maintenance` section in every revision.
-
-### Scope
-
-- **In scope:** the four deletions/edits above, plus the audit-script extension and its required HANDOFF/ARCHITECTURE invariant strings.
-- **Out of scope:** Do NOT refactor the casts (no widening of `recordLlmAttempt`'s signature, no change to `MarketPulseDb`) — documenting them is the locked decision (D3). Do NOT touch `fetchDailyAggregates`, the `agentReports` table, the schema, or any `latest`/cron route. Do NOT change the audit skill's `SKILL.md` text (the skill already lists these targets; we're making the script match the skill, not the reverse). No new env vars, no migration, no product/UI change. Provider-client consolidation (TradingView/Massive) is Sprint 11 — leave it alone even though `massive-market.ts` is touched here.
-
-### Decisions Locked For Sprint 10
-
-- **D1. `computeMdrEligibility` + `MdrEligibilityResult` are deleted, `fetchDailyAggregates` is kept.** The eligibility helper is dead (route-only); the aggregates fetch it depends on is shared infrastructure. Verified via repo-wide grep.
-- **D2. The agent-reports routes are deleted (not kept+documented).** Confirmed no product consumer and that the Research section's reports use a completely separate route (`/api/research-report`). Deleting the generic list/detail endpoints does not affect the `agentReports` table or its type-specific `latest`-route readers. This matches the user's instruction: "if [the research section] doesn't use this route then we can delete both routes + test."
-- **D3. The three casts are documented, not refactored.** Each is an accepted Drizzle/brand-type limitation, not a hidden bug; refactoring working market-pulse and telemetry paths for type cosmetics carries risk with no behavior benefit. Keep the exact same code, add a one-line comment above each cast explaining why it's there. (Comment text is given verbatim in Planned File Actions — use it as written.)
-- **D4. `workflow:audit` is extended, not merely documented.** Per the user's choice, add real checks so the command matches what the skill claims. The HANDOFF.md check is **positive-only** (a structural anchor): forbidden-substring checks must NOT be used on HANDOFF.md because it legitimately names retired systems while a cleanup sprint is active (a fanout review caught this self-reference trap). Forbidden-reference checks belong only on stable published docs (README.md, docs/ARCHITECTURE.md). Never assert sprint-specific strings. Follow the existing `read()` + `check()` style exactly; do not restructure the script.
-
-### Planned File Actions
-
-**Deleted files:**
-
-- `app/api/scanner/mdr-eligibility/route.ts`
-- `__tests__/scanner-mdr-eligibility-route.test.ts`
-- `app/api/agents/reports/route.ts`
-- `app/api/agents/reports/[id]/route.ts`  *(after deleting both files, the now-empty `app/api/agents/reports/` and `app/api/agents/reports/[id]/` directories should be removed too)*
-- `__tests__/agent-reports-route.test.ts`
-
-**Modified files:**
-
-- `lib/massive-market.ts` — Delete the `export interface MdrEligibilityResult { ... }` block (starts at line ~334) **and** the entire `export async function computeMdrEligibility(...) { ... }` (starts at line ~349, runs to its closing brace). Leave everything else — especially `fetchDailyAggregates` and `fetchGroupedDailyAggregates` — untouched. After deletion, confirm no remaining reference to either deleted symbol in the file.
-
-- `lib/validations/agents.ts` — Delete the `export const reportsListQuerySchema = z.object({ ... });` block (line ~19) and the `export type ReportsListQueryInput = z.infer<typeof reportsListQuerySchema>;` line (~25). Leave all other exports in the file intact. If removing them leaves an unused `z` import, only remove the import if `z` is now unused in the whole file (grep first — it's almost certainly still used by other schemas).
-
-- `lib/market-pulse/capture.ts` — Keep both casts' code exactly as-is; add a comment line directly above each.
-  - Above `const rows = await ((db.select() as unknown as {` (line ~101):
-    ```ts
-    // MarketPulseDb narrows db to a Pick<> so tests can pass a partial mock, but
-    // Pick drops Drizzle's fluent builder return types — so select().from().where()
-    // is typed by hand here. Accepted Drizzle/Pick limitation, not a hidden bug.
-    ```
-  - Above `await (db.insert(marketPulseDailyStats) as unknown as {` (line ~117):
-    ```ts
-    // Same Drizzle/Pick limitation as loadBarsForDates: the narrowed db drops
-    // insert()'s fluent builder types, so values().onConflictDoUpdate() is typed by hand.
-    ```
-
-- `app/api/research-report/route.ts` — Keep the cast; add a comment directly above `const telemetryDb = db as unknown as Parameters<typeof recordLlmAttempt>[0];` (line ~174):
-  ```ts
-  // recordLlmAttempt wants AgentDb; getDb() returns the structurally-identical site
-  // Db (same Drizzle instance over the same schema). The cast bridges the two brand
-  // types — widening recordLlmAttempt's signature is out of scope here.
-  ```
-
-- `scripts/workflow-audit.mjs` — Following the existing `read()` + `check()` pattern (place these blocks alongside the other top-level checks, before the `if (includeCrossTool)` block), add:
-  ```js
-  // HANDOFF.md is a rotating work-contract: it legitimately NAMES retired systems
-  // whenever a sprint is about removing them, so forbidden-substring checks do not
-  // belong here (they would fail mid-sprint on the spec's own text). Only assert the
-  // structural anchor that every revision must keep.
-  const handoff = read('HANDOFF.md');
-  check(
-    handoff.includes('## Session Maintenance'),
-    'HANDOFF.md should keep its `## Session Maintenance` section.',
-  );
-
-  const architecture = read('docs/ARCHITECTURE.md');
-  check(
-    architecture.includes('requireCronSecret()') && architecture.includes('requireUser()'),
-    'docs/ARCHITECTURE.md should document the requireUser()/requireCronSecret() auth conventions.',
-  );
-  check(
-    architecture.includes('maxDuration = 60'),
-    'docs/ARCHITECTURE.md should document the SSE `maxDuration = 60` convention.',
-  );
-  check(
-    architecture.includes('Never `db:push`'),
-    'docs/ARCHITECTURE.md should keep the "Never `db:push`" migration rule.',
-  );
-  check(
-    !/Jarvis|JARVIS_|Schwab/i.test(architecture),
-    'docs/ARCHITECTURE.md should not reference retired Jarvis/Schwab systems.',
-  );
-  ```
-  All asserted strings are present in the current files (verified), so the audit stays green during and after this sprint — including while this Sprint 10 spec itself is still in HANDOFF.md. (The HANDOFF.md check is positive-only on purpose: a fanout review caught that negative forbidden-substring checks on HANDOFF.md are self-referential — the spec text discussing a cleanup names the very systems being removed — and would fail mid-sprint. Negative reference checks stay on the stable published docs, README.md and docs/ARCHITECTURE.md, only.) The ARCHITECTURE.md checks are convention anchors, not sprint-specific content.
-
-### Acceptance Criteria
-
-- [ ] `app/api/scanner/mdr-eligibility/route.ts` and `__tests__/scanner-mdr-eligibility-route.test.ts` are deleted; `computeMdrEligibility` + `MdrEligibilityResult` are gone from `lib/massive-market.ts`; `fetchDailyAggregates` and all other exports remain.
-- [ ] `app/api/agents/reports/route.ts`, `app/api/agents/reports/[id]/route.ts`, and `__tests__/agent-reports-route.test.ts` are deleted (and the emptied route directories removed); `reportsListQuerySchema` + `ReportsListQueryInput` are removed from `lib/validations/agents.ts` with no other export disturbed.
-- [ ] The three `as unknown as` casts are unchanged in behavior but each now has the documenting comment above it (verbatim as specified).
-- [ ] `scripts/workflow-audit.mjs` reads `HANDOFF.md` and `docs/ARCHITECTURE.md` and checks the listed invariants; `npm run workflow:audit` passes.
-- [ ] No schema/migration, no new env var, no product/UI behavior change; `fetchDailyAggregates`, the `agentReports` table, and all `latest`/cron readers are untouched.
-- [ ] Full validation gauntlet passes (see below).
-
-### Validation
-
-Run before marking COMPLETE:
-- `npm run lint`
-- `npx tsc --noEmit`
-- `npm run typecheck:services` (`lib/massive-market.ts` is imported by `services/` agent blueprints)
-- `npm test` (expect 2 fewer test files — the two deleted route tests; remaining suite green)
-- `npm run workflow:audit` (HANDOFF.md changed + the audit script itself changed)
-
-### Notes for Codex
-
-- After deletions, do a repo-wide grep for each deleted symbol/route path (`computeMdrEligibility`, `MdrEligibilityResult`, `reportsListQuerySchema`, `ReportsListQueryInput`, `/api/agents/reports`) to confirm no dangling import or reference remains outside the dashboard test's negative assertion (which is expected to stay).
-- The dashboard test line asserting the UI does NOT call `/api/scanner/mdr-eligibility` is correct to leave in place — it's a guard, not a consumer.
-
----
-
 ## Recently Completed
+
+### Sprint 10 — Dead-Code Purge + Type-Cast Documentation + Audit Coverage
+
+Status: completed 2026-05-30.
+
+Outcome:
+- Deleted the dead scanner MDR-eligibility route + route test, and removed its orphaned helper/result type from `lib/massive-market.ts`. `fetchDailyAggregates` remains intact for the live scanner/agent/cron paths.
+- Deleted backend-only generic agent-report list/detail routes + route test, and removed the orphaned validation schema/type exports. The `agentReports` table and its type-specific latest/admin/cron readers were not changed.
+- Documented the three accepted `as unknown as` limitations in place, without refactoring signatures or Drizzle mock seams.
+- Extended `scripts/workflow-audit.mjs` so `workflow:audit` now checks `HANDOFF.md` and `docs/ARCHITECTURE.md` invariants in addition to the existing workflow assets.
+
+Validation:
+- `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npm test` (96 files, 692 tests), and `npm run workflow:audit` all passed.
+- Repo-wide grep found no live dangling references for the deleted symbols/routes. The dashboard test's intentional negative assertion that the UI does not fetch the retired scanner route remains.
 
 ### Sprint 9 — Agent Job Lease Recovery
 

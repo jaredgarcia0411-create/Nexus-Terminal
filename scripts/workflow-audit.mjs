@@ -53,6 +53,34 @@ check(
   'codex-skills/nexus-vercel-ops/SKILL.md should match live vercel.json crons.',
 );
 
+// HANDOFF.md is a rotating work-contract: it legitimately NAMES retired systems
+// whenever a sprint is about removing them, so forbidden-substring checks do not
+// belong here (they would fail mid-sprint on the spec's own text). Only assert the
+// structural anchor that every revision must keep.
+const handoff = read('HANDOFF.md');
+check(
+  handoff.includes('## Session Maintenance'),
+  'HANDOFF.md should keep its `## Session Maintenance` section.',
+);
+
+const architecture = read('docs/ARCHITECTURE.md');
+check(
+  architecture.includes('requireCronSecret()') && architecture.includes('requireUser()'),
+  'docs/ARCHITECTURE.md should document the requireUser()/requireCronSecret() auth conventions.',
+);
+check(
+  architecture.includes('maxDuration = 60'),
+  'docs/ARCHITECTURE.md should document the SSE `maxDuration = 60` convention.',
+);
+check(
+  architecture.includes('Never `db:push`'),
+  'docs/ARCHITECTURE.md should keep the "Never `db:push`" migration rule.',
+);
+check(
+  !/Jarvis|JARVIS_|Schwab/i.test(architecture),
+  'docs/ARCHITECTURE.md should not reference retired Jarvis/Schwab systems.',
+);
+
 for (const skillName of [
   'task-orchestrator',
   'nexus-execute',

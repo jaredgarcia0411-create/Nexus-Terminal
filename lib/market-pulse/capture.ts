@@ -98,6 +98,9 @@ async function loadRecentTradeDates(db: MarketPulseDb, tradeDate: string): Promi
 
 async function loadBarsForDates(db: MarketPulseDb, dates: string[]): Promise<MarketPulseBar[]> {
   if (dates.length === 0) return [];
+  // MarketPulseDb narrows db to a Pick<> so tests can pass a partial mock, but
+  // Pick drops Drizzle's fluent builder return types — so select().from().where()
+  // is typed by hand here. Accepted Drizzle/Pick limitation, not a hidden bug.
   const rows = await ((db.select() as unknown as {
     from: (table: unknown) => {
       where: (condition: unknown) => Promise<MarketPulseBar[]>;
@@ -114,6 +117,8 @@ export async function upsertMarketPulseStats(
   db: MarketPulseDb,
   stats: MarketPulseDailyStats,
 ): Promise<void> {
+  // Same Drizzle/Pick limitation as loadBarsForDates: the narrowed db drops
+  // insert()'s fluent builder types, so values().onConflictDoUpdate() is typed by hand.
   await (db.insert(marketPulseDailyStats) as unknown as {
     values: (row: Record<string, unknown>) => {
       onConflictDoUpdate: (args: unknown) => Promise<unknown>;

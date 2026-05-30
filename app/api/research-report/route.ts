@@ -171,6 +171,9 @@ export async function POST(request: Request) {
     }
 
     try {
+      // recordLlmAttempt wants AgentDb; getDb() returns the structurally-identical site
+      // Db (same Drizzle instance over the same schema). The cast bridges the two brand
+      // types — widening recordLlmAttempt's signature is out of scope here.
       const telemetryDb = db as unknown as Parameters<typeof recordLlmAttempt>[0];
       const generationStart = Date.now();
       let generation: Awaited<ReturnType<typeof generateSmallCapResearchReport>>;

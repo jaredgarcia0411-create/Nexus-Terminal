@@ -16,14 +16,6 @@ export const serviceChatGetQuerySchema = z.object({
 
 export type ServiceChatGetQueryInput = z.infer<typeof serviceChatGetQuerySchema>;
 
-export const reportsListQuerySchema = z.object({
-  status: z.enum(['published', 'delivery_failed', 'archived']).optional(),
-  agent_id: z.enum(['orchestrator', 'small-cap-trader', 'swing-trader']).optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
-});
-
-export type ReportsListQueryInput = z.infer<typeof reportsListQuerySchema>;
-
 export const adminMemoryListQuerySchema = z.object({
   user_id: z.string().optional(),
   agent_id: z.enum(['orchestrator', 'small-cap-trader', 'swing-trader']).optional(),

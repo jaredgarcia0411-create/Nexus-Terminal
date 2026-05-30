@@ -1,6 +1,6 @@
 # Repo Cleanup Audit
 
-Date: 2026-05-21 | Updated: 2026-05-25
+Date: 2026-05-21 | Updated: 2026-05-30
 
 Current-state audit for making the codebase simpler and more efficient without removing features or reducing reliability. Updated 2026-05-25 with findings from a parallel four-agent health audit (Claude/Codex utilization, monetization, engineering principles, codebase health).
 
@@ -18,10 +18,10 @@ Current-state audit for making the codebase simpler and more efficient without r
 
 ## Remaining Sprint Plan (set 2026-05-30)
 
-Sprints 6–8 closed the rate-limiting, slim-trades-payload, and Research-TLDR-claim findings. The actionable remainder is bundled into **6 focused sprints** (numbering continues the HANDOFF sequence). Deletions and mechanical edits are grouped; the migration sprint is kept isolated for a clean revert path.
+Sprints 6–10 closed the rate-limiting, slim-trades-payload, Research-TLDR-claim, agent-lease-recovery, and dead-code purge findings. The remaining work is bundled into focused sprints (numbering continues the HANDOFF sequence). Deletions and mechanical edits are grouped; the migration sprint is kept isolated for a clean revert path.
 
-- **Sprint 9 — Agent Job Lease Recovery** — IN PROGRESS (handed to Codex 2026-05-30). Requeue/fail expired `processing` jobs. Closes the only open security/reliability finding.
-- **Sprint 10 — Dead-code purge.** Delete `/api/scanner/mdr-eligibility` + `computeMdrEligibility()` + its test; decide and remove (or document) `/api/agents/reports` + `[id]` routes; fix the `as unknown as` assertions; extend or document `workflow:audit`. All deletions + mechanical edits, no user-facing change.
+- **Sprint 9 — Agent Job Lease Recovery** — DONE (2026-05-30, commit c8ffd89). Requeue/fail expired `processing` jobs. Closed the only open security/reliability finding.
+- **Sprint 10 — Dead-code purge** — DONE (2026-05-30). Removed the dead MDR eligibility endpoint/helper/test and generic agent-report list/detail routes/tests, documented the accepted type-cast limitations, and extended `workflow:audit` to cover handoff/architecture invariants. All deletions + mechanical edits, no user-facing change.
 - **Sprint 11 — Provider client consolidation.** Fold TradingView gainers/MDR-candidates fetch+header logic into `lib/tradingview-client.ts`; consolidate Massive paths into `lib/massive-market.ts`; delete or document the now-unused raw scanner route handlers. Scanner output unchanged (tests assert it).
 - **Sprint 12 — Scanner cost & telemetry.** Per-endpoint durable AskEdgar telemetry; durable (cross-instance) dashboard scanner cache; cache MDR thresholds per `(ticker, trigger_date)`. Additive, no UI change.
 - **Sprint 13 — Test coverage + small cleanups.** Component tests for `TradesTab`/`TradeDetailSheet`; Playbook route + UI coverage; `next/dynamic` lazy imports for `BacktestingTab` (after an `ANALYZE=true` build check). All low-risk.
@@ -31,16 +31,9 @@ Sprints 6–8 closed the rate-limiting, slim-trades-payload, and Research-TLDR-c
 
 ## Immediate Security And Reliability
 
-### Expired Agent Job Leases Are Not Recovered — SPRINT 9 (handed to Codex 2026-05-30)
+### Expired Agent Job Leases Are Not Recovered — DONE (Sprint 9, 2026-05-30, commit c8ffd89)
 
-Evidence:
-- Queue claims only `status = 'queued'` jobs: [lib/agents/queue.ts](/home/jared/Nexus-Terminal/lib/agents/queue.ts:73).
-- Processing updates are fenced by worker lock, lease version, `status = 'processing'`, and unexpired `lock_expires_at`: [lib/agents/queue.ts](/home/jared/Nexus-Terminal/lib/agents/queue.ts:53).
-- Service chat exposes `processing` status while waiting: [app/api/agents/service/chat/route.ts](/home/jared/Nexus-Terminal/app/api/agents/service/chat/route.ts:171).
-- Discord bot polling eventually times out if no terminal state arrives: [services/discord-bot/index.ts](/home/jared/Nexus-Terminal/services/discord-bot/index.ts:305).
-
-Recommendation:
-Add a lease recovery path that requeues expired `processing` jobs when attempts remain, or marks them failed after max attempts. Keep the lease fencing; the cleanup is about making stale leases recoverable without manual DB intervention.
+Resolved by adding `recoverExpiredJobs(db, agentId)` and calling it before each worker claim. Expired processing jobs now requeue when attempts remain or fail once max attempts are exhausted; lease fencing remains intact.
 
 ## Data Integrity And Error Handling (added 2026-05-25)
 
@@ -54,14 +47,13 @@ Resolved via slim-payload (not pagination). `GET /api/trades` no longer joins `t
 
 ## TypeScript Safety (added 2026-05-25)
 
-### Type Assertions Hiding Real Type Problems
+### Type Assertions Hiding Real Type Problems — DONE (Sprint 10, 2026-05-30)
 
-Evidence:
-- `lib/market-pulse/capture.ts` lines 101 and 117: Drizzle builder chains cast via `as unknown as { ... }`.
-- `app/api/research-report/route.ts` line 168: `db as unknown as Parameters<typeof recordLlmAttempt>[0]`.
+Resolved by documenting the three accepted limitations in place:
+- `lib/market-pulse/capture.ts`: Drizzle builder chains are typed by hand because `MarketPulseDb` intentionally narrows the DB to a mockable `Pick<>`.
+- `app/api/research-report/route.ts`: the telemetry DB cast bridges structurally identical site/agent Drizzle DB brand types.
 
-Recommendation:
-Investigate each `as unknown as` and either properly type the function signatures or document as an accepted Drizzle typing limitation.
+No signature refactor was made; the sprint decision was to preserve working runtime behavior and document the limitation.
 
 ### Remove Redundant Legacy DB Columns
 
@@ -179,25 +171,13 @@ Evidence:
 Recommendation:
 Move helper code out of route modules into `lib/` or `app/api/dashboard/_shared`-style modules, then either delete the raw public route handlers or explicitly document them as supported debug/API surfaces. No Dashboard behavior should change if the aggregate JSON contract is preserved.
 
-### `/api/scanner/mdr-eligibility` Appears Deletion-Ready
+### MDR Eligibility Endpoint Appears Deletion-Ready — DONE (Sprint 10, 2026-05-30)
 
-Evidence:
-- The route only wraps `computeMdrEligibility()`: [app/api/scanner/mdr-eligibility/route.ts](/home/jared/Nexus-Terminal/app/api/scanner/mdr-eligibility/route.ts:19), [app/api/scanner/mdr-eligibility/route.ts](/home/jared/Nexus-Terminal/app/api/scanner/mdr-eligibility/route.ts:38).
-- `rg` finds `computeMdrEligibility()` only in this route and its route test: [lib/massive-market.ts](/home/jared/Nexus-Terminal/lib/massive-market.ts:348), [__tests__/scanner-mdr-eligibility-route.test.ts](/home/jared/Nexus-Terminal/__tests__/scanner-mdr-eligibility-route.test.ts:35).
-- Dashboard tests assert the UI does not call the route: [__tests__/dashboard-scanner-table.test.tsx](/home/jared/Nexus-Terminal/__tests__/dashboard-scanner-table.test.tsx:226).
+Removed the dead scanner eligibility endpoint, its route test, and its orphaned helper/result type. The dashboard guard that asserts the UI does not fetch that endpoint remains.
 
-Recommendation:
-Remove the route, its route test, and `computeMdrEligibility()` in a focused cleanup PR unless an external/manual consumer is confirmed. Expected user-visible change: none for the current app.
+### Agent Report List/Detail Routes Look Backend-Only — DONE (Sprint 10, 2026-05-30)
 
-### Agent Report List/Detail Routes Look Backend-Only
-
-Evidence:
-- `/api/agents/reports` and `/api/agents/reports/[id]` are protected readers: [app/api/agents/reports/route.ts](/home/jared/Nexus-Terminal/app/api/agents/reports/route.ts:26), [app/api/agents/reports/[id]/route.ts](/home/jared/Nexus-Terminal/app/api/agents/reports/[id]/route.ts:7).
-- Current Dashboard panels use report-type-specific latest routes instead.
-- Repo search found no current product consumer for `/api/agents/reports`.
-
-Recommendation:
-Decide whether a generic agent-report UI is planned. If not, remove these routes and tests after checking external/manual consumers. If yes, keep them and document their intended consumer.
+Removed the generic agent-report list/detail endpoints and their route test after confirming current dashboard/report panels use type-specific latest routes instead. The `agentReports` table and live type-specific readers remain.
 
 ### Low-Priority Route Pattern Extraction
 
@@ -278,15 +258,9 @@ Add focused route tests for auth, validation, ownership, CRUD, and one UI smoke 
 
 ## Docs And Workflow Drift
 
-### `workflow:audit` Is A Narrow Smoke Check, Not The Full Skill Audit
+### `workflow:audit` Is A Narrow Smoke Check, Not The Full Skill Audit — DONE (Sprint 10, 2026-05-30)
 
-Evidence:
-- The workflow-audit skill lists `HANDOFF.md` and architecture claims as audit targets: [codex-skills/nexus-workflow-audit/SKILL.md](/home/jared/Nexus-Terminal/codex-skills/nexus-workflow-audit/SKILL.md:15), [codex-skills/nexus-workflow-audit/SKILL.md](/home/jared/Nexus-Terminal/codex-skills/nexus-workflow-audit/SKILL.md:26).
-- The script checks selected strings in `AGENTS.md`, `README.md`, `docs/VALIDATION_MATRIX.md`, Vercel ops skill, and skill files, but does not read `HANDOFF.md` or `docs/ARCHITECTURE.md`: [scripts/workflow-audit.mjs](/home/jared/Nexus-Terminal/scripts/workflow-audit.mjs:19), [scripts/workflow-audit.mjs](/home/jared/Nexus-Terminal/scripts/workflow-audit.mjs:35), [scripts/workflow-audit.mjs](/home/jared/Nexus-Terminal/scripts/workflow-audit.mjs:41).
-- `npm run workflow:audit` passes in the current tree.
-
-Recommendation:
-Either extend `scripts/workflow-audit.mjs` to cover the key handoff/architecture invariants, or document it as a narrow smoke check. The command is still useful, but it should not imply the full skill checklist ran.
+Extended `scripts/workflow-audit.mjs` to read `HANDOFF.md` and `docs/ARCHITECTURE.md`, checking the handoff maintenance anchor plus key auth, SSE, migration, and retired-system architecture invariants. `npm run workflow:audit` passes.
 
 ---
 
@@ -316,7 +290,7 @@ I ran the deep-research pass with 3 parallel subagents and did not edit files.
   - Massive API logic is split between [market-data route](/home/jared/Nexus-Terminal/app/api/market-data/route.ts:68) and [lib/massive-market.ts](/home/jared/Nexus-Terminal/lib/massive-market.ts:149).
   - Daily/weekly review sheets duplicate template lifecycle around [DailyReportSheet](/home/jared/Nexus-Terminal/components/trading/DailyReportSheet.tsx:49) and [WeeklyReviewSheet](/home/jared/Nexus-Terminal/components/trading/WeeklyReviewSheet.tsx:65).
   - Backtesting sample-set loading repeats between [use-backtest-manager](/home/jared/Nexus-Terminal/hooks/use-backtest-manager.ts:89) and [BacktestingSidebar](/home/jared/Nexus-Terminal/components/trading/BacktestingSidebar.tsx:130).
-  - `/api/scanner/mdr-eligibility`, its test, and `computeMdrEligibility()` look deletion-ready after external-consumer confirmation.
+  - Sprint 10 removed the dead MDR eligibility endpoint/helper/test after external-consumer confirmation.
 
 **Framework Fit**
 - **TanStack Query** is the best candidate if you want reliable LOC reduction. Its docs explicitly target caching, deduping, stale state, background updates, pagination, mutations, and optimistic updates. This maps well to Nexus fetch-heavy hooks and polling/cache code. Source: [TanStack Query overview](https://tanstack.com/query/docs/docs).
@@ -335,7 +309,7 @@ I ran the deep-research pass with 3 parallel subagents and did not edit files.
 **Recommendation**
 Do not run a “reduce LOC” rewrite. Run 4 focused cleanup passes:
 
-1. Delete confirmed dead surfaces: start with `/api/scanner/mdr-eligibility`.
+1. Delete confirmed dead surfaces. Sprint 10 removed the first confirmed set; continue with provider-client route cleanup in Sprint 11.
 2. Consolidate provider clients: TradingView and Massive.
 3. Extract shared review-template lifecycle for daily/weekly sheets.
 4. Pilot TanStack Query in one fetch-heavy area before adopting it broadly.
