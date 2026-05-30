@@ -10,6 +10,141 @@ Parked ideas and longer-horizon plans. Each entry should note **why it's parked*
 
 ---
 
+## Internal research sheets / spreadsheet workspace (parked 2026-05-30)
+
+### The idea
+Add a Management > Sheets workspace that feels close to Google Sheets / Excel for internal trading research:
+
+- Saved sheets with names, blank-sheet creation, rename/duplicate/delete, and a sheet picker.
+- Rows added manually one by one, plus an "Add to Sheets" action from Research.
+- User-defined columns that can be plain text, date, number, URL/reference, checkbox, or dropdown.
+- Dropdown columns where the team can add/edit options and reuse them in that column.
+- Spreadsheet-like keyboard flow: click/edit, tab/enter navigation, paste small ranges, undo/redo if practical.
+- A default research sheet shape with columns like Date, Ticker, Chart, Report, Company Details, Bucket, Sub Bucket, Bias, Theme, News, Locate Avail, PIPE?, Float, Notes.
+
+The useful product is not a generic Excel clone. It is a team research notebook where tickers, dates, reports, charts, and small-cap metadata land in a structured grid without needing a separate Google Sheet.
+
+### Current recommendation
+Start with a **DB-backed structured grid MVP**, not true Google-Sheets-style live multiplayer.
+
+The realistic v1 should let the user and two coworkers open the same sheet and make edits safely, but it does not need live cursors, per-keystroke remote updates, CRDT merge semantics, or formulas. Use optimistic row/cell versioning and refresh/polling so conflicting edits are detected instead of silently overwritten.
+
+Treat true simultaneous editing as phase 2. If the team later needs live cursors and conflict-free concurrent cell edits, use a hosted realtime/collaboration backend such as Liveblocks/Yjs rather than trying to host a WebSocket/CRDT server inside Vercel Functions.
+
+### UI/library options checked 2026-05-30
+
+| Option | Fit | Notes |
+|---|---|---|
+| **AG Grid Community** | Best v1 fit if this is a structured grid of research rows. | MIT/free community tier. React/TypeScript support, editable cells, basic provided editors including select, sorting/filtering, resizing, theming, and a mature API. Enterprise gates richer spreadsheet features such as range selection, rich select, batch editing, integrated charts, and Excel-style extras. Pricing page currently lists AG Grid Enterprise from `$999/developer`. Sources: https://www.ag-grid.com/react-data-grid/cell-editing/, https://www.ag-grid.com/react-data-grid/provided-cell-editors/, https://www.ag-grid.com/license-pricing/ |
+| **Glide Data Grid** | Best license-safe custom sheet surface if avoiding paid grid licensing matters. | MIT, fast canvas grid, editable cells, custom cells, row append callbacks, multi-selection, movable/resizable columns. More implementation work: dropdown editors, persistence, column config UI, import/export, and formula semantics would be ours. Sources: https://github.com/glideapps/glide-data-grid, https://docs.grid.glideapps.com/api/dataeditor/editing |
+| **Handsontable** | Closest out-of-box "spreadsheet" UX. | Strong for spreadsheet feel: dropdown cells, row/column operations, copy/paste, formulas via HyperFormula. Licensing is the gating issue: production commercial use requires a paid commercial license; HyperFormula has GPLv3/noncommercial/proprietary licensing constraints outside permitted commercial use. Sources: https://handsontable.com/docs/react-data-grid/dropdown-cell-type/, https://handsontable.com/docs/react-data-grid/software-license/, https://hyperformula.handsontable.com/docs/guide/licensing.html |
+| **TanStack Table** | Not a good spreadsheet core. | Great headless table state for normal app tables, but it supplies no spreadsheet UI, keyboard model, fill/range behavior, paste semantics, or dropdown editor UX by default. Use it elsewhere, not as the sheet engine. Source: https://tanstack.com/table/v8/docs/framework/react/examples/editable-data |
+
+Recommendation: **AG Grid Community first**, unless the first implementation proves that AG Grid's community feature gates block core workflows. If license risk or visual control matters more than speed, choose Glide Data Grid and accept more custom work. Do not pick Handsontable without deciding that paid licensing is acceptable.
+
+### Current repo seams
+
+- `components/trading/ManagementTab.tsx` owns the Management subtabs. A new `sheets` subtab belongs there, likely rendered by a new `components/trading/SheetsTab.tsx`.
+- `app/page.tsx` already mounts `ManagementTab` and `ResearchTab`; keep orchestration there and avoid pushing this into `use-trades.ts`.
+- `components/trading/ResearchTickerView.tsx` already has the `AddToWatchlistButton` pattern. Add a sibling "Add to Sheets" action there, but do not force the Research page to know grid internals.
+- `components/trading/ResearchReportPanel.tsx` exposes `getCachedReportId(ticker)` / `prefetchResearchReport(ticker)`, which is how the watchlist captures a specific `research_reports.id`.
+- `app/api/daily-reviews/append-watchlist/route.ts` is the closest "append research thing into another surface" route, but sheets should tighten report ownership/visibility validation before copying the pattern.
+- `lib/askedgar/snapshot-normalizer.ts` already normalizes `ResearchSnapshot.header.country`, `industry`, `outstandingShares`, and `float`; `components/trading/ResearchCompanyHeader.tsx` displays the same values. These are the right source fields for the new Company Details column.
+- `sample_sets` and `system_tickers` are useful analogs, not foundations. `sample_sets.rows` is too narrow (`ticker`, `date` only), and `system_tickers` is a shared imported Google Sheet log without sheet ids, ACLs, or editable workbook semantics.
+
+### Data model direction
+
+Do not store a whole sheet as one JSON blob. That would recreate last-write-wins review-sheet behavior and make coworker edits unsafe.
+
+Recommended v1 tables:
+
+- `sheets`: `id`, `ownerUserId`, `name`, `description`, `defaultView`, `createdAt`, `updatedAt`, optional `archivedAt`.
+- `sheet_members`: `sheetId`, `userId`, `role` (`owner`, `editor`, `viewer`), timestamps. Even if the first version makes all coworkers editors, model it explicitly.
+- `sheet_columns`: `id`, `sheetId`, `key`, `name`, `type`, `order`, `width`, `optionsJson`, `required`, `createdAt`, `updatedAt`.
+- `sheet_rows`: `id`, `sheetId`, `order`, `valuesJson`, `version`, `createdByUserId`, `updatedByUserId`, timestamps.
+- Optional later: `sheet_cell_events` or normalized `sheet_cells` if cell-level history, audit, formulas, or true concurrent edits become important.
+
+For v1, row-level JSON values plus a row `version` is probably enough. Patch a single row at a time with `WHERE id = ? AND version = ?`; return `409` when stale. This lets multiple people edit different rows safely and makes same-row conflicts explicit.
+
+### Research "Add to Sheets" behavior
+
+Add a button near "Add to Watchlist" in `ResearchTickerView`.
+
+Initial behavior:
+
+1. User chooses a target sheet, or the app uses a default "Research" sheet if one exists.
+2. Client posts to a new route such as `POST /api/sheets/[id]/append-research-row`.
+3. Route requires `requireUser()`, verifies editor access, validates ticker/date/report id, and appends one row.
+4. Row populates:
+   - Date: user's local date or selected historical gap date if the action is tied to a gap row.
+   - Ticker: current Research ticker.
+   - Chart: a typed reference object, not a screenshot. Store enough state to reopen the chart: ticker, date/historicalDate, timeframe if available.
+   - Report: `research_reports.id` if a cached/generated report exists; otherwise blank with an affordance to attach/generate later.
+   - Company Details: country, industry, float, outstanding shares from the normalized Research snapshot header.
+5. Dedupe should be per sheet by `(ticker, date)` or by `(ticker, date, reportId)` depending on desired workflow. Return `{ duplicate: true }` like the watchlist route if no row is created.
+
+Important: the Add to Sheets action should not secretly trigger paid Research Report generation. It can attach an already-ready report id, or leave the Report cell blank if a report is still loading. A separate explicit generate/attach action can come later.
+
+### Collaboration options
+
+Practical v1:
+
+- DB is source of truth.
+- Edits are saved through small patch endpoints.
+- Each row has a version.
+- Client does optimistic updates and handles `409` by reloading the row and showing a conflict toast.
+- Poll the sheet metadata/updated rows every few seconds, or add an SSE invalidation channel later. This is enough for three coworkers if edits are not usually on the exact same cell at the same moment.
+
+True live collaboration:
+
+- Use Liveblocks/Yjs or a similar hosted realtime provider if live cursors, presence, CRDT merges, offline edits, and per-keystroke sync become required.
+- Liveblocks Storage is explicitly designed for persistent realtime collaborative data such as spreadsheet cells and exposes conflict-free data types. Current pricing has a free plan for prototyping and paid production plans/usage. Sources: https://liveblocks.io/docs/tutorial/react/getting-started/storage, https://liveblocks.io/docs/pricing/plans, https://liveblocks.io/docs/platform/limits
+- Yjs supports shared maps/arrays and y-websocket, but self-hosting y-websocket requires a long-lived WebSocket service and persistence/scaling decisions. Source: https://docs.yjs.dev/getting-started/working-with-shared-types, https://docs.yjs.dev/ecosystem/connection-provider/y-websocket
+- Supabase Realtime/Pusher-style services are good for presence, broadcasts, and invalidation, but they do not provide spreadsheet conflict resolution by themselves. Source: https://supabase.com/docs/guides/realtime
+- Vercel Functions should not be treated as a WebSocket server. Vercel's docs say Functions do not support acting as a WebSocket server and recommend third-party realtime solutions. Source: https://vercel.com/docs/limits/overview
+
+### Good feature additions
+
+- Saved views: Default, Today, Unreviewed, Long, Short, Backtest Candidates.
+- Column presets/templates: Research, Watchlist Review, Backtest Candidates, Offerings/Dilution Review.
+- Row source badges: Manual, Research, Watchlist, Sample Set, System Sheet.
+- Attachments/references: chart reference, research report id, SEC filing URL, news URL.
+- Export CSV for sharing/backtesting.
+- Convert selected rows to sample set, reusing the existing sample-set idea but with richer sheet context.
+- Basic audit fields: created by, updated by, updated at, last source.
+- Row comments/notes later, not v1.
+
+### Risks and guardrails
+
+- **Realtime is the trap.** Full Google Sheets collaboration is substantially more complex than a useful shared research grid. Do not start there unless it becomes the main product requirement.
+- **Do not reuse `system_tickers` as the workbook model.** It is a shared imported log, not an editable sheet.
+- **Do not copy review-sheet JSON blob saves.** They are fine for single-user review forms but unsafe for collaborative editing.
+- **Do not add this to `hooks/use-trades.ts`.** Use a new `hooks/use-sheets.ts` or feature-local hooks.
+- **Validate aggressively.** Use Zod max bounds for sheet names, column names, dropdown options, row values, and batch sizes.
+- **Keep AskEdgar costs explicit.** Import only already-normalized snapshot data; never trigger paid endpoint fanout or LLM report generation as a hidden side effect of adding a row.
+- **Handle report ids carefully.** If sheets embed `research_reports.id`, verify access and decide whether reports are team-visible or user-owned.
+
+### Phased implementation plan
+
+1. **Schema + routes:** add `sheets`, `sheet_members`, `sheet_columns`, `sheet_rows`; CRUD routes under `app/api/sheets`; Zod schemas under `lib/validations/sheets.ts`; route tests for auth, ACL, validation, and version conflicts.
+2. **Management UI MVP:** add `SheetsTab` under Management with sheet picker, create/rename/delete, a default Research template, add row/column, dropdown option editor, and save-on-cell-commit.
+3. **Research import:** add `Add to Sheets` beside `Add to Watchlist`; append ticker/date/chart/report/company-details row; dedupe and toast success/duplicate/error.
+4. **Team sharing:** expose member roles and sheet visibility rules; make coworker access explicit.
+5. **Collaboration polish:** polling/SSE invalidation, presence indicator if useful, conflict UX.
+6. **Optional live multiplayer:** only after v1 usage proves it is worth adding Liveblocks/Yjs or another managed realtime layer.
+
+### Why it is parked
+This is a substantial product surface: schema, ACLs, routes, a grid dependency, research integration, tests, and a new Management tab. It should be a dedicated sprint, not bundled with cleanup or small Research polish.
+
+### Triggers to revisit
+
+- Google Sheets becomes a daily team bottleneck.
+- Coworkers actively need to edit the same research list inside Nexus.
+- Research-to-watchlist/sample-set flow is not enough because the team needs richer per-ticker notes and dropdown classifications.
+- The team agrees whether v1 collaboration means conflict-safe shared editing or true live multiplayer.
+
+---
+
 ## Filing headline parser for Research Filings (parked 2026-05-25)
 
 ### The idea
