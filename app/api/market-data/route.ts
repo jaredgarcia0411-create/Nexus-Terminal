@@ -1,23 +1,11 @@
-import { requireUser } from '@/lib/server-db-utils';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
-
-type MassiveAggResponse = {
-  ticker?: string;
-  adjusted?: boolean;
-  queryCount?: number;
-  resultsCount?: number;
-  status?: string;
-  results?: Array<{
-    o?: number | null;
-    h?: number | null;
-    l?: number | null;
-    c?: number | null;
-    v?: number | null;
-    vw?: number | null;
-    t?: number | null;
-    n?: number | null;
-  }>;
-};
+import {
+  fetchMassiveAggregateBars,
+  isMassiveConfigured,
+  MassiveRequestError,
+  type MassiveAggregateBar,
+} from '@/lib/massive-market';
+import { requireUser } from '@/lib/server-db-utils';
 
 function toMassiveTimespan(frequencyType: string, frequency: string) {
   if (frequencyType === 'minute') return { multiplier: frequency, timespan: 'minute' };
@@ -65,8 +53,7 @@ export async function GET(request: Request): Promise<Response> {
       return Response.json({ error: 'Missing symbol' }, { status: 400 });
     }
 
-    const apiKey = process.env.MASSIVE_API_KEY;
-    if (!apiKey) {
+    if (!isMassiveConfigured()) {
       return Response.json({ error: 'Market data provider not configured' }, { status: 503 });
     }
 
@@ -96,33 +83,28 @@ export async function GET(request: Request): Promise<Response> {
       to = range.to;
     }
 
-    const endpoint = new URL(`https://api.massive.com/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/${multiplier}/${timespan}/${from}/${to}`);
-    endpoint.searchParams.set('apiKey', apiKey);
-    endpoint.searchParams.set('adjusted', 'true');
-    endpoint.searchParams.set('sort', 'asc');
-    endpoint.searchParams.set('limit', '50000');
-
-    let res: Response;
+    let bars: MassiveAggregateBar[];
     try {
-      res = await fetch(endpoint.toString(), {
-        cache: 'no-store',
+      bars = await fetchMassiveAggregateBars({
+        ticker: symbol,
+        multiplier,
+        timespan,
+        from,
+        to,
       });
     } catch (error) {
+      if (error instanceof MassiveRequestError) {
+        return Response.json({ error: 'Failed to fetch market data' }, { status: error.status || 502 });
+      }
       console.error('[api:market-data] upstream request failed', { symbol, error: String(error) });
       return Response.json({ error: 'Market data provider unavailable' }, { status: 502 });
     }
 
-    const payload = (await res.json().catch(() => ({}))) as MassiveAggResponse;
-    if (!res.ok) {
-      return Response.json({ error: 'Failed to fetch market data' }, { status: res.status || 502 });
-    }
-
-    const results = payload.results ?? [];
-    if (results.length === 0) {
+    if (bars.length === 0) {
       return Response.json({ symbol, candles: [] });
     }
 
-    const candles = results.flatMap((bar) => {
+    const candles = bars.flatMap((bar) => {
       const open = Number(bar.o ?? NaN);
       const high = Number(bar.h ?? NaN);
       const low = Number(bar.l ?? NaN);

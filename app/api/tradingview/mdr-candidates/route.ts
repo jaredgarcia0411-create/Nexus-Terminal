@@ -1,9 +1,5 @@
-import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { evaluateLatestD2MdrTrigger } from '@/lib/massive-market';
-import { requireUser } from '@/lib/server-db-utils';
-
-export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+import { scanTradingView } from '@/lib/tradingview-client';
 
 const COLUMNS = [
   'name',
@@ -107,29 +103,7 @@ async function structurallyQualifyCandidates(candidates: NormalizedMdrCandidate[
 
 export async function fetchMdrCandidatesForDashboard(): Promise<DashboardMdrCandidatesPayload> {
   const sessionId = process.env.TRADINGVIEW_SESSION_ID?.trim() ?? '';
-
-  const response = await fetch('https://scanner.tradingview.com/america/scan', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(sessionId ? { Cookie: `sessionid=${sessionId}` } : {}),
-      'User-Agent': 'Mozilla/5.0',
-      Origin: 'https://www.tradingview.com',
-      Referer: 'https://www.tradingview.com/',
-    },
-    body: JSON.stringify(SCAN_BODY),
-    cache: 'no-store',
-  });
-
-  if (!response.ok) {
-    throw new Error(`TradingView scanner returned ${response.status}`);
-  }
-
-  const payload = (await response.json()) as {
-    totalCount?: number;
-    data?: Array<{ s: string; d: unknown[] }>;
-  };
-
+  const payload = await scanTradingView(SCAN_BODY);
   const raw = payload.data ?? [];
 
   const normalizedCandidates: NormalizedMdrCandidate[] = raw.flatMap((row) => {
@@ -168,24 +142,4 @@ export async function fetchMdrCandidatesForDashboard(): Promise<DashboardMdrCand
     isRealtime: Boolean(sessionId),
     fetchedAt: new Date().toISOString(),
   };
-}
-
-export async function GET() {
-  const authState = await requireUser();
-  if ('error' in authState) return authState.error;
-
-  try {
-    return Response.json(await fetchMdrCandidatesForDashboard());
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith('TradingView scanner returned ')) {
-      const status = error.message.replace('TradingView scanner returned ', '');
-      return Response.json(
-        { error: `TradingView scanner returned ${status}` },
-        { status: 502 },
-      );
-    }
-
-    logRouteError('tradingview-mdr-candidates', error);
-    return internalServerError();
-  }
 }

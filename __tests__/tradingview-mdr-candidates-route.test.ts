@@ -1,22 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const {
-  requireUserMock,
-  evaluateLatestD2MdrTriggerMock,
-} = vi.hoisted(() => ({
-  requireUserMock: vi.fn(),
+const { evaluateLatestD2MdrTriggerMock } = vi.hoisted(() => ({
   evaluateLatestD2MdrTriggerMock: vi.fn(),
-}));
-
-vi.mock('@/lib/server-db-utils', () => ({
-  requireUser: requireUserMock,
 }));
 
 vi.mock('@/lib/massive-market', () => ({
   evaluateLatestD2MdrTrigger: evaluateLatestD2MdrTriggerMock,
 }));
 
-import { GET } from '@/app/api/tradingview/mdr-candidates/route';
+import { fetchMdrCandidatesForDashboard } from '@/app/api/tradingview/mdr-candidates/route';
 
 const originalTradingViewSessionId = process.env.TRADINGVIEW_SESSION_ID;
 
@@ -27,21 +19,9 @@ function makeJsonResponse(payload: unknown, status = 200) {
   });
 }
 
-function authedUser() {
-  requireUserMock.mockResolvedValue({
-    user: {
-      id: 'user-1',
-      email: 'user@example.com',
-      name: 'Test User',
-      picture: null,
-    },
-  });
-}
-
-describe('GET /api/tradingview/mdr-candidates', () => {
+describe('fetchMdrCandidatesForDashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    authedUser();
     delete process.env.TRADINGVIEW_SESSION_ID;
   });
 
@@ -52,17 +32,6 @@ describe('GET /api/tradingview/mdr-candidates', () => {
       return;
     }
     process.env.TRADINGVIEW_SESSION_ID = originalTradingViewSessionId;
-  });
-
-  it('returns 401 when unauthenticated', async () => {
-    requireUserMock.mockResolvedValueOnce({
-      error: Response.json({ error: 'Unauthorized' }, { status: 401 }),
-    });
-
-    const response = (await GET()) as Response;
-
-    expect(response.status).toBe(401);
-    expect(evaluateLatestD2MdrTriggerMock).not.toHaveBeenCalled();
   });
 
   it('returns only candidates passing the structural d2_mdr check with thresholds', async () => {
@@ -94,10 +63,8 @@ describe('GET /api/tradingview/mdr-candidates', () => {
           },
     }));
 
-    const response = (await GET()) as Response;
-    const payload = await response.json();
+    const payload = await fetchMdrCandidatesForDashboard();
 
-    expect(response.status).toBe(200);
     expect(evaluateLatestD2MdrTriggerMock).toHaveBeenCalledWith('KEEP');
     expect(evaluateLatestD2MdrTriggerMock).toHaveBeenCalledWith('DROP');
     expect(payload).toEqual({
@@ -148,10 +115,8 @@ describe('GET /api/tradingview/mdr-candidates', () => {
       };
     });
 
-    const response = (await GET()) as Response;
-    const payload = await response.json();
+    const payload = await fetchMdrCandidatesForDashboard();
 
-    expect(response.status).toBe(200);
     expect(payload.candidates.map((row: { ticker: string }) => row.ticker)).toEqual(['KEEP']);
     expect(console.warn).toHaveBeenCalledWith(
       '[api:tradingview-mdr-candidates] skipped structural evaluation',

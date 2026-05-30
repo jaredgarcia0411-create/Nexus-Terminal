@@ -1,21 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { requireUserMock } = vi.hoisted(() => ({
-  requireUserMock: vi.fn(),
-}));
-
-vi.mock('@/lib/server-db-utils', () => ({
-  requireUser: requireUserMock,
-}));
-
-import { GET } from '@/app/api/tradingview/gainers/route';
+import { fetchGainersForDashboard } from '@/app/api/tradingview/gainers/route';
 
 const originalTradingViewSessionId = process.env.TRADINGVIEW_SESSION_ID;
-
-function ensureResponse(response: Response | undefined): Response {
-  if (!response) throw new Error('Expected response');
-  return response;
-}
 
 function makeJsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -30,17 +17,9 @@ function mockTradingViewFetch(pmPayload: unknown, ahPayload: unknown = { data: [
     .mockResolvedValueOnce(makeJsonResponse(ahPayload));
 }
 
-describe('GET /api/tradingview/gainers', () => {
+describe('fetchGainersForDashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireUserMock.mockResolvedValue({
-      user: {
-        id: 'user-1',
-        email: 'user@example.com',
-        name: 'Test User',
-        picture: null,
-      },
-    });
     delete process.env.TRADINGVIEW_SESSION_ID;
   });
 
@@ -53,17 +32,7 @@ describe('GET /api/tradingview/gainers', () => {
     process.env.TRADINGVIEW_SESSION_ID = originalTradingViewSessionId;
   });
 
-  it('returns 401 when unauthenticated', async () => {
-    requireUserMock.mockResolvedValueOnce({
-      error: Response.json({ error: 'Unauthorized' }, { status: 401 }),
-    });
-
-    const response = ensureResponse(await GET());
-
-    expect(response.status).toBe(401);
-  });
-
-  it('returns 200 and normalizes valid TradingView rows into gainers', async () => {
+  it('normalizes valid TradingView rows into gainers', async () => {
     mockTradingViewFetch({
       totalCount: 12,
       data: [{
@@ -86,10 +55,8 @@ describe('GET /api/tradingview/gainers', () => {
       }],
     });
 
-    const response = ensureResponse(await GET());
-    const payload = await response.json();
+    const payload = await fetchGainersForDashboard();
 
-    expect(response.status).toBe(200);
     expect(payload).toEqual({
       gainers: [{
         ticker: 'AAPL',
@@ -128,10 +95,8 @@ describe('GET /api/tradingview/gainers', () => {
       ],
     });
 
-    const response = ensureResponse(await GET());
-    const payload = await response.json();
+    const payload = await fetchGainersForDashboard();
 
-    expect(response.status).toBe(200);
     expect(payload.gainers).toEqual([
       {
         ticker: 'GOOD',
@@ -175,10 +140,8 @@ describe('GET /api/tradingview/gainers', () => {
       ],
     });
 
-    const response = ensureResponse(await GET());
-    const payload = await response.json();
+    const payload = await fetchGainersForDashboard();
 
-    expect(response.status).toBe(200);
     expect(payload.gainers.map((row: { ticker: string }) => row.ticker)).toEqual(['COMBO']);
     expect(payload.gainers[0]).toEqual(expect.objectContaining({
       ticker: 'COMBO',
@@ -192,9 +155,8 @@ describe('GET /api/tradingview/gainers', () => {
   it('uses only the requested Day 1 scan prefilters', async () => {
     const fetchSpy = mockTradingViewFetch({ data: [] }, { data: [] });
 
-    const response = ensureResponse(await GET());
+    await fetchGainersForDashboard();
 
-    expect(response.status).toBe(200);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
 
     const scanBodies = fetchSpy.mock.calls.map(([, init]) => JSON.parse(String(init?.body)) as {
@@ -239,10 +201,8 @@ describe('GET /api/tradingview/gainers', () => {
       }],
     });
 
-    const response = ensureResponse(await GET());
-    const payload = await response.json();
+    const payload = await fetchGainersForDashboard();
 
-    expect(response.status).toBe(200);
     expect(payload.gainers).toEqual([
       expect.objectContaining({
         ticker: 'AHONLY',
@@ -267,10 +227,8 @@ describe('GET /api/tradingview/gainers', () => {
       ],
     });
 
-    const response = ensureResponse(await GET());
-    const payload = await response.json();
+    const payload = await fetchGainersForDashboard();
 
-    expect(response.status).toBe(200);
     expect(payload.gainers.map((row: { ticker: string }) => row.ticker)).toEqual(['GOOD']);
     expect(payload.gainers[0]).toEqual(expect.objectContaining({
       priorDayClose: expect.closeTo(0.76, 8),
@@ -282,10 +240,8 @@ describe('GET /api/tradingview/gainers', () => {
   it('returns isRealtime false when TRADINGVIEW_SESSION_ID is missing', async () => {
     mockTradingViewFetch({ data: [] });
 
-    const response = ensureResponse(await GET());
-    const payload = await response.json();
+    const payload = await fetchGainersForDashboard();
 
-    expect(response.status).toBe(200);
     expect(payload.isRealtime).toBe(false);
   });
 
@@ -293,10 +249,8 @@ describe('GET /api/tradingview/gainers', () => {
     process.env.TRADINGVIEW_SESSION_ID = 'live-session';
     const fetchSpy = mockTradingViewFetch({ data: [] });
 
-    const response = ensureResponse(await GET());
-    const payload = await response.json();
+    const payload = await fetchGainersForDashboard();
 
-    expect(response.status).toBe(200);
     expect(payload.isRealtime).toBe(true);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     for (const call of fetchSpy.mock.calls) {
@@ -308,27 +262,19 @@ describe('GET /api/tradingview/gainers', () => {
     }
   });
 
-  it('returns 502 when TradingView responds with a non-OK status', async () => {
+  it('throws when TradingView responds with a non-OK status', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(makeJsonResponse({ error: 'nope' }, 403))
       .mockResolvedValueOnce(makeJsonResponse({ data: [] }));
 
-    const response = ensureResponse(await GET());
-    const payload = await response.json();
-
-    expect(response.status).toBe(502);
-    expect(payload).toEqual({ error: 'TradingView scanner returned 403' });
+    await expect(fetchGainersForDashboard()).rejects.toThrow('TradingView scanner returned 403');
   });
 
-  it('returns 500 when fetch throws', async () => {
+  it('throws when fetch throws', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockRejectedValueOnce(new Error('network down'))
       .mockResolvedValueOnce(makeJsonResponse({ data: [] }));
 
-    const response = ensureResponse(await GET());
-    const payload = await response.json();
-
-    expect(response.status).toBe(500);
-    expect(payload).toEqual({ error: 'Internal server error' });
+    await expect(fetchGainersForDashboard()).rejects.toThrow('network down');
   });
 });

@@ -1,7 +1,4 @@
-import { internalServerError, logRouteError } from '@/lib/api-route-utils';
-import { requireUser } from '@/lib/server-db-utils';
-
-export const dynamic = 'force-dynamic';
+import { scanTradingView } from '@/lib/tradingview-client';
 
 // TradingView screener columns returned in order — index matches d[] array.
 // `close`, `change`, `volume` are session-dependent (during pre-market they reflect
@@ -78,11 +75,6 @@ export interface TradingViewGainer {
   dayOneMark: number;
   dayOneMoveSource: 'pre-market' | 'after-hours';
 }
-
-type TradingViewScanPayload = {
-  totalCount?: number;
-  data?: Array<{ s: string; d: unknown[] }>;
-};
 
 export interface DashboardGainersPayload {
   gainers: TradingViewGainer[];
@@ -203,35 +195,12 @@ function richerGainer(a: TradingViewGainer, b: TradingViewGainer) {
   return bScore > aScore ? b : a;
 }
 
-async function fetchScan(body: typeof PM_SCAN_BODY, sessionId: string) {
-  const response = await fetch('https://scanner.tradingview.com/america/scan', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      // Without a session cookie, TradingView returns 15-min delayed data.
-      // With it, data is real-time. Either way the endpoint works.
-      ...(sessionId ? { Cookie: `sessionid=${sessionId}` } : {}),
-      'User-Agent': 'Mozilla/5.0',
-      Origin: 'https://www.tradingview.com',
-      Referer: 'https://www.tradingview.com/',
-    },
-    body: JSON.stringify(body),
-    cache: 'no-store',
-  });
-
-  if (!response.ok) {
-    throw new Error(`TradingView scanner returned ${response.status}`);
-  }
-
-  return (await response.json()) as TradingViewScanPayload;
-}
-
 export async function fetchGainersForDashboard(): Promise<DashboardGainersPayload> {
   const sessionId = process.env.TRADINGVIEW_SESSION_ID?.trim() ?? '';
 
   const [pmPayload, ahPayload] = await Promise.all([
-    fetchScan(PM_SCAN_BODY, sessionId),
-    fetchScan(AH_SCAN_BODY, sessionId),
+    scanTradingView(PM_SCAN_BODY),
+    scanTradingView(AH_SCAN_BODY),
   ]);
 
   const byTicker = new Map<string, TradingViewGainer>();
@@ -257,24 +226,4 @@ export async function fetchGainersForDashboard(): Promise<DashboardGainersPayloa
     isRealtime: Boolean(sessionId),
     fetchedAt: new Date().toISOString(),
   };
-}
-
-export async function GET() {
-  const authState = await requireUser();
-  if ('error' in authState) return authState.error;
-
-  try {
-    return Response.json(await fetchGainersForDashboard());
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith('TradingView scanner returned ')) {
-      const status = error.message.replace('TradingView scanner returned ', '');
-      return Response.json(
-        { error: `TradingView scanner returned ${status}` },
-        { status: 502 },
-      );
-    }
-
-    logRouteError('tradingview-gainers', error);
-    return internalServerError();
-  }
 }

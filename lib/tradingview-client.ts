@@ -29,6 +29,33 @@ export const TRADINGVIEW_COLUMNS = [
   'EMA21',
 ];
 
+export type TradingViewScanPayload = {
+  totalCount?: number;
+  data?: Array<{ s: string; d: unknown[] }>;
+};
+
+export async function scanTradingView(body: unknown): Promise<TradingViewScanPayload> {
+  const sessionId = process.env.TRADINGVIEW_SESSION_ID?.trim() ?? '';
+  const response = await fetch('https://scanner.tradingview.com/america/scan', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(sessionId ? { Cookie: `sessionid=${sessionId}` } : {}),
+      'User-Agent': 'Mozilla/5.0',
+      Origin: 'https://www.tradingview.com',
+      Referer: 'https://www.tradingview.com/',
+    },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error(`TradingView scanner returned ${response.status}`);
+  }
+
+  return (await response.json()) as TradingViewScanPayload;
+}
+
 function toNullableNumber(value: unknown): number | null {
   if (typeof value === 'string') {
     const numeric = Number(value.replace(/,/g, '').replace(/%/g, '').trim());
@@ -41,33 +68,13 @@ function toNullableNumber(value: unknown): number | null {
 
 export async function fetchTradingViewPriceContext(ticker: string): Promise<TradingViewPriceContext | null> {
   const normalizedTicker = ticker.trim().toUpperCase();
-  const sessionId = process.env.TRADINGVIEW_SESSION_ID?.trim() ?? '';
-  const response = await fetch('https://scanner.tradingview.com/america/scan', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(sessionId ? { Cookie: `sessionid=${sessionId}` } : {}),
-      'User-Agent': 'Mozilla/5.0',
-      Origin: 'https://www.tradingview.com',
-      Referer: 'https://www.tradingview.com/',
-    },
-    body: JSON.stringify({
-      columns: TRADINGVIEW_COLUMNS,
-      filter: [
-        { left: 'name', operation: 'equal', right: normalizedTicker },
-      ],
-      range: [0, 1],
-    }),
-    cache: 'no-store',
+  const payload = await scanTradingView({
+    columns: TRADINGVIEW_COLUMNS,
+    filter: [
+      { left: 'name', operation: 'equal', right: normalizedTicker },
+    ],
+    range: [0, 1],
   });
-
-  if (!response.ok) {
-    throw new Error(`TradingView scanner returned ${response.status}`);
-  }
-
-  const payload = (await response.json()) as {
-    data?: Array<{ s?: string; d?: unknown[] }>;
-  };
   const row = payload.data?.find((candidate) => candidate.s?.split(':')[1] === normalizedTicker)
     ?? payload.data?.[0];
   if (!row?.d) {

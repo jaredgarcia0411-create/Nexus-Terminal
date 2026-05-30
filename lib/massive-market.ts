@@ -73,6 +73,17 @@ export interface DailyOhlcBar {
   vwap: number | null;
 }
 
+export interface MassiveAggregateBar {
+  o?: number | null;
+  h?: number | null;
+  l?: number | null;
+  c?: number | null;
+  v?: number | null;
+  vw?: number | null;
+  t?: number | null;
+  n?: number | null;
+}
+
 export interface MassiveNewsArticle {
   id?: string;
   title?: string;
@@ -100,6 +111,13 @@ export function normalizeMassiveTicker(raw: string) {
     .replace(/^\//, '')
     .trim()
     .toUpperCase();
+}
+
+export class MassiveRequestError extends Error {
+  constructor(public readonly status: number) {
+    super(`Massive request failed: ${status}`);
+    this.name = 'MassiveRequestError';
+  }
 }
 
 function toNumberOrNull(value: unknown) {
@@ -146,6 +164,10 @@ function getMassiveApiKey() {
   return apiKey;
 }
 
+export function isMassiveConfigured(): boolean {
+  return Boolean(process.env.MASSIVE_API_KEY?.trim());
+}
+
 async function fetchMassiveJson<T>(path: string, searchParams: Record<string, string>): Promise<T> {
   const endpoint = new URL(path, MASSIVE_BASE_URL);
   for (const [key, value] of Object.entries(searchParams)) {
@@ -157,7 +179,7 @@ async function fetchMassiveJson<T>(path: string, searchParams: Record<string, st
   const response = await fetch(endpoint.toString(), { cache: 'no-store' });
   const payload = (await response.json().catch(() => ({}))) as T;
   if (!response.ok) {
-    throw new Error(`Massive request failed: ${response.status}`);
+    throw new MassiveRequestError(response.status);
   }
   return payload;
 }
@@ -263,6 +285,24 @@ export async function fetchTickerNews(ticker: string, daysBack = 3): Promise<Mas
   return response.results ?? [];
 }
 
+export async function fetchMassiveAggregateBars(params: {
+  ticker: string;
+  multiplier: string;
+  timespan: string;
+  from: string;
+  to: string;
+  limit?: number;
+}): Promise<MassiveAggregateBar[]> {
+  const payload = await fetchMassiveJson<{
+    results?: MassiveAggregateBar[];
+  }>(
+    `/v2/aggs/ticker/${encodeURIComponent(params.ticker.trim().toUpperCase())}/range/${params.multiplier}/${params.timespan}/${params.from}/${params.to}`,
+    { adjusted: 'true', sort: 'asc', limit: String(params.limit ?? 50000) },
+  );
+
+  return payload.results ?? [];
+}
+
 /**
  * Fetch daily OHLC bars from Massive (Polygon-compatible) aggregates API.
  * Returns the most recent `days` trading days of data.
@@ -279,22 +319,16 @@ export async function fetchDailyAggregates(
   const toStr = to.toISOString().split('T')[0]!;
   const fromStr = from.toISOString().split('T')[0]!;
 
-  const response = await fetchMassiveJson<{
-    results?: Array<{
-      o?: number | null;
-      h?: number | null;
-      l?: number | null;
-      c?: number | null;
-      v?: number | null;
-      vw?: number | null;
-      t?: number | null;
-    }>;
-  }>(
-    `/v2/aggs/ticker/${encodeURIComponent(ticker.trim().toUpperCase())}/range/1/day/${fromStr}/${toStr}`,
-    { adjusted: 'true', sort: 'asc', limit: String(days + 5) },
-  );
+  const bars = await fetchMassiveAggregateBars({
+    ticker,
+    multiplier: '1',
+    timespan: 'day',
+    from: fromStr,
+    to: toStr,
+    limit: days + 5,
+  });
 
-  return (response.results ?? [])
+  return bars
     .flatMap((bar) => {
       const open = Number(bar.o ?? NaN);
       const high = Number(bar.h ?? NaN);

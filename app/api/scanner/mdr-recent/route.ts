@@ -1,13 +1,8 @@
 import { and, gte, isNull, sql } from 'drizzle-orm';
 
-import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { mdrTriggers } from '@/lib/db/schema';
 import { evaluateLatestD2MdrTrigger, fetchUnifiedSnapshot, type MdrThresholds } from '@/lib/massive-market';
-import { dbUnavailable, requireUser } from '@/lib/server-db-utils';
-
-export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
 
 const THRESHOLD_CONCURRENCY = 10;
 
@@ -134,19 +129,4 @@ export async function fetchMdrRecentForDashboard(db: AppDb): Promise<DashboardMd
   });
 
   return { rows: out, fetchedAt: new Date().toISOString() };
-}
-
-export async function GET() {
-  const authState = await requireUser();
-  if ('error' in authState) return authState.error;
-
-  const db = getDb();
-  if (!db) return dbUnavailable();
-
-  try {
-    return Response.json(await fetchMdrRecentForDashboard(db));
-  } catch (error) {
-    logRouteError('scanner-mdr-recent', error);
-    return internalServerError();
-  }
 }
