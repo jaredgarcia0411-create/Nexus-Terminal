@@ -7,148 +7,150 @@ Historical completed sections (Sprints 1-5, Tier 1 Cleanup, Chart Drawings, Work
 
 ---
 
-## Sprint 9 — Agent Job Lease Recovery
+## Sprint 10 — Dead-Code Purge + Type-Cast Documentation + Audit Coverage
 
 > Generated: 2026-05-30 | Agent: Claude (Plan)
-> Status: completed 2026-05-30
+> Status: READY FOR CODEX
 
-(First of the remaining `docs/repo-cleanup.md` cleanup batch. Numbered 9 to continue the existing HANDOFF sprint sequence — Sprints 6/7/8 above were also cleanup findings.)
+(Second of the remaining `docs/repo-cleanup.md` cleanup batch — see the "Remaining Sprint Plan" there. All deletions and mechanical edits; no user-facing behavior change. Baseline is green as of the Sprint 9 review on 2026-05-30: `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npm test` (98 files, 707 tests) all passed.)
 
 ### Objective
 
-When an agent worker dies mid-job (crash, OOM, container restart), its `agent_jobs` row is left at `status = 'processing'` with an expired `lock_expires_at`. The claim query only selects `status = 'queued'`, and every finalizer is fenced on `lock_expires_at > now()`, so that row is stuck forever — the user sees a job that never finishes (service chat shows `processing` until the Discord bot polling times out). This sprint adds a lease-recovery sweep that runs in the worker poll loop: expired `processing` jobs with attempts remaining are requeued, and exhausted ones are marked `failed`. Closes the `docs/repo-cleanup.md` "Expired Agent Job Leases Are Not Recovered" finding.
+Remove two confirmed-dead route surfaces and their orphaned helpers, convert three silent `as unknown as` casts into documented accepted-limitation comments, and extend `scripts/workflow-audit.mjs` so it actually checks the `HANDOFF.md` and `docs/ARCHITECTURE.md` invariants the audit skill claims it covers. Nothing here changes runtime behavior — it shrinks dead surface area and closes three `docs/repo-cleanup.md` findings (the `mdr-eligibility` deletion, the agent-reports route decision, the `as unknown as` finding, and the `workflow:audit` narrow-check finding).
 
 ### Stories
 
-- CLEAN-901 — Add `recoverExpiredJobs(db, agentId)` to the queue module.
-- CLEAN-902 — Call recovery in the worker loop before each claim attempt.
-- CLEAN-903 — Test coverage for requeue / fail-exhausted / counts.
+- CLEAN-1001 — Delete `/api/scanner/mdr-eligibility` route + its test, and remove `computeMdrEligibility()` + `MdrEligibilityResult` from `lib/massive-market.ts`.
+- CLEAN-1002 — Delete `/api/agents/reports` and `/api/agents/reports/[id]` routes + `__tests__/agent-reports-route.test.ts`, and remove the now-orphaned `reportsListQuerySchema` + `ReportsListQueryInput` from `lib/validations/agents.ts`.
+- CLEAN-1003 — Replace the three `as unknown as` casts with the same code plus an explanatory comment documenting the accepted limitation (no signature refactor).
+- CLEAN-1004 — Extend `scripts/workflow-audit.mjs` with stable invariant checks for `HANDOFF.md` and `docs/ARCHITECTURE.md`.
 
 ### Current State
 
-- `lib/agents/queue.ts` exports `claimNextQueuedJob`, `renewJobLease`, `heartbeatJob`, `completeJob`, `failJob`, `scheduleJobRetry`, `persistStepLog`, and `calculateBackoffMs`. All mutation helpers go through `processingLeaseFence(jobId, lockedBy, leaseVersion)`, which `and()`s: `eq(id)`, `eq(lockedBy)`, `eq(leaseVersion)`, `eq(status,'processing')`, and `sql\`${agentJobs.lockExpiresAt} > now()\``.
-- `claimNextQueuedJob` is a single `db.execute` raw-SQL `WITH candidate … UPDATE … RETURNING …`. On claim it sets `status='processing'`, `attempt = attempt + 1`, `locked_by`, `lock_expires_at = now() + interval '5 minutes'`, `last_heartbeat_at = now()`, `lease_version = lease_version + 1`. **`attempt` is post-incremented at claim** — a job that crashed on its first run has `attempt = 1`.
-- `scheduleJobRetry` (the normal requeue path) sets `status='queued'`, `nextRetryAt`, `completedAt=null`, `result=null`, `lockedBy=null`, `lockExpiresAt=null`, `lastHeartbeatAt=null`, and conditionally `errorMessage`. It does **not** touch `leaseVersion` or `startedAt` — the next claim bumps `leaseVersion`, and claim's `started_at = COALESCE(started_at, now())` preserves the original start.
-- `lib/agents/worker.ts` `startWorker()` runs a `while (!shuttingDown)` loop: it `try`s `claimNextQueuedJob`, sleeps `pollIntervalMs` (default 5000ms) on null/error, else calls `processClaim`. The worker's own in-process retry guard is `if (job.attempt < job.maxAttempts)` → `scheduleJobRetry`, else `failJob`.
-- `lib/db/schema.ts` `agentJobs`: relevant columns `status` (default `'queued'`), `attempt` (default 0), `maxAttempts` (default 3), `lockedBy`, `lockExpiresAt`, `lastHeartbeatAt`, `leaseVersion` (default 0). Index `idx_agent_jobs_stale` on `(status, lockExpiresAt)` **already exists** and currently has no reader — it exactly fits the recovery query. **No migration is required this sprint.**
-- `app/api/agents/admin/stats/route.ts` already computes `stuckProcessing` as rows where `lockExpiresAt < now()` OR `lastHeartbeatAt` older than 10 minutes. Recovery uses the simpler authoritative signal (`lockExpiresAt < now()`); see D2.
-- Each agent runs its own worker container (`services/agent-entrypoint.ts` starts one `startWorker` per `AGENT_ID`). Workers filter by `agentId`, so recovery must also filter by `agentId` (see D3).
-- `__tests__/agent-queue.test.ts` exists. Its `createQueueDb` helper records a single `lastSet`/`lastWhere` and returns one shared `returningRows` for every `.returning()` call — it cannot yet distinguish two sequential update chains, so it must be extended (see CLEAN-903).
+- **mdr-eligibility (CLEAN-1001):** `app/api/scanner/mdr-eligibility/route.ts` is a thin `GET` wrapper over `computeMdrEligibility(ticker, mark)`. Repo-wide, `computeMdrEligibility` is referenced only by that route + `__tests__/scanner-mdr-eligibility-route.test.ts`. `MdrEligibilityResult` (the interface above it) is used only by `computeMdrEligibility`. The dashboard test (`__tests__/dashboard-scanner-table.test.tsx:226`) asserts the UI never fetches `/api/scanner/mdr-eligibility` — that assertion stays valid (and passing) after the route is gone. **`fetchDailyAggregates` is used widely (swing-trader/orchestrator blueprints, `cron/mdr-sweep`, `massive-market.ts:745`) — do NOT remove it.**
+- **agents/reports (CLEAN-1002):** `app/api/agents/reports/route.ts` (list) and `app/api/agents/reports/[id]/route.ts` (detail) are `requireUser`-protected readers of the `agentReports` table. No product/UI code fetches them (verified: the only references outside the route files are inside `__tests__/agent-reports-route.test.ts`). The Research section UI (`ResearchReportPanel`, `ResearchTickerView`, `ResearchTldr`) uses `/api/research-report`, `/api/askedgar/tldr`, `/api/askedgar/snapshot` — none of which touch these routes. The `agentReports` table itself is read by the type-specific `latest` routes (`agents/market-pulse/latest`, `agents/macro-summary/latest`, `agents/admin/stats`, `agents/admin/redeliver`, `cron/market-pulse-eod`), which query the table directly and do NOT go through `/api/agents/reports`. So deleting these two generic routes leaves the table and every live reader intact. `reportsListQuerySchema` and its inferred type `ReportsListQueryInput` (`lib/validations/agents.ts:19,25`) are imported only by the list route → orphaned once it's gone.
+- **Casts (CLEAN-1003):** Three `as unknown as` sites: `lib/market-pulse/capture.ts:101` (`db.select()` chain) and `:117` (`db.insert()` chain) — both exist because `MarketPulseDb = Pick<Db, 'insert' | 'select'> & Partial<Pick<Db, 'execute'>>` (line 9) narrows the db so tests can pass a partial mock, but `Pick` drops Drizzle's fluent builder return types so the `.from().where()` / `.values().onConflictDoUpdate()` chains must be typed by hand. `app/api/research-report/route.ts:174` (`db as unknown as Parameters<typeof recordLlmAttempt>[0]`) — `getDb()` returns the site `Db`, while `recordLlmAttempt` (`lib/agents/runtime-limits.ts:171`) takes `AgentDb`; both are the same Drizzle instance over the same schema, just different brand types. None of the three is a hidden bug.
+- **Audit script (CLEAN-1004):** `scripts/workflow-audit.mjs` (147 lines) string-checks `AGENTS.md`, `README.md`, `docs/VALIDATION_MATRIX.md`, the vercel-ops skill, and skill-file existence, but never reads `HANDOFF.md` or `docs/ARCHITECTURE.md` — even though `codex-skills/nexus-workflow-audit/SKILL.md` lists both as audit targets. The script uses a simple `read(rel)` + `check(condition, message)` pattern and exits non-zero with a failure list. `docs/ARCHITECTURE.md` exists (the route-auth conventions are stated at its line 53; "Never `db:push`" at line 154). `HANDOFF.md` ends with a `## Session Maintenance` section in every revision.
 
 ### Scope
 
-- **In scope:** `lib/agents/queue.ts` (new `recoverExpiredJobs`), `lib/agents/worker.ts` (call it in the loop), `__tests__/agent-queue.test.ts` (extend harness + new tests).
-- **Out of scope:** No schema/migration changes (`idx_agent_jobs_stale` already supports the query). No changes to `app/api/agents/service/chat/route.ts`, `services/discord-bot/index.ts`, or `app/api/agents/admin/stats/route.ts` — recovery at the queue level is the root-cause fix; consumers see `failed`/`completed`/`queued` once the row moves (all read job status as disjoint cases and none assume `processing` is terminal, so the revert-to-`queued` transition is safe). Admin stats' `stuckProcessing` is left as-is on purpose: it counts `lockExpiresAt < now()` OR `lastHeartbeatAt` >10min stale, but heartbeats push `lockExpiresAt` forward in lockstep, so the lock expires (and recovery fires) *before* the 10-min heartbeat signal — the count self-clears once recovery runs. No new env vars, cron, or routes. Do not change `processingLeaseFence` or any existing helper's behavior.
+- **In scope:** the four deletions/edits above, plus the audit-script extension and its required HANDOFF/ARCHITECTURE invariant strings.
+- **Out of scope:** Do NOT refactor the casts (no widening of `recordLlmAttempt`'s signature, no change to `MarketPulseDb`) — documenting them is the locked decision (D3). Do NOT touch `fetchDailyAggregates`, the `agentReports` table, the schema, or any `latest`/cron route. Do NOT change the audit skill's `SKILL.md` text (the skill already lists these targets; we're making the script match the skill, not the reverse). No new env vars, no migration, no product/UI change. Provider-client consolidation (TradingView/Massive) is Sprint 11 — leave it alone even though `massive-market.ts` is touched here.
 
-### Decisions Locked For Sprint 9
+### Decisions Locked For Sprint 10
 
-These remove ambiguity before Codex starts. If any is wrong, update this section before execution.
-
-- **D1. Recovery is a non-fenced, condition-based bulk update — two separate Drizzle updates, FAIL first then REQUEUE.** The whole point is that the lease is expired and no live worker owns it, so `processingLeaseFence` cannot be used. Both updates are guarded by `eq(agentJobs.status, 'processing')` AND `sql\`${agentJobs.lockExpiresAt} < now()\`` so only genuinely-expired rows are touched — a live job (`lockExpiresAt > now()`) is never affected. The two updates target disjoint sets (`attempt >= maxAttempts` vs `attempt < maxAttempts`), so order is correctness-neutral; do FAIL first for readability. Two separate `db.update(...)` calls (not one raw SQL) keep it readable and testable.
-- **D2. Recovery condition is `status = 'processing' AND lockExpiresAt < now()`** — do not also key off `lastHeartbeatAt`. `lockExpiresAt` is the authoritative lease signal: claim sets it to `now()+5min` and every heartbeat/renew pushes it forward, so a processing row always has a non-null `lockExpiresAt`, and it crosses `now()` within ~5 min of a worker dying. This is the same primary signal admin stats uses, and it matches the existing index. Accepted consequence: recovery latency is up to ~5 minutes after a crash, which is fine for this app. **Invariant relied on:** `status='processing' ⇒ lockExpiresAt IS NOT NULL`, enforced by `claimNextQueuedJob` (which sets both atomically). A processing row with a null lock would never match `lockExpiresAt < now()` (SQL NULL comparison is false) and would stay stuck — but no code path produces one, so this is safe without a schema change. (Adding `.notNull()` to the column to make the invariant explicit is a possible later follow-up, out of scope here.)
-- **D3. Recovery filters by `agentId`** (passed from the worker's `config.agentId`), mirroring the per-agent worker model. A live worker recovers expired jobs left by dead siblings of the **same** agent. Known limitation (acceptable, do not solve now): if an agent has no running worker at all, its stuck jobs are not recovered until that agent's container comes back — but with no worker there is also nothing consuming that agent's queue, so nothing is lost.
-- **D4. Requeue makes the job immediately eligible: set `nextRetryAt = null`** (claim treats null as eligible). No backoff is applied on recovery. A crash-looping "poison" job is already bounded by `maxAttempts` (default 3) plus the seconds a container takes to restart, so a flat immediate requeue cannot hot-loop unboundedly, and this avoids duplicating `calculateBackoffMs` into SQL (drift risk). The normal in-process retry path keeps its real backoff.
-- **D5. Requeue mirrors `scheduleJobRetry`'s field clearing and does NOT bump `leaseVersion`.** Set `status='queued'`, `nextRetryAt=null`, `completedAt=null`, `result=null`, `lockedBy=null`, `lockExpiresAt=null`, `lastHeartbeatAt=null`. Leave `leaseVersion`, `startedAt`, `stepLog`, `errorMessage`, and `attempt` untouched (the next claim bumps `leaseVersion` and increments `attempt`). Do **not** set an errorMessage on requeue. **Zombie-worker safety:** a stalled-but-alive original worker that wakes up and tries to finalize is blocked on two independent fence conditions — while the row is `queued` it fails the `status='processing'` check, and once a new worker reclaims it the bumped `leaseVersion` (and changed `lockedBy`) is the *primary* fence; the cleared `lockExpiresAt` is a secondary guard. So no zombie write can corrupt the row in either window.
-- **D6. Fail-exhausted sets the same fields `failJob` sets, minus the fence.** `status='failed'`, `errorMessage = 'Job lease expired; worker did not finish (max attempts reached)'`, `completedAt = sql\`now()\``, `lockedBy=null`, `lockExpiresAt=null`, `lastHeartbeatAt=null`, `nextRetryAt=null`. Do not overwrite `result`.
-- **D7. `recoverExpiredJobs` returns `{ requeued: number; failed: number }`** derived from each update's `.returning({ id: agentJobs.id })` row count. The worker logs only when `requeued > 0 || failed > 0`.
-- **D8. Recovery runs before each claim, inside the loop, wrapped in its own try/catch.** A recovery failure logs `console.error` and falls through to the claim — it must never break the poll loop. Use `console.warn` for a successful non-empty recovery.
+- **D1. `computeMdrEligibility` + `MdrEligibilityResult` are deleted, `fetchDailyAggregates` is kept.** The eligibility helper is dead (route-only); the aggregates fetch it depends on is shared infrastructure. Verified via repo-wide grep.
+- **D2. The agent-reports routes are deleted (not kept+documented).** Confirmed no product consumer and that the Research section's reports use a completely separate route (`/api/research-report`). Deleting the generic list/detail endpoints does not affect the `agentReports` table or its type-specific `latest`-route readers. This matches the user's instruction: "if [the research section] doesn't use this route then we can delete both routes + test."
+- **D3. The three casts are documented, not refactored.** Each is an accepted Drizzle/brand-type limitation, not a hidden bug; refactoring working market-pulse and telemetry paths for type cosmetics carries risk with no behavior benefit. Keep the exact same code, add a one-line comment above each cast explaining why it's there. (Comment text is given verbatim in Planned File Actions — use it as written.)
+- **D4. `workflow:audit` is extended, not merely documented.** Per the user's choice, add real checks so the command matches what the skill claims. The HANDOFF.md check is **positive-only** (a structural anchor): forbidden-substring checks must NOT be used on HANDOFF.md because it legitimately names retired systems while a cleanup sprint is active (a fanout review caught this self-reference trap). Forbidden-reference checks belong only on stable published docs (README.md, docs/ARCHITECTURE.md). Never assert sprint-specific strings. Follow the existing `read()` + `check()` style exactly; do not restructure the script.
 
 ### Planned File Actions
 
+**Deleted files:**
+
+- `app/api/scanner/mdr-eligibility/route.ts`
+- `__tests__/scanner-mdr-eligibility-route.test.ts`
+- `app/api/agents/reports/route.ts`
+- `app/api/agents/reports/[id]/route.ts`  *(after deleting both files, the now-empty `app/api/agents/reports/` and `app/api/agents/reports/[id]/` directories should be removed too)*
+- `__tests__/agent-reports-route.test.ts`
+
 **Modified files:**
 
-- `lib/agents/queue.ts` — Add and export:
+- `lib/massive-market.ts` — Delete the `export interface MdrEligibilityResult { ... }` block (starts at line ~334) **and** the entire `export async function computeMdrEligibility(...) { ... }` (starts at line ~349, runs to its closing brace). Leave everything else — especially `fetchDailyAggregates` and `fetchGroupedDailyAggregates` — untouched. After deletion, confirm no remaining reference to either deleted symbol in the file.
+
+- `lib/validations/agents.ts` — Delete the `export const reportsListQuerySchema = z.object({ ... });` block (line ~19) and the `export type ReportsListQueryInput = z.infer<typeof reportsListQuerySchema>;` line (~25). Leave all other exports in the file intact. If removing them leaves an unused `z` import, only remove the import if `z` is now unused in the whole file (grep first — it's almost certainly still used by other schemas).
+
+- `lib/market-pulse/capture.ts` — Keep both casts' code exactly as-is; add a comment line directly above each.
+  - Above `const rows = await ((db.select() as unknown as {` (line ~101):
+    ```ts
+    // MarketPulseDb narrows db to a Pick<> so tests can pass a partial mock, but
+    // Pick drops Drizzle's fluent builder return types — so select().from().where()
+    // is typed by hand here. Accepted Drizzle/Pick limitation, not a hidden bug.
+    ```
+  - Above `await (db.insert(marketPulseDailyStats) as unknown as {` (line ~117):
+    ```ts
+    // Same Drizzle/Pick limitation as loadBarsForDates: the narrowed db drops
+    // insert()'s fluent builder types, so values().onConflictDoUpdate() is typed by hand.
+    ```
+
+- `app/api/research-report/route.ts` — Keep the cast; add a comment directly above `const telemetryDb = db as unknown as Parameters<typeof recordLlmAttempt>[0];` (line ~174):
   ```ts
-  export async function recoverExpiredJobs(
-    db: AgentDb,
-    agentId: AgentId,
-  ): Promise<{ requeued: number; failed: number }> {
-    // FAIL exhausted expired-lease jobs first (D1, D6).
-    const failedRows = await db.update(agentJobs)
-      .set({
-        status: 'failed',
-        errorMessage: 'Job lease expired; worker did not finish (max attempts reached)',
-        completedAt: sql`now()`,
-        lockedBy: null,
-        lockExpiresAt: null,
-        lastHeartbeatAt: null,
-        nextRetryAt: null,
-      })
-      .where(and(
-        eq(agentJobs.agentId, agentId),
-        eq(agentJobs.status, 'processing'),
-        sql`${agentJobs.lockExpiresAt} < now()`,
-        sql`${agentJobs.attempt} >= ${agentJobs.maxAttempts}`,
-      ))
-      .returning({ id: agentJobs.id });
-
-    // REQUEUE expired-lease jobs that still have attempts left (D4, D5).
-    const requeuedRows = await db.update(agentJobs)
-      .set({
-        status: 'queued',
-        nextRetryAt: null,
-        completedAt: null,
-        result: null,
-        lockedBy: null,
-        lockExpiresAt: null,
-        lastHeartbeatAt: null,
-      })
-      .where(and(
-        eq(agentJobs.agentId, agentId),
-        eq(agentJobs.status, 'processing'),
-        sql`${agentJobs.lockExpiresAt} < now()`,
-        sql`${agentJobs.attempt} < ${agentJobs.maxAttempts}`,
-      ))
-      .returning({ id: agentJobs.id });
-
-    return { requeued: requeuedRows.length, failed: failedRows.length };
-  }
-  ```
-  `and`, `eq`, `sql`, and `agentJobs` are already imported at the top of the file; `AgentId` is already imported from `./types`. Add no new imports.
-
-- `lib/agents/worker.ts` — Import `recoverExpiredJobs` in the existing `from './queue'` import block. In `startWorker`'s `while (!shuttingDown)` loop, **before** the `let claim` / `try { claim = await claimNextQueuedJob(...) }` block, insert:
-  ```ts
-  try {
-    const recovered = await recoverExpiredJobs(db, config.agentId);
-    if (recovered.requeued > 0 || recovered.failed > 0) {
-      console.warn(`agent worker recovered expired jobs for ${config.agentId}`, recovered);
-    }
-  } catch (error) {
-    console.error(`agent worker recovery failed for ${config.agentId}`, error);
-  }
+  // recordLlmAttempt wants AgentDb; getDb() returns the structurally-identical site
+  // Db (same Drizzle instance over the same schema). The cast bridges the two brand
+  // types — widening recordLlmAttempt's signature is out of scope here.
   ```
 
-- `__tests__/agent-queue.test.ts` — Extend `createQueueDb` so two sequential update chains can be inspected independently, then add recovery tests:
-  - Add a `setCalls: Record<string, unknown>[]` array to `_state`; have the `set` mock push each value (keep `lastSet` for existing tests).
-  - Accept an optional `returningResults?: Array<Array<{ id: string }>>` param; the `returning` mock returns `returningResults.shift()` when the array is non-empty, otherwise falls back to `returningRows`. (Existing single-chain tests keep passing because they don't pass `returningResults`.)
-  - Import `recoverExpiredJobs` from `@/lib/agents/queue`.
-  - Tests to add:
-    1. Requeue + fail counts: `returningResults: [[{id:'a'}], [{id:'b'},{id:'c'}]]` → expect `{ requeued: 2, failed: 1 }`; assert `setCalls[0]` is the FAIL payload (`status:'failed'`, the D6 errorMessage) and `setCalls[1]` is the REQUEUE payload (`status:'queued'`, `nextRetryAt:null`) and that `setCalls[1]` has **no** `leaseVersion` and **no** `errorMessage` key.
-    2. Both empty: `returningResults: [[], []]` → `{ requeued: 0, failed: 0 }`.
-    3. Source-string guard (matches the file's existing `queueSource` assertion style). Because the mocked db cannot evaluate the SQL `WHERE`, this guard is the only thing protecting the filter conditions from accidental deletion — assert `queueSource` contains all of: the expiry guard `${agentJobs.lockExpiresAt} < now()`, the agent filter `eq(agentJobs.agentId, agentId)`, and **both** attempt branches `${agentJobs.attempt} >= ${agentJobs.maxAttempts}` (fail) and `${agentJobs.attempt} < ${agentJobs.maxAttempts}` (requeue).
+- `scripts/workflow-audit.mjs` — Following the existing `read()` + `check()` pattern (place these blocks alongside the other top-level checks, before the `if (includeCrossTool)` block), add:
+  ```js
+  // HANDOFF.md is a rotating work-contract: it legitimately NAMES retired systems
+  // whenever a sprint is about removing them, so forbidden-substring checks do not
+  // belong here (they would fail mid-sprint on the spec's own text). Only assert the
+  // structural anchor that every revision must keep.
+  const handoff = read('HANDOFF.md');
+  check(
+    handoff.includes('## Session Maintenance'),
+    'HANDOFF.md should keep its `## Session Maintenance` section.',
+  );
+
+  const architecture = read('docs/ARCHITECTURE.md');
+  check(
+    architecture.includes('requireCronSecret()') && architecture.includes('requireUser()'),
+    'docs/ARCHITECTURE.md should document the requireUser()/requireCronSecret() auth conventions.',
+  );
+  check(
+    architecture.includes('maxDuration = 60'),
+    'docs/ARCHITECTURE.md should document the SSE `maxDuration = 60` convention.',
+  );
+  check(
+    architecture.includes('Never `db:push`'),
+    'docs/ARCHITECTURE.md should keep the "Never `db:push`" migration rule.',
+  );
+  check(
+    !/Jarvis|JARVIS_|Schwab/i.test(architecture),
+    'docs/ARCHITECTURE.md should not reference retired Jarvis/Schwab systems.',
+  );
+  ```
+  All asserted strings are present in the current files (verified), so the audit stays green during and after this sprint — including while this Sprint 10 spec itself is still in HANDOFF.md. (The HANDOFF.md check is positive-only on purpose: a fanout review caught that negative forbidden-substring checks on HANDOFF.md are self-referential — the spec text discussing a cleanup names the very systems being removed — and would fail mid-sprint. Negative reference checks stay on the stable published docs, README.md and docs/ARCHITECTURE.md, only.) The ARCHITECTURE.md checks are convention anchors, not sprint-specific content.
 
 ### Acceptance Criteria
 
-- [x] `recoverExpiredJobs(db, agentId)` exists and is exported from `lib/agents/queue.ts`, returning `{ requeued, failed }`.
-- [x] Both recovery updates filter on `agentId`, `status='processing'`, and `lockExpiresAt < now()`; FAIL targets `attempt >= maxAttempts`, REQUEUE targets `attempt < maxAttempts`.
-- [x] Requeue clears lock fields and sets `status='queued'`, `nextRetryAt=null`, without touching `leaseVersion`, `startedAt`, `attempt`, or `errorMessage`.
-- [x] Fail-exhausted sets `status='failed'` with the D6 errorMessage and does not overwrite `result`.
-- [x] The worker loop calls `recoverExpiredJobs` before each claim, logs only on non-empty recovery, and a thrown recovery error is caught and does not break the loop.
-- [x] No schema migration, no new env var, no consumer-route changes.
-- [x] New tests cover requeue/fail counts, the empty case, and the field payloads; existing queue tests still pass unchanged.
+- [ ] `app/api/scanner/mdr-eligibility/route.ts` and `__tests__/scanner-mdr-eligibility-route.test.ts` are deleted; `computeMdrEligibility` + `MdrEligibilityResult` are gone from `lib/massive-market.ts`; `fetchDailyAggregates` and all other exports remain.
+- [ ] `app/api/agents/reports/route.ts`, `app/api/agents/reports/[id]/route.ts`, and `__tests__/agent-reports-route.test.ts` are deleted (and the emptied route directories removed); `reportsListQuerySchema` + `ReportsListQueryInput` are removed from `lib/validations/agents.ts` with no other export disturbed.
+- [ ] The three `as unknown as` casts are unchanged in behavior but each now has the documenting comment above it (verbatim as specified).
+- [ ] `scripts/workflow-audit.mjs` reads `HANDOFF.md` and `docs/ARCHITECTURE.md` and checks the listed invariants; `npm run workflow:audit` passes.
+- [ ] No schema/migration, no new env var, no product/UI behavior change; `fetchDailyAggregates`, the `agentReports` table, and all `latest`/cron readers are untouched.
+- [ ] Full validation gauntlet passes (see below).
 
 ### Validation
 
 Run before marking COMPLETE:
-- `npm run lint` — passed 2026-05-30
-- `npx tsc --noEmit` — passed 2026-05-30
-- `npm run typecheck:services` (worker.ts is consumed by `services/agent-entrypoint.ts`) — passed 2026-05-30
-- `npm test` — passed 2026-05-30 (98 files, 707 tests)
-- Manual (optional, post-deploy): kill an agent container mid-job; confirm within ~5 min the row moves off `processing` (requeued and reprocessed, or `failed` if attempts exhausted) instead of hanging. PENDING user/post-deploy verification.
+- `npm run lint`
+- `npx tsc --noEmit`
+- `npm run typecheck:services` (`lib/massive-market.ts` is imported by `services/` agent blueprints)
+- `npm test` (expect 2 fewer test files — the two deleted route tests; remaining suite green)
+- `npm run workflow:audit` (HANDOFF.md changed + the audit script itself changed)
+
+### Notes for Codex
+
+- After deletions, do a repo-wide grep for each deleted symbol/route path (`computeMdrEligibility`, `MdrEligibilityResult`, `reportsListQuerySchema`, `ReportsListQueryInput`, `/api/agents/reports`) to confirm no dangling import or reference remains outside the dashboard test's negative assertion (which is expected to stay).
+- The dashboard test line asserting the UI does NOT call `/api/scanner/mdr-eligibility` is correct to leave in place — it's a guard, not a consumer.
 
 ---
 
 ## Recently Completed
+
+### Sprint 9 — Agent Job Lease Recovery
+
+Status: completed 2026-05-30 (commit c8ffd89).
+
+Outcome:
+- New `recoverExpiredJobs(db, agentId)` in `lib/agents/queue.ts`: two non-fenced bulk updates over expired-lease processing rows (`status='processing' AND lockExpiresAt < now()`, scoped by `agentId`) — FAIL exhausted (`attempt >= maxAttempts`) with a lease-expired message, REQUEUE the rest (`attempt < maxAttempts`) immediately (`nextRetryAt=null`), leaving `leaseVersion`/`startedAt`/`attempt` for the next claim. Returns `{ requeued, failed }`. No migration (reuses existing `idx_agent_jobs_stale`).
+- `lib/agents/worker.ts` runs recovery before each claim inside the poll loop, in its own try/catch so a recovery failure logs and falls through instead of breaking the loop; logs only on non-empty recovery. Closes the `docs/repo-cleanup.md` "Expired Agent Job Leases Are Not Recovered" finding.
+
+Validation:
+- `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npm test` (98 files, 707 tests) all passed.
+- Tests cover requeue/fail counts, the empty case, exact set-payloads (requeue has no `leaseVersion`/`errorMessage`), and a source-string guard on the filter conditions.
+- Manual (kill a container mid-job; row clears off `processing` within ~5 min): PENDING post-deploy verification.
 
 ### Sprint 8 — Research TLDR Paid-Work Claim + Usage Telemetry
 

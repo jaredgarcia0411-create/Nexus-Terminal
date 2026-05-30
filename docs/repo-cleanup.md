@@ -16,9 +16,22 @@ Current-state audit for making the codebase simpler and more efficient without r
 8. Do frontend and oversized-module simplifications only when touching those areas for feature or bug work.
 9. Tighten TypeScript safety and remove legacy schema columns.
 
+## Remaining Sprint Plan (set 2026-05-30)
+
+Sprints 6–8 closed the rate-limiting, slim-trades-payload, and Research-TLDR-claim findings. The actionable remainder is bundled into **6 focused sprints** (numbering continues the HANDOFF sequence). Deletions and mechanical edits are grouped; the migration sprint is kept isolated for a clean revert path.
+
+- **Sprint 9 — Agent Job Lease Recovery** — IN PROGRESS (handed to Codex 2026-05-30). Requeue/fail expired `processing` jobs. Closes the only open security/reliability finding.
+- **Sprint 10 — Dead-code purge.** Delete `/api/scanner/mdr-eligibility` + `computeMdrEligibility()` + its test; decide and remove (or document) `/api/agents/reports` + `[id]` routes; fix the `as unknown as` assertions; extend or document `workflow:audit`. All deletions + mechanical edits, no user-facing change.
+- **Sprint 11 — Provider client consolidation.** Fold TradingView gainers/MDR-candidates fetch+header logic into `lib/tradingview-client.ts`; consolidate Massive paths into `lib/massive-market.ts`; delete or document the now-unused raw scanner route handlers. Scanner output unchanged (tests assert it).
+- **Sprint 12 — Scanner cost & telemetry.** Per-endpoint durable AskEdgar telemetry; durable (cross-instance) dashboard scanner cache; cache MDR thresholds per `(ticker, trigger_date)`. Additive, no UI change.
+- **Sprint 13 — Test coverage + small cleanups.** Component tests for `TradesTab`/`TradeDetailSheet`; Playbook route + UI coverage; `next/dynamic` lazy imports for `BacktestingTab` (after an `ANALYZE=true` build check). All low-risk.
+- **Sprint 14 — Legacy DB column drop (ISOLATED — has a migration).** Drop `pnl`/`executions`, remove the `toTrade()` fallback. Kept in its own sprint per the migration rule; runs last (review-order item 9).
+
+**Not scheduled — fold into feature/bug work when next touching those areas** (audit explicitly defers these): the 6 frontend simplifications (Management prop surface, Journal/Trades duplicate controls, daily/weekly review-sheet template lifecycle, backtesting sample-set loading, chart session shading, Research Report polling) and the "Low-Priority Route Pattern Extraction" finding.
+
 ## Immediate Security And Reliability
 
-### Expired Agent Job Leases Are Not Recovered
+### Expired Agent Job Leases Are Not Recovered — SPRINT 9 (handed to Codex 2026-05-30)
 
 Evidence:
 - Queue claims only `status = 'queued'` jobs: [lib/agents/queue.ts](/home/jared/Nexus-Terminal/lib/agents/queue.ts:73).
