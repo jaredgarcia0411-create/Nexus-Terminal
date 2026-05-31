@@ -100,7 +100,9 @@ export default function NexusTerminal() {
     handleMergeTrades,
     handleAddTag,
     handleRemoveTag,
+    handleApplyTradeTags,
     handleDeleteGlobalTag,
+    handleRenameGlobalTag,
     handleBulkAddTag,
     handleClearAllData,
     handleFileUpload,
@@ -231,7 +233,9 @@ export default function NexusTerminal() {
                   handleSelectAll={handleSelectAll}
                   handleAddTag={handleAddTag}
                   handleRemoveTag={handleRemoveTag}
+                  handleApplyTradeTags={handleApplyTradeTags}
                   handleDeleteGlobalTag={handleDeleteGlobalTag}
+                  handleRenameGlobalTag={handleRenameGlobalTag}
                   onMergeTrades={handleMergeTrades}
                   positionFilter={positionFilter}
                   onPositionFilterChange={setPositionFilter}

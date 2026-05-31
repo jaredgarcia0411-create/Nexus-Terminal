@@ -37,11 +37,13 @@ function makeDb(
 ) {
   const deleteWhereMock = txConfig.deleteWhereMock ?? vi.fn().mockResolvedValue(undefined);
   const updateWhereMock = txConfig.updateWhereMock ?? vi.fn().mockResolvedValue(undefined);
+  const tagOnConflictDoNothingMock = vi.fn().mockResolvedValue(undefined);
+  const tradeTagOnConflictDoNothingMock = vi.fn().mockResolvedValue(undefined);
   const tagInsertValuesMock = txConfig.tagInsertValuesMock ?? vi.fn(() => ({
-    onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+    onConflictDoNothing: tagOnConflictDoNothingMock,
   }));
   const tradeTagInsertValuesMock = txConfig.tradeTagInsertValuesMock ?? vi.fn(() => ({
-    onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+    onConflictDoNothing: tradeTagOnConflictDoNothingMock,
   }));
 
   const updateSet = vi.fn(() => ({ where: updateWhereMock }));
@@ -74,6 +76,8 @@ function makeDb(
       updateSet,
       tagInsertValuesMock,
       tradeTagInsertValuesMock,
+      tagOnConflictDoNothingMock,
+      tradeTagOnConflictDoNothingMock,
     },
   };
 
@@ -193,5 +197,56 @@ describe('bulk trades route', () => {
     expect(db._mocks.tagInsertValuesMock).toHaveBeenCalledWith({ userId: 'u1', name: 'swing' });
     expect(db._mocks.tradeTagInsertValuesMock).toHaveBeenCalledWith({ userId: 'u1', tradeId: 'trade-1', tag: 'swing' });
     expect(db._mocks.tradeTagInsertValuesMock).toHaveBeenCalledWith({ userId: 'u1', tradeId: 'trade-2', tag: 'swing' });
+  });
+
+  it('adds multiple tags to owned trades', async () => {
+    const db = makeDb([{ id: 'trade-1' }, { id: 'trade-2' }]);
+    getPoolDbMock.mockReturnValue(db);
+
+    const response = ensureResponse(await POST(new Request('http://localhost/api/trades/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'addTags',
+        assignments: [
+          { tradeId: 'trade-1', tags: [' momentum ', 'gap', 'momentum'] },
+          { tradeId: 'trade-2', tags: ['gap'] },
+        ],
+      }),
+    })));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({ success: true, action: 'addTags', ids: ['trade-1', 'trade-2'] });
+    expect(db._mocks.tagInsertValuesMock).toHaveBeenCalledWith({ userId: 'u1', name: 'momentum' });
+    expect(db._mocks.tagInsertValuesMock).toHaveBeenCalledWith({ userId: 'u1', name: 'gap' });
+    expect(db._mocks.tradeTagInsertValuesMock).toHaveBeenCalledWith({ userId: 'u1', tradeId: 'trade-1', tag: 'momentum' });
+    expect(db._mocks.tradeTagInsertValuesMock).toHaveBeenCalledWith({ userId: 'u1', tradeId: 'trade-1', tag: 'gap' });
+    expect(db._mocks.tradeTagInsertValuesMock).toHaveBeenCalledWith({ userId: 'u1', tradeId: 'trade-2', tag: 'gap' });
+    expect(db._mocks.tagOnConflictDoNothingMock).toHaveBeenCalled();
+    expect(db._mocks.tradeTagOnConflictDoNothingMock).toHaveBeenCalled();
+  });
+
+  it('ignores unowned addTags assignments', async () => {
+    const db = makeDb([{ id: 'trade-1' }]);
+    getPoolDbMock.mockReturnValue(db);
+
+    const response = ensureResponse(await POST(new Request('http://localhost/api/trades/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'addTags',
+        assignments: [
+          { tradeId: 'trade-1', tags: ['momentum'] },
+          { tradeId: 'unowned', tags: ['gap'] },
+        ],
+      }),
+    })));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({ success: true, action: 'addTags', ids: ['trade-1'] });
+    expect(db._mocks.tradeTagInsertValuesMock).toHaveBeenCalledTimes(1);
+    expect(db._mocks.tradeTagInsertValuesMock).toHaveBeenCalledWith({ userId: 'u1', tradeId: 'trade-1', tag: 'momentum' });
   });
 });

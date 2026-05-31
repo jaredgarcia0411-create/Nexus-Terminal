@@ -1,7 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'motion/react';
 import { Search } from 'lucide-react';
+
+import ManageTagsDialog from '@/components/trading/ManageTagsDialog';
 import TradeTable from '@/components/trading/TradeTable';
 import TagFilterDropdown from '@/components/trading/TagFilterDropdown';
 import { Button } from '@/components/ui/button';
@@ -20,6 +23,7 @@ interface TradesTabProps {
   onToggleFilterTag: (tag: string) => void;
   onClearFilterTags: () => void;
   onDeleteGlobalTag: (tagName: string) => void;
+  onRenameGlobalTag: (from: string, to: string) => Promise<void>;
   onToggleSelect: (id: string) => void;
   onSelectAll: (ids: string[]) => void;
   onAddTag: (tradeId: string, tagName: string) => void;
@@ -47,6 +51,7 @@ export default function TradesTab({
   onToggleFilterTag,
   onClearFilterTags,
   onDeleteGlobalTag,
+  onRenameGlobalTag,
   onToggleSelect,
   onSelectAll,
   onAddTag,
@@ -64,6 +69,8 @@ export default function TradesTab({
   onSetDefaultRisk,
   onBulkAddTag,
 }: TradesTabProps) {
+  const [manageTagsOpen, setManageTagsOpen] = useState(false);
+
   return (
     <motion.div key="filter" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
         <div className="space-y-6">
@@ -118,6 +125,13 @@ export default function TradesTab({
               onToggleTag={onToggleFilterTag}
               onClearTags={onClearFilterTags}
             />
+            <Button
+              type="button"
+              onClick={() => setManageTagsOpen(true)}
+              className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+            >
+              Manage Tags
+            </Button>
             <div className="flex items-center gap-2">
               <input
                 type="text"
@@ -154,6 +168,13 @@ export default function TradesTab({
           onPositionFilterChange={onPositionFilterChange}
         />
       </div>
+      <ManageTagsDialog
+        open={manageTagsOpen}
+        onOpenChange={setManageTagsOpen}
+        globalTags={globalTags}
+        onRenameTag={onRenameGlobalTag}
+        onDeleteTag={onDeleteGlobalTag}
+      />
     </motion.div>
   );
 }

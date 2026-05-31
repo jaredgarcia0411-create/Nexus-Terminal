@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 
+import TradeTagEditor from '@/components/trading/TradeTagEditor';
 import type { Trade } from '@/lib/types';
 
 interface WeeklyTradesPanelProps {
@@ -10,6 +11,11 @@ interface WeeklyTradesPanelProps {
   // Daily Review (passes "Daily Trades" / "No trades logged today.").
   title?: string;
   emptyState?: string;
+  globalTags?: string[];
+  readOnly?: boolean;
+  onAddTag?: (tradeId: string, tagName: string) => void;
+  onRemoveTag?: (tradeId: string, tagName: string) => void;
+  onDeleteGlobalTag?: (tagName: string) => void;
 }
 
 interface WeeklyTradeRow {
@@ -39,6 +45,11 @@ export default function WeeklyTradesPanel({
   trades,
   title = 'Weekly Trades',
   emptyState = 'No trades logged this week.',
+  globalTags = [],
+  readOnly = true,
+  onAddTag,
+  onRemoveTag,
+  onDeleteGlobalTag,
 }: WeeklyTradesPanelProps) {
   // Sort chronologically by sortKey so the order matches the Trade Replay Charts
   // section below it — same trades, same visual order.
@@ -84,7 +95,15 @@ export default function WeeklyTradesPanel({
             </div>
           ) : (
             rows.map((row) => (
-              <RowCells key={row.id} row={row} />
+              <RowCells
+                key={row.id}
+                row={row}
+                globalTags={globalTags}
+                readOnly={readOnly}
+                onAddTag={onAddTag}
+                onRemoveTag={onRemoveTag}
+                onDeleteGlobalTag={onDeleteGlobalTag}
+              />
             ))
           )}
         </div>
@@ -93,7 +112,21 @@ export default function WeeklyTradesPanel({
   );
 }
 
-function RowCells({ row }: { row: WeeklyTradeRow }) {
+function RowCells({
+  row,
+  globalTags,
+  readOnly,
+  onAddTag,
+  onRemoveTag,
+  onDeleteGlobalTag,
+}: {
+  row: WeeklyTradeRow;
+  globalTags: string[];
+  readOnly: boolean;
+  onAddTag?: (tradeId: string, tagName: string) => void;
+  onRemoveTag?: (tradeId: string, tagName: string) => void;
+  onDeleteGlobalTag?: (tagName: string) => void;
+}) {
   const cellBase = 'bg-card px-3 py-2 text-sm';
   // R color follows the same convention used elsewhere in the app:
   // green for positive, rose for negative, muted for null.
@@ -108,8 +141,16 @@ function RowCells({ row }: { row: WeeklyTradeRow }) {
     <>
       <div className={`${cellBase} font-medium text-foreground`}>{row.ticker}</div>
       <div className={cellBase}>
-        {row.tags.length > 0 ? (
-          <span className="text-foreground">{row.tags.join(', ')}</span>
+        {!readOnly && onAddTag && onRemoveTag ? (
+          <TradeTagEditor
+            tags={row.tags}
+            globalTags={globalTags}
+            onAddTag={(tag) => onAddTag(row.id, tag)}
+            onRemoveTag={(tag) => onRemoveTag(row.id, tag)}
+            onDeleteGlobalTag={onDeleteGlobalTag}
+          />
+        ) : row.tags.length > 0 ? (
+          <TradeTagEditor tags={row.tags} globalTags={globalTags} readOnly emptyLabel="—" />
         ) : (
           <span className="text-muted-foreground">—</span>
         )}

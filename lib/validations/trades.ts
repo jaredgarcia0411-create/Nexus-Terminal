@@ -52,11 +52,32 @@ export const updateTradeSchema = z.object({
 
 export type UpdateTradeInput = z.infer<typeof updateTradeSchema>;
 
-export const bulkTradeSchema = z.object({
-  action: z.enum(['delete', 'applyRisk', 'addTag']),
-  ids: z.array(z.string().min(1).max(256)).max(500).min(1, 'ids are required'),
-  value: z.union([z.number().finite(), z.string().max(200)]).optional(),
-});
+const bulkIdsSchema = z.array(z.string().min(1).max(256)).max(500).min(1, 'ids are required');
+const bulkTagNameSchema = z.string().trim().min(1).max(200);
+
+export const bulkTradeSchema = z.discriminatedUnion('action', [
+  z.object({
+    action: z.literal('delete'),
+    ids: bulkIdsSchema,
+  }),
+  z.object({
+    action: z.literal('applyRisk'),
+    ids: bulkIdsSchema,
+    value: z.number().finite(),
+  }),
+  z.object({
+    action: z.literal('addTag'),
+    ids: bulkIdsSchema,
+    value: bulkTagNameSchema,
+  }),
+  z.object({
+    action: z.literal('addTags'),
+    assignments: z.array(z.object({
+      tradeId: z.string().min(1).max(256),
+      tags: z.array(bulkTagNameSchema).max(100),
+    })).max(500).min(1, 'assignments are required'),
+  }),
+]);
 
 export type BulkTradeInput = z.infer<typeof bulkTradeSchema>;
 

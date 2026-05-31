@@ -2,20 +2,12 @@
 
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { FileText, LineChart, Plus, Trash2, X } from 'lucide-react';
+import { FileText, LineChart, Plus, Trash2 } from 'lucide-react';
 
+import TradeTagEditor from '@/components/trading/TradeTagEditor';
 import WatchlistSavePicker from '@/components/trading/WatchlistSavePicker';
 import WatchlistReportInline from '@/components/trading/WatchlistReportInline';
 import WatchlistTickerChart from '@/components/trading/WatchlistTickerChart';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -31,7 +23,7 @@ export const WATCHLIST_GRADE_OPTIONS = ['A+', 'A', 'B+', 'B', 'C+', 'C', 'D', 'F
 export interface WatchlistRow {
   id: string;
   ticker: string;
-  thesis: string;
+  tags: string[];
   grade: string;
   notes: string;
   // Set only when the row was created by the "+ Add to Watchlist" button on the
@@ -55,6 +47,8 @@ interface WatchlistEditorProps {
   // ticker on that day. Weekly aggregated watchlists pass no date — those rows
   // don't have a single consistent session, so the Chart column is omitted.
   date?: string;
+  globalTags: string[];
+  onDeleteGlobalTag?: (tagName: string) => void;
 }
 
 function newRowId(): string {
@@ -66,7 +60,7 @@ function newRowId(): string {
 }
 
 function emptyRow(): WatchlistRow {
-  return { id: newRowId(), ticker: '', thesis: '', grade: '', notes: '' };
+  return { id: newRowId(), ticker: '', tags: [], grade: '', notes: '' };
 }
 
 export default function WatchlistEditor({
@@ -76,11 +70,9 @@ export default function WatchlistEditor({
   readOnly = false,
   emptyState = 'No tickers on the watchlist yet.',
   date,
+  globalTags,
+  onDeleteGlobalTag,
 }: WatchlistEditorProps) {
-  const [theses, setTheses] = useState<string[]>([]);
-  // Track which row's thesis popover is open. Only one open at a time.
-  const [thesisOpenForRow, setThesisOpenForRow] = useState<string | null>(null);
-  const [thesisQuery, setThesisQuery] = useState('');
   // Which watchlist row currently has its saved-report viewer expanded. Only one open at a time.
   const [reportOpenForRow, setReportOpenForRow] = useState<string | null>(null);
   // Mirrors reportOpenForRow but for the inline candlestick chart panel.
@@ -94,26 +86,6 @@ export default function WatchlistEditor({
   const showChartColumn = Boolean(date) || hasRowDates;
   const showSaveColumn = Boolean(date) || hasRowDates;
   const showSelectColumn = showSaveColumn && !readOnly;
-
-  // Load saved theses on mount; we re-fetch when this component remounts inside a
-  // newly-opened sheet, which matches the rest of the app.
-  useEffect(() => {
-    if (readOnly) return;
-    let aborted = false;
-    void fetch('/api/watchlist-theses')
-      .then((response) => (response.ok ? response.json() : { theses: [] }))
-      .then((data) => {
-        if (aborted) return;
-        const list = Array.isArray(data?.theses) ? (data.theses as string[]) : [];
-        setTheses(list);
-      })
-      .catch(() => {
-        if (!aborted) setTheses([]);
-      });
-    return () => {
-      aborted = true;
-    };
-  }, [readOnly]);
 
   const updateRow = useCallback(
     (rowId: string, patch: Partial<WatchlistRow>) => {
@@ -175,48 +147,10 @@ export default function WatchlistEditor({
     setSavePickerRows(targetRows);
   }, [date, selectedRows]);
 
-  const upsertThesis = useCallback(
-    async (rowId: string, raw: string) => {
-      const name = raw.trim();
-      if (!name) return;
-      updateRow(rowId, { thesis: name });
-      setThesisOpenForRow(null);
-      setThesisQuery('');
-
-      if (theses.includes(name)) return;
-      // Optimistically add to the local list — POST is fire-and-forget; the row already has the value.
-      setTheses((current) => [...current, name].sort((a, b) => a.localeCompare(b)));
-      try {
-        await fetch('/api/watchlist-theses', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
-        });
-      } catch {
-        // Network failure here only means the option won't autocomplete next time;
-        // the row's thesis text is already saved with the daily review.
-      }
-    },
-    [theses, updateRow],
-  );
-
-  const deleteThesisOption = useCallback(async (name: string) => {
-    setTheses((current) => current.filter((option) => option !== name));
-    try {
-      await fetch('/api/watchlist-theses', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
-    } catch {
-      // Silent — the option will reappear on next refresh if delete failed server-side.
-    }
-  }, []);
-
   const rowCount = value.length;
   const showEmpty = rowCount === 0;
 
-  // Grid template: [select] · ticker (narrow) · thesis · grade (narrow) · notes (wide) · report · [chart] · [save] · [delete].
+  // Grid template: [select] · ticker (narrow) · tags · grade (narrow) · notes (wide) · report · [chart] · [save] · [delete].
   // Inline style instead of a Tailwind arbitrary class so the JIT scanner can't
   // miss the new column count — we hit that exact issue in WeeklyTradesPanel.
   // The delete column is editable-only; report column is always present and
@@ -224,7 +158,7 @@ export default function WatchlistEditor({
   // appears when `date` is provided (daily reviews). Report/Chart widths fit
   // the new "Report"/"Chart" header labels.
   const selectColumn = showSelectColumn ? '28px ' : '';
-  const baseColumns = '80px minmax(140px, 1fr) 70px minmax(160px, 2fr) 56px';
+  const baseColumns = '80px minmax(150px, 1fr) 70px minmax(160px, 2fr) 56px';
   const chartColumn = showChartColumn ? ' 56px' : '';
   const saveColumn = showSaveColumn ? ' 56px' : '';
   const deleteColumn = readOnly ? '' : ' 28px';
@@ -278,7 +212,7 @@ export default function WatchlistEditor({
             Ticker
           </div>
           <div className="bg-card px-3 py-2 text-xs font-semibold text-foreground">
-            Thesis
+            Tags
           </div>
           <div className="bg-card px-3 py-2 text-xs font-semibold text-foreground">
             Grade
@@ -316,22 +250,14 @@ export default function WatchlistEditor({
                 <RowCells
                   row={row}
                   readOnly={readOnly}
-                  theses={theses}
-                  thesisOpen={thesisOpenForRow === row.id}
-                  thesisQuery={thesisOpenForRow === row.id ? thesisQuery : ''}
+                  globalTags={globalTags}
+                  onDeleteGlobalTag={onDeleteGlobalTag}
                   reportOpen={reportOpenForRow === row.id}
                   chartOpen={chartOpenForRow === row.id}
                   showChartColumn={showChartColumn}
                   showSaveColumn={showSaveColumn}
                   showSelectColumn={showSelectColumn}
                   isSelected={selectedRowIds.has(row.id)}
-                  onOpenThesis={(open) => {
-                    setThesisOpenForRow(open ? row.id : null);
-                    if (!open) setThesisQuery('');
-                  }}
-                  onThesisQueryChange={setThesisQuery}
-                  onPickThesis={(name) => void upsertThesis(row.id, name)}
-                  onDeleteThesisOption={(name) => void deleteThesisOption(name)}
                   onChangeRow={(patch) => updateRow(row.id, patch)}
                   onRemoveRow={() => removeRow(row.id)}
                   onToggleReport={() => {
@@ -408,19 +334,14 @@ export default function WatchlistEditor({
 interface RowCellsProps {
   row: WatchlistRow;
   readOnly: boolean;
-  theses: string[];
-  thesisOpen: boolean;
-  thesisQuery: string;
+  globalTags: string[];
+  onDeleteGlobalTag?: (tagName: string) => void;
   reportOpen: boolean;
   chartOpen: boolean;
   showChartColumn: boolean;
   showSaveColumn: boolean;
   showSelectColumn: boolean;
   isSelected: boolean;
-  onOpenThesis: (open: boolean) => void;
-  onThesisQueryChange: (next: string) => void;
-  onPickThesis: (name: string) => void;
-  onDeleteThesisOption: (name: string) => void;
   onChangeRow: (patch: Partial<WatchlistRow>) => void;
   onRemoveRow: () => void;
   onToggleReport: () => void;
@@ -434,19 +355,14 @@ interface RowCellsProps {
 function RowCells({
   row,
   readOnly,
-  theses,
-  thesisOpen,
-  thesisQuery,
+  globalTags,
+  onDeleteGlobalTag,
   reportOpen,
   chartOpen,
   showChartColumn,
   showSaveColumn,
   showSelectColumn,
   isSelected,
-  onOpenThesis,
-  onThesisQueryChange,
-  onPickThesis,
-  onDeleteThesisOption,
   onChangeRow,
   onRemoveRow,
   onToggleReport,
@@ -456,14 +372,16 @@ function RowCells({
   tickerInputId,
   notesInputId,
 }: RowCellsProps) {
-  const filteredTheses = useMemo(() => {
-    const q = thesisQuery.trim().toLowerCase();
-    if (!q) return theses;
-    return theses.filter((option) => option.toLowerCase().includes(q));
-  }, [theses, thesisQuery]);
-
   // Cell base style — matches the dark calendar cells in the rest of the app.
   const cellBase = 'bg-card px-2 py-1.5';
+  const addRowTag = (tag: string) => {
+    const clean = tag.trim();
+    if (!clean) return;
+    onChangeRow({ tags: Array.from(new Set([...(row.tags ?? []), clean])) });
+  };
+  const removeRowTag = (tag: string) => {
+    onChangeRow({ tags: (row.tags ?? []).filter((item) => item !== tag) });
+  };
 
   if (readOnly) {
     return (
@@ -472,7 +390,9 @@ function RowCells({
         <div className={`${cellBase} font-mono text-sm font-semibold text-foreground`}>
           {row.ticker || '—'}
         </div>
-        <div className={`${cellBase} text-sm text-foreground`}>{row.thesis || '—'}</div>
+        <div className={`${cellBase} text-sm text-foreground`}>
+          <TradeTagEditor tags={row.tags ?? []} globalTags={globalTags} readOnly emptyLabel="—" />
+        </div>
         <div className={`${cellBase} text-sm text-foreground`}>{row.grade || '—'}</div>
         <div className={`${cellBase} whitespace-pre-wrap text-sm text-foreground`}>
           {row.notes || '—'}
@@ -501,66 +421,14 @@ function RowCells({
       </div>
 
       <div className={cellBase}>
-        <Popover open={thesisOpen} onOpenChange={onOpenThesis}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className="w-full truncate rounded border border-transparent px-1 py-0.5 text-left text-sm text-foreground hover:border-emerald-500/30 hover:bg-accent"
-            >
-              {row.thesis || <span className="text-muted-foreground">Select thesis…</span>}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent
-            className="w-64 border-border bg-card p-0 text-foreground"
-            align="start"
-          >
-            <Command className="bg-transparent">
-              <CommandInput
-                placeholder="Search or create thesis…"
-                value={thesisQuery}
-                onValueChange={onThesisQueryChange}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && thesisQuery.trim()) {
-                    event.preventDefault();
-                    onPickThesis(thesisQuery.trim());
-                  }
-                }}
-              />
-              <CommandList>
-                <CommandEmpty>
-                  {thesisQuery.trim()
-                    ? `Press Enter to create "${thesisQuery.trim()}"`
-                    : 'No saved theses yet.'}
-                </CommandEmpty>
-                {filteredTheses.length > 0 ? (
-                  <CommandGroup heading="Saved Theses">
-                    {filteredTheses.map((option) => (
-                      <CommandItem
-                        key={option}
-                        value={option}
-                        onSelect={() => onPickThesis(option)}
-                      >
-                        <span className="flex-1">{option}</span>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onDeleteThesisOption(option);
-                          }}
-                          className="text-muted-foreground hover:text-rose-500"
-                          title="Remove from saved list"
-                          aria-label={`Remove ${option} from saved theses`}
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                ) : null}
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
+        <TradeTagEditor
+          tags={row.tags ?? []}
+          globalTags={globalTags}
+          onAddTag={addRowTag}
+          onRemoveTag={removeRowTag}
+          onDeleteGlobalTag={onDeleteGlobalTag}
+          emptyLabel="—"
+        />
       </div>
 
       <div className={cellBase}>

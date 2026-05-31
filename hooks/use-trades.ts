@@ -223,6 +223,36 @@ export function useTrades() {
     });
   };
 
+  const handleApplyTradeTags = async (
+    assignments: Array<{ tradeId: string; tags: string[] }>,
+  ): Promise<void> => {
+    const normalizedAssignments = assignments
+      .map((assignment) => ({
+        tradeId: assignment.tradeId,
+        tags: Array.from(new Set(assignment.tags.map((tag) => tag.trim()).filter(Boolean))),
+      }))
+      .filter((assignment) => assignment.tradeId.trim() && assignment.tags.length > 0);
+
+    if (normalizedAssignments.length === 0) return;
+
+    await apiRequest('/api/trades/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'addTags', assignments: normalizedAssignments }),
+    });
+
+    const assignedByTradeId = new Map(normalizedAssignments.map((assignment) => [assignment.tradeId, assignment.tags]));
+    const assignedTags = Array.from(new Set(normalizedAssignments.flatMap((assignment) => assignment.tags)));
+
+    setTrades((prev) =>
+      prev.map((trade) => {
+        const tags = assignedByTradeId.get(trade.id);
+        if (!tags) return trade;
+        return { ...trade, tags: Array.from(new Set([...(trade.tags ?? []), ...tags])) };
+      }),
+    );
+    setGlobalTags((prev) => Array.from(new Set([...prev, ...assignedTags])).sort((a, b) => a.localeCompare(b)));
+  };
+
   const handleDeleteGlobalTag = (tagName: string) => {
     const removeFromSelected = (prev: Set<string>) => {
       const next = new Set(prev);
@@ -235,6 +265,37 @@ export function useTrades() {
       setGlobalTags((prev) => prev.filter((tag) => tag !== tagName));
       setTrades((prev) => prev.map((trade) => ({ ...trade, tags: (trade.tags ?? []).filter((tag) => tag !== tagName) })));
       setSelectedFilterTags(removeFromSelected);
+    });
+  };
+
+  const handleRenameGlobalTag = async (from: string, to: string): Promise<void> => {
+    const cleanFrom = from.trim();
+    const cleanTo = to.trim();
+    if (!cleanFrom || !cleanTo) return;
+
+    await apiRequest('/api/tags', {
+      method: 'PATCH',
+      body: JSON.stringify({ from: cleanFrom, to: cleanTo }),
+    });
+
+    setGlobalTags((prev) =>
+      Array.from(new Set([...prev.filter((tag) => tag !== cleanFrom), cleanTo])).sort((a, b) => a.localeCompare(b)),
+    );
+    setTrades((prev) =>
+      prev.map((trade) => {
+        if (!(trade.tags ?? []).includes(cleanFrom)) return trade;
+        return {
+          ...trade,
+          tags: Array.from(new Set((trade.tags ?? []).map((tag) => (tag === cleanFrom ? cleanTo : tag)))),
+        };
+      }),
+    );
+    setSelectedFilterTags((prev) => {
+      if (!prev.has(cleanFrom)) return prev;
+      const next = new Set(prev);
+      next.delete(cleanFrom);
+      next.add(cleanTo);
+      return next;
     });
   };
 
@@ -437,7 +498,7 @@ export function useTrades() {
     searchQuery, setStartDate, setEndDate, setRiskInput, setDefaultRiskInput,
     setFilterPreset, setSelectedFilterTags, setPositionFilter, setBulkTagInput, setSearchQuery, handleToggleSelect, handleSelectAll,
     handleCreateManualTrade, handleCoverPosition, handleDeleteSelected, handleApplyRisk, handleSetDefaultRisk, handleSaveNotes, handleAddTag,
-    handleCloseTrade, handleMergeTrades, handleRemoveTag, handleDeleteGlobalTag, handleBulkAddTag, handleClearAllData, handleFileUpload, handleFolderUpload, handleTraderVueImport,
+    handleCloseTrade, handleMergeTrades, handleRemoveTag, handleApplyTradeTags, handleDeleteGlobalTag, handleRenameGlobalTag, handleBulkAddTag, handleClearAllData, handleFileUpload, handleFolderUpload, handleTraderVueImport,
     fetchTradeDetail,
   };
 }

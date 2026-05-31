@@ -15,7 +15,7 @@ import { aggregateDay } from '@/lib/journal-aggregates';
 import { DAILY_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
 import type { Trade } from '@/lib/types';
 import { formatCurrency } from '@/lib/ui-trade-utils';
-import { coerceWatchlistRows, WATCHLIST_REPORT_KEY } from '@/lib/watchlist';
+import { buildWatchlistTradeTagAssignments, coerceWatchlistRows, WATCHLIST_REPORT_KEY } from '@/lib/watchlist';
 import type { TemplateField } from '@/lib/validations/reviews';
 
 const INITIAL_CHART_BATCH = 4;
@@ -28,6 +28,11 @@ interface DailyReportSheetProps {
   trades: Trade[];
   onSaved?: () => void;
   readOnly?: boolean;
+  globalTags?: string[];
+  onAddTag?: (tradeId: string, tagName: string) => void;
+  onRemoveTag?: (tradeId: string, tagName: string) => void;
+  onDeleteGlobalTag?: (tagName: string) => void;
+  onApplyTradeTags?: (assignments: Array<{ tradeId: string; tags: string[] }>) => Promise<void>;
   // When true, fire window.print() once the review data has loaded. Used by
   // Archive's PDF export — the print stylesheet (globals.css) hides
   // everything except this sheet's content.
@@ -61,6 +66,11 @@ export default function DailyReportSheet({
   trades,
   onSaved,
   readOnly = false,
+  globalTags = [],
+  onAddTag,
+  onRemoveTag,
+  onDeleteGlobalTag,
+  onApplyTradeTags,
   printOnReady = false,
 }: DailyReportSheetProps) {
   const [template, setTemplate] = useState<TemplateRow | null>(null);
@@ -181,6 +191,16 @@ export default function DailyReportSheet({
 
       if (!response.ok) throw new Error('Save failed');
 
+      const assignments = buildWatchlistTradeTagAssignments(chartTrades, watchlist);
+      if (assignments.length > 0 && onApplyTradeTags) {
+        try {
+          await onApplyTradeTags(assignments);
+        } catch {
+          toast.error('Daily review saved, but failed to apply watchlist tags');
+          return;
+        }
+      }
+
       toast.success('Daily review saved');
       onSaved?.();
       onOpenChange(false);
@@ -296,12 +316,19 @@ export default function DailyReportSheet({
               onChange={effectiveReadOnly ? undefined : setWatchlist}
               readOnly={effectiveReadOnly}
               date={date ?? undefined}
+              globalTags={globalTags}
+              onDeleteGlobalTag={onDeleteGlobalTag}
             />
 
             <WeeklyTradesPanel
               trades={chartTrades}
               title="Daily Trades"
               emptyState="No trades logged today."
+              globalTags={globalTags}
+              readOnly={effectiveReadOnly || !onAddTag || !onRemoveTag}
+              onAddTag={onAddTag}
+              onRemoveTag={onRemoveTag}
+              onDeleteGlobalTag={onDeleteGlobalTag}
             />
 
             {editingTemplate && !readOnly ? (

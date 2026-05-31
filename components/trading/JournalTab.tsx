@@ -34,6 +34,7 @@ interface JournalTabProps {
   onSelectAll: (ids: string[]) => void;
   onAddTag: (tradeId: string, tagName: string) => void;
   onRemoveTag: (tradeId: string, tagName: string) => void;
+  onApplyTradeTags: (assignments: Array<{ tradeId: string; tags: string[] }>) => Promise<void>;
   onDeleteGlobalTag: (tagName: string) => void;
   onTradeClick: (trade: Trade) => void;
 }
@@ -67,6 +68,7 @@ export default function JournalTab({
   onSelectAll,
   onAddTag,
   onRemoveTag,
+  onApplyTradeTags,
   onDeleteGlobalTag,
   onTradeClick,
 }: JournalTabProps) {
@@ -393,6 +395,11 @@ export default function JournalTab({
         date={drcDate}
         trades={filteredTrades}
         onSaved={() => setDrcDate(null)}
+        globalTags={globalTags}
+        onAddTag={onAddTag}
+        onRemoveTag={onRemoveTag}
+        onDeleteGlobalTag={onDeleteGlobalTag}
+        onApplyTradeTags={onApplyTradeTags}
       />
 
       <WeeklyReviewSheet

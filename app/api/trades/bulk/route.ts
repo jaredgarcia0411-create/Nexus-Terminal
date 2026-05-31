@@ -18,9 +18,9 @@ export async function POST(request: Request) {
     if (bodyState.error) return bodyState.error;
     const body = bodyState.data;
 
-    const uniqueIds = Array.isArray(body.ids)
-      ? Array.from(new Set(body.ids.map((id) => String(id).trim()).filter(Boolean)))
-      : [];
+    const uniqueIds = body.action === 'addTags'
+      ? Array.from(new Set(body.assignments.map((item) => item.tradeId.trim()).filter(Boolean)))
+      : Array.from(new Set(body.ids.map((id) => id.trim()).filter(Boolean)));
 
     if (uniqueIds.length === 0) {
       return Response.json({ error: 'ids are required' }, { status: 400 });
@@ -30,13 +30,6 @@ export async function POST(request: Request) {
       const risk = Number(body.value);
       if (!Number.isFinite(risk) || risk <= 0) {
         return Response.json({ error: 'value must be a positive number' }, { status: 400 });
-      }
-    }
-
-    if (body.action === 'addTag') {
-      const tag = String(body.value ?? '').trim();
-      if (!tag) {
-        return Response.json({ error: 'value is required for addTag' }, { status: 400 });
       }
     }
 
@@ -67,7 +60,7 @@ export async function POST(request: Request) {
       }
 
       if (body.action === 'addTag') {
-        const tag = String(body.value ?? '').trim();
+        const tag = body.value;
 
         await tx.insert(tagsTable)
           .values({ userId: authState.user.id, name: tag })
@@ -77,6 +70,24 @@ export async function POST(request: Request) {
           await tx.insert(tradeTagsTable)
             .values({ userId: authState.user.id, tradeId: id, tag })
             .onConflictDoNothing();
+        }
+      }
+
+      if (body.action === 'addTags') {
+        const ownedIdSet = new Set(ownedIds);
+        for (const assignment of body.assignments) {
+          const tradeId = assignment.tradeId.trim();
+          if (!ownedIdSet.has(tradeId)) continue;
+
+          const tags = Array.from(new Set(assignment.tags.map((tag) => tag.trim()).filter(Boolean)));
+          for (const tag of tags) {
+            await tx.insert(tagsTable)
+              .values({ userId: authState.user.id, name: tag })
+              .onConflictDoNothing();
+            await tx.insert(tradeTagsTable)
+              .values({ userId: authState.user.id, tradeId, tag })
+              .onConflictDoNothing();
+          }
         }
       }
     });

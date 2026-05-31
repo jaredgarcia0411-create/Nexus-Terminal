@@ -367,6 +367,7 @@ export default function WeeklyReviewSheet({
               title="Weekly Watchlist"
               value={aggregatedWatchlist}
               readOnly
+              globalTags={[]}
               emptyState="No watchlist entries logged in the daily reviews this week."
             />
 

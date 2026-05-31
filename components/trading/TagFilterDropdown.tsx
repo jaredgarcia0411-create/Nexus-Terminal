@@ -1,6 +1,8 @@
 'use client';
 
 import { ChevronDown } from 'lucide-react';
+
+import { TAG_TEXT_CLASS } from '@/components/trading/TradeTagEditor';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -33,7 +35,7 @@ export default function TagFilterDropdown({ globalTags, selectedTags, onToggleTa
           type="button"
           className={
             triggerClassName ??
-            'flex h-8 w-56 items-center justify-between rounded-md border border-border bg-accent px-3 text-xs text-foreground transition-colors hover:bg-accent'
+            'flex h-8 w-52 items-center justify-between rounded-md border border-border bg-accent px-3 text-xs text-foreground transition-colors hover:bg-accent'
           }
         >
           <span className="truncate">{triggerLabel}</span>
@@ -43,7 +45,7 @@ export default function TagFilterDropdown({ globalTags, selectedTags, onToggleTa
           </span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56 border-border bg-card text-foreground" align="start">
+      <DropdownMenuContent className="w-52 border-border bg-card text-foreground" align="start">
         <DropdownMenuLabel className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Select tags</DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-accent" />
 
@@ -68,9 +70,9 @@ export default function TagFilterDropdown({ globalTags, selectedTags, onToggleTa
             checked={selectedTags.has(tag)}
             onCheckedChange={() => onToggleTag(tag)}
             onSelect={(event) => event.preventDefault()}
-            className="text-xs data-[state=checked]:text-primary"
+            className="data-[state=checked]:text-primary"
           >
-            {tag}
+            <span className={TAG_TEXT_CLASS}>{tag}</span>
           </DropdownMenuCheckboxItem>
         ))}
 

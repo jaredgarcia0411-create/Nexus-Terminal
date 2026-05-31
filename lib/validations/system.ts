@@ -1,10 +1,17 @@
 import { z } from 'zod';
 
 export const tagBodySchema = z.object({
-  name: z.string().trim().min(1, 'name is required'),
+  name: z.string().trim().min(1, 'name is required').max(200),
 });
 
 export type TagBody = z.infer<typeof tagBodySchema>;
+
+export const renameTagBodySchema = z.object({
+  from: z.string().trim().min(1, 'from is required').max(200),
+  to: z.string().trim().min(1, 'to is required').max(200),
+});
+
+export type RenameTagBody = z.infer<typeof renameTagBodySchema>;
 
 export const presetBodySchema = z.object({
   name: z.string().trim().min(1, 'name is required').max(100, 'name must be 100 characters or fewer'),

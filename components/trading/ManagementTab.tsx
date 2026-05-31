@@ -49,7 +49,9 @@ interface ManagementTabProps {
   handleSelectAll: (ids: string[]) => void;
   handleAddTag: (tradeId: string, tagName: string) => void;
   handleRemoveTag: (tradeId: string, tagName: string) => void;
+  handleApplyTradeTags: (assignments: Array<{ tradeId: string; tags: string[] }>) => Promise<void>;
   handleDeleteGlobalTag: (tagName: string) => void;
+  handleRenameGlobalTag: (from: string, to: string) => Promise<void>;
   onMergeTrades?: (ids: string[]) => void;
   positionFilter?: 'all' | 'open' | 'closed';
   onPositionFilterChange?: (filter: 'all' | 'open' | 'closed') => void;
@@ -88,6 +90,7 @@ export default function ManagementTab(props: ManagementTabProps) {
           onSelectAll={props.handleSelectAll}
           onAddTag={props.handleAddTag}
           onRemoveTag={props.handleRemoveTag}
+          onApplyTradeTags={props.handleApplyTradeTags}
           onDeleteGlobalTag={props.handleDeleteGlobalTag}
           onTradeClick={props.onTradeClick}
         />
@@ -110,6 +113,7 @@ export default function ManagementTab(props: ManagementTabProps) {
           }}
           onClearFilterTags={() => props.setSelectedFilterTags(new Set())}
           onDeleteGlobalTag={props.handleDeleteGlobalTag}
+          onRenameGlobalTag={props.handleRenameGlobalTag}
           onToggleSelect={props.handleToggleSelect}
           onSelectAll={props.handleSelectAll}
           onAddTag={props.handleAddTag}

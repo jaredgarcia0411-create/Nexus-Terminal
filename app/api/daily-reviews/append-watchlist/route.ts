@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     const newRow = {
       id: crypto.randomUUID(),
       ticker,
-      thesis: '',
+      tags: [],
       grade: '',
       notes: '',
       reportId,
