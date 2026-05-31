@@ -1,136 +1,200 @@
 # Nexus Terminal - HANDOFF.md
 
-> Updated: 2026-05-30
+> Updated: 2026-05-31
 > Purpose: active execution context for Codex. Older implementation detail lives in git history, `specs/`, and durable docs such as `docs/repo-cleanup.md`.
 
-Historical completed sections (Sprints 1-5, Tier 1 Cleanup, Chart Drawings, Workflow Maintenance, AskEdgar News Filter Expansion) were removed to keep this file focused. Use git history for archived implementation detail.
+Historical completed sections (Sprints 1-11, Tier 1 Cleanup, Chart Drawings, Multi-Day Charts, CSV/Cover-Close flows, Workflow Maintenance) were removed to keep this file focused. Use git history and `docs/repo-cleanup.md` (Completed) for archived implementation detail.
 
 ---
 
-## Recently Completed
+## Sprint 12 — Scanner Cost & Telemetry (right-sized)
 
-### Sprint 11 — Provider Client Consolidation
+> Generated: 2026-05-31 | Agent: claude (inline spec, per workflow preference)
+> Status: COMPLETE — validated 2026-05-31
 
-Status: completed 2026-05-30 (commit dc5bcd2).
+Goal: make AskEdgar fan-out cost attributable in logs, and make the dashboard scanner cache durable across Vercel instances. Telemetry is **structured logs only** (no table). MDR threshold caching is **dropped** (MDR scans are being retired). No AskEdgar cache-logic change (TTLs tuned later from the log evidence). **No migration. No UI change.**
 
-Outcome:
-- New `scanTradingView(body)` in `lib/tradingview-client.ts` is the sole owner of the `scanner.tradingview.com/america/scan` request; `fetchTradingViewPriceContext`, gainers, and mdr-candidates all route through it (no inline scan fetch remains elsewhere).
-- `lib/massive-market.ts` gained `fetchMassiveAggregateBars`, `MassiveAggregateBar`, `MassiveRequestError`, and `isMassiveConfigured`; `fetchDailyAggregates` now delegates the HTTP (values unchanged), and `/api/market-data` routes through the lib while preserving its 400/401/503/200/passthrough/502 contract.
-- Deleted the three dead `GET` handlers (gainers, mdr-candidates, mdr-recent) + their orphaned `dynamic`/`maxDuration`/imports; the `fetch*ForDashboard` helpers + types stay exported for `scanner-state`. The two TradingView route tests now call the helpers directly.
+Scope locked with Jared 2026-05-31:
+- Part A — AskEdgar telemetry = structured stdout logs, no `askedgar_request_log` table.
+- Part B — dashboard scanner cache = durable DB row, reusing the existing `askedgar_cache` table (no migration).
+- Dropped: MDR threshold caching (MDR being removed later) and any per-endpoint AE TTL refactor.
 
-Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm test` (96 files, 690 tests), `npm run workflow:audit`, and `npm run build` all passed.
-- The four regression-contract tests (`market-data-route`, `tradingview-client`, `dashboard-scanner-state-route`, `massive-market`) stayed green unmodified — strong behavior-preservation evidence. The build kept the three handler-less routes with no missing-method complaint.
-- Manual Dashboard scanner-panel + replay/backtest chart smoke: PENDING user verification post-deploy.
+---
 
-### Sprint 10 — Dead-Code Purge + Type-Cast Documentation + Audit Coverage
+### Part A — Structured per-endpoint AskEdgar fan-out logs
 
-Status: completed 2026-05-30.
+**File:** `lib/askedgar/fanout.ts` — **MODIFY**
 
-Outcome:
-- Deleted the dead scanner MDR-eligibility route + route test, and removed its orphaned helper/result type from `lib/massive-market.ts`. `fetchDailyAggregates` remains intact for the live scanner/agent/cron paths.
-- Deleted backend-only generic agent-report list/detail routes + route test, and removed the orphaned validation schema/type exports. The `agentReports` table and its type-specific latest/admin/cron readers were not changed.
-- Documented the three accepted `as unknown as` limitations in place, without refactoring signatures or Drizzle mock seams.
-- Extended `scripts/workflow-audit.mjs` so `workflow:audit` now checks `HANDOFF.md` and `docs/ARCHITECTURE.md` invariants in addition to the existing workflow assets.
+Today `fetchTickerData` emits one human-readable aggregate `console.log` line per ticker. Replace it with one structured JSON line per endpoint (so per-endpoint cost is queryable in Vercel logs) plus one structured summary line.
 
-Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npm test` (96 files, 692 tests), and `npm run workflow:audit` all passed.
-- Repo-wide grep found no live dangling references for the deleted symbols/routes. The dashboard test's intentional negative assertion that the UI does not fetch the retired scanner route remains.
+1. Add an optional `surface` to the `opts` param of `fetchTickerData`:
+   ```ts
+   opts?: { endpoints?: readonly string[]; surface?: string }
+   ```
+   After the existing `const requested = opts?.endpoints ?? ENDPOINT_SCOPES.snapshot;`, add:
+   ```ts
+   const surface = opts?.surface ?? 'snapshot';
+   ```
 
-### Sprint 9 — Agent Job Lease Recovery
+2. Leave the batch-of-10 loop and the `endpointStates` construction **untouched** (no per-endpoint timing). Replace ONLY the existing aggregate `console.log( ... )` block (the `[askedgar-fanout] ticker=... requested=... succeeded=... costUsd=... durationMs=...` template literal) with the following, built from the already-constructed `endpointStates`:
+   ```ts
+   for (const state of endpointStates) {
+     console.log(JSON.stringify({
+       tag: 'askedgar-endpoint',
+       surface,
+       ticker: normalizedTicker,
+       endpoint: state.key,
+       status: state.response.status,          // 'success' | 'error'
+       hasData: state.hasData,
+       costMicrodollars: state.response.usage?.cost_microdollars ?? 0,
+       error: state.response.error ?? null,
+     }));
+   }
+   console.log(JSON.stringify({
+     tag: 'askedgar-fanout',
+     surface,
+     ticker: normalizedTicker,
+     requested: requested.length,
+     succeeded: endpointStates.filter((s) => s.hasData).length,
+     costUsd: Number(sumCostUsd(endpointStates).toFixed(4)),
+     durationMs: Date.now() - startedAt,
+   }));
+   ```
+   Do **not** reference `state.response.usage?.duplicate` — that field does not exist on the `usage` type (`{ cost_microdollars?: number }` only). Do **not** add per-endpoint duration.
 
-Status: completed 2026-05-30 (commit c8ffd89).
+3. Thread `surface` so each fan-out logs the scope that triggered it. The scope name is known at the cache entry points; pass it down the existing chain into the new `surface` option.
 
-Outcome:
-- New `recoverExpiredJobs(db, agentId)` in `lib/agents/queue.ts`: two non-fenced bulk updates over expired-lease processing rows (`status='processing' AND lockExpiresAt < now()`, scoped by `agentId`) — FAIL exhausted (`attempt >= maxAttempts`) with a lease-expired message, REQUEUE the rest (`attempt < maxAttempts`) immediately (`nextRetryAt=null`), leaving `leaseVersion`/`startedAt`/`attempt` for the next claim. Returns `{ requeued, failed }`. No migration (reuses existing `idx_agent_jobs_stale`).
-- `lib/agents/worker.ts` runs recovery before each claim inside the poll loop, in its own try/catch so a recovery failure logs and falls through instead of breaking the loop; logs only on non-empty recovery. Closes the `docs/repo-cleanup.md` "Expired Agent Job Leases Are Not Recovered" finding.
+   **File:** `lib/askedgar/cache.ts` — **MODIFY**
+   - `getCachedTickerData(ticker, opts?: { scope })` already computes `const scope = opts?.scope ?? 'snapshot';`. Add a `scope: string` parameter to `completeTickerDataForScope(...)` and `fetchAndCacheTickerEndpoints(...)`, and pass `scope` from both `getCachedTickerData` call sites of `completeTickerDataForScope` (the partial-cache path and the empty-result path).
+   - In `fetchAndCacheTickerEndpoints`, change the fan-out call from `fetchTickerData(normalizedTicker, { endpoints: requested })` to `fetchTickerData(normalizedTicker, { endpoints: requested, surface: scope })`.
+   - No separate change is needed for scanner-summary: `getCachedScannerSummary` already routes through `getCachedTickerData(ticker, { scope: 'scanner-summary' })` (via `fetchScannerSummaryRaw`), so threading `scope` through the chain above automatically attributes those fan-outs as `'scanner-summary'`.
+   - The only other `fetchTickerData` reference is the `lib/askedgar.ts` re-export; leave its callers' `surface` defaulting to `'snapshot'`.
 
-Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npm test` (98 files, 707 tests) all passed.
-- Tests cover requeue/fail counts, the empty case, exact set-payloads (requeue has no `leaseVersion`/`errorMessage`), and a source-string guard on the filter conditions.
-- Manual (kill a container mid-job; row clears off `processing` within ~5 min): PENDING post-deploy verification.
+**Acceptance criteria:**
+- [x] `fetchTickerData` accepts `opts.surface`, defaulting to `'snapshot'`.
+- [x] Each fan-out logs one `tag:'askedgar-endpoint'` JSON line per requested endpoint (with `endpoint`, `status`, `hasData`, `costMicrodollars`, `error`) plus one `tag:'askedgar-fanout'` summary line.
+- [x] No reference to `usage.duplicate`; no per-endpoint timing; the batch loop is unchanged.
+- [x] `surface` reflects the originating scope: ticker/research snapshots log their scope; scanner-summary fetches log `'scanner-summary'`.
+- [x] `TickerDataResult` shape is unchanged; `npm run lint` and `npx tsc --noEmit` clean.
 
-### Sprint 8 — Research TLDR Paid-Work Claim + Usage Telemetry
+---
 
-Status: completed 2026-05-29 (commit 458a0a9).
+### Part B — Durable dashboard scanner-state cache (DB row, no migration)
 
-Outcome:
-- New `research_tldr_claims` table (ticker PK + `claimed_at`) + migration `0044_optimal_mysterio.sql`. `getCachedResearchTldr(ticker, userId)` now claims per-ticker on a cold miss; concurrent losers poll (8×1500ms) and reuse the winner's cached row instead of double-spending, then generate themselves only if the winner stalls. Stale claims (>90s) cleared at claim time.
-- `lib/llm-client.ts` `callLlm` surfaces `usage: { inputTokens, outputTokens }` (defaults 0). TLDR generation now logs tokens/cost/duration to `agent_request_log` via new telemetry-only `recordSiteLlmUsage` (`mode:'site-research-tldr'`) — deliberately NOT `recordLlmAttempt`, so it never mutates the small-cap-trader circuit breaker. Route adds `ensureUser` + threads the user id; response shape unchanged. Closes the `docs/repo-cleanup.md` "Research TLDR Needs A Paid-Work Claim And Unified Telemetry" finding.
-- Beneficial drift from spec: a non-unique-violation claim-insert error is logged and swallowed (proceed as owner, skip release) rather than rethrown — better satisfies "claim writes never block the TLDR" than the literal spec, which would have 500'd.
+**File:** `app/api/dashboard/scanner-state/route.ts` — **MODIFY**
 
-Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm test` (98 files, 704 tests) all passed; `npm run db:migrate` applied `0044` cleanly.
-- Tests cover usage parse/default-zero, `recordSiteLlmUsage` insert with `db.execute` never called (no-breaker proof), and cache-hit / cold-owner (2 deletes) / failed-telemetry / loser-poll (fake timers, no LLM call) paths.
-- Manual browser smoke (one generation for a cold ticker opened twice; `agent_request_log` row for `mode='site-research-tldr'` with non-zero tokens): PENDING user verification.
+Replace the module-level `Map` (per-instance, lost on cold start) with a single row in the existing `askedgar_cache` table so the 8s warm cache is shared across Vercel instances. The response JSON contract (`AggregatePayload`) is unchanged.
 
-### Sprint 7 — Slim GET /api/trades Payload (Lazy-Load Executions)
+1. Remove the in-memory cache: delete `interface CachedState`, `const cache = new Map<string, CachedState>();`, and `const CACHE_KEY = 'dashboard-scanner-state';`. Keep `const TTL_MS = 8_000;`. Add:
+   ```ts
+   const SCANNER_CACHE_TYPE = 'dashboard-scanner-state';
+   const SCANNER_CACHE_KEY = 'GLOBAL'; // single shared row; ticker column reused as a fixed key
+   ```
 
-Status: completed 2026-05-29 (commit 757cd32).
+2. Add imports (match the file's existing import style):
+   ```ts
+   import { and, eq, gt } from 'drizzle-orm';
+   import { askedgarCache } from '@/lib/db/schema';
+   ```
 
-Outcome:
-- `GET /api/trades` no longer joins `tradeExecutions` — returns one summary row per trade (tags intact, `rawExecutions: []`), so the bulk list loads lighter; `POST` unchanged. Closes the `docs/repo-cleanup.md` "Unbounded GET /api/trades" finding (slim-payload scope; true pagination deferred).
-- New `hooks/use-trade-executions.ts`: `useTradeExecutions(id, seeded)` lazy-loads a single trade's executions via `/api/trades/[id]` with a shared module cache + promise-based in-flight dedup; `prefetchTradeExecutions(ids)` warms the same cache. `JournalTradeChart` uses it so replay charts keep per-fill markers; both review sheets prefetch before the auto-print timer so exported PDFs keep per-fill markers.
-- Also closed the "Missing GET Test For Trades Route" gap.
+3. In `GET`, after the existing `db` guard (`if (!db) return dbUnavailable();`), replace the in-memory read with a DB read:
+   ```ts
+   const now = new Date();
+   const cachedRows = await db
+     .select({ dataJson: askedgarCache.dataJson })
+     .from(askedgarCache)
+     .where(and(
+       eq(askedgarCache.cacheType, SCANNER_CACHE_TYPE),
+       eq(askedgarCache.ticker, SCANNER_CACHE_KEY),
+       gt(askedgarCache.expiresAt, now),
+     ))
+     .limit(1);
+   if (cachedRows.length > 0) {
+     return Response.json(cachedRows[0].dataJson as AggregatePayload);
+   }
+   ```
 
-Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm test` (96 files, 696 tests) all passed.
-- New GET test asserts `select` ran exactly once (proves the executions query is gone); new hook test covers seeded/seed-transition/lazy-fetch/cache/prefetch.
-- Manual browser smoke (Journal + daily/weekly replay markers, detail sheet, multi-fill review PDF export, list load speed): PENDING user verification.
+4. After `payload` is built (the existing `Promise.allSettled` fan-out is unchanged), replace the old `cache.set(...)` write with an upsert that mirrors the existing `askedgar_cache` upsert pattern in `lib/askedgar/cache.ts`, wrapped so a write failure never fails the request:
+   ```ts
+   // askedgar_cache is a generic jsonb cache; reused here for the (non-AE) scanner aggregate.
+   try {
+     const cacheNow = new Date();
+     const cacheExpiry = new Date(cacheNow.getTime() + TTL_MS);
+     await db.insert(askedgarCache).values({
+       id: SCANNER_CACHE_TYPE,
+       cacheType: SCANNER_CACHE_TYPE,
+       ticker: SCANNER_CACHE_KEY,
+       dataJson: payload,
+       fetchedAt: cacheNow,
+       expiresAt: cacheExpiry,
+     }).onConflictDoUpdate({
+       target: [askedgarCache.cacheType, askedgarCache.ticker],
+       set: { dataJson: payload, fetchedAt: cacheNow, expiresAt: cacheExpiry },
+     });
+   } catch (error) {
+     console.warn('[dashboard:scanner-state] cache write failed:', error);
+   }
+   return Response.json(payload);
+   ```
+   (Plain-value `set` matches the existing `askedgar_cache` upserts in `lib/askedgar/cache.ts` — `writeTickerCache`, `getCachedScannerSummary`. Concurrent instances may each recompute once when the row expires — acceptable; same behavior as before, just shared once warm. No locking needed.)
 
-### Sprint 6 — Rate Limiting On Expensive Endpoints
+**Acceptance criteria:**
+- [x] Module-level `Map` / `CachedState` / `CACHE_KEY` are removed.
+- [x] A fresh cached row (`expiresAt > now`) is returned without fanning out.
+- [x] On miss, the route fans out, upserts the single row with an 8s expiry, and returns the payload.
+- [x] A cache-write failure logs and still returns the computed payload (request never 500s on cache write).
+- [x] `AggregatePayload` response shape is unchanged.
 
-Status: completed 2026-05-29 (commit 644dc24).
+**Tests** — `__tests__/dashboard-scanner-state-route.test.ts` — **MODIFY**
 
-Outcome:
-- New `rate_limits` table (text PK `${userId}:${endpoint}:${windowStartMs}`, FK cascade, lookup index) + migration `drizzle/0043_fat_timeslip.sql`.
-- Shared `lib/rate-limit.ts`: atomic fixed-window (UTC clock-hour) upsert counter + 429 builder with `Retry-After` / `X-RateLimit-*` headers. Caps: research-report 20/hr, askedgar-tldr 30/hr.
-- Wired into `POST /api/research-report` and `POST /api/askedgar/tldr` (added a `getDb` guard + one-try/catch restructure to the tldr route).
+Extend the existing `db` stub so it supports the new read chain (`.select().from().where().limit()`) and the write chain (`.insert().values().onConflictDoUpdate()`). Add cases:
+- [x] Fresh cached row present → returns it, fan-out helpers NOT called.
+- [x] Cache miss (read returns `[]`) → fan-out helpers called, upsert called, payload returned.
+- [x] Upsert throws → payload still returned (no 500).
+Do not assert on `console` output.
 
-Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm test` (95 files, 688 tests) all passed; `npm run db:migrate` applied cleanly.
-- Manual post-deploy 429-header smoke: PENDING user verification.
+(Part A logging needs no dedicated test — it's stdout only. Keep coverage on the data paths above.)
 
-### Multi-Day Trade Replay Charts
+---
 
-Status: completed 2026-05-28 (commit a625032).
+### Files Changed Summary
 
-Outcome:
-- Closed trades spanning >1 day now widen the candle window entry-day→exit-day, place `EXIT` markers on the exit day, and show a date range in the detail-sheet and Journal labels. Open/same-day trades are unchanged.
-- Behind an optional `endSortKey` param on `buildTradeChartOptions`; `ResearchChart`/`WatchlistTickerChart` (2-arg callers) untouched. Detection reuses `isCrossDayTrade`/`bucketKey`.
+| File | Action | ~Lines | Risk |
+|---|---|---|---|
+| `lib/askedgar/fanout.ts` | MODIFY | ~18 | LOW (logging + optional param) |
+| `lib/askedgar/cache.ts` | MODIFY | ~8 | LOW (thread `scope` through 2 helpers) |
+| `app/api/dashboard/scanner-state/route.ts` | MODIFY | ~30 | MEDIUM (in-memory → DB read/write path) |
+| `__tests__/dashboard-scanner-state-route.test.ts` | MODIFY | ~35 | LOW |
 
-Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm test` (94 files, 681 tests) all passed.
-- Codex added `__tests__/ui-trade-utils.test.ts` (3 marker tests) beyond the spec.
-- Manual browser smoke (same-day unchanged, multi-day span, ResearchChart unaffected): PENDING user verification.
+No new files. No schema change. No migration.
 
-### CSV Parser: Position-Aware B Resolution
+### Verification Steps
 
-Status: completed 2026-05-28 (commit 5ea235b).
+From repo root:
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npm test`
+- [x] `npm run workflow:audit` (HANDOFF.md changed)
+- [x] Do **not** run `npm run db:migrate` — this sprint adds no migration. If you find yourself writing one, stop and re-read the scope.
 
-Outcome:
-- Lifted DAS Trader's chronological position-resolver into shared `resolveSidesByPositionState` helper in `lib/parsers/utils.ts`.
-- `defaultParser` now runs the resolver in `buildContext`, disambiguating raw `B` to `MARGIN` (long open) when no open short exists, or `B` (cover) when one does.
-- Deleted `builtinNormalizeRow`; both `processCsvData` and `extractRawExecutions` default to `defaultParser`. Removed `parser.id === 'default'` bypass in `lib/trade-utils.ts`.
+Manual (post-deploy):
+- [ ] Open the Dashboard; confirm the scanner panel renders identically and refreshes.
+- [ ] Open a Research ticker; in Vercel logs confirm `tag:"askedgar-endpoint"` lines (one per endpoint, with `costMicrodollars`) and a `tag:"askedgar-fanout"` summary line, with `surface` set to the right scope.
 
-Validation:
-- `npm run lint` passed.
-- `npx tsc --noEmit` passed.
-- `npm test` passed (92 files, 671 tests).
-- Manual browser smoke with coworker's 2026-05-28 CSV: PENDING — confirm ASTC/ATPC LONG trades appear, NCT/SPRC SHORT remain correct, ARM shows as open long.
+---
 
-### Cover/Close Entry Flow — Manual Entry (FIFO) + Import Side Resolution
+## Implementation Style
 
-Status: completed 2026-05-28 (commit c846e4a).
+Write the simplest correct code that satisfies this spec. Specifically:
 
-Outcome:
-- Part A: manual New Trade form now detects an offsetting open position (same symbol, opposite direction) and prompts to close it FIFO instead of creating a new opposite open trade. New `lib/cover-position.ts` (pure FIFO math) + `app/api/trades/cover/route.ts` handle full close / partial / flip; `useTrades.handleCoverPosition` merges affected rows by id.
-- Part B: import (raw CSV) path seeds `resolveSidesByPositionState` with the client's currently-open positions so a later-day `B` covering a carried-over short labels as a cover, not a new long. Threaded through `extractRawExecutions` → `collectRawExecutions` → `processImportFiles`.
-- Known limits (intentional): multi-day folder import in one action won't link an open+cover across batches; same-symbol intraday round-trip while holding a carried-over position can mislabel. Supported workflow documented for coworkers.
+- Match the existing conventions in the file you're editing. Do not introduce new patterns, helpers, abstractions, or file layouts unless this spec explicitly calls for them.
+- No future-proofing. No feature flags, no "in case we need it later" parameters, no extracted helpers that have a single caller. If a value is only used once, inline it.
+- No defensive code at internal boundaries. Trust your own code and framework guarantees; validate only at system boundaries (user input, external APIs, DB reads of untrusted JSON).
+- No comments unless the *why* is non-obvious (a hidden constraint, a workaround, a surprising invariant). Don't restate what the code says.
+- If a step in this spec looks more complex than it needs to be, flag it and propose the simpler version before implementing — don't silently "improve" the spec, but don't write code that's more elaborate than the problem requires either.
+- If you spot an existing simpler pattern in the codebase that fits, use it instead of writing new code.
 
-Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm test` (93 files, 677 tests) all passed.
-- Manual browser smoke (Part A confirm/partial/flip/decline, Part B import seeding): PENDING user verification.
+This is a personal trading platform built solo. Readability > cleverness; debuggable > elegant; small diff > sweeping refactor. Three similar lines beats a premature abstraction.
 
 ---
 
@@ -140,3 +204,4 @@ Validation:
 - If a new multi-step feature starts, replace or append a self-contained execution spec with exact file paths, ordered changes, acceptance criteria, and validation requirements.
 - If only docs/workflow assets change, run `npm run workflow:audit`.
 - Do not modify `.env*` or secret files.
+</content>

@@ -1,3 +1,5 @@
+import { and, eq, gt } from 'drizzle-orm';
+
 import {
   fetchMdrRecentForDashboard,
   type DashboardMdrRecentPayload,
@@ -12,6 +14,7 @@ import {
 } from '@/app/api/tradingview/mdr-candidates/route';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
+import { askedgarCache } from '@/lib/db/schema';
 import { dbUnavailable, requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';
@@ -25,14 +28,9 @@ interface AggregatePayload {
   fetchedAt: string;
 }
 
-interface CachedState {
-  payload: AggregatePayload;
-  expiresAt: number;
-}
-
 const TTL_MS = 8_000;
-const CACHE_KEY = 'dashboard-scanner-state';
-const cache = new Map<string, CachedState>();
+const SCANNER_CACHE_TYPE = 'dashboard-scanner-state';
+const SCANNER_CACHE_KEY = 'GLOBAL'; // single shared row; ticker column reused as a fixed key
 
 export async function GET() {
   const authState = await requireUser();
@@ -41,13 +39,21 @@ export async function GET() {
   const db = getDb();
   if (!db) return dbUnavailable();
 
-  const now = Date.now();
-  const cached = cache.get(CACHE_KEY);
-  if (cached && cached.expiresAt > now) {
-    return Response.json(cached.payload);
-  }
-
   try {
+    const now = new Date();
+    const cachedRows = await db
+      .select({ dataJson: askedgarCache.dataJson })
+      .from(askedgarCache)
+      .where(and(
+        eq(askedgarCache.cacheType, SCANNER_CACHE_TYPE),
+        eq(askedgarCache.ticker, SCANNER_CACHE_KEY),
+        gt(askedgarCache.expiresAt, now),
+      ))
+      .limit(1);
+    if (cachedRows.length > 0) {
+      return Response.json(cachedRows[0].dataJson as AggregatePayload);
+    }
+
     const [gainersResult, mdrLiveResult, mdrRecentResult] = await Promise.allSettled([
       fetchGainersForDashboard(),
       fetchMdrCandidatesForDashboard(),
@@ -72,7 +78,25 @@ export async function GET() {
       fetchedAt: new Date().toISOString(),
     };
 
-    cache.set(CACHE_KEY, { payload, expiresAt: now + TTL_MS });
+    // askedgar_cache is a generic jsonb cache; reused here for the (non-AE) scanner aggregate.
+    try {
+      const cacheNow = new Date();
+      const cacheExpiry = new Date(cacheNow.getTime() + TTL_MS);
+      await db.insert(askedgarCache).values({
+        id: SCANNER_CACHE_TYPE,
+        cacheType: SCANNER_CACHE_TYPE,
+        ticker: SCANNER_CACHE_KEY,
+        dataJson: payload,
+        fetchedAt: cacheNow,
+        expiresAt: cacheExpiry,
+      }).onConflictDoUpdate({
+        target: [askedgarCache.cacheType, askedgarCache.ticker],
+        set: { dataJson: payload, fetchedAt: cacheNow, expiresAt: cacheExpiry },
+      });
+    } catch (error) {
+      console.warn('[dashboard:scanner-state] cache write failed:', error);
+    }
+
     return Response.json(payload);
   } catch (error) {
     logRouteError('dashboard:scanner-state', error);

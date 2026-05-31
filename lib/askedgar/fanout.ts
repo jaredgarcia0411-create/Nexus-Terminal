@@ -89,13 +89,14 @@ export function endpointStatesFromRawData(rawData: Record<string, AskEdgarRespon
 
 export async function fetchTickerData(
   ticker: string,
-  opts?: { endpoints?: readonly string[] },
+  opts?: { endpoints?: readonly string[]; surface?: string },
 ): Promise<TickerDataResult> {
   const startedAt = Date.now();
   const normalizedTicker = ticker.trim().toUpperCase();
   await syncRateLimitFromDb();
 
   const requested = opts?.endpoints ?? ENDPOINT_SCOPES.snapshot;
+  const surface = opts?.surface ?? 'snapshot';
   const endpointConfigs: EndpointConfig[] = requested.map((key) => {
     const entry = ENDPOINT_REGISTRY_LOOKUP[key];
     if (!entry) {
@@ -122,12 +123,27 @@ export async function fetchTickerData(
   // Flag when every single endpoint failed — callers use this to skip caching bad data
   const hasAnyData = endpointStates.some((state) => state.hasData);
 
-  console.log(
-    `[askedgar-fanout] ticker=${normalizedTicker} requested=${requested.length} `
-    + `succeeded=${endpointStates.filter((state) => state.hasData).length} `
-    + `costUsd=${sumCostUsd(endpointStates).toFixed(4)} `
-    + `durationMs=${Date.now() - startedAt}`,
-  );
+  for (const state of endpointStates) {
+    console.log(JSON.stringify({
+      tag: 'askedgar-endpoint',
+      surface,
+      ticker: normalizedTicker,
+      endpoint: state.key,
+      status: state.response.status,
+      hasData: state.hasData,
+      costMicrodollars: state.response.usage?.cost_microdollars ?? 0,
+      error: state.response.error ?? null,
+    }));
+  }
+  console.log(JSON.stringify({
+    tag: 'askedgar-fanout',
+    surface,
+    ticker: normalizedTicker,
+    requested: requested.length,
+    succeeded: endpointStates.filter((state) => state.hasData).length,
+    costUsd: Number(sumCostUsd(endpointStates).toFixed(4)),
+    durationMs: Date.now() - startedAt,
+  }));
 
   return {
     ticker: normalizedTicker,

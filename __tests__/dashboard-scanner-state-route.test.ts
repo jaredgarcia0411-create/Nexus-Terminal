@@ -35,7 +35,65 @@ vi.mock('@/lib/server-db-utils', () => ({
   requireUser: requireUserMock,
 }));
 
-const dbStub = { id: 'db' };
+interface ScannerCacheRow {
+  id: string;
+  cacheType: string;
+  ticker: string;
+  dataJson: unknown;
+  fetchedAt: Date;
+  expiresAt: Date;
+}
+
+function createScannerStateDb(options: {
+  initialRows?: ScannerCacheRow[];
+  writeError?: unknown;
+} = {}) {
+  const rows = [...(options.initialRows ?? [])];
+
+  const selectLimit = vi.fn(async (limit: number) => (
+    rows
+      .filter((row) => row.expiresAt > new Date())
+      .slice(0, limit)
+      .map((row) => ({ dataJson: row.dataJson }))
+  ));
+  const selectWhere = vi.fn(() => ({ limit: selectLimit }));
+  const selectFrom = vi.fn(() => ({ where: selectWhere }));
+  const select = vi.fn(() => ({ from: selectFrom }));
+
+  let pendingInsert: ScannerCacheRow | undefined;
+  const onConflictDoUpdate = vi.fn(async ({ set }: { set: Partial<ScannerCacheRow> }) => {
+    if (options.writeError) {
+      throw options.writeError;
+    }
+
+    if (!pendingInsert) return;
+
+    const pending = pendingInsert;
+    const nextRow = { ...pending, ...set };
+    const index = rows.findIndex((row) => row.cacheType === pending.cacheType && row.ticker === pending.ticker);
+    if (index >= 0) {
+      rows[index] = nextRow;
+      return;
+    }
+
+    rows.push(nextRow);
+  });
+  const insertValues = vi.fn((value: ScannerCacheRow) => {
+    pendingInsert = value;
+    return { onConflictDoUpdate };
+  });
+  const insert = vi.fn(() => ({ values: insertValues }));
+
+  return {
+    insert,
+    select,
+    _spies: {
+      insertValues,
+      onConflictDoUpdate,
+      selectLimit,
+    },
+  };
+}
 
 const gainer = {
   ticker: 'GAIN',
@@ -137,7 +195,7 @@ describe('GET /api/dashboard/scanner-state', () => {
     vi.resetModules();
     vi.clearAllMocks();
     mockAuthenticatedUser();
-    getDbMock.mockReturnValue(dbStub);
+    getDbMock.mockReturnValue(createScannerStateDb());
     mockSuccessfulHelpers();
   });
 
@@ -146,7 +204,39 @@ describe('GET /api/dashboard/scanner-state', () => {
     vi.restoreAllMocks();
   });
 
-  it('caches the aggregate payload within the 8 second TTL', async () => {
+  it('returns a fresh cached aggregate row without calling fan-out helpers', async () => {
+    const cachedPayload = {
+      gainers: [gainer],
+      isRealtime: true,
+      mdrLive: [mdrLive],
+      mdrRecent: [mdrRecent],
+      fetchedAt: '2026-05-01T12:00:00.000Z',
+    };
+    getDbMock.mockReturnValue(createScannerStateDb({
+      initialRows: [{
+        id: 'dashboard-scanner-state',
+        cacheType: 'dashboard-scanner-state',
+        ticker: 'GLOBAL',
+        dataJson: cachedPayload,
+        fetchedAt: new Date('2026-05-01T12:00:00.000Z'),
+        expiresAt: new Date(Date.now() + 8_000),
+      }],
+    }));
+    const GET = await loadGet();
+
+    const response = ensureResponse(await GET());
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual(cachedPayload);
+    expect(fetchGainersForDashboardMock).not.toHaveBeenCalled();
+    expect(fetchMdrCandidatesForDashboardMock).not.toHaveBeenCalled();
+    expect(fetchMdrRecentForDashboardMock).not.toHaveBeenCalled();
+  });
+
+  it('fans out, upserts, and returns the aggregate payload on cache miss', async () => {
+    const db = createScannerStateDb();
+    getDbMock.mockReturnValue(db);
     const GET = await loadGet();
 
     const first = ensureResponse(await GET());
@@ -156,10 +246,6 @@ describe('GET /api/dashboard/scanner-state', () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(secondPayload).toEqual(firstPayload);
-    expect(fetchGainersForDashboardMock).toHaveBeenCalledTimes(1);
-    expect(fetchMdrCandidatesForDashboardMock).toHaveBeenCalledTimes(1);
-    expect(fetchMdrRecentForDashboardMock).toHaveBeenCalledTimes(1);
     expect(firstPayload).toEqual({
       gainers: [gainer],
       isRealtime: true,
@@ -167,11 +253,18 @@ describe('GET /api/dashboard/scanner-state', () => {
       mdrRecent: [mdrRecent],
       fetchedAt: expect.any(String),
     });
+    expect(secondPayload).toEqual(firstPayload);
+    expect(fetchGainersForDashboardMock).toHaveBeenCalledTimes(1);
+    expect(fetchMdrCandidatesForDashboardMock).toHaveBeenCalledTimes(1);
+    expect(fetchMdrRecentForDashboardMock).toHaveBeenCalledTimes(1);
+    expect(db.insert).toHaveBeenCalledTimes(1);
+    expect(db._spies.onConflictDoUpdate).toHaveBeenCalledTimes(1);
   });
 
-  it('refreshes the aggregate payload after the TTL expires', async () => {
+  it('refreshes the aggregate payload after the DB row TTL expires', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-01T12:00:00.000Z'));
+    getDbMock.mockReturnValue(createScannerStateDb());
     const GET = await loadGet();
 
     await GET();
@@ -209,6 +302,32 @@ describe('GET /api/dashboard/scanner-state', () => {
     expect(console.warn).toHaveBeenCalledWith(
       '[dashboard:scanner-state] gainers fetch failed:',
       expect.any(Error),
+    );
+  });
+
+  it('returns the computed payload when the cache upsert fails', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const writeError = new Error('write failed');
+    getDbMock.mockReturnValue(createScannerStateDb({ writeError }));
+    const GET = await loadGet();
+
+    const response = ensureResponse(await GET());
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      gainers: [gainer],
+      isRealtime: true,
+      mdrLive: [mdrLive],
+      mdrRecent: [mdrRecent],
+      fetchedAt: expect.any(String),
+    });
+    expect(fetchGainersForDashboardMock).toHaveBeenCalledTimes(1);
+    expect(fetchMdrCandidatesForDashboardMock).toHaveBeenCalledTimes(1);
+    expect(fetchMdrRecentForDashboardMock).toHaveBeenCalledTimes(1);
+    expect(console.warn).toHaveBeenCalledWith(
+      '[dashboard:scanner-state] cache write failed:',
+      writeError,
     );
   });
 

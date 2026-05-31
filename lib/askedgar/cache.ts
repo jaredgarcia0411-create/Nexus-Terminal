@@ -264,10 +264,11 @@ async function writeTickerCache(
 async function fetchAndCacheTickerEndpoints(
   normalizedTicker: string,
   endpoints: readonly string[],
+  scope: string,
   db: AskEdgarDb | null,
   cachedResult: TickerDataResult,
 ): Promise<TickerDataResult> {
-  const freshResult = await fetchTickerData(normalizedTicker, { endpoints });
+  const freshResult = await fetchTickerData(normalizedTicker, { endpoints, surface: scope });
   const mergedRawData = mergeRawData(cachedResult.rawData, freshResult.rawData);
   const mergedResult = rebuildTickerDataResult({
     ...cachedResult,
@@ -285,6 +286,7 @@ async function fetchAndCacheTickerEndpoints(
 async function completeTickerDataForScope(
   normalizedTicker: string,
   requested: readonly string[],
+  scope: string,
   db: AskEdgarDb | null,
   seedResult: TickerDataResult,
 ): Promise<{ result: TickerDataResult; freshCount: number }> {
@@ -315,7 +317,7 @@ async function completeTickerDataForScope(
     }
 
     const endpointsToFetch = missing;
-    const request = fetchAndCacheTickerEndpoints(normalizedTicker, endpointsToFetch, db, result);
+    const request = fetchAndCacheTickerEndpoints(normalizedTicker, endpointsToFetch, scope, db, result);
     inFlightTickerRequests.set(normalizedTicker, request);
 
     try {
@@ -389,7 +391,7 @@ export async function getCachedTickerData(
         return subsetTickerDataResult(cachedResult, requested);
       }
 
-      const { result, freshCount } = await completeTickerDataForScope(normalizedTicker, requested, db, cachedResult);
+      const { result, freshCount } = await completeTickerDataForScope(normalizedTicker, requested, scope, db, cachedResult);
       logTickerCacheDecision(normalizedTicker, scope, 'partial', freshCount, requested.length);
       return subsetTickerDataResult(result, requested);
     }
@@ -404,7 +406,7 @@ export async function getCachedTickerData(
     warnings: [],
     hasAnyData: false,
   };
-  const { result, freshCount } = await completeTickerDataForScope(normalizedTicker, requested, db, emptyResult);
+  const { result, freshCount } = await completeTickerDataForScope(normalizedTicker, requested, scope, db, emptyResult);
   logTickerCacheDecision(normalizedTicker, scope, 'miss', freshCount, requested.length);
   return subsetTickerDataResult(result, requested);
 }

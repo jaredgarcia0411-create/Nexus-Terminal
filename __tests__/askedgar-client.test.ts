@@ -138,6 +138,7 @@ describe('askedgar client', () => {
     vi.clearAllMocks();
     vi.restoreAllMocks();
     vi.resetModules();
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
     getDbMock.mockReset();
     getDbMock.mockReturnValue(undefined);
     getResearchFilingsMock.mockReset();
@@ -253,7 +254,7 @@ describe('askedgar client', () => {
     expect(cachedRawDataKeys(cacheDb)).toHaveLength(13);
   });
 
-  it('sums AskEdgar usage cost into the fan-out log', async () => {
+  it('logs per-endpoint usage cost and a fan-out summary', async () => {
     const costs = [1250, 2750];
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
       const cost = costs.shift() ?? 0;
@@ -270,7 +271,37 @@ describe('askedgar client', () => {
     await client.fetchTickerData('AAPL', { endpoints: ['gap-stats', 'news'] });
 
     expect(fetchSpy).toHaveBeenCalledTimes(2);
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('costUsd=0.0040'));
+    const logPayloads = logSpy.mock.calls.map(([message]) => JSON.parse(String(message)));
+    expect(logPayloads).toEqual([
+      expect.objectContaining({
+        tag: 'askedgar-endpoint',
+        surface: 'snapshot',
+        ticker: 'AAPL',
+        endpoint: 'gap-stats',
+        status: 'success',
+        hasData: true,
+        costMicrodollars: 1250,
+        error: null,
+      }),
+      expect.objectContaining({
+        tag: 'askedgar-endpoint',
+        surface: 'snapshot',
+        ticker: 'AAPL',
+        endpoint: 'news',
+        status: 'success',
+        hasData: true,
+        costMicrodollars: 2750,
+        error: null,
+      }),
+      expect.objectContaining({
+        tag: 'askedgar-fanout',
+        surface: 'snapshot',
+        ticker: 'AAPL',
+        requested: 2,
+        succeeded: 2,
+        costUsd: 0.004,
+      }),
+    ]);
   });
 
   it('throws for unknown endpoint keys', async () => {
