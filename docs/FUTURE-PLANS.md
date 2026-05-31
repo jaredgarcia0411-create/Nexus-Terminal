@@ -10,6 +10,87 @@ Parked ideas and longer-horizon plans. Each entry should note **why it's parked*
 
 ---
 
+## Replacing NextAuth with Clerk (research note parked 2026-05-31)
+
+### Bottom Line
+
+I would not switch to Clerk solely because the Google Cloud free trial is ending. Based on Google's free-trial docs, the trial ending can close billing and stop project resources if you do not upgrade, but basic Google OAuth sign-in is not documented as a per-login paid SKU. The lower-risk move is likely to upgrade/keep the Google Cloud project active and keep current NextAuth for now.
+
+Clerk is still a credible future upgrade if you want hosted user lifecycle, public signup, account management, MFA, organizations, billing-aware auth, or multi-provider auth. For this codebase, though, it is a **medium-large auth migration**, not a login-button swap.
+
+### What Makes It Big
+
+The current system is centralized but identity-sensitive:
+
+- NextAuth config is in [lib/auth-config.ts](/home/jared/Nexus-Terminal/lib/auth-config.ts:16): Google provider, JWT sessions, `/login`, and `ALLOWED_EMAILS`.
+- Protected APIs mostly go through [requireUser()](/home/jared/Nexus-Terminal/lib/server-db-utils.ts:15) and [ensureUser()](/home/jared/Nexus-Terminal/lib/server-db-utils.ts:32).
+- `middleware.ts` protects pages but excludes all `/api`, so API security depends on `requireUser()` directly.
+- The DB uses [users.id](/home/jared/Nexus-Terminal/lib/db/schema.ts:5) as the ownership root for trades, tags, reports, reviews, backtests, imports, agent service calls, etc.
+- Client code depends on NextAuth in [app/layout.tsx](/home/jared/Nexus-Terminal/app/layout.tsx:18), [app/login/page.tsx](/home/jared/Nexus-Terminal/app/login/page.tsx:23), [app/page.tsx](/home/jared/Nexus-Terminal/app/page.tsx:125), and several hooks.
+
+The critical migration decision is user ID mapping. Clerk generates its own user IDs. If we blindly use Clerk IDs as `users.id`, existing users can appear to have empty data. Clerk's Auth.js migration guide explicitly calls out this foreign-key issue and suggests using Clerk `externalId` or updating DB foreign keys. For Nexus, I'd preserve current `users.id` as canonical and map Clerk users onto it.
+
+### Implementation Shape
+
+A safe migration would be phased:
+
+1. Add Clerk package/env and replace `SessionProvider` with `ClerkProvider`.
+2. Replace NextAuth middleware with `clerkMiddleware()`, preserving current protected/public route behavior.
+3. Rewrite `requireUser()` to source auth from Clerk while returning the same `{ user } | { error }` contract.
+4. Preserve `ensureUser()` canonical ID behavior and make sure Clerk identity maps to the existing DB user by external ID or verified email.
+5. Replace login/sign-out/client hooks with Clerk equivalents.
+6. Remove NextAuth route/config only after API, page, and data ownership smoke tests pass.
+
+I would avoid rewriting every API route to call Clerk directly. There are dozens of `requireUser()` users; keeping that helper as the compatibility layer contains the blast radius.
+
+### Switching To Clerk: Pros
+
+- Better hosted auth product: sign-in/sign-up, user profile, account management, session UI.
+- Current Next.js App Router support via `@clerk/nextjs`, `ClerkProvider`, `clerkMiddleware()`, and server `auth()`.
+- Social login, email codes/links, passwords, account linking, user metadata, webhooks, and user exports are available.
+- Current pricing page, checked May 31, 2026, says Hobby is free up to **50,000 monthly retained users**, not 10,000.
+- Useful future features for Nexus: allowlist/invitations, user profile, bot protection, leaked-password checks, MFA on Pro, organizations, billing-aware authorization.
+
+### Switching To Clerk: Cons
+
+- Migration risk is concentrated around `users.id` ownership.
+- Clerk free tier has meaningful limits: fixed 7-day session lifetime, Clerk branding, MFA/custom session lifetime on Pro per current pricing.
+- Still may need Google OAuth credentials for production Google social login through Clerk.
+- Adds external vendor lock-in and pricing-plan drift risk.
+- Requires env/Vercel/dashboard setup, callback URL changes, test rewrites, and careful rollout.
+
+### Staying With Current NextAuth: Pros
+
+- Lowest implementation risk.
+- Existing tests and API routes already fit the `requireUser()`/`ensureUser()` model.
+- Current allowlist is simple and server-side.
+- Google OAuth for basic sign-in does not appear to require per-login billing; the real concern is keeping the Cloud project/billing state active.
+- No user-ID migration.
+
+### Staying With Current NextAuth: Cons
+
+- You remain on `next-auth@5.0.0-beta.30`.
+- You own all account lifecycle work if you later want email/password, password reset, MFA, account settings, invite flows, etc.
+- Google OAuth setup remains yours to maintain in Google Cloud.
+- More manual work if Nexus becomes a public SaaS.
+
+### Clerk Features Worth Considering
+
+- **Use early:** Google/social login, hosted sign-in/sign-up, `UserButton`, user profile, bot protection, account linking, session/device management.
+- **Use if Nexus opens signup:** invitations or allowlist/blocklist, disposable email blocking, email/password or email-code login.
+- **Use later/productized:** organizations, roles/permissions, billing-aware authorization, webhooks for syncing Clerk user data to `users`.
+- **Probably defer:** MFA, passkeys, custom session lifetime, SSO/SAML, custom roles, unless you are ready for paid-plan features.
+
+### Recommendation
+
+For the next 30 days, I'd first verify the Google Cloud project status and OAuth consent status. If upgrading the billing account keeps the OAuth project active without meaningful cost, stay on NextAuth for now.
+
+If you still want Clerk, make the first spec narrow: "Clerk session in, canonical Nexus DB user ID out." Do not start with UI polish or new Clerk features. The success criterion should be that an existing user signs in through Clerk and sees the exact same trades/tags/reviews as before.
+
+Sources used: Clerk [Next.js quickstart](https://clerk.com/docs/nextjs/getting-started/quickstart), [middleware docs](https://clerk.com/docs/reference/nextjs/clerk-middleware), [auth docs](https://clerk.com/docs/reference/nextjs/app-router/auth), [Auth.js migration guide](https://clerk.com/docs/guides/development/migrating/authjs), [pricing](https://clerk.com/pricing), Google Cloud [free trial docs](https://docs.cloud.google.com/free/docs/free-cloud-features), and Google [OAuth consent docs](https://developers.google.com/workspace/guides/configure-oauth-consent). No files were changed or tests run.
+
+---
+
 ## Internal research sheets / spreadsheet workspace (parked 2026-05-30)
 
 ### The idea
