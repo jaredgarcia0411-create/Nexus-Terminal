@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { signOut } from 'next-auth/react';
+import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
 
 import NewTradeDialog from '@/components/trading/NewTradeDialog';
@@ -11,7 +12,6 @@ import Sidebar, { type TabKey } from '@/components/trading/Sidebar';
 import Toolbar from '@/components/trading/Toolbar';
 import DashboardTab from '@/components/trading/DashboardTab';
 import ManagementTab from '@/components/trading/ManagementTab';
-import BacktestingTab from '@/components/trading/BacktestingTab';
 import ResearchTab from '@/components/trading/ResearchTab';
 import CommandPalette from '@/components/trading/CommandPalette';
 import { TabErrorBoundary } from '@/components/ui/TabErrorBoundary';
@@ -20,6 +20,11 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useTrades } from '@/hooks/use-trades';
 
 const VALID_TABS: TabKey[] = ['dashboard', 'management', 'charts', 'research'];
+
+const BacktestingTab = dynamic(() => import('@/components/trading/BacktestingTab'), {
+  ssr: false,
+  loading: () => <div className="flex h-[calc(100dvh-6.5rem)] min-h-[620px] items-center justify-center text-sm text-muted-foreground">Loading charts...</div>,
+});
 
 const TAB_TITLES: Record<TabKey, string> = {
   dashboard: 'Dashboard',

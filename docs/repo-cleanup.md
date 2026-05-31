@@ -16,48 +16,17 @@ Current-state audit for making the codebase simpler and more efficient without r
 8. Do frontend and oversized-module simplifications only when touching those areas for feature or bug work.
 9. Tighten TypeScript safety and remove legacy schema columns.
 
-## Remaining Sprint Plan (set 2026-05-30)
+## Remaining Sprint Plan (set 2026-05-30, updated 2026-05-31)
 
-Sprints 6–12 closed the rate-limiting, slim-trades-payload, Research-TLDR-claim, agent-lease-recovery, dead-code purge, provider-client consolidation, and scanner cost/telemetry findings (see Completed). The remaining work is bundled into focused sprints (numbering continues the HANDOFF sequence). The migration sprint is kept isolated for a clean revert path.
+Sprints 6–15 closed the rate-limiting, slim-trades-payload, Research-TLDR-claim, agent-lease-recovery, dead-code purge, provider-client consolidation, scanner cost/telemetry, Dashboard MDR retirement, Daily Review tag centralization, and test-coverage/lazy-loading findings (see Completed). The only scheduled cleanup work left is the isolated migration sprint, kept separate for a clean revert path.
 
-- **Next cleanup sprint — Test coverage + small cleanups.** Component tests for `TradesTab`/`TradeDetailSheet`; Playbook route + UI coverage; `next/dynamic` lazy imports for `BacktestingTab` (after an `ANALYZE=true` build check). All low-risk.
-- **Migration cleanup sprint — Legacy DB column drop (ISOLATED — has a migration).** Drop `pnl`/`executions`, remove the `toTrade()` fallback. Kept in its own sprint per the migration rule; runs last (review-order item 9).
+- **Next cleanup sprint — Legacy DB column drop (ISOLATED — has a migration).** Drop `pnl`/`executions`, remove the `toTrade()` fallback. Kept in its own sprint per the migration rule; runs last (review-order item 9).
 
 **Not scheduled — fold into feature/bug work when next touching those areas** (audit explicitly defers these): the 6 frontend simplifications (Management prop surface, Journal/Trades duplicate controls, daily/weekly review-sheet template lifecycle, backtesting sample-set loading, chart session shading, Research Report polling) and the "Low-Priority Route Pattern Extraction" finding.
 
 ---
 
 ## Open Findings
-
-### Test Coverage + Small Cleanups
-
-#### Missing Component-Level Tests For Complex UI
-
-Evidence:
-- `TradesTab`, `TradeDetailSheet`, `ResearchTickerView` have no dedicated test files.
-- These components involve money-related operations (closing trades, recording P&L).
-
-Recommendation:
-Add 3-5 focused component tests for the highest-value user interactions in these components.
-
-#### Add Playbook Coverage Before More Management Cleanup
-
-Evidence:
-- Playbook API exposes GET/POST/PATCH/DELETE: [app/api/playbook/route.ts](/home/jared/Nexus-Terminal/app/api/playbook/route.ts:10).
-- Playbook UI drives list/load/create/save/delete flows: [components/trading/PlaybookTab.tsx](/home/jared/Nexus-Terminal/components/trading/PlaybookTab.tsx:56).
-- `rg -n "playbook|Playbook|/api/playbook" __tests__` currently returns no test coverage.
-
-Recommendation:
-Add focused route tests for auth, validation, ownership, CRUD, and one UI smoke test for create/save/delete wiring before larger Management cleanup. This reduces regression risk without changing features.
-
-#### Add Lazy Dynamic Imports For BacktestingTab
-
-Evidence:
-- `BacktestingTab.tsx` imports 8+ heavy sub-components plus `motion` and `react-hotkeys-hook` eagerly.
-- If the Charts tab is rarely the first tab visited, this is dead weight in the initial bundle.
-
-Recommendation:
-Wrap heavy sub-components with `next/dynamic`. Only worth doing after running `ANALYZE=true npm run build` to confirm bundle impact.
 
 ### Legacy DB Column Drop (ISOLATED — has a migration)
 
@@ -107,6 +76,8 @@ Condensed; see git history / `HANDOFF.md` for full per-sprint detail.
 - **Sprint 11 — Provider client consolidation** (2026-05-30, commit dc5bcd2). New `scanTradingView()` owns the TradingView scan request (gainers/mdr-candidates/price-context route through it); `lib/massive-market.ts` gained the aggregate-bars client and `/api/market-data` delegates to it; deleted the three dead raw scanner `GET` handlers. Scanner output unchanged (regression tests stayed green).
 - **Sprint 12 — Scanner cost & telemetry** (2026-05-31). Added structured AskEdgar fan-out logs and moved the dashboard scanner aggregate cache into a short-lived `askedgar_cache` row. MDR threshold caching was explicitly dropped because Dashboard MDR scans were being retired.
 - **Sprint 13 — Dashboard MDR scan retirement** (2026-05-31). Removed the Dashboard MDR UI, aggregate-route MDR fields, live/recent candidate routes, Vercel cron schedule, and Massive MDR evaluator exports. Left `mdr_triggers` schema/data in place for the later explicit migration.
+- **Sprint 14 — Daily Review Tag Centralization** (2026-05-31). Made trade tags the shared Watchlist/Daily Trades tagging model, added tag rename/merge management, and removed watchlist-thesis UI usage while keeping the legacy route/table.
+- **Sprint 15 — Test Coverage + Backtesting Lazy Loading** (2026-05-31). Added focused coverage for `TradesTab`, `TradeDetailSheet`, `ResearchTickerView`, Playbook route CRUD/ownership/validation, and Playbook UI smoke flows. Lazy-loaded the whole `BacktestingTab` at the `app/page.tsx` Charts-tab boundary only. Plain `npm run build` route output improved `/` from `388 kB` / `559 kB First Load JS` to `355 kB` / `526 kB First Load JS`.
 
 ---
 
