@@ -2,28 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   fetchGainersForDashboardMock,
-  fetchMdrCandidatesForDashboardMock,
-  fetchMdrRecentForDashboardMock,
   getDbMock,
   requireUserMock,
 } = vi.hoisted(() => ({
   fetchGainersForDashboardMock: vi.fn(),
-  fetchMdrCandidatesForDashboardMock: vi.fn(),
-  fetchMdrRecentForDashboardMock: vi.fn(),
   getDbMock: vi.fn(),
   requireUserMock: vi.fn(),
 }));
 
 vi.mock('@/app/api/tradingview/gainers/route', () => ({
   fetchGainersForDashboard: fetchGainersForDashboardMock,
-}));
-
-vi.mock('@/app/api/tradingview/mdr-candidates/route', () => ({
-  fetchMdrCandidatesForDashboard: fetchMdrCandidatesForDashboardMock,
-}));
-
-vi.mock('@/app/api/scanner/mdr-recent/route', () => ({
-  fetchMdrRecentForDashboard: fetchMdrRecentForDashboardMock,
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -115,39 +103,6 @@ const gainer = {
   dayOneMoveSource: 'pre-market',
 };
 
-const mdrLive = {
-  ticker: 'LIVE',
-  price: 2,
-  change: 100,
-  volume: 15_000_000,
-  avgVolume90d: null,
-  marketCap: 200_000_000,
-  sector: null,
-  preMarketPrice: null,
-  preMarketChange: null,
-  preMarketVolume: null,
-  pmPriceNeeded: 2.5,
-  openingGapNeededPercent: 25,
-  intradayPriceNeeded: 2.5,
-  basisPrice: 2.5,
-  atr14: 0.2,
-};
-
-const mdrRecent = {
-  ticker: 'RECENT',
-  triggerDate: '2026-05-01',
-  triggerClose: 1,
-  mark: 1.5,
-  pdc: 1,
-  change: 50,
-  volume: 12_000_000,
-  pmPriceNeeded: 2.25,
-  openingGapNeededPercent: 125,
-  intradayPriceNeeded: 2.25,
-  basisPrice: 2.25,
-  atr14: 0.3,
-};
-
 async function loadGet() {
   const route = await import('@/app/api/dashboard/scanner-state/route');
   return route.GET;
@@ -177,17 +132,6 @@ function mockSuccessfulHelpers() {
     isRealtime: true,
     fetchedAt: '2026-05-01T12:00:00.000Z',
   });
-  fetchMdrCandidatesForDashboardMock.mockResolvedValue({
-    candidates: [mdrLive],
-    count: 1,
-    totalCount: 1,
-    isRealtime: true,
-    fetchedAt: '2026-05-01T12:00:00.000Z',
-  });
-  fetchMdrRecentForDashboardMock.mockResolvedValue({
-    rows: [mdrRecent],
-    fetchedAt: '2026-05-01T12:00:00.000Z',
-  });
 }
 
 describe('GET /api/dashboard/scanner-state', () => {
@@ -204,20 +148,25 @@ describe('GET /api/dashboard/scanner-state', () => {
     vi.restoreAllMocks();
   });
 
-  it('returns a fresh cached aggregate row without calling fan-out helpers', async () => {
+  it('returns a fresh cached aggregate row without calling fan-out helpers or leaking retired fields', async () => {
     const cachedPayload = {
       gainers: [gainer],
       isRealtime: true,
-      mdrLive: [mdrLive],
-      mdrRecent: [mdrRecent],
       fetchedAt: '2026-05-01T12:00:00.000Z',
+    };
+    const retiredLiveKey = 'mdr' + 'Live';
+    const retiredRecentKey = 'mdr' + 'Recent';
+    const cachedRowPayload = {
+      ...cachedPayload,
+      [retiredLiveKey]: [{ ticker: 'OLDLIVE' }],
+      [retiredRecentKey]: [{ ticker: 'OLDRECENT' }],
     };
     getDbMock.mockReturnValue(createScannerStateDb({
       initialRows: [{
         id: 'dashboard-scanner-state',
         cacheType: 'dashboard-scanner-state',
         ticker: 'GLOBAL',
-        dataJson: cachedPayload,
+        dataJson: cachedRowPayload,
         fetchedAt: new Date('2026-05-01T12:00:00.000Z'),
         expiresAt: new Date(Date.now() + 8_000),
       }],
@@ -230,8 +179,6 @@ describe('GET /api/dashboard/scanner-state', () => {
     expect(response.status).toBe(200);
     expect(payload).toEqual(cachedPayload);
     expect(fetchGainersForDashboardMock).not.toHaveBeenCalled();
-    expect(fetchMdrCandidatesForDashboardMock).not.toHaveBeenCalled();
-    expect(fetchMdrRecentForDashboardMock).not.toHaveBeenCalled();
   });
 
   it('fans out, upserts, and returns the aggregate payload on cache miss', async () => {
@@ -249,14 +196,10 @@ describe('GET /api/dashboard/scanner-state', () => {
     expect(firstPayload).toEqual({
       gainers: [gainer],
       isRealtime: true,
-      mdrLive: [mdrLive],
-      mdrRecent: [mdrRecent],
       fetchedAt: expect.any(String),
     });
     expect(secondPayload).toEqual(firstPayload);
     expect(fetchGainersForDashboardMock).toHaveBeenCalledTimes(1);
-    expect(fetchMdrCandidatesForDashboardMock).toHaveBeenCalledTimes(1);
-    expect(fetchMdrRecentForDashboardMock).toHaveBeenCalledTimes(1);
     expect(db.insert).toHaveBeenCalledTimes(1);
     expect(db._spies.onConflictDoUpdate).toHaveBeenCalledTimes(1);
   });
@@ -272,11 +215,9 @@ describe('GET /api/dashboard/scanner-state', () => {
     await GET();
 
     expect(fetchGainersForDashboardMock).toHaveBeenCalledTimes(2);
-    expect(fetchMdrCandidatesForDashboardMock).toHaveBeenCalledTimes(2);
-    expect(fetchMdrRecentForDashboardMock).toHaveBeenCalledTimes(2);
   });
 
-  it('falls back to partial payloads and caches them when one helper fails', async () => {
+  it('falls back to an empty payload and caches it when the gainer helper fails', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     fetchGainersForDashboardMock.mockRejectedValueOnce(new Error('TradingView down'));
     const GET = await loadGet();
@@ -291,14 +232,10 @@ describe('GET /api/dashboard/scanner-state', () => {
     expect(firstPayload).toEqual({
       gainers: [],
       isRealtime: false,
-      mdrLive: [mdrLive],
-      mdrRecent: [mdrRecent],
       fetchedAt: expect.any(String),
     });
     expect(secondPayload).toEqual(firstPayload);
     expect(fetchGainersForDashboardMock).toHaveBeenCalledTimes(1);
-    expect(fetchMdrCandidatesForDashboardMock).toHaveBeenCalledTimes(1);
-    expect(fetchMdrRecentForDashboardMock).toHaveBeenCalledTimes(1);
     expect(console.warn).toHaveBeenCalledWith(
       '[dashboard:scanner-state] gainers fetch failed:',
       expect.any(Error),
@@ -318,13 +255,9 @@ describe('GET /api/dashboard/scanner-state', () => {
     expect(payload).toEqual({
       gainers: [gainer],
       isRealtime: true,
-      mdrLive: [mdrLive],
-      mdrRecent: [mdrRecent],
       fetchedAt: expect.any(String),
     });
     expect(fetchGainersForDashboardMock).toHaveBeenCalledTimes(1);
-    expect(fetchMdrCandidatesForDashboardMock).toHaveBeenCalledTimes(1);
-    expect(fetchMdrRecentForDashboardMock).toHaveBeenCalledTimes(1);
     expect(console.warn).toHaveBeenCalledWith(
       '[dashboard:scanner-state] cache write failed:',
       writeError,
@@ -341,7 +274,5 @@ describe('GET /api/dashboard/scanner-state', () => {
     expect(response.status).toBe(503);
     expect(payload).toEqual({ error: 'Database not configured' });
     expect(fetchGainersForDashboardMock).not.toHaveBeenCalled();
-    expect(fetchMdrCandidatesForDashboardMock).not.toHaveBeenCalled();
-    expect(fetchMdrRecentForDashboardMock).not.toHaveBeenCalled();
   });
 });

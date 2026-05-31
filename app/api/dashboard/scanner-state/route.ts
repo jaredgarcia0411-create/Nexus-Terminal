@@ -1,17 +1,9 @@
 import { and, eq, gt } from 'drizzle-orm';
 
 import {
-  fetchMdrRecentForDashboard,
-  type DashboardMdrRecentPayload,
-} from '@/app/api/scanner/mdr-recent/route';
-import {
   fetchGainersForDashboard,
   type DashboardGainersPayload,
 } from '@/app/api/tradingview/gainers/route';
-import {
-  fetchMdrCandidatesForDashboard,
-  type DashboardMdrCandidatesPayload,
-} from '@/app/api/tradingview/mdr-candidates/route';
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
 import { askedgarCache } from '@/lib/db/schema';
@@ -23,14 +15,20 @@ export const maxDuration = 60;
 interface AggregatePayload {
   gainers: DashboardGainersPayload['gainers'];
   isRealtime: boolean;
-  mdrLive: DashboardMdrCandidatesPayload['candidates'];
-  mdrRecent: DashboardMdrRecentPayload['rows'];
   fetchedAt: string;
 }
 
 const TTL_MS = 8_000;
 const SCANNER_CACHE_TYPE = 'dashboard-scanner-state';
 const SCANNER_CACHE_KEY = 'GLOBAL'; // single shared row; ticker column reused as a fixed key
+
+function projectAggregatePayload(payload: AggregatePayload): AggregatePayload {
+  return {
+    gainers: payload.gainers,
+    isRealtime: payload.isRealtime,
+    fetchedAt: payload.fetchedAt,
+  };
+}
 
 export async function GET() {
   const authState = await requireUser();
@@ -51,30 +49,20 @@ export async function GET() {
       ))
       .limit(1);
     if (cachedRows.length > 0) {
-      return Response.json(cachedRows[0].dataJson as AggregatePayload);
+      return Response.json(projectAggregatePayload(cachedRows[0].dataJson as AggregatePayload));
     }
 
-    const [gainersResult, mdrLiveResult, mdrRecentResult] = await Promise.allSettled([
+    const [gainersResult] = await Promise.allSettled([
       fetchGainersForDashboard(),
-      fetchMdrCandidatesForDashboard(),
-      fetchMdrRecentForDashboard(db),
     ]);
 
     if (gainersResult.status === 'rejected') {
       console.warn('[dashboard:scanner-state] gainers fetch failed:', gainersResult.reason);
     }
-    if (mdrLiveResult.status === 'rejected') {
-      console.warn('[dashboard:scanner-state] mdr-candidates fetch failed:', mdrLiveResult.reason);
-    }
-    if (mdrRecentResult.status === 'rejected') {
-      console.warn('[dashboard:scanner-state] mdr-recent fetch failed:', mdrRecentResult.reason);
-    }
 
     const payload: AggregatePayload = {
       gainers: gainersResult.status === 'fulfilled' ? gainersResult.value.gainers : [],
       isRealtime: gainersResult.status === 'fulfilled' ? gainersResult.value.isRealtime : false,
-      mdrLive: mdrLiveResult.status === 'fulfilled' ? mdrLiveResult.value.candidates : [],
-      mdrRecent: mdrRecentResult.status === 'fulfilled' ? mdrRecentResult.value.rows : [],
       fetchedAt: new Date().toISOString(),
     };
 

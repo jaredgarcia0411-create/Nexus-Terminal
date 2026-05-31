@@ -7,6 +7,257 @@ Historical completed sections (Sprints 1-11, Tier 1 Cleanup, Chart Drawings, Mul
 
 ---
 
+## Sprint 13 — Remove Dashboard MDR Scans
+
+> Generated: 2026-05-31 | Agent: Codex (`$nexus-handoff`)
+> Status: COMPLETE — validated 2026-05-31
+
+### Objective
+
+Remove the Dashboard MDR scan surface and all live/runtime logic that calculates or serves MDR scan candidates. Keep the existing `mdr_triggers` database table, historical data, and `lib/db/schema.ts` mapping in place for now; a later migration will drop that table.
+
+This is a Dashboard scanner retirement, not a repo-wide ban on the string "MDR". Swing-trader agent research language and tests that describe MDR-style pattern matching are out of scope unless they import or call the Dashboard scan runtime.
+
+### Current State
+
+- `components/trading/DashboardTab.tsx` renders `DashboardScannerTable` under the "Scanners" heading.
+- `components/trading/DashboardScannerTable.tsx` renders two tables:
+  - Day 1 Setup table from `gainers`.
+  - Potential MDR Setup table from `mdrLive` and `mdrRecent`.
+- `app/api/dashboard/scanner-state/route.ts` aggregates:
+  - `fetchGainersForDashboard()` from `app/api/tradingview/gainers/route.ts`.
+  - `fetchMdrCandidatesForDashboard()` from `app/api/tradingview/mdr-candidates/route.ts`.
+  - `fetchMdrRecentForDashboard(db)` from `app/api/scanner/mdr-recent/route.ts`.
+  - The response shape currently includes `mdrLive` and `mdrRecent`.
+- `app/api/tradingview/mdr-candidates/route.ts` owns the live TradingView MDR candidate scan and calls `evaluateLatestD2MdrTrigger()`.
+- `app/api/scanner/mdr-recent/route.ts` reads `mdr_triggers`, fetches Massive snapshots, and enriches rows with MDR thresholds.
+- `app/api/cron/mdr-sweep/route.ts` populates and invalidates `mdr_triggers`; `vercel.json` schedules it at `/api/cron/mdr-sweep`.
+- `lib/massive-market.ts` contains MDR-specific evaluator/threshold helpers:
+  - `D2MdrTriggerResult`
+  - `MdrThresholds`
+  - `D2MdrDailyEvaluation`
+  - `evaluateD2MdrTrigger`
+  - `calculateMdrThresholds`
+  - `evaluateD2MdrDailySeries`
+  - `evaluateLatestD2MdrTrigger`
+  - `isInvalidationDay`
+- `lib/massive-market.ts` also contains non-MDR Massive helpers that must remain:
+  - `fetchUnifiedSnapshot`
+  - `fetchDailyAggregates`
+  - `fetchGroupedDailyAggregates`
+  - `GroupedDailyBar`
+  - `fetchTickerNews`, market movers, ticker details, etc.
+- `lib/db/schema.ts` exports `mdrTriggers`. Keep this export and table mapping until the later DB migration.
+
+### Required Changes
+
+#### 1. Remove MDR from the Dashboard aggregate route
+
+**File:** `app/api/dashboard/scanner-state/route.ts` — **MODIFY**
+
+- Remove imports from:
+  - `@/app/api/scanner/mdr-recent/route`
+  - `@/app/api/tradingview/mdr-candidates/route`
+- Remove `DashboardMdrRecentPayload` and `DashboardMdrCandidatesPayload` from `AggregatePayload`.
+- Remove `mdrLive` and `mdrRecent` fields from `AggregatePayload`.
+- Change the fan-out from three helpers to only `fetchGainersForDashboard()`.
+- Remove warning branches for `mdr-candidates` and `mdr-recent`.
+- Keep the existing DB-backed 8s aggregate cache in `askedgar_cache`.
+- Keep auth, DB guard, `dynamic`, `maxDuration`, cache read/write behavior, and error handling unchanged.
+
+Expected post-change payload shape:
+
+```ts
+interface AggregatePayload {
+  gainers: DashboardGainersPayload['gainers'];
+  isRealtime: boolean;
+  fetchedAt: string;
+}
+```
+
+#### 2. Remove Dashboard MDR UI and client merge logic
+
+**File:** `components/trading/DashboardScannerTable.tsx` — **MODIFY**
+
+- Remove MDR-only interfaces and types:
+  - `MdrCandidate`
+  - `MdrRecentRow`
+  - `MarketSession` if no longer needed after MDR removal.
+- Remove MDR-only helpers:
+  - `getMarketSession`
+  - `sessionMark`
+  - `fmtDollarOrDash`
+  - `fmtPercentOrDash`
+  - `thresholdClass`
+- Remove MDR state:
+  - `mdrLive`
+  - `mdrRecent`
+- Update the `/api/dashboard/scanner-state` response type to only read `gainers`, `isRealtime`, and `fetchedAt`.
+- Remove `setMdrLive(...)` and `setMdrRecent(...)`.
+- Remove the `mdrRows` `useMemo`.
+- Remove the entire "Potential MDR Setup" table/card from the JSX.
+- Keep the Day 1 Setup table, Day 1 localStorage latch, scanner-summary enrichment, polling interval, and row navigation behavior unchanged.
+- Review copy after removal. If only one scanner remains, keep `DashboardTab.tsx` title as "Scanners" unless the executor sees a clearly better minimal wording change; do not redesign the Dashboard.
+
+#### 3. Delete Dashboard MDR runtime routes
+
+**Files:** **DELETE**
+
+- `app/api/tradingview/mdr-candidates/route.ts`
+- `app/api/scanner/mdr-recent/route.ts`
+- `app/api/cron/mdr-sweep/route.ts`
+
+These routes should have no remaining imports after steps 1 and 4. Do not leave route files with no HTTP method just to satisfy path stability; the feature is being retired.
+
+#### 4. Remove MDR cron schedule
+
+**File:** `vercel.json` — **MODIFY**
+
+- Remove the cron entry:
+
+```json
+{
+  "path": "/api/cron/mdr-sweep",
+  "schedule": "0 22 * * 1-5"
+}
+```
+
+- Keep the `agent-retention` and `market-pulse-eod` cron entries unchanged.
+
+#### 5. Remove now-dead MDR evaluator code, but keep shared Massive helpers
+
+**File:** `lib/massive-market.ts` — **MODIFY**
+
+- Remove the MDR-specific exports listed in Current State:
+  - `D2MdrTriggerResult`
+  - `MdrThresholds`
+  - `D2MdrDailyEvaluation`
+  - `evaluateD2MdrTrigger`
+  - `calculateMdrThresholds`
+  - `evaluateD2MdrDailySeries`
+  - `evaluateLatestD2MdrTrigger`
+  - `isInvalidationDay`
+- Remove private helpers only used by those MDR exports:
+  - `NULL_MDR_THRESHOLDS`
+  - `round2`
+  - `lastFinite` if no other code uses it
+  - `dailyBarTime` if no other code uses it
+  - `toGroupedDailyBar`
+  - `toOhlcData`
+  - `indicatorContext`
+- Remove the `atr`, `ema50`, and `OHLCData` import from `@/lib/indicators` if it becomes unused.
+- Keep `DailyOhlcBar`, `GroupedDailyBar`, `fetchDailyAggregates`, and `fetchGroupedDailyAggregates`; `lib/market-pulse/capture.ts` still uses the grouped aggregate helper and type.
+- Rename or remove the stale `// MDR cron helpers` section comment so the remaining grouped aggregate helper is not documented as MDR-only.
+
+#### 6. Keep database schema/table until the later migration
+
+**File:** `lib/db/schema.ts` — **NO CHANGE**
+
+- Do not delete `mdrTriggers`.
+- Do not generate or run a migration.
+- Do not remove historical data.
+- The schema export is intentionally retained as a temporary table mapping until the later explicit migration drops `mdr_triggers`.
+
+#### 7. Update or delete tests to match the retired surface
+
+**Files:** **MODIFY / DELETE**
+
+- `__tests__/dashboard-scanner-state-route.test.ts` — **MODIFY**
+  - Remove mocks for `fetchMdrCandidatesForDashboard` and `fetchMdrRecentForDashboard`.
+  - Update cached payloads and expected responses to exclude `mdrLive` and `mdrRecent`.
+  - Update helper-call assertions so only `fetchGainersForDashboard` is expected.
+  - Preserve coverage for:
+    - fresh cache row returns without fan-out
+    - cache miss fans out and upserts
+    - TTL expiry refreshes
+    - gainer helper failure returns fallback payload and caches it
+    - cache upsert failure still returns payload
+    - DB unavailable returns 503 without calling helpers
+- `__tests__/dashboard-scanner-table.test.tsx` — **MODIFY**
+  - Remove MDR fixture types, `MDR_STORAGE_KEY`, `mdrLiveBatches`, and `mdrRecentRows`.
+  - Remove the test that renders merged MDR live/recent rows.
+  - Update fetch mock payloads so `/api/dashboard/scanner-state` returns only `gainers`, `isRealtime`, and `fetchedAt`.
+  - Add or keep an assertion that "Potential MDR Setup" and "No MDR setups detected." are not rendered.
+  - Keep Day 1 latch and scanner-summary tests intact.
+- `__tests__/tradingview-mdr-candidates-route.test.ts` — **DELETE**
+- `__tests__/massive-market.test.ts` — **DELETE** if it contains only MDR evaluator/threshold tests. If non-MDR coverage is added before execution, delete only the MDR cases.
+
+#### 8. Clean stale docs references introduced by this retirement
+
+**Files:** **MODIFY**
+
+- `docs/repo-cleanup.md`
+  - Remove or rewrite the old Dashboard MDR threshold/caching cleanup note so it no longer asks future agents to optimize a retired scan.
+  - Keep completed-history bullets if they describe past work, but do not leave active TODOs for MDR Dashboard scans.
+- `docs/scanner-build.md`
+  - Mark MDR replacement content as stale/retired or remove references that describe MDR as an active Dashboard target.
+  - Preserve Day 1/custom scanner material that remains relevant.
+
+### Acceptance Criteria
+
+- [x] Dashboard renders only the Day 1 scanner table; no "Potential MDR Setup" UI or empty MDR message remains.
+- [x] `/api/dashboard/scanner-state` returns only Day 1 aggregate data (`gainers`, `isRealtime`, `fetchedAt`) and no longer imports or calls MDR helpers.
+- [x] `app/api/tradingview/mdr-candidates/route.ts`, `app/api/scanner/mdr-recent/route.ts`, and `app/api/cron/mdr-sweep/route.ts` are deleted.
+- [x] `vercel.json` no longer schedules `/api/cron/mdr-sweep`.
+- [x] MDR candidate/evaluator/threshold exports are removed from `lib/massive-market.ts`.
+- [x] No live import references remain for `mdr-candidates`, `mdr-recent`, `mdr-sweep`, `evaluateD2Mdr*`, `calculateMdrThresholds`, `MdrThresholds`, or `isInvalidationDay`.
+- [x] `lib/db/schema.ts` still contains `mdrTriggers`; no migration is generated or run.
+- [x] Tests no longer assert MDR Dashboard behavior and still cover Day 1 Dashboard scanner behavior.
+- [x] Stale docs no longer tell future agents to optimize or preserve retired Dashboard MDR scans.
+
+### Search Checks
+
+Run these before validation and resolve any unexpected hits:
+
+```bash
+rg -n "mdr-candidates|mdr-recent|mdr-sweep|evaluateD2Mdr|evaluateLatestD2MdrTrigger|calculateMdrThresholds|MdrThresholds|isInvalidationDay" app components hooks lib __tests__ docs specs vercel.json
+rg -n "Potential MDR Setup|No MDR setups detected|mdrLive|mdrRecent" components __tests__
+```
+
+Expected remaining MDR hits after implementation:
+
+- `lib/db/schema.ts` table mapping and comments for `mdrTriggers`.
+- Historical or non-Dashboard agent references such as swing-trader research prompts/tests, if they do not import retired Dashboard scan code.
+- Any docs explicitly marked as historical/retired.
+
+### Security / Cost Notes
+
+- Removing the MDR Dashboard routes reduces TradingView and Massive API calls.
+- Keep `MASSIVE_API_KEY` server-side; do not touch `.env*`.
+- No auth model changes.
+- No database migration in this sprint.
+
+### Order Of Operations
+
+1. Remove MDR fields/calls from `app/api/dashboard/scanner-state/route.ts`.
+2. Remove MDR state/rendering from `components/trading/DashboardScannerTable.tsx`.
+3. Delete the retired MDR route files.
+4. Remove the Vercel cron entry.
+5. Remove unused MDR evaluator/threshold exports from `lib/massive-market.ts`.
+6. Update/delete tests.
+7. Update stale docs references.
+8. Run the search checks, then validation.
+
+This order keeps TypeScript errors easy to interpret: route/UI consumers are disconnected before deleting providers, then shared helper cleanup follows once imports are gone.
+
+### Validation
+
+From repo root:
+
+- [x] `npm run lint`
+- [x] `npx tsc --noEmit`
+- [x] `npm test`
+- [x] `npm run workflow:audit` (HANDOFF.md and docs changed)
+- [x] Do **not** run `npm run db:migrate`; no migration belongs in this sprint.
+
+Validation note: the first full `npm test` run hit a timeout in the unrelated `__tests__/sec-companyfacts.test.ts` stale-cache test. The single file passed on rerun, and the required full `npm test` rerun passed.
+
+### Complexity Estimate
+
+Medium. The runtime removal is straightforward, but the blast radius spans UI, API routes, Vercel cron config, shared Massive helpers, route/component tests, and stale docs. The main risk is deleting a shared Massive helper still used by market pulse or agents; use the search checks before removing exports.
+
+---
+
 ## Sprint 12 — Scanner Cost & Telemetry (right-sized)
 
 > Generated: 2026-05-31 | Agent: claude (inline spec, per workflow preference)
@@ -204,4 +455,3 @@ This is a personal trading platform built solo. Readability > cleverness; debugg
 - If a new multi-step feature starts, replace or append a self-contained execution spec with exact file paths, ordered changes, acceptance criteria, and validation requirements.
 - If only docs/workflow assets change, run `npm run workflow:audit`.
 - Do not modify `.env*` or secret files.
-</content>

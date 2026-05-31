@@ -24,14 +24,10 @@ type TestGainer = {
   dayOneMovePercent: number;
   dayOneMark: number;
   dayOneMoveSource: 'pre-market' | 'after-hours';
-  pmPriceNeeded?: number | null;
-  openingGapNeededPercent?: number | null;
-  intradayPriceNeeded?: number | null;
 };
 
 const LEGACY_DAY1_STORAGE_KEY = 'nexus-dashboard-day1-latched';
 const DAY1_STORAGE_KEY = 'nexus-dashboard-day1-latched-v2';
-const MDR_STORAGE_KEY = 'nexus-dashboard-mdr-latched';
 
 function makeGainer(overrides: Partial<TestGainer> & { ticker: string }): TestGainer {
   const { ticker, ...rest } = overrides;
@@ -65,30 +61,12 @@ function jsonResponse(payload: unknown) {
   } as Response);
 }
 
-type TestMdrRecentRow = {
-  ticker: string;
-  triggerDate: string;
-  triggerClose: number;
-  mark: number | null;
-  pdc: number | null;
-  change: number | null;
-  volume: number | null;
-  pmPriceNeeded?: number | null;
-  openingGapNeededPercent?: number | null;
-  intradayPriceNeeded?: number | null;
-};
-
 function installFetchMock({
   gainerBatches,
-  mdrLiveBatches = [[]],
-  mdrRecentRows = [],
 }: {
   gainerBatches: TestGainer[][];
-  mdrLiveBatches?: TestGainer[][];
-  mdrRecentRows?: TestMdrRecentRow[];
 }) {
   let gainerIndex = 0;
-  let mdrLiveIndex = 0;
 
   const fetchMock = vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
@@ -96,13 +74,9 @@ function installFetchMock({
     if (url.startsWith('/api/dashboard/scanner-state')) {
       const batch = gainerBatches[Math.min(gainerIndex, gainerBatches.length - 1)] ?? [];
       gainerIndex += 1;
-      const mdrLiveBatch = mdrLiveBatches[Math.min(mdrLiveIndex, mdrLiveBatches.length - 1)] ?? [];
-      mdrLiveIndex += 1;
       return jsonResponse({
         gainers: batch,
         isRealtime: true,
-        mdrLive: mdrLiveBatch,
-        mdrRecent: mdrRecentRows,
         fetchedAt: '2026-05-01T12:00:00.000Z',
       });
     }
@@ -163,70 +137,8 @@ describe('DashboardScannerTable', () => {
 
     await waitFor(() => expect(screen.getByText('DAY1')).toBeTruthy());
     expect(screen.queryByText('No Day 1 gainers detected.')).toBeNull();
-  });
-
-  it('renders merged MDR live and recent rows without using the old eligibility latch', async () => {
-    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
-    const removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem');
-    const fetchMock = installFetchMock({
-      gainerBatches: [[]],
-      mdrLiveBatches: [[
-        makeGainer({
-          ticker: 'LIVE',
-          price: 2,
-          change: 100,
-          marketCap: 500_000_000,
-          preMarketPrice: null,
-        }),
-      ]],
-      mdrRecentRows: [
-        {
-          ticker: 'RECENT',
-          triggerDate: '2026-05-01',
-          triggerClose: 1,
-          mark: 1.5,
-          pdc: 1,
-          change: 50,
-          volume: 12_000_000,
-          pmPriceNeeded: 2.25,
-          openingGapNeededPercent: 125,
-          intradayPriceNeeded: 2.25,
-        },
-        {
-          ticker: 'LIVE',
-          triggerDate: '2026-05-01',
-          triggerClose: 1,
-          mark: 10,
-          pdc: 1,
-          change: 900,
-          volume: 20_000_000,
-          pmPriceNeeded: 9,
-          openingGapNeededPercent: 800,
-          intradayPriceNeeded: 9,
-        },
-      ],
-    });
-
-    render(<DashboardScannerTable onNavigateToResearch={vi.fn()} />);
-
-    await waitFor(() => expect(screen.getAllByText('LIVE').length).toBeGreaterThanOrEqual(2));
-    expect(screen.getByText('RECENT')).toBeTruthy();
-    await waitFor(() => expect(screen.queryByText('No MDR setups detected.')).toBeNull());
-
-    expect(screen.getByText('+100.00%')).toBeTruthy();
-    expect(screen.getByText('+50.00%')).toBeTruthy();
-    expect(screen.queryByText('+900.00%')).toBeNull();
-    expect(screen.getAllByText('$2.25').length).toBe(2);
-    expect(screen.getByText('+125.00%')).toBeTruthy();
-    expect(screen.queryByText('$9.00')).toBeNull();
-    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/dashboard/scanner-state'))).toBe(true);
-    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/tradingview/gainers'))).toBe(false);
-    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/tradingview/mdr-candidates'))).toBe(false);
-    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/scanner/mdr-recent'))).toBe(false);
-    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/scanner/mdr-eligibility'))).toBe(false);
-    expect(window.localStorage.getItem(MDR_STORAGE_KEY)).toBeNull();
-    expect(setItemSpy).not.toHaveBeenCalledWith(MDR_STORAGE_KEY, expect.any(String));
-    expect(removeItemSpy).not.toHaveBeenCalledWith(MDR_STORAGE_KEY);
+    expect(screen.queryByText('Potential MDR Setup')).toBeNull();
+    expect(screen.queryByText('No MDR setups detected.')).toBeNull();
   });
 
   it('prunes stored rows from a different ET date', async () => {

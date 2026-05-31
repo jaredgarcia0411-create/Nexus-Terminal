@@ -1,6 +1,6 @@
 # Repo Cleanup Audit
 
-Date: 2026-05-21 | Updated: 2026-05-30
+Date: 2026-05-21 | Updated: 2026-05-31
 
 Current-state audit for making the codebase simpler and more efficient without removing features or reducing reliability. Updated 2026-05-25 with findings from a parallel four-agent health audit (Claude/Codex utilization, monetization, engineering principles, codebase health).
 
@@ -18,71 +18,20 @@ Current-state audit for making the codebase simpler and more efficient without r
 
 ## Remaining Sprint Plan (set 2026-05-30)
 
-Sprints 6–10 closed the rate-limiting, slim-trades-payload, Research-TLDR-claim, agent-lease-recovery, and dead-code purge findings. The remaining work is bundled into focused sprints (numbering continues the HANDOFF sequence). Deletions and mechanical edits are grouped; the migration sprint is kept isolated for a clean revert path.
+Sprints 6–12 closed the rate-limiting, slim-trades-payload, Research-TLDR-claim, agent-lease-recovery, dead-code purge, provider-client consolidation, and scanner cost/telemetry findings (see Completed). The remaining work is bundled into focused sprints (numbering continues the HANDOFF sequence). The migration sprint is kept isolated for a clean revert path.
 
-- **Sprint 9 — Agent Job Lease Recovery** — DONE (2026-05-30, commit c8ffd89). Requeue/fail expired `processing` jobs. Closed the only open security/reliability finding.
-- **Sprint 10 — Dead-code purge** — DONE (2026-05-30). Removed the dead MDR eligibility endpoint/helper/test and generic agent-report list/detail routes/tests, documented the accepted type-cast limitations, and extended `workflow:audit` to cover handoff/architecture invariants. All deletions + mechanical edits, no user-facing change.
-- **Sprint 11 — Provider client consolidation.** Fold TradingView gainers/MDR-candidates fetch+header logic into `lib/tradingview-client.ts`; consolidate Massive paths into `lib/massive-market.ts`; delete or document the now-unused raw scanner route handlers. Scanner output unchanged (tests assert it).
-- **Sprint 12 — Scanner cost & telemetry.** Per-endpoint durable AskEdgar telemetry; durable (cross-instance) dashboard scanner cache; cache MDR thresholds per `(ticker, trigger_date)`. Additive, no UI change.
-- **Sprint 13 — Test coverage + small cleanups.** Component tests for `TradesTab`/`TradeDetailSheet`; Playbook route + UI coverage; `next/dynamic` lazy imports for `BacktestingTab` (after an `ANALYZE=true` build check). All low-risk.
-- **Sprint 14 — Legacy DB column drop (ISOLATED — has a migration).** Drop `pnl`/`executions`, remove the `toTrade()` fallback. Kept in its own sprint per the migration rule; runs last (review-order item 9).
+- **Next cleanup sprint — Test coverage + small cleanups.** Component tests for `TradesTab`/`TradeDetailSheet`; Playbook route + UI coverage; `next/dynamic` lazy imports for `BacktestingTab` (after an `ANALYZE=true` build check). All low-risk.
+- **Migration cleanup sprint — Legacy DB column drop (ISOLATED — has a migration).** Drop `pnl`/`executions`, remove the `toTrade()` fallback. Kept in its own sprint per the migration rule; runs last (review-order item 9).
 
 **Not scheduled — fold into feature/bug work when next touching those areas** (audit explicitly defers these): the 6 frontend simplifications (Management prop surface, Journal/Trades duplicate controls, daily/weekly review-sheet template lifecycle, backtesting sample-set loading, chart session shading, Research Report polling) and the "Low-Priority Route Pattern Extraction" finding.
 
-## Immediate Security And Reliability
+---
 
-### Expired Agent Job Leases Are Not Recovered — DONE (Sprint 9, 2026-05-30, commit c8ffd89)
+## Open Findings
 
-Resolved by adding `recoverExpiredJobs(db, agentId)` and calling it before each worker claim. Expired processing jobs now requeue when attempts remain or fail once max attempts are exhausted; lease fencing remains intact.
+### Test Coverage + Small Cleanups
 
-## Data Integrity And Error Handling (added 2026-05-25)
-
-### Rate Limiting On Expensive Endpoints — DONE (Sprint 6, 2026-05-29, commit 644dc24)
-
-Shipped a DB-backed fixed-window (UTC clock-hour) per-user counter: `rate_limits` table + shared `lib/rate-limit.ts`, returning 429 with `Retry-After` / `X-RateLimit-*` headers. Caps: `POST /api/research-report` 20/hr, `POST /api/askedgar/tldr` 30/hr. Not-done knobs left for later if volume grows: a prune cron for old rows and an external store.
-
-### Unbounded GET /api/trades Query — DONE (Sprint 7, 2026-05-29, commit 757cd32)
-
-Resolved via slim-payload (not pagination). `GET /api/trades` no longer joins `tradeExecutions` — it returns summary rows + tags only; per-trade executions lazy-load via `/api/trades/[id]` (`hooks/use-trade-executions.ts`). Dropping the executions join removes the bulk of the payload and the heaviest query. True pagination was deliberately deferred: all analytics (Career P/L, Performance, Calendar) run client-side off the full trade array, so paginating rows would silently break them until aggregation moves server-side (a separate multi-sprint effort).
-
-## TypeScript Safety (added 2026-05-25)
-
-### Type Assertions Hiding Real Type Problems — DONE (Sprint 10, 2026-05-30)
-
-Resolved by documenting the three accepted limitations in place:
-- `lib/market-pulse/capture.ts`: Drizzle builder chains are typed by hand because `MarketPulseDb` intentionally narrows the DB to a mockable `Pick<>`.
-- `app/api/research-report/route.ts`: the telemetry DB cast bridges structurally identical site/agent Drizzle DB brand types.
-
-No signature refactor was made; the sprint decision was to preserve working runtime behavior and document the limitation.
-
-### Remove Redundant Legacy DB Columns
-
-Evidence:
-- `pnl` duplicates `netPnl`, `executions` duplicates `executionCount` in [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts).
-- Comment says "transitional legacy retained for one release cycle" — that cycle has passed.
-- `toTrade()` runs fallback logic on every trade read to reconcile the two sources.
-
-Recommendation:
-Write a migration that drops the legacy columns (`pnl`, `executions`) and remove the fallback logic in `toTrade()`. This simplifies every trade read path.
-
-## Naming And Dependencies (added 2026-05-25)
-
-### Add Lazy Dynamic Imports For BacktestingTab
-
-Evidence:
-- `BacktestingTab.tsx` imports 8+ heavy sub-components plus `motion` and `react-hotkeys-hook` eagerly.
-- If the Charts tab is rarely the first tab visited, this is dead weight in the initial bundle.
-
-Recommendation:
-Wrap heavy sub-components with `next/dynamic`. Only worth doing after running `ANALYZE=true npm run build` to confirm bundle impact.
-
-## Test Coverage Gaps (added 2026-05-25)
-
-### Missing GET Test For Trades Route — DONE (Sprint 7, 2026-05-29, commit 757cd32)
-
-`__tests__/trades-route.test.ts` now covers GET: happy path (also asserts `select` ran exactly once, proving the executions query was removed), 401 auth rejection, and 503 db-unavailable.
-
-### Missing Component-Level Tests For Complex UI
+#### Missing Component-Level Tests For Complex UI
 
 Evidence:
 - `TradesTab`, `TradeDetailSheet`, `ResearchTickerView` have no dedicated test files.
@@ -91,162 +40,7 @@ Evidence:
 Recommendation:
 Add 3-5 focused component tests for the highest-value user interactions in these components.
 
-## Cost And External-Call Efficiency
-
-### Research TLDR Needs A Paid-Work Claim And Unified Telemetry — DONE (Sprint 8, commit 458a0a9)
-
-Evidence:
-- Research TLDR auto-posts from the UI: [components/trading/ResearchTldr.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchTldr.tsx:34).
-- The route delegates to `getCachedResearchTldr()`: [app/api/askedgar/tldr/route.ts](/home/jared/Nexus-Terminal/app/api/askedgar/tldr/route.ts:23).
-- On cache miss, `getCachedResearchTldr()` reads cache, calls Ask Edgar data, runs the LLM, then upserts after generation: [lib/research.ts](/home/jared/Nexus-Terminal/lib/research.ts:171), [lib/research.ts](/home/jared/Nexus-Terminal/lib/research.ts:190), [lib/research.ts](/home/jared/Nexus-Terminal/lib/research.ts:197).
-- The cache unique key protects final storage but not the expensive generation window: [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts:150).
-- TLDR uses the standalone LLM client, whose result has no token usage or duration fields: [lib/research.ts](/home/jared/Nexus-Terminal/lib/research.ts:7), [lib/llm-client.ts](/home/jared/Nexus-Terminal/lib/llm-client.ts:42).
-- Agent LLM calls already return usage and duration for telemetry: [lib/agents/llm-client.ts](/home/jared/Nexus-Terminal/lib/agents/llm-client.ts:214).
-
-Recommendation:
-Give TLDR generation the same shape as Research Report generation: a DB-backed per-ticker in-progress claim, retry/stale cleanup, and usage records in the existing LLM telemetry path. User-facing output should remain the same; duplicate cold-cache spend should drop.
-
-### Ask Edgar Needs Endpoint-Level Durable Telemetry
-
-Evidence:
-- The split adapter is now in place: [lib/askedgar/endpoints.ts](/home/jared/Nexus-Terminal/lib/askedgar/endpoints.ts:280), [lib/askedgar/fanout.ts](/home/jared/Nexus-Terminal/lib/askedgar/fanout.ts:90), [lib/askedgar/cache.ts](/home/jared/Nexus-Terminal/lib/askedgar/cache.ts:356).
-- Fan-out logs requested count, successful count, cost, and duration only to stdout: [lib/askedgar/fanout.ts](/home/jared/Nexus-Terminal/lib/askedgar/fanout.ts:125).
-- Cache metadata is still row-level by `(cache_type, ticker)`: [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts:143).
-- The registry contains a broad `snapshot` scope plus narrower scanner and agent scopes: [lib/askedgar/endpoints.ts](/home/jared/Nexus-Terminal/lib/askedgar/endpoints.ts:301).
-
-Recommendation:
-Persist per-endpoint telemetry with caller surface, scope, ticker, endpoint, cache hit/miss, duration, failure kind, and `usage.cost_microdollars`. Use that evidence before changing endpoint TTLs or splitting Research snapshot loading. This does not change UI output; it makes cost decisions measurable.
-
-### Dashboard Scanner Cache Is Only Per Warm Instance
-
-Evidence:
-- Dashboard now uses one aggregate endpoint: [components/trading/DashboardScannerTable.tsx](/home/jared/Nexus-Terminal/components/trading/DashboardScannerTable.tsx:299).
-- The aggregate route fans out to TradingView gainers, MDR live candidates, and recent MDR rows: [app/api/dashboard/scanner-state/route.ts](/home/jared/Nexus-Terminal/app/api/dashboard/scanner-state/route.ts:51).
-- It caches for 8 seconds in a module-level `Map`: [app/api/dashboard/scanner-state/route.ts](/home/jared/Nexus-Terminal/app/api/dashboard/scanner-state/route.ts:33).
-- Vercel module memory is not durable across cold starts or instances.
-
-Recommendation:
-Keep the aggregate endpoint contract, but move short-lived coalescing to a DB row or external cache if scanner traffic or upstream noise becomes a problem. This preserves the Dashboard response shape while making caching real across instances.
-
-### MDR Threshold Enrichment Is Recomputed Per Request
-
-Evidence:
-- Recent MDR rows load active triggers from `mdr_triggers`: [app/api/scanner/mdr-recent/route.ts](/home/jared/Nexus-Terminal/app/api/scanner/mdr-recent/route.ts:77).
-- Each row then calls `evaluateLatestD2MdrTrigger()` in chunks: [app/api/scanner/mdr-recent/route.ts](/home/jared/Nexus-Terminal/app/api/scanner/mdr-recent/route.ts:48).
-- Dashboard aggregate calls that helper on each cache miss: [app/api/dashboard/scanner-state/route.ts](/home/jared/Nexus-Terminal/app/api/dashboard/scanner-state/route.ts:54).
-
-Recommendation:
-Persist or cache MDR thresholds per `(ticker, trigger_date)`. The UI should show the same values; repeat dashboard requests should avoid recomputing the same historical thresholds.
-
-### TradingView Scanner Calls Should Share One Client
-
-Evidence:
-- A shared client already owns TradingView headers, session cookie use, price-context columns, and scanner request handling: [lib/tradingview-client.ts](/home/jared/Nexus-Terminal/lib/tradingview-client.ts:16), [lib/tradingview-client.ts](/home/jared/Nexus-Terminal/lib/tradingview-client.ts:42).
-- Gainers repeats TradingView columns and fetch wrapper: [app/api/tradingview/gainers/route.ts](/home/jared/Nexus-Terminal/app/api/tradingview/gainers/route.ts:15), [app/api/tradingview/gainers/route.ts](/home/jared/Nexus-Terminal/app/api/tradingview/gainers/route.ts:206).
-- MDR candidates repeats the same endpoint/header pattern: [app/api/tradingview/mdr-candidates/route.ts](/home/jared/Nexus-Terminal/app/api/tradingview/mdr-candidates/route.ts:8), [app/api/tradingview/mdr-candidates/route.ts](/home/jared/Nexus-Terminal/app/api/tradingview/mdr-candidates/route.ts:111).
-
-Recommendation:
-Move the generic scan request, header/session handling, response typing, and TradingView error mapping into `lib/tradingview-client.ts`. Keep route-specific columns and normalization near each route or move them into scanner-specific helpers. User-visible scanner output should not change.
-
-### Massive Market Data Has Two Client Paths
-
-Evidence:
-- `/api/market-data` reads `MASSIVE_API_KEY` and hardcodes an aggregate URL directly: [app/api/market-data/route.ts](/home/jared/Nexus-Terminal/app/api/market-data/route.ts:68), [app/api/market-data/route.ts](/home/jared/Nexus-Terminal/app/api/market-data/route.ts:99).
-- `lib/massive-market.ts` also has the shared Massive client helper and base URL: [lib/massive-market.ts](/home/jared/Nexus-Terminal/lib/massive-market.ts:3), [lib/massive-market.ts](/home/jared/Nexus-Terminal/lib/massive-market.ts:149).
-- `services/.env.example` documents `MASSIVE_API_BASE_URL`, but current code does not read it.
-
-Recommendation:
-Consolidate aggregate/candle requests into `lib/massive-market.ts` and either implement or remove the `MASSIVE_API_BASE_URL` knob. Chart data should remain identical; provider configuration and future retry/rate-limit behavior become one place.
-
-## Route And Product-Surface Cleanup
-
-### Remove Or Document Raw Scanner Routes
-
-Evidence:
-- Dashboard fetches only `/api/dashboard/scanner-state`: [components/trading/DashboardScannerTable.tsx](/home/jared/Nexus-Terminal/components/trading/DashboardScannerTable.tsx:299).
-- Tests assert Dashboard no longer fetches `/api/tradingview/gainers`, `/api/tradingview/mdr-candidates`, or `/api/scanner/mdr-recent` directly: [__tests__/dashboard-scanner-table.test.tsx](/home/jared/Nexus-Terminal/__tests__/dashboard-scanner-table.test.tsx:222).
-- The aggregate route imports helper functions directly from those public route modules: [app/api/dashboard/scanner-state/route.ts](/home/jared/Nexus-Terminal/app/api/dashboard/scanner-state/route.ts:1).
-- The scanner plan already calls for deleting or repurposing raw TradingView routes after audit: [docs/scanner-build.md](/home/jared/Nexus-Terminal/docs/scanner-build.md:214).
-
-Recommendation:
-Move helper code out of route modules into `lib/` or `app/api/dashboard/_shared`-style modules, then either delete the raw public route handlers or explicitly document them as supported debug/API surfaces. No Dashboard behavior should change if the aggregate JSON contract is preserved.
-
-### MDR Eligibility Endpoint Appears Deletion-Ready — DONE (Sprint 10, 2026-05-30)
-
-Removed the dead scanner eligibility endpoint, its route test, and its orphaned helper/result type. The dashboard guard that asserts the UI does not fetch that endpoint remains.
-
-### Agent Report List/Detail Routes Look Backend-Only — DONE (Sprint 10, 2026-05-30)
-
-Removed the generic agent-report list/detail endpoints and their route test after confirming current dashboard/report panels use type-specific latest routes instead. The `agentReports` table and live type-specific readers remain.
-
-### Low-Priority Route Pattern Extraction
-
-Evidence:
-- Daily and weekly review routes have the same list/upsert shape with different date fields: [app/api/daily-reviews/route.ts](/home/jared/Nexus-Terminal/app/api/daily-reviews/route.ts:8), [app/api/weekly-reviews/route.ts](/home/jared/Nexus-Terminal/app/api/weekly-reviews/route.ts:8).
-- Tags and watchlist theses share a small option-list CRUD shape, except tags also delete `trade_tags`: [app/api/tags/route.ts](/home/jared/Nexus-Terminal/app/api/tags/route.ts:8), [app/api/watchlist-theses/route.ts](/home/jared/Nexus-Terminal/app/api/watchlist-theses/route.ts:8).
-
-Recommendation:
-Do not abstract these immediately. If another review or option-list route is added, extract focused route helpers for authenticated list/upsert/delete patterns. User-visible behavior should remain unchanged.
-
-## Frontend Simplification Targets
-
-### Management Trade Prop Surface
-
-Evidence:
-- `app/page.tsx` destructures the broad `useTrades()` surface and forwards many props into Management: [app/page.tsx](/home/jared/Nexus-Terminal/app/page.tsx:61), [app/page.tsx](/home/jared/Nexus-Terminal/app/page.tsx:207).
-- `ManagementTab` declares the same broad contract and repartitions it into Journal, Trades, Performance, Career P/L, Archive, and Playbook: [components/trading/ManagementTab.tsx](/home/jared/Nexus-Terminal/components/trading/ManagementTab.tsx:28).
-
-Recommendation:
-When Management is next touched, group props by purpose (`tradeFilters`, `tradeSelection`, `tradeBulkActions`, `tradePersistence`) or move more management-only wiring one level down. Expected user-visible change: none; fewer add-a-prop edits across parent and child components.
-
-### Journal And Trades Duplicate Controls
-
-Evidence:
-- Journal renders search/risk/tag controls and selected-trade actions: [components/trading/JournalTab.tsx](/home/jared/Nexus-Terminal/components/trading/JournalTab.tsx:152).
-- Trades renders similar search, risk, and tag controls with different layout: [components/trading/TradesTab.tsx](/home/jared/Nexus-Terminal/components/trading/TradesTab.tsx:68).
-
-Recommendation:
-Extract a shared trade action/search control with compact and full variants when either tab is next edited. Expected user-visible change: same controls; less markup drift between Journal and Trades.
-
-### Daily And Weekly Review Sheets Duplicate Template Lifecycle
-
-Evidence:
-- Both sheets define template/review row types, clone fields, load template + review data, auto-print, save review, reset/save template, move/remove fields, and chart pagination: [components/trading/DailyReportSheet.tsx](/home/jared/Nexus-Terminal/components/trading/DailyReportSheet.tsx:36), [components/trading/WeeklyReviewSheet.tsx](/home/jared/Nexus-Terminal/components/trading/WeeklyReviewSheet.tsx:52).
-- Matching open/load flows live at [components/trading/DailyReportSheet.tsx](/home/jared/Nexus-Terminal/components/trading/DailyReportSheet.tsx:85) and [components/trading/WeeklyReviewSheet.tsx](/home/jared/Nexus-Terminal/components/trading/WeeklyReviewSheet.tsx:146).
-
-Recommendation:
-Extract a review-template hook plus shared template editor and replay-chart-list components. Leave daily/weekly aggregation and weekly watchlist composition local. Expected user-visible change: none; parity fixes become smaller.
-
-### Backtesting Sample-Set Loading Is Split Across Client Paths
-
-Evidence:
-- `useBacktestManager()` loads backtests and sample sets together: [hooks/use-backtest-manager.ts](/home/jared/Nexus-Terminal/hooks/use-backtest-manager.ts:92).
-- `BacktestingSidebar` redeclares sample-set response types, fetches the list again, and fetches detail rows separately: [components/trading/BacktestingSidebar.tsx](/home/jared/Nexus-Terminal/components/trading/BacktestingSidebar.tsx:47), [components/trading/BacktestingSidebar.tsx](/home/jared/Nexus-Terminal/components/trading/BacktestingSidebar.tsx:130), [components/trading/BacktestingSidebar.tsx](/home/jared/Nexus-Terminal/components/trading/BacktestingSidebar.tsx:211).
-
-Recommendation:
-Share sample-set list/detail loaders or lift the list into `BacktestingTab` when the chart/sidebar flow is next touched. Expected user-visible change: fewer duplicate requests and less stale-list risk.
-
-### Chart Session Shading Is Reimplemented Three Times
-
-Evidence:
-- Session shade rect state and `buildSessionShadeRects` wiring appears in Research, live candlestick, and backtest charts: [components/trading/ResearchChart.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchChart.tsx:101), [components/trading/CandlestickChart.tsx](/home/jared/Nexus-Terminal/components/trading/CandlestickChart.tsx:232), [components/trading/BacktestChart.tsx](/home/jared/Nexus-Terminal/components/trading/BacktestChart.tsx:395).
-- Each component has its own scheduling/recalculation path: [components/trading/ResearchChart.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchChart.tsx:141), [components/trading/CandlestickChart.tsx](/home/jared/Nexus-Terminal/components/trading/CandlestickChart.tsx:317), [components/trading/BacktestChart.tsx](/home/jared/Nexus-Terminal/components/trading/BacktestChart.tsx:666).
-
-Recommendation:
-Extract a shared session-shading hook/helper around chart API, candles, viewport width, and intraday enablement. Expected user-visible change: same shading visuals.
-
-### Research Report Cache Readiness Uses Polling
-
-Evidence:
-- `ResearchReportPanel` owns module-level `reportCache`, `getCachedReportId()`, and `prefetchResearchReport()`: [components/trading/ResearchReportPanel.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchReportPanel.tsx:61).
-- `ResearchTickerView` prefetches the report, then the Add-to-Watchlist button polls the cache every 500ms: [components/trading/ResearchTickerView.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchTickerView.tsx:82), [components/trading/ResearchTickerView.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchTickerView.tsx:153).
-
-Recommendation:
-Expose report readiness through a small hook or have `prefetchResearchReport()` return/report the generated id directly to the button state. Expected user-visible change: same or faster Add button enablement, no timer polling.
-
-## Dead Weight And Tests
-
-### Add Playbook Coverage Before More Management Cleanup
+#### Add Playbook Coverage Before More Management Cleanup
 
 Evidence:
 - Playbook API exposes GET/POST/PATCH/DELETE: [app/api/playbook/route.ts](/home/jared/Nexus-Terminal/app/api/playbook/route.ts:10).
@@ -256,11 +50,63 @@ Evidence:
 Recommendation:
 Add focused route tests for auth, validation, ownership, CRUD, and one UI smoke test for create/save/delete wiring before larger Management cleanup. This reduces regression risk without changing features.
 
-## Docs And Workflow Drift
+#### Add Lazy Dynamic Imports For BacktestingTab
 
-### `workflow:audit` Is A Narrow Smoke Check, Not The Full Skill Audit — DONE (Sprint 10, 2026-05-30)
+Evidence:
+- `BacktestingTab.tsx` imports 8+ heavy sub-components plus `motion` and `react-hotkeys-hook` eagerly.
+- If the Charts tab is rarely the first tab visited, this is dead weight in the initial bundle.
 
-Extended `scripts/workflow-audit.mjs` to read `HANDOFF.md` and `docs/ARCHITECTURE.md`, checking the handoff maintenance anchor plus key auth, SSE, migration, and retired-system architecture invariants. `npm run workflow:audit` passes.
+Recommendation:
+Wrap heavy sub-components with `next/dynamic`. Only worth doing after running `ANALYZE=true npm run build` to confirm bundle impact.
+
+### Legacy DB Column Drop (ISOLATED — has a migration)
+
+#### Remove Redundant Legacy DB Columns
+
+Evidence:
+- `pnl` duplicates `netPnl`, `executions` duplicates `executionCount` in [lib/db/schema.ts](/home/jared/Nexus-Terminal/lib/db/schema.ts).
+- Comment says "transitional legacy retained for one release cycle" — that cycle has passed.
+- `toTrade()` runs fallback logic on every trade read to reconcile the two sources.
+
+Recommendation:
+Write a migration that drops the legacy columns (`pnl`, `executions`) and remove the fallback logic in `toTrade()`. This simplifies every trade read path.
+
+### Deferred — Route Pattern Extraction
+
+#### Low-Priority Route Pattern Extraction
+
+Evidence:
+- Daily and weekly review routes have the same list/upsert shape with different date fields: [app/api/daily-reviews/route.ts](/home/jared/Nexus-Terminal/app/api/daily-reviews/route.ts:8), [app/api/weekly-reviews/route.ts](/home/jared/Nexus-Terminal/app/api/weekly-reviews/route.ts:8).
+- Tags and watchlist theses share a small option-list CRUD shape, except tags also delete `trade_tags`: [app/api/tags/route.ts](/home/jared/Nexus-Terminal/app/api/tags/route.ts:8), [app/api/watchlist-theses/route.ts](/home/jared/Nexus-Terminal/app/api/watchlist-theses/route.ts:8).
+
+Recommendation:
+Do not abstract these immediately. If another review or option-list route is added, extract focused route helpers for authenticated list/upsert/delete patterns. User-visible behavior should remain unchanged.
+
+### Deferred — Frontend Simplification Targets
+
+Fold each into feature/bug work the next time the area is touched. Expected user-visible change for all: none.
+
+- **Management trade prop surface** — `app/page.tsx` forwards a broad `useTrades()` surface into `ManagementTab`, which repartitions it into Journal/Trades/Performance/Career P/L/Archive/Playbook. Group props by purpose or push wiring down a level. [app/page.tsx](/home/jared/Nexus-Terminal/app/page.tsx:207), [components/trading/ManagementTab.tsx](/home/jared/Nexus-Terminal/components/trading/ManagementTab.tsx:28).
+- **Journal/Trades duplicate controls** — both render similar search/risk/tag controls with different layouts. Extract a shared control with compact and full variants. [components/trading/JournalTab.tsx](/home/jared/Nexus-Terminal/components/trading/JournalTab.tsx:152), [components/trading/TradesTab.tsx](/home/jared/Nexus-Terminal/components/trading/TradesTab.tsx:68).
+- **Daily/weekly review-sheet template lifecycle** — both sheets duplicate template/review row types, load/auto-print/save/reset, field move/remove, and chart pagination. Extract a review-template hook plus shared template editor and replay-chart-list components. [components/trading/DailyReportSheet.tsx](/home/jared/Nexus-Terminal/components/trading/DailyReportSheet.tsx:36), [components/trading/WeeklyReviewSheet.tsx](/home/jared/Nexus-Terminal/components/trading/WeeklyReviewSheet.tsx:52).
+- **Backtesting sample-set loading** — `useBacktestManager()` loads sample sets, but `BacktestingSidebar` redeclares the types and refetches list + detail separately. Share loaders or lift the list into `BacktestingTab`. [hooks/use-backtest-manager.ts](/home/jared/Nexus-Terminal/hooks/use-backtest-manager.ts:92), [components/trading/BacktestingSidebar.tsx](/home/jared/Nexus-Terminal/components/trading/BacktestingSidebar.tsx:130).
+- **Chart session shading reimplemented three times** — Research, live candlestick, and backtest charts each wire their own `buildSessionShadeRects` + scheduling. Extract a shared session-shading hook/helper. [components/trading/ResearchChart.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchChart.tsx:101), [components/trading/CandlestickChart.tsx](/home/jared/Nexus-Terminal/components/trading/CandlestickChart.tsx:232), [components/trading/BacktestChart.tsx](/home/jared/Nexus-Terminal/components/trading/BacktestChart.tsx:395).
+- **Research Report cache readiness uses polling** — `ResearchTickerView` prefetches the report then polls the module-level cache every 500ms for the Add-to-Watchlist button. Expose readiness via a small hook or have `prefetchResearchReport()` report the generated id directly. [components/trading/ResearchReportPanel.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchReportPanel.tsx:61), [components/trading/ResearchTickerView.tsx](/home/jared/Nexus-Terminal/components/trading/ResearchTickerView.tsx:153).
+
+---
+
+## Completed
+
+Condensed; see git history / `HANDOFF.md` for full per-sprint detail.
+
+- **Sprint 6 — Rate limiting on expensive endpoints** (2026-05-29, commit 644dc24). DB-backed UTC clock-hour per-user counter (`rate_limits` + `lib/rate-limit.ts`) returning 429 with `Retry-After`/`X-RateLimit-*`. Caps: research-report 20/hr, askedgar/tldr 30/hr.
+- **Sprint 7 — Unbounded GET /api/trades + missing GET test** (2026-05-29, commit 757cd32). Slimmed payload by dropping the `tradeExecutions` join (executions lazy-load via `/api/trades/[id]`); added GET route tests. Pagination deliberately deferred (analytics run client-side off the full array).
+- **Sprint 8 — Research TLDR paid-work claim + unified telemetry** (2026-05-29, commit 458a0a9). Per-ticker in-progress claim against double cold-cache spend; TLDR generation now logs usage/duration through the LLM telemetry path. Output unchanged.
+- **Sprint 9 — Agent job lease recovery** (2026-05-30, commit c8ffd89). `recoverExpiredJobs()` requeues/fails expired `processing` jobs before each worker claim; lease fencing intact. Closed the only open security/reliability finding.
+- **Sprint 10 — Dead-code purge + type-cast docs + audit coverage** (2026-05-30). Removed the dead MDR eligibility endpoint/helper/test and generic agent-report list/detail routes/tests; documented the three accepted `as unknown as` limitations in place; extended `workflow:audit` to cover `HANDOFF.md`/`ARCHITECTURE.md` invariants.
+- **Sprint 11 — Provider client consolidation** (2026-05-30, commit dc5bcd2). New `scanTradingView()` owns the TradingView scan request (gainers/mdr-candidates/price-context route through it); `lib/massive-market.ts` gained the aggregate-bars client and `/api/market-data` delegates to it; deleted the three dead raw scanner `GET` handlers. Scanner output unchanged (regression tests stayed green).
+- **Sprint 12 — Scanner cost & telemetry** (2026-05-31). Added structured AskEdgar fan-out logs and moved the dashboard scanner aggregate cache into a short-lived `askedgar_cache` row. MDR threshold caching was explicitly dropped because Dashboard MDR scans were being retired.
+- **Sprint 13 — Dashboard MDR scan retirement** (2026-05-31). Removed the Dashboard MDR UI, aggregate-route MDR fields, live/recent candidate routes, Vercel cron schedule, and Massive MDR evaluator exports. Left `mdr_triggers` schema/data in place for the later explicit migration.
 
 ---
 
@@ -268,7 +114,7 @@ Extended `scripts/workflow-audit.mjs` to read `HANDOFF.md` and `docs/ARCHITECTUR
 
 I ran the deep-research pass with 3 parallel subagents and did not edit files.
 
-**Bottom line:** frameworks are absolutely used to reduce code, but reliably only when they replace repeated plumbing. They do not erase domain logic. In Nexus, the target should be “less duplicated lifecycle/fetch/form/route boilerplate,” not raw LOC.
+**Bottom line:** frameworks are absolutely used to reduce code, but reliably only when they replace repeated plumbing. They do not erase domain logic. In Nexus, the target should be "less duplicated lifecycle/fetch/form/route boilerplate," not raw LOC.
 
 **Current LOC**
 - `587` tracked files.
@@ -285,12 +131,9 @@ I ran the deep-research pass with 3 parallel subagents and did not edit files.
 - Generated Drizzle metadata is the raw LOC monster. It is not product complexity.
 - `.opencode/` and `.claude/` are tracked workflow/tooling weight. AGENTS says ignore them unless explicitly aligning tools, but they do inflate repo size.
 - Repeated API route shells are real but mostly healthy convention: `requireUser`, `getDb`, `ensureUser`, `parseAndValidate`.
-- Actual redundancy worth acting on:
-  - TradingView scan fetch/header logic repeats in [gainers route](/home/jared/Nexus-Terminal/app/api/tradingview/gainers/route.ts:1) and [MDR candidates route](/home/jared/Nexus-Terminal/app/api/tradingview/mdr-candidates/route.ts:1) despite `lib/tradingview-client.ts`.
-  - Massive API logic is split between [market-data route](/home/jared/Nexus-Terminal/app/api/market-data/route.ts:68) and [lib/massive-market.ts](/home/jared/Nexus-Terminal/lib/massive-market.ts:149).
+- Actual redundancy worth acting on (provider-client items now closed by Sprint 11):
   - Daily/weekly review sheets duplicate template lifecycle around [DailyReportSheet](/home/jared/Nexus-Terminal/components/trading/DailyReportSheet.tsx:49) and [WeeklyReviewSheet](/home/jared/Nexus-Terminal/components/trading/WeeklyReviewSheet.tsx:65).
   - Backtesting sample-set loading repeats between [use-backtest-manager](/home/jared/Nexus-Terminal/hooks/use-backtest-manager.ts:89) and [BacktestingSidebar](/home/jared/Nexus-Terminal/components/trading/BacktestingSidebar.tsx:130).
-  - Sprint 10 removed the dead MDR eligibility endpoint/helper/test after external-consumer confirmation.
 
 **Framework Fit**
 - **TanStack Query** is the best candidate if you want reliable LOC reduction. Its docs explicitly target caching, deduping, stale state, background updates, pagination, mutations, and optimistic updates. This maps well to Nexus fetch-heavy hooks and polling/cache code. Source: [TanStack Query overview](https://tanstack.com/query/docs/docs).
@@ -307,10 +150,10 @@ I ran the deep-research pass with 3 parallel subagents and did not edit files.
 - Broad route factories: small helpers are fine, but hiding auth/ownership/validation can make route behavior harder to audit.
 
 **Recommendation**
-Do not run a “reduce LOC” rewrite. Run 4 focused cleanup passes:
+Do not run a "reduce LOC" rewrite. Run focused cleanup passes:
 
-1. Delete confirmed dead surfaces. Sprint 10 removed the first confirmed set; continue with provider-client route cleanup in Sprint 11.
-2. Consolidate provider clients: TradingView and Massive.
+1. Delete confirmed dead surfaces. (Sprints 10–11 removed the confirmed sets.)
+2. Consolidate provider clients: TradingView and Massive. (Done in Sprint 11.)
 3. Extract shared review-template lifecycle for daily/weekly sheets.
 4. Pilot TanStack Query in one fetch-heavy area before adopting it broadly.
 

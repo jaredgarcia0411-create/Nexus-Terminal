@@ -152,4 +152,3 @@ Use this when the user wants to plan changes for Codex to execute.
 - Auth runs through NextAuth v5 (Google OAuth, JWT sessions). `requireUser()` from `lib/server-db-utils.ts` guards every non-health API route. Flag any change that touches auth config, middleware, or `requireUser()` as elevated risk.
 - When comparing current state to desired state, always specify what is missing, what exists but is wrong, and what exists and is correct.
 - Save all generated spec files to HANDOFF.md in the project root & mark tasks that are complete.
-- If the user is working on an AEV2 sprint (drafting, reviewing, amending, or collapsing a sprint section in HANDOFF.md), defer to the `aev2-sprint` skill — it owns the sprint format, fan-out review procedure, and collapse rules. Don't re-derive them here.

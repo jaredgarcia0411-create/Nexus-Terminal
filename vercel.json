@@ -5,10 +5,6 @@
       "schedule": "0 8 * * *"
     },
     {
-      "path": "/api/cron/mdr-sweep",
-      "schedule": "0 22 * * 1-5"
-    },
-    {
       "path": "/api/cron/market-pulse-eod",
       "schedule": "30 22 * * 1-5"
     }

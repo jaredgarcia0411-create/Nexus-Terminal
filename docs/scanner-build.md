@@ -1,6 +1,6 @@
 # Custom Scanner Build — Source of Truth
 
-This is the project brief and source of truth for replacing Nexus Terminal's current scanners (Day 1, MDR) with a custom, polling-based scanner powered by Polygon (Massive) and a JSONLogic rule engine. Individual sprint specs live in `HANDOFF.md`.
+This is the project brief and source of truth for replacing Nexus Terminal's active Dashboard scanner surface with a custom, polling-based scanner powered by Polygon (Massive) and a JSONLogic rule engine. Sprint 13 retired the Dashboard MDR runtime/UI/candidate logic; any older MDR replacement notes in this document are historical context only unless a future sprint explicitly re-scopes MDR.
 
 ## Goal
 
@@ -17,10 +17,7 @@ Traced from the audit of `app/api/tradingview/*` and `app/api/dashboard/scanner-
 
 - `gainers/route.ts:44` — `PRIOR_CLOSE_FLOOR = $0.75` hardcoded. Any sub-$0.75 penny runner is invisible.
 - `gainers/route.ts:50-51` — TradingView prefilter scans PM gap and AH gap as separate queries. A name with 0 PM volume but 2M AH volume falls out of the 250-result window.
-- TradingView is implicit NASDAQ/NYSE; `mdr-candidates/route.ts:30` is explicit NYSE/NASDAQ. **OTC names cannot appear in scan results.**
-- `mdr-candidates/route.ts:744` — MDR requires 20 prior trading days. IPOs younger than 20 sessions are rejected even when they're textbook D2 setups.
 - TradingView field semantics drift at the session boundary (`postmarket_change` returns yesterday's AH until today's AH starts at 4 PM). A scan run at 9:32 AM can compare against the wrong session.
-- `/api/dashboard/scanner-state` uses an 8-second module-level cache. On Vercel that cache is ephemeral; every cold start re-fetches everything, and 10 concurrent 80-day Massive history calls saturate the 60s function budget.
 - Day 1 results are not persisted. There is no answer to "what fired at 7:14 AM yesterday."
 
 This isn't a tuning problem. The scanners aren't really scanners — they're hardcoded TradingView wrappers. We are replacing the engine, not adjusting thresholds.
@@ -69,14 +66,14 @@ This isn't a tuning problem. The scanners aren't really scanners — they're har
 | 3 | Scheduler | Long-lived Node worker, not Vercel | Vercel's 60s function ceiling and cold-start ephemerality kill in-route scanning. Worker runs continuously. |
 | 4 | Worker host | Optiplex 7060 Micro, Docker container | Already runs 24/7. Docker keeps it consistent with other services on that machine. |
 | 5 | Database | Single Neon Launch instance | $14/mo or less even at 90-day snapshot retention. Splitting to a local DB is premature complexity. |
-| 6 | Polling cadence | 30s pre/post, 15s RTH | Sufficient resolution for Day 1 and MDR setups (these develop over minutes, not seconds). |
+| 6 | Polling cadence | 30s pre/post, 15s RTH | Sufficient resolution for Day 1 setups, which develop over minutes rather than seconds. |
 | 7 | Snapshot cadence (backtest) | 5 min, narrowed universe | ~200 MB/day after compression, fits Neon Launch's included tier. |
 | 8 | Snapshot universe filter | price >= $0.10 AND day_volume >= 1000, common-stock type only | Drops 5–10× volume; matches our actual trading universe. |
 | 9 | Halt feed (Polygon LULD WebSocket) | Deferred to v2 | Pure addition; doesn't restructure anything when added. |
 | 10 | Float source | Polygon `weighted_shares_outstanding` (shares outstanding, not free float) | Polygon only. Close enough for v1; layer in EDGAR-derived true float later. |
-| 11 | UI rule editor | Deferred to v2 | Rules seeded via migration in v1. Day 1 + MDR are the only two presets. |
-| 12 | Rollout strategy | 30-day parallel run | Old scanners keep powering the Dashboard UI; new scanners write to new tables silently. Compare via `/scanner-debug`. |
-| 13 | Cutover | Swap `/api/dashboard/scanner-state` to read new tables, same response shape | Zero UI churn. |
+| 11 | UI rule editor | Deferred to v2 | Rules seeded via migration in v1. Day 1 is the active Dashboard preset. |
+| 12 | Rollout strategy | 30-day parallel run | The current scanner keeps powering the Dashboard UI; the new scanner writes to new tables silently. Compare via `/scanner-debug`. |
+| 13 | Cutover | Swap `/api/dashboard/scanner-state` to read new tables, same Day 1 response shape | Zero UI churn. |
 | 14 | Backtest | In v1. Snapshot re-evaluation against stored `market_snapshots`. | Whole reason to rebuild — tune rules with data, not guesswork. |
 
 ## Database schema
@@ -84,11 +81,11 @@ This isn't a tuning problem. The scanners aren't really scanners — they're har
 All tables live in Drizzle. Migrations via `npm run db:migrate` (never `db:push` — known false-positive on composite PKs in this repo).
 
 ### `scanner_definitions`
-Active rule presets. Day 1 and MDR are seeded here in v1.
+Active rule presets. Day 1 is seeded here in v1.
 
 | column | type | notes |
 |---|---|---|
-| `id` | text PK | slug, e.g., `"day-1"`, `"mdr"` |
+| `id` | text PK | slug, e.g., `"day-1"` |
 | `name` | text | display name |
 | `description` | text | optional |
 | `rules` | jsonb | JSONLogic AST |
@@ -174,7 +171,7 @@ The worker joins this in at scan time to enable filters like `shares_outstanding
 ### Existing tables — preserved
 
 - `market_pulse_daily_bars` — keep as-is. Used for EOD/historical context and Market Pulse ingestion.
-- `mdr_triggers` — keep as-is. Verified EOD MDR triggers; different time scale from intraday scans.
+- `mdr_triggers` — keep as-is until the later explicit migration drops it. Historical MDR data remains in place, but the Dashboard MDR runtime is retired.
 
 ## Build phases (epics)
 
@@ -184,7 +181,7 @@ Each epic is one HANDOFF.md sprint. They're sequential — don't start the next 
 - Drizzle schema for 5 new tables (`scanner_definitions`, `scanner_runs`, `scanner_results`, `scanner_health`, `market_snapshots`, `scanner_tickers`).
 - Migration script.
 - `services/scanner/src/engine/jsonlogic.ts` — wrapper around `json-logic-js` with our typed snapshot schema.
-- Seed migration: Day 1 and MDR as JSONLogic rules, encoded from existing logic in `gainers/route.ts` and `mdr-candidates/route.ts` (faithfully reproduced, including known limitations — we'll tune in parallel-run).
+- Seed migration: Day 1 as a JSONLogic rule, encoded from existing logic in `gainers/route.ts` (faithfully reproduced, including known limitations — we'll tune in parallel-run).
 - Unit tests for the engine: known snapshots in, expected matches out.
 - **No UI changes. No worker. No deploy.** This epic just lands the foundation.
 
@@ -201,7 +198,7 @@ Each epic is one HANDOFF.md sprint. They're sequential — don't start the next 
 - Holiday calendar: skip ticks on US market holidays (use Polygon's `marketStatus` endpoint or a static list — sprint decides).
 
 ### Epic 3 — Debug page + heartbeat badge
-- `/scanner-debug` page, gated to your email only. Side-by-side: current TradingView-based Dashboard scanner output vs new Polygon-based output. Highlight tickers in one but not the other.
+- `/scanner-debug` page, gated to your email only. Side-by-side: current TradingView-based Day 1 Dashboard output vs new Polygon-based output. Highlight tickers in one but not the other.
 - Heartbeat badge on the Dashboard (small, unobtrusive) reading `scanner_health`.
 - No changes to the main Dashboard data path yet — old scanners still power the UI.
 - **This is when parallel run starts.** Day 0 of the 30-day comparison.
@@ -213,9 +210,9 @@ Each epic is one HANDOFF.md sprint. They're sequential — don't start the next 
 
 ### Epic 5 — Cutover
 - After 30 days of parallel run and your validation, swap `/api/dashboard/scanner-state` to read latest run from `scanner_results`, returning the same JSON shape the UI expects.
-- Delete `app/api/tradingview/gainers/route.ts` and `app/api/tradingview/mdr-candidates/route.ts` (or repurpose if anything else uses them — Codex audits before deleting).
+- Delete or repurpose `app/api/tradingview/gainers/route.ts` after auditing any remaining consumers.
 - Remove the in-route 8s module cache.
-- Add a basic UI surface for "enabled scanners" so you can toggle Day 1 / MDR without code changes.
+- Add a basic UI surface for enabled scanner rules if multiple active rules exist by cutover.
 
 ## Validation: 30-day parallel run
 
@@ -240,7 +237,7 @@ These are deliberate omissions. Each is purely additive and can land in a future
 - **Auto-deploy to Optiplex (CI)** — manual `git pull && docker compose up --build -d` is fine for one user.
 - **Off-site backup of `market_snapshots`** — Neon handles its own backups for v1 retention. If we extend retention to >90 days we revisit.
 - **Tick-level snapshot storage** — 5-min snapshots are sufficient for the rule-tuning we actually need. Tick-level can come later if a setup demands it.
-- **More scanners beyond Day 1 + MDR** — confirm these are correct first. New presets added after cutover.
+- **More scanners beyond Day 1** — confirm the first custom scanner is correct before adding new presets after cutover.
 
 ## Prerequisites (blockers)
 
@@ -251,7 +248,7 @@ These are deliberate omissions. Each is purely additive and can land in a future
 ## Known limitations and trade-offs
 
 - **No proper free float in v1.** `weighted_shares_outstanding` from Polygon is shares outstanding, not the publicly tradeable float. Insider holdings, locked-up shares, and institutional positions aren't subtracted. For small-cap setups this typically overstates float by 20–60%. Workable for v1 filters (`shares_outstanding < 50M` will still catch most low-float runners) but not precise.
-- **Polling, not streaming.** A trade printing 200ms after a tick won't be reflected until the next tick (15s RTH). For Day 1 and MDR this is irrelevant; for tick-level setups (parabolic shorts entering on a single print) it would matter and would need WebSocket integration.
+- **Polling, not streaming.** A trade printing 200ms after a tick won't be reflected until the next tick (15s RTH). For Day 1 this is acceptable; for tick-level setups (parabolic shorts entering on a single print) it would matter and would need WebSocket integration.
 - **Home server reliability is on you.** If the Optiplex loses power or internet, the scanner stops and the heartbeat goes red. No Vercel fallback in v1 (by your decision — you have other tools to use if it's down).
 - **Snapshot universe filter (price >= $0.10, vol >= 1000) excludes truly dormant tickers from backtest data.** If you later want to backtest setups on near-zero-volume names, we'd need to widen the filter or accept the gap.
 
@@ -259,7 +256,6 @@ These are deliberate omissions. Each is purely additive and can land in a future
 
 These are detail-level decisions Codex can resolve in the sprint without coming back to you:
 
-- Exact JSONLogic encoding of MDR's "prior big day in 20-day window" check (it's the most complex existing rule).
 - Holiday calendar source: Polygon `marketStatus` polling vs static array.
 - Whether `scanner_definitions.rules` should be a single JSONLogic blob or split into `prefilter` + `match` for performance.
 - Whether to add `score` computation in v1 or always return `1.0`.

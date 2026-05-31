@@ -33,34 +33,6 @@ interface ScannerSummary {
   fetchedAt: string;
 }
 
-// MDR feed only carries PM data — decouple from TradingViewGainer so we don't
-// force the mdr-candidates route to surface postmarket columns it doesn't need.
-interface MdrCandidate {
-  ticker: string;
-  price: number;
-  change: number;
-  volume: number;
-  preMarketPrice: number | null;
-  pmPriceNeeded?: number | null;
-  openingGapNeededPercent?: number | null;
-  intradayPriceNeeded?: number | null;
-}
-
-interface MdrRecentRow {
-  ticker: string;
-  triggerDate: string;
-  triggerClose: number;
-  mark: number | null;
-  pdc: number | null;
-  change: number | null;
-  volume: number | null;
-  pmPriceNeeded?: number | null;
-  openingGapNeededPercent?: number | null;
-  intradayPriceNeeded?: number | null;
-}
-
-type MarketSession = 'pre-market' | 'regular' | 'after-hours' | 'closed';
-
 type DashboardLatchState = {
   date: string;
   rowsByTicker: Record<string, TradingViewGainer>;
@@ -68,43 +40,6 @@ type DashboardLatchState = {
 
 const LEGACY_DASHBOARD_DAY1_LATCH_STORAGE_KEY = 'nexus-dashboard-day1-latched';
 const DASHBOARD_DAY1_LATCH_STORAGE_KEY = 'nexus-dashboard-day1-latched-v2';
-
-// Inlined from lib/massive-market.ts so we don't pull a server module into the client bundle.
-function getMarketSession(now: Date = new Date()): MarketSession {
-  const dayLabel = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    weekday: 'short',
-  }).format(now);
-  if (dayLabel === 'Sat' || dayLabel === 'Sun') return 'closed';
-
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(now);
-  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
-  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
-  const total = hour * 60 + minute;
-
-  if (total >= 240 && total < 570) return 'pre-market';
-  if (total >= 570 && total < 960) return 'regular';
-  if (total >= 960 && total < 1200) return 'after-hours';
-  return 'closed';
-}
-
-// Pick session-aware mark/volume for the MDR table:
-//   pre-market → pre-market price/volume (so the structural check fires on PM breakouts)
-//   regular/after/closed → today's regular session mark/volume
-function sessionMark(
-  g: { price: number; preMarketPrice: number | null },
-  session: MarketSession,
-): number {
-  if (session === 'pre-market' && g.preMarketPrice != null && Number.isFinite(g.preMarketPrice)) {
-    return g.preMarketPrice;
-  }
-  return g.price;
-}
 
 interface DashboardScannerTableProps {
   onNavigateToResearch: (ticker: string) => void;
@@ -269,30 +204,12 @@ function TD({ children, right, className }: { children: ReactNode; right?: boole
   );
 }
 
-function fmtDollarOrDash(value: number | null | undefined): string {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
-  return `$${value.toFixed(2)}`;
-}
-
-function fmtPercentOrDash(value: number | null | undefined): string {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
-  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
-}
-
-function thresholdClass(value: number | null | undefined, tone?: 'percent'): string | undefined {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return 'text-muted-foreground';
-  if (tone === 'percent') return value >= 0 ? 'text-emerald-400' : 'text-rose-500';
-  return undefined;
-}
-
 export default function DashboardScannerTable({ onNavigateToResearch }: DashboardScannerTableProps) {
   const [isRealtime, setIsRealtime] = useState(false);
   const [loading, setLoading] = useState(true);
   const [summaries, setSummaries] = useState<Record<string, ScannerSummary>>({});
   const requestedSummariesRef = useRef(new Set<string>());
   const [dayOneLatch, setDayOneLatch] = useState<DashboardLatchState>(() => loadDashboardLatch(DASHBOARD_DAY1_LATCH_STORAGE_KEY));
-  const [mdrLive, setMdrLive] = useState<MdrCandidate[]>([]);
-  const [mdrRecent, setMdrRecent] = useState<MdrRecentRow[]>([]);
 
   const fetchScannerState = useCallback(async () => {
     try {
@@ -301,8 +218,7 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
       const data = (await res.json()) as {
         gainers: TradingViewGainer[];
         isRealtime: boolean;
-        mdrLive: MdrCandidate[];
-        mdrRecent: MdrRecentRow[];
+        fetchedAt: string;
       };
       const nextGainers = data.gainers ?? [];
       const today = todayInNewYork();
@@ -312,8 +228,6 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
         today,
         nextGainers,
       ));
-      setMdrLive(data.mdrLive ?? []);
-      setMdrRecent(data.mdrRecent ?? []);
     } catch {
       // Keep last good scanner state on transient polling failures.
     } finally {
@@ -332,11 +246,6 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
   useEffect(() => {
     persistLatch(DASHBOARD_DAY1_LATCH_STORAGE_KEY, dayOneLatch);
   }, [dayOneLatch]);
-
-  // Session is still used for the MDR mark choice. Day 1 rows now use
-  // route-derived AH+PM volume and move fields because the combined-volume
-  // qualification cannot be reconstructed from TV's session-current columns.
-  const session = getMarketSession();
 
   const dayOneRows = useMemo(() => (
     sortDayOneRows(dayOneLatch.rowsByTicker)
@@ -371,56 +280,6 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
     event.preventDefault();
     onNavigateToResearch(ticker);
   };
-
-  const mdrRows = useMemo(() => {
-    const byTicker = new Map<string, {
-      ticker: string;
-      pdc: number;
-      mark: number;
-      chg: number;
-      pmPriceNeeded: number | null;
-      openingGapNeededPercent: number | null;
-      intradayPriceNeeded: number | null;
-    }>();
-
-    // Live candidates first — TV's `change` is regular-session % change.
-    // Back-compute pdc from price + change so the table stays consistent
-    // with the existing format. During PM, mark falls back to preMarketPrice.
-    for (const c of mdrLive) {
-      const mark = sessionMark(c, session);
-      const chg = c.change;
-      const pdc = chg !== 0 ? c.price / (1 + chg / 100) : c.price;
-      byTicker.set(c.ticker, {
-        ticker: c.ticker,
-        pdc,
-        mark,
-        chg,
-        pmPriceNeeded: c.pmPriceNeeded ?? null,
-        openingGapNeededPercent: c.openingGapNeededPercent ?? null,
-        intradayPriceNeeded: c.intradayPriceNeeded ?? null,
-      });
-    }
-
-    // DB rows fill in any ticker not already in the live set. They have
-    // proper mark + pdc from Massive's unified snapshot.
-    for (const r of mdrRecent) {
-      if (byTicker.has(r.ticker)) continue;
-      const mark = r.mark ?? r.triggerClose;
-      const pdc = r.pdc ?? r.triggerClose;
-      const chg = pdc > 0 ? (mark / pdc - 1) * 100 : 0;
-      byTicker.set(r.ticker, {
-        ticker: r.ticker,
-        pdc,
-        mark,
-        chg,
-        pmPriceNeeded: r.pmPriceNeeded ?? null,
-        openingGapNeededPercent: r.openingGapNeededPercent ?? null,
-        intradayPriceNeeded: r.intradayPriceNeeded ?? null,
-      });
-    }
-
-    return Array.from(byTicker.values()).sort((a, b) => b.chg - a.chg);
-  }, [mdrLive, mdrRecent, session]);
 
   if (loading) {
     return (
@@ -526,79 +385,6 @@ export default function DashboardScannerTable({ onNavigateToResearch }: Dashboar
                   </tr>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className={tableCard}>
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="text-base font-bold text-foreground">
-            Potential MDR Setup
-          </h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-full table-fixed">
-            <colgroup>
-              <col className="w-[90px]" />
-              <col className="w-[90px]" />
-              <col className="w-[90px]" />
-              <col className="w-[110px]" />
-              <col className="w-[140px]" />
-              <col className="w-[140px]" />
-              <col className="w-[140px]" />
-            </colgroup>
-            <thead>
-              <tr className={headerRow}>
-                <TH>Ticker</TH>
-                <TH right>PDC</TH>
-                <TH right>Mark</TH>
-                <TH right>Mark % Chg</TH>
-                <TH right>PM Price Needed</TH>
-                <TH right>Opening Gap Needed</TH>
-                <TH right>Intraday Price Needed</TH>
-              </tr>
-            </thead>
-            <tbody>
-              {mdrRows.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-sm text-muted-foreground">
-                    No MDR setups detected.
-                  </td>
-                </tr>
-              ) : (
-                mdrRows.map((row) => (
-                  <tr
-                    key={row.ticker}
-                    className={bodyRow}
-                    onClick={() => onNavigateToResearch(row.ticker)}
-                    onKeyDown={(event) => handleRowKeyDown(event, row.ticker)}
-                    role="button"
-                    tabIndex={0}
-                    title={`Open ${row.ticker} in Research`}
-                  >
-                    <TD>
-                      <span className="text-foreground">{row.ticker}</span>
-                    </TD>
-                    <TD right>${row.pdc.toFixed(3)}</TD>
-                    <TD right>${row.mark.toFixed(3)}</TD>
-                    <TD right>
-                      <span className={row.chg >= 0 ? 'text-emerald-400' : 'text-rose-500'}>
-                        {row.chg >= 0 ? '+' : ''}{row.chg.toFixed(2)}%
-                      </span>
-                    </TD>
-                    <TD right className={thresholdClass(row.pmPriceNeeded)}>
-                      {fmtDollarOrDash(row.pmPriceNeeded)}
-                    </TD>
-                    <TD right className={thresholdClass(row.openingGapNeededPercent, 'percent')}>
-                      {fmtPercentOrDash(row.openingGapNeededPercent)}
-                    </TD>
-                    <TD right className={thresholdClass(row.intradayPriceNeeded)}>
-                      {fmtDollarOrDash(row.intradayPriceNeeded)}
-                    </TD>
-                  </tr>
-                ))
-              )}
             </tbody>
           </table>
         </div>
