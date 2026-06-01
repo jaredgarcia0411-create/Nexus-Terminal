@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "react-data-grid/lib/styles.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -230,4 +231,29 @@
     color: #047857 !important;
     text-decoration: underline !important;
   }
+}
+
+/* react-data-grid theming: map the grid's color variables onto app semantic
+   tokens so Sheets follows light/dark mode without a parallel palette. */
+.sheets-grid {
+  --rdg-color: var(--foreground);
+  --rdg-background-color: var(--card);
+  --rdg-header-background-color: var(--muted);
+  --rdg-header-draggable-background-color: var(--accent);
+  --rdg-row-hover-background-color: var(--accent);
+  --rdg-row-selected-background-color: color-mix(in srgb, var(--primary) 12%, transparent);
+  --rdg-row-selected-hover-background-color: color-mix(in srgb, var(--primary) 18%, transparent);
+  --rdg-border-color: var(--border);
+  --rdg-summary-border-color: var(--border);
+  --rdg-selection-color: var(--ring);
+  --rdg-checkbox-focus-color: var(--ring);
+  --rdg-cell-frozen-box-shadow: 2px 0 5px -2px color-mix(in srgb, var(--foreground) 30%, transparent);
+  --rdg-font-size: 13px;
+  --rdg-color-scheme: light;
+  accent-color: var(--primary);
+  border: none;
+}
+
+.dark .sheets-grid {
+  --rdg-color-scheme: dark;
 }

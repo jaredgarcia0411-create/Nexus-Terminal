@@ -9,13 +9,14 @@ import JournalTab from '@/components/trading/JournalTab';
 import PlaybookTab from '@/components/trading/PlaybookTab';
 import PerformanceTab from '@/components/trading/PerformanceTab';
 import ResearchSubNav from '@/components/trading/ResearchSubNav';
+import SheetsTab from '@/components/trading/SheetsTab';
 import TradesTab from '@/components/trading/TradesTab';
 import type { Trade } from '@/lib/types';
 
-type SubTabKey = 'journal' | 'trades' | 'performance' | 'playbook' | 'career-pnl' | 'archive';
+type SubTabKey = 'journal' | 'trades' | 'performance' | 'playbook' | 'career-pnl' | 'archive' | 'sheets';
 
 // Order matches the spec: Journal first, then Trades (formerly the standalone
-// "Management"/Trades tab), Performance, Playbook, Career P/L, Archive.
+// "Management"/Trades tab), Performance, Playbook, Career P/L, Archive, Sheets.
 const SUB_TABS: Array<{ key: SubTabKey; label: string }> = [
   { key: 'journal', label: 'Journal' },
   { key: 'trades', label: 'Trades' },
@@ -23,6 +24,7 @@ const SUB_TABS: Array<{ key: SubTabKey; label: string }> = [
   { key: 'playbook', label: 'Playbook' },
   { key: 'career-pnl', label: 'Career P/L' },
   { key: 'archive', label: 'Archive' },
+  { key: 'sheets', label: 'Sheets' },
 ];
 
 interface ManagementTabProps {
@@ -152,6 +154,8 @@ export default function ManagementTab(props: ManagementTabProps) {
       {activeSubTab === 'career-pnl' ? <CareerPnlTab /> : null}
 
       {activeSubTab === 'archive' ? <ArchiveTab trades={props.trades} /> : null}
+
+      {activeSubTab === 'sheets' ? <SheetsTab /> : null}
     </motion.div>
   );
 }
