@@ -32,16 +32,10 @@ interface Props {
 }
 
 function programStatusClass(statusLabel: string): string {
-  if (/inactive|expired|terminated|unavailable/i.test(statusLabel)) {
-    return 'border-rose-500/30 bg-rose-500/10 text-rose-300';
-  }
-  if (/restricted|limited|baby shelf/i.test(statusLabel)) {
-    return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
-  }
-  if (/active|effective|available/i.test(statusLabel)) {
-    return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
-  }
-  return 'border-zinc-500/30 bg-muted/10 text-muted-foreground';
+  if (/inactive|expired|terminated|unavailable/i.test(statusLabel)) return 'text-rose-300';
+  if (/restricted|limited|baby shelf/i.test(statusLabel)) return 'text-amber-300';
+  if (/active|effective|available/i.test(statusLabel)) return 'text-emerald-300';
+  return 'text-muted-foreground';
 }
 
 const LAYOUT_STORAGE_KEY = 'nexus-research-dilution-layout';
@@ -105,17 +99,22 @@ function ProgramSection({
         <div className="divide-y divide-border">
           {rows.map((row, index) => {
             const badge = babyShelfBadge(row);
-            const statusLabel = row.status ?? (row.isEffective ? 'Active' : 'Inactive');
-            const statusClass = programStatusClass(statusLabel);
+            // Show AskEdgar's registration status verbatim. When it's absent we
+            // render no badge rather than inferring Active/Inactive — ATMs ride
+            // on a parent shelf and don't carry their own effective_status, so
+            // inferring it here was unreliable.
+            const statusLabel = row.status;
             // ATM Remaining color tracks baby-shelf status: green when there's
             // still room to raise, red when over the limit. Matches scanner.
             const remainingColorClass = row.overBabyShelf ? 'text-rose-500' : 'text-emerald-400';
             return (
               <div key={`${title}-${index}`} className="py-2">
                 <div className="flex items-center gap-2">
-                  <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${statusClass}`}>
-                    {statusLabel}
-                  </span>
+                  {statusLabel ? (
+                    <span className={`text-xs font-medium whitespace-nowrap ${programStatusClass(statusLabel)}`}>
+                      {statusLabel}
+                    </span>
+                  ) : null}
                   {row.documentUrl ? (
                     <a
                       href={row.documentUrl}
@@ -525,14 +524,16 @@ function ProgramCardView({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {rows.map((row, index) => {
             const badge = babyShelfBadge(row);
-            const statusLabel = row.status ?? (row.isEffective ? 'Active' : 'Inactive');
-            const borderClass = programCardBorderClass(statusLabel);
-            const statusClass = programStatusClass(statusLabel);
+            // Display AskEdgar's status verbatim; no badge when it's absent.
+            const statusLabel = row.status;
+            const borderClass = programCardBorderClass(statusLabel ?? '');
             const remainingColorClass = row.overBabyShelf ? 'text-rose-500' : 'text-emerald-400';
             return (
               <div key={`${title}-card-${index}`} className={`rounded-lg border-l-4 ${borderClass} bg-accent p-4`}>
                 <div className="mb-3 flex items-center gap-2">
-                  <span className={`rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${statusClass}`}>{statusLabel}</span>
+                  {statusLabel ? (
+                    <span className={`text-xs font-medium whitespace-nowrap ${programStatusClass(statusLabel)}`}>{statusLabel}</span>
+                  ) : null}
                   {badge ? <span className={`text-sm font-semibold whitespace-nowrap ${badge.colorClass}`}>{badge.label}</span> : null}
                 </div>
                 <h5 className="mb-3 text-sm font-semibold text-foreground">{row.headline}</h5>
