@@ -13,10 +13,12 @@ Complete guide for every UI decision in Nexus Terminal. Covers design principles
 Nexus Terminal is a **data-dense trading tool** for a small private team. The aesthetic is **dark, minimal, and functional** — like a modern Bloomberg Terminal. Every visual choice serves the data, not competes with it.
 
 **Core identity:**
-- Dark background (`#0A0A0B`) with emerald accent
+- Dark-first (page `bg-background` → `#0A0A0B` in dark) with an emerald primary accent
 - High information density, low visual noise
 - Professional, utilitarian — not flashy, not playful
 - Traders scan fast — make the important things obvious
+
+**Colors come from semantic tokens, not hardcoded hex.** The app defines CSS-variable tokens in `app/globals.css` — light values under `:root`, dark values under `.dark` — and exposes them as Tailwind classes (`bg-card`, `text-foreground`, `border-border`, …). Using these means a component works in both themes automatically and stays consistent with everything else. Hardcoded hex (`bg-[#121214]`) is reserved for one place: chart canvases that must hand exact colors to `lightweight-charts` (see Chart Colors).
 
 ---
 
@@ -35,9 +37,9 @@ Every pixel should either convey information or help organize it. Remove anythin
 ### 2. Visual Hierarchy
 
 Control what the eye sees first, second, third. In a trading context:
-- **First:** Price action, PnL numbers, key metrics — large, white, prominent
+- **First:** Price action, PnL numbers, key metrics — large, `text-foreground`, prominent
 - **Second:** Context like ticker, side, date, tags — medium, slightly muted
-- **Third:** Metadata and controls like timestamps, settings, secondary actions — small, zinc-400/500
+- **Third:** Metadata and controls like timestamps, settings, secondary actions — small, `text-muted-foreground`
 
 Use size, weight, color, and position to create hierarchy — not borders or boxes. Adding a border around something doesn't make it more important; it adds noise.
 
@@ -62,17 +64,23 @@ Every visual element costs the user attention. Audit aggressively for:
 
 ### 5. Color Encodes Meaning
 
-Color is not decoration — it communicates:
-- **Emerald** = positive, active, primary action, profit
-- **Rose/Red** = negative, loss, destructive, error
-- **Amber** = warning, caution, neutral
-- **White** = primary content, important readable data
-- **Zinc-400** = secondary content, labels, descriptions
-- **Zinc-500** = tertiary, disabled, placeholder
+There are **two color systems** — know which one you're reaching for:
 
-Never introduce colors outside this system. If something needs emphasis, use what exists — don't add blue, purple, or other off-brand colors.
+**A. Semantic tokens (chrome / structure).** Surfaces, text, borders, and the primary action use tokens so they flip cleanly between light and dark:
+- `bg-background` / `bg-card` / `bg-muted` / `bg-accent` = surfaces (page → card → subtle fill → hover/overlay)
+- `text-foreground` = primary readable content; `text-muted-foreground` = labels, metadata, placeholders
+- `border-border` = all borders and dividers
+- `text-primary` / `bg-primary` = the emerald primary accent (CTAs, active nav, links)
+- `text-destructive` / `bg-destructive` = destructive action surface
 
-**Text color rule:** If the user needs to actually read and act on data, it should be `text-white`. Reserve `text-zinc-400` for labels and metadata that provide context but aren't the main content. When in doubt, make it white — readability beats subtlety.
+**B. Data-meaning colors (raw Tailwind, intentionally fixed).** These encode trading meaning and must read identically in any theme, so they are NOT tokenized:
+- **emerald** (`text-emerald-400`/`-500`) = profit, positive PnL, long ("L"), up candle
+- **rose** (`text-rose-400`/`-500`) = loss, negative PnL, short ("S"), down candle, errors
+- **amber** (`text-amber-300`/`-500`) = warning, caution, neutral sentiment
+
+Never introduce colors outside these two systems — no blue, purple, or other off-brand hues. For chrome, prefer a token; only drop to raw emerald/rose/amber when the color carries data meaning.
+
+**Text color rule:** If the user needs to read and act on data, use `text-foreground`. Reserve `text-muted-foreground` for labels and metadata that give context but aren't the main content. When in doubt, use `text-foreground` — readability beats subtlety.
 
 ### 6. Progressive Disclosure
 
@@ -91,29 +99,34 @@ Animation tells users something happened — a tab changed, content loaded, some
 ## Design System Tokens
 
 ### Colors
-| Role | Value | Usage |
-|------|-------|-------|
-| Page background | `#0A0A0B` | `bg-[#0A0A0B]` — outermost background |
-| Card background | `#121214` | `bg-[#121214]` — cards, containers, panels |
-| Primary button | `bg-emerald-500/10 text-white` | Primary CTAs ("New Trade", "Save Review", "Apply Risk", "Launch Chart", "New Backtest", "Add Tag", "Set Auto Risk") — translucent emerald tint, white text |
-| Primary button hover | `bg-emerald-500/20` | Hover state for primary buttons |
-| Positive value | `emerald-500` | Profit text, positive PnL, calendar green days, "up" candle |
-| Long direction | `emerald-500` | Long side indicator ("L") |
-| Active toggle | `bg-zinc-700/60 text-zinc-100` | Selected state for range / mode toggles (All/30D/60D, Net/Gross, $/R, Research filing tabs) — NOT emerald |
-| Accent tint | `emerald-500/10` | Sidebar active tab, primary button bg, subtle accent backgrounds (selected rows, ring) |
-| Negative | `rose-500` / `rose-400` | Losses, destructive actions, errors, "down" candle, Short ("S") direction |
-| Caution | `amber-500` / `amber-300` | Warnings, neutral sentiment |
-| Primary text | `text-white` | Headings, important values, readable data, table column headers |
-| Secondary text | `text-zinc-400` | Descriptions, labels, metadata |
-| Tertiary text | `text-zinc-500` | Placeholders, disabled text |
-| Border standard | `border-white/10` | Default card/container borders |
-| Border subtle | `border-white/5` | Table dividers, row separators |
-| Surface overlay | `bg-white/5` | Input backgrounds, table headers |
-| Surface hover | `bg-white/10` | Hover states on ghost elements |
 
-**Primary button pattern:** Primary CTAs (Save Review, Launch Chart, New Trade, Apply Risk, Add Tag, etc.) use `bg-emerald-500/10 text-white hover:bg-emerald-500/20` — the same translucent emerald the sidebar uses for the active tab, just with white text instead of `text-emerald-500`. NEVER use a solid emerald fill (`bg-emerald-500` / `-600` / `-700`) on these buttons — solid fills compete with positive-PnL text and read too "loud" against the dark background. The translucent style keeps CTAs visible without dominating the data.
+**Semantic tokens (use these for all chrome).** Each is a Tailwind class backed by a CSS variable; the light/dark columns show what it resolves to so you can reason about contrast.
 
-**Active toggle pattern:** Range selectors, metric toggles, and tab-style filters use a neutral active state (`bg-zinc-700/60 text-zinc-100`) — not emerald. Emerald is for primary CTAs and data-meaning. A "selected" filter is a state indicator, not an action.
+| Role | Class | Light | Dark |
+|------|-------|-------|------|
+| Page background | `bg-background` | `#FAFAF9` | `#0A0A0B` |
+| Card / panel | `bg-card` | `#F5F5F4` | `#121214` |
+| Subtle fill (table header, wells) | `bg-muted` | `#EDEDEC` | `#18181b` |
+| Hover / overlay / input bg / active toggle | `bg-accent` | `rgba(28,25,23,.04)` | `rgba(255,255,255,.05)` |
+| Secondary button surface | `bg-secondary` | `rgba(28,25,23,.04)` | `rgba(255,255,255,.05)` |
+| Primary accent (emerald) | `text-primary` / `bg-primary` | `#059669` | `#10b981` |
+| Destructive surface | `bg-destructive` / `text-destructive` | `#DC2626` | `#f43f5e` |
+| Primary text | `text-foreground` | `#1C1917` | `#E4E4E7` |
+| Secondary text / labels / placeholders | `text-muted-foreground` | `#57534E` | `#71717a` |
+| Borders + dividers | `border-border` / `divide-border` | `rgba(28,25,23,.08)` | `rgba(255,255,255,.05)` |
+| Focus ring | `ring-ring` | `#059669` | `#10b981` |
+
+**Data-meaning colors (raw Tailwind — fixed across themes, never tokenize):**
+
+| Meaning | Class |
+|---------|-------|
+| Positive / profit / long ("L") / up | `text-emerald-400` / `text-emerald-500` (tint bg `bg-emerald-500/10`) |
+| Negative / loss / short ("S") / down / error | `text-rose-400` / `text-rose-500` (tint bg `bg-rose-500/10`) |
+| Caution / neutral | `text-amber-300` / `text-amber-500` |
+
+**Primary button pattern:** Primary CTAs (Save Review, Launch Chart, New Trade, Apply Risk, Add Tag, etc.) use `border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20` — a translucent emerald tint with emerald (`text-primary`) text and a faint border. This is the same accent the sidebar uses for the active tab. NEVER use a solid emerald fill (`bg-primary`, `bg-emerald-500`/`-600`/`-700`) on these buttons — solid fills compete with positive-PnL text and read too "loud." The translucent style keeps CTAs visible without dominating the data. Secondary/cancel buttons use `variant="secondary"` + `bg-accent hover:bg-accent/80`.
+
+**Active toggle pattern:** Range selectors, metric toggles, and tab-style filters use a neutral active state — `bg-accent text-foreground` for the selected item, `text-muted-foreground hover:bg-accent hover:text-foreground` for the rest. NOT emerald: emerald is for primary CTAs and data-meaning, and a "selected" filter is a state indicator, not an action.
 
 **Toggle button labels:** Mode/metric toggles use the shortest possible label — single tokens like "Net" / "Gross" or "$" / "R", not "Net PnL" / "Gross PnL" / "$ Metrics" / "R Metrics". The button group itself supplies the context.
 
@@ -121,17 +134,17 @@ Animation tells users something happened — a tab changed, content loaded, some
 | Element | Classes |
 |---------|---------|
 | Page title | `text-2xl font-semibold tracking-tight` |
-| Section label | `text-xs font-medium uppercase tracking-[0.2em] text-zinc-400` |
+| Section label | `text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground` |
 | Card title | `text-xl font-semibold` or `text-lg font-semibold` |
-| Body text | `text-sm text-zinc-400` |
-| Small label | `text-xs text-zinc-500` |
+| Body text | `text-sm text-muted-foreground` |
+| Small label | `text-xs text-muted-foreground` |
 | Large number | `text-3xl font-semibold font-mono tabular-nums` |
 | Table number | `text-sm font-mono tabular-nums` |
 | Button text | `text-sm font-semibold` |
 | Tag/badge | `text-xs font-bold capitalize` (NOT `uppercase`; reserve `text-[10px]` only for chip-style filter tags) |
-| Side indicator (L/S) | `text-sm font-bold` colored (`text-emerald-500` long, `text-rose-500` short) — bare letter, no badge background |
-| Table column header | `text-xs tracking-wider text-white` — title case (no `uppercase`); white, not zinc, so headers read as scannable labels |
-| Calendar day header | `text-[10px] font-bold tracking-widest text-zinc-500` — title case (no `uppercase`) |
+| Side indicator (L/S) | `text-sm font-bold` colored (`text-emerald-500` long, `text-rose-500` short — data-meaning, raw) — bare letter, no badge background |
+| Table column header | `text-xs tracking-wider text-foreground` — title case (no `uppercase`); `text-foreground`, not muted, so headers read as scannable labels |
+| Calendar day header | `text-[10px] font-bold tracking-widest text-muted-foreground` — title case (no `uppercase`) |
 
 **Typography rules:**
 - `font-mono tabular-nums` on ALL numeric data (prices, PnL, percentages, dates, counts)
@@ -142,12 +155,12 @@ Animation tells users something happened — a tab changed, content loaded, some
 
 ### Cards & Containers
 ```
-Standard card:     bg-[#121214] border border-white/10 rounded-2xl p-6
-Compact card:      bg-[#121214] border border-white/10 rounded-xl p-4
-Table wrapper:     overflow-x-auto rounded border border-white/5 bg-[#121214]
+Standard card:     bg-card border border-border rounded-2xl p-6
+Compact card:      bg-card border border-border rounded-xl p-4
+Table wrapper:     overflow-x-auto rounded border border-border bg-card
 Tag/type badge:    rounded-sm px-2 py-0.5 (less rounded than container; 2–4px corners on inline pills)
-Input field:       rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm
-Modal overlay:     bg-black/50 backdrop-blur-sm
+Input field:       rounded-lg border border-border bg-accent px-3 py-2 text-sm
+Modal / Dialog:    border-border bg-card text-foreground (DialogContent); overlay bg-black/50 backdrop-blur-sm
 ```
 
 **Border-radius hierarchy:** Larger surfaces get larger radii; inline chips/badges stay tight. Trading tables get the tightest corners of any container — they read as data grids, not cards.
@@ -158,29 +171,30 @@ Modal overlay:     bg-black/50 backdrop-blur-sm
 - `rounded-sm` (2px) — inline type/category badges (daily/weekly tags, archive type column)
 - No radius — direction letters (L/S) and other bare text indicators
 
-**Border reduction rule:** Only the outermost container of a section gets a border. Children inside a card use spacing, dividers (`divide-y divide-white/5`), or background tints — never their own borders. If you see a border inside a border, remove the inner one.
+**Border reduction rule:** Only the outermost container of a section gets a border. Children inside a card use spacing, dividers (`divide-y divide-border`), or background tints — never their own borders. If you see a border inside a border, remove the inner one.
 
 ### Hover & Transitions
 ```
 Color transition:  transition-colors duration-150
 All properties:    transition-all duration-200
 
-Primary button:    bg-emerald-500/10 text-white hover:bg-emerald-500/20 transition-colors
-Ghost button:      bg-white/5 hover:bg-white/10 transition-colors
-Icon button:       text-zinc-400 hover:text-white hover:bg-white/10 transition-colors
+Primary button:    border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 transition-colors
+Secondary button:  bg-accent hover:bg-accent/80 transition-colors (shadcn variant="secondary")
+Ghost button:      bg-accent hover:bg-accent/80 transition-colors
+Icon button:       text-muted-foreground hover:text-foreground hover:bg-accent transition-colors
 Delete icon btn:   h-7 w-7 rounded-md border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 hover:text-rose-300
-Panel toggle btn:  h-6 w-6 rounded-md text-zinc-500 hover:bg-white/5 hover:text-white (with ChevronRight h-4 w-4)
-Table row:         hover:bg-white/5 cursor-pointer transition-colors
-Link text:         text-emerald-500 hover:text-emerald-400 transition-colors
-Destructive btn:   bg-rose-500 hover:bg-rose-400 transition-colors
-Active toggle:     bg-zinc-700/60 text-zinc-100 (selected); zinc-500 hover:text-white (unselected)
+Panel toggle btn:  h-6 w-6 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground (with ChevronRight h-4 w-4)
+Table row:         hover:bg-accent cursor-pointer transition-colors
+Link text:         text-primary hover:text-primary/80 transition-colors
+Destructive btn:   border border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 (or shadcn variant="destructive")
+Active toggle:     bg-accent text-foreground (selected); text-muted-foreground hover:bg-accent hover:text-foreground (unselected)
 ```
 
 ### Focus States
 ```
-Standard:  focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-1 focus:ring-offset-[#121214]
+Standard:  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background
 ```
-Apply to ALL interactive elements: inputs, buttons, selects, checkboxes.
+shadcn primitives (Button, Input, etc.) already include this. Apply it to any hand-rolled interactive element: inputs, buttons, selects, checkboxes.
 
 ### Spacing
 | Context | Pattern |
@@ -250,7 +264,7 @@ Apply to ALL interactive elements: inputs, buttons, selects, checkboxes.
 - **Charts:** recharts (analytics), lightweight-charts (candlestick)
 
 ### Chart Colors (Candlestick / Volume / Markers / Indicators)
-Both backtest and research candle charts use the same palette. Any new chart that renders OHLC/volume should reuse these exact hex values — do not introduce new candle colors.
+This is the one place hardcoded hex is correct: `lightweight-charts` is a canvas library that takes literal color strings, not CSS classes, and candle/PnL colors are data-meaning (they must not theme-flip). Both backtest and research candle charts use the same palette. Any new chart that renders OHLC/volume should reuse these exact hex values — do not introduce new candle colors.
 
 | Element | Color | Notes |
 |---------|-------|-------|
@@ -276,7 +290,7 @@ The Backtesting right panel is the reference implementation for any collapsible 
 - **Grid does the size transition** via `transition-[grid-template-columns] duration-300`. The right column goes between its size (e.g. `220px` / `280px`) and a single `minmax(0,1fr)` (no right column) when collapsed.
 - **Toggle button** is the same markup in both states — same icon, same size — so it never looks like two different controls:
   ```
-  <button class="flex h-6 w-6 items-center justify-center rounded-md text-zinc-500 hover:bg-white/5 hover:text-white">
+  <button class="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
     <ChevronRight class="h-4 w-4" />
   </button>
   ```
@@ -302,7 +316,7 @@ For any UI task:
 - Is this consistent with the rest of the app? (Consistency)
 - Can the user read the important content easily? (Text Color Rule)
 
-**4. Use the design system.** Every color, font size, spacing value, and pattern should come from the tokens above. No custom hex values, no arbitrary Tailwind values, no one-off patterns.
+**4. Use the design system.** Every color, font size, spacing value, and pattern should come from the tokens above. Use semantic token classes (`bg-card`, `text-foreground`, `border-border`, …) for chrome and raw emerald/rose/amber only for data-meaning. No custom hex values (except chart canvases), no arbitrary Tailwind values, no one-off patterns.
 
 **5. Run the checklist** before considering work complete.
 
@@ -313,12 +327,13 @@ For any UI task:
 ## Quality Checklist
 
 ### Visual Polish
-- [ ] Colors only from the token table (no random hex values)
+- [ ] Chrome uses semantic token classes (`bg-card`, `text-foreground`, `border-border`, …); raw color only for data-meaning emerald/rose/amber; no hardcoded hex outside chart canvases
+- [ ] Component works in both light and dark (it will, if colors come from tokens)
 - [ ] Typography follows the scale (no arbitrary sizes)
 - [ ] All numbers use `font-mono tabular-nums`
 - [ ] Cards use standard bg/border/radius patterns
 - [ ] No nested borders — outermost container only
-- [ ] Readable data is `text-white`, not unnecessarily gray
+- [ ] Readable data is `text-foreground`, not unnecessarily muted
 - [ ] Hover states on all interactive elements
 - [ ] Focus rings on all focusable elements
 - [ ] Icons from Lucide, sized consistently per context
@@ -356,7 +371,7 @@ For any UI task:
 - [ ] Currency has `$` symbol and consistent decimal places
 - [ ] Long text truncated (`truncate` or `line-clamp-2`)
 - [ ] Relative timestamps where helpful ("2h ago")
-- [ ] Tables use `divide-y divide-white/5` between rows
+- [ ] Tables use `divide-y divide-border` between rows
 
 ---
 
@@ -365,12 +380,12 @@ For any UI task:
 | Anti-Pattern | Why It's Bad | What to Do Instead |
 |---|---|---|
 | Nested borders | Adds visual weight without information | Only outermost container gets a border |
-| Gray text on readable data | Users strain to read important content | Use `text-white` for data users act on |
-| Random hex colors | Breaks the visual language | Only use colors from the token table |
+| Muted text on readable data | Users strain to read important content | Use `text-foreground` for data users act on |
+| Hardcoded hex for chrome (`bg-[#121214]`, `text-zinc-400`, `border-white/10`) | Breaks theming; won't flip light/dark; drifts from the rest of the app | Use semantic token classes (`bg-card`, `text-muted-foreground`, `border-border`). Hex is only for chart canvases |
 | Decorative gradients/glows | Competes with the data | Remove unless it encodes meaning |
 | Mixed card border-radius | Feels inconsistent and unfinished | Follow the radius hierarchy: `rounded-2xl` standard card, `rounded-xl` compact card, `rounded` table wrapper, `rounded-sm` tag/badge |
-| Emerald badge for a "selected" filter | Looks like a CTA, not a state | Use `bg-zinc-700/60 text-zinc-100` for active filter/range/mode toggles |
-| Solid emerald fill on a primary button | Competes with positive-PnL text; reads too loud on the dark UI | Use `bg-emerald-500/10 text-white hover:bg-emerald-500/20` — translucent tint, same as sidebar active tab |
+| Emerald accent for a "selected" filter | Looks like a CTA, not a state | Use `bg-accent text-foreground` for active filter/range/mode toggles |
+| Solid emerald fill on a primary button | Competes with positive-PnL text; reads too loud | Use `border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20` — translucent tint, same as sidebar active tab |
 | `uppercase` on tabular headers / category tags | Adds visual weight without information | Title case via `capitalize` (or natural casing) — reserve `uppercase` for `tracking-[0.2em]` section eyebrows |
 | 500-shade arrow on a 500-shade candle | Marker disappears into the candle body | Use 300-shade marker (`#86efac` / `#fca5a5`) — lighter than the candle |
 | 500-shade green indicator line on green candles | Indicator melts into candle bodies | Use a different shade than the candle (VWAP = green-700, EMA9 = green-500, etc.) |
@@ -379,4 +394,4 @@ For any UI task:
 | Heavy borders on inner sections | Creates visual clutter inside cards | Use spacing or `divide-y` inside cards |
 | Animating everything | Slows the interface, distracts | Only animate meaningful state transitions |
 | `font-bold` on headings | Too heavy, looks aggressive | Use `font-semibold`; bold is for badges only |
-| Colors outside the palette | Introduces visual inconsistency | Emerald, rose, amber, white, zinc — that's it |
+| Colors outside the two systems | Introduces visual inconsistency | Semantic tokens for chrome; emerald/rose/amber for data-meaning — that's it. No blue/purple/etc. |
