@@ -1,0 +1,364 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const {
+  getDbMock,
+  getPoolDbMock,
+  requireUserMock,
+  ensureUserMock,
+  getSheetRoleMock,
+} = vi.hoisted(() => ({
+  getDbMock: vi.fn(),
+  getPoolDbMock: vi.fn(),
+  requireUserMock: vi.fn(),
+  ensureUserMock: vi.fn(),
+  getSheetRoleMock: vi.fn(),
+}));
+
+vi.mock('@/lib/db', () => ({ getDb: getDbMock, getPoolDb: getPoolDbMock }));
+vi.mock('@/lib/server-db-utils', () => ({
+  dbUnavailable: () => Response.json({ error: 'Database not configured' }, { status: 503 }),
+  ensureUser: ensureUserMock,
+  requireUser: requireUserMock,
+}));
+vi.mock('@/lib/sheets/access', () => ({ getSheetRole: getSheetRoleMock }));
+
+import { DELETE as deleteSheet, GET as getSheet, PATCH as patchSheet } from '@/app/api/sheets/[id]/route';
+import { POST as duplicateSheet } from '@/app/api/sheets/[id]/duplicate/route';
+import { POST as postSheetRow } from '@/app/api/sheets/[id]/rows/route';
+import { PATCH as patchSheetRow } from '@/app/api/sheets/[id]/rows/[rowId]/route';
+import { GET as getSheets, POST as postSheet } from '@/app/api/sheets/route';
+import { DEFAULT_SHEET_COLUMNS } from '@/lib/sheets/columns';
+
+function createDbMock(options: {
+  selectQueue?: unknown[];
+  insertResult?: unknown[];
+  updateResult?: unknown[];
+}) {
+  const selectQueue = [...(options.selectQueue ?? [])];
+  const insertResult = options.insertResult ?? [];
+  const updateResult = options.updateResult ?? [];
+  const insertValuesMock = vi.fn(() => ({
+    returning: vi.fn(() => Promise.resolve(insertResult)),
+  }));
+
+  return {
+    select: vi.fn(() => {
+      const result = selectQueue.shift() ?? [];
+      const chain = {
+        from: vi.fn(() => chain),
+        innerJoin: vi.fn(() => chain),
+        leftJoin: vi.fn(() => chain),
+        where: vi.fn(() => chain),
+        orderBy: vi.fn(() => chain),
+        limit: vi.fn(() => Promise.resolve(result)),
+        then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
+          Promise.resolve(result).then(resolve, reject),
+      };
+      return chain;
+    }),
+    insert: vi.fn(() => ({
+      values: insertValuesMock,
+    })),
+    update: vi.fn(() => ({
+      set: vi.fn(() => ({
+        where: vi.fn(() => ({
+          returning: vi.fn(() => Promise.resolve(updateResult)),
+        })),
+      })),
+    })),
+    delete: vi.fn(() => ({
+      where: vi.fn(() => Promise.resolve()),
+    })),
+    _mocks: {
+      insertValuesMock,
+    },
+  };
+}
+
+function createPoolDbMock(options: {
+  selectQueue?: unknown[];
+  insertResults?: unknown[][];
+}) {
+  const selectQueue = [...(options.selectQueue ?? [])];
+  const insertResults = [...(options.insertResults ?? [])];
+  const txInsertValuesMock = vi.fn(() => ({
+    returning: vi.fn(() => Promise.resolve(insertResults.shift() ?? [])),
+  }));
+
+  const tx = {
+    insert: vi.fn(() => ({
+      values: txInsertValuesMock,
+    })),
+  };
+
+  return {
+    select: vi.fn(() => {
+      const result = selectQueue.shift() ?? [];
+      const chain = {
+        from: vi.fn(() => chain),
+        where: vi.fn(() => chain),
+        limit: vi.fn(() => Promise.resolve(result)),
+      };
+      return chain;
+    }),
+    transaction: vi.fn(async (fn: (txArg: typeof tx) => Promise<unknown>) => fn(tx)),
+    _mocks: {
+      tx,
+      txInsertValuesMock,
+    },
+  };
+}
+
+function ensureResponse(response: Response | undefined): Response {
+  if (!response) throw new Error('Expected response');
+  return response;
+}
+
+describe('sheets routes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireUserMock.mockResolvedValue({
+      user: { id: 'user-1', email: 'user@example.com', name: 'User', picture: null },
+    });
+    ensureUserMock.mockResolvedValue(undefined);
+    getSheetRoleMock.mockResolvedValue('owner');
+  });
+
+  it('POST /api/sheets creates with default columns and owner membership', async () => {
+    const poolDb = createPoolDbMock({
+      insertResults: [[{
+        id: 'sheet-1',
+        ownerUserId: 'user-1',
+        name: 'Daily Sheet',
+        columns: DEFAULT_SHEET_COLUMNS,
+      }]],
+    });
+    getPoolDbMock.mockReturnValue(poolDb);
+
+    const response = ensureResponse(await postSheet(new Request('http://localhost/api/sheets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Daily Sheet' }),
+    })));
+    const payload = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(payload.sheet.id).toBe('sheet-1');
+    expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      columns: DEFAULT_SHEET_COLUMNS,
+      ownerUserId: 'user-1',
+    }));
+    expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(2, {
+      sheetId: 'sheet-1',
+      userId: 'user-1',
+      role: 'owner',
+    });
+  });
+
+  it('GET /api/sheets returns member rows', async () => {
+    getDbMock.mockReturnValue(createDbMock({
+      selectQueue: [[{
+        id: 'sheet-1',
+        name: 'Daily Sheet',
+        role: 'editor',
+      }]],
+    }));
+
+    const response = ensureResponse(await getSheets(new Request('http://localhost/api/sheets')));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.sheets).toEqual([{ id: 'sheet-1', name: 'Daily Sheet', role: 'editor' }]);
+  });
+
+  it('GET /api/sheets/[id] returns 404 when caller is not a member', async () => {
+    getSheetRoleMock.mockResolvedValue(null);
+    getDbMock.mockReturnValue(createDbMock({}));
+
+    const response = ensureResponse(await getSheet(new Request('http://localhost/api/sheets/sheet-1'), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Sheet not found' });
+  });
+
+  it('GET /api/sheets/[id] returns sheet detail for a member', async () => {
+    getSheetRoleMock.mockResolvedValue('viewer');
+    getDbMock.mockReturnValue(createDbMock({
+      selectQueue: [
+        [{ id: 'sheet-1', name: 'Daily Sheet' }],
+        [{ id: 'row-1', sheetId: 'sheet-1', position: 0 }],
+        [{ userId: 'user-1', role: 'viewer', name: 'User', email: 'user@example.com' }],
+      ],
+    }));
+
+    const response = ensureResponse(await getSheet(new Request('http://localhost/api/sheets/sheet-1'), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      sheet: { id: 'sheet-1', name: 'Daily Sheet' },
+      rows: [{ id: 'row-1', sheetId: 'sheet-1', position: 0 }],
+      members: [{ userId: 'user-1', role: 'viewer', name: 'User', email: 'user@example.com' }],
+      role: 'viewer',
+    });
+  });
+
+  it('PATCH /api/sheets/[id] returns 403 for editors', async () => {
+    getSheetRoleMock.mockResolvedValue('editor');
+    getDbMock.mockReturnValue(createDbMock({}));
+
+    const response = ensureResponse(await patchSheet(new Request('http://localhost/api/sheets/sheet-1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Renamed' }),
+    }), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'Forbidden' });
+  });
+
+  it('PATCH /api/sheets/[id] returns 409 for stale columnsVersion', async () => {
+    getDbMock.mockReturnValue(createDbMock({
+      selectQueue: [[{ columnsVersion: 2 }]],
+    }));
+
+    const response = ensureResponse(await patchSheet(new Request('http://localhost/api/sheets/sheet-1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ columns: DEFAULT_SHEET_COLUMNS, columnsVersion: 1 }),
+    }), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.currentColumnsVersion).toBe(2);
+  });
+
+  it('DELETE /api/sheets/[id] returns 403 for editors and succeeds for owners', async () => {
+    getDbMock.mockReturnValue(createDbMock({}));
+    getSheetRoleMock.mockResolvedValueOnce('editor');
+
+    const forbidden = ensureResponse(await deleteSheet(new Request('http://localhost/api/sheets/sheet-1', {
+      method: 'DELETE',
+    }), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+
+    expect(forbidden.status).toBe(403);
+
+    getSheetRoleMock.mockResolvedValueOnce('owner');
+    const ok = ensureResponse(await deleteSheet(new Request('http://localhost/api/sheets/sheet-1', {
+      method: 'DELETE',
+    }), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ deleted: true, id: 'sheet-1' });
+  });
+
+  it('POST /api/sheets/[id]/duplicate copies columns and assigns owner membership', async () => {
+    const poolDb = createPoolDbMock({
+      selectQueue: [[{ id: 'source-1', name: 'Source', columns: DEFAULT_SHEET_COLUMNS }]],
+      insertResults: [[{
+        id: 'sheet-copy',
+        ownerUserId: 'user-1',
+        name: 'Source Copy',
+        columns: DEFAULT_SHEET_COLUMNS,
+        isTemplate: false,
+      }]],
+    });
+    getPoolDbMock.mockReturnValue(poolDb);
+
+    const response = ensureResponse(await duplicateSheet(new Request('http://localhost/api/sheets/source-1/duplicate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Source Copy' }),
+    }), {
+      params: Promise.resolve({ id: 'source-1' }),
+    }));
+
+    expect(response.status).toBe(201);
+    expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      ownerUserId: 'user-1',
+      columns: DEFAULT_SHEET_COLUMNS,
+      isTemplate: false,
+    }));
+    expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(2, {
+      sheetId: 'sheet-copy',
+      userId: 'user-1',
+      role: 'owner',
+    });
+  });
+
+  it('POST /api/sheets/[id]/rows returns 403 for viewers', async () => {
+    getSheetRoleMock.mockResolvedValue('viewer');
+    getDbMock.mockReturnValue(createDbMock({}));
+
+    const response = ensureResponse(await postSheetRow(new Request('http://localhost/api/sheets/sheet-1/rows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: { ticker: 'AAPL' } }),
+    }), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+
+    expect(response.status).toBe(403);
+  });
+
+  it('PATCH /api/sheets/[id]/rows/[rowId] returns 409 with current row on version conflict', async () => {
+    getDbMock.mockReturnValue(createDbMock({
+      selectQueue: [[{ id: 'row-1', sheetId: 'sheet-1', values: { ticker: 'AAPL' }, version: 2 }]],
+      updateResult: [],
+    }));
+
+    const response = ensureResponse(await patchSheetRow(new Request('http://localhost/api/sheets/sheet-1/rows/row-1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: { ticker: 'TSLA' }, version: 1 }),
+    }), {
+      params: Promise.resolve({ id: 'sheet-1', rowId: 'row-1' }),
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.row).toEqual({ id: 'row-1', sheetId: 'sheet-1', values: { ticker: 'AAPL' }, version: 2 });
+  });
+
+  it('POST /api/sheets rejects names longer than 100 characters', async () => {
+    getPoolDbMock.mockReturnValue(createPoolDbMock({}));
+
+    const response = ensureResponse(await postSheet(new Request('http://localhost/api/sheets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'a'.repeat(101) }),
+    })));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe('Validation failed');
+  });
+
+  it('PATCH /api/sheets/[id] rejects columns without columnsVersion', async () => {
+    getDbMock.mockReturnValue(createDbMock({}));
+
+    const response = ensureResponse(await patchSheet(new Request('http://localhost/api/sheets/sheet-1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ columns: DEFAULT_SHEET_COLUMNS }),
+    }), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe('Validation failed');
+  });
+});

@@ -3,7 +3,7 @@ import { type Db, type PoolDb } from '@/lib/db';
 import { users, trades, tradeTags } from '@/lib/db/schema';
 import type { ApiTrade } from '@/lib/types';
 
-type QueryDb = Db | PoolDb;
+export type QueryDb = Db | PoolDb;
 
 export interface AuthUserIdentity {
   id: string;

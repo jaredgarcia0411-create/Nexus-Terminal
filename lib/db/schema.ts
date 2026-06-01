@@ -2,6 +2,8 @@ import { sql } from 'drizzle-orm';
 import { pgTable, text, doublePrecision, integer, real, serial, timestamp, primaryKey, index, uniqueIndex, unique, foreignKey, jsonb, date, boolean } from 'drizzle-orm/pg-core';
 import { randomUUID } from 'crypto';
 
+import type { SheetColumn } from '@/lib/sheets/columns';
+
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
   email: text('email').unique().notNull(),
@@ -646,4 +648,43 @@ export const playbookStrategies = pgTable('playbook_strategies', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index('playbook_strategies_user_created_idx').on(t.userId, t.createdAt),
+]);
+
+export const sheets = pgTable('sheets', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  ownerUserId: text('owner_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  sheetDate: date('sheet_date'),
+  isTemplate: boolean('is_template').notNull().default(false),
+  columns: jsonb('columns').$type<SheetColumn[]>().notNull().default([]),
+  columnsVersion: integer('columns_version').notNull().default(0),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('sheets_owner_updated_idx').on(t.ownerUserId, t.updatedAt),
+]);
+
+export const sheetRows = pgTable('sheet_rows', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  sheetId: text('sheet_id').notNull().references(() => sheets.id, { onDelete: 'cascade' }),
+  position: integer('position').notNull().default(0),
+  values: jsonb('values').$type<Record<string, unknown>>().notNull().default({}),
+  version: integer('version').notNull().default(0),
+  createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  updatedByUserId: text('updated_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('sheet_rows_sheet_position_idx').on(t.sheetId, t.position),
+]);
+
+export const sheetMembers = pgTable('sheet_members', {
+  sheetId: text('sheet_id').notNull().references(() => sheets.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: text('role', { enum: ['owner', 'editor', 'viewer'] }).notNull().default('editor'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.sheetId, t.userId] }),
+  index('sheet_members_user_idx').on(t.userId),
 ]);
