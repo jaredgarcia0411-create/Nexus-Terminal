@@ -31,435 +31,374 @@ Validation:
 - `npm run lint`, `npx tsc --noEmit`, `npm test` (736 passed) all green.
 - Migration generated + applied (`npm run db:migrate`).
 
-### Deferred from Sprint 1 (candidates for next sprints)
-- Any UI (`SheetsTab`, grid, `ManagementTab` subtab).
-- Member add/remove-by-email routes + email→user lookup.
-- Research "Add to Sheets" import route.
-- CSV export, polling/SSE invalidation.
-- `AGENTS.md` update — defer until routes + UI land so we document a real surface.
+### Sheets - Sprint 2: Management UI + Editable Grid
+
+Status: completed 2026-06-01 (commit `da1bba0`).
+
+Outcome:
+- First Sheets UI: `Sheets` subtab under Management — list rail, create/rename/duplicate/delete, `react-data-grid` editable grid with text/select/checkbox editors, optimistic save with 409 conflict toasts.
+- `hooks/use-sheets.ts` owns all data + mutations; pure grid helpers in `lib/sheets/grid.ts` (unit-tested).
+- Grid themed via `.sheets-grid` mapping `--rdg-*` vars onto app semantic tokens (follows light/dark).
+
+Validation:
+- `npm run lint`, `npx tsc --noEmit`, `npm test` (740 passed) all green.
+- Authenticated browser smoke not run (no `agent-browser` in Codex sandbox); deferred surfaces (`report`/`chart`/`action` cells, tag options, sharing) are not built yet, not broken.
+
+Known cosmetic debt (rolled into Sprint 3): `SheetFormDialog` date input + `AddColumnDialog` type select dropped the `[color-scheme:dark]` class the rest of the app uses.
+
+### Roadmap (deferred from Sprints 1-2)
+- **Sprint 3 (implemented below; manual authenticated smoke pending): sharing/members.**
+- Research "Add to Sheets" import + interactive `report`/`chart`/`action` cells.
+- Templates / per-day "start today's sheet" flow beyond plain Duplicate.
+- CSV export, archive/unarchive UI, undo/redo, polling/SSE invalidation, drag-reorder rows/columns.
+- `AGENTS.md` update once sharing + import land (document the full surface at once).
 
 ---
 
-## Sheets - Sprint 2: Management UI + Editable Grid
+## Sheets - Sprint 3: Sharing / Members
 
 > Generated: 2026-06-01 | Agent: Claude (Plan)
-> Status: IMPLEMENTED - automated validation passed 2026-06-01; authenticated browser smoke remains blocked because `agent-browser` is unavailable in this environment.
+> Status: IMPLEMENTED - automated validation passed 2026-06-01; manual authenticated smoke remains pending.
+
+Outcome:
+- Added owner-only member routes for add-by-email, editor/viewer role changes, and member removal while preserving immutable owner membership.
+- Wired `use-sheets` member mutations into a new owner-only Share dialog in `SheetsTab`.
+- Cleared the Sprint-2 native control color-scheme debt and added member validation coverage.
+
+Validation:
+- `npm run lint`, `npx tsc --noEmit`, `npm test` (744 passed) all green.
+- Manual authenticated sharing smoke was not run in this session.
 
 ### Context
 
-Sprint 1 shipped the data layer (tables + routes + validation, commit `176e525`). This sprint builds the **first UI** that consumes it: a `Sheets` subtab under Management with a sheet list, create/rename/duplicate/delete, an editable `react-data-grid`, add-row / add-column, dropdown + checkbox editors, and optimistic save-on-commit with 409 conflict toasts.
+Sprints 1-2 shipped the data layer + the single-user grid. Every sheet already has a `sheet_members` row per member (owner created on insert), `getSheetRole` already gates every route, and `GET /api/sheets/[id]` already returns `members: { userId, role, name, email }[]` and the caller's `role`. The grid already enforces owner/editor/viewer in the UI. **What's missing is the ability to actually add, re-role, or remove other people.** This sprint builds that: three owner-only member routes, hook wiring, and a Share dialog opened from the sheet header. It also clears the Sprint-2 `[color-scheme:dark]` cosmetic debt.
 
-**Locked decisions (memory `project_sheets_feature_decisions.md`):** grid library is `react-data-grid` (adazzle, MIT) — NOT AG Grid. Build under `components/trading/SheetsTab.tsx` + a new `sheets` subtab in `ManagementTab.tsx`, `hooks/use-sheets.ts`. Do NOT touch `hooks/use-trades.ts`. Owner-only for sheet rename/columns/delete; owner+editor edit rows; viewer read-only.
+**Locked facts (do not re-derive):**
+- `sheetMembers` PK is `(sheetId, userId)`, `role` enum `'owner' | 'editor' | 'viewer'` default `'editor'` (`lib/db/schema.ts:682`).
+- Role check helper: `getSheetRole(db, sheetId, userId)` in `lib/sheets/access.ts` returns the role or `null`.
+- Users only exist in the `users` table **after they have signed in at least once** (`ensureUser` upserts them on their own authenticated requests). So an invite-by-email can only target someone who has already logged in. If no user row matches, return a clear "they need to sign in first" error — do NOT create a placeholder user row.
+- Owner is identified by `sheets.ownerUserId` AND by the member row whose `role = 'owner'`. The owner's membership is immutable: never let the API change or delete it, and never assign `'owner'` via these routes.
+- Route conventions (mirror `app/api/sheets/[id]/route.ts` exactly): `requireUser()` → `getDb()` + `dbUnavailable()` → `ensureUser(db, authState.user)` → `getSheetRole` → owner gate returns `403`; non-member returns `404`. Validate bodies with `parseAndValidate(request, schema)`. Wrap in try/catch with `logRouteError('<tag>', error)` + `internalServerError()`.
 
-**Routes already live (do not change them):**
-- `GET /api/sheets` → `{ sheets: SheetListItem[] }`
-- `POST /api/sheets {name, sheetDate?}` → 201 `{ sheet }` (defaults columns)
-- `GET /api/sheets/[id]` → `{ sheet, rows, members, role }` (404 non-member)
-- `PATCH /api/sheets/[id] {name?, sheetDate?, columns?, columnsVersion?, archived?}` → `{ sheet }` (owner-only; 409 on stale `columnsVersion`)
-- `DELETE /api/sheets/[id]` → `{ deleted, id }`
-- `POST /api/sheets/[id]/duplicate {name?}` → 201 `{ sheet }`
-- `POST /api/sheets/[id]/rows {values?}` → 201 `{ row }`
-- `PATCH /api/sheets/[id]/rows/[rowId] {values, version}` → `{ row }` or 409 `{ error, row }`
-- `DELETE /api/sheets/[id]/rows/[rowId]` → `{ deleted, id }`
-
-**Design conventions to match:** this codebase uses shadcn **semantic tokens** (`bg-card`, `border-border`, `text-foreground`, `text-muted-foreground`, `bg-accent`, `bg-primary/10 text-primary`, `text-rose-400`, `text-emerald-400`) — NOT raw zinc/hex classes. Mirror `components/trading/CareerPnlTab.tsx` and `components/trading/AddSampleSetDialog.tsx` exactly for layout, dialogs, fetch/loading/toast patterns. Tab entry animation uses `motion/react` like every other tab.
+**Design conventions:** semantic tokens only (`bg-card`, `border-border`, `text-foreground`, `text-muted-foreground`, `bg-accent`, `bg-primary/10 text-primary`, `text-rose-400`). Mirror `components/trading/SheetFormDialog.tsx` and `AddColumnDialog.tsx` for the dialog shell, fetch/error/submit pattern. Native `<select>` and `type="date"` inputs MUST carry `[color-scheme:dark]` (the established convention — see `ArchiveTab.tsx`, `CareerPnlTab.tsx`, `BacktestingTab.tsx`).
 
 ---
 
-### Step 1 — Install react-data-grid
+### Step 1 — Validation schemas for member mutations
 
-Run from repo root:
+**File:** `lib/validations/sheets.ts` — MODIFY (append after `rowPatchSchema`, before the `export type` block)
 
-```
-npm install react-data-grid
-```
-
-This installs `7.0.0-beta.59` (current `latest`; peer `react@^19.2` — matches this repo). Confirm `package.json` + `package-lock.json` updated. **Do not** delete or regenerate the lockfile.
-
-**Acceptance:** `react-data-grid` appears in `package.json` dependencies; `npm ci` would still install cleanly.
-
----
-
-### Step 2 — Global CSS: import grid styles + dark theme overrides
-
-**File:** `app/globals.css` — MODIFY
-
-`react-data-grid/lib/styles.css` is **global CSS**. Next.js App Router only allows global CSS imported from the root layout or `globals.css` (never a component), so it must go here, not in `SheetsTab.tsx`.
-
-1. Add the import on a new line **immediately after** the existing `@import "tw-animate-css";` (line 2). All `@import` rules must precede other CSS:
-   ```css
-   @import "react-data-grid/lib/styles.css";
-   ```
-2. Append a theme block at the **end of the file** that maps react-data-grid's CSS variables onto the app's **semantic tokens** (the `var(--...)` defined in `:root` for light and `.dark` for dark). Because those tokens already flip with the theme, the grid follows light/dark automatically and reuses the exact same palette as every other surface — no hardcoded hex. Apply via a `.sheets-grid` wrapper class:
-   ```css
-   /* react-data-grid theming — map the grid's --rdg-* variables onto the app's
-      semantic tokens so the grid follows light/dark automatically and reuses the
-      same palette as every other surface. */
-   .sheets-grid {
-     --rdg-color: var(--foreground);
-     --rdg-background-color: var(--card);
-     --rdg-header-background-color: var(--muted);
-     --rdg-row-hover-background-color: var(--accent);
-     --rdg-row-selected-background-color: color-mix(in srgb, var(--primary) 12%, transparent);
-     --rdg-row-selected-hover-background-color: color-mix(in srgb, var(--primary) 18%, transparent);
-     --rdg-border-color: var(--border);
-     --rdg-selection-color: var(--ring);
-     --rdg-font-size: 13px;
-     border: none;
-   }
-
-   /* Native controls inside cells (checkbox, scrollbars, date input) follow the
-      active theme. The app toggles the `.dark` class, so key off that. */
-   .sheets-grid { color-scheme: light; }
-   .dark .sheets-grid { color-scheme: dark; }
-   ```
-   > **Verify, don't assume:** after install, open `node_modules/react-data-grid/lib/styles.css` and confirm the exact `--rdg-*` variable names (they can shift across betas). Map every color-bearing var the file actually defines onto the matching app token — `--card`, `--muted`, `--accent`, `--border`, `--foreground`, `--primary`/`--ring` (with `color-mix` for tints). Do NOT introduce hardcoded hex; if a var has no obvious token, pick the closest existing token rather than inventing a color. Drop or rename any var above that doesn't exist in the installed file.
-
-**Acceptance:** grid background matches `var(--card)` in **both** light and dark mode (toggle the `.dark` class to confirm it flips); no hardcoded hex in the block; colors come only from existing tokens.
-
----
-
-### Step 3 — Pure grid helpers (testable)
-
-**File:** `lib/sheets/grid.ts` — CREATE
-
-Client-safe, no DB imports. Pure functions kept separate so they're unit-tested without a DOM.
+Add two schemas. Roles assignable via the API are only `editor`/`viewer` — `owner` is never accepted.
 
 ```ts
-import type { SheetColumn, SheetColumnType } from '@/lib/sheets/columns';
+export const memberAddSchema = z.object({
+  email: z.string().trim().toLowerCase().email('a valid email is required').max(200),
+  role: z.enum(['editor', 'viewer']).default('editor'),
+});
 
-export type SheetRole = 'owner' | 'editor' | 'viewer';
+export const memberRoleSchema = z.object({
+  role: z.enum(['editor', 'viewer']),
+});
+```
 
-// Grid rows are FLATTENED: each sheet column key becomes a top-level property so
-// react-data-grid's default cell accessor (row[column.key]) works without custom
-// getters. __id / __version carry row identity + the optimistic-lock version.
-export type GridRow = { __id: string; __version: number } & Record<string, unknown>;
+Then add to the type-export block at the bottom:
 
-export type SheetRowRecord = {
-  id: string;
-  position: number;
-  values: Record<string, unknown>;
-  version: number;
-};
+```ts
+export type MemberAddBody = z.infer<typeof memberAddSchema>;
+export type MemberRoleBody = z.infer<typeof memberRoleSchema>;
+```
 
-export function gridRowsFromSheet(rows: SheetRowRecord[]): GridRow[] {
-  return rows.map((r) => ({ __id: r.id, __version: r.version, ...r.values }));
-}
+**Acceptance:** `memberAddSchema` lowercases + validates the email and defaults `role` to `editor`; both schemas reject `role: 'owner'`.
 
-// Pull only the sheet's declared column keys back out of a grid row (dropping the
-// __id/__version meta keys) to build the `values` jsonb payload for a PATCH.
-export function valuesFromGridRow(gridRow: GridRow, columns: SheetColumn[]): Record<string, unknown> {
-  const values: Record<string, unknown> = {};
-  for (const col of columns) {
-    if (gridRow[col.key] !== undefined) values[col.key] = gridRow[col.key];
+---
+
+### Step 2 — Add-member route
+
+**File:** `app/api/sheets/[id]/members/route.ts` — CREATE
+
+`POST` only. Owner-only. Looks up the target user by email; upserts a membership.
+
+```ts
+import { eq } from 'drizzle-orm';
+
+import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
+import { getDb } from '@/lib/db';
+import { sheetMembers, sheets, users } from '@/lib/db/schema';
+import { getSheetRole } from '@/lib/sheets/access';
+import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
+import { memberAddSchema } from '@/lib/validations/sheets';
+
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    const authState = await requireUser();
+    if ('error' in authState) return authState.error;
+
+    const bodyState = await parseAndValidate(request, memberAddSchema);
+    if (bodyState.error) return bodyState.error;
+    const body = bodyState.data;
+
+    const db = getDb();
+    if (!db) return dbUnavailable();
+    await ensureUser(db, authState.user);
+
+    const { id } = await context.params;
+    const role = await getSheetRole(db, id, authState.user.id);
+    if (!role) return Response.json({ error: 'Sheet not found' }, { status: 404 });
+    if (role !== 'owner') return Response.json({ error: 'Forbidden' }, { status: 403 });
+
+    const [target] = await db
+      .select({ id: users.id, name: users.name, email: users.email })
+      .from(users)
+      .where(eq(users.email, body.email))
+      .limit(1);
+    if (!target) {
+      return Response.json(
+        { error: 'No Nexus account uses that email yet. Ask them to sign in once, then try again.' },
+        { status: 404 },
+      );
+    }
+
+    const [sheet] = await db
+      .select({ ownerUserId: sheets.ownerUserId })
+      .from(sheets)
+      .where(eq(sheets.id, id))
+      .limit(1);
+    if (sheet && target.id === sheet.ownerUserId) {
+      return Response.json({ error: 'That user is the owner of this sheet.' }, { status: 400 });
+    }
+
+    await db
+      .insert(sheetMembers)
+      .values({ sheetId: id, userId: target.id, role: body.role })
+      .onConflictDoUpdate({
+        target: [sheetMembers.sheetId, sheetMembers.userId],
+        set: { role: body.role },
+      });
+
+    return Response.json(
+      { member: { userId: target.id, role: body.role, name: target.name, email: target.email } },
+      { status: 201 },
+    );
+  } catch (error) {
+    logRouteError('sheets.members.post', error);
+    return internalServerError();
   }
-  return values;
-}
-
-// Types a user can add. report/chart/action are reserved for the locked default
-// columns and are not user-creatable in v1.
-export const USER_COLUMN_TYPES: SheetColumnType[] = ['text', 'number', 'date', 'url', 'checkbox', 'select'];
-
-// Types edited inline via react-data-grid's built-in text editor.
-export const TEXT_EDIT_TYPES: SheetColumnType[] = ['text', 'number', 'date', 'url'];
-
-export function slugifyColumnKey(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 40);
-}
-
-// Ensure a generated key doesn't collide with an existing column key (suffix
-// _2, _3, ...). Falls back to `column` if the name slugifies to empty.
-export function nextColumnKey(name: string, existing: SheetColumn[]): string {
-  const base = slugifyColumnKey(name) || 'column';
-  const taken = new Set(existing.map((c) => c.key));
-  if (!taken.has(base)) return base;
-  let i = 2;
-  while (taken.has(`${base}_${i}`)) i += 1;
-  return `${base}_${i}`;
 }
 ```
 
-**Acceptance:** exports `SheetRole`, `GridRow`, `SheetRowRecord`, `gridRowsFromSheet`, `valuesFromGridRow`, `USER_COLUMN_TYPES`, `TEXT_EDIT_TYPES`, `slugifyColumnKey`, `nextColumnKey`.
+> **Verify:** confirm `onConflictDoUpdate`'s `target` accepts the composite-key column array in this Drizzle version (it does for `pgTable` composite PKs). If the import path for `parseAndValidate`/`logRouteError`/`internalServerError` differs, copy it verbatim from `app/api/sheets/[id]/route.ts`.
+
+**Acceptance:** owner can add an existing user as editor/viewer; re-adding an existing member updates their role (idempotent); adding an unknown email → 404 with the sign-in message; adding the owner → 400; non-owner → 403; non-member → 404.
 
 ---
 
-### Step 4 — Data hook
+### Step 3 — Change-role + remove-member route
 
-**File:** `hooks/use-sheets.ts` — CREATE
+**File:** `app/api/sheets/[id]/members/[userId]/route.ts` — CREATE
 
-Owns all sheet data + mutations (fetch, optimistic row edit with 409 reconcile, column update with 409 reload). UI state (selection, dialogs) stays in `SheetsTab`.
+`PATCH` (change role) + `DELETE` (remove). Both owner-only and both refuse to touch the owner's own membership.
 
 ```ts
-'use client';
+import { and, eq } from 'drizzle-orm';
 
-import { useCallback, useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
+import { getDb } from '@/lib/db';
+import { sheetMembers, sheets } from '@/lib/db/schema';
+import { getSheetRole } from '@/lib/sheets/access';
+import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
+import { memberRoleSchema } from '@/lib/validations/sheets';
 
-import type { SheetColumn } from '@/lib/sheets/columns';
-import type { SheetRole, SheetRowRecord } from '@/lib/sheets/grid';
-
-export type SheetListItem = {
-  id: string;
-  name: string;
-  sheetDate: string | null;
-  isTemplate: boolean;
-  archivedAt: string | null;
-  ownerUserId: string;
-  ownerName: string | null;
-  role: SheetRole;
-  updatedAt: string;
-};
-
-export type Sheet = {
-  id: string;
-  ownerUserId: string;
-  name: string;
-  sheetDate: string | null;
-  isTemplate: boolean;
-  columns: SheetColumn[];
-  columnsVersion: number;
-  archivedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type SheetMember = {
-  userId: string;
-  role: SheetRole;
-  name: string | null;
-  email: string | null;
-};
-
-function sendJson(url: string, body: unknown, method = 'POST') {
-  return fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+async function loadOwnerGate(sheetId: string, userId: string) {
+  const db = getDb();
+  if (!db) return { error: dbUnavailable() as Response };
+  const role = await getSheetRole(db, sheetId, userId);
+  if (!role) return { error: Response.json({ error: 'Sheet not found' }, { status: 404 }) };
+  if (role !== 'owner') return { error: Response.json({ error: 'Forbidden' }, { status: 403 }) };
+  const [sheet] = await db
+    .select({ ownerUserId: sheets.ownerUserId })
+    .from(sheets)
+    .where(eq(sheets.id, sheetId))
+    .limit(1);
+  return { db, ownerUserId: sheet?.ownerUserId ?? null };
 }
 
-export function useSheets() {
-  const [list, setList] = useState<SheetListItem[]>([]);
-  const [listLoading, setListLoading] = useState(true);
+export async function PATCH(request: Request, context: { params: Promise<{ id: string; userId: string }> }) {
+  try {
+    const authState = await requireUser();
+    if ('error' in authState) return authState.error;
 
-  const [activeSheet, setActiveSheet] = useState<Sheet | null>(null);
-  const [rows, setRows] = useState<SheetRowRecord[]>([]);
-  const [members, setMembers] = useState<SheetMember[]>([]);
-  const [role, setRole] = useState<SheetRole | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+    const bodyState = await parseAndValidate(request, memberRoleSchema);
+    if (bodyState.error) return bodyState.error;
 
-  const refreshList = useCallback(async () => {
-    try {
-      const res = await fetch('/api/sheets');
-      if (!res.ok) throw new Error(`list failed: ${res.status}`);
-      const data = (await res.json()) as { sheets: SheetListItem[] };
-      setList(data.sheets ?? []);
-    } catch (error) {
-      console.error(error);
-      toast.error('Failed to load sheets');
-    } finally {
-      setListLoading(false);
+    const db = getDb();
+    if (!db) return dbUnavailable();
+    await ensureUser(db, authState.user);
+
+    const { id, userId } = await context.params;
+    const gate = await loadOwnerGate(id, authState.user.id);
+    if ('error' in gate) return gate.error;
+    if (userId === gate.ownerUserId) {
+      return Response.json({ error: "The owner's role cannot be changed." }, { status: 400 });
     }
-  }, []);
 
-  useEffect(() => {
-    void refreshList();
-  }, [refreshList]);
+    const [updated] = await db
+      .update(sheetMembers)
+      .set({ role: bodyState.data.role })
+      .where(and(eq(sheetMembers.sheetId, id), eq(sheetMembers.userId, userId)))
+      .returning();
+    if (!updated) return Response.json({ error: 'Member not found' }, { status: 404 });
 
-  const openSheet = useCallback(async (id: string) => {
-    setDetailLoading(true);
-    try {
-      const res = await fetch(`/api/sheets/${id}`);
-      if (!res.ok) throw new Error(`open failed: ${res.status}`);
-      const data = (await res.json()) as {
-        sheet: Sheet; rows: SheetRowRecord[]; members: SheetMember[]; role: SheetRole;
-      };
-      setActiveSheet(data.sheet);
-      setRows(data.rows ?? []);
-      setMembers(data.members ?? []);
-      setRole(data.role);
-    } catch (error) {
-      console.error(error);
-      toast.error('Failed to open sheet');
-    } finally {
-      setDetailLoading(false);
+    return Response.json({ member: { userId, role: bodyState.data.role } });
+  } catch (error) {
+    logRouteError('sheets.members.patch', error);
+    return internalServerError();
+  }
+}
+
+export async function DELETE(_request: Request, context: { params: Promise<{ id: string; userId: string }> }) {
+  try {
+    const authState = await requireUser();
+    if ('error' in authState) return authState.error;
+
+    const db = getDb();
+    if (!db) return dbUnavailable();
+    await ensureUser(db, authState.user);
+
+    const { id, userId } = await context.params;
+    const gate = await loadOwnerGate(id, authState.user.id);
+    if ('error' in gate) return gate.error;
+    if (userId === gate.ownerUserId) {
+      return Response.json({ error: 'The owner cannot be removed.' }, { status: 400 });
     }
-  }, []);
 
-  const createSheet = useCallback(async (name: string, sheetDate?: string) => {
-    const res = await sendJson('/api/sheets', { name, sheetDate });
-    if (!res.ok) { toast.error('Failed to create sheet'); return; }
-    const data = (await res.json()) as { sheet: Sheet };
-    await refreshList();
-    await openSheet(data.sheet.id);
-    toast.success('Sheet created');
-  }, [refreshList, openSheet]);
+    await db
+      .delete(sheetMembers)
+      .where(and(eq(sheetMembers.sheetId, id), eq(sheetMembers.userId, userId)));
 
-  const renameSheet = useCallback(async (id: string, name: string, sheetDate?: string) => {
-    const res = await sendJson(`/api/sheets/${id}`, { name, sheetDate: sheetDate ?? null }, 'PATCH');
-    if (!res.ok) { toast.error('Failed to rename sheet'); return; }
-    const data = (await res.json()) as { sheet: Sheet };
-    setActiveSheet((cur) => (cur && cur.id === id ? data.sheet : cur));
-    await refreshList();
-  }, [refreshList]);
-
-  const duplicateSheet = useCallback(async (id: string, name: string) => {
-    const res = await sendJson(`/api/sheets/${id}/duplicate`, { name });
-    if (!res.ok) { toast.error('Failed to duplicate sheet'); return; }
-    const data = (await res.json()) as { sheet: Sheet };
-    await refreshList();
-    await openSheet(data.sheet.id);
-    toast.success('Sheet duplicated');
-  }, [refreshList, openSheet]);
-
-  const deleteSheet = useCallback(async (id: string) => {
-    const res = await fetch(`/api/sheets/${id}`, { method: 'DELETE' });
-    if (!res.ok) { toast.error('Failed to delete sheet'); return; }
-    setActiveSheet((cur) => {
-      if (cur && cur.id === id) { setRows([]); setMembers([]); setRole(null); return null; }
-      return cur;
-    });
-    await refreshList();
-    toast.success('Sheet deleted');
-  }, [refreshList]);
-
-  const addRow = useCallback(async () => {
-    if (!activeSheet) return;
-    const res = await sendJson(`/api/sheets/${activeSheet.id}/rows`, {});
-    if (!res.ok) { toast.error('Failed to add row'); return; }
-    const data = (await res.json()) as { row: SheetRowRecord };
-    setRows((cur) => [...cur, data.row]);
-  }, [activeSheet]);
-
-  // Optimistic single-row save. On 409 the server returns the current row; we
-  // adopt it and warn (v1 detects conflicts, it does not merge). On other errors
-  // we roll back to the snapshot.
-  const updateRow = useCallback(async (rowId: string, values: Record<string, unknown>) => {
-    if (!activeSheet) return;
-    const current = rows.find((r) => r.id === rowId);
-    if (!current) return;
-    const snapshot = rows;
-    setRows((cur) => cur.map((r) => (r.id === rowId ? { ...r, values } : r)));
-
-    const res = await sendJson(
-      `/api/sheets/${activeSheet.id}/rows/${rowId}`,
-      { values, version: current.version },
-      'PATCH',
-    );
-
-    if (res.ok) {
-      const data = (await res.json()) as { row: SheetRowRecord };
-      setRows((cur) => cur.map((r) => (r.id === rowId ? data.row : r)));
-      return;
-    }
-    if (res.status === 409) {
-      const data = (await res.json()) as { row: SheetRowRecord };
-      setRows((cur) => cur.map((r) => (r.id === rowId ? data.row : r)));
-      toast.error('Row was changed by someone else — reloaded latest');
-      return;
-    }
-    setRows(snapshot);
-    toast.error('Failed to save cell');
-  }, [activeSheet, rows]);
-
-  const deleteRows = useCallback(async (rowIds: string[]) => {
-    if (!activeSheet || rowIds.length === 0) return;
-    const results = await Promise.all(
-      rowIds.map((rowId) => fetch(`/api/sheets/${activeSheet.id}/rows/${rowId}`, { method: 'DELETE' })),
-    );
-    setRows((cur) => cur.filter((r) => !rowIds.includes(r.id)));
-    if (results.some((r) => !r.ok)) toast.error('Some rows could not be deleted');
-  }, [activeSheet]);
-
-  const updateColumns = useCallback(async (columns: SheetColumn[]) => {
-    if (!activeSheet) return;
-    const res = await sendJson(
-      `/api/sheets/${activeSheet.id}`,
-      { columns, columnsVersion: activeSheet.columnsVersion },
-      'PATCH',
-    );
-    if (res.ok) {
-      const data = (await res.json()) as { sheet: Sheet };
-      setActiveSheet(data.sheet);
-      return;
-    }
-    if (res.status === 409) {
-      toast.error('Columns were changed by someone else — reloading');
-      await openSheet(activeSheet.id);
-      return;
-    }
-    toast.error('Failed to update columns');
-  }, [activeSheet, openSheet]);
-
-  return {
-    list, listLoading,
-    activeSheet, rows, members, role, detailLoading,
-    refreshList, openSheet,
-    createSheet, renameSheet, duplicateSheet, deleteSheet,
-    addRow, updateRow, deleteRows, updateColumns,
-  };
+    return Response.json({ removed: true, userId });
+  } catch (error) {
+    logRouteError('sheets.members.delete', error);
+    return internalServerError();
+  }
 }
 ```
 
-**Acceptance:** hook exports `useSheets`, `Sheet`, `SheetListItem`, `SheetMember`. Optimistic row edit reconciles on 409; column update reloads on 409.
+> **Simplicity note:** `loadOwnerGate` is shared by both handlers in this one file — it's a single-file local helper with two callers, which is allowed. It calls `getDb()` again internally; the handlers also call `getDb()` for the mutation. That double call is cheap (memoized client) and keeps each handler readable. If Codex prefers, inline the gate into each handler instead — either is fine. Do NOT export the helper.
+
+**Acceptance:** owner can change a member editor↔viewer and remove a member; targeting the owner's `userId` → 400; non-owner → 403; PATCH of a non-member → 404.
 
 ---
 
-### Step 5 — Sheet create/rename dialog
+### Step 4 — Hook: member mutations
 
-**File:** `components/trading/SheetFormDialog.tsx` — CREATE
+**File:** `hooks/use-sheets.ts` — MODIFY
 
-One dialog reused for create + rename (name + optional date). Mirror `AddSampleSetDialog.tsx`.
+Add three callbacks that update the in-memory `members` array (no full reload needed — these routes return the changed member). Insert after `updateColumns`, and add all three to the returned object.
+
+```ts
+const addMember = useCallback(async (email: string, role: 'editor' | 'viewer') => {
+  if (!activeSheet) return;
+  const res = await sendJson(`/api/sheets/${activeSheet.id}/members`, { email, role });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { error?: string } | null;
+    toast.error(data?.error ?? 'Failed to add member');
+    throw new Error('add member failed');
+  }
+  const data = (await res.json()) as { member: SheetMember };
+  setMembers((current) => {
+    const without = current.filter((m) => m.userId !== data.member.userId);
+    return [...without, data.member];
+  });
+  toast.success('Member added');
+}, [activeSheet]);
+
+const updateMemberRole = useCallback(async (userId: string, role: 'editor' | 'viewer') => {
+  if (!activeSheet) return;
+  const res = await sendJson(`/api/sheets/${activeSheet.id}/members/${userId}`, { role }, 'PATCH');
+  if (!res.ok) { toast.error('Failed to update role'); return; }
+  setMembers((current) => current.map((m) => (m.userId === userId ? { ...m, role } : m)));
+}, [activeSheet]);
+
+const removeMember = useCallback(async (userId: string) => {
+  if (!activeSheet) return;
+  const res = await fetch(`/api/sheets/${activeSheet.id}/members/${userId}`, { method: 'DELETE' });
+  if (!res.ok) { toast.error('Failed to remove member'); return; }
+  setMembers((current) => current.filter((m) => m.userId !== userId));
+}, [activeSheet]);
+```
+
+`addMember` re-throws on failure so the dialog can keep itself open and surface the server's specific message (same pattern Sprint 2 used for `createSheet`). Add `addMember, updateMemberRole, removeMember` to the `return { ... }` object.
+
+**Acceptance:** hook exposes `addMember`, `updateMemberRole`, `removeMember`; each updates `members` locally; `addMember` rethrows on failure.
+
+---
+
+### Step 5 — Share dialog
+
+**File:** `components/trading/ShareSheetDialog.tsx` — CREATE
+
+Lists members (owner row is read-only with an "Owner" badge), lets the owner change a role or remove a member, and has an add-by-email form. Mirror `AddColumnDialog.tsx`'s shell.
 
 ```tsx
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import type { SheetMember } from '@/hooks/use-sheets';
 
-interface SheetFormDialogProps {
+interface ShareSheetDialogProps {
   open: boolean;
-  mode: 'create' | 'rename';
-  initialName?: string;
-  initialDate?: string | null;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (values: { name: string; sheetDate?: string }) => Promise<void>;
+  members: SheetMember[];
+  ownerUserId: string;
+  onAdd: (email: string, role: 'editor' | 'viewer') => Promise<void>;
+  onChangeRole: (userId: string, role: 'editor' | 'viewer') => Promise<void>;
+  onRemove: (userId: string) => Promise<void>;
 }
 
-export default function SheetFormDialog({
-  open, mode, initialName, initialDate, onOpenChange, onSubmit,
-}: SheetFormDialogProps) {
-  const [name, setName] = useState('');
-  const [date, setDate] = useState('');
+export default function ShareSheetDialog({
+  open,
+  onOpenChange,
+  members,
+  ownerUserId,
+  onAdd,
+  onChangeRole,
+  onRemove,
+}: ShareSheetDialogProps) {
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<'editor' | 'viewer'>('editor');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      setName(initialName ?? '');
-      setDate(initialDate ?? '');
-      setError(null);
-      setSubmitting(false);
-    }
-  }, [open, initialName, initialDate]);
+    if (!open) return;
+    setEmail('');
+    setRole('editor');
+    setError(null);
+    setSubmitting(false);
+  }, [open]);
 
-  const handleSubmit = async () => {
-    const trimmed = name.trim();
-    if (!trimmed) { setError('Name is required'); return; }
+  const handleAdd = async () => {
+    const trimmed = email.trim();
+    if (!trimmed) { setError('Email is required'); return; }
     setSubmitting(true);
+    setError(null);
     try {
-      await onSubmit({ name: trimmed, sheetDate: date || undefined });
-      onOpenChange(false);
+      await onAdd(trimmed, role);
+      setEmail('');
     } catch {
-      setError('Could not save sheet');
+      setError('Could not add that person. Check the email and that they have signed in before.');
     } finally {
       setSubmitting(false);
     }
@@ -467,25 +406,95 @@ export default function SheetFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-border bg-card text-foreground sm:max-w-md">
+      <DialogContent className="border-border bg-card text-foreground sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{mode === 'create' ? 'New Sheet' : 'Rename Sheet'}</DialogTitle>
+          <DialogTitle>Share Sheet</DialogTitle>
         </DialogHeader>
+
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="sheet-name">Name</Label>
-            <Input id="sheet-name" value={name} onChange={(e) => setName(e.target.value)} className="border-border bg-accent text-foreground" />
+            <Label>People with access</Label>
+            <div className="space-y-1">
+              {members.map((member) => {
+                const isOwner = member.userId === ownerUserId;
+                return (
+                  <div
+                    key={member.userId}
+                    className="flex items-center justify-between gap-2 rounded-md border border-border bg-accent/40 px-2 py-1.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-foreground">{member.name ?? member.email ?? member.userId}</p>
+                      {member.email ? <p className="truncate text-xs text-muted-foreground">{member.email}</p> : null}
+                    </div>
+                    {isOwner ? (
+                      <span className="rounded bg-primary/10 px-2 py-0.5 text-xs text-primary">Owner</span>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <select
+                          value={member.role === 'viewer' ? 'viewer' : 'editor'}
+                          onChange={(event) => void onChangeRole(member.userId, event.target.value as 'editor' | 'viewer')}
+                          className="h-8 rounded-md border border-border bg-accent px-2 text-sm text-foreground [color-scheme:dark]"
+                        >
+                          <option value="editor">editor</option>
+                          <option value="viewer">viewer</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => void onRemove(member.userId)}
+                          className="flex h-8 w-8 items-center justify-center rounded-md border border-rose-500/40 text-rose-400 transition-colors hover:bg-rose-500/10"
+                          aria-label={`Remove ${member.email ?? member.userId}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
+
           <div className="space-y-2">
-            <Label htmlFor="sheet-date">Date (optional)</Label>
-            <Input id="sheet-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border-border bg-accent text-foreground [color-scheme:dark]" />
+            <Label htmlFor="share-email">Invite by email</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="share-email"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="name@example.com"
+                className="border-border bg-accent text-foreground"
+              />
+              <select
+                value={role}
+                onChange={(event) => setRole(event.target.value as 'editor' | 'viewer')}
+                className="h-9 rounded-md border border-border bg-accent px-2 text-sm text-foreground [color-scheme:dark]"
+              >
+                <option value="editor">editor</option>
+                <option value="viewer">viewer</option>
+              </select>
+            </div>
           </div>
+
           {error ? <p className="text-sm text-rose-400">{error}</p> : null}
         </div>
+
         <DialogFooter>
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} className="bg-accent hover:bg-accent/80">Cancel</Button>
-          <Button type="button" disabled={submitting} onClick={() => void handleSubmit()} className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40">
-            {mode === 'create' ? 'Create' : 'Save'}
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => onOpenChange(false)}
+            className="bg-accent hover:bg-accent/80"
+          >
+            Done
+          </Button>
+          <Button
+            type="button"
+            disabled={submitting}
+            onClick={() => void handleAdd()}
+            className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40"
+          >
+            Add
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -494,451 +503,94 @@ export default function SheetFormDialog({
 }
 ```
 
----
-
-### Step 6 — Add column dialog
-
-**File:** `components/trading/AddColumnDialog.tsx` — CREATE
-
-```tsx
-'use client';
-
-import { useEffect, useState } from 'react';
-
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import type { SheetColumnType } from '@/lib/sheets/columns';
-import { USER_COLUMN_TYPES } from '@/lib/sheets/grid';
-
-interface AddColumnDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSubmit: (column: { name: string; type: SheetColumnType; options?: string[] }) => Promise<void>;
-}
-
-export default function AddColumnDialog({ open, onOpenChange, onSubmit }: AddColumnDialogProps) {
-  const [name, setName] = useState('');
-  const [type, setType] = useState<SheetColumnType>('text');
-  const [optionsText, setOptionsText] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (open) { setName(''); setType('text'); setOptionsText(''); setError(null); setSubmitting(false); }
-  }, [open]);
-
-  const handleSubmit = async () => {
-    const trimmed = name.trim();
-    if (!trimmed) { setError('Name is required'); return; }
-    const options = type === 'select'
-      ? optionsText.split(/[\n,]/).map((o) => o.trim()).filter(Boolean)
-      : undefined;
-    setSubmitting(true);
-    try {
-      await onSubmit({ name: trimmed, type, options });
-      onOpenChange(false);
-    } catch {
-      setError('Could not add column');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-border bg-card text-foreground sm:max-w-md">
-        <DialogHeader><DialogTitle>Add Column</DialogTitle></DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="col-name">Name</Label>
-            <Input id="col-name" value={name} onChange={(e) => setName(e.target.value)} className="border-border bg-accent text-foreground" />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="col-type">Type</Label>
-            <select
-              id="col-type"
-              value={type}
-              onChange={(e) => setType(e.target.value as SheetColumnType)}
-              className="h-9 w-full rounded-md border border-border bg-accent px-2 text-sm text-foreground [color-scheme:dark]"
-            >
-              {USER_COLUMN_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          {type === 'select' ? (
-            <div className="space-y-2">
-              <Label htmlFor="col-options">Options (one per line or comma-separated)</Label>
-              <textarea
-                id="col-options"
-                value={optionsText}
-                onChange={(e) => setOptionsText(e.target.value)}
-                rows={3}
-                className="w-full rounded-md border border-border bg-accent px-2 py-1.5 text-sm text-foreground"
-              />
-            </div>
-          ) : null}
-          {error ? <p className="text-sm text-rose-400">{error}</p> : null}
-        </div>
-        <DialogFooter>
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} className="bg-accent hover:bg-accent/80">Cancel</Button>
-          <Button type="button" disabled={submitting} onClick={() => void handleSubmit()} className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40">Add</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-```
+**Acceptance:** dialog lists every member; owner row shows an "Owner" badge and no controls; non-owner rows have an editor/viewer select + remove button; the invite form adds by email and clears on success, and shows the server error on failure.
 
 ---
 
-### Step 7 — SheetsTab (list rail + editable grid + toolbar)
+### Step 6 — Wire Share into SheetsTab
 
-**File:** `components/trading/SheetsTab.tsx` — CREATE
+**File:** `components/trading/SheetsTab.tsx` — MODIFY
 
-Self-contained (no props), like `CareerPnlTab`. Left rail = sheet list; main = active sheet header + toolbar + grid. Role gates the actions.
-
-```tsx
-'use client';
-
-import { useMemo, useState } from 'react';
-import { motion } from 'motion/react';
-import { Columns3, Copy, FileSpreadsheet, Pencil, Plus, Trash2 } from 'lucide-react';
-import {
-  DataGrid,
-  SelectColumn,
-  renderTextEditor,
-  type Column,
-  type RenderEditCellProps,
-} from 'react-data-grid';
-
-import AddColumnDialog from '@/components/trading/AddColumnDialog';
-import SheetFormDialog from '@/components/trading/SheetFormDialog';
-import { Button } from '@/components/ui/button';
-import { useSheets } from '@/hooks/use-sheets';
-import type { SheetColumn, SheetColumnType } from '@/lib/sheets/columns';
-import {
-  TEXT_EDIT_TYPES,
-  gridRowsFromSheet,
-  nextColumnKey,
-  valuesFromGridRow,
-  type GridRow,
-} from '@/lib/sheets/grid';
-
-function SelectCellEditor(
-  { row, column, onRowChange, onClose, options }: RenderEditCellProps<GridRow> & { options: string[] },
-) {
-  return (
-    <select
-      autoFocus
-      className="rdg-text-editor"
-      value={(row[column.key] as string) ?? ''}
-      onChange={(e) => onRowChange({ ...row, [column.key]: e.target.value }, true)}
-      onBlur={() => onClose(true)}
-    >
-      <option value="" />
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
-    </select>
-  );
-}
-
-// Map one SheetColumn to a react-data-grid column. Checkbox commits directly
-// (not through RDG edit mode) via onToggle. report/chart/action are read-only
-// display in v1 (their interactive behavior lands with the Research import sprint).
-function buildColumn(
-  col: SheetColumn,
-  canEdit: boolean,
-  onToggle: (rowId: string, key: string, value: boolean) => void,
-): Column<GridRow> {
-  const base: Column<GridRow> = { key: col.key, name: col.name, width: col.width, resizable: true };
-
-  if (col.type === 'checkbox') {
-    return {
-      ...base,
-      renderCell: ({ row }) => (
-        <input
-          type="checkbox"
-          checked={Boolean(row[col.key])}
-          disabled={!canEdit}
-          onChange={(e) => onToggle(row.__id, col.key, e.target.checked)}
-          aria-label={col.name}
-        />
-      ),
-    };
-  }
-  if (!canEdit || col.type === 'report' || col.type === 'chart' || col.type === 'action') {
-    return base;
-  }
-  if (col.type === 'select') {
-    return { ...base, renderEditCell: (props) => <SelectCellEditor {...props} options={col.options ?? []} /> };
-  }
-  if (TEXT_EDIT_TYPES.includes(col.type)) {
-    return { ...base, renderEditCell: renderTextEditor };
-  }
-  return base;
-}
-
-export default function SheetsTab() {
-  const sheets = useSheets();
-  const [selectedRows, setSelectedRows] = useState<ReadonlySet<string>>(() => new Set());
-  const [formOpen, setFormOpen] = useState(false);
-  const [formMode, setFormMode] = useState<'create' | 'rename'>('create');
-  const [columnOpen, setColumnOpen] = useState(false);
-
-  const { activeSheet, role, rows } = sheets;
-  const canEditRows = role === 'owner' || role === 'editor';
-  const canManage = role === 'owner';
-
-  const gridRows = useMemo(() => gridRowsFromSheet(rows), [rows]);
-
-  const gridColumns = useMemo<Column<GridRow>[]>(() => {
-    if (!activeSheet) return [];
-    const toggle = (rowId: string, key: string, value: boolean) => {
-      const target = rows.find((r) => r.id === rowId);
-      if (!target) return;
-      void sheets.updateRow(rowId, { ...target.values, [key]: value });
-    };
-    const cols: Column<GridRow>[] = canEditRows ? [SelectColumn] : [];
-    for (const col of activeSheet.columns) cols.push(buildColumn(col, canEditRows, toggle));
-    return cols;
-  }, [activeSheet, canEditRows, rows, sheets]);
-
-  const handleRowsChange = (next: GridRow[], data: { indexes: number[] }) => {
-    if (!activeSheet) return;
-    for (const i of data.indexes) {
-      const gr = next[i];
-      void sheets.updateRow(gr.__id, valuesFromGridRow(gr, activeSheet.columns));
-    }
-  };
-
-  const handleFormSubmit = async ({ name, sheetDate }: { name: string; sheetDate?: string }) => {
-    if (formMode === 'create') await sheets.createSheet(name, sheetDate);
-    else if (activeSheet) await sheets.renameSheet(activeSheet.id, name, sheetDate);
-  };
-
-  const handleAddColumn = async ({ name, type, options }: { name: string; type: SheetColumnType; options?: string[] }) => {
-    if (!activeSheet) return;
-    const column: SheetColumn = { key: nextColumnKey(name, activeSheet.columns), name, type };
-    if (options && options.length > 0) column.options = options;
-    await sheets.updateColumns([...activeSheet.columns, column]);
-  };
-
-  const visibleList = sheets.list.filter((s) => !s.archivedAt);
-
-  return (
-    <motion.div
-      key="sheets"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
-      className="flex gap-4 px-1"
-    >
-      {/* Left rail: sheet list */}
-      <aside className="w-60 shrink-0 rounded-2xl border border-border bg-card p-3">
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-xs uppercase tracking-wider text-muted-foreground">Sheets</p>
-          <button
-            type="button"
-            onClick={() => { setFormMode('create'); setFormOpen(true); }}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            aria-label="New sheet"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="space-y-1">
-          {sheets.listLoading ? (
-            <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>
-          ) : visibleList.length === 0 ? (
-            <p className="px-2 py-2 text-sm text-muted-foreground">No sheets yet.</p>
-          ) : (
-            visibleList.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => void sheets.openSheet(s.id)}
-                className={`flex w-full flex-col rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-                  activeSheet?.id === s.id ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                }`}
-              >
-                <span className="truncate font-medium">{s.name}</span>
-                <span className="text-[11px] text-muted-foreground">
-                  {s.sheetDate ?? '—'} · {s.role}
-                </span>
-              </button>
-            ))
-          )}
-        </div>
-      </aside>
-
-      {/* Main: active sheet */}
-      <section className="min-w-0 flex-1">
-        {!activeSheet ? (
-          <div className="flex h-72 flex-col items-center justify-center rounded-2xl border border-border bg-card text-muted-foreground">
-            <FileSpreadsheet className="mb-2 h-6 w-6" />
-            <p className="text-sm">{sheets.detailLoading ? 'Loading…' : 'Select a sheet or create a new one.'}</p>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
-            {/* Header + actions */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h2 className="text-lg font-semibold text-foreground">{activeSheet.name}</h2>
-                <p className="text-xs text-muted-foreground">{activeSheet.sheetDate ?? 'No date'} · {role}</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {canEditRows ? (
-                  <Button type="button" onClick={() => void sheets.addRow()} className="h-8 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20">
-                    <Plus className="h-4 w-4" /> Row
-                  </Button>
-                ) : null}
-                {canManage ? (
-                  <Button type="button" onClick={() => setColumnOpen(true)} variant="secondary" className="h-8 bg-accent hover:bg-accent/80">
-                    <Columns3 className="h-4 w-4" /> Column
-                  </Button>
-                ) : null}
-                <Button
-                  type="button"
-                  onClick={() => void sheets.duplicateSheet(activeSheet.id, `Copy of ${activeSheet.name}`)}
-                  variant="secondary"
-                  className="h-8 bg-accent hover:bg-accent/80"
-                >
-                  <Copy className="h-4 w-4" /> Duplicate
-                </Button>
-                {canManage ? (
-                  <Button type="button" onClick={() => { setFormMode('rename'); setFormOpen(true); }} variant="secondary" className="h-8 bg-accent hover:bg-accent/80">
-                    <Pencil className="h-4 w-4" /> Rename
-                  </Button>
-                ) : null}
-                {canEditRows && selectedRows.size > 0 ? (
-                  <Button
-                    type="button"
-                    onClick={() => { void sheets.deleteRows([...selectedRows]); setSelectedRows(new Set()); }}
-                    className="h-8 border border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
-                  >
-                    <Trash2 className="h-4 w-4" /> Delete ({selectedRows.size})
-                  </Button>
-                ) : null}
-                {canManage ? (
-                  <button
-                    type="button"
-                    onClick={() => { if (window.confirm('Delete this sheet? This cannot be undone.')) void sheets.deleteSheet(activeSheet.id); }}
-                    className="flex h-8 w-8 items-center justify-center rounded-md border border-rose-500/40 text-rose-400 transition-colors hover:bg-rose-500/10"
-                    aria-label="Delete sheet"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            {/* Grid */}
-            <DataGrid
-              className="sheets-grid"
-              columns={gridColumns}
-              rows={gridRows}
-              rowKeyGetter={(r) => r.__id}
-              onRowsChange={handleRowsChange}
-              selectedRows={selectedRows}
-              onSelectedRowsChange={setSelectedRows}
-              style={{ blockSize: 480 }}
-            />
-            {gridRows.length === 0 ? (
-              <p className="text-center text-sm text-muted-foreground">
-                No rows yet.{canEditRows ? ' Use “Row” to add one.' : ''}
-              </p>
-            ) : null}
-          </div>
-        )}
-      </section>
-
-      <SheetFormDialog
-        open={formOpen}
-        mode={formMode}
-        initialName={formMode === 'rename' ? activeSheet?.name : ''}
-        initialDate={formMode === 'rename' ? activeSheet?.sheetDate : ''}
-        onOpenChange={setFormOpen}
-        onSubmit={handleFormSubmit}
-      />
-      <AddColumnDialog open={columnOpen} onOpenChange={setColumnOpen} onSubmit={handleAddColumn} />
-    </motion.div>
-  );
-}
-```
-
-> **Verify against installed types:** confirm `react-data-grid` exports `DataGrid`, `SelectColumn`, `renderTextEditor`, and the `Column` / `RenderEditCellProps` types, and that the edit-cell prop names are `onRowChange(row, commit)` + `onClose(commit)` in beta.59 (open `node_modules/react-data-grid/lib/index.d.ts`). If `renderTextEditor` was renamed, use the exported text editor under its current name. Do not invent an API — match the installed `.d.ts`.
-
-**Acceptance:** viewer sees a read-only grid (no SelectColumn, no editors, no Row/Column/Delete actions); editor can add/edit/delete rows; owner can additionally add columns, rename, delete the sheet. Editing a cell PATCHes that row; a select column edits via dropdown; a checkbox column toggles inline.
-
----
-
-### Step 8 — Wire the subtab into ManagementTab
-
-**File:** `components/trading/ManagementTab.tsx` — MODIFY
-
-1. Add the import (alphabetical with the others):
+1. Import the dialog and a `Users` icon:
    ```ts
-   import SheetsTab from '@/components/trading/SheetsTab';
+   import { Columns3, Copy, FileSpreadsheet, Pencil, Plus, Trash2, Users } from 'lucide-react';
+   import ShareSheetDialog from '@/components/trading/ShareSheetDialog';
    ```
-2. Extend the union and the `SUB_TABS` array with a `sheets` entry (append last):
-   ```ts
-   type SubTabKey = 'journal' | 'trades' | 'performance' | 'playbook' | 'career-pnl' | 'archive' | 'sheets';
-   ```
-   ```ts
-   { key: 'archive', label: 'Archive' },
-   { key: 'sheets', label: 'Sheets' },
-   ```
-3. Render it at the end of the conditional block (it takes no props):
+2. Add `const [shareOpen, setShareOpen] = useState(false);` alongside the other dialog state.
+3. Destructure `members` from the hook: `const { activeSheet, role, rows, members } = sheets;`
+4. In the header action row, add a **Share** button gated by `canManage`, next to Rename:
    ```tsx
-   {activeSubTab === 'sheets' ? <SheetsTab /> : null}
+   {canManage ? (
+     <Button
+       type="button"
+       variant="secondary"
+       onClick={() => setShareOpen(true)}
+       className="h-8 bg-accent hover:bg-accent/80"
+     >
+       <Users className="h-4 w-4" />
+       Share
+     </Button>
+   ) : null}
+   ```
+5. Render the dialog next to the others at the bottom (only when there's an active sheet so `ownerUserId` is defined):
+   ```tsx
+   {activeSheet ? (
+     <ShareSheetDialog
+       open={shareOpen}
+       onOpenChange={setShareOpen}
+       members={members}
+       ownerUserId={activeSheet.ownerUserId}
+       onAdd={sheets.addMember}
+       onChangeRole={sheets.updateMemberRole}
+       onRemove={sheets.removeMember}
+     />
+   ) : null}
    ```
 
-**Acceptance:** a `Sheets` tab appears in Management and renders `SheetsTab`. No other tab's props change.
+**Acceptance:** owner sees a Share button that opens the dialog; editor/viewer never see it; member changes made in the dialog reflect immediately in the member list.
 
 ---
 
-### Step 9 — Unit tests for the pure grid helpers
+### Step 7 — Clear Sprint-2 color-scheme debt
 
-**File:** `__tests__/sheets-grid.test.ts` — CREATE
+Native pickers/dropdowns must follow the dark theme like every other one in the app.
 
-Vitest. Pure-function coverage only (no DOM / no RDG) — fast and deterministic.
+1. **`components/trading/SheetFormDialog.tsx`** — the `type="date"` Input (`id="sheet-date"`): append `[color-scheme:dark]` to its `className` → `"border-border bg-accent text-foreground [color-scheme:dark]"`.
+2. **`components/trading/AddColumnDialog.tsx`** — the type `<select>` (`id="col-type"`): append `[color-scheme:dark]` to its `className`.
+
+**Acceptance:** the Sheet date picker and the Add-Column type dropdown render with dark chrome, matching `ArchiveTab`/`CareerPnlTab`.
+
+---
+
+### Step 8 — Tests for member validation
+
+**File:** `__tests__/sheets-members.test.ts` — CREATE
+
+Pure schema coverage (no DB/route). Mirrors the existing `sheets` validation tests' style.
 
 ```ts
 import { describe, expect, it } from 'vitest';
 
-import type { SheetColumn } from '@/lib/sheets/columns';
-import { gridRowsFromSheet, nextColumnKey, slugifyColumnKey, valuesFromGridRow } from '@/lib/sheets/grid';
+import { memberAddSchema, memberRoleSchema } from '@/lib/validations/sheets';
 
-const columns: SheetColumn[] = [
-  { key: 'ticker', name: 'Ticker', type: 'text' },
-  { key: 'note', name: 'Note', type: 'text' },
-];
-
-describe('sheets grid helpers', () => {
-  it('flattens sheet rows into grid rows with meta keys', () => {
-    const grid = gridRowsFromSheet([
-      { id: 'r1', position: 0, version: 3, values: { ticker: 'AAPL', note: 'hi' } },
-    ]);
-    expect(grid[0]).toEqual({ __id: 'r1', __version: 3, ticker: 'AAPL', note: 'hi' });
+describe('sheet member validation', () => {
+  it('lowercases the email and defaults role to editor', () => {
+    const parsed = memberAddSchema.parse({ email: 'Trader@Example.COM' });
+    expect(parsed).toEqual({ email: 'trader@example.com', role: 'editor' });
   });
 
-  it('extracts only declared column keys back out (drops meta keys)', () => {
-    const values = valuesFromGridRow(
-      { __id: 'r1', __version: 1, ticker: 'AAPL', note: 'hi', stray: 'x' },
-      columns,
-    );
-    expect(values).toEqual({ ticker: 'AAPL', note: 'hi' });
+  it('rejects an invalid email', () => {
+    expect(memberAddSchema.safeParse({ email: 'not-an-email' }).success).toBe(false);
   });
 
-  it('slugifies a name to a safe column key', () => {
-    expect(slugifyColumnKey('Sub Bucket!')).toBe('sub_bucket');
-    expect(slugifyColumnKey('  Bias  ')).toBe('bias');
+  it('refuses to assign the owner role', () => {
+    expect(memberAddSchema.safeParse({ email: 'a@b.com', role: 'owner' }).success).toBe(false);
+    expect(memberRoleSchema.safeParse({ role: 'owner' }).success).toBe(false);
   });
 
-  it('avoids key collisions by suffixing', () => {
-    expect(nextColumnKey('Note', columns)).toBe('note_2');
-    expect(nextColumnKey('Theme', columns)).toBe('theme');
-    expect(nextColumnKey('!!!', columns)).toBe('column');
+  it('accepts editor and viewer for a role change', () => {
+    expect(memberRoleSchema.parse({ role: 'viewer' })).toEqual({ role: 'viewer' });
+    expect(memberRoleSchema.parse({ role: 'editor' })).toEqual({ role: 'editor' });
   });
 });
 ```
@@ -951,49 +603,43 @@ describe('sheets grid helpers', () => {
 
 | File | Action | ~Lines | Risk |
 |---|---|---|---|
-| `package.json` / `package-lock.json` | INSTALL react-data-grid | — | Low |
-| `app/globals.css` | MODIFY (import + theme block) | +~20 | Medium (theming) |
-| `lib/sheets/grid.ts` | CREATE | ~55 | Low |
-| `hooks/use-sheets.ts` | CREATE | ~190 | Medium |
-| `components/trading/SheetFormDialog.tsx` | CREATE | ~70 | Low |
-| `components/trading/AddColumnDialog.tsx` | CREATE | ~80 | Low |
-| `components/trading/SheetsTab.tsx` | CREATE | ~230 | High (grid integration) |
-| `components/trading/ManagementTab.tsx` | MODIFY | +3 | Low |
-| `__tests__/sheets-grid.test.ts` | CREATE | ~45 | Low |
+| `lib/validations/sheets.ts` | MODIFY (2 schemas + 2 types) | +12 | Low |
+| `app/api/sheets/[id]/members/route.ts` | CREATE (POST) | ~65 | Medium (email lookup, upsert) |
+| `app/api/sheets/[id]/members/[userId]/route.ts` | CREATE (PATCH+DELETE) | ~90 | Medium (owner-guard) |
+| `hooks/use-sheets.ts` | MODIFY (3 callbacks + return) | +35 | Low |
+| `components/trading/ShareSheetDialog.tsx` | CREATE | ~150 | Low |
+| `components/trading/SheetsTab.tsx` | MODIFY (button + dialog wiring) | +25 | Low |
+| `components/trading/SheetFormDialog.tsx` | MODIFY (color-scheme) | +0 | Low |
+| `components/trading/AddColumnDialog.tsx` | MODIFY (color-scheme) | +0 | Low |
+| `__tests__/sheets-members.test.ts` | CREATE | ~30 | Low |
 
 ### Verification Steps
 
 Run from repo root after implementation:
 
-- [x] `npm install react-data-grid` (installed `react-data-grid@7.0.0-beta.59`; `package-lock.json` updated)
 - [x] `npm run lint`
 - [x] `npx tsc --noEmit`
-- [x] `npm test` (new `sheets-grid` tests pass; full suite green: 103 files / 740 tests)
+- [x] `npm test` (new `sheets-members` tests pass; full suite green: 104 files / 744 tests)
 
-No migration this sprint (no schema change). `npm run typecheck:services` not required (no `services/` files).
+No migration this sprint (no schema change — `sheet_members` already exists). `npm run typecheck:services` not required (no `services/` files).
 
-Runtime smoke evidence:
-- Dev server required escalation to bind localhost (`listen EPERM` in sandbox; escalated `npm run dev` succeeded on `http://localhost:3000`).
-- HTTP smoke via escalated `curl`: `/` returns expected `307` to `/login?callbackUrl=...`; `/login` returns `200` and renders the Nexus Terminal sign-in shell.
-- Authenticated visual/manual Sheets smoke could not be completed because the `agent-browser` CLI is not installed (`command not found`) and no callable replacement browser tool was available.
-
-**Manual smoke (UI now exists — do this before marking complete):**
-- [ ] Management → Sheets renders; the grid background matches the surrounding card and follows the theme (toggle light/dark — it flips, no white-on-dark or dark-on-light).
-- [ ] Create a sheet → it opens with the six default columns.
-- [ ] Add a row; edit a text cell → persists after refresh.
-- [ ] Add a `select` column with options → dropdown editor works; add a `checkbox` column → toggle persists.
-- [ ] Add a column, rename, duplicate, delete a row, delete the sheet — all work.
+**Manual smoke (pending — do before marking complete):**
+- [ ] As owner, open Share → see yourself as "Owner".
+- [ ] Invite a coworker's email who has logged in → they appear as editor; flip them to viewer; remove them.
+- [ ] Invite an email no one has used → see the "sign in once first" error, no row added.
+- [ ] Log in as that coworker → the sheet shows up in their list with the granted role; viewer sees a read-only grid, editor can edit rows but sees no Column/Rename/Share/Delete.
 
 ### Deferred to later sprints (do NOT build now)
-- Member add/remove-by-email routes + the email→user lookup, and any share UI (Sprint 3).
-- Templates / per-day "start today's sheet from a layout" flow beyond plain Duplicate (Sprint 3).
-- Research "Add to Sheets" import + making `report`/`chart`/`action` cells interactive (Sprint 4).
-- CSV export, archive/unarchive UI, undo/redo, polling/SSE invalidation, drag-reorder rows/columns.
-- `AGENTS.md` update — defer until sharing + import land so we document the complete surface at once.
+- Self-leave (a non-owner removing their own membership), ownership transfer.
+- Email notifications / invite links for people who haven't signed in.
+- Research "Add to Sheets" import + interactive `report`/`chart`/`action` cells.
+- CSV export, archive/unarchive UI, polling/SSE invalidation, drag-reorder.
+- `AGENTS.md` update — defer until the import sprint so we document the full surface at once.
 
 ### Notes for Codex
-- This is a large sprint; build it in the file order above (deps → CSS → helpers → hook → dialogs → tab → wiring → tests) so each layer compiles before the next depends on it.
-- The only genuinely uncertain surface is the `react-data-grid` beta API + its CSS variable names. Where this spec says "verify against the installed types/styles," read the actual files in `node_modules/react-data-grid/` and match them — do not guess. If an API differs materially from this spec, stop and flag it rather than improvising a large workaround.
+- Build in file order: schemas → routes → hook → dialog → tab wiring → color-scheme → tests, so each layer compiles before the next depends on it.
+- Copy the route boilerplate (`requireUser`/`getDb`/`ensureUser`/`getSheetRole`/try-catch) verbatim from `app/api/sheets/[id]/route.ts` — do not reinvent it.
+- The owner's membership is sacred: never assign/change/remove `owner` via these routes. If a guard feels redundant, keep it — it's a security boundary, not internal defensive code.
 
 ---
 

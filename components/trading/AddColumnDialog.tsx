@@ -84,7 +84,7 @@ export default function AddColumnDialog({ open, onOpenChange, onSubmit }: AddCol
               id="col-type"
               value={type}
               onChange={(event) => setType(event.target.value as SheetColumnType)}
-              className="h-9 w-full rounded-md border border-border bg-accent px-2 text-sm text-foreground"
+              className="h-9 w-full rounded-md border border-border bg-accent px-2 text-sm text-foreground [color-scheme:dark]"
             >
               {USER_COLUMN_TYPES.map((columnType) => (
                 <option key={columnType} value={columnType}>

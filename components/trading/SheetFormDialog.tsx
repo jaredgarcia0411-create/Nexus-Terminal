@@ -87,7 +87,7 @@ export default function SheetFormDialog({
               type="date"
               value={date}
               onChange={(event) => setDate(event.target.value)}
-              className="border-border bg-accent text-foreground"
+              className="border-border bg-accent text-foreground [color-scheme:dark]"
             />
           </div>
 

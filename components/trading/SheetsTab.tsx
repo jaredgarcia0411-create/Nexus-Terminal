@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Columns3, Copy, FileSpreadsheet, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Columns3, Copy, FileSpreadsheet, Pencil, Plus, Trash2, Users } from 'lucide-react';
 import {
   DataGrid,
   SelectColumn,
@@ -13,6 +13,7 @@ import {
 } from 'react-data-grid';
 
 import AddColumnDialog from '@/components/trading/AddColumnDialog';
+import ShareSheetDialog from '@/components/trading/ShareSheetDialog';
 import SheetFormDialog from '@/components/trading/SheetFormDialog';
 import { Button } from '@/components/ui/button';
 import { useSheets } from '@/hooks/use-sheets';
@@ -101,8 +102,9 @@ export default function SheetsTab() {
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'rename'>('create');
   const [columnOpen, setColumnOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
-  const { activeSheet, role, rows } = sheets;
+  const { activeSheet, role, rows, members } = sheets;
   const canEditRows = role === 'owner' || role === 'editor';
   const canManage = role === 'owner';
 
@@ -291,6 +293,18 @@ export default function SheetsTab() {
                   </Button>
                 ) : null}
 
+                {canManage ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setShareOpen(true)}
+                    className="h-8 bg-accent hover:bg-accent/80"
+                  >
+                    <Users className="h-4 w-4" />
+                    Share
+                  </Button>
+                ) : null}
+
                 {canEditRows && selectedRows.size > 0 ? (
                   <Button
                     type="button"
@@ -351,6 +365,17 @@ export default function SheetsTab() {
         onSubmit={handleFormSubmit}
       />
       <AddColumnDialog open={columnOpen} onOpenChange={setColumnOpen} onSubmit={handleAddColumn} />
+      {activeSheet ? (
+        <ShareSheetDialog
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+          members={members}
+          ownerUserId={activeSheet.ownerUserId}
+          onAdd={sheets.addMember}
+          onChangeRole={sheets.updateMemberRole}
+          onRemove={sheets.removeMember}
+        />
+      ) : null}
     </motion.div>
   );
 }

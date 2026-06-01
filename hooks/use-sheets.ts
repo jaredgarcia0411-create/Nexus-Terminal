@@ -238,6 +238,52 @@ export function useSheets() {
     throw new Error(`columns failed: ${res.status}`);
   }, [activeSheet, openSheet]);
 
+  const addMember = useCallback(async (email: string, role: 'editor' | 'viewer') => {
+    if (!activeSheet) return;
+
+    const res = await sendJson(`/api/sheets/${activeSheet.id}/members`, { email, role });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      toast.error(data?.error ?? 'Failed to add member');
+      throw new Error(data?.error ?? 'Failed to add member');
+    }
+
+    const data = (await res.json()) as { member: SheetMember };
+    setMembers((current) => {
+      const withoutMember = current.filter((member) => member.userId !== data.member.userId);
+      return [...withoutMember, data.member];
+    });
+    toast.success('Member added');
+  }, [activeSheet]);
+
+  const updateMemberRole = useCallback(async (userId: string, role: 'editor' | 'viewer') => {
+    if (!activeSheet) return;
+
+    const res = await sendJson(`/api/sheets/${activeSheet.id}/members/${userId}`, { role }, 'PATCH');
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      toast.error(data?.error ?? 'Failed to update role');
+      return;
+    }
+
+    setMembers((current) => current.map((member) => (
+      member.userId === userId ? { ...member, role } : member
+    )));
+  }, [activeSheet]);
+
+  const removeMember = useCallback(async (userId: string) => {
+    if (!activeSheet) return;
+
+    const res = await fetch(`/api/sheets/${activeSheet.id}/members/${userId}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      toast.error(data?.error ?? 'Failed to remove member');
+      return;
+    }
+
+    setMembers((current) => current.filter((member) => member.userId !== userId));
+  }, [activeSheet]);
+
   return {
     list,
     listLoading,
@@ -256,5 +302,8 @@ export function useSheets() {
     updateRow,
     deleteRows,
     updateColumns,
+    addMember,
+    updateMemberRole,
+    removeMember,
   };
 }
