@@ -49,6 +49,9 @@ interface WatchlistEditorProps {
   date?: string;
   globalTags: string[];
   onDeleteGlobalTag?: (tagName: string) => void;
+  // Persist a newly typed tag into the reusable global tag list. Without this,
+  // tags added here only live in the saved review JSON and never become reusable.
+  onCreateTag?: (tagName: string) => void;
 }
 
 function newRowId(): string {
@@ -72,6 +75,7 @@ export default function WatchlistEditor({
   date,
   globalTags,
   onDeleteGlobalTag,
+  onCreateTag,
 }: WatchlistEditorProps) {
   // Which watchlist row currently has its saved-report viewer expanded. Only one open at a time.
   const [reportOpenForRow, setReportOpenForRow] = useState<string | null>(null);
@@ -252,6 +256,7 @@ export default function WatchlistEditor({
                   readOnly={readOnly}
                   globalTags={globalTags}
                   onDeleteGlobalTag={onDeleteGlobalTag}
+                  onCreateTag={onCreateTag}
                   reportOpen={reportOpenForRow === row.id}
                   chartOpen={chartOpenForRow === row.id}
                   showChartColumn={showChartColumn}
@@ -336,6 +341,7 @@ interface RowCellsProps {
   readOnly: boolean;
   globalTags: string[];
   onDeleteGlobalTag?: (tagName: string) => void;
+  onCreateTag?: (tagName: string) => void;
   reportOpen: boolean;
   chartOpen: boolean;
   showChartColumn: boolean;
@@ -357,6 +363,7 @@ function RowCells({
   readOnly,
   globalTags,
   onDeleteGlobalTag,
+  onCreateTag,
   reportOpen,
   chartOpen,
   showChartColumn,
@@ -378,6 +385,8 @@ function RowCells({
     const clean = tag.trim();
     if (!clean) return;
     onChangeRow({ tags: Array.from(new Set([...(row.tags ?? []), clean])) });
+    // Also register it in the reusable global tag list (no-op if it already exists).
+    onCreateTag?.(clean);
   };
   const removeRowTag = (tag: string) => {
     onChangeRow({ tags: (row.tags ?? []).filter((item) => item !== tag) });

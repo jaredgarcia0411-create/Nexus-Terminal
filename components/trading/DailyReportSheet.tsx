@@ -33,6 +33,7 @@ interface DailyReportSheetProps {
   onRemoveTag?: (tradeId: string, tagName: string) => void;
   onDeleteGlobalTag?: (tagName: string) => void;
   onApplyTradeTags?: (assignments: Array<{ tradeId: string; tags: string[] }>) => Promise<void>;
+  onCreateTag?: (tagName: string) => void;
   // When true, fire window.print() once the review data has loaded. Used by
   // Archive's PDF export — the print stylesheet (globals.css) hides
   // everything except this sheet's content.
@@ -71,6 +72,7 @@ export default function DailyReportSheet({
   onRemoveTag,
   onDeleteGlobalTag,
   onApplyTradeTags,
+  onCreateTag,
   printOnReady = false,
 }: DailyReportSheetProps) {
   const [template, setTemplate] = useState<TemplateRow | null>(null);
@@ -318,6 +320,7 @@ export default function DailyReportSheet({
               date={date ?? undefined}
               globalTags={globalTags}
               onDeleteGlobalTag={onDeleteGlobalTag}
+              onCreateTag={onCreateTag}
             />
 
             <WeeklyTradesPanel

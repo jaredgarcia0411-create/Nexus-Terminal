@@ -106,6 +106,7 @@ export default function NexusTerminal() {
     handleAddTag,
     handleRemoveTag,
     handleApplyTradeTags,
+    handleCreateTag,
     handleDeleteGlobalTag,
     handleRenameGlobalTag,
     handleBulkAddTag,
@@ -239,6 +240,7 @@ export default function NexusTerminal() {
                   handleAddTag={handleAddTag}
                   handleRemoveTag={handleRemoveTag}
                   handleApplyTradeTags={handleApplyTradeTags}
+                  handleCreateTag={handleCreateTag}
                   handleDeleteGlobalTag={handleDeleteGlobalTag}
                   handleRenameGlobalTag={handleRenameGlobalTag}
                   onMergeTrades={handleMergeTrades}

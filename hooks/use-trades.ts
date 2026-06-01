@@ -210,6 +210,22 @@ export function useTrades() {
     });
   };
 
+  // Register a tag in the global (reusable) tag list without attaching it to a
+  // trade. Used by the daily-review watchlist, whose rows store tags in the
+  // review JSON — those tag names would otherwise never reach the `tags` table,
+  // so they'd never show up as reusable in the dropdown. Persist first, then
+  // mirror into local state (kept sorted to match GET /api/tags ordering).
+  const handleCreateTag = (tagName: string) => {
+    const cleanTag = tagName.trim();
+    if (!cleanTag || globalTags.includes(cleanTag)) return;
+    withErrorToast('Failed to save tag', async () => {
+      await apiRequest('/api/tags', { method: 'POST', body: JSON.stringify({ name: cleanTag }) });
+      setGlobalTags((prev) =>
+        prev.includes(cleanTag) ? prev : [...prev, cleanTag].sort((a, b) => a.localeCompare(b)),
+      );
+    });
+  };
+
   const handleRemoveTag = (tradeId: string, tagName: string) => {
     const target = trades.find((trade) => trade.id === tradeId);
     if (!target) return;
@@ -498,7 +514,7 @@ export function useTrades() {
     searchQuery, setStartDate, setEndDate, setRiskInput, setDefaultRiskInput,
     setFilterPreset, setSelectedFilterTags, setPositionFilter, setBulkTagInput, setSearchQuery, handleToggleSelect, handleSelectAll,
     handleCreateManualTrade, handleCoverPosition, handleDeleteSelected, handleApplyRisk, handleSetDefaultRisk, handleSaveNotes, handleAddTag,
-    handleCloseTrade, handleMergeTrades, handleRemoveTag, handleApplyTradeTags, handleDeleteGlobalTag, handleRenameGlobalTag, handleBulkAddTag, handleClearAllData, handleFileUpload, handleFolderUpload, handleTraderVueImport,
+    handleCloseTrade, handleMergeTrades, handleRemoveTag, handleApplyTradeTags, handleCreateTag, handleDeleteGlobalTag, handleRenameGlobalTag, handleBulkAddTag, handleClearAllData, handleFileUpload, handleFolderUpload, handleTraderVueImport,
     fetchTradeDetail,
   };
 }

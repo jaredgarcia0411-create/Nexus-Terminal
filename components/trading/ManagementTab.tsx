@@ -50,6 +50,7 @@ interface ManagementTabProps {
   handleAddTag: (tradeId: string, tagName: string) => void;
   handleRemoveTag: (tradeId: string, tagName: string) => void;
   handleApplyTradeTags: (assignments: Array<{ tradeId: string; tags: string[] }>) => Promise<void>;
+  handleCreateTag: (tagName: string) => void;
   handleDeleteGlobalTag: (tagName: string) => void;
   handleRenameGlobalTag: (from: string, to: string) => Promise<void>;
   onMergeTrades?: (ids: string[]) => void;
@@ -91,6 +92,7 @@ export default function ManagementTab(props: ManagementTabProps) {
           onAddTag={props.handleAddTag}
           onRemoveTag={props.handleRemoveTag}
           onApplyTradeTags={props.handleApplyTradeTags}
+          onCreateTag={props.handleCreateTag}
           onDeleteGlobalTag={props.handleDeleteGlobalTag}
           onTradeClick={props.onTradeClick}
         />
