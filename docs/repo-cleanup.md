@@ -16,11 +16,11 @@ Current-state audit for making the codebase simpler and more efficient without r
 8. Do frontend and oversized-module simplifications only when touching those areas for feature or bug work.
 9. Tighten TypeScript safety and remove legacy schema columns.
 
-## Remaining Sprint Plan (set 2026-05-30, updated 2026-05-31)
+## Remaining Sprint Plan (set 2026-05-30, updated 2026-06-01)
 
-Sprints 6–15 closed the rate-limiting, slim-trades-payload, Research-TLDR-claim, agent-lease-recovery, dead-code purge, provider-client consolidation, scanner cost/telemetry, Dashboard MDR retirement, Daily Review tag centralization, and test-coverage/lazy-loading findings (see Completed). The only scheduled cleanup work left is the isolated migration sprint, kept separate for a clean revert path.
+Sprints 6–15 closed the rate-limiting, slim-trades-payload, Research-TLDR-claim, agent-lease-recovery, dead-code purge, provider-client consolidation, scanner cost/telemetry, Dashboard MDR retirement, Daily Review tag centralization, and test-coverage/lazy-loading findings (see Completed). **No cleanup sprints remain.**
 
-- **Next cleanup sprint — Legacy DB column drop (ISOLATED — has a migration).** Drop `pnl`/`executions`, remove the `toTrade()` fallback. Kept in its own sprint per the migration rule; runs last (review-order item 9).
+- **Legacy DB column drop — CLOSED, won't do (decided 2026-06-01).** Reviewed the full surface (`schema.ts`, `toTrade()` fallback, 5 write paths, 2 test assertions, a hand-edited backfill+drop migration). Decision: keep `pnl`/`executions`. The columns are inert and cheap (a few bytes/row + two ternaries per read); the only "win" was deleting ~12 lines of well-commented code. Against that, `DROP COLUMN` on the production trading DB is irreversible and carries real data-loss risk for any old row where `net_pnl=0` but `pnl` holds the true value (the exact case the fallback guards). Not worth a destructive migration for a cosmetic gain. Note: the code can't be simplified without altering the columns — `pnl` is `notNull()` with no default, so any insert that stops writing it breaks. All-or-nothing, and we chose nothing.
 
 **Not scheduled — fold into feature/bug work when next touching those areas** (audit explicitly defers these): the 6 frontend simplifications (Management prop surface, Journal/Trades duplicate controls, daily/weekly review-sheet template lifecycle, backtesting sample-set loading, chart session shading, Research Report polling) and the "Low-Priority Route Pattern Extraction" finding.
 
@@ -28,7 +28,7 @@ Sprints 6–15 closed the rate-limiting, slim-trades-payload, Research-TLDR-clai
 
 ## Open Findings
 
-### Legacy DB Column Drop (ISOLATED — has a migration)
+### Legacy DB Column Drop — CLOSED (won't do, 2026-06-01)
 
 #### Remove Redundant Legacy DB Columns
 
@@ -37,8 +37,7 @@ Evidence:
 - Comment says "transitional legacy retained for one release cycle" — that cycle has passed.
 - `toTrade()` runs fallback logic on every trade read to reconcile the two sources.
 
-Recommendation:
-Write a migration that drops the legacy columns (`pnl`, `executions`) and remove the fallback logic in `toTrade()`. This simplifies every trade read path.
+Decision (2026-06-01): **Won't do — keep the columns.** A destructive, irreversible `DROP COLUMN` on the live trading DB isn't justified by removing ~12 lines of inert, well-commented code. The fallback exists precisely because some old rows may hold the real value in `pnl`/`executions`; dropping without a perfect backfill risks permanent data loss. The columns cost a few bytes/row and two ternaries per read — negligible. See "Remaining Sprint Plan" above for the full cost/benefit.
 
 ### Deferred — Route Pattern Extraction
 
