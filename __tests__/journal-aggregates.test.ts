@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { aggregateDay, aggregateWeek, isCrossDayTrade } from '@/lib/journal-aggregates';
+import { aggregateDay, aggregateWeek, dailyPnlByDate, isCrossDayTrade } from '@/lib/journal-aggregates';
 import type { Trade } from '@/lib/types';
 
 // Build a Trade in local time so tests are stable regardless of host timezone.
@@ -106,6 +106,50 @@ describe('aggregateDay', () => {
     const result = aggregateDay(trades, '2026-04-20');
 
     expect(result).toEqual({ grossResult: 0, netResult: 0, rTotal: 0, tradeIds: [] });
+  });
+});
+
+describe('dailyPnlByDate', () => {
+  it('sums multiple trades into one local date key', () => {
+    const trades: Trade[] = [
+      makeTrade({ id: 'win', date: new Date(2026, 3, 17, 10, 0), netPnl: 175 }),
+      makeTrade({ id: 'loss', date: new Date(2026, 3, 17, 14, 0), netPnl: -50 }),
+      makeTrade({ id: 'next-day', date: new Date(2026, 3, 18, 9, 0), netPnl: 25 }),
+    ];
+
+    const result = dailyPnlByDate(trades);
+
+    expect(result.get('2026-04-17')).toBe(125);
+    expect(result.get('2026-04-18')).toBe(25);
+  });
+
+  it('excludes open trades', () => {
+    const trades: Trade[] = [
+      makeTrade({ id: 'closed', date: new Date(2026, 3, 17, 10, 0), netPnl: 100 }),
+      makeTrade({ id: 'open', date: new Date(2026, 3, 17, 11, 0), netPnl: 999, isOpen: true }),
+    ];
+
+    const result = dailyPnlByDate(trades);
+
+    expect(result.get('2026-04-17')).toBe(100);
+  });
+
+  it('buckets cross-day trades under the close date', () => {
+    const entry = new Date(2026, 3, 17, 15, 30);
+    const close = new Date(2026, 3, 18, 9, 45);
+    const trades: Trade[] = [
+      makeTrade({
+        id: 'cross-day',
+        date: entry,
+        closedAt: close.toISOString(),
+        netPnl: 220,
+      }),
+    ];
+
+    const result = dailyPnlByDate(trades);
+
+    expect(result.get('2026-04-17')).toBeUndefined();
+    expect(result.get('2026-04-18')).toBe(220);
   });
 });
 

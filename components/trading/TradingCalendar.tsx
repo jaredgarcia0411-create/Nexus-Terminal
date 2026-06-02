@@ -25,6 +25,8 @@ interface TradingCalendarProps {
   trades: Trade[];
   onDayClick?: (dateKey: string) => void;
   onWeekClick?: (weekStart: string, weekEnd: string) => void;
+  month?: Date;
+  onMonthChange?: (month: Date) => void;
   embedded?: boolean;
   // Optional controlled selection. When provided, the calendar uses this for
   // the highlight ring instead of its internal state — letting the parent
@@ -42,11 +44,18 @@ export default function TradingCalendar({
   trades,
   onDayClick,
   onWeekClick,
+  month: controlledMonth,
+  onMonthChange,
   embedded = false,
   selectedDate: controlledSelectedDate,
 }: TradingCalendarProps) {
   const isMobile = useIsMobile();
-  const [currentMonth, setCurrentMonth] = React.useState(new Date());
+  const [internalMonth, setInternalMonth] = React.useState(new Date());
+  const currentMonth = controlledMonth !== undefined ? controlledMonth : internalMonth;
+  const setMonth = (next: Date) => {
+    if (onMonthChange) onMonthChange(next);
+    else setInternalMonth(next);
+  };
   const [internalSelectedDate, setInternalSelectedDate] = React.useState<string | null>(null);
   // Prefer the controlled prop when the parent passes one; otherwise fall
   // back to internal state. `undefined` means uncontrolled, `null` means
@@ -123,8 +132,8 @@ export default function TradingCalendar({
     return map;
   }, [trades]);
 
-  const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
-  const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
+  const nextMonth = () => setMonth(addMonths(currentMonth, 1));
+  const prevMonth = () => setMonth(subMonths(currentMonth, 1));
 
   // Group days into weeks
   const weeks = useMemo(() => {
@@ -271,10 +280,10 @@ export default function TradingCalendar({
 
                     {stats && (stats.pnl !== 0 || stats.r !== 0) && (
                       <div className="mt-auto flex flex-col gap-0.5">
-                        <div className={`${isMobile ? 'text-[13px]' : 'text-[14px]'} font-bold ${getPnLColor(stats.pnl)}`}>
+                        <div className={`${isMobile ? 'text-[13px]' : 'text-base'} font-semibold ${getPnLColor(stats.pnl)}`}>
                           {stats.pnl >= 0 ? '+' : ''}{formatCurrency(stats.pnl)}
                         </div>
-                        <div className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-medium opacity-60 ${stats.r > 0 ? 'text-emerald-400' : stats.r < 0 ? 'text-rose-400' : 'text-foreground'}`}>
+                        <div className={`${isMobile ? 'text-[12px]' : 'text-sm'} font-medium opacity-60 ${stats.r > 0 ? 'text-emerald-400' : stats.r < 0 ? 'text-rose-400' : 'text-foreground'}`}>
                           {formatR(stats.r)}
                         </div>
                       </div>
@@ -298,10 +307,10 @@ export default function TradingCalendar({
                   }}
                 >
                   <div className="flex h-full flex-col items-center justify-center gap-1">
-                    <div className={`text-[14px] font-bold ${getPnLColor(week.weeklyPnl)}`}>
+                    <div className={`text-base font-semibold ${getPnLColor(week.weeklyPnl)}`}>
                       {week.weeklyPnl >= 0 ? '+' : ''}{formatCurrency(week.weeklyPnl)}
                     </div>
-                    <div className={`text-[13px] font-medium opacity-70 ${week.weeklyR > 0 ? 'text-emerald-400' : week.weeklyR < 0 ? 'text-rose-400' : 'text-foreground'}`}>
+                    <div className={`text-sm font-medium opacity-70 ${week.weeklyR > 0 ? 'text-emerald-400' : week.weeklyR < 0 ? 'text-rose-400' : 'text-foreground'}`}>
                       {formatR(week.weeklyR)}
                     </div>
                     {onWeekClick && (

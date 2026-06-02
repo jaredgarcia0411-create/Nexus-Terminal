@@ -7,236 +7,222 @@ Historical completed sections (Sprints 1-15, Tier 1 Cleanup, Chart Drawings, Mul
 
 ---
 
-## Active Spec — Sheets Sprint 7: Snapshot & Reset flow
+## Active Spec — Calendar: Year Overview + day $/R sizing
 
-Status: implemented 2026-06-02. Validation passed: `npm run lint`, `npx tsc --noEmit`, `npm test` (105 files / 769 tests). No `services/` changes; no migration.
+Status: implemented 2026-06-02. Validation passed: `npm run lint`, `npx tsc --noEmit`, `npm test` (105 files / 772 tests), `npm run workflow:audit`. No `services/` changes; no API/DB/migration.
 
-Goal: replace plain "duplicate" with a **Snapshot & Reset** action. On a live/original sheet the button (1) saves a dated frozen copy into the sheet's lineage, then (2) clears the original's rows so it's ready for the next day. Originals (lineage roots, `rootId == null`) are the only sheets offered in Research → "Add to Sheets".
+Goal: Add a **Year Overview** mode to the Calendar sub-tab (Management → Calendar — the tab formerly "Journal"; internal sub-tab key is still `journal`, file `components/trading/JournalTab.tsx`). The default Calendar view is unchanged — current-month full calendar + day cards. A new **Year Overview** button enters a mode that shows, top to bottom: a header bar (back arrow + centered "Year Overview" title + year toggle), the opened month's full calendar, then a grid of 12 compact mini-month calendars. Clicking a month's **Open** button jumps the full calendar to that month; the opened month's card reads **Active**. Clicking dates on the full calendar still drives the existing daily-review / trades flow. Also bump the day $/R numbers on the full calendar one step and drop the bold — they look grainy.
+
+Purely client-side: no API, no DB, no migration. All data comes from the already-in-memory `filteredTrades`.
 
 Confirmed decisions (Jared, 2026-06-02):
-- The snapshot title uses **today's date** (`{name} {today}`); the client passes today's local date so it matches the rest of the app's timezone handling.
-- The original's rows are **wiped**; its `name`, `sheetDate`, and `columns` are left untouched.
-- Every original (root) sheet **displays today's date** (rolling), computed in the UI — display-only, no `sheetDate` write. Snapshots show their frozen date.
-- Snapshot copies stay editable (no read-only lock) — they're just excluded from "Add to Sheets".
+- Two modes via a toggle. Default = today's behavior; the back arrow returns to the current month.
+- Mini-month days are **display-only** (tinted by net P&L). Navigation is the **Open** button; date-level review still happens on the full calendar.
+- Year-toggle years are derived from trades, plus the current year.
+- $/R sizing: $ → `text-base` (16px) `font-semibold`; R → `text-sm` (14px) `font-medium`. Bold dropped on both day cells and the weekly-total column.
 
-Context: `rootId` lineage shipped in Sprint 6 (root = `rootId null`; snapshots carry `rootId = root.id`). The current `/duplicate` route makes an empty same-name copy and is only used by the one toolbar button — it is repurposed here. **No migration** (schema unchanged).
-
-### Step 1 — Validation schema
-File `lib/validations/sheets.ts`:
-1. Remove `sheetDuplicateSchema` and its `SheetDuplicateBody` type export (only the duplicate route used them — confirm no other importers first).
-2. Add:
+### Step 1 — Daily P&L helper
+File `lib/journal-aggregates.ts`. Add after `isCrossDayTrade`:
 ```ts
-export const sheetSnapshotSchema = z.object({
-  date: z.string().trim().regex(DATE_REGEX, 'date must be YYYY-MM-DD'),
-});
-```
-and `export type SheetSnapshotBody = z.infer<typeof sheetSnapshotSchema>;`
-
-### Step 2 — Route rename + new logic
-1. `git mv app/api/sheets/[id]/duplicate/route.ts app/api/sheets/[id]/snapshot/route.ts`.
-2. Rewrite the POST handler:
-   - Imports: add `sheetRows` to the `@/lib/db/schema` import; swap `sheetDuplicateSchema` → `sheetSnapshotSchema`.
-   - Auth/role flow unchanged (`requireUser`, `ensureUser`, `getPoolDb`, `getSheetRole`). After loading `role`, require owner:
-     `if (role !== 'owner') return Response.json({ error: 'Only the owner can snapshot' }, { status: 403 });`
-   - Load `source` (the `db.select().from(sheets).where(eq(sheets.id, id))` is unchanged). Guard against snapshotting a snapshot:
-     `if (source.rootId) return Response.json({ error: 'Only original sheets can be snapshotted' }, { status: 400 });`
-   - `const { date } = bodyState.data;`
-   - Inside the existing `db.transaction(async (tx) => { ... })`:
-     a. Insert the snapshot sheet:
-     ```ts
-     const [sheet] = await tx.insert(sheets).values({
-       ownerUserId: authState.user.id,
-       name: `${source.name} ${date}`,
-       sheetDate: date,
-       isTemplate: false,
-       columns: source.columns,
-       rootId: source.id,
-       updatedAt: new Date(),
-     }).returning();
-     ```
-     b. Copy rows into the snapshot, then clear the original (order matters — select before delete):
-     ```ts
-     const sourceRows = await tx.select().from(sheetRows).where(eq(sheetRows.sheetId, source.id));
-     if (sourceRows.length > 0) {
-       await tx.insert(sheetRows).values(sourceRows.map((r) => ({
-         sheetId: sheet.id,
-         position: r.position,
-         values: r.values,
-         createdByUserId: authState.user.id,
-       })));
-     }
-     await tx.delete(sheetRows).where(eq(sheetRows.sheetId, source.id));
-     ```
-     (New row ids are auto-generated by the table's `$defaultFn`; `version` defaults to 0.)
-     c. Keep the existing owner `sheetMembers` insert for the new sheet.
-     d. `return sheet;`
-   - Respond `Response.json({ sheet: created }, { status: 201 });`.
-   - Change the `logRouteError` tag to `'sheets.id.snapshot'`.
-
-### Step 3 — Hook
-File `hooks/use-sheets.ts`:
-1. Rename `duplicateSheet` → `snapshotSheet(id: string, date: string)`:
-```ts
-const snapshotSheet = useCallback(async (id: string, date: string) => {
-  const res = await sendJson(`/api/sheets/${id}/snapshot`, { date });
-  if (!res.ok) {
-    toast.error('Failed to snapshot sheet');
-    return;
+// Net P&L per calendar day (bucketed by close date) for the mini-month
+// calendars. Skips still-open trades.
+export function dailyPnlByDate(trades: Trade[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const trade of trades) {
+    if (trade.isOpen) continue;
+    const key = bucketKey(trade);
+    map.set(key, (map.get(key) ?? 0) + trade.netPnl);
   }
-  await refreshList();
-  await openSheet(id); // re-open the now-cleared original so Jared keeps working on it
-  toast.success('Snapshot saved; sheet cleared for today');
-}, [openSheet, refreshList]);
+  return map;
+}
 ```
-2. Update the returned object key (`duplicateSheet` → `snapshotSheet`).
 
-### Step 4 — SheetsTab UI
-File `components/trading/SheetsTab.tsx`:
-1. Replace the Duplicate `<Button>` (the `Copy` one, ~line 699) with a Snapshot button, shown only on originals (`canManage && !activeSheet.rootId`):
+### Step 2 — Test the helper
+File `__tests__/journal-aggregates.test.ts`. Add a `describe('dailyPnlByDate', ...)` that reuses the existing `makeTrade(...)` fixture helper at the top of the file (and adds `dailyPnlByDate` to the `@/lib/journal-aggregates` import). Cover: (a) multiple trades on the same day sum into one key; (b) `isOpen` trades are excluded; (c) a cross-day trade (set via `closedAt` one day after `date`) buckets under its close date.
+
+### Step 3 — MiniMonthCalendar component
+New file `components/trading/MiniMonthCalendar.tsx`. A compact, display-only month grid. Follow the frontend-design skill for tokens/radii.
+Props:
+```ts
+interface MiniMonthCalendarProps {
+  monthDate: Date;                 // any date inside the month to render
+  pnlByDate: Map<string, number>;
+  isActive: boolean;               // this month is the one open in the full calendar
+  onOpen: () => void;
+}
+```
+Build the grid with date-fns:
+```ts
+const monthStart = startOfMonth(monthDate);
+const days = eachDayOfInterval({ start: startOfWeek(monthStart), end: endOfWeek(endOfMonth(monthStart)) });
+```
+Layout:
+- Card: `rounded-xl border border-border bg-card p-4`.
+- Header: `mb-3 flex items-center justify-between`.
+  - Left: `<span className="text-sm font-semibold text-foreground">{format(monthDate, 'MMMM, yyyy')}</span>`.
+  - Right: Open/Active button — `rounded-md px-3 py-1 text-xs font-medium transition-colors`, `onClick={onOpen}`. Active → `border border-primary/40 bg-primary/10 text-primary` reading "Active"; inactive → `bg-accent text-muted-foreground hover:bg-accent/80 hover:text-foreground` reading "Open".
+- Weekday row: `grid grid-cols-7`, each `text-center text-[10px] font-bold tracking-widest text-muted-foreground` (Sun..Sat).
+- Day grid: `grid grid-cols-7 gap-1`. Per day:
+  - `const key = format(day, 'yyyy-MM-dd'); const pnl = pnlByDate.get(key) ?? 0; const inMonth = isSameMonth(day, monthStart);` (the `?? 0` keeps `pnl` typed as `number`, so the comparisons below don't trip `strictNullChecks`).
+  - base: `flex h-8 items-center justify-center rounded text-sm font-mono tabular-nums`
+  - `!inMonth` → add `text-muted-foreground/30`
+  - `inMonth && pnl > 0` → `bg-emerald-500/10 text-emerald-400`
+  - `inMonth && pnl < 0` → `bg-rose-500/10 text-rose-400`
+  - `inMonth` otherwise (no trades / breakeven) → `text-foreground`
+  - content `{format(day, 'd')}`
+- No per-day `onClick`.
+
+### Step 4 — YearOverview component
+New file `components/trading/YearOverview.tsx`. Renders only the 12-card grid (the header bar lives in JournalTab).
+Props:
+```ts
+interface YearOverviewProps {
+  trades: Trade[];
+  year: number;
+  activeMonth: Date;
+  onOpenMonth: (monthDate: Date) => void;
+}
+```
+Body:
 ```tsx
-{canManage && !activeSheet.rootId ? (
-  <Button
-    type="button"
-    size="icon-sm"
-    variant="secondary"
-    onClick={() => {
-      if (window.confirm('Save a dated snapshot and clear this sheet for today?')) {
-        setSelectedRows(new Set());
-        void sheets.snapshotSheet(activeSheet.id, format(new Date(), 'yyyy-MM-dd'));
-      }
-    }}
-    title="Snapshot & reset"
-    aria-label="Snapshot and reset"
-    className="bg-accent hover:bg-accent/80"
-  >
-    <Archive className="h-4 w-4" />
-  </Button>
-) : null}
+const pnlByDate = useMemo(() => dailyPnlByDate(trades), [trades]);
+const months = Array.from({ length: 12 }, (_, m) => new Date(year, m, 1));
+return (
+  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    {months.map((m) => (
+      <MiniMonthCalendar
+        key={m.getMonth()}
+        monthDate={m}
+        pnlByDate={pnlByDate}
+        isActive={isSameMonth(m, activeMonth)}
+        onOpen={() => onOpenMonth(m)}
+      />
+    ))}
+  </div>
+);
 ```
-2. Imports: add `Archive` to the lucide import; remove `Copy` if now unused. (`format` from `date-fns` is already imported.)
-3. In `groupSheetLineages`, make the lineage **head the root** so the original is the picker's primary entry and snapshots fall into History. Replace the body of the `.map(([key, members]) => { ... })`:
+Imports: `useMemo` (react); `isSameMonth` (date-fns); `dailyPnlByDate` (`@/lib/journal-aggregates`); `MiniMonthCalendar`; `Trade` type (`@/lib/types`).
+
+### Step 5 — TradingCalendar: controlled month + $/R sizing
+File `components/trading/TradingCalendar.tsx`.
+1. Add to `TradingCalendarProps` (mirror the existing controlled `selectedDate` pattern):
 ```ts
-const sorted = [...members].sort((a, b) => sheetVersionTime(b) - sheetVersionTime(a));
-const head = members.find((m) => m.id === key) ?? sorted[0];
-const pastVersions = sorted.filter((m) => m.id !== head.id);
-return { key, head, pastVersions };
+month?: Date;
+onMonthChange?: (month: Date) => void;
 ```
-(Keep the outer `.sort((a, b) => sheetVersionTime(b.head) - sheetVersionTime(a.head))`.)
-4. **Rolling date for originals (display-only, no DB write).** Every original sheet (`rootId === null`) should display **today's** date; snapshots keep their frozen stored date. Near the top of the component body add:
+2. Destructure with renames in the component signature: `month: controlledMonth`, `onMonthChange`.
+3. Replace `const [currentMonth, setCurrentMonth] = React.useState(new Date());` with:
 ```ts
-const today = format(new Date(), 'yyyy-MM-dd');
-const sheetDisplayDate = (sheet: { rootId: string | null; sheetDate: string | null }) =>
-  sheet.rootId === null ? today : sheet.sheetDate ?? 'No date';
-```
-Reuse `today` in the snapshot button's `onClick` (Step 4.1) instead of calling `format(...)` again. Then swap the three places that currently print a sheet date to use the helper:
-- the title `<span>` (currently `{activeSheet.sheetDate ?? 'No date'}`) → `{sheetDisplayDate(activeSheet)}`;
-- the lineage picker item (currently `{group.head.sheetDate ?? 'No date'}`) → `{sheetDisplayDate(group.head)}`;
-- the History dropdown item (currently `{sheet.sheetDate ?? 'No date'}`) → `{sheetDisplayDate(sheet)}` (uniform; these are snapshots so it returns the stored date anyway).
-
-### Step 5 — Research "Add to Sheets" shows originals only
-File `components/trading/ResearchTickerView.tsx`:
-1. Add `rootId: string | null;` to the `SheetListResponse.sheets[]` element type (~line 39).
-2. In `loadSheets`, add `&& sheet.rootId === null` to the existing `.filter(...)` so snapshots are excluded.
-
-### Step 6 — Tests
-File `__tests__/sheets-routes.test.ts`. The snapshot route calls `tx.select(sheetRows)` and `tx.delete(sheetRows)` **inside** the transaction, but the current `createPoolDbMock` `tx` object only implements `.insert()` — so the mock must be extended first.
-
-1. **Extend `createPoolDbMock`.** Add a `select` and a `delete` to the `tx` object, sharing the same `selectQueue`, and expose a delete spy:
-```ts
-const txDeleteWhereMock = vi.fn(() => Promise.resolve());
-
-const tx = {
-  insert: vi.fn(() => ({ values: txInsertValuesMock })),
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const chain = {
-      from: vi.fn(() => chain),
-      where: vi.fn(() => Promise.resolve(result)),
-    };
-    return chain;
-  }),
-  delete: vi.fn(() => ({ where: txDeleteWhereMock })),
+const [internalMonth, setInternalMonth] = React.useState(new Date());
+const currentMonth = controlledMonth !== undefined ? controlledMonth : internalMonth;
+const setMonth = (next: Date) => {
+  if (onMonthChange) onMonthChange(next);
+  else setInternalMonth(next);
 };
 ```
-and add `txDeleteWhereMock` to the returned `_mocks`. (Existing tests only use `tx.insert`, so this is backward-compatible.)
+4. `nextMonth` → `setMonth(addMonths(currentMonth, 1))`; `prevMonth` → `setMonth(subMonths(currentMonth, 1))`.
+5. $/R sizing (drop bold, bump one step):
+   - Day $ div (`getPnLColor(stats.pnl)`): `${isMobile ? 'text-[13px]' : 'text-[14px]'} font-bold` → `${isMobile ? 'text-[13px]' : 'text-base'} font-semibold`.
+   - Day R div: `${isMobile ? 'text-[12px]' : 'text-[13px]'} font-medium opacity-60` → `${isMobile ? 'text-[12px]' : 'text-sm'} font-medium opacity-60`.
+   - Weekly $ div: `text-[14px] font-bold` → `text-base font-semibold`.
+   - Weekly R div: `text-[13px] font-medium opacity-70` → `text-sm font-medium opacity-70`.
 
-2. **Update the import (line 27):** `import { POST as snapshotSheet } from '@/app/api/sheets/[id]/snapshot/route';`
-
-3. **Replace the line-269 test** ("duplicate copies columns…") with a snapshot happy-path. Call order inside the route is: outer source select → `tx.insert(sheets)` → `tx.select(sheetRows)` → `tx.insert(sheetRows)` → `tx.delete(sheetRows)` → `tx.insert(sheetMembers)`. So `selectQueue[0]` = source sheet (must have `rootId: null`), `selectQueue[1]` = source rows; only the sheet insert calls `.returning()`, so `insertResults` needs just the new sheet. `txInsertValuesMock` is called 1=sheet, 2=copied-rows array, 3=owner member:
+### Step 6 — JournalTab: mode state + restructure
+File `components/trading/JournalTab.tsx`.
+1. Imports: add `ArrowLeft, LayoutGrid` to the lucide-react import; add `import YearOverview from '@/components/trading/YearOverview';`.
+2. New state (near the other `useState`s):
 ```ts
-it('POST /api/sheets/[id]/snapshot copies rows into a dated snapshot and clears the original', async () => {
-  const poolDb = createPoolDbMock({
-    selectQueue: [
-      [{ id: 'source-1', name: 'Source', columns: DEFAULT_SHEET_COLUMNS, rootId: null }],
-      [{ position: 0, values: { ticker: 'AAPL' } }, { position: 1, values: { ticker: 'TSLA' } }],
-    ],
-    insertResults: [[{ id: 'sheet-copy', ownerUserId: 'user-1', name: 'Source 2026-06-02' }]],
-  });
-  getPoolDbMock.mockReturnValue(poolDb);
-
-  const response = ensureResponse(await snapshotSheet(new Request('http://localhost/api/sheets/source-1/snapshot', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ date: '2026-06-02' }),
-  }), { params: Promise.resolve({ id: 'source-1' }) }));
-
-  expect(response.status).toBe(201);
-  expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(1, expect.objectContaining({
-    ownerUserId: 'user-1',
-    name: 'Source 2026-06-02',
-    sheetDate: '2026-06-02',
-    rootId: 'source-1',
-    columns: DEFAULT_SHEET_COLUMNS,
-  }));
-  expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(2, [
-    { sheetId: 'sheet-copy', position: 0, values: { ticker: 'AAPL' }, createdByUserId: 'user-1' },
-    { sheetId: 'sheet-copy', position: 1, values: { ticker: 'TSLA' }, createdByUserId: 'user-1' },
-  ]);
-  expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(3, {
-    sheetId: 'sheet-copy', userId: 'user-1', role: 'owner',
-  });
-  expect(poolDb._mocks.txDeleteWhereMock).toHaveBeenCalledTimes(1);
-});
+const [yearOverview, setYearOverview] = useState(false);
+const [calMonth, setCalMonth] = useState<Date>(() => new Date());
+const [overviewYear, setOverviewYear] = useState<number>(() => new Date().getFullYear());
+```
+3. Available years (after the `dayCards` / `displayedDayCards` memos):
+```ts
+const availableYears = useMemo(() => {
+  const years = new Set<number>([new Date().getFullYear()]);
+  for (const trade of filteredTrades) years.add(trade.date.getFullYear());
+  return [...years].sort((a, b) => a - b);
+}, [filteredTrades]);
+```
+4. Top toolbar (the first `flex flex-wrap items-center justify-between` row): keep the search input as the left child. Replace the right child (currently the `{selectedIds.size > 0 ? (...) : null}` block) so the risk/tag controls AND a new Year Overview button share the right side:
+```tsx
+<div className="flex flex-wrap items-center gap-2">
+  {selectedIds.size > 0 ? (
+    <div className="animate-in slide-in-from-right-2 fade-in flex items-center gap-2">
+      {/* …existing Set Risk + Add Tag controls, unchanged… */}
+    </div>
+  ) : null}
+  {!yearOverview ? (
+    <button
+      type="button"
+      onClick={() => { setOverviewYear(calMonth.getFullYear()); setYearOverview(true); }}
+      className="flex items-center gap-2 rounded-lg border border-border bg-accent px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/80 hover:text-foreground"
+    >
+      <LayoutGrid className="h-4 w-4" /> Year Overview
+    </button>
+  ) : null}
+</div>
+```
+5. Year-overview header bar — render directly **above** `<TradingCalendar …>`, only when `yearOverview`:
+```tsx
+{yearOverview ? (
+  <div className="grid grid-cols-3 items-center">
+    <button
+      type="button"
+      onClick={() => { setYearOverview(false); setCalMonth(new Date()); setSelectedDate(null); setDrcDate(null); }}
+      className="flex h-8 w-8 items-center justify-center justify-self-start rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      aria-label="Back to calendar"
+      title="Back to calendar"
+    >
+      <ArrowLeft className="h-4 w-4" />
+    </button>
+    <h3 className="justify-self-center text-base font-semibold text-foreground">Year Overview</h3>
+    <div className="flex items-center gap-1 justify-self-end rounded-lg border border-border bg-accent p-0.5">
+      {availableYears.map((y) => (
+        <button
+          key={y}
+          type="button"
+          onClick={() => setOverviewYear(y)}
+          className={`rounded-md px-3 py-1 text-sm tabular-nums transition-colors ${y === overviewYear ? 'bg-card text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+        >
+          {y}
+        </button>
+      ))}
+    </div>
+  </div>
+) : null}
+```
+6. `<TradingCalendar>` call: add `month={calMonth}` and `onMonthChange={setCalMonth}` (keep existing `trades`, `selectedDate`, `onDayClick`, `onWeekClick`).
+7. Directly **below** `<TradingCalendar>` and **above** the day-cards `<div className="space-y-4">`, render the grid only in overview mode:
+```tsx
+{yearOverview ? (
+  <YearOverview
+    trades={filteredTrades}
+    year={overviewYear}
+    activeMonth={calMonth}
+    onOpenMonth={(d) => setCalMonth(d)}
+  />
+) : null}
 ```
 
-4. **Replace the line-304 test** ("keeps an existing lineage root") — that scenario (source already has a `rootId`) is now **rejected**, so flip it to assert the guard: source with `rootId: 'root-1'` → 400, and neither insert nor delete runs:
-```ts
-it('POST /api/sheets/[id]/snapshot rejects snapshotting a snapshot', async () => {
-  const poolDb = createPoolDbMock({
-    selectQueue: [[{ id: 'source-1', name: 'Source', columns: DEFAULT_SHEET_COLUMNS, rootId: 'root-1' }]],
-  });
-  getPoolDbMock.mockReturnValue(poolDb);
-
-  const response = ensureResponse(await snapshotSheet(new Request('http://localhost/api/sheets/source-1/snapshot', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ date: '2026-06-02' }),
-  }), { params: Promise.resolve({ id: 'source-1' }) }));
-
-  expect(response.status).toBe(400);
-  expect(poolDb._mocks.txInsertValuesMock).not.toHaveBeenCalled();
-  expect(poolDb._mocks.txDeleteWhereMock).not.toHaveBeenCalled();
-});
-```
-(The append-research-row test lower in the file uses `duplicate` as a row-dedupe field name — unrelated, leave it.)
+Behavior recap: default = current-month calendar + day cards (+ a "Year Overview" button). Year Overview = header bar + full calendar (controlled month) + 12 mini-months; Open swaps the month, Active marks the open one, back arrow resets to the current month and exits. The day-cards list and DailyReportSheet / WeeklyReviewSheet stay below in both modes, so date clicks still open reviews/trades.
 
 ### Validation
 - `npm run lint` && `npx tsc --noEmit` && `npm test`.
-- No `services/` change → `typecheck:services` not required.
-- No migration (`rootId` already exists).
+- No `services/` change → `typecheck:services` not required. No migration.
 
 ### Acceptance criteria
-- The toolbar shows **Snapshot & reset** (Archive icon) only on original sheets; it's hidden on snapshots.
-- Clicking it (after the confirm) creates `"{name} {today}"` holding the original's rows, then empties the original; the picker keeps the original as head with the new snapshot under History.
-- Every original sheet displays today's date; snapshots display their frozen date.
-- Research → "Add to Sheets" lists only originals.
-- All validations green.
+- Calendar tab still opens on the current month with day cards (unchanged), plus a Year Overview button.
+- Year Overview shows 12 mini-months for the selected year, each tinted by daily P&L, with Open/Active buttons; the year toggle lists trade years + the current year.
+- Opening a month moves the full calendar to it (Active highlight); clicking a date there still opens the daily review and narrows the day list.
+- Back arrow returns to the current-month default view.
+- Day and weekly $/R numbers are one step larger and no longer bold (no grain).
 
 ### Notes for Codex
-- Do NOT add a migration; `rootId` exists.
-- Keep the snapshot route owner-gated and the copy-then-clear inside one transaction so a failure can't half-clear a sheet.
-- The rolling date (Step 4.4) is **display-only** — do not write `sheetDate` back to the original on snapshot.
-- Step 6 requires extending `createPoolDbMock` (`tx.select` + `tx.delete`) before the snapshot tests will run.
+- No API/DB/migration — client-only.
+- Reuse `dailyPnlByDate`, `formatCurrency` / `formatR` / `getPnLColor`, `bucketKey` — don't write new P&L math.
+- Keep `TradingCalendar` generic: the controlled `month` mirrors the existing controlled `selectedDate`; do not add overview-specific logic inside it.
+- Follow the frontend-design skill for the new components (semantic tokens, radius hierarchy, calendar-header type).
 
 ---
 
@@ -250,6 +236,17 @@ it('POST /api/sheets/[id]/snapshot rejects snapshotting a snapshot', async () =>
 ---
 
 ## Recently Completed
+
+### Sheets - Sprint 7: Snapshot & Reset flow
+
+Status: completed 2026-06-02 (commit `ef7b591`); reviewed + UI polish applied (commit `cd5fafb`).
+
+Outcome:
+- `/duplicate` route repurposed to `/snapshot`: saves a dated frozen copy into the sheet's lineage, then clears the original's rows. Owner-gated; copy-then-clear in one transaction. No migration.
+- Originals (`rootId == null`) display today's date (display-only); snapshots show their frozen date. Research "Add to Sheets" lists originals only.
+- Post-ship polish (cd5fafb): sheet action buttons consolidated into one top-right cluster, delete-sheet moved to the toolbar, reduced section padding, styled portal tooltip on text cells, explicit grid column widths to fix resize reflow, Journal tab renamed to Calendar with Sheets as the default Management tab.
+
+Validation: `npm run lint`, `npx tsc --noEmit`, `npm test` (105 files / 769 tests) all green.
 
 ### Sheets - Sprint 6: Lineage, Watchlist Column + Auto-tag
 
@@ -337,7 +334,7 @@ Validation:
 - **Manual authenticated smoke for sharing** (still pending: invite logged-in coworker, flip role, remove; unknown-email error; viewer read-only / editor sees no manage buttons).
 - Self-leave (non-owner removing own membership), ownership transfer, email/invite-link notifications for users who haven't signed in.
 - Templates / per-day "start today's sheet" flow beyond plain Duplicate.
-- CSV export, archive/unarchive UI, undo/redo, polling/SSE invalidation. (drag-reorder rows/columns + tags-in-Tag-column shipped; lineage UI + Watch column + import auto-tag shipped in Sprint 6; Snapshot & Reset is the active Sprint 7 spec above.)
+- CSV export, archive/unarchive UI, undo/redo, polling/SSE invalidation. (drag-reorder rows/columns + tags-in-Tag-column shipped; lineage UI + Watch column + import auto-tag shipped in Sprint 6; Snapshot & Reset shipped in Sprint 7.)
 
 (Research "Add to Sheets" import + interactive `report`/`chart`/`action` cells + the `AGENTS.md` Sheets-surface update shipped in Sprint 4 — see Recently Completed.)
 

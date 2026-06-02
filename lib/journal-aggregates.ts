@@ -44,6 +44,18 @@ export function isCrossDayTrade(
   return bucketKey(trade) !== trade.sortKey;
 }
 
+// Net PnL per calendar day (bucketed by close date) for the mini-month
+// calendars. Skips still-open trades.
+export function dailyPnlByDate(trades: Trade[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const trade of trades) {
+    if (trade.isOpen) continue;
+    const key = bucketKey(trade);
+    map.set(key, (map.get(key) ?? 0) + trade.netPnl);
+  }
+  return map;
+}
+
 /**
  * Aggregate all trades that fall on `date` (YYYY-MM-DD, local timezone).
  * R is only counted for trades where initialRisk > 0.

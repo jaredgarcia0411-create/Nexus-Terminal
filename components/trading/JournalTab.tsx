@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronDown, ChevronRight, Search, Tag as TagIcon } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, LayoutGrid, Search, Tag as TagIcon } from 'lucide-react';
 import DailyReportSheet from '@/components/trading/DailyReportSheet';
 import TradingCalendar from '@/components/trading/TradingCalendar';
 import TradeTable from '@/components/trading/TradeTable';
 import WeeklyReviewSheet from '@/components/trading/WeeklyReviewSheet';
 import JournalTradeChart from '@/components/trading/JournalTradeChart';
+import YearOverview from '@/components/trading/YearOverview';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatCurrency, getPnLColor } from '@/lib/ui-trade-utils';
 import { bucketKey, isCrossDayTrade } from '@/lib/journal-aggregates';
@@ -79,6 +80,9 @@ export default function JournalTab({
   const [chartTimeframes, setChartTimeframes] = useState<Record<string, TradeChartTimeframeKey>>({});
   const [drcDate, setDrcDate] = useState<string | null>(null);
   const [weekRange, setWeekRange] = useState<{ start: string; end: string } | null>(null);
+  const [yearOverview, setYearOverview] = useState(false);
+  const [calMonth, setCalMonth] = useState<Date>(() => new Date());
+  const [overviewYear, setOverviewYear] = useState<number>(() => new Date().getFullYear());
   // When set, the journal list below the calendar filters down to this date
   // and the matching card auto-expands. Cleared by clicking the same date
   // again or the X chip rendered above the list.
@@ -132,6 +136,12 @@ export default function JournalTab({
     return dayCards.filter((day) => day.sortKey === selectedDate);
   }, [dayCards, selectedDate]);
 
+  const availableYears = useMemo(() => {
+    const years = new Set<number>([new Date().getFullYear()]);
+    for (const trade of filteredTrades) years.add(trade.date.getFullYear());
+    return [...years].sort((a, b) => a - b);
+  }, [filteredTrades]);
+
   const toggleDay = (sortKey: string) => {
     const isCurrentlyExpanded = expandedDays.has(sortKey);
     if (!isCurrentlyExpanded) {
@@ -166,41 +176,93 @@ export default function JournalTab({
           />
         </div>
 
-        {selectedIds.size > 0 ? (
-          <div className="animate-in slide-in-from-right-2 fade-in flex items-center gap-2">
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-accent px-2 py-1">
-              <span className="text-[10px] font-bold uppercase text-muted-foreground">Set Risk:</span>
-              <input
-                type="number"
-                placeholder="$500"
-                value={riskInput}
-                onChange={(event) => onRiskInputChange(event.target.value)}
-                className="w-20 rounded-lg border border-border bg-accent px-2 py-1 text-xs transition-colors focus:border-ring/50 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-card"
-              />
-              <button onClick={onApplyRisk} className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[10px] font-bold uppercase text-primary hover:bg-primary/20">
-                Apply
-              </button>
-            </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {selectedIds.size > 0 ? (
+            <div className="animate-in slide-in-from-right-2 fade-in flex items-center gap-2">
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-accent px-2 py-1">
+                <span className="text-[10px] font-bold uppercase text-muted-foreground">Set Risk:</span>
+                <input
+                  type="number"
+                  placeholder="$500"
+                  value={riskInput}
+                  onChange={(event) => onRiskInputChange(event.target.value)}
+                  className="w-20 rounded-lg border border-border bg-accent px-2 py-1 text-xs transition-colors focus:border-ring/50 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-card"
+                />
+                <button onClick={onApplyRisk} className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[10px] font-bold uppercase text-primary hover:bg-primary/20">
+                  Apply
+                </button>
+              </div>
 
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-accent px-2 py-1">
-              <TagIcon className="h-3 w-3 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Add Tag..."
-                value={bulkTagInput}
-                onChange={(event) => onBulkTagInputChange(event.target.value)}
-                className="w-24 rounded-lg border border-border bg-accent px-2 py-1 text-xs transition-colors focus:border-ring/50 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-card"
-              />
-              <button onClick={onBulkAddTag} className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[10px] font-bold uppercase text-primary hover:bg-primary/20">
-                Add
-              </button>
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-accent px-2 py-1">
+                <TagIcon className="h-3 w-3 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Add Tag..."
+                  value={bulkTagInput}
+                  onChange={(event) => onBulkTagInputChange(event.target.value)}
+                  className="w-24 rounded-lg border border-border bg-accent px-2 py-1 text-xs transition-colors focus:border-ring/50 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-card"
+                />
+                <button onClick={onBulkAddTag} className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[10px] font-bold uppercase text-primary hover:bg-primary/20">
+                  Add
+                </button>
+              </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
+          {!yearOverview ? (
+            <button
+              type="button"
+              onClick={() => {
+                setOverviewYear(calMonth.getFullYear());
+                setYearOverview(true);
+              }}
+              className="flex items-center gap-2 rounded-lg border border-border bg-accent px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/80 hover:text-foreground"
+            >
+              <LayoutGrid className="h-4 w-4" /> Year Overview
+            </button>
+          ) : null}
+        </div>
       </div>
+
+      {yearOverview ? (
+        <div className="grid grid-cols-3 items-center">
+          <button
+            type="button"
+            onClick={() => {
+              setYearOverview(false);
+              setCalMonth(new Date());
+              setSelectedDate(null);
+              setDrcDate(null);
+            }}
+            className="flex h-8 w-8 items-center justify-center justify-self-start rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            aria-label="Back to calendar"
+            title="Back to calendar"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <h3 className="justify-self-center text-base font-semibold text-foreground">Year Overview</h3>
+          <div className="flex items-center gap-1 justify-self-end rounded-lg border border-border bg-accent p-0.5">
+            {availableYears.map((year) => (
+              <button
+                key={year}
+                type="button"
+                onClick={() => setOverviewYear(year)}
+                className={`rounded-md px-3 py-1 text-sm tabular-nums transition-colors ${
+                  year === overviewYear
+                    ? 'bg-card text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {year}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <TradingCalendar
         trades={filteredTrades}
+        month={calMonth}
+        onMonthChange={setCalMonth}
         selectedDate={selectedDate}
         onDayClick={(dateKey) => {
           // Toggle: clicking the same date again clears the filter, closes
@@ -223,6 +285,15 @@ export default function JournalTab({
         }}
         onWeekClick={(start, end) => setWeekRange({ start, end })}
       />
+
+      {yearOverview ? (
+        <YearOverview
+          trades={filteredTrades}
+          year={overviewYear}
+          activeMonth={calMonth}
+          onOpenMonth={(monthDate) => setCalMonth(monthDate)}
+        />
+      ) : null}
 
       <div className="space-y-4">
         {displayedDayCards.map((day) => {
