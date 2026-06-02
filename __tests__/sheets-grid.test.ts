@@ -41,6 +41,14 @@ describe('sheets grid helpers', () => {
     expect(ensureLockedColumns(legacyColumns)).toEqual(DEFAULT_SHEET_COLUMNS);
   });
 
+  it('re-syncs outdated locked column names from the defaults', () => {
+    const stale = DEFAULT_SHEET_COLUMNS.map((column) =>
+      column.key === 'add_to_sample' ? { ...column, name: 'Add to Sample' } : column,
+    );
+
+    expect(ensureLockedColumns(stale)).toEqual(DEFAULT_SHEET_COLUMNS);
+  });
+
   it('returns columns unchanged when locked defaults are already present', () => {
     const columnsWithCustom = [
       ...DEFAULT_SHEET_COLUMNS,

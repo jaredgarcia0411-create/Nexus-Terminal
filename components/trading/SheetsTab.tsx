@@ -1,6 +1,7 @@
 'use client';
 
-import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties, type Key } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type Key } from 'react';
+import { createPortal } from 'react-dom';
 import { format } from 'date-fns';
 import { motion } from 'motion/react';
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
@@ -80,9 +81,13 @@ function DateCell({ row, column, onRowChange }: RenderCellProps<GridRow>) {
   );
 }
 
+const TOOLTIP_WIDTH = 256; // px — matches the w-64 on the tooltip box
+
 function TextCell({ row, column, onRowChange }: RenderCellProps<GridRow>) {
   const rawValue = String(row[column.key] ?? '');
   const [value, setValue] = useState(() => rawValue);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [tip, setTip] = useState<{ left: number; top: number } | null>(null);
 
   useEffect(() => {
     setValue(rawValue);
@@ -94,20 +99,48 @@ function TextCell({ row, column, onRowChange }: RenderCellProps<GridRow>) {
     }
   };
 
+  // Only show the tooltip when the text is actually clipped by the cell, and
+  // never while the cell is being edited. Clamp to the viewport so the fixed
+  // width box never spills off the right edge.
+  const showTip = () => {
+    const el = inputRef.current;
+    if (!el || el === document.activeElement || el.scrollWidth <= el.clientWidth) return;
+    const rect = el.getBoundingClientRect();
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - TOOLTIP_WIDTH - 8));
+    setTip({ left, top: rect.bottom + 4 });
+  };
+
   return (
-    <input
-      className="h-full w-full border border-transparent bg-transparent px-1 text-sm text-foreground outline-none placeholder:text-muted-foreground hover:border-primary/30 focus:border-primary/40 focus:bg-card"
-      value={value}
-      onChange={(event) => setValue(event.target.value)}
-      onBlur={commit}
-      onKeyDown={(event) => {
-        event.stopPropagation();
-        if (event.key === 'Enter') {
-          commit();
-          event.currentTarget.blur();
-        }
-      }}
-    />
+    <>
+      <input
+        ref={inputRef}
+        className="h-full w-full border border-transparent bg-transparent px-1 text-sm text-foreground outline-none placeholder:text-muted-foreground hover:border-primary/30 focus:border-primary/40 focus:bg-card"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        onBlur={commit}
+        onFocus={() => setTip(null)}
+        onMouseEnter={showTip}
+        onMouseLeave={() => setTip(null)}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === 'Enter') {
+            commit();
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      {tip
+        ? createPortal(
+            <div
+              className="pointer-events-none fixed z-50 w-64 whitespace-pre-wrap break-words rounded-md border border-border bg-popover px-3 py-2 text-sm leading-relaxed text-popover-foreground shadow-md"
+              style={{ left: tip.left, top: tip.top }}
+            >
+              {value}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
 
@@ -146,6 +179,28 @@ function groupSheetLineages(list: SheetListItem[]): SheetLineageGroup[] {
     .sort((a, b) => sheetVersionTime(b.head) - sheetVersionTime(a.head));
 }
 
+// Every column needs an explicit pixel width. Without one, react-data-grid
+// treats the column as flexible (it shares leftover space), so resizing one
+// column makes all the other flexible columns recompute their widths — the
+// "weird inconsistent resize" behavior. Fixed widths mean a drag only moves
+// the neighboring columns, never resizes them.
+function defaultColumnWidth(type: SheetColumnType): number {
+  switch (type) {
+    case 'checkbox':
+    case 'report':
+    case 'chart':
+    case 'action':
+    case 'watchlist':
+      return 90; // icon / single-control columns stay narrow
+    case 'date':
+      return 130;
+    case 'select':
+      return 140;
+    default:
+      return 160; // text, number, url
+  }
+}
+
 function buildColumn(
   column: SheetColumn,
   canEdit: boolean,
@@ -175,7 +230,8 @@ function buildColumn(
   const base: Column<GridRow> = {
     key: column.key,
     name: column.name,
-    width: column.width,
+    width: column.width ?? defaultColumnWidth(column.type),
+    minWidth: 60,
     resizable: true,
     draggable: canManage,
     renderHeaderCell,
@@ -546,7 +602,7 @@ export default function SheetsTab() {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
-      className="flex flex-col gap-3 px-1"
+      className="-mx-5 flex flex-col gap-3"
     >
       <div className="flex flex-wrap items-center justify-between gap-2 px-1">
         <div className="flex min-w-0 items-center gap-2">
@@ -622,6 +678,21 @@ export default function SheetsTab() {
           {visibleList.length === 0 && !sheets.listLoading ? (
             <span className="text-sm text-muted-foreground">No sheets yet.</span>
           ) : null}
+          {canManage && activeSheet ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm('Delete this sheet? This cannot be undone.')) {
+                  void sheets.deleteSheet(activeSheet.id);
+                }
+              }}
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-rose-500/40 text-rose-400 transition-colors hover:bg-rose-500/10"
+              aria-label="Delete sheet"
+              title="Delete sheet"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => {
@@ -639,134 +710,116 @@ export default function SheetsTab() {
 
       <section className="min-w-0 flex-1">
         {!activeSheet ? (
-          <div className="flex h-72 flex-col items-center justify-center rounded-2xl border border-border bg-card text-muted-foreground">
+          <div className="flex h-72 flex-col items-center justify-center text-muted-foreground">
             <FileSpreadsheet className="mb-2 h-6 w-6" />
             <p className="text-sm">
               {sheets.detailLoading ? 'Loading...' : 'Select a sheet or create a new one.'}
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
+          <div className="flex flex-col gap-3 border border-border bg-card px-2 py-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <div className="flex items-baseline gap-2">
-                  <h2 className="text-lg font-semibold text-foreground">{activeSheet.name}</h2>
-                  <span className="text-lg font-semibold text-foreground">
-                    {sheetDisplayDate(activeSheet)}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground">{role}</p>
+              <div className="flex items-baseline gap-2">
+                <h2 className="text-lg font-semibold text-foreground">{activeSheet.name}</h2>
+                <span className="text-lg font-semibold text-foreground">
+                  {sheetDisplayDate(activeSheet)}
+                </span>
+                <span className="text-xs font-medium capitalize text-muted-foreground">{role}</span>
               </div>
 
-              {canManage ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (window.confirm('Delete this sheet? This cannot be undone.')) {
-                      void sheets.deleteSheet(activeSheet.id);
-                    }
-                  }}
-                  className="flex h-8 w-8 items-center justify-center rounded-md border border-rose-500/40 text-rose-400 transition-colors hover:bg-rose-500/10"
-                  title="Delete sheet"
-                  aria-label="Delete sheet"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              ) : null}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {canEditRows ? (
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  onClick={() => void sheets.addRow()}
-                  title="Add row"
-                  aria-label="Add row"
-                  className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
-                >
-                  <Rows3 className="h-4 w-4" />
-                </Button>
-              ) : null}
-
-              {canManage ? (
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  onClick={() => setColumnOpen(true)}
-                  title="Add column"
-                  aria-label="Add column"
-                  className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
-                >
-                  <Columns3 className="h-4 w-4" />
-                </Button>
-              ) : null}
-
-              {canManage && !activeSheet.rootId ? (
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="secondary"
-                  onClick={() => {
-                    if (window.confirm('Save a dated snapshot and clear this sheet for today?')) {
+              <div className="flex flex-wrap items-center gap-2">
+                {canEditRows && selectedRows.size > 0 ? (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    onClick={() => {
+                      void sheets.deleteRows([...selectedRows]);
                       setSelectedRows(new Set());
-                      void sheets.snapshotSheet(activeSheet.id, today);
-                    }
-                  }}
-                  title="Snapshot & reset"
-                  aria-label="Snapshot and reset"
-                  className="bg-accent hover:bg-accent/80"
-                >
-                  <Archive className="h-4 w-4" />
-                </Button>
-              ) : null}
+                    }}
+                    title={`Delete ${selectedRows.size} selected row${selectedRows.size === 1 ? '' : 's'}`}
+                    aria-label={`Delete ${selectedRows.size} selected rows`}
+                    className="border border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                ) : null}
 
-              {canManage ? (
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="secondary"
-                  onClick={() => {
-                    setFormMode('rename');
-                    setFormOpen(true);
-                  }}
-                  title="Rename sheet"
-                  aria-label="Rename sheet"
-                  className="bg-accent hover:bg-accent/80"
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-              ) : null}
+                {canEditRows ? (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    onClick={() => void sheets.addRow()}
+                    title="Add row"
+                    aria-label="Add row"
+                    className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+                  >
+                    <Rows3 className="h-4 w-4" />
+                  </Button>
+                ) : null}
 
-              {canManage ? (
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="secondary"
-                  onClick={() => setShareOpen(true)}
-                  title="Share sheet"
-                  aria-label="Share sheet"
-                  className="bg-accent hover:bg-accent/80"
-                >
-                  <Users className="h-4 w-4" />
-                </Button>
-              ) : null}
+                {canManage ? (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    onClick={() => setColumnOpen(true)}
+                    title="Add column"
+                    aria-label="Add column"
+                    className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+                  >
+                    <Columns3 className="h-4 w-4" />
+                  </Button>
+                ) : null}
 
-              {canEditRows && selectedRows.size > 0 ? (
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  onClick={() => {
-                    void sheets.deleteRows([...selectedRows]);
-                    setSelectedRows(new Set());
-                  }}
-                  title={`Delete ${selectedRows.size} selected row${selectedRows.size === 1 ? '' : 's'}`}
-                  aria-label={`Delete ${selectedRows.size} selected rows`}
-                  className="border border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              ) : null}
+                {canManage && !activeSheet.rootId ? (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="secondary"
+                    onClick={() => {
+                      if (window.confirm('Save a dated snapshot and clear this sheet for today?')) {
+                        setSelectedRows(new Set());
+                        void sheets.snapshotSheet(activeSheet.id, today);
+                      }
+                    }}
+                    title="Snapshot & reset"
+                    aria-label="Snapshot and reset"
+                    className="bg-accent hover:bg-accent/80"
+                  >
+                    <Archive className="h-4 w-4" />
+                  </Button>
+                ) : null}
+
+                {canManage ? (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setFormMode('rename');
+                      setFormOpen(true);
+                    }}
+                    title="Rename sheet"
+                    aria-label="Rename sheet"
+                    className="bg-accent hover:bg-accent/80"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                ) : null}
+
+                {canManage ? (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="secondary"
+                    onClick={() => setShareOpen(true)}
+                    title="Share sheet"
+                    aria-label="Share sheet"
+                    className="bg-accent hover:bg-accent/80"
+                  >
+                    <Users className="h-4 w-4" />
+                  </Button>
+                ) : null}
+              </div>
             </div>
 
             {canEditRows ? (

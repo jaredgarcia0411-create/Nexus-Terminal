@@ -15,16 +15,17 @@ import type { Trade } from '@/lib/types';
 
 type SubTabKey = 'journal' | 'trades' | 'performance' | 'playbook' | 'career-pnl' | 'archive' | 'sheets';
 
-// Order matches the spec: Journal first, then Trades (formerly the standalone
-// "Management"/Trades tab), Performance, Playbook, Career P/L, Archive, Sheets.
+// Sheets is the landing tab, then Calendar (internally keyed 'journal'), Trades
+// (formerly the standalone "Management"/Trades tab), Performance, Playbook,
+// Career P/L, Archive.
 const SUB_TABS: Array<{ key: SubTabKey; label: string }> = [
-  { key: 'journal', label: 'Journal' },
+  { key: 'sheets', label: 'Sheets' },
+  { key: 'journal', label: 'Calendar' },
   { key: 'trades', label: 'Trades' },
   { key: 'performance', label: 'Performance' },
   { key: 'playbook', label: 'Playbook' },
   { key: 'career-pnl', label: 'Career P/L' },
   { key: 'archive', label: 'Archive' },
-  { key: 'sheets', label: 'Sheets' },
 ];
 
 interface ManagementTabProps {
@@ -62,9 +63,9 @@ interface ManagementTabProps {
 }
 
 export default function ManagementTab(props: ManagementTabProps) {
-  // Default to Journal per the spec; sub-tab state lives here (not lifted) so
+  // Default to Sheets; sub-tab state lives here (not lifted) so
   // app/page.tsx stays simple.
-  const [activeSubTab, setActiveSubTab] = useState<SubTabKey>('journal');
+  const [activeSubTab, setActiveSubTab] = useState<SubTabKey>('sheets');
 
   return (
     <motion.div
