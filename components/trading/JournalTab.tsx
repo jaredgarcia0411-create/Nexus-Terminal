@@ -11,7 +11,7 @@ import WeeklyReviewSheet from '@/components/trading/WeeklyReviewSheet';
 import JournalTradeChart from '@/components/trading/JournalTradeChart';
 import YearOverview from '@/components/trading/YearOverview';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { formatCurrency, getPnLColor } from '@/lib/ui-trade-utils';
+import { formatCurrency } from '@/lib/ui-trade-utils';
 import { bucketKey, isCrossDayTrade } from '@/lib/journal-aggregates';
 import {
   TRADE_CHART_TIMEFRAME_CONFIG,
@@ -341,7 +341,7 @@ export default function JournalTab({
                 </button>
 
                 <div className="flex items-center justify-end">
-                  <p className={`text-base font-semibold ${getPnLColor(day.dailyNetPnl)}`}>
+                  <p className={`text-base font-medium ${day.dailyNetPnl > 0 ? 'text-emerald-400' : day.dailyNetPnl < 0 ? 'text-rose-400' : 'text-foreground'}`}>
                     {formatCurrency(day.dailyNetPnl)}
                   </p>
                 </div>

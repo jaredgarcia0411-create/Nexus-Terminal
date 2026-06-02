@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react';
 import { Trade } from '@/lib/types';
 import { bucketKey, isCrossDayTrade } from '@/lib/journal-aggregates';
-import { formatCurrency, formatR, getPnLColor } from '@/lib/ui-trade-utils';
+import { formatCurrency, formatR } from '@/lib/ui-trade-utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { 
   addDays,
@@ -280,7 +280,7 @@ export default function TradingCalendar({
 
                     {stats && (stats.pnl !== 0 || stats.r !== 0) && (
                       <div className="mt-auto flex flex-col gap-0.5">
-                        <div className={`${isMobile ? 'text-[13px]' : 'text-base'} font-semibold ${getPnLColor(stats.pnl)}`}>
+                        <div className={`${isMobile ? 'text-[13px]' : 'text-[15px]'} font-medium ${stats.pnl > 0 ? 'text-emerald-400' : stats.pnl < 0 ? 'text-rose-400' : 'text-foreground'}`}>
                           {stats.pnl >= 0 ? '+' : ''}{formatCurrency(stats.pnl)}
                         </div>
                         <div className={`${isMobile ? 'text-[12px]' : 'text-sm'} font-medium opacity-60 ${stats.r > 0 ? 'text-emerald-400' : stats.r < 0 ? 'text-rose-400' : 'text-foreground'}`}>
@@ -307,7 +307,7 @@ export default function TradingCalendar({
                   }}
                 >
                   <div className="flex h-full flex-col items-center justify-center gap-1">
-                    <div className={`text-base font-semibold ${getPnLColor(week.weeklyPnl)}`}>
+                    <div className={`text-[15px] font-medium ${week.weeklyPnl > 0 ? 'text-emerald-400' : week.weeklyPnl < 0 ? 'text-rose-400' : 'text-foreground'}`}>
                       {week.weeklyPnl >= 0 ? '+' : ''}{formatCurrency(week.weeklyPnl)}
                     </div>
                     <div className={`text-sm font-medium opacity-70 ${week.weeklyR > 0 ? 'text-emerald-400' : week.weeklyR < 0 ? 'text-rose-400' : 'text-foreground'}`}>
