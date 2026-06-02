@@ -7,117 +7,6 @@ Historical completed sections (Sprints 1-15, Tier 1 Cleanup, Chart Drawings, Mul
 
 ---
 
-## Active Spec - Filing headline parser (Research Filings) v1
-
-Goal: replace generic filing headlines (`10-Q filing`, `Current report`) on Research > Filings with deterministic, trader-readable labels built from SEC metadata we already fetch. Metadata-only. No LLM, no filing-body fetch, no DB migration, no type changes.
-
-Status: completed 2026-06-02 in-session. Implemented parser in `lib/sec/filing-summary.ts`, wired `lib/sec/submissions.ts`, and added runnable coverage in `__tests__/sec-filing-summary.test.ts` because `vitest.config.ts` only includes `__tests__/**/*.test.{ts,tsx}`. Validation passed: `npm run lint`, `npx tsc --noEmit`, `npm test` (106 files / 777 tests). No `services/`, migration, DB, normalizer, or UI changes.
-
-Background (already true, do not change): Research Filings are sourced first-party from SEC via `lib/sec/submissions.ts` → `getResearchFilings()`, registered as the `sec-filings` endpoint. `SecFiling` already carries `form_type`, `items` (8-K item codes), and `primary_doc_description`. Today `submissions.ts:149` sets `headline = primaryDocDescription || "${formType} filing"` and discards `items`. The normalizer prefers `headline` first (`snapshot-normalizer.ts:271`), so fixing the headline at the source flows to the UI with no normalizer edits. The UI shows `formType` in its own column (`_shared.tsx:72`), so the headline must NOT repeat the form code.
-
-### Step 1 — Create `lib/sec/filing-summary.ts`
-
-Export one pure function. No imports, no side effects.
-
-```ts
-export interface FilingSummaryInput {
-  formType: string;
-  items: string | null;
-  primaryDocDescription: string | null;
-}
-
-export function summarizeFilingMetadata(input: FilingSummaryInput): string
-```
-
-Logic, in order:
-
-1. `const form = input.formType.trim().toUpperCase();`
-2. `const isAmended = form.endsWith('/A');`
-3. `const base = isAmended ? form.slice(0, -2) : form;` (strip the `/A` suffix for matching)
-4. **8-K branch** — if `base === '8-K'`:
-   - Extract codes: `const codes = (input.items ?? '').match(/\d\.\d{2}/g) ?? [];`
-   - If more than one code AND `9.01` is present, drop `9.01` (it's an exhibit companion): filter it out.
-   - Map remaining codes through `EIGHT_K_ITEMS` (below), drop unrecognized, take the first **two**, join with `', '`.
-   - `core` = that joined string if non-empty, else `'current report'`.
-5. **Other forms** — else, `core = baseFormLabel(base)` (helper below). If it returns `null` (unknown form), return the existing fallback unchanged: `return input.primaryDocDescription?.trim() || \`${input.formType} filing\`;`
-6. Apply amended prefix: `return isAmended ? \`amended ${core}\` : core;`
-
-`EIGHT_K_ITEMS` (flat `Record<string,string>`):
-```
-1.01 material definitive agreement
-1.02 termination of material agreement
-2.01 completion of acquisition or disposition
-2.02 results of operations
-2.03 creation of a material financial obligation
-3.01 exchange listing / delisting notice
-3.02 unregistered sale of equity
-5.02 director/officer change
-5.03 charter/bylaw amendment
-5.07 shareholder vote results
-7.01 Regulation FD disclosure
-8.01 other event
-9.01 financial statements and exhibits
-```
-
-`baseFormLabel(form: string): string | null` — `form` is already uppercased with `/A` stripped. Use a simple if/return chain (match the project's plain style):
-```
-10-Q                       -> quarterly report
-10-K                       -> annual report
-20-F or 40-F               -> annual report (foreign issuer)
-6-K                        -> foreign issuer report
-S-1|S-3|S-4|S-8|S-11       -> registration statement
-F-1|F-3|F-4                -> registration statement
-424[AB]\d?                 -> prospectus supplement
-425                        -> merger/business-combination communication
-DEF...14[AC]               -> proxy statement
-PRE...14[AC]               -> preliminary proxy statement
-SC 13G | SCHEDULE 13G      -> beneficial ownership report
-SC 13D | SCHEDULE 13D      -> beneficial ownership report
-3 | 4 | 5                  -> insider ownership report
-144                        -> proposed sale of securities
-(anything else)            -> null
-```
-For the regex forms use anchored tests, e.g. `/^S-(1|3|4|8|11)$/`, `/^F-(1|3|4)$/`, `/^424[AB]\d?$/`, `/^(SC ?)?13G$/`, `/^SCHEDULE ?13G$/` (and the 13D variants), proxies `form.startsWith('DEF') && /14[AC]/.test(form)` / `form.startsWith('PRE') && /14[AC]/.test(form)`.
-
-### Step 2 — Wire into `lib/sec/submissions.ts`
-
-1. Add import at top: `import { summarizeFilingMetadata } from '@/lib/sec/filing-summary';`
-2. In `zipFilingColumns`, replace line 149:
-   ```ts
-   const headline = description.trim() || `${formType} filing`;
-   ```
-   with:
-   ```ts
-   const headline = summarizeFilingMetadata({
-     formType,
-     items,
-     primaryDocDescription: description.trim() || null,
-   });
-   ```
-   (`items` and `description` are already in scope above this line.)
-3. Update the `SecFiling.headline` JSDoc comment (line 28) to: `// deterministic parsed label from form type + 8-K items; falls back to primary_doc_description or "${form_type} filing"`.
-
-Do not touch the normalizer or the UI. `primary_doc_description` and `items` remain stored intact for debugging.
-
-### Step 3 — Tests `lib/sec/filing-summary.test.ts` (vitest)
-
-Cover:
-- `10-Q` → `quarterly report`; `10-Q/A` → `amended quarterly report`.
-- `8-K` items `"5.02"` → `director/officer change`; items `"2.02,9.01"` → `results of operations` (9.01 dropped as companion); items `"9.01"` alone → `financial statements and exhibits`; items `null`/`""` → `current report`; three+ items → only first two labels.
-- `8-K/A` items `"5.03"` → `amended charter/bylaw amendment`.
-- `S-1` → `registration statement`; `S-1/A` → `amended registration statement`; `424B5` → `prospectus supplement`; `SC 13G/A` → `amended beneficial ownership report`.
-- Unknown form `"NT 10-Q"` with `primaryDocDescription "Notification of late filing"` → returns that description; unknown form with null description → `NT 10-Q filing`.
-
-### Validation
-`npm run lint` · `npx tsc --noEmit` · `npm test`. (`lib/sec/` is not under `services/`, so `typecheck:services` is not required.) No migration, no `db:migrate`.
-
-### Acceptance
-- Common forms (10-Q/K, 8-K with items, S-1/S-3, 424B*, proxies, ownership) render a readable headline; the form code is not duplicated in the headline.
-- Unknown forms behave exactly as today.
-- No LLM call, no body fetch, no schema change.
-
----
-
 ## Recent Completed Context
 
 - **Sprint 14 - Daily Review Tag Centralization:** trade tags are now the shared Watchlist/Daily Trades tagging model; added tag rename/merge management.
@@ -128,6 +17,17 @@ Cover:
 ---
 
 ## Recently Completed
+
+### Filing headline parser (Research Filings)
+
+Status: completed 2026-06-02 (commit `95ab4c7`); reviewed against spec.
+
+Outcome:
+- New pure `summarizeFilingMetadata()` in `lib/sec/filing-summary.ts`: form-type taxonomy + 8-K item map (drops `9.01` exhibit companion, keeps first two items), `/A` → "amended"; unknown forms keep the old `primaryDocDescription || "${formType} filing"` fallback.
+- Wired into `zipFilingColumns` in `lib/sec/submissions.ts` so first-party SEC headlines flow to Research > Filings with no normalizer/UI change; `items` + `primary_doc_description` stay intact.
+- Tests in `__tests__/sec-filing-summary.test.ts` (path chosen so vitest's `__tests__/**` glob runs them); `sec-submissions.test.ts` expectations updated.
+
+Validation: `npm run lint`, `npx tsc --noEmit`, `npm test` (106 files / 777 tests) all green. No `services`/API/DB/migration.
 
 ### Calendar: Year Overview + day $/R sizing
 

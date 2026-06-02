@@ -111,82 +111,12 @@ From the original phased plan; none are active work:
 
 ---
 
-## Filing headline parser for Research Filings (parked 2026-05-25)
+## Filing headline parser for Research Filings — metadata parser shipped 2026-06-02
 
-### The idea
-Improve the Research > Filings headline column so every filing has a compact one-line explanation instead of falling back to generic SEC metadata like `10-Q filing` or `Form 425 - Prospectuses and communications, business combinations`.
+**Shipped (v1, commit `95ab4c7`):** the deterministic, metadata-only headline parser. `summarizeFilingMetadata()` in `lib/sec/filing-summary.ts` maps form-type + 8-K item codes into compact, trader-readable headlines (`quarterly report`, `director/officer change`, `amended registration statement`), with `/A` → "amended" and an unknown-form fallback to `primaryDocDescription || "${formType} filing"`. It keeps up to two business-relevant 8-K items and drops `9.01` when it's only an exhibit companion. Wired into `zipFilingColumns` in `lib/sec/submissions.ts`; flows to Research > Filings through the existing normalizer with no UI/type/DB change. Tests in `__tests__/sec-filing-summary.test.ts`. Full taxonomy + build record live in git history and `HANDOFF.md` Recently Completed.
 
-Target shape:
-- `8-K: Item 5.03 - charter/bylaw amendment or fiscal year change`
-- `S-1/A: amended registration statement`
-- `424B5: prospectus supplement`
-- `10-Q: quarterly report`
-- `SC 13G/A: amended beneficial ownership report`
-
-This is intentionally not the same as a full AI filing summary. It is a deterministic, trader-readable headline built from SEC metadata first.
-
-### LLM answer
-To produce genuinely semantic headlines like "Auddia announces 1-for-77 reverse stock split" or "Auddia enters exchange agreement to retire Series C preferred stock" for arbitrary filings, we usually need one of:
-
-1. A source headline already present in the filing payload or primary document title.
-2. A targeted parser for that specific form/event pattern.
-3. An LLM call over selected filing text.
-
-The parser can cover generic one-line labels and many common small-cap filing patterns, but it should not pretend to understand every filing body. For arbitrary event-specific prose, use a cached LLM summary lane later.
-
-### Current repo seams
-- `lib/sec/submissions.ts` builds first-party SEC filing rows. It currently sets `headline` to `primaryDocDescription` or `${formType} filing`.
-- `lib/askedgar/snapshot-normalizer.ts` maps SEC filing rows into `ResearchSnapshotFiling.title`.
-- `components/trading/research-report-sections/_shared.tsx` renders `filing.title` in the Filings table headline column.
-- `lib/sec/filing-body.ts` can fetch and cache primary-document text by accession number, but the Filings tab currently does not use it.
-- `sec_filings_raw` stores metadata separately from `sec_filing_body_cache`, which is the right split for parser-first work.
-
-### Parser-first implementation strategy
-1. Add a helper such as `lib/sec/filing-summary.ts`.
-2. Export a pure function like:
-   ```ts
-   summarizeFilingMetadata({
-     formType,
-     items,
-     primaryDocDescription,
-     headline,
-   }): string
-   ```
-3. Keep it metadata-only for v1. Do not fetch filing bodies in the Filings tab path.
-4. Add an optional `summary` or `displayHeadline` field to `SecFiling` and `ResearchSnapshotFiling`, leaving `title` available as the source/raw headline.
-5. In `lib/sec/submissions.ts`, compute the parser headline when zipping SEC filing columns.
-6. In `lib/askedgar/snapshot-normalizer.ts`, prefer `summary` / `displayHeadline`, then source `headline`, then `${formType} filing`.
-7. In the UI, render the parser headline in the existing Headline column. Consider preserving the original SEC title in a tooltip or secondary muted text later.
-
-### Parser rules to start with
-Use a small explicit taxonomy. Prefer boring correctness over clever inference.
-
-| Source | Rule |
-|---|---|
-| `10-Q`, `10-Q/A` | quarterly report / amended quarterly report |
-| `10-K`, `10-K/A` | annual report / amended annual report |
-| `8-K`, `8-K/A` + `items` | current report with item labels |
-| `6-K`, `6-K/A` | foreign issuer current report |
-| `S-1`, `S-1/A`, `S-3`, `S-3/A`, `F-1`, `F-3` | registration statement, amended when `/A` |
-| `424B*` | prospectus supplement |
-| `425` | merger/business-combination communication |
-| `DEF 14A`, `PRE 14A` | proxy statement / preliminary proxy statement |
-| `SC 13G`, `SC 13D`, amendments | beneficial ownership report |
-| `3`, `4`, `5` | insider ownership / transaction report |
-| `144` | proposed sale of securities |
-
-For 8-K items, map common item codes:
-- `1.01` - material definitive agreement
-- `2.02` - results of operations / financial condition
-- `3.01` - exchange listing notice
-- `3.02` - unregistered sale of equity securities
-- `5.02` - director/officer change or compensation arrangement
-- `5.03` - charter/bylaw amendment or fiscal-year change
-- `7.01` - Regulation FD disclosure
-- `8.01` - other event
-- `9.01` - financial statements and exhibits
-
-If multiple 8-K items are present, include up to two business-relevant items and drop `9.01` when it is only an exhibit companion to another item.
+### Deferred next phases (not built)
+Two extensions remain parked — each needs filing-body fetching and/or LLM cost accounting, so they were intentionally kept out of v1.
 
 ### Body-parser extension
 After the metadata parser is stable, add lazy body parsing only for high-value candidates:
@@ -212,21 +142,47 @@ Add LLM summaries only after parser output is useful and cached:
 5. Fall back to parser output on timeout, missing API key, or budget exhaustion.
 6. Put route-level rate limiting in place before exposing batch LLM summaries.
 
-### Acceptance criteria for parser v1
-- No LLM API call is required.
-- No filing body fetch is required in the default Filings tab render path.
-- Existing SEC source fields remain available for debugging and future parser work.
-- The headline column no longer shows unhelpful fallbacks for common forms.
-- Unit tests cover common form types, 8-K item combinations, amendments, unknown forms, and missing metadata.
+### Triggers to revisit the deferred phases
+- The Filings tab becomes a daily workflow surface and generic headlines slow review.
+- A specific event type (reverse splits, offerings) is worth a targeted body parser.
+- We're ready to add cached LLM summaries with rate limits and cost accounting.
 
-### Why it is parked
-This is valuable UI polish, but it should be a focused filings sprint. It touches the SEC data contract, normalized Research snapshot shape, and Filings UI display. It should not be bundled with unrelated cleanup or rate-limiting work.
+---
 
-### Triggers to revisit
-- The Filings tab becomes a daily workflow surface.
-- Generic SEC headlines are slowing down review.
-- We need to reduce AskEdgar headline reliance without losing readability.
-- We are ready to add cached LLM summaries with rate limits and cost accounting.
+## News feed replacement — external press-release feed (parked 2026-06-02)
+
+### The idea
+Research > News currently shows AskEdgar `/v1/news` rows: an AI-generated *summary* of each press release (not the raw text), titled with the PR's first sentence, where the only per-row link points back to AskEdgar's own site (`app.askedgar.io`), not the source. No real publisher name is available. Goal: get full, real press releases — ideally including wire-only PRs — into the app.
+
+### What we confirmed (DXST, live data, 2026-06-02)
+- **AskEdgar news rows** carry `url` (not `document_url`) = `app.askedgar.io/news/...`; `body` is an LLM summary; `source` is empty. Low ceiling — a link to AskEdgar's summary page, not the source PR.
+- **SEC 8-K/6-K exhibit-99.1** (already pulled via the `sec-filings` endpoint) **is the full, verbatim press release** — free, first-party, no copyright issue. But it only covers *material* PRs that get filed; wire-only PRs (partnerships, product news) never appear.
+- The gap — wire-only PRs not filed with the SEC — is the real reason to consider a paid feed.
+
+### Done now (cheap win, shipped 2026-06-02)
+Fixed the HTML-entity bug: `&#34;` etc. now decode to real characters in news headlines/summaries (`decodeHtmlEntities` in `lib/askedgar-utils.ts`, applied in the snapshot normalizer for news title + summary and registration headlines). This was the only worthwhile "fix what we have" change — the rest of the news path has a hard ceiling set by AskEdgar's payload.
+
+### Paid options (researched 2026-06-02)
+| Service | List price | Full text? | Wire-only PRs? | Notes |
+|---|---|---|---|---|
+| EODHD news | $19.99/mo *(personal tier)* | yes (`content` + source `link`) | yes | Mixed with market-mover noise; filterable |
+| FMP press-releases | $29/mo | yes, by symbol | yes | PR-only endpoint, no noise; verify small-cap coverage |
+| Benzinga | enterprise/custom | yes (licensed) | — | Overkill |
+
+**EODHD live test (DXST) verdict:** genuine value is full verbatim GlobeNewswire PRs — offering/dilution PRs, earnings, reverse split — with the real source link, plus sentiment/tags, going back months. But ~half the payload is market-mover noise (Yahoo/AP/MT-Newswires "most active" dumps, some paywall-truncated). Cleanly filterable: keep items where `link` is a wire domain (globenewswire/accesswire/prnewswire/businesswire) OR `symbols` has just the one ticker.
+
+### Operational answers (EODHD)
+- **Caching:** allowed (store during active subscription; delete within 1 month of cancel). Mirror the existing `askedgar_cache` pattern — DB-backed, per-ticker, ~15-min TTL, shared across users.
+- **Rate limits:** 100k API calls/day + 1k req/min; a news request ≈ 10 calls. With a 15-min cache you'd use a fraction of the quota even across 100 tickers. Not a realistic risk.
+- **Refresh:** intraday, 15–60 min delay (not once-a-day). Fine for check-throughout-the-day use; not for trading the headline in the first seconds.
+
+### Why it's parked — the blocker
+**License tier.** EODHD's $19.99 plan is a Non-Professional/Personal license that prohibits *displaying data to others*. This app serves multiple coworkers, which pushes it into a **Commercial license — ~$400/mo**, almost certainly the same story for FMP/Benzinga. At that price the squeeze isn't worth it for a 15–60 min feed we don't trade on. Jared is emailing EODHD to confirm the exact tier/price for "internal tool, ~N named users, not resold."
+
+### Triggers to revisit / decision
+- EODHD (or FMP) confirms an acceptable internal-use license price → build the paid feed.
+- If paid stays ~$400/mo: fall back to the **free SEC-exhibit path** — render the already-pulled 8-K/6-K exhibit-99.1 as full-text press releases. Covers filed PRs verbatim for $0; accepts the wire-only gap.
+- Build approach when greenlit: cache table (mirror `askedgar_cache`) → fetch → wire-domain/single-ticker filter → News UI. Prototype in a git worktree first.
 
 ---
 

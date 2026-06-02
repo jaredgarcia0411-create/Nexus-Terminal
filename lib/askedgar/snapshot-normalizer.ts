@@ -1,4 +1,4 @@
-import { getField, toNumberValue, toRecord } from '@/lib/askedgar-utils';
+import { decodeHtmlEntities, getField, toNumberValue, toRecord } from '@/lib/askedgar-utils';
 import { bucketForFormType } from '@/lib/filings-bucket';
 import type {
   ResearchSnapshotFull,
@@ -110,12 +110,11 @@ function normalizeHeadline(row: Record<string, unknown>, fallback: string): stri
   // in `summary`, often with the real headline wrapped in *asterisks*. Try the
   // bolded text first, then the trimmed summary itself, then the fallback.
   const direct = getStringField(row, ['headline', 'title']);
-  if (direct) return direct;
+  if (direct) return decodeHtmlEntities(direct);
   const summary = getStringField(row, ['summary', 'body']);
   if (summary) {
     const bolded = summary.match(/\*([^*]+)\*/);
-    if (bolded) return bolded[1].trim();
-    return summary.trim();
+    return decodeHtmlEntities((bolded ? bolded[1] : summary).trim());
   }
   return fallback;
 }
@@ -236,7 +235,7 @@ export function normalizeAskEdgarResponse(
     .filter((row) => NEWS_FORM_TYPES.has((getStringField(row, ['form_type', 'formType']) ?? 'news').toLowerCase()))
     .map((row, index) => ({
       title: normalizeHeadline(row, `News item ${index + 1}`),
-      summary: getStringField(row, ['body', 'summary', 'details']) ?? '',
+      summary: decodeHtmlEntities(getStringField(row, ['body', 'summary', 'details']) ?? ''),
       filedAt: getStringField(row, ['filedAt', 'filed_at', 'date']),
       formType: getStringField(row, ['formType', 'form_type', 'form', 'source']) ?? 'News',
       isNews: true,

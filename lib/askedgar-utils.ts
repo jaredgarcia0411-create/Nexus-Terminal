@@ -37,6 +37,22 @@ export function getField(record: Record<string, unknown>, keys: string[]): unkno
   return null;
 }
 
+// Decodes HTML entities (named + numeric) so upstream text renders as real
+// characters. AskEdgar news rows arrive with raw entities like `&#34;` (a
+// double quote) embedded in the press-release headline/body. `&amp;` is
+// replaced last so we never double-decode (e.g. `&amp;lt;` stays `&lt;`).
+export function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(parseInt(dec, 10)))
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, '\'')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&');
+}
+
 export function formatNumber(value: unknown): string {
   const numeric = toNumberValue(value);
   return numeric === null ? '--' : numeric.toLocaleString();
