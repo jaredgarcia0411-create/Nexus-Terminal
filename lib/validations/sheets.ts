@@ -68,6 +68,10 @@ export const appendResearchRowSchema = z.object({
   reportId: z.string().min(1).max(128).optional(),
 });
 
+export const reorderRowsSchema = z.object({
+  rowIds: z.array(z.string().min(1).max(64)).min(1).max(2000),
+});
+
 export const memberAddSchema = z.object({
   email: z.string().trim().toLowerCase().email('a valid email is required').max(200),
   role: z.enum(['editor', 'viewer']).default('editor'),
@@ -83,5 +87,6 @@ export type SheetDuplicateBody = z.infer<typeof sheetDuplicateSchema>;
 export type RowCreateBody = z.infer<typeof rowCreateSchema>;
 export type RowPatchBody = z.infer<typeof rowPatchSchema>;
 export type AppendResearchRowBody = z.infer<typeof appendResearchRowSchema>;
+export type ReorderRowsBody = z.infer<typeof reorderRowsSchema>;
 export type MemberAddBody = z.infer<typeof memberAddSchema>;
 export type MemberRoleBody = z.infer<typeof memberRoleSchema>;

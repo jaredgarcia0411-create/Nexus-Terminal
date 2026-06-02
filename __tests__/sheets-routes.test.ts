@@ -27,6 +27,7 @@ import { POST as appendResearchRow } from '@/app/api/sheets/[id]/append-research
 import { POST as duplicateSheet } from '@/app/api/sheets/[id]/duplicate/route';
 import { POST as postSheetRow } from '@/app/api/sheets/[id]/rows/route';
 import { PATCH as patchSheetRow } from '@/app/api/sheets/[id]/rows/[rowId]/route';
+import { PATCH as reorderRows } from '@/app/api/sheets/[id]/rows/reorder/route';
 import { GET as getSheets, POST as postSheet } from '@/app/api/sheets/route';
 import { DEFAULT_SHEET_COLUMNS } from '@/lib/sheets/columns';
 
@@ -395,6 +396,56 @@ describe('sheets routes', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ticker: 'AAPL', date: '2026-06-01' }),
+    }), {
+      params: Promise.resolve({ id: 'missing' }),
+    }));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Sheet not found' });
+  });
+
+  it('PATCH /api/sheets/[id]/rows/reorder reorders rows for editors', async () => {
+    getSheetRoleMock.mockResolvedValue('editor');
+    const db = createDbMock({});
+    getDbMock.mockReturnValue(db);
+
+    const response = ensureResponse(await reorderRows(new Request('http://localhost/api/sheets/sheet-1/rows/reorder', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rowIds: ['row-2', 'row-1'] }),
+    }), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(db.update).toHaveBeenCalledTimes(2);
+  });
+
+  it('PATCH /api/sheets/[id]/rows/reorder returns 403 for viewers', async () => {
+    getSheetRoleMock.mockResolvedValue('viewer');
+    getDbMock.mockReturnValue(createDbMock({}));
+
+    const response = ensureResponse(await reorderRows(new Request('http://localhost/api/sheets/sheet-1/rows/reorder', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rowIds: ['row-1'] }),
+    }), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'Forbidden' });
+  });
+
+  it('PATCH /api/sheets/[id]/rows/reorder returns 404 for unknown sheets', async () => {
+    getSheetRoleMock.mockResolvedValue(null);
+    getDbMock.mockReturnValue(createDbMock({}));
+
+    const response = ensureResponse(await reorderRows(new Request('http://localhost/api/sheets/missing/rows/reorder', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rowIds: ['row-1'] }),
     }), {
       params: Promise.resolve({ id: 'missing' }),
     }));

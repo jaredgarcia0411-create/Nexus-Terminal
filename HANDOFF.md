@@ -1,148 +1,317 @@
 # Nexus Terminal - HANDOFF.md
 
-> Updated: 2026-06-01
+> Updated: 2026-06-02
 > Purpose: active execution context for Codex. Older implementation detail lives in git history, `specs/`, and durable docs such as `docs/repo-cleanup.md`.
 
 Historical completed sections (Sprints 1-15, Tier 1 Cleanup, Chart Drawings, Multi-Day Charts, CSV/Cover-Close flows, Workflow Maintenance) were removed to keep this file focused. Use git history and `docs/repo-cleanup.md` for archived implementation detail.
 
 ---
 
-## Active Spec — Sheets Sprint 4: Research Notebook Core
+## Active Spec — Sheets Sprint 5: Reorder Rows/Columns + Delete Columns
 
-Status: implemented 2026-06-01. Validation passed: `npm run lint`, `npx tsc --noEmit`, `npm test` (751 passed), and `npm run workflow:audit`. Manual authenticated smoke remains a Jared post-merge task per the acceptance criteria.
+Status: implemented 2026-06-02. Validation passed: `npm run lint`, `npx tsc --noEmit`, `npm test` (756 passed), and `npm run workflow:audit`. Manual authenticated smoke remains a Jared post-merge task per the acceptance criteria.
 
-Goal: make the three locked default columns (Research Report, Chart, Add to Sample) actually do something, and let the Research page push a ticker into a sheet. This is the feature's actual value prop — those cells are inert placeholders today (`components/trading/SheetsTab.tsx:81` returns the bare column for `report`/`chart`/`action`).
+Goal: let users drag-reorder rows and columns in a sheet, and delete user-added columns. Three capabilities:
+1. **Row reorder** — drag a row by a handle; persists to `sheet_rows.position`. (rows are editor+owner)
+2. **Column reorder** — drag a column header; persists into the `columns` jsonb. (owner-only)
+3. **Column delete** — remove a *user-added* (non-locked) column via an × on header hover. (owner-only)
 
-Out of scope this sprint (Sprint 5+): templates / "start today's sheet", CSV export, archive/unarchive UI, undo/redo, polling/SSE invalidation, drag-reorder, self-leave/ownership-transfer, invite notifications.
+Locked decisions (from scoping):
+- Rows use **@dnd-kit** (new dep) — it's the pattern react-data-grid v7's own row-reorder example uses, and avoids hand-rolling HTML5 drag math. Row drag is via a dedicated **drag-handle column** (not whole-row drag), because our cells are always-visible inputs and whole-row listeners would fight text selection.
+- Column reorder is **native** to rdg (`draggable` per column + `onColumnsReorder`); persistence reuses the existing owner-only `PATCH /api/sheets/[id]` via `useSheets.updateColumns`. No new route for columns.
+- Column delete drops only the column definition (reuses `updateColumns`). **Orphaned cell values stay** in each row's `values` jsonb — they're ignored by the grid and dropped naturally on the next row save. No bulk row scrub.
+- Column reorder/delete are **owner-only** because `PATCH /api/sheets/[id]` is owner-only (`app/api/sheets/[id]/route.ts:63`); this matches today's owner-only "Column" button.
+- **No migration** — `sheet_rows.position` already exists (`lib/db/schema.ts:671`).
 
-Locked decisions:
-- The cells reuse the existing watchlist viewers. `react-data-grid` rows are fixed-height, so open a **modal dialog** on click rather than expanding the row inline.
-- The chart needs **no stored data** — it derives from the row's own `ticker` + `date` cell values. The report cell uses the stored `research_report` value (a `research_reports.id` string). Add-to-Sample stores nothing.
-- Import appends one row with `values = { ticker, date, research_report? }`. `reportId` is **optional** here (unlike the watchlist button, which requires it — a sheet row is still useful with just ticker/date/chart). Dedupe by `(ticker, date)` within the sheet.
-- The three cells work for **viewers too** (read-only viewing of a report/chart is fine; Add-to-Sample creates a sample set the acting user owns). Only text/select/checkbox *editing* stays gated by `canEditRows`.
-- **No migration this sprint** — no schema change, so no `db:migrate` step.
+### Part A — Install dependency
 
-### Part A — Interactive grid cells (`components/trading/SheetsTab.tsx`)
+A1. From repo root: `npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/modifiers @dnd-kit/utilities`. (Do NOT touch/delete `package-lock.json` manually — `npm install` updates it.)
 
-A1. Add imports:
-- `import WatchlistReportInline from '@/components/trading/WatchlistReportInline';`
-- `import WatchlistTickerChart from '@/components/trading/WatchlistTickerChart';`
-- `import WatchlistSavePicker from '@/components/trading/WatchlistSavePicker';`
-- From `@/components/ui/dialog`: `Dialog, DialogContent, DialogHeader, DialogTitle`.
-- Add `FileText, LineChart` to the existing `lucide-react` import (line 5; `Plus` is already imported).
-- `import type { SampleSetRow } from '@/lib/sample-set-csv';`
+### Part B — Row reorder route + validation + hook
 
-A2. Define a cell-actions type above `buildColumn`:
+B1. Add to `lib/validations/sheets.ts` (next to `appendResearchRowSchema`):
 ```ts
-type CellActions = {
-  openReport: (reportId: string) => void;
-  openChart: (ticker: string, date: string) => void;
-  addToSample: (ticker: string, date: string) => void;
-};
+export const reorderRowsSchema = z.object({
+  rowIds: z.array(z.string().min(1).max(64)).min(1).max(2000),
+});
+```
+And export its type alongside the others: `export type ReorderRowsBody = z.infer<typeof reorderRowsSchema>;`
+
+B2. New file `app/api/sheets/[id]/rows/reorder/route.ts` (static `reorder` segment sits beside the existing `[rowId]` dynamic segment — Next.js matches the static route first, no conflict). Mirror the auth/role shape of `app/api/sheets/[id]/rows/[rowId]/route.ts`:
+```ts
+import { and, eq } from 'drizzle-orm';
+
+import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
+import { getDb } from '@/lib/db';
+import { sheetRows } from '@/lib/db/schema';
+import { getSheetRole } from '@/lib/sheets/access';
+import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
+import { reorderRowsSchema } from '@/lib/validations/sheets';
+
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    const authState = await requireUser();
+    if ('error' in authState) return authState.error;
+
+    const bodyState = await parseAndValidate(request, reorderRowsSchema);
+    if (bodyState.error) return bodyState.error;
+    const { rowIds } = bodyState.data;
+
+    const db = getDb();
+    if (!db) return dbUnavailable();
+    await ensureUser(db, authState.user);
+
+    const { id } = await context.params;
+    const role = await getSheetRole(db, id, authState.user.id);
+    if (!role) return Response.json({ error: 'Sheet not found' }, { status: 404 });
+    if (role === 'viewer') return Response.json({ error: 'Forbidden' }, { status: 403 });
+
+    // Set position = index for each id. The sheetId in the WHERE scopes the update so a rowId
+    // from another sheet is a no-op. Non-transactional like deleteRows — acceptable for this tool.
+    await Promise.all(rowIds.map((rowId, index) =>
+      db.update(sheetRows)
+        .set({ position: index })
+        .where(and(eq(sheetRows.id, rowId), eq(sheetRows.sheetId, id))),
+    ));
+
+    return Response.json({ ok: true });
+  } catch (error) {
+    logRouteError('sheets.id.rows.reorder', error);
+    return internalServerError();
+  }
+}
 ```
 
-A3. Change `buildColumn` to take `actions: CellActions` and replace the inert branch at line 81. Do **not** short-circuit report/chart/action when `!canEdit` — only return bare `base` for the *non-special* types when `!canEdit`. Restructure so:
-- `checkbox` branch stays as-is.
-- New branch: `if (column.type === 'report')` → `renderCell` reads `const reportId = String(row[column.key] ?? '').trim();`. Empty → render the muted dash cell; else a centered `FileText` icon button calling `actions.openReport(reportId)`.
-- `if (column.type === 'chart')` → reads `const ticker = String(row.ticker ?? '').trim(); const date = String(row.date ?? '').trim();`. If `!ticker || !date` → dash; else centered `LineChart` button → `actions.openChart(ticker, date)`.
-- `if (column.type === 'action')` → reads same `ticker`/`date`. If `!ticker` → dash; else centered `Plus` button → `actions.addToSample(ticker, date)`.
-- After the three special branches: `if (!canEdit) return base;` then a new `date` branch (A3a, below), then the existing `select` / `TEXT_EDIT_TYPES` editor branches. The `date` branch must come **before** the `TEXT_EDIT_TYPES.includes(column.type)` check, because `TEXT_EDIT_TYPES` still contains `'date'` (`lib/sheets/grid.ts:28`) and would otherwise grab it first. Leave `TEXT_EDIT_TYPES` as-is — don't remove `'date'` from it (the values-extraction helpers rely on it elsewhere).
+B3. In `hooks/use-sheets.ts`, add a `reorderRows` callback (after `deleteRows`) and return it:
+```ts
+const reorderRows = useCallback(async (orderedIds: string[]) => {
+  if (!activeSheet) return;
 
-A3a. Add a `DateCellEditor` component next to `SelectCellEditor` (mirror its exact shape), using a native date input so the cell always stores `YYYY-MM-DD`:
+  const snapshot = rows;
+  // Optimistic: reorder local rows to match orderedIds and renumber positions.
+  setRows((current) => {
+    const byId = new Map(current.map((row) => [row.id, row]));
+    return orderedIds
+      .map((id, index) => {
+        const row = byId.get(id);
+        return row ? { ...row, position: index } : null;
+      })
+      .filter((row): row is SheetRowRecord => row !== null);
+  });
+
+  const res = await sendJson(`/api/sheets/${activeSheet.id}/rows/reorder`, { rowIds: orderedIds }, 'PATCH');
+  if (!res.ok) {
+    setRows(snapshot);
+    toast.error('Failed to reorder rows');
+  }
+}, [activeSheet, rows]);
+```
+Add `reorderRows` to the returned object.
+
+### Part C — Row drag UI (`components/trading/SheetsTab.tsx`)
+
+C1. Add imports at top:
+```ts
+import { createContext, useContext, type CSSProperties, type Key } from 'react';   // merge into the existing 'react' import
+import { GripVertical, X } from 'lucide-react';        // add to the existing lucide-react import
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import { CSS } from '@dnd-kit/utilities';
+import { Row as GridRowRenderer, type RenderRowProps } from 'react-data-grid';   // add Row + RenderRowProps to the existing react-data-grid import
+```
+
+C2. Above `SheetsTab`, add a context + draggable row renderer + drag-handle component. The row-level `useSortable` lives in the renderer; its `listeners`/`attributes` are passed down to the handle cell via context so only the grip is draggable (not the whole row):
 ```tsx
-function DateCellEditor({ row, column, onRowChange, onClose }: RenderEditCellProps<GridRow>) {
+// Derive the handle type straight from useSortable so attributes/listeners stay correctly typed
+// when spread onto the handle button (avoid Record<string, unknown> — it breaks JSX spread typing).
+type RowDragHandle = Pick<ReturnType<typeof useSortable>, 'attributes' | 'listeners'>;
+const RowDragContext = createContext<RowDragHandle | null>(null);
+
+function DraggableRow(key: Key, props: RenderRowProps<GridRow>) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.row.__id,
+  });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : undefined,
+  };
   return (
-    <input
-      type="date"
-      autoFocus
-      className="h-full w-full border-2 border-ring bg-card px-1 text-sm text-foreground outline-none [color-scheme:dark]"
-      value={(row[column.key] as string) ?? ''}
-      onChange={(event) => onRowChange({ ...row, [column.key]: event.target.value }, true)}
-      onBlur={() => onClose(true)}
-    />
+    <RowDragContext.Provider key={key} value={{ attributes, listeners }}>
+      <GridRowRenderer {...props} ref={setNodeRef} style={style} />
+    </RowDragContext.Provider>
+  );
+}
+
+function DragHandle() {
+  const drag = useContext(RowDragContext);
+  return (
+    <div className="flex h-full items-center justify-center">
+      <button
+        type="button"
+        className="cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing"
+        aria-label="Drag to reorder row"
+        {...(drag?.attributes ?? {})}
+        {...(drag?.listeners ?? {})}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+    </div>
   );
 }
 ```
-Then in `buildColumn`: `if (column.type === 'date') return { ...base, renderEditCell: (props) => <DateCellEditor {...props} /> };`. The `[color-scheme:dark]` class matches the app's other native date inputs (`SheetFormDialog.tsx:90`). This applies to the locked `Date` column **and** any user-added date column.
 
-Reuse the centered-button styling from `WatchlistEditor.tsx`'s `ReportCell`/`ChartCell` (`flex items-center justify-center` wrapper; button `rounded-md p-1 text-primary hover:bg-accent hover:text-primary/80`; dash cell `text-xs text-muted-foreground`). Keep it minimal — no new abstractions.
+C3. In `SheetsTab`, set up sensors (near the top, after the hooks):
+```ts
+const sensors = useSensors(
+  useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+  useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+);
 
-A4. In `SheetsTab`, add state near the other dialog state:
-```ts
-const [reportDialog, setReportDialog] = useState<{ reportId: string } | null>(null);
-const [chartDialog, setChartDialog] = useState<{ ticker: string; date: string } | null>(null);
-const [savePickerRows, setSavePickerRows] = useState<SampleSetRow[] | null>(null);
-```
-In the `gridColumns` `useMemo`, build the actions object and pass it to `buildColumn`:
-```ts
-const actions: CellActions = {
-  openReport: (reportId) => setReportDialog({ reportId }),
-  openChart: (ticker, date) => setChartDialog({ ticker, date }),
-  addToSample: (ticker, date) => setSavePickerRows([{ ticker, date }]),
+const handleDragEnd = (event: DragEndEvent) => {
+  const { active, over } = event;
+  if (!over || active.id === over.id) return;
+  const ids = gridRows.map((row) => row.__id);
+  const from = ids.indexOf(String(active.id));
+  const to = ids.indexOf(String(over.id));
+  if (from === -1 || to === -1) return;
+  void sheets.reorderRows(arrayMove(ids, from, to));
 };
 ```
-Add `actions`'s setters are stable, but `useMemo` deps must still satisfy lint — define `actions` inside the memo (it only uses `setState`, which is stable) so no new deps are needed.
 
-A5. Render the overlays at the end of `SheetsTab`'s JSX, next to `ShareSheetDialog`:
-- Report: `<Dialog open={!!reportDialog} onOpenChange={(o) => !o && setReportDialog(null)}>` → `DialogContent` with a `DialogHeader`/`DialogTitle` ("Research Report") and `{reportDialog && <WatchlistReportInline reportId={reportDialog.reportId} />}`.
-- Chart: same pattern, title "Chart", body `{chartDialog && <WatchlistTickerChart ticker={chartDialog.ticker} date={chartDialog.date} />}`.
-- Save picker: `{savePickerRows && <WatchlistSavePicker open onOpenChange={(o) => !o && setSavePickerRows(null)} seedRows={savePickerRows} />}`.
-
-### Part B — Import route (`app/api/sheets/[id]/append-research-row/route.ts`, new file)
-
-Mirror `app/api/sheets/[id]/rows/route.ts` for structure and `app/api/daily-reviews/append-watchlist/route.ts` for dedupe.
-
-B1. Add to `lib/validations/sheets.ts` (reuse the existing `DATE_REGEX` const):
+C4. In the `gridColumns` `useMemo`, when `canEditRows`, prepend a drag-handle column **before** `SelectColumn`:
 ```ts
-export const appendResearchRowSchema = z.object({
-  ticker: z.string().trim().toUpperCase().regex(/^[A-Z0-9.\-^]{1,10}$/, 'Valid ticker required'),
-  date: z.string().trim().regex(DATE_REGEX, 'date must be YYYY-MM-DD'),
-  reportId: z.string().min(1).max(128).optional(),
-});
+const dragColumn: Column<GridRow> = {
+  key: '__drag',
+  name: '',
+  width: 36,
+  minWidth: 36,
+  frozen: true,
+  renderCell: () => <DragHandle />,
+};
+const columns: Column<GridRow>[] = canEditRows ? [dragColumn, SelectColumn] : [];
+```
+(`'__drag'` won't collide with real column keys — `valuesFromGridRow` only iterates `activeSheet.columns`, so it never touches row data.)
+
+C5. Wrap the `<DataGrid>` so dragging is only active for editors/owners. Add `renderers={{ renderRow: DraggableRow }}` to the grid **only** when `canEditRows`, and wrap in `DndContext`/`SortableContext`:
+```tsx
+const rowIds = gridRows.map((row) => row.__id);
+
+const grid = (
+  <DataGrid<GridRow, unknown, string>
+    className="sheets-grid"
+    columns={gridColumns}
+    rows={gridRows}
+    rowKeyGetter={(row) => row.__id}
+    onRowsChange={handleRowsChange}
+    selectedRows={selectedRows}
+    onSelectedRowsChange={setSelectedRows}
+    onColumnsReorder={canManage ? handleColumnsReorder : undefined}
+    renderers={canEditRows ? { renderRow: DraggableRow } : undefined}
+    style={{ blockSize: 480 }}
+  />
+);
+
+// then in JSX where <DataGrid> currently is:
+{canEditRows ? (
+  <DndContext
+    sensors={sensors}
+    collisionDetection={closestCenter}
+    modifiers={[restrictToVerticalAxis]}
+    onDragEnd={handleDragEnd}
+  >
+    <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
+      {grid}
+    </SortableContext>
+  </DndContext>
+) : grid}
 ```
 
-B2. `POST(request, context: { params: Promise<{ id: string }> })`:
-1. `requireUser()` → on error return it.
-2. `parseAndValidate(request, appendResearchRowSchema)`.
-3. `getDb()` / `dbUnavailable()`; `ensureUser(db, authState.user)`.
-4. `const { id } = await context.params;` `const role = await getSheetRole(db, id, authState.user.id);` → `null` ⇒ 404 `{ error: 'Sheet not found' }`; `viewer` ⇒ 403 `{ error: 'Forbidden' }`.
-5. Load existing rows in **one** query: `select({ position: sheetRows.position, values: sheetRows.values }).from(sheetRows).where(eq(sheetRows.sheetId, id))`. Use this single result for both dedupe and position (no second select — keeps it aligned with how `__tests__/sheets-routes.test.ts` queues one select result per query). Dedupe: if any `v = row.values as Record<string, unknown>` has `String(v.ticker ?? '').toUpperCase() === ticker && String(v.date ?? '') === date` → return `Response.json({ duplicate: true })`.
-6. Compute next `position` from that same result: `existing.length ? Math.max(...existing.map((r) => r.position)) + 1 : 0`.
-7. `const values: Record<string, unknown> = { ticker, date }; if (reportId) values.research_report = reportId;`
-8. Insert into `sheetRows` (same fields as rows route: `sheetId, position, values, createdByUserId, updatedByUserId, updatedAt`), `.returning()`. Return `Response.json({ row, duplicate: false }, { status: 201 })`.
-9. `try/catch` → `logRouteError('sheets.id.append-research-row', error)` then `internalServerError()`.
+### Part D — Column reorder (owner-only, native rdg)
 
-### Part C — "Add to Sheets" button (`components/trading/ResearchTickerView.tsx`)
+D1. Add the reorder handler in `SheetsTab`:
+```ts
+const handleColumnsReorder = (sourceKey: string, targetKey: string) => {
+  if (!activeSheet) return;
+  const cols = activeSheet.columns;
+  const from = cols.findIndex((column) => column.key === sourceKey);
+  const to = cols.findIndex((column) => column.key === targetKey);
+  if (from === -1 || to === -1) return;
+  const next = [...cols];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  void sheets.updateColumns(next);
+};
+```
+(`onColumnsReorder` is already wired in C5, gated to `canManage`.)
 
-C1. At line 118, render `<AddToSheetsButton ticker={ticker} />` alongside `<AddToWatchlistButton ticker={ticker} />` (wrap both in a `flex items-center gap-2` if not already).
+D2. In `buildColumn`, mark real columns draggable for owners. Add a `canManage: boolean` parameter to `buildColumn`, and set `draggable: canManage` on the `base` object. Pass `canManage` from the `gridColumns` loop: `buildColumn(column, canEditRows, canManage, toggle, actions)`. The `__drag` and `SelectColumn` columns stay non-draggable (don't set `draggable` on them).
 
-C2. New `AddToSheetsButton` component in the same file, modeled on `AddToWatchlistButton` but using the dropdown primitive `@/components/ui/dropdown-menu` (`DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem`):
-- State: `const [sheets, setSheets] = useState<{ id: string; name: string }[]>([]);` and `saving`.
-- `reportId` from `getCachedReportId(ticker)` (optional — read it at click time so a late-arriving report is included).
-- Fetch the sheet list when the menu opens (`onOpenChange` true) or on mount: `GET /api/sheets`, keep only `s.role === 'owner' || s.role === 'editor'`, `!s.isTemplate`, `s.archivedAt === null`. Map to `{ id, name }`.
-- Trigger button: styled like the enabled `AddToWatchlistButton` (`Plus` icon + "Add to Sheets"), always enabled.
-- Menu items: one per sheet. Empty list → a single disabled item "No sheets yet".
-- On item click: `POST /api/sheets/{id}/append-research-row` with `{ ticker, date: format(new Date(), 'yyyy-MM-dd'), reportId: getCachedReportId(ticker) ?? undefined }`. Parse `{ duplicate }`. Toast: duplicate → ``${ticker} is already in "${name}"``; else ``Added ${ticker} to "${name}"``. Failure → `toast.error('Failed to add to sheet')`. (`format` and `toast` are already imported in this file.)
+### Part E — Column delete (owner-only, non-locked)
 
-### Part D — Tests, validation, docs
+E1. Extend `CellActions` with `deleteColumn: (key: string) => void;` and in the `gridColumns` `useMemo` actions object add:
+```ts
+deleteColumn: (key) => {
+  if (window.confirm('Delete this column? Cell data in it will be hidden.')) {
+    void sheets.updateColumns(activeSheet.columns.filter((column) => column.key !== key));
+  }
+},
+```
 
-D1. Tests:
-- Add `appendResearchRowSchema` cases to the validations coverage (valid row; bad ticker; bad date; reportId optional). Put them where the other sheets validation tests live.
-- Add an append-research-row route test in `__tests__/sheets-routes.test.ts` following the existing patterns there: appends a row for an editor; a second identical call returns `{ duplicate: true }` and does not add a row; `viewer` → 403; unknown sheet id → 404.
+E2. In `buildColumn`, when `canManage && !column.locked`, override `base.renderHeaderCell` so the name shows with an × that appears on hover:
+```tsx
+if (canManage && !column.locked) {
+  base.renderHeaderCell = () => (
+    <div className="group flex h-full items-center justify-between gap-1">
+      <span className="truncate">{column.name}</span>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          actions.deleteColumn(column.key);
+        }}
+        className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition hover:bg-rose-500/10 hover:text-rose-400 group-hover:opacity-100"
+        aria-label={`Delete ${column.name} column`}
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+```
+Apply this to the shared `base` near the top of `buildColumn`, before the type branches return (so every non-locked user column — text/select/date/etc. — gets the deletable header). The `stopPropagation` keeps the × click from triggering rdg's column sort/drag.
 
-D2. Run from repo root: `npm run lint` && `npx tsc --noEmit` && `npm test`. No migration this sprint.
+### Part F — Tests, validation, docs
 
-D3. Update `AGENTS.md` to document the full Sheets surface now that import + interactive cells exist (the roadmap deferred this until import landed). Then run `npm run workflow:audit` because a workflow asset changed.
+F1. Tests in `__tests__/sheets-routes.test.ts` for the reorder route (import `PATCH as reorderRows from '@/app/api/sheets/[id]/rows/reorder/route'`):
+- editor reorders → `200` `{ ok: true }`.
+- `viewer` → `403`.
+- unknown sheet (`getSheetRoleMock` → `null`) → `404`.
+Follow the existing row-route test setup (`requireUserMock`, `getSheetRoleMock`, `getDbMock.mockReturnValue(createDbMock({}))`).
+
+F2. Validation-schema tests in `__tests__/sheets-members.test.ts` (where `appendResearchRowSchema` tests live): `reorderRowsSchema` accepts a non-empty string array; rejects an empty array.
+
+F3. Run from repo root: `npm run lint` && `npx tsc --noEmit` && `npm test`. **No migration.**
+
+F4. Update the **Sheets** bullet in `AGENTS.md` to note rows are drag-reorderable (@dnd-kit) and columns can be reordered/deleted by the owner. Then run `npm run workflow:audit` (workflow asset changed).
 
 ### Acceptance criteria
-- Report cell with a stored reportId opens the report in a dialog; empty cell shows a dash.
-- Chart cell opens the chart for the row's `ticker` + `date`; missing either shows a dash.
-- Date cells (locked `Date` column and any user-added date column) edit via a native date picker that stores `YYYY-MM-DD`.
-- Add-to-Sample opens the sample-set save picker seeded with the row's ticker + date.
-- All three cells work for viewers as well as editors/owners.
-- "Add to Sheets" lists only the user's editable, non-template, non-archived sheets and appends `{ ticker, date, research_report? }`, deduping by `(ticker, date)`.
-- `npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run workflow:audit` all green.
-- Manual authenticated smoke (Jared, post-merge): open a report cell, open a chart cell, add a row to a sample set, and use "Add to Sheets" from Research including the duplicate path.
+- Editors/owners see a grip handle on each row and can drag rows into a new order; the order persists across reload. Viewers see no handle and cannot reorder.
+- Owners can drag a column header to reorder columns; the order persists. Editors/viewers cannot.
+- Owners see an × on hover over **user-added** column headers (never on the 6 locked defaults) that deletes the column after a confirm; deleted columns disappear and orphaned cell data stays dormant in the DB.
+- Keyboard drag works for rows (focus a handle, space to lift, arrows, space to drop).
+- `npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run workflow:audit` all green. No migration.
+- Manual authenticated smoke (Jared, post-merge): reorder rows, reorder columns, delete an added column, confirm viewer/editor gating.
+
+### Notes for Codex
+- `@dnd-kit` row-reorder mirrors react-data-grid's official example: a `renderers.renderRow` that wraps the exported `Row` with `useSortable`, plus a `SortableContext` of row ids. Do not make the whole row draggable — only the handle cell carries `listeners` (via `RowDragContext`).
+- The grid row type is `GridRow` (has `__id`) — type the renderer as `RenderRowProps<GridRow>` as shown.
+- React is v19 here, so `ref` on the exported `Row` is a normal prop and typechecks (`RenderRowProps` extends `ComponentProps<'div'>`); no `forwardRef` shim needed.
+- The `gridColumns` `useMemo` currently depends on `[activeSheet, canEditRows, rows, sheets]`. **Add `canManage`** to that array — it's now read inside for `draggable` and the delete header, and `react-hooks/exhaustive-deps` will fail otherwise.
+- Define `sensors`, `handleDragEnd`, `handleColumnsReorder`, and the `grid` element in the component body **before** the `return`, with the two handlers above the `grid` const that references them.
+- `handleColumnsReorder` guards with `if (from === -1 || to === -1) return;` — that also safely ignores drops over the non-draggable `__drag`/`SelectColumn` columns (their keys aren't in `activeSheet.columns`).
+- Don't add the drag-handle column or `renderers` for viewers — keep their grid exactly as today.
 
 ---
 
@@ -156,6 +325,19 @@ D3. Update `AGENTS.md` to document the full Sheets surface now that import + int
 ---
 
 ## Recently Completed
+
+### Sheets - Sprint 4: Research Notebook Core
+
+Status: completed 2026-06-01 (commit `65ecd1e`).
+
+Outcome:
+- Locked `report`/`chart`/`action` cells are live (report dialog, ticker+date chart, sample-set save picker); they work for viewers too.
+- Date/select/text cells render as always-visible inline inputs (`renderCell`) instead of the spec's `renderEditCell` editors — this was the fix for a crash (Codex had used the canary-only `useEffectEvent`) and the visible-date-selector issue.
+- New `POST /api/sheets/[id]/append-research-row` (auth + role gate + `(ticker, date)` dedupe) and an "Add to Sheets" dropdown on the Research page.
+
+Validation:
+- `npm run lint`, `npx tsc --noEmit`, `npm test` (751 passed) all green; reviewed against spec.
+- Manual authenticated smoke (open report/chart cells, save to sample set, Add to Sheets incl. duplicate) remains a Jared post-merge task.
 
 ### Sheets - Sprint 1: Data Layer
 
@@ -204,7 +386,7 @@ Validation:
 - Templates / per-day "start today's sheet" flow beyond plain Duplicate.
 - CSV export, archive/unarchive UI, undo/redo, polling/SSE invalidation, drag-reorder rows/columns.
 
-(Research "Add to Sheets" import + interactive `report`/`chart`/`action` cells + the `AGENTS.md` Sheets-surface update are the **active Sprint 4 spec** above.)
+(Research "Add to Sheets" import + interactive `report`/`chart`/`action` cells + the `AGENTS.md` Sheets-surface update shipped in Sprint 4 — see Recently Completed.)
 
 ---
 

@@ -213,6 +213,27 @@ export function useSheets() {
     }
   }, [activeSheet, rows]);
 
+  const reorderRows = useCallback(async (orderedIds: string[]) => {
+    if (!activeSheet) return;
+
+    const snapshot = rows;
+    setRows((current) => {
+      const byId = new Map(current.map((row) => [row.id, row]));
+      return orderedIds
+        .map((id, index) => {
+          const row = byId.get(id);
+          return row ? { ...row, position: index } : null;
+        })
+        .filter((row): row is SheetRowRecord => row !== null);
+    });
+
+    const res = await sendJson(`/api/sheets/${activeSheet.id}/rows/reorder`, { rowIds: orderedIds }, 'PATCH');
+    if (!res.ok) {
+      setRows(snapshot);
+      toast.error('Failed to reorder rows');
+    }
+  }, [activeSheet, rows]);
+
   const updateColumns = useCallback(async (columns: SheetColumn[]) => {
     if (!activeSheet) return;
 
@@ -301,6 +322,7 @@ export function useSheets() {
     addRow,
     updateRow,
     deleteRows,
+    reorderRows,
     updateColumns,
     addMember,
     updateMemberRole,

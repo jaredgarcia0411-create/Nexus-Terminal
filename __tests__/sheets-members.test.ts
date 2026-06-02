@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { appendResearchRowSchema, memberAddSchema, memberRoleSchema } from '@/lib/validations/sheets';
+import { appendResearchRowSchema, memberAddSchema, memberRoleSchema, reorderRowsSchema } from '@/lib/validations/sheets';
 
 describe('sheet member validation', () => {
   it('lowercases the email and defaults role to editor', () => {
@@ -48,5 +48,17 @@ describe('append research row validation', () => {
   it('rejects invalid dates', () => {
     expect(appendResearchRowSchema.safeParse({ ticker: 'AAPL', date: '06/01/2026' }).success)
       .toBe(false);
+  });
+});
+
+describe('reorder rows validation', () => {
+  it('accepts a non-empty row id array', () => {
+    expect(reorderRowsSchema.parse({ rowIds: ['row-1', 'row-2'] })).toEqual({
+      rowIds: ['row-1', 'row-2'],
+    });
+  });
+
+  it('rejects an empty row id array', () => {
+    expect(reorderRowsSchema.safeParse({ rowIds: [] }).success).toBe(false);
   });
 });

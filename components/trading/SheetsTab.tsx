@@ -1,13 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties, type Key } from 'react';
 import { motion } from 'motion/react';
-import { Columns3, Copy, FileSpreadsheet, FileText, LineChart, Pencil, Plus, Trash2, Users } from 'lucide-react';
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Columns3, Copy, FileSpreadsheet, FileText, GripVertical, LineChart, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import {
   DataGrid,
+  Row as GridRowRenderer,
   SelectColumn,
   type Column,
   type RenderCellProps,
+  type RenderRowProps,
   type RowsChangeData,
 } from 'react-data-grid';
 
@@ -100,19 +106,42 @@ type CellActions = {
   openReport: (reportId: string) => void;
   openChart: (ticker: string, date: string) => void;
   addToSample: (ticker: string, date: string) => void;
+  deleteColumn: (key: string) => void;
 };
 
 function buildColumn(
   column: SheetColumn,
   canEdit: boolean,
+  canManage: boolean,
   onToggle: (rowId: string, key: string, value: boolean) => void,
   actions: CellActions,
 ): Column<GridRow> {
+  const renderHeaderCell = canManage && !column.locked
+    ? () => (
+      <div className="group flex h-full items-center justify-between gap-1">
+        <span className="truncate">{column.name}</span>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            actions.deleteColumn(column.key);
+          }}
+          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition hover:bg-rose-500/10 hover:text-rose-400 group-hover:opacity-100"
+          aria-label={`Delete ${column.name} column`}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    )
+    : undefined;
+
   const base: Column<GridRow> = {
     key: column.key,
     name: column.name,
     width: column.width,
     resizable: true,
+    draggable: canManage,
+    renderHeaderCell,
   };
 
   if (column.type === 'checkbox') {
@@ -229,6 +258,44 @@ function buildColumn(
   return base;
 }
 
+type RowDragHandle = Pick<ReturnType<typeof useSortable>, 'attributes' | 'listeners'>;
+const RowDragContext = createContext<RowDragHandle | null>(null);
+
+function DraggableRow(key: Key, props: RenderRowProps<GridRow>) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.row.__id,
+  });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : undefined,
+  };
+
+  return (
+    <RowDragContext.Provider key={key} value={{ attributes, listeners }}>
+      <GridRowRenderer {...props} ref={setNodeRef} style={style} />
+    </RowDragContext.Provider>
+  );
+}
+
+function DragHandle() {
+  const drag = useContext(RowDragContext);
+
+  return (
+    <div className="flex h-full items-center justify-center">
+      <button
+        type="button"
+        className="cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing"
+        aria-label="Drag to reorder row"
+        {...(drag?.attributes ?? {})}
+        {...(drag?.listeners ?? {})}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
 export default function SheetsTab() {
   const sheets = useSheets();
   const [selectedRows, setSelectedRows] = useState<ReadonlySet<string>>(() => new Set());
@@ -245,6 +312,10 @@ export default function SheetsTab() {
   const canManage = role === 'owner';
 
   const gridRows = useMemo(() => gridRowsFromSheet(rows), [rows]);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   const gridColumns = useMemo<Column<GridRow>[]>(() => {
     if (!activeSheet) return [];
@@ -259,14 +330,27 @@ export default function SheetsTab() {
       openReport: (reportId) => setReportDialog({ reportId }),
       openChart: (ticker, date) => setChartDialog({ ticker, date }),
       addToSample: (ticker, date) => setSavePickerRows([{ ticker, date }]),
+      deleteColumn: (key) => {
+        if (window.confirm('Delete this column? Cell data in it will be hidden.')) {
+          void sheets.updateColumns(activeSheet.columns.filter((column) => column.key !== key));
+        }
+      },
     };
 
-    const columns: Column<GridRow>[] = canEditRows ? [SelectColumn] : [];
+    const dragColumn: Column<GridRow> = {
+      key: '__drag',
+      name: '',
+      width: 36,
+      minWidth: 36,
+      frozen: true,
+      renderCell: () => <DragHandle />,
+    };
+    const columns: Column<GridRow>[] = canEditRows ? [dragColumn, SelectColumn] : [];
     for (const column of activeSheet.columns) {
-      columns.push(buildColumn(column, canEditRows, toggle, actions));
+      columns.push(buildColumn(column, canEditRows, canManage, toggle, actions));
     }
     return columns;
-  }, [activeSheet, canEditRows, rows, sheets]);
+  }, [activeSheet, canEditRows, canManage, rows, sheets]);
 
   const handleRowsChange = (nextRows: GridRow[], data: RowsChangeData<GridRow>) => {
     if (!activeSheet) return;
@@ -275,6 +359,28 @@ export default function SheetsTab() {
       const gridRow = nextRows[index];
       void sheets.updateRow(gridRow.__id, valuesFromGridRow(gridRow, activeSheet.columns));
     }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const ids = gridRows.map((row) => row.__id);
+    const from = ids.indexOf(String(active.id));
+    const to = ids.indexOf(String(over.id));
+    if (from === -1 || to === -1) return;
+    void sheets.reorderRows(arrayMove(ids, from, to));
+  };
+
+  const handleColumnsReorder = (sourceKey: string, targetKey: string) => {
+    if (!activeSheet) return;
+    const cols = activeSheet.columns;
+    const from = cols.findIndex((column) => column.key === sourceKey);
+    const to = cols.findIndex((column) => column.key === targetKey);
+    if (from === -1 || to === -1) return;
+    const next = [...cols];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    void sheets.updateColumns(next);
   };
 
   const handleFormSubmit = async ({ name, sheetDate }: { name: string; sheetDate?: string }) => {
@@ -310,6 +416,21 @@ export default function SheetsTab() {
   };
 
   const visibleList = sheets.list.filter((sheet) => !sheet.archivedAt);
+  const rowIds = gridRows.map((row) => row.__id);
+  const grid = (
+    <DataGrid<GridRow, unknown, string>
+      className="sheets-grid"
+      columns={gridColumns}
+      rows={gridRows}
+      rowKeyGetter={(row) => row.__id}
+      onRowsChange={handleRowsChange}
+      selectedRows={selectedRows}
+      onSelectedRowsChange={setSelectedRows}
+      onColumnsReorder={canManage ? handleColumnsReorder : undefined}
+      renderers={canEditRows ? { renderRow: DraggableRow } : undefined}
+      style={{ blockSize: 480 }}
+    />
+  );
 
   return (
     <motion.div
@@ -375,7 +496,7 @@ export default function SheetsTab() {
           </div>
         ) : (
           <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <h2 className="text-lg font-semibold text-foreground">{activeSheet.name}</h2>
                 <p className="text-xs text-muted-foreground">
@@ -383,111 +504,113 @@ export default function SheetsTab() {
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                {canEditRows ? (
-                  <Button
-                    type="button"
-                    onClick={() => void sheets.addRow()}
-                    className="h-8 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Row
-                  </Button>
-                ) : null}
+              {canManage ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('Delete this sheet? This cannot be undone.')) {
+                      void sheets.deleteSheet(activeSheet.id);
+                    }
+                  }}
+                  className="flex h-8 w-8 items-center justify-center rounded-md border border-rose-500/40 text-rose-400 transition-colors hover:bg-rose-500/10"
+                  aria-label="Delete sheet"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
 
-                {canManage ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setColumnOpen(true)}
-                    className="h-8 bg-accent hover:bg-accent/80"
-                  >
-                    <Columns3 className="h-4 w-4" />
-                    Column
-                  </Button>
-                ) : null}
+            <div className="flex flex-wrap items-center gap-2">
+              {canEditRows ? (
+                <Button
+                  type="button"
+                  onClick={() => void sheets.addRow()}
+                  className="h-8 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+                >
+                  <Plus className="h-4 w-4" />
+                  Row
+                </Button>
+              ) : null}
 
+              {canManage ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setColumnOpen(true)}
+                  className="h-8 bg-accent hover:bg-accent/80"
+                >
+                  <Columns3 className="h-4 w-4" />
+                  Column
+                </Button>
+              ) : null}
+
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setSelectedRows(new Set());
+                  void sheets.duplicateSheet(activeSheet.id, `Copy of ${activeSheet.name}`);
+                }}
+                className="h-8 bg-accent hover:bg-accent/80"
+              >
+                <Copy className="h-4 w-4" />
+                Duplicate
+              </Button>
+
+              {canManage ? (
                 <Button
                   type="button"
                   variant="secondary"
                   onClick={() => {
-                    setSelectedRows(new Set());
-                    void sheets.duplicateSheet(activeSheet.id, `Copy of ${activeSheet.name}`);
+                    setFormMode('rename');
+                    setFormOpen(true);
                   }}
                   className="h-8 bg-accent hover:bg-accent/80"
                 >
-                  <Copy className="h-4 w-4" />
-                  Duplicate
+                  <Pencil className="h-4 w-4" />
+                  Rename
                 </Button>
+              ) : null}
 
-                {canManage ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => {
-                      setFormMode('rename');
-                      setFormOpen(true);
-                    }}
-                    className="h-8 bg-accent hover:bg-accent/80"
-                  >
-                    <Pencil className="h-4 w-4" />
-                    Rename
-                  </Button>
-                ) : null}
+              {canManage ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setShareOpen(true)}
+                  className="h-8 bg-accent hover:bg-accent/80"
+                >
+                  <Users className="h-4 w-4" />
+                  Share
+                </Button>
+              ) : null}
 
-                {canManage ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setShareOpen(true)}
-                    className="h-8 bg-accent hover:bg-accent/80"
-                  >
-                    <Users className="h-4 w-4" />
-                    Share
-                  </Button>
-                ) : null}
-
-                {canEditRows && selectedRows.size > 0 ? (
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      void sheets.deleteRows([...selectedRows]);
-                      setSelectedRows(new Set());
-                    }}
-                    className="h-8 border border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Delete ({selectedRows.size})
-                  </Button>
-                ) : null}
-
-                {canManage ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm('Delete this sheet? This cannot be undone.')) {
-                        void sheets.deleteSheet(activeSheet.id);
-                      }
-                    }}
-                    className="flex h-8 w-8 items-center justify-center rounded-md border border-rose-500/40 text-rose-400 transition-colors hover:bg-rose-500/10"
-                    aria-label="Delete sheet"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                ) : null}
-              </div>
+              {canEditRows && selectedRows.size > 0 ? (
+                <Button
+                  type="button"
+                  onClick={() => {
+                    void sheets.deleteRows([...selectedRows]);
+                    setSelectedRows(new Set());
+                  }}
+                  className="h-8 border border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete ({selectedRows.size})
+                </Button>
+              ) : null}
             </div>
 
-            <DataGrid<GridRow, unknown, string>
-              className="sheets-grid"
-              columns={gridColumns}
-              rows={gridRows}
-              rowKeyGetter={(row) => row.__id}
-              onRowsChange={handleRowsChange}
-              selectedRows={selectedRows}
-              onSelectedRowsChange={setSelectedRows}
-              style={{ blockSize: 480 }}
-            />
+            {canEditRows ? (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                modifiers={[restrictToVerticalAxis]}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
+                  {grid}
+                </SortableContext>
+              </DndContext>
+            ) : grid}
 
             {gridRows.length === 0 ? (
               <p className="text-center text-sm text-muted-foreground">
