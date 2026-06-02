@@ -4,6 +4,7 @@ import { getDb } from '@/lib/db';
 import { secFilingsRaw } from '@/lib/db/schema';
 import { secFetchJson, SecHttpError } from '@/lib/sec/client';
 import { getCikForTicker, normalizeTicker, padCik } from '@/lib/sec/cik-map';
+import { summarizeFilingMetadata } from '@/lib/sec/filing-summary';
 
 const SUBMISSIONS_BASE = 'https://data.sec.gov/submissions';
 const DEFAULT_LIMIT = 20;
@@ -25,7 +26,7 @@ export interface SecFiling {
   filed_at: string;              // 'YYYY-MM-DD'
   report_date: string | null;
   acceptance_datetime: string | null;
-  headline: string;              // primary_doc_description if present, else `${form_type} filing`
+  headline: string;              // deterministic parsed label from form type + 8-K items; falls back to primary_doc_description or "${form_type} filing"
   url: string;                   // archives URL to primary document
   primary_document: string | null;
   primary_doc_description: string | null;
@@ -146,7 +147,11 @@ function zipFilingColumns(args: {
 
     if (!accession || !filedAt) continue;
 
-    const headline = description.trim() || `${formType} filing`;
+    const headline = summarizeFilingMetadata({
+      formType,
+      items,
+      primaryDocDescription: description.trim() || null,
+    });
 
     out.push({
       accession_number: accession,

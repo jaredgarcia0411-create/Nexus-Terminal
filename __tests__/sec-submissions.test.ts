@@ -79,7 +79,7 @@ describe('sec submissions', () => {
       filed_at: '2026-04-20',
       report_date: '2026-04-20',
       acceptance_datetime: '2026-04-20T20:00:00.000Z',
-      headline: 'Item 1.01',
+      headline: 'charter/bylaw amendment',
       primary_document: 'doc1.htm',
       primary_doc_description: 'Item 1.01',
       items: '5.03,9.01',
@@ -88,7 +88,7 @@ describe('sec submissions', () => {
     expect(result.results[0].url).toBe('https://www.sec.gov/Archives/edgar/data/320193/000032019326000001/doc1.htm');
   });
 
-  it('falls back to "${formType} filing" when description is empty', async () => {
+  it('uses deterministic labels when description is empty', async () => {
     const cikMap = await import('@/lib/sec/cik-map');
     vi.mocked(cikMap.getCikForTicker).mockResolvedValue({
       ticker: 'AAPL', cik: '0000320193', name: 'Apple Inc.', exchange: 'Nasdaq',
@@ -100,7 +100,7 @@ describe('sec submissions', () => {
 
     const result = await getRecentFilings('AAPL', { sinceDays: 0 });
 
-    expect(result.results[1].headline).toBe('10-Q filing');
+    expect(result.results[1].headline).toBe('quarterly report');
     expect(result.results[1].primary_doc_description).toBeNull();
     expect(result.results[1].items).toBeNull();
   });
