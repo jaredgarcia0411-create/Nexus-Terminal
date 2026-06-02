@@ -20,7 +20,9 @@ vi.mock('@/lib/server-db-utils', () => ({
 }));
 
 import { DELETE as deleteDailyById, GET as getDailyById } from '@/app/api/daily-reviews/[id]/route';
+import { POST as appendWatchlist } from '@/app/api/daily-reviews/append-watchlist/route';
 import { GET, POST } from '@/app/api/daily-reviews/route';
+import { WATCHLIST_REPORT_KEY } from '@/lib/watchlist';
 
 function ensureResponse(response: Response | undefined): Response {
   if (!response) throw new Error('Expected response');
@@ -100,6 +102,119 @@ describe('daily-reviews routes', () => {
     expect(response.status).toBe(200);
     expect(payload.review.id).toBe('u1:dr:2026-04-18');
     expect(onConflictDoUpdateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('appends a bare watchlist ticker with tags to an existing review', async () => {
+    const updateSetMock = vi.fn(() => ({
+      where: vi.fn().mockResolvedValue(undefined),
+    }));
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn().mockResolvedValue([
+              { id: 'u1:dr:2026-06-02', reportData: { notes: 'morning' } },
+            ]),
+          })),
+        })),
+      })),
+      update: vi.fn(() => ({
+        set: updateSetMock,
+      })),
+    };
+    getDbMock.mockReturnValue(db);
+
+    const response = ensureResponse(await appendWatchlist(new Request('http://localhost/api/daily-reviews/append-watchlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: '2026-06-02', ticker: 'aapl', tags: ['gap'] }),
+    })));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({ ok: true, reviewId: 'u1:dr:2026-06-02', duplicate: false });
+    expect(updateSetMock).toHaveBeenCalledWith(expect.objectContaining({
+      reportData: {
+        notes: 'morning',
+        [WATCHLIST_REPORT_KEY]: [expect.objectContaining({
+          ticker: 'AAPL',
+          tags: ['gap'],
+          grade: '',
+          notes: '',
+        })],
+      },
+    }));
+  });
+
+  it('keeps reportId watchlist appends backward-compatible', async () => {
+    const updateSetMock = vi.fn(() => ({
+      where: vi.fn().mockResolvedValue(undefined),
+    }));
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn().mockResolvedValue([
+              { id: 'u1:dr:2026-06-02', reportData: {} },
+            ]),
+          })),
+        })),
+      })),
+      update: vi.fn(() => ({
+        set: updateSetMock,
+      })),
+    };
+    getDbMock.mockReturnValue(db);
+
+    const response = ensureResponse(await appendWatchlist(new Request('http://localhost/api/daily-reviews/append-watchlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: '2026-06-02', ticker: 'MSFT', reportId: 'report-1' }),
+    })));
+
+    expect(response.status).toBe(200);
+    expect(updateSetMock).toHaveBeenCalledWith(expect.objectContaining({
+      reportData: {
+        [WATCHLIST_REPORT_KEY]: [expect.objectContaining({
+          ticker: 'MSFT',
+          tags: [],
+          reportId: 'report-1',
+        })],
+      },
+    }));
+  });
+
+  it('dedupes bare watchlist appends by ticker', async () => {
+    const updateMock = vi.fn();
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn().mockResolvedValue([
+              {
+                id: 'u1:dr:2026-06-02',
+                reportData: {
+                  [WATCHLIST_REPORT_KEY]: [{ id: 'row-1', ticker: 'AAPL', tags: ['gap'], grade: '', notes: '' }],
+                },
+              },
+            ]),
+          })),
+        })),
+      })),
+      update: updateMock,
+    };
+    getDbMock.mockReturnValue(db);
+
+    const response = ensureResponse(await appendWatchlist(new Request('http://localhost/api/daily-reviews/append-watchlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: '2026-06-02', ticker: 'AAPL', tags: ['gap'] }),
+    })));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.duplicate).toBe(true);
+    expect(updateMock).not.toHaveBeenCalled();
   });
 
   it('returns 401 when unauthenticated', async () => {

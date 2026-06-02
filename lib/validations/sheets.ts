@@ -10,6 +10,7 @@ export const SHEET_COLUMN_TYPES = [
   'report',
   'chart',
   'action',
+  'watchlist',
 ] as const;
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;

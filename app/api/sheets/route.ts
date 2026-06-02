@@ -26,6 +26,7 @@ export async function GET(_request: Request) {
         ownerUserId: sheets.ownerUserId,
         ownerName: users.name,
         role: sheetMembers.role,
+        rootId: sheets.rootId,
         updatedAt: sheets.updatedAt,
       })
       .from(sheetMembers)

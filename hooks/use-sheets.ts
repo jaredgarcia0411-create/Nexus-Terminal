@@ -15,6 +15,7 @@ export type SheetListItem = {
   ownerUserId: string;
   ownerName: string | null;
   role: SheetRole;
+  rootId: string | null;
   updatedAt: string;
 };
 
@@ -26,6 +27,7 @@ export type Sheet = {
   isTemplate: boolean;
   columns: SheetColumn[];
   columnsVersion: number;
+  rootId: string | null;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;

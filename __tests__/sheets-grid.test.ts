@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { SheetColumn } from '@/lib/sheets/columns';
+import { DEFAULT_SHEET_COLUMNS, ensureLockedColumns, type SheetColumn } from '@/lib/sheets/columns';
 import { gridRowsFromSheet, nextColumnKey, slugifyColumnKey, valuesFromGridRow } from '@/lib/sheets/grid';
 
 const columns: SheetColumn[] = [
@@ -33,5 +33,20 @@ describe('sheets grid helpers', () => {
     expect(nextColumnKey('Note', columns)).toBe('note_2');
     expect(nextColumnKey('Theme', columns)).toBe('theme');
     expect(nextColumnKey('!!!', columns)).toBe('column');
+  });
+
+  it('appends missing locked default columns without reordering existing columns', () => {
+    const legacyColumns = DEFAULT_SHEET_COLUMNS.filter((column) => column.key !== 'add_to_watchlist');
+
+    expect(ensureLockedColumns(legacyColumns)).toEqual(DEFAULT_SHEET_COLUMNS);
+  });
+
+  it('returns columns unchanged when locked defaults are already present', () => {
+    const columnsWithCustom = [
+      ...DEFAULT_SHEET_COLUMNS,
+      { key: 'custom_note', name: 'Custom Note', type: 'text' },
+    ] satisfies SheetColumn[];
+
+    expect(ensureLockedColumns(columnsWithCustom)).toBe(columnsWithCustom);
   });
 });

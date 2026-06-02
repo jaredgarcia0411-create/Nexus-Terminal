@@ -22,14 +22,12 @@ const tickerPattern = /^[A-Z0-9.\-^]{1,10}$/;
 const bodySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   ticker: z.string().trim().toUpperCase().regex(tickerPattern, 'Valid ticker required'),
-  reportId: z.string().min(1).max(128),
+  reportId: z.string().min(1).max(128).optional(),
+  tags: z.array(z.string().trim().min(1).max(64)).max(10).optional(),
 });
 
-// Adds one watchlist row pinned to a research_reports.id onto the user's
-// daily review for the given date. Used by the "+ Add to Watchlist" button on
-// the Research page. The eye-icon viewer in WatchlistEditor uses the reportId
-// to fetch and inline-render that specific report later — even months after
-// it was generated, since /api/research-report/by-id has no freshness filter.
+// Adds one watchlist row onto the user's daily review for the given date. The
+// Research page passes reportId; Sheets can pass a bare ticker plus tags.
 export async function POST(request: Request) {
   try {
     const authState = await requireUser();
@@ -41,15 +39,15 @@ export async function POST(request: Request) {
 
     const bodyState = await parseAndValidate(request, bodySchema);
     if (bodyState.error) return bodyState.error;
-    const { date, ticker, reportId } = bodyState.data;
+    const { date, ticker, reportId, tags } = bodyState.data;
 
     const newRow = {
       id: crypto.randomUUID(),
       ticker,
-      tags: [],
+      tags: tags ?? [],
       grade: '',
       notes: '',
-      reportId,
+      ...(reportId ? { reportId } : {}),
     };
 
     // 1. Existing daily review for this date? Append (or no-op on duplicate).
@@ -62,11 +60,10 @@ export async function POST(request: Request) {
     if (existing) {
       const reportData = (existing.reportData ?? {}) as Record<string, unknown>;
       const current = coerceWatchlistRows(reportData[WATCHLIST_REPORT_KEY]);
-      // Dedupe: same (ticker, reportId) already pinned → no-op success. Prevents
-      // double-clicks or page-refresh-then-reclick from stacking duplicate rows.
-      const alreadyPinned = current.some(
-        (row) => row.ticker.toUpperCase() === ticker && row.reportId === reportId,
-      );
+      const alreadyPinned = current.some((row) => {
+        if (row.ticker.toUpperCase() !== ticker) return false;
+        return reportId ? row.reportId === reportId : true;
+      });
       const next = alreadyPinned ? current : [...current, newRow];
 
       if (!alreadyPinned) {

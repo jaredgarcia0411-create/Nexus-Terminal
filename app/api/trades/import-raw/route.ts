@@ -14,6 +14,7 @@ import {
   type OpenPositionInput,
 } from '@/lib/position-matcher';
 import { importRawSchema } from '@/lib/validations/trades';
+import { applyWatchlistTagsForDate } from '@/lib/watchlist-server';
 
 function makeId(parts: string[]): string {
   return parts.join('|');
@@ -278,6 +279,12 @@ export async function POST(request: Request) {
         }
       }
     });
+
+    try {
+      await applyWatchlistTagsForDate(db, authState.user.id, sortKey);
+    } catch (err) {
+      logRouteError('trades.import-raw.watchlist-tags', err);
+    }
 
     return Response.json({ warnings, importSkipped });
   } catch (error) {

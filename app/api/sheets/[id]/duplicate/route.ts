@@ -36,6 +36,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           sheetDate: body.sheetDate ?? null,
           isTemplate: false,
           columns: source.columns,
+          rootId: source.rootId ?? source.id,
           updatedAt: new Date(),
         })
         .returning();

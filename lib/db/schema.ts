@@ -658,6 +658,7 @@ export const sheets = pgTable('sheets', {
   isTemplate: boolean('is_template').notNull().default(false),
   columns: jsonb('columns').$type<SheetColumn[]>().notNull().default([]),
   columnsVersion: integer('columns_version').notNull().default(0),
+  rootId: text('root_id'),
   archivedAt: timestamp('archived_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

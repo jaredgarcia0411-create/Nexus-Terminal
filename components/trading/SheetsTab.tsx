@@ -1,12 +1,13 @@
 'use client';
 
 import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties, type Key } from 'react';
+import { format } from 'date-fns';
 import { motion } from 'motion/react';
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Columns3, Copy, FileSpreadsheet, FileText, GripVertical, LineChart, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
+import { ChevronDown, Columns3, Copy, FileSpreadsheet, FileText, GripVertical, History, LineChart, ListPlus, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import {
   DataGrid,
   Row as GridRowRenderer,
@@ -16,6 +17,7 @@ import {
   type RenderRowProps,
   type RowsChangeData,
 } from 'react-data-grid';
+import { toast } from 'sonner';
 
 import AddColumnDialog from '@/components/trading/AddColumnDialog';
 import ShareSheetDialog from '@/components/trading/ShareSheetDialog';
@@ -25,7 +27,14 @@ import WatchlistSavePicker from '@/components/trading/WatchlistSavePicker';
 import WatchlistTickerChart from '@/components/trading/WatchlistTickerChart';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useSheets } from '@/hooks/use-sheets';
+import type { SheetListItem } from '@/hooks/use-sheets';
 import type { SampleSetRow } from '@/lib/sample-set-csv';
 import type { SheetColumn, SheetColumnType } from '@/lib/sheets/columns';
 import {
@@ -106,8 +115,35 @@ type CellActions = {
   openReport: (reportId: string) => void;
   openChart: (ticker: string, date: string) => void;
   addToSample: (ticker: string, date: string) => void;
+  addToWatchlist: (ticker: string, tag: string) => void;
   deleteColumn: (key: string) => void;
 };
+
+type SheetLineageGroup = {
+  key: string;
+  head: SheetListItem;
+  pastVersions: SheetListItem[];
+};
+
+function sheetVersionTime(sheet: SheetListItem) {
+  return Date.parse(sheet.sheetDate ?? sheet.updatedAt);
+}
+
+function groupSheetLineages(list: SheetListItem[]): SheetLineageGroup[] {
+  const byLineage = new Map<string, SheetListItem[]>();
+  for (const sheet of list) {
+    const key = sheet.rootId ?? sheet.id;
+    byLineage.set(key, [...(byLineage.get(key) ?? []), sheet]);
+  }
+
+  return [...byLineage.entries()]
+    .map(([key, members]) => {
+      const sorted = [...members].sort((a, b) => sheetVersionTime(b) - sheetVersionTime(a));
+      const [head, ...pastVersions] = sorted;
+      return { key, head, pastVersions };
+    })
+    .sort((a, b) => sheetVersionTime(b.head) - sheetVersionTime(a.head));
+}
 
 function buildColumn(
   column: SheetColumn,
@@ -236,6 +272,32 @@ function buildColumn(
     };
   }
 
+  if (column.type === 'watchlist') {
+    return {
+      ...base,
+      renderCell: ({ row }) => {
+        const ticker = String(row.ticker ?? '').trim();
+        const tag = String(row.tag ?? '').trim();
+        if (!ticker) {
+          return <div className="flex items-center justify-center text-xs text-muted-foreground">—</div>;
+        }
+        return (
+          <div className="flex items-center justify-center">
+            <button
+              type="button"
+              onClick={() => actions.addToWatchlist(ticker, tag)}
+              className="rounded-md p-1 text-primary hover:bg-accent hover:text-primary/80"
+              aria-label={`Add ${ticker} to today's watchlist`}
+              title="Add to watchlist"
+            >
+              <ListPlus className="h-4 w-4" />
+            </button>
+          </div>
+        );
+      },
+    };
+  }
+
   if (!canEdit) {
     return base;
   }
@@ -314,6 +376,7 @@ export default function SheetsTab() {
   const [reportDialog, setReportDialog] = useState<{ reportId: string } | null>(null);
   const [chartDialog, setChartDialog] = useState<{ ticker: string; date: string } | null>(null);
   const [savePickerRows, setSavePickerRows] = useState<SampleSetRow[] | null>(null);
+  const [tagOptions, setTagOptions] = useState<string[]>([]);
 
   const { activeSheet, role, rows, members } = sheets;
   const canEditRows = role === 'owner' || role === 'editor';
@@ -324,6 +387,21 @@ export default function SheetsTab() {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
+
+  // Feed the user's global trade tags into the locked "Tag" select column so
+  // sheet tags stay consistent with the tags used on trades.
+  useEffect(() => {
+    let cancelled = false;
+    void fetch('/api/tags')
+      .then((res) => (res.ok ? res.json() : { tags: [] }))
+      .then((data: { tags?: string[] }) => {
+        if (!cancelled) setTagOptions(data.tags ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const gridColumns = useMemo<Column<GridRow>[]>(() => {
     if (!activeSheet) return [];
@@ -338,6 +416,19 @@ export default function SheetsTab() {
       openReport: (reportId) => setReportDialog({ reportId }),
       openChart: (ticker, date) => setChartDialog({ ticker, date }),
       addToSample: (ticker, date) => setSavePickerRows([{ ticker, date }]),
+      addToWatchlist: (ticker, tag) => {
+        const date = format(new Date(), 'yyyy-MM-dd');
+        void fetch('/api/daily-reviews/append-watchlist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date, ticker, tags: tag ? [tag] : [] }),
+        })
+          .then((res) => {
+            if (res.ok) toast.success(`${ticker} added to today's watchlist`);
+            else toast.error('Failed to add to watchlist');
+          })
+          .catch(() => toast.error('Failed to add to watchlist'));
+      },
       deleteColumn: (key) => {
         if (window.confirm('Delete this column? Cell data in it will be hidden.')) {
           void sheets.updateColumns(activeSheet.columns.filter((column) => column.key !== key));
@@ -355,10 +446,11 @@ export default function SheetsTab() {
     };
     const columns: Column<GridRow>[] = canEditRows ? [dragColumn, SelectColumn] : [];
     for (const column of activeSheet.columns) {
-      columns.push(buildColumn(column, canEditRows, canManage, toggle, actions));
+      const resolved = column.key === 'tag' ? { ...column, options: tagOptions } : column;
+      columns.push(buildColumn(resolved, canEditRows, canManage, toggle, actions));
     }
     return columns;
-  }, [activeSheet, canEditRows, canManage, rows, sheets]);
+  }, [activeSheet, canEditRows, canManage, rows, sheets, tagOptions]);
 
   const handleRowsChange = (nextRows: GridRow[], data: RowsChangeData<GridRow>) => {
     if (!activeSheet) return;
@@ -424,6 +516,10 @@ export default function SheetsTab() {
   };
 
   const visibleList = sheets.list.filter((sheet) => !sheet.archivedAt);
+  const lineageGroups = useMemo(() => groupSheetLineages(visibleList), [visibleList]);
+  const activeLineageGroup = activeSheet
+    ? lineageGroups.find((group) => group.key === (activeSheet.rootId ?? activeSheet.id))
+    : null;
   const rowIds = gridRows.map((row) => row.__id);
   const grid = (
     <DataGrid<GridRow, unknown, string>
@@ -446,11 +542,82 @@ export default function SheetsTab() {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
-      className="flex flex-col gap-4 px-1 lg:flex-row"
+      className="flex flex-col gap-3 px-1"
     >
-      <aside className="shrink-0 rounded-2xl border border-border bg-card p-3 lg:w-36">
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-lg font-semibold text-foreground">Sheets</p>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-card p-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="secondary"
+                className="min-w-48 justify-between bg-accent text-left hover:bg-accent/80"
+                disabled={sheets.listLoading || lineageGroups.length === 0}
+              >
+                <span className="truncate">
+                  {sheets.listLoading
+                    ? 'Loading sheets'
+                    : activeLineageGroup?.head.name ?? activeSheet?.name ?? 'Select sheet'}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-72 bg-popover text-popover-foreground">
+              {lineageGroups.map((group) => (
+                <DropdownMenuItem
+                  key={group.key}
+                  onSelect={() => {
+                    setSelectedRows(new Set());
+                    void sheets.openSheet(group.head.id);
+                  }}
+                  className="flex flex-col items-start gap-0.5"
+                >
+                  <span className="max-w-full truncate font-medium">{group.head.name}</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {group.head.sheetDate ?? 'No date'} · {group.head.role}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {activeLineageGroup && activeLineageGroup.pastVersions.length > 0 ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  title="Past versions"
+                  aria-label="Past versions"
+                >
+                  <History className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-64 bg-popover text-popover-foreground">
+                {activeLineageGroup.pastVersions.map((sheet) => (
+                  <DropdownMenuItem
+                    key={sheet.id}
+                    onSelect={() => {
+                      setSelectedRows(new Set());
+                      void sheets.openSheet(sheet.id);
+                    }}
+                    className="flex flex-col items-start gap-0.5"
+                  >
+                    <span className="max-w-full truncate font-medium">{sheet.name}</span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {sheet.sheetDate ?? 'No date'} · {sheet.role}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {visibleList.length === 0 && !sheets.listLoading ? (
+            <span className="text-sm text-muted-foreground">No sheets yet.</span>
+          ) : null}
           <button
             type="button"
             onClick={() => {
@@ -459,40 +626,12 @@ export default function SheetsTab() {
             }}
             className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             aria-label="New sheet"
+            title="New sheet"
           >
             <Plus className="h-4 w-4" />
           </button>
         </div>
-
-        <div className="space-y-1">
-          {sheets.listLoading ? (
-            <p className="px-2 py-2 text-sm text-muted-foreground">Loading...</p>
-          ) : visibleList.length === 0 ? (
-            <p className="px-2 py-2 text-sm text-muted-foreground">No sheets yet.</p>
-          ) : (
-            visibleList.map((sheet) => (
-              <button
-                key={sheet.id}
-                type="button"
-                onClick={() => {
-                  setSelectedRows(new Set());
-                  void sheets.openSheet(sheet.id);
-                }}
-                className={`flex w-full flex-col rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-                  activeSheet?.id === sheet.id
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                }`}
-              >
-                <span className="truncate font-medium">{sheet.name}</span>
-                <span className="text-[11px] text-muted-foreground">
-                  {sheet.sheetDate ?? '-'} · {sheet.role}
-                </span>
-              </button>
-            ))
-          )}
-        </div>
-      </aside>
+      </div>
 
       <section className="min-w-0 flex-1">
         {!activeSheet ? (
@@ -521,6 +660,7 @@ export default function SheetsTab() {
                     }
                   }}
                   className="flex h-8 w-8 items-center justify-center rounded-md border border-rose-500/40 text-rose-400 transition-colors hover:bg-rose-500/10"
+                  title="Delete sheet"
                   aria-label="Delete sheet"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -532,77 +672,89 @@ export default function SheetsTab() {
               {canEditRows ? (
                 <Button
                   type="button"
+                  size="icon-sm"
                   onClick={() => void sheets.addRow()}
-                  className="h-8 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+                  title="Add row"
+                  aria-label="Add row"
+                  className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
                 >
                   <Plus className="h-4 w-4" />
-                  Row
                 </Button>
               ) : null}
 
               {canManage ? (
                 <Button
                   type="button"
+                  size="icon-sm"
                   variant="secondary"
                   onClick={() => setColumnOpen(true)}
-                  className="h-8 bg-accent hover:bg-accent/80"
+                  title="Add column"
+                  aria-label="Add column"
+                  className="bg-accent hover:bg-accent/80"
                 >
                   <Columns3 className="h-4 w-4" />
-                  Column
                 </Button>
               ) : null}
 
               <Button
                 type="button"
+                size="icon-sm"
                 variant="secondary"
                 onClick={() => {
                   setSelectedRows(new Set());
                   void sheets.duplicateSheet(activeSheet.id, `Copy of ${activeSheet.name}`);
                 }}
-                className="h-8 bg-accent hover:bg-accent/80"
+                title="Duplicate sheet"
+                aria-label="Duplicate sheet"
+                className="bg-accent hover:bg-accent/80"
               >
                 <Copy className="h-4 w-4" />
-                Duplicate
               </Button>
 
               {canManage ? (
                 <Button
                   type="button"
+                  size="icon-sm"
                   variant="secondary"
                   onClick={() => {
                     setFormMode('rename');
                     setFormOpen(true);
                   }}
-                  className="h-8 bg-accent hover:bg-accent/80"
+                  title="Rename sheet"
+                  aria-label="Rename sheet"
+                  className="bg-accent hover:bg-accent/80"
                 >
                   <Pencil className="h-4 w-4" />
-                  Rename
                 </Button>
               ) : null}
 
               {canManage ? (
                 <Button
                   type="button"
+                  size="icon-sm"
                   variant="secondary"
                   onClick={() => setShareOpen(true)}
-                  className="h-8 bg-accent hover:bg-accent/80"
+                  title="Share sheet"
+                  aria-label="Share sheet"
+                  className="bg-accent hover:bg-accent/80"
                 >
                   <Users className="h-4 w-4" />
-                  Share
                 </Button>
               ) : null}
 
               {canEditRows && selectedRows.size > 0 ? (
                 <Button
                   type="button"
+                  size="icon-sm"
                   onClick={() => {
                     void sheets.deleteRows([...selectedRows]);
                     setSelectedRows(new Set());
                   }}
-                  className="h-8 border border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
+                  title={`Delete ${selectedRows.size} selected row${selectedRows.size === 1 ? '' : 's'}`}
+                  aria-label={`Delete ${selectedRows.size} selected rows`}
+                  className="border border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
                 >
                   <Trash2 className="h-4 w-4" />
-                  Delete ({selectedRows.size})
                 </Button>
               ) : null}
             </div>

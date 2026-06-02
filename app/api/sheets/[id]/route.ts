@@ -4,6 +4,7 @@ import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-
 import { getDb } from '@/lib/db';
 import { sheetMembers, sheetRows, sheets, users } from '@/lib/db/schema';
 import { getSheetRole } from '@/lib/sheets/access';
+import { ensureLockedColumns } from '@/lib/sheets/columns';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { sheetPatchSchema } from '@/lib/validations/sheets';
 
@@ -37,7 +38,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       .leftJoin(users, eq(sheetMembers.userId, users.id))
       .where(eq(sheetMembers.sheetId, id));
 
-    return Response.json({ sheet, rows, members, role });
+    return Response.json({ sheet: { ...sheet, columns: ensureLockedColumns(sheet.columns) }, rows, members, role });
   } catch (error) {
     logRouteError('sheets.id.get', error);
     return internalServerError();

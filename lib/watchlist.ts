@@ -1,5 +1,4 @@
 import type { WatchlistRow } from '@/components/trading/WatchlistEditor';
-import type { Trade } from '@/lib/types';
 
 // Stored inside daily-review `reportData` under a reserved key.
 // Underscore prefix avoids collision with user-defined template field ids.
@@ -85,7 +84,7 @@ export function dedupeWatchlistRows(rows: WatchlistRow[]): WatchlistRow[] {
 }
 
 export function buildWatchlistTradeTagAssignments(
-  trades: Trade[],
+  trades: Array<{ id: string; symbol: string; tags?: string[] }>,
   watchlistRows: WatchlistRow[],
 ): Array<{ tradeId: string; tags: string[] }> {
   const tagsByTicker = new Map<string, string[]>();

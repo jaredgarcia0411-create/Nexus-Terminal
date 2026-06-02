@@ -1,0 +1,1 @@
+ALTER TABLE "sheets" ADD COLUMN "root_id" text;

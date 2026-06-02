@@ -189,7 +189,7 @@ describe('sheets routes', () => {
     getSheetRoleMock.mockResolvedValue('viewer');
     getDbMock.mockReturnValue(createDbMock({
       selectQueue: [
-        [{ id: 'sheet-1', name: 'Daily Sheet' }],
+        [{ id: 'sheet-1', name: 'Daily Sheet', columns: DEFAULT_SHEET_COLUMNS }],
         [{ id: 'row-1', sheetId: 'sheet-1', position: 0 }],
         [{ userId: 'user-1', role: 'viewer', name: 'User', email: 'user@example.com' }],
       ],
@@ -202,7 +202,7 @@ describe('sheets routes', () => {
 
     expect(response.status).toBe(200);
     expect(payload).toEqual({
-      sheet: { id: 'sheet-1', name: 'Daily Sheet' },
+      sheet: { id: 'sheet-1', name: 'Daily Sheet', columns: DEFAULT_SHEET_COLUMNS },
       rows: [{ id: 'row-1', sheetId: 'sheet-1', position: 0 }],
       members: [{ userId: 'user-1', role: 'viewer', name: 'User', email: 'user@example.com' }],
       role: 'viewer',
@@ -292,12 +292,39 @@ describe('sheets routes', () => {
       ownerUserId: 'user-1',
       columns: DEFAULT_SHEET_COLUMNS,
       isTemplate: false,
+      rootId: 'source-1',
     }));
     expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(2, {
       sheetId: 'sheet-copy',
       userId: 'user-1',
       role: 'owner',
     });
+  });
+
+  it('POST /api/sheets/[id]/duplicate keeps an existing lineage root', async () => {
+    const poolDb = createPoolDbMock({
+      selectQueue: [[{
+        id: 'source-1',
+        rootId: 'root-1',
+        name: 'Source',
+        columns: DEFAULT_SHEET_COLUMNS,
+      }]],
+      insertResults: [[{ id: 'sheet-copy', ownerUserId: 'user-1', name: 'Source Copy' }]],
+    });
+    getPoolDbMock.mockReturnValue(poolDb);
+
+    const response = ensureResponse(await duplicateSheet(new Request('http://localhost/api/sheets/source-1/duplicate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Source Copy' }),
+    }), {
+      params: Promise.resolve({ id: 'source-1' }),
+    }));
+
+    expect(response.status).toBe(201);
+    expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      rootId: 'root-1',
+    }));
   });
 
   it('POST /api/sheets/[id]/rows returns 403 for viewers', async () => {
