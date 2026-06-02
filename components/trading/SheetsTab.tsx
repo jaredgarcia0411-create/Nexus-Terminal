@@ -261,7 +261,11 @@ function buildColumn(
 type RowDragHandle = Pick<ReturnType<typeof useSortable>, 'attributes' | 'listeners'>;
 const RowDragContext = createContext<RowDragHandle | null>(null);
 
-function DraggableRow(key: Key, props: RenderRowProps<GridRow>) {
+// react-data-grid calls `renderRow(key, props)` as a plain function during its own render,
+// so the `useSortable` hook must live in a real component it renders as JSX (each row gets its
+// own hook list). Calling the hook directly in `renderRow` runs N hooks inside DataGrid's single
+// render and crashes with "Rendered fewer hooks than expected" when the row count changes.
+function DraggableRowRenderer(props: RenderRowProps<GridRow>) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: props.row.__id,
   });
@@ -272,10 +276,14 @@ function DraggableRow(key: Key, props: RenderRowProps<GridRow>) {
   };
 
   return (
-    <RowDragContext.Provider key={key} value={{ attributes, listeners }}>
+    <RowDragContext.Provider value={{ attributes, listeners }}>
       <GridRowRenderer {...props} ref={setNodeRef} style={style} />
     </RowDragContext.Provider>
   );
+}
+
+function renderRow(key: Key, props: RenderRowProps<GridRow>) {
+  return <DraggableRowRenderer key={key} {...props} />;
 }
 
 function DragHandle() {
@@ -427,7 +435,7 @@ export default function SheetsTab() {
       selectedRows={selectedRows}
       onSelectedRowsChange={setSelectedRows}
       onColumnsReorder={canManage ? handleColumnsReorder : undefined}
-      renderers={canEditRows ? { renderRow: DraggableRow } : undefined}
+      renderers={canEditRows ? { renderRow } : undefined}
       style={{ blockSize: 480 }}
     />
   );

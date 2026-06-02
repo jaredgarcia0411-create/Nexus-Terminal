@@ -104,7 +104,7 @@ export default function ShareSheetDialog({
                           onChange={(event) => {
                             void onChangeRole(member.userId, event.target.value as 'editor' | 'viewer');
                           }}
-                          className="h-8 rounded-md border border-border bg-accent px-2 text-sm text-foreground [color-scheme:dark]"
+                          className="h-8 rounded-md border border-border bg-popover px-2 text-sm text-popover-foreground [color-scheme:dark]"
                         >
                           <option value="editor">editor</option>
                           <option value="viewer">viewer</option>
@@ -139,7 +139,7 @@ export default function ShareSheetDialog({
               <select
                 value={role}
                 onChange={(event) => setRole(event.target.value as 'editor' | 'viewer')}
-                className="h-9 rounded-md border border-border bg-accent px-2 text-sm text-foreground [color-scheme:dark]"
+                className="h-9 rounded-md border border-border bg-popover px-2 text-sm text-popover-foreground [color-scheme:dark]"
               >
                 <option value="editor">editor</option>
                 <option value="viewer">viewer</option>
