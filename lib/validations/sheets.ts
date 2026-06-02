@@ -49,9 +49,8 @@ export const sheetPatchSchema = z
     path: ['columnsVersion'],
   });
 
-export const sheetDuplicateSchema = z.object({
-  name: z.string().trim().min(1).max(100).optional(),
-  sheetDate: z.string().trim().regex(DATE_REGEX).optional(),
+export const sheetSnapshotSchema = z.object({
+  date: z.string().trim().regex(DATE_REGEX, 'date must be YYYY-MM-DD'),
 });
 
 export const rowCreateSchema = z.object({
@@ -84,7 +83,7 @@ export const memberRoleSchema = z.object({
 
 export type SheetCreateBody = z.infer<typeof sheetCreateSchema>;
 export type SheetPatchBody = z.infer<typeof sheetPatchSchema>;
-export type SheetDuplicateBody = z.infer<typeof sheetDuplicateSchema>;
+export type SheetSnapshotBody = z.infer<typeof sheetSnapshotSchema>;
 export type RowCreateBody = z.infer<typeof rowCreateSchema>;
 export type RowPatchBody = z.infer<typeof rowPatchSchema>;
 export type AppendResearchRowBody = z.infer<typeof appendResearchRowSchema>;

@@ -7,7 +7,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ChevronDown, Columns3, Copy, FileSpreadsheet, FileText, GripVertical, History, LineChart, ListPlus, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
+import { Archive, ChevronDown, Columns3, FileSpreadsheet, FileText, GripVertical, History, LineChart, ListPlus, Pencil, Plus, Rows3, Trash2, Users, X } from 'lucide-react';
 import {
   DataGrid,
   Row as GridRowRenderer,
@@ -139,7 +139,8 @@ function groupSheetLineages(list: SheetListItem[]): SheetLineageGroup[] {
   return [...byLineage.entries()]
     .map(([key, members]) => {
       const sorted = [...members].sort((a, b) => sheetVersionTime(b) - sheetVersionTime(a));
-      const [head, ...pastVersions] = sorted;
+      const head = members.find((member) => member.id === key) ?? sorted[0];
+      const pastVersions = sorted.filter((member) => member.id !== head.id);
       return { key, head, pastVersions };
     })
     .sort((a, b) => sheetVersionTime(b.head) - sheetVersionTime(a.head));
@@ -381,6 +382,9 @@ export default function SheetsTab() {
   const { activeSheet, role, rows, members } = sheets;
   const canEditRows = role === 'owner' || role === 'editor';
   const canManage = role === 'owner';
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const sheetDisplayDate = (sheet: { rootId: string | null; sheetDate: string | null }) =>
+    sheet.rootId === null ? today : sheet.sheetDate ?? 'No date';
 
   const gridRows = useMemo(() => gridRowsFromSheet(rows), [rows]);
   const sensors = useSensors(
@@ -544,7 +548,7 @@ export default function SheetsTab() {
       exit={{ opacity: 0, y: -10 }}
       className="flex flex-col gap-3 px-1"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-card p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
         <div className="flex min-w-0 items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -574,7 +578,7 @@ export default function SheetsTab() {
                 >
                   <span className="max-w-full truncate font-medium">{group.head.name}</span>
                   <span className="text-[11px] text-muted-foreground">
-                    {group.head.sheetDate ?? 'No date'} · {group.head.role}
+                    {sheetDisplayDate(group.head)} · {group.head.role}
                   </span>
                 </DropdownMenuItem>
               ))}
@@ -605,7 +609,7 @@ export default function SheetsTab() {
                   >
                     <span className="max-w-full truncate font-medium">{sheet.name}</span>
                     <span className="text-[11px] text-muted-foreground">
-                      {sheet.sheetDate ?? 'No date'} · {sheet.role}
+                      {sheetDisplayDate(sheet)} · {sheet.role}
                     </span>
                   </DropdownMenuItem>
                 ))}
@@ -645,10 +649,13 @@ export default function SheetsTab() {
           <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <h2 className="text-lg font-semibold text-foreground">{activeSheet.name}</h2>
-                <p className="text-xs text-muted-foreground">
-                  {activeSheet.sheetDate ?? 'No date'} · {role}
-                </p>
+                <div className="flex items-baseline gap-2">
+                  <h2 className="text-lg font-semibold text-foreground">{activeSheet.name}</h2>
+                  <span className="text-lg font-semibold text-foreground">
+                    {sheetDisplayDate(activeSheet)}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">{role}</p>
               </div>
 
               {canManage ? (
@@ -678,7 +685,7 @@ export default function SheetsTab() {
                   aria-label="Add row"
                   className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
                 >
-                  <Plus className="h-4 w-4" />
+                  <Rows3 className="h-4 w-4" />
                 </Button>
               ) : null}
 
@@ -686,30 +693,33 @@ export default function SheetsTab() {
                 <Button
                   type="button"
                   size="icon-sm"
-                  variant="secondary"
                   onClick={() => setColumnOpen(true)}
                   title="Add column"
                   aria-label="Add column"
-                  className="bg-accent hover:bg-accent/80"
+                  className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
                 >
                   <Columns3 className="h-4 w-4" />
                 </Button>
               ) : null}
 
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="secondary"
-                onClick={() => {
-                  setSelectedRows(new Set());
-                  void sheets.duplicateSheet(activeSheet.id, `Copy of ${activeSheet.name}`);
-                }}
-                title="Duplicate sheet"
-                aria-label="Duplicate sheet"
-                className="bg-accent hover:bg-accent/80"
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
+              {canManage && !activeSheet.rootId ? (
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="secondary"
+                  onClick={() => {
+                    if (window.confirm('Save a dated snapshot and clear this sheet for today?')) {
+                      setSelectedRows(new Set());
+                      void sheets.snapshotSheet(activeSheet.id, today);
+                    }
+                  }}
+                  title="Snapshot & reset"
+                  aria-label="Snapshot and reset"
+                  className="bg-accent hover:bg-accent/80"
+                >
+                  <Archive className="h-4 w-4" />
+                </Button>
+              ) : null}
 
               {canManage ? (
                 <Button

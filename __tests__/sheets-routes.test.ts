@@ -24,10 +24,10 @@ vi.mock('@/lib/sheets/access', () => ({ getSheetRole: getSheetRoleMock }));
 
 import { DELETE as deleteSheet, GET as getSheet, PATCH as patchSheet } from '@/app/api/sheets/[id]/route';
 import { POST as appendResearchRow } from '@/app/api/sheets/[id]/append-research-row/route';
-import { POST as duplicateSheet } from '@/app/api/sheets/[id]/duplicate/route';
 import { POST as postSheetRow } from '@/app/api/sheets/[id]/rows/route';
 import { PATCH as patchSheetRow } from '@/app/api/sheets/[id]/rows/[rowId]/route';
 import { PATCH as reorderRows } from '@/app/api/sheets/[id]/rows/reorder/route';
+import { POST as snapshotSheet } from '@/app/api/sheets/[id]/snapshot/route';
 import { GET as getSheets, POST as postSheet } from '@/app/api/sheets/route';
 import { DEFAULT_SHEET_COLUMNS } from '@/lib/sheets/columns';
 
@@ -86,11 +86,21 @@ function createPoolDbMock(options: {
   const txInsertValuesMock = vi.fn(() => ({
     returning: vi.fn(() => Promise.resolve(insertResults.shift() ?? [])),
   }));
+  const txDeleteWhereMock = vi.fn(() => Promise.resolve());
 
   const tx = {
     insert: vi.fn(() => ({
       values: txInsertValuesMock,
     })),
+    select: vi.fn(() => {
+      const result = selectQueue.shift() ?? [];
+      const chain = {
+        from: vi.fn(() => chain),
+        where: vi.fn(() => Promise.resolve(result)),
+      };
+      return chain;
+    }),
+    delete: vi.fn(() => ({ where: txDeleteWhereMock })),
   };
 
   return {
@@ -107,6 +117,7 @@ function createPoolDbMock(options: {
     _mocks: {
       tx,
       txInsertValuesMock,
+      txDeleteWhereMock,
     },
   };
 }
@@ -266,23 +277,20 @@ describe('sheets routes', () => {
     expect(await ok.json()).toEqual({ deleted: true, id: 'sheet-1' });
   });
 
-  it('POST /api/sheets/[id]/duplicate copies columns and assigns owner membership', async () => {
+  it('POST /api/sheets/[id]/snapshot copies rows into a dated snapshot and clears the original', async () => {
     const poolDb = createPoolDbMock({
-      selectQueue: [[{ id: 'source-1', name: 'Source', columns: DEFAULT_SHEET_COLUMNS }]],
-      insertResults: [[{
-        id: 'sheet-copy',
-        ownerUserId: 'user-1',
-        name: 'Source Copy',
-        columns: DEFAULT_SHEET_COLUMNS,
-        isTemplate: false,
-      }]],
+      selectQueue: [
+        [{ id: 'source-1', name: 'Source', columns: DEFAULT_SHEET_COLUMNS, rootId: null }],
+        [{ position: 0, values: { ticker: 'AAPL' } }, { position: 1, values: { ticker: 'TSLA' } }],
+      ],
+      insertResults: [[{ id: 'sheet-copy', ownerUserId: 'user-1', name: 'Source 2026-06-02' }]],
     });
     getPoolDbMock.mockReturnValue(poolDb);
 
-    const response = ensureResponse(await duplicateSheet(new Request('http://localhost/api/sheets/source-1/duplicate', {
+    const response = ensureResponse(await snapshotSheet(new Request('http://localhost/api/sheets/source-1/snapshot', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Source Copy' }),
+      body: JSON.stringify({ date: '2026-06-02' }),
     }), {
       params: Promise.resolve({ id: 'source-1' }),
     }));
@@ -290,18 +298,25 @@ describe('sheets routes', () => {
     expect(response.status).toBe(201);
     expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(1, expect.objectContaining({
       ownerUserId: 'user-1',
+      name: 'Source 2026-06-02',
+      sheetDate: '2026-06-02',
+      rootId: 'source-1',
       columns: DEFAULT_SHEET_COLUMNS,
       isTemplate: false,
-      rootId: 'source-1',
     }));
-    expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(2, {
+    expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(2, [
+      { sheetId: 'sheet-copy', position: 0, values: { ticker: 'AAPL' }, createdByUserId: 'user-1' },
+      { sheetId: 'sheet-copy', position: 1, values: { ticker: 'TSLA' }, createdByUserId: 'user-1' },
+    ]);
+    expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(3, {
       sheetId: 'sheet-copy',
       userId: 'user-1',
       role: 'owner',
     });
+    expect(poolDb._mocks.txDeleteWhereMock).toHaveBeenCalledTimes(1);
   });
 
-  it('POST /api/sheets/[id]/duplicate keeps an existing lineage root', async () => {
+  it('POST /api/sheets/[id]/snapshot rejects snapshotting a snapshot', async () => {
     const poolDb = createPoolDbMock({
       selectQueue: [[{
         id: 'source-1',
@@ -309,22 +324,68 @@ describe('sheets routes', () => {
         name: 'Source',
         columns: DEFAULT_SHEET_COLUMNS,
       }]],
-      insertResults: [[{ id: 'sheet-copy', ownerUserId: 'user-1', name: 'Source Copy' }]],
     });
     getPoolDbMock.mockReturnValue(poolDb);
 
-    const response = ensureResponse(await duplicateSheet(new Request('http://localhost/api/sheets/source-1/duplicate', {
+    const response = ensureResponse(await snapshotSheet(new Request('http://localhost/api/sheets/source-1/snapshot', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Source Copy' }),
+      body: JSON.stringify({ date: '2026-06-02' }),
+    }), {
+      params: Promise.resolve({ id: 'source-1' }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(poolDb._mocks.txInsertValuesMock).not.toHaveBeenCalled();
+    expect(poolDb._mocks.txDeleteWhereMock).not.toHaveBeenCalled();
+  });
+
+  it('POST /api/sheets/[id]/snapshot returns 403 for editors', async () => {
+    getSheetRoleMock.mockResolvedValue('editor');
+    const poolDb = createPoolDbMock({
+      selectQueue: [[{ id: 'source-1', name: 'Source', columns: DEFAULT_SHEET_COLUMNS, rootId: null }]],
+    });
+    getPoolDbMock.mockReturnValue(poolDb);
+
+    const response = ensureResponse(await snapshotSheet(new Request('http://localhost/api/sheets/source-1/snapshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: '2026-06-02' }),
+    }), {
+      params: Promise.resolve({ id: 'source-1' }),
+    }));
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'Only the owner can snapshot' });
+    expect(poolDb._mocks.txInsertValuesMock).not.toHaveBeenCalled();
+  });
+
+  it('POST /api/sheets/[id]/snapshot copies no rows when the original is empty', async () => {
+    const poolDb = createPoolDbMock({
+      selectQueue: [
+        [{ id: 'source-1', name: 'Source', columns: DEFAULT_SHEET_COLUMNS, rootId: null }],
+        [],
+      ],
+      insertResults: [[{ id: 'sheet-copy', ownerUserId: 'user-1', name: 'Source 2026-06-02' }]],
+    });
+    getPoolDbMock.mockReturnValue(poolDb);
+
+    const response = ensureResponse(await snapshotSheet(new Request('http://localhost/api/sheets/source-1/snapshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: '2026-06-02' }),
     }), {
       params: Promise.resolve({ id: 'source-1' }),
     }));
 
     expect(response.status).toBe(201);
-    expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      rootId: 'root-1',
-    }));
+    expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(2, {
+      sheetId: 'sheet-copy',
+      userId: 'user-1',
+      role: 'owner',
+    });
+    expect(poolDb._mocks.txInsertValuesMock).toHaveBeenCalledTimes(2);
+    expect(poolDb._mocks.txDeleteWhereMock).toHaveBeenCalledTimes(1);
   });
 
   it('POST /api/sheets/[id]/rows returns 403 for viewers', async () => {

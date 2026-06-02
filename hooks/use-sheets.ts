@@ -123,17 +123,16 @@ export function useSheets() {
     await refreshList();
   }, [refreshList]);
 
-  const duplicateSheet = useCallback(async (id: string, name: string) => {
-    const res = await sendJson(`/api/sheets/${id}/duplicate`, { name });
+  const snapshotSheet = useCallback(async (id: string, date: string) => {
+    const res = await sendJson(`/api/sheets/${id}/snapshot`, { date });
     if (!res.ok) {
-      toast.error('Failed to duplicate sheet');
+      toast.error('Failed to snapshot sheet');
       return;
     }
 
-    const data = (await res.json()) as { sheet: Sheet };
     await refreshList();
-    await openSheet(data.sheet.id);
-    toast.success('Sheet duplicated');
+    await openSheet(id);
+    toast.success('Snapshot saved; sheet cleared for today');
   }, [openSheet, refreshList]);
 
   const deleteSheet = useCallback(async (id: string) => {
@@ -319,7 +318,7 @@ export function useSheets() {
     openSheet,
     createSheet,
     renameSheet,
-    duplicateSheet,
+    snapshotSheet,
     deleteSheet,
     addRow,
     updateRow,

@@ -42,6 +42,7 @@ type SheetListResponse = {
     role: 'owner' | 'editor' | 'viewer';
     isTemplate: boolean;
     archivedAt: string | null;
+    rootId: string | null;
   }>;
 };
 
@@ -181,6 +182,7 @@ function AddToSheetsButton({ ticker }: { ticker: string }) {
           (sheet.role === 'owner' || sheet.role === 'editor')
           && !sheet.isTemplate
           && sheet.archivedAt === null
+          && sheet.rootId === null
         ))
         .map((sheet) => ({ id: sheet.id, name: sheet.name })));
     } catch {
