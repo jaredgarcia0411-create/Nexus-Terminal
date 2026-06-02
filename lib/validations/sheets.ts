@@ -62,6 +62,12 @@ export const rowPatchSchema = z.object({
   version: z.number().int().min(0),
 });
 
+export const appendResearchRowSchema = z.object({
+  ticker: z.string().trim().toUpperCase().regex(/^[A-Z0-9.\-^]{1,10}$/, 'Valid ticker required'),
+  date: z.string().trim().regex(DATE_REGEX, 'date must be YYYY-MM-DD'),
+  reportId: z.string().min(1).max(128).optional(),
+});
+
 export const memberAddSchema = z.object({
   email: z.string().trim().toLowerCase().email('a valid email is required').max(200),
   role: z.enum(['editor', 'viewer']).default('editor'),
@@ -76,5 +82,6 @@ export type SheetPatchBody = z.infer<typeof sheetPatchSchema>;
 export type SheetDuplicateBody = z.infer<typeof sheetDuplicateSchema>;
 export type RowCreateBody = z.infer<typeof rowCreateSchema>;
 export type RowPatchBody = z.infer<typeof rowPatchSchema>;
+export type AppendResearchRowBody = z.infer<typeof appendResearchRowSchema>;
 export type MemberAddBody = z.infer<typeof memberAddSchema>;
 export type MemberRoleBody = z.infer<typeof memberRoleSchema>;

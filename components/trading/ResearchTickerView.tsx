@@ -10,6 +10,12 @@ import ResearchCompanyHeader from '@/components/trading/ResearchCompanyHeader';
 import { getCachedReportId, prefetchResearchReport } from '@/components/trading/ResearchReportPanel';
 import ResearchReportSections from '@/components/trading/ResearchReportSections';
 import ResearchSubNav from '@/components/trading/ResearchSubNav';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { ResearchSnapshot } from '@/lib/types';
 
 interface SnapshotErrorResponse {
@@ -23,6 +29,21 @@ interface Props {
 }
 
 type TabKey = 'overview' | 'dilution' | 'news' | 'filings' | 'research';
+
+type SheetPickerItem = {
+  id: string;
+  name: string;
+};
+
+type SheetListResponse = {
+  sheets?: Array<{
+    id: string;
+    name: string;
+    role: 'owner' | 'editor' | 'viewer';
+    isTemplate: boolean;
+    archivedAt: string | null;
+  }>;
+};
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'overview', label: 'Overview' },
@@ -114,8 +135,9 @@ export default function ResearchTickerView({ ticker }: Props) {
           sub-nav row on the right without restructuring the shared sub-nav component. */}
       <div className="relative shrink-0">
         <ResearchSubNav tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
-        <div className="absolute right-2 top-1/2 -translate-y-1/2">
+        <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-2">
           <AddToWatchlistButton ticker={ticker} />
+          <AddToSheetsButton ticker={ticker} />
         </div>
       </div>
 
@@ -142,6 +164,87 @@ export default function ResearchTickerView({ ticker }: Props) {
         <ResearchReportSections ticker={ticker} data={data} activeTab={activeTab} onSelectGapDate={setHistoricalDate} />
       </div>
     </div>
+  );
+}
+
+function AddToSheetsButton({ ticker }: { ticker: string }) {
+  const [sheets, setSheets] = useState<SheetPickerItem[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const loadSheets = useCallback(async () => {
+    try {
+      const response = await fetch('/api/sheets');
+      if (!response.ok) throw new Error('load failed');
+      const payload = (await response.json()) as SheetListResponse;
+      setSheets((payload.sheets ?? [])
+        .filter((sheet) => (
+          (sheet.role === 'owner' || sheet.role === 'editor')
+          && !sheet.isTemplate
+          && sheet.archivedAt === null
+        ))
+        .map((sheet) => ({ id: sheet.id, name: sheet.name })));
+    } catch {
+      setSheets([]);
+      toast.error('Failed to load sheets');
+    }
+  }, []);
+
+  const addToSheet = async (sheet: SheetPickerItem) => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/sheets/${sheet.id}/append-research-row`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticker,
+          date: format(new Date(), 'yyyy-MM-dd'),
+          reportId: getCachedReportId(ticker) ?? undefined,
+        }),
+      });
+      if (!response.ok) throw new Error('save failed');
+      const payload = (await response.json()) as { duplicate?: boolean };
+      if (payload.duplicate) {
+        toast.success(`${ticker} is already in "${sheet.name}"`);
+      } else {
+        toast.success(`Added ${ticker} to "${sheet.name}"`);
+      }
+    } catch {
+      toast.error('Failed to add to sheet');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <DropdownMenu onOpenChange={(open) => {
+      if (open) void loadSheets();
+    }}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add to Sheets
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="border-border bg-card text-foreground">
+        {sheets.length === 0 ? (
+          <DropdownMenuItem disabled>No sheets yet</DropdownMenuItem>
+        ) : (
+          sheets.map((sheet) => (
+            <DropdownMenuItem
+              key={sheet.id}
+              disabled={saving}
+              onSelect={() => void addToSheet(sheet)}
+            >
+              {sheet.name}
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

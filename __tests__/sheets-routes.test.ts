@@ -23,6 +23,7 @@ vi.mock('@/lib/server-db-utils', () => ({
 vi.mock('@/lib/sheets/access', () => ({ getSheetRole: getSheetRoleMock }));
 
 import { DELETE as deleteSheet, GET as getSheet, PATCH as patchSheet } from '@/app/api/sheets/[id]/route';
+import { POST as appendResearchRow } from '@/app/api/sheets/[id]/append-research-row/route';
 import { POST as duplicateSheet } from '@/app/api/sheets/[id]/duplicate/route';
 import { POST as postSheetRow } from '@/app/api/sheets/[id]/rows/route';
 import { PATCH as patchSheetRow } from '@/app/api/sheets/[id]/rows/[rowId]/route';
@@ -311,6 +312,95 @@ describe('sheets routes', () => {
     }));
 
     expect(response.status).toBe(403);
+  });
+
+  it('POST /api/sheets/[id]/append-research-row appends for editors and dedupes ticker/date', async () => {
+    getSheetRoleMock.mockResolvedValue('editor');
+    const db = createDbMock({
+      selectQueue: [
+        [],
+        [{ position: 0, values: { ticker: 'AAPL', date: '2026-06-01' } }],
+      ],
+      insertResult: [{
+        id: 'row-1',
+        sheetId: 'sheet-1',
+        position: 0,
+        values: { ticker: 'AAPL', date: '2026-06-01', research_report: 'report-1' },
+      }],
+    });
+    getDbMock.mockReturnValue(db);
+
+    const appended = ensureResponse(await appendResearchRow(new Request('http://localhost/api/sheets/sheet-1/append-research-row', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker: 'aapl', date: '2026-06-01', reportId: 'report-1' }),
+    }), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+    const appendedPayload = await appended.json();
+
+    expect(appended.status).toBe(201);
+    expect(appendedPayload).toEqual({
+      row: {
+        id: 'row-1',
+        sheetId: 'sheet-1',
+        position: 0,
+        values: { ticker: 'AAPL', date: '2026-06-01', research_report: 'report-1' },
+      },
+      duplicate: false,
+    });
+    expect(db._mocks.insertValuesMock).toHaveBeenCalledTimes(1);
+    expect(db._mocks.insertValuesMock).toHaveBeenCalledWith(expect.objectContaining({
+      sheetId: 'sheet-1',
+      position: 0,
+      values: { ticker: 'AAPL', date: '2026-06-01', research_report: 'report-1' },
+      createdByUserId: 'user-1',
+      updatedByUserId: 'user-1',
+    }));
+
+    const duplicate = ensureResponse(await appendResearchRow(new Request('http://localhost/api/sheets/sheet-1/append-research-row', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker: 'AAPL', date: '2026-06-01' }),
+    }), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+
+    expect(duplicate.status).toBe(200);
+    expect(await duplicate.json()).toEqual({ duplicate: true });
+    expect(db._mocks.insertValuesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('POST /api/sheets/[id]/append-research-row returns 403 for viewers', async () => {
+    getSheetRoleMock.mockResolvedValue('viewer');
+    getDbMock.mockReturnValue(createDbMock({}));
+
+    const response = ensureResponse(await appendResearchRow(new Request('http://localhost/api/sheets/sheet-1/append-research-row', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker: 'AAPL', date: '2026-06-01' }),
+    }), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'Forbidden' });
+  });
+
+  it('POST /api/sheets/[id]/append-research-row returns 404 for unknown sheets', async () => {
+    getSheetRoleMock.mockResolvedValue(null);
+    getDbMock.mockReturnValue(createDbMock({}));
+
+    const response = ensureResponse(await appendResearchRow(new Request('http://localhost/api/sheets/missing/append-research-row', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker: 'AAPL', date: '2026-06-01' }),
+    }), {
+      params: Promise.resolve({ id: 'missing' }),
+    }));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Sheet not found' });
   });
 
   it('PATCH /api/sheets/[id]/rows/[rowId] returns 409 with current row on version conflict', async () => {

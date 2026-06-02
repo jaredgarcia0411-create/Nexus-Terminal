@@ -1,22 +1,26 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Columns3, Copy, FileSpreadsheet, Pencil, Plus, Trash2, Users } from 'lucide-react';
+import { Columns3, Copy, FileSpreadsheet, FileText, LineChart, Pencil, Plus, Trash2, Users } from 'lucide-react';
 import {
   DataGrid,
   SelectColumn,
-  renderTextEditor,
   type Column,
-  type RenderEditCellProps,
+  type RenderCellProps,
   type RowsChangeData,
 } from 'react-data-grid';
 
 import AddColumnDialog from '@/components/trading/AddColumnDialog';
 import ShareSheetDialog from '@/components/trading/ShareSheetDialog';
 import SheetFormDialog from '@/components/trading/SheetFormDialog';
+import WatchlistReportInline from '@/components/trading/WatchlistReportInline';
+import WatchlistSavePicker from '@/components/trading/WatchlistSavePicker';
+import WatchlistTickerChart from '@/components/trading/WatchlistTickerChart';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useSheets } from '@/hooks/use-sheets';
+import type { SampleSetRow } from '@/lib/sample-set-csv';
 import type { SheetColumn, SheetColumnType } from '@/lib/sheets/columns';
 import {
   TEXT_EDIT_TYPES,
@@ -26,20 +30,18 @@ import {
   type GridRow,
 } from '@/lib/sheets/grid';
 
-function SelectCellEditor({
+function SelectCell({
   row,
   column,
   onRowChange,
-  onClose,
   options,
-}: RenderEditCellProps<GridRow> & { options: string[] }) {
+}: RenderCellProps<GridRow> & { options: string[] }) {
   return (
     <select
-      autoFocus
-      className="h-full w-full border-2 border-ring bg-card px-1 text-sm text-foreground outline-none"
+      className="h-full w-full border border-transparent bg-transparent px-1 text-sm text-foreground outline-none hover:border-primary/30 focus:border-primary/40 focus:bg-card"
       value={(row[column.key] as string) ?? ''}
-      onChange={(event) => onRowChange({ ...row, [column.key]: event.target.value }, true)}
-      onBlur={() => onClose(true)}
+      onChange={(event) => onRowChange({ ...row, [column.key]: event.target.value })}
+      onKeyDown={(event) => event.stopPropagation()}
     >
       <option value="" />
       {options.map((option) => (
@@ -51,10 +53,60 @@ function SelectCellEditor({
   );
 }
 
+function DateCell({ row, column, onRowChange }: RenderCellProps<GridRow>) {
+  return (
+    <input
+      type="date"
+      className="h-full w-full border border-transparent bg-transparent px-1 text-sm text-foreground outline-none [color-scheme:dark] hover:border-primary/30 focus:border-primary/40 focus:bg-card"
+      value={(row[column.key] as string) ?? ''}
+      onChange={(event) => onRowChange({ ...row, [column.key]: event.target.value })}
+      onKeyDown={(event) => event.stopPropagation()}
+    />
+  );
+}
+
+function TextCell({ row, column, onRowChange }: RenderCellProps<GridRow>) {
+  const rawValue = String(row[column.key] ?? '');
+  const [value, setValue] = useState(() => rawValue);
+
+  useEffect(() => {
+    setValue(rawValue);
+  }, [rawValue]);
+
+  const commit = () => {
+    if (value !== rawValue) {
+      onRowChange({ ...row, [column.key]: value });
+    }
+  };
+
+  return (
+    <input
+      className="h-full w-full border border-transparent bg-transparent px-1 text-sm text-foreground outline-none placeholder:text-muted-foreground hover:border-primary/30 focus:border-primary/40 focus:bg-card"
+      value={value}
+      onChange={(event) => setValue(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === 'Enter') {
+          commit();
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+type CellActions = {
+  openReport: (reportId: string) => void;
+  openChart: (ticker: string, date: string) => void;
+  addToSample: (ticker: string, date: string) => void;
+};
+
 function buildColumn(
   column: SheetColumn,
   canEdit: boolean,
   onToggle: (rowId: string, key: string, value: boolean) => void,
+  actions: CellActions,
 ): Column<GridRow> {
   const base: Column<GridRow> = {
     key: column.key,
@@ -78,19 +130,100 @@ function buildColumn(
     };
   }
 
-  if (!canEdit || column.type === 'report' || column.type === 'chart' || column.type === 'action') {
+  if (column.type === 'report') {
+    return {
+      ...base,
+      renderCell: ({ row }) => {
+        const reportId = String(row[column.key] ?? '').trim();
+        if (!reportId) {
+          return <div className="flex items-center justify-center text-xs text-muted-foreground">—</div>;
+        }
+        return (
+          <div className="flex items-center justify-center">
+            <button
+              type="button"
+              onClick={() => actions.openReport(reportId)}
+              className="rounded-md p-1 text-primary hover:bg-accent hover:text-primary/80"
+              aria-label={`Open ${column.name}`}
+              title="Open report"
+            >
+              <FileText className="h-4 w-4" />
+            </button>
+          </div>
+        );
+      },
+    };
+  }
+
+  if (column.type === 'chart') {
+    return {
+      ...base,
+      renderCell: ({ row }) => {
+        const ticker = String(row.ticker ?? '').trim();
+        const date = String(row.date ?? '').trim();
+        if (!ticker || !date) {
+          return <div className="flex items-center justify-center text-xs text-muted-foreground">—</div>;
+        }
+        return (
+          <div className="flex items-center justify-center">
+            <button
+              type="button"
+              onClick={() => actions.openChart(ticker, date)}
+              className="rounded-md p-1 text-primary hover:bg-accent hover:text-primary/80"
+              aria-label={`Open chart for ${ticker}`}
+              title="Open chart"
+            >
+              <LineChart className="h-4 w-4" />
+            </button>
+          </div>
+        );
+      },
+    };
+  }
+
+  if (column.type === 'action') {
+    return {
+      ...base,
+      renderCell: ({ row }) => {
+        const ticker = String(row.ticker ?? '').trim();
+        const date = String(row.date ?? '').trim();
+        if (!ticker) {
+          return <div className="flex items-center justify-center text-xs text-muted-foreground">—</div>;
+        }
+        return (
+          <div className="flex items-center justify-center">
+            <button
+              type="button"
+              onClick={() => actions.addToSample(ticker, date)}
+              className="rounded-md p-1 text-primary hover:bg-accent hover:text-primary/80"
+              aria-label={`Add ${ticker} to sample set`}
+              title="Save to sample set"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+        );
+      },
+    };
+  }
+
+  if (!canEdit) {
     return base;
+  }
+
+  if (column.type === 'date') {
+    return { ...base, renderCell: (props) => <DateCell {...props} /> };
   }
 
   if (column.type === 'select') {
     return {
       ...base,
-      renderEditCell: (props) => <SelectCellEditor {...props} options={column.options ?? []} />,
+      renderCell: (props) => <SelectCell {...props} options={column.options ?? []} />,
     };
   }
 
   if (TEXT_EDIT_TYPES.includes(column.type)) {
-    return { ...base, renderEditCell: renderTextEditor };
+    return { ...base, renderCell: (props) => <TextCell {...props} /> };
   }
 
   return base;
@@ -103,6 +236,9 @@ export default function SheetsTab() {
   const [formMode, setFormMode] = useState<'create' | 'rename'>('create');
   const [columnOpen, setColumnOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [reportDialog, setReportDialog] = useState<{ reportId: string } | null>(null);
+  const [chartDialog, setChartDialog] = useState<{ ticker: string; date: string } | null>(null);
+  const [savePickerRows, setSavePickerRows] = useState<SampleSetRow[] | null>(null);
 
   const { activeSheet, role, rows, members } = sheets;
   const canEditRows = role === 'owner' || role === 'editor';
@@ -119,9 +255,15 @@ export default function SheetsTab() {
       void sheets.updateRow(rowId, { ...target.values, [key]: value });
     };
 
+    const actions: CellActions = {
+      openReport: (reportId) => setReportDialog({ reportId }),
+      openChart: (ticker, date) => setChartDialog({ ticker, date }),
+      addToSample: (ticker, date) => setSavePickerRows([{ ticker, date }]),
+    };
+
     const columns: Column<GridRow>[] = canEditRows ? [SelectColumn] : [];
     for (const column of activeSheet.columns) {
-      columns.push(buildColumn(column, canEditRows, toggle));
+      columns.push(buildColumn(column, canEditRows, toggle, actions));
     }
     return columns;
   }, [activeSheet, canEditRows, rows, sheets]);
@@ -177,9 +319,9 @@ export default function SheetsTab() {
       exit={{ opacity: 0, y: -10 }}
       className="flex flex-col gap-4 px-1 lg:flex-row"
     >
-      <aside className="shrink-0 rounded-2xl border border-border bg-card p-3 lg:w-60">
+      <aside className="shrink-0 rounded-2xl border border-border bg-card p-3 lg:w-36">
         <div className="mb-3 flex items-center justify-between">
-          <p className="text-xs uppercase tracking-wider text-muted-foreground">Sheets</p>
+          <p className="text-lg font-semibold text-foreground">Sheets</p>
           <button
             type="button"
             onClick={() => {
@@ -374,6 +516,29 @@ export default function SheetsTab() {
           onAdd={sheets.addMember}
           onChangeRole={sheets.updateMemberRole}
           onRemove={sheets.removeMember}
+        />
+      ) : null}
+      <Dialog open={!!reportDialog} onOpenChange={(open) => !open && setReportDialog(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto border-border bg-card text-foreground sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Research Report</DialogTitle>
+          </DialogHeader>
+          {reportDialog ? <WatchlistReportInline reportId={reportDialog.reportId} /> : null}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!chartDialog} onOpenChange={(open) => !open && setChartDialog(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto border-border bg-card text-foreground sm:max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Chart</DialogTitle>
+          </DialogHeader>
+          {chartDialog ? <WatchlistTickerChart ticker={chartDialog.ticker} date={chartDialog.date} /> : null}
+        </DialogContent>
+      </Dialog>
+      {savePickerRows ? (
+        <WatchlistSavePicker
+          open
+          onOpenChange={(open) => !open && setSavePickerRows(null)}
+          seedRows={savePickerRows}
         />
       ) : null}
     </motion.div>

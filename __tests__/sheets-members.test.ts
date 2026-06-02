@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { memberAddSchema, memberRoleSchema } from '@/lib/validations/sheets';
+import { appendResearchRowSchema, memberAddSchema, memberRoleSchema } from '@/lib/validations/sheets';
 
 describe('sheet member validation', () => {
   it('lowercases the email and defaults role to editor', () => {
@@ -20,5 +20,33 @@ describe('sheet member validation', () => {
   it('accepts editor and viewer for a role change', () => {
     expect(memberRoleSchema.parse({ role: 'viewer' })).toEqual({ role: 'viewer' });
     expect(memberRoleSchema.parse({ role: 'editor' })).toEqual({ role: 'editor' });
+  });
+});
+
+describe('append research row validation', () => {
+  it('normalizes a valid row and keeps an optional report id', () => {
+    const parsed = appendResearchRowSchema.parse({
+      ticker: ' aapl ',
+      date: '2026-06-01',
+      reportId: 'report-1',
+    });
+    expect(parsed).toEqual({ ticker: 'AAPL', date: '2026-06-01', reportId: 'report-1' });
+  });
+
+  it('accepts rows without a report id', () => {
+    expect(appendResearchRowSchema.parse({ ticker: 'TSLA', date: '2026-06-01' })).toEqual({
+      ticker: 'TSLA',
+      date: '2026-06-01',
+    });
+  });
+
+  it('rejects invalid tickers', () => {
+    expect(appendResearchRowSchema.safeParse({ ticker: 'TOO-LONG-TICKER', date: '2026-06-01' }).success)
+      .toBe(false);
+  });
+
+  it('rejects invalid dates', () => {
+    expect(appendResearchRowSchema.safeParse({ ticker: 'AAPL', date: '06/01/2026' }).success)
+      .toBe(false);
   });
 });
