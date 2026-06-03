@@ -54,13 +54,35 @@ export default function NexusTerminal() {
     return stored === 'true';
   });
 
+  // Keep the active tab in the URL so a refresh (or a bookmarked/shared link)
+  // restores the same tab instead of falling back to Dashboard. Dashboard is
+  // the default, so we leave the URL bare for it to keep things clean.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const tabParam = params.get('tab');
+    const current = params.get('tab');
 
-    if (tabParam && VALID_TABS.includes(tabParam as TabKey)) {
-      window.history.replaceState({}, '', '/');
+    if (activeTab === 'dashboard') {
+      if (current === null) return;
+      params.delete('tab');
+    } else {
+      if (current === activeTab) return;
+      params.set('tab', activeTab);
     }
+
+    const qs = params.toString();
+    window.history.pushState({}, '', qs ? `?${qs}` : '/');
+  }, [activeTab]);
+
+  // When the user hits Back/Forward, sync the tab to whatever the URL now says.
+  useEffect(() => {
+    const onPopState = () => {
+      const tabParam = new URLSearchParams(window.location.search).get('tab');
+      setActiveTab(
+        tabParam && VALID_TABS.includes(tabParam as TabKey) ? (tabParam as TabKey) : 'dashboard',
+      );
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
   const {
