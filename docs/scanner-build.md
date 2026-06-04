@@ -2,6 +2,8 @@
 
 This is the project brief and source of truth for replacing Nexus Terminal's active Dashboard scanner surface with a custom, polling-based scanner powered by Polygon (Massive) and a JSONLogic rule engine. Sprint 13 retired the Dashboard MDR runtime/UI/candidate logic; any older MDR replacement notes in this document are historical context only unless a future sprint explicitly re-scopes MDR.
 
+> **Build discipline:** the entire scanner is built in a **git worktree on a throwaway Neon branch**, validated across **weeks of real sessions** (the 30-day parallel run below), and **not merged to `main` or pushed to prod until proven**. The existing TradingView scanner keeps powering the live Dashboard the whole time — nothing here touches the production data path until Epic 5 (cutover). See "Validation: 30-day parallel run."
+
 ## Goal
 
 Build a scanner engine that:
@@ -26,7 +28,7 @@ This isn't a tuning problem. The scanners aren't really scanners — they're har
 
 ```
                   ┌──────────────────────────────┐
-                  │   Optiplex 7060 (home)        │
+                  │   Dell OptiPlex (home)        │
                   │   Docker: nexus-scanner       │
                   │                              │
                   │   loop every 15s/30s:        │
@@ -64,8 +66,8 @@ This isn't a tuning problem. The scanners aren't really scanners — they're har
 | 1 | Market data provider | Polygon Stocks Advanced ($199/mo) | Full SIP from 4 AM ET, OTC included, shares-outstanding from EDGAR, single-call full-market snapshot. We already integrate with it. |
 | 2 | Filter language | JSONLogic (`json-logic-js`) | Tiny pure-data AST, round-trips between UI/DB/evaluator, perfect for backtest replay (rule and snapshot are both data). |
 | 3 | Scheduler | Long-lived Node worker, not Vercel | Vercel's 60s function ceiling and cold-start ephemerality kill in-route scanning. Worker runs continuously. |
-| 4 | Worker host | Optiplex 7060 Micro, Docker container | Already runs 24/7. Docker keeps it consistent with other services on that machine. |
-| 5 | Database | Single Neon Launch instance | $14/mo or less even at 90-day snapshot retention. Splitting to a local DB is premature complexity. |
+| 4 | Worker host | Dell OptiPlex Micro (32GB/1TB), Ubuntu Server 24.04 LTS, Docker | Runs 24/7 headless, managed over Tailscale SSH. Consolidates all workers (4 existing agents + scanner) onto this one box; the older OptiPlex becomes a powered-down hot spare. See "Host & database topology." |
+| 5 | Database | Neon for v1 (all app + scanner control/live tables); `market_snapshots` moves to a local Postgres on the OptiPlex as a committed fast-follow | App/live data must stay on Neon — Vercel can't reach a home DB. `market_snapshots` is the one bulky, cold, Vercel-independent table, so it's worth hosting on the 1TB local drive once the worker is stable. Planned, not premature. See "Host & database topology." |
 | 6 | Polling cadence | 30s pre/post, 15s RTH | Sufficient resolution for Day 1 setups, which develop over minutes rather than seconds. |
 | 7 | Snapshot cadence (backtest) | 5 min, narrowed universe | ~200 MB/day after compression, fits Neon Launch's included tier. |
 | 8 | Snapshot universe filter | price >= $0.10 AND day_volume >= 1000, common-stock type only | Drops 5–10× volume; matches our actual trading universe. |
@@ -75,6 +77,31 @@ This isn't a tuning problem. The scanners aren't really scanners — they're har
 | 12 | Rollout strategy | 30-day parallel run | The current scanner keeps powering the Dashboard UI; the new scanner writes to new tables silently. Compare via `/scanner-debug`. |
 | 13 | Cutover | Swap `/api/dashboard/scanner-state` to read new tables, same Day 1 response shape | Zero UI churn. |
 | 14 | Backtest | In v1. Snapshot re-evaluation against stored `market_snapshots`. | Whole reason to rebuild — tune rules with data, not guesswork. |
+
+## Host & database topology
+
+### Worker host
+All workers (the 4 existing agents + the scanner) run on a **Dell OptiPlex Micro** (32GB RAM, 1TB SSD) at home.
+
+- **OS:** Ubuntu Server 24.04 LTS, headless. Boring + best-documented Docker host, 5-year support. (Not Desktop — no GUI overhead; not Windows — bare-Linux Docker is more reliable for 24/7.)
+- **Runtime:** Docker Engine from Docker's official repo (not the apt `docker.io` package) + Compose plugin. All services use `restart: unless-stopped`.
+- **Remote management:** Tailscale (free mesh VPN) on the box + laptop/phone → SSH from anywhere, **no port-forwarding, no inbound exposure**. The box only makes outbound HTTPS to Polygon + Neon.
+- **24/7 resilience knobs:**
+  - BIOS: *Restore on AC Power Loss → On* (auto-boot after an outage).
+  - `systemctl enable docker` + `restart: unless-stopped` → containers auto-start on boot.
+  - `systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target` → never suspends.
+  - `unattended-upgrades` for security patches.
+  - A small UPS is recommended to ride out power flickers.
+- **Old OptiPlex:** powered-down **hot spare** — clone the repo + `services/.env`; `git pull && docker compose up -d` brings it live in minutes if the primary dies. Optional later: staging box, or host for the local snapshot Postgres.
+- **Monitoring:** the `scanner_health` heartbeat + Dashboard badge (Epic 3) is the app-level "is the worker alive" check.
+
+### Database topology
+The split is dictated by **who reads each table**:
+
+- **Neon (cloud) — everything Vercel reads.** All current app data plus the scanner *control + live* tables: `scanner_definitions`, `scanner_health`, `scanner_runs`, and the latest `scanner_results` the Dashboard renders. Vercel cannot reach a home database, so anything the web app renders stays on Neon. Non-negotiable.
+- **Local Postgres on the OptiPlex — `market_snapshots` (committed fast-follow).** The one table that is bulky (~200MB/day), cold (read only by backtest), unbounded, and Vercel-independent. At 30-day retention it fits Neon's base plan; at the multi-year retention that makes backtests valuable, Neon storage gets expensive (~70GB/yr) while the 1TB local drive is free.
+
+**Phasing:** v1 keeps `market_snapshots` on Neon so the parallel-run validation isn't blocked on standing up a local DB. Moving it local is a deliberate, separable sub-project — run Postgres in Docker on the OptiPlex, repoint the worker's snapshot **writes** and the backtest's **reads** at it — done as a fast-follow once the worker is proven stable. This move is committed, not hypothetical. When it happens, the Epic 4 backtest job moves onto the OptiPlex too (it can't stay a Vercel route once the data it reads lives at home).
 
 ## Database schema
 
@@ -194,6 +221,7 @@ Each epic is one HANDOFF.md sprint. They're sequential — don't start the next 
 - Health-row upsert on every tick (including ticks that match nothing).
 - Per-rule evaluation, per-match `scanner_results` insert.
 - Every 5 minutes: write narrowed-universe rows to `market_snapshots`.
+- **Swappable snapshot seam (required):** `market_snapshots` reads/writes go through a dedicated module with its own connection getter (e.g. `services/scanner/src/snapshot-store.ts`), **not** the worker's general Neon client. In v1 that getter points at `DATABASE_URL` (Neon); the local-Postgres move is then an env var + connection swap (`SNAPSHOT_DATABASE_URL`), not a refactor. Keep all other tables (`scanner_definitions`/`runs`/`results`/`health`) on the general Neon client. Rationale: snapshots are a bulky, disposable, append-only archive that is committed to move local (see "Host & database topology") — isolating its access path now makes that move trivial and keeps it from contaminating the control-table code.
 - Deploy doc in this sprint: how to `docker compose up --build -d` after `git pull`, where logs live.
 - Holiday calendar: skip ticks on US market holidays (use Polygon's `marketStatus` endpoint or a static list — sprint decides).
 
@@ -205,6 +233,7 @@ Each epic is one HANDOFF.md sprint. They're sequential — don't start the next 
 
 ### Epic 4 — Backtest endpoint + UI
 - `/api/scanner/backtest` POST endpoint: takes a JSONLogic rule + date range, replays it against stored `market_snapshots`, returns matched (ticker, taken_at) pairs.
+  - **Topology note:** this is a Vercel route only while `market_snapshots` lives on Neon. Once snapshots move to the local Postgres (see "Host & database topology"), the replay job moves onto the OptiPlex and the UI calls it there — Vercel can't query a home DB.
 - Backtest UI: form to paste/edit a JSONLogic rule, date range picker, results table, "overlap with my journaled trades" view (joins against the trades table).
 - Save backtest results temporarily in-memory or in a `backtest_runs` table if you want history (decide in the sprint).
 
@@ -215,6 +244,8 @@ Each epic is one HANDOFF.md sprint. They're sequential — don't start the next 
 - Add a basic UI surface for enabled scanner rules if multiple active rules exist by cutover.
 
 ## Validation: 30-day parallel run
+
+**This whole build stays off `main` and out of prod until proven.** It is developed in a git worktree on a throwaway Neon branch, runs in parallel with the live TradingView scanner for ~30 days of real sessions, and only merges at Epic 5 cutover after the comparison data says the new scanner is at least as good. No production data path changes until then.
 
 **Phase 1 (build, ~1–2 weeks):** Epics 1–3 in a worktree backed by a Neon branch. `git worktree add ../nexus-scanner scanner-v1`, create Neon branch in dashboard, point `.env.local` at it, `npm run dev` works identically.
 
