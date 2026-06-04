@@ -14,6 +14,7 @@ import {
   Row as GridRowRenderer,
   SelectColumn,
   type Column,
+  type ColumnWidths,
   type RenderCellProps,
   type RenderRowProps,
   type RowsChangeData,
@@ -148,7 +149,7 @@ type CellActions = {
   openReport: (reportId: string) => void;
   openChart: (ticker: string, date: string) => void;
   addToSample: (ticker: string, date: string) => void;
-  addToWatchlist: (ticker: string, tag: string) => void;
+  addToWatchlist: (ticker: string, tag: string, reportId: string) => void;
   deleteColumn: (key: string) => void;
 };
 
@@ -201,6 +202,19 @@ function defaultColumnWidth(type: SheetColumnType): number {
   }
 }
 
+// Read saved widths for a sheet from localStorage and shape them into the
+// ColumnWidths Map RDG expects. Stored as a plain { columnKey: pixels } object.
+function loadColumnWidths(sheetId: string | null): ColumnWidths {
+  if (!sheetId || typeof window === 'undefined') return new Map();
+  try {
+    const raw = window.localStorage.getItem(`sheets:widths:${sheetId}`);
+    const saved = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+    return new Map(Object.entries(saved).map(([key, width]) => [key, { type: 'resized', width }]));
+  } catch {
+    return new Map();
+  }
+}
+
 function buildColumn(
   column: SheetColumn,
   canEdit: boolean,
@@ -234,6 +248,10 @@ function buildColumn(
     minWidth: 60,
     resizable: true,
     draggable: canManage,
+    // Pin the ticker column so it stays visible when scrolling right. RDG
+    // auto-sorts frozen columns to the left next to the drag/checkbox columns,
+    // so this one flag is all that's needed.
+    frozen: column.key === 'ticker',
     renderHeaderCell,
   };
 
@@ -335,6 +353,10 @@ function buildColumn(
       renderCell: ({ row }) => {
         const ticker = String(row.ticker ?? '').trim();
         const tag = String(row.tag ?? '').trim();
+        // Carry the row's research report into the watchlist so the report
+        // eye-icon resolves there. `research_report` is the locked report
+        // column's key (see DEFAULT_SHEET_COLUMNS); empty when the row has none.
+        const reportId = String(row.research_report ?? '').trim();
         if (!ticker) {
           return <div className="flex items-center justify-center text-xs text-muted-foreground">—</div>;
         }
@@ -342,7 +364,7 @@ function buildColumn(
           <div className="flex items-center justify-center">
             <button
               type="button"
-              onClick={() => actions.addToWatchlist(ticker, tag)}
+              onClick={() => actions.addToWatchlist(ticker, tag, reportId)}
               className="rounded-md p-1 text-primary hover:bg-accent hover:text-primary/80"
               aria-label={`Add ${ticker} to today's watchlist`}
               title="Add to watchlist"
@@ -434,6 +456,10 @@ export default function SheetsTab() {
   const [chartDialog, setChartDialog] = useState<{ ticker: string; date: string } | null>(null);
   const [savePickerRows, setSavePickerRows] = useState<SampleSetRow[] | null>(null);
   const [tagOptions, setTagOptions] = useState<string[]>([]);
+  // Per-user, per-browser column widths. RDG runs in "controlled width" mode:
+  // we own this Map, feed it in via `columnWidths`, and update it on resize.
+  // Columns not in the Map fall back to their default width.
+  const [columnWidths, setColumnWidths] = useState<ColumnWidths>(() => new Map());
 
   const { activeSheet, role, rows, members } = sheets;
   const canEditRows = role === 'owner' || role === 'editor';
@@ -463,6 +489,32 @@ export default function SheetsTab() {
     };
   }, []);
 
+  // Reload saved widths whenever the open sheet changes. Adjusting state during
+  // render (tracking the last loaded sheet id) is React's recommended pattern
+  // for "reset state when a prop changes" — it avoids an effect + cascading render.
+  const sheetId = activeSheet?.id ?? null;
+  const [loadedWidthsSheetId, setLoadedWidthsSheetId] = useState<string | null>(sheetId);
+  if (sheetId !== loadedWidthsSheetId) {
+    setLoadedWidthsSheetId(sheetId);
+    setColumnWidths(loadColumnWidths(sheetId));
+  }
+
+  // RDG hands us the full next Map on every resize. Keep it in state (controlled
+  // mode) and persist only user-resized columns so we never pin auto-sized ones.
+  const handleColumnWidthsChange = (widths: ColumnWidths) => {
+    setColumnWidths(widths);
+    if (!sheetId) return;
+    const resized: Record<string, number> = {};
+    for (const [key, value] of widths) {
+      if (value.type === 'resized') resized[key] = value.width;
+    }
+    try {
+      localStorage.setItem(`sheets:widths:${sheetId}`, JSON.stringify(resized));
+    } catch {
+      // localStorage can throw (private mode / quota); widths just won't persist.
+    }
+  };
+
   const gridColumns = useMemo<Column<GridRow>[]>(() => {
     if (!activeSheet) return [];
 
@@ -476,12 +528,17 @@ export default function SheetsTab() {
       openReport: (reportId) => setReportDialog({ reportId }),
       openChart: (ticker, date) => setChartDialog({ ticker, date }),
       addToSample: (ticker, date) => setSavePickerRows([{ ticker, date }]),
-      addToWatchlist: (ticker, tag) => {
+      addToWatchlist: (ticker, tag, reportId) => {
         const date = format(new Date(), 'yyyy-MM-dd');
         void fetch('/api/daily-reviews/append-watchlist', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ date, ticker, tags: tag ? [tag] : [] }),
+          body: JSON.stringify({
+            date,
+            ticker,
+            tags: tag ? [tag] : [],
+            ...(reportId ? { reportId } : {}),
+          }),
         })
           .then((res) => {
             if (res.ok) toast.success(`${ticker} added to today's watchlist`);
@@ -588,6 +645,8 @@ export default function SheetsTab() {
       rows={gridRows}
       rowKeyGetter={(row) => row.__id}
       onRowsChange={handleRowsChange}
+      columnWidths={columnWidths}
+      onColumnWidthsChange={handleColumnWidthsChange}
       selectedRows={selectedRows}
       onSelectedRowsChange={setSelectedRows}
       onColumnsReorder={canManage ? handleColumnsReorder : undefined}
