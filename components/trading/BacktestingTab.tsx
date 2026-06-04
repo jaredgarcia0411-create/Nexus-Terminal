@@ -50,6 +50,25 @@ function getInitialRiskDollars() {
 // mount effect below.
 const CHARTS_LAST_TICKER_KEY = 'nexus.charts.lastTicker';
 const CHARTS_RIGHT_COLLAPSED_KEY = 'nexus.charts.rightCollapsed';
+// Remember whether Charts was last on the chart workspace or the Backtest
+// Manager so a refresh returns to the same spot. The stats sub-view saves as
+// 'manager' (it needs a backtest id we don't round-trip), so refreshing from
+// stats lands back on the manager list.
+const CHARTS_VIEW_KEY = 'nexus.charts.view';
+
+function getInitialView(): View {
+  if (typeof window !== 'undefined') {
+    try {
+      if (localStorage.getItem(CHARTS_VIEW_KEY) === 'manager') {
+        return { kind: 'manager' };
+      }
+    } catch {
+      // Ignore storage failures — fall through to the chart default.
+    }
+  }
+  // Chart workspace placeholder; ticker/date hydrate in the mount effect below.
+  return { kind: 'chart', ticker: null, date: null, id: null, name: null, userId: null };
+}
 
 function getPersistedTicker(): string {
   if (typeof window === 'undefined') return 'AAPL';
@@ -82,17 +101,20 @@ export default function BacktestingTab() {
   const currentUserId = (session?.user as { id?: string | null } | undefined)?.id ?? null;
 
   // Default to the chart workspace (not the manager) so the Charts tab feels
-  // like a charting area first. The actual ticker/date is hydrated from
-  // localStorage in the mount effect below — we can't read it during initial
-  // render because that runs on the server.
-  const [view, setView] = useState<View>({
-    kind: 'chart',
-    ticker: null,
-    date: null,
-    id: null,
-    name: null,
-    userId: null,
-  });
+  // like a charting area first, unless a prior refresh left us on the manager.
+  // The actual ticker/date is hydrated from localStorage in the mount effect
+  // below — we can't read it during initial render because that runs on the
+  // server.
+  const [view, setView] = useState<View>(getInitialView);
+
+  // Persist which top-level view we're on so a refresh restores it.
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHARTS_VIEW_KEY, view.kind === 'chart' ? 'chart' : 'manager');
+    } catch {
+      // Ignore storage failures — non-critical preference.
+    }
+  }, [view.kind]);
   const [rightCollapsed, setRightCollapsed] = useState(getInitialRightCollapsed);
 
   // Persist collapse state so the panel stays the way the user left it across

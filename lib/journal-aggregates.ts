@@ -57,6 +57,21 @@ export function dailyPnlByDate(trades: Trade[]): Map<string, number> {
 }
 
 /**
+ * R-multiple summed by date (YYYY-MM-DD local). Mirrors dailyPnlByDate but
+ * only counts trades with a real initialRisk, matching aggregateDay's rule.
+ */
+export function dailyRByDate(trades: Trade[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const trade of trades) {
+    if (trade.isOpen) continue;
+    if (!trade.initialRisk || trade.initialRisk <= 0) continue;
+    const key = bucketKey(trade);
+    map.set(key, (map.get(key) ?? 0) + trade.netPnl / trade.initialRisk);
+  }
+  return map;
+}
+
+/**
  * Aggregate all trades that fall on `date` (YYYY-MM-DD, local timezone).
  * R is only counted for trades where initialRisk > 0.
  */

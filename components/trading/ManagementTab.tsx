@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 
 import ArchiveTab from '@/components/trading/ArchiveTab';
@@ -27,6 +27,11 @@ const SUB_TABS: Array<{ key: SubTabKey; label: string }> = [
   { key: 'career-pnl', label: 'Career P/L' },
   { key: 'archive', label: 'Archive' },
 ];
+
+// Remember the last sub-tab so a refresh returns to where you were instead of
+// resetting to Sheets. localStorage (not URL) keeps it simple — we only need it
+// to survive reloads, not be shareable.
+const SUBTAB_STORAGE_KEY = 'nexus.management.subTab';
 
 interface ManagementTabProps {
   trades: Trade[];
@@ -64,8 +69,25 @@ interface ManagementTabProps {
 
 export default function ManagementTab(props: ManagementTabProps) {
   // Default to Sheets; sub-tab state lives here (not lifted) so
-  // app/page.tsx stays simple.
-  const [activeSubTab, setActiveSubTab] = useState<SubTabKey>('sheets');
+  // app/page.tsx stays simple. Hydrate from localStorage when valid.
+  const [activeSubTab, setActiveSubTab] = useState<SubTabKey>(() => {
+    if (typeof window === 'undefined') return 'sheets';
+    try {
+      const stored = localStorage.getItem(SUBTAB_STORAGE_KEY);
+      if (stored && SUB_TABS.some((t) => t.key === stored)) return stored as SubTabKey;
+    } catch {
+      // Ignore storage failures (private browsing etc.).
+    }
+    return 'sheets';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SUBTAB_STORAGE_KEY, activeSubTab);
+    } catch {
+      // Ignore storage failures — non-critical preference.
+    }
+  }, [activeSubTab]);
 
   return (
     <motion.div

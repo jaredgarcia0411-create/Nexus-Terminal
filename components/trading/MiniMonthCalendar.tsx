@@ -10,9 +10,12 @@ import {
   startOfWeek,
 } from 'date-fns';
 
+import { formatR } from '@/lib/ui-trade-utils';
+
 interface MiniMonthCalendarProps {
   monthDate: Date;
   pnlByDate: Map<string, number>;
+  rByDate: Map<string, number>;
   isActive: boolean;
   onOpen: () => void;
 }
@@ -22,6 +25,7 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export default function MiniMonthCalendar({
   monthDate,
   pnlByDate,
+  rByDate,
   isActive,
   onOpen,
 }: MiniMonthCalendarProps) {
@@ -31,21 +35,39 @@ export default function MiniMonthCalendar({
     end: endOfWeek(endOfMonth(monthStart)),
   });
 
+  // Sum R only for days inside this month — the grid includes leading/trailing
+  // days from neighbors that shouldn't leak into the month total.
+  const monthR = days.reduce((sum, day) => {
+    if (!isSameMonth(day, monthStart)) return sum;
+    return sum + (rByDate.get(format(day, 'yyyy-MM-dd')) ?? 0);
+  }, 0);
+
   return (
     <div className="rounded-xl border border-border bg-card p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <span className="text-sm font-semibold text-foreground">{format(monthDate, 'MMMM, yyyy')}</span>
-        <button
-          type="button"
-          onClick={onOpen}
-          className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-            isActive
-              ? 'border border-primary/40 bg-primary/10 text-primary'
-              : 'bg-accent text-muted-foreground hover:bg-accent/80 hover:text-foreground'
-          }`}
-        >
-          {isActive ? 'Active' : 'Open'}
-        </button>
+        <div className="flex items-center gap-2">
+          {monthR !== 0 ? (
+            <span
+              className={`text-sm font-semibold tabular-nums ${
+                monthR > 0 ? 'text-emerald-400' : 'text-rose-400'
+              }`}
+            >
+              {formatR(monthR)}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            onClick={onOpen}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+              isActive
+                ? 'border border-primary/40 bg-primary/10 text-primary'
+                : 'bg-accent text-muted-foreground hover:bg-accent/80 hover:text-foreground'
+            }`}
+          >
+            {isActive ? 'Active' : 'Open'}
+          </button>
+        </div>
       </div>
 
       <div className="mb-2 grid grid-cols-7">
@@ -75,7 +97,7 @@ export default function MiniMonthCalendar({
           return (
             <div
               key={key}
-              className={`flex h-8 items-center justify-center rounded text-sm font-mono tabular-nums ${tone}`}
+              className={`flex h-8 items-center justify-center rounded-sm text-sm font-mono tabular-nums ${tone}`}
             >
               {format(day, 'd')}
             </div>
