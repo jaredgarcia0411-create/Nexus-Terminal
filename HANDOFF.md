@@ -12,6 +12,29 @@ Historical completed sections (Sprints 1-15, Tier 1 Cleanup, Chart Drawings, Mul
 > Source of truth: `docs/scanner-build.md`. This spec executes **Epic 1 only**. Do not build the worker, UI, or backtest — those are Epics 2–5.
 > Two deviations from the doc, decided with Jared (rationale below): (a) the engine lives in `lib/scanner/`, not `services/scanner/src/engine/`; (b) Epic 1 lands only the `scanner_definitions` table, not all 6.
 
+### Phase 1 kickoff — human setup BEFORE running Codex (Jared does these)
+This whole build happens in a **git worktree on a throwaway Neon branch**, never on `main`/prod (see `docs/scanner-build.md` → "Build discipline" + "Validation: 30-day parallel run"). Do these in order. **Do not run Codex until step 4 is done** — Step 5 of the spec runs `db:migrate`, and it must hit the Neon branch, not prod.
+
+1. **Create the worktree + branch.** From the main checkout (`/home/jared/Nexus-Terminal`):
+   ```bash
+   git worktree add ../nexus-scanner -b scanner-v1
+   cd ../nexus-scanner
+   npm install            # worktrees do not share node_modules — fresh install needed
+   ```
+   (A worktree is a second working folder on the same repo, checked out to its own branch `scanner-v1`. The main checkout is untouched. The Epic 1 spec is already committed to `main`, so it's present here.)
+
+2. **Create a Neon branch** in the Neon dashboard (branch off the production DB). Copy its connection string. (A Neon branch is a copy-on-write clone — migrations/test rows hit the branch, never prod.)
+
+3. **Point the worktree at the branch.** Edit `../nexus-scanner/.env.local` and replace **only** `DATABASE_URL` with the Neon branch connection string. Leave every other value alone. (Claude will not touch `.env*` files — this step is yours.)
+
+4. **Confirm** `../nexus-scanner/.env.local` `DATABASE_URL` points at the **branch**, not prod. This is the safety gate for the migration in Step 5 of the spec.
+
+5. **Run Codex** from inside `../nexus-scanner`, pointed at this `HANDOFF.md` active spec. It executes Steps 1–6 below (install dep → types → engine → schema → migration+seed → tests) against the branch.
+
+6. **When Codex reports back**, run `/review` with Claude to check the diff against this spec.
+
+**Branch lifecycle:** `scanner-v1` is the home for Epics 1–3. Do **not** merge to `main` (which applies the migration to prod Neon) until you're ready to start the 30-day parallel run (Phase 2). Build → validate on the branch → merge once when the worker is ready to run live alongside the old scanner.
+
 ### Goal
 Land the foundation for the custom scanner: a typed snapshot contract, a JSONLogic rule evaluator, the `scanner_definitions` table, and one **editable starter rule seeded as DB data** (not a hardcoded strategy). Fully unit-tested. No worker, no Polygon calls, no UI, no deploy.
 
