@@ -9,156 +9,9 @@ Historical completed sections (Sprints 1-15, Tier 1 Cleanup, Chart Drawings, Mul
 
 ---
 
-## ACTIVE SPEC — Sheets Spec 3: R column + drop Sample + toolbar tweaks
+## Open Follow-Ups
 
-> Builds on 2a/2b (shipped). Each sheet row now has its own isolated backtest sim session (keyed by `sheetRowId`). This spec surfaces that sim's result as a locked **R** column, retires the **Sample** column, and moves the **Filter** toolbar button. **No DB migration** — R is computed from existing data, Sample removal is read-time normalization. Confirm there is no `schema.ts` change and no `drizzle/` file.
-> The Scanner Epic 1 spec stays parked in `specs/scanner-epic1-handoff.md`.
-
-Status: completed 2026-06-07. Implemented the computed per-viewer R column, retired locked Sample normalization/UI plumbing, added `GET /api/sheets/[id]/r-results`, moved the Filter toolbar button, and covered the helper/columns/route behavior in Vitest. Validation passed: `npm run lint`, `npx tsc --noEmit`, `npm test` (106 files / 793 tests), `npm run build`. Confirmed no `lib/db/schema.ts`, `drizzle/`, or `services/` changes; no DB migration run.
-
-### Goal
-1. Add a locked, read-only **R** default column — the **last** of the locked default columns — showing each row's sim R: the row's **ACTIVE** session's realized R, falling back to the **latest REVIEWED** session's R when there's no active sim. R is per-viewer (sessions are per-user), computed `realizedPnl / riskDollars`; blank (`—`) when there's no session/no closed trades.
-2. Remove the `add_to_sample` ("Sample") locked default column and its now-dead plumbing (sheets are the deeper sample set now).
-3. Move the **Filter** toolbar button to sit **between** the Add-column button and the Snapshot-&-reset button.
-
-### Design (read first)
-- R isn't stored on the row — it's derived from a session's actions (`realizedPnl / riskDollars`, see `computeReviewStats` in `lib/backtest-stats.ts`). The grid needs every row's R at once, so we add **one read-only endpoint** `GET /api/sheets/[id]/r-results` that returns `{ results: { [rowId]: number | null } }`. No new table, no write path.
-- To avoid duplicating the money calc, **extract a pure helper** `realizedPnlFromActions` from `computeReviewStats` and have both the existing function and the new endpoint call it (single source of truth).
-- The R column is a new locked column type `'rmultiple'`: a custom read-only `renderCell` that reads from a `rResults` map (fetched in `SheetsTab`, refetched when the chart dialog closes so newly-placed trades show up). It is never editable and never stored in row `values`.
-- Removing `add_to_sample`: `ensureLockedColumns` only *adds* missing locked defaults today — it must also *remove* retired ones, or old sheets keep showing Sample. Add a `RETIRED_LOCKED_KEYS` set and strip those (locked ones only, so a user column sharing the key is never nuked).
-
-### Step 1 — `lib/backtest-stats.ts`: extract the realized-PnL helper
-1. Add an exported pure helper above `computeReviewStats`:
-   ```ts
-   // Single source of truth for realized P&L from a sequence of fills (FIFO-ish
-   // average-cost, matching the sim). Used by review stats and the sheet R column.
-   export function realizedPnlFromActions(
-     actions: Pick<BacktestAction, 'actionType' | 'price' | 'shares'>[],
-   ): number {
-     let totalCost = 0;
-     let totalShares = 0;
-     let realizedPnl = 0;
-     let avgEntry = 0;
-     for (const action of actions) {
-       if (action.actionType === 'LONG' || action.actionType === 'LONG_ADD'
-         || action.actionType === 'SHORT' || action.actionType === 'SHORT_ADD') {
-         totalCost += action.shares * action.price;
-         totalShares += action.shares;
-         avgEntry = totalShares > 0 ? totalCost / totalShares : 0;
-       } else if (action.actionType === 'SELL') {
-         realizedPnl += (action.price - avgEntry) * action.shares;
-         totalShares -= action.shares;
-         totalCost = avgEntry * totalShares;
-       } else if (action.actionType === 'COVER') {
-         realizedPnl += (avgEntry - action.price) * action.shares;
-         totalShares -= action.shares;
-         totalCost = avgEntry * totalShares;
-       }
-     }
-     return realizedPnl;
-   }
-   ```
-   (This is exactly the reduce currently inlined in `computeReviewStats` lines ~68–100, with LONG/SHORT entry branches merged since they're identical.)
-2. Refactor `computeReviewStats` to use it: replace its inline reduce with `const realizedPnl = realizedPnlFromActions(actions);` keeping the rest (`rMultiple = session.riskDollars > 0 ? realizedPnl / session.riskDollars : null`, direction, holdMinutes) unchanged. Existing tests must still pass.
-
-### Step 2 — `lib/sheets/columns.ts`: add R, drop Sample, strip orphans
-1. Add `'rmultiple'` to the `SheetColumnType` union.
-2. In `DEFAULT_SHEET_COLUMNS`: **delete** the `add_to_sample` entry, and **append** R as the **last** entry (after `add_to_watchlist`):
-   ```ts
-   { key: 'r', name: 'R', type: 'rmultiple', locked: true },
-   ```
-3. Add retired-default removal to `ensureLockedColumns`. Above the function: `const RETIRED_LOCKED_KEYS = new Set(['add_to_sample']);`. Inside, before the name-sync map, drop retired locked columns and track `changed`:
-   ```ts
-   const kept = columns.filter((column) => {
-     if (column.locked && RETIRED_LOCKED_KEYS.has(column.key)) {
-       changed = true;
-       return false;
-     }
-     return true;
-   });
-   ```
-   Then run the existing name-sync `.map` over `kept` (not `columns`), compute `missing` against the synced keys, set `changed = true` if `missing.length > 0`, and `return changed ? [...synced, ...missing] : columns;` — preserve the "same reference when nothing changed" contract (return the original `columns` when `!changed`).
-
-### Step 3 — `app/api/sheets/[id]/r-results/route.ts` (NEW, GET)
-Follow the auth + params + access pattern of `app/api/sheets/[id]/route.ts` exactly (`requireUser()`, `getDb()`, `ensureUser`, resolve the `[id]` param the same way that file does, `getSheetRole(db, sheetId, userId)` → if no role, return the same 403/404 shape that file uses).
-1. Load the sheet's row ids: `select({ id: sheetRows.id }).from(sheetRows).where(eq(sheetRows.sheetId, sheetId))`. If none, return `Response.json({ results: {} })`.
-2. Load this viewer's sessions for those rows:
-   ```ts
-   const sessions = await db.select().from(backtestSessions).where(and(
-     eq(backtestSessions.userId, authState.user.id),
-     inArray(backtestSessions.sheetRowId, rowIds),
-   )).orderBy(desc(backtestSessions.reviewedAt), desc(backtestSessions.createdAt));
-   ```
-   (`inArray` from `drizzle-orm`.)
-3. Pick one session per row: the `status === 'ACTIVE'` one if present, else the first (most-recent) `REVIEWED` one. Build `chosenByRow: Map<rowId, session>`.
-4. Load actions for the chosen session ids ordered by sequence:
-   ```ts
-   const actions = chosenIds.length === 0 ? [] : await db.select().from(backtestActions).where(and(
-     eq(backtestActions.userId, authState.user.id),
-     inArray(backtestActions.sessionId, chosenIds),
-   )).orderBy(asc(backtestActions.sequence));
-   ```
-   Group into `actionsBySession: Map<sessionId, rows[]>`.
-5. Compute the map: for each row with a chosen session, `const pnl = realizedPnlFromActions(actionsBySession.get(session.id) ?? []); results[rowId] = session.riskDollars > 0 ? pnl / session.riskDollars : null;`. Rows with no session are simply absent from `results` (the cell renders `—`).
-6. Return `Response.json({ results })`. Wrap in try/catch with `logRouteError('sheets.r-results.get', error)` + `internalServerError()` like the other routes.
-
-### Step 4 — `components/trading/SheetsTab.tsx`
-1. **R results state + fetch.** Add `const [rResults, setRResults] = useState<Record<string, number | null>>({});`. Add a `loadRResults` callback that GETs `/api/sheets/${activeSheet.id}/r-results` and `setRResults(data.results ?? {})` (model it on the existing `tagOptions` fetch effect — guard on `activeSheet?.id`, reset to `{}` when the id changes before fetching). Run it in a `useEffect` keyed on `activeSheet?.id`.
-2. **Refetch on dialog close.** The chart `<Dialog onOpenChange>` (added in 2b) becomes: `onOpenChange={(open) => { if (!open) { setChartDialog(null); void loadRResults(); } }}` so R reflects trades just placed in the workspace.
-3. **R cell.** In `buildColumn`, add an `rResults: Record<string, number | null>` parameter (append to the signature) and a branch before the fall-through:
-   ```tsx
-   if (column.type === 'rmultiple') {
-     return {
-       ...base,
-       renderCell: ({ row }) => {
-         const r = rResults[row.__id];
-         if (r == null || !Number.isFinite(r)) {
-           return <div className="flex items-center justify-center text-xs text-muted-foreground">—</div>;
-         }
-         const sign = r > 0 ? '+' : '';
-         return (
-           <div className={`flex h-full items-center justify-end pr-2 font-mono text-sm tabular-nums ${
-             r > 0 ? 'text-emerald-400' : r < 0 ? 'text-rose-400' : 'text-muted-foreground'
-           }`}>
-             {sign}{r.toFixed(2)}R
-           </div>
-         );
-       },
-     };
-   }
-   ```
-   Pass `rResults` at the `buildColumn(...)` call site (the `gridColumns` memo, ~line 707) and add `rResults` to that memo's dependency array.
-4. **Width.** In `defaultColumnWidth`, add `case 'rmultiple': return 80;`.
-5. **Remove Sample plumbing** (let `npm run lint` confirm nothing dangles): delete the `action`-type `renderCell` branch in `buildColumn` (~lines 442–466), `addToSample` from the `CellActions` type (~line 231) and its impl (~line 666), the `savePickerRows` state (~line 577), the `<WatchlistSavePicker>` render block (~lines 1120–1126), and the now-unused `WatchlistSavePicker` + `SampleSetRow` imports. Leave the `'action'` entry in the `SheetColumnType` union and its `defaultColumnWidth` case alone (harmless, avoids churn).
-6. **Move the Filter button.** Relocate the entire Filter `<Button>` block (~lines 940–955) from its current first position to **between** the Add-column button (`Columns3`, ends ~line 997) and the Snapshot-&-reset button (`Archive`, starts ~line 999). Keep its props/classes/handler byte-for-byte; only its position changes.
-
-### Validation (run from repo root, report pass/fail for each)
-1. `npm run lint`
-2. `npx tsc --noEmit`
-3. `npm test`
-4. `npm run build` — touches a new route + two components; build catches what lint/tsc miss.
-- **No** `npm run db:migrate` — confirm no `schema.ts`/`drizzle/` change was made. No `services/` → skip `typecheck:services`. No workflow assets → skip `workflow:audit`.
-
-### Tests to add/update
-- `lib/backtest-stats` test (existing file): add cases for `realizedPnlFromActions` (a long round-trip with a known P&L, a short round-trip, and entry-only → 0). Existing `computeReviewStats` tests must stay green (the refactor is behavior-preserving).
-- `lib/sheets` columns test (existing): update for the new defaults — `add_to_sample` gone, `r` present and last; add a case that an old sheet carrying a locked `add_to_sample` column has it **stripped** and `r` appended by `ensureLockedColumns`; assert the same-ref-when-unchanged behavior still holds for an already-correct column set.
-- Route test for `/api/sheets/[id]/r-results` following the existing `__tests__/backtest-sessions-route.test.ts` mock harness: (a) no role → 403; (b) a row with an ACTIVE session's R is returned and is preferred over that row's REVIEWED session; (c) a row with only a REVIEWED session returns that R; rows with no session are absent.
-
-### Manual smoke (Jared, post-merge)
-- Open a sheet: existing sheets no longer show the **Sample** column; an **R** column appears as the last locked column. Rows with no sim show `—`.
-- Open a row's chart, place + close a trade, close the dialog → that row's **R** populates (green for +, red for −). Open another user's view of a shared sheet (or a second account) → R reflects *their* sim, not yours.
-- Toolbar: Filter button now sits between Add-column and Snapshot-&-reset; toggling it still locks columns + shows per-column filters as before.
-
-### Acceptance criteria
-- `realizedPnlFromActions` is the single P&L calc; `computeReviewStats` delegates to it; existing stats tests pass.
-- New `r` locked column is last among locked defaults, read-only, shows ACTIVE-else-latest-REVIEWED R per row (per-viewer), `—` when none.
-- `add_to_sample` removed from defaults **and** stripped from existing sheets by `ensureLockedColumns`; Sample button gone from the grid; dead Sample plumbing removed.
-- `GET /api/sheets/[id]/r-results` is access-gated and returns the per-row R map; SheetsTab fetches it and refetches on chart-dialog close.
-- Filter button relocated between Add-column and Snapshot-&-reset.
-- No DB migration. lint + tsc + test + build all green.
-
-### Out of scope
-Storing/denormalizing R onto the row, ranking/sorting by R, aggregate R stats across the sheet, ripping out the `'action'` column type itself. Scanner Epic 1 stays parked.
+- **`BacktestStatsView` owner badge (likely same id mismatch):** `components/trading/BacktestStatsView.tsx` (Charts → Management) computes an owner badge with `review.session.userId === currentUserId`, where `currentUserId` comes from `hooks/use-backtest-stats.ts` (client session id). Before changing anything, check whether that hook's data endpoint already returns a server `currentUserId` (like `use-backtest-manager` does), then apply the same `serverUserId ?? sessionUserId` pattern.
 
 ---
 
@@ -172,6 +25,29 @@ Storing/denormalizing R onto the row, ranking/sorting by R, aggregate R stats ac
 ---
 
 ## Recently Completed
+
+### Fix client/server user-id mismatch hiding backtest reviews
+
+Status: completed 2026-06-07 (commit `b12e604`); reviewed against spec — READY TO SHIP.
+
+Outcome:
+- `GET /api/backtest/sessions` now returns canonical `currentUserId` (`authState.user.id`); `useBacktestSession` prefers `serverUserId ?? clientUserId`, exposes it, and trusts the server-scoped `session` directly (no id comparison) so in-progress sessions reload.
+- `BacktestChartWorkspace` feeds the canonical id to `BacktestSimPanel`, fixing the empty review list / disabled Load for users whose auth id ≠ DB id. No `BacktestSimPanel` change; no migration.
+
+Validation: `npm run lint`, `npx tsc --noEmit`, `npm test` (106 files / 794 tests), `npm run build` all green. Jared confirmed reviews reload in dev.
+
+### Sheets Spec 3: R column + drop Sample + toolbar tweaks
+
+Status: completed 2026-06-07 (commit `797f536`); reviewed against spec — READY TO SHIP.
+
+Outcome:
+- Extracted pure `realizedPnlFromActions` in `lib/backtest-stats.ts` as the single realized-P&L source; refactored `computeReviewStats` to delegate to it.
+- Added a locked, read-only **R** column (last locked default, `'rmultiple'` type) showing each row's per-viewer ACTIVE-else-latest-REVIEWED R; retired the **Sample** column and taught `ensureLockedColumns` to strip retired locked keys; removed the dead Sample plumbing.
+- New access-gated `GET /api/sheets/[id]/r-results`; `SheetsTab` fetches it and refetches on chart-dialog close; moved the Filter toolbar button between Add-column and Snapshot-&-reset.
+
+Validation: `npm run lint`, `npx tsc --noEmit`, `npm test` (106 files / 793 tests), `npm run build` all green. No `schema.ts`/`drizzle/`/`services/` change; no migration.
+
+Note: the review surfaced a pre-existing client/server user-id mismatch (saved reviews not displaying) — tracked as the current ACTIVE SPEC; not caused by this commit.
 
 ### Sheets Spec 2b: Sheet chart-cell sim workspace (frontend)
 
