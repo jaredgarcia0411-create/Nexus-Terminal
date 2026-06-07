@@ -1,6 +1,24 @@
 import { describe, expect, it } from 'vitest';
 
-import { backtestSessionReviewSchema } from '@/lib/validations/backtest';
+import { backtestSessionReviewSchema, backtestSessionUpsertSchema } from '@/lib/validations/backtest';
+
+describe('backtestSessionUpsertSchema', () => {
+  it('accepts sheet row session discriminators', () => {
+    expect(backtestSessionUpsertSchema.safeParse({
+      ticker: 'AAPL',
+      date: '2026-04-28',
+      riskDollars: 100,
+      sheetRowId: 'row-1',
+    }).success).toBe(true);
+
+    expect(backtestSessionUpsertSchema.safeParse({
+      ticker: 'AAPL',
+      date: '2026-04-28',
+      riskDollars: 100,
+      sheetRowId: null,
+    }).success).toBe(true);
+  });
+});
 
 describe('backtestSessionReviewSchema', () => {
   it('allows review saves without chart state', () => {

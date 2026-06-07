@@ -15,6 +15,7 @@ function makeSession(overrides: Partial<BacktestSession> = {}): BacktestSession 
     notes: null,
     chartState: null,
     backtestId: null,
+    sheetRowId: null,
     reviewedAt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

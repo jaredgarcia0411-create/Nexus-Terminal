@@ -9,6 +9,7 @@ export const backtestSessionUpsertSchema = z.object({
   date: z.string().trim().regex(ISO_DATE_RE, 'date must be YYYY-MM-DD'),
   riskDollars: z.number().positive('riskDollars must be positive'),
   backtestId: z.string().trim().nullable().optional(),
+  sheetRowId: z.string().trim().nullable().optional(),
 });
 
 export type BacktestSessionUpsertBody = z.infer<typeof backtestSessionUpsertSchema>;

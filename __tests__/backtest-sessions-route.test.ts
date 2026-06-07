@@ -4,10 +4,12 @@ const {
   requireUserMock,
   ensureUserMock,
   getDbMock,
+  getSheetRoleMock,
 } = vi.hoisted(() => ({
   requireUserMock: vi.fn(),
   ensureUserMock: vi.fn(),
   getDbMock: vi.fn(),
+  getSheetRoleMock: vi.fn(),
 }));
 
 vi.mock('@/lib/server-db-utils', () => ({
@@ -16,12 +18,13 @@ vi.mock('@/lib/server-db-utils', () => ({
   dbUnavailable: () => Response.json({ error: 'DB unavailable' }, { status: 503 }),
 }));
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
+vi.mock('@/lib/sheets/access', () => ({ getSheetRole: getSheetRoleMock }));
 
 import { POST as postAction } from '@/app/api/backtest/actions/route';
 import { DELETE as deleteSession } from '@/app/api/backtest/sessions/[id]/route';
 import { POST as reviewSession } from '@/app/api/backtest/sessions/[id]/review/route';
 import { GET as getSessions, POST as postSession } from '@/app/api/backtest/sessions/route';
-import { backtestActions, backtestSessions } from '@/lib/db/schema';
+import { backtestActions, backtestSessions, sheetRows } from '@/lib/db/schema';
 
 type SessionRow = {
   id: string;
@@ -34,6 +37,7 @@ type SessionRow = {
   notes: string | null;
   chartState: Record<string, unknown>;
   backtestId: string | null;
+  sheetRowId?: string | null;
   reviewedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -52,20 +56,27 @@ type ActionRow = {
   createdAt: Date;
 };
 
+type SheetRow = {
+  id: string;
+  sheetId: string;
+};
+
 function projectRow<T extends Record<string, unknown>>(row: T, fields?: Record<string, unknown>) {
   if (!fields) return { ...row };
   return Object.fromEntries(Object.keys(fields).map((key) => [key, row[key]]));
 }
 
 function createBacktestDb() {
-  const state: { sessions: SessionRow[]; actions: ActionRow[] } = {
+  const state: { sessions: SessionRow[]; actions: ActionRow[]; sheetRows: SheetRow[] } = {
     sessions: [],
     actions: [],
+    sheetRows: [],
   };
 
   function getRows(table: unknown) {
     if (table === backtestSessions) return state.sessions;
     if (table === backtestActions) return state.actions;
+    if (table === sheetRows) return state.sheetRows;
     return [];
   }
 
@@ -124,6 +135,7 @@ function createBacktestDb() {
                   notes: null,
                   chartState: {},
                   backtestId: typeof values.backtestId === 'string' ? values.backtestId : null,
+                  sheetRowId: typeof values.sheetRowId === 'string' ? values.sheetRowId : null,
                   reviewedAt: null,
                   createdAt: new Date(),
                   updatedAt: new Date(),
@@ -212,6 +224,7 @@ describe('backtest session routes', () => {
     vi.clearAllMocks();
     requireUserMock.mockResolvedValue({ user: { id: 'u1', email: 'u1@example.com', name: null, picture: null } });
     ensureUserMock.mockResolvedValue(undefined);
+    getSheetRoleMock.mockResolvedValue(null);
     getDbMock.mockReturnValue(createBacktestDb());
   });
 
@@ -406,5 +419,97 @@ describe('backtest session routes', () => {
 
     expect(uncategorizedResponse.status).toBe(200);
     expect(uncategorizedPayload.session).toBeNull();
+  });
+
+  it('scopes reviews by sheet row while preserving chart-session reviews by default', async () => {
+    const db = createBacktestDb();
+    getDbMock.mockReturnValue(db);
+    const now = new Date('2026-04-28T15:00:00.000Z');
+
+    db.state.sessions.push(
+      {
+        id: 'review-chart',
+        userId: 'u1',
+        ticker: 'AAPL',
+        date: '2026-04-28',
+        status: 'REVIEWED',
+        riskDollars: 100,
+        label: 'Chart',
+        notes: null,
+        chartState: {},
+        backtestId: null,
+        sheetRowId: null,
+        reviewedAt: new Date('2026-04-28T16:00:00.000Z'),
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'review-sheet-row',
+        userId: 'u1',
+        ticker: 'AAPL',
+        date: '2026-04-28',
+        status: 'REVIEWED',
+        riskDollars: 100,
+        label: 'Sheet row',
+        notes: null,
+        chartState: {},
+        backtestId: null,
+        sheetRowId: 'row-1',
+        reviewedAt: new Date('2026-04-28T15:30:00.000Z'),
+        createdAt: now,
+        updatedAt: now,
+      },
+    );
+
+    const chartResponse = ensureResponse(await getSessions(new Request(
+      'http://localhost/api/backtest/sessions?ticker=AAPL&date=2026-04-28',
+    )));
+    const chartPayload = await chartResponse.json();
+
+    expect(chartResponse.status).toBe(200);
+    expect(chartPayload.reviews.map((review: SessionRow) => review.id)).toEqual(['review-chart']);
+
+    const sheetRowResponse = ensureResponse(await getSessions(new Request(
+      'http://localhost/api/backtest/sessions?ticker=AAPL&date=2026-04-28&sheetRowId=row-1',
+    )));
+    const sheetRowPayload = await sheetRowResponse.json();
+
+    expect(sheetRowResponse.status).toBe(200);
+    expect(sheetRowPayload.reviews.map((review: SessionRow) => review.id)).toEqual(['review-sheet-row']);
+  });
+
+  it('persists a sheet row session when the user can access the row sheet', async () => {
+    const db = createBacktestDb();
+    db.state.sheetRows.push({ id: 'row-1', sheetId: 'sheet-1' });
+    getDbMock.mockReturnValue(db);
+    getSheetRoleMock.mockResolvedValue('viewer');
+
+    const response = ensureResponse(await postSession(new Request('http://localhost/api/backtest/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker: 'AAPL', date: '2026-04-28', riskDollars: 100, sheetRowId: 'row-1' }),
+    })));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.session.sheetRowId).toBe('row-1');
+    expect(getSheetRoleMock).toHaveBeenCalledWith(db, 'sheet-1', 'u1');
+  });
+
+  it('rejects sheet row sessions when the row sheet is not accessible', async () => {
+    const db = createBacktestDb();
+    db.state.sheetRows.push({ id: 'row-1', sheetId: 'sheet-1' });
+    getDbMock.mockReturnValue(db);
+    getSheetRoleMock.mockResolvedValue(null);
+
+    const response = ensureResponse(await postSession(new Request('http://localhost/api/backtest/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker: 'AAPL', date: '2026-04-28', riskDollars: 100, sheetRowId: 'row-1' }),
+    })));
+    const payload = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(payload).toEqual({ error: 'No access to that sheet' });
   });
 });

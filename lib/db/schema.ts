@@ -571,11 +571,13 @@ export const backtestSessions = pgTable('backtest_sessions', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   backtestId: text('backtest_id').references(() => backtests.id, { onDelete: 'set null' }),
+  sheetRowId: text('sheet_row_id').references(() => sheetRows.id, { onDelete: 'cascade' }),
 }, (t) => [
   unique('backtest_sessions_user_id_id_unique').on(t.userId, t.id),
   index('backtest_sessions_user_ticker_date_idx').on(t.userId, t.ticker, t.date),
   index('backtest_sessions_user_status_idx').on(t.userId, t.status),
   index('backtest_sessions_user_backtest_idx').on(t.userId, t.backtestId),
+  index('backtest_sessions_sheet_row_idx').on(t.sheetRowId),
 ]);
 
 export const backtestActions = pgTable('backtest_actions', {

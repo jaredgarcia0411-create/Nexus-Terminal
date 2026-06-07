@@ -46,6 +46,7 @@ interface UseBacktestSessionInput {
   date: string | null;
   riskDollars: number;
   backtestId: string | null;
+  sheetRowId?: string | null;
   autoLoadReviewId?: string | null;
 }
 
@@ -62,6 +63,7 @@ export function useBacktestSession({
   date,
   riskDollars,
   backtestId,
+  sheetRowId = null,
   autoLoadReviewId = null,
 }: UseBacktestSessionInput) {
   const { data: sessionData } = useSession();
@@ -116,6 +118,7 @@ export function useBacktestSession({
       try {
         const params = new URLSearchParams({ ticker, date });
         if (backtestId) params.set('backtestId', backtestId);
+        if (sheetRowId) params.set('sheetRowId', sheetRowId);
         const response = await fetch(`/api/backtest/sessions?${params.toString()}`, { signal: controller.signal });
         const payload = await parseJson<SessionsResponse>(response);
         if (!response.ok) {
@@ -158,7 +161,7 @@ export function useBacktestSession({
     void load();
 
     return () => controller.abort();
-  }, [autoLoadReviewId, backtestId, currentUserId, date, loadSessionDetails, ticker]);
+  }, [autoLoadReviewId, backtestId, currentUserId, date, loadSessionDetails, sheetRowId, ticker]);
 
   const ensureActiveSession = useCallback(async (nextRiskDollars = riskDollars) => {
     if (!ticker || !date) {
@@ -167,7 +170,8 @@ export function useBacktestSession({
     if (
       activeSession &&
       activeSession.riskDollars === nextRiskDollars &&
-      activeSession.backtestId === backtestId
+      activeSession.backtestId === backtestId &&
+      activeSession.sheetRowId === sheetRowId
     ) {
       return activeSession;
     }
@@ -175,7 +179,7 @@ export function useBacktestSession({
     const response = await fetch('/api/backtest/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker, date, riskDollars: nextRiskDollars, backtestId }),
+      body: JSON.stringify({ ticker, date, riskDollars: nextRiskDollars, backtestId, sheetRowId }),
     });
     const payload = await parseJson<SessionMutationResponse>(response);
     if (!response.ok || !payload.session) {
@@ -184,7 +188,7 @@ export function useBacktestSession({
 
     setActiveSession(payload.session);
     return payload.session;
-  }, [activeSession, backtestId, date, riskDollars, ticker]);
+  }, [activeSession, backtestId, date, riskDollars, sheetRowId, ticker]);
 
   const placeAction = useCallback(async (input: PlaceBacktestActionInput) => {
     if (isReadOnly) {

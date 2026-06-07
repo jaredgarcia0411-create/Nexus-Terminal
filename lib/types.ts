@@ -116,6 +116,7 @@ export interface BacktestSession {
   notes: string | null;
   chartState: BacktestChartState | null;
   backtestId: string | null;
+  sheetRowId: string | null;
   reviewedAt: string | Date | null;
   createdAt: string | Date;
   updatedAt: string | Date;

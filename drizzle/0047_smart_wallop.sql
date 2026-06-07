@@ -1,0 +1,3 @@
+ALTER TABLE "backtest_sessions" ADD COLUMN "sheet_row_id" text;--> statement-breakpoint
+ALTER TABLE "backtest_sessions" ADD CONSTRAINT "backtest_sessions_sheet_row_id_sheet_rows_id_fk" FOREIGN KEY ("sheet_row_id") REFERENCES "public"."sheet_rows"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "backtest_sessions_sheet_row_idx" ON "backtest_sessions" USING btree ("sheet_row_id");

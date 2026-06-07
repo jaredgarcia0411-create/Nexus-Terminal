@@ -16,6 +16,7 @@ function makeReview(overrides: Partial<ReviewWithStats['stats']> = {}): ReviewWi
       notes: null,
       chartState: null,
       backtestId: null,
+      sheetRowId: null,
       reviewedAt: null,
       createdAt: '',
       updatedAt: '',

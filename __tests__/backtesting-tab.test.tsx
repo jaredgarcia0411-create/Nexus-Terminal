@@ -315,6 +315,7 @@ describe('BacktestingTab', () => {
           indicators: { intraday: { primary: ['VWAP'] }, higher: {} },
         },
         backtestId: 'bt-1',
+        sheetRowId: null,
         reviewedAt: '2026-04-29T12:00:00.000Z',
         createdAt: '2026-04-28T12:00:00.000Z',
         updatedAt: '2026-04-29T12:00:00.000Z',
