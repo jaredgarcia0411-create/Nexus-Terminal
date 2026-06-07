@@ -8,7 +8,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Archive, ChevronDown, Columns3, FileSpreadsheet, FileText, GripVertical, History, LineChart, ListPlus, Pencil, Plus, Rows3, Trash2, Users, X } from 'lucide-react';
+import { Archive, ChevronDown, Columns3, FileSpreadsheet, FileText, Filter, GripVertical, History, LineChart, ListPlus, Pencil, Plus, Rows3, Trash2, Users, X } from 'lucide-react';
 import {
   DataGrid,
   Row as GridRowRenderer,
@@ -35,17 +35,91 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useSheets } from '@/hooks/use-sheets';
 import type { SheetListItem } from '@/hooks/use-sheets';
 import type { SampleSetRow } from '@/lib/sample-set-csv';
 import type { SheetColumn, SheetColumnType } from '@/lib/sheets/columns';
 import {
   TEXT_EDIT_TYPES,
+  filterGridRows,
   gridRowsFromSheet,
   nextColumnKey,
   valuesFromGridRow,
   type GridRow,
+  type SheetFilters,
 } from '@/lib/sheets/grid';
+
+function focusAdjacentEditableInput(input: HTMLInputElement, direction: -1 | 1, columnKey: string, rowIdx: number) {
+  const gridCell = input.closest<HTMLElement>('[role="gridcell"]');
+  const colIndex = gridCell?.getAttribute('aria-colindex');
+  const row = input.closest<HTMLElement>('[role="row"]');
+  const nextRow = direction === 1 ? row?.nextElementSibling : row?.previousElementSibling;
+  if (nextRow instanceof HTMLElement && colIndex) {
+    const target = nextRow.querySelector<HTMLInputElement>(
+      `[role="gridcell"][aria-colindex="${colIndex}"] input`,
+    );
+    if (target) {
+      target.focus();
+      target.select();
+      return;
+    }
+  }
+
+  const fallback = document.querySelector<HTMLInputElement>(
+    `input[data-cell="${columnKey}"][data-rowidx="${rowIdx + direction}"]`,
+  );
+  if (fallback) {
+    fallback.focus();
+    fallback.select();
+  }
+}
+
+function isFilterableColumn(type: SheetColumnType) {
+  return type === 'text' || type === 'number' || type === 'url' || type === 'date' || type === 'select' || type === 'checkbox';
+}
+
+function hasActiveFilter(type: SheetColumnType, value: string) {
+  return type === 'checkbox' ? value === 'checked' || value === 'unchecked' : value.trim() !== '';
+}
+
+function FilterControl({
+  column,
+  value,
+  onChange,
+}: {
+  column: SheetColumn;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  if (column.type === 'checkbox') {
+    return (
+      <select
+        className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none [color-scheme:dark] focus:border-primary/40"
+        value={value || 'all'}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => event.stopPropagation()}
+        aria-label={`Filter ${column.name}`}
+      >
+        <option value="all">All</option>
+        <option value="checked">Checked</option>
+        <option value="unchecked">Unchecked</option>
+      </select>
+    );
+  }
+
+  return (
+    <input
+      type="text"
+      className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/40"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => event.stopPropagation()}
+      placeholder={`Filter ${column.name}`}
+      aria-label={`Filter ${column.name}`}
+    />
+  );
+}
 
 function SelectCell({
   row,
@@ -84,7 +158,7 @@ function DateCell({ row, column, onRowChange }: RenderCellProps<GridRow>) {
 
 const TOOLTIP_WIDTH = 256; // px — matches the w-64 on the tooltip box
 
-function TextCell({ row, column, onRowChange }: RenderCellProps<GridRow>) {
+function TextCell({ row, column, rowIdx, onRowChange }: RenderCellProps<GridRow>) {
   const rawValue = String(row[column.key] ?? '');
   const [value, setValue] = useState(() => rawValue);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -117,6 +191,8 @@ function TextCell({ row, column, onRowChange }: RenderCellProps<GridRow>) {
         ref={inputRef}
         className="h-full w-full border border-transparent bg-transparent px-1 text-sm text-foreground outline-none placeholder:text-muted-foreground hover:border-primary/30 focus:border-primary/40 focus:bg-card"
         value={value}
+        data-cell={column.key}
+        data-rowidx={rowIdx}
         onChange={(event) => setValue(event.target.value)}
         onBlur={commit}
         onFocus={() => setTip(null)}
@@ -124,9 +200,12 @@ function TextCell({ row, column, onRowChange }: RenderCellProps<GridRow>) {
         onMouseLeave={() => setTip(null)}
         onKeyDown={(event) => {
           event.stopPropagation();
-          if (event.key === 'Enter') {
+          if (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'Enter') {
+            const direction = event.key === 'ArrowUp' ? -1 : 1;
+            const target = event.currentTarget;
+            event.preventDefault();
             commit();
-            event.currentTarget.blur();
+            requestAnimationFrame(() => focusAdjacentEditableInput(target, direction, column.key, rowIdx));
           }
         }}
       />
@@ -219,10 +298,48 @@ function buildColumn(
   column: SheetColumn,
   canEdit: boolean,
   canManage: boolean,
+  filterMode: boolean,
+  filterValue: string,
+  setFilter: (key: string, value: string) => void,
   onToggle: (rowId: string, key: string, value: boolean) => void,
   actions: CellActions,
 ): Column<GridRow> {
-  const renderHeaderCell = canManage && !column.locked
+  const renderHeaderCell = filterMode && isFilterableColumn(column.type)
+    ? () => (
+      <div className="flex h-full items-center justify-between gap-1">
+        <span className="truncate">{column.name}</span>
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+              className={
+                hasActiveFilter(column.type, filterValue)
+                  ? 'shrink-0 rounded border border-primary/40 bg-primary/10 p-0.5 text-primary'
+                  : 'shrink-0 rounded border border-transparent p-0.5 text-muted-foreground transition hover:bg-accent hover:text-foreground'
+              }
+              aria-label={`Filter ${column.name}`}
+              title={`Filter ${column.name}`}
+            >
+              <Filter className="h-3.5 w-3.5" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="end"
+            className="w-56 border-border bg-popover p-2 text-popover-foreground"
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <FilterControl
+              column={column}
+              value={filterValue}
+              onChange={(value) => setFilter(column.key, value)}
+            />
+          </PopoverContent>
+        </Popover>
+      </div>
+    )
+    : canManage && !column.locked
     ? () => (
       <div className="group flex h-full items-center justify-between gap-1">
         <span className="truncate">{column.name}</span>
@@ -246,8 +363,8 @@ function buildColumn(
     name: column.name,
     width: column.width ?? defaultColumnWidth(column.type),
     minWidth: 60,
-    resizable: true,
-    draggable: canManage,
+    resizable: !filterMode,
+    draggable: canManage && !filterMode,
     // Pin the ticker column so it stays visible when scrolling right. RDG
     // auto-sorts frozen columns to the left next to the drag/checkbox columns,
     // so this one flag is all that's needed.
@@ -460,6 +577,8 @@ export default function SheetsTab() {
   // we own this Map, feed it in via `columnWidths`, and update it on resize.
   // Columns not in the Map fall back to their default width.
   const [columnWidths, setColumnWidths] = useState<ColumnWidths>(() => new Map());
+  const [filterMode, setFilterMode] = useState(false);
+  const [filters, setFilters] = useState<SheetFilters>({});
 
   const { activeSheet, role, rows, members } = sheets;
   const canEditRows = role === 'owner' || role === 'editor';
@@ -469,6 +588,10 @@ export default function SheetsTab() {
     sheet.rootId === null ? today : sheet.sheetDate ?? 'No date';
 
   const gridRows = useMemo(() => gridRowsFromSheet(rows), [rows]);
+  const visibleRows = useMemo(
+    () => (filterMode && activeSheet ? filterGridRows(gridRows, activeSheet.columns, filters) : gridRows),
+    [activeSheet, filterMode, filters, gridRows],
+  );
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -515,6 +638,16 @@ export default function SheetsTab() {
     }
   };
 
+  const toggleFilterMode = () => {
+    if (filterMode) {
+      setFilterMode(false);
+      setFilters({});
+      return;
+    }
+
+    setFilterMode(true);
+  };
+
   const gridColumns = useMemo<Column<GridRow>[]>(() => {
     if (!activeSheet) return [];
 
@@ -552,6 +685,9 @@ export default function SheetsTab() {
         }
       },
     };
+    const setColumnFilter = (key: string, value: string) => {
+      setFilters((current) => ({ ...current, [key]: value }));
+    };
 
     const dragColumn: Column<GridRow> = {
       key: '__drag',
@@ -561,13 +697,24 @@ export default function SheetsTab() {
       frozen: true,
       renderCell: () => <DragHandle />,
     };
-    const columns: Column<GridRow>[] = canEditRows ? [dragColumn, SelectColumn] : [];
+    const columns: Column<GridRow>[] = canEditRows && !filterMode ? [dragColumn, SelectColumn] : [];
     for (const column of activeSheet.columns) {
       const resolved = column.key === 'tag' ? { ...column, options: tagOptions } : column;
-      columns.push(buildColumn(resolved, canEditRows, canManage, toggle, actions));
+      columns.push(
+        buildColumn(
+          resolved,
+          canEditRows,
+          canManage,
+          filterMode,
+          filters[resolved.key] ?? '',
+          setColumnFilter,
+          toggle,
+          actions,
+        ),
+      );
     }
     return columns;
-  }, [activeSheet, canEditRows, canManage, rows, sheets, tagOptions]);
+  }, [activeSheet, canEditRows, canManage, filterMode, filters, rows, sheets, tagOptions]);
 
   const handleRowsChange = (nextRows: GridRow[], data: RowsChangeData<GridRow>) => {
     if (!activeSheet) return;
@@ -642,15 +789,15 @@ export default function SheetsTab() {
     <DataGrid<GridRow, unknown, string>
       className="sheets-grid"
       columns={gridColumns}
-      rows={gridRows}
+      rows={visibleRows}
       rowKeyGetter={(row) => row.__id}
       onRowsChange={handleRowsChange}
       columnWidths={columnWidths}
       onColumnWidthsChange={handleColumnWidthsChange}
       selectedRows={selectedRows}
       onSelectedRowsChange={setSelectedRows}
-      onColumnsReorder={canManage ? handleColumnsReorder : undefined}
-      renderers={canEditRows ? { renderRow } : undefined}
+      onColumnsReorder={canManage && !filterMode ? handleColumnsReorder : undefined}
+      renderers={canEditRows && !filterMode ? { renderRow } : undefined}
       style={{ blockSize: 480 }}
     />
   );
@@ -787,6 +934,23 @@ export default function SheetsTab() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="secondary"
+                  onClick={toggleFilterMode}
+                  title="Filter"
+                  aria-label="Filter"
+                  aria-pressed={filterMode}
+                  className={
+                    filterMode
+                      ? 'border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20'
+                      : 'bg-accent hover:bg-accent/80'
+                  }
+                >
+                  <Filter className="h-4 w-4" />
+                </Button>
+
                 {canEditRows && selectedRows.size > 0 ? (
                   <Button
                     type="button"
@@ -881,7 +1045,7 @@ export default function SheetsTab() {
               </div>
             </div>
 
-            {canEditRows ? (
+            {canEditRows && !filterMode ? (
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}

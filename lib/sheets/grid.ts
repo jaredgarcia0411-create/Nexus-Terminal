@@ -4,6 +4,8 @@ export type SheetRole = 'owner' | 'editor' | 'viewer';
 
 export type GridRow = { __id: string; __version: number } & Record<string, unknown>;
 
+export type SheetFilters = Record<string, string>;
+
 export type SheetRowRecord = {
   id: string;
   position: number;
@@ -21,6 +23,26 @@ export function valuesFromGridRow(gridRow: GridRow, columns: SheetColumn[]): Rec
     if (gridRow[column.key] !== undefined) values[column.key] = gridRow[column.key];
   }
   return values;
+}
+
+export function filterGridRows(rows: GridRow[], columns: SheetColumn[], filters: SheetFilters): GridRow[] {
+  const columnsByKey = new Map(columns.map((column) => [column.key, column]));
+  const activeFilters = Object.entries(filters).filter(([, value]) => value.trim() !== '' && value !== 'all');
+  if (activeFilters.length === 0) return rows;
+
+  return rows.filter((row) =>
+    activeFilters.every(([key, value]) => {
+      const column = columnsByKey.get(key);
+      if (!column) return true;
+
+      if (column.type === 'checkbox') {
+        if (value !== 'checked' && value !== 'unchecked') return true;
+        return Boolean(row[key]) === (value === 'checked');
+      }
+
+      return String(row[key] ?? '').toLowerCase().includes(value.trim().toLowerCase());
+    }),
+  );
 }
 
 export const USER_COLUMN_TYPES: SheetColumnType[] = ['text', 'number', 'date', 'url', 'checkbox', 'select'];
