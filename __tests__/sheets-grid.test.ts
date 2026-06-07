@@ -55,17 +55,29 @@ describe('sheets grid helpers', () => {
   });
 
   it('appends missing locked default columns without reordering existing columns', () => {
-    const legacyColumns = DEFAULT_SHEET_COLUMNS.filter((column) => column.key !== 'add_to_watchlist');
+    const legacyColumns = DEFAULT_SHEET_COLUMNS.filter((column) => column.key !== 'r');
 
     expect(ensureLockedColumns(legacyColumns)).toEqual(DEFAULT_SHEET_COLUMNS);
   });
 
   it('re-syncs outdated locked column names from the defaults', () => {
     const stale = DEFAULT_SHEET_COLUMNS.map((column) =>
-      column.key === 'add_to_sample' ? { ...column, name: 'Add to Sample' } : column,
+      column.key === 'research_report' ? { ...column, name: 'Research Report' } : column,
     );
 
     expect(ensureLockedColumns(stale)).toEqual(DEFAULT_SHEET_COLUMNS);
+  });
+
+  it('strips retired locked Sample columns and appends the R column', () => {
+    const legacyColumns = [
+      ...DEFAULT_SHEET_COLUMNS.filter((column) => column.key !== 'r'),
+      { key: 'add_to_sample', name: 'Sample', type: 'action', locked: true },
+    ] satisfies SheetColumn[];
+
+    const normalized = ensureLockedColumns(legacyColumns);
+
+    expect(normalized).toEqual(DEFAULT_SHEET_COLUMNS);
+    expect(normalized.at(-1)).toEqual({ key: 'r', name: 'R', type: 'rmultiple', locked: true });
   });
 
   it('returns columns unchanged when locked defaults are already present', () => {

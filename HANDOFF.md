@@ -9,153 +9,156 @@ Historical completed sections (Sprints 1-15, Tier 1 Cleanup, Chart Drawings, Mul
 
 ---
 
-## COMPLETED — Sheets Spec 2b: Sheet chart-cell sim workspace (frontend)
+## ACTIVE SPEC — Sheets Spec 3: R column + drop Sample + toolbar tweaks
 
-Status: completed 2026-06-07; ready for Jared post-merge smoke.
-
-Outcome:
-- Extracted the chart sim workspace into `components/trading/BacktestChartWorkspace.tsx`, including session loading, order placement, risk persistence, review actions, forward-day controls, chart-state capture, and the place-order dialog.
-- `BacktestingTab` now owns Charts-only view/navigation chrome and passes the manager button, lookup/name toolbar, and `BacktestingSidebar` rail as slots. It also passes the active backtest summary because the live `BacktestSimPanel` uses it for named-backtest save/review behavior.
-- Sheet chart cells now pass `sheetRowId={row.__id}` into a full-screen workspace dialog, giving each sheet row its own isolated sim session. `WatchlistTickerChart` was removed from `SheetsTab` imports.
-
-Validation: `npm run lint`, `npx tsc --noEmit`, `npm test` (106 files / 787 tests), and `npm run build` all passed. No `services/` changes.
-
-> Builds on 2a (shipped, commit `f24121d`), which added per-row backtest-session isolation via an optional `sheetRowId`. **2b is the UI half:** extract the Charts chart-workspace into a shared `BacktestChartWorkspace` component, then mount it in a full-screen dialog launched from the sheet's chart cell, passing `sheetRowId` so each row gets its own isolated sim. The Charts tab must look and behave **exactly** as today after this refactor.
+> Builds on 2a/2b (shipped). Each sheet row now has its own isolated backtest sim session (keyed by `sheetRowId`). This spec surfaces that sim's result as a locked **R** column, retires the **Sample** column, and moves the **Filter** toolbar button. **No DB migration** — R is computed from existing data, Sample removal is read-time normalization. Confirm there is no `schema.ts` change and no `drizzle/` file.
 > The Scanner Epic 1 spec stays parked in `specs/scanner-epic1-handoff.md`.
 
+Status: completed 2026-06-07. Implemented the computed per-viewer R column, retired locked Sample normalization/UI plumbing, added `GET /api/sheets/[id]/r-results`, moved the Filter toolbar button, and covered the helper/columns/route behavior in Vitest. Validation passed: `npm run lint`, `npx tsc --noEmit`, `npm test` (106 files / 793 tests), `npm run build`. Confirmed no `lib/db/schema.ts`, `drizzle/`, or `services/` changes; no DB migration run.
+
+### Goal
+1. Add a locked, read-only **R** default column — the **last** of the locked default columns — showing each row's sim R: the row's **ACTIVE** session's realized R, falling back to the **latest REVIEWED** session's R when there's no active sim. R is per-viewer (sessions are per-user), computed `realizedPnl / riskDollars`; blank (`—`) when there's no session/no closed trades.
+2. Remove the `add_to_sample` ("Sample") locked default column and its now-dead plumbing (sheets are the deeper sample set now).
+3. Move the **Filter** toolbar button to sit **between** the Add-column button and the Snapshot-&-reset button.
+
 ### Design (read first)
-Today the entire chart workspace lives inline in `BacktestingTab.tsx` inside the `view.kind === 'chart'` block (lines ~346–558) plus its supporting state/handlers (lines ~118–296). We pull the **session-driven core** (chart grid + trade menu + armed banner + sim panel + place-order dialog, and the state that drives them) into a new reusable component. The bits that are specific to the Charts tab — the back-to-Manager button, the ticker **lookup form** / backtest-name, and the **selection rail** (`BacktestingSidebar`, which browses sample-sets/system tickers) — stay in `BacktestingTab` and are passed into the workspace as **slots**. The sheet dialog passes none of those slots, so a sheet row gets the full sim minus the Charts-only navigation chrome. This matches the locked decisions: **full-screen dialog · full sim parity · one isolated session per row · extract & share.**
+- R isn't stored on the row — it's derived from a session's actions (`realizedPnl / riskDollars`, see `computeReviewStats` in `lib/backtest-stats.ts`). The grid needs every row's R at once, so we add **one read-only endpoint** `GET /api/sheets/[id]/r-results` that returns `{ results: { [rowId]: number | null } }`. No new table, no write path.
+- To avoid duplicating the money calc, **extract a pure helper** `realizedPnlFromActions` from `computeReviewStats` and have both the existing function and the new endpoint call it (single source of truth).
+- The R column is a new locked column type `'rmultiple'`: a custom read-only `renderCell` that reads from a `rResults` map (fetched in `SheetsTab`, refetched when the chart dialog closes so newly-placed trades show up). It is never editable and never stored in row `values`.
+- Removing `add_to_sample`: `ensureLockedColumns` only *adds* missing locked defaults today — it must also *remove* retired ones, or old sheets keep showing Sample. Add a `RETIRED_LOCKED_KEYS` set and strip those (locked ones only, so a user column sharing the key is never nuked).
 
-Ownership split:
-- **Parent owns** `ticker`/`date` (Charts keeps them in `view`; the sheet keeps them in `chartDialog`). Parent passes them down controlled, plus an `onAnchorChange` callback the workspace calls when the chart shifts its anchor date.
-- **Workspace owns** everything session/sim/transient: `rightCollapsed` (+ its localStorage persistence), `riskDollars` (+ `nexus-default-risk` persistence), `armedAction`, `pendingOrder`, `extraSessionsForward`, `latestChartStateRef`, the `useBacktestSession` call, the `esc` hotkey, and all the handlers (`updateRisk`, `placeAction`, `handleArmedClick`, `handleChartStateChange`). `backtestId`, `sheetRowId`, `autoLoadReviewId`, `currentUserId` come in as props.
-
-Why slots instead of a `variant` flag: two consumers with a few differing nodes — explicit optional `ReactNode` slots (and one render-prop for the right panel) keep Charts' current DOM/layout byte-for-byte while letting the sheet omit chrome. No `variant: 'charts' | 'sheet'` enum (that pattern hides branching and is the kind of indirection we avoid).
-
-### Step 1 — Create `components/trading/BacktestChartWorkspace.tsx` (NEW, `'use client'`)
-Move the chart-workspace core out of `BacktestingTab`. The component renders the **grid layout div that is currently the inner content of the `view.kind === 'chart'` `motion.div`** (the `className={rightCollapsed ? ... : ...}` grid at lines ~352–557) as its root element, plus the `<BacktestPlaceOrderDialog>` (lines ~561–573) after it (wrap both in a fragment).
-
-1. Props interface:
+### Step 1 — `lib/backtest-stats.ts`: extract the realized-PnL helper
+1. Add an exported pure helper above `computeReviewStats`:
    ```ts
-   import { type ReactNode } from 'react';
-   import type { BacktestActionType } from '@/lib/types';
-
-   interface BacktestChartWorkspaceProps {
-     ticker: string | null;
-     date: string | null;
-     currentUserId: string | null;
-     backtestId?: string | null;       // Charts backtest context; null elsewhere
-     sheetRowId?: string | null;       // sheet-row isolation key; null on Charts
-     autoLoadReviewId?: string | null; // Charts manager "launch with review"; null elsewhere
-     onAnchorChange?: (date: string) => void;
-     headerLeft?: ReactNode;           // top bar left slot (Charts: back-to-manager button)
-     toolbarLeft?: ReactNode;          // second-row left slot (Charts: lookup form OR backtest name)
-     renderRightPanel?: (simPanel: ReactNode) => ReactNode; // wrap the sim panel (Charts: BacktestingSidebar)
+   // Single source of truth for realized P&L from a sequence of fills (FIFO-ish
+   // average-cost, matching the sim). Used by review stats and the sheet R column.
+   export function realizedPnlFromActions(
+     actions: Pick<BacktestAction, 'actionType' | 'price' | 'shares'>[],
+   ): number {
+     let totalCost = 0;
+     let totalShares = 0;
+     let realizedPnl = 0;
+     let avgEntry = 0;
+     for (const action of actions) {
+       if (action.actionType === 'LONG' || action.actionType === 'LONG_ADD'
+         || action.actionType === 'SHORT' || action.actionType === 'SHORT_ADD') {
+         totalCost += action.shares * action.price;
+         totalShares += action.shares;
+         avgEntry = totalShares > 0 ? totalCost / totalShares : 0;
+       } else if (action.actionType === 'SELL') {
+         realizedPnl += (action.price - avgEntry) * action.shares;
+         totalShares -= action.shares;
+         totalCost = avgEntry * totalShares;
+       } else if (action.actionType === 'COVER') {
+         realizedPnl += (avgEntry - action.price) * action.shares;
+         totalShares -= action.shares;
+         totalCost = avgEntry * totalShares;
+       }
+     }
+     return realizedPnl;
    }
    ```
-   Default `backtestId`, `sheetRowId`, `autoLoadReviewId` to `null` in the destructure.
+   (This is exactly the reduce currently inlined in `computeReviewStats` lines ~68–100, with LONG/SHORT entry branches merged since they're identical.)
+2. Refactor `computeReviewStats` to use it: replace its inline reduce with `const realizedPnl = realizedPnlFromActions(actions);` keeping the rest (`rMultiple = session.riskDollars > 0 ? realizedPnl / session.riskDollars : null`, direction, holdMinutes) unchanged. Existing tests must still pass.
 
-2. **Move into this component, verbatim, from `BacktestingTab`:** the state/refs/handlers at lines ~118–296 that the chart block uses — `rightCollapsed` (+ its persistence `useEffect`, the `getInitialRightCollapsed` helper, and the `CHARTS_RIGHT_COLLAPSED_KEY` constant), `riskDollars` (+ `getInitialRiskDollars`, the `nexus-default-risk` writes inside `updateRisk`), `armedAction`, `pendingOrder`, `extraSessionsForward`, `latestChartStateRef`, the `useBacktestSession` call, the read-only chart-state reset `useEffect`, `handleChartStateChange`, the `useHotkeys('esc', ...)`, `effectiveRiskDollars`, `chartGridKey`, `updateRisk`, `placeAction`, `handleArmedClick`. Bring the matching imports (`useBacktestSession`, `BacktestChartGrid`, `BacktestSimPanel`, `BacktestTradeMenu`, `BacktestPlaceOrderDialog` + its `BacktestOrderDraft` type, `Button`, `Input`, `useHotkeys`, the lucide icons actually used by the moved markup, `BacktestActionType`/`BacktestChartState` types).
-
-3. **`selected`** inside the workspace is derived from the `ticker`/`date` props: `const selected = ticker && date ? { ticker, date } : null;`.
-
-4. **`useBacktestSession`** call uses the props: `{ ticker, date, riskDollars, backtestId, sheetRowId, autoLoadReviewId }`. (2a already added `sheetRowId` to the hook input.)
-
-5. **Anchor change:** the chart grid's `onAnchorChange` must call the prop. Define a local `const handleAnchorChange = useCallback((newDate: string) => { setExtraSessionsForward(0); onAnchorChange?.(newDate); }, [onAnchorChange]);` and pass it to `<BacktestChartGrid onAnchorChange={handleAnchorChange} />`. (The old version also mutated `view.date`; that now happens in the parent via the callback.)
-
-6. **Slots in the markup:**
-   - Top bar left cell (currently the back-to-manager `<button>`): replace with `{headerLeft}`.
-   - Second toolbar's left cell (currently the `!view.id ? <lookup form> : <backtest name>`): replace with `{toolbarLeft}`.
-   - The top-bar **center** (ticker/date display) and the **collapse toggle** (top-bar right) stay in the workspace — both consumers want them.
-   - **Right panel:** today the sim panel is passed as `topPanel` into `<BacktestingSidebar>`. Build the sim panel element once as a `const simPanel = (<BacktestSimPanel ... />)` using the workspace's session state (same props as today, but `activeBacktest` derives from the `backtestId` prop — since the workspace no longer has `view.name`/`view.userId`, pass `activeBacktest={null}` for now; the backtest name/owner display is Charts-sidebar chrome that the sidebar itself reloads from `activeBacktestId`, so this is not a regression — confirm in smoke). Then render `{renderRightPanel ? renderRightPanel(simPanel) : <aside className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-border bg-background"><div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">{simPanel}</div></aside>}` in the `{!rightCollapsed ? ... : null}` slot.
-   - **Place-order dialog:** render `<BacktestPlaceOrderDialog>` (moved verbatim) as the second fragment child, after the grid div.
-
-> Note on `activeBacktest`: in the current Charts code the sim panel receives `activeBacktest` built from `view.id/name/userId`. The sidebar (Charts-only) already independently fetches the backtest by `activeBacktestId`. Passing `activeBacktest={null}` to the sim panel changes only what the **panel** itself shows for an active-backtest label. If smoke shows the Charts panel lost a needed label, add an optional `activeBacktest?: {id,name,userId} | null` prop to the workspace and have `BacktestingTab` pass it; the sheet passes nothing. Prefer the no-prop version unless smoke proves it's needed — don't add the prop speculatively.
-
-### Step 2 — Refactor `BacktestingTab.tsx` to use the workspace
-1. Delete the moved state/handlers/effects/constants/imports from Step 1.2 (now in the workspace). Keep everything tied to view-switching and Charts chrome: `view`, the `CHARTS_VIEW_KEY`/`CHARTS_LAST_TICKER_KEY` persistence, `getInitialView`, `getPersistedTicker`, `todayIsoDate`, `lookupTicker`/`lookupDate` + `handleLookupSubmit` + `lookupValid`, `openChartView`, `handleSelect`, `resetTransientState`, `autoLoadReviewId`, the mount-hydrate effect, manager/stats views.
-2. `handleAnchorChange` here becomes the callback the workspace calls: keep it updating `view.date` (`setView((c) => c.kind === 'chart' ? { ...c, date: newDate } : c)`), drop the `setExtraSessionsForward(0)` line (the workspace resets its own forward count).
-3. Replace the entire inner content of the `view.kind === 'chart'` `motion.div` with:
-   ```tsx
-   <BacktestChartWorkspace
-     ticker={view.ticker}
-     date={view.date}
-     currentUserId={currentUserId}
-     backtestId={view.id}
-     autoLoadReviewId={autoLoadReviewId}
-     onAnchorChange={handleAnchorChange}
-     headerLeft={
-       <button type="button" onClick={() => setView({ kind: 'manager' })} /* ...existing back-button markup... */ >
-         <ChevronLeft className="h-3.5 w-3.5" /> Backtest Manager
-       </button>
-     }
-     toolbarLeft={
-       !view.id
-         ? <form onSubmit={handleLookupSubmit} /* ...existing lookup form... */ />
-         : <div className="flex min-w-0 items-center px-2"><span className="truncate text-sm font-medium text-foreground">{view.name ?? 'Backtest'}</span></div>
-     }
-     renderRightPanel={(simPanel) => (
-       <BacktestingSidebar
-         selected={view.ticker && view.date ? { ticker: view.ticker, date: view.date } : null}
-         onSelect={handleSelect}
-         activeBacktestId={view.id}
-         topPanel={simPanel}
-       />
-     )}
-   />
+### Step 2 — `lib/sheets/columns.ts`: add R, drop Sample, strip orphans
+1. Add `'rmultiple'` to the `SheetColumnType` union.
+2. In `DEFAULT_SHEET_COLUMNS`: **delete** the `add_to_sample` entry, and **append** R as the **last** entry (after `add_to_watchlist`):
+   ```ts
+   { key: 'r', name: 'R', type: 'rmultiple', locked: true },
    ```
-   Keep the surrounding `<motion.div key="chart" ...>` wrapper exactly as-is so Charts' transitions are unchanged. Move the back-button and lookup-form JSX from their old inline positions into these slots verbatim (same classNames/handlers).
-4. `BacktestingSidebar`, `BacktestPlaceOrderDialog`, `BacktestChartGrid`, `BacktestSimPanel`, `BacktestTradeMenu`, `useBacktestSession`, `useHotkeys`, `Input`, `Search` import: remove any that are now only used by the workspace; keep `BacktestingSidebar`, `Button`, `Input`/`Search` (lookup form), `ChevronLeft` (back button), the manager/stats imports. Let `npm run lint` flag unused imports and remove them.
-
-### Step 3 — Sheet chart cell → full-screen workspace dialog (`components/trading/SheetsTab.tsx`)
-1. Add `import { useSession } from 'next-auth/react';` and inside `SheetsTab()` derive `const { data: session } = useSession(); const currentUserId = (session?.user as { id?: string | null } | undefined)?.id ?? null;` (the sim panel needs the viewer id for review ownership).
-2. Add `import BacktestChartWorkspace from '@/components/trading/BacktestChartWorkspace';` and remove the `WatchlistTickerChart` import (it stays in the repo — Watchlist still uses it — just drop it here).
-3. `chartDialog` state: change to carry the row id — `useState<{ ticker: string; date: string; rowId: string } | null>(null)` (line 573).
-4. `CellActions.openChart` signature (line 229) → `openChart: (ticker: string, date: string, rowId: string) => void;`. The chart cell `renderCell` (line ~428) calls `actions.openChart(ticker, date, String(row.__id))` — **`row.__id` is the sheet-row id** (GridRow stores it as `__id`, not `id`). The `actions` impl (line 662) becomes `openChart: (ticker, date, rowId) => setChartDialog({ ticker, date, rowId })`.
-5. Replace the chart `<Dialog>` (lines ~1098–1105) with a **full-screen** dialog hosting the workspace:
-   ```tsx
-   <Dialog open={!!chartDialog} onOpenChange={(open) => !open && setChartDialog(null)}>
-     <DialogContent className="h-[100dvh] w-screen max-w-none gap-0 rounded-none border-0 p-0 sm:max-w-none">
-       <DialogHeader className="sr-only"><DialogTitle>Chart</DialogTitle></DialogHeader>
-       {chartDialog ? (
-         <div className="flex h-full min-h-0 flex-col overflow-hidden p-3 pt-9">
-           <BacktestChartWorkspace
-             ticker={chartDialog.ticker}
-             date={chartDialog.date}
-             sheetRowId={chartDialog.rowId}
-             currentUserId={currentUserId}
-             onAnchorChange={(date) => setChartDialog((c) => (c ? { ...c, date } : c))}
-           />
-         </div>
-       ) : null}
-     </DialogContent>
-   </Dialog>
+3. Add retired-default removal to `ensureLockedColumns`. Above the function: `const RETIRED_LOCKED_KEYS = new Set(['add_to_sample']);`. Inside, before the name-sync map, drop retired locked columns and track `changed`:
+   ```ts
+   const kept = columns.filter((column) => {
+     if (column.locked && RETIRED_LOCKED_KEYS.has(column.key)) {
+       changed = true;
+       return false;
+     }
+     return true;
+   });
    ```
-   - `max-w-none`/`w-screen`/`h-[100dvh]`/`rounded-none`/`p-0` override the primitive's `sm:max-w-lg` cap (dialog.tsx line 64) to make it full-screen. `pt-9` leaves room for the Radix close (×) button at `top-4 right-4`. The `sr-only` header keeps an accessible title without visible chrome (Radix requires a `DialogTitle`).
-   - The wrapping `div` must give the workspace a real height (the workspace grid uses `min-h-0 flex-1`), hence `flex h-full min-h-0 flex-col`.
-   - No `headerLeft`/`toolbarLeft`/`renderRightPanel` → the workspace renders its default plain-`<aside>` sim panel, no back button, no lookup form, no selection rail. Esc closes the dialog (returns to the row) — acceptable; do not add custom esc handling.
+   Then run the existing name-sync `.map` over `kept` (not `columns`), compute `missing` against the synced keys, set `changed = true` if `missing.length > 0`, and `return changed ? [...synced, ...missing] : columns;` — preserve the "same reference when nothing changed" contract (return the original `columns` when `!changed`).
+
+### Step 3 — `app/api/sheets/[id]/r-results/route.ts` (NEW, GET)
+Follow the auth + params + access pattern of `app/api/sheets/[id]/route.ts` exactly (`requireUser()`, `getDb()`, `ensureUser`, resolve the `[id]` param the same way that file does, `getSheetRole(db, sheetId, userId)` → if no role, return the same 403/404 shape that file uses).
+1. Load the sheet's row ids: `select({ id: sheetRows.id }).from(sheetRows).where(eq(sheetRows.sheetId, sheetId))`. If none, return `Response.json({ results: {} })`.
+2. Load this viewer's sessions for those rows:
+   ```ts
+   const sessions = await db.select().from(backtestSessions).where(and(
+     eq(backtestSessions.userId, authState.user.id),
+     inArray(backtestSessions.sheetRowId, rowIds),
+   )).orderBy(desc(backtestSessions.reviewedAt), desc(backtestSessions.createdAt));
+   ```
+   (`inArray` from `drizzle-orm`.)
+3. Pick one session per row: the `status === 'ACTIVE'` one if present, else the first (most-recent) `REVIEWED` one. Build `chosenByRow: Map<rowId, session>`.
+4. Load actions for the chosen session ids ordered by sequence:
+   ```ts
+   const actions = chosenIds.length === 0 ? [] : await db.select().from(backtestActions).where(and(
+     eq(backtestActions.userId, authState.user.id),
+     inArray(backtestActions.sessionId, chosenIds),
+   )).orderBy(asc(backtestActions.sequence));
+   ```
+   Group into `actionsBySession: Map<sessionId, rows[]>`.
+5. Compute the map: for each row with a chosen session, `const pnl = realizedPnlFromActions(actionsBySession.get(session.id) ?? []); results[rowId] = session.riskDollars > 0 ? pnl / session.riskDollars : null;`. Rows with no session are simply absent from `results` (the cell renders `—`).
+6. Return `Response.json({ results })`. Wrap in try/catch with `logRouteError('sheets.r-results.get', error)` + `internalServerError()` like the other routes.
+
+### Step 4 — `components/trading/SheetsTab.tsx`
+1. **R results state + fetch.** Add `const [rResults, setRResults] = useState<Record<string, number | null>>({});`. Add a `loadRResults` callback that GETs `/api/sheets/${activeSheet.id}/r-results` and `setRResults(data.results ?? {})` (model it on the existing `tagOptions` fetch effect — guard on `activeSheet?.id`, reset to `{}` when the id changes before fetching). Run it in a `useEffect` keyed on `activeSheet?.id`.
+2. **Refetch on dialog close.** The chart `<Dialog onOpenChange>` (added in 2b) becomes: `onOpenChange={(open) => { if (!open) { setChartDialog(null); void loadRResults(); } }}` so R reflects trades just placed in the workspace.
+3. **R cell.** In `buildColumn`, add an `rResults: Record<string, number | null>` parameter (append to the signature) and a branch before the fall-through:
+   ```tsx
+   if (column.type === 'rmultiple') {
+     return {
+       ...base,
+       renderCell: ({ row }) => {
+         const r = rResults[row.__id];
+         if (r == null || !Number.isFinite(r)) {
+           return <div className="flex items-center justify-center text-xs text-muted-foreground">—</div>;
+         }
+         const sign = r > 0 ? '+' : '';
+         return (
+           <div className={`flex h-full items-center justify-end pr-2 font-mono text-sm tabular-nums ${
+             r > 0 ? 'text-emerald-400' : r < 0 ? 'text-rose-400' : 'text-muted-foreground'
+           }`}>
+             {sign}{r.toFixed(2)}R
+           </div>
+         );
+       },
+     };
+   }
+   ```
+   Pass `rResults` at the `buildColumn(...)` call site (the `gridColumns` memo, ~line 707) and add `rResults` to that memo's dependency array.
+4. **Width.** In `defaultColumnWidth`, add `case 'rmultiple': return 80;`.
+5. **Remove Sample plumbing** (let `npm run lint` confirm nothing dangles): delete the `action`-type `renderCell` branch in `buildColumn` (~lines 442–466), `addToSample` from the `CellActions` type (~line 231) and its impl (~line 666), the `savePickerRows` state (~line 577), the `<WatchlistSavePicker>` render block (~lines 1120–1126), and the now-unused `WatchlistSavePicker` + `SampleSetRow` imports. Leave the `'action'` entry in the `SheetColumnType` union and its `defaultColumnWidth` case alone (harmless, avoids churn).
+6. **Move the Filter button.** Relocate the entire Filter `<Button>` block (~lines 940–955) from its current first position to **between** the Add-column button (`Columns3`, ends ~line 997) and the Snapshot-&-reset button (`Archive`, starts ~line 999). Keep its props/classes/handler byte-for-byte; only its position changes.
 
 ### Validation (run from repo root, report pass/fail for each)
 1. `npm run lint`
 2. `npx tsc --noEmit`
 3. `npm test`
-4. `npm run build` — this is a real component refactor touching imports/JSX across two large client components; the lint+tsc gates miss production-build issues, so build before declaring done.
-- No `services/` → skip `typecheck:services`. No workflow assets → skip `workflow:audit`.
+4. `npm run build` — touches a new route + two components; build catches what lint/tsc miss.
+- **No** `npm run db:migrate` — confirm no `schema.ts`/`drizzle/` change was made. No `services/` → skip `typecheck:services`. No workflow assets → skip `workflow:audit`.
+
+### Tests to add/update
+- `lib/backtest-stats` test (existing file): add cases for `realizedPnlFromActions` (a long round-trip with a known P&L, a short round-trip, and entry-only → 0). Existing `computeReviewStats` tests must stay green (the refactor is behavior-preserving).
+- `lib/sheets` columns test (existing): update for the new defaults — `add_to_sample` gone, `r` present and last; add a case that an old sheet carrying a locked `add_to_sample` column has it **stripped** and `r` appended by `ensureLockedColumns`; assert the same-ref-when-unchanged behavior still holds for an already-correct column set.
+- Route test for `/api/sheets/[id]/r-results` following the existing `__tests__/backtest-sessions-route.test.ts` mock harness: (a) no role → 403; (b) a row with an ACTIVE session's R is returned and is preferred over that row's REVIEWED session; (c) a row with only a REVIEWED session returns that R; rows with no session are absent.
 
 ### Manual smoke (Jared, post-merge)
-- **Charts unchanged:** open Charts, lookup a ticker, arm + place a trade, adjust risk, +/- forward days, collapse/expand panel, save a review, reload (returns to chart), back to Manager, launch a backtest with a review. All identical to before.
-- **Sheet sim:** add two rows with the **same ticker + date**; open each row's chart cell → full-screen workspace; place a trade in row A; confirm row B's chart opens to an **empty** session (isolation works — this is what 2a enabled). Save a review in row A, reopen row A → its review is there; row B does not show row A's review.
-- Esc (or ×) closes the dialog back to the sheet.
+- Open a sheet: existing sheets no longer show the **Sample** column; an **R** column appears as the last locked column. Rows with no sim show `—`.
+- Open a row's chart, place + close a trade, close the dialog → that row's **R** populates (green for +, red for −). Open another user's view of a shared sheet (or a second account) → R reflects *their* sim, not yours.
+- Toolbar: Filter button now sits between Add-column and Snapshot-&-reset; toggling it still locks columns + shows per-column filters as before.
 
 ### Acceptance criteria
-- New `BacktestChartWorkspace` renders the full sim workspace and is used by **both** `BacktestingTab` (with slots) and the sheet chart-cell dialog (no slots).
-- Charts tab behavior + layout unchanged (lookup, back-to-manager, selection rail, reviews, risk, forward days, collapse all work as before).
-- Sheet chart cell opens a full-screen dialog with a working, **per-row isolated** sim (passes `sheetRowId={row.__id}`); two rows sharing a ticker/date do not share a session or reviews.
-- `WatchlistTickerChart` import removed from `SheetsTab` (component itself retained for Watchlist).
-- lint + tsc + test + build all green.
+- `realizedPnlFromActions` is the single P&L calc; `computeReviewStats` delegates to it; existing stats tests pass.
+- New `r` locked column is last among locked defaults, read-only, shows ACTIVE-else-latest-REVIEWED R per row (per-viewer), `—` when none.
+- `add_to_sample` removed from defaults **and** stripped from existing sheets by `ensureLockedColumns`; Sample button gone from the grid; dead Sample plumbing removed.
+- `GET /api/sheets/[id]/r-results` is access-gated and returns the per-row R map; SheetsTab fetches it and refetches on chart-dialog close.
+- Filter button relocated between Add-column and Snapshot-&-reset.
+- No DB migration. lint + tsc + test + build all green.
 
-### Out of scope (Spec 3 — do NOT build here)
-The R locked default column showing the row's sim R-result, and removing the `add_to_sample` default column.
+### Out of scope
+Storing/denormalizing R onto the row, ranking/sorting by R, aggregate R stats across the sheet, ripping out the `'action'` column type itself. Scanner Epic 1 stays parked.
 
 ---
 
@@ -169,6 +172,17 @@ The R locked default column showing the row's sim R-result, and removing the `ad
 ---
 
 ## Recently Completed
+
+### Sheets Spec 2b: Sheet chart-cell sim workspace (frontend)
+
+Status: completed 2026-06-07 (commit `24297a2`); reviewed against spec.
+
+Outcome:
+- Extracted the session-driven chart sim into `components/trading/BacktestChartWorkspace.tsx` (chart grid, trade menu, armed banner, sim panel, place-order dialog + all sim/session/transient state); `ticker`/`date` stay parent-owned via props + an `onAnchorChange` callback.
+- `BacktestingTab` renders it with Charts-only chrome passed as slots (back-to-manager, lookup/name toolbar, `BacktestingSidebar` rail) and passes `activeBacktest` so the panel label is unchanged; each consumer adds a `key` so the workspace remounts cleanly per ticker/date/row.
+- Sheet chart cells open a full-screen dialog rendering the workspace with `sheetRowId={row.__id}` for a per-row isolated sim (builds on 2a); `WatchlistTickerChart` import dropped from `SheetsTab`.
+
+Validation: `npm run lint`, `npx tsc --noEmit`, `npm test` (106 files / 787 tests), `npm run build` all green. Charts no-regression + per-row isolation smoke remain a Jared post-merge task.
 
 ### Sheets Spec 2a: Per-row backtest-session isolation (backend only)
 

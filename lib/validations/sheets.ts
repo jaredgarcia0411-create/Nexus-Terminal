@@ -9,6 +9,7 @@ export const SHEET_COLUMN_TYPES = [
   'select',
   'report',
   'chart',
+  'rmultiple',
   'action',
   'watchlist',
 ] as const;

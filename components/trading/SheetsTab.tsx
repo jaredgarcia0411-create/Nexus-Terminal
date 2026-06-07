@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type Key } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type Key } from 'react';
 import { createPortal } from 'react-dom';
 import { format } from 'date-fns';
 import { useSession } from 'next-auth/react';
@@ -27,7 +27,6 @@ import BacktestChartWorkspace from '@/components/trading/BacktestChartWorkspace'
 import ShareSheetDialog from '@/components/trading/ShareSheetDialog';
 import SheetFormDialog from '@/components/trading/SheetFormDialog';
 import WatchlistReportInline from '@/components/trading/WatchlistReportInline';
-import WatchlistSavePicker from '@/components/trading/WatchlistSavePicker';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -39,7 +38,6 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useSheets } from '@/hooks/use-sheets';
 import type { SheetListItem } from '@/hooks/use-sheets';
-import type { SampleSetRow } from '@/lib/sample-set-csv';
 import type { SheetColumn, SheetColumnType } from '@/lib/sheets/columns';
 import {
   TEXT_EDIT_TYPES,
@@ -228,7 +226,6 @@ function TextCell({ row, column, rowIdx, onRowChange }: RenderCellProps<GridRow>
 type CellActions = {
   openReport: (reportId: string) => void;
   openChart: (ticker: string, date: string, rowId: string) => void;
-  addToSample: (ticker: string, date: string) => void;
   addToWatchlist: (ticker: string, tag: string, reportId: string) => void;
   deleteColumn: (key: string) => void;
 };
@@ -260,6 +257,13 @@ function groupSheetLineages(list: SheetListItem[]): SheetLineageGroup[] {
     .sort((a, b) => sheetVersionTime(b.head) - sheetVersionTime(a.head));
 }
 
+async function fetchSheetRResults(sheetId: string): Promise<Record<string, number | null>> {
+  const res = await fetch(`/api/sheets/${sheetId}/r-results`);
+  if (!res.ok) return {};
+  const data = await res.json() as { results?: Record<string, number | null> };
+  return data.results ?? {};
+}
+
 // Every column needs an explicit pixel width. Without one, react-data-grid
 // treats the column as flexible (it shares leftover space), so resizing one
 // column makes all the other flexible columns recompute their widths — the
@@ -273,6 +277,8 @@ function defaultColumnWidth(type: SheetColumnType): number {
     case 'action':
     case 'watchlist':
       return 90; // icon / single-control columns stay narrow
+    case 'rmultiple':
+      return 80;
     case 'date':
       return 130;
     case 'select':
@@ -304,6 +310,7 @@ function buildColumn(
   setFilter: (key: string, value: string) => void,
   onToggle: (rowId: string, key: string, value: boolean) => void,
   actions: CellActions,
+  rResults: Record<string, number | null>,
 ): Column<GridRow> {
   const renderHeaderCell = filterMode && isFilterableColumn(column.type)
     ? () => (
@@ -439,26 +446,20 @@ function buildColumn(
     };
   }
 
-  if (column.type === 'action') {
+  if (column.type === 'rmultiple') {
     return {
       ...base,
       renderCell: ({ row }) => {
-        const ticker = String(row.ticker ?? '').trim();
-        const date = String(row.date ?? '').trim();
-        if (!ticker) {
+        const r = rResults[row.__id];
+        if (r == null || !Number.isFinite(r)) {
           return <div className="flex items-center justify-center text-xs text-muted-foreground">—</div>;
         }
+        const sign = r > 0 ? '+' : '';
         return (
-          <div className="flex items-center justify-center">
-            <button
-              type="button"
-              onClick={() => actions.addToSample(ticker, date)}
-              className="rounded-md p-1 text-primary hover:bg-accent hover:text-primary/80"
-              aria-label={`Add ${ticker} to sample set`}
-              title="Save to sample set"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
+          <div className={`flex h-full items-center justify-end pr-2 font-mono text-sm tabular-nums ${
+            r > 0 ? 'text-emerald-400' : r < 0 ? 'text-rose-400' : 'text-muted-foreground'
+          }`}>
+            {sign}{r.toFixed(2)}R
           </div>
         );
       },
@@ -567,6 +568,8 @@ export default function SheetsTab() {
   const { data: session } = useSession();
   const currentUserId = (session?.user as { id?: string | null } | undefined)?.id ?? null;
   const sheets = useSheets();
+  const { activeSheet, role, rows, members } = sheets;
+  const sheetId = activeSheet?.id ?? null;
   const [selectedRows, setSelectedRows] = useState<ReadonlySet<string>>(() => new Set());
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'rename'>('create');
@@ -574,16 +577,16 @@ export default function SheetsTab() {
   const [shareOpen, setShareOpen] = useState(false);
   const [reportDialog, setReportDialog] = useState<{ reportId: string } | null>(null);
   const [chartDialog, setChartDialog] = useState<{ ticker: string; date: string; rowId: string } | null>(null);
-  const [savePickerRows, setSavePickerRows] = useState<SampleSetRow[] | null>(null);
   const [tagOptions, setTagOptions] = useState<string[]>([]);
+  const [rResults, setRResults] = useState<Record<string, number | null>>({});
   // Per-user, per-browser column widths. RDG runs in "controlled width" mode:
   // we own this Map, feed it in via `columnWidths`, and update it on resize.
   // Columns not in the Map fall back to their default width.
   const [columnWidths, setColumnWidths] = useState<ColumnWidths>(() => new Map());
   const [filterMode, setFilterMode] = useState(false);
   const [filters, setFilters] = useState<SheetFilters>({});
+  const [loadedRResultsSheetId, setLoadedRResultsSheetId] = useState<string | null>(sheetId);
 
-  const { activeSheet, role, rows, members } = sheets;
   const canEditRows = role === 'owner' || role === 'editor';
   const canManage = role === 'owner';
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -615,10 +618,40 @@ export default function SheetsTab() {
     };
   }, []);
 
+  const loadRResults = useCallback(() => {
+    if (!sheetId) {
+      setRResults({});
+      return;
+    }
+
+    void fetchSheetRResults(sheetId)
+      .then(setRResults)
+      .catch(() => setRResults({}));
+  }, [sheetId]);
+
+  if (sheetId !== loadedRResultsSheetId) {
+    setLoadedRResultsSheetId(sheetId);
+    if (Object.keys(rResults).length > 0) setRResults({});
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!sheetId) return undefined;
+    void fetchSheetRResults(sheetId)
+      .then((results) => {
+        if (!cancelled) setRResults(results);
+      })
+      .catch(() => {
+        if (!cancelled) setRResults({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sheetId]);
+
   // Reload saved widths whenever the open sheet changes. Adjusting state during
   // render (tracking the last loaded sheet id) is React's recommended pattern
   // for "reset state when a prop changes" — it avoids an effect + cascading render.
-  const sheetId = activeSheet?.id ?? null;
   const [loadedWidthsSheetId, setLoadedWidthsSheetId] = useState<string | null>(sheetId);
   if (sheetId !== loadedWidthsSheetId) {
     setLoadedWidthsSheetId(sheetId);
@@ -663,7 +696,6 @@ export default function SheetsTab() {
     const actions: CellActions = {
       openReport: (reportId) => setReportDialog({ reportId }),
       openChart: (ticker, date, rowId) => setChartDialog({ ticker, date, rowId }),
-      addToSample: (ticker, date) => setSavePickerRows([{ ticker, date }]),
       addToWatchlist: (ticker, tag, reportId) => {
         const date = format(new Date(), 'yyyy-MM-dd');
         void fetch('/api/daily-reviews/append-watchlist', {
@@ -713,11 +745,12 @@ export default function SheetsTab() {
           setColumnFilter,
           toggle,
           actions,
+          rResults,
         ),
       );
     }
     return columns;
-  }, [activeSheet, canEditRows, canManage, filterMode, filters, rows, sheets, tagOptions]);
+  }, [activeSheet, canEditRows, canManage, filterMode, filters, rResults, rows, sheets, tagOptions]);
 
   const handleRowsChange = (nextRows: GridRow[], data: RowsChangeData<GridRow>) => {
     if (!activeSheet) return;
@@ -937,23 +970,6 @@ export default function SheetsTab() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="secondary"
-                  onClick={toggleFilterMode}
-                  title="Filter"
-                  aria-label="Filter"
-                  aria-pressed={filterMode}
-                  className={
-                    filterMode
-                      ? 'border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20'
-                      : 'bg-accent hover:bg-accent/80'
-                  }
-                >
-                  <Filter className="h-4 w-4" />
-                </Button>
-
                 {canEditRows && selectedRows.size > 0 ? (
                   <Button
                     type="button"
@@ -995,6 +1011,23 @@ export default function SheetsTab() {
                     <Columns3 className="h-4 w-4" />
                   </Button>
                 ) : null}
+
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="secondary"
+                  onClick={toggleFilterMode}
+                  title="Filter"
+                  aria-label="Filter"
+                  aria-pressed={filterMode}
+                  className={
+                    filterMode
+                      ? 'border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20'
+                      : 'bg-accent hover:bg-accent/80'
+                  }
+                >
+                  <Filter className="h-4 w-4" />
+                </Button>
 
                 {canManage && !activeSheet.rootId ? (
                   <Button
@@ -1098,7 +1131,15 @@ export default function SheetsTab() {
           {reportDialog ? <WatchlistReportInline reportId={reportDialog.reportId} /> : null}
         </DialogContent>
       </Dialog>
-      <Dialog open={!!chartDialog} onOpenChange={(open) => !open && setChartDialog(null)}>
+      <Dialog
+        open={!!chartDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            setChartDialog(null);
+            void loadRResults();
+          }
+        }}
+      >
         <DialogContent className="h-[100dvh] w-screen max-w-none gap-0 rounded-none border-0 bg-background p-0 text-foreground sm:max-w-none">
           <DialogHeader className="sr-only">
             <DialogTitle>Chart</DialogTitle>
@@ -1117,13 +1158,6 @@ export default function SheetsTab() {
           ) : null}
         </DialogContent>
       </Dialog>
-      {savePickerRows ? (
-        <WatchlistSavePicker
-          open
-          onOpenChange={(open) => !open && setSavePickerRows(null)}
-          seedRows={savePickerRows}
-        />
-      ) : null}
     </motion.div>
   );
 }

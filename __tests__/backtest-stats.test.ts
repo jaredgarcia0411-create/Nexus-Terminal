@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeAggregateStats, computeReviewStats, type ReviewWithStats } from '@/lib/backtest-stats';
+import {
+  computeAggregateStats,
+  computeReviewStats,
+  realizedPnlFromActions,
+  type ReviewWithStats,
+} from '@/lib/backtest-stats';
 import type { BacktestAction, BacktestSession } from '@/lib/types';
 
 function makeSession(overrides: Partial<BacktestSession> = {}): BacktestSession {
@@ -38,6 +43,30 @@ function makeAction(overrides: Partial<BacktestAction>): BacktestAction {
     ...overrides,
   };
 }
+
+describe('realizedPnlFromActions', () => {
+  it('computes long round-trip realized pnl', () => {
+    expect(realizedPnlFromActions([
+      makeAction({ actionType: 'LONG', price: 100, shares: 10, sequence: 1 }),
+      makeAction({ id: 'a2', actionType: 'LONG_ADD', price: 110, shares: 10, sequence: 2 }),
+      makeAction({ id: 'a3', actionType: 'SELL', price: 120, shares: 20, sequence: 3 }),
+    ])).toBeCloseTo(300);
+  });
+
+  it('computes short round-trip realized pnl', () => {
+    expect(realizedPnlFromActions([
+      makeAction({ actionType: 'SHORT', price: 50, shares: 20, sequence: 1 }),
+      makeAction({ id: 'a2', actionType: 'COVER', price: 40, shares: 20, sequence: 2 }),
+    ])).toBeCloseTo(200);
+  });
+
+  it('returns zero for entry-only actions', () => {
+    expect(realizedPnlFromActions([
+      makeAction({ actionType: 'LONG', price: 100, shares: 10, sequence: 1 }),
+      makeAction({ id: 'a2', actionType: 'LONG_ADD', price: 110, shares: 10, sequence: 2 }),
+    ])).toBe(0);
+  });
+});
 
 describe('computeReviewStats', () => {
   it('returns zero pnl for no actions', () => {

@@ -24,6 +24,7 @@ vi.mock('@/lib/sheets/access', () => ({ getSheetRole: getSheetRoleMock }));
 
 import { DELETE as deleteSheet, GET as getSheet, PATCH as patchSheet } from '@/app/api/sheets/[id]/route';
 import { POST as appendResearchRow } from '@/app/api/sheets/[id]/append-research-row/route';
+import { GET as getRResults } from '@/app/api/sheets/[id]/r-results/route';
 import { POST as postSheetRow } from '@/app/api/sheets/[id]/rows/route';
 import { PATCH as patchSheetRow } from '@/app/api/sheets/[id]/rows/[rowId]/route';
 import { PATCH as reorderRows } from '@/app/api/sheets/[id]/rows/reorder/route';
@@ -218,6 +219,161 @@ describe('sheets routes', () => {
       members: [{ userId: 'user-1', role: 'viewer', name: 'User', email: 'user@example.com' }],
       role: 'viewer',
     });
+  });
+
+  it('GET /api/sheets/[id]/r-results returns 404 when caller is not a member', async () => {
+    getSheetRoleMock.mockResolvedValue(null);
+    getDbMock.mockReturnValue(createDbMock({}));
+
+    const response = ensureResponse(await getRResults(new Request('http://localhost/api/sheets/sheet-1/r-results'), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Sheet not found' });
+  });
+
+  it('GET /api/sheets/[id]/r-results prefers active sessions and falls back to latest reviewed sessions', async () => {
+    getSheetRoleMock.mockResolvedValue('viewer');
+    getDbMock.mockReturnValue(createDbMock({
+      selectQueue: [
+        [{ id: 'row-active' }, { id: 'row-reviewed' }, { id: 'row-empty' }],
+        [
+          {
+            id: 'session-reviewed-ignored',
+            userId: 'user-1',
+            ticker: 'AAPL',
+            date: '2024-01-02',
+            status: 'REVIEWED',
+            riskDollars: 100,
+            label: null,
+            notes: null,
+            chartState: {},
+            reviewedAt: new Date('2024-01-03T10:00:00Z'),
+            createdAt: new Date('2024-01-03T09:00:00Z'),
+            updatedAt: new Date('2024-01-03T10:00:00Z'),
+            backtestId: null,
+            sheetRowId: 'row-active',
+          },
+          {
+            id: 'session-active',
+            userId: 'user-1',
+            ticker: 'AAPL',
+            date: '2024-01-02',
+            status: 'ACTIVE',
+            riskDollars: 100,
+            label: null,
+            notes: null,
+            chartState: {},
+            reviewedAt: null,
+            createdAt: new Date('2024-01-03T11:00:00Z'),
+            updatedAt: new Date('2024-01-03T11:00:00Z'),
+            backtestId: null,
+            sheetRowId: 'row-active',
+          },
+          {
+            id: 'session-reviewed',
+            userId: 'user-1',
+            ticker: 'MSFT',
+            date: '2024-01-02',
+            status: 'REVIEWED',
+            riskDollars: 25,
+            label: null,
+            notes: null,
+            chartState: {},
+            reviewedAt: new Date('2024-01-03T08:00:00Z'),
+            createdAt: new Date('2024-01-03T07:00:00Z'),
+            updatedAt: new Date('2024-01-03T08:00:00Z'),
+            backtestId: null,
+            sheetRowId: 'row-reviewed',
+          },
+        ],
+        [
+          {
+            id: 'a1',
+            userId: 'user-1',
+            sessionId: 'session-active',
+            actionType: 'LONG',
+            price: 100,
+            shares: 10,
+            stopPrice: null,
+            barTime: '2024-01-02T09:30:00Z',
+            sequence: 1,
+            createdAt: new Date(),
+          },
+          {
+            id: 'a2',
+            userId: 'user-1',
+            sessionId: 'session-active',
+            actionType: 'SELL',
+            price: 110,
+            shares: 10,
+            stopPrice: null,
+            barTime: '2024-01-02T09:45:00Z',
+            sequence: 2,
+            createdAt: new Date(),
+          },
+          {
+            id: 'a3',
+            userId: 'user-1',
+            sessionId: 'session-reviewed',
+            actionType: 'SHORT',
+            price: 50,
+            shares: 5,
+            stopPrice: null,
+            barTime: '2024-01-02T09:30:00Z',
+            sequence: 1,
+            createdAt: new Date(),
+          },
+          {
+            id: 'a4',
+            userId: 'user-1',
+            sessionId: 'session-reviewed',
+            actionType: 'COVER',
+            price: 40,
+            shares: 5,
+            stopPrice: null,
+            barTime: '2024-01-02T09:45:00Z',
+            sequence: 2,
+            createdAt: new Date(),
+          },
+          {
+            id: 'a5',
+            userId: 'user-1',
+            sessionId: 'session-reviewed-ignored',
+            actionType: 'LONG',
+            price: 100,
+            shares: 10,
+            stopPrice: null,
+            barTime: '2024-01-02T09:30:00Z',
+            sequence: 1,
+            createdAt: new Date(),
+          },
+          {
+            id: 'a6',
+            userId: 'user-1',
+            sessionId: 'session-reviewed-ignored',
+            actionType: 'SELL',
+            price: 200,
+            shares: 10,
+            stopPrice: null,
+            barTime: '2024-01-02T09:45:00Z',
+            sequence: 2,
+            createdAt: new Date(),
+          },
+        ],
+      ],
+    }));
+
+    const response = ensureResponse(await getRResults(new Request('http://localhost/api/sheets/sheet-1/r-results'), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.results['row-active']).toBeCloseTo(1);
+    expect(payload.results['row-reviewed']).toBeCloseTo(2);
+    expect(payload.results).not.toHaveProperty('row-empty');
   });
 
   it('PATCH /api/sheets/[id] returns 403 for editors', async () => {

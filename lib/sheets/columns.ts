@@ -7,6 +7,7 @@ export type SheetColumnType =
   | 'select'
   | 'report'
   | 'chart'
+  | 'rmultiple'
   | 'action'
   | 'watchlist';
 
@@ -25,9 +26,11 @@ export const DEFAULT_SHEET_COLUMNS: SheetColumn[] = [
   { key: 'tag', name: 'Tag', type: 'select', options: [], locked: true },
   { key: 'research_report', name: 'Report', type: 'report', locked: true },
   { key: 'chart', name: 'Chart', type: 'chart', locked: true },
-  { key: 'add_to_sample', name: 'Sample', type: 'action', locked: true },
   { key: 'add_to_watchlist', name: 'Watch', type: 'watchlist', locked: true },
+  { key: 'r', name: 'R', type: 'rmultiple', locked: true },
 ];
+
+const RETIRED_LOCKED_KEYS = new Set(['add_to_sample']);
 
 // Ensures every locked default column is present (older sheets snapshotted their
 // columns before new defaults existed). Keeps existing order, appends missing
@@ -37,11 +40,19 @@ export const DEFAULT_SHEET_COLUMNS: SheetColumn[] = [
 // new array when something actually changed, so unchanged input keeps its
 // reference (callers/tests rely on this).
 export function ensureLockedColumns(columns: SheetColumn[]): SheetColumn[] {
+  let changed = false;
+  const kept = columns.filter((column) => {
+    if (column.locked && RETIRED_LOCKED_KEYS.has(column.key)) {
+      changed = true;
+      return false;
+    }
+    return true;
+  });
+
   const lockedNames = new Map(
     DEFAULT_SHEET_COLUMNS.filter((column) => column.locked).map((column) => [column.key, column.name]),
   );
-  let changed = false;
-  const synced = columns.map((column) => {
+  const synced = kept.map((column) => {
     const name = lockedNames.get(column.key);
     if (name !== undefined && name !== column.name) {
       changed = true;
@@ -49,9 +60,9 @@ export function ensureLockedColumns(columns: SheetColumn[]): SheetColumn[] {
     }
     return column;
   });
-  const base = changed ? synced : columns;
 
-  const existingKeys = new Set(base.map((column) => column.key));
+  const existingKeys = new Set(synced.map((column) => column.key));
   const missing = DEFAULT_SHEET_COLUMNS.filter((column) => column.locked && !existingKeys.has(column.key));
-  return missing.length === 0 ? base : [...base, ...missing];
+  if (missing.length > 0) changed = true;
+  return changed ? [...synced, ...missing] : columns;
 }

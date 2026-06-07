@@ -40,6 +40,40 @@ export type AggregateStats = {
   equityCurve: EquityPoint[];
 };
 
+// Single source of truth for realized P&L from a sequence of fills (FIFO-ish
+// average-cost, matching the sim). Used by review stats and the sheet R column.
+export function realizedPnlFromActions(
+  actions: Pick<BacktestAction, 'actionType' | 'price' | 'shares'>[],
+): number {
+  let totalCost = 0;
+  let totalShares = 0;
+  let realizedPnl = 0;
+  let avgEntry = 0;
+
+  for (const action of actions) {
+    if (
+      action.actionType === 'LONG'
+      || action.actionType === 'LONG_ADD'
+      || action.actionType === 'SHORT'
+      || action.actionType === 'SHORT_ADD'
+    ) {
+      totalCost += action.shares * action.price;
+      totalShares += action.shares;
+      avgEntry = totalShares > 0 ? totalCost / totalShares : 0;
+    } else if (action.actionType === 'SELL') {
+      realizedPnl += (action.price - avgEntry) * action.shares;
+      totalShares -= action.shares;
+      totalCost = avgEntry * totalShares;
+    } else if (action.actionType === 'COVER') {
+      realizedPnl += (avgEntry - action.price) * action.shares;
+      totalShares -= action.shares;
+      totalCost = avgEntry * totalShares;
+    }
+  }
+
+  return realizedPnl;
+}
+
 export function computeReviewStats(
   session: BacktestSession,
   actions: BacktestAction[],
@@ -63,42 +97,9 @@ export function computeReviewStats(
       ? 'LONG'
       : firstAction.actionType === 'SHORT' || firstAction.actionType === 'SHORT_ADD'
         ? 'SHORT'
-        : null;
+      : null;
 
-  let totalCost = 0;
-  let totalShares = 0;
-  let realizedPnl = 0;
-  let avgEntry = 0;
-
-  for (const action of actions) {
-    if (action.actionType === 'LONG' || action.actionType === 'LONG_ADD') {
-      totalCost += action.shares * action.price;
-      totalShares += action.shares;
-      avgEntry = totalShares > 0 ? totalCost / totalShares : 0;
-      continue;
-    }
-
-    if (action.actionType === 'SELL') {
-      realizedPnl += (action.price - avgEntry) * action.shares;
-      totalShares -= action.shares;
-      totalCost = avgEntry * totalShares;
-      continue;
-    }
-
-    if (action.actionType === 'SHORT' || action.actionType === 'SHORT_ADD') {
-      totalCost += action.shares * action.price;
-      totalShares += action.shares;
-      avgEntry = totalShares > 0 ? totalCost / totalShares : 0;
-      continue;
-    }
-
-    if (action.actionType === 'COVER') {
-      realizedPnl += (avgEntry - action.price) * action.shares;
-      totalShares -= action.shares;
-      totalCost = avgEntry * totalShares;
-    }
-  }
-
+  const realizedPnl = realizedPnlFromActions(actions);
   const rMultiple = session.riskDollars > 0 ? realizedPnl / session.riskDollars : null;
 
   let holdMinutes: number | null = null;
