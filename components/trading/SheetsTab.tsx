@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type Key } from 'react';
 import { createPortal } from 'react-dom';
 import { format } from 'date-fns';
+import { useSession } from 'next-auth/react';
 import { motion } from 'motion/react';
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
@@ -22,11 +23,11 @@ import {
 import { toast } from 'sonner';
 
 import AddColumnDialog from '@/components/trading/AddColumnDialog';
+import BacktestChartWorkspace from '@/components/trading/BacktestChartWorkspace';
 import ShareSheetDialog from '@/components/trading/ShareSheetDialog';
 import SheetFormDialog from '@/components/trading/SheetFormDialog';
 import WatchlistReportInline from '@/components/trading/WatchlistReportInline';
 import WatchlistSavePicker from '@/components/trading/WatchlistSavePicker';
-import WatchlistTickerChart from '@/components/trading/WatchlistTickerChart';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -226,7 +227,7 @@ function TextCell({ row, column, rowIdx, onRowChange }: RenderCellProps<GridRow>
 
 type CellActions = {
   openReport: (reportId: string) => void;
-  openChart: (ticker: string, date: string) => void;
+  openChart: (ticker: string, date: string, rowId: string) => void;
   addToSample: (ticker: string, date: string) => void;
   addToWatchlist: (ticker: string, tag: string, reportId: string) => void;
   deleteColumn: (key: string) => void;
@@ -425,7 +426,7 @@ function buildColumn(
           <div className="flex items-center justify-center">
             <button
               type="button"
-              onClick={() => actions.openChart(ticker, date)}
+              onClick={() => actions.openChart(ticker, date, String(row.__id))}
               className="rounded-md p-1 text-primary hover:bg-accent hover:text-primary/80"
               aria-label={`Open chart for ${ticker}`}
               title="Open chart"
@@ -563,6 +564,8 @@ function DragHandle() {
 }
 
 export default function SheetsTab() {
+  const { data: session } = useSession();
+  const currentUserId = (session?.user as { id?: string | null } | undefined)?.id ?? null;
   const sheets = useSheets();
   const [selectedRows, setSelectedRows] = useState<ReadonlySet<string>>(() => new Set());
   const [formOpen, setFormOpen] = useState(false);
@@ -570,7 +573,7 @@ export default function SheetsTab() {
   const [columnOpen, setColumnOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [reportDialog, setReportDialog] = useState<{ reportId: string } | null>(null);
-  const [chartDialog, setChartDialog] = useState<{ ticker: string; date: string } | null>(null);
+  const [chartDialog, setChartDialog] = useState<{ ticker: string; date: string; rowId: string } | null>(null);
   const [savePickerRows, setSavePickerRows] = useState<SampleSetRow[] | null>(null);
   const [tagOptions, setTagOptions] = useState<string[]>([]);
   // Per-user, per-browser column widths. RDG runs in "controlled width" mode:
@@ -659,7 +662,7 @@ export default function SheetsTab() {
 
     const actions: CellActions = {
       openReport: (reportId) => setReportDialog({ reportId }),
-      openChart: (ticker, date) => setChartDialog({ ticker, date }),
+      openChart: (ticker, date, rowId) => setChartDialog({ ticker, date, rowId }),
       addToSample: (ticker, date) => setSavePickerRows([{ ticker, date }]),
       addToWatchlist: (ticker, tag, reportId) => {
         const date = format(new Date(), 'yyyy-MM-dd');
@@ -1096,11 +1099,22 @@ export default function SheetsTab() {
         </DialogContent>
       </Dialog>
       <Dialog open={!!chartDialog} onOpenChange={(open) => !open && setChartDialog(null)}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto border-border bg-card text-foreground sm:max-w-5xl">
-          <DialogHeader>
+        <DialogContent className="h-[100dvh] w-screen max-w-none gap-0 rounded-none border-0 bg-background p-0 text-foreground sm:max-w-none">
+          <DialogHeader className="sr-only">
             <DialogTitle>Chart</DialogTitle>
           </DialogHeader>
-          {chartDialog ? <WatchlistTickerChart ticker={chartDialog.ticker} date={chartDialog.date} /> : null}
+          {chartDialog ? (
+            <div className="flex h-full min-h-0 flex-col overflow-hidden p-3 pt-9">
+              <BacktestChartWorkspace
+                key={`${chartDialog.rowId}:${chartDialog.ticker}:${chartDialog.date}`}
+                ticker={chartDialog.ticker}
+                date={chartDialog.date}
+                sheetRowId={chartDialog.rowId}
+                currentUserId={currentUserId}
+                onAnchorChange={(date) => setChartDialog((current) => (current ? { ...current, date } : current))}
+              />
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
       {savePickerRows ? (
