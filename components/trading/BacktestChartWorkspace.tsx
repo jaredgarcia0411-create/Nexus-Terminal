@@ -179,7 +179,7 @@ export default function BacktestChartWorkspace({
       date={selected?.date ?? null}
       riskDollars={effectiveRiskDollars}
       activeBacktest={activeBacktest}
-      currentUserId={currentUserId}
+      currentUserId={sessionState.currentUserId ?? currentUserId}
       session={sessionState.session}
       actions={sessionState.actions}
       position={sessionState.position}

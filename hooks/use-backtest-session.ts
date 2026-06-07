@@ -7,6 +7,7 @@ import { reduceActions, type SimPosition } from '@/lib/backtest-math';
 import type { BacktestAction, BacktestActionType, BacktestChartState, BacktestSession } from '@/lib/types';
 
 type SessionsResponse = {
+  currentUserId?: string | null;
   session?: BacktestSession | null;
   reviews?: BacktestSession[];
   error?: string;
@@ -67,7 +68,9 @@ export function useBacktestSession({
   autoLoadReviewId = null,
 }: UseBacktestSessionInput) {
   const { data: sessionData } = useSession();
-  const currentUserId = (sessionData?.user as { id?: string | null } | undefined)?.id ?? null;
+  const clientUserId = (sessionData?.user as { id?: string | null } | undefined)?.id ?? null;
+  const [serverUserId, setServerUserId] = useState<string | null>(null);
+  const currentUserId = serverUserId ?? clientUserId;
   const [activeSession, setActiveSession] = useState<BacktestSession | null>(null);
   const [activeActions, setActiveActions] = useState<BacktestAction[]>([]);
   const [reviews, setReviews] = useState<BacktestSession[]>([]);
@@ -125,9 +128,10 @@ export function useBacktestSession({
           throw new Error(payload.error ?? 'Could not load backtest sessions');
         }
 
+        setServerUserId(payload.currentUserId ?? null);
         setReviews(payload.reviews ?? []);
 
-        const ownActiveSession = payload.session?.userId === currentUserId ? payload.session : null;
+        const ownActiveSession = payload.session ?? null;
 
         if (autoLoadReviewId) {
           const details = await loadSessionDetails(autoLoadReviewId, controller.signal);
@@ -161,7 +165,7 @@ export function useBacktestSession({
     void load();
 
     return () => controller.abort();
-  }, [autoLoadReviewId, backtestId, currentUserId, date, loadSessionDetails, sheetRowId, ticker]);
+  }, [autoLoadReviewId, backtestId, date, loadSessionDetails, sheetRowId, ticker]);
 
   const ensureActiveSession = useCallback(async (nextRiskDollars = riskDollars) => {
     if (!ticker || !date) {
@@ -430,6 +434,7 @@ export function useBacktestSession({
   }, []);
 
   return {
+    currentUserId,
     session,
     actions,
     position,

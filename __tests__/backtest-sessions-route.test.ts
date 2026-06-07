@@ -335,6 +335,47 @@ describe('backtest session routes', () => {
     expect(listPayload.reviews).toHaveLength(0);
   });
 
+  it('returns the canonical current user id from GET sessions', async () => {
+    const db = createBacktestDb();
+    getDbMock.mockReturnValue(db);
+    requireUserMock.mockResolvedValueOnce({
+      user: { id: 'auth-u1', email: 'u1@example.com', name: null, picture: null },
+    });
+    ensureUserMock.mockImplementationOnce(async (
+      _db: unknown,
+      user: { id: string; email: string; name: string | null; picture: string | null },
+    ) => {
+      user.id = 'canonical-u1';
+      return user;
+    });
+    const now = new Date('2026-04-28T15:00:00.000Z');
+    db.state.sessions.push({
+      id: 'active-canonical',
+      userId: 'canonical-u1',
+      ticker: 'AAPL',
+      date: '2026-04-28',
+      status: 'ACTIVE',
+      riskDollars: 100,
+      label: null,
+      notes: null,
+      chartState: {},
+      backtestId: null,
+      sheetRowId: null,
+      reviewedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const response = ensureResponse(await getSessions(new Request(
+      'http://localhost/api/backtest/sessions?ticker=AAPL&date=2026-04-28',
+    )));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.currentUserId).toBe('canonical-u1');
+    expect(payload.session.id).toBe('active-canonical');
+  });
+
   it('returns reviews across launch contexts while active sessions stay context-scoped', async () => {
     const db = createBacktestDb();
     getDbMock.mockReturnValue(db);

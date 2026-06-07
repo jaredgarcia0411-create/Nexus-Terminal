@@ -47,6 +47,7 @@ export async function GET(request: Request) {
     // BacktestId remains an active-session tag; sheetRowId is the row isolation
     // boundary for both active sessions and reviews.
     return Response.json({
+      currentUserId: authState.user.id,
       session: rows.find((row) =>
         row.status === 'ACTIVE'
         && row.userId === authState.user.id
