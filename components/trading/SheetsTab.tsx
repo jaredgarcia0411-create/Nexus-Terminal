@@ -762,6 +762,9 @@ export default function SheetsTab() {
   };
 
   const toggleFilterMode = () => {
+    // Clear selection whenever the filtered view changes, so a stale selection
+    // from a previous filter can't be deleted by accident.
+    setSelectedRows(new Set());
     if (filterMode) {
       setFilterMode(false);
       setFilters({});
@@ -807,6 +810,7 @@ export default function SheetsTab() {
       },
     };
     const setColumnFilter = (key: string, value: string) => {
+      setSelectedRows(new Set());
       setFilters((current) => ({ ...current, [key]: value }));
     };
 
@@ -818,7 +822,14 @@ export default function SheetsTab() {
       frozen: true,
       renderCell: () => <DragHandle />,
     };
-    const columns: Column<GridRow>[] = canEditRows && !filterMode ? [dragColumn, SelectColumn] : [];
+    // Keep the selection checkbox available while filtering so rows can be
+    // selected + deleted from a filtered subset. Only the drag handle drops in
+    // filter mode (reordering a filtered view is meaningless).
+    const columns: Column<GridRow>[] = canEditRows
+      ? filterMode
+        ? [SelectColumn]
+        : [dragColumn, SelectColumn]
+      : [];
     for (const column of activeSheet.columns) {
       const resolved = column.key === 'tag' ? { ...column, options: tagOptions } : column;
       columns.push(
