@@ -42,6 +42,7 @@ import { POST as postSheetRow } from '@/app/api/sheets/[id]/rows/route';
 import { PATCH as patchSheetRow } from '@/app/api/sheets/[id]/rows/[rowId]/route';
 import { PATCH as reorderRows } from '@/app/api/sheets/[id]/rows/reorder/route';
 import { POST as snapshotSheet } from '@/app/api/sheets/[id]/snapshot/route';
+import { POST as importSheet } from '@/app/api/sheets/import/route';
 import { GET as getSheets, POST as postSheet } from '@/app/api/sheets/route';
 import { DEFAULT_SHEET_COLUMNS } from '@/lib/sheets/columns';
 
@@ -855,6 +856,85 @@ describe('sheets routes', () => {
 
     expect(response.status).toBe(400);
     expect(payload.error).toBe('Validation failed');
+  });
+
+  it('POST /api/sheets/import returns auth errors from requireUser', async () => {
+    requireUserMock.mockResolvedValueOnce({
+      error: Response.json({ error: 'Unauthorized' }, { status: 401 }),
+    });
+
+    const response = ensureResponse(await importSheet(new Request('http://localhost/api/sheets/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Import', columns: DEFAULT_SHEET_COLUMNS, rows: [] }),
+    })));
+    const payload = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(payload.error).toBe('Unauthorized');
+  });
+
+  it('POST /api/sheets/import rejects invalid import bodies', async () => {
+    const response = ensureResponse(await importSheet(new Request('http://localhost/api/sheets/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: '', columns: [], rows: [] }),
+    })));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe('Validation failed');
+    expect(getPoolDbMock).not.toHaveBeenCalled();
+  });
+
+  it('POST /api/sheets/import creates a multi-date sheet with imported rows', async () => {
+    const poolDb = createPoolDbMock({
+      insertResults: [
+        [{
+          id: 'sheet-import',
+          ownerUserId: 'user-1',
+          name: 'Import',
+          sheetDate: null,
+          columns: DEFAULT_SHEET_COLUMNS,
+        }],
+        [
+          { id: 'row-1', sheetId: 'sheet-import', position: 0, values: { ticker: 'AAPL' }, version: 0 },
+          { id: 'row-2', sheetId: 'sheet-import', position: 1, values: { ticker: 'MSFT' }, version: 0 },
+        ],
+      ],
+    });
+    getPoolDbMock.mockReturnValue(poolDb);
+
+    const response = ensureResponse(await importSheet(new Request('http://localhost/api/sheets/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Import',
+        columns: DEFAULT_SHEET_COLUMNS,
+        rows: [{ ticker: 'AAPL' }, { ticker: 'MSFT' }],
+      }),
+    })));
+    const payload = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(payload.sheet.id).toBe('sheet-import');
+    expect(payload.rows).toHaveLength(2);
+    expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      ownerUserId: 'user-1',
+      name: 'Import',
+      sheetDate: null,
+      isTemplate: false,
+      columns: DEFAULT_SHEET_COLUMNS,
+    }));
+    expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(2, {
+      sheetId: 'sheet-import',
+      userId: 'user-1',
+      role: 'owner',
+    });
+    expect(poolDb._mocks.txInsertValuesMock).toHaveBeenNthCalledWith(3, [
+      expect.objectContaining({ sheetId: 'sheet-import', position: 0, values: { ticker: 'AAPL' } }),
+      expect.objectContaining({ sheetId: 'sheet-import', position: 1, values: { ticker: 'MSFT' } }),
+    ]);
   });
 
   it('PATCH /api/sheets/[id] rejects columns without columnsVersion', async () => {

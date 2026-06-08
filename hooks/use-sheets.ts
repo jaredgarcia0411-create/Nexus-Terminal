@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 
 import type { SheetColumn } from '@/lib/sheets/columns';
 import type { SheetRole, SheetRowRecord } from '@/lib/sheets/grid';
+import type { SheetImportBody } from '@/lib/validations/sheets';
 
 export type SheetListItem = {
   id: string;
@@ -115,6 +116,38 @@ export function useSheets() {
     await openSheet(data.sheet.id);
     toast.success('Sheet created');
   }, [openSheet, refreshList]);
+
+  const importSheet = useCallback(async (payload: SheetImportBody): Promise<Sheet> => {
+    const res = await sendJson('/api/sheets/import', payload);
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      const message = data?.error ?? 'Failed to import sheet';
+      toast.error(message);
+      throw new Error(message);
+    }
+
+    const data = (await res.json()) as { sheet: Sheet; rows: SheetRowRecord[] };
+    setList((current) => [
+      {
+        id: data.sheet.id,
+        name: data.sheet.name,
+        sheetDate: data.sheet.sheetDate,
+        isTemplate: data.sheet.isTemplate,
+        archivedAt: data.sheet.archivedAt,
+        ownerUserId: data.sheet.ownerUserId,
+        ownerName: null,
+        role: 'owner',
+        rootId: data.sheet.rootId,
+        updatedAt: data.sheet.updatedAt,
+      },
+      ...current.filter((sheet) => sheet.id !== data.sheet.id),
+    ]);
+    setActiveSheet(data.sheet);
+    setRows(data.rows ?? []);
+    setMembers([]);
+    setRole('owner');
+    return data.sheet;
+  }, []);
 
   const renameSheet = useCallback(async (id: string, name: string, sheetDate?: string) => {
     const res = await sendJson(`/api/sheets/${id}`, { name, sheetDate: sheetDate ?? null }, 'PATCH');
@@ -351,6 +384,7 @@ export function useSheets() {
     refreshList,
     openSheet,
     createSheet,
+    importSheet,
     renameSheet,
     snapshotSheet,
     deleteSheet,

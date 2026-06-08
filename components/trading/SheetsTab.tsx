@@ -8,7 +8,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Archive, ChevronDown, Columns3, FileSpreadsheet, FileText, Filter, GripVertical, History, LineChart, ListPlus, Pencil, Plus, RefreshCw, Rows3, Trash2, Users, X } from 'lucide-react';
+import { Archive, ChevronDown, Columns3, FileSpreadsheet, FileText, Filter, GripVertical, History, LineChart, ListPlus, Pencil, Plus, RefreshCw, Rows3, Trash2, Upload, Users, X } from 'lucide-react';
 import {
   DataGrid,
   Row as GridRowRenderer,
@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 
 import AddColumnDialog from '@/components/trading/AddColumnDialog';
 import BacktestChartWorkspace from '@/components/trading/BacktestChartWorkspace';
+import ImportSheetDialog from '@/components/trading/ImportSheetDialog';
 import ShareSheetDialog from '@/components/trading/ShareSheetDialog';
 import SheetFormDialog from '@/components/trading/SheetFormDialog';
 import WatchlistReportInline from '@/components/trading/WatchlistReportInline';
@@ -650,6 +651,7 @@ export default function SheetsTab() {
   const [selectedRows, setSelectedRows] = useState<ReadonlySet<string>>(() => new Set());
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'rename'>('create');
+  const [importOpen, setImportOpen] = useState(false);
   const [columnOpen, setColumnOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [reportDialog, setReportDialog] = useState<{ reportId: string } | null>(null);
@@ -1065,6 +1067,16 @@ export default function SheetsTab() {
           >
             <Plus className="h-4 w-4" />
           </button>
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            disabled={!currentUserId}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Import CSV"
+            title="Import CSV"
+          >
+            <Upload className="h-4 w-4" />
+          </button>
         </div>
       </div>
 
@@ -1240,6 +1252,15 @@ export default function SheetsTab() {
         initialDate={formMode === 'rename' ? activeSheet?.sheetDate : ''}
         onOpenChange={setFormOpen}
         onSubmit={handleFormSubmit}
+      />
+      <ImportSheetDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImport={async (payload) => {
+          const sheet = await sheets.importSheet(payload);
+          setSelectedRows(new Set());
+          return sheet;
+        }}
       />
       <AddColumnDialog open={columnOpen} onOpenChange={setColumnOpen} onSubmit={handleAddColumn} />
       {activeSheet ? (
