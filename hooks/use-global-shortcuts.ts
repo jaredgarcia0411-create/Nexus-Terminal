@@ -3,7 +3,7 @@
 import { useHotkeys } from 'react-hotkeys-hook';
 import type { TabKey } from '@/components/trading/Sidebar';
 
-const TAB_KEYS: TabKey[] = ['dashboard', 'management', 'charts', 'research'];
+const TAB_KEYS: TabKey[] = ['dashboard', 'trades', 'journal', 'charts', 'sheets', 'research'];
 
 interface GlobalShortcutOptions {
   setActiveTab: (tab: TabKey) => void;
@@ -15,6 +15,8 @@ export function useGlobalShortcuts({ setActiveTab, setCommandPaletteOpen }: Glob
   useHotkeys('2', () => setActiveTab(TAB_KEYS[1]));
   useHotkeys('3', () => setActiveTab(TAB_KEYS[2]));
   useHotkeys('4', () => setActiveTab(TAB_KEYS[3]));
+  useHotkeys('5', () => setActiveTab(TAB_KEYS[4]));
+  useHotkeys('6', () => setActiveTab(TAB_KEYS[5]));
 
   useHotkeys(
     'meta+k, ctrl+k',

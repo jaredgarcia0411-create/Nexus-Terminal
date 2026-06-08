@@ -12,14 +12,16 @@ import Sidebar, { type TabKey } from '@/components/trading/Sidebar';
 import Toolbar from '@/components/trading/Toolbar';
 import DashboardTab from '@/components/trading/DashboardTab';
 import ManagementTab from '@/components/trading/ManagementTab';
+import SheetsTab from '@/components/trading/SheetsTab';
 import ResearchTab from '@/components/trading/ResearchTab';
 import CommandPalette from '@/components/trading/CommandPalette';
 import { TabErrorBoundary } from '@/components/ui/TabErrorBoundary';
 import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useTrades } from '@/hooks/use-trades';
+import type { Trade } from '@/lib/types';
 
-const VALID_TABS: TabKey[] = ['dashboard', 'management', 'charts', 'research'];
+const VALID_TABS: TabKey[] = ['dashboard', 'trades', 'journal', 'charts', 'sheets', 'research'];
 
 const BacktestingTab = dynamic(() => import('@/components/trading/BacktestingTab'), {
   ssr: false,
@@ -28,8 +30,10 @@ const BacktestingTab = dynamic(() => import('@/components/trading/BacktestingTab
 
 const TAB_TITLES: Record<TabKey, string> = {
   dashboard: 'Dashboard',
-  management: 'Management',
+  trades: 'Trades',
+  journal: 'Journal',
   charts: 'Charts',
+  sheets: 'Sheets',
   research: 'Research',
 };
 
@@ -41,7 +45,8 @@ export default function NexusTerminal() {
     }
 
     const tabParam = new URLSearchParams(window.location.search).get('tab');
-    return tabParam && VALID_TABS.includes(tabParam as TabKey) ? (tabParam as TabKey) : 'dashboard';
+    const normalized = tabParam === 'management' ? 'trades' : tabParam;
+    return normalized && VALID_TABS.includes(normalized as TabKey) ? (normalized as TabKey) : 'dashboard';
   });
   const [performanceMetric, setPerformanceMetric] = useState<'$' | 'R'>('$');
   const [isManualTradeOpen, setIsManualTradeOpen] = useState(false);
@@ -77,8 +82,9 @@ export default function NexusTerminal() {
   useEffect(() => {
     const onPopState = () => {
       const tabParam = new URLSearchParams(window.location.search).get('tab');
+      const normalized = tabParam === 'management' ? 'trades' : tabParam;
       setActiveTab(
-        tabParam && VALID_TABS.includes(tabParam as TabKey) ? (tabParam as TabKey) : 'dashboard',
+        normalized && VALID_TABS.includes(normalized as TabKey) ? (normalized as TabKey) : 'dashboard',
       );
     };
     window.addEventListener('popstate', onPopState);
@@ -186,6 +192,43 @@ export default function NexusTerminal() {
     localStorage.setItem('sidebarCollapsed', String(newValue));
   };
 
+  // Trades + Journal are two top-level tabs backed by the same sub-tab
+  // container; only the `group` prop differs. Spreading one object keeps the
+  // two render sites from duplicating the whole prop list.
+  const tradeWorkspaceProps = {
+    trades,
+    filteredTrades,
+    globalTags,
+    selectedIds,
+    selectedFilterTags,
+    setSelectedFilterTags,
+    searchQuery,
+    riskInput,
+    defaultRiskInput,
+    bulkTagInput,
+    performanceMetric,
+    setPerformanceMetric,
+    setSearchQuery,
+    setRiskInput,
+    setDefaultRiskInput,
+    setBulkTagInput,
+    handleApplyRisk,
+    handleSetDefaultRisk,
+    handleBulkAddTag,
+    handleToggleSelect,
+    handleSelectAll,
+    handleAddTag,
+    handleRemoveTag,
+    handleApplyTradeTags,
+    handleCreateTag,
+    handleDeleteGlobalTag,
+    handleRenameGlobalTag,
+    onMergeTrades: handleMergeTrades,
+    positionFilter,
+    onPositionFilterChange: setPositionFilter,
+    onTradeClick: (trade: Trade) => setSelectedTradeId(trade.id),
+  };
+
   return (
     <div className="min-h-screen bg-background font-sans text-foreground selection:bg-emerald-500/30">
       <Sidebar
@@ -235,41 +278,21 @@ export default function NexusTerminal() {
               </TabErrorBoundary>
             ) : null}
 
-            {activeTab === 'management' ? (
-              <TabErrorBoundary name="Management">
-                <ManagementTab
-                  trades={trades}
-                  filteredTrades={filteredTrades}
-                  globalTags={globalTags}
-                  selectedIds={selectedIds}
-                  selectedFilterTags={selectedFilterTags}
-                  setSelectedFilterTags={setSelectedFilterTags}
-                  searchQuery={searchQuery}
-                  riskInput={riskInput}
-                  defaultRiskInput={defaultRiskInput}
-                  bulkTagInput={bulkTagInput}
-                  performanceMetric={performanceMetric}
-                  setPerformanceMetric={setPerformanceMetric}
-                  setSearchQuery={setSearchQuery}
-                  setRiskInput={setRiskInput}
-                  setDefaultRiskInput={setDefaultRiskInput}
-                  setBulkTagInput={setBulkTagInput}
-                  handleApplyRisk={handleApplyRisk}
-                  handleSetDefaultRisk={handleSetDefaultRisk}
-                  handleBulkAddTag={handleBulkAddTag}
-                  handleToggleSelect={handleToggleSelect}
-                  handleSelectAll={handleSelectAll}
-                  handleAddTag={handleAddTag}
-                  handleRemoveTag={handleRemoveTag}
-                  handleApplyTradeTags={handleApplyTradeTags}
-                  handleCreateTag={handleCreateTag}
-                  handleDeleteGlobalTag={handleDeleteGlobalTag}
-                  handleRenameGlobalTag={handleRenameGlobalTag}
-                  onMergeTrades={handleMergeTrades}
-                  positionFilter={positionFilter}
-                  onPositionFilterChange={setPositionFilter}
-                  onTradeClick={(trade) => setSelectedTradeId(trade.id)}
-                />
+            {activeTab === 'trades' ? (
+              <TabErrorBoundary name="Trades">
+                <ManagementTab {...tradeWorkspaceProps} group="trades" />
+              </TabErrorBoundary>
+            ) : null}
+
+            {activeTab === 'journal' ? (
+              <TabErrorBoundary name="Journal">
+                <ManagementTab {...tradeWorkspaceProps} group="journal" />
+              </TabErrorBoundary>
+            ) : null}
+
+            {activeTab === 'sheets' ? (
+              <TabErrorBoundary name="Sheets">
+                <SheetsTab />
               </TabErrorBoundary>
             ) : null}
 

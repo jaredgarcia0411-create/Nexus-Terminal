@@ -70,7 +70,7 @@ export default function Toolbar({
           ) : null}
 
           {/* Time Filters - Far Right */}
-          {activeTab !== 'dashboard' && activeTab !== 'research' && activeTab !== 'charts' ? (
+          {activeTab !== 'dashboard' && activeTab !== 'research' && activeTab !== 'charts' && activeTab !== 'sheets' ? (
             <div className="flex items-center gap-1">
               {[
                 { id: 'all', label: 'All' },

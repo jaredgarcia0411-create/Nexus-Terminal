@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { ChartCandlestick, LayoutGrid, List, Plus, Search, Upload } from 'lucide-react';
+import { CalendarDays, ChartCandlestick, FileSpreadsheet, LayoutGrid, List, Plus, Search, Upload } from 'lucide-react';
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from '@/components/ui/command';
 import type { TabKey } from '@/components/trading/Sidebar';
 
@@ -20,9 +20,11 @@ const NAV_ITEMS: Array<{
   shortcut: string;
 }> = [
   { tab: 'dashboard', label: 'Dashboard', icon: LayoutGrid, shortcut: '1' },
-  { tab: 'management', label: 'Management', icon: List, shortcut: '2' },
-  { tab: 'charts', label: 'Charts', icon: ChartCandlestick, shortcut: '3' },
-  { tab: 'research', label: 'Research', icon: Search, shortcut: '4' },
+  { tab: 'trades', label: 'Trades', icon: List, shortcut: '2' },
+  { tab: 'journal', label: 'Journal', icon: CalendarDays, shortcut: '3' },
+  { tab: 'charts', label: 'Charts', icon: ChartCandlestick, shortcut: '4' },
+  { tab: 'sheets', label: 'Sheets', icon: FileSpreadsheet, shortcut: '5' },
+  { tab: 'research', label: 'Research', icon: Search, shortcut: '6' },
 ];
 
 export default function CommandPalette({

@@ -9,29 +9,27 @@ import JournalTab from '@/components/trading/JournalTab';
 import PlaybookTab from '@/components/trading/PlaybookTab';
 import PerformanceTab from '@/components/trading/PerformanceTab';
 import ResearchSubNav from '@/components/trading/ResearchSubNav';
-import SheetsTab from '@/components/trading/SheetsTab';
 import TradesTab from '@/components/trading/TradesTab';
 import type { Trade } from '@/lib/types';
 
-type SubTabKey = 'journal' | 'trades' | 'performance' | 'playbook' | 'career-pnl' | 'archive' | 'sheets';
+type SubTabKey = 'calendar' | 'history' | 'performance' | 'playbook' | 'career-pnl' | 'reviews';
 
-// Sheets is the landing tab, then Calendar (internally keyed 'journal'), Trades
-// (formerly the standalone "Management"/Trades tab), Performance, Playbook,
-// Career P/L, Archive.
-const SUB_TABS: Array<{ key: SubTabKey; label: string }> = [
-  { key: 'sheets', label: 'Sheets' },
-  { key: 'journal', label: 'Calendar' },
-  { key: 'trades', label: 'Trades' },
+// Two top-level tabs share this container. `group` selects which sub-tabs show.
+const TRADES_SUB_TABS: Array<{ key: SubTabKey; label: string }> = [
+  { key: 'history', label: 'History' },
   { key: 'performance', label: 'Performance' },
-  { key: 'playbook', label: 'Playbook' },
   { key: 'career-pnl', label: 'Career P/L' },
-  { key: 'archive', label: 'Archive' },
+  { key: 'playbook', label: 'Playbook' },
 ];
 
-// Remember the last sub-tab so a refresh returns to where you were instead of
-// resetting to Sheets. localStorage (not URL) keeps it simple — we only need it
-// to survive reloads, not be shareable.
-const SUBTAB_STORAGE_KEY = 'nexus.management.subTab';
+const JOURNAL_SUB_TABS: Array<{ key: SubTabKey; label: string }> = [
+  { key: 'calendar', label: 'Calendar' },
+  { key: 'reviews', label: 'Reviews' },
+];
+
+// Remember the last sub-tab per group so a refresh returns where you were.
+const TRADES_SUBTAB_KEY = 'nexus.trades.subTab';
+const JOURNAL_SUBTAB_KEY = 'nexus.journal.subTab';
 
 interface ManagementTabProps {
   trades: Trade[];
@@ -65,41 +63,47 @@ interface ManagementTabProps {
   positionFilter?: 'all' | 'open' | 'closed';
   onPositionFilterChange?: (filter: 'all' | 'open' | 'closed') => void;
   onTradeClick: (trade: Trade) => void;
+  group: 'trades' | 'journal';
 }
 
 export default function ManagementTab(props: ManagementTabProps) {
-  // Default to Sheets; sub-tab state lives here (not lifted) so
-  // app/page.tsx stays simple. Hydrate from localStorage when valid.
+  const { group } = props;
+  const subTabs = group === 'trades' ? TRADES_SUB_TABS : JOURNAL_SUB_TABS;
+  const storageKey = group === 'trades' ? TRADES_SUBTAB_KEY : JOURNAL_SUBTAB_KEY;
+  const defaultSubTab: SubTabKey = group === 'trades' ? 'history' : 'calendar';
+
+  // Sub-tab state lives here (not lifted) so app/page.tsx stays simple.
+  // Hydrate from localStorage when the stored value is valid for this group.
   const [activeSubTab, setActiveSubTab] = useState<SubTabKey>(() => {
-    if (typeof window === 'undefined') return 'sheets';
+    if (typeof window === 'undefined') return defaultSubTab;
     try {
-      const stored = localStorage.getItem(SUBTAB_STORAGE_KEY);
-      if (stored && SUB_TABS.some((t) => t.key === stored)) return stored as SubTabKey;
+      const stored = localStorage.getItem(storageKey);
+      if (stored && subTabs.some((t) => t.key === stored)) return stored as SubTabKey;
     } catch {
       // Ignore storage failures (private browsing etc.).
     }
-    return 'sheets';
+    return defaultSubTab;
   });
 
   useEffect(() => {
     try {
-      localStorage.setItem(SUBTAB_STORAGE_KEY, activeSubTab);
+      localStorage.setItem(storageKey, activeSubTab);
     } catch {
       // Ignore storage failures — non-critical preference.
     }
-  }, [activeSubTab]);
+  }, [storageKey, activeSubTab]);
 
   return (
     <motion.div
-      key="management"
+      key={group}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
       className="flex flex-col gap-2"
     >
-      <ResearchSubNav tabs={SUB_TABS} activeTab={activeSubTab} onTabChange={setActiveSubTab} />
+      <ResearchSubNav tabs={subTabs} activeTab={activeSubTab} onTabChange={setActiveSubTab} />
 
-      {activeSubTab === 'journal' ? (
+      {activeSubTab === 'calendar' ? (
         <JournalTab
           filteredTrades={props.filteredTrades}
           selectedIds={props.selectedIds}
@@ -123,7 +127,7 @@ export default function ManagementTab(props: ManagementTabProps) {
         />
       ) : null}
 
-      {activeSubTab === 'trades' ? (
+      {activeSubTab === 'history' ? (
         <TradesTab
           filteredTrades={props.filteredTrades}
           selectedIds={props.selectedIds}
@@ -176,9 +180,7 @@ export default function ManagementTab(props: ManagementTabProps) {
 
       {activeSubTab === 'career-pnl' ? <CareerPnlTab /> : null}
 
-      {activeSubTab === 'archive' ? <ArchiveTab trades={props.trades} /> : null}
-
-      {activeSubTab === 'sheets' ? <SheetsTab /> : null}
+      {activeSubTab === 'reviews' ? <ArchiveTab trades={props.trades} /> : null}
     </motion.div>
   );
 }
