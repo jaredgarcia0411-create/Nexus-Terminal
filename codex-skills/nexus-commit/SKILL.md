@@ -31,6 +31,7 @@ Treat this skill as the canonical commit workflow for Nexus Terminal. Any user-f
    - Use `$ARGUMENTS` as a hint if provided; otherwise derive the message from the diff.
    - Keep the subject concise, imperative, and focused on why the change exists.
 5. Commit safely.
+   - Run `git diff --cached --check` after staging and before committing.
    - Create a normal commit.
    - If a hook fails, fix the issue and retry. Do not bypass hooks.
 6. Push only on explicit publish instruction.
@@ -45,5 +46,6 @@ Treat this skill as the canonical commit workflow for Nexus Terminal. Any user-f
 ## Repo-Specific Guardrails
 
 - Do not rewrite or squash existing commits unless explicitly asked.
-- If the change touched workflow docs or repo-maintained skills, make sure `HANDOFF.md` and any relevant `AGENTS.md` guidance are updated before committing.
+- If the change touched workflow docs or repo-maintained skills, make sure any relevant `AGENTS.md` guidance is updated before committing.
+- Do not mark `HANDOFF.md` specs `READY TO SHIP`, `reviewed against spec`, or otherwise final-reviewed during commit closure unless Jared explicitly instructed that status change.
 - Never include secrets or local-only env files.

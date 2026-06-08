@@ -28,7 +28,8 @@ not just planning it.
 5. Implement narrowly.
    - Preserve existing architecture and local patterns.
    - Keep unrelated cleanup out of scope.
-   - Update `HANDOFF.md` status only when the current work changes the active contract or checkpoint evidence.
+   - Update `HANDOFF.md` only when the spec requires checkpoint evidence or the user asks for a status/handoff edit.
+   - Do not mark a spec `READY TO SHIP`, `reviewed against spec`, or otherwise final-reviewed unless Jared explicitly instructs that status; successful validation is implementation evidence, not review approval.
 6. Validate for the changed scope.
    - Code or behavior changes: `npm run lint`, `npx tsc --noEmit`, and `npm test`.
    - `services/` changes: also run `npm run typecheck:services`.
@@ -47,6 +48,7 @@ Keep progress updates tied to concrete files, commands, or validation. Final res
 - validation results
 - any skipped checks with reasons
 - whether the next phase remains unopened
+- whether `HANDOFF.md` was left for Jared/Claude review instead of being marked ready to ship
 
 ## Do Not
 

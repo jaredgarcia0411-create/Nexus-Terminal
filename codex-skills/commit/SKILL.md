@@ -8,19 +8,12 @@ description: >
 
 # Commit
 
-Use this skill only when the user explicitly asks for a commit or push. Default to a local commit; publish only when the user explicitly says to push origin main.
+Use this skill only when the user explicitly asks for a commit or push. This is a thin alias for `nexus-commit`: default to a local commit, and publish only when the user explicitly says to push origin main.
 
 ## Workflow
 
 1. Read `../nexus-commit/SKILL.md` before touching git state.
-2. Follow the `nexus-commit` workflow exactly:
-   - review repo state and commit scope first
-   - run required validation before committing
-   - stage intentionally
-   - write a concise message focused on why the change exists
-   - commit safely without bypassing hooks
-   - push only when the user explicitly says to push origin main
-   - confirm the resulting git state
+2. Follow the `nexus-commit` workflow exactly. Do not maintain separate validation, staging, push, or status rules in this alias.
 3. Use any supplied arguments only as a commit message hint. If no hint is provided, derive the message from the diff.
 4. If the worktree includes unrelated changes, keep the commit scoped to the requested work and ask before bundling unrelated changes together.
 

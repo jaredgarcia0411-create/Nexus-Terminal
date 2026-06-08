@@ -2,7 +2,7 @@
 name: nexus-review
 description: >
   Review Nexus Terminal implementation work against the active handoff or a requested scope. Use
-  when the user wants a compliance review, a ship/no-ship recommendation, or a check for missed
+  when the user wants a compliance review, a ship-readiness recommendation, or a check for missed
   acceptance criteria, validation gaps, or risky drift.
 ---
 
@@ -33,7 +33,8 @@ Use this skill for a focused implementation audit before handoff or merge.
    - **Acceptance Criteria** — pass / miss per criterion
    - **Issues Found** — severity, file path, concern, suggested fix
    - **Validation** — pass / fail / skipped with reason for each relevant command
-   - **Verdict** — `READY TO SHIP` or `NEEDS FIXES`
+   - **Verdict** — `READY TO SHIP` or `NEEDS FIXES` as a chat recommendation only
+7. Do not write the verdict into `HANDOFF.md` or mark a spec final-reviewed unless Jared explicitly asks for that handoff status change.
 
 ## What To Check Carefully
 
@@ -48,4 +49,5 @@ Use this skill for a focused implementation audit before handoff or merge.
 
 - Do not rewrite code during a review-only request.
 - Do not mark criteria as passed unless the code or validation actually proves it.
+- Do not treat a clean review or passing validation as permission to update handoff ship status.
 - Do not ignore `npm run typecheck:services` when the changed files live under `services/`.

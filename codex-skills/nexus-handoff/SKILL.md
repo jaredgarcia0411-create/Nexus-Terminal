@@ -22,7 +22,7 @@ This skill exists to produce self-contained implementation plans that another ex
 Write or update a section in `HANDOFF.md` with:
 
 - A clear section title
-- Generated date and current status
+- Generated date and current implementation status
 - Objective
 - Current state with exact file paths
 - Required changes grouped into ordered steps
@@ -38,6 +38,7 @@ Write or update a section in `HANDOFF.md` with:
 - Keep `HANDOFF.md` focused on active or recently completed work that still matters.
 - When asked to clean it up, compress or remove stale completed sections and keep a brief note that older detail lives in git history.
 - Update `AGENTS.md` only for durable workflow or architecture guidance, not one-off task trivia.
+- Do not mark completed implementation as `READY TO SHIP`, `reviewed against spec`, or final-reviewed unless Jared explicitly asks for that status. Use neutral implementation/validation status until Jared/Claude review is complete.
 
 ## Spec Rules
 

@@ -48,7 +48,8 @@ check(
 const vercelOpsSkill = read('codex-skills/nexus-vercel-ops/SKILL.md');
 check(
   vercelOpsSkill.includes('/api/cron/agent-retention') &&
-    vercelOpsSkill.includes('/api/cron/mdr-sweep') &&
+    vercelOpsSkill.includes('/api/cron/market-pulse-eod') &&
+    vercelOpsSkill.includes('30 22 * * 1-5') &&
     !vercelOpsSkill.includes('/api/discord/cron/sync'),
   'codex-skills/nexus-vercel-ops/SKILL.md should match live vercel.json crons.',
 );

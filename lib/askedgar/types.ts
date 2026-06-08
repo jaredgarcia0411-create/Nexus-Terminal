@@ -18,7 +18,7 @@ export interface TickerDataResult {
   fetchedAt: string;
   rawData: Record<string, AskEdgarResponse<unknown>>;
   // ISO timestamps for the last successful fetch of each endpoint. Used so
-  // /v1/news can carry its own 5-minute freshness window while the rest of the
+  // /v1/news can carry its own 15-minute freshness window while the rest of the
   // ticker row keeps the 16-hour TTL.
   endpointFetchedAt: Record<string, string>;
   dataSources: DilutionDataSourceCheck[];

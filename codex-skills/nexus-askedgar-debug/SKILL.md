@@ -35,7 +35,7 @@ For AskEdgar endpoint schemas, query the AskEdgar MCP server instead of a local 
 3. Check the repo-specific invariants first.
    - Use `getCachedTickerData` by default.
    - Only tolerate raw `fetchTickerData` usage when there is an explicit bypass reason.
-   - Confirm `askedgar_cache` behavior matches the intended TTL expectations (16hr for ticker rows; 5min sub-TTL for the `news` endpoint inside that row; 3hr for `scanner-summary` rows).
+   - Confirm `askedgar_cache` behavior matches the intended TTL expectations (16hr for ticker rows; 15min sub-TTL for the `news` endpoint inside that row; 24hr for `scanner-summary` rows).
 4. Audit the likely failure classes:
    - missing or server-side-only API key handling
    - DB unavailable path not handled

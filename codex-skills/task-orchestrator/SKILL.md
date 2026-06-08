@@ -46,6 +46,7 @@ and move the task forward without adding ceremony.
 - For substantial or risky work, give a short plan, then execute.
 - Stop exactly at user-specified phase, checkpoint, commit-only, or push boundaries.
 - If a spec is stale, patch the approach to live repo reality instead of forcing bad text.
+- Do not mark a handoff spec `READY TO SHIP`, `reviewed against spec`, or final-reviewed unless Jared explicitly asks; route review status through `$nexus-review` and keep it chat-only by default.
 - Never edit secrets or `.env*` files.
 
 ## Validation

@@ -4,4 +4,4 @@ policy:
 interface:
   display_name: "Review"
   short_description: "Spec compliance + ship-readiness review"
-  default_prompt: "Use $nexus-review to compare the implementation against the active spec or requested scope, run validation, and report whether it is ready to ship."
+  default_prompt: "Use $nexus-review to compare the implementation against the active spec or requested scope, run validation, and report a chat-only ship-readiness verdict without editing HANDOFF.md unless I explicitly ask."

@@ -138,7 +138,7 @@ Report pass/fail for each command.
 - Do not change schema/migrations unless explicitly requested by the spec.
 
 ## Docs and Handoff Updates
-- After completing session work, update checklist/status in `HANDOFF.md`.
+- After completing session work, update `HANDOFF.md` only when the spec requires checkpoint evidence or the user asks for a status/handoff edit. Do not mark a spec `READY TO SHIP`, `reviewed against spec`, or otherwise final-reviewed unless Jared explicitly instructs that status; report implementation and validation results in chat for Jared/Claude review.
 - For cleanup or tech-debt work, check `docs/repo-cleanup.md` first — it is the canonical prioritized list of cleanup items maintained across audit sessions.
 - Repo-maintained Codex skill sources live in `codex-skills/`; some also expose user-facing agent metadata in `codex-skills/*/agents/openai.yaml` when that file exists.
 - Repo-local skill files do not automatically make a skill callable in the current Codex session. To surface a repo-maintained skill in the skill list, install or sync it into `~/.codex/skills/<skill-name>` and restart Codex.
