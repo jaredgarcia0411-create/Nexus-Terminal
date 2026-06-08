@@ -205,7 +205,6 @@ export default function BacktestingTab() {
                     : { id: null, name: null, userId: null },
                   autoLoadReview?.id ?? null,
                 )}
-                onOpenLastChart={() => handleSelect({ ticker: getPersistedTicker(), date: todayIsoDate() })}
                 onViewStats={(backtestId) => setView({ kind: 'stats', backtestId })}
               />
             </motion.div>

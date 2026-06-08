@@ -260,7 +260,7 @@ describe('BacktestManagerView', () => {
   });
 
   it('renders backtest cards with names and authors', () => {
-    render(<BacktestManagerView onLaunchChart={vi.fn()} onOpenLastChart={vi.fn()} onViewStats={vi.fn()} />);
+    render(<BacktestManagerView onLaunchChart={vi.fn()} onViewStats={vi.fn()} />);
 
     expect(screen.getByText('Bravo')).toBeTruthy();
     expect(screen.getByText('Alpha')).toBeTruthy();
@@ -270,34 +270,24 @@ describe('BacktestManagerView', () => {
   });
 
   it('renders section headings for the saved lists', () => {
-    render(<BacktestManagerView onLaunchChart={vi.fn()} onOpenLastChart={vi.fn()} onViewStats={vi.fn()} />);
+    render(<BacktestManagerView onLaunchChart={vi.fn()} onViewStats={vi.fn()} />);
 
     expect(screen.getByText('Saved Tests')).toBeTruthy();
     expect(screen.getByText('Sample Sets')).toBeTruthy();
   });
 
   it('opens the new backtest dialog from the header button', () => {
-    render(<BacktestManagerView onLaunchChart={vi.fn()} onOpenLastChart={vi.fn()} onViewStats={vi.fn()} />);
+    render(<BacktestManagerView onLaunchChart={vi.fn()} onViewStats={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('button', { name: /\+ new backtest/i }));
 
     expect(screen.getByText('New Backtest Dialog')).toBeTruthy();
   });
 
-  it('opens the last-viewed chart from the header button', () => {
-    const onOpenLastChart = vi.fn();
-
-    render(<BacktestManagerView onLaunchChart={vi.fn()} onOpenLastChart={onOpenLastChart} onViewStats={vi.fn()} />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Back to charts' }));
-
-    expect(onOpenLastChart).toHaveBeenCalledTimes(1);
-  });
-
   it('renders the empty state when no backtests are available', () => {
     hookSeed.backtests = [];
 
-    render(<BacktestManagerView onLaunchChart={vi.fn()} onOpenLastChart={vi.fn()} onViewStats={vi.fn()} />);
+    render(<BacktestManagerView onLaunchChart={vi.fn()} onViewStats={vi.fn()} />);
 
     expect(screen.getByText('No backtests yet. Create one to get started.')).toBeTruthy();
   });
@@ -324,7 +314,7 @@ describe('BacktestManagerView', () => {
       },
     ];
 
-    render(<BacktestManagerView onLaunchChart={vi.fn()} onOpenLastChart={vi.fn()} onViewStats={vi.fn()} />);
+    render(<BacktestManagerView onLaunchChart={vi.fn()} onViewStats={vi.fn()} />);
 
     expect(screen.getByRole('button', { name: 'Add Row to Owned Set' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Add Row to Shared Set' })).toBeTruthy();

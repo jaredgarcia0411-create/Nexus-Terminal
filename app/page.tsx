@@ -265,7 +265,15 @@ export default function NexusTerminal() {
         <input ref={folderInputRef} type="file" accept=".csv" multiple webkitdirectory="" className="hidden" onChange={handleFolderUpload} />
         <input ref={traderVueInputRef} type="file" accept=".csv" multiple className="hidden" onChange={handleTraderVueImport} />
 
-        <div className={activeTab === 'charts' || activeTab === 'research' ? 'px-3 py-4' : 'mx-auto max-w-7xl p-8'}>
+        <div
+          className={
+            activeTab === 'charts' || activeTab === 'research'
+              ? 'px-3 py-4'
+              : activeTab === 'trades' || activeTab === 'journal'
+                ? 'mx-auto max-w-7xl px-8 py-4'
+                : 'mx-auto max-w-7xl p-8'
+          }
+        >
           <AnimatePresence mode="wait">
             {activeTab === 'dashboard' ? (
               <TabErrorBoundary name="Dashboard">
@@ -280,13 +288,13 @@ export default function NexusTerminal() {
 
             {activeTab === 'trades' ? (
               <TabErrorBoundary name="Trades">
-                <ManagementTab {...tradeWorkspaceProps} group="trades" />
+                <ManagementTab key="trades" {...tradeWorkspaceProps} group="trades" />
               </TabErrorBoundary>
             ) : null}
 
             {activeTab === 'journal' ? (
               <TabErrorBoundary name="Journal">
-                <ManagementTab {...tradeWorkspaceProps} group="journal" />
+                <ManagementTab key="journal" {...tradeWorkspaceProps} group="journal" />
               </TabErrorBoundary>
             ) : null}
 

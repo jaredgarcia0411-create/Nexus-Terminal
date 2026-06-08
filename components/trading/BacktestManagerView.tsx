@@ -2,7 +2,7 @@
 
 import { useRef, useState, type ChangeEvent } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { ChevronLeft, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import AddSampleSetDialog from '@/components/trading/AddSampleSetDialog';
@@ -22,7 +22,6 @@ interface BacktestManagerViewProps {
     backtest: { id: string; name: string; ownerId: string } | null,
     autoLoadReview: { id: string; ticker: string; date: string } | null,
   ) => void;
-  onOpenLastChart: () => void;
   onViewStats: (backtestId: string) => void;
 }
 
@@ -54,7 +53,6 @@ function formatBacktestSampleSetLabel(backtest: BacktestListItem, isUncategorize
 
 export default function BacktestManagerView({
   onLaunchChart,
-  onOpenLastChart,
   onViewStats,
 }: BacktestManagerViewProps) {
   const {
@@ -144,25 +142,6 @@ export default function BacktestManagerView({
 
   return (
     <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background">
-      <div className="grid h-7 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-3 border-b border-border px-4">
-        <div className="flex min-w-0 items-center">
-          <button
-            type="button"
-            onClick={onOpenLastChart}
-            className="inline-flex h-7 items-center gap-0.5 rounded-md px-1.5 text-sm font-medium leading-none text-muted-foreground transition-colors hover:text-foreground"
-            aria-label="Back to charts"
-            title="Back to charts"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-            Charts
-          </button>
-        </div>
-        <div className="flex min-w-0 items-center justify-center">
-          <h2 className="text-lg font-semibold leading-none text-foreground">Backtest Manager</h2>
-        </div>
-        <div />
-      </div>
-
       <div className="grid min-h-0 flex-1 gap-4 p-4 sm:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)]">
         <div className="flex min-h-0 flex-col rounded-md border border-border bg-popover">
           <div className="border-b border-border p-3">
