@@ -217,9 +217,29 @@ describe('backtests routes', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
+    expect(payload.currentUserId).toBe('user-1');
     expect(payload.backtest.name).toBe('Momentum');
     expect(payload.reviews).toHaveLength(1);
     expect(payload.reviews[0].actions).toHaveLength(1);
+  });
+
+  it('GET /api/backtests/[id] returns current user id for uncategorized reviews', async () => {
+    getDbMock.mockReturnValue(createDbMock({
+      selectQueue: [
+        [{ name: 'Other' }],
+        [],
+      ],
+    }));
+
+    const response = ensureResponse(await getBacktestDetail(new Request('http://localhost/api/backtests/uncat-user-2'), {
+      params: Promise.resolve({ id: 'uncat-user-2' }),
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.currentUserId).toBe('user-1');
+    expect(payload.backtest.id).toBe('uncat-user-2');
+    expect(payload.reviews).toEqual([]);
   });
 
   it('PATCH /api/backtests/[id] returns 403 when the authed user is not the owner', async () => {

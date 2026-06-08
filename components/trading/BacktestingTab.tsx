@@ -202,7 +202,6 @@ export default function BacktestingTab() {
             backtestId={view.backtestId}
             onBack={() => setView({ kind: 'manager' })}
             onOpenInChart={(ticker, date, activeBacktest) => openChartView({ ticker, date }, activeBacktest)}
-            currentUserId={currentUserId}
           />
         </motion.div>
       ) : null}

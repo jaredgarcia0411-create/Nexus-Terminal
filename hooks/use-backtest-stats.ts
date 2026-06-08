@@ -41,6 +41,7 @@ type ReviewPayload = {
 type BacktestDetailResponse = {
   backtest?: BacktestDetail;
   reviews?: ReviewPayload[];
+  currentUserId?: string | null;
 };
 
 function normalizeSessionUser(
@@ -54,7 +55,12 @@ function normalizeSessionUser(
 
 export function useBacktestStats(backtestId: string) {
   const { data: session } = useSession();
-  const currentUserId = normalizeSessionUser(session)?.id ?? null;
+  const sessionUserId = normalizeSessionUser(session)?.id ?? null;
+  const [serverUserId, setServerUserId] = useState<string | null>(null);
+  // Server-derived currentUserId is authoritative — `ensureUser` may remap the
+  // session's JWT id to a canonical DB id when an email-collided record exists,
+  // which would cause owner checks against `session.user.id` to silently fail.
+  const currentUserId = serverUserId ?? sessionUserId;
 
   const [backtest, setBacktest] = useState<BacktestDetail | null>(null);
   const [reviewsWithStats, setReviewsWithStats] = useState<ReviewWithStats[]>([]);
@@ -79,6 +85,7 @@ export function useBacktestStats(backtestId: string) {
 
       setBacktest(payload.backtest);
       setReviewsWithStats(nextReviews);
+      if (payload.currentUserId) setServerUserId(payload.currentUserId);
     } catch (loadError) {
       setBacktest(null);
       setReviewsWithStats([]);

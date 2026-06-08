@@ -72,6 +72,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
           ownerName: owner?.name ?? null,
         },
         reviews,
+        currentUserId: authState.user.id,
       });
     }
 
@@ -105,7 +106,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 
     const reviews = await loadReviewsForSessions(db, sessions);
 
-    return Response.json({ backtest, reviews });
+    return Response.json({ backtest, reviews, currentUserId: authState.user.id });
   } catch (error) {
     logRouteError('backtests.id.get', error);
     return internalServerError();

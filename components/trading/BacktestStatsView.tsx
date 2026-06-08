@@ -34,7 +34,6 @@ interface BacktestStatsViewProps {
     date: string,
     activeBacktest: { id: string | null; name: string | null; userId: string | null },
   ) => void;
-  currentUserId: string | null;
 }
 
 function formatMetricNumber(value: number | null) {
@@ -70,7 +69,6 @@ export default function BacktestStatsView({
   backtestId,
   onBack,
   onOpenInChart,
-  currentUserId,
 }: BacktestStatsViewProps) {
   const {
     backtest,
@@ -82,6 +80,7 @@ export default function BacktestStatsView({
     isLoading,
     error,
     refetch,
+    currentUserId,
   } = useBacktestStats(backtestId);
 
   const filterGroups = useMemo(() => {
