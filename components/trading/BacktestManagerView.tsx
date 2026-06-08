@@ -143,7 +143,7 @@ export default function BacktestManagerView({
   };
 
   return (
-    <section className="flex h-[calc(100dvh-6.5rem)] min-h-[620px] flex-1 flex-col overflow-hidden bg-background">
+    <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background">
       <div className="grid h-7 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-3 border-b border-border px-4">
         <div className="flex min-w-0 items-center">
           <button

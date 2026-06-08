@@ -130,12 +130,12 @@ export default function BacktestStatsView({
   };
 
   if (isLoading) {
-    return <section className="flex h-[calc(100dvh-6.5rem)] flex-1 items-center justify-center text-sm text-muted-foreground">Loading stats...</section>;
+    return <section className="flex h-full min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">Loading stats...</section>;
   }
 
   if (error || !backtest || !aggregateStats) {
     return (
-      <section className="flex h-[calc(100dvh-6.5rem)] flex-1 flex-col items-center justify-center gap-3 text-sm">
+      <section className="flex h-full min-h-0 flex-1 flex-col items-center justify-center gap-3 text-sm">
         <p className="text-rose-400">{error ?? 'Could not load backtest stats'}</p>
         <Button type="button" variant="ghost" onClick={onBack} className="text-muted-foreground hover:bg-accent hover:text-foreground">
           Back
@@ -145,7 +145,7 @@ export default function BacktestStatsView({
   }
 
   return (
-    <section className="flex h-[calc(100dvh-6.5rem)] min-h-[620px] flex-1 flex-col overflow-hidden bg-background">
+    <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background">
       <div className="border-b border-border px-4 py-3">
         <Button
           type="button"

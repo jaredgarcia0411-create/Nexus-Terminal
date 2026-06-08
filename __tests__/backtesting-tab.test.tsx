@@ -223,9 +223,9 @@ describe('BacktestingTab', () => {
 
   // BacktestingTab now opens directly into the chart workspace (with AAPL
   // hydrated from localStorage) rather than the manager. Tests that need the
-  // manager UI click "Back to backtest manager" first.
+  // manager UI use the Charts/Backtests sub-nav.
   const goToManager = () => {
-    fireEvent.click(screen.getByLabelText('Back to backtest manager'));
+    fireEvent.click(screen.getByRole('button', { name: 'Backtests' }));
   };
 
   it('starts on the chart view and can round-trip to the manager to launch a backtest', () => {
@@ -242,6 +242,29 @@ describe('BacktestingTab', () => {
 
     expect(screen.getByText('Sidebar Active: bt-1')).toBeTruthy();
     expect(useBacktestSessionMock).toHaveBeenLastCalledWith(expect.objectContaining({ backtestId: 'bt-1' }));
+  });
+
+  it('switches between charts and backtests with the sub-nav', () => {
+    render(<BacktestingTab />);
+
+    expect(screen.getByText('Sidebar Active: none')).toBeTruthy();
+
+    goToManager();
+    expect(screen.getByText('Manager View')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Charts' }));
+    expect(screen.queryByText('Manager View')).toBeNull();
+    expect(screen.getByText('Sidebar Active: none')).toBeTruthy();
+  });
+
+  it('keeps the Backtests sub-nav active while viewing stats', () => {
+    render(<BacktestingTab />);
+
+    goToManager();
+    fireEvent.click(screen.getByText('Open Stats'));
+
+    expect(screen.getByText('Stats View')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Backtests' }).className).toContain('bg-accent');
   });
 
   it('only shows manual ticker lookup for ad hoc chart launches', () => {

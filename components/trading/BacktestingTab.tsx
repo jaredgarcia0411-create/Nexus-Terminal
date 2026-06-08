@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useSession } from 'next-auth/react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronLeft, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 
 import BacktestChartWorkspace from '@/components/trading/BacktestChartWorkspace';
 import BacktestManagerView from '@/components/trading/BacktestManagerView';
 import BacktestStatsView from '@/components/trading/BacktestStatsView';
 import BacktestingSidebar, { type BacktestSelection } from '@/components/trading/BacktestingSidebar';
+import ResearchSubNav from '@/components/trading/ResearchSubNav';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -159,138 +160,147 @@ export default function BacktestingTab() {
     ));
   }, []);
 
+  // Charts sub-nav: "Charts" = chart workspace, "Backtests" = manager list.
+  // Stats is a drill-down from the manager, so it reads as "Backtests" here.
+  const chartsNavTab: 'charts' | 'backtests' = view.kind === 'chart' ? 'charts' : 'backtests';
+  const handleChartsNav = useCallback((tab: 'charts' | 'backtests') => {
+    if (tab === 'backtests') {
+      setView({ kind: 'manager' });
+      return;
+    }
+    // Re-entering Charts restores the last symbol on today's date.
+    handleSelect({ ticker: getPersistedTicker(), date: todayIsoDate() });
+  }, [handleSelect]);
+
   return (
     <motion.div
       key="backtesting"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
-      className="flex h-[calc(100dvh-6.5rem)] min-h-[620px] overflow-hidden bg-background"
+      className="flex h-[calc(100dvh-6.5rem)] min-h-[620px] flex-col overflow-hidden bg-background"
     >
-      <AnimatePresence mode="wait">
-      {view.kind === 'manager' ? (
-        <motion.div
-          key="manager"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          className="flex min-h-0 min-w-0 flex-1"
-        >
-          <BacktestManagerView
-            onLaunchChart={(backtest, autoLoadReview) => openChartView(
-              autoLoadReview ? { ticker: autoLoadReview.ticker, date: autoLoadReview.date } : null,
-              backtest
-                ? { id: backtest.id, name: backtest.name, userId: backtest.ownerId }
-                : { id: null, name: null, userId: null },
-              autoLoadReview?.id ?? null,
-            )}
-            onOpenLastChart={() => handleSelect({ ticker: getPersistedTicker(), date: todayIsoDate() })}
-            onViewStats={(backtestId) => setView({ kind: 'stats', backtestId })}
-          />
-        </motion.div>
-      ) : null}
-
-      {view.kind === 'stats' ? (
-        <motion.div
-          key="stats"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          className="flex min-h-0 min-w-0 flex-1"
-        >
-          <BacktestStatsView
-            backtestId={view.backtestId}
-            onBack={() => setView({ kind: 'manager' })}
-            onOpenInChart={(ticker, date, activeBacktest) => openChartView({ ticker, date }, activeBacktest)}
-          />
-        </motion.div>
-      ) : null}
-
-      {view.kind === 'chart' ? (
-        <motion.div
-          key="chart"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          className="flex min-h-0 min-w-0 flex-1"
-        >
-          <BacktestChartWorkspace
-            key={`${view.id ?? 'free'}:${view.ticker ?? 'empty'}:${view.date ?? 'empty'}`}
-            ticker={view.ticker}
-            date={view.date}
-            currentUserId={currentUserId}
-            backtestId={view.id}
-            autoLoadReviewId={autoLoadReviewId}
-            activeBacktest={
-              view.id && view.name && view.userId
-                ? { id: view.id, name: view.name, userId: view.userId }
-                : null
-            }
-            onAnchorChange={handleAnchorChange}
-            headerLeft={
-              <button
-                type="button"
-                onClick={() => setView({ kind: 'manager' })}
-                className="inline-flex h-7 items-center gap-0.5 rounded-md px-1.5 text-sm font-medium leading-none text-muted-foreground transition-colors hover:text-foreground"
-                aria-label="Back to backtest manager"
-                title="Back to backtest manager"
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-                Backtest Manager
-              </button>
-            }
-            toolbarLeft={
-              !view.id ? (
-                <form
-                  onSubmit={handleLookupSubmit}
-                  className="flex items-center gap-1.5"
-                  aria-label="Lookup ticker on date"
-                >
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={lookupTicker}
-                      onChange={(event) => setLookupTicker(event.target.value.toUpperCase())}
-                      placeholder="TICKER"
-                      className="h-7 w-[8.25rem] border-border bg-accent pl-7 font-mono text-xs uppercase text-foreground placeholder:text-muted-foreground"
-                    />
-                  </div>
-                  <input
-                    type="date"
-                    value={lookupDate}
-                    onChange={(event) => setLookupDate(event.target.value)}
-                    className="h-7 w-[8.25rem] rounded-md border border-border bg-accent px-2 font-mono text-xs text-foreground [color-scheme:dark]"
-                  />
-                  <Button
-                    type="submit"
-                    variant="ghost"
-                    size="xs"
-                    disabled={!lookupValid}
-                    className="h-7 text-[11px] text-muted-foreground hover:bg-transparent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Load
-                  </Button>
-                </form>
-              ) : (
-                <div className="flex min-w-0 items-center px-2">
-                  <span className="truncate text-sm font-medium text-foreground">
-                    {view.name ?? 'Backtest'}
-                  </span>
-                </div>
-              )
-            }
-            renderRightPanel={(simPanel) => (
-              <BacktestingSidebar
-                selected={view.ticker && view.date ? { ticker: view.ticker, date: view.date } : null}
-                onSelect={handleSelect}
-                activeBacktestId={view.id}
-                topPanel={simPanel}
+      <div className="shrink-0">
+        <ResearchSubNav
+          tabs={[{ key: 'charts', label: 'Charts' }, { key: 'backtests', label: 'Backtests' }]}
+          activeTab={chartsNavTab}
+          onTabChange={handleChartsNav}
+        />
+      </div>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <AnimatePresence mode="wait">
+          {view.kind === 'manager' ? (
+            <motion.div
+              key="manager"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="flex min-h-0 min-w-0 flex-1"
+            >
+              <BacktestManagerView
+                onLaunchChart={(backtest, autoLoadReview) => openChartView(
+                  autoLoadReview ? { ticker: autoLoadReview.ticker, date: autoLoadReview.date } : null,
+                  backtest
+                    ? { id: backtest.id, name: backtest.name, userId: backtest.ownerId }
+                    : { id: null, name: null, userId: null },
+                  autoLoadReview?.id ?? null,
+                )}
+                onOpenLastChart={() => handleSelect({ ticker: getPersistedTicker(), date: todayIsoDate() })}
+                onViewStats={(backtestId) => setView({ kind: 'stats', backtestId })}
               />
-            )}
-          />
-        </motion.div>
-      ) : null}
-      </AnimatePresence>
+            </motion.div>
+          ) : null}
+
+          {view.kind === 'stats' ? (
+            <motion.div
+              key="stats"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="flex min-h-0 min-w-0 flex-1"
+            >
+              <BacktestStatsView
+                backtestId={view.backtestId}
+                onBack={() => setView({ kind: 'manager' })}
+                onOpenInChart={(ticker, date, activeBacktest) => openChartView({ ticker, date }, activeBacktest)}
+              />
+            </motion.div>
+          ) : null}
+
+          {view.kind === 'chart' ? (
+            <motion.div
+              key="chart"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="flex min-h-0 min-w-0 flex-1"
+            >
+              <BacktestChartWorkspace
+                key={`${view.id ?? 'free'}:${view.ticker ?? 'empty'}:${view.date ?? 'empty'}`}
+                ticker={view.ticker}
+                date={view.date}
+                currentUserId={currentUserId}
+                backtestId={view.id}
+                autoLoadReviewId={autoLoadReviewId}
+                activeBacktest={
+                  view.id && view.name && view.userId
+                    ? { id: view.id, name: view.name, userId: view.userId }
+                    : null
+                }
+                onAnchorChange={handleAnchorChange}
+                toolbarLeft={
+                  !view.id ? (
+                    <form
+                      onSubmit={handleLookupSubmit}
+                      className="flex items-center gap-1.5"
+                      aria-label="Lookup ticker on date"
+                    >
+                      <div className="relative">
+                        <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={lookupTicker}
+                          onChange={(event) => setLookupTicker(event.target.value.toUpperCase())}
+                          placeholder="TICKER"
+                          className="h-7 w-[8.25rem] border-border bg-accent pl-7 font-mono text-xs uppercase text-foreground placeholder:text-muted-foreground"
+                        />
+                      </div>
+                      <input
+                        type="date"
+                        value={lookupDate}
+                        onChange={(event) => setLookupDate(event.target.value)}
+                        className="h-7 w-[8.25rem] rounded-md border border-border bg-accent px-2 font-mono text-xs text-foreground [color-scheme:dark]"
+                      />
+                      <Button
+                        type="submit"
+                        variant="ghost"
+                        size="xs"
+                        disabled={!lookupValid}
+                        className="h-7 text-[11px] text-muted-foreground hover:bg-transparent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Load
+                      </Button>
+                    </form>
+                  ) : (
+                    <div className="flex min-w-0 items-center px-2">
+                      <span className="truncate text-sm font-medium text-foreground">
+                        {view.name ?? 'Backtest'}
+                      </span>
+                    </div>
+                  )
+                }
+                renderRightPanel={(simPanel) => (
+                  <BacktestingSidebar
+                    selected={view.ticker && view.date ? { ticker: view.ticker, date: view.date } : null}
+                    onSelect={handleSelect}
+                    activeBacktestId={view.id}
+                    topPanel={simPanel}
+                  />
+                )}
+              />
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </div>
     </motion.div>
   );
 }
