@@ -123,13 +123,13 @@ export default function ImportSheetDialog({ open, onOpenChange, onImport }: Impo
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto border-border bg-card text-foreground sm:max-w-5xl">
+      <DialogContent className={`max-h-[85vh] overflow-y-auto border-border bg-card text-foreground ${drafts.length > 0 ? 'sm:max-w-5xl' : 'sm:max-w-md'}`}>
         <DialogHeader>
           <DialogTitle>Import CSV</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-[1fr_1fr]">
+          <div className="space-y-3">
             <div className="space-y-2">
               <Label htmlFor="sheet-import-file">CSV file</Label>
               <Input
@@ -209,8 +209,11 @@ export default function ImportSheetDialog({ open, onOpenChange, onImport }: Impo
                         <td className="px-3 py-2">
                           {draft.type === 'select' && !draft.drop ? (
                             <textarea
-                              value={(draft.options ?? []).join('\n')}
-                              onChange={(event) => updateDraft(index, { options: splitOptions(event.target.value) })}
+                              value={draft.optionsText ?? (draft.options ?? []).join('\n')}
+                              onChange={(event) => updateDraft(index, {
+                                optionsText: event.target.value,
+                                options: splitOptions(event.target.value),
+                              })}
                               rows={2}
                               className="min-w-48 rounded-md border border-border bg-popover px-2 py-1.5 text-sm text-popover-foreground [color-scheme:dark]"
                               aria-label={`Select options for ${draft.header || 'blank header'}`}

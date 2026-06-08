@@ -47,6 +47,12 @@ describe('sheets CSV import helpers', () => {
     expect(drafts.find((draft) => draft.header === 'Score')).toMatchObject({ type: 'number' });
   });
 
+  it('auto-drops a CSV R column so it does not duplicate the live locked R column', () => {
+    const drafts = detectImportColumns(['R'], [['1.5'], ['2.0']]);
+
+    expect(drafts[0]).toMatchObject({ header: 'R', drop: true });
+  });
+
   it('dedupes generated keys against locked defaults and prior import columns', () => {
     const drafts = detectImportColumns(['Tag', 'Tag', ''], [['A', 'B', 'C']]);
 

@@ -11,107 +11,7 @@ Historical completed sections (Sprints 1-15, Tier 1 Cleanup, Chart Drawings, Mul
 
 ## Open Follow-Ups
 
-- **`BacktestStatsView` owner badge (likely same id mismatch):** `components/trading/BacktestStatsView.tsx` (Charts → Management) computes an owner badge with `review.session.userId === currentUserId`, where `currentUserId` comes from `hooks/use-backtest-stats.ts` (client session id). Before changing anything, check whether that hook's data endpoint already returns a server `currentUserId` (like `use-backtest-manager` does), then apply the same `serverUserId ?? sessionUserId` pattern.
-
----
-
-## COMPLETED SPEC — Sheets Massive Wave, Spec 2: CSV import with mapping-review
-
-> Decisions locked with Jared 2026-06-08. This is **Spec 2 of 2** (Spec 1 — Massive volume/float fill — shipped in `abe6a9a`). Spec 2 adds a CSV importer that creates one new multi-date sheet from an uploaded file.
-
-### Goal
-
-A toolbar **Import** button reads a `.csv` in the browser, auto-detects each column's type (and harvests select options), shows an editable **mapping-review** modal, then creates one new multi-date sheet (`sheetDate: null`) and bulk-inserts the rows via a new `POST /api/sheets/import`.
-
-Locked rules (product decisions — implement exactly):
-- `Date` header → locked `date` column, `Ticker` header → locked `ticker` column (map onto existing locked keys, do **not** create duplicate columns).
-- Headers `Reports` / `Charts` / `Sim Trade` are **dropped** (the locked Report + Chart columns auto-inject via `ensureLockedColumns`; sim lives in the chart cell). No user columns, no values.
-- Headers `Float` / `$ Vol` / `Share Vol` map to the Spec 1 Massive types (`float` / `dollar_volume` / `share_volume`) by header name, so **Fill data** works immediately after import. Existing Float values import as-is; empty `$ Vol` is left for Fill to backfill.
-- A column is auto-suggested as `select` (with harvested options) when it has few distinct, short, repeated values. Every detected type/name/options is editable in the modal.
-- Rows whose `ticker` cell is empty are skipped (counted in the import summary).
-- Import always creates ONE new multi-date sheet (`sheetDate: null`); rows keep their own `Date` cell. Never appends to an existing sheet.
-
-No DB migration: column types are plain strings in the existing `sheets.columns` jsonb; row values land in the existing `sheet_rows.values` jsonb. Parsing/detection run client-side (the file never reaches the server); the route only validates + inserts, matching the existing trust boundary (`createSheet` already sends `columns`, `addRow` already sends `values`).
-
-### Part A — Validation (`lib/validations/sheets.ts`)
-
-1. Add, reusing the existing `columnSchema` + `rowValuesSchema` already in this file:
-   ```ts
-   export const sheetImportSchema = z.object({
-     name: z.string().trim().min(1).max(100),
-     columns: z.array(columnSchema).min(1).max(40),
-     rows: z.array(rowValuesSchema).max(2000),
-   });
-   export type SheetImportBody = z.infer<typeof sheetImportSchema>;
-   ```
-
-### Part B — Pure detection lib (`lib/sheets/import.ts`, new, unit-tested)
-
-2. Constants/helpers:
-   - `normalizeHeader(h: string)` → lowercase, trim, collapse internal whitespace.
-   - `HEADER_TYPE_OVERRIDES: Record<string, SheetColumnType>` → `float`→`float`; `$ vol`/`$vol`/`dollar vol`/`dollar volume`→`dollar_volume`; `share vol`/`share volume`→`share_volume`.
-   - `LOCKED_TARGETS: Record<string, string>` → `date`→`date`, `ticker`→`ticker`.
-   - `DROP_HEADERS: Set<string>` → `reports`, `charts`, `sim trade`.
-   - `coerceImportNumber(raw: unknown): number | null` → strip `$`, `,`, whitespace; return a finite number or `null`. Exported + tested.
-3. `detectImportColumns(headers: string[], dataRows: string[][]): ImportColumnDraft[]` where `ImportColumnDraft = { header: string; key: string; name: string; type: SheetColumnType; options?: string[]; drop: boolean; lockedKey?: string }`. Per header (using `normalizeHeader`):
-   - in `DROP_HEADERS` → `drop: true`.
-   - in `LOCKED_TARGETS` → `lockedKey` set, `type` = the locked column's type (`date` for date, `text` for ticker), no new key allocation.
-   - in `HEADER_TYPE_OVERRIDES` → that type.
-   - else infer from that column's non-empty trimmed samples, in order: all match `/^\d{4}-\d{2}-\d{2}$/` → `date`; all `true`/`false` (case-insensitive) → `checkbox`; all `coerceImportNumber != null` → `number`; all match `/^https?:\/\//i` → `url`; `distinct.size <= 15 && every value length <= 40 && distinct.size < sampleCount` → `select` (options = sorted distinct); else `text`. Empty sample set → `text`.
-   - Key allocation for non-locked, non-drop headers via `nextColumnKey(header, existingColumnsSoFar)` (import `nextColumnKey` + `slugifyColumnKey` from `lib/sheets/grid.ts`), deduped against locked default keys and prior import keys; empty header falls back through `nextColumnKey` to `column`.
-4. `buildImportPayload(drafts: ImportColumnDraft[], dataRows: string[][]): { columns: SheetColumn[]; rows: Record<string, unknown>[]; skipped: number }`:
-   - `columns` = `[...DEFAULT_SHEET_COLUMNS, ...drafts.filter(d => !d.drop && !d.lockedKey).map(d => ({ key: d.key, name: d.name, type: d.type, ...(d.options?.length ? { options: d.options } : {}) }))]`.
-   - For each data row: build a `values` object; for each non-drop draft, coerce the cell by `draft.type` and assign under `draft.lockedKey ?? draft.key`. Coercion: `number`/`share_volume`/`dollar_volume`/`float` → `coerceImportNumber` (omit when `null`); `checkbox` → `true`/`false` by case-insensitive match (omit otherwise); `date`/`url`/`select`/`text` → trimmed string (omit when `''`).
-   - **Skip the row** (increment `skipped`, add nothing) when its `ticker` value is empty after coercion.
-
-### Part C — Import route (`app/api/sheets/import/route.ts`, new)
-
-5. `POST` mirroring `app/api/sheets/route.ts`'s create flow: `requireUser` → `parseAndValidate(request, sheetImportSchema)` → `getPoolDb` → `ensureUser` → `db.transaction(async (tx) => { ... })`:
-   - `const columns = ensureLockedColumns(body.columns)` (safety: guarantees locked defaults present, strips retired keys).
-   - Insert `sheets`: `{ ownerUserId: authState.user.id, name: body.name, sheetDate: null, isTemplate: false, columns, updatedAt: new Date() }` `.returning()`.
-   - Insert `sheetMembers`: `{ sheetId: sheet.id, userId: authState.user.id, role: 'owner' }`.
-   - If `body.rows.length > 0`: `const insertedRows = await tx.insert(sheetRows).values(body.rows.map((values, i) => ({ sheetId: sheet.id, position: i, values, createdByUserId: authState.user.id, updatedByUserId: authState.user.id, updatedAt: new Date() }))).returning();` else `insertedRows = []`.
-   - Return `{ sheet, rows: insertedRows }`.
-   - Wrap in try/catch → `logRouteError('sheets.import.post', error)` + `internalServerError()`. Imports: `getPoolDb` from `@/lib/db`, `sheets`/`sheetMembers`/`sheetRows` from `@/lib/db/schema`, `ensureLockedColumns` from `@/lib/sheets/columns`, `sheetImportSchema` from `@/lib/validations/sheets`.
-
-### Part D — Hook (`hooks/use-sheets.ts`)
-
-6. Add `importSheet(payload: SheetImportBody): Promise<…>`: POST to `/api/sheets/import` via the existing `sendJson` helper; on `!res.ok`, read `{ error }`, `toast.error(message)`, throw; on success parse `{ sheet, rows }`, apply the **same `list` update + set-active** that `createSheet` already does (prepend the new sheet to local list, select it as active), then `setRows(rows)`; return the new sheet. Export `importSheet` in the hook's return object. Import the `SheetImportBody` type from `@/lib/validations/sheets`.
-
-### Part E — Dialog + toolbar button (`components/trading/`)
-
-7. New `ImportSheetDialog.tsx`:
-   - `<input type="file" accept=".csv">`; on change `const text = await file.text();` then `const parsed = Papa.parse<string[]>(text, { skipEmptyLines: true });` (`import Papa from 'papaparse'`, header:false — mirror `lib/parsers/tradervue.ts`). `headers = parsed.data[0] ?? []` (strip a leading BOM `﻿` from `headers[0]`); `dataRows = parsed.data.slice(1)`.
-   - State: editable `drafts` (seeded from `detectImportColumns(headers, dataRows)`) and `sheetName` (default = filename without extension).
-   - Render a mapping table: header label (read-only) · `name` text input · `type` `<select>` over `USER_COLUMN_TYPES` · an options `<textarea>` shown only when `type === 'select'` (split on `/[\n,]/`, trim, drop empties — mirror `AddColumnDialog.tsx`) · a **Drop** toggle. Locked-target rows (Date/Ticker) render "→ Date" / "→ Ticker" and disable the type select + Drop.
-   - Guard: if kept (non-drop) columns > 40 or `dataRows.length > 2000`, show an inline error and disable **Import**.
-   - **Import** → `const { columns, rows, skipped } = buildImportPayload(drafts, dataRows);` → `await sheets.importSheet({ name: sheetName, columns, rows });` → close dialog + `toast.success(\`Imported ${rows.length} rows${skipped ? \` · ${skipped} skipped\` : ''}\`)`. Surface hook errors via the hook's own toast.
-   - Follow the existing dialog idiom (`components/ui/dialog`, same as `AddColumnDialog`); use `bg-popover`/`text-popover-foreground` for the type/options selects per the UI-consistency note.
-8. `SheetsTab.tsx`: add an **Import** icon button (lucide `Upload`) to the toolbar near the new-sheet ("+") control. Always enabled for a signed-in user (it creates a *new* sheet, independent of the active sheet's role). Clicking opens `ImportSheetDialog`.
-
-### Part F — Validation
-
-9. Add tests for `lib/sheets/import.ts`: `detectImportColumns` across date / number / checkbox / select-with-options / Massive-header-override / drop-header / locked-target cases; `buildImportPayload` coercion (`$`/comma stripping, checkbox bool, empty-cell omit) + ticker-skip counting; `coerceImportNumber`. Add an `app/api/sheets/import` access/validation test (unauthorized + bad body). Then run `npm run lint` · `npx tsc --noEmit` · `npm test` · `npm run build`. `services/` untouched, so `typecheck:services` not required. **No migration** — no `schema.ts` / `drizzle/` change.
-
-### Acceptance criteria
-
-- **Import** parses a `.csv` and opens a mapping modal where every column's type, name, and (for selects) options are editable; Date/Ticker are shown as locked targets.
-- `Float`/`$ Vol` import as the Massive types so the **Fill data** button lights up; existing Float values are preserved, empty `$ Vol` backfills via Fill.
-- `Reports`/`Charts`/`Sim Trade` produce no user columns; the new sheet still shows the locked Report + Chart columns.
-- Importing creates one new multi-date sheet (`sheetDate: null`) with all valid rows bulk-inserted; ticker-less rows are skipped and reported; the new sheet becomes active without a manual refresh.
-- No `schema.ts` / `drizzle/` change; **no migration**.
-
-### Execution status
-
-Status: completed 2026-06-08; reviewed against spec — READY TO SHIP.
-
-Outcome:
-- Added client-side CSV parsing + mapping-review modal with editable names, types, select options, drop toggles, and locked Date/Ticker targets.
-- Added pure import detection/payload helpers for locked targets, dropped Reports/Charts/Sim Trade headers, Massive type overrides, select option harvesting, numeric/checkbox coercion, and ticker-less row skips.
-- Added `POST /api/sheets/import` to create one new multi-date sheet with owner membership and bulk rows in one transaction; no schema or migration change.
-- Wired `useSheets.importSheet` and the Sheets toolbar Import button so a successful import becomes the active sheet immediately.
-
-Validation: `npm run lint`, `npx tsc --noEmit`, `npm test` (109 files / 814 tests), and `npm run build` all green. `services/` untouched, so `npm run typecheck:services` was not run.
+_None open._
 
 ---
 
@@ -125,6 +25,28 @@ Validation: `npm run lint`, `npx tsc --noEmit`, `npm test` (109 files / 814 test
 ---
 
 ## Recently Completed
+
+### Fix BacktestStatsView owner badge (client/server user-id mismatch)
+
+Status: completed 2026-06-08 (commit `c9b1bf7`); reviewed against spec — READY TO SHIP.
+
+Outcome:
+- `GET /api/backtests/[id]` now returns canonical `currentUserId` (`authState.user.id`) in both the normal and `uncat-` branches.
+- `useBacktestStats` prefers `serverUserId ?? sessionUserId` (mirrors `use-backtest-manager`); `BacktestStatsView` trusts the hook and dropped its `currentUserId` prop, so the owner-only Edit Notes / Delete dropdown shows on your own stats-view reviews even when session JWT id ≠ DB id.
+- `BacktestChartWorkspace` + `BacktestingTab:72` wiring untouched. No schema/migration.
+
+Validation: `npm run lint`, `npx tsc --noEmit`, `npm test` (109 files / 815 tests), `npm run build` all green (build needed a `.next` clean — same stale-cache phantom as the prior review).
+
+### Sheets Massive Wave, Spec 2: CSV import with mapping-review
+
+Status: completed 2026-06-08 (commit `c6630b7`); reviewed against spec — READY TO SHIP.
+
+Outcome:
+- Toolbar **Import** button parses a `.csv` client-side (papaparse) and opens an editable mapping modal: auto-detects type, harvests select options, maps Date/Ticker onto locked columns, drops Reports/Charts/Sim Trade, maps Float/$ Vol/Share Vol to the Spec 1 Massive types.
+- Pure `lib/sheets/import.ts` (`detectImportColumns`/`buildImportPayload`/`coerceImportNumber`) handles inference, `$`/comma coercion, checkbox bools, and ticker-less row skips; unit-tested.
+- New `POST /api/sheets/import` creates one multi-date sheet (`sheetDate: null`) + owner membership + bulk rows in one transaction; `useSheets.importSheet` makes it active immediately. No schema/migration change.
+
+Validation: `npm run lint`, `npx tsc --noEmit`, `npm test` (109 files / 814 tests), `npm run build` all green (build needed a `.next` clean — first run hit a stale-cache phantom on an unrelated route). LOW note: imported sheet's owner label is blank until next list refresh (self-owned, cosmetic).
 
 ### Sheets Massive Wave, Spec 1: Volume + Float fill columns
 

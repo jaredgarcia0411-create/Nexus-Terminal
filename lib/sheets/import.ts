@@ -7,6 +7,10 @@ export type ImportColumnDraft = {
   name: string;
   type: SheetColumnType;
   options?: string[];
+  // Raw textarea text while editing select options. Kept separate from `options`
+  // so trailing spaces / newlines survive keystrokes (parsing them away mid-type
+  // makes the space/Enter keys look broken). `options` stays the parsed payload value.
+  optionsText?: string;
   drop: boolean;
   lockedKey?: string;
 };
@@ -30,7 +34,7 @@ export const LOCKED_TARGETS: Record<string, string> = {
   ticker: 'ticker',
 };
 
-export const DROP_HEADERS = new Set(['reports', 'charts', 'sim trade']);
+export const DROP_HEADERS = new Set(['reports', 'charts', 'sim trade', 'r']);
 
 export function coerceImportNumber(raw: unknown): number | null {
   const stripped = String(raw ?? '').replace(/[$,\s]/g, '');
