@@ -9,7 +9,10 @@ export type SheetColumnType =
   | 'chart'
   | 'rmultiple'
   | 'action'
-  | 'watchlist';
+  | 'watchlist'
+  | 'share_volume'
+  | 'dollar_volume'
+  | 'float';
 
 export type SheetColumn = {
   key: string;

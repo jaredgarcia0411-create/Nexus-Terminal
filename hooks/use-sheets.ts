@@ -40,6 +40,11 @@ export type SheetMember = {
   email: string | null;
 };
 
+export type FillMassiveResult = {
+  filled: number;
+  missed: number;
+};
+
 function sendJson(url: string, body: unknown, method = 'POST') {
   return fetch(url, {
     method,
@@ -235,6 +240,35 @@ export function useSheets() {
     }
   }, [activeSheet, rows]);
 
+  const fillMassive = useCallback(async (rowIds: string[]): Promise<FillMassiveResult> => {
+    if (!activeSheet || rowIds.length === 0) return { filled: 0, missed: 0 };
+
+    let surfacedError = false;
+    try {
+      const res = await sendJson(`/api/sheets/${activeSheet.id}/fill-massive`, { rowIds });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        const message = data?.error ?? 'Failed to fill data';
+        toast.error(message);
+        surfacedError = true;
+        throw new Error(message);
+      }
+
+      const data = (await res.json()) as { rows: SheetRowRecord[]; filled: number; missed: number };
+      const updatedById = new Map(data.rows.map((row) => [row.id, row]));
+      setRows((current) => current.map((row) => {
+        const updated = updatedById.get(row.id);
+        return updated ? { ...row, values: updated.values, version: updated.version } : row;
+      }));
+      return { filled: data.filled, missed: data.missed };
+    } catch (error) {
+      if (!surfacedError) {
+        toast.error('Failed to fill data');
+      }
+      throw error;
+    }
+  }, [activeSheet]);
+
   const updateColumns = useCallback(async (columns: SheetColumn[]) => {
     if (!activeSheet) return;
 
@@ -324,6 +358,7 @@ export function useSheets() {
     updateRow,
     deleteRows,
     reorderRows,
+    fillMassive,
     updateColumns,
     addMember,
     updateMemberRole,

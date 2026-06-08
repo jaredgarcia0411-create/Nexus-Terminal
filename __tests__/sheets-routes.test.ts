@@ -6,12 +6,18 @@ const {
   requireUserMock,
   ensureUserMock,
   getSheetRoleMock,
+  isMassiveConfiguredMock,
+  fetchGroupedDailyAggregatesMock,
+  fetchSharesOutstandingMock,
 } = vi.hoisted(() => ({
   getDbMock: vi.fn(),
   getPoolDbMock: vi.fn(),
   requireUserMock: vi.fn(),
   ensureUserMock: vi.fn(),
   getSheetRoleMock: vi.fn(),
+  isMassiveConfiguredMock: vi.fn(),
+  fetchGroupedDailyAggregatesMock: vi.fn(),
+  fetchSharesOutstandingMock: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ getDb: getDbMock, getPoolDb: getPoolDbMock }));
@@ -21,9 +27,16 @@ vi.mock('@/lib/server-db-utils', () => ({
   requireUser: requireUserMock,
 }));
 vi.mock('@/lib/sheets/access', () => ({ getSheetRole: getSheetRoleMock }));
+vi.mock('@/lib/massive-market', () => ({
+  fetchGroupedDailyAggregates: fetchGroupedDailyAggregatesMock,
+  fetchSharesOutstanding: fetchSharesOutstandingMock,
+  isMassiveConfigured: isMassiveConfiguredMock,
+  normalizeMassiveTicker: (raw: string) => raw.trim().toUpperCase(),
+}));
 
 import { DELETE as deleteSheet, GET as getSheet, PATCH as patchSheet } from '@/app/api/sheets/[id]/route';
 import { POST as appendResearchRow } from '@/app/api/sheets/[id]/append-research-row/route';
+import { POST as fillMassive } from '@/app/api/sheets/[id]/fill-massive/route';
 import { GET as getRResults } from '@/app/api/sheets/[id]/r-results/route';
 import { POST as postSheetRow } from '@/app/api/sheets/[id]/rows/route';
 import { PATCH as patchSheetRow } from '@/app/api/sheets/[id]/rows/[rowId]/route';
@@ -42,6 +55,11 @@ function createDbMock(options: {
   const updateResult = options.updateResult ?? [];
   const insertValuesMock = vi.fn(() => ({
     returning: vi.fn(() => Promise.resolve(insertResult)),
+  }));
+  const updateSetMock = vi.fn(() => ({
+    where: vi.fn(() => ({
+      returning: vi.fn(() => Promise.resolve(updateResult)),
+    })),
   }));
 
   return {
@@ -63,17 +81,14 @@ function createDbMock(options: {
       values: insertValuesMock,
     })),
     update: vi.fn(() => ({
-      set: vi.fn(() => ({
-        where: vi.fn(() => ({
-          returning: vi.fn(() => Promise.resolve(updateResult)),
-        })),
-      })),
+      set: updateSetMock,
     })),
     delete: vi.fn(() => ({
       where: vi.fn(() => Promise.resolve()),
     })),
     _mocks: {
       insertValuesMock,
+      updateSetMock,
     },
   };
 }
@@ -136,6 +151,9 @@ describe('sheets routes', () => {
     });
     ensureUserMock.mockResolvedValue(undefined);
     getSheetRoleMock.mockResolvedValue('owner');
+    isMassiveConfiguredMock.mockReturnValue(true);
+    fetchGroupedDailyAggregatesMock.mockResolvedValue([]);
+    fetchSharesOutstandingMock.mockResolvedValue(null);
   });
 
   it('POST /api/sheets creates with default columns and owner membership', async () => {
@@ -646,6 +664,114 @@ describe('sheets routes', () => {
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: 'Sheet not found' });
+  });
+
+  it('POST /api/sheets/[id]/fill-massive rejects invalid row batches', async () => {
+    getDbMock.mockReturnValue(createDbMock({}));
+
+    const response = ensureResponse(await fillMassive(new Request('http://localhost/api/sheets/sheet-1/fill-massive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rowIds: Array.from({ length: 51 }, (_, index) => `row-${index}`) }),
+    }), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe('Validation failed');
+    expect(getSheetRoleMock).not.toHaveBeenCalled();
+  });
+
+  it('POST /api/sheets/[id]/fill-massive returns 403 for viewers', async () => {
+    getSheetRoleMock.mockResolvedValue('viewer');
+    getDbMock.mockReturnValue(createDbMock({}));
+
+    const response = ensureResponse(await fillMassive(new Request('http://localhost/api/sheets/sheet-1/fill-massive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rowIds: ['row-1'] }),
+    }), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'Forbidden' });
+    expect(isMassiveConfiguredMock).not.toHaveBeenCalled();
+  });
+
+  it('POST /api/sheets/[id]/fill-massive returns 503 when Massive is not configured', async () => {
+    isMassiveConfiguredMock.mockReturnValue(false);
+    getDbMock.mockReturnValue(createDbMock({}));
+
+    const response = ensureResponse(await fillMassive(new Request('http://localhost/api/sheets/sheet-1/fill-massive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rowIds: ['row-1'] }),
+    }), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'Massive API is not configured' });
+  });
+
+  it('POST /api/sheets/[id]/fill-massive fills empty volume cells without overwriting rows', async () => {
+    fetchGroupedDailyAggregatesMock.mockResolvedValue([{
+      ticker: 'AAPL',
+      open: 1,
+      high: 3,
+      low: 1,
+      close: 2,
+      volume: 1000,
+      vwap: 2.5,
+      timestamp: 0,
+    }]);
+    const db = createDbMock({
+      selectQueue: [
+        [{
+          columns: [
+            ...DEFAULT_SHEET_COLUMNS,
+            { key: 'share_vol', name: 'Share Vol', type: 'share_volume' },
+            { key: 'dollar_vol', name: '$ Vol', type: 'dollar_volume' },
+          ],
+        }],
+        [{
+          id: 'row-1',
+          sheetId: 'sheet-1',
+          position: 0,
+          values: { ticker: 'AAPL', date: '2026-06-05' },
+          version: 0,
+        }],
+      ],
+      updateResult: [{
+        id: 'row-1',
+        sheetId: 'sheet-1',
+        position: 0,
+        values: { ticker: 'AAPL', date: '2026-06-05', share_vol: 1000, dollar_vol: 2500 },
+        version: 1,
+      }],
+    });
+    getDbMock.mockReturnValue(db);
+
+    const response = ensureResponse(await fillMassive(new Request('http://localhost/api/sheets/sheet-1/fill-massive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rowIds: ['row-1'] }),
+    }), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.filled).toBe(1);
+    expect(payload.missed).toBe(0);
+    expect(fetchGroupedDailyAggregatesMock).toHaveBeenCalledWith('2026-06-05', false);
+    expect(fetchSharesOutstandingMock).not.toHaveBeenCalled();
+    expect(db._mocks.updateSetMock).toHaveBeenCalledWith(expect.objectContaining({
+      values: { ticker: 'AAPL', date: '2026-06-05', share_vol: 1000, dollar_vol: 2500 },
+      updatedByUserId: 'user-1',
+    }));
   });
 
   it('PATCH /api/sheets/[id]/rows/reorder reorders rows for editors', async () => {

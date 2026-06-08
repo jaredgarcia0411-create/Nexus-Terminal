@@ -12,6 +12,9 @@ export const SHEET_COLUMN_TYPES = [
   'rmultiple',
   'action',
   'watchlist',
+  'share_volume',
+  'dollar_volume',
+  'float',
 ] as const;
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
@@ -73,6 +76,10 @@ export const reorderRowsSchema = z.object({
   rowIds: z.array(z.string().min(1).max(64)).min(1).max(2000),
 });
 
+export const fillMassiveSchema = z.object({
+  rowIds: z.array(z.string().min(1).max(64)).min(1).max(50),
+});
+
 export const memberAddSchema = z.object({
   email: z.string().trim().toLowerCase().email('a valid email is required').max(200),
   role: z.enum(['editor', 'viewer']).default('editor'),
@@ -89,5 +96,6 @@ export type RowCreateBody = z.infer<typeof rowCreateSchema>;
 export type RowPatchBody = z.infer<typeof rowPatchSchema>;
 export type AppendResearchRowBody = z.infer<typeof appendResearchRowSchema>;
 export type ReorderRowsBody = z.infer<typeof reorderRowsSchema>;
+export type FillMassiveBody = z.infer<typeof fillMassiveSchema>;
 export type MemberAddBody = z.infer<typeof memberAddSchema>;
 export type MemberRoleBody = z.infer<typeof memberRoleSchema>;

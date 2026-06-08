@@ -45,9 +45,19 @@ export function filterGridRows(rows: GridRow[], columns: SheetColumn[], filters:
   );
 }
 
-export const USER_COLUMN_TYPES: SheetColumnType[] = ['text', 'number', 'date', 'url', 'checkbox', 'select'];
+export const USER_COLUMN_TYPES: SheetColumnType[] = [
+  'text',
+  'number',
+  'date',
+  'url',
+  'checkbox',
+  'select',
+  'share_volume',
+  'dollar_volume',
+  'float',
+];
 
-export const TEXT_EDIT_TYPES: SheetColumnType[] = ['text', 'number', 'date', 'url'];
+export const TEXT_EDIT_TYPES: SheetColumnType[] = ['text', 'number', 'date', 'url', 'float'];
 
 export function slugifyColumnKey(name: string): string {
   return name

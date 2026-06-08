@@ -219,6 +219,24 @@ export async function fetchTickerDetails(ticker: string): Promise<MassiveTickerD
   };
 }
 
+export async function fetchSharesOutstanding(ticker: string): Promise<number | null> {
+  const normalized = normalizeMassiveTicker(ticker);
+  const payload = await fetchMassiveJson<{
+    results?: {
+      weighted_shares_outstanding?: number | string | null;
+      share_class_shares_outstanding?: number | string | null;
+    };
+  }>(`/v3/reference/tickers/${encodeURIComponent(normalized)}`, {});
+
+  const results = payload.results ?? {};
+  const shares = toNumberOrNull(results.weighted_shares_outstanding)
+    ?? toNumberOrNull(results.share_class_shares_outstanding);
+  if (shares != null) return shares;
+
+  console.warn(`Massive shares outstanding unavailable for ${normalized}`);
+  return null;
+}
+
 export async function fetchTopMarketMovers(direction: MassiveDirection) {
   return fetchMassiveJson<MassiveTopMoversResponse>(`/v2/snapshot/locale/us/markets/stocks/${direction}`, {
     include_otc: 'false',
@@ -370,7 +388,7 @@ export interface GroupedDailyBar {
  * aggregates endpoint. Returns [] for non-trading days (Massive returns
  * no results for weekends/holidays).
  */
-export async function fetchGroupedDailyAggregates(date: string): Promise<GroupedDailyBar[]> {
+export async function fetchGroupedDailyAggregates(date: string, adjusted = true): Promise<GroupedDailyBar[]> {
   const response = await fetchMassiveJson<{
     results?: Array<{
       T?: string;
@@ -384,7 +402,7 @@ export async function fetchGroupedDailyAggregates(date: string): Promise<Grouped
     }>;
   }>(
     `/v2/aggs/grouped/locale/us/market/stocks/${encodeURIComponent(date)}`,
-    { adjusted: 'true' },
+    { adjusted: String(adjusted) },
   );
 
   return (response.results ?? []).flatMap((bar) => {

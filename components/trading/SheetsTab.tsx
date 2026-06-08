@@ -2,14 +2,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type Key } from 'react';
 import { createPortal } from 'react-dom';
-import { format } from 'date-fns';
 import { useSession } from 'next-auth/react';
 import { motion } from 'motion/react';
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Archive, ChevronDown, Columns3, FileSpreadsheet, FileText, Filter, GripVertical, History, LineChart, ListPlus, Pencil, Plus, Rows3, Trash2, Users, X } from 'lucide-react';
+import { Archive, ChevronDown, Columns3, FileSpreadsheet, FileText, Filter, GripVertical, History, LineChart, ListPlus, Pencil, Plus, RefreshCw, Rows3, Trash2, Users, X } from 'lucide-react';
 import {
   DataGrid,
   Row as GridRowRenderer,
@@ -39,6 +38,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useSheets } from '@/hooks/use-sheets';
 import type { SheetListItem } from '@/hooks/use-sheets';
 import type { SheetColumn, SheetColumnType } from '@/lib/sheets/columns';
+import { formatCompactShares, formatCompactUsd } from '@/lib/sheets/format';
 import {
   TEXT_EDIT_TYPES,
   filterGridRows,
@@ -47,7 +47,10 @@ import {
   valuesFromGridRow,
   type GridRow,
   type SheetFilters,
+  type SheetRowRecord,
 } from '@/lib/sheets/grid';
+import { getMassiveFillKeys, isEmptySheetCell, type MassiveFillKeys } from '@/lib/sheets/massive-fill';
+import { epochToNySortKey } from '@/lib/time-utils';
 
 function focusAdjacentEditableInput(input: HTMLInputElement, direction: -1 | 1, columnKey: string, rowIdx: number) {
   const gridCell = input.closest<HTMLElement>('[role="gridcell"]');
@@ -264,6 +267,58 @@ async function fetchSheetRResults(sheetId: string): Promise<Record<string, numbe
   return data.results ?? {};
 }
 
+function numericCellValue(value: unknown): number | null {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function ReadOnlyCompactNumberCell({
+  value,
+  formatter,
+}: {
+  value: unknown;
+  formatter: (value: number) => string;
+}) {
+  const numeric = numericCellValue(value);
+  if (numeric == null) {
+    return <div className="flex items-center justify-center text-xs text-muted-foreground">—</div>;
+  }
+
+  return (
+    <div
+      className="flex h-full items-center justify-end pr-2 font-mono text-sm tabular-nums text-foreground"
+      title={String(numeric)}
+    >
+      {formatter(numeric)}
+    </div>
+  );
+}
+
+function getMassiveCandidateRowIds(rows: SheetRowRecord[], keys: MassiveFillKeys, today: string): string[] {
+  const rowIds: string[] = [];
+  for (const row of rows) {
+    const ticker = String(row.values.ticker ?? '').trim();
+    if (!ticker) continue;
+
+    const date = String(row.values.date ?? '').trim();
+    const needsVolume = Boolean(
+      date
+      && (
+        (keys.shareKey && isEmptySheetCell(row.values[keys.shareKey]))
+        || (keys.dollarKey && isEmptySheetCell(row.values[keys.dollarKey]))
+      ),
+    );
+    const needsFloat = Boolean(
+      date === today
+      && keys.floatKey
+      && isEmptySheetCell(row.values[keys.floatKey]),
+    );
+
+    if (needsVolume || needsFloat) rowIds.push(row.id);
+  }
+  return rowIds;
+}
+
 // Every column needs an explicit pixel width. Without one, react-data-grid
 // treats the column as flexible (it shares leftover space), so resizing one
 // column makes all the other flexible columns recompute their widths — the
@@ -279,6 +334,10 @@ function defaultColumnWidth(type: SheetColumnType): number {
       return 90; // icon / single-control columns stay narrow
     case 'rmultiple':
       return 80;
+    case 'share_volume':
+    case 'dollar_volume':
+    case 'float':
+      return 110;
     case 'date':
       return 130;
     case 'select':
@@ -466,6 +525,24 @@ function buildColumn(
     };
   }
 
+  if (column.type === 'share_volume') {
+    return {
+      ...base,
+      renderCell: ({ row }) => (
+        <ReadOnlyCompactNumberCell value={row[column.key]} formatter={formatCompactShares} />
+      ),
+    };
+  }
+
+  if (column.type === 'dollar_volume') {
+    return {
+      ...base,
+      renderCell: ({ row }) => (
+        <ReadOnlyCompactNumberCell value={row[column.key]} formatter={formatCompactUsd} />
+      ),
+    };
+  }
+
   if (column.type === 'watchlist') {
     return {
       ...base,
@@ -586,12 +663,20 @@ export default function SheetsTab() {
   const [filterMode, setFilterMode] = useState(false);
   const [filters, setFilters] = useState<SheetFilters>({});
   const [loadedRResultsSheetId, setLoadedRResultsSheetId] = useState<string | null>(sheetId);
+  const [fillingMassive, setFillingMassive] = useState(false);
 
   const canEditRows = role === 'owner' || role === 'editor';
   const canManage = role === 'owner';
-  const today = format(new Date(), 'yyyy-MM-dd');
+  const today = epochToNySortKey(Date.now());
   const sheetDisplayDate = (sheet: { rootId: string | null; sheetDate: string | null }) =>
     sheet.rootId === null ? today : sheet.sheetDate ?? 'No date';
+  const massiveFillKeys = useMemo<MassiveFillKeys>(
+    () => (activeSheet ? getMassiveFillKeys(activeSheet.columns) : {}),
+    [activeSheet],
+  );
+  const hasMassiveFillColumns = Boolean(
+    massiveFillKeys.shareKey || massiveFillKeys.dollarKey || massiveFillKeys.floatKey,
+  );
 
   const gridRows = useMemo(() => gridRowsFromSheet(rows), [rows]);
   const visibleRows = useMemo(
@@ -697,12 +782,11 @@ export default function SheetsTab() {
       openReport: (reportId) => setReportDialog({ reportId }),
       openChart: (ticker, date, rowId) => setChartDialog({ ticker, date, rowId }),
       addToWatchlist: (ticker, tag, reportId) => {
-        const date = format(new Date(), 'yyyy-MM-dd');
         void fetch('/api/daily-reviews/append-watchlist', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            date,
+            date: today,
             ticker,
             tags: tag ? [tag] : [],
             ...(reportId ? { reportId } : {}),
@@ -750,7 +834,7 @@ export default function SheetsTab() {
       );
     }
     return columns;
-  }, [activeSheet, canEditRows, canManage, filterMode, filters, rResults, rows, sheets, tagOptions]);
+  }, [activeSheet, canEditRows, canManage, filterMode, filters, rResults, rows, sheets, tagOptions, today]);
 
   const handleRowsChange = (nextRows: GridRow[], data: RowsChangeData<GridRow>) => {
     if (!activeSheet) return;
@@ -813,6 +897,40 @@ export default function SheetsTab() {
     };
     if (options && options.length > 0) column.options = options;
     await sheets.updateColumns([...activeSheet.columns, column]);
+  };
+
+  const handleFillMassive = async () => {
+    if (!activeSheet || fillingMassive) return;
+
+    const candidates = getMassiveCandidateRowIds(rows, massiveFillKeys, today);
+    if (candidates.length === 0) {
+      toast.info('Nothing to fill');
+      return;
+    }
+
+    setFillingMassive(true);
+    const toastId = toast.loading(`Filled 0 · ${candidates.length} left...`);
+    let filled = 0;
+    let missed = 0;
+
+    try {
+      for (let index = 0; index < candidates.length; index += 40) {
+        const batch = candidates.slice(index, index + 40);
+        const result = await sheets.fillMassive(batch);
+        filled += result.filled;
+        missed += result.missed;
+        const left = Math.max(0, candidates.length - index - batch.length);
+        if (left > 0) {
+          toast.loading(`Filled ${filled} · ${left} left...`, { id: toastId });
+        }
+      }
+
+      toast.success(`Filled ${filled} · ${missed} unavailable`, { id: toastId });
+    } catch {
+      toast.dismiss(toastId);
+    } finally {
+      setFillingMassive(false);
+    }
   };
 
   const visibleList = sheets.list.filter((sheet) => !sheet.archivedAt);
@@ -1011,6 +1129,18 @@ export default function SheetsTab() {
                     <Columns3 className="h-4 w-4" />
                   </Button>
                 ) : null}
+
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  onClick={() => void handleFillMassive()}
+                  disabled={!canEditRows || !hasMassiveFillColumns || fillingMassive}
+                  title="Fill data"
+                  aria-label="Fill data"
+                  className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40"
+                >
+                  <RefreshCw className={`h-4 w-4 ${fillingMassive ? 'animate-spin' : ''}`} />
+                </Button>
 
                 <Button
                   type="button"

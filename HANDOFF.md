@@ -1,6 +1,6 @@
 # Nexus Terminal - HANDOFF.md
 
-> Updated: 2026-06-07
+> Updated: 2026-06-08
 > Purpose: active execution context for Codex. Older implementation detail lives in git history, `specs/`, and durable docs such as `docs/repo-cleanup.md`.
 
 Historical completed sections (Sprints 1-15, Tier 1 Cleanup, Chart Drawings, Multi-Day Charts, CSV/Cover-Close flows, Workflow Maintenance) were removed to keep this file focused. Use git history and `docs/repo-cleanup.md` for archived implementation detail.
@@ -12,6 +12,97 @@ Historical completed sections (Sprints 1-15, Tier 1 Cleanup, Chart Drawings, Mul
 ## Open Follow-Ups
 
 - **`BacktestStatsView` owner badge (likely same id mismatch):** `components/trading/BacktestStatsView.tsx` (Charts → Management) computes an owner badge with `review.session.userId === currentUserId`, where `currentUserId` comes from `hooks/use-backtest-stats.ts` (client session id). Before changing anything, check whether that hook's data endpoint already returns a server `currentUserId` (like `use-backtest-manager` does), then apply the same `serverUserId ?? sessionUserId` pattern.
+
+---
+
+## COMPLETED SPEC — Sheets Massive Wave, Spec 1: Volume + Float fill columns
+
+> Decisions locked with Jared 2026-06-08. This is **Spec 1 of 2**. Spec 2 (CSV import with a mapping-review screen) is NOT in this spec — do not build import here. Spec 1 ships standalone value: a user can manually Add three new column types to any existing sheet, then click **Fill data** to populate them from Massive.
+
+### Goal
+
+Add three new sheet column types and a server-side **Fill data** action that backfills them from the Massive API for every empty cell:
+
+- **`share_volume`** ("Share Vol") — that day's share volume. Massive daily aggregate `v`.
+- **`dollar_volume`** ("$ Vol") — that day's dollar volume = `round((vw ?? c) * v)` (VWAP × volume; close × volume fallback when VWAP is null).
+- **`float`** ("Float") — current shares outstanding from Massive.
+
+Fill rules (these are the product decisions — implement exactly):
+- **Only ever write into EMPTY target cells.** Never overwrite an existing value (preserves the user's manually-entered floats/volumes).
+- **Volume** (`share_volume` + `dollar_volume`): fill any row that has a ticker AND a date, regardless of how old. Use **unadjusted** data (`adjusted=false`) — these are reverse-split-prone micro-caps and we want the shares that actually traded that day.
+- **Float**: fill **only rows whose date === today** (America/New_York trading date). Massive returns *current* shares outstanding, which is invalid for historical dates, so old empty floats stay blank for the user to fill manually.
+
+No DB migration: column types are plain strings inside the existing `sheets.columns` jsonb, and filled values land in the existing `sheet_rows.values` jsonb.
+
+### Part A — Column types + rendering
+
+1. `lib/validations/sheets.ts`: add `'share_volume'`, `'dollar_volume'`, `'float'` to `SHEET_COLUMN_TYPES`.
+2. `lib/sheets/columns.ts`: add the same three to the `SheetColumnType` union. Do **not** add them to `DEFAULT_SHEET_COLUMNS` — they are user-added / import-detected, not locked defaults.
+3. `lib/sheets/grid.ts`: add all three to `USER_COLUMN_TYPES` (so they appear in the Add Column dialog). Add `'float'` to `TEXT_EDIT_TYPES` (float is an editable number; volume columns are read-only display).
+4. New `lib/sheets/format.ts` (pure + unit-tested):
+   - `formatCompactShares(n: number): string` → e.g. `1.23M`, `545.0K`, `34.2M` (no `$`).
+   - `formatCompactUsd(n: number): string` → e.g. `$1.2M`, `$340.5K`, `$2.1B`.
+   - Both return `''` for non-finite input.
+5. `components/trading/SheetsTab.tsx` `buildColumn`:
+   - `share_volume` / `dollar_volume`: **read-only** `renderCell` that shows the compact-formatted value (`title` = the raw number for hover). Follow the existing read-only cell idiom (e.g. how `rmultiple` renders), not an editable input.
+   - `float`: render like the existing `number` path (editable `TextCell`) — raw number, no compact formatting (traders read raw float).
+   - Add `defaultColumnWidth` cases (volume/float ~110).
+6. `components/trading/AddColumnDialog.tsx`: no code change needed if it maps `USER_COLUMN_TYPES`; just confirm the three new types render as selectable options. (Their raw keys are acceptable labels for now.)
+
+### Part B — Massive client additions (`lib/massive-market.ts`)
+
+7. Add an optional `adjusted` param to `fetchGroupedDailyAggregates(date: string, adjusted = true)` and pass it through as `adjusted: String(adjusted)`. Default stays `true` so existing callers are unchanged; the fill route passes `false`.
+8. Add `fetchSharesOutstanding(ticker: string): Promise<number | null>` hitting `/v3/reference/tickers/{normalized}` (reuse `normalizeMassiveTicker`). Read `results.weighted_shares_outstanding`, fall back to `results.share_class_shares_outstanding`; return a finite number or `null`. (Massive is Polygon-compatible — verify these field names against one live response; if absent, log and return `null`, don't throw.)
+
+### Part C — Pure fill helper (`lib/sheets/massive-fill.ts`, new, unit-tested)
+
+9. Export:
+   - `getMassiveFillKeys(columns: SheetColumn[]): { shareKey?: string; dollarKey?: string; floatKey?: string }` — first column key of each type.
+   - `computeRowFill(args: { values: Record<string, unknown>; keys; bar: { volume: number; vwap: number | null; close: number } | null; sharesOutstanding: number | null; isToday: boolean }): Record<string, unknown>` — returns ONLY the keys to add (empty `{}` if nothing). `bar` uses the **same field names `fetchGroupedDailyAggregates` returns** (`volume`/`vwap`/`close`), so the route can pass the `GroupedDailyBar` straight through. Rules: skip any key whose current value is already a finite number; `shareKey` (= `bar.volume`) / `dollarKey` (= `Math.round((bar.vwap ?? bar.close) * bar.volume)`) need `bar`; `floatKey` needs `isToday && sharesOutstanding != null`.
+   - A helper to test "is this cell empty" (treat `undefined`/`null`/`''` as empty; an existing finite number = filled).
+
+### Part D — Fill endpoint
+
+10. `lib/validations/sheets.ts`: add `fillMassiveSchema = z.object({ rowIds: z.array(z.string().min(1).max(64)).min(1).max(50) })` + exported type.
+11. New `app/api/sheets/[id]/fill-massive/route.ts` `POST` — mirror the auth shape of `app/api/sheets/[id]/rows/route.ts`:
+    - `requireUser` → `parseAndValidate(request, fillMassiveSchema)` → `getDb` → `ensureUser` → `getSheetRole`; `404` if no role, `403` if `viewer`.
+    - If `!isMassiveConfigured()` return `Response.json({ error: 'Massive API is not configured' }, { status: 503 })`.
+    - Load the sheet's `columns` (for `getMassiveFillKeys`) and the requested rows (`inArray(sheetRows.id, body.rowIds)` scoped to `sheetId`). If no massive keys, return `{ rows: [], filled: 0, missed: 0 }`.
+    - Today's ET date = `epochToNySortKey(Date.now())` (from `lib/time-utils.ts`).
+    - Group rows by their `values.date` (the locked date column key is `date`). For each distinct date that is non-empty, passes `isNyTradingDay(date)`, **and has ≥1 row needing volume** (empty `shareKey`/`dollarKey`), call `fetchGroupedDailyAggregates(date, false)` once and add its `GroupedDailyBar`s to a `Map<normalizeMassiveTicker(ticker), bar>`. Look up each row by `normalizeMassiveTicker(row.values.ticker)`. For rows dated today missing float, collect distinct tickers and `fetchSharesOutstanding` each (`Promise.allSettled`). Rows whose ticker/date isn't found just fill nothing (counted as missed).
+    - For each row: `computeRowFill(...)`; if it returns keys, `update sheetRows set values = {...current, ...fill}, version+1, updatedBy/updatedAt` guarded on the freshly-read `version` (skip on conflict — count as missed). Collect each successfully-updated row.
+    - Return `{ rows: updatedRows, filled, missed }`. Wrap in try/catch with `logRouteError('sheets.id.fill-massive.post', error)` + `internalServerError()`.
+
+### Part E — Hook + toolbar button
+
+12. `hooks/use-sheets.ts`: add `fillMassive(rowIds: string[])` that POSTs to `/api/sheets/${id}/fill-massive`, then merges each returned row's `values` + `version` into local row state (same merge shape `updateRow` uses). Return `{ filled, missed }`.
+13. `components/trading/SheetsTab.tsx`: add a **Fill data** icon button to the toolbar (near Add Column; pick a fitting lucide icon, e.g. `RefreshCw` or `DollarSign`). On click:
+    - Compute candidate `rowIds` = rows with a ticker that have at least one **fillable** empty cell, encoding the same rules the server enforces: an empty `share_volume`/`dollar_volume` cell with a non-empty date, OR an empty `float` cell whose date === today (`epochToNySortKey(Date.now())`). This is what stops old empty-float rows from being permanent "unavailable" candidates. If none, toast "Nothing to fill" and stop.
+    - Slice into batches of 40; call `fillMassive(batch)` sequentially; accumulate `filled`/`missed`; toast progress (`Filled 40 · 120 left…`) and a final summary (`Filled 218 · 12 unavailable`).
+    - Disable the button for `viewer` role and when the sheet has no massive-target columns.
+
+### Acceptance criteria
+
+- Adding a `share_volume` / `dollar_volume` / `float` column via Add Column works; volume cells render read-only compact (`$1.2M`, `1.23M`), float renders as an editable raw number.
+- **Fill data** populates only empty cells; existing values are never overwritten; volume fills for any dated row; float fills only for today's rows.
+- A many-row backfill completes via batched calls without hitting the 60s function limit; concurrent edits don't error the run (conflicted rows are skipped + counted).
+- Viewer can't fill (button disabled; endpoint `403`). Unconfigured Massive → endpoint `503` with a clear toast.
+- No `schema.ts` / `drizzle/` change; **no migration**.
+
+### Validation
+
+`npm run lint` · `npx tsc --noEmit` · `npm test` (add cases for `lib/sheets/format.ts` and `lib/sheets/massive-fill.ts`, plus a fill-route validation/access test) · `npm run build`. `services/` untouched, so `typecheck:services` not required.
+
+### Execution status
+
+Status: completed 2026-06-08; reviewed against spec — READY TO SHIP.
+
+Outcome:
+- Added manual sheet column types `share_volume`, `dollar_volume`, and `float`; Add Column exposes them without adding locked defaults.
+- Added compact sheet formatters and Massive fill helpers; volume cells render read-only compact values, while float remains editable as a raw number.
+- Added Massive unadjusted grouped aggregate support plus shares-outstanding lookup, then wired `POST /api/sheets/[id]/fill-massive` with role checks, Massive config gating, empty-cell-only fills, today-only float fills, batched client calls, conflict skips, and local row merge.
+
+Validation: `npm run lint`, `npx tsc --noEmit`, `npm test` (108 files / 807 tests), and `npm run build` all green. `services/` untouched, so `npm run typecheck:services` was not run. Live Massive response verification could not run because `MASSIVE_API_KEY` is not set in the shell; current Massive docs confirm both fallback fields on the ticker overview response.
 
 ---
 
