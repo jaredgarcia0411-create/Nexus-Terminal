@@ -13,8 +13,8 @@ import {
   type MatcherExecution,
   type OpenPositionInput,
 } from '@/lib/position-matcher';
+import { applySheetTagsForDates } from '@/lib/sheets/trade-tags';
 import { importRawSchema } from '@/lib/validations/trades';
-import { applyWatchlistTagsForDate } from '@/lib/watchlist-server';
 
 function makeId(parts: string[]): string {
   return parts.join('|');
@@ -281,9 +281,9 @@ export async function POST(request: Request) {
     });
 
     try {
-      await applyWatchlistTagsForDate(db, authState.user.id, sortKey);
+      await applySheetTagsForDates(db, authState.user.id, [sortKey]);
     } catch (err) {
-      logRouteError('trades.import-raw.watchlist-tags', err);
+      logRouteError('trades.import-raw.sheet-tags', err);
     }
 
     return Response.json({ warnings, importSkipped });

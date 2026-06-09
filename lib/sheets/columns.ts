@@ -22,6 +22,8 @@ export type SheetColumn = {
   width?: number;
   options?: string[];
   locked?: boolean;
+  // Values from asTags columns are copied onto matching trades as tags.
+  asTags?: boolean;
 };
 
 export const DEFAULT_SHEET_COLUMNS: SheetColumn[] = [

@@ -12,6 +12,7 @@ const {
   getPoolDbMock,
   requireUserMock,
   ensureUserMock,
+  applySheetTagsForDatesMock,
   loadTagsForTradeIdsMock,
   toTradeMock,
   toExecutionRowIdMock,
@@ -19,6 +20,7 @@ const {
   getPoolDbMock: vi.fn(),
   requireUserMock: vi.fn(),
   ensureUserMock: vi.fn(),
+  applySheetTagsForDatesMock: vi.fn(),
   loadTagsForTradeIdsMock: vi.fn(),
   toTradeMock: vi.fn(),
   toExecutionRowIdMock: vi.fn(),
@@ -35,6 +37,10 @@ vi.mock('@/lib/server-db-utils', () => ({
   requireUser: requireUserMock,
   toExecutionRowId: toExecutionRowIdMock,
   toTrade: toTradeMock,
+}));
+
+vi.mock('@/lib/sheets/trade-tags', () => ({
+  applySheetTagsForDates: applySheetTagsForDatesMock,
 }));
 
 import { POST } from '@/app/api/trades/import/route';

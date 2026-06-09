@@ -16,6 +16,7 @@ import {
   toExecutionRowId,
   toTrade,
 } from '@/lib/server-db-utils';
+import { applySheetTagsForDates } from '@/lib/sheets/trade-tags';
 import { normalizeTimestamp } from '@/lib/time-utils';
 import { importTradesSchema, type ImportTradesInput } from '@/lib/validations/trades';
 
@@ -347,6 +348,14 @@ export async function POST(request: Request) {
         }
       }
     });
+
+    if (!importSkipped) {
+      await applySheetTagsForDates(
+        db,
+        authState.user.id,
+        normalizedTrades.map((normalized) => normalized.trade.sortKey),
+      );
+    }
 
     const tradeRows = await db.select().from(trades)
       .where(eq(trades.userId, authState.user.id))

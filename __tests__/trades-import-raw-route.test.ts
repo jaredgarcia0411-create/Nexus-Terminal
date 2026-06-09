@@ -5,14 +5,14 @@ import { tradeExecutions as tradeExecutionsTable, trades as tradesTable } from '
 const {
   ensureUserMock,
   getPoolDbMock,
-  applyWatchlistTagsForDateMock,
+  applySheetTagsForDatesMock,
   loadTagsForTradeIdsMock,
   requireUserMock,
   toTradeMock,
 } = vi.hoisted(() => ({
   ensureUserMock: vi.fn(),
   getPoolDbMock: vi.fn(),
-  applyWatchlistTagsForDateMock: vi.fn(),
+  applySheetTagsForDatesMock: vi.fn(),
   loadTagsForTradeIdsMock: vi.fn(),
   requireUserMock: vi.fn(),
   toTradeMock: vi.fn(),
@@ -29,8 +29,8 @@ vi.mock('@/lib/server-db-utils', () => ({
   requireUser: requireUserMock,
   toTrade: toTradeMock,
 }));
-vi.mock('@/lib/watchlist-server', () => ({
-  applyWatchlistTagsForDate: applyWatchlistTagsForDateMock,
+vi.mock('@/lib/sheets/trade-tags', () => ({
+  applySheetTagsForDates: applySheetTagsForDatesMock,
 }));
 
 import { POST } from '@/app/api/trades/import-raw/route';
@@ -104,7 +104,7 @@ describe('POST /api/trades/import-raw', () => {
     if (!response) throw new Error('Expected response');
 
     expect(response.status).toBe(200);
-    expect(applyWatchlistTagsForDateMock).toHaveBeenCalledWith(db, 'user-1', '2026-05-19');
+    expect(applySheetTagsForDatesMock).toHaveBeenCalledWith(db, 'user-1', ['2026-05-19']);
     expect(db._mocks.tradeInsertValuesMock).toHaveBeenCalledWith(expect.objectContaining({
       id: '2026-05-19|AAPL|LONG',
       executionCount: 2,

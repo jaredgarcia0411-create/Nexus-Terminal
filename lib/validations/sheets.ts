@@ -27,6 +27,7 @@ const columnSchema = z.object({
   width: z.number().int().min(40).max(800).optional(),
   options: z.array(z.string().trim().min(1).max(60)).max(50).optional(),
   locked: z.boolean().optional(),
+  asTags: z.boolean().optional(),
 });
 
 const rowValuesSchema = z
