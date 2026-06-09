@@ -57,7 +57,7 @@ export const USER_COLUMN_TYPES: SheetColumnType[] = [
   'float',
 ];
 
-export const TEXT_EDIT_TYPES: SheetColumnType[] = ['text', 'number', 'date', 'url', 'float'];
+export const TEXT_EDIT_TYPES: SheetColumnType[] = ['text', 'number', 'date', 'url'];
 
 export function slugifyColumnKey(name: string): string {
   return name

@@ -227,6 +227,60 @@ function TextCell({ row, column, rowIdx, onRowChange }: RenderCellProps<GridRow>
   );
 }
 
+function FloatCell({ row, column, rowIdx, onRowChange }: RenderCellProps<GridRow>) {
+  const raw = row[column.key];
+  const rawValue = String(raw ?? '');
+  const [value, setValue] = useState(() => rawValue);
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    setValue(rawValue);
+  }, [rawValue]);
+
+  const commit = () => {
+    const trimmed = value.trim();
+    const nextValue = trimmed === ''
+      ? ''
+      : Number.isFinite(Number(trimmed))
+      ? Number(trimmed)
+      : trimmed;
+    if (!Object.is(nextValue, raw)) {
+      onRowChange({ ...row, [column.key]: nextValue });
+    }
+  };
+  const displayValue = focused || typeof raw !== 'number' || !Number.isFinite(raw)
+    ? value
+    : formatCompactShares(raw);
+
+  return (
+    <input
+      className="h-full w-full border border-transparent bg-transparent px-1 text-sm text-foreground outline-none placeholder:text-muted-foreground hover:border-primary/30 focus:border-primary/40 focus:bg-card"
+      value={displayValue}
+      data-cell={column.key}
+      data-rowidx={rowIdx}
+      onChange={(event) => setValue(event.target.value)}
+      onFocus={() => {
+        setFocused(true);
+        setValue(rawValue);
+      }}
+      onBlur={() => {
+        commit();
+        setFocused(false);
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'Enter') {
+          const direction = event.key === 'ArrowUp' ? -1 : 1;
+          const target = event.currentTarget;
+          event.preventDefault();
+          commit();
+          requestAnimationFrame(() => focusAdjacentEditableInput(target, direction, column.key, rowIdx));
+        }
+      }}
+    />
+  );
+}
+
 type CellActions = {
   openReport: (reportId: string) => void;
   openChart: (ticker: string, date: string, rowId: string) => void;
@@ -540,6 +594,17 @@ function buildColumn(
       ...base,
       renderCell: ({ row }) => (
         <ReadOnlyCompactNumberCell value={row[column.key]} formatter={formatCompactUsd} />
+      ),
+    };
+  }
+
+  if (column.type === 'float') {
+    return {
+      ...base,
+      renderCell: (props) => (
+        canEdit
+          ? <FloatCell {...props} />
+          : <ReadOnlyCompactNumberCell value={props.row[column.key]} formatter={formatCompactShares} />
       ),
     };
   }
