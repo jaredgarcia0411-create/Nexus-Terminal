@@ -69,7 +69,6 @@ export default function JournalTab({
   onSelectAll,
   onAddTag,
   onRemoveTag,
-  onApplyTradeTags,
   onDeleteGlobalTag,
   onTradeClick,
 }: JournalTabProps) {
@@ -470,7 +469,7 @@ export default function JournalTab({
         onAddTag={onAddTag}
         onRemoveTag={onRemoveTag}
         onDeleteGlobalTag={onDeleteGlobalTag}
-        onApplyTradeTags={onApplyTradeTags}
+        onTradeClick={onTradeClick}
       />
 
       <WeeklyReviewSheet

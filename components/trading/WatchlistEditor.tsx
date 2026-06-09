@@ -15,26 +15,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { WATCHLIST_GRADE_OPTIONS } from '@/lib/grades';
 import type { SampleSetRow } from '@/lib/sample-set-csv';
+import type { WatchlistRow } from '@/lib/watchlist';
 
-// Grade options mirror weekly review's GRADE_FIELD so the dropdowns feel identical.
-export const WATCHLIST_GRADE_OPTIONS = ['A+', 'A', 'B+', 'B', 'C+', 'C', 'D', 'F'] as const;
-
-export interface WatchlistRow {
-  id: string;
-  ticker: string;
-  tags: string[];
-  grade: string;
-  notes: string;
-  // Set only when the row was created by the "+ Add to Watchlist" button on the
-  // research page. Points at a research_reports.id row so the eye-icon viewer
-  // can fetch the exact report from that day — even months later.
-  reportId?: string;
-  // YYYY-MM-DD of the daily review this row came from. Attached at aggregation
-  // time (e.g. weekly review) so each row carries its own session date for the
-  // Chart and Save columns when no editor-wide `date` prop is set.
-  sourceDate?: string;
-}
+export { WATCHLIST_GRADE_OPTIONS };
+export type { WatchlistRow };
 
 interface WatchlistEditorProps {
   title?: string;

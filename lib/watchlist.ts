@@ -1,8 +1,16 @@
-import type { WatchlistRow } from '@/components/trading/WatchlistEditor';
-
 // Stored inside daily-review `reportData` under a reserved key.
 // Underscore prefix avoids collision with user-defined template field ids.
 export const WATCHLIST_REPORT_KEY = '__watchlist';
+
+export interface WatchlistRow {
+  id: string;
+  ticker: string;
+  tags: string[];
+  grade: string;
+  notes: string;
+  reportId?: string;
+  sourceDate?: string;
+}
 
 function isString(value: unknown): value is string {
   return typeof value === 'string';

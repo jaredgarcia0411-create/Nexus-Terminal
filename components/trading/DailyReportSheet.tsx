@@ -4,19 +4,19 @@ import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { ChevronDown, ChevronUp, Pencil, X } from 'lucide-react';
 import { toast } from 'sonner';
+import ArchivedWatchlist from '@/components/trading/ArchivedWatchlist';
 import JournalTradeChart from '@/components/trading/JournalTradeChart';
 import TemplateFieldRenderer from '@/components/trading/TemplateFieldRenderer';
-import WatchlistEditor, { type WatchlistRow } from '@/components/trading/WatchlistEditor';
 import WeeklyTradesPanel from '@/components/trading/WeeklyTradesPanel';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { prefetchTradeExecutions } from '@/hooks/use-trade-executions';
-import { useTeamTags } from '@/hooks/use-team-tags';
+import { TRADE_GRADES_REPORT_KEY } from '@/lib/grades';
 import { aggregateDay } from '@/lib/journal-aggregates';
 import { DAILY_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
 import type { Trade } from '@/lib/types';
 import { formatCurrency } from '@/lib/ui-trade-utils';
-import { buildWatchlistTradeTagAssignments, coerceWatchlistRows, WATCHLIST_REPORT_KEY } from '@/lib/watchlist';
+import { coerceWatchlistRows, WATCHLIST_REPORT_KEY, type WatchlistRow } from '@/lib/watchlist';
 import type { TemplateField } from '@/lib/validations/reviews';
 
 const INITIAL_CHART_BATCH = 4;
@@ -33,7 +33,7 @@ interface DailyReportSheetProps {
   onAddTag?: (tradeId: string, tagName: string) => void;
   onRemoveTag?: (tradeId: string, tagName: string) => void;
   onDeleteGlobalTag?: (tagName: string) => void;
-  onApplyTradeTags?: (assignments: Array<{ tradeId: string; tags: string[] }>) => Promise<void>;
+  onTradeClick?: (trade: Trade) => void;
   // When true, fire window.print() once the review data has loaded. Used by
   // Archive's PDF export — the print stylesheet (globals.css) hides
   // everything except this sheet's content.
@@ -53,11 +53,24 @@ interface ReviewRow {
   tradeIds: string[];
 }
 
+interface ResearchRowsResponse {
+  rows?: Array<{ ticker: string; date: string; reportId?: string }>;
+}
+
 function cloneTemplateFields(fields: TemplateField[]): TemplateField[] {
   return fields.map((field) => ({
     ...field,
     options: field.options ? [...field.options] : undefined,
   }));
+}
+
+function coerceTradeGrades(input: unknown): Record<string, string> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const result: Record<string, string> = {};
+  for (const [tradeId, grade] of Object.entries(input)) {
+    if (typeof grade === 'string') result[tradeId] = grade;
+  }
+  return result;
 }
 
 export default function DailyReportSheet({
@@ -71,15 +84,16 @@ export default function DailyReportSheet({
   onAddTag,
   onRemoveTag,
   onDeleteGlobalTag,
-  onApplyTradeTags,
+  onTradeClick,
   printOnReady = false,
 }: DailyReportSheetProps) {
-  const { teamTags, createTag: createTeamTag, deleteTag: deleteTeamTag } = useTeamTags();
   const [template, setTemplate] = useState<TemplateRow | null>(null);
   const [existing, setExisting] = useState<ReviewRow | null>(null);
   const [fields, setFields] = useState<TemplateField[]>([]);
   const [reportData, setReportData] = useState<Record<string, unknown>>({});
   const [watchlist, setWatchlist] = useState<WatchlistRow[]>([]);
+  const [tradeGrades, setTradeGrades] = useState<Record<string, string>>({});
+  const [reportByKey, setReportByKey] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
@@ -104,6 +118,8 @@ export default function DailyReportSheet({
     setFields([]);
     setReportData({});
     setWatchlist([]);
+    setTradeGrades({});
+    setReportByKey(new Map());
     setEditingTemplate(false);
     setChartCount(INITIAL_CHART_BATCH);
     // Always reset to view; user explicitly clicks "Edit Review" to mutate.
@@ -112,11 +128,18 @@ export default function DailyReportSheet({
     void Promise.all([
       fetch(`/api/daily-reviews?from=${date}&to=${date}`).then((response) => response.json()),
       fetch('/api/report-templates?type=daily').then((response) => response.json()),
+      fetch(`/api/sheets/research-rows?from=${date}&to=${date}`).then((response) => response.json()),
     ])
-      .then(([reviewsRes, templateRes]) => {
+      .then(([reviewsRes, templateRes, researchRowsRes]) => {
         const tmpl = templateRes.template as TemplateRow | undefined;
         const reviews = (reviewsRes.reviews ?? []) as ReviewRow[];
         const found = reviews[0] ?? null;
+        const researchRows = (researchRowsRes as ResearchRowsResponse).rows ?? [];
+        const nextReportByKey = new Map<string, string>();
+        for (const row of researchRows) {
+          if (row.reportId) nextReportByKey.set(`${row.ticker.trim().toUpperCase()}|${row.date}`, row.reportId);
+        }
+        setReportByKey(nextReportByKey);
 
         setTemplate(tmpl ?? null);
 
@@ -133,6 +156,7 @@ export default function DailyReportSheet({
           };
           setReportData(merged);
           setWatchlist(coerceWatchlistRows(found.reportData?.[WATCHLIST_REPORT_KEY]));
+          setTradeGrades(coerceTradeGrades(found.reportData?.[TRADE_GRADES_REPORT_KEY]));
         } else if (tmpl) {
           setFields(cloneTemplateFields(tmpl.fields));
           const agg = aggregateDay(trades, date);
@@ -143,6 +167,7 @@ export default function DailyReportSheet({
           };
           setReportData(initialData);
           setWatchlist([]);
+          setTradeGrades({});
         }
       })
       .finally(() => setLoading(false));
@@ -186,22 +211,12 @@ export default function DailyReportSheet({
           date,
           templateId: template.id,
           templateSnapshot: fields,
-          reportData: { ...reportData, [WATCHLIST_REPORT_KEY]: watchlist },
+          reportData: { ...reportData, [TRADE_GRADES_REPORT_KEY]: tradeGrades },
           tradeIds: agg.tradeIds,
         }),
       });
 
       if (!response.ok) throw new Error('Save failed');
-
-      const assignments = buildWatchlistTradeTagAssignments(chartTrades, watchlist);
-      if (assignments.length > 0 && onApplyTradeTags) {
-        try {
-          await onApplyTradeTags(assignments);
-        } catch {
-          toast.error('Daily review saved, but failed to apply watchlist tags');
-          return;
-        }
-      }
 
       toast.success('Daily review saved');
       onSaved?.();
@@ -313,15 +328,7 @@ export default function DailyReportSheet({
               </div>
             ) : null}
 
-            <WatchlistEditor
-              value={watchlist}
-              onChange={effectiveReadOnly ? undefined : setWatchlist}
-              readOnly={effectiveReadOnly}
-              date={date ?? undefined}
-              globalTags={teamTags}
-              onDeleteGlobalTag={deleteTeamTag}
-              onCreateTag={createTeamTag}
-            />
+            {watchlist.length > 0 ? <ArchivedWatchlist rows={watchlist} /> : null}
 
             <WeeklyTradesPanel
               trades={chartTrades}
@@ -332,6 +339,10 @@ export default function DailyReportSheet({
               onAddTag={onAddTag}
               onRemoveTag={onRemoveTag}
               onDeleteGlobalTag={onDeleteGlobalTag}
+              grades={tradeGrades}
+              onGradeChange={(tradeId, grade) => setTradeGrades((prev) => ({ ...prev, [tradeId]: grade }))}
+              reportByKey={reportByKey}
+              onOpenTrade={onTradeClick}
             />
 
             {editingTemplate && !readOnly ? (

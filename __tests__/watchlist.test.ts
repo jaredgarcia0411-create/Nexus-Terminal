@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import type { WatchlistRow } from '@/components/trading/WatchlistEditor';
 import type { Trade } from '@/lib/types';
 import {
   buildWatchlistTradeTagAssignments,
   coerceWatchlistRows,
   dedupeWatchlistRows,
+  type WatchlistRow,
 } from '@/lib/watchlist';
 
 function makeTrade(overrides: Partial<Trade>): Trade {

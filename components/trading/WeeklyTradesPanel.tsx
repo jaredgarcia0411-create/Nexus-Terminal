@@ -1,8 +1,18 @@
 'use client';
 
-import { useMemo } from 'react';
+import { Fragment, useMemo, useState } from 'react';
+import { FileText, NotebookPen } from 'lucide-react';
 
 import TradeTagEditor from '@/components/trading/TradeTagEditor';
+import WatchlistReportInline from '@/components/trading/WatchlistReportInline';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { WATCHLIST_GRADE_OPTIONS } from '@/lib/grades';
 import type { Trade } from '@/lib/types';
 
 interface WeeklyTradesPanelProps {
@@ -16,13 +26,19 @@ interface WeeklyTradesPanelProps {
   onAddTag?: (tradeId: string, tagName: string) => void;
   onRemoveTag?: (tradeId: string, tagName: string) => void;
   onDeleteGlobalTag?: (tagName: string) => void;
+  grades?: Record<string, string>;
+  onGradeChange?: (tradeId: string, grade: string) => void;
+  reportByKey?: Map<string, string>;
+  onOpenTrade?: (trade: Trade) => void;
 }
 
 interface WeeklyTradeRow {
   id: string;
   ticker: string;
+  sortKey: string;
   tags: string[];
   r: number | null;
+  trade: Trade;
 }
 
 // R is only meaningful when the trade has a positive initial risk.
@@ -32,8 +48,10 @@ function computeRow(trade: Trade): WeeklyTradeRow {
   return {
     id: trade.id,
     ticker: trade.symbol,
+    sortKey: trade.sortKey,
     tags: trade.tags ?? [],
     r,
+    trade,
   };
 }
 
@@ -50,7 +68,12 @@ export default function WeeklyTradesPanel({
   onAddTag,
   onRemoveTag,
   onDeleteGlobalTag,
+  grades = {},
+  onGradeChange,
+  reportByKey,
+  onOpenTrade,
 }: WeeklyTradesPanelProps) {
+  const [openReportKey, setOpenReportKey] = useState<string | null>(null);
   // Sort chronologically by sortKey so the order matches the Trade Replay Charts
   // section below it — same trades, same visual order.
   const rows = useMemo(
@@ -65,11 +88,11 @@ export default function WeeklyTradesPanel({
   const rowCount = rows.length;
   const showEmpty = rowCount === 0;
 
-  // Three columns: ticker (narrow) · tags (wide) · R (narrow, right-aligned).
+  // Ticker · Tags · Grade · R · Report · Notes.
   // Using inline gridTemplateColumns instead of a Tailwind arbitrary class —
   // Tailwind's JIT can miss dynamic class strings in newly-added files until
   // the dev server is restarted, and we hit that here.
-  const gridTemplateColumns = '80px minmax(160px, 1fr) 70px';
+  const gridTemplateColumns = '80px minmax(160px, 1fr) 78px 70px 62px 62px';
 
   return (
     <section className="space-y-2">
@@ -85,26 +108,52 @@ export default function WeeklyTradesPanel({
           <div className="bg-card px-3 py-2 text-xs font-semibold text-foreground">
             Tags
           </div>
+          <div className="bg-card px-3 py-2 text-xs font-semibold text-foreground">
+            Grade
+          </div>
           <div className="bg-card px-3 py-2 text-right text-xs font-semibold text-foreground">
             R
           </div>
+          <div className="bg-card px-3 py-2 text-center text-xs font-semibold text-foreground">
+            Report
+          </div>
+          <div className="bg-card px-3 py-2 text-center text-xs font-semibold text-foreground">
+            Notes
+          </div>
 
           {showEmpty ? (
-            <div className="col-span-3 bg-card px-3 py-4 text-xs italic text-muted-foreground">
+            <div className="bg-card px-3 py-4 text-xs italic text-muted-foreground" style={{ gridColumn: '1 / -1' }}>
               {emptyState}
             </div>
           ) : (
-            rows.map((row) => (
-              <RowCells
-                key={row.id}
-                row={row}
-                globalTags={globalTags}
-                readOnly={readOnly}
-                onAddTag={onAddTag}
-                onRemoveTag={onRemoveTag}
-                onDeleteGlobalTag={onDeleteGlobalTag}
-              />
-            ))
+            rows.map((row) => {
+              const reportKey = `${row.ticker.trim().toUpperCase()}|${row.sortKey}`;
+              const reportId = reportByKey?.get(reportKey);
+              const reportOpen = openReportKey === reportKey;
+              return (
+                <Fragment key={row.id}>
+                  <RowCells
+                    row={row}
+                    grade={grades[row.id] ?? ''}
+                    globalTags={globalTags}
+                    readOnly={readOnly}
+                    reportId={reportId}
+                    reportOpen={reportOpen}
+                    onToggleReport={() => setOpenReportKey((current) => (current === reportKey ? null : reportKey))}
+                    onGradeChange={onGradeChange}
+                    onOpenTrade={onOpenTrade}
+                    onAddTag={onAddTag}
+                    onRemoveTag={onRemoveTag}
+                    onDeleteGlobalTag={onDeleteGlobalTag}
+                  />
+                  {reportId && reportOpen ? (
+                    <div className="bg-card p-3" style={{ gridColumn: '1 / -1' }}>
+                      <WatchlistReportInline reportId={reportId} />
+                    </div>
+                  ) : null}
+                </Fragment>
+              );
+            })
           )}
         </div>
       </div>
@@ -114,15 +163,27 @@ export default function WeeklyTradesPanel({
 
 function RowCells({
   row,
+  grade,
   globalTags,
   readOnly,
+  reportId,
+  reportOpen,
+  onToggleReport,
+  onGradeChange,
+  onOpenTrade,
   onAddTag,
   onRemoveTag,
   onDeleteGlobalTag,
 }: {
   row: WeeklyTradeRow;
+  grade: string;
   globalTags: string[];
   readOnly: boolean;
+  reportId?: string;
+  reportOpen: boolean;
+  onToggleReport: () => void;
+  onGradeChange?: (tradeId: string, grade: string) => void;
+  onOpenTrade?: (trade: Trade) => void;
   onAddTag?: (tradeId: string, tagName: string) => void;
   onRemoveTag?: (tradeId: string, tagName: string) => void;
   onDeleteGlobalTag?: (tagName: string) => void;
@@ -155,8 +216,61 @@ function RowCells({
           <span className="text-muted-foreground">—</span>
         )}
       </div>
+      <div className={cellBase}>
+        {!readOnly && onGradeChange ? (
+          <Select value={grade || undefined} onValueChange={(value) => onGradeChange(row.id, value)}>
+            <SelectTrigger className="h-7 w-full border-transparent bg-transparent px-1 text-sm text-foreground hover:border-emerald-500/30 hover:bg-accent">
+              <SelectValue placeholder="—" />
+            </SelectTrigger>
+            <SelectContent className="border-border bg-card text-foreground">
+              {WATCHLIST_GRADE_OPTIONS.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : grade ? (
+          <span className="text-foreground">{grade}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </div>
       <div className={`${cellBase} text-right font-medium ${rColor}`}>
         {row.r === null ? '—' : formatR(row.r)}
+      </div>
+      <div className="flex items-center justify-center bg-card px-1 py-1.5">
+        {reportId ? (
+          <button
+            type="button"
+            onClick={onToggleReport}
+            className={`rounded-md p-1 ${
+              reportOpen ? 'bg-primary/15 text-primary' : 'text-primary hover:bg-accent hover:text-primary/80'
+            }`}
+            title={reportOpen ? 'Hide Report' : 'Show Report'}
+            aria-label={reportOpen ? 'Hide Report' : 'Show Report'}
+            aria-expanded={reportOpen}
+          >
+            <FileText className="h-4 w-4" />
+          </button>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        )}
+      </div>
+      <div className="flex items-center justify-center bg-card px-1 py-1.5">
+        {onOpenTrade ? (
+          <button
+            type="button"
+            onClick={() => onOpenTrade(row.trade)}
+            className="rounded-md p-1 text-primary hover:bg-accent hover:text-primary/80"
+            title="Open Notes"
+            aria-label={`Open notes for ${row.ticker}`}
+          >
+            <NotebookPen className="h-4 w-4" />
+          </button>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        )}
       </div>
     </>
   );
