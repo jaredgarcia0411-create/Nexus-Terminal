@@ -483,6 +483,7 @@ export default function JournalTab({
         weekEnd={weekRange?.end ?? null}
         trades={filteredTrades}
         onSaved={() => setWeekRange(null)}
+        onTradeClick={onTradeClick}
       />
     </motion.div>
   );
