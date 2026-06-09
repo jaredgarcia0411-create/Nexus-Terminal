@@ -12,6 +12,7 @@ import {
 } from '@/lib/massive-market';
 import { getSheetRole } from '@/lib/sheets/access';
 import { computeRowFill, getMassiveFillKeys, isEmptySheetCell, type MassiveFillKeys } from '@/lib/sheets/massive-fill';
+import { applySheetTagsForDates } from '@/lib/sheets/trade-tags';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { epochToNySortKey, isNyTradingDay } from '@/lib/time-utils';
 import { fillMassiveSchema } from '@/lib/validations/sheets';
@@ -163,6 +164,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
       updatedRows.push(updated);
     }
+
+    await applySheetTagsForDates(
+      db,
+      authState.user.id,
+      Array.from(new Set(updatedRows.map((row) => textCell(row.values, 'date')).filter(Boolean))),
+    );
 
     return Response.json({ rows: updatedRows, filled: updatedRows.length, missed });
   } catch (error) {

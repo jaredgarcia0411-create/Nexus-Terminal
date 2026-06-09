@@ -4,6 +4,7 @@ import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-
 import { getDb } from '@/lib/db';
 import { sheetRows } from '@/lib/db/schema';
 import { getSheetRole } from '@/lib/sheets/access';
+import { applySheetTagsForDates } from '@/lib/sheets/trade-tags';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { rowCreateSchema } from '@/lib/validations/sheets';
 
@@ -44,6 +45,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         updatedAt: new Date(),
       })
       .returning();
+
+    await applySheetTagsForDates(db, authState.user.id, [String(body.values?.date ?? '')]);
 
     return Response.json({ row }, { status: 201 });
   } catch (error) {

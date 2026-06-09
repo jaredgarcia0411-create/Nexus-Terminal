@@ -4,6 +4,7 @@ import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-
 import { getDb } from '@/lib/db';
 import { sheetRows } from '@/lib/db/schema';
 import { getSheetRole } from '@/lib/sheets/access';
+import { applySheetTagsForDates } from '@/lib/sheets/trade-tags';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { rowPatchSchema } from '@/lib/validations/sheets';
 
@@ -57,6 +58,8 @@ export async function PATCH(
         { status: 409 },
       );
     }
+
+    await applySheetTagsForDates(db, authState.user.id, [String(body.values?.date ?? '')]);
 
     return Response.json({ row: updated });
   } catch (error) {

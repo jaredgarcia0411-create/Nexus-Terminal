@@ -6,6 +6,7 @@ const {
   requireUserMock,
   ensureUserMock,
   getSheetRoleMock,
+  applySheetTagsForDatesMock,
   isMassiveConfiguredMock,
   fetchGroupedDailyAggregatesMock,
   fetchSharesOutstandingMock,
@@ -15,6 +16,7 @@ const {
   requireUserMock: vi.fn(),
   ensureUserMock: vi.fn(),
   getSheetRoleMock: vi.fn(),
+  applySheetTagsForDatesMock: vi.fn(),
   isMassiveConfiguredMock: vi.fn(),
   fetchGroupedDailyAggregatesMock: vi.fn(),
   fetchSharesOutstandingMock: vi.fn(),
@@ -27,6 +29,7 @@ vi.mock('@/lib/server-db-utils', () => ({
   requireUser: requireUserMock,
 }));
 vi.mock('@/lib/sheets/access', () => ({ getSheetRole: getSheetRoleMock }));
+vi.mock('@/lib/sheets/trade-tags', () => ({ applySheetTagsForDates: applySheetTagsForDatesMock }));
 vi.mock('@/lib/massive-market', () => ({
   fetchGroupedDailyAggregates: fetchGroupedDailyAggregatesMock,
   fetchSharesOutstanding: fetchSharesOutstandingMock,
