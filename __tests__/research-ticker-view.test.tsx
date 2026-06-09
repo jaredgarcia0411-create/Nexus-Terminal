@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi, type MockedFunction } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi, type MockedFunction } from 'vitest';
 import type React from 'react';
 
 import ResearchTickerView from '@/components/trading/ResearchTickerView';
@@ -125,14 +125,10 @@ function makeSnapshot(overrides: Partial<ResearchSnapshot> = {}): ResearchSnapsh
 }
 
 function installSnapshotFetch(response: Response) {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = input.toString();
 
     if (url.startsWith('/api/askedgar/snapshot')) return response.clone();
-
-    if (url === '/api/daily-reviews/append-watchlist' && init?.method === 'POST') {
-      return jsonResponse({ duplicate: false });
-    }
 
     return jsonResponse({ error: 'unexpected fetch' }, { status: 500 });
   }) as MockedFunction<typeof fetch>;
@@ -141,22 +137,11 @@ function installSnapshotFetch(response: Response) {
   return fetchMock;
 }
 
-async function flushEffects() {
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-}
-
 describe('ResearchTickerView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllGlobals();
     reportCacheMock.reportId = null;
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it('fetches a snapshot and renders header, chart, and report boundaries', async () => {
@@ -207,56 +192,4 @@ describe('ResearchTickerView', () => {
     });
   });
 
-  it('keeps Add to Watchlist disabled until the cached report id is available', async () => {
-    vi.useFakeTimers();
-    installSnapshotFetch(jsonResponse(makeSnapshot()));
-
-    render(<ResearchTickerView ticker="AAPL" />);
-    await flushEffects();
-
-    expect(screen.getByText('Add to Watchlist')).toHaveProperty('disabled', true);
-
-    reportCacheMock.reportId = 'report-1';
-    await act(async () => {
-      vi.advanceTimersByTime(500);
-    });
-
-    expect(screen.getByText('Add to Watchlist')).toHaveProperty('disabled', false);
-  });
-
-  it('posts the cached report to the daily watchlist and handles added versus duplicate toasts', async () => {
-    vi.useFakeTimers();
-    const fetchMock = installSnapshotFetch(jsonResponse(makeSnapshot()));
-
-    render(<ResearchTickerView ticker="AAPL" />);
-    await flushEffects();
-
-    reportCacheMock.reportId = 'report-1';
-    await act(async () => {
-      vi.advanceTimersByTime(500);
-    });
-
-    fireEvent.click(screen.getByText('Add to Watchlist'));
-
-    await flushEffects();
-    expect(fetchMock).toHaveBeenCalledWith('/api/daily-reviews/append-watchlist', expect.objectContaining({
-      method: 'POST',
-      body: expect.stringContaining('"reportId":"report-1"'),
-    }));
-    expect(toastMock.success).toHaveBeenCalledWith("Added AAPL to today's watchlist");
-
-    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = input.toString();
-      if (url.startsWith('/api/askedgar/snapshot')) return jsonResponse(makeSnapshot());
-      if (url === '/api/daily-reviews/append-watchlist' && init?.method === 'POST') {
-        return jsonResponse({ duplicate: true });
-      }
-      return jsonResponse({ error: 'unexpected fetch' }, { status: 500 });
-    });
-
-    fireEvent.click(screen.getByText('Add to Watchlist'));
-
-    await flushEffects();
-    expect(toastMock.success).toHaveBeenCalledWith("AAPL is already on today's watchlist");
-  });
 });

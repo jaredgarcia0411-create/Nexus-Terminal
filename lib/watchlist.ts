@@ -35,7 +35,7 @@ function normalizeTags(input: unknown): string[] {
 }
 
 // Defensive: rows live in jsonb. Anything could be in there from older saves,
-// so coerce to the strict shape WatchlistEditor expects.
+// so coerce to the strict read-only archive shape.
 export function coerceWatchlistRows(input: unknown): WatchlistRow[] {
   if (!Array.isArray(input)) return [];
   return input.flatMap((raw, index) => {
@@ -89,37 +89,4 @@ export function dedupeWatchlistRows(rows: WatchlistRow[]): WatchlistRow[] {
     });
   }
   return Array.from(byKey.values()).sort((a, b) => a.ticker.localeCompare(b.ticker));
-}
-
-export function buildWatchlistTradeTagAssignments(
-  trades: Array<{ id: string; symbol: string; tags?: string[] }>,
-  watchlistRows: WatchlistRow[],
-): Array<{ tradeId: string; tags: string[] }> {
-  const tagsByTicker = new Map<string, string[]>();
-
-  for (const row of watchlistRows) {
-    const ticker = row.ticker.trim().toUpperCase();
-    if (!ticker) continue;
-
-    const existing = tagsByTicker.get(ticker) ?? [];
-    for (const tag of normalizeTags(row.tags)) {
-      if (!existing.includes(tag)) existing.push(tag);
-    }
-    if (existing.length > 0) tagsByTicker.set(ticker, existing);
-  }
-
-  const assignments: Array<{ tradeId: string; tags: string[] }> = [];
-  for (const trade of trades) {
-    const ticker = trade.symbol.trim().toUpperCase();
-    const watchlistTags = tagsByTicker.get(ticker);
-    if (!watchlistTags || watchlistTags.length === 0) continue;
-
-    const currentTags = trade.tags ?? [];
-    const missingTags = watchlistTags.filter((tag) => !currentTags.includes(tag));
-    if (missingTags.length > 0) {
-      assignments.push({ tradeId: trade.id, tags: missingTags });
-    }
-  }
-
-  return assignments;
 }

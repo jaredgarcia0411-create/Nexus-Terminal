@@ -8,7 +8,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Archive, ArrowDownWideNarrow, ArrowUpWideNarrow, ChevronDown, Columns3, FileSpreadsheet, FileText, Filter, GripVertical, History, LineChart, ListPlus, Pencil, Plus, RefreshCw, Rows3, Tags, Trash2, Upload, Users, X } from 'lucide-react';
+import { Archive, ArrowDownWideNarrow, ArrowUpWideNarrow, ChevronDown, Columns3, FileSpreadsheet, FileText, Filter, GripVertical, History, LineChart, Pencil, Plus, RefreshCw, Rows3, Tags, Trash2, Upload, Users, X } from 'lucide-react';
 import {
   DataGrid,
   Row as GridRowRenderer,
@@ -384,7 +384,6 @@ function FloatCell({ row, column, rowIdx, onRowChange }: RenderCellProps<GridRow
 type CellActions = {
   openReport: (reportId: string) => void;
   openChart: (ticker: string, date: string, rowId: string) => void;
-  addToWatchlist: (ticker: string, tag: string, reportId: string) => void;
   editColumn: (column: SheetColumn) => void;
   deleteColumn: (key: string) => void;
 };
@@ -733,36 +732,6 @@ function buildColumn(
     };
   }
 
-  if (column.type === 'watchlist') {
-    return {
-      ...base,
-      renderCell: ({ row }) => {
-        const ticker = String(row.ticker ?? '').trim();
-        const tag = String(row.tag ?? '').trim();
-        // Carry the row's research report into the watchlist so the report
-        // eye-icon resolves there. `research_report` is the locked report
-        // column's key (see DEFAULT_SHEET_COLUMNS); empty when the row has none.
-        const reportId = String(row.research_report ?? '').trim();
-        if (!ticker) {
-          return <div className="flex items-center justify-center text-xs text-muted-foreground">—</div>;
-        }
-        return (
-          <div className="flex items-center justify-center">
-            <button
-              type="button"
-              onClick={() => actions.addToWatchlist(ticker, tag, reportId)}
-              className="rounded-md p-1 text-primary hover:bg-accent hover:text-primary/80"
-              aria-label={`Add ${ticker} to today's watchlist`}
-              title="Add to watchlist"
-            >
-              <ListPlus className="h-4 w-4" />
-            </button>
-          </div>
-        );
-      },
-    };
-  }
-
   if (column.type === 'multiselect') {
     return {
       ...base,
@@ -1002,23 +971,6 @@ export default function SheetsTab() {
     const actions: CellActions = {
       openReport: (reportId) => setReportDialog({ reportId }),
       openChart: (ticker, date, rowId) => setChartDialog({ ticker, date, rowId }),
-      addToWatchlist: (ticker, tag, reportId) => {
-        void fetch('/api/daily-reviews/append-watchlist', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            date: today,
-            ticker,
-            tags: tag ? [tag] : [],
-            ...(reportId ? { reportId } : {}),
-          }),
-        })
-          .then((res) => {
-            if (res.ok) toast.success(`${ticker} added to today's watchlist`);
-            else toast.error('Failed to add to watchlist');
-          })
-          .catch(() => toast.error('Failed to add to watchlist'));
-      },
       editColumn: setEditColumn,
       deleteColumn: (key) => {
         if (window.confirm('Delete this column? Cell data in it will be hidden.')) {
@@ -1063,7 +1015,7 @@ export default function SheetsTab() {
       );
     }
     return columns;
-  }, [activeSheet, canEditRows, canManage, dragEnabled, filterMode, filters, rResults, rows, sheets, teamTags, today]);
+  }, [activeSheet, canEditRows, canManage, dragEnabled, filterMode, filters, rResults, rows, sheets, teamTags]);
 
   const handleRowsChange = (nextRows: GridRow[], data: RowsChangeData<GridRow>) => {
     if (!activeSheet) return;

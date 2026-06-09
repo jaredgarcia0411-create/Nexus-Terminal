@@ -137,7 +137,6 @@ export default function ResearchTickerView({ ticker }: Props) {
       <div className="relative shrink-0">
         <ResearchSubNav tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
         <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-2">
-          <AddToWatchlistButton ticker={ticker} />
           <AddToSheetsButton ticker={ticker} />
         </div>
       </div>
@@ -247,74 +246,5 @@ function AddToSheetsButton({ ticker }: { ticker: string }) {
         )}
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-// Pins the current research report onto today's daily-review watchlist. Reads
-// the report id from ResearchReportPanel's module-level cache so we don't
-// duplicate the fetch — and polls every 500ms until the cache is warm so the
-// button enables itself as soon as the panel's fetch resolves (fresh
-// generations can take ~30s).
-function AddToWatchlistButton({ ticker }: { ticker: string }) {
-  const [reportId, setReportId] = useState<string | null>(() => getCachedReportId(ticker));
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setReportId(getCachedReportId(ticker));
-    setSaving(false);
-    if (getCachedReportId(ticker)) return;
-    const interval = setInterval(() => {
-      const id = getCachedReportId(ticker);
-      if (id) {
-        setReportId(id);
-        clearInterval(interval);
-      }
-    }, 500);
-    return () => clearInterval(interval);
-  }, [ticker]);
-
-  const onClick = async () => {
-    if (!reportId || saving) return;
-    setSaving(true);
-    try {
-      // Today in the user's local timezone — matches how DailyReportSheet
-      // dates its saves (date-fns format, no UTC roll-over surprises).
-      const today = format(new Date(), 'yyyy-MM-dd');
-      const response = await fetch('/api/daily-reviews/append-watchlist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: today, ticker, reportId }),
-      });
-      if (!response.ok) throw new Error('save failed');
-      const payload = (await response.json()) as { duplicate?: boolean };
-      if (payload.duplicate) {
-        toast.success(`${ticker} is already on today's watchlist`);
-      } else {
-        toast.success(`Added ${ticker} to today's watchlist`);
-      }
-    } catch {
-      toast.error('Failed to add to watchlist');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const disabled = !reportId || saving;
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={!reportId ? 'Research report is still loading' : "Add to today's watchlist"}
-      className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-        disabled
-          ? 'cursor-not-allowed border-border bg-accent text-muted-foreground'
-          : 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/20'
-      }`}
-    >
-      <Plus className="h-3.5 w-3.5" />
-      {saving ? 'Adding…' : 'Add to Watchlist'}
-    </button>
   );
 }
