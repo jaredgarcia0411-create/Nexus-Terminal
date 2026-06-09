@@ -176,44 +176,74 @@ function MultiSelectCell({
     onRowChange({ ...row, [column.key]: next });
   };
 
+  const spanRef = useRef<HTMLSpanElement>(null);
+  const [tip, setTip] = useState<{ left: number; top: number } | null>(null);
+
+  // Match the text-column hover: a styled tooltip that appears only when the
+  // label is clipped, instead of the tiny native title bubble.
+  const showTip = () => {
+    const el = spanRef.current;
+    if (!el || el.scrollWidth <= el.clientWidth) return;
+    const rect = el.getBoundingClientRect();
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - TOOLTIP_WIDTH - 8));
+    setTip({ left, top: rect.bottom + 4 });
+  };
+
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex h-full w-full items-center px-1 text-left text-sm text-foreground outline-none hover:bg-accent/40 focus:bg-card"
-          onClick={(event) => event.stopPropagation()}
+    <>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="flex h-full w-full items-center px-1 text-left text-sm text-foreground outline-none hover:bg-accent/40 focus:bg-card"
+            onClick={(event) => {
+              event.stopPropagation();
+              setTip(null);
+            }}
+            onKeyDown={(event) => event.stopPropagation()}
+            onMouseEnter={showTip}
+            onMouseLeave={() => setTip(null)}
+          >
+            <span ref={spanRef} className="min-w-0 flex-1 truncate">{label}</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="w-56 border-border bg-popover p-2 text-popover-foreground"
           onKeyDown={(event) => event.stopPropagation()}
-          title={label}
         >
-          <span className="truncate">{label}</span>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-56 border-border bg-popover p-2 text-popover-foreground"
-        onKeyDown={(event) => event.stopPropagation()}
-      >
-        <div className="max-h-64 overflow-y-auto">
-          {options.length === 0 ? (
-            <div className="px-2 py-1.5 text-sm text-muted-foreground">No options</div>
-          ) : options.map((option) => (
-            <label
-              key={option}
-              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
+          <div className="max-h-64 overflow-y-auto">
+            {options.length === 0 ? (
+              <div className="px-2 py-1.5 text-sm text-muted-foreground">No options</div>
+            ) : options.map((option) => (
+              <label
+                key={option}
+                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedSet.has(option)}
+                  onChange={() => toggle(option)}
+                  onClick={(event) => event.stopPropagation()}
+                />
+                <span className="truncate">{option}</span>
+              </label>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+      {tip
+        ? createPortal(
+            <div
+              className="pointer-events-none fixed z-50 w-64 whitespace-pre-wrap break-words rounded-md border border-border bg-popover px-3 py-2 text-sm leading-relaxed text-popover-foreground shadow-md"
+              style={{ left: tip.left, top: tip.top }}
             >
-              <input
-                type="checkbox"
-                checked={selectedSet.has(option)}
-                onChange={() => toggle(option)}
-                onClick={(event) => event.stopPropagation()}
-              />
-              <span className="truncate">{option}</span>
-            </label>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
+              {label}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
 
@@ -1367,18 +1397,6 @@ export default function SheetsTab() {
                 <Button
                   type="button"
                   size="icon-sm"
-                  variant="secondary"
-                  onClick={() => setTeamTagsOpen(true)}
-                  title="Manage team tags"
-                  aria-label="Manage team tags"
-                  className="bg-accent hover:bg-accent/80"
-                >
-                  <Tags className="h-4 w-4" />
-                </Button>
-
-                <Button
-                  type="button"
-                  size="icon-sm"
                   onClick={() => void handleFillMassive()}
                   disabled={!canEditRows || !hasMassiveFillColumns || fillingMassive}
                   title="Fill data"
@@ -1403,6 +1421,18 @@ export default function SheetsTab() {
                   }
                 >
                   <Filter className="h-4 w-4" />
+                </Button>
+
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="secondary"
+                  onClick={() => setTeamTagsOpen(true)}
+                  title="Manage team tags"
+                  aria-label="Manage team tags"
+                  className="bg-accent hover:bg-accent/80"
+                >
+                  <Tags className="h-4 w-4" />
                 </Button>
 
                 <DropdownMenu>
