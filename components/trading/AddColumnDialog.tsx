@@ -18,13 +18,14 @@ import { USER_COLUMN_TYPES } from '@/lib/sheets/grid';
 interface AddColumnDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (column: { name: string; type: SheetColumnType; options?: string[] }) => Promise<void>;
+  onSubmit: (column: { name: string; type: SheetColumnType; options?: string[]; asTags?: boolean }) => Promise<void>;
 }
 
 export default function AddColumnDialog({ open, onOpenChange, onSubmit }: AddColumnDialogProps) {
   const [name, setName] = useState('');
   const [type, setType] = useState<SheetColumnType>('text');
   const [optionsText, setOptionsText] = useState('');
+  const [asTags, setAsTags] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -33,6 +34,7 @@ export default function AddColumnDialog({ open, onOpenChange, onSubmit }: AddCol
     setName('');
     setType('text');
     setOptionsText('');
+    setAsTags(false);
     setError(null);
     setSubmitting(false);
   }, [open]);
@@ -51,7 +53,12 @@ export default function AddColumnDialog({ open, onOpenChange, onSubmit }: AddCol
     setSubmitting(true);
     setError(null);
     try {
-      await onSubmit({ name: trimmed, type, options });
+      await onSubmit({
+        name: trimmed,
+        type,
+        options,
+        asTags: type === 'select' || type === 'multiselect' ? asTags || undefined : undefined,
+      });
       onOpenChange(false);
     } catch {
       setError('Could not add column');
@@ -95,15 +102,26 @@ export default function AddColumnDialog({ open, onOpenChange, onSubmit }: AddCol
           </div>
 
           {type === 'select' || type === 'multiselect' ? (
-            <div className="space-y-2">
-              <Label htmlFor="col-options">Options (one per line or comma-separated)</Label>
-              <textarea
-                id="col-options"
-                value={optionsText}
-                onChange={(event) => setOptionsText(event.target.value)}
-                rows={3}
-                className="w-full rounded-md border border-border bg-accent px-2 py-1.5 text-sm text-foreground"
-              />
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="col-options">Options (one per line or comma-separated)</Label>
+                <textarea
+                  id="col-options"
+                  value={optionsText}
+                  onChange={(event) => setOptionsText(event.target.value)}
+                  rows={3}
+                  className="w-full rounded-md border border-border bg-accent px-2 py-1.5 text-sm text-foreground"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={asTags}
+                  onChange={(event) => setAsTags(event.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-border bg-card accent-primary"
+                />
+                Use values as trade tags
+              </label>
             </div>
           ) : null}
 

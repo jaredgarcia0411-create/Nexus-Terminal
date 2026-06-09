@@ -1112,10 +1112,12 @@ export default function SheetsTab() {
     name,
     type,
     options,
+    asTags,
   }: {
     name: string;
     type: SheetColumnType;
     options?: string[];
+    asTags?: boolean;
   }) => {
     if (!activeSheet) return;
 
@@ -1125,6 +1127,7 @@ export default function SheetsTab() {
       type,
     };
     if (options && options.length > 0) column.options = options;
+    if (asTags) column.asTags = true;
     await sheets.updateColumns([...activeSheet.columns, column]);
   };
 
@@ -1132,10 +1135,12 @@ export default function SheetsTab() {
     name,
     type,
     options,
+    asTags,
   }: {
     name: string;
     type: SheetColumnType;
     options?: string[];
+    asTags?: boolean;
   }) => {
     if (!activeSheet || !editColumn) return;
 
@@ -1146,6 +1151,7 @@ export default function SheetsTab() {
           name,
           type,
           options: type === 'select' || type === 'multiselect' ? options : undefined,
+          asTags: type === 'select' || type === 'multiselect' ? asTags : undefined,
         }
         : column
     )));
