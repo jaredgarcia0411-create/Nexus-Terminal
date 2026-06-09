@@ -7,6 +7,7 @@ export const SHEET_COLUMN_TYPES = [
   'url',
   'checkbox',
   'select',
+  'multiselect',
   'report',
   'chart',
   'rmultiple',

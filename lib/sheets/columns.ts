@@ -5,6 +5,7 @@ export type SheetColumnType =
   | 'url'
   | 'checkbox'
   | 'select'
+  | 'multiselect'
   | 'report'
   | 'chart'
   | 'rmultiple'

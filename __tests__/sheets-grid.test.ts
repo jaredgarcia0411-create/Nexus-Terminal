@@ -113,6 +113,19 @@ describe('sheets grid helpers', () => {
     ]);
   });
 
+  it('filters multiselect columns by selected option text', () => {
+    const rows: GridRow[] = [
+      { __id: 'r1', __version: 1, setups: ['Gap', 'Momentum'] },
+      { __id: 'r2', __version: 1, setups: ['Reversal'] },
+      { __id: 'r3', __version: 1, setups: 'Momentum' },
+    ];
+    const columns: SheetColumn[] = [
+      { key: 'setups', name: 'Setups', type: 'multiselect' },
+    ];
+
+    expect(filterGridRows(rows, columns, { setups: 'momentum' }).map((row) => row.__id)).toEqual(['r1']);
+  });
+
   it('filters checkbox columns by checked state', () => {
     expect(filterGridRows(filterRows, filterColumns, { watched: 'checked' }).map((row) => row.__id)).toEqual([
       'r1',

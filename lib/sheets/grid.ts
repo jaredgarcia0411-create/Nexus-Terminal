@@ -41,6 +41,12 @@ export function filterGridRows(rows: GridRow[], columns: SheetColumn[], filters:
         return Boolean(row[key]) === (value === 'checked');
       }
 
+      if (column.type === 'multiselect') {
+        return (Array.isArray(row[key]) ? row[key].join(',') : '')
+          .toLowerCase()
+          .includes(value.trim().toLowerCase());
+      }
+
       return String(row[key] ?? '').toLowerCase().includes(value.trim().toLowerCase());
     }),
   );
@@ -74,6 +80,7 @@ export const USER_COLUMN_TYPES: SheetColumnType[] = [
   'url',
   'checkbox',
   'select',
+  'multiselect',
   'share_volume',
   'dollar_volume',
   'float',

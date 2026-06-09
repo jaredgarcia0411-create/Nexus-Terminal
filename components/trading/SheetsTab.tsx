@@ -81,7 +81,13 @@ function focusAdjacentEditableInput(input: HTMLInputElement, direction: -1 | 1, 
 }
 
 function isFilterableColumn(type: SheetColumnType) {
-  return type === 'text' || type === 'number' || type === 'url' || type === 'date' || type === 'select' || type === 'checkbox';
+  return type === 'text'
+    || type === 'number'
+    || type === 'url'
+    || type === 'date'
+    || type === 'select'
+    || type === 'multiselect'
+    || type === 'checkbox';
 }
 
 function hasActiveFilter(type: SheetColumnType, value: string) {
@@ -146,6 +152,65 @@ function SelectCell({
         </option>
       ))}
     </select>
+  );
+}
+
+function MultiSelectCell({
+  row,
+  column,
+  onRowChange,
+  options,
+}: RenderCellProps<GridRow> & { options: string[] }) {
+  const raw = row[column.key];
+  const selected = Array.isArray(raw) ? raw.map(String) : raw ? [String(raw)] : [];
+  const selectedSet = new Set(selected);
+  const label = selected.length > 0 ? selected.join(', ') : '—';
+
+  const toggle = (option: string) => {
+    const next = selectedSet.has(option)
+      ? selected.filter((value) => value !== option)
+      : [...selected, option];
+    onRowChange({ ...row, [column.key]: next });
+  };
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex h-full w-full items-center px-1 text-left text-sm text-foreground outline-none hover:bg-accent/40 focus:bg-card"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+          title={label}
+        >
+          <span className="truncate">{label}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-56 border-border bg-popover p-2 text-popover-foreground"
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        <div className="max-h-64 overflow-y-auto">
+          {options.length === 0 ? (
+            <div className="px-2 py-1.5 text-sm text-muted-foreground">No options</div>
+          ) : options.map((option) => (
+            <label
+              key={option}
+              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
+            >
+              <input
+                type="checkbox"
+                checked={selectedSet.has(option)}
+                onChange={() => toggle(option)}
+                onClick={(event) => event.stopPropagation()}
+              />
+              <span className="truncate">{option}</span>
+            </label>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -647,6 +712,24 @@ function buildColumn(
             </button>
           </div>
         );
+      },
+    };
+  }
+
+  if (column.type === 'multiselect') {
+    return {
+      ...base,
+      renderCell: (props) => {
+        const raw = props.row[column.key];
+        const values = Array.isArray(raw) ? raw.map(String) : raw ? [String(raw)] : [];
+        if (!canEdit) {
+          return (
+            <div className="flex h-full items-center px-1 text-sm text-foreground">
+              <span className="truncate">{values.length > 0 ? values.join(', ') : '—'}</span>
+            </div>
+          );
+        }
+        return <MultiSelectCell {...props} options={column.options ?? []} />;
       },
     };
   }
