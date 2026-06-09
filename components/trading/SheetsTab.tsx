@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 
 import AddColumnDialog from '@/components/trading/AddColumnDialog';
 import BacktestChartWorkspace from '@/components/trading/BacktestChartWorkspace';
+import EditColumnDialog from '@/components/trading/EditColumnDialog';
 import ImportSheetDialog from '@/components/trading/ImportSheetDialog';
 import ShareSheetDialog from '@/components/trading/ShareSheetDialog';
 import SheetFormDialog from '@/components/trading/SheetFormDialog';
@@ -352,6 +353,7 @@ type CellActions = {
   openReport: (reportId: string) => void;
   openChart: (ticker: string, date: string, rowId: string) => void;
   addToWatchlist: (ticker: string, tag: string, reportId: string) => void;
+  editColumn: (column: SheetColumn) => void;
   deleteColumn: (key: string) => void;
 };
 
@@ -542,17 +544,30 @@ function buildColumn(
     ? () => (
       <div className="group flex h-full items-center justify-between gap-1">
         <span className="truncate">{column.name}</span>
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            actions.deleteColumn(column.key);
-          }}
-          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition hover:bg-rose-500/10 hover:text-rose-400 group-hover:opacity-100"
-          aria-label={`Delete ${column.name} column`}
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              actions.editColumn(column);
+            }}
+            className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            aria-label={`Edit ${column.name} column`}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              actions.deleteColumn(column.key);
+            }}
+            className="rounded p-0.5 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-400"
+            aria-label={`Delete ${column.name} column`}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     )
     : undefined;
@@ -813,6 +828,7 @@ export default function SheetsTab() {
   const [formMode, setFormMode] = useState<'create' | 'rename'>('create');
   const [importOpen, setImportOpen] = useState(false);
   const [columnOpen, setColumnOpen] = useState(false);
+  const [editColumn, setEditColumn] = useState<SheetColumn | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [reportDialog, setReportDialog] = useState<{ reportId: string } | null>(null);
   const [chartDialog, setChartDialog] = useState<{ ticker: string; date: string; rowId: string } | null>(null);
@@ -985,6 +1001,7 @@ export default function SheetsTab() {
           })
           .catch(() => toast.error('Failed to add to watchlist'));
       },
+      editColumn: setEditColumn,
       deleteColumn: (key) => {
         if (window.confirm('Delete this column? Cell data in it will be hidden.')) {
           void sheets.updateColumns(activeSheet.columns.filter((column) => column.key !== key));
@@ -1091,6 +1108,30 @@ export default function SheetsTab() {
     };
     if (options && options.length > 0) column.options = options;
     await sheets.updateColumns([...activeSheet.columns, column]);
+  };
+
+  const handleEditColumn = async ({
+    name,
+    type,
+    options,
+  }: {
+    name: string;
+    type: SheetColumnType;
+    options?: string[];
+  }) => {
+    if (!activeSheet || !editColumn) return;
+
+    await sheets.updateColumns(activeSheet.columns.map((column) => (
+      column.key === editColumn.key
+        ? {
+          ...column,
+          name,
+          type,
+          options: type === 'select' || type === 'multiselect' ? options : undefined,
+        }
+        : column
+    )));
+    setEditColumn(null);
   };
 
   const handleFillMassive = async () => {
@@ -1500,6 +1541,14 @@ export default function SheetsTab() {
         }}
       />
       <AddColumnDialog open={columnOpen} onOpenChange={setColumnOpen} onSubmit={handleAddColumn} />
+      <EditColumnDialog
+        open={!!editColumn}
+        column={editColumn}
+        onOpenChange={(open) => {
+          if (!open) setEditColumn(null);
+        }}
+        onSubmit={handleEditColumn}
+      />
       {activeSheet ? (
         <ShareSheetDialog
           open={shareOpen}

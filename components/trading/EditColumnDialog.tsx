@@ -12,16 +12,22 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import type { SheetColumnType } from '@/lib/sheets/columns';
+import type { SheetColumn, SheetColumnType } from '@/lib/sheets/columns';
 import { USER_COLUMN_TYPES } from '@/lib/sheets/grid';
 
-interface AddColumnDialogProps {
+interface EditColumnDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (column: { name: string; type: SheetColumnType; options?: string[] }) => Promise<void>;
+  column: SheetColumn | null;
+  onSubmit: (next: { name: string; type: SheetColumnType; options?: string[] }) => Promise<void>;
 }
 
-export default function AddColumnDialog({ open, onOpenChange, onSubmit }: AddColumnDialogProps) {
+export default function EditColumnDialog({
+  open,
+  onOpenChange,
+  column,
+  onSubmit,
+}: EditColumnDialogProps) {
   const [name, setName] = useState('');
   const [type, setType] = useState<SheetColumnType>('text');
   const [optionsText, setOptionsText] = useState('');
@@ -29,15 +35,16 @@ export default function AddColumnDialog({ open, onOpenChange, onSubmit }: AddCol
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
-    setName('');
-    setType('text');
-    setOptionsText('');
+    if (!open || !column) return;
+    setName(column.name);
+    setType(column.type);
+    setOptionsText((column.options ?? []).join('\n'));
     setError(null);
     setSubmitting(false);
-  }, [open]);
+  }, [column, open]);
 
   const handleSubmit = async () => {
+    if (!column) return;
     const trimmed = name.trim();
     if (!trimmed) {
       setError('Name is required');
@@ -54,7 +61,7 @@ export default function AddColumnDialog({ open, onOpenChange, onSubmit }: AddCol
       await onSubmit({ name: trimmed, type, options });
       onOpenChange(false);
     } catch {
-      setError('Could not add column');
+      setError('Could not update column');
     } finally {
       setSubmitting(false);
     }
@@ -64,14 +71,14 @@ export default function AddColumnDialog({ open, onOpenChange, onSubmit }: AddCol
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-border bg-card text-foreground sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Column</DialogTitle>
+          <DialogTitle>Edit Column</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="col-name">Name</Label>
+            <Label htmlFor="edit-col-name">Name</Label>
             <Input
-              id="col-name"
+              id="edit-col-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
               className="border-border bg-accent text-foreground"
@@ -79,9 +86,9 @@ export default function AddColumnDialog({ open, onOpenChange, onSubmit }: AddCol
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="col-type">Type</Label>
+            <Label htmlFor="edit-col-type">Type</Label>
             <select
-              id="col-type"
+              id="edit-col-type"
               value={type}
               onChange={(event) => setType(event.target.value as SheetColumnType)}
               className="h-9 w-full rounded-md border border-border bg-popover px-2 text-sm text-popover-foreground [color-scheme:dark]"
@@ -96,9 +103,9 @@ export default function AddColumnDialog({ open, onOpenChange, onSubmit }: AddCol
 
           {type === 'select' || type === 'multiselect' ? (
             <div className="space-y-2">
-              <Label htmlFor="col-options">Options (one per line or comma-separated)</Label>
+              <Label htmlFor="edit-col-options">Options (one per line or comma-separated)</Label>
               <textarea
-                id="col-options"
+                id="edit-col-options"
                 value={optionsText}
                 onChange={(event) => setOptionsText(event.target.value)}
                 rows={3}
@@ -121,11 +128,11 @@ export default function AddColumnDialog({ open, onOpenChange, onSubmit }: AddCol
           </Button>
           <Button
             type="button"
-            disabled={submitting}
+            disabled={submitting || !column}
             onClick={() => void handleSubmit()}
             className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40"
           >
-            Add
+            Save
           </Button>
         </DialogFooter>
       </DialogContent>
