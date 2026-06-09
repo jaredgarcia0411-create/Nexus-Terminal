@@ -8,7 +8,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Archive, ChevronDown, Columns3, FileSpreadsheet, FileText, Filter, GripVertical, History, LineChart, ListPlus, Pencil, Plus, RefreshCw, Rows3, Trash2, Upload, Users, X } from 'lucide-react';
+import { Archive, ArrowDownWideNarrow, ArrowUpWideNarrow, ChevronDown, Columns3, FileSpreadsheet, FileText, Filter, GripVertical, History, LineChart, ListPlus, Pencil, Plus, RefreshCw, Rows3, Trash2, Upload, Users, X } from 'lucide-react';
 import {
   DataGrid,
   Row as GridRowRenderer,
@@ -45,10 +45,12 @@ import {
   filterGridRows,
   gridRowsFromSheet,
   nextColumnKey,
+  sortGridRows,
   valuesFromGridRow,
   type GridRow,
   type SheetFilters,
   type SheetRowRecord,
+  type SheetSortMode,
 } from '@/lib/sheets/grid';
 import { getMassiveFillKeys, isEmptySheetCell, type MassiveFillKeys } from '@/lib/sheets/massive-fill';
 import { epochToNySortKey } from '@/lib/time-utils';
@@ -415,6 +417,16 @@ function loadColumnWidths(sheetId: string | null): ColumnWidths {
   }
 }
 
+function loadSortMode(sheetId: string | null): SheetSortMode {
+  if (!sheetId || typeof window === 'undefined') return 'date_desc';
+  try {
+    const saved = window.localStorage.getItem(`sheets:sort:${sheetId}`);
+    return saved === 'date_asc' || saved === 'manual' ? saved : 'date_desc';
+  } catch {
+    return 'date_desc';
+  }
+}
+
 function buildColumn(
   column: SheetColumn,
   canEdit: boolean,
@@ -729,11 +741,13 @@ export default function SheetsTab() {
   const [columnWidths, setColumnWidths] = useState<ColumnWidths>(() => new Map());
   const [filterMode, setFilterMode] = useState(false);
   const [filters, setFilters] = useState<SheetFilters>({});
+  const [sortMode, setSortMode] = useState<SheetSortMode>('date_desc');
   const [loadedRResultsSheetId, setLoadedRResultsSheetId] = useState<string | null>(sheetId);
   const [fillingMassive, setFillingMassive] = useState(false);
 
   const canEditRows = role === 'owner' || role === 'editor';
   const canManage = role === 'owner';
+  const dragEnabled = canEditRows && !filterMode && sortMode === 'manual';
   const today = epochToNySortKey(Date.now());
   const sheetDisplayDate = (sheet: { rootId: string | null; sheetDate: string | null }) =>
     sheet.rootId === null ? today : sheet.sheetDate ?? 'No date';
@@ -746,9 +760,13 @@ export default function SheetsTab() {
   );
 
   const gridRows = useMemo(() => gridRowsFromSheet(rows), [rows]);
-  const visibleRows = useMemo(
+  const filteredRows = useMemo(
     () => (filterMode && activeSheet ? filterGridRows(gridRows, activeSheet.columns, filters) : gridRows),
     [activeSheet, filterMode, filters, gridRows],
+  );
+  const visibleRows = useMemo(
+    () => sortGridRows(filteredRows, sortMode),
+    [filteredRows, sortMode],
   );
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -805,9 +823,15 @@ export default function SheetsTab() {
   // render (tracking the last loaded sheet id) is React's recommended pattern
   // for "reset state when a prop changes" — it avoids an effect + cascading render.
   const [loadedWidthsSheetId, setLoadedWidthsSheetId] = useState<string | null>(sheetId);
+  const [loadedSortSheetId, setLoadedSortSheetId] = useState<string | null>(null);
   if (sheetId !== loadedWidthsSheetId) {
     setLoadedWidthsSheetId(sheetId);
     setColumnWidths(loadColumnWidths(sheetId));
+  }
+
+  if (sheetId !== loadedSortSheetId) {
+    setLoadedSortSheetId(sheetId);
+    setSortMode(loadSortMode(sheetId));
   }
 
   // RDG hands us the full next Map on every resize. Keep it in state (controlled
@@ -823,6 +847,16 @@ export default function SheetsTab() {
       localStorage.setItem(`sheets:widths:${sheetId}`, JSON.stringify(resized));
     } catch {
       // localStorage can throw (private mode / quota); widths just won't persist.
+    }
+  };
+
+  const handleSortModeChange = (mode: SheetSortMode) => {
+    setSortMode(mode);
+    if (!sheetId) return;
+    try {
+      localStorage.setItem(`sheets:sort:${sheetId}`, mode);
+    } catch {
+      // localStorage can throw (private mode / quota); sort falls back to Date desc.
     }
   };
 
@@ -887,13 +921,12 @@ export default function SheetsTab() {
       frozen: true,
       renderCell: () => <DragHandle />,
     };
-    // Keep the selection checkbox available while filtering so rows can be
-    // selected + deleted from a filtered subset. Only the drag handle drops in
-    // filter mode (reordering a filtered view is meaningless).
+    // Keep the selection checkbox available while filtering/sorting so rows can
+    // still be selected + deleted. Manual mode restores the drag handle.
     const columns: Column<GridRow>[] = canEditRows
-      ? filterMode
-        ? [SelectColumn]
-        : [dragColumn, SelectColumn]
+      ? dragEnabled
+        ? [dragColumn, SelectColumn]
+        : [SelectColumn]
       : [];
     for (const column of activeSheet.columns) {
       const resolved = column.key === 'tag' ? { ...column, options: tagOptions } : column;
@@ -912,7 +945,7 @@ export default function SheetsTab() {
       );
     }
     return columns;
-  }, [activeSheet, canEditRows, canManage, filterMode, filters, rResults, rows, sheets, tagOptions, today]);
+  }, [activeSheet, canEditRows, canManage, dragEnabled, filterMode, filters, rResults, rows, sheets, tagOptions, today]);
 
   const handleRowsChange = (nextRows: GridRow[], data: RowsChangeData<GridRow>) => {
     if (!activeSheet) return;
@@ -1016,7 +1049,8 @@ export default function SheetsTab() {
   const activeLineageGroup = activeSheet
     ? lineageGroups.find((group) => group.key === (activeSheet.rootId ?? activeSheet.id))
     : null;
-  const rowIds = gridRows.map((row) => row.__id);
+  const sortTitle = sortMode === 'date_desc' ? 'Date ↓' : sortMode === 'date_asc' ? 'Date ↑' : 'Manual';
+  const rowIds = visibleRows.map((row) => row.__id);
   const grid = (
     <DataGrid<GridRow, unknown, string>
       className="sheets-grid"
@@ -1029,7 +1063,7 @@ export default function SheetsTab() {
       selectedRows={selectedRows}
       onSelectedRowsChange={setSelectedRows}
       onColumnsReorder={canManage && !filterMode ? handleColumnsReorder : undefined}
-      renderers={canEditRows && !filterMode ? { renderRow } : undefined}
+      renderers={dragEnabled ? { renderRow } : undefined}
       style={{ blockSize: 480 }}
     />
   );
@@ -1247,6 +1281,50 @@ export default function SheetsTab() {
                   <Filter className="h-4 w-4" />
                 </Button>
 
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="secondary"
+                      title={`Sort: ${sortTitle}`}
+                      aria-label={`Sort: ${sortTitle}`}
+                      className="bg-accent hover:bg-accent/80"
+                    >
+                      {sortMode === 'date_desc' ? (
+                        <ArrowDownWideNarrow className="h-4 w-4" />
+                      ) : sortMode === 'date_asc' ? (
+                        <ArrowUpWideNarrow className="h-4 w-4" />
+                      ) : (
+                        <GripVertical className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-36 bg-popover text-popover-foreground">
+                    <DropdownMenuItem
+                      onSelect={() => handleSortModeChange('date_desc')}
+                      className={sortMode === 'date_desc' ? 'text-primary' : undefined}
+                    >
+                      <ArrowDownWideNarrow className="mr-2 h-4 w-4" />
+                      Date ↓
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => handleSortModeChange('date_asc')}
+                      className={sortMode === 'date_asc' ? 'text-primary' : undefined}
+                    >
+                      <ArrowUpWideNarrow className="mr-2 h-4 w-4" />
+                      Date ↑
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => handleSortModeChange('manual')}
+                      className={sortMode === 'manual' ? 'text-primary' : undefined}
+                    >
+                      <GripVertical className="mr-2 h-4 w-4" />
+                      Manual
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
                 {canManage && !activeSheet.rootId ? (
                   <Button
                     type="button"
@@ -1299,7 +1377,7 @@ export default function SheetsTab() {
               </div>
             </div>
 
-            {canEditRows && !filterMode ? (
+            {dragEnabled ? (
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}

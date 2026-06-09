@@ -5,6 +5,7 @@ import {
   filterGridRows,
   gridRowsFromSheet,
   nextColumnKey,
+  sortGridRows,
   slugifyColumnKey,
   valuesFromGridRow,
   type GridRow,
@@ -25,6 +26,13 @@ const filterRows: GridRow[] = [
   { __id: 'r1', __version: 1, ticker: 'AAPL', tag: 'Momentum', watched: true },
   { __id: 'r2', __version: 1, ticker: 'MSFT', tag: 'Reversal', watched: false },
   { __id: 'r3', __version: 1, ticker: 'NVDA', tag: 'Momentum', watched: true },
+];
+
+const datedRows: GridRow[] = [
+  { __id: 'r1', __version: 1, date: '2026-06-07' },
+  { __id: 'r2', __version: 1, date: '2026-06-09' },
+  { __id: 'r3', __version: 1, date: '2026-06-08' },
+  { __id: 'r4', __version: 1, date: '2026-06-09' },
 ];
 
 describe('sheets grid helpers', () => {
@@ -123,5 +131,39 @@ describe('sheets grid helpers', () => {
 
   it('treats empty filters as passthrough', () => {
     expect(filterGridRows(filterRows, filterColumns, { ticker: '', watched: 'all' })).toBe(filterRows);
+  });
+
+  it('sorts rows by date descending', () => {
+    expect(sortGridRows(datedRows, 'date_desc').map((row) => row.__id)).toEqual(['r2', 'r4', 'r3', 'r1']);
+  });
+
+  it('sorts rows by date ascending', () => {
+    expect(sortGridRows(datedRows, 'date_asc').map((row) => row.__id)).toEqual(['r1', 'r3', 'r2', 'r4']);
+  });
+
+  it('returns rows unchanged in manual mode', () => {
+    expect(sortGridRows(datedRows, 'manual')).toBe(datedRows);
+  });
+
+  it('sorts empty dates to the top in date modes', () => {
+    const rows = [
+      { __id: 'r1', __version: 1, date: '2026-06-08' },
+      { __id: 'r2', __version: 1, date: '' },
+      { __id: 'r3', __version: 1 },
+      { __id: 'r4', __version: 1, date: '2026-06-09' },
+    ];
+
+    expect(sortGridRows(rows, 'date_desc').map((row) => row.__id)).toEqual(['r2', 'r3', 'r4', 'r1']);
+    expect(sortGridRows(rows, 'date_asc').map((row) => row.__id)).toEqual(['r2', 'r3', 'r1', 'r4']);
+  });
+
+  it('preserves incoming order for equal dates', () => {
+    const rows = [
+      { __id: 'r1', __version: 1, date: '2026-06-08' },
+      { __id: 'r2', __version: 1, date: '2026-06-08' },
+      { __id: 'r3', __version: 1, date: '2026-06-08' },
+    ];
+
+    expect(sortGridRows(rows, 'date_desc').map((row) => row.__id)).toEqual(['r1', 'r2', 'r3']);
   });
 });
