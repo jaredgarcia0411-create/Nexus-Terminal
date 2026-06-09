@@ -38,6 +38,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useSheets } from '@/hooks/use-sheets';
+import { useTeamTags } from '@/hooks/use-team-tags';
 import type { SheetListItem } from '@/hooks/use-sheets';
 import type { SheetColumn, SheetColumnType } from '@/lib/sheets/columns';
 import { formatCompactShares, formatCompactUsd } from '@/lib/sheets/format';
@@ -832,7 +833,7 @@ export default function SheetsTab() {
   const [shareOpen, setShareOpen] = useState(false);
   const [reportDialog, setReportDialog] = useState<{ reportId: string } | null>(null);
   const [chartDialog, setChartDialog] = useState<{ ticker: string; date: string; rowId: string } | null>(null);
-  const [tagOptions, setTagOptions] = useState<string[]>([]);
+  const { teamTags } = useTeamTags();
   const [rResults, setRResults] = useState<Record<string, number | null>>({});
   // Per-user, per-browser column widths. RDG runs in "controlled width" mode:
   // we own this Map, feed it in via `columnWidths`, and update it on resize.
@@ -871,21 +872,6 @@ export default function SheetsTab() {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-
-  // Feed the user's global trade tags into the locked "Tag" select column so
-  // sheet tags stay consistent with the tags used on trades.
-  useEffect(() => {
-    let cancelled = false;
-    void fetch('/api/tags')
-      .then((res) => (res.ok ? res.json() : { tags: [] }))
-      .then((data: { tags?: string[] }) => {
-        if (!cancelled) setTagOptions(data.tags ?? []);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const loadRResults = useCallback(() => {
     if (!sheetId) {
@@ -1029,7 +1015,7 @@ export default function SheetsTab() {
         : [SelectColumn]
       : [];
     for (const column of activeSheet.columns) {
-      const resolved = column.key === 'tag' ? { ...column, options: tagOptions } : column;
+      const resolved = column.key === 'tag' ? { ...column, options: teamTags } : column;
       columns.push(
         buildColumn(
           resolved,
@@ -1045,7 +1031,7 @@ export default function SheetsTab() {
       );
     }
     return columns;
-  }, [activeSheet, canEditRows, canManage, dragEnabled, filterMode, filters, rResults, rows, sheets, tagOptions, today]);
+  }, [activeSheet, canEditRows, canManage, dragEnabled, filterMode, filters, rResults, rows, sheets, teamTags, today]);
 
   const handleRowsChange = (nextRows: GridRow[], data: RowsChangeData<GridRow>) => {
     if (!activeSheet) return;
