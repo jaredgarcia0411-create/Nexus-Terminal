@@ -8,7 +8,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Archive, ArrowDownWideNarrow, ArrowUpWideNarrow, ChevronDown, Columns3, FileSpreadsheet, FileText, Filter, GripVertical, History, LineChart, ListPlus, Pencil, Plus, RefreshCw, Rows3, Trash2, Upload, Users, X } from 'lucide-react';
+import { Archive, ArrowDownWideNarrow, ArrowUpWideNarrow, ChevronDown, Columns3, FileSpreadsheet, FileText, Filter, GripVertical, History, LineChart, ListPlus, Pencil, Plus, RefreshCw, Rows3, Tags, Trash2, Upload, Users, X } from 'lucide-react';
 import {
   DataGrid,
   Row as GridRowRenderer,
@@ -25,6 +25,7 @@ import AddColumnDialog from '@/components/trading/AddColumnDialog';
 import BacktestChartWorkspace from '@/components/trading/BacktestChartWorkspace';
 import EditColumnDialog from '@/components/trading/EditColumnDialog';
 import ImportSheetDialog from '@/components/trading/ImportSheetDialog';
+import ManageTeamTagsDialog from '@/components/trading/ManageTeamTagsDialog';
 import ShareSheetDialog from '@/components/trading/ShareSheetDialog';
 import SheetFormDialog from '@/components/trading/SheetFormDialog';
 import WatchlistReportInline from '@/components/trading/WatchlistReportInline';
@@ -831,9 +832,10 @@ export default function SheetsTab() {
   const [columnOpen, setColumnOpen] = useState(false);
   const [editColumn, setEditColumn] = useState<SheetColumn | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [teamTagsOpen, setTeamTagsOpen] = useState(false);
   const [reportDialog, setReportDialog] = useState<{ reportId: string } | null>(null);
   const [chartDialog, setChartDialog] = useState<{ ticker: string; date: string; rowId: string } | null>(null);
-  const { teamTags } = useTeamTags();
+  const { teamTags, createTag: createTeamTag, deleteTag: deleteTeamTag } = useTeamTags();
   const [rResults, setRResults] = useState<Record<string, number | null>>({});
   // Per-user, per-browser column widths. RDG runs in "controlled width" mode:
   // we own this Map, feed it in via `columnWidths`, and update it on resize.
@@ -1365,6 +1367,18 @@ export default function SheetsTab() {
                 <Button
                   type="button"
                   size="icon-sm"
+                  variant="secondary"
+                  onClick={() => setTeamTagsOpen(true)}
+                  title="Manage team tags"
+                  aria-label="Manage team tags"
+                  className="bg-accent hover:bg-accent/80"
+                >
+                  <Tags className="h-4 w-4" />
+                </Button>
+
+                <Button
+                  type="button"
+                  size="icon-sm"
                   onClick={() => void handleFillMassive()}
                   disabled={!canEditRows || !hasMassiveFillColumns || fillingMassive}
                   title="Fill data"
@@ -1527,6 +1541,13 @@ export default function SheetsTab() {
         }}
       />
       <AddColumnDialog open={columnOpen} onOpenChange={setColumnOpen} onSubmit={handleAddColumn} />
+      <ManageTeamTagsDialog
+        open={teamTagsOpen}
+        onOpenChange={setTeamTagsOpen}
+        teamTags={teamTags}
+        onCreateTag={createTeamTag}
+        onDeleteTag={deleteTeamTag}
+      />
       <EditColumnDialog
         open={!!editColumn}
         column={editColumn}
