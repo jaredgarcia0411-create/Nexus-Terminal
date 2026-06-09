@@ -1,6 +1,6 @@
 # Nexus Terminal - HANDOFF.md
 
-> Updated: 2026-06-08
+> Updated: 2026-06-09
 > Purpose: active execution context for Codex. Older implementation detail lives in git history, `specs/`, and durable docs such as `docs/repo-cleanup.md`.
 
 Historical completed sections (Sprints 1-16, Tier 1 Cleanup, Chart Drawings, Multi-Day Charts, CSV/Cover-Close flows, Sheets Sprints 1-7 + Massive Wave 1-2, backtest user-id fixes, Filing headline parser, Calendar Year Overview, Workflow Maintenance) were removed to keep this file focused. Use git history and `docs/repo-cleanup.md` for archived implementation detail.
@@ -21,6 +21,7 @@ Deferred Sheets roadmap (not started):
 
 ## Recent Completed Context
 
+- **Sheets Frontend Wave (commits `6d770e1` / `a6abece` / `0f43f23` / `a9a0f65` / `02ffa48`):** removed Watch as a locked default column, added float shorthand display, date sort/manual-drag mode, multi-select columns, and an edit-column dialog.
 - **Sprint 14 - Daily Review Tag Centralization:** trade tags are now the shared Watchlist/Daily Trades tagging model; added tag rename/merge management.
 - **Sprint 15 - Cleanup Test Coverage + Backtesting Lazy Loading:** added focused tests and lazy-loaded `BacktestingTab` at the Charts-tab boundary.
 - **Repo cleanup (`docs/repo-cleanup.md`):** completed; repo in good standing as of 2026-06-01.
