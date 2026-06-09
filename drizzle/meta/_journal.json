@@ -344,6 +344,13 @@
       "when": 1781016865904,
       "tag": "0048_quick_rogue",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1781017576993,
+      "tag": "0049_confused_risque",
+      "breakpoints": true
     }
   ]
 }

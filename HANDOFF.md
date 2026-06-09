@@ -21,6 +21,7 @@ Deferred Sheets roadmap (not started):
 
 ## Recent Completed Context
 
+- **Team-Wide Tags:** added shared `team_tags` + `/api/team-tags`, moved Sheets/review watchlist tag options to `useTeamTags`, added Manage Team Tags, and dropped the unused `watchlist_theses` route/table.
 - **Sheets Frontend Wave (commits `6d770e1` / `a6abece` / `0f43f23` / `a9a0f65` / `02ffa48`):** removed Watch as a locked default column, added float shorthand display, date sort/manual-drag mode, multi-select columns, and an edit-column dialog.
 - **Sprint 14 - Daily Review Tag Centralization:** trade tags are now the shared Watchlist/Daily Trades tagging model; added tag rename/merge management.
 - **Sprint 15 - Cleanup Test Coverage + Backtesting Lazy Loading:** added focused tests and lazy-loaded `BacktestingTab` at the Charts-tab boundary.

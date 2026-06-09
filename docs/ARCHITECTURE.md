@@ -45,7 +45,7 @@ app/
     ├── backtest/, backtests/  ← backtesting endpoints
     ├── scanner/, market-data/ ← real-time scanning + price data
     ├── dashboard/, career-pnl/, daily-reviews/, weekly-reviews/  ← dashboard surfaces
-    ├── sample-sets/, tags/, watchlist-theses/, system-tickers/, system-sheet/  ← journal data
+    ├── sample-sets/, tags/, team-tags/, system-tickers/, system-sheet/  ← journal data
     ├── report-templates/, research-report/, tradingview/  ← reporting + chart integration
     └── health/       ← liveness checks
 ```
