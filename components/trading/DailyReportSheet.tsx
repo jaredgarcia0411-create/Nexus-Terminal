@@ -11,6 +11,7 @@ import WeeklyTradesPanel from '@/components/trading/WeeklyTradesPanel';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { prefetchTradeExecutions } from '@/hooks/use-trade-executions';
+import { useTeamTags } from '@/hooks/use-team-tags';
 import { aggregateDay } from '@/lib/journal-aggregates';
 import { DAILY_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
 import type { Trade } from '@/lib/types';
@@ -33,7 +34,6 @@ interface DailyReportSheetProps {
   onRemoveTag?: (tradeId: string, tagName: string) => void;
   onDeleteGlobalTag?: (tagName: string) => void;
   onApplyTradeTags?: (assignments: Array<{ tradeId: string; tags: string[] }>) => Promise<void>;
-  onCreateTag?: (tagName: string) => void;
   // When true, fire window.print() once the review data has loaded. Used by
   // Archive's PDF export — the print stylesheet (globals.css) hides
   // everything except this sheet's content.
@@ -72,9 +72,9 @@ export default function DailyReportSheet({
   onRemoveTag,
   onDeleteGlobalTag,
   onApplyTradeTags,
-  onCreateTag,
   printOnReady = false,
 }: DailyReportSheetProps) {
+  const { teamTags, createTag: createTeamTag, deleteTag: deleteTeamTag } = useTeamTags();
   const [template, setTemplate] = useState<TemplateRow | null>(null);
   const [existing, setExisting] = useState<ReviewRow | null>(null);
   const [fields, setFields] = useState<TemplateField[]>([]);
@@ -318,9 +318,9 @@ export default function DailyReportSheet({
               onChange={effectiveReadOnly ? undefined : setWatchlist}
               readOnly={effectiveReadOnly}
               date={date ?? undefined}
-              globalTags={globalTags}
-              onDeleteGlobalTag={onDeleteGlobalTag}
-              onCreateTag={onCreateTag}
+              globalTags={teamTags}
+              onDeleteGlobalTag={deleteTeamTag}
+              onCreateTag={createTeamTag}
             />
 
             <WeeklyTradesPanel

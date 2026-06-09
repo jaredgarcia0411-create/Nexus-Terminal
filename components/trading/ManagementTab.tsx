@@ -121,7 +121,6 @@ export default function ManagementTab(props: ManagementTabProps) {
           onAddTag={props.handleAddTag}
           onRemoveTag={props.handleRemoveTag}
           onApplyTradeTags={props.handleApplyTradeTags}
-          onCreateTag={props.handleCreateTag}
           onDeleteGlobalTag={props.handleDeleteGlobalTag}
           onTradeClick={props.onTradeClick}
         />

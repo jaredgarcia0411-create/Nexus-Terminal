@@ -36,7 +36,7 @@ export function useTeamTags() {
     });
     if (!res.ok) {
       toast.error('Failed to add team tag');
-      throw new Error(`team tag create failed: ${res.status}`);
+      return;
     }
 
     const data = (await res.json()) as { tag?: string };
@@ -58,7 +58,7 @@ export function useTeamTags() {
     });
     if (!res.ok) {
       toast.error('Failed to delete team tag');
-      throw new Error(`team tag delete failed: ${res.status}`);
+      return;
     }
 
     setTeamTags((current) => current.filter((tag) => tag !== trimmed));

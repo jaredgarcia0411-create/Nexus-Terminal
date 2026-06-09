@@ -11,6 +11,7 @@ import WeeklyTradesPanel from '@/components/trading/WeeklyTradesPanel';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { prefetchTradeExecutions } from '@/hooks/use-trade-executions';
+import { useTeamTags } from '@/hooks/use-team-tags';
 import { aggregateWeek } from '@/lib/journal-aggregates';
 import { WEEKLY_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
 import { formatCurrency } from '@/lib/ui-trade-utils';
@@ -124,6 +125,7 @@ export default function WeeklyReviewSheet({
   readOnly = false,
   printOnReady = false,
 }: WeeklyReviewSheetProps) {
+  const { teamTags, createTag: createTeamTag, deleteTag: deleteTeamTag } = useTeamTags();
   const [template, setTemplate] = useState<TemplateRow | null>(null);
   const [existing, setExisting] = useState<ReviewRow | null>(null);
   const [fields, setFields] = useState<TemplateField[]>([]);
@@ -367,7 +369,9 @@ export default function WeeklyReviewSheet({
               title="Weekly Watchlist"
               value={aggregatedWatchlist}
               readOnly
-              globalTags={[]}
+              globalTags={teamTags}
+              onDeleteGlobalTag={deleteTeamTag}
+              onCreateTag={createTeamTag}
               emptyState="No watchlist entries logged in the daily reviews this week."
             />
 
