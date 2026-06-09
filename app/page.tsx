@@ -267,7 +267,7 @@ export default function NexusTerminal() {
 
         <div
           className={
-            activeTab === 'charts' || activeTab === 'research'
+            activeTab === 'charts' || activeTab === 'research' || activeTab === 'sheets'
               ? 'px-3 py-4'
               : activeTab === 'trades' || activeTab === 'journal'
                 ? 'mx-auto max-w-7xl px-8 py-4'

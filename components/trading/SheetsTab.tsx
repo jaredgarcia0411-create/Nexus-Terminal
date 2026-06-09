@@ -1164,7 +1164,7 @@ export default function SheetsTab() {
       onSelectedRowsChange={setSelectedRows}
       onColumnsReorder={canManage && !filterMode ? handleColumnsReorder : undefined}
       renderers={dragEnabled ? { renderRow } : undefined}
-      style={{ blockSize: 480 }}
+      style={{ blockSize: '100%' }}
     />
   );
 
@@ -1174,9 +1174,9 @@ export default function SheetsTab() {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
-      className="-mx-5 flex flex-col gap-3"
+      className="flex h-[calc(100dvh-6.5rem)] min-h-[620px] flex-col gap-3 overflow-hidden"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-1">
         <div className="flex min-w-0 items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1290,7 +1290,7 @@ export default function SheetsTab() {
         </div>
       </div>
 
-      <section className="min-w-0 flex-1">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         {!activeSheet ? (
           <div className="flex h-72 flex-col items-center justify-center text-muted-foreground">
             <FileSpreadsheet className="mb-2 h-6 w-6" />
@@ -1299,8 +1299,8 @@ export default function SheetsTab() {
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-3 border border-border bg-card px-2 py-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 border border-border bg-card px-2 py-4">
+            <div className="flex shrink-0 flex-wrap items-start justify-between gap-2">
               <div className="flex items-baseline gap-2">
                 <h2 className="text-lg font-semibold text-foreground">{activeSheet.name}</h2>
                 <span className="text-lg font-semibold text-foreground">
@@ -1489,18 +1489,20 @@ export default function SheetsTab() {
               </div>
             </div>
 
-            {dragEnabled ? (
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                modifiers={[restrictToVerticalAxis]}
-                onDragEnd={handleDragEnd}
-              >
-                <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
-                  {grid}
-                </SortableContext>
-              </DndContext>
-            ) : grid}
+            <div className="min-h-0 flex-1">
+              {dragEnabled ? (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  modifiers={[restrictToVerticalAxis]}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
+                    {grid}
+                  </SortableContext>
+                </DndContext>
+              ) : grid}
+            </div>
 
             {gridRows.length === 0 ? (
               <p className="text-center text-sm text-muted-foreground">
