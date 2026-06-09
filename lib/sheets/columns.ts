@@ -29,11 +29,10 @@ export const DEFAULT_SHEET_COLUMNS: SheetColumn[] = [
   { key: 'tag', name: 'Tag', type: 'select', options: [], locked: true },
   { key: 'research_report', name: 'Report', type: 'report', locked: true },
   { key: 'chart', name: 'Chart', type: 'chart', locked: true },
-  { key: 'add_to_watchlist', name: 'Watch', type: 'watchlist', locked: true },
   { key: 'r', name: 'R', type: 'rmultiple', locked: true },
 ];
 
-const RETIRED_LOCKED_KEYS = new Set(['add_to_sample']);
+const RETIRED_LOCKED_KEYS = new Set(['add_to_sample', 'add_to_watchlist']);
 
 // Ensures every locked default column is present (older sheets snapshotted their
 // columns before new defaults existed). Keeps existing order, appends missing

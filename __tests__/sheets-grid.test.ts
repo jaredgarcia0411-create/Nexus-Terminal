@@ -68,10 +68,11 @@ describe('sheets grid helpers', () => {
     expect(ensureLockedColumns(stale)).toEqual(DEFAULT_SHEET_COLUMNS);
   });
 
-  it('strips retired locked Sample columns and appends the R column', () => {
+  it('strips retired locked Sample and Watch columns and appends the R column', () => {
     const legacyColumns = [
       ...DEFAULT_SHEET_COLUMNS.filter((column) => column.key !== 'r'),
       { key: 'add_to_sample', name: 'Sample', type: 'action', locked: true },
+      { key: 'add_to_watchlist', name: 'Watch', type: 'watchlist', locked: true },
     ] satisfies SheetColumn[];
 
     const normalized = ensureLockedColumns(legacyColumns);

@@ -287,7 +287,7 @@ function ReadOnlyCompactNumberCell({
 
   return (
     <div
-      className="flex h-full items-center justify-end pr-2 font-mono text-sm tabular-nums text-foreground"
+      className="flex h-full items-center justify-end pr-2 text-sm text-foreground"
       title={String(numeric)}
     >
       {formatter(numeric)}
