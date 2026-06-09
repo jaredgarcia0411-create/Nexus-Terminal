@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getTableConfig } from 'drizzle-orm/pg-core';
-import { tradeTags, trades } from '@/lib/db/schema';
+import { teamTags, tradeTags, trades } from '@/lib/db/schema';
 
 function columnNames(columns: Array<{ name: string }>) {
   return columns.map((column) => column.name);
@@ -24,5 +24,13 @@ describe('tenant-safe trade schema', () => {
     expect(columnNames(tradeForeignKey!.reference().columns as Array<{ name: string }>)).toEqual(['user_id', 'trade_id']);
     expect(columnNames(tradeForeignKey!.reference().foreignColumns as Array<{ name: string }>)).toEqual(['user_id', 'id']);
     expect(tradeForeignKey!.onDelete).toBe('cascade');
+  });
+
+  it('keeps team_tags intentionally shared across users', () => {
+    const config = getTableConfig(teamTags);
+
+    expect(columnNames(config.columns as Array<{ name: string }>)).not.toContain('user_id');
+    expect(config.uniqueConstraints).toHaveLength(1);
+    expect(columnNames(config.uniqueConstraints[0].columns as Array<{ name: string }>)).toEqual(['name']);
   });
 });

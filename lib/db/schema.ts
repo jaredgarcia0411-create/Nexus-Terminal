@@ -93,6 +93,14 @@ export const tags = pgTable('tags', {
   index('idx_tags_user_id').on(table.userId),
 ]);
 
+// Shared, non-user-scoped vocabulary for sheet and review watchlist tags.
+export const teamTags = pgTable('team_tags', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+}, (table) => [
+  unique().on(table.name),
+]);
+
 // Reusable thesis options for the daily-review watchlist. Same shape as `tags` —
 // each user has their own list of named theses they can pick from in a dropdown.
 export const watchlistTheses = pgTable('watchlist_theses', {
