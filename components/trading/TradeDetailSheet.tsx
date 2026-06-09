@@ -191,14 +191,24 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
 
             <div className="flex-1 space-y-4 overflow-y-auto px-4 pb-6">
               <section className="space-y-3 rounded-xl border border-border bg-accent/50 p-4">
-                <h3 className="text-base font-semibold uppercase tracking-wider text-foreground">Overview</h3>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {overviewItems.map(([label, value]) => (
-                    <div key={label}>
-                      <p className="text-[12px] uppercase tracking-wider text-muted-foreground">{label}</p>
-                      <p className="mt-1 text-sm font-medium">{value}</p>
-                    </div>
-                  ))}
+                <h3 className="text-base font-semibold uppercase tracking-wider text-foreground">Notes</h3>
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Textarea
+                      id="trade-notes"
+                      value={notes}
+                      onChange={(event) => setNotes(event.target.value)}
+                      rows={10}
+                      className="bg-accent border-border"
+                      placeholder="Add notes about setup quality, execution, emotions, and lessons learned..."
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <Button onClick={handleSave} className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20">
+                      Save Notes
+                    </Button>
+                  </div>
                 </div>
               </section>
 
@@ -325,24 +335,14 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
               </section>
 
               <section className="space-y-3 rounded-xl border border-border bg-accent/50 p-4">
-                <h3 className="text-base font-semibold uppercase tracking-wider text-foreground">Notes</h3>
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <Textarea
-                      id="trade-notes"
-                      value={notes}
-                      onChange={(event) => setNotes(event.target.value)}
-                      rows={10}
-                      className="bg-accent border-border"
-                      placeholder="Add notes about setup quality, execution, emotions, and lessons learned..."
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-2">
-                    <Button onClick={handleSave} className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20">
-                      Save Notes
-                    </Button>
-                  </div>
+                <h3 className="text-base font-semibold uppercase tracking-wider text-foreground">Overview</h3>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {overviewItems.map(([label, value]) => (
+                    <div key={label}>
+                      <p className="text-[12px] uppercase tracking-wider text-muted-foreground">{label}</p>
+                      <p className="mt-1 text-sm font-medium">{value}</p>
+                    </div>
+                  ))}
                 </div>
               </section>
             </div>
