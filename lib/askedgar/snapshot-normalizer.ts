@@ -230,6 +230,7 @@ export function normalizeAskEdgarResponse(
     summary: decodeHtmlEntities(getStringField(row, ['content', 'summary']) ?? ''),
     filedAt: getStringField(row, ['date', 'filedAt', 'filed_at']),
     formType: 'News',
+    url: getStringField(row, ['link', 'url']),
     isNews: true,
   } satisfies ResearchSnapshotNewsItem));
 

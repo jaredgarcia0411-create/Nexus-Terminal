@@ -100,6 +100,45 @@ export function formatDate(value: string | null | undefined): string {
   return parsed.toLocaleDateString();
 }
 
+// Formats a past ISO timestamp as a coarse "X units ago" label
+// ("18 hours ago", "6 days ago", "2 months ago"). Returns '--' when
+// the value can't be parsed. `numeric: 'always'` keeps it numeric
+// (never "yesterday").
+export function formatRelativeTime(value: string | null | undefined): string {
+  if (!value) return '--';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '--';
+
+  const diffMs = parsed.getTime() - Date.now();
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ['year', 1000 * 60 * 60 * 24 * 365],
+    ['month', 1000 * 60 * 60 * 24 * 30],
+    ['day', 1000 * 60 * 60 * 24],
+    ['hour', 1000 * 60 * 60],
+    ['minute', 1000 * 60],
+  ];
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'always' });
+  for (const [unit, ms] of units) {
+    if (Math.abs(diffMs) >= ms) return rtf.format(Math.round(diffMs / ms), unit);
+  }
+  return rtf.format(0, 'minute');
+}
+
+// Formats an ISO timestamp like "May 26, 2026, 4:05 PM" for the
+// article reader header. Returns '--' when unparseable.
+export function formatDateTimeLong(value: string | null | undefined): string {
+  if (!value) return '--';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '--';
+  return parsed.toLocaleString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 // Maps a Tailwind color class string to the matching solid dot background class.
 // Used to render colored indicator dots next to risk badges.
 export function riskDotClass(colorClass: string): string {

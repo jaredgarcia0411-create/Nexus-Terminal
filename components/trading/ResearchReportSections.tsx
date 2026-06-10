@@ -30,7 +30,7 @@ export default function ResearchReportSections({ ticker, data, activeTab, onSele
           <ResearchSection ticker={ticker} />
         ) : null}
         {activeTab === 'news' ? (
-          <NewsSection news={data.news} />
+          <NewsSection news={data.news} ticker={ticker} />
         ) : null}
         {activeTab === 'filings' ? (
           <FilingsSection filings={data.filings} />

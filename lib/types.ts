@@ -201,6 +201,7 @@ export interface ResearchSnapshotNewsItem {
   summary: string;
   filedAt: string | null;
   formType: string | null;
+  url: string | null;
   isNews: boolean;
 }
 

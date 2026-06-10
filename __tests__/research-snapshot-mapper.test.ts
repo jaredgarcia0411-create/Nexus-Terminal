@@ -212,6 +212,7 @@ describe('normalizeAskEdgarResponse', () => {
         summary: 'Topline data expected next quarter.',
         filedAt: '2026-04-25T13:00:00Z',
         formType: 'News',
+        url: null,
         isNews: true,
       },
       {
@@ -219,6 +220,7 @@ describe('normalizeAskEdgarResponse', () => {
         summary: 'Untitled article body.',
         filedAt: '2026-04-24T13:00:00Z',
         formType: 'News',
+        url: null,
         isNews: true,
       },
     ]);
