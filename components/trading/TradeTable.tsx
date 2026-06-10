@@ -162,7 +162,13 @@ export default function TradeTable({
                   />
                 </td>
 
-                <td className="px-4 py-3 max-w-[220px] text-xs text-muted-foreground line-clamp-2">{trade.notes?.trim() || '-'}</td>
+                <td className="px-4 py-3 max-w-[220px] text-xs">
+                  {trade.notes?.trim() ? (
+                    <span className="text-primary transition-colors hover:text-primary/80">Show Notes</span>
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-right font-mono">{formatCurrency(trade.avgEntryPrice)}</td>
                 <td className="px-4 py-3 text-right font-mono">{formatCurrency(trade.avgExitPrice)}</td>
                 <td className="px-4 py-3 text-right font-mono text-muted-foreground">{trade.totalQuantity}</td>

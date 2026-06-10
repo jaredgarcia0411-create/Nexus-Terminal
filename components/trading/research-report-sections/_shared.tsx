@@ -72,7 +72,7 @@ export function FilingsRow({ filing }: { filing: ResearchSnapshotFiling }) {
         {filing.formType}
       </td>
       <td className="px-3 py-2 text-center align-top">
-        <div className={clamp ? 'line-clamp-2' : ''}>{titleNode}</div>
+        <div className={`capitalize ${clamp ? 'line-clamp-2' : ''}`}>{titleNode}</div>
         {isLong ? (
           <button
             type="button"

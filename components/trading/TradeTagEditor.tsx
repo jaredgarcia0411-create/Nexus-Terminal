@@ -17,7 +17,7 @@ export const TAG_TEXT_CLASS = 'text-xs text-foreground';
 
 // Tags lists can get tall (the Sheet pushes many onto a trade). Collapse past
 // this count behind a "Show all" toggle so a row stays compact by default.
-const TAG_COLLAPSE_THRESHOLD = 3;
+const TAG_COLLAPSE_THRESHOLD = 2;
 
 interface TradeTagEditorProps {
   tags: string[];
@@ -58,7 +58,7 @@ export default function TradeTagEditor({
       onClick={() => setExpanded((flag) => !flag)}
       className="text-xs text-primary transition-colors hover:text-primary/80"
     >
-      {expanded ? 'Show less' : `Show all (${tags.length})`}
+      {expanded ? 'Show less' : 'Show All'}
     </button>
   ) : null;
 
