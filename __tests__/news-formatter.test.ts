@@ -12,19 +12,18 @@ function expectCleanHeadlines(headlines: string[]) {
 }
 
 describe('news formatter', () => {
-  it('uses the AskEdgar title for news items when present', () => {
+  it('maps EODHD news articles into the feed contract', () => {
     const feed = buildNewsFeed({
       news: {
         results: [{
-          form_type: 'news',
           title: 'Company launches new platform',
-          body: 'Detailed article body that should stay in the summary field.',
-          filed_at: '2026-04-15',
-          document_url: 'https://example.com/news',
+          content: 'Detailed article body that should stay in the summary field.',
+          date: '2026-04-15',
+          link: 'https://example.com/news',
           tags: ['Product Launches'],
+          sentiment: { pos: 0.8, neg: 0.1, neu: 0.1 },
         }],
       },
-      'filing-titles': { results: [] },
     }, { nowMs: NOW_MS });
 
     expect(feed).toEqual([{
@@ -36,68 +35,54 @@ describe('news formatter', () => {
       tags: ['Product Launches'],
       isNews: true,
       isFiling: false,
+      sentiment: 'positive',
     }]);
     expectCleanHeadlines(feed.map((item) => item.headline));
   });
 
-  it('uses the inline headline on filing rows from the news endpoint', () => {
-    // The /v1/news endpoint now includes a `headline` field on filing rows
-    // (JMT 2026-05-10), so we no longer need a separate filing-titles call.
+  it('falls back to a generic headline for EODHD rows without a title', () => {
     const news = [{
-      accession_number: '000123',
-      form_type: '8-K',
-      headline: 'Announces $50M convertible financing facility',
-      summary: 'Convertible financing summary',
-      filed_at: '2026-04-15',
-      document_url: 'https://sec.test/8k',
+      content: 'Article body without a usable headline.',
+      date: '2026-04-15',
+      link: 'https://example.com/missing-title',
     }];
 
     const feed = buildNewsFeedFromArrays(news, { nowMs: NOW_MS });
 
     expect(feed).toHaveLength(1);
     expect(feed[0]).toMatchObject({
-      headline: 'Announces $50M convertible financing facility',
-      summary: 'Convertible financing summary',
-      formType: '8-K',
-      isNews: false,
-      isFiling: true,
+      headline: 'News item',
+      summary: 'Article body without a usable headline.',
+      formType: 'news',
+      isNews: true,
+      isFiling: false,
     });
     expectCleanHeadlines(feed.map((item) => item.headline));
   });
 
-  it('falls back to the filing summary when no filing-title match exists', () => {
+  it('reads neutral and negative EODHD sentiment labels', () => {
     const feed = buildNewsFeed({
       news: {
-        results: [{
-          accession_number: '000124',
-          form_type: '8-K',
-          summary: 'Company pivots to GPU-as-a-Service',
-          filed_at: '2026-04-14',
-        }],
+        results: [
+          {
+            title: 'Neutral item',
+            content: 'Mostly balanced article.',
+            date: '2026-04-15',
+            link: 'https://example.com/neutral',
+            sentiment: { pos: 0.2, neg: 0.2, neu: 0.6 },
+          },
+          {
+            title: 'Negative item',
+            content: 'Risk-heavy article.',
+            date: '2026-04-14',
+            link: 'https://example.com/negative',
+            sentiment: { pos: 0.1, neg: 0.7, neu: 0.2 },
+          },
+        ],
       },
-      'filing-titles': { results: [] },
     }, { nowMs: NOW_MS });
 
-    expect(feed).toHaveLength(1);
-    expect(feed[0]?.headline).toBe('Company pivots to GPU-as-a-Service');
-    expectCleanHeadlines(feed.map((item) => item.headline));
-  });
-
-  it('falls back to the form-type label when a filing has no better headline source', () => {
-    const feed = buildNewsFeed({
-      news: {
-        results: [{
-          accession_number: '000125',
-          form_type: '8-K',
-          filed_at: '2026-04-14',
-        }],
-      },
-      'filing-titles': { results: [] },
-    }, { nowMs: NOW_MS });
-
-    expect(feed).toHaveLength(1);
-    expect(feed[0]?.headline).toBe('8-K filing');
-    expectCleanHeadlines(feed.map((item) => item.headline));
+    expect(feed.map((item) => item.sentiment)).toEqual(['neutral', 'negative']);
   });
 
   it('filters out items older than maxAgeDays', () => {
@@ -105,51 +90,47 @@ describe('news formatter', () => {
       news: {
         results: [
           {
-            accession_number: 'old-1',
-            form_type: '8-K',
-            summary: 'Older filing that should be filtered out',
-            filed_at: '2026-03-01',
+            title: 'Older article',
+            content: 'Older article that should be filtered out',
+            date: '2026-03-01',
+            link: 'https://example.com/old',
           },
           {
-            accession_number: 'new-1',
-            form_type: '8-K',
-            summary: 'Fresh filing that should remain',
-            filed_at: '2026-04-14',
+            title: 'Fresh article',
+            content: 'Fresh article that should remain',
+            date: '2026-04-14',
+            link: 'https://example.com/new',
           },
         ],
       },
-      'filing-titles': { results: [] },
     }, {
       nowMs: NOW_MS,
       maxAgeDays: 30,
     });
 
     expect(feed).toHaveLength(1);
-    expect(feed[0]?.headline).toBe('Fresh filing that should remain');
+    expect(feed[0]?.headline).toBe('Fresh article');
     expectCleanHeadlines(feed.map((item) => item.headline));
   });
 
-  it('deduplicates filings by accession number', () => {
+  it('deduplicates EODHD articles by URL', () => {
     const feed = buildNewsFeed({
       news: {
         results: [
           {
-            accession_number: 'dup-1',
-            form_type: '8-K',
-            summary: 'First copy',
-            filed_at: '2026-04-15',
-            document_url: 'https://sec.test/dup-1',
+            title: 'First copy',
+            content: 'First copy',
+            date: '2026-04-15',
+            link: 'https://example.com/dup-1',
           },
           {
-            accession_number: 'dup-1',
-            form_type: '8-K',
-            summary: 'Second copy',
-            filed_at: '2026-04-15',
-            document_url: 'https://sec.test/dup-1-b',
+            title: 'Second copy',
+            content: 'Second copy',
+            date: '2026-04-15',
+            link: 'https://example.com/dup-1',
           },
         ],
       },
-      'filing-titles': { results: [] },
     }, { nowMs: NOW_MS });
 
     expect(feed).toHaveLength(1);

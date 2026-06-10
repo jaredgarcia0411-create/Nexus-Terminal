@@ -74,19 +74,12 @@ describe('normalizeAskEdgarResponse', () => {
       offerings: emptyResponse,
       news: {
         status: 'success',
-        count: 2,
+        count: 1,
         results: [
           {
             title: 'Biotech announces trial milestone',
-            body: 'Topline data expected next quarter.',
-            filed_at: '2026-04-25',
-            form_type: 'news',
-          },
-          {
-            accession_number: 'ask-edgar-filing',
-            form_type: '8-K',
-            filed_at: '2026-04-24',
-            headline: 'AskEdgar filing row should be fallback only',
+            content: 'Topline data expected next quarter.',
+            date: '2026-04-25T13:00:00Z',
           },
         ],
       },
@@ -143,6 +136,9 @@ describe('normalizeAskEdgarResponse', () => {
     expect(snapshot.news).toEqual([
       expect.objectContaining({
         title: 'Biotech announces trial milestone',
+        summary: 'Topline data expected next quarter.',
+        filedAt: '2026-04-25T13:00:00Z',
+        formType: 'News',
         isNews: true,
       }),
     ]);
@@ -162,10 +158,9 @@ describe('normalizeAskEdgarResponse', () => {
         filedAt: '2024-12-15',
       }),
     ]);
-    expect(snapshot.filings.some((filing) => filing.accessionNumber === 'ask-edgar-filing')).toBe(false);
   });
 
-  it('keeps only rendered news fallback filing types from news', () => {
+  it('maps EODHD news rows and leaves filings empty without sec-filings data', () => {
     const rawData: Record<string, AskEdgarResponse<unknown>> = {
       screener: emptyResponse,
       'dilution-rating': emptyResponse,
@@ -176,87 +171,20 @@ describe('normalizeAskEdgarResponse', () => {
       offerings: emptyResponse,
       news: {
         status: 'success',
-        count: 8,
+        count: 2,
         results: [
           {
             title: 'Biotech announces trial milestone',
-            body: 'Topline data expected next quarter.',
-            summary: 'Topline data expected next quarter.',
-            filed_at: '2026-04-25',
-            form_type: 'news',
+            content: 'Topline data expected next quarter.',
+            date: '2026-04-25T13:00:00Z',
           },
           {
-            accession_number: '0000000001-26-000001',
-            form_type: 'CORRESP',
-            filed_at: '2026-04-18',
-            headline: 'Staff correspondence',
-            document_url: 'https://www.sec.gov/Archives/edgar/data/1/correspondence.htm',
-          },
-          {
-            accession_number: '0000000001-26-000002',
-            form_type: '10-K',
-            filed_at: '2026-04-24',
-            headline: 'Annual report',
-            document_url: 'https://www.sec.gov/Archives/edgar/data/1/10k.htm',
-          },
-          {
-            accession_number: '0000000001-26-000003',
-            form_type: '8-K',
-            filed_at: '2026-04-26',
-            headline: 'Current report',
-            document_url: 'https://www.sec.gov/Archives/edgar/data/1/8k.htm',
-          },
-          {
-            accession_number: '0000000001-26-000004',
-            form_type: 'S-1',
-            filed_at: '2026-04-23',
-            headline: 'Registration statement',
-            document_url: 'https://www.sec.gov/Archives/edgar/data/1/s1.htm',
-          },
-          {
-            accession_number: '0000000001-26-000008',
-            form_type: '6-K',
-            filed_at: '2026-04-27',
-            headline: 'Foreign issuer report',
-            document_url: 'https://www.sec.gov/Archives/edgar/data/1/6k.htm',
-          },
-          {
-            accession_number: '0000000001-26-000009',
-            form_type: '6-K/A',
-            filed_at: '2026-04-28',
-            headline: 'Foreign issuer report amendment',
-            document_url: 'https://www.sec.gov/Archives/edgar/data/1/6ka.htm',
-          },
-          {
-            accession_number: '0000000001-26-000010',
-            form_type: 'S-1/A',
-            filed_at: '2026-04-29',
-            headline: 'Registration statement amendment',
-            document_url: 'https://www.sec.gov/Archives/edgar/data/1/s1a.htm',
-          },
-          {
-            accession_number: '0000000001-26-000005',
-            form_type: '424B3',
-            filed_at: '2026-04-22',
-            headline: 'Prospectus supplement',
-            document_url: 'https://www.sec.gov/Archives/edgar/data/1/424b3.htm',
-          },
-          {
-            accession_number: '0000000001-26-000006',
-            form_type: 'DEF 14A',
-            filed_at: '2026-04-21',
-            headline: 'Definitive proxy statement',
-            document_url: 'https://www.sec.gov/Archives/edgar/data/1/def14a.htm',
-          },
-          {
-            accession_number: '0000000001-26-000007',
-            form_type: 'SC 13D',
-            filed_at: '2026-04-20',
-            headline: 'Beneficial ownership report',
-            document_url: 'https://www.sec.gov/Archives/edgar/data/1/sc13d.htm',
+            content: 'Untitled article body.',
+            date: '2026-04-24T13:00:00Z',
           },
         ],
       },
+      'sec-filings': emptyResponse,
       'historical-float-pro': {
         status: 'success',
         count: 1,
@@ -279,37 +207,22 @@ describe('normalizeAskEdgarResponse', () => {
     });
 
     expect(snapshot.news).toEqual([
-      expect.objectContaining({
+      {
         title: 'Biotech announces trial milestone',
-        formType: 'news',
+        summary: 'Topline data expected next quarter.',
+        filedAt: '2026-04-25T13:00:00Z',
+        formType: 'News',
         isNews: true,
-      }),
+      },
+      {
+        title: 'News item 2',
+        summary: 'Untitled article body.',
+        filedAt: '2026-04-24T13:00:00Z',
+        formType: 'News',
+        isNews: true,
+      },
     ]);
-
-    expect(snapshot.filings).toHaveLength(5);
-    expect(snapshot.filings.map((filing) => filing.formType)).toEqual([
-      'S-1/A',
-      '6-K/A',
-      '6-K',
-      '8-K',
-      'S-1',
-    ]);
-    expect(snapshot.filings.map((filing) => filing.bucket)).toEqual([
-      'registrations',
-      'news',
-      'news',
-      'news',
-      'registrations',
-    ]);
-    expect(snapshot.filings.find((filing) => filing.formType === '8-K')).toMatchObject({
-      title: 'Current report',
-      filedAt: '2026-04-26',
-      url: 'https://www.sec.gov/Archives/edgar/data/1/8k.htm',
-      accessionNumber: '0000000001-26-000003',
-    });
-    expect(snapshot.filings.some((filing) => filing.formType === '10-K')).toBe(false);
-    expect(snapshot.filings.some((filing) => filing.formType === 'CORRESP')).toBe(false);
-    expect(snapshot.news.some((item) => item.title === 'Current report')).toBe(false);
+    expect(snapshot.filings).toEqual([]);
     expect(snapshot.historicalFloat).toEqual([
       expect.objectContaining({
         date: '2026-04-15',

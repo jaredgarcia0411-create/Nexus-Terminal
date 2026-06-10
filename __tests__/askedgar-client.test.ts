@@ -169,10 +169,12 @@ describe('askedgar client', () => {
       results: [{ date: '2026-01-01', outstanding: 1_000_000 }],
     });
     process.env.ASKEDGAR_API_KEY = 'test-key';
+    process.env.EODHD_API_KEY = 'eodhd-test-key';
   });
 
   afterEach(() => {
     delete process.env.ASKEDGAR_API_KEY;
+    delete process.env.EODHD_API_KEY;
   });
 
   it('returns endpoint payload map from fetchTickerData', async () => {
@@ -195,7 +197,7 @@ describe('askedgar client', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(fetchCallUrls(fetchSpy).map((url) => url.pathname)).toEqual([
       '/v1/gap-stats',
-      '/v1/news',
+      '/api/news',
     ]);
     expect(Object.keys(result.rawData)).toEqual(['gap-stats', 'news']);
     expect(result.dataSources).toHaveLength(2);
@@ -255,14 +257,17 @@ describe('askedgar client', () => {
   });
 
   it('logs per-endpoint usage cost and a fan-out summary', async () => {
-    const costs = [1250, 2750];
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
-      const cost = costs.shift() ?? 0;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.origin === 'https://eodhd.com') {
+        return new Response(JSON.stringify([{ title: 'EODHD headline' }]));
+      }
+
       return new Response(JSON.stringify({
         status: 'success',
         count: 1,
         results: [{}],
-        usage: { cost_microdollars: cost },
+        usage: { cost_microdollars: 1250 },
       }));
     });
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -290,7 +295,7 @@ describe('askedgar client', () => {
         endpoint: 'news',
         status: 'success',
         hasData: true,
-        costMicrodollars: 2750,
+        costMicrodollars: 0,
         error: null,
       }),
       expect.objectContaining({
@@ -299,7 +304,7 @@ describe('askedgar client', () => {
         ticker: 'AAPL',
         requested: 2,
         succeeded: 2,
-        costUsd: 0.004,
+        costUsd: 0.0013,
       }),
     ]);
   });
@@ -363,15 +368,19 @@ describe('askedgar client', () => {
     expect(registrationsUrl.searchParams.has('effective_status')).toBe(false);
   });
 
-  it('filters news requests to rendered form types', async () => {
+  it('routes news requests to EODHD with the exchange-suffixed symbol', async () => {
     const fetchSpy = mockSuccessfulEndpointFetch();
     const client = await import('@/lib/askedgar');
 
     await client.fetchTickerData('AAPL', { endpoints: ['news'] });
 
     const [newsUrl] = fetchCallUrls(fetchSpy);
-    expect(newsUrl.pathname).toBe('/v1/news');
-    expect(newsUrl.searchParams.get('form_type')).toBe('news,8-K,S-1,6-K,6-K/A,S-1/A');
+    expect(newsUrl.origin).toBe('https://eodhd.com');
+    expect(newsUrl.pathname).toBe('/api/news');
+    expect(newsUrl.searchParams.get('s')).toBe('AAPL.US');
+    expect(newsUrl.searchParams.get('limit')).toBe('20');
+    expect(newsUrl.searchParams.get('fmt')).toBe('json');
+    expect(newsUrl.searchParams.has('form_type')).toBe(false);
   });
 
   it('keeps restricted or expired ATM registrations in scanner summary flags', async () => {

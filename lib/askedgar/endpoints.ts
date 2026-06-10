@@ -1,4 +1,5 @@
 import { toNumberValue, toRecord } from '@/lib/askedgar-utils';
+import { fetchEodhdNews } from '@/lib/eodhd';
 import { getHistoricalOutstanding } from '@/lib/sec/companyfacts';
 import { getResearchFilings } from '@/lib/sec/submissions';
 import { getRateLimitedUntil, setRateLimited } from '@/lib/askedgar/runtime-state';
@@ -260,15 +261,6 @@ export async function fetchRegistrations(ticker: string) {
   return requestAskEdgar<unknown>('/v1/registrations', { ticker: validated });
 }
 
-export async function fetchNews(ticker: string, limit = 40) {
-  const validated = validateTickerOrError<unknown>(ticker);
-  if (typeof validated !== 'string') return validated;
-  // SERVER-SIDE FILTER: only news + selected current/registration filing types. Per-KB billing
-  // makes this the highest-leverage payload-shaping change. Drop the LLM
-  // summary rows (`jmt415`, `grok`) and any form type we don't render.
-  return requestAskEdgar<unknown>('/v1/news', { ticker: validated, limit, form_type: 'news,8-K,S-1,6-K,6-K/A,S-1/A' });
-}
-
 export async function fetchNasdaqCompliance(ticker: string) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
@@ -289,7 +281,7 @@ export const ENDPOINT_REGISTRY = {
   'sec-filings': { label: 'SEC Filings', run: (ticker) => getResearchFilings(ticker) },
   'equity-lines': { label: 'Equity Lines', run: (ticker) => fetchEquityLines(ticker) },
   registrations: { label: 'Registrations', run: (ticker) => fetchRegistrations(ticker) },
-  news: { label: 'News', run: (ticker) => fetchNews(ticker, 40) },
+  news: { label: 'News', run: (ticker) => fetchEodhdNews(ticker, 20) },
   'nasdaq-compliance': { label: 'Nasdaq Compliance', run: (ticker) => fetchNasdaqCompliance(ticker) },
   'historical-float-pro': { label: 'Historical Outstanding Shares', run: (ticker) => getHistoricalOutstanding(ticker, { limit: 20 }) },
   'reverse-splits': { label: 'Reverse Splits', run: (ticker) => fetchReverseSplits(ticker) },

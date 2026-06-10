@@ -76,7 +76,7 @@ RULES:
 - Format share counts and large dollar amounts with thousands separators (e.g., 12,345,678 — not 12345678 or 12.3M).
 - When mentioning warrants, include the strike price.
 - Cash position: cover in AT MOST 1 bullet that combines cash on hand, monthly burn, and runway in months. Do not split these across multiple bullets.
-- Most recent news: include exactly 1 bullet with the most recent headline from the news endpoint (form_type = "news") and its filed date. Format as: "Latest news (YYYY-MM-DD): <headline>". Skip if no news items are present.
+- Most recent news: include exactly 1 bullet with the most recent news headline and its published date. Format as: "Latest news (YYYY-MM-DD): <headline>". Skip if no news items are present.
 - Be specific with numbers (prices, dates, percentages, share counts). Use null or omit a bullet if a field is missing — never fabricate.
 - JSON only, no markdown fences.
 

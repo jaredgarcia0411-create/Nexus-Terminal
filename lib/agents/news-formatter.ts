@@ -34,7 +34,6 @@ export const newsFeedItemSchema = z.object({
 
 const DEFAULT_MAX_ITEMS = 10;
 const DEFAULT_MAX_AGE_DAYS = 30;
-const MAX_HEADLINE_BODY_LENGTH = 160;
 const MAX_SUMMARY_LENGTH = 280;
 
 function isValidRecord(value: unknown): value is Record<string, unknown> {
@@ -97,10 +96,6 @@ function toSummary(value: string | null): string {
   return value ? truncate(value, MAX_SUMMARY_LENGTH) : '';
 }
 
-function toBodyHeadline(value: string | null): string | null {
-  return value ? truncate(value, MAX_HEADLINE_BODY_LENGTH) : null;
-}
-
 function toTimestamp(value: string): number | null {
   const parsed = new Date(value);
   const timestamp = parsed.getTime();
@@ -133,36 +128,31 @@ function shouldKeepItem(itemDate: string, options: Required<BuildNewsFeedOptions
   return timestamp >= options.nowMs - (options.maxAgeDays * 86400000);
 }
 
-function buildAskEdgarNewsItem(item: unknown): NewsFeedItem | null {
+function readSentimentLabel(item: Record<string, unknown>): string | null {
+  const sentiment = item.sentiment;
+  if (!isValidRecord(sentiment)) return null;
+  const pos = sentiment.pos, neg = sentiment.neg, neu = sentiment.neu;
+  if (typeof pos !== 'number' || typeof neg !== 'number' || typeof neu !== 'number') return null;
+  if (pos >= neg && pos >= neu) return 'positive';
+  if (neg >= pos && neg >= neu) return 'negative';
+  return 'neutral';
+}
+
+function buildNewsItem(item: unknown): NewsFeedItem | null {
   if (!isValidRecord(item)) {
     return null;
   }
 
-  const formType = getStringField(item, ['form_type', 'formType']) ?? 'unknown';
-  const date = getStringField(item, ['filed_at', 'filedAt', 'date']) ?? '';
-  const body = getStringField(item, ['body']);
-  const filingSummary = getStringField(item, ['summary', 'details']);
-  const url = getStringField(item, ['document_url', 'documentUrl']) ?? '';
-  const tags = getStringArrayField(item, ['tags']);
-  const isNews = formType.toLowerCase() === 'news';
-  const isFiling = !isNews;
-
-  // The /v1/news endpoint now includes `headline` directly on filing rows
-  // (JMT 2026-05-10 update), so we no longer need a separate filing-titles
-  // lookup to enrich filing headlines.
-  const headline = isNews
-    ? getStringField(item, ['title']) ?? toBodyHeadline(body) ?? 'News item'
-    : getStringField(item, ['headline', 'title']) ?? filingSummary ?? `${formType} filing`;
-
   return {
-    headline,
-    summary: isNews ? toSummary(body) : toSummary(filingSummary),
-    date,
-    formType,
-    url,
-    tags,
-    isNews,
-    isFiling,
+    headline: getStringField(item, ['title']) ?? 'News item',
+    summary: toSummary(getStringField(item, ['content'])),
+    date: getStringField(item, ['date']) ?? '',
+    formType: 'news',
+    url: getStringField(item, ['link']) ?? '',
+    tags: getStringArrayField(item, ['tags']),
+    isNews: true,
+    isFiling: false,
+    sentiment: readSentimentLabel(item),
   };
 }
 
@@ -225,7 +215,7 @@ export function buildNewsFeedFromArrays(
   };
   const normalizedItems = newsItems
     .map((source) => {
-      const item = buildAskEdgarNewsItem(source);
+      const item = buildNewsItem(source);
       return item ? { item, source } : null;
     })
     .filter((entry): entry is { item: NewsFeedItem; source: unknown } => entry !== null);

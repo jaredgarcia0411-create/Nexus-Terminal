@@ -221,47 +221,17 @@ export function normalizeAskEdgarResponse(
     ...offeringEquityLines,
   ]);
 
-  // The /v1/news endpoint can still return news articles and filing-like rows,
-  // but the Research Filings tab now prefers first-party SEC submissions
-  // metadata from the SEC-backed `sec-filings` endpoint.
-  // News bucket: ONLY actual news rows. Ask Edgar LLM summary rows like
-  // `grok` and `jmt415` add payload cost and are not rendered as news.
-  const NEWS_FORM_TYPES = new Set(['news']);
-  // Filings fallback bucket from /v1/news: only forms we render from this path.
-  const ALLOWED_NEWS_FILING_TYPES = new Set(['8-k', 's-1', '6-k', '6-k/a', 's-1/a']);
+  // News now comes from EODHD (press articles only, no filings). The Filings
+  // tab is sourced entirely from the first-party `sec-filings` endpoint.
   const newsEndpointRows = getEndpointResponse(rawData, ['news']).results.map((item) => toRecord(item));
 
-  const news: ResearchSnapshotNewsItem[] = newsEndpointRows
-    .filter((row) => NEWS_FORM_TYPES.has((getStringField(row, ['form_type', 'formType']) ?? 'news').toLowerCase()))
-    .map((row, index) => ({
-      title: normalizeHeadline(row, `News item ${index + 1}`),
-      summary: decodeHtmlEntities(getStringField(row, ['body', 'summary', 'details']) ?? ''),
-      filedAt: getStringField(row, ['filedAt', 'filed_at', 'date']),
-      formType: getStringField(row, ['formType', 'form_type', 'form', 'source']) ?? 'News',
-      isNews: true,
-    } satisfies ResearchSnapshotNewsItem));
-
-  const newsFilingRows: ResearchSnapshotFiling[] = newsEndpointRows
-    .filter((row) => ALLOWED_NEWS_FILING_TYPES.has((getStringField(row, ['form_type', 'formType']) ?? '').toLowerCase()))
-    .map((row) => {
-      const formType = getStringField(row, ['form_type', 'formType', 'form']) ?? 'unknown';
-      const title = getStringField(row, ['headline', 'title', 'summary', 'primary_doc_description', 'primaryDocDescription'])
-        ?? `${formType} filing`;
-      return {
-        formType,
-        bucket: bucketForFormType(formType),
-        title,
-        filedAt: getStringField(row, ['filed_at', 'filedAt', 'date']),
-        url: getStringField(row, ['document_url', 'documentUrl', 'url']),
-        accessionNumber: getStringField(row, ['accession_number', 'accessionNumber', 'accn']),
-      } satisfies ResearchSnapshotFiling;
-    })
-    .sort((a, b) => {
-      if (!a.filedAt && !b.filedAt) return 0;
-      if (!a.filedAt) return 1;
-      if (!b.filedAt) return -1;
-      return b.filedAt.localeCompare(a.filedAt);
-    });
+  const news: ResearchSnapshotNewsItem[] = newsEndpointRows.map((row, index) => ({
+    title: decodeHtmlEntities(getStringField(row, ['title']) ?? `News item ${index + 1}`),
+    summary: decodeHtmlEntities(getStringField(row, ['content', 'summary']) ?? ''),
+    filedAt: getStringField(row, ['date', 'filedAt', 'filed_at']),
+    formType: 'News',
+    isNews: true,
+  } satisfies ResearchSnapshotNewsItem));
 
   const secFilingRows: ResearchSnapshotFiling[] = getEndpointResponse(rawData, ['sec-filings', 'filings']).results
     .map((item) => toRecord(item))
@@ -285,7 +255,7 @@ export function normalizeAskEdgarResponse(
       return b.filedAt.localeCompare(a.filedAt);
     });
 
-  const filings = secFilingRows.length > 0 ? secFilingRows : newsFilingRows;
+  const filings = secFilingRows;
 
   const currentPrice = toNumberValue(getField(screener, ['price']));
   const warrants: ResearchSnapshotWarrant[] = dilutionData.results.reduce<ResearchSnapshotWarrant[]>((rows, item, index) => {

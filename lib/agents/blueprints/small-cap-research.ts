@@ -444,7 +444,7 @@ function extractNewsMetrics(newsItems: unknown[]): {
       continue;
     }
 
-    const date = parseLooseDate(getFieldValue(item, ['filed_at', 'filedAt']));
+    const date = parseLooseDate(getFieldValue(item, ['date', 'filed_at', 'filedAt']));
     if (date && (latestDate === null || date > latestDate)) {
       latestDate = date;
     }
