@@ -1,5 +1,6 @@
 import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb } from '@/lib/db';
+import { resolveReportIdsByTickerAndDate } from '@/lib/sheets/report-lookup';
 import { buildSheetMatchesForDates } from '@/lib/sheets/trade-tags';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { epochToNySortKey, parseSortKey } from '@/lib/time-utils';
@@ -48,11 +49,29 @@ export async function GET(request: Request) {
       return {
         ticker,
         date,
-        ...(value.reportId ? { reportId: value.reportId } : {}),
+        reportId: value.reportId,
       };
     });
 
-    return Response.json({ rows });
+    // Fallback: when a sheet row has no report pinned, link a report that was
+    // generated on the row's own date — the same ticker|date match the sheet's
+    // report column uses. Lets Daily Review surface a report for a traded name
+    // (e.g. researched and traded the same day) without anyone pinning it.
+    const tickersNeedingReport = rows.filter((row) => !row.reportId).map((row) => row.ticker);
+    if (tickersNeedingReport.length > 0) {
+      const reportIdsByKey = await resolveReportIdsByTickerAndDate(db, tickersNeedingReport);
+      for (const row of rows) {
+        if (!row.reportId) row.reportId = reportIdsByKey.get(`${row.ticker}|${row.date}`);
+      }
+    }
+
+    return Response.json({
+      rows: rows.map((row) => ({
+        ticker: row.ticker,
+        date: row.date,
+        ...(row.reportId ? { reportId: row.reportId } : {}),
+      })),
+    });
   } catch (error) {
     logRouteError('sheets.research-rows.get', error);
     return internalServerError();

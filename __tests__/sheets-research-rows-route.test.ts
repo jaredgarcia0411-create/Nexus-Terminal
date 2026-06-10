@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   buildSheetMatchesForDatesMock,
+  resolveReportIdsByTickerAndDateMock,
   ensureUserMock,
   getDbMock,
   requireUserMock,
 } = vi.hoisted(() => ({
   buildSheetMatchesForDatesMock: vi.fn(),
+  resolveReportIdsByTickerAndDateMock: vi.fn(),
   ensureUserMock: vi.fn(),
   getDbMock: vi.fn(),
   requireUserMock: vi.fn(),
@@ -20,6 +22,9 @@ vi.mock('@/lib/server-db-utils', () => ({
 }));
 vi.mock('@/lib/sheets/trade-tags', () => ({
   buildSheetMatchesForDates: buildSheetMatchesForDatesMock,
+}));
+vi.mock('@/lib/sheets/report-lookup', () => ({
+  resolveReportIdsByTickerAndDate: resolveReportIdsByTickerAndDateMock,
 }));
 
 import { GET } from '@/app/api/sheets/research-rows/route';
@@ -35,6 +40,7 @@ describe('GET /api/sheets/research-rows', () => {
     requireUserMock.mockResolvedValue({ user: { id: 'user-1', email: 'u@example.com', name: null, picture: null } });
     ensureUserMock.mockResolvedValue(undefined);
     getDbMock.mockReturnValue({});
+    resolveReportIdsByTickerAndDateMock.mockResolvedValue(new Map());
   });
 
   it('returns sheet research row matches for an inclusive date range', async () => {
@@ -58,6 +64,29 @@ describe('GET /api/sheets/research-rows', () => {
       rows: [
         { ticker: 'AAPL', date: '2026-06-08', reportId: 'report-1' },
         { ticker: 'MSFT', date: '2026-06-10' },
+      ],
+    });
+  });
+
+  it('back-fills reportId from the latest same-date report when the sheet cell has none', async () => {
+    buildSheetMatchesForDatesMock.mockResolvedValue(new Map([
+      ['AAPL|2026-06-08', { tags: ['Gapper'], reportId: 'pinned-1' }],
+      ['VSME|2026-06-10', { tags: ['Failed Breakouts'] }],
+    ]));
+    // Helper resolves the unpinned ticker by ticker|date; pinned rows keep theirs.
+    resolveReportIdsByTickerAndDateMock.mockResolvedValue(new Map([['VSME|2026-06-10', 'report-fallback']]));
+
+    const response = ensureResponse(
+      await GET(new Request('http://localhost/api/sheets/research-rows?from=2026-06-08&to=2026-06-10')),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(resolveReportIdsByTickerAndDateMock).toHaveBeenCalledWith({}, ['VSME']);
+    expect(body).toEqual({
+      rows: [
+        { ticker: 'AAPL', date: '2026-06-08', reportId: 'pinned-1' },
+        { ticker: 'VSME', date: '2026-06-10', reportId: 'report-fallback' },
       ],
     });
   });

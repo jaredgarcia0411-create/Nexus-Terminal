@@ -15,6 +15,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 
 export const TAG_TEXT_CLASS = 'text-xs text-foreground';
 
+// Tags lists can get tall (the Sheet pushes many onto a trade). Collapse past
+// this count behind a "Show all" toggle so a row stays compact by default.
+const TAG_COLLAPSE_THRESHOLD = 3;
+
 interface TradeTagEditorProps {
   tags: string[];
   globalTags: string[];
@@ -38,10 +42,25 @@ export default function TradeTagEditor({
 }: TradeTagEditorProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [expanded, setExpanded] = useState(false);
   const availableTags = useMemo(
     () => globalTags.filter((tag) => !tags.includes(tag)),
     [globalTags, tags],
   );
+
+  const collapsible = tags.length > TAG_COLLAPSE_THRESHOLD;
+  const visibleTags = collapsible && !expanded ? tags.slice(0, TAG_COLLAPSE_THRESHOLD) : tags;
+
+  // Shared toggle so the read-only and editable branches render the same control.
+  const toggleButton = collapsible ? (
+    <button
+      type="button"
+      onClick={() => setExpanded((flag) => !flag)}
+      className="text-xs text-primary transition-colors hover:text-primary/80"
+    >
+      {expanded ? 'Show less' : `Show all (${tags.length})`}
+    </button>
+  ) : null;
 
   const addTag = (raw: string) => {
     const next = raw.trim();
@@ -58,18 +77,19 @@ export default function TradeTagEditor({
 
     return (
       <div className={`flex flex-wrap items-center gap-1 ${maxWidthClassName ?? ''}`}>
-        {tags.map((tag) => (
+        {visibleTags.map((tag) => (
           <span key={tag} className={TAG_TEXT_CLASS}>
             {tag}
           </span>
         ))}
+        {toggleButton}
       </div>
     );
   }
 
   return (
     <div className={`flex flex-wrap items-center gap-1 ${maxWidthClassName ?? ''}`}>
-      {tags.map((tag) => (
+      {visibleTags.map((tag) => (
         <span key={tag} className={`flex items-center gap-1 ${TAG_TEXT_CLASS} group/tag`}>
           {tag}
           <button
@@ -82,6 +102,8 @@ export default function TradeTagEditor({
           </button>
         </span>
       ))}
+
+      {toggleButton}
 
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>

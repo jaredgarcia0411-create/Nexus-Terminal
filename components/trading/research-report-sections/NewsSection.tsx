@@ -37,16 +37,16 @@ function ArticleReader({
 
   return (
     <div className="space-y-4 p-3">
-      <button
-        type="button"
-        onClick={onBack}
-        className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back
-      </button>
-
       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-1 transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </button>
+        <span className="text-border">|</span>
         <span className="rounded-sm bg-accent px-2 py-0.5 text-xs font-bold text-foreground">
           ${ticker.toUpperCase()}
         </span>
