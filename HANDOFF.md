@@ -21,6 +21,29 @@ Deferred Sheets roadmap (not started):
 
 ## Recent Completed Context
 
+### Sheets — "Today" Quick Filter Toggle
+
+Status: completed 2026-06-10 (commit `c151f3b`).
+
+Outcome:
+- `SheetsTab` toolbar gains a `CalendarCheck` toggle (live sheet only, `!activeSheet.rootId`) that filters the grid to rows dated today, independent of the per-column `filterMode` and composable with it.
+- Toggling clears the row selection; on dated/snapshot sheets the filter self-disables so switching never traps an empty grid.
+
+Validation: `npm run lint`, `npx tsc --noEmit`, `npm test` (824 passed).
+
+### Sheets Report Column — Resolve by Ticker + Date at Render Time
+
+Status: completed 2026-06-10 (commit `280d904`).
+
+Outcome:
+- New `lib/sheets/report-lookup.ts` (`resolveReportIdsByTickerAndDate`) + `GET /api/sheets/[id]/report-ids` return a `TICKER|YYYY-MM-DD` → reportId map (NY generation date, newest per ticker+date, no freshness window).
+- `SheetsTab` report cell now prefers the row's stored `research_report` value and only falls back to a same-date resolved report when empty; map refetches on sheet load + window focus. Fixes reports added before generation finished, without back-filling stale reports onto historical rows.
+- `ResearchTickerView` fires `prefetchResearchReport(ticker)` on add so generation is guaranteed to start. Daily/Weekly review panels left on the untouched stored-value path.
+
+Validation: `npm run lint`, `npx tsc --noEmit`, `npm test` (824 passed; +4 new tests covering the helper, viewer access, and the different-date no-backfill case).
+
+Known edge (not fixed, matches existing date handling): the row's stored date is browser-local while the report date is NY — if your browser TZ differs from ET, a late-night add could land on different days and not auto-resolve.
+
 - **Sheets → Daily/Weekly Trades (commits `3c0f397`→`ddbd097`):** retired the editable review Watchlist; sheet columns flagged `asTags` now auto-tag matching trades (same ticker + date) on import and sheet-row edits via `lib/sheets/trade-tags.ts`; new `/api/sheets/research-rows` feeds the panel's Report column. Daily/Weekly "Trades" panel gained editable Grade (saved in `reportData.__tradeGrades`), Report inline-expand, and a Notes button opening the global Trade Review; Trade Review now shows Notes above Overview. Old reviews keep their watchlist as a read-only `ArchivedWatchlist` block (data preserved in `__watchlist`, never re-written). Deleted `WatchlistEditor`/`WatchlistSavePicker`/`WatchlistTickerChart`, `lib/watchlist-server.ts`, append-watchlist route; slimmed `lib/watchlist.ts`. Validated: `npm run lint`, `npx tsc --noEmit`, `npm test` (820 passed). Follow-up: tag *removal* on cell-clear intentionally not implemented (additive-only).
 - **Team-Wide Tags:** added shared `team_tags` + `/api/team-tags`, moved Sheets/review watchlist tag options to `useTeamTags`, added Manage Team Tags, and dropped the unused `watchlist_theses` route/table.
 - **Sheets Frontend Wave (commits `6d770e1` / `a6abece` / `0f43f23` / `a9a0f65` / `02ffa48`):** removed Watch as a locked default column, added float shorthand display, date sort/manual-drag mode, multi-select columns, and an edit-column dialog.
