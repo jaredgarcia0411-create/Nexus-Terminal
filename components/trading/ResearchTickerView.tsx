@@ -194,6 +194,7 @@ function AddToSheetsButton({ ticker }: { ticker: string }) {
     if (saving) return;
     setSaving(true);
     try {
+      void prefetchResearchReport(ticker);
       const response = await fetch(`/api/sheets/${sheet.id}/append-research-row`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

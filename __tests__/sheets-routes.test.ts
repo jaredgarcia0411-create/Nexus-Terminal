@@ -40,6 +40,7 @@ vi.mock('@/lib/massive-market', () => ({
 import { DELETE as deleteSheet, GET as getSheet, PATCH as patchSheet } from '@/app/api/sheets/[id]/route';
 import { POST as appendResearchRow } from '@/app/api/sheets/[id]/append-research-row/route';
 import { POST as fillMassive } from '@/app/api/sheets/[id]/fill-massive/route';
+import { GET as getReportIds } from '@/app/api/sheets/[id]/report-ids/route';
 import { GET as getRResults } from '@/app/api/sheets/[id]/r-results/route';
 import { POST as postSheetRow } from '@/app/api/sheets/[id]/rows/route';
 import { PATCH as patchSheetRow } from '@/app/api/sheets/[id]/rows/[rowId]/route';
@@ -47,7 +48,9 @@ import { PATCH as reorderRows } from '@/app/api/sheets/[id]/rows/reorder/route';
 import { POST as snapshotSheet } from '@/app/api/sheets/[id]/snapshot/route';
 import { POST as importSheet } from '@/app/api/sheets/import/route';
 import { GET as getSheets, POST as postSheet } from '@/app/api/sheets/route';
+import { resolveReportIdsByTickerAndDate } from '@/lib/sheets/report-lookup';
 import { DEFAULT_SHEET_COLUMNS } from '@/lib/sheets/columns';
+import type { QueryDb } from '@/lib/server-db-utils';
 
 function createDbMock(options: {
   selectQueue?: unknown[];
@@ -396,6 +399,78 @@ describe('sheets routes', () => {
     expect(payload.results['row-active']).toBeCloseTo(1);
     expect(payload.results['row-reviewed']).toBeCloseTo(2);
     expect(payload.results).not.toHaveProperty('row-empty');
+  });
+
+  it('resolveReportIdsByTickerAndDate returns newest complete report per ticker and NY date', async () => {
+    const db = createDbMock({
+      selectQueue: [[
+        { id: 'aapl-new', ticker: 'AAPL', generatedAt: new Date('2026-06-10T16:00:00Z') },
+        { id: 'msft-today', ticker: 'MSFT', generatedAt: new Date('2026-06-10T15:00:00Z') },
+        { id: 'aapl-old-same-day', ticker: 'AAPL', generatedAt: new Date('2026-06-10T14:00:00Z') },
+        { id: 'aapl-yesterday', ticker: 'AAPL', generatedAt: new Date('2026-06-09T16:00:00Z') },
+      ]],
+    });
+
+    const result = await resolveReportIdsByTickerAndDate(db as unknown as QueryDb, [' aapl ', 'MSFT', '']);
+
+    expect(Object.fromEntries(result)).toEqual({
+      'AAPL|2026-06-10': 'aapl-new',
+      'MSFT|2026-06-10': 'msft-today',
+      'AAPL|2026-06-09': 'aapl-yesterday',
+    });
+  });
+
+  it('resolveReportIdsByTickerAndDate returns an empty map without querying for blank tickers', async () => {
+    const db = { select: vi.fn() } as unknown as QueryDb;
+
+    const result = await resolveReportIdsByTickerAndDate(db, [' ', '']);
+
+    expect(result.size).toBe(0);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it('GET /api/sheets/[id]/report-ids lets viewers resolve report ids by ticker and row date', async () => {
+    getSheetRoleMock.mockResolvedValue('viewer');
+    getDbMock.mockReturnValue(createDbMock({
+      selectQueue: [
+        [
+          { values: { ticker: 'aapl', date: '2026-06-10' } },
+          { values: { ticker: 'MSFT', date: '2026-06-10' } },
+          { values: { ticker: 'AAPL', date: '2026-06-09' } },
+          { values: { ticker: '   ', date: '2026-06-10' } },
+        ],
+        [
+          { id: 'aapl-today', ticker: 'AAPL', generatedAt: new Date('2026-06-10T14:00:00Z') },
+          { id: 'msft-today', ticker: 'MSFT', generatedAt: new Date('2026-06-10T14:00:00Z') },
+          { id: 'aapl-yesterday', ticker: 'AAPL', generatedAt: new Date('2026-06-09T14:00:00Z') },
+        ],
+      ],
+    }));
+
+    const response = ensureResponse(await getReportIds(new Request('http://localhost/api/sheets/sheet-1/report-ids'), {
+      params: Promise.resolve({ id: 'sheet-1' }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      reportIds: {
+        'AAPL|2026-06-10': 'aapl-today',
+        'MSFT|2026-06-10': 'msft-today',
+        'AAPL|2026-06-09': 'aapl-yesterday',
+      },
+    });
+  });
+
+  it('GET /api/sheets/[id]/report-ids returns 404 when caller is not a member', async () => {
+    getSheetRoleMock.mockResolvedValue(null);
+    getDbMock.mockReturnValue(createDbMock({}));
+
+    const response = ensureResponse(await getReportIds(new Request('http://localhost/api/sheets/missing/report-ids'), {
+      params: Promise.resolve({ id: 'missing' }),
+    }));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Sheet not found' });
   });
 
   it('PATCH /api/sheets/[id] returns 403 for editors', async () => {

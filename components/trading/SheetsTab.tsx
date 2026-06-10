@@ -422,6 +422,13 @@ async function fetchSheetRResults(sheetId: string): Promise<Record<string, numbe
   return data.results ?? {};
 }
 
+async function fetchSheetReportIds(sheetId: string): Promise<Record<string, string>> {
+  const res = await fetch(`/api/sheets/${sheetId}/report-ids`);
+  if (!res.ok) return {};
+  const data = await res.json() as { reportIds?: Record<string, string> };
+  return data.reportIds ?? {};
+}
+
 function numericCellValue(value: unknown): number | null {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
@@ -535,6 +542,7 @@ function buildColumn(
   onToggle: (rowId: string, key: string, value: boolean) => void,
   actions: CellActions,
   rResults: Record<string, number | null>,
+  reportIdByKey: Record<string, string>,
 ): Column<GridRow> {
   const renderHeaderCell = filterMode && isFilterableColumn(column.type)
     ? () => (
@@ -636,7 +644,10 @@ function buildColumn(
     return {
       ...base,
       renderCell: ({ row }) => {
-        const reportId = String(row[column.key] ?? '').trim();
+        const stored = String(row[column.key] ?? '').trim();
+        const ticker = String(row.ticker ?? '').trim().toUpperCase();
+        const date = String(row.date ?? '').trim();
+        const reportId = stored || (ticker && date ? (reportIdByKey[`${ticker}|${date}`] ?? '') : '');
         if (!reportId) {
           return <div className="flex items-center justify-center text-xs text-muted-foreground">—</div>;
         }
@@ -836,6 +847,7 @@ export default function SheetsTab() {
   const [chartDialog, setChartDialog] = useState<{ ticker: string; date: string; rowId: string } | null>(null);
   const { teamTags, createTag: createTeamTag, deleteTag: deleteTeamTag } = useTeamTags();
   const [rResults, setRResults] = useState<Record<string, number | null>>({});
+  const [reportIdByKey, setReportIdByKey] = useState<Record<string, string>>({});
   // Per-user, per-browser column widths. RDG runs in "controlled width" mode:
   // we own this Map, feed it in via `columnWidths`, and update it on resize.
   // Columns not in the Map fall back to their default width.
@@ -902,6 +914,31 @@ export default function SheetsTab() {
       });
     return () => {
       cancelled = true;
+    };
+  }, [sheetId]);
+
+  useEffect(() => {
+    if (!sheetId) {
+      setReportIdByKey({});
+      return undefined;
+    }
+
+    let cancelled = false;
+    const load = () => {
+      void fetchSheetReportIds(sheetId)
+        .then((ids) => {
+          if (!cancelled) setReportIdByKey(ids);
+        })
+        .catch(() => {
+          if (!cancelled) setReportIdByKey({});
+        });
+    };
+
+    load();
+    window.addEventListener('focus', load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', load);
     };
   }, [sheetId]);
 
@@ -1011,11 +1048,12 @@ export default function SheetsTab() {
           toggle,
           actions,
           rResults,
+          reportIdByKey,
         ),
       );
     }
     return columns;
-  }, [activeSheet, canEditRows, canManage, dragEnabled, filterMode, filters, rResults, rows, sheets, teamTags]);
+  }, [activeSheet, canEditRows, canManage, dragEnabled, filterMode, filters, reportIdByKey, rResults, rows, sheets, teamTags]);
 
   const handleRowsChange = (nextRows: GridRow[], data: RowsChangeData<GridRow>) => {
     if (!activeSheet) return;
