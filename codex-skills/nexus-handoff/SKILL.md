@@ -33,6 +33,10 @@ Write or update a section in `HANDOFF.md` with:
 - Order of operations
 - Complexity estimate
 
+## After Writing
+
+Re-verify the finished spec against the live codebase before handing it off — treat the draft as a hypothesis, not a finished spec. For every change confirm: anchors (paths + line numbers) still match; every symbol it references exists and is in scope (distinguish local functions from imports — never instruct removing an "import" that is a local function or still used elsewhere); field names in snippets match the real data shape (external API keys, DB rows); downstream readers of anything changed won't silently break (grep for them, or document the degradation); removals leave no unused symbols. Fix any drift in the spec and note what changed.
+
 ## Maintenance Rules
 
 - Keep `HANDOFF.md` focused on active or recently completed work that still matters.

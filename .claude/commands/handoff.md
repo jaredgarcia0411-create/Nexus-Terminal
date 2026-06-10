@@ -12,12 +12,11 @@ Read `HANDOFF.md`. Remove any sections where all acceptance criteria are checked
 If removing completed sections, add a one-liner at the top noting they were archived:
 > Historical completed sections were removed to keep this file focused. Use git history and the `specs/` directory for archived implementation detail.
 
-### Step 2: Invoke nexus-architect to plan
+### Step 2: Investigate the codebase and write the spec yourself
 
-Use the Agent tool with `subagent_type: "nexus-architect"` to:
-1. Understand the current state of the task described in $ARGUMENTS
-2. Read all relevant source files
-3. Produce a step-by-step implementation spec
+Investigate the task in $ARGUMENTS directly: read all relevant source files, trace the data flow, and confirm the current state before drafting. Then write the spec inline.
+
+Do NOT spawn nexus-architect to reformat findings you already have — that wastes a cold sub-agent on context you're holding. Only consider invoking nexus-architect when the task genuinely needs broad fan-out exploration across an unfamiliar area you haven't already covered, and say so before doing it. Default is inline.
 
 The spec MUST follow this format for every change:
 - **File:** exact path (e.g., `lib/research.ts`)
@@ -35,7 +34,7 @@ Leave ZERO ambiguity. Codex should be able to implement without asking questions
 
 Append the new spec to `HANDOFF.md` with:
 - A `## Section Title` header
-- `> Generated: {date} | Agent: nexus-architect`
+- `> Generated: {date} | Author: Claude (plan)`
 - `> Status: PLANNED`
 - The full spec from Step 2
 - A "Files Changed Summary" table (file, lines added/removed, risk level)
@@ -57,14 +56,27 @@ Append the new spec to `HANDOFF.md` with:
   This is a personal trading platform built solo. Readability > cleverness; debuggable > elegant; small diff > sweeping refactor. Three similar lines beats a premature abstraction.
   ```
 
-### Step 4: Update AGENTS.md if needed
+### Step 4: Sanity-check the spec against the live codebase
+
+ALWAYS do this before declaring the spec ready. Treat the first draft as a hypothesis, not a finished spec — this step routinely finds real bugs, so budget for it. Re-open the actual files and, for every change in the spec, verify against the live repo:
+
+- **Anchors:** file paths and line numbers still match (line numbers drift — prefer stable anchors, but confirm them).
+- **Symbols exist and are in scope:** every helper, import, or type the spec's code calls is actually defined and reachable at that location. Distinguish local functions from imports — never tell Codex to "remove the import" for something that is a local function or still used elsewhere.
+- **Field names match the real shape:** keys in code snippets match the actual data (e.g. an external API's response fields, a DB row), not assumed names.
+- **Downstream consumers won't silently break:** grep for everything that reads the field/function/endpoint you're changing and confirm it still works — or document the degradation explicitly.
+- **No orphans:** removing code leaves no unused imports/symbols (the build errors on these).
+
+Fix any drift directly in the spec and note what changed. If the spec was authored by nexus-architect, this verification is still yours to run.
+
+### Step 5: Update AGENTS.md if needed
 
 If the plan introduces new files, API routes, conventions, or patterns, update `AGENTS.md` so future agents know about them. Don't update for minor changes.
 
-### Step 5: Confirm
+### Step 6: Confirm
 
 Show me a summary of:
 - What was cleaned up from HANDOFF.md
 - What the new spec covers (1-2 sentences)
+- What the sanity-check (Step 4) found and fixed
 - Number of files to change and estimated risk
 - Any open questions or decisions I need to make before Codex starts
