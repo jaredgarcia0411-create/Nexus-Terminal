@@ -8,7 +8,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Archive, ArrowDownWideNarrow, ArrowUpWideNarrow, ChevronDown, Columns3, FileSpreadsheet, FileText, Filter, GripVertical, History, LineChart, Pencil, Plus, RefreshCw, Rows3, Tags, Trash2, Upload, Users, X } from 'lucide-react';
+import { Archive, ArrowDownWideNarrow, ArrowUpWideNarrow, CalendarCheck, ChevronDown, Columns3, FileSpreadsheet, FileText, Filter, GripVertical, History, LineChart, Pencil, Plus, RefreshCw, Rows3, Tags, Trash2, Upload, Users, X } from 'lucide-react';
 import {
   DataGrid,
   Row as GridRowRenderer,
@@ -853,6 +853,7 @@ export default function SheetsTab() {
   // Columns not in the Map fall back to their default width.
   const [columnWidths, setColumnWidths] = useState<ColumnWidths>(() => new Map());
   const [filterMode, setFilterMode] = useState(false);
+  const [todayOnly, setTodayOnly] = useState(false);
   const [filters, setFilters] = useState<SheetFilters>({});
   const [sortMode, setSortMode] = useState<SheetSortMode>('date_desc');
   const [loadedRResultsSheetId, setLoadedRResultsSheetId] = useState<string | null>(sheetId);
@@ -873,10 +874,12 @@ export default function SheetsTab() {
   );
 
   const gridRows = useMemo(() => gridRowsFromSheet(rows), [rows]);
-  const filteredRows = useMemo(
-    () => (filterMode && activeSheet ? filterGridRows(gridRows, activeSheet.columns, filters) : gridRows),
-    [activeSheet, filterMode, filters, gridRows],
-  );
+  const filteredRows = useMemo(() => {
+    const base = todayOnly && activeSheet && !activeSheet.rootId
+      ? gridRows.filter((row) => String(row.date ?? '') === today)
+      : gridRows;
+    return filterMode && activeSheet ? filterGridRows(base, activeSheet.columns, filters) : base;
+  }, [activeSheet, filterMode, filters, gridRows, today, todayOnly]);
   const visibleRows = useMemo(
     () => sortGridRows(filteredRows, sortMode),
     [filteredRows, sortMode],
@@ -994,6 +997,13 @@ export default function SheetsTab() {
     }
 
     setFilterMode(true);
+  };
+
+  const toggleTodayOnly = () => {
+    // Match toggleFilterMode: clear selection whenever the visible set changes
+    // so a stale selection can't be deleted by accident.
+    setSelectedRows(new Set());
+    setTodayOnly((current) => !current);
   };
 
   const gridColumns = useMemo<Column<GridRow>[]>(() => {
@@ -1401,6 +1411,25 @@ export default function SheetsTab() {
                 >
                   <RefreshCw className={`h-4 w-4 ${fillingMassive ? 'animate-spin' : ''}`} />
                 </Button>
+
+                {!activeSheet.rootId ? (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="secondary"
+                    onClick={toggleTodayOnly}
+                    title="Show today's rows"
+                    aria-label="Show today's rows"
+                    aria-pressed={todayOnly}
+                    className={
+                      todayOnly
+                        ? 'border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20'
+                        : 'bg-accent hover:bg-accent/80'
+                    }
+                  >
+                    <CalendarCheck className="h-4 w-4" />
+                  </Button>
+                ) : null}
 
                 <Button
                   type="button"
