@@ -69,7 +69,7 @@ function ArticleReader({
       {paragraphs.length > 0 ? (
         <div className="space-y-4">
           {paragraphs.map((paragraph, index) => (
-            <p key={index} className="text-sm leading-relaxed text-foreground">
+            <p key={index} className="text-base leading-relaxed text-foreground">
               {paragraph}
             </p>
           ))}

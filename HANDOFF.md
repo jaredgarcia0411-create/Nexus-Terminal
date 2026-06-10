@@ -3,7 +3,7 @@
 > Updated: 2026-06-10
 > Purpose: active execution context for Codex. Older implementation detail lives in git history, `specs/`, and durable docs such as `docs/repo-cleanup.md`.
 
-Historical completed sections (Sprints 1-16, Tier 1 Cleanup, Chart Drawings, Multi-Day Charts, CSV/Cover-Close flows, Sheets Sprints 1-7 + Massive Wave 1-2, backtest user-id fixes, Filing headline parser, Calendar Year Overview, Workflow Maintenance, Nav Reorg, Sheets Today-filter + report-by-ticker/date) were removed to keep this file focused. Use git history and `docs/repo-cleanup.md` for archived implementation detail.
+Historical completed sections (Sprints 1-16, Tier 1 Cleanup, Chart Drawings, Multi-Day Charts, CSV/Cover-Close flows, Sheets Sprints 1-7 + Massive Wave 1-2, backtest user-id fixes, Filing headline parser, Calendar Year Overview, Workflow Maintenance, Nav Reorg, Sheets Today-filter + report-by-ticker/date, EODHD News API swap) were removed to keep this file focused. Use git history and `docs/repo-cleanup.md` for archived implementation detail.
 
 > **Parked:** the Scanner Epic 1 execution spec was moved to `specs/scanner-epic1-handoff.md` (not started — still waiting on the worktree + Neon-branch setup). Move it back here when you're ready to run it.
 
@@ -21,19 +21,18 @@ Deferred Sheets roadmap (not started):
 
 ## Recently Completed
 
-### Replace Ask Edgar News with EODHD News API
+### News Section Redesign — Headline List + Inline Article Reader
 
-Status: completed 2026-06-10 (commit `6b10607`, reviewed against spec).
+Status: completed 2026-06-10 (commit `3dabcd0`, reviewed against spec).
 
 Outcome:
-- News now sourced from EODHD `GET /api/news` via new `lib/eodhd.ts` (`fetchEodhdNews`), wired into the `news` registry key so it inherits the 15-min cache; `fetchNews`/Ask Edgar `/v1/news` removed.
-- Both consumers repointed at EODHD fields (`title/content/date/link/tags/sentiment`): `news-formatter.ts` (`buildNewsItem` + sentiment label, LLM/Discord) and `snapshot-normalizer.ts` (UI); filing fallback dropped — Filings tab is now `sec-filings`-only.
-- `small-cap-research` date-key fix (`date` added) keeps news-recency signals working; research prompt de-references `form_type`.
+- Research News tab is now a two-level UI: a card list of headlines (`relative time · absolute datetime · bold title`, no source label) that swaps into a full inline article reader with `← Back`, a `$TICKER` badge, long datetime, optional "Open original ↗", and the body split into paragraphs.
+- Added `url` to `ResearchSnapshotNewsItem` (sourced from EODHD `link`) and two formatters in `lib/askedgar-utils.ts` (`formatRelativeTime`, `formatDateTimeLong`); dropped the dead Groq/JMT415 `formType` source logic.
+- Post-review tweak: article body bumped `text-sm` → `text-base` per Jared.
 
 Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm test` (825 tests), `npm run build` — all pass.
-- Leftover-symbol grep clean; EODHD tests added/updated.
-- Manual smoke (News populates, Filings renders, agent runs, 15-min cache coalesce) still owed by Jared once `EODHD_API_KEY` confirmed in all envs.
+- `npm run lint`, `npx tsc --noEmit`, `npm test` (825 tests) — all pass.
+- Manual dev-server smoke by Jared: list, reader swap, and "Open original" all good.
 
 ---
 
