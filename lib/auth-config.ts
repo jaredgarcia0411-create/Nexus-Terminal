@@ -28,8 +28,10 @@ const config: NextAuthConfig = {
   session: { strategy: 'jwt' },
   callbacks: {
     signIn({ user }) {
+      // Fail closed: if the allowlist is missing or empty, deny everyone
+      // rather than letting any Google account sign in.
       const allowedRaw = process.env.ALLOWED_EMAILS?.trim();
-      if (!allowedRaw) return true;
+      if (!allowedRaw) return false;
       const allowed = allowedRaw.split(',').map((email) => email.trim().toLowerCase());
       return allowed.includes(user.email?.toLowerCase() ?? '');
     },
