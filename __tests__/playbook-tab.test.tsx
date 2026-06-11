@@ -224,6 +224,7 @@ describe('PlaybookTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllGlobals();
+    window.localStorage.clear();
   });
 
   it('loads existing strategies and selects the first one', async () => {

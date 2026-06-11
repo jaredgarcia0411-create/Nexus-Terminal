@@ -1,13 +1,16 @@
 'use client';
 
+import { useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
+import { TextStyle, FontSize } from '@tiptap/extension-text-style';
 import {
   Bold, Italic, Underline, Strikethrough, Heading1, Heading2,
   List, ListOrdered, Quote, Link as LinkIcon, Code,
 } from 'lucide-react';
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 interface RichTextEditorProps {
@@ -44,6 +47,7 @@ function fromEditor(html: string): string {
 }
 
 export function RichTextEditor({ value, onChange, className }: RichTextEditorProps) {
+  const [sizeMenuOpen, setSizeMenuOpen] = useState(false);
   const editor = useEditor({
     immediatelyRender: false, // required under Next SSR to avoid hydration mismatch
     extensions: [
@@ -52,6 +56,8 @@ export function RichTextEditor({ value, onChange, className }: RichTextEditorPro
         codeBlock: false, // Notion-lite: inline code only
         link: { openOnClick: false, autolink: true },
       }),
+      TextStyle,
+      FontSize,
     ],
     content: toEditorContent(value),
     onUpdate: ({ editor }) => onChange(fromEditor(editor.getHTML())),
@@ -85,6 +91,10 @@ export function RichTextEditor({ value, onChange, className }: RichTextEditorPro
     <div className={className}>
       <BubbleMenu
         editor={editor}
+        shouldShow={({ view, state, from, to }) => {
+          if (sizeMenuOpen) return true;
+          return view.hasFocus() && editor.isEditable && !state.selection.empty && state.doc.textBetween(from, to).length > 0;
+        }}
         className="flex items-center gap-0.5 rounded-md border border-border bg-card p-1 shadow-md"
       >
         <button type="button" onClick={() => editor.chain().focus().toggleBold().run()} className={btn(editor.isActive('bold'))} aria-label="Bold"><Bold className="h-3.5 w-3.5" /></button>
@@ -99,6 +109,37 @@ export function RichTextEditor({ value, onChange, className }: RichTextEditorPro
         <button type="button" onClick={() => editor.chain().focus().toggleBlockquote().run()} className={btn(editor.isActive('blockquote'))} aria-label="Quote"><Quote className="h-3.5 w-3.5" /></button>
         <button type="button" onClick={() => editor.chain().focus().toggleCode().run()} className={btn(editor.isActive('code'))} aria-label="Inline code"><Code className="h-3.5 w-3.5" /></button>
         <button type="button" onClick={setLink} className={btn(editor.isActive('link'))} aria-label="Link"><LinkIcon className="h-3.5 w-3.5" /></button>
+        <span className="mx-0.5 h-4 w-px bg-border" />
+        <Select
+          open={sizeMenuOpen}
+          onOpenChange={setSizeMenuOpen}
+          value={(editor.getAttributes('textStyle').fontSize as string | undefined) ?? 'default'}
+          onValueChange={(size) => {
+            if (size === 'default') {
+              editor.chain().focus().unsetFontSize().run();
+            } else {
+              editor.chain().focus().setFontSize(size).run();
+            }
+          }}
+        >
+          <SelectTrigger
+            size="sm"
+            aria-label="Font size"
+            className="h-7 w-[96px] border-transparent bg-card px-2 text-xs text-muted-foreground shadow-none hover:bg-accent hover:text-foreground focus-visible:ring-0"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent
+            align="start"
+            className="min-w-[96px] border-border bg-card text-foreground"
+          >
+            <SelectItem value="default" className="text-xs">Default</SelectItem>
+            <SelectItem value="12px" className="text-xs">Small</SelectItem>
+            <SelectItem value="14px" className="text-xs">Normal</SelectItem>
+            <SelectItem value="18px" className="text-xs">Large</SelectItem>
+            <SelectItem value="24px" className="text-xs">Huge</SelectItem>
+          </SelectContent>
+        </Select>
       </BubbleMenu>
       <EditorContent editor={editor} />
     </div>

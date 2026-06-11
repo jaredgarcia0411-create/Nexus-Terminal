@@ -79,6 +79,27 @@ function nextFieldId(existing: TemplateField[]): string {
   return `${base}${counter}`;
 }
 
+const DRAFTS_KEY = 'nexus-playbook-drafts';
+type StrategyDraft = Pick<Strategy, 'name' | 'description' | 'tag' | 'sections'>;
+
+function readDrafts(): Record<string, StrategyDraft> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(DRAFTS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, StrategyDraft>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDrafts(drafts: Record<string, StrategyDraft>): void {
+  try {
+    window.localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+  } catch {
+    // Ignore storage failures (private browsing / quota).
+  }
+}
+
 export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -86,6 +107,8 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
   const [saving, setSaving] = useState(false);
   const [fields, setFields] = useState<TemplateField[]>(PLAYBOOK_DEFAULT_FIELDS);
   const [editingTemplate, setEditingTemplate] = useState(false);
+  // Strategy ids that currently have an unsaved local draft (drives the pill).
+  const [draftedIds, setDraftedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -107,8 +130,23 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
         }
 
         if (!cancelled) {
-          const nextStrategies = stratData.strategies ?? [];
+          const fetched = stratData.strategies ?? [];
+          const drafts = readDrafts();
+          const validIds = new Set(fetched.map((strategy) => strategy.id));
+          // Drop drafts whose strategy no longer exists, then persist if changed.
+          let pruned = false;
+          for (const id of Object.keys(drafts)) {
+            if (!validIds.has(id)) {
+              delete drafts[id];
+              pruned = true;
+            }
+          }
+          if (pruned) writeDrafts(drafts);
+          const nextStrategies = fetched.map((strategy) => (
+            drafts[strategy.id] ? { ...strategy, ...drafts[strategy.id] } : strategy
+          ));
           setStrategies(nextStrategies);
+          setDraftedIds(new Set(Object.keys(drafts)));
           if (nextStrategies.length > 0) {
             setSelectedId(nextStrategies[0].id);
           }
@@ -194,6 +232,15 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
       setStrategies((current) => current.map((strategy) => (
         strategy.id === data.strategy.id ? data.strategy : strategy
       )));
+      const drafts = readDrafts();
+      delete drafts[data.strategy.id];
+      writeDrafts(drafts);
+      setDraftedIds((current) => {
+        if (!current.has(data.strategy.id)) return current;
+        const next = new Set(current);
+        next.delete(data.strategy.id);
+        return next;
+      });
       toast.success('Saved');
     } catch (error) {
       console.error(error);
@@ -216,6 +263,15 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
         setSelectedId(next.length > 0 ? next[0].id : null);
         return next;
       });
+      const drafts = readDrafts();
+      delete drafts[selected.id];
+      writeDrafts(drafts);
+      setDraftedIds((current) => {
+        if (!current.has(selected.id)) return current;
+        const next = new Set(current);
+        next.delete(selected.id);
+        return next;
+      });
       toast.success('Deleted');
     } catch (error) {
       console.error(error);
@@ -225,9 +281,21 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
 
   const updateSelected = (patch: Partial<Strategy>) => {
     if (!selected) return;
+    const merged = { ...selected, ...patch };
     setStrategies((current) => current.map((strategy) => (
-      strategy.id === selected.id ? { ...strategy, ...patch } : strategy
+      strategy.id === selected.id ? merged : strategy
     )));
+    const drafts = readDrafts();
+    drafts[selected.id] = {
+      name: merged.name,
+      description: merged.description,
+      tag: merged.tag,
+      sections: merged.sections,
+    };
+    writeDrafts(drafts);
+    setDraftedIds((current) => (
+      current.has(selected.id) ? current : new Set(current).add(selected.id)
+    ));
   };
 
   const updateSection = (key: string, value: string) => {
@@ -418,7 +486,7 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
                   value={selected.description}
                   onChange={(event) => updateSelected({ description: event.target.value })}
                   placeholder="One-line description"
-                  className="h-9 flex-1 border-border bg-accent text-sm text-muted-foreground"
+                  className="h-9 flex-1 border-border bg-accent text-sm text-foreground"
                 />
                 <Button
                   onClick={() => setEditingTemplate((flag) => !flag)}
@@ -429,6 +497,13 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
                 </Button>
               </div>
             </div>
+
+            {draftedIds.has(selected.id) ? (
+              <p className="flex items-center gap-1.5 text-xs text-amber-500">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
+                Unsaved draft saved in this browser - hit Save to store it.
+              </p>
+            ) : null}
 
             {editingTemplate ? (
               <div className="space-y-3 rounded-md border border-border bg-accent p-4">
