@@ -947,16 +947,6 @@ export default function BacktestChart({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {hoverOhlc ? (
-          <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-3 font-mono text-xs tabular-nums text-zinc-300">
-            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">H</span><span>{hoverOhlc.h.toFixed(2)}</span></span>
-            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">L</span><span>{hoverOhlc.l.toFixed(2)}</span></span>
-            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">O</span><span>{hoverOhlc.o.toFixed(2)}</span></span>
-            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">C</span><span>{hoverOhlc.c.toFixed(2)}</span></span>
-            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">V</span><span>{formatHoverVolume(hoverOhlc.v)}</span></span>
-          </div>
-        ) : null}
-
         <div className="ml-auto flex items-center gap-0.5">
           {canDraw ? (
             <DrawingToolbar
@@ -998,6 +988,15 @@ export default function BacktestChart({
 
       <div ref={chartWrapRef} className={`relative min-h-0 flex-1 ${activeDrawingTool ? 'cursor-crosshair' : ''}`}>
         <div ref={containerRef} className="absolute inset-0" />
+        {hoverOhlc ? (
+          <div className="pointer-events-none absolute left-2 top-2 z-20 flex items-center gap-3 rounded-sm border border-white/10 bg-[#0A0A0B]/50 px-2 py-1 font-mono text-xs tabular-nums text-zinc-300 shadow">
+            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">H</span><span>{hoverOhlc.h.toFixed(2)}</span></span>
+            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">L</span><span>{hoverOhlc.l.toFixed(2)}</span></span>
+            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">O</span><span>{hoverOhlc.o.toFixed(2)}</span></span>
+            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">C</span><span>{hoverOhlc.c.toFixed(2)}</span></span>
+            <span className="inline-flex items-baseline gap-1"><span className="text-zinc-500">V</span><span>{formatHoverVolume(hoverOhlc.v)}</span></span>
+          </div>
+        ) : null}
         {frame.intraday && sessionShadeRects.length > 0 ? (
           <div className="pointer-events-none absolute inset-0 z-10">
             {sessionShadeRects.map((rect) => (
