@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_SHEET_COLUMNS } from '@/lib/sheets/columns';
 import {
   buildImportPayload,
+  coerceImportDate,
   coerceImportNumber,
   detectImportColumns,
 } from '@/lib/sheets/import';
@@ -64,6 +65,22 @@ describe('sheets CSV import helpers', () => {
     expect(coerceImportNumber(' 10 000 ')).toBe(10000);
     expect(coerceImportNumber('')).toBeNull();
     expect(coerceImportNumber('abc')).toBeNull();
+  });
+
+  it('normalizes ISO and US date formats to yyyy-MM-dd, falling back on junk', () => {
+    expect(coerceImportDate('2026-06-04')).toBe('2026-06-04');
+    expect(coerceImportDate('2026-6-4')).toBe('2026-06-04');
+    expect(coerceImportDate('6/10/2026')).toBe('2026-06-10');
+    expect(coerceImportDate('6/9/26')).toBe('2026-06-09');
+    expect(coerceImportDate('')).toBeNull();
+    expect(coerceImportDate('not a date')).toBeNull();
+  });
+
+  it('coerces US-formatted import dates into the date column as yyyy-MM-dd', () => {
+    const drafts = detectImportColumns(['Date', 'Ticker', 'Setup'], [['6/10/2026', 'CIIT', 'Agenda Day 1']]);
+    const payload = buildImportPayload(drafts, [['6/10/2026', 'CIIT', 'Agenda Day 1']]);
+
+    expect(payload.rows[0]).toMatchObject({ date: '2026-06-10', ticker: 'CIIT' });
   });
 
   it('builds import payloads with coercion, omissions, dropped values, and ticker skip counting', () => {

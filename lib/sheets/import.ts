@@ -43,6 +43,31 @@ export function coerceImportNumber(raw: unknown): number | null {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+// The grid's date cell is a native <input type="date">, which only accepts
+// `yyyy-MM-dd`. Sheets exported with US-style `M/D/YYYY` would otherwise store a
+// value the input can't render (so the date shows blank). Normalize both the
+// ISO and US formats to `yyyy-MM-dd`. Returns null when the text isn't a date we
+// recognize, so the caller can fall back to storing the raw string.
+export function coerceImportDate(raw: unknown): string | null {
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed) return null;
+
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (isoMatch) {
+    const [, y, m, d] = isoMatch;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
+  const usMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (usMatch) {
+    const [, m, d, yRaw] = usMatch;
+    const y = yRaw.length === 2 ? `20${yRaw}` : yRaw;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
+  return null;
+}
+
 function lockedColumnType(key: string): SheetColumnType {
   return DEFAULT_SHEET_COLUMNS.find((column) => column.key === key)?.type ?? 'text';
 }
@@ -127,6 +152,12 @@ function coerceImportValue(type: SheetColumnType, raw: unknown): unknown {
 
   if (type === 'number' || type === 'share_volume' || type === 'dollar_volume' || type === 'float') {
     return coerceImportNumber(trimmed) ?? undefined;
+  }
+
+  if (type === 'date') {
+    // Fall back to the raw text if it isn't a recognized date format, so we
+    // don't silently drop a value the user can fix by hand.
+    return coerceImportDate(trimmed) ?? trimmed;
   }
 
   if (type === 'checkbox') {
