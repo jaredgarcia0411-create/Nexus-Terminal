@@ -14,7 +14,7 @@ import { getSheetRole } from '@/lib/sheets/access';
 import { computeRowFill, getMassiveFillKeys, isEmptySheetCell, type MassiveFillKeys } from '@/lib/sheets/massive-fill';
 import { applySheetTagsForDates } from '@/lib/sheets/trade-tags';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
-import { epochToNySortKey, isNyTradingDay } from '@/lib/time-utils';
+import { isNyTradingDay } from '@/lib/time-utils';
 import { fillMassiveSchema } from '@/lib/validations/sheets';
 
 function hasMassiveFillKey(keys: MassiveFillKeys): boolean {
@@ -32,12 +32,8 @@ function needsVolume(values: Record<string, unknown>, keys: MassiveFillKeys): bo
   );
 }
 
-function needsTodayFloat(values: Record<string, unknown>, keys: MassiveFillKeys, today: string): boolean {
-  return Boolean(
-    keys.floatKey
-    && textCell(values, 'date') === today
-    && isEmptySheetCell(values[keys.floatKey]),
-  );
+function needsFloat(values: Record<string, unknown>, keys: MassiveFillKeys): boolean {
+  return Boolean(keys.floatKey && isEmptySheetCell(values[keys.floatKey]));
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -79,9 +75,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       .from(sheetRows)
       .where(and(eq(sheetRows.sheetId, id), inArray(sheetRows.id, body.rowIds)));
 
-    const today = epochToNySortKey(Date.now());
     const datesNeedingVolume = new Set<string>();
-    const tickersNeedingFloat = new Set<string>();
+    // Keyed by `${ticker}|${date}` so each row's float is fetched as of its own
+    // date; rows sharing a ticker+date dedupe to a single request.
+    const floatNeeds = new Map<string, { ticker: string; date: string }>();
 
     for (const row of rows) {
       const values = row.values;
@@ -93,8 +90,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         datesNeedingVolume.add(date);
       }
 
-      if (needsTodayFloat(values, keys, today)) {
-        tickersNeedingFloat.add(ticker);
+      if (date && needsFloat(values, keys)) {
+        floatNeeds.set(`${ticker}|${date}`, { ticker, date });
       }
     }
 
@@ -111,14 +108,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       }
     }));
 
-    const sharesByTicker = new Map<string, number | null>();
-    const shareResults = await Promise.allSettled([...tickersNeedingFloat].map(async (ticker) => ({
-      ticker,
-      shares: await fetchSharesOutstanding(ticker),
+    const sharesByKey = new Map<string, number | null>();
+    const shareResults = await Promise.allSettled([...floatNeeds.values()].map(async ({ ticker, date }) => ({
+      key: `${ticker}|${date}`,
+      shares: await fetchSharesOutstanding(ticker, date),
     })));
     for (const result of shareResults) {
       if (result.status === 'fulfilled') {
-        sharesByTicker.set(result.value.ticker, result.value.shares);
+        sharesByKey.set(result.value.key, result.value.shares);
       } else {
         console.warn('Massive shares outstanding request failed', result.reason);
       }
@@ -132,13 +129,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const ticker = normalizeMassiveTicker(textCell(values, 'ticker'));
       const date = textCell(values, 'date');
       const bar = date ? barsByDate.get(date)?.get(ticker) ?? null : null;
-      const sharesOutstanding = date === today ? sharesByTicker.get(ticker) ?? null : null;
+      const sharesOutstanding = date ? sharesByKey.get(`${ticker}|${date}`) ?? null : null;
       const fill = computeRowFill({
         values,
         keys,
         bar,
         sharesOutstanding,
-        isToday: date === today,
       });
 
       if (Object.keys(fill).length === 0) {

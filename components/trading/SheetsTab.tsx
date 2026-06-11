@@ -456,7 +456,7 @@ function ReadOnlyCompactNumberCell({
   );
 }
 
-function getMassiveCandidateRowIds(rows: SheetRowRecord[], keys: MassiveFillKeys, today: string): string[] {
+function getMassiveCandidateRowIds(rows: SheetRowRecord[], keys: MassiveFillKeys): string[] {
   const rowIds: string[] = [];
   for (const row of rows) {
     const ticker = String(row.values.ticker ?? '').trim();
@@ -471,7 +471,7 @@ function getMassiveCandidateRowIds(rows: SheetRowRecord[], keys: MassiveFillKeys
       ),
     );
     const needsFloat = Boolean(
-      date === today
+      date
       && keys.floatKey
       && isEmptySheetCell(row.values[keys.floatKey]),
     );
@@ -1161,7 +1161,7 @@ export default function SheetsTab() {
   const handleFillMassive = async () => {
     if (!activeSheet || fillingMassive) return;
 
-    const candidates = getMassiveCandidateRowIds(rows, massiveFillKeys, today);
+    const candidates = getMassiveCandidateRowIds(rows, massiveFillKeys);
     if (candidates.length === 0) {
       toast.info('Nothing to fill');
       return;

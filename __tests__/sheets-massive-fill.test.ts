@@ -33,7 +33,6 @@ describe('sheets Massive fill helpers', () => {
       keys: getMassiveFillKeys(columns),
       bar: { volume: 123_456, vwap: 1.23, close: 1.2 },
       sharesOutstanding: null,
-      isToday: false,
     })).toEqual({
       vol: 123_456,
       dvol: 151_851,
@@ -46,7 +45,6 @@ describe('sheets Massive fill helpers', () => {
       keys: getMassiveFillKeys(columns),
       bar: { volume: 100, vwap: null, close: 2.5 },
       sharesOutstanding: null,
-      isToday: false,
     })).toMatchObject({ dvol: 250 });
   });
 
@@ -56,26 +54,24 @@ describe('sheets Massive fill helpers', () => {
       keys: getMassiveFillKeys(columns),
       bar: { volume: 100, vwap: 2, close: 1 },
       sharesOutstanding: 500,
-      isToday: true,
     })).toEqual({});
   });
 
-  it('fills current float only for today rows', () => {
+  it('fills float from the dated shares the caller provides', () => {
     const keys = getMassiveFillKeys(columns);
     expect(computeRowFill({
       values: {},
       keys,
       bar: null,
       sharesOutstanding: 1_000_000,
-      isToday: true,
     })).toEqual({ float_value: 1_000_000 });
 
+    // No shares resolved for the row's date -> nothing to fill.
     expect(computeRowFill({
       values: {},
       keys,
       bar: null,
-      sharesOutstanding: 1_000_000,
-      isToday: false,
+      sharesOutstanding: null,
     })).toEqual({});
   });
 });

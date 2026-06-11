@@ -30,13 +30,13 @@ export function computeRowFill({
   keys,
   bar,
   sharesOutstanding,
-  isToday,
 }: {
   values: Record<string, unknown>;
   keys: MassiveFillKeys;
   bar: Pick<GroupedDailyBar, 'volume' | 'vwap' | 'close'> | null;
+  // Shares outstanding as of the row's own date (the caller fetches it dated),
+  // so this fills the correct historical float, not just today's.
   sharesOutstanding: number | null;
-  isToday: boolean;
 }): Record<string, unknown> {
   const fill: Record<string, unknown> = {};
 
@@ -52,7 +52,6 @@ export function computeRowFill({
 
   if (
     keys.floatKey
-    && isToday
     && sharesOutstanding != null
     && !hasFiniteNumber(values[keys.floatKey])
     && isEmptySheetCell(values[keys.floatKey])

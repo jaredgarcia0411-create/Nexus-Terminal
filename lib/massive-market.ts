@@ -219,14 +219,18 @@ export async function fetchTickerDetails(ticker: string): Promise<MassiveTickerD
   };
 }
 
-export async function fetchSharesOutstanding(ticker: string): Promise<number | null> {
+// `date` (YYYY-MM-DD) asks the reference endpoint for shares outstanding as of
+// that date, so historical sheet rows get the float that was accurate then —
+// important for the low-float small-caps that dilute often. Omit it for the
+// current snapshot.
+export async function fetchSharesOutstanding(ticker: string, date?: string): Promise<number | null> {
   const normalized = normalizeMassiveTicker(ticker);
   const payload = await fetchMassiveJson<{
     results?: {
       weighted_shares_outstanding?: number | string | null;
       share_class_shares_outstanding?: number | string | null;
     };
-  }>(`/v3/reference/tickers/${encodeURIComponent(normalized)}`, {});
+  }>(`/v3/reference/tickers/${encodeURIComponent(normalized)}`, date ? { date } : {});
 
   const results = payload.results ?? {};
   const shares = toNumberOrNull(results.weighted_shares_outstanding)
