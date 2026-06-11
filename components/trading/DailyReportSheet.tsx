@@ -11,6 +11,7 @@ import WeeklyTradesPanel from '@/components/trading/WeeklyTradesPanel';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { prefetchTradeExecutions } from '@/hooks/use-trade-executions';
+import { readDrafts, writeDrafts } from '@/lib/drafts';
 import { TRADE_GRADES_REPORT_KEY } from '@/lib/grades';
 import { aggregateDay } from '@/lib/journal-aggregates';
 import { DAILY_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
@@ -21,6 +22,7 @@ import type { TemplateField } from '@/lib/validations/reviews';
 
 const INITIAL_CHART_BATCH = 4;
 const CHART_BATCH_STEP = 4;
+const DAILY_DRAFTS_KEY = 'nexus-daily-review-drafts';
 
 interface DailyReportSheetProps {
   open: boolean;
@@ -97,6 +99,7 @@ export default function DailyReportSheet({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
+  const [hasDraft, setHasDraft] = useState(false);
   const [chartCount, setChartCount] = useState(INITIAL_CHART_BATCH);
   // All sheets — saved or fresh — open in 'view' so URLs render as clickable
   // anchors (the textarea swap happens via the `readOnly` prop on the
@@ -121,6 +124,7 @@ export default function DailyReportSheet({
     setTradeGrades({});
     setReportByKey(new Map());
     setEditingTemplate(false);
+    setHasDraft(false);
     setChartCount(INITIAL_CHART_BATCH);
     // Always reset to view; user explicitly clicks "Edit Review" to mutate.
     setViewMode('view');
@@ -169,9 +173,26 @@ export default function DailyReportSheet({
           setWatchlist([]);
           setTradeGrades({});
         }
+
+        // Re-pin auto fields after the draft so stale saved P/L can't shadow live aggregates.
+        // Skip entirely when the parent forces read-only (Archive / PDF export). Restoring a
+        // draft drops into Edit mode so the pill + Save button show.
+        const draft = date && !readOnly ? readDrafts<Record<string, unknown>>(DAILY_DRAFTS_KEY)[date] : undefined;
+        if (draft && date) {
+          const dayAgg = aggregateDay(trades, date);
+          setReportData((prev) => ({
+            ...prev,
+            ...draft,
+            grossResult: formatCurrency(dayAgg.grossResult),
+            netResult: formatCurrency(dayAgg.netResult),
+            rTotal: `${dayAgg.rTotal.toFixed(2)}R`,
+          }));
+          setHasDraft(true);
+          setViewMode('edit');
+        }
       })
       .finally(() => setLoading(false));
-  }, [open, date, trades]);
+  }, [open, date, readOnly, trades]);
 
   const agg = useMemo(() => (date ? aggregateDay(trades, date) : null), [date, trades]);
   const chartTrades = useMemo(
@@ -199,6 +220,16 @@ export default function DailyReportSheet({
     };
   }, [printOnReady, open, loading, chartTrades, chartCount]);
 
+  const updateReportField = (id: string, nextValue: unknown) => {
+    const next = { ...reportData, [id]: nextValue };
+    setReportData(next);
+    if (!date) return;
+    const drafts = readDrafts<Record<string, unknown>>(DAILY_DRAFTS_KEY);
+    drafts[date] = next;
+    writeDrafts(DAILY_DRAFTS_KEY, drafts);
+    setHasDraft(true);
+  };
+
   const handleSave = async () => {
     if (!date || !template) return;
     setSaving(true);
@@ -219,6 +250,12 @@ export default function DailyReportSheet({
       if (!response.ok) throw new Error('Save failed');
 
       toast.success('Daily review saved');
+      if (date) {
+        const drafts = readDrafts<Record<string, unknown>>(DAILY_DRAFTS_KEY);
+        delete drafts[date];
+        writeDrafts(DAILY_DRAFTS_KEY, drafts);
+      }
+      setHasDraft(false);
       onSaved?.();
       onOpenChange(false);
     } catch {
@@ -328,6 +365,13 @@ export default function DailyReportSheet({
               </div>
             ) : null}
 
+            {hasDraft && viewMode === 'edit' ? (
+              <p className="flex items-center gap-1.5 text-xs text-amber-500">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
+                Unsaved draft saved in this browser — hit {isExistingReport ? 'Update' : 'Save'} Review to store it.
+              </p>
+            ) : null}
+
             {watchlist.length > 0 ? <ArchivedWatchlist rows={watchlist} /> : null}
 
             <WeeklyTradesPanel
@@ -419,7 +463,7 @@ export default function DailyReportSheet({
                   field={field}
                   value={reportData[field.id]}
                   readOnly={effectiveReadOnly}
-                  onChange={(nextValue) => setReportData((prev) => ({ ...prev, [field.id]: nextValue }))}
+                  onChange={(nextValue) => updateReportField(field.id, nextValue)}
                 />
               ))}
             </div>

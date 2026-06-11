@@ -11,6 +11,7 @@ import WeeklyTradesPanel from '@/components/trading/WeeklyTradesPanel';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { prefetchTradeExecutions } from '@/hooks/use-trade-executions';
+import { readDrafts, writeDrafts } from '@/lib/drafts';
 import { TRADE_GRADES_REPORT_KEY } from '@/lib/grades';
 import { aggregateWeek } from '@/lib/journal-aggregates';
 import { WEEKLY_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
@@ -32,6 +33,7 @@ const HOISTED_FIELD_IDS = new Set(['weeklyTotal', 'netResult', 'rTotal', 'grade'
 // Match DailyReportSheet's chart pagination so the two sheets feel identical.
 const INITIAL_CHART_BATCH = 4;
 const CHART_BATCH_STEP = 4;
+const WEEKLY_DRAFTS_KEY = 'nexus-weekly-review-drafts';
 
 function formatRTotal(r: number): string {
   return `${r >= 0 ? '+' : ''}${r.toFixed(2)}R`;
@@ -150,6 +152,7 @@ export default function WeeklyReviewSheet({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
+  const [hasDraft, setHasDraft] = useState(false);
   const [chartCount, setChartCount] = useState(INITIAL_CHART_BATCH);
   // Mirror DailyReportSheet: every open defaults to 'view' so URLs render as
   // clickable anchors (TemplateFieldRenderer swaps the textarea for an
@@ -174,6 +177,7 @@ export default function WeeklyReviewSheet({
     setTradeGrades({});
     setReportByKey(new Map());
     setEditingTemplate(false);
+    setHasDraft(false);
     setChartCount(INITIAL_CHART_BATCH);
     // Always reset to view; user explicitly clicks "Edit Review" to mutate.
     setViewMode('view');
@@ -226,9 +230,27 @@ export default function WeeklyReviewSheet({
           });
           setTradeGrades({});
         }
+
+        // Re-pin auto fields after the draft so stale saved P/L can't shadow live aggregates.
+        // Skip entirely when the parent forces read-only (Archive / PDF export). Restoring a
+        // draft drops into Edit mode so the pill + Save button show.
+        const draft = weekStart && !readOnly
+          ? readDrafts<Record<string, unknown>>(WEEKLY_DRAFTS_KEY)[weekStart]
+          : undefined;
+        if (draft && weekStart) {
+          const weekAgg = aggregateWeek(trades, weekStart, weekEnd);
+          setReportData((prev) => ({
+            ...prev,
+            ...draft,
+            netResult: formatCurrency(weekAgg.netResult),
+            rTotal: formatRTotal(weekAgg.rTotal),
+          }));
+          setHasDraft(true);
+          setViewMode('edit');
+        }
       })
       .finally(() => setLoading(false));
-  }, [open, weekEnd, weekStart, trades]);
+  }, [open, readOnly, weekEnd, weekStart, trades]);
 
   const agg = useMemo(
     () => (weekStart && weekEnd ? aggregateWeek(trades, weekStart, weekEnd) : null),
@@ -260,6 +282,16 @@ export default function WeeklyReviewSheet({
     };
   }, [printOnReady, open, loading, chartTrades, chartCount]);
 
+  const updateReportField = (id: string, nextValue: unknown) => {
+    const next = { ...reportData, [id]: nextValue };
+    setReportData(next);
+    if (!weekStart) return;
+    const drafts = readDrafts<Record<string, unknown>>(WEEKLY_DRAFTS_KEY);
+    drafts[weekStart] = next;
+    writeDrafts(WEEKLY_DRAFTS_KEY, drafts);
+    setHasDraft(true);
+  };
+
   const handleSave = async () => {
     if (!weekStart || !weekEnd || !template) return;
     setSaving(true);
@@ -281,6 +313,12 @@ export default function WeeklyReviewSheet({
       if (!response.ok) throw new Error('Save failed');
 
       toast.success('Weekly review saved');
+      if (weekStart) {
+        const drafts = readDrafts<Record<string, unknown>>(WEEKLY_DRAFTS_KEY);
+        delete drafts[weekStart];
+        writeDrafts(WEEKLY_DRAFTS_KEY, drafts);
+      }
+      setHasDraft(false);
       onSaved?.();
       onOpenChange(false);
     } catch {
@@ -393,6 +431,13 @@ export default function WeeklyReviewSheet({
               </div>
             ) : null}
 
+            {hasDraft && viewMode === 'edit' ? (
+              <p className="flex items-center gap-1.5 text-xs text-amber-500">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
+                Unsaved draft saved in this browser — hit {isExistingReport ? 'Update' : 'Save'} Review to store it.
+              </p>
+            ) : null}
+
             {aggregatedWatchlist.length > 0 ? <ArchivedWatchlist rows={aggregatedWatchlist} /> : null}
 
             <WeeklyTradesPanel
@@ -427,7 +472,7 @@ export default function WeeklyReviewSheet({
                     field={GRADE_FIELD}
                     value={reportData.grade}
                     readOnly={effectiveReadOnly}
-                    onChange={(nextValue) => setReportData((prev) => ({ ...prev, grade: nextValue }))}
+                    onChange={(nextValue) => updateReportField('grade', nextValue)}
                   />
                 </div>
               </div>
@@ -509,7 +554,7 @@ export default function WeeklyReviewSheet({
                     field={field}
                     value={reportData[field.id]}
                     readOnly={effectiveReadOnly}
-                    onChange={(nextValue) => setReportData((prev) => ({ ...prev, [field.id]: nextValue }))}
+                    onChange={(nextValue) => updateReportField(field.id, nextValue)}
                   />
                 ))}
             </div>
