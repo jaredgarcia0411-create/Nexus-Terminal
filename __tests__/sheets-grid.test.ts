@@ -89,6 +89,24 @@ describe('sheets grid helpers', () => {
     expect(normalized.at(-1)).toEqual({ key: 'r', name: 'R', type: 'rmultiple', locked: true });
   });
 
+  it('unlocks a legacy locked Tag column so it can be deleted, without removing it', () => {
+    const legacyColumns = [
+      ...DEFAULT_SHEET_COLUMNS.slice(0, 2),
+      { key: 'tag', name: 'Tag', type: 'select', options: [], locked: true },
+      ...DEFAULT_SHEET_COLUMNS.slice(2),
+    ] satisfies SheetColumn[];
+
+    const normalized = ensureLockedColumns(legacyColumns);
+
+    expect(normalized.find((column) => column.key === 'tag')).toEqual({
+      key: 'tag',
+      name: 'Tag',
+      type: 'select',
+      options: [],
+      locked: false,
+    });
+  });
+
   it('returns columns unchanged when locked defaults are already present', () => {
     const columnsWithCustom = [
       ...DEFAULT_SHEET_COLUMNS,

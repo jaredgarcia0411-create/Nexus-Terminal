@@ -55,9 +55,9 @@ describe('sheets CSV import helpers', () => {
   });
 
   it('dedupes generated keys against locked defaults and prior import columns', () => {
-    const drafts = detectImportColumns(['Tag', 'Tag', ''], [['A', 'B', 'C']]);
+    const drafts = detectImportColumns(['Chart', 'Chart', ''], [['A', 'B', 'C']]);
 
-    expect(drafts.map((draft) => draft.key)).toEqual(['tag_2', 'tag_3', 'column']);
+    expect(drafts.map((draft) => draft.key)).toEqual(['chart_2', 'chart_3', 'column']);
   });
 
   it('coerces import numbers from currency, commas, and blanks', () => {
