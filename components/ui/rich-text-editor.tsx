@@ -71,7 +71,9 @@ export function RichTextEditor({ value, onChange, className, editable = true }: 
   });
 
   useEffect(() => {
-    editor?.setEditable(editable);
+    // Second arg false: don't emit an update. setEditable defaults to emitting
+    // 'update', which would fire onChange on mount and write a spurious draft.
+    editor?.setEditable(editable, false);
   }, [editor, editable]);
 
   if (!editor) return null;
