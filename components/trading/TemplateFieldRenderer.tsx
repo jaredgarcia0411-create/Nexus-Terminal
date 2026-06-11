@@ -1,8 +1,7 @@
 'use client';
 
-import LinkifiedText from '@/components/ui/linkified-text';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import type { TemplateField } from '@/lib/validations/reviews';
 
 interface TemplateFieldRendererProps {
@@ -51,29 +50,13 @@ export default function TemplateFieldRenderer({
 
   if (field.type === 'text') {
     const stringValue = typeof value === 'string' ? value : '';
-
-    // Read-only view (e.g. archived reviews) swaps the textarea for a div so
-    // URLs in the saved text become clickable anchors. whitespace-pre-wrap
-    // preserves the user's line breaks the same way a textarea would.
-    if (readOnly) {
-      return (
-        <div className="space-y-1">
-          <p className="text-xs font-medium capitalize text-foreground">{field.label}</p>
-          <div className="whitespace-pre-wrap break-words rounded-md border border-border bg-accent px-3 py-2 text-sm text-foreground">
-            {stringValue ? <LinkifiedText value={stringValue} /> : <span className="text-muted-foreground">—</span>}
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div className="space-y-1">
         <p className="text-xs font-medium capitalize text-foreground">{field.label}</p>
-        <Textarea
+        <RichTextEditor
           value={stringValue}
-          onChange={(event) => onChange?.(event.target.value)}
-          rows={3}
-          className="border-border bg-accent text-sm"
+          editable={!readOnly}
+          onChange={(html) => onChange?.(html)}
         />
       </div>
     );

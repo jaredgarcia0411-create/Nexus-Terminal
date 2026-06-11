@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
@@ -17,6 +17,7 @@ interface RichTextEditorProps {
   value: string;
   onChange: (html: string) => void;
   className?: string;
+  editable?: boolean;
 }
 
 // Legacy sections hold plain text. Escape HTML-special chars so they render as
@@ -46,10 +47,11 @@ function fromEditor(html: string): string {
   return html === '<p></p>' ? '' : html;
 }
 
-export function RichTextEditor({ value, onChange, className }: RichTextEditorProps) {
+export function RichTextEditor({ value, onChange, className, editable = true }: RichTextEditorProps) {
   const [sizeMenuOpen, setSizeMenuOpen] = useState(false);
   const editor = useEditor({
     immediatelyRender: false, // required under Next SSR to avoid hydration mismatch
+    editable,
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
@@ -67,6 +69,10 @@ export function RichTextEditor({ value, onChange, className }: RichTextEditorPro
       },
     },
   });
+
+  useEffect(() => {
+    editor?.setEditable(editable);
+  }, [editor, editable]);
 
   if (!editor) return null;
 

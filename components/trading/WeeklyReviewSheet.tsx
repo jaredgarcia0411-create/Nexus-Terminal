@@ -505,7 +505,7 @@ export default function WeeklyReviewSheet({
                 .filter((field) => !HOISTED_FIELD_IDS.has(field.id))
                 .map((field) => (
                   <TemplateFieldRenderer
-                    key={field.id}
+                    key={`${weekStart ?? 'new'}-${field.id}`}
                     field={field}
                     value={reportData[field.id]}
                     readOnly={effectiveReadOnly}

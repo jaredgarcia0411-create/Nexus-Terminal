@@ -5,8 +5,9 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import type { Trade } from '@/lib/types';
 import { buildTradeMarkers, formatCurrency, formatR, getPnLColor } from '@/lib/ui-trade-utils';
+import { readDrafts, writeDrafts } from '@/lib/drafts';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -20,6 +21,8 @@ import {
   type TradeChartTimeframeKey,
 } from '@/lib/chart-timeframes';
 import { nyDateTimeToEpoch, parseAbsoluteTimestampMs } from '@/lib/time-utils';
+
+const NOTES_DRAFTS_KEY = 'nexus-trade-notes-drafts';
 
 interface TradeDetailSheetProps {
   trade: Trade | null;
@@ -55,7 +58,13 @@ function prettyPct(value?: number | null) {
 }
 
 export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNotes, onCloseTrade }: TradeDetailSheetProps) {
-  const [notes, setNotes] = useState(trade?.notes ?? '');
+  const [notes, setNotes] = useState(() => {
+    const draft = trade ? readDrafts<string>(NOTES_DRAFTS_KEY)[trade.id] : undefined;
+    return draft ?? trade?.notes ?? '';
+  });
+  const [hasDraft, setHasDraft] = useState(() =>
+    trade ? readDrafts<string>(NOTES_DRAFTS_KEY)[trade.id] !== undefined : false,
+  );
   const [timeframe, setTimeframe] = useState<TradeChartTimeframeKey>('5m');
   const [closeExitPrice, setCloseExitPrice] = useState('');
   const [closeExitTime, setCloseExitTime] = useState('');
@@ -97,10 +106,23 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
     : '';
   const tradeTimeLabel = trade ? (trade.isOpen ? trade.entryTime : trade.exitTime) : '';
 
+  const updateNotes = (html: string) => {
+    setNotes(html);
+    if (!trade) return;
+    const drafts = readDrafts<string>(NOTES_DRAFTS_KEY);
+    drafts[trade.id] = html;
+    writeDrafts(NOTES_DRAFTS_KEY, drafts);
+    setHasDraft(true);
+  };
+
   const handleSave = async () => {
     if (!trade) return;
     try {
       await onSaveNotes(trade.id, notes);
+      const drafts = readDrafts<string>(NOTES_DRAFTS_KEY);
+      delete drafts[trade.id];
+      writeDrafts(NOTES_DRAFTS_KEY, drafts);
+      setHasDraft(false);
       toast.success('Notes saved');
     } catch (error) {
       console.error(error);
@@ -194,14 +216,16 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                 <h3 className="text-base font-semibold uppercase tracking-wider text-foreground">Notes</h3>
                 <div className="space-y-3">
                   <div className="space-y-2">
-                    <Textarea
-                      id="trade-notes"
+                    <RichTextEditor
                       value={notes}
-                      onChange={(event) => setNotes(event.target.value)}
-                      rows={10}
-                      className="bg-accent border-border"
-                      placeholder="Add notes about setup quality, execution, emotions, and lessons learned..."
+                      onChange={updateNotes}
                     />
+                    {hasDraft ? (
+                      <p className="mt-1 flex items-center gap-1.5 text-xs text-amber-500">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
+                        Unsaved draft saved in this browser — hit Save to store it.
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="flex justify-end gap-2">

@@ -415,7 +415,7 @@ export default function DailyReportSheet({
             <div className="space-y-3">
               {fields.map((field) => (
                 <TemplateFieldRenderer
-                  key={field.id}
+                  key={`${date ?? 'new'}-${field.id}`}
                   field={field}
                   value={reportData[field.id]}
                   readOnly={effectiveReadOnly}

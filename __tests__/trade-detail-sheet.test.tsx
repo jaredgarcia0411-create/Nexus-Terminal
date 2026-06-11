@@ -46,6 +46,12 @@ vi.mock('@/components/ui/select', () => ({
   SelectItem: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
+vi.mock('@/components/ui/rich-text-editor', () => ({
+  RichTextEditor: ({ value, onChange }: { value: string; onChange: (html: string) => void }) => (
+    <textarea value={value} onChange={(event) => onChange(event.target.value)} />
+  ),
+}));
+
 function makeTrade(overrides: Partial<Trade> = {}): Trade {
   return {
     id: 'trade-1',
@@ -80,6 +86,7 @@ function makeTrade(overrides: Partial<Trade> = {}): Trade {
 describe('TradeDetailSheet', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     candleState.candles = [];
     candleState.isLoading = false;
     candleState.error = null;
