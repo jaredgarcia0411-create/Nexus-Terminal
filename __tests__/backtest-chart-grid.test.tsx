@@ -11,7 +11,7 @@ vi.mock('@/components/trading/BacktestChart', () => ({
   default: (props: Record<string, unknown>) => {
     chartProps.push(props);
     const timeframe = String(props.timeframe);
-    const onToggleExpanded = props.onToggleExpanded as (() => void) | undefined;
+    const onSelectView = props.onSelectView as ((view: 'single') => void) | undefined;
     const onTimeframeChange = props.onTimeframeChange as ((next: string) => void) | undefined;
     const onIndicatorsChange = props.onIndicatorsChange as ((next: string[]) => void) | undefined;
     const extraSessionsForward = Number(props.extraSessionsForward ?? 0);
@@ -20,7 +20,7 @@ vi.mock('@/components/trading/BacktestChart', () => ({
       <div data-testid={`chart-${timeframe}`}>
         <span>{timeframe}</span>
         <span data-testid={`extra-${timeframe}`}>{extraSessionsForward}</span>
-        <button type="button" onClick={onToggleExpanded}>toggle {timeframe}</button>
+        <button type="button" onClick={() => onSelectView?.('single')}>toggle {timeframe}</button>
         <button type="button" onClick={() => onTimeframeChange?.('15m')}>timeframe {timeframe}</button>
         <button type="button" onClick={() => onIndicatorsChange?.(['EMA9'])}>indicator {timeframe}</button>
       </div>

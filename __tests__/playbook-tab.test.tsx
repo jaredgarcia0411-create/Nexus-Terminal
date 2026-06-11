@@ -60,6 +60,21 @@ vi.mock('@/components/ui/select', async () => {
   };
 });
 
+vi.mock('@/components/ui/rich-text-editor', () => ({
+  RichTextEditor: ({
+    value,
+    onChange,
+  }: {
+    value: string;
+    onChange: (html: string) => void;
+  }) => (
+    <textarea
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  ),
+}));
+
 interface Strategy {
   id: string;
   name: string;

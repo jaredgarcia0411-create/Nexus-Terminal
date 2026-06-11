@@ -7,8 +7,8 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { PLAYBOOK_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
 import { emptySectionsForTemplate } from '@/lib/playbook-defaults';
 import { formatCurrency } from '@/lib/ui-trade-utils';
@@ -513,10 +513,10 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
                 <p className="text-xs font-medium capitalize text-foreground">
                   {field.label}
                 </p>
-                <Textarea
+                <RichTextEditor
+                  key={`${selected.id}-${field.id}`}
                   value={selected.sections[field.id] ?? ''}
-                  onChange={(event) => updateSection(field.id, event.target.value)}
-                  className="min-h-[80px] border-border bg-accent text-sm"
+                  onChange={(html) => updateSection(field.id, html)}
                 />
               </div>
             ))}
@@ -583,4 +583,3 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
     </motion.div>
   );
 }
-
