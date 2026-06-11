@@ -23,7 +23,7 @@ import {
   type SeriesMarker,
   type Time,
 } from 'lightweight-charts';
-import { ChartCandlestick, ChevronLeft, ChevronRight, Layers, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
+import { ChartCandlestick, ChevronLeft, ChevronRight, Grid2x2, Layers, Rows2, Square } from 'lucide-react';
 
 import ChartDrawings from '@/components/trading/ChartDrawings';
 import DrawingToolbar from '@/components/trading/DrawingToolbar';
@@ -102,6 +102,16 @@ type MarketDataResponse = {
   error?: string;
 };
 
+// The three chart layouts the toolbar can switch between. 'single' shows just
+// this chart, 'stacked' lists all charts vertically, 'grid2x2' tiles them 2x2.
+export type ChartView = 'single' | 'stacked' | 'grid2x2';
+
+const VIEW_OPTIONS: { value: ChartView; Icon: typeof Square; label: string }[] = [
+  { value: 'stacked', Icon: Rows2, label: 'Stacked view' },
+  { value: 'grid2x2', Icon: Grid2x2, label: 'Grid view' },
+  { value: 'single', Icon: Square, label: 'Single chart' },
+];
+
 interface BacktestChartProps {
   ticker: string;
   anchorDate: string;
@@ -117,10 +127,8 @@ interface BacktestChartProps {
   drawingsController?: ChartDrawingsController | null;
   activeDrawingTool?: DrawingTool;
   onDrawingToolChange?: (tool: DrawingTool) => void;
-  isExpanded?: boolean;
-  onToggleExpanded?: () => void;
-  gridLayout?: 'stacked' | 'grid2x2';
-  onToggleGridLayout?: () => void;
+  chartView?: ChartView;
+  onSelectView?: (view: ChartView) => void;
   extraSessionsForward?: number;
   isReadOnly?: boolean;
 }
@@ -356,13 +364,12 @@ export default function BacktestChart({
   drawingsController = null,
   activeDrawingTool = null,
   onDrawingToolChange,
-  isExpanded = false,
-  onToggleExpanded,
-  gridLayout = 'stacked',
-  onToggleGridLayout,
+  chartView = 'stacked',
+  onSelectView,
   extraSessionsForward = 0,
   isReadOnly = false,
 }: BacktestChartProps) {
+  const isExpanded = chartView === 'single';
   const indicators = useMemo(() => new Set(defaultIndicators), [defaultIndicators]);
   const [seriesType, setSeriesType] = useState<SeriesType>('candles');
   const [drawingsCount, setDrawingsCount] = useState(0);
@@ -537,6 +544,11 @@ export default function BacktestChart({
       });
     }
 
+    // Hide the last-value horizontal line that crosses the whole chart. The
+    // right-axis price tag is controlled separately (lastValueVisible, on by
+    // default), so the value still shows on the right — just without the line.
+    baseSeries.applyOptions({ priceLineVisible: false });
+
     let disposed = false;
     queueMicrotask(() => {
       if (disposed) return;
@@ -645,6 +657,7 @@ export default function BacktestChart({
         color: '#888888',
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
+        lineVisible: false,
         axisLabelVisible: true,
         title: 'PDC',
       });
@@ -849,7 +862,7 @@ export default function BacktestChart({
   return (
     <section
       className={`flex ${
-        isExpanded ? 'min-h-[620px] flex-1' : gridLayout === 'grid2x2' ? 'h-full min-h-0' : 'h-[440px] shrink-0'
+        isExpanded ? 'min-h-[620px] flex-1' : chartView === 'grid2x2' ? 'h-full min-h-0' : 'h-[440px] shrink-0'
       } flex-col overflow-hidden border border-white/10 bg-[#121214]`}
     >
       <div className="relative flex h-9 shrink-0 items-center gap-1 border-b border-white/10 bg-[#0A0A0B] px-2">
@@ -957,31 +970,28 @@ export default function BacktestChart({
               disabled={isReadOnly}
             />
           ) : null}
-          {onToggleGridLayout ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={onToggleGridLayout}
-              className="text-zinc-300 hover:bg-white/10 hover:text-white"
-              title={gridLayout === 'grid2x2' ? 'Back to Stacked View' : '2x2 Grid Layout'}
-              aria-label={gridLayout === 'grid2x2' ? 'Back to Stacked View' : '2x2 Grid Layout'}
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-            </Button>
-          ) : null}
-          {onToggleExpanded ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={onToggleExpanded}
-              className="text-zinc-300 hover:bg-white/10 hover:text-white"
-              title={isExpanded ? 'Collapse chart' : 'Expand chart'}
-              aria-label={isExpanded ? 'Collapse chart' : 'Expand chart'}
-            >
-              {isExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-            </Button>
+          {onSelectView ? (
+            <div className="flex items-center gap-0.5">
+              {VIEW_OPTIONS.map(({ value, Icon, label }) => (
+                <Button
+                  key={value}
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => onSelectView(value)}
+                  aria-pressed={chartView === value}
+                  className={
+                    chartView === value
+                      ? 'bg-white/15 text-white hover:bg-white/15 hover:text-white'
+                      : 'text-zinc-400 hover:bg-white/10 hover:text-white'
+                  }
+                  title={label}
+                  aria-label={label}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </Button>
+              ))}
+            </div>
           ) : null}
         </div>
       </div>

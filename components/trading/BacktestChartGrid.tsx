@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import BacktestChart, { type IndicatorKey } from '@/components/trading/BacktestChart';
+import BacktestChart, { type ChartView, type IndicatorKey } from '@/components/trading/BacktestChart';
 import {
   fetchChartLibrary,
   normalizeDrawings,
@@ -441,21 +441,21 @@ export default function BacktestChartGrid({
     });
   };
 
-  const toggleExpandedSlot = (slotId: ChartSlotId) => {
-    const nextExpanded = currentGridState.expandedSlotId === slotId ? null : slotId;
-    writePersistedExpandedSlot(nextExpanded);
-    setGridState({
-      ...currentGridState,
-      expandedSlotId: nextExpanded,
-    });
-  };
-
-  const toggleGridLayout = () => {
-    setGridLayout((prev) => {
-      const next: GridLayout = prev === 'stacked' ? 'grid2x2' : 'stacked';
-      writePersistedGridLayout(next);
-      return next;
-    });
+  // Switch a chart's layout. 'single' expands just that slot; 'stacked'/'grid2x2'
+  // clear any expanded slot and set the shared multi-chart layout. Both pieces of
+  // state persist to localStorage so each user keeps their last view.
+  const selectView = (slotId: ChartSlotId, view: ChartView) => {
+    if (view === 'single') {
+      writePersistedExpandedSlot(slotId);
+      setGridState({ ...currentGridState, expandedSlotId: slotId });
+      return;
+    }
+    writePersistedExpandedSlot(null);
+    writePersistedGridLayout(view);
+    setGridLayout(view);
+    if (currentGridState.expandedSlotId !== null) {
+      setGridState({ ...currentGridState, expandedSlotId: null });
+    }
   };
 
   const setSlotTimeframe = (slotId: ChartSlotId, timeframe: BacktestTimeframeKey) => {
@@ -567,10 +567,8 @@ export default function BacktestChartGrid({
             drawingsController={isIntradayDrawingChart ? intradayController : higherController}
             activeDrawingTool={activeDrawingTool}
             onDrawingToolChange={setActiveDrawingTool}
-            isExpanded={isExpanded}
-            onToggleExpanded={() => toggleExpandedSlot(cell.id)}
-            gridLayout={gridLayout}
-            onToggleGridLayout={toggleGridLayout}
+            chartView={isExpanded ? 'single' : gridLayout}
+            onSelectView={(view) => selectView(cell.id, view)}
             extraSessionsForward={extraSessionsForward}
             isReadOnly={isReadOnly}
           />
