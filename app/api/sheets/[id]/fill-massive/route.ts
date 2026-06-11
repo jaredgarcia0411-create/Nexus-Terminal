@@ -25,14 +25,16 @@ function textCell(values: Record<string, unknown>, key: string): string {
   return String(values[key] ?? '').trim();
 }
 
-function needsVolume(values: Record<string, unknown>, keys: MassiveFillKeys): boolean {
+function needsVolume(values: Record<string, unknown>, keys: MassiveFillKeys, force: boolean): boolean {
+  if (force) return Boolean(keys.shareKey || keys.dollarKey);
   return Boolean(
     (keys.shareKey && isEmptySheetCell(values[keys.shareKey]))
     || (keys.dollarKey && isEmptySheetCell(values[keys.dollarKey])),
   );
 }
 
-function needsFloat(values: Record<string, unknown>, keys: MassiveFillKeys): boolean {
+function needsFloat(values: Record<string, unknown>, keys: MassiveFillKeys, force: boolean): boolean {
+  if (force) return Boolean(keys.floatKey);
   return Boolean(keys.floatKey && isEmptySheetCell(values[keys.floatKey]));
 }
 
@@ -86,11 +88,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const date = textCell(values, 'date');
       if (!ticker) continue;
 
-      if (date && isNyTradingDay(date) && needsVolume(values, keys)) {
+      if (date && isNyTradingDay(date) && needsVolume(values, keys, body.force)) {
         datesNeedingVolume.add(date);
       }
 
-      if (date && needsFloat(values, keys)) {
+      if (date && needsFloat(values, keys, body.force)) {
         floatNeeds.set(`${ticker}|${date}`, { ticker, date });
       }
     }
@@ -135,6 +137,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         keys,
         bar,
         sharesOutstanding,
+        force: body.force,
       });
 
       if (Object.keys(fill).length === 0) {

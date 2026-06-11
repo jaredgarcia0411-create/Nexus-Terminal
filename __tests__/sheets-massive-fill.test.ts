@@ -57,6 +57,20 @@ describe('sheets Massive fill helpers', () => {
     })).toEqual({});
   });
 
+  it('overwrites existing values when force is set', () => {
+    expect(computeRowFill({
+      values: { vol: 1, dvol: 'manual', float_value: 2 },
+      keys: getMassiveFillKeys(columns),
+      bar: { volume: 100, vwap: 2, close: 1 },
+      sharesOutstanding: 500,
+      force: true,
+    })).toEqual({
+      vol: 100,
+      dvol: 200,
+      float_value: 500,
+    });
+  });
+
   it('fills float from the dated shares the caller provides', () => {
     const keys = getMassiveFillKeys(columns);
     expect(computeRowFill({

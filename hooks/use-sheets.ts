@@ -273,12 +273,12 @@ export function useSheets() {
     }
   }, [activeSheet, rows]);
 
-  const fillMassive = useCallback(async (rowIds: string[]): Promise<FillMassiveResult> => {
+  const fillMassive = useCallback(async (rowIds: string[], force = false): Promise<FillMassiveResult> => {
     if (!activeSheet || rowIds.length === 0) return { filled: 0, missed: 0 };
 
     let surfacedError = false;
     try {
-      const res = await sendJson(`/api/sheets/${activeSheet.id}/fill-massive`, { rowIds });
+      const res = await sendJson(`/api/sheets/${activeSheet.id}/fill-massive`, { rowIds, force });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { error?: string } | null;
         const message = data?.error ?? 'Failed to fill data';

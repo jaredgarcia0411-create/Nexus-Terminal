@@ -456,13 +456,19 @@ function ReadOnlyCompactNumberCell({
   );
 }
 
-function getMassiveCandidateRowIds(rows: SheetRowRecord[], keys: MassiveFillKeys): string[] {
+function getMassiveCandidateRowIds(rows: SheetRowRecord[], keys: MassiveFillKeys, force = false): string[] {
   const rowIds: string[] = [];
   for (const row of rows) {
     const ticker = String(row.values.ticker ?? '').trim();
     if (!ticker) continue;
 
     const date = String(row.values.date ?? '').trim();
+    // Force-refresh re-pulls every row that has a ticker+date, even if its
+    // cells are already filled. The normal path only queues empty cells.
+    if (force) {
+      if (date) rowIds.push(row.id);
+      continue;
+    }
     const needsVolume = Boolean(
       date
       && (
@@ -1158,33 +1164,42 @@ export default function SheetsTab() {
     setEditColumn(null);
   };
 
-  const handleFillMassive = async () => {
+  const handleFillMassive = async (force = false) => {
     if (!activeSheet || fillingMassive) return;
 
-    const candidates = getMassiveCandidateRowIds(rows, massiveFillKeys);
+    const candidates = getMassiveCandidateRowIds(rows, massiveFillKeys, force);
     if (candidates.length === 0) {
-      toast.info('Nothing to fill');
+      toast.info(force ? 'Nothing to refresh' : 'Nothing to fill');
       return;
     }
 
+    // Daily bars for today's session aren't final until the close, so any
+    // value (fresh or refreshed) for a today-dated row is provisional.
+    const hasTodayRow = candidates.some((id) =>
+      String(rows.find((row) => row.id === id)?.values.date ?? '') === today);
+    if (hasTodayRow) {
+      toast.warning("Today's numbers are provisional until the market closes.");
+    }
+
     setFillingMassive(true);
-    const toastId = toast.loading(`Filled 0 · ${candidates.length} left...`);
+    const verb = force ? 'Refreshed' : 'Filled';
+    const toastId = toast.loading(`${verb} 0 · ${candidates.length} left...`);
     let filled = 0;
     let missed = 0;
 
     try {
       for (let index = 0; index < candidates.length; index += 40) {
         const batch = candidates.slice(index, index + 40);
-        const result = await sheets.fillMassive(batch);
+        const result = await sheets.fillMassive(batch, force);
         filled += result.filled;
         missed += result.missed;
         const left = Math.max(0, candidates.length - index - batch.length);
         if (left > 0) {
-          toast.loading(`Filled ${filled} · ${left} left...`, { id: toastId });
+          toast.loading(`${verb} ${filled} · ${left} left...`, { id: toastId });
         }
       }
 
-      toast.success(`Filled ${filled} · ${missed} unavailable`, { id: toastId });
+      toast.success(`${verb} ${filled} · ${missed} unavailable`, { id: toastId });
     } catch {
       toast.dismiss(toastId);
     } finally {
@@ -1403,9 +1418,9 @@ export default function SheetsTab() {
                 <Button
                   type="button"
                   size="icon-sm"
-                  onClick={() => void handleFillMassive()}
+                  onClick={(event) => void handleFillMassive(event.shiftKey)}
                   disabled={!canEditRows || !hasMassiveFillColumns || fillingMassive}
-                  title="Fill data"
+                  title="Fill data (Shift-click to refresh existing values)"
                   aria-label="Fill data"
                   className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40"
                 >

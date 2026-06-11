@@ -80,6 +80,9 @@ export const reorderRowsSchema = z.object({
 
 export const fillMassiveSchema = z.object({
   rowIds: z.array(z.string().min(1).max(64)).min(1).max(50),
+  // force=true re-pulls Massive data and overwrites existing values instead of
+  // only filling empty cells. Used by the Shift-click "refresh" path.
+  force: z.boolean().optional().default(false),
 });
 
 export const sheetImportSchema = z.object({

@@ -30,6 +30,7 @@ export function computeRowFill({
   keys,
   bar,
   sharesOutstanding,
+  force = false,
 }: {
   values: Record<string, unknown>;
   keys: MassiveFillKeys;
@@ -37,25 +38,25 @@ export function computeRowFill({
   // Shares outstanding as of the row's own date (the caller fetches it dated),
   // so this fills the correct historical float, not just today's.
   sharesOutstanding: number | null;
+  // When true, overwrite cells that already hold a value (refresh) instead of
+  // only writing into empty ones.
+  force?: boolean;
 }): Record<string, unknown> {
   const fill: Record<string, unknown> = {};
+  // A cell is writable if it's empty, or if we're force-refreshing.
+  const writable = (key: string) => force || (!hasFiniteNumber(values[key]) && isEmptySheetCell(values[key]));
 
   if (bar) {
-    if (keys.shareKey && !hasFiniteNumber(values[keys.shareKey]) && isEmptySheetCell(values[keys.shareKey])) {
+    if (keys.shareKey && writable(keys.shareKey)) {
       fill[keys.shareKey] = bar.volume;
     }
 
-    if (keys.dollarKey && !hasFiniteNumber(values[keys.dollarKey]) && isEmptySheetCell(values[keys.dollarKey])) {
+    if (keys.dollarKey && writable(keys.dollarKey)) {
       fill[keys.dollarKey] = Math.round((bar.vwap ?? bar.close) * bar.volume);
     }
   }
 
-  if (
-    keys.floatKey
-    && sharesOutstanding != null
-    && !hasFiniteNumber(values[keys.floatKey])
-    && isEmptySheetCell(values[keys.floatKey])
-  ) {
+  if (keys.floatKey && sharesOutstanding != null && writable(keys.floatKey)) {
     fill[keys.floatKey] = sharesOutstanding;
   }
 
