@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Search } from 'lucide-react';
 
-import ResearchTickerView from '@/components/trading/ResearchTickerView';
+import ResearchTickerView, { AddToSheetsButton } from '@/components/trading/ResearchTickerView';
 
 interface ResearchTabProps {
   pendingResearchTicker: string | null;
@@ -60,11 +60,18 @@ export default function ResearchTab({ pendingResearchTicker, onClearPendingTicke
             className="w-48 rounded-lg border border-border bg-card py-1.5 pl-10 pr-3 text-sm text-foreground transition-colors focus:border-ring/50 focus:outline-none"
           />
         </div>
+        {/* Mobile only: the ticker view hides its inline Add-to-Sheets there and surfaces it here
+            next to the search box. Desktop keeps the button overlaid in the ticker view. */}
+        {selectedTicker ? (
+          <div className="md:hidden">
+            <AddToSheetsButton ticker={selectedTicker} />
+          </div>
+        ) : null}
       </div>
 
       {/* Height anchor only — no overflow here. ResearchTickerView owns the inner scroll, so the page
           shows one scrollbar (inside the sections), not two stacked. */}
-      <div className="h-[calc(100vh-120px)]">
+      <div className="min-h-[60vh] md:h-[calc(100vh-120px)]">
         {selectedTicker ? (
           <ResearchTickerView ticker={selectedTicker} />
         ) : (

@@ -136,7 +136,7 @@ export default function ResearchTickerView({ ticker }: Props) {
           without restructuring the shared sub-nav component. */}
       <div className="relative shrink-0">
         <ResearchSubNav tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
-        <div className="flex items-center gap-2 px-3 pb-2 md:absolute md:right-2 md:top-1/2 md:-translate-y-1/2 md:px-0 md:pb-0">
+        <div className="hidden items-center gap-2 px-3 pb-2 md:absolute md:right-2 md:top-1/2 md:flex md:-translate-y-1/2 md:px-0 md:pb-0">
           <AddToSheetsButton ticker={ticker} />
         </div>
       </div>
@@ -167,7 +167,7 @@ export default function ResearchTickerView({ ticker }: Props) {
   );
 }
 
-function AddToSheetsButton({ ticker }: { ticker: string }) {
+export function AddToSheetsButton({ ticker }: { ticker: string }) {
   const [sheets, setSheets] = useState<SheetPickerItem[]>([]);
   const [saving, setSaving] = useState(false);
 
