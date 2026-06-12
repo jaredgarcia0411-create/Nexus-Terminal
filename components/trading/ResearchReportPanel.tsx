@@ -281,14 +281,14 @@ export function ResearchReportBody({
 }) {
   return (
     <div className="space-y-4 rounded border border-border bg-accent p-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <span className="flex items-center gap-2">
           <span className="text-xs uppercase tracking-wide text-muted-foreground">Confidence</span>
           <span className="rounded bg-card/40 px-2 py-0.5 text-xs font-medium uppercase text-foreground">
             {report.confidence}
           </span>
         </span>
-        {generatedAt ? <span className="text-xs text-muted-foreground">{new Date(generatedAt).toLocaleString()}</span> : null}
+        {generatedAt ? <span className="hidden text-xs text-muted-foreground sm:inline">{new Date(generatedAt).toLocaleString()}</span> : null}
       </div>
 
       <RatedRow label="Overall Offering Risk" section={report.overallOfferingRisk} />

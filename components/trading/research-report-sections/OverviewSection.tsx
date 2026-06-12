@@ -107,11 +107,11 @@ export default function OverviewSection({ ticker, data, onSelectGapDate }: Props
 
   return (
     <div className="space-y-5 p-3">
-      <div className="flex gap-4">
+      <div className="flex flex-col gap-4 md:flex-row">
         <div className="min-w-0 flex-1">
           <ResearchTldr key={ticker} ticker={ticker} />
         </div>
-        <div className="w-64 shrink-0">
+        <div className="w-full shrink-0 md:w-64">
           <DilutionRatingTile
             offeringAbilityRating={data.offeringAbilityRating}
             offeringFrequencyRating={data.offeringFrequencyRating}

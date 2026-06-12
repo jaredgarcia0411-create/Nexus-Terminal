@@ -426,12 +426,12 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
         ) : (
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
                   value={selected.name}
                   onChange={(event) => updateSelected({ name: event.target.value })}
                   placeholder="Strategy Name"
-                  className="h-9 flex-1 border-border bg-accent text-base font-medium"
+                  className="h-9 w-full border-border bg-accent text-base font-medium sm:flex-1"
                 />
                 <div className="flex w-44 shrink-0 items-center gap-2">
                   <Select
@@ -481,12 +481,12 @@ export default function PlaybookTab({ trades, globalTags }: PlaybookTabProps) {
               </div>
               {/* Description row: edit-template button sits to the right at
                   the same height (h-9) so it lines up with the inputs above. */}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
                   value={selected.description}
                   onChange={(event) => updateSelected({ description: event.target.value })}
                   placeholder="One-line description"
-                  className="h-9 flex-1 border-border bg-accent text-sm text-foreground"
+                  className="h-9 w-full border-border bg-accent text-sm text-foreground sm:flex-1"
                 />
                 <Button
                   onClick={() => setEditingTemplate((flag) => !flag)}

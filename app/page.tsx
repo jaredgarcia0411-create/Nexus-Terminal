@@ -270,8 +270,8 @@ export default function NexusTerminal() {
             activeTab === 'charts' || activeTab === 'research' || activeTab === 'sheets'
               ? 'px-3 py-4'
               : activeTab === 'trades' || activeTab === 'journal'
-                ? 'mx-auto max-w-7xl px-8 py-4'
-                : 'mx-auto max-w-7xl p-8'
+                ? 'mx-auto max-w-7xl px-4 py-4 md:px-8'
+                : 'mx-auto max-w-7xl p-4 md:p-8'
           }
         >
           <AnimatePresence mode="wait">

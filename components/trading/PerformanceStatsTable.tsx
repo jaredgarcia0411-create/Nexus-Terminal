@@ -341,7 +341,7 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
 
       <div className="divide-y divide-border">
         {rows.map((row, rowIndex) => (
-          <div key={`row-${rowIndex}`} className="grid grid-cols-3 gap-4 py-3 text-sm sm:text-xs">
+          <div key={`row-${rowIndex}`} className="grid grid-cols-1 gap-4 py-3 text-sm sm:grid-cols-2 sm:text-xs lg:grid-cols-3">
             {row.map((cell, cellIndex) => (
               <div key={`cell-${rowIndex}-${cellIndex}`} className="flex items-center justify-between gap-2">
                 <span className="text-xs text-muted-foreground">{cell.label}</span>

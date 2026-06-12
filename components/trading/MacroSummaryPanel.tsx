@@ -200,8 +200,8 @@ export default function MacroSummaryPanel() {
 
   return (
     <div className="space-y-4 rounded border border-border bg-accent p-4">
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <span className="flex flex-wrap items-center gap-2">
           <span className="text-xs uppercase tracking-wide text-muted-foreground">Bias</span>
           <span className="rounded bg-card/40 px-2 py-0.5 text-xs font-medium uppercase text-foreground">
             {report.marketBias}
@@ -213,7 +213,7 @@ export default function MacroSummaryPanel() {
         </span>
         <span className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>{report.tradingDate}</span>
-          {generatedAt ? <span>· {new Date(generatedAt).toLocaleString()}</span> : null}
+          {generatedAt ? <span className="hidden sm:inline">· {new Date(generatedAt).toLocaleString()}</span> : null}
         </span>
       </div>
 

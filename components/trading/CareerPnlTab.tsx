@@ -213,7 +213,7 @@ export default function CareerPnlTab() {
       {/* Add row */}
       <div className="rounded-2xl border border-border bg-card p-4">
         <p className="text-sm font-medium text-foreground">Add Month</p>
-        <div className="mt-3 grid grid-cols-[160px_minmax(120px,180px)_1fr_auto] gap-3">
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[160px_minmax(120px,180px)_1fr_auto]">
           <div>
             <p className="mb-1 text-[11px] uppercase tracking-wider text-muted-foreground">Month</p>
             <input
@@ -247,7 +247,7 @@ export default function CareerPnlTab() {
             <Button
               onClick={handleAdd}
               disabled={saving}
-              className="h-9 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+              className="h-9 w-full border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 sm:w-auto"
             >
               <Plus className="h-4 w-4" />
               Save

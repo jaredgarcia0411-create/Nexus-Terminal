@@ -132,22 +132,22 @@ export default function ResearchTickerView({ ticker }: Props) {
   return (
     <div className="flex h-full flex-col">
       {/* Sub-nav stays pinned so the user can swap tabs without scrolling back up. shrink-0 keeps it
-          out of the flex distribution. The relative wrapper lets the watchlist button overlay the
-          sub-nav row on the right without restructuring the shared sub-nav component. */}
+          out of the flex distribution. The relative wrapper keeps Add to Sheets overlaid at md+
+          without restructuring the shared sub-nav component. */}
       <div className="relative shrink-0">
         <ResearchSubNav tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
-        <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-2">
+        <div className="flex items-center gap-2 px-3 pb-2 md:absolute md:right-2 md:top-1/2 md:-translate-y-1/2 md:px-0 md:pb-0">
           <AddToSheetsButton ticker={ticker} />
         </div>
       </div>
 
       {/* Top row: company info panel on the left, chart only where it supports the tab. Pinned. */}
-      <div className={`flex shrink-0 border-b border-border ${hasChart ? 'h-[380px]' : ''}`}>
-        <div className="scrollbar-hidden w-[320px] shrink-0 overflow-y-auto border-r border-border bg-card">
+      <div className={`flex shrink-0 flex-col border-b border-border md:flex-row ${hasChart ? 'md:h-[380px]' : ''}`}>
+        <div className="scrollbar-hidden w-full shrink-0 overflow-y-auto border-b border-border bg-card md:w-[320px] md:border-b-0 md:border-r">
           <ResearchCompanyHeader ticker={ticker} companyName={data.companyName ?? null} header={data.header} compact={!hasChart} />
         </div>
         {hasChart ? (
-          <div className="min-h-0 flex-1 bg-background">
+          <div className="h-[300px] w-full bg-background md:h-auto md:min-h-0 md:flex-1">
             <ResearchChart
               ticker={ticker}
               historicalDate={historicalDate}

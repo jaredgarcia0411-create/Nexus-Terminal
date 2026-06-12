@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, CalendarDays, ChartCandlestick, ChevronLeft, ChevronRight, File, FileSpreadsheet, Folder, LayoutGrid, List, MoreHorizontal, Plus, Search, Upload, User } from 'lucide-react';
+import { Activity, CalendarDays, ChartCandlestick, ChevronLeft, ChevronRight, File, FileSpreadsheet, Folder, LayoutGrid, List, Plus, Search, Upload, User } from 'lucide-react';
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import SettingsMenu from '@/components/trading/SettingsMenu';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -8,11 +8,6 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import type { Trade } from '@/lib/types';
 
 export type TabKey = 'dashboard' | 'trades' | 'journal' | 'charts' | 'sheets' | 'research';
-
-// On mobile the bottom bar shows only the primary tabs; the rest live behind a
-// "More" menu so the bar doesn't overcrowd.
-const MOBILE_PRIMARY: TabKey[] = ['dashboard', 'trades', 'sheets', 'research'];
-const MOBILE_MORE: TabKey[] = ['journal', 'charts'];
 
 type UserSession = { id?: string; name?: string | null; email?: string | null; image?: string | null } | undefined;
 
@@ -58,16 +53,10 @@ export default function Sidebar({
   ];
 
   if (isMobile) {
-    const primaryItems = MOBILE_PRIMARY
-      .map((tab) => navItems.find((item) => item.tab === tab))
-      .filter((item): item is (typeof navItems)[number] => Boolean(item));
-    const moreItems = navItems.filter((item) => MOBILE_MORE.includes(item.tab));
-    const moreActive = MOBILE_MORE.includes(activeTab);
-
     return (
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background px-2 py-2">
         <div className="flex items-center justify-around text-muted-foreground">
-          {primaryItems.map((item) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
             return (
               <button
@@ -82,34 +71,7 @@ export default function Sidebar({
             );
           })}
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className={`rounded-lg p-2 transition-colors ${moreActive ? 'bg-primary/10 text-primary' : 'hover:text-foreground'}`}
-                title="More"
-                aria-label="More tabs"
-              >
-                <MoreHorizontal className="h-5 w-5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" side="top" className="border-border bg-card text-foreground">
-              {moreItems.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <DropdownMenuItem
-                    key={item.tab}
-                    onClick={() => setActiveTab(item.tab)}
-                    className={`cursor-pointer gap-2 ${activeTab === item.tab ? 'text-primary' : ''}`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {item.title}
-                  </DropdownMenuItem>
-                );
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <SettingsMenu trades={trades} onClearAllData={onClearAllData} />
+          <SettingsMenu trades={trades} onClearAllData={onClearAllData} collapsed />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
