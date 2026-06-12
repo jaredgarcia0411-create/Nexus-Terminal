@@ -183,6 +183,7 @@ describe('sec submissions', () => {
       sinceDays: 730,
       parseCandidateLimit: 0,
       metadataOnly: true,
+      enrichHeadlines: true,
     });
     expect(getSecFilingPullProfileConfig('completed-offerings').limit).toBe(5000);
     expect(getSecFilingPullProfileConfig('completed-offerings').parseCandidateLimit).toBe(300);

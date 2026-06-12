@@ -4,6 +4,7 @@ import { getDb } from '@/lib/db';
 import { secFilingsRaw } from '@/lib/db/schema';
 import { secFetchJson, SecHttpError } from '@/lib/sec/client';
 import { getCikForTicker, normalizeTicker, padCik } from '@/lib/sec/cik-map';
+import { enrichFilingHeadlines } from '@/lib/sec/filing-headline';
 import { summarizeFilingMetadata } from '@/lib/sec/filing-summary';
 
 const SUBMISSIONS_BASE = 'https://data.sec.gov/submissions';
@@ -56,6 +57,7 @@ export interface GetRecentFilingsOptions {
   sinceDays?: number;       // default 90; pass 0 to disable the recency filter
   includeArchives?: boolean;
   persistRaw?: boolean;
+  enrichHeadlines?: boolean;
 }
 
 export interface SecFilingPullProfileConfig {
@@ -63,6 +65,7 @@ export interface SecFilingPullProfileConfig {
   sinceDays: number;
   parseCandidateLimit: number;
   metadataOnly: boolean;
+  enrichHeadlines: boolean;
 }
 
 interface RawArchiveFile {
@@ -91,24 +94,28 @@ const SEC_FILING_PULL_PROFILES: Record<SecFilingPullProfile, SecFilingPullProfil
     sinceDays: DAYS_PER_YEAR * 2,
     parseCandidateLimit: 0,
     metadataOnly: true,
+    enrichHeadlines: true,
   },
   'completed-offerings': {
     limit: 5000,
     sinceDays: DAYS_PER_YEAR * 10,
     parseCandidateLimit: 300,
     metadataOnly: false,
+    enrichHeadlines: false,
   },
   'reverse-splits': {
     limit: 5000,
     sinceDays: DAYS_PER_YEAR * 10,
     parseCandidateLimit: 200,
     metadataOnly: false,
+    enrichHeadlines: false,
   },
   'symbol-changes': {
     limit: 5000,
     sinceDays: DAYS_PER_YEAR * 10,
     parseCandidateLimit: 200,
     metadataOnly: false,
+    enrichHeadlines: false,
   },
 };
 
@@ -304,6 +311,7 @@ export async function getRecentFilings(
     sinceDays: options.sinceDays ?? DEFAULT_SINCE_DAYS,
     includeArchives: options.includeArchives ?? false,
     persistRaw: options.persistRaw ?? false,
+    enrichHeadlines: options.enrichHeadlines ?? false,
   };
   const tickerRequested = normalizeTicker(rawTicker);
 
@@ -349,6 +357,19 @@ export async function getRecentFilings(
         console.warn('[sec-submissions] raw metadata persist failed:', persistError);
       });
     }
+    if (opts.enrichHeadlines) {
+      try {
+        const headlines = await enrichFilingHeadlines(results);
+        if (headlines.size > 0) {
+          for (const filing of results) {
+            const better = headlines.get(filing.accession_number);
+            if (better) filing.headline = better;
+          }
+        }
+      } catch (error) {
+        console.warn('[sec-submissions] headline enrichment failed:', error);
+      }
+    }
     return { status: 'success', count: results.length, results };
   } catch (error) {
     const message = error instanceof Error
@@ -369,6 +390,7 @@ export async function getSecFilingsForProfile(
     sinceDays: config.sinceDays,
     includeArchives: true,
     persistRaw: true,
+    enrichHeadlines: config.enrichHeadlines,
   });
 }
 

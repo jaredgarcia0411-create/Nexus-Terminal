@@ -117,7 +117,9 @@ export default function NewsSection({ news, ticker }: Props) {
                   ) : null}
                   <span>{formatRelativeTime(item.filedAt)} · {formatListTimestamp(item.filedAt)}</span>
                 </div>
-                <div className="mt-1 text-sm font-semibold text-foreground">{item.title}</div>
+                <div className={`mt-1 text-sm font-semibold text-foreground${!item.isNews ? ' capitalize' : ''}`}>
+                  {item.title}
+                </div>
               </>
             );
 

@@ -1,0 +1,1 @@
+ALTER TABLE "sec_filings_raw" ADD COLUMN "pr_headline" text;

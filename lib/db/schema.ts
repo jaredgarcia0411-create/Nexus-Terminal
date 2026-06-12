@@ -278,6 +278,8 @@ export const secFilingsRaw = pgTable('sec_filings_raw', {
   items: text('items'),
   primaryDocument: text('primary_document'),
   primaryDocDescription: text('primary_doc_description'),
+  // NULL = unchecked; empty string = checked with no PR exhibit; non-empty = extracted PR headline.
+  prHeadline: text('pr_headline'),
   secUrl: text('sec_url'),
   archiveSource: text('archive_source'),
   metadataJson: jsonb('metadata_json').notNull(),
