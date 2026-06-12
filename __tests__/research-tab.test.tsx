@@ -18,7 +18,14 @@ vi.mock('@/components/trading/ResearchTickerView', async () => {
     return <div>Research view for {ticker}</div>;
   }
 
-  return { default: MockResearchTickerView };
+  function MockAddToSheetsButton({ ticker }: { ticker: string }) {
+    return <button type="button">Add {ticker} to Sheets</button>;
+  }
+
+  return {
+    default: MockResearchTickerView,
+    AddToSheetsButton: MockAddToSheetsButton,
+  };
 });
 
 import ResearchTab from '@/components/trading/ResearchTab';

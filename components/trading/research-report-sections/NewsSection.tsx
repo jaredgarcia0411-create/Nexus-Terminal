@@ -106,19 +106,42 @@ export default function NewsSection({ news, ticker }: Props) {
           transition={{ duration: 0.2, ease: 'easeOut' }}
           className="space-y-2 p-3"
         >
-          {news.map((item, index) => (
-            <button
-              key={`news-${index}`}
-              type="button"
-              onClick={() => setSelectedIndex(index)}
-              className="block w-full cursor-pointer rounded-xl border border-border bg-card p-4 text-left transition-colors hover:bg-accent"
-            >
-              <div className="text-xs text-muted-foreground">
-                {formatRelativeTime(item.filedAt)} · {formatListTimestamp(item.filedAt)}
-              </div>
-              <div className="mt-1 text-sm font-semibold text-foreground">{item.title}</div>
-            </button>
-          ))}
+          {news.map((item, index) => {
+            const content = (
+              <>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {!item.isNews && item.formType ? (
+                    <span className="rounded-sm bg-accent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                      {item.formType}
+                    </span>
+                  ) : null}
+                  <span>{formatRelativeTime(item.filedAt)} · {formatListTimestamp(item.filedAt)}</span>
+                </div>
+                <div className="mt-1 text-sm font-semibold text-foreground">{item.title}</div>
+              </>
+            );
+
+            return item.isNews ? (
+              <button
+                key={`news-${index}`}
+                type="button"
+                onClick={() => setSelectedIndex(index)}
+                className="block w-full cursor-pointer rounded-xl border border-border bg-card p-4 text-left transition-colors hover:bg-accent"
+              >
+                {content}
+              </button>
+            ) : (
+              <a
+                key={`news-${index}`}
+                href={item.url ?? '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block w-full cursor-pointer rounded-xl border border-border bg-card p-4 text-left transition-colors hover:bg-accent"
+              >
+                {content}
+              </a>
+            );
+          })}
           {news.length === 0 ? <NoDataBadge /> : null}
         </motion.div>
       )}

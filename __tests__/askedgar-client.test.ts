@@ -378,7 +378,7 @@ describe('askedgar client', () => {
     expect(newsUrl.origin).toBe('https://eodhd.com');
     expect(newsUrl.pathname).toBe('/api/news');
     expect(newsUrl.searchParams.get('s')).toBe('AAPL.US');
-    expect(newsUrl.searchParams.get('limit')).toBe('20');
+    expect(newsUrl.searchParams.get('limit')).toBe('50');
     expect(newsUrl.searchParams.get('fmt')).toBe('json');
     expect(newsUrl.searchParams.has('form_type')).toBe(false);
   });

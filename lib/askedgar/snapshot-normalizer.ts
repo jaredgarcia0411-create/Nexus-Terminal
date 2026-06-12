@@ -1,6 +1,7 @@
 import { decodeHtmlEntities, getField, toNumberValue, toRecord } from '@/lib/askedgar-utils';
 import { bucketForFormType } from '@/lib/filings-bucket';
 import type {
+  FilingBucket,
   ResearchSnapshotFull,
   ResearchSnapshotConvertibleNote,
   ResearchSnapshotFiling,
@@ -258,6 +259,31 @@ export function normalizeAskEdgarResponse(
 
   const filings = secFilingRows;
 
+  // Unified "what happened" feed: EODHD articles + material SEC filings, newest first.
+  // Whitelist by bucket so the News tab surfaces structural events (8-K/6-K, S-1/S-3/F-*,
+  // 424B prospectuses) without drowning in routine forms (Form 4, 13G, 10-K, proxies).
+  const MATERIAL_FILING_BUCKETS: ReadonlySet<FilingBucket> = new Set(['news', 'registrations', 'prospectus']);
+
+  const filingNewsItems: ResearchSnapshotNewsItem[] = filings
+    .filter((filing) => MATERIAL_FILING_BUCKETS.has(filing.bucket))
+    .map((filing) => ({
+      title: filing.title,
+      summary: '',
+      filedAt: filing.filedAt,
+      formType: filing.formType,
+      url: filing.url,
+      isNews: false,
+    }));
+
+  const unifiedNews = [...news, ...filingNewsItems].sort((a, b) => {
+    const at = a.filedAt ? new Date(a.filedAt).getTime() : NaN;
+    const bt = b.filedAt ? new Date(b.filedAt).getTime() : NaN;
+    if (Number.isNaN(at) && Number.isNaN(bt)) return 0;
+    if (Number.isNaN(at)) return 1;
+    if (Number.isNaN(bt)) return -1;
+    return bt - at;
+  });
+
   const currentPrice = toNumberValue(getField(screener, ['price']));
   const warrants: ResearchSnapshotWarrant[] = dilutionData.results.reduce<ResearchSnapshotWarrant[]>((rows, item, index) => {
     const row = toRecord(item);
@@ -428,7 +454,7 @@ export function normalizeAskEdgarResponse(
     registrations,
     equityLines,
     offerings,
-    news,
+    news: unifiedNews,
     filings,
     historicalFloat,
     reverseSplits,

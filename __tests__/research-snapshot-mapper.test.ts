@@ -141,6 +141,13 @@ describe('normalizeAskEdgarResponse', () => {
         formType: 'News',
         isNews: true,
       }),
+      expect.objectContaining({
+        title: 'Registration statement',
+        summary: '',
+        filedAt: '2024-12-15',
+        formType: 'S-1',
+        isNews: false,
+      }),
     ]);
     expect(snapshot.filings).toEqual([
       expect.objectContaining({
@@ -229,6 +236,91 @@ describe('normalizeAskEdgarResponse', () => {
       expect.objectContaining({
         date: '2026-04-15',
         outstanding: 123456789,
+      }),
+    ]);
+  });
+
+  it('merges only material SEC filings into news and sorts the unified feed newest first', () => {
+    const rawData: Record<string, AskEdgarResponse<unknown>> = {
+      screener: emptyResponse,
+      'dilution-rating': emptyResponse,
+      'dilution-data': emptyResponse,
+      'nasdaq-compliance': emptyResponse,
+      registrations: emptyResponse,
+      'equity-lines': emptyResponse,
+      offerings: emptyResponse,
+      news: {
+        status: 'success',
+        count: 1,
+        results: [
+          {
+            title: 'Company announces financing update',
+            content: 'A financing update was announced.',
+            date: '2026-06-09T13:00:00Z',
+          },
+        ],
+      },
+      'sec-filings': {
+        status: 'success',
+        count: 2,
+        results: [
+          {
+            accession_number: '0000000001-26-000300',
+            form_type: '6-K',
+            filed_at: '2026-06-10',
+            headline: 'Foreign issuer report',
+            url: 'https://www.sec.gov/Archives/edgar/data/1/6k.htm',
+          },
+          {
+            accession_number: '0000000001-26-000301',
+            form_type: '4',
+            filed_at: '2026-06-11',
+            headline: 'Statement of changes in beneficial ownership',
+            url: 'https://www.sec.gov/Archives/edgar/data/1/form4.htm',
+          },
+        ],
+      },
+      'historical-float-pro': emptyResponse,
+      'reverse-splits': emptyResponse,
+      'gap-stats': emptyResponse,
+    };
+
+    const snapshot = normalizeAskEdgarResponse(rawData, {
+      ticker: 'ABCD',
+      companyName: 'Acme Biotech',
+      fetchedAt: '2026-06-12T00:00:00.000Z',
+      warnings: [],
+    });
+
+    expect(snapshot.news).toEqual([
+      expect.objectContaining({
+        title: 'Foreign issuer report',
+        filedAt: '2026-06-10',
+        formType: '6-K',
+        isNews: false,
+      }),
+      expect.objectContaining({
+        title: 'Company announces financing update',
+        filedAt: '2026-06-09T13:00:00Z',
+        formType: 'News',
+        isNews: true,
+      }),
+    ]);
+    expect(snapshot.news).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        formType: '4',
+      }),
+    ]));
+    expect(snapshot.filings).toEqual([
+      expect.objectContaining({
+        accessionNumber: '0000000001-26-000301',
+        formType: '4',
+        bucket: 'ownerships',
+      }),
+      expect.objectContaining({
+        accessionNumber: '0000000001-26-000300',
+        formType: '6-K',
+        bucket: 'news',
       }),
     ]);
   });
