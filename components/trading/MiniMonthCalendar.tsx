@@ -74,7 +74,7 @@ export default function MiniMonthCalendar({
         {WEEKDAYS.map((day) => (
           <div
             key={day}
-            className="text-center text-[10px] font-bold tracking-widest text-muted-foreground"
+            className="text-center text-[12px] font-bold tracking-widest text-muted-foreground"
           >
             {day}
           </div>
@@ -97,7 +97,7 @@ export default function MiniMonthCalendar({
           return (
             <div
               key={key}
-              className={`flex h-8 items-center justify-center rounded-sm text-sm font-mono tabular-nums ${tone}`}
+              className={`flex h-8 items-center justify-center rounded-sm text-sm tabular-nums ${tone}`}
             >
               {format(day, 'd')}
             </div>

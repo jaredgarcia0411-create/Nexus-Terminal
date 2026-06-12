@@ -200,7 +200,7 @@ export default function TradingCalendar({
 
         <div className={`grid gap-px overflow-hidden rounded-xl border border-border bg-accent ${isMobile ? 'grid-cols-7' : 'grid-cols-8'}`}>
           {(isMobile ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Weekly']).map((day) => (
-            <div key={day} className="bg-card py-3 text-center text-[11px] font-bold text-muted-foreground tracking-widest">
+            <div key={day} className="bg-card py-3 text-center text-[13px] font-bold text-muted-foreground tracking-widest">
               {day}
             </div>
           ))}
@@ -231,7 +231,7 @@ export default function TradingCalendar({
                       isOffDay ? 'bg-accent/40' : ''
                     } ${isSelected ? 'bg-primary/5 ring-1 ring-inset ring-primary/30' : ''}`}
                   >
-                    <span className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} font-mono ${isToday ? 'text-foreground font-bold' : 'text-muted-foreground'}`}>
+                    <span className={`${isMobile ? 'text-[12px]' : 'text-[13px]'} ${isToday ? 'text-foreground font-bold' : 'text-muted-foreground'}`}>
                       {format(day, 'd')}
                     </span>
 

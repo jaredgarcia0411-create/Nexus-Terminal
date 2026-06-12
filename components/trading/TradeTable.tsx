@@ -131,7 +131,7 @@ export default function TradeTable({
                   </td>
                 ) : null}
 
-                <td className="px-4 py-3 text-muted-foreground font-mono whitespace-nowrap">{format(new Date(trade.date), 'MMM dd, yyyy')}</td>
+                <td className="px-4 py-3 text-foreground whitespace-nowrap">{format(new Date(trade.date), 'MMM dd, yyyy')}</td>
                 <td className="px-4 py-3 font-medium">
                   <span>{trade.symbol}</span>
                   {trade.isOpen ? (
@@ -169,11 +169,11 @@ export default function TradeTable({
                     <span className="text-muted-foreground">-</span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-right font-mono">{formatCurrency(trade.avgEntryPrice)}</td>
-                <td className="px-4 py-3 text-right font-mono">{formatCurrency(trade.avgExitPrice)}</td>
-                <td className="px-4 py-3 text-right font-mono text-muted-foreground">{trade.totalQuantity}</td>
-                <td className="px-4 py-3 text-right font-mono text-muted-foreground">{trade.initialRisk ? formatCurrency(trade.initialRisk) : '-'}</td>
-                <td className={`px-4 py-3 text-right font-mono font-medium ${trade.isOpen ? 'text-muted-foreground' : getPnLColor(pnlValue)}`}>
+                <td className="px-4 py-3 text-right">{formatCurrency(trade.avgEntryPrice)}</td>
+                <td className="px-4 py-3 text-right">{formatCurrency(trade.avgExitPrice)}</td>
+                <td className="px-4 py-3 text-right text-foreground">{trade.totalQuantity}</td>
+                <td className="px-4 py-3 text-right text-foreground">{trade.initialRisk ? formatCurrency(trade.initialRisk) : '-'}</td>
+                <td className={`px-4 py-3 text-right font-medium ${trade.isOpen ? 'text-muted-foreground' : getPnLColor(pnlValue)}`}>
                   <div className="flex flex-col items-end">
                     {trade.isOpen ? (
                       <span className="text-muted-foreground">-</span>

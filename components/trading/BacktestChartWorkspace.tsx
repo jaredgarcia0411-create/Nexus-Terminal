@@ -113,6 +113,23 @@ export default function BacktestChartWorkspace({
     latestChartStateRef.current = nextChartState;
   }, []);
 
+  // The workspace no longer remounts when the ticker/date changes (so the
+  // nested sidebar keeps its sample-set selection). The remount used to clear
+  // these per-chart bits of state, so reset them here instead — an armed order
+  // or extra forward days must not carry over to a newly selected symbol.
+  // This is React's "adjust state during render" pattern: we track the last
+  // ticker/date in state and, when it differs, reset synchronously while
+  // rendering. React restarts the render with the new values before painting,
+  // so there's no extra flash (unlike doing the same work in an effect).
+  const [lastSelectedKey, setLastSelectedKey] = useState<string | null>(null);
+  const selectedKey = ticker && date ? `${ticker}:${date}` : null;
+  if (selectedKey !== lastSelectedKey) {
+    setLastSelectedKey(selectedKey);
+    setArmedAction(null);
+    setPendingOrder(null);
+    setExtraSessionsForward(0);
+  }
+
   useHotkeys('esc', () => {
     setArmedAction(null);
     setPendingOrder(null);
@@ -224,7 +241,7 @@ export default function BacktestChartWorkspace({
               {selected ? (
                 <>
                   <span className="font-mono text-base font-semibold leading-none text-foreground">{selected.ticker}</span>
-                  <span className="font-mono text-sm leading-none tabular-nums text-muted-foreground">{selected.date}</span>
+                  <span className="text-sm leading-none tabular-nums text-muted-foreground">{selected.date}</span>
                 </>
               ) : null}
             </div>
@@ -265,7 +282,7 @@ export default function BacktestChartWorkspace({
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
                 </Button>
-                <span className="min-w-9 text-center font-mono text-xs tabular-nums text-muted-foreground">
+                <span className="min-w-9 text-center text-xs tabular-nums text-muted-foreground">
                   +{extraSessionsForward}D
                 </span>
                 <Button

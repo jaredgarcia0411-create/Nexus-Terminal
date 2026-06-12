@@ -235,7 +235,14 @@ export default function BacktestingTab() {
               className="flex min-h-0 min-w-0 flex-1"
             >
               <BacktestChartWorkspace
-                key={`${view.id ?? 'free'}:${view.ticker ?? 'empty'}:${view.date ?? 'empty'}`}
+                // Key only on backtest identity, NOT ticker/date. Including
+                // ticker/date here remounted the whole workspace (and the
+                // sidebar nested inside it via renderRightPanel) on every
+                // ticker selection, wiping the sidebar's sample-set choice in
+                // free mode and flashing it in backtest mode. Ticker/date
+                // changes are already handled via props (useBacktestSession)
+                // and the chart grid's own internal key.
+                key={view.id ?? 'free'}
                 ticker={view.ticker}
                 date={view.date}
                 currentUserId={currentUserId}

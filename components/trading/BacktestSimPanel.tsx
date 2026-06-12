@@ -202,7 +202,7 @@ export default function BacktestSimPanel({
               defaultValue={riskDollars > 0 ? String(Math.round(riskDollars)) : ''}
               disabled={!ticker || !date || isReadOnly || isLoading}
               onBlur={(event) => void commitRisk(event.currentTarget.value)}
-              className="h-8 border-border bg-accent font-mono text-xs text-foreground"
+              className="h-8 border-border bg-accent text-xs text-foreground"
             />
           </div>
           <div className="space-y-1.5">

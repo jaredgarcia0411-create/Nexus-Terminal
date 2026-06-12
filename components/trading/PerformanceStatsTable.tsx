@@ -346,7 +346,7 @@ export default function PerformanceStatsTable({ trades, onTradeClick }: Performa
               <div key={`cell-${rowIndex}-${cellIndex}`} className="flex items-center justify-between gap-2">
                 <span className="text-xs text-muted-foreground">{cell.label}</span>
                 <div className="flex items-center gap-1">
-                  <span className={`font-mono text-sm font-medium ${cell.value.startsWith('-') ? 'text-rose-500' : 'text-foreground'}`}>
+                  <span className={`text-sm font-medium ${cell.value.startsWith('-') ? 'text-rose-500' : 'text-foreground'}`}>
                     {cell.value}
                   </span>
                   {cell.clickTrade ? (

@@ -261,11 +261,17 @@ function DateCell({ row, column, onRowChange }: RenderCellProps<GridRow>) {
 
 const TOOLTIP_WIDTH = 256; // px — matches the w-64 on the tooltip box
 
-function TextCell({ row, column, rowIdx, onRowChange }: RenderCellProps<GridRow>) {
+function TextCell({ row, column, rowIdx, onRowChange, expandable = false }: RenderCellProps<GridRow> & { expandable?: boolean }) {
   const rawValue = String(row[column.key] ?? '');
   const [value, setValue] = useState(() => rawValue);
   const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [tip, setTip] = useState<{ left: number; top: number } | null>(null);
+  // Only free-text columns get the expanded editor (passed in from the column
+  // factory). url/number are short, so they keep the plain single-line input.
+  // When editing a text column we pop an editable textarea overlay anchored to
+  // the cell. `editBox` holds its screen position/size while open.
+  const [editBox, setEditBox] = useState<{ left: number; top: number; width: number; minHeight: number } | null>(null);
 
   useEffect(() => {
     setValue(rawValue);
@@ -277,12 +283,57 @@ function TextCell({ row, column, rowIdx, onRowChange }: RenderCellProps<GridRow>
     }
   };
 
+  // Grow the textarea to fit its content so every line is visible. Capped by
+  // max-h in the className, which falls back to scrolling for very long notes.
+  // scrollHeight excludes the border, but the textarea is border-box, so we add
+  // the border back — otherwise the content box is a couple px short and the
+  // scrollbar appears before we ever hit the cap.
+  const autosize = (el: HTMLTextAreaElement) => {
+    el.style.height = 'auto';
+    const borderY = el.offsetHeight - el.clientHeight;
+    el.style.height = `${el.scrollHeight + borderY}px`;
+  };
+
+  // Anchor the editor over the cell, at least as wide as the hover tooltip so
+  // the value is comfortably readable. Clamp to the viewport's right edge.
+  const openEditor = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const width = Math.max(rect.width, TOOLTIP_WIDTH);
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    setTip(null);
+    setEditBox({ left, top: rect.top, width, minHeight: rect.height });
+  };
+
+  // Once the overlay mounts, move focus into it with the caret at the end and
+  // size it to the current content.
+  useEffect(() => {
+    if (!editBox) return;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    autosize(ta);
+  }, [editBox]);
+
+  // Commit, close the box, then jump to the same column one row up/down — the
+  // adjacent cell's input opens its own editor on focus.
+  const commitAndMove = (direction: -1 | 1) => {
+    const anchor = inputRef.current;
+    commit();
+    setEditBox(null);
+    if (anchor) {
+      requestAnimationFrame(() => focusAdjacentEditableInput(anchor, direction, column.key, rowIdx));
+    }
+  };
+
   // Only show the tooltip when the text is actually clipped by the cell, and
   // never while the cell is being edited. Clamp to the viewport so the fixed
   // width box never spills off the right edge.
   const showTip = () => {
     const el = inputRef.current;
-    if (!el || el === document.activeElement || el.scrollWidth <= el.clientWidth) return;
+    if (!el || editBox || el === document.activeElement || el.scrollWidth <= el.clientWidth) return;
     const rect = el.getBoundingClientRect();
     const left = Math.max(8, Math.min(rect.left, window.innerWidth - TOOLTIP_WIDTH - 8));
     setTip({ left, top: rect.bottom + 4 });
@@ -292,13 +343,14 @@ function TextCell({ row, column, rowIdx, onRowChange }: RenderCellProps<GridRow>
     <>
       <input
         ref={inputRef}
+        readOnly={expandable}
         className="h-full w-full border border-transparent bg-transparent px-1 text-sm text-foreground outline-none placeholder:text-muted-foreground hover:border-primary/30 focus:border-primary/40 focus:bg-card"
         value={value}
         data-cell={column.key}
         data-rowidx={rowIdx}
         onChange={(event) => setValue(event.target.value)}
-        onBlur={commit}
-        onFocus={() => setTip(null)}
+        onBlur={expandable ? undefined : commit}
+        onFocus={expandable ? openEditor : () => setTip(null)}
         onMouseEnter={showTip}
         onMouseLeave={() => setTip(null)}
         onKeyDown={(event) => {
@@ -312,7 +364,41 @@ function TextCell({ row, column, rowIdx, onRowChange }: RenderCellProps<GridRow>
           }
         }}
       />
-      {tip
+      {editBox
+        ? createPortal(
+            <textarea
+              ref={textareaRef}
+              className="fixed z-50 max-h-[50vh] resize-none overflow-y-auto rounded-md border border-primary/40 bg-popover px-3 py-2 text-sm leading-relaxed text-popover-foreground shadow-md outline-none"
+              style={{ left: editBox.left, top: editBox.top, width: editBox.width, minHeight: editBox.minHeight }}
+              value={value}
+              onChange={(event) => {
+                setValue(event.target.value);
+                autosize(event.currentTarget);
+              }}
+              onBlur={() => {
+                commit();
+                setEditBox(null);
+              }}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+                // Escape / Enter close the box; Shift+Enter inserts a newline.
+                // Arrow up/down jump rows, matching the single-line input.
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                } else if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  commitAndMove(1);
+                } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                  event.preventDefault();
+                  commitAndMove(event.key === 'ArrowUp' ? -1 : 1);
+                }
+              }}
+            />,
+            document.body,
+          )
+        : null}
+      {tip && !editBox
         ? createPortal(
             <div
               className="pointer-events-none fixed z-50 w-64 whitespace-pre-wrap break-words rounded-md border border-border bg-popover px-3 py-2 text-sm leading-relaxed text-popover-foreground shadow-md"
@@ -783,7 +869,7 @@ function buildColumn(
   }
 
   if (TEXT_EDIT_TYPES.includes(column.type)) {
-    return { ...base, renderCell: (props) => <TextCell {...props} /> };
+    return { ...base, renderCell: (props) => <TextCell {...props} expandable={column.type === 'text'} /> };
   }
 
   return base;

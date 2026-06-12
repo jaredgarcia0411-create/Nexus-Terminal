@@ -240,7 +240,7 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
                     className="cursor-pointer border-b border-border transition-colors last:border-b-0 hover:bg-accent/80"
                     onClick={() => setOpenReview(review)}
                   >
-                    <td className="px-4 py-3 font-mono text-foreground">{review.dateLabel}</td>
+                    <td className="px-4 py-3 text-foreground">{review.dateLabel}</td>
                     <td className="px-4 py-3">
                       <span
                         className={`rounded-sm px-2 py-0.5 text-xs font-bold capitalize ${
@@ -252,9 +252,9 @@ export default function ArchiveTab({ trades }: ArchiveTabProps) {
                         {review.type}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{grade ?? '—'}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{rResult}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{net}</td>
+                    <td className="px-4 py-3 text-foreground">{grade ?? '—'}</td>
+                    <td className="px-4 py-3 text-foreground">{rResult}</td>
+                    <td className="px-4 py-3 text-foreground">{net}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
