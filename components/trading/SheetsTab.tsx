@@ -1460,19 +1460,31 @@ export default function SheetsTab() {
 
               <div className="flex flex-wrap items-center gap-2">
                 {canEditRows && selectedRows.size > 0 ? (
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    onClick={() => {
-                      void sheets.deleteRows([...selectedRows]);
-                      setSelectedRows(new Set());
-                    }}
-                    title={`Delete ${selectedRows.size} selected row${selectedRows.size === 1 ? '' : 's'}`}
-                    aria-label={`Delete ${selectedRows.size} selected rows`}
-                    className="border border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  (() => {
+                    // "All rows" when the selection covers every visible row, so a
+                    // full wipe is obvious before confirming (a coworker once
+                    // deleted a whole sheet's worth this way and it can't be undone).
+                    const allSelected = selectedRows.size === visibleRows.length;
+                    const label = `Delete ${selectedRows.size} selected row${selectedRows.size === 1 ? '' : 's'}${
+                      allSelected ? ' (all rows)' : ''
+                    }`;
+                    return (
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        onClick={() => {
+                          if (!window.confirm(`${label}? This cannot be undone.`)) return;
+                          void sheets.deleteRows([...selectedRows]);
+                          setSelectedRows(new Set());
+                        }}
+                        title={label}
+                        aria-label={label}
+                        className="border border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    );
+                  })()
                 ) : null}
 
                 {canEditRows ? (
