@@ -26,44 +26,23 @@ Deferred Sheets roadmap (not started):
 
 ---
 
+> Historical completed sections (Filing Headline Parser, Unified News Feed, Mobile Optimization) were removed to keep this file focused. Use git history and the `specs/` directory for archived implementation detail.
+
+---
+
 ## Recently Completed
 
-### Filing Headline Parser (EX-99.1 → real PR headlines)
+### Trade-Chart Annotations, Expand, Per-Chart Timeframe & DAS Triangle Markers
 
-Status: completed 2026-06-12 (commit b6de3e1).
-
-Outcome:
-- 6-K/8-K filing rows now show the real press-release headline pulled from the `EX-99.1` exhibit (both Research **News** and **Filings** tabs), falling back to the title-cased form label when no exhibit / no parse.
-- Bounded inline on first research load (cap 8 most-recent material filings); cached per-accession forever in a new nullable `sec_filings_raw.pr_headline` column (NULL=unchecked, ''=checked/no-PR, text=headline). Only the `research-filings` profile enriches.
-- Extraction is heuristic (first non-boilerplate / post-dateline line); other forms (S-1, 424B, Form 4) untouched.
-
-Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm test` (836 passed). Migration `drizzle/0050_last_kree.sql` generated.
-
-### Unified News Feed (EODHD articles + material SEC filings)
-
-Status: completed 2026-06-12 (commit 5881f3b).
+Status: completed 2026-07-03.
 
 Outcome:
-- Research **News** tab now merges EODHD press articles with material SEC filings (buckets `news`/`registrations`/`prospectus` → 8-K/6-K, S-1/S-3/F-*, 424B), date-sorted newest-first; Form 4/13G/10-K/proxies excluded. Filings tab and the agent are untouched.
-- Filing rows render as `<a target="_blank">` to the SEC doc with a form-type badge; article rows keep the in-app reader. EODHD `limit` bumped 20→50.
-- Known gaps (accepted): filing rows show generic form labels not PR headlines (parser deferred — see Open Follow-Ups); pure-promo PRs with no filing still won't appear.
+- New `AnnotatableChart` wrapper puts drawing/text tools, a fullscreen expand toggle, and a per-chart timeframe selector over the shared `CandlestickChart`, used by Trade Detail + Daily/Weekly reviews + Journal.
+- Buy/sell arrows replaced with DAS-style bordered triangles via new `TriangleMarkersPrimitive` (lightweight-charts v5 series primitive).
+- Follow-up tweaks: added the `2m` timeframe; made the toolbar timeframe selector borderless/transparent to match the chart top bar; drawings now persist per trade (`trade:{id}`) so they carry across timeframe switches.
 
 Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm test` (831 passed).
-
-### Mobile Optimization — 7 Responsive Fixes
-
-Status: completed 2026-06-11.
-
-Outcome:
-- Responsive fixes across bottom nav, macro/report headers, Performance Stats, Career P/L, Playbook header, Research restack, and global page padding — desktop (≥768px) unchanged.
-- Research mobile fix: dropped the fixed-height inner-scroll anchor on mobile (`min-h-[60vh] md:h-[calc(100vh-120px)]`) so the stacked header+chart+report flow and the page scrolls (was clipping the Overview chart).
-- Moved Research "Add to Sheets" next to the symbol search box on mobile (`md:hidden`); desktop keeps the overlaid button.
-
-Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm test` (830 passed).
-- Founder confirmed on mobile: Overview chart fully visible, Add-to-Sheets beside search.
+- `npm run lint`, `npx tsc --noEmit`, `npm test` (836 passed) all green.
 
 ---
 

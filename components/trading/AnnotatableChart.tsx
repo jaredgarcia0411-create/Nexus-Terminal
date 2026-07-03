@@ -78,7 +78,7 @@ export default function AnnotatableChart({
     <div className={expanded ? 'fixed inset-0 z-50 flex flex-col bg-[#0A0A0B]' : 'relative flex flex-col border border-white/10 bg-[#121214]'}>
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-white/10 bg-[#0A0A0B] px-2 print:hidden">
         <Select value={timeframe} onValueChange={(value) => onTimeframeChange(value as TradeChartTimeframeKey)}>
-          <SelectTrigger className="h-7 w-24 border-border bg-accent text-xs">
+          <SelectTrigger className="h-7 w-24 border-0 bg-transparent text-xs shadow-none dark:bg-transparent dark:hover:bg-transparent">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="border-border bg-card text-foreground">

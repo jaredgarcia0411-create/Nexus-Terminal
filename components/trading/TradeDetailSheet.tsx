@@ -289,7 +289,7 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                     <AnnotatableChart
                       candles={candles}
                       tradeMarkers={tradeMarkers}
-                      scopeKey={`trade:${trade.id}:${timeframe}`}
+                      scopeKey={`trade:${trade.id}`}
                       timeframe={timeframe}
                       onTimeframeChange={setTimeframe}
                       baseHeight={640}
