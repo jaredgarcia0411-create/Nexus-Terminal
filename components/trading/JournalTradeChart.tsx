@@ -1,8 +1,8 @@
 'use client';
 
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import type { Trade } from '@/lib/types';
-import CandlestickChart from '@/components/trading/CandlestickChart';
+import AnnotatableChart from '@/components/trading/AnnotatableChart';
 import type { TradeMarker } from '@/lib/types';
 import {
   buildTradeChartOptions,
@@ -15,10 +15,11 @@ import { buildTradeMarkers } from '@/lib/ui-trade-utils';
 
 interface JournalTradeChartProps {
   trade: Trade;
-  timeframe: TradeChartTimeframeKey;
 }
 
-function JournalTradeChart({ trade, timeframe }: JournalTradeChartProps) {
+function JournalTradeChart({ trade }: JournalTradeChartProps) {
+  const [timeframe, setTimeframe] = useState<TradeChartTimeframeKey>('5m');
+
   const chartOptions = useMemo(() => {
     return buildTradeChartOptions(
       trade.sortKey,
@@ -51,10 +52,13 @@ function JournalTradeChart({ trade, timeframe }: JournalTradeChartProps) {
   }
 
   return (
-    <CandlestickChart
+    <AnnotatableChart
       candles={candles}
       tradeMarkers={tradeMarkers}
-      height={612}
+      scopeKey={`trade:${trade.id}:${timeframe}`}
+      timeframe={timeframe}
+      onTimeframeChange={setTimeframe}
+      baseHeight={612}
       exactPriceMarkers
       showTimeAxis
       showSessionShading={timeframe !== '1d'}

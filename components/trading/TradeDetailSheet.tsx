@@ -10,14 +10,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import CandlestickChart from '@/components/trading/CandlestickChart';
+import AnnotatableChart from '@/components/trading/AnnotatableChart';
 import type { TradeMarker } from '@/lib/types';
 import { useCandleData } from '@/hooks/use-candle-data';
 import { bucketKey, isCrossDayTrade } from '@/lib/journal-aggregates';
 import {
   buildTradeChartOptions,
-  TRADE_CHART_TIMEFRAME_CONFIG,
   type TradeChartTimeframeKey,
 } from '@/lib/chart-timeframes';
 import { nyDateTimeToEpoch, parseAbsoluteTimestampMs } from '@/lib/time-utils';
@@ -277,21 +275,6 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
               <section className="space-y-3 rounded-xl border border-border bg-accent/50 p-4">
                 <h3 className="text-base font-semibold uppercase tracking-wider text-foreground">Chart</h3>
                 <div className="space-y-3">
-                  <div className="flex items-center justify-end gap-4">
-                    <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TradeChartTimeframeKey)}>
-                      <SelectTrigger className="h-8 w-28 bg-accent border-border text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-card border-border text-foreground">
-                        {Object.entries(TRADE_CHART_TIMEFRAME_CONFIG).map(([value, cfg]) => (
-                          <SelectItem key={value} value={value}>
-                            {cfg.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
                   {loadingCandles ? (
                     <div className="flex h-[640px] items-center justify-center text-sm text-muted-foreground">Loading candles...</div>
                   ) : candlesError ? (
@@ -303,10 +286,13 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
                       No candle data available for this trade window.
                     </div>
                   ) : (
-                    <CandlestickChart
+                    <AnnotatableChart
                       candles={candles}
                       tradeMarkers={tradeMarkers}
-                      height={640}
+                      scopeKey={`trade:${trade.id}:${timeframe}`}
+                      timeframe={timeframe}
+                      onTimeframeChange={setTimeframe}
+                      baseHeight={640}
                       exactPriceMarkers
                       showTimeAxis
                       showSessionShading={timeframe !== '1d'}

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createChart,
-  createSeriesMarkers,
   ColorType,
   CandlestickSeries,
   HistogramSeries,
@@ -13,16 +12,13 @@ import {
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
-  type ISeriesMarkersPluginApi,
   type CandlestickData,
   type HistogramData,
   type LineWidth,
   type MouseEventParams,
-  type SeriesMarker,
-  type SeriesMarkerBar,
-  type SeriesMarkerPrice,
   type Time,
 } from 'lightweight-charts';
+import { TriangleMarkersPrimitive, type TriangleMarker } from '@/components/trading/plugins/TriangleMarkersPrimitive';
 import { useSessionShading } from '@/hooks/use-session-shading';
 import type { TradeMarker } from '@/lib/types';
 import { formatNyCrosshair, formatNyTime, toEpochMs, toTime } from '@/lib/chart-time';
@@ -40,8 +36,6 @@ const UP_COLOR = '#22c55e';
 const DOWN_COLOR = '#ef4444';
 const UP_VOLUME_COLOR = '#22c55e33';
 const DOWN_VOLUME_COLOR = '#ef444433';
-const LONG_MARKER_COLOR = '#86efac';
-const SHORT_MARKER_COLOR = '#fca5a5';
 
 interface CandlestickChartProps extends CandlestickChartOptions {
   candles: CandleData[];
@@ -51,6 +45,7 @@ interface CandlestickChartProps extends CandlestickChartOptions {
   showTimeAxis?: boolean;
   showSessionShading?: boolean;
   scaleMode?: PriceScaleMode;
+  onInstances?: (chart: IChartApi | null, series: ISeriesApi<'Candlestick'> | null) => void;
 }
 
 type NativeCrosshairPoint = {
@@ -215,13 +210,16 @@ export default function CandlestickChart({
   scaleMode,
   priceLines,
   showCrosshairLegend = false,
+  onInstances,
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const trianglePrimitiveRef = useRef<TriangleMarkersPrimitive | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
+  const onInstancesRef = useRef(onInstances);
+  const heightRef = useRef(height);
   const [, setContainerWidth] = useState(0);
   const [crosshairPoint, setCrosshairPoint] = useState<NativeCrosshairPoint | null>(null);
 
@@ -235,6 +233,15 @@ export default function CandlestickChart({
   useEffect(() => {
     sortedCandlesRef.current = sortedCandles;
   }, [sortedCandles]);
+
+  useEffect(() => {
+    onInstancesRef.current = onInstances;
+  }, [onInstances]);
+
+  useEffect(() => {
+    heightRef.current = height;
+    chartRef.current?.applyOptions({ height });
+  }, [height]);
 
   const candleByEpoch = useMemo(() => {
     const map = new Map<number, CandleData>();
@@ -255,11 +262,17 @@ export default function CandlestickChart({
     setCrosshairPoint(null);
   }, []);
 
-  const detachSeriesMarkers = useCallback(() => {
-    const plugin = markersPluginRef.current;
-    if (plugin == null) return;
-    plugin.detach();
-    markersPluginRef.current = null;
+  const detachTrianglePrimitive = useCallback(() => {
+    const series = candleSeriesRef.current;
+    const primitive = trianglePrimitiveRef.current;
+    if (series && primitive) {
+      try {
+        series.detachPrimitive(primitive);
+      } catch {
+        // series may already be disposed during teardown
+      }
+    }
+    trianglePrimitiveRef.current = null;
   }, []);
 
   const removePriceLines = useCallback(() => {
@@ -275,44 +288,27 @@ export default function CandlestickChart({
     priceLinesRef.current = [];
   }, []);
 
-  const buildMarkers = useCallback((): SeriesMarker<Time>[] => {
+  const buildMarkers = useCallback((): TriangleMarker[] => {
     if (tradeMarkers.length === 0 || sortedCandles.length === 0) {
       return [];
     }
 
     const candleTimestamps = sortedCandles.map((candle) => candle.datetime);
-    const markers: Array<SeriesMarkerBar<Time> | SeriesMarkerPrice<Time>> = [];
+    const markers: TriangleMarker[] = [];
     [...tradeMarkers]
       .sort((a, b) => a.time - b.time)
-      .forEach((marker, index) => {
+      .forEach((marker) => {
         const nearestTimestamp = findNearestTimestamp(marker.time, candleTimestamps);
         if (nearestTimestamp == null) return;
-
-        if (exactPriceMarkers) {
-          markers.push({
-            id: `${marker.time}:${marker.price}:${index}`,
-            time: toTime(nearestTimestamp),
-            position: marker.direction === 'LONG' ? 'atPriceBottom' : 'atPriceTop',
-            color: marker.direction === 'LONG' ? LONG_MARKER_COLOR : SHORT_MARKER_COLOR,
-            shape: marker.direction === 'LONG' ? 'arrowUp' : 'arrowDown',
-            price: marker.price,
-            size: 1,
-          });
-          return;
-        }
-
         markers.push({
-          id: `${marker.time}:${marker.price}:${index}`,
           time: toTime(nearestTimestamp),
-          position: marker.direction === 'LONG' ? 'belowBar' : 'aboveBar',
-          color: marker.direction === 'LONG' ? LONG_MARKER_COLOR : SHORT_MARKER_COLOR,
-          shape: marker.direction === 'LONG' ? 'arrowUp' : 'arrowDown',
-          size: 1,
+          price: marker.price,
+          direction: marker.direction,
         });
       });
 
     return markers;
-  }, [exactPriceMarkers, sortedCandles, tradeMarkers]);
+  }, [sortedCandles, tradeMarkers]);
 
   const findCrosshairCandle = useCallback((time: Time): CandleData | null => {
     const epoch = toEpochMs(time);
@@ -354,7 +350,7 @@ export default function CandlestickChart({
 
     const lifecycle = createChartLifecycle({
       container: containerRef.current,
-      height,
+      height: heightRef.current,
       showTimeAxis,
       scaleMode,
       onResize: (width) => {
@@ -369,6 +365,7 @@ export default function CandlestickChart({
     chartRef.current = lifecycle.chart;
     candleSeriesRef.current = lifecycle.candleSeries;
     volumeSeriesRef.current = lifecycle.volumeSeries;
+    onInstancesRef.current?.(lifecycle.chart, lifecycle.candleSeries);
 
     let unsubscribeSessionRange: (() => void) | null = null;
     if (showSessionShading) {
@@ -404,9 +401,10 @@ export default function CandlestickChart({
       if (unsubscribeCrosshair != null) {
         lifecycle.chart.unsubscribeCrosshairMove(unsubscribeCrosshair);
       }
-      detachSeriesMarkers();
+      detachTrianglePrimitive();
       removePriceLines();
       clearCrosshairPoint();
+      onInstancesRef.current?.(null, null);
       lifecycle.cleanup();
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -414,8 +412,7 @@ export default function CandlestickChart({
     };
   }, [
     clearCrosshairPoint,
-    detachSeriesMarkers,
-    height,
+    detachTrianglePrimitive,
     removePriceLines,
     scaleMode,
     scheduleSessionShadeRecalculation,
@@ -435,7 +432,7 @@ export default function CandlestickChart({
     if (sortedCandles.length === 0) {
       candleSeries.setData([]);
       volumeSeries.setData([]);
-      detachSeriesMarkers();
+      detachTrianglePrimitive();
       if (showSessionShading) {
         scheduleSessionShadeRecalculation();
       }
@@ -460,17 +457,11 @@ export default function CandlestickChart({
     volumeSeries.setData(volumeData);
 
     const markers = buildMarkers();
-    if (markers.length > 0) {
-      if (markersPluginRef.current == null) {
-        markersPluginRef.current = createSeriesMarkers(candleSeries, markers);
-      } else {
-        markersPluginRef.current.setMarkers(markers);
-      }
-    } else if (markersPluginRef.current == null) {
-      markersPluginRef.current = createSeriesMarkers(candleSeries, []);
-    } else {
-      markersPluginRef.current.setMarkers([]);
+    if (trianglePrimitiveRef.current == null) {
+      trianglePrimitiveRef.current = new TriangleMarkersPrimitive(exactPriceMarkers ? 4 : 8);
+      candleSeries.attachPrimitive(trianglePrimitiveRef.current);
     }
+    trianglePrimitiveRef.current.setMarkers(markers);
 
     chart.timeScale().fitContent();
 
@@ -480,7 +471,8 @@ export default function CandlestickChart({
   }, [
     buildMarkers,
     clearCrosshairPoint,
-    detachSeriesMarkers,
+    detachTrianglePrimitive,
+    exactPriceMarkers,
     scheduleSessionShadeRecalculation,
     showSessionShading,
     sortedCandles,

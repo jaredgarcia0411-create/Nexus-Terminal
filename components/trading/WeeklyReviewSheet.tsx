@@ -568,7 +568,7 @@ export default function WeeklyReviewSheet({
                       <p className="text-xs font-semibold text-foreground">
                         {trade.symbol} ({trade.direction})
                       </p>
-                      <JournalTradeChart trade={trade} timeframe="5m" />
+                      <JournalTradeChart trade={trade} />
                     </div>
                   ))}
                   {chartTrades.length > chartCount ? (

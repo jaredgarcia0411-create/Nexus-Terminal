@@ -10,13 +10,8 @@ import TradeTable from '@/components/trading/TradeTable';
 import WeeklyReviewSheet from '@/components/trading/WeeklyReviewSheet';
 import JournalTradeChart from '@/components/trading/JournalTradeChart';
 import YearOverview from '@/components/trading/YearOverview';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatCurrency } from '@/lib/ui-trade-utils';
 import { bucketKey, isCrossDayTrade } from '@/lib/journal-aggregates';
-import {
-  TRADE_CHART_TIMEFRAME_CONFIG,
-  type TradeChartTimeframeKey,
-} from '@/lib/chart-timeframes';
 import type { Trade } from '@/lib/types';
 
 interface JournalTabProps {
@@ -74,7 +69,6 @@ export default function JournalTab({
 }: JournalTabProps) {
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [chartCountByDay, setChartCountByDay] = useState<Record<string, number>>({});
-  const [chartTimeframes, setChartTimeframes] = useState<Record<string, TradeChartTimeframeKey>>({});
   const [drcDate, setDrcDate] = useState<string | null>(null);
   const [weekRange, setWeekRange] = useState<{ start: string; end: string } | null>(null);
   const [yearOverview, setYearOverview] = useState(false);
@@ -404,23 +398,8 @@ export default function JournalTab({
                                   ? `${format(new Date(`${trade.sortKey}T00:00:00`), 'MMM dd')} ${trade.entryTime || '--:--'} → ${format(new Date(`${bucketKey(trade)}T00:00:00`), 'MMM dd')} ${trade.exitTime || '--:--'}`
                                   : `${trade.entryTime || '--:--'} - ${trade.exitTime || '--:--'}`}
                               </p>
-                              <Select
-                                value={chartTimeframes[trade.id] ?? '5m'}
-                                onValueChange={(value) => setChartTimeframes((prev) => ({ ...prev, [trade.id]: value as TradeChartTimeframeKey }))}
-                              >
-                                <SelectTrigger className="h-7 w-24 bg-accent border-border text-xs">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent className="bg-card border-border text-foreground">
-                                  {Object.entries(TRADE_CHART_TIMEFRAME_CONFIG).map(([value, cfg]) => (
-                                    <SelectItem key={value} value={value}>
-                                      {cfg.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
                             </div>
-                            <JournalTradeChart trade={trade} timeframe={chartTimeframes[trade.id] ?? '5m'} />
+                            <JournalTradeChart trade={trade} />
                           </div>
                         ))}
 
