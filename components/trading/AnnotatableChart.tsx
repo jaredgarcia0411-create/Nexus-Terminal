@@ -113,6 +113,7 @@ export default function AnnotatableChart({
         <CandlestickChart
           candles={candles}
           tradeMarkers={tradeMarkers}
+          focusLastSession={timeframe !== '1d'}
           height={height}
           exactPriceMarkers={exactPriceMarkers}
           showTimeAxis={showTimeAxis}

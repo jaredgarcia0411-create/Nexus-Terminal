@@ -58,21 +58,21 @@ describe('time-utils', () => {
   });
 
   it('builds intraday session windows with prior day support', () => {
-    expect(getIntradaySessionWindow('2026-03-06', true)).toEqual({
+    expect(getIntradaySessionWindow('2026-03-06', 1)).toEqual({
       startDate: String(nyDateTimeToEpoch('2026-03-05', '04:00:00')),
       endDate: String(nyDateTimeToEpoch('2026-03-06', '20:00:00')),
       sessionSortKey: '2026-03-06',
       priorSessionSortKey: '2026-03-05',
     });
 
-    expect(getIntradaySessionWindow('2026-03-07', true)).toEqual({
+    expect(getIntradaySessionWindow('2026-03-07', 1)).toEqual({
       startDate: String(nyDateTimeToEpoch('2026-03-05', '04:00:00')),
       endDate: String(nyDateTimeToEpoch('2026-03-06', '20:00:00')),
       sessionSortKey: '2026-03-06',
       priorSessionSortKey: '2026-03-05',
     });
 
-    expect(getIntradaySessionWindow('2026-03-06', false)).toEqual({
+    expect(getIntradaySessionWindow('2026-03-06', 0)).toEqual({
       startDate: String(nyDateTimeToEpoch('2026-03-06', '04:00:00')),
       endDate: String(nyDateTimeToEpoch('2026-03-06', '20:00:00')),
       sessionSortKey: '2026-03-06',

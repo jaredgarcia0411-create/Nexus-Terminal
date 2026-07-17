@@ -1,5 +1,7 @@
 import { getIntradaySessionWindow } from '@/lib/time-utils';
 
+const INTRADAY_PRIOR_SESSIONS = 4; // focus session + 4 prior = 5 sessions loaded
+
 export type TradeChartTimeframeKey = '1m' | '2m' | '5m' | '15m' | '1d';
 
 export type TradeChartRequestOptions = {
@@ -39,9 +41,9 @@ export function buildTradeChartOptions(
     return baseOptions;
   }
 
-  const startWindow = getIntradaySessionWindow(sortKey, true);
+  const startWindow = getIntradaySessionWindow(sortKey, INTRADAY_PRIOR_SESSIONS);
   const endWindow = endSortKey && endSortKey !== sortKey
-    ? getIntradaySessionWindow(endSortKey, false)
+    ? getIntradaySessionWindow(endSortKey, 0)
     : startWindow;
   return {
     ...baseOptions,

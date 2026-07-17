@@ -11,6 +11,65 @@ import { createFibonacciRenderer } from './plugins/FibonacciPrimitive';
 // Hit detection helper - check if point is near a drawing
 const HIT_TOLERANCE = 10; // pixels
 
+const TEXT_FONT = '14px ui-sans-serif, system-ui, -apple-system, sans-serif';
+const TEXT_PADDING = 6;
+const TEXT_LINE_HEIGHT = 18;
+const DEFAULT_TEXT_WIDTH = 180;
+const MIN_TEXT_WIDTH = 60;
+const MAX_TEXT_WIDTH = 600;
+const RESIZE_HANDLE_SIZE = 8;
+
+// One offscreen 2D context reused for measuring wrapped text.
+const measureCtx: CanvasRenderingContext2D | null =
+  typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null;
+
+function wrapTextLines(text: string, maxWidth: number): string[] {
+  const ctx = measureCtx;
+  const paragraphs = text.split('\n');
+  if (!ctx || maxWidth <= 0) return paragraphs;
+  ctx.font = TEXT_FONT;
+  const lines: string[] = [];
+  for (const paragraph of paragraphs) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) { lines.push(''); continue; }
+    let current = '';
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (current && ctx.measureText(candidate).width > maxWidth) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current) lines.push(current);
+  }
+  return lines.length > 0 ? lines : [''];
+}
+
+function getTextBoxDimensions(drawing: TextDrawing): { width: number; height: number; lines: string[] } {
+  const width = drawing.width ?? DEFAULT_TEXT_WIDTH;
+  const lines = wrapTextLines(drawing.text, width - TEXT_PADDING * 2);
+  const height = TEXT_PADDING * 2 + lines.length * TEXT_LINE_HEIGHT;
+  return { width, height, lines };
+}
+
+function isPointNearTextResizeHandle(
+  x: number,
+  y: number,
+  drawing: TextDrawing,
+  priceToCoordinate: (price: number) => number | null,
+  timeToCoordinate: (time: number) => number | null,
+): boolean {
+  const bx = timeToCoordinate(drawing.position.time);
+  const by = priceToCoordinate(drawing.position.price);
+  if (bx === null || by === null) return false;
+  const { width, height } = getTextBoxDimensions(drawing);
+  const hx = bx + width;
+  const hy = by + height / 2;
+  return Math.abs(x - hx) <= RESIZE_HANDLE_SIZE && Math.abs(y - hy) <= RESIZE_HANDLE_SIZE;
+}
+
 function isPointNearDrawing(
   x: number,
   y: number,
@@ -82,10 +141,11 @@ function isPointNearDrawing(
       const x1 = timeToCoordinate(drawing.position.time);
       const y1 = priceToCoordinate(drawing.position.price);
       if (x1 === null || y1 === null) return false;
-      const approxWidth = drawing.text.length * 8;
+      const { width, height } = getTextBoxDimensions(drawing);
       return x >= x1 - HIT_TOLERANCE
-        && x <= x1 + approxWidth + HIT_TOLERANCE
-        && Math.abs(y - y1) < HIT_TOLERANCE;
+        && x <= x1 + width + HIT_TOLERANCE
+        && y >= y1 - HIT_TOLERANCE
+        && y <= y1 + height + HIT_TOLERANCE;
     }
     default:
       return false;
@@ -188,6 +248,7 @@ export default function ChartDrawings({
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<{ drawingId: string; point: 'start' | 'end' } | null>(null);
+  const [resizeState, setResizeState] = useState<{ id: string } | null>(null);
   const [textEditState, setTextEditState] = useState<{
     mode: 'create' | 'edit';
     id?: string;
@@ -211,8 +272,9 @@ export default function ChartDrawings({
     removeDrawing,
     addTextDrawing,
     updateTextDrawing,
+    updateTextWidth,
   } = controller ?? localController;
-  const isInteracting = isDrawing || dragState !== null || textEditState !== null;
+  const isInteracting = isDrawing || dragState !== null || textEditState !== null || resizeState !== null;
 
   // Get coordinate converters
   const priceToCoordinate = useCallback(
@@ -390,6 +452,14 @@ export default function ChartDrawings({
       }
 
       if (!activeTool) {
+        if (selectedDrawingId) {
+          const sel = drawings.find((d) => d.id === selectedDrawingId);
+          if (sel && sel.type === 'text' && isPointNearTextResizeHandle(x, y, sel, priceToCoordinate, timeToCoordinate)) {
+            setResizeState({ id: sel.id });
+            return;
+          }
+        }
+
         // Check if clicking on an existing drawing
         for (let i = drawings.length - 1; i >= 0; i--) {
           const drawing = drawings[i];
@@ -397,13 +467,7 @@ export default function ChartDrawings({
             setSelectedDrawingId(drawing.id);
 
             if (drawing.type === 'text') {
-              setTextEditState({
-                mode: 'edit',
-                id: drawing.id,
-                point: { x, y },
-                value: drawing.text,
-              });
-              return;
+              return; // select only — double-click to edit, drag handle to resize
             }
             
             // Check if clicking near an endpoint to start dragging
@@ -433,6 +497,7 @@ export default function ChartDrawings({
     isDrawing,
     isReadOnly,
     onToolChange,
+    selectedDrawingId,
     startDrawing,
     updateDrawing,
   ]);
@@ -445,6 +510,18 @@ export default function ChartDrawings({
       if (disposedRef.current) return;
       if (isReadOnly) return;
       if (!param.time || !param.point) return;
+
+      if (resizeState) {
+        const sel = drawings.find((d) => d.id === resizeState.id);
+        if (sel && sel.type === 'text') {
+          const boxLeft = timeToCoordinate(sel.position.time);
+          if (boxLeft !== null) {
+            const nextWidth = Math.max(MIN_TEXT_WIDTH, Math.min(MAX_TEXT_WIDTH, param.point.x - boxLeft));
+            updateTextWidth(sel.id, nextWidth);
+          }
+        }
+        return;
+      }
 
       let timeMs: number;
       if (typeof param.time === 'number') {
@@ -472,19 +549,20 @@ export default function ChartDrawings({
 
     chart.subscribeCrosshairMove(handleCrosshairMove);
     return () => chart.unsubscribeCrosshairMove(handleCrosshairMove);
-  }, [chart, isDrawing, dragState, coordinateToPrice, isReadOnly, updateDrawing, updateDrawingEndpoint]);
+  }, [chart, isDrawing, dragState, resizeState, drawings, coordinateToPrice, timeToCoordinate, isReadOnly, updateDrawing, updateDrawingEndpoint, updateTextWidth]);
 
-  // End endpoint drag on mouseup
+  // End endpoint drag or text resize on mouseup
   useEffect(() => {
-    if (!dragState) return;
+    if (!dragState && !resizeState) return;
 
     const handleMouseUp = () => {
       setDragState(null);
+      setResizeState(null);
     };
 
     window.addEventListener('mouseup', handleMouseUp);
     return () => window.removeEventListener('mouseup', handleMouseUp);
-  }, [dragState]);
+  }, [dragState, resizeState]);
 
   // Render a single drawing
   const renderDrawing = useCallback(
@@ -518,15 +596,6 @@ export default function ChartDrawings({
             const y2 = priceToCoordinate(drawing.end.price);
             if (x1 !== null && y1 !== null && x2 !== null && y2 !== null) {
               ctx.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
-            }
-            break;
-          }
-          case 'text': {
-            const x = timeToCoordinate(drawing.position.time);
-            const y = priceToCoordinate(drawing.position.price);
-            if (x !== null && y !== null) {
-              const approxWidth = drawing.text.length * 8;
-              ctx.strokeRect(x - 2, y - 9, approxWidth + 4, 18);
             }
             break;
           }
@@ -580,11 +649,30 @@ export default function ChartDrawings({
           const x = timeToCoordinate(drawing.position.time);
           const y = priceToCoordinate(drawing.position.price);
           if (x === null || y === null) break;
+          const { width, height, lines } = getTextBoxDimensions(drawing);
           ctx.save();
-          ctx.font = '14px ui-sans-serif, system-ui, -apple-system, sans-serif';
+          // Box background + border.
+          ctx.fillStyle = 'rgba(10, 10, 11, 0.72)';
+          ctx.fillRect(x, y, width, height);
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = isSelected ? '#22d3ee' : 'rgba(255, 255, 255, 0.18)';
+          if (isSelected) ctx.setLineDash([4, 4]);
+          ctx.strokeRect(x, y, width, height);
+          ctx.setLineDash([]);
+          // Wrapped text.
+          ctx.font = TEXT_FONT;
           ctx.fillStyle = '#ffffff';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(drawing.text, x, y);
+          ctx.textBaseline = 'top';
+          lines.forEach((line, i) => {
+            ctx.fillText(line, x + TEXT_PADDING, y + TEXT_PADDING + i * TEXT_LINE_HEIGHT);
+          });
+          // Resize handle (right-middle) when selected.
+          if (isSelected) {
+            const hx = x + width;
+            const hy = y + height / 2;
+            ctx.fillStyle = '#22d3ee';
+            ctx.fillRect(hx - RESIZE_HANDLE_SIZE / 2, hy - RESIZE_HANDLE_SIZE / 2, RESIZE_HANDLE_SIZE, RESIZE_HANDLE_SIZE);
+          }
           ctx.restore();
           break;
         }
@@ -839,6 +927,16 @@ export default function ChartDrawings({
 				if (isPointNearDrawing(x, y, drawing, priceToCoordinate, timeToCoordinate)) {
 					e.preventDefault();
 					setSelectedDrawingId(drawing.id);
+					if (drawing.type === 'text') {
+						const bx = timeToCoordinate(drawing.position.time);
+						const by = priceToCoordinate(drawing.position.price);
+						setTextEditState({
+							mode: 'edit',
+							id: drawing.id,
+							point: { x: bx ?? x, y: by ?? y },
+							value: drawing.text,
+						});
+					}
 					return;
 				}
 			}
@@ -849,6 +947,16 @@ export default function ChartDrawings({
 		window.addEventListener('dblclick', handleDoubleClick, true); // Use capture phase
 		return () => window.removeEventListener('dblclick', handleDoubleClick, true);
 	}, [activeTool, drawings, isReadOnly, priceToCoordinate, timeToCoordinate]);
+
+  const editingTextWidth = (() => {
+    if (!textEditState?.id) return DEFAULT_TEXT_WIDTH;
+    const editing = drawings.find((d) => d.id === textEditState.id);
+    return editing?.type === 'text' ? (editing.width ?? DEFAULT_TEXT_WIDTH) : DEFAULT_TEXT_WIDTH;
+  })();
+  const editingTextHeight = textEditState
+    ? TEXT_PADDING * 2
+      + wrapTextLines(textEditState.value, editingTextWidth - TEXT_PADDING * 2).length * TEXT_LINE_HEIGHT
+    : TEXT_PADDING * 2 + TEXT_LINE_HEIGHT;
 
   return (
     <>
@@ -873,18 +981,18 @@ export default function ChartDrawings({
 					<Trash2 className="h-4 w-4" />
 				</button>
 			</>
-		)}
+      )}
       {textEditState ? (
-        <input
-          type="text"
+        <textarea
           autoFocus
+          rows={Math.max(1, textEditState.value.split('\n').length)}
           value={textEditState.value}
           onChange={(event) => setTextEditState((current) => (
             current ? { ...current, value: event.target.value } : current
           ))}
           onBlur={() => commitTextEdit()}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') {
+            if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
               event.currentTarget.blur();
             } else if (event.key === 'Escape') {
@@ -892,9 +1000,15 @@ export default function ChartDrawings({
               setTextEditState(null);
               onToolChange?.(null);
             }
+            // Shift+Enter falls through to the textarea's default newline.
           }}
-          className="absolute z-30 rounded border border-white/20 bg-[#121214] px-1 text-[14px] text-white outline-none"
-          style={{ left: textEditState.point.x, top: textEditState.point.y - 10 }}
+          className="absolute z-30 resize-none overflow-hidden rounded border border-white/20 bg-[#121214] px-1.5 py-1 text-[14px] leading-[18px] text-white outline-none"
+          style={{
+            left: textEditState.point.x,
+            top: textEditState.point.y,
+            width: editingTextWidth,
+            height: editingTextHeight,
+          }}
         />
       ) : null}
     </>

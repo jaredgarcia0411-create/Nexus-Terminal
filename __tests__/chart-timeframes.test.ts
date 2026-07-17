@@ -30,7 +30,7 @@ describe('chart-timeframes', () => {
       frequencyType: 'minute',
       frequency: '5',
       includePrePost: true,
-      startDate: String(nyDateTimeToEpoch('2026-03-09', '04:00:00')),
+      startDate: String(nyDateTimeToEpoch('2026-03-04', '04:00:00')),
       endDate: String(nyDateTimeToEpoch('2026-03-10', '20:00:00')),
     });
   });
@@ -46,7 +46,7 @@ describe('chart-timeframes', () => {
   it('normalizes weekend sort keys to prior trading session for intraday', () => {
     const options = buildTradeChartOptions('2026-03-07', '1m');
 
-    expect(options.startDate).toBe(String(nyDateTimeToEpoch('2026-03-05', '04:00:00')));
+    expect(options.startDate).toBe(String(nyDateTimeToEpoch('2026-03-02', '04:00:00')));
     expect(options.endDate).toBe(String(nyDateTimeToEpoch('2026-03-06', '20:00:00')));
   });
 

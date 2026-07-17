@@ -22,6 +22,7 @@ import { TriangleMarkersPrimitive, type TriangleMarker } from '@/components/trad
 import { useSessionShading } from '@/hooks/use-session-shading';
 import type { TradeMarker } from '@/lib/types';
 import { formatNyCrosshair, formatNyTime, toEpochMs, toTime } from '@/lib/chart-time';
+import { epochToNySortKey } from '@/lib/time-utils';
 
 export interface CandleData {
   datetime: number;
@@ -40,6 +41,7 @@ const DOWN_VOLUME_COLOR = '#ef444433';
 interface CandlestickChartProps extends CandlestickChartOptions {
   candles: CandleData[];
   tradeMarkers?: TradeMarker[];
+  focusLastSession?: boolean;
   height?: number;
   exactPriceMarkers?: boolean;
   showTimeAxis?: boolean;
@@ -203,6 +205,7 @@ function formatNumber(value: number | null) {
 export default function CandlestickChart({
   candles,
   tradeMarkers = [],
+  focusLastSession = false,
   height = 400,
   exactPriceMarkers = false,
   showTimeAxis = false,
@@ -463,7 +466,22 @@ export default function CandlestickChart({
     }
     trianglePrimitiveRef.current.setMarkers(markers);
 
-    chart.timeScale().fitContent();
+    if (focusLastSession) {
+      const lastCandle = sortedCandles[sortedCandles.length - 1];
+      const lastDayKey = epochToNySortKey(lastCandle.datetime);
+      let fromDayKey = lastDayKey;
+      if (tradeMarkers.length > 0) {
+        const earliestMarkerDay = epochToNySortKey(Math.min(...tradeMarkers.map((m) => m.time)));
+        if (earliestMarkerDay < fromDayKey) fromDayKey = earliestMarkerDay;
+      }
+      const firstVisible = sortedCandles.find((c) => epochToNySortKey(c.datetime) >= fromDayKey) ?? lastCandle;
+      chart.timeScale().setVisibleRange({
+        from: toTime(firstVisible.datetime),
+        to: toTime(lastCandle.datetime),
+      });
+    } else {
+      chart.timeScale().fitContent();
+    }
 
     if (showSessionShading) {
       scheduleSessionShadeRecalculation();
@@ -473,9 +491,11 @@ export default function CandlestickChart({
     clearCrosshairPoint,
     detachTrianglePrimitive,
     exactPriceMarkers,
+    focusLastSession,
     scheduleSessionShadeRecalculation,
     showSessionShading,
     sortedCandles,
+    tradeMarkers,
   ]);
 
   useEffect(() => {

@@ -47,6 +47,7 @@ export interface TextDrawing {
   type: 'text';
   position: DrawingPoint;
   text: string;
+  width?: number; // box width in screen pixels; text wraps to it. Absent = default.
 }
 
 export type Drawing = TrendLineDrawing | HorizontalLineDrawing | RectangleDrawing | FibonacciDrawing | TextDrawing;
@@ -76,6 +77,7 @@ type DrawingAction =
   | { type: 'updateDrawingEndpoint'; id: string; point: DrawingPoint; which: 'start' | 'end' }
   | { type: 'addCompletedDrawing'; drawing: Drawing }
   | { type: 'updateTextDrawing'; id: string; text: string }
+  | { type: 'updateTextWidth'; id: string; width: number }
   | { type: 'replaceAllDrawings'; drawings: Drawing[] };
 
 function isDrawingPoint(value: unknown): value is DrawingPoint {
@@ -111,11 +113,16 @@ export function normalizeDrawings(loaded: unknown): Drawing[] {
         continue;
       }
 
+      const width = typeof drawing.width === 'number' && Number.isFinite(drawing.width)
+        ? drawing.width
+        : undefined;
+
       normalized.push({
         id,
         type: 'text',
         position: drawing.position,
         text: drawing.text,
+        ...(width !== undefined ? { width } : {}),
       });
       continue;
     }
@@ -364,6 +371,15 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
           drawing.id === action.id && drawing.type === 'text'
             ? { ...drawing, text: action.text }
             : drawing,
+          ),
+      };
+    case 'updateTextWidth':
+      return {
+        ...state,
+        drawings: state.drawings.map((drawing) =>
+          drawing.id === action.id && drawing.type === 'text'
+            ? { ...drawing, width: action.width }
+            : drawing,
         ),
       };
     default:
@@ -499,6 +515,10 @@ export function useChartDrawings(
     });
   }, []);
 
+  const updateTextWidth = useCallback((id: string, width: number) => {
+    dispatch({ type: 'updateTextWidth', id, width });
+  }, []);
+
   return {
     activeTool,
     isDrawing,
@@ -519,6 +539,7 @@ export function useChartDrawings(
     updateDrawingEndpoint,
     addTextDrawing,
     updateTextDrawing,
+    updateTextWidth,
     availableColors: DEFAULT_COLORS,
   };
 }

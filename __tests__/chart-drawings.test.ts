@@ -23,6 +23,28 @@ describe('normalizeDrawings', () => {
     ]);
   });
 
+  it('preserves resized text drawing widths', () => {
+    const drawings = normalizeDrawings([
+      {
+        id: 'text-1',
+        type: 'text',
+        position: { time: 1770000000000, price: 10.5 },
+        text: 'test',
+        width: 240,
+      },
+    ]);
+
+    expect(drawings).toEqual([
+      {
+        id: 'text-1',
+        type: 'text',
+        position: { time: 1770000000000, price: 10.5 },
+        text: 'test',
+        width: 240,
+      },
+    ]);
+  });
+
   it('rejects invalid text drawing payloads', () => {
     const drawings = normalizeDrawings([
       {

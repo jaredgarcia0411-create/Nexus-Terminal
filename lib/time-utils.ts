@@ -160,7 +160,7 @@ export type SessionWindow = {
 
 export function getIntradaySessionWindow(
   sortKey: string,
-  includePriorSession = false,
+  priorSessions = 0,
 ): SessionWindow | null {
   const session = normalizeToTradingSession(sortKey);
   if (session == null) return null;
@@ -168,7 +168,15 @@ export function getIntradaySessionWindow(
   const endDate = nyDateTimeToEpoch(session.resolvedSortKey, '20:00:00');
   if (endDate == null) return null;
 
-  const startSortKey = includePriorSession ? getPreviousTradingSession(session.resolvedSortKey) : null;
+  // Walk back `priorSessions` trading days to find the window's start session.
+  let startSortKey: string | null = null;
+  let cursor = session.resolvedSortKey;
+  for (let i = 0; i < priorSessions; i += 1) {
+    const prev = getPreviousTradingSession(cursor);
+    if (prev == null) break;
+    cursor = prev;
+    startSortKey = prev;
+  }
   const startDateKey = startSortKey ?? session.resolvedSortKey;
 
   const startDate = nyDateTimeToEpoch(startDateKey, '04:00:00');
