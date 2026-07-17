@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { tags as tagsTable, tradeTags as tradeTagsTable } from '@/lib/db/schema';
+import { tags as tagsTable, tradeImportBatches, trades as tradesTable, tradeTags as tradeTagsTable } from '@/lib/db/schema';
 
 const {
   ensureUserMock,
@@ -27,7 +27,7 @@ function ensureResponse(response: Response | undefined): Response {
 }
 
 function makeDb(
-  ownedRows: Array<{ id: string }>,
+  ownedRows: Array<{ id: string; sortKey?: string }>,
   txConfig: {
     deleteWhereMock?: ReturnType<typeof vi.fn>,
     updateWhereMock?: ReturnType<typeof vi.fn>,
@@ -47,6 +47,9 @@ function makeDb(
   }));
 
   const updateSet = vi.fn(() => ({ where: updateWhereMock }));
+  // Records the table each delete() targeted so tests can distinguish trade
+  // deletes from the import-fingerprint cleanup.
+  const deleteTables: unknown[] = [];
   const db = {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
@@ -55,7 +58,10 @@ function makeDb(
     })),
     transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => {
       await callback({
-        delete: vi.fn(() => ({ where: deleteWhereMock })),
+        delete: vi.fn((table: unknown) => {
+          deleteTables.push(table);
+          return { where: deleteWhereMock };
+        }),
         update: vi.fn(() => ({ set: updateSet })),
         insert: vi.fn((table: unknown) => {
           if (table === tagsTable) {
@@ -72,6 +78,7 @@ function makeDb(
     }),
     _mocks: {
       deleteWhereMock,
+      deleteTables,
       updateWhereMock,
       updateSet,
       tagInsertValuesMock,
@@ -165,7 +172,10 @@ describe('bulk trades route', () => {
   });
 
   it('deletes only owned ids on delete action', async () => {
-    const db = makeDb([{ id: 'trade-1' }, { id: 'trade-2' }]);
+    const db = makeDb([
+      { id: 'trade-1', sortKey: '2026-07-17' },
+      { id: 'trade-2', sortKey: '2026-07-17' },
+    ]);
     getPoolDbMock.mockReturnValue(db);
 
     const response = ensureResponse(await POST(new Request('http://localhost/api/trades/bulk', {
@@ -178,7 +188,46 @@ describe('bulk trades route', () => {
     expect(response.status).toBe(200);
     expect(payload).toEqual({ success: true, action: 'delete', ids: ['trade-1', 'trade-2'] });
     expect(db.transaction).toHaveBeenCalledTimes(1);
-    expect(db._mocks.deleteWhereMock).toHaveBeenCalledTimes(2);
+    // Two trade deletes plus one fingerprint delete for the shared date.
+    const tradeDeletes = db._mocks.deleteTables.filter((table) => table === tradesTable);
+    const batchDeletes = db._mocks.deleteTables.filter((table) => table === tradeImportBatches);
+    expect(tradeDeletes).toHaveLength(2);
+    expect(batchDeletes).toHaveLength(1);
+  });
+
+  it('clears an import fingerprint for each distinct date on delete', async () => {
+    // Trades span two days -> one fingerprint delete per date so either day's
+    // CSV can be re-uploaded. Regression guard: bulk delete used to skip this,
+    // leaving ghost rows that silently blocked re-import.
+    const db = makeDb([
+      { id: '2026-07-16|MRVL|LONG', sortKey: '2026-07-16' },
+      { id: '2026-07-17|SNDK|LONG', sortKey: '2026-07-17' },
+    ]);
+    getPoolDbMock.mockReturnValue(db);
+
+    const response = ensureResponse(await POST(new Request('http://localhost/api/trades/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', ids: ['2026-07-16|MRVL|LONG', '2026-07-17|SNDK|LONG'] }),
+    })));
+
+    expect(response.status).toBe(200);
+    expect(db._mocks.deleteTables.filter((table) => table === tradesTable)).toHaveLength(2);
+    expect(db._mocks.deleteTables.filter((table) => table === tradeImportBatches)).toHaveLength(2);
+  });
+
+  it('does not clear fingerprints on non-delete actions', async () => {
+    const db = makeDb([{ id: 'trade-1', sortKey: '2026-07-17' }]);
+    getPoolDbMock.mockReturnValue(db);
+
+    const response = ensureResponse(await POST(new Request('http://localhost/api/trades/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'addTag', ids: ['trade-1'], value: 'swing' }),
+    })));
+
+    expect(response.status).toBe(200);
+    expect(db._mocks.deleteTables.filter((table) => table === tradeImportBatches)).toHaveLength(0);
   });
 
   it('adds tags to owned trades', async () => {

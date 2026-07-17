@@ -1,7 +1,7 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getPoolDb } from '@/lib/db';
-import { trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
+import { tradeImportBatches, trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 import { bulkTradeSchema } from '@/lib/validations/trades';
 
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const ownedRows = await db.select({ id: trades.id })
+    const ownedRows = await db.select({ id: trades.id, sortKey: trades.sortKey })
       .from(trades)
       .where(and(eq(trades.userId, authState.user.id), inArray(trades.id, uniqueIds)));
     const ownedIds = ownedRows.map((row) => row.id);
@@ -47,6 +47,18 @@ export async function POST(request: Request) {
         for (const id of ownedIds) {
           await tx.delete(trades)
             .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)));
+        }
+
+        // Clear import fingerprints for every affected date so the same CSV can
+        // be re-uploaded. Single-delete already does this; bulk previously did
+        // not, leaving ghost rows that silently blocked re-import. Executions
+        // and tags cascade on the trade delete above, so nothing else lingers.
+        const sortKeys = Array.from(new Set(ownedRows.map((row) => row.sortKey)));
+        for (const sortKey of sortKeys) {
+          await tx.delete(tradeImportBatches).where(and(
+            eq(tradeImportBatches.userId, authState.user.id),
+            like(tradeImportBatches.batchKey, `raw|${sortKey}|%`),
+          ));
         }
       }
 
