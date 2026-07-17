@@ -126,8 +126,22 @@ export function resolveSidesByPositionState(
     stateBySymbol.set(row.symbol, state);
 
     if (row.rawSide === 'SS') {
-      state.shortQty += row.qty;
-      resolvedSideByRow[row.rowIndex] = 'SS';
+      // A short-sale tag is ambiguous the same way a bare buy is: some brokers
+      // (e.g. DAS) mark EVERY sell as "SS", so a sell while long is really a
+      // long close, not a new short. Mirror the B logic below: close an open
+      // long first, and only open a short when flat.
+      if (state.longQty > 0) {
+        if (row.qty > state.longQty + 1e-9) {
+          warnings.push(
+            `Row ${row.rowIndex + 1}: Ambiguous SELL for ${row.symbol}; qty ${row.qty} exceeds open long ${state.longQty}. Treating as long close.`,
+          );
+        }
+        state.longQty = Math.max(0, state.longQty - row.qty);
+        resolvedSideByRow[row.rowIndex] = 'S';
+      } else {
+        state.shortQty += row.qty;
+        resolvedSideByRow[row.rowIndex] = 'SS';
+      }
       continue;
     }
 

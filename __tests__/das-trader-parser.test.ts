@@ -124,6 +124,39 @@ describe('dasTraderParser', () => {
     expect(longTrade?.netPnl).toBeCloseTo((202 - 200) * 50);
   });
 
+  it('closes an open long when the exit is tagged SS (broker marks all sells short)', () => {
+    // Real coworker case: buy to open long, then flatten via sells the broker
+    // tagged "SS". Must produce ONE closed long round-trip, not a phantom short.
+    const rows = [
+      { Time: '09:16:01', Symbol: 'SNDK', Qty: '20', Price: '1369.47', Side: 'B', Route: 'SMART', Account: 'AVTR009', Type: 'Margin' },
+      { Time: '09:34:40', Symbol: 'SNDK', Qty: '20', Price: '1346.135', Side: 'SS', Route: 'SMART', Account: 'AVTR009', Type: 'Short' },
+    ];
+
+    const result = processCsvData(rows, { date: new Date('2026-07-17'), sortKey: '2026-07-17' }, dasTraderParser);
+
+    expect(result.warnings).toHaveLength(0);
+    expect(result.trades).toHaveLength(1);
+    expect(result.trades[0].direction).toBe('LONG');
+    expect(result.trades[0].totalQuantity).toBe(20);
+    expect(result.trades[0].netPnl).toBeCloseTo((1346.135 - 1369.47) * 20);
+  });
+
+  it('opens a short via SS only when no long is open, and flips correctly', () => {
+    // Long 100, sell 150 via SS: 100 closes the long, 50 opens a short.
+    const rows = [
+      { Time: '09:30:00', Symbol: 'NVDA', Qty: '100', Price: '100', Side: 'B', Route: 'INET', Account: 'X', Type: 'Margin' },
+      { Time: '09:40:00', Symbol: 'NVDA', Qty: '150', Price: '110', Side: 'SS', Route: 'INET', Account: 'X', Type: 'Short' },
+    ];
+
+    const result = processCsvData(rows, { date: new Date('2026-07-17'), sortKey: '2026-07-17' }, dasTraderParser);
+
+    // 150 > open long of 100 -> ambiguous, capped as a long close.
+    expect(result.warnings.some((warning) => warning.includes('Ambiguous SELL for NVDA'))).toBe(true);
+    const longTrade = result.trades.find((trade) => trade.direction === 'LONG');
+    expect(longTrade?.totalQuantity).toBe(100);
+    expect(longTrade?.netPnl).toBeCloseTo((110 - 100) * 100);
+  });
+
   it('emits deterministic warning when BUY quantity exceeds open short quantity', () => {
     const rows = [
       { Time: '09:30:00', Symbol: 'TSLA', Qty: '50', Price: '300', Side: 'SS', Route: 'INET', Account: 'X', Type: 'Short' },
