@@ -62,6 +62,7 @@ function JournalTradeChart({ trade }: JournalTradeChartProps) {
       exactPriceMarkers
       showTimeAxis
       showSessionShading={timeframe !== '1d'}
+      showVwap
     />
   );
 }

@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { ChevronDown, ChevronUp, Pencil, X } from 'lucide-react';
 import { toast } from 'sonner';
 import ArchivedWatchlist from '@/components/trading/ArchivedWatchlist';
 import JournalTradeChart from '@/components/trading/JournalTradeChart';
+import MissedSetupsPanel from '@/components/trading/MissedSetupsPanel';
 import TemplateFieldRenderer from '@/components/trading/TemplateFieldRenderer';
 import WeeklyTradesPanel from '@/components/trading/WeeklyTradesPanel';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,7 @@ import { readDrafts, writeDrafts } from '@/lib/drafts';
 import { TRADE_GRADES_REPORT_KEY } from '@/lib/grades';
 import { aggregateDay } from '@/lib/journal-aggregates';
 import { DAILY_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
+import { coerceMissedSetupRows, MISSED_SETUPS_REPORT_KEY, type MissedSetupRow } from '@/lib/missed-setups';
 import type { Trade } from '@/lib/types';
 import { formatCurrency } from '@/lib/ui-trade-utils';
 import { coerceWatchlistRows, WATCHLIST_REPORT_KEY, type WatchlistRow } from '@/lib/watchlist';
@@ -95,6 +97,7 @@ export default function DailyReportSheet({
   const [reportData, setReportData] = useState<Record<string, unknown>>({});
   const [watchlist, setWatchlist] = useState<WatchlistRow[]>([]);
   const [tradeGrades, setTradeGrades] = useState<Record<string, string>>({});
+  const [missedSetups, setMissedSetups] = useState<MissedSetupRow[]>([]);
   const [reportByKey, setReportByKey] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -122,6 +125,7 @@ export default function DailyReportSheet({
     setReportData({});
     setWatchlist([]);
     setTradeGrades({});
+    setMissedSetups([]);
     setReportByKey(new Map());
     setEditingTemplate(false);
     setHasDraft(false);
@@ -161,6 +165,7 @@ export default function DailyReportSheet({
           setReportData(merged);
           setWatchlist(coerceWatchlistRows(found.reportData?.[WATCHLIST_REPORT_KEY]));
           setTradeGrades(coerceTradeGrades(found.reportData?.[TRADE_GRADES_REPORT_KEY]));
+          setMissedSetups(coerceMissedSetupRows(found.reportData?.[MISSED_SETUPS_REPORT_KEY]));
         } else if (tmpl) {
           setFields(cloneTemplateFields(tmpl.fields));
           const agg = aggregateDay(trades, date);
@@ -172,6 +177,7 @@ export default function DailyReportSheet({
           setReportData(initialData);
           setWatchlist([]);
           setTradeGrades({});
+          setMissedSetups([]);
         }
 
         // Re-pin auto fields after the draft so stale saved P/L can't shadow live aggregates.
@@ -242,7 +248,11 @@ export default function DailyReportSheet({
           date,
           templateId: template.id,
           templateSnapshot: fields,
-          reportData: { ...reportData, [TRADE_GRADES_REPORT_KEY]: tradeGrades },
+          reportData: {
+            ...reportData,
+            [TRADE_GRADES_REPORT_KEY]: tradeGrades,
+            [MISSED_SETUPS_REPORT_KEY]: missedSetups,
+          },
           tradeIds: agg.tradeIds,
         }),
       });
@@ -458,13 +468,23 @@ export default function DailyReportSheet({
 
             <div className="space-y-3">
               {fields.map((field) => (
-                <TemplateFieldRenderer
-                  key={`${date ?? 'new'}-${field.id}`}
-                  field={field}
-                  value={reportData[field.id]}
-                  readOnly={effectiveReadOnly}
-                  onChange={(nextValue) => updateReportField(field.id, nextValue)}
-                />
+                <Fragment key={`${date ?? 'new'}-${field.id}`}>
+                  {field.id === 'missedTrades' ? (
+                    <MissedSetupsPanel
+                      rows={missedSetups}
+                      date={date ?? ''}
+                      readOnly={effectiveReadOnly}
+                      globalTags={globalTags}
+                      onChange={setMissedSetups}
+                    />
+                  ) : null}
+                  <TemplateFieldRenderer
+                    field={field}
+                    value={reportData[field.id]}
+                    readOnly={effectiveReadOnly}
+                    onChange={(nextValue) => updateReportField(field.id, nextValue)}
+                  />
+                </Fragment>
               ))}
             </div>
 

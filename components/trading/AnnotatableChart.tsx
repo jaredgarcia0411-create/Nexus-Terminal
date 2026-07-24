@@ -29,6 +29,7 @@ interface AnnotatableChartProps {
   exactPriceMarkers?: boolean;
   showTimeAxis?: boolean;
   showSessionShading?: boolean;
+  showVwap?: boolean;
 }
 
 export default function AnnotatableChart({
@@ -41,6 +42,7 @@ export default function AnnotatableChart({
   exactPriceMarkers = true,
   showTimeAxis = true,
   showSessionShading = false,
+  showVwap = false,
 }: AnnotatableChartProps) {
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
   const [expanded, setExpanded] = useState(false);
@@ -118,6 +120,7 @@ export default function AnnotatableChart({
           exactPriceMarkers={exactPriceMarkers}
           showTimeAxis={showTimeAxis}
           showSessionShading={showSessionShading}
+          showVwap={showVwap}
           onInstances={handleInstances}
         />
         {chartInstance && seriesInstance ? (

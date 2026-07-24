@@ -6,6 +6,7 @@ import {
   ColorType,
   CandlestickSeries,
   HistogramSeries,
+  LineSeries,
   CrosshairMode,
   PriceScaleMode,
   LineStyle,
@@ -22,6 +23,7 @@ import { TriangleMarkersPrimitive, type TriangleMarker } from '@/components/trad
 import { useSessionShading } from '@/hooks/use-session-shading';
 import type { TradeMarker } from '@/lib/types';
 import { formatNyCrosshair, formatNyTime, toEpochMs, toTime } from '@/lib/chart-time';
+import { sessionVwap, vwap } from '@/lib/indicators';
 import { epochToNySortKey } from '@/lib/time-utils';
 
 export interface CandleData {
@@ -46,6 +48,7 @@ interface CandlestickChartProps extends CandlestickChartOptions {
   exactPriceMarkers?: boolean;
   showTimeAxis?: boolean;
   showSessionShading?: boolean;
+  showVwap?: boolean;
   scaleMode?: PriceScaleMode;
   onInstances?: (chart: IChartApi | null, series: ISeriesApi<'Candlestick'> | null) => void;
 }
@@ -210,6 +213,7 @@ export default function CandlestickChart({
   exactPriceMarkers = false,
   showTimeAxis = false,
   showSessionShading = false,
+  showVwap = false,
   scaleMode,
   priceLines,
   showCrosshairLegend = false,
@@ -219,6 +223,7 @@ export default function CandlestickChart({
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const vwapSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const trianglePrimitiveRef = useRef<TriangleMarkersPrimitive | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const onInstancesRef = useRef(onInstances);
@@ -529,6 +534,60 @@ export default function CandlestickChart({
       removePriceLines();
     };
   }, [priceLines, removePriceLines]);
+
+  // VWAP overlay. Session-anchored intraday (resets each NY session's PM open),
+  // continuous for daily — matches the charts section (BacktestChart).
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (vwapSeriesRef.current) {
+      try {
+        chart.removeSeries(vwapSeriesRef.current);
+      } catch {
+        // chart may be disposed
+      }
+      vwapSeriesRef.current = null;
+    }
+
+    if (!showVwap || sortedCandles.length === 0) return;
+
+    const ohlc = sortedCandles.map((candle) => ({
+      time: candle.datetime,
+      open: candle.open,
+      high: candle.high,
+      low: candle.low,
+      close: candle.close,
+      volume: candle.volume,
+    }));
+    const values = isIntraday
+      ? sessionVwap(ohlc, (candle) => (Number.isFinite(candle.time) ? epochToNySortKey(candle.time) : null))
+      : vwap(ohlc);
+
+    const series = chart.addSeries(LineSeries, {
+      color: '#15803d',
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+    series.setData(sortedCandles.flatMap((candle, index) => {
+      const value = values[index];
+      return value == null ? [] : [{ time: toTime(candle.datetime), value }];
+    }));
+    vwapSeriesRef.current = series;
+
+    return () => {
+      const activeChart = chartRef.current;
+      if (activeChart && vwapSeriesRef.current) {
+        try {
+          activeChart.removeSeries(vwapSeriesRef.current);
+        } catch {
+          // chart may be disposed
+        }
+      }
+      vwapSeriesRef.current = null;
+    };
+  }, [showVwap, sortedCandles, isIntraday]);
 
   return (
     <div className="relative" style={{ height }}>

@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp, Pencil, X } from 'lucide-react';
 import { toast } from 'sonner';
 import ArchivedWatchlist from '@/components/trading/ArchivedWatchlist';
 import JournalTradeChart from '@/components/trading/JournalTradeChart';
+import MissedSetupsPanel from '@/components/trading/MissedSetupsPanel';
 import TemplateFieldRenderer from '@/components/trading/TemplateFieldRenderer';
 import WeeklyTradesPanel from '@/components/trading/WeeklyTradesPanel';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,7 @@ import { readDrafts, writeDrafts } from '@/lib/drafts';
 import { TRADE_GRADES_REPORT_KEY } from '@/lib/grades';
 import { aggregateWeek } from '@/lib/journal-aggregates';
 import { WEEKLY_DEFAULT_FIELDS } from '@/lib/journal-template-defaults';
+import { coerceMissedSetupRows, dedupeMissedSetupRows, MISSED_SETUPS_REPORT_KEY, type MissedSetupRow } from '@/lib/missed-setups';
 import { formatCurrency } from '@/lib/ui-trade-utils';
 import type { Trade } from '@/lib/types';
 import type { TemplateField } from '@/lib/validations/reviews';
@@ -147,6 +149,7 @@ export default function WeeklyReviewSheet({
   const [fields, setFields] = useState<TemplateField[]>([]);
   const [reportData, setReportData] = useState<Record<string, unknown>>({});
   const [aggregatedWatchlist, setAggregatedWatchlist] = useState<WatchlistRow[]>([]);
+  const [aggregatedMissedSetups, setAggregatedMissedSetups] = useState<MissedSetupRow[]>([]);
   const [tradeGrades, setTradeGrades] = useState<Record<string, string>>({});
   const [reportByKey, setReportByKey] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(false);
@@ -174,6 +177,7 @@ export default function WeeklyReviewSheet({
     setFields([]);
     setReportData({});
     setAggregatedWatchlist([]);
+    setAggregatedMissedSetups([]);
     setTradeGrades({});
     setReportByKey(new Map());
     setEditingTemplate(false);
@@ -210,6 +214,23 @@ export default function WeeklyReviewSheet({
             .map((row) => (daily.date ? { ...row, sourceDate: daily.date } : row)));
         setAggregatedWatchlist(dedupeWatchlistRows(collected));
 
+        // Seed grades from the week's daily reviews (keyed by trade.id). A grade
+        // saved on the weekly review itself overrides the daily-derived one below.
+        const dailyGradesByTrade: Record<string, string> = {};
+        for (const daily of dailyReviews) {
+          const grades = coerceTradeGrades(daily?.reportData?.[TRADE_GRADES_REPORT_KEY]);
+          for (const [tradeId, grade] of Object.entries(grades)) {
+            if (grade) dailyGradesByTrade[tradeId] = grade;
+          }
+        }
+
+        const collectedMissed = dailyReviews
+          .slice()
+          .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''))
+          .flatMap((daily) => coerceMissedSetupRows(daily?.reportData?.[MISSED_SETUPS_REPORT_KEY])
+            .map((row) => (daily.date ? { ...row, sourceDate: daily.date } : row)));
+        setAggregatedMissedSetups(dedupeMissedSetupRows(collectedMissed));
+
         setTemplate(tmpl ?? null);
 
         const agg = aggregateWeek(trades, weekStart, weekEnd);
@@ -221,14 +242,17 @@ export default function WeeklyReviewSheet({
           if (merged.netResult == null) merged.netResult = formatCurrency(agg.netResult);
           if (merged.rTotal == null) merged.rTotal = formatRTotal(agg.rTotal);
           setReportData(merged);
-          setTradeGrades(coerceTradeGrades(found.reportData?.[TRADE_GRADES_REPORT_KEY]));
+          setTradeGrades({
+            ...dailyGradesByTrade,
+            ...coerceTradeGrades(found.reportData?.[TRADE_GRADES_REPORT_KEY]),
+          });
         } else if (tmpl) {
           setFields(withMissingDefaults(cloneTemplateFields(tmpl.fields)));
           setReportData({
             netResult: formatCurrency(agg.netResult),
             rTotal: formatRTotal(agg.rTotal),
           });
-          setTradeGrades({});
+          setTradeGrades(dailyGradesByTrade);
         }
 
         // Re-pin auto fields after the draft so stale saved P/L can't shadow live aggregates.
@@ -439,6 +463,10 @@ export default function WeeklyReviewSheet({
             ) : null}
 
             {aggregatedWatchlist.length > 0 ? <ArchivedWatchlist rows={aggregatedWatchlist} /> : null}
+
+            {aggregatedMissedSetups.length > 0 ? (
+              <MissedSetupsPanel rows={aggregatedMissedSetups} date={weekStart ?? ''} readOnly />
+            ) : null}
 
             <WeeklyTradesPanel
               trades={chartTrades}
