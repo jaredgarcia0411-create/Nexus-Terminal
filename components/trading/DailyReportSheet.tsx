@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { ChevronDown, ChevronUp, Pencil, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -399,6 +399,14 @@ export default function DailyReportSheet({
               onOpenTrade={onTradeClick}
             />
 
+            <MissedSetupsPanel
+              rows={missedSetups}
+              date={date ?? ''}
+              readOnly={effectiveReadOnly}
+              globalTags={globalTags}
+              onChange={setMissedSetups}
+            />
+
             {editingTemplate && !readOnly ? (
               <div className="space-y-3 rounded-xl border border-border bg-accent p-4">
                 <p className="text-sm font-medium capitalize text-foreground">Edit Template</p>
@@ -468,23 +476,13 @@ export default function DailyReportSheet({
 
             <div className="space-y-3">
               {fields.map((field) => (
-                <Fragment key={`${date ?? 'new'}-${field.id}`}>
-                  {field.id === 'missedTrades' ? (
-                    <MissedSetupsPanel
-                      rows={missedSetups}
-                      date={date ?? ''}
-                      readOnly={effectiveReadOnly}
-                      globalTags={globalTags}
-                      onChange={setMissedSetups}
-                    />
-                  ) : null}
-                  <TemplateFieldRenderer
-                    field={field}
-                    value={reportData[field.id]}
-                    readOnly={effectiveReadOnly}
-                    onChange={(nextValue) => updateReportField(field.id, nextValue)}
-                  />
-                </Fragment>
+                <TemplateFieldRenderer
+                  key={`${date ?? 'new'}-${field.id}`}
+                  field={field}
+                  value={reportData[field.id]}
+                  readOnly={effectiveReadOnly}
+                  onChange={(nextValue) => updateReportField(field.id, nextValue)}
+                />
               ))}
             </div>
 

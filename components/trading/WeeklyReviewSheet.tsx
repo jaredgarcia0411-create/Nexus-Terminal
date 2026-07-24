@@ -464,10 +464,6 @@ export default function WeeklyReviewSheet({
 
             {aggregatedWatchlist.length > 0 ? <ArchivedWatchlist rows={aggregatedWatchlist} /> : null}
 
-            {aggregatedMissedSetups.length > 0 ? (
-              <MissedSetupsPanel rows={aggregatedMissedSetups} date={weekStart ?? ''} readOnly />
-            ) : null}
-
             <WeeklyTradesPanel
               trades={chartTrades}
               readOnly={effectiveReadOnly}
@@ -476,6 +472,10 @@ export default function WeeklyReviewSheet({
               reportByKey={reportByKey}
               onOpenTrade={onTradeClick}
             />
+
+            {aggregatedMissedSetups.length > 0 ? (
+              <MissedSetupsPanel rows={aggregatedMissedSetups} date={weekStart ?? ''} readOnly />
+            ) : null}
 
             {agg ? (
               <div className="grid gap-3 md:grid-cols-2">

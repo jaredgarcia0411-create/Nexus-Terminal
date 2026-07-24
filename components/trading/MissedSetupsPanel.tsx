@@ -34,7 +34,7 @@ export default function MissedSetupsPanel({
   const [openChartId, setOpenChartId] = useState<string | null>(null);
 
   const editable = !readOnly && !!onChange;
-  const gridTemplateColumns = '84px minmax(150px, 1fr) 78px 48px 40px';
+  const gridTemplateColumns = '84px minmax(150px, 1fr) 78px 64px 40px';
 
   const updateRow = (id: string, patch: Partial<MissedSetupRow>) => {
     onChange?.(rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
@@ -80,7 +80,7 @@ export default function MissedSetupsPanel({
           <div className="bg-card px-3 py-2 text-xs font-semibold text-foreground">Ticker</div>
           <div className="bg-card px-3 py-2 text-xs font-semibold text-foreground">Tags</div>
           <div className="bg-card px-3 py-2 text-xs font-semibold text-foreground">Grade</div>
-          <div className="bg-card px-3 py-2 text-center text-xs font-semibold text-foreground">Chart</div>
+          <div className="bg-card px-1 py-2 text-center text-xs font-semibold text-foreground">Chart</div>
           <div className="bg-card px-3 py-2" />
 
           {rows.length === 0 ? (

@@ -9,19 +9,7 @@ Historical completed sections (Sprints 1-16, Tier 1 Cleanup, Chart Drawings, Mul
 
 ---
 
-## Recently Completed
-
-### Chart Loading & Text-Box Improvements
-
-Status: completed 2026-07-17.
-
-Outcome:
-- Intraday frames now load 5 trading sessions (focus + 4 prior) and open zoomed to the trade/focus day; `1d` unchanged.
-- Text annotations are resizable, word-wrapping, multi-line boxes (Shift+Enter = newline, Enter = commit); width persists via `normalizeDrawings`.
-- Known limitation (accepted): resize handle only registers over candle area, not the empty margin past the last candle.
-
-Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm test` (841 tests) all pass.
+> Historical completed sections (Chart Loading & Text-Box Improvements, 2026-07-17) were removed to keep this file focused. Use git history and the `specs/` directory for archived implementation detail.
 
 ---
 
@@ -47,3 +35,20 @@ Deferred Sheets roadmap (not started):
 - If a new multi-step feature starts, replace or append a self-contained execution spec with exact file paths, ordered changes, acceptance criteria, and validation requirements.
 - If only docs/workflow assets change, run `npm run workflow:audit`.
 - Do not modify `.env*` or secret files.
+
+---
+
+## Recently Completed
+
+### Daily/Weekly Review: Grade Transfer, Default VWAP, Missed Setups Block
+
+Status: completed 2026-07-24.
+
+Outcome:
+- Weekly Review's Weekly Trades now pre-fills grades from that week's daily reviews; a grade saved on the weekly itself still wins.
+- VWAP is a default overlay on every review chart — session-anchored on intraday frames, continuous on daily (`showVwap` prop through `CandlestickChart` → `AnnotatableChart` → `JournalTradeChart`/`ReviewTickerChart`).
+- New Missed Setups block (ticker · tags · grade · inline annotatable chart) renders under Daily Trades in the Daily Review and under Weekly Trades read-only in the Weekly Review; stored in `reportData` under `__missedSetups`, so no schema or migration was needed.
+
+Validation:
+- `npm run lint`, `npx tsc --noEmit`, `npm test` (841 tests) all pass.
+- Manual smoke in dev: missed setups add/edit/chart/save/reopen, grade transfer, and VWAP all confirmed working.
