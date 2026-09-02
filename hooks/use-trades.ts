@@ -380,8 +380,9 @@ export function useTrades() {
       const prevIds = new Set(tradesRef.current.map((t) => t.id));
 
       const allServerWarnings: string[] = [];
+      const foldedTradeIds: string[] = [];
       for (const batch of batches) {
-        const result = await apiRequest<{ warnings?: string[]; importSkipped?: boolean }>(
+        const result = await apiRequest<{ warnings?: string[]; importSkipped?: boolean; foldedTradeIds?: string[] }>(
           '/api/trades/import-raw',
           {
             method: 'POST',
@@ -393,6 +394,7 @@ export function useTrades() {
           },
         );
         if (Array.isArray(result.warnings)) allServerWarnings.push(...result.warnings);
+        if (Array.isArray(result.foldedTradeIds)) foldedTradeIds.push(...result.foldedTradeIds);
       }
 
       if (allServerWarnings.length > 0) {
@@ -414,6 +416,29 @@ export function useTrades() {
           });
           setTrades((prev) =>
             prev.map((t) => (ids.includes(t.id) ? { ...t, initialRisk: defaultRisk } : t)),
+          );
+        }
+      }
+
+      // A folded scale-in reuses an existing trade row, so the needRisk sweep above
+      // skips it. Each add contributes another unit of default risk; edit the trade
+      // to risk more or less.
+      if (defaultRisk != null && foldedTradeIds.length > 0) {
+        const foldCounts = new Map<string, number>();
+        for (const id of foldedTradeIds) {
+          foldCounts.set(id, (foldCounts.get(id) ?? 0) + 1);
+        }
+
+        for (const [id, count] of foldCounts) {
+          const current = freshTrades.find((t) => t.id === id);
+          if (!current) continue;
+          const nextRisk = (current.initialRisk ?? 0) + defaultRisk * count;
+          await apiRequest('/api/trades/bulk', {
+            method: 'POST',
+            body: JSON.stringify({ action: 'applyRisk', ids: [id], value: nextRisk }),
+          });
+          setTrades((prev) =>
+            prev.map((t) => (t.id === id ? { ...t, initialRisk: nextRisk } : t)),
           );
         }
       }

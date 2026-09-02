@@ -55,9 +55,22 @@ export interface ClosingFill {
   exitExecutions: MatcherExecution[];
 }
 
+export interface PositionAddition {
+  openPositionId: string;
+  symbol: string;
+  direction: Direction;
+  addedQty: number;
+  addedValueSum: number;
+  commission: number;
+  fees: number;
+  entryTime: string;
+  rawExecutions: MatcherExecution[];
+}
+
 export interface MatcherResult {
   trades: MatchedTrade[];
   newOpenPositions: MatchedTrade[];
+  additions: PositionAddition[];
   closingFills: ClosingFill[];
   warnings: string[];
 }
@@ -217,11 +230,13 @@ function matchSide(
   opens: OpenPositionInput[],
   outTrades: MatchedTrade[],
   outNewOpen: MatchedTrade[],
+  outAdditions: PositionAddition[],
   outClosing: ClosingFill[],
   warnings: string[],
 ): void {
   const sortedEntries = [...entries].sort((a, b) => compareTimes(a.time, b.time));
   const sortedExits = [...exits].sort((a, b) => compareTimes(a.time, b.time));
+  const openResiduals = new Map<string, number>();
 
   for (const open of opens) {
     let remainingToClose = open.totalQuantity;
@@ -256,6 +271,7 @@ function matchSide(
       remainingToClose -= take;
     }
 
+    openResiduals.set(open.id, remainingToClose);
     const matchedQty = open.totalQuantity - remainingToClose;
     if (matchedQty <= 0) continue;
 
@@ -385,22 +401,41 @@ function matchSide(
       '',
     );
 
-    outNewOpen.push({
-      symbol,
-      direction,
-      avgEntryPrice: totalOpenQty > 0 ? openValueSum / totalOpenQty : 0,
-      avgExitPrice: 0,
-      totalQuantity: totalOpenQty,
-      grossPnl: 0,
-      netPnl: 0,
-      entryTime,
-      exitTime: '',
-      commission: openCommission,
-      fees: openFees,
-      isOpen: true,
-      remainingQty: totalOpenQty,
-      rawExecutions: sortedEntries.map((entry) => toMatcherExecution(symbol, direction, 'ENTRY', entry)),
-    });
+    // `opens` arrives FIFO-sorted, so the oldest surviving position absorbs the
+    // add. A position fully closed by this batch has residual 0 and is skipped,
+    // which correctly leaves a same-day re-entry as its own new trade.
+    const foldTarget = opens.find((open) => (openResiduals.get(open.id) ?? 0) > 0);
+
+    if (foldTarget) {
+      outAdditions.push({
+        openPositionId: foldTarget.id,
+        symbol,
+        direction,
+        addedQty: totalOpenQty,
+        addedValueSum: openValueSum,
+        commission: openCommission,
+        fees: openFees,
+        entryTime,
+        rawExecutions: sortedEntries.map((entry) => toMatcherExecution(symbol, direction, 'ENTRY', entry)),
+      });
+    } else {
+      outNewOpen.push({
+        symbol,
+        direction,
+        avgEntryPrice: totalOpenQty > 0 ? openValueSum / totalOpenQty : 0,
+        avgExitPrice: 0,
+        totalQuantity: totalOpenQty,
+        grossPnl: 0,
+        netPnl: 0,
+        entryTime,
+        exitTime: '',
+        commission: openCommission,
+        fees: openFees,
+        isOpen: true,
+        remainingQty: totalOpenQty,
+        rawExecutions: sortedEntries.map((entry) => toMatcherExecution(symbol, direction, 'ENTRY', entry)),
+      });
+    }
   }
 
   if (sortedExits.length > 0) {
@@ -417,6 +452,7 @@ export function matchExecutions(
   const warnings: string[] = [];
   const trades: MatchedTrade[] = [];
   const newOpenPositions: MatchedTrade[] = [];
+  const additions: PositionAddition[] = [];
   const closingFills: ClosingFill[] = [];
 
   const longEntries: Record<string, RawBucket[]> = {};
@@ -466,6 +502,7 @@ export function matchExecutions(
       longOpen[symbol] ?? [],
       trades,
       newOpenPositions,
+      additions,
       closingFills,
       warnings,
     );
@@ -477,12 +514,13 @@ export function matchExecutions(
       shortOpen[symbol] ?? [],
       trades,
       newOpenPositions,
+      additions,
       closingFills,
       warnings,
     );
   }
 
-  return { trades, newOpenPositions, closingFills, warnings };
+  return { trades, newOpenPositions, additions, closingFills, warnings };
 }
 
 export function normalizeSide(

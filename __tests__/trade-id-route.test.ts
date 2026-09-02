@@ -57,8 +57,9 @@ function buildSelectChain(tradesRows: unknown[], tagRows: unknown[], executionRo
       }
 
       if (table === tradeExecutionsTable) {
+        const query = Promise.resolve(executionRows);
         return {
-          where: vi.fn(() => ({
+          where: vi.fn(() => Object.assign(query, {
             orderBy: vi.fn(async () => executionRows),
           })),
         };

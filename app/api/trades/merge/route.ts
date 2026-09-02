@@ -74,7 +74,12 @@ export async function POST(request: Request) {
       return (a.entryTime ?? '').localeCompare(b.entryTime ?? '');
     });
     const earliest = sorted[0];
-    const initialRisk = earliest.initialRisk ?? null;
+    const riskValues = tradeRows
+      .map((trade) => trade.initialRisk)
+      .filter((value): value is number => typeof value === 'number' && value > 0);
+    const initialRisk = riskValues.length > 0
+      ? riskValues.reduce((sum, value) => sum + value, 0)
+      : null;
     const anyOpen = tradeRows.some((trade) => trade.isOpen);
     const remainingQty = anyOpen ? tradeRows.reduce((sum, trade) => sum + (trade.remainingQty ?? 0), 0) : 0;
     const closedAtValues = tradeRows

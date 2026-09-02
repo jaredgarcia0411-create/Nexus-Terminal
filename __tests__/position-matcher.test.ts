@@ -261,3 +261,62 @@ describe('matchExecutions - proportional commission allocation on partial close'
     expect(fill.netPnl).toBeCloseTo(390.2);
   });
 });
+
+describe('matchExecutions - cross-day scale-in folds into the open position', () => {
+  it('emits an addition instead of a second open position', () => {
+    const open = openPos('t1', 'SPCX', 'SHORT', 150, 142.92, '09:35', new Date('2026-09-01'));
+    const result = matchExecutions([exec('SPCX', 'SHORT_ENTRY', 85, 139.74, '10:15')], [open]);
+
+    expect(result.newOpenPositions).toHaveLength(0);
+    expect(result.additions).toHaveLength(1);
+    expect(result.additions[0].openPositionId).toBe('t1');
+    expect(result.additions[0].addedQty).toBe(85);
+    expect(result.additions[0].addedValueSum).toBeCloseTo(85 * 139.74, 6);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('folds into the oldest surviving position when several are open', () => {
+    const older = openPos('t1', 'SPCX', 'SHORT', 100, 142.92, '09:35', new Date('2026-09-01'));
+    const newer = openPos('t2', 'SPCX', 'SHORT', 50, 141.0, '09:40', new Date('2026-09-02'));
+    const result = matchExecutions([exec('SPCX', 'SHORT_ENTRY', 25, 139.74, '10:15')], [older, newer]);
+
+    expect(result.additions).toHaveLength(1);
+    expect(result.additions[0].openPositionId).toBe('t1');
+  });
+
+  it('does not fold into a position the same batch fully closed', () => {
+    const open = openPos('t1', 'SPCX', 'SHORT', 100, 142.92, '09:35', new Date('2026-09-01'));
+    const result = matchExecutions([
+      exec('SPCX', 'SHORT_EXIT', 100, 140.0, '09:45'),
+      exec('SPCX', 'SHORT_ENTRY', 40, 139.0, '14:00'),
+    ], [open]);
+
+    expect(result.closingFills).toHaveLength(1);
+    expect(result.additions).toHaveLength(0);
+    expect(result.newOpenPositions).toHaveLength(1);
+    expect(result.newOpenPositions[0].totalQuantity).toBe(40);
+  });
+
+  it('folds into a position the same batch only partially closed', () => {
+    const open = openPos('t1', 'SPCX', 'SHORT', 100, 142.92, '09:35', new Date('2026-09-01'));
+    const result = matchExecutions([
+      exec('SPCX', 'SHORT_EXIT', 30, 140.0, '09:45'),
+      exec('SPCX', 'SHORT_ENTRY', 40, 139.0, '14:00'),
+    ], [open]);
+
+    expect(result.closingFills).toHaveLength(1);
+    expect(result.closingFills[0].matchedQty).toBe(30);
+    expect(result.additions).toHaveLength(1);
+    expect(result.additions[0].addedQty).toBe(40);
+    expect(result.newOpenPositions).toHaveLength(0);
+  });
+
+  it('does not fold across opposite directions', () => {
+    const open = openPos('t1', 'SPCX', 'SHORT', 100, 142.92, '09:35', new Date('2026-09-01'));
+    const result = matchExecutions([exec('SPCX', 'LONG_ENTRY', 40, 139.0, '10:00')], [open]);
+
+    expect(result.additions).toHaveLength(0);
+    expect(result.newOpenPositions).toHaveLength(1);
+    expect(result.newOpenPositions[0].direction).toBe('LONG');
+  });
+});

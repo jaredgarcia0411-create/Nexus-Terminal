@@ -4,6 +4,7 @@ import { internalServerError, logRouteError } from '@/lib/api-route-utils';
 import { getDb, getPoolDb } from '@/lib/db';
 import { tradeExecutions, tradeImportBatches, trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser, toTrade } from '@/lib/server-db-utils';
+import { epochToNySortKey, parseAbsoluteTimestampMs } from '@/lib/time-utils';
 import { closePositionSchema, updateTradeSchema } from '@/lib/validations/trades';
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -233,16 +234,31 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
       .where(and(eq(trades.id, id), eq(trades.userId, authState.user.id)))
       .limit(1);
 
+    const importDaysToClear = new Set<string>();
+    if (row?.sortKey) importDaysToClear.add(row.sortKey);
+
+    const execRows = await db.select({ timestamp: tradeExecutions.timestamp })
+      .from(tradeExecutions)
+      .where(and(
+        eq(tradeExecutions.userId, authState.user.id),
+        eq(tradeExecutions.tradeId, id),
+      ));
+
+    for (const exec of execRows) {
+      const ms = parseAbsoluteTimestampMs(exec.timestamp);
+      if (ms != null) importDaysToClear.add(epochToNySortKey(ms));
+    }
+
     await db.transaction(async (tx) => {
       // Clear matching tradeImportBatches rows so the user can re-upload
       // the same CSV after deleting this trade. The raw| prefix scopes
       // the like() to CSV-import batches only, protecting against future
       // batch-key formats that might share the same date string.
-      if (row?.sortKey) {
+      for (const day of importDaysToClear) {
         await tx.delete(tradeImportBatches).where(
           and(
             eq(tradeImportBatches.userId, authState.user.id),
-            like(tradeImportBatches.batchKey, `raw|${row.sortKey}|%`),
+            like(tradeImportBatches.batchKey, `raw|${day}|%`),
           ),
         );
       }

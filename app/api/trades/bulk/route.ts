@@ -1,8 +1,9 @@
 import { and, eq, inArray, like } from 'drizzle-orm';
 import { internalServerError, logRouteError, parseAndValidate } from '@/lib/api-route-utils';
 import { getPoolDb } from '@/lib/db';
-import { tradeImportBatches, trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
+import { tradeExecutions, tradeImportBatches, trades, tradeTags as tradeTagsTable, tags as tagsTable } from '@/lib/db/schema';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
+import { epochToNySortKey, parseAbsoluteTimestampMs } from '@/lib/time-utils';
 import { bulkTradeSchema } from '@/lib/validations/trades';
 
 export async function POST(request: Request) {
@@ -42,6 +43,25 @@ export async function POST(request: Request) {
       return Response.json({ success: true, action: body.action, ids: [] });
     }
 
+    // A folded scale-in holds fills from several days, so the fingerprints to clear
+    // are the days its executions actually happened on, not just its entry day.
+    const importDaysToClear = new Set<string>();
+    if (body.action === 'delete') {
+      for (const row of ownedRows) importDaysToClear.add(row.sortKey);
+
+      const execRows = await db.select({ timestamp: tradeExecutions.timestamp })
+        .from(tradeExecutions)
+        .where(and(
+          eq(tradeExecutions.userId, authState.user.id),
+          inArray(tradeExecutions.tradeId, ownedIds),
+        ));
+
+      for (const exec of execRows) {
+        const ms = parseAbsoluteTimestampMs(exec.timestamp);
+        if (ms != null) importDaysToClear.add(epochToNySortKey(ms));
+      }
+    }
+
     await db.transaction(async (tx) => {
       if (body.action === 'delete') {
         for (const id of ownedIds) {
@@ -53,8 +73,7 @@ export async function POST(request: Request) {
         // be re-uploaded. Single-delete already does this; bulk previously did
         // not, leaving ghost rows that silently blocked re-import. Executions
         // and tags cascade on the trade delete above, so nothing else lingers.
-        const sortKeys = Array.from(new Set(ownedRows.map((row) => row.sortKey)));
-        for (const sortKey of sortKeys) {
+        for (const sortKey of importDaysToClear) {
           await tx.delete(tradeImportBatches).where(and(
             eq(tradeImportBatches.userId, authState.user.id),
             like(tradeImportBatches.batchKey, `raw|${sortKey}|%`),

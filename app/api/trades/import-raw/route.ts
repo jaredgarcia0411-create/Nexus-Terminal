@@ -14,6 +14,7 @@ import {
   type OpenPositionInput,
 } from '@/lib/position-matcher';
 import { applySheetTagsForDates } from '@/lib/sheets/trade-tags';
+import { nyDateTimeToEpoch } from '@/lib/time-utils';
 import { importRawSchema } from '@/lib/validations/trades';
 
 function makeId(parts: string[]): string {
@@ -40,7 +41,20 @@ function toStoredExecutionSide(side: MatcherExecution['side']): 'ENTRY' | 'EXIT'
   return side.endsWith('_ENTRY') ? 'ENTRY' : 'EXIT';
 }
 
-function toExecutionRows(userId: string, tradeId: string, rawExecutions: MatcherExecution[] = []) {
+// Raw CSV fills carry only a clock time. The chart needs an absolute instant
+// to place markers on the right session, otherwise buildTradeMarkers falls
+// back to the trade's entry day — wrong for anything spanning days.
+function toIsoTimestamp(sortKey: string, time: string): string | null {
+  const epoch = nyDateTimeToEpoch(sortKey, time);
+  return epoch == null ? null : new Date(epoch).toISOString();
+}
+
+function toExecutionRows(
+  userId: string,
+  tradeId: string,
+  sortKey: string,
+  rawExecutions: MatcherExecution[] = [],
+) {
   return rawExecutions.map((execution, index) => ({
     id: `${tradeId}|raw|${index}-${hex4()}`,
     userId,
@@ -49,7 +63,7 @@ function toExecutionRows(userId: string, tradeId: string, rawExecutions: Matcher
     price: execution.price,
     qty: execution.qty,
     time: execution.time,
-    timestamp: null,
+    timestamp: toIsoTimestamp(sortKey, execution.time),
     commission: execution.commission ?? 0,
     fees: execution.fees ?? 0,
   }));
@@ -90,10 +104,11 @@ export async function POST(request: Request) {
       };
     });
 
-    const { trades: matchedClosed, newOpenPositions, closingFills, warnings } =
+    const { trades: matchedClosed, newOpenPositions, additions, closingFills, warnings } =
       matchExecutions(executions, openPositions);
     const closedAt = dayToClosedAt(sortKey);
     let importSkipped = false;
+    const foldedTradeIds: string[] = [];
 
     await db.transaction(async (tx) => {
       if (batchKey) {
@@ -110,7 +125,7 @@ export async function POST(request: Request) {
 
       for (const trade of matchedClosed) {
         const tradeId = makeId([sortKey, trade.symbol, trade.direction]);
-        const executionRows = toExecutionRows(authState.user.id, tradeId, trade.rawExecutions);
+        const executionRows = toExecutionRows(authState.user.id, tradeId, sortKey, trade.rawExecutions);
 
         await tx.insert(trades).values({
           id: tradeId,
@@ -169,7 +184,7 @@ export async function POST(request: Request) {
           position.direction,
           `${compactTimeForId(position.entryTime)}-${hex4()}`,
         ]);
-        const executionRows = toExecutionRows(authState.user.id, tradeId, position.rawExecutions);
+        const executionRows = toExecutionRows(authState.user.id, tradeId, sortKey, position.rawExecutions);
 
         await tx.insert(trades).values({
           id: tradeId,
@@ -272,11 +287,51 @@ export async function POST(request: Request) {
             price: execution.price,
             qty: execution.qty,
             time: execution.time,
-            timestamp: null,
+            timestamp: toIsoTimestamp(sortKey, execution.time),
             commission: execution.commission ?? 0,
             fees: execution.fees ?? 0,
           }).onConflictDoNothing();
         }
+      }
+
+      for (const addition of additions) {
+        // Re-read inside the transaction: the closingFills loop above may have just
+        // reduced this position's quantity and commission.
+        const [current] = await tx.select().from(trades).where(and(
+          eq(trades.userId, authState.user.id),
+          eq(trades.id, addition.openPositionId),
+        )).limit(1);
+        if (!current) continue;
+
+        const priorQty = current.remainingQty > 0 ? current.remainingQty : current.totalQuantity;
+        const nextQty = priorQty + addition.addedQty;
+        const executionRows = toExecutionRows(
+          authState.user.id,
+          current.id,
+          sortKey,
+          addition.rawExecutions,
+        );
+
+        await tx.update(trades).set({
+          totalQuantity: nextQty,
+          remainingQty: nextQty,
+          avgEntryPrice: nextQty > 0
+            ? (current.avgEntryPrice * priorQty + addition.addedValueSum) / nextQty
+            : current.avgEntryPrice,
+          commission: (current.commission ?? 0) + addition.commission,
+          fees: (current.fees ?? 0) + addition.fees,
+          executionCount: current.executionCount + executionRows.length,
+          executions: current.executions + executionRows.length,
+        }).where(and(
+          eq(trades.userId, authState.user.id),
+          eq(trades.id, current.id),
+        ));
+
+        if (executionRows.length > 0) {
+          await tx.insert(tradeExecutions).values(executionRows);
+        }
+
+        foldedTradeIds.push(current.id);
       }
     });
 
@@ -286,7 +341,7 @@ export async function POST(request: Request) {
       logRouteError('trades.import-raw.sheet-tags', err);
     }
 
-    return Response.json({ warnings, importSkipped });
+    return Response.json({ warnings, importSkipped, foldedTradeIds });
   } catch (error) {
     if (error instanceof Response) return error;
     logRouteError('trades.import-raw.post', error);
