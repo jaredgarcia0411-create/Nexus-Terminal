@@ -1,15 +1,11 @@
 # Nexus Terminal - HANDOFF.md
 
-> Updated: 2026-07-17
+> Updated: 2026-09-02
 > Purpose: active execution context for Codex. Older implementation detail lives in git history, `specs/`, and durable docs such as `docs/repo-cleanup.md`.
 
-Historical completed sections (Sprints 1-16, Tier 1 Cleanup, Chart Drawings, Multi-Day Charts, CSV/Cover-Close flows, Sheets Sprints 1-7 + Massive Wave 1-2, backtest user-id fixes, Filing headline parser, Calendar Year Overview, Workflow Maintenance, Nav Reorg, Sheets Today-filter + report-by-ticker/date, EODHD News API swap, Trade-Chart Annotations/Expand/Per-Chart-Timeframe/DAS Triangle Markers) were removed to keep this file focused. Use git history and `docs/repo-cleanup.md` for archived implementation detail.
+Historical completed sections were removed to keep this file focused. Use git history and the `specs/` directory for archived implementation detail.
 
 > **Parked:** the Scanner Epic 1 execution spec was moved to `specs/scanner-epic1-handoff.md` (not started — still waiting on the worktree + Neon-branch setup). Move it back here when you're ready to run it.
-
----
-
-> Historical completed sections (Chart Loading & Text-Box Improvements, 2026-07-17) were removed to keep this file focused. Use git history and the `specs/` directory for archived implementation detail.
 
 ---
 
@@ -25,8 +21,6 @@ Deferred Sheets roadmap (not started):
 - Templates / per-day "start today's sheet" flow beyond plain Duplicate.
 - CSV export, archive/unarchive UI, undo/redo, polling/SSE invalidation.
 
-> Historical completed sections (Rich Text + Autosave for Reviews/Notes, Playbook Auto-Save + Font-Size, Playbook Rich Text, News Section Redesign, Filing Headline Parser, Unified News Feed, Mobile Optimization, Trade-Chart Annotations/Expand/Timeframe/Triangle Markers) were removed to keep this file focused. Use git history and the `specs/` directory for archived implementation detail.
-
 ---
 
 ## Session Maintenance
@@ -40,15 +34,17 @@ Deferred Sheets roadmap (not started):
 
 ## Recently Completed
 
-### Daily/Weekly Review: Grade Transfer, Default VWAP, Missed Setups Block
+### Scale-In Folding: Execution Timestamps, Summed Risk, Matcher Additions
 
-Status: completed 2026-07-24.
+Status: completed 2026-09-02.
 
 Outcome:
-- Weekly Review's Weekly Trades now pre-fills grades from that week's daily reviews; a grade saved on the weekly itself still wins.
-- VWAP is a default overlay on every review chart — session-anchored on intraday frames, continuous on daily (`showVwap` prop through `CandlestickChart` → `AnnotatableChart` → `JournalTradeChart`/`ReviewTickerChart`).
-- New Missed Setups block (ticker · tags · grade · inline annotatable chart) renders under Daily Trades in the Daily Review and under Weekly Trades read-only in the Weekly Review; stored in `reportData` under `__missedSetups`, so no schema or migration was needed.
+- Raw-imported executions now store an absolute ISO timestamp, so chart markers land on the session the fill actually happened on instead of the trade's entry day.
+- Cross-day adds fold into the oldest surviving open position via a new `additions` channel on `matchExecutions`, instead of creating a second trade row.
+- Risk sums when positions combine: the merge endpoint adds `initialRisk` across sources, and each folded scale-in adds one more unit of default risk (edit the trade to risk more or less).
+- Both delete paths clear `raw|<day>|%` import fingerprints for every day a trade holds fills, so a folded trade's CSVs can be re-uploaded.
+- No schema change, no migration. Historical executions keep null timestamps and fall back to today's behavior.
 
 Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm test` (841 tests) all pass.
-- Manual smoke in dev: missed setups add/edit/chart/save/reopen, grade transfer, and VWAP all confirmed working.
+- `npm run lint`, `npx tsc --noEmit`, `npm test` (112 files / 846 tests), `npm run build` — all pass.
+- Review found and fixed two client-side bugs: the folded-risk sweep read a pre-sweep snapshot (undercounting risk when the base position and the add arrived in one upload), and import batches weren't date-sorted (out-of-order files would date the folded trade wrong).

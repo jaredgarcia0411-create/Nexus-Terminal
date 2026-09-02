@@ -381,7 +381,10 @@ export function useTrades() {
 
       const allServerWarnings: string[] = [];
       const foldedTradeIds: string[] = [];
-      for (const batch of batches) {
+      // Oldest day first: whichever batch lands first creates the open position and
+      // later ones fold into it, so out-of-order files would date the trade wrong.
+      const orderedBatches = [...batches].sort((a, b) => a.date.localeCompare(b.date));
+      for (const batch of orderedBatches) {
         const result = await apiRequest<{ warnings?: string[]; importSkipped?: boolean; foldedTradeIds?: string[] }>(
           '/api/trades/import-raw',
           {
@@ -404,12 +407,15 @@ export function useTrades() {
 
       const freshTrades = await refreshTrades();
 
+      const sweptIds = new Set<string>();
+
       if (defaultRisk != null && freshTrades.length > 0) {
         const needRisk = freshTrades.filter(
           (t) => !prevIds.has(t.id) && (typeof t.initialRisk !== 'number' || !Number.isFinite(t.initialRisk) || t.initialRisk <= 0),
         );
         if (needRisk.length > 0) {
           const ids = needRisk.map((t) => t.id);
+          for (const id of ids) sweptIds.add(id);
           await apiRequest('/api/trades/bulk', {
             method: 'POST',
             body: JSON.stringify({ action: 'applyRisk', ids, value: defaultRisk }),
@@ -432,7 +438,10 @@ export function useTrades() {
         for (const [id, count] of foldCounts) {
           const current = freshTrades.find((t) => t.id === id);
           if (!current) continue;
-          const nextRisk = (current.initialRisk ?? 0) + defaultRisk * count;
+          // freshTrades was snapshotted before the sweep above wrote to the DB, so a
+          // trade the sweep just touched still reads as null here.
+          const baseRisk = sweptIds.has(id) ? defaultRisk : (current.initialRisk ?? 0);
+          const nextRisk = baseRisk + defaultRisk * count;
           await apiRequest('/api/trades/bulk', {
             method: 'POST',
             body: JSON.stringify({ action: 'applyRisk', ids: [id], value: nextRisk }),
