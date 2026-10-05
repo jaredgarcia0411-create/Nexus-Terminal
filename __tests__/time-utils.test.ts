@@ -5,6 +5,7 @@ import {
   getNextTradingSession,
   epochToNySortKey,
   hasExplicitTimezone,
+  isNyTradingDay,
   normalizeToTradingSession,
   nyDateTimeToEpoch,
   parseAbsoluteTimestampMs,
@@ -55,6 +56,13 @@ describe('time-utils', () => {
   it('finds the next trading session', () => {
     expect(getNextTradingSession('2026-03-04')).toBe('2026-03-05');
     expect(getNextTradingSession('2026-03-06')).toBe('2026-03-09');
+  });
+
+  it('skips NYSE holidays', () => {
+    expect(isNyTradingDay('2025-01-09')).toBe(false);
+    expect(getNextTradingSession('2025-01-08')).toBe('2025-01-10');
+    expect(getNextTradingSession('2025-01-17')).toBe('2025-01-21');
+    expect(getNextTradingSession('2026-07-02')).toBe('2026-07-06');
   });
 
   it('builds intraday session windows with prior day support', () => {
