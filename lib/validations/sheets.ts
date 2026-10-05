@@ -16,6 +16,12 @@ export const SHEET_COLUMN_TYPES = [
   'share_volume',
   'dollar_volume',
   'float',
+  'pdc',
+  'pd_range',
+  'ah_high',
+  'pm_high_early',
+  'pm_high_late',
+  'pm_extension',
 ] as const;
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;

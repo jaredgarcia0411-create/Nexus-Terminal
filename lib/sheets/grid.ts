@@ -26,6 +26,10 @@ export function valuesFromGridRow(gridRow: GridRow, columns: SheetColumn[]): Rec
   return values;
 }
 
+// Numeric comparisons accept an optional k/m/b suffix.
+const COMPARISON_FILTER = /^(>=|<=|>|<)\s*(-?\d*\.?\d+)\s*([kmb])?$/i;
+const SUFFIX_MULTIPLIER: Record<string, number> = { k: 1_000, m: 1_000_000, b: 1_000_000_000 };
+
 export function filterGridRows(rows: GridRow[], columns: SheetColumn[], filters: SheetFilters): GridRow[] {
   const columnsByKey = new Map(columns.map((column) => [column.key, column]));
   const activeFilters = Object.entries(filters).filter(([, value]) => value.trim() !== '' && value !== 'all');
@@ -39,6 +43,19 @@ export function filterGridRows(rows: GridRow[], columns: SheetColumn[], filters:
       if (column.type === 'checkbox') {
         if (value !== 'checked' && value !== 'unchecked') return true;
         return Boolean(row[key]) === (value === 'checked');
+      }
+
+      const comparison = COMPARISON_FILTER.exec(value.trim().replace(/,/g, ''));
+      if (comparison) {
+        const text = String(row[key] ?? '').replace(/,/g, '').trim();
+        const cell = Number(text);
+        // Number('') is zero, but blanks must never match a comparison.
+        if (!text || !Number.isFinite(cell)) return false;
+        const target = Number(comparison[2]) * (comparison[3] ? SUFFIX_MULTIPLIER[comparison[3].toLowerCase()] ?? 1 : 1);
+        if (comparison[1] === '>') return cell > target;
+        if (comparison[1] === '>=') return cell >= target;
+        if (comparison[1] === '<') return cell < target;
+        return cell <= target;
       }
 
       if (column.type === 'multiselect') {
@@ -84,6 +101,25 @@ export const USER_COLUMN_TYPES: SheetColumnType[] = [
   'share_volume',
   'dollar_volume',
   'float',
+  'pdc',
+  'pd_range',
+  'ah_high',
+  'pm_high_early',
+  'pm_high_late',
+  'pm_extension',
+];
+
+export const NUMERIC_COLUMN_TYPES: SheetColumnType[] = [
+  'number',
+  'share_volume',
+  'dollar_volume',
+  'float',
+  'pdc',
+  'pd_range',
+  'ah_high',
+  'pm_high_early',
+  'pm_high_late',
+  'pm_extension',
 ];
 
 export const TEXT_EDIT_TYPES: SheetColumnType[] = ['text', 'number', 'date', 'url'];

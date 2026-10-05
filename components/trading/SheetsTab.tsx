@@ -42,8 +42,9 @@ import { useSheets } from '@/hooks/use-sheets';
 import { useTeamTags } from '@/hooks/use-team-tags';
 import type { SheetListItem } from '@/hooks/use-sheets';
 import type { SheetColumn, SheetColumnType } from '@/lib/sheets/columns';
-import { formatCompactShares, formatCompactUsd } from '@/lib/sheets/format';
+import { formatCompactShares, formatCompactUsd, formatSheetPrice } from '@/lib/sheets/format';
 import {
+  NUMERIC_COLUMN_TYPES,
   TEXT_EDIT_TYPES,
   filterGridRows,
   gridRowsFromSheet,
@@ -90,7 +91,8 @@ function isFilterableColumn(type: SheetColumnType) {
     || type === 'date'
     || type === 'select'
     || type === 'multiselect'
-    || type === 'checkbox';
+    || type === 'checkbox'
+    || NUMERIC_COLUMN_TYPES.includes(type);
 }
 
 function hasActiveFilter(type: SheetColumnType, value: string) {
@@ -129,7 +131,7 @@ function FilterControl({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       onKeyDown={(event) => event.stopPropagation()}
-      placeholder={`Filter ${column.name}`}
+      placeholder={NUMERIC_COLUMN_TYPES.includes(column.type) ? 'e.g. >0.33, >10m' : `Filter ${column.name}`}
       aria-label={`Filter ${column.name}`}
     />
   );
@@ -555,20 +557,11 @@ function getMassiveCandidateRowIds(rows: SheetRowRecord[], keys: MassiveFillKeys
       if (date) rowIds.push(row.id);
       continue;
     }
-    const needsVolume = Boolean(
-      date
-      && (
-        (keys.shareKey && isEmptySheetCell(row.values[keys.shareKey]))
-        || (keys.dollarKey && isEmptySheetCell(row.values[keys.dollarKey]))
-      ),
-    );
-    const needsFloat = Boolean(
-      date
-      && keys.floatKey
-      && isEmptySheetCell(row.values[keys.floatKey]),
+    const needsFill = Boolean(
+      date && Object.values(keys).some((key) => key && isEmptySheetCell(row.values[key])),
     );
 
-    if (needsVolume || needsFloat) rowIds.push(row.id);
+    if (needsFill) rowIds.push(row.id);
   }
   return rowIds;
 }
@@ -591,6 +584,12 @@ function defaultColumnWidth(type: SheetColumnType): number {
     case 'share_volume':
     case 'dollar_volume':
     case 'float':
+    case 'pdc':
+    case 'pd_range':
+    case 'ah_high':
+    case 'pm_high_early':
+    case 'pm_high_late':
+    case 'pm_extension':
       return 110;
     case 'date':
       return 130;
@@ -835,6 +834,30 @@ function buildColumn(
     };
   }
 
+  if (
+    column.type === 'pdc'
+    || column.type === 'pd_range'
+    || column.type === 'ah_high'
+    || column.type === 'pm_high_early'
+    || column.type === 'pm_high_late'
+  ) {
+    return {
+      ...base,
+      renderCell: ({ row }) => (
+        <ReadOnlyCompactNumberCell value={row[column.key]} formatter={formatSheetPrice} />
+      ),
+    };
+  }
+
+  if (column.type === 'pm_extension') {
+    return {
+      ...base,
+      renderCell: ({ row }) => (
+        <ReadOnlyCompactNumberCell value={row[column.key]} formatter={(n) => n.toFixed(2)} />
+      ),
+    };
+  }
+
   if (column.type === 'multiselect') {
     return {
       ...base,
@@ -961,9 +984,7 @@ export default function SheetsTab() {
     () => (activeSheet ? getMassiveFillKeys(activeSheet.columns) : {}),
     [activeSheet],
   );
-  const hasMassiveFillColumns = Boolean(
-    massiveFillKeys.shareKey || massiveFillKeys.dollarKey || massiveFillKeys.floatKey,
-  );
+  const hasMassiveFillColumns = Object.values(massiveFillKeys).some(Boolean);
 
   const gridRows = useMemo(() => gridRowsFromSheet(rows), [rows]);
   const filteredRows = useMemo(() => {

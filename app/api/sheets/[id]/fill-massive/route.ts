@@ -5,37 +5,42 @@ import { getDb } from '@/lib/db';
 import { sheetRows, sheets } from '@/lib/db/schema';
 import {
   fetchGroupedDailyAggregates,
+  fetchMassiveAggregateBars,
   fetchSharesOutstanding,
   isMassiveConfigured,
   normalizeMassiveTicker,
   type GroupedDailyBar,
 } from '@/lib/massive-market';
 import { getSheetRole } from '@/lib/sheets/access';
-import { computeRowFill, getMassiveFillKeys, isEmptySheetCell, type MassiveFillKeys } from '@/lib/sheets/massive-fill';
+import { computeRowFill, computeSessionHighs, getMassiveFillKeys, isEmptySheetCell, type MassiveFillKeys } from '@/lib/sheets/massive-fill';
 import { applySheetTagsForDates } from '@/lib/sheets/trade-tags';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
-import { isNyTradingDay } from '@/lib/time-utils';
+import { getNextTradingSession, isNyTradingDay, nyDateTimeToEpoch } from '@/lib/time-utils';
 import { fillMassiveSchema } from '@/lib/validations/sheets';
 
 function hasMassiveFillKey(keys: MassiveFillKeys): boolean {
-  return Boolean(keys.shareKey || keys.dollarKey || keys.floatKey);
+  return Object.values(keys).some(Boolean);
 }
 
 function textCell(values: Record<string, unknown>, key: string): string {
   return String(values[key] ?? '').trim();
 }
 
-function needsVolume(values: Record<string, unknown>, keys: MassiveFillKeys, force: boolean): boolean {
-  if (force) return Boolean(keys.shareKey || keys.dollarKey);
-  return Boolean(
-    (keys.shareKey && isEmptySheetCell(values[keys.shareKey]))
-    || (keys.dollarKey && isEmptySheetCell(values[keys.dollarKey])),
-  );
+function needsDaily(values: Record<string, unknown>, keys: MassiveFillKeys, force: boolean): boolean {
+  const dailyKeys = [keys.shareKey, keys.dollarKey, keys.pdcKey, keys.pdRangeKey, keys.extensionKey];
+  if (force) return dailyKeys.some(Boolean);
+  return dailyKeys.some((key) => key && isEmptySheetCell(values[key]));
 }
 
 function needsFloat(values: Record<string, unknown>, keys: MassiveFillKeys, force: boolean): boolean {
   if (force) return Boolean(keys.floatKey);
   return Boolean(keys.floatKey && isEmptySheetCell(values[keys.floatKey]));
+}
+
+function needsSession(values: Record<string, unknown>, keys: MassiveFillKeys, force: boolean): boolean {
+  const sessionKeys = [keys.ahHighKey, keys.pmEarlyKey, keys.pmLateKey, keys.extensionKey];
+  if (force) return sessionKeys.some(Boolean);
+  return sessionKeys.some((key) => key && isEmptySheetCell(values[key]));
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -81,6 +86,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     // Keyed by `${ticker}|${date}` so each row's float is fetched as of its own
     // date; rows sharing a ticker+date dedupe to a single request.
     const floatNeeds = new Map<string, { ticker: string; date: string }>();
+    // One minute-bar request per ticker + scan date covers AH through next PM.
+    const sessionNeeds = new Map<string, { ticker: string; date: string; tradeDate: string }>();
+    const nowMs = Date.now();
 
     for (const row of rows) {
       const values = row.values;
@@ -88,12 +96,18 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const date = textCell(values, 'date');
       if (!ticker) continue;
 
-      if (date && isNyTradingDay(date) && needsVolume(values, keys, body.force)) {
+      if (date && isNyTradingDay(date) && needsDaily(values, keys, body.force)) {
         datesNeedingVolume.add(date);
       }
 
       if (date && needsFloat(values, keys, body.force)) {
         floatNeeds.set(`${ticker}|${date}`, { ticker, date });
+      }
+
+      const tradeDate = date && isNyTradingDay(date) ? getNextTradingSession(date) : null;
+      // Before AH closes, none of the session windows can be written.
+      if (tradeDate && nowMs >= nyDateTimeToEpoch(date, '20:00:00')! && needsSession(values, keys, body.force)) {
+        sessionNeeds.set(`${ticker}|${date}`, { ticker, date, tradeDate });
       }
     }
 
@@ -123,6 +137,27 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       }
     }
 
+    const minuteBarsByKey = new Map<string, Array<{ t: number; h: number }>>();
+    await Promise.all([...sessionNeeds.entries()].map(async ([key, { ticker, date, tradeDate }]) => {
+      try {
+        const bars = await fetchMassiveAggregateBars({
+          ticker,
+          multiplier: '1',
+          timespan: 'minute',
+          from: String(nyDateTimeToEpoch(date, '16:00:00')),
+          to: String(nyDateTimeToEpoch(tradeDate, '09:30:00')),
+          adjusted: false,
+        });
+        minuteBarsByKey.set(key, bars.flatMap((bar) => {
+          const t = Number(bar.t);
+          const h = Number(bar.h);
+          return Number.isFinite(t) && Number.isFinite(h) ? [{ t, h }] : [];
+        }));
+      } catch (error) {
+        console.warn(`Massive minute bars unavailable for ${key}`, error);
+      }
+    }));
+
     const updatedRows: Array<typeof sheetRows.$inferSelect> = [];
     let missed = Math.max(0, body.rowIds.length - rows.length);
 
@@ -132,11 +167,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const date = textCell(values, 'date');
       const bar = date ? barsByDate.get(date)?.get(ticker) ?? null : null;
       const sharesOutstanding = date ? sharesByKey.get(`${ticker}|${date}`) ?? null : null;
+      const minuteBars = minuteBarsByKey.get(`${ticker}|${date}`);
+      const tradeDate = minuteBars ? getNextTradingSession(date) : null;
+      const sessionHighs = minuteBars && tradeDate
+        ? computeSessionHighs(minuteBars, date, tradeDate, nowMs)
+        : null;
       const fill = computeRowFill({
         values,
         keys,
         bar,
         sharesOutstanding,
+        sessionHighs,
         force: body.force,
       });
 

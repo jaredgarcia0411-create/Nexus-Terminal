@@ -35,6 +35,14 @@ const datedRows: GridRow[] = [
   { __id: 'r4', __version: 1, date: '2026-06-09' },
 ];
 
+const numericColumns: SheetColumn[] = [{ key: 'ext', name: 'Extension', type: 'number' }];
+const numericRows: GridRow[] = [
+  { __id: 'r1', __version: 1, ext: 0.2 },
+  { __id: 'r2', __version: 1, ext: 0.45 },
+  { __id: 'r3', __version: 1, ext: '' },
+  { __id: 'r4', __version: 1, ext: '1,200' },
+];
+
 describe('sheets grid helpers', () => {
   it('flattens sheet rows into grid rows with meta keys', () => {
     const grid = gridRowsFromSheet([
@@ -162,6 +170,39 @@ describe('sheets grid helpers', () => {
 
   it('treats empty filters as passthrough', () => {
     expect(filterGridRows(filterRows, filterColumns, { ticker: '', watched: 'all' })).toBe(filterRows);
+  });
+
+  it.each([
+    ['>0.33', ['r2', 'r4']],
+    ['<=0.2', ['r1']],
+    ['>= 0.45', ['r2', 'r4']],
+    ['<0.45', ['r1']],
+    ['>1k', ['r4']],
+    ['>=1,200', ['r4']],
+    ['0.4', ['r2']],
+  ])('filters numeric cells with %s', (filter, expected) => {
+    expect(filterGridRows(numericRows, numericColumns, { ext: filter }).map((row) => row.__id)).toEqual(expected);
+  });
+
+  it('combines extension and volume comparisons with AND semantics', () => {
+    const columns: SheetColumn[] = [
+      { key: 'ext', name: 'Extension', type: 'pm_extension' },
+      { key: 'vol', name: 'Share Vol', type: 'share_volume' },
+    ];
+    const rows: GridRow[] = [
+      { __id: 'r1', __version: 1, ext: 0.45, vol: 12_000_000 },
+      { __id: 'r2', __version: 1, ext: 0.45, vol: 9_000_000 },
+      { __id: 'r3', __version: 1, ext: 0.2, vol: 12_000_000 },
+    ];
+    expect(filterGridRows(rows, columns, { vol: '>10m' }).map((row) => row.__id)).toEqual(['r1', 'r3']);
+    expect(filterGridRows(rows, columns, { ext: '>0.33', vol: '>10m' }).map((row) => row.__id)).toEqual(['r1']);
+    expect(filterGridRows(rows, columns, { vol: '>= .012B' }).map((row) => row.__id)).toEqual(['r1', 'r3']);
+  });
+
+  it('rejects blank and non-numeric cells even with a negative threshold', () => {
+    const rows: GridRow[] = ['', null, undefined, '   ', 'manual', Number.NaN, Number.POSITIVE_INFINITY, 0]
+      .map((ext, index) => ({ __id: String(index), __version: 1, ext }));
+    expect(filterGridRows(rows, numericColumns, { ext: '>-1' }).map((row) => row.__id)).toEqual(['7']);
   });
 
   it('sorts rows by date descending', () => {

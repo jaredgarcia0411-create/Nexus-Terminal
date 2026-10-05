@@ -30,3 +30,8 @@ export function formatCompactUsd(n: number): string {
   const formatted = formatScaled(n, COMPACT_UNITS, () => 1);
   return formatted ? `$${formatted}` : '';
 }
+
+export function formatSheetPrice(n: number): string {
+  if (!Number.isFinite(n)) return '';
+  return n >= 1 ? n.toFixed(2) : n.toFixed(4);
+}

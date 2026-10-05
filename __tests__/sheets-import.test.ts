@@ -67,6 +67,20 @@ describe('sheets CSV import helpers', () => {
     expect(coerceImportNumber('abc')).toBeNull();
   });
 
+  it.each(['pdc', 'pd_range', 'ah_high', 'pm_high_early', 'pm_high_late', 'pm_extension'] as const)(
+    'imports %s cells as numbers and omits blank or invalid values',
+    (type) => {
+      const drafts = detectImportColumns(['Ticker', 'Value'], []).map((draft) =>
+        draft.header === 'Value' ? { ...draft, type } : draft,
+      );
+      expect(buildImportPayload(drafts, [
+        ['AAPL', '1,234.50'], ['MSFT', ''], ['NVDA', 'invalid'],
+      ]).rows).toEqual([
+        { ticker: 'AAPL', value: 1234.5 }, { ticker: 'MSFT' }, { ticker: 'NVDA' },
+      ]);
+    },
+  );
+
   it('normalizes ISO and US date formats to yyyy-MM-dd, falling back on junk', () => {
     expect(coerceImportDate('2026-06-04')).toBe('2026-06-04');
     expect(coerceImportDate('2026-6-4')).toBe('2026-06-04');

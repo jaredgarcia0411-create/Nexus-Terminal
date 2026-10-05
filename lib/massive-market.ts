@@ -312,12 +312,13 @@ export async function fetchMassiveAggregateBars(params: {
   from: string;
   to: string;
   limit?: number;
+  adjusted?: boolean;
 }): Promise<MassiveAggregateBar[]> {
   const payload = await fetchMassiveJson<{
     results?: MassiveAggregateBar[];
   }>(
     `/v2/aggs/ticker/${encodeURIComponent(params.ticker.trim().toUpperCase())}/range/${params.multiplier}/${params.timespan}/${params.from}/${params.to}`,
-    { adjusted: 'true', sort: 'asc', limit: String(params.limit ?? 50000) },
+    { adjusted: String(params.adjusted ?? true), sort: 'asc', limit: String(params.limit ?? 50000) },
   );
 
   return payload.results ?? [];

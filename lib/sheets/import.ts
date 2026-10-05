@@ -1,5 +1,5 @@
 import { DEFAULT_SHEET_COLUMNS, type SheetColumn, type SheetColumnType } from '@/lib/sheets/columns';
-import { nextColumnKey } from '@/lib/sheets/grid';
+import { nextColumnKey, NUMERIC_COLUMN_TYPES } from '@/lib/sheets/grid';
 
 export type ImportColumnDraft = {
   header: string;
@@ -150,7 +150,7 @@ function coerceImportValue(type: SheetColumnType, raw: unknown): unknown {
   const trimmed = String(raw ?? '').trim();
   if (!trimmed) return undefined;
 
-  if (type === 'number' || type === 'share_volume' || type === 'dollar_volume' || type === 'float') {
+  if (NUMERIC_COLUMN_TYPES.includes(type)) {
     return coerceImportNumber(trimmed) ?? undefined;
   }
 

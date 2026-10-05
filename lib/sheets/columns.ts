@@ -13,7 +13,13 @@ export type SheetColumnType =
   | 'watchlist'
   | 'share_volume'
   | 'dollar_volume'
-  | 'float';
+  | 'float'
+  | 'pdc'
+  | 'pd_range'
+  | 'ah_high'
+  | 'pm_high_early'
+  | 'pm_high_late'
+  | 'pm_extension';
 
 export type SheetColumn = {
   key: string;
