@@ -13,11 +13,13 @@ import { Input } from '@/components/ui/input';
 import AnnotatableChart from '@/components/trading/AnnotatableChart';
 import type { TradeMarker } from '@/lib/types';
 import { useCandleData } from '@/hooks/use-candle-data';
+import { useSplitHistory } from '@/hooks/use-split-history';
 import { bucketKey, isCrossDayTrade } from '@/lib/journal-aggregates';
 import {
   buildTradeChartOptions,
   type TradeChartTimeframeKey,
 } from '@/lib/chart-timeframes';
+import { adjustMarkersForSplits } from '@/lib/splits';
 import { nyDateTimeToEpoch, parseAbsoluteTimestampMs } from '@/lib/time-utils';
 
 const NOTES_DRAFTS_KEY = 'nexus-trade-notes-drafts';
@@ -92,10 +94,13 @@ export default function TradeDetailSheet({ trade, open, onOpenChange, onSaveNote
     );
   }, [trade]);
 
+  // Same split alignment as JournalTradeChart: chart markers only — the
+  // execution list below keeps the prices as traded.
+  const splits = useSplitHistory(trade?.symbol ?? null);
   const tradeMarkers = useMemo<TradeMarker[]>(() => {
     if (!trade) return [];
-    return buildTradeMarkers(trade);
-  }, [trade]);
+    return adjustMarkersForSplits(buildTradeMarkers(trade), splits);
+  }, [trade, splits]);
 
   const tradeDateLabel = trade
     ? isCrossDayTrade(trade)

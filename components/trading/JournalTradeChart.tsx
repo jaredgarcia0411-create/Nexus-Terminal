@@ -9,8 +9,10 @@ import {
   type TradeChartTimeframeKey,
 } from '@/lib/chart-timeframes';
 import { useCandleData } from '@/hooks/use-candle-data';
+import { useSplitHistory } from '@/hooks/use-split-history';
 import { useTradeExecutions } from '@/hooks/use-trade-executions';
 import { bucketKey, isCrossDayTrade } from '@/lib/journal-aggregates';
+import { adjustMarkersForSplits } from '@/lib/splits';
 import { buildTradeMarkers } from '@/lib/ui-trade-utils';
 
 interface JournalTradeChartProps {
@@ -34,9 +36,12 @@ function JournalTradeChart({ trade }: JournalTradeChartProps) {
   );
 
   const executions = useTradeExecutions(trade.id, trade.rawExecutions);
+  // Candles are split-adjusted by Massive; fills are stored as traded. Scale the
+  // markers onto the candles' basis so they line up after a later split.
+  const splits = useSplitHistory(trade.symbol);
   const tradeMarkers = useMemo<TradeMarker[]>(
-    () => buildTradeMarkers({ ...trade, rawExecutions: executions }),
-    [trade, executions],
+    () => adjustMarkersForSplits(buildTradeMarkers({ ...trade, rawExecutions: executions }), splits),
+    [trade, executions, splits],
   );
 
   if (isLoading) {

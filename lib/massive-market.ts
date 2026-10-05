@@ -1,3 +1,5 @@
+import type { SplitEvent } from '@/lib/splits';
+
 const MASSIVE_BASE_URL = 'https://api.massive.com';
 
 export type MassiveDirection = 'gainers' | 'losers';
@@ -322,6 +324,26 @@ export async function fetchMassiveAggregateBars(params: {
   );
 
   return payload.results ?? [];
+}
+
+// Full split history for one ticker, oldest first. See lib/splits.ts for how the
+// factor is applied. Sorted locally so callers can rely on the order.
+export async function fetchSplitHistory(ticker: string): Promise<SplitEvent[]> {
+  const payload = await fetchMassiveJson<{
+    results?: Array<{
+      execution_date?: string | null;
+      historical_adjustment_factor?: number | string | null;
+    }>;
+  }>('/stocks/v1/splits', { ticker: normalizeMassiveTicker(ticker), limit: '1000' });
+
+  return (payload.results ?? [])
+    .flatMap((row) => {
+      const executionDate = row.execution_date ?? '';
+      const factor = toNumberOrNull(row.historical_adjustment_factor);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(executionDate) || factor == null || factor <= 0) return [];
+      return [{ executionDate, factor }];
+    })
+    .sort((a, b) => a.executionDate.localeCompare(b.executionDate));
 }
 
 /**
