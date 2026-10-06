@@ -8,7 +8,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Archive, ArrowDownWideNarrow, ArrowUpWideNarrow, CalendarCheck, ChevronDown, Columns3, FileSpreadsheet, FileText, Filter, GripVertical, History, LineChart, Pencil, Plus, RefreshCw, Rows3, Tags, Trash2, Upload, Users, X } from 'lucide-react';
+import { Archive, ArrowDownWideNarrow, ArrowUpWideNarrow, CalendarCheck, ChevronDown, Columns3, Download, FileSpreadsheet, FileText, Filter, GripVertical, History, LineChart, Pencil, Plus, RefreshCw, Rows3, Tags, Trash2, Upload, Users, X } from 'lucide-react';
 import {
   DataGrid,
   Row as GridRowRenderer,
@@ -42,6 +42,7 @@ import { useSheets } from '@/hooks/use-sheets';
 import { useTeamTags } from '@/hooks/use-team-tags';
 import type { SheetListItem } from '@/hooks/use-sheets';
 import type { SheetColumn, SheetColumnType } from '@/lib/sheets/columns';
+import { buildSheetCsv } from '@/lib/sheets/export';
 import { formatCompactShares, formatCompactUsd, formatSheetPrice } from '@/lib/sheets/format';
 import {
   NUMERIC_COLUMN_TYPES,
@@ -1209,6 +1210,23 @@ export default function SheetsTab() {
     void sheets.updateColumns(next);
   };
 
+  // Downloads the rows currently on screen (filters + sort applied) as a CSV.
+  // The browser can only "download" a URL, so we wrap the text in a Blob, give
+  // it a temporary URL, and click a hidden link pointing at it.
+  const handleExportCsv = () => {
+    if (!activeSheet) return;
+    const csv = buildSheetCsv(activeSheet.columns, visibleRows, rResults);
+    const filename = `${activeSheet.name}-${sheetDisplayDate(activeSheet)}`.replace(/[^\w-]+/g, '_');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${filename}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const handleFormSubmit = async ({ name, sheetDate }: { name: string; sheetDate?: string }) => {
     if (formMode === 'create') {
       await sheets.createSheet(name, sheetDate);
@@ -1456,6 +1474,16 @@ export default function SheetsTab() {
             title="Import CSV"
           >
             <Upload className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            disabled={!activeSheet}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Export CSV"
+            title="Export CSV"
+          >
+            <Download className="h-4 w-4" />
           </button>
         </div>
       </div>
