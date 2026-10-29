@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { agentReports, agentStepEffects } from '@/lib/db/schema';
-import type { ParabolicScanReport } from '@/lib/parabolic/scan';
+import type { ParabolicGrade, ParabolicScanReport } from '@/lib/parabolic/scan';
 import { recordStepEffect } from './checkpoints';
 import type { AgentDb } from './db';
 import type {
@@ -230,10 +230,6 @@ function selectEmbed(report: AgentReport): DiscordEmbed {
     return buildSwingSetupEmbed(report);
   }
 
-  if (report.reportType === 'parabolic-scan') {
-    return buildParabolicScanEmbed(report);
-  }
-
   if (report.reportType === 'system-alert' || report.reportType.startsWith('system-')) {
     const payload = asRecord(report.reportJson);
     return buildSystemEmbed(
@@ -325,10 +321,10 @@ async function ensureStoredReport(
   return stored;
 }
 
-async function postWebhook(embed: DiscordEmbed, url: string): Promise<DeliveryResult> {
+async function postWebhook(embeds: DiscordEmbed[], url: string): Promise<DeliveryResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DISCORD_TIMEOUT_MS);
-  const payload: DiscordWebhookPayload = { embeds: [embed] };
+  const payload: DiscordWebhookPayload = { embeds };
 
   try {
     const response = await fetch(url, {
@@ -394,8 +390,8 @@ async function deliverStoredReport(
     };
   }
 
-  const embed = selectEmbed(report);
-  const deliveryResult = await postWebhook(embed, url);
+  const embeds = report.reportType === 'parabolic-scan' ? buildParabolicScanEmbeds(report) : [selectEmbed(report)];
+  const deliveryResult = await postWebhook(embeds, url);
 
   if (deliveryResult.status === 'published') {
     await updateDeliveryState(db, reportId, {
@@ -764,57 +760,89 @@ export function buildMacroIntradayEmbed(report: AgentReport): DiscordEmbed {
   );
 }
 
-export function buildParabolicScanEmbed(report: AgentReport): DiscordEmbed {
+const PARABOLIC_HEADER_COLOR = 0x5865F2;
+const PARABOLIC_GRADE_COLORS: Record<ParabolicGrade, number> = {
+  A: 0x23A55A,
+  B: 0xF0B232,
+  C: 0x80848E,
+  Pass: 0x80848E,
+};
+const PARABOLIC_SIZE_LABELS: Record<number, string> = {
+  1: 'Full size (1R)',
+  0.5: 'Half size (½R)',
+  0: 'Watch only',
+};
+// Short checklist names for the card footer, keyed by the score item labels in lib/parabolic/scan.ts.
+const PARABOLIC_SHORT_LABELS: Record<string, string> = {
+  '3+ consecutive green days': 'Green',
+  'Trade-day gap-up': 'Gap',
+  '2+ consecutive gap-ups': 'Gap-ups',
+  'Accelerating daily ranges': 'Ranges',
+  'Increasing daily volume': 'Volume',
+  'Significant MA extension': 'MA ext',
+  'Opening volume climax': 'Climax',
+  'Clean parabolic structure': 'Parabolic',
+};
+// Discord allows 10 embeds per message: one header card + 9 setup cards.
+const PARABOLIC_MAX_CARDS = 9;
+
+// One header card, then one card per setup colored by grade.
+export function buildParabolicScanEmbeds(report: AgentReport): DiscordEmbed[] {
   const payload = report.reportJson as ParabolicScanReport;
-  const pct = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
+  const pct = (value: number, digits = 1) => `${value >= 0 ? '+' : ''}${value.toFixed(digits)}%`;
   const usd = (value: number) => `$${value.toFixed(2)}`;
-  const rr = (value: number | null) => (value === null ? 'n/a' : value.toFixed(1));
-  const size = (fraction: number) => (fraction === 0 ? 'Watch only' : `${fraction}R`);
+  const target = (price: number, rr: number | null) => (rr === null ? usd(price) : `${usd(price)} · ${rr.toFixed(1)}R`);
+  const dayLabel = new Date(`${payload.tradingDate}T12:00:00Z`).toLocaleDateString('en-US', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
   const asOfEt = new Date(payload.asOf).toLocaleTimeString('en-US', {
     timeZone: 'America/New_York',
     hour: 'numeric',
     minute: '2-digit',
   });
+  const scanned = `${payload.candidatesChecked} scanned · premarket as of ${asOfEt} ET`;
+  const title = `Parabolic shorts · ${dayLabel}`;
 
-  const lines = [
-    `${report.summary ?? ''} Premarket data as of ${asOfEt} ET; ${payload.candidatesChecked} candidates checked.`,
-    '⚠️ Confirm borrow before shorting. Entry is unconfirmed — wait for a VWAP or opening-range breakdown. Scores are research heuristics.',
-  ];
-  if (payload.setups.length > 0) {
-    lines.push(
-      '```',
-      ...payload.setups.slice(0, 15).map((setup, index) => [
-        String(index + 1).padStart(2),
-        setup.ticker.padEnd(5),
-        setup.grade.padEnd(4),
-        `${setup.score}/${setup.maxScore}`.padEnd(5),
-        `gap ${pct(setup.metrics.tradeDayGapPct)}`.padEnd(12),
-        `10SMA ${pct(setup.metrics.ext10Pct)}`.padEnd(14),
-        size(setup.plan.riskFraction),
-      ].join(' ')),
-      '```',
-    );
+  if (payload.setups.length === 0) {
+    return [{ title, description: `No setups today · ${scanned}`, color: PARABOLIC_GRADE_COLORS.C }];
   }
 
-  const fields = payload.setups.slice(0, 5).map((setup, index) => {
+  const count = (grade: ParabolicGrade) => payload.setups.filter((setup) => setup.grade === grade).length;
+  const shown = payload.setups.slice(0, PARABOLIC_MAX_CARDS);
+  const overflow = payload.setups.length > shown.length ? `\nShowing the top ${shown.length} of ${payload.setups.length}.` : '';
+  const header: DiscordEmbed = {
+    title,
+    description: `🟢 A ${count('A')} · 🟡 B ${count('B')} · ⚪ C ${count('C')} · ${scanned}${overflow}`,
+    color: PARABOLIC_HEADER_COLOR,
+    footer: { text: '⚠️ Confirm borrow. Entry needs a VWAP or opening-range break.' },
+  };
+
+  const cards = shown.map((setup): DiscordEmbed => {
     const { metrics, plan } = setup;
-    const missing = setup.scoreItems
-      .filter((item) => item.status !== 'met')
-      .map((item) => (item.status === 'unknown' ? `${item.label} (unknown)` : item.label));
-    return buildField(
-      `#${index + 1} ${setup.ticker} — ${setup.grade} ${setup.score}/${setup.maxScore} • ${size(plan.riskFraction)}`,
-      [
-        `Entry ~${usd(plan.entry)} (PM last) • Stop ${usd(plan.stop)} (PM high + 0.1 ATR) • Risk/sh ${usd(plan.riskPerShare)}`,
-        `T1 ${usd(plan.target1)} prior close (R:R ${rr(plan.target1RR)}) • T2 ${usd(plan.target2)} 9EMA (R:R ${rr(plan.target2RR)})`,
-        `20SMA ${pct(metrics.ext20Pct)} • 50SMA ${metrics.atrAbove50 === null ? 'n/a' : `${metrics.atrAbove50.toFixed(1)} ATR`} • Avg vol ${(metrics.avgVolume20 / 1_000_000).toFixed(1)}M`,
-        `Green ${metrics.greenStreak} • Gap-ups ${metrics.gapUpStreak} • Range↑ ${metrics.rangeExpansions}/3 • Vol↑ ${metrics.volumeExpansions}/3`,
-        `Missing: ${missing.join(', ') || 'none'}`,
-      ].join('\n'),
-      false,
-    );
+    const checklist = setup.scoreItems.map((item) => {
+      const icon = item.status === 'met' ? '✅' : item.status === 'unknown' ? '❔' : '❌';
+      const name = PARABOLIC_SHORT_LABELS[item.label] ?? item.label;
+      return `${icon} ${name === 'Green' ? `Green ${metrics.greenStreak}` : name}`;
+    });
+    return {
+      title: `${setup.ticker} · ${setup.grade} · ${setup.score}/${setup.maxScore} · ${PARABOLIC_SIZE_LABELS[plan.riskFraction]}`,
+      color: PARABOLIC_GRADE_COLORS[setup.grade],
+      fields: [
+        buildField('Entry', usd(plan.entry)),
+        buildField('Stop', usd(plan.stop)),
+        buildField('Risk / share', usd(plan.riskPerShare)),
+        buildField('T1 prior close', target(plan.target1, plan.target1RR)),
+        buildField('T2 9EMA', target(plan.target2, plan.target2RR)),
+        buildField('Gap · 10SMA', `${pct(metrics.tradeDayGapPct)} · ${pct(metrics.ext10Pct, 0)}`),
+      ],
+      footer: { text: checklist.join(' ') },
+    };
   });
 
-  return buildBaseEmbed(report, fields, lines.join('\n'));
+  return [header, ...cards];
 }
 
 export function buildSystemEmbed(

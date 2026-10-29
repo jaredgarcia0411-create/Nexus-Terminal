@@ -10,7 +10,7 @@ vi.mock('@/lib/agents/checkpoints', () => ({
 
 import {
   buildMacroIntradayEmbed,
-  buildParabolicScanEmbed,
+  buildParabolicScanEmbeds,
   buildResearchEmbed,
   buildMacroSummaryEmbed,
   buildSwingSetupEmbed,
@@ -197,6 +197,27 @@ function makeDb(tableRows: RowQueues = new Map()) {
   };
 
   return db;
+}
+
+// Real 2026-10-29 NUWE scan values, re-dated to the shared 2026-04-07 fixture day.
+function createParabolicReportJson() {
+  const met = (label: string, maxPoints: number) => ({ label, maxPoints, points: maxPoints, status: 'met' });
+  const missed = (label: string, maxPoints: number) => ({ label, maxPoints, points: 0, status: 'not met' });
+  return {
+    tradingDate: '2026-04-07',
+    asOf: '2026-04-07T13:00:00.000Z',
+    candidatesChecked: 26,
+    setups: [{
+      ticker: 'NUWE', qualified: true, failedFilters: [], grade: 'C', score: 8, maxScore: 17,
+      scoreItems: [
+        met('3+ consecutive green days', 2), met('Trade-day gap-up', 3), missed('2+ consecutive gap-ups', 2),
+        missed('Accelerating daily ranges', 3), missed('Increasing daily volume', 2), missed('Significant MA extension', 2),
+        { label: 'Opening volume climax', maxPoints: 2, points: 0, status: 'unknown' }, met('Clean parabolic structure', 3),
+      ],
+      metrics: { tradeDayGapPct: 22.6, ext10Pct: 50.8, greenStreak: 3 },
+      plan: { riskFraction: 0, entry: 6.94, stop: 7.56, riskPerShare: 0.62, target1: 5.66, target1RR: 2.04, target2: 4.76, target2RR: 3.52 },
+    }],
+  };
 }
 
 describe('agent discord helpers', () => {
@@ -422,17 +443,65 @@ describe('agent discord helpers', () => {
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
-  it('renders an empty parabolic scan without a code block or fields', () => {
-    const embed = buildParabolicScanEmbed(createStoredReport({
+  it('renders an empty parabolic scan as one gray header card', () => {
+    const embeds = buildParabolicScanEmbeds(createStoredReport({
       agentId: 'orchestrator', reportType: 'parabolic-scan',
       summary: 'No qualified parabolic short setups.',
       reportJson: { tradingDate: '2026-04-07', asOf: '2026-04-07T13:00:00.000Z', candidatesChecked: 12, setups: [] },
     }) as never);
-    expect(embed.description).toContain('No qualified');
-    expect(embed.description).toContain('12 candidates checked');
-    expect(embed.description).toContain('Confirm borrow');
-    expect(embed.description).not.toContain('```');
-    expect(embed.fields).toBeUndefined();
+    expect(embeds).toEqual([{
+      title: 'Parabolic shorts · Tue, Apr 7',
+      description: 'No setups today · 12 scanned · premarket as of 9:00 AM ET',
+      color: 0x80848E,
+    }]);
+  });
+
+  it('renders a header card plus one grade-colored card per parabolic setup', () => {
+    const embeds = buildParabolicScanEmbeds(createStoredReport({
+      agentId: 'orchestrator', reportType: 'parabolic-scan',
+      reportJson: createParabolicReportJson(),
+    }) as never);
+    expect(embeds).toHaveLength(2);
+    expect(embeds[0]).toMatchObject({
+      title: 'Parabolic shorts · Tue, Apr 7',
+      description: '🟢 A 0 · 🟡 B 0 · ⚪ C 1 · 26 scanned · premarket as of 9:00 AM ET',
+      color: 0x5865F2,
+      footer: { text: '⚠️ Confirm borrow. Entry needs a VWAP or opening-range break.' },
+    });
+    expect(embeds[1]).toEqual({
+      title: 'NUWE · C · 8/17 · Watch only',
+      color: 0x80848E,
+      fields: [
+        { name: 'Entry', value: '$6.94', inline: true },
+        { name: 'Stop', value: '$7.56', inline: true },
+        { name: 'Risk / share', value: '$0.62', inline: true },
+        { name: 'T1 prior close', value: '$5.66 · 2.0R', inline: true },
+        { name: 'T2 9EMA', value: '$4.76 · 3.5R', inline: true },
+        { name: 'Gap · 10SMA', value: '+22.6% · +51%', inline: true },
+      ],
+      footer: { text: '✅ Green 3 ✅ Gap ❌ Gap-ups ❌ Ranges ❌ Volume ❌ MA ext ❔ Climax ✅ Parabolic' },
+    });
+  });
+
+  it('posts every parabolic card in a single webhook message', async () => {
+    vi.stubEnv('DISCORD_WEBHOOK_PARABOLIC', 'https://discord.test/parabolic');
+    const stored = createStoredReport({
+      id: 'job-1:parabolic-scan', agentId: 'orchestrator', reportType: 'parabolic-scan',
+      title: '2026-04-07 parabolic short scan', reportJson: createParabolicReportJson(),
+    });
+    const rows = new Map<unknown, unknown[][]>();
+    rows.set(agentReports, [[], [stored]]);
+    rows.set(agentStepEffects, [[]]);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+
+    await writeAndDeliverReport(makeDb(rows) as never, {
+      jobId: 'job-1', userId: 'system-agent-user', agentId: 'orchestrator', reportType: 'parabolic-scan',
+      title: stored.title, summary: null, reportJson: stored.reportJson,
+    });
+
+    const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(body.embeds.map((embed: { title: string }) => embed.title))
+      .toEqual(['Parabolic shorts · Tue, Apr 7', 'NUWE · C · 8/17 · Watch only']);
   });
 
   it('returns null for unknown webhook combinations and logs the mismatch once', () => {

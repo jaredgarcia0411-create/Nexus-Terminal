@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { fetchGroupedDailyAggregates, type DailyOhlcBar } from '@/lib/massive-market';
 import { addCalendarDays, fetchDailyBars, fetchPremarketStats } from '@/lib/parabolic/data';
 import { evaluateParabolicSetup, passesLivePrefilter, type ParabolicScanReport } from '@/lib/parabolic/scan';
-import { getPreviousTradingSession, isNyTradingDay } from '@/lib/time-utils';
+import { getPreviousTradingSession, isNyTradingDay, nyDateTimeToEpoch } from '@/lib/time-utils';
 import { writeAndDeliverReport } from '../discord';
 import type { Blueprint, StepResult } from '../types';
 
@@ -79,8 +79,10 @@ export const orchestratorParabolicScanBlueprint: Blueprint = {
           }
         }
         setups.sort((a, b) => b.score - a.score || b.metrics.ext10Pct - a.metrics.ext10Pct);
+        // Premarket data stops at the open, so a late run is still "as of" 9:30.
+        const premarketEndMs = nyDateTimeToEpoch(tradingDate, '09:30:00') ?? asOfMs;
         return completedResult<ScanStepOutput>({
-          skipped: false, tradingDate, asOf: new Date(asOfMs).toISOString(),
+          skipped: false, tradingDate, asOf: new Date(Math.min(asOfMs, premarketEndMs)).toISOString(),
           candidatesChecked: candidates.length, setups,
         }, Date.now() - startedAt);
       },
