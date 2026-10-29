@@ -548,7 +548,7 @@ describe('agent discord helpers', () => {
       description: '🟢 A+ 1 · 🟡 A 0 · ⚪ B 0 · 2 earnings filers · premarket as of 9:00 AM ET',
     });
     expect(embeds[1]).toEqual({
-      title: 'NCLH · A+ · 90/90 · Full size (1R)', color: 0x23A55A,
+      title: 'NCLH · A+ · 45/45 · Full size (1R)', color: 0x23A55A,
       description: '🏆 Strict triple beat\nBeat on EPS and revenue and raised full-year guidance.',
       fields: [
         { name: 'Entry · PM high', value: '$23.40', inline: true },
@@ -558,7 +558,7 @@ describe('agent discord helpers', () => {
         { name: 'Runner', value: 'Trail 10EMA ($20.00)', inline: true },
         { name: 'Gap · hold', value: '+15.0% (high +17.0%) · 79% of range', inline: true },
       ],
-      footer: { text: '✅ EPS ✅ Rev ✅ Guide ✅ Base ✅ Breakout ✅ Fresh ✅ PM vol ❔ RVOL ✅ Gap 10 ✅ Hold ✅ Stop ✅ $10+ ✅ $Vol' },
+      footer: { text: '✅ EPS ✅ Rev ✅ Guide ✅ Base ✅ Breakout ✅ $10+' },
     });
   });
 
@@ -591,7 +591,7 @@ describe('agent discord helpers', () => {
     expect(fetchSpy).toHaveBeenCalledOnce();
     const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
     expect(body.embeds.map((embed: { title: string }) => embed.title))
-      .toEqual(['Triple Beat earnings · Thu, Oct 29', 'NCLH · A+ · 90/90 · Full size (1R)']);
+      .toEqual(['Triple Beat earnings · Thu, Oct 29', 'NCLH · A+ · 45/45 · Full size (1R)']);
   });
 
   it('returns null for unknown webhook combinations and logs the mismatch once', () => {

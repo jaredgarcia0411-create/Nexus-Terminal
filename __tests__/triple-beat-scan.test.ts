@@ -13,24 +13,23 @@ const plan = evaluateTripleBeatSetup(history, extended, STRICT)!.plan!;
 const day = (overrides: Partial<DailyOhlcBar>): DailyOhlcBar => ({ date: '2026-10-29', open: 23.1, high: 25.2, low: 23, close: 25, volume: 2000000, vwap: null, ...overrides });
 
 describe('Triple Beat scoring', () => {
-  it('scores a strict triple beat at 90/90 with an A+ plan', () => {
+  it('scores a strict triple beat at 45/45 with an A+ plan', () => {
     const setup = evaluateTripleBeatSetup(history, extended, STRICT)!;
-    expect(setup).toMatchObject({ qualified: true, score: 90, maxScore: 90, grade: 'A+', strictTripleBeat: true, plan: { riskFraction: 1, entry: 23.4, stop: 22.6 } });
+    expect(setup).toMatchObject({ qualified: true, score: 45, maxScore: 45, grade: 'A+', strictTripleBeat: true, plan: { riskFraction: 1, entry: 23.4, stop: 22.6 } });
     expect(setup.plan!.riskPerShare).toBeCloseTo(0.8);
     expect(setup.plan!.riskAtr).toBeCloseTo(1);
     expect(setup.plan!.target1).toBeCloseTo(25);
-    expect(setup.scoreItems.find((item) => item.label === 'Projected RVOL 3x+')?.status).toBe('unknown');
+    expect(setup.scoreItems.map((item) => item.label)).toEqual(['EPS beat', 'Revenue beat', 'Guidance raised', '3-month base', 'Clears 3-month high', 'Price $10+']);
   });
-  it('limits unverified earnings to B and watch only', () => {
+  it('grades unverified earnings Pass and watch only', () => {
     const setup = evaluateTripleBeatSetup(history, extended, UNKNOWN_EARNINGS_READ)!;
-    expect(setup).toMatchObject({ score: 65, grade: 'B', plan: { riskFraction: 0 } });
+    expect(setup).toMatchObject({ score: 20, grade: 'Pass', plan: { riskFraction: 0 } });
     expect(setup.scoreItems.slice(0, 3).map((item) => item.status)).toEqual(['unknown', 'unknown', 'unknown']);
   });
-  it('forces wide stops to watch only even at grade A', () => {
+  it('forces wide stops to watch only even at grade A+', () => {
     const setup = evaluateTripleBeatSetup(history, { ...extended, premarketLow: 21, low: 21 }, STRICT)!;
-    expect(setup).toMatchObject({ score: 80, grade: 'A', plan: { riskFraction: 0 } });
+    expect(setup).toMatchObject({ score: 45, grade: 'A+', plan: { riskFraction: 0 } });
     expect(setup.plan!.riskAtr).toBeCloseTo(3);
-    expect(setup.scoreItems.find((item) => item.label === 'Stop within 1.5 ATR')?.status).toBe('not met');
   });
   it('accepts faded gaps that reached +5% overnight and remain at or above the prior close', () => {
     const faded = evaluateTripleBeatSetup(history, { ...extended, last: 20.5 }, STRICT)!;

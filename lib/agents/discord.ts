@@ -861,14 +861,7 @@ const TRIPLE_BEAT_SHORT_LABELS: Record<string, string> = {
   'Guidance raised': 'Guide',
   '3-month base': 'Base',
   'Clears 3-month high': 'Breakout',
-  'Not extended into earnings': 'Fresh',
-  'Heavy extended-hours volume': 'PM vol',
-  'Projected RVOL 3x+': 'RVOL',
-  'Gap 10%+': 'Gap 10',
-  'Holding near highs': 'Hold',
-  'Stop within 1.5 ATR': 'Stop',
   'Price $10+': '$10+',
-  '$20M+ dollar volume': '$Vol',
 };
 
 export function buildTripleBeatScanEmbeds(report: AgentReport): DiscordEmbed[] {

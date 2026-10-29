@@ -11,15 +11,10 @@ const RULES = {
   minMaxGapPct: 5,
   minCurrentGapPct: 0,
   minMarketCap: 250_000_000,
-  bigGapPct: 10,
   preferredPrice: 10,
-  preferredDollarVolume: 20_000_000,
   basePeriod: 60,
   maxBaseRangePct: 40,
   runUpPeriod: 20,
-  maxRunUpPct: 20,
-  minExtendedVolumeRatio: 0.25,
-  minHoldPct: 65,
   maxStopAtr: 1.5,
   // Jul–Aug 2026 replay: stops under 0.5 ATR sat inside normal noise (71–90% stopped on day 0, −16R over 40 trades).
   minStopAtr: 0.5,
@@ -31,7 +26,7 @@ const RULES = {
 };
 
 export const MIN_HISTORY_BARS = 61;
-export const MAX_PREMARKET_SCORE = 90;
+export const MAX_PREMARKET_SCORE = 45;
 
 export type TripleBeatGrade = 'A+' | 'A' | 'B' | 'Pass';
 export type GapBucket = '<4' | '4-7.9' | '8-9.9' | '10+';
@@ -105,9 +100,9 @@ function pctChange(from: number, to: number): number {
 }
 
 function gradeFor(score: number): TripleBeatGrade {
-  if (score >= 85) return 'A+';
-  if (score >= 75) return 'A';
-  if (score >= 60) return 'B';
+  if (score >= 40) return 'A+';
+  if (score >= 34) return 'A';
+  if (score >= 26) return 'B';
   return 'Pass';
 }
 
@@ -177,20 +172,15 @@ export function evaluateTripleBeatSetup(
   const beat = (status: EarningsRead['epsBeat']): ScoreItemStatus => (
     status === 'yes' ? 'met' : status === 'no' ? 'not met' : 'unknown'
   );
+  // Only items that separated winners from losers in the Apr, Jul and Oct 2026 replays (575 trades). Dropped for no edge
+  // or a backwards one: extended-hours volume, 10%+ gap, holding near highs, stop within 1.5 ATR, run-up, $20M volume.
   const items: Array<[string, number, boolean | ScoreItemStatus]> = [
     ['EPS beat', 8, beat(earnings.epsBeat)],
     ['Revenue beat', 8, beat(earnings.revenueBeat)],
     ['Guidance raised', 9, earnings.guidance === 'raised' ? 'met' : earnings.guidance === 'unknown' ? 'unknown' : 'not met'],
     ['3-month base', 8, metrics.baseRangePct <= RULES.maxBaseRangePct],
     ['Clears 3-month high', 8, metrics.referencePrice > baseHigh],
-    ['Not extended into earnings', 4, metrics.runUpPct <= RULES.maxRunUpPct],
-    ['Heavy extended-hours volume', 10, metrics.extendedVolumeRatio >= RULES.minExtendedVolumeRatio],
-    ['Projected RVOL 3x+', 10, 'unknown'],
-    ['Gap 10%+', 8, metrics.gapPct >= RULES.bigGapPct],
-    ['Holding near highs', 7, metrics.holdPct >= RULES.minHoldPct],
-    ['Stop within 1.5 ATR', 10, riskPerShare > 0 && riskAtr <= RULES.maxStopAtr],
     ['Price $10+', 4, metrics.referencePrice >= RULES.preferredPrice],
-    ['$20M+ dollar volume', 6, metrics.avgDollarVolume20 >= RULES.preferredDollarVolume],
   ];
   const scoreItems = items.map(([label, maxPoints, condition]): ScoreItem => {
     const status = typeof condition === 'boolean' ? (condition ? 'met' : 'not met') : condition;
@@ -220,7 +210,7 @@ export function evaluateTripleBeatSetup(
   };
 }
 
-// Daily bars cannot order intraday events, so any day that touches the stop counts as stopped before the target.
+// Day 0 is ordered by minute bars when given; later daily bars that touch the stop count as stopped before the target.
 export function measureTripleBeatOutcome(
   history: DailyOhlcBar[],
   plan: TripleBeatPlan,

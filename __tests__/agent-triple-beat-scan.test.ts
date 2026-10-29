@@ -66,7 +66,7 @@ describe('orchestrator Triple Beat scan', () => {
     const scan = await orchestratorTripleBeatScanBlueprint.steps[0].run(input());
     const report = scan.data as TripleBeatScanReport;
     expect(report).toMatchObject({ earningsFilings: 5, asOf: '2026-10-29T13:00:00.000Z' });
-    expect(report.setups.map((setup) => [setup.ticker, setup.grade])).toEqual([['AAA', 'A+'], ['DDD', 'B']]);
+    expect(report.setups.map((setup) => [setup.ticker, setup.grade])).toEqual([['AAA', 'A+']]);
     expect(warn).toHaveBeenCalledOnce();
     expect(getRecentFilings).toHaveBeenCalledWith('AAA', { limit: 20, sinceDays: 5 });
     expect(getRecentFilings).not.toHaveBeenCalledWith('BBB', expect.anything());
@@ -78,7 +78,7 @@ describe('orchestrator Triple Beat scan', () => {
     expect(classifyEarnings).not.toHaveBeenCalledWith('CCC', expect.anything());
     await orchestratorTripleBeatScanBlueprint.steps[1].run(input({ previousOutput: scan.data }));
     expect(writeAndDeliverReport).toHaveBeenCalledWith({}, expect.objectContaining({
-      reportType: 'triple-beat-scan', summary: '2 setups (A+ 1 • A 0 • B 1)',
+      reportType: 'triple-beat-scan', summary: '1 setups (A+ 1 • A 0 • B 0)',
       reportJson: { tradingDate: report.tradingDate, asOf: report.asOf, earningsFilings: 5, setups: report.setups },
     }));
   });
@@ -89,7 +89,7 @@ describe('orchestrator Triple Beat scan', () => {
     const scan = await orchestratorTripleBeatScanBlueprint.steps[0].run(input());
     expect(scan.data).toMatchObject({ earningsFilings: 1, setups: [] }); expect(classifyEarnings).not.toHaveBeenCalled();
     vi.mocked(fetchEarningsNews).mockResolvedValue([{ source: 'massive', title: 'Quarterly earnings', text: '' }]);
-    vi.mocked(classifyEarnings).mockResolvedValue(UNKNOWN_EARNINGS_READ);
+    vi.mocked(classifyEarnings).mockResolvedValue({ ...UNKNOWN_EARNINGS_READ, epsBeat: 'yes', revenueBeat: 'yes', guidance: 'raised' });
     const confirmed = await orchestratorTripleBeatScanBlueprint.steps[0].run(input());
     expect((confirmed.data as TripleBeatScanReport).setups).toHaveLength(1);
   });

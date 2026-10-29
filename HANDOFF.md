@@ -40,7 +40,8 @@ Outcome:
 - Triple Beat candidates now come from SEC's latest-filings Atom feed (8-K Item 2.02 + 6-K, `fetchEarningsFilerTickers`) instead of the Massive gapper snapshot; rules match the coworker's scan: overnight high ≥ +5%, current ≥ prior close, price ≥ $3, market cap ≥ $250M (skipped when shares unknown). Card shows `gap (high maxGap)`.
 - Replay checks every liquid ticker-day for an earnings filing first, so premarket faders are now included (`maxGapPct`/`marketCapM` CSV columns).
 - Parabolic: 2 of last 3 days green; ≥25% above a 10SMA that includes the current price OR ≥35% in 5 days; 3% trade-day gap kept.
-- Follow-up: replay walks day-0 minute bars (stop vs 2R order, pre-entry dips ignored); Jul 15–Aug 15 replay went −0.12R → +0.04R avg. Added Triple Beat filter `Stop < 0.5 ATR` (those 40 trades lost 16R). Next: out-of-sample replay Oct 14–28; parabolic replay still uses the daily stop-first rule.
+- Follow-up: replay walks day-0 minute bars (stop vs 2R order, pre-entry dips ignored); Jul 15–Aug 15 replay went −0.12R → +0.04R avg. Added Triple Beat filter `Stop < 0.5 ATR` (those 40 trades lost 16R). (Parabolic replay needs no such fix: entry is the open and there's no day-0 target, so any stop touch is a real stop-out.)
+- Score rebuilt from Apr/Jul/Oct replays (575 matured trades): kept EPS, revenue, guidance, 3-month base, clears 3-month high, price $10+ (45 pts; B 26+, A 34+, A+ 40+). Score 26+ averaged +0.29R vs −0.06R below, positive in all three seasons; items are in-sample, so watch live posts. Unknown earnings (LLM failure) now grade Pass and don't post.
 
 Validation:
 - `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npm test` (957/957), `npm run build`
