@@ -76,7 +76,8 @@ export function isEarningsHeadline(title: string): boolean {
 }
 
 export async function fetchPressReleaseText(filing: SecFiling): Promise<string> {
-  const html = await fetchPressReleaseHtml(filing.cik, filing.accession_number);
+  // An SEC hiccup falls back to news-only evidence instead of dropping the ticker.
+  const html = await fetchPressReleaseHtml(filing.cik, filing.accession_number).catch(() => null);
   return html ? stripFilingBodyHtml(html).slice(0, PRESS_RELEASE_MAX_CHARS) : '';
 }
 

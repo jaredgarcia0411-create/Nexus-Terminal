@@ -69,7 +69,9 @@ export async function classifyEarnings(ticker: string, evidence: string): Promis
       systemPrompt: SYSTEM_PROMPT,
       userMessage: `Ticker: ${ticker}\n\n${evidence}`,
       temperature: 0,
-      maxTokens: 600,
+      // Reasoning models (the background lane runs MiniMax) spend tokens thinking before the JSON;
+      // a tight cap cuts the answer off mid-string.
+      maxTokens: 4096,
     }, 'background');
     const json = response.content.replace(/^```(?:json)?\s*|\s*```$/g, '');
     return verifyEarningsRead(earningsReadSchema.parse(JSON.parse(json)), evidence);

@@ -6,9 +6,10 @@
  * Usage: npx tsx scripts/triple-beat-replay.ts --from 2024-11-01 --to 2026-10-15 [--out /path/file.csv]
  *
  * Entry is a break of the premarket high, filled at the open when it gaps above. A day that touches the
- * stop counts as stopped before any target. News is limited to items published before 09:30 ET on the
- * trade date. LLM earnings reads are cached in ~/triple-beat-llm-cache.json so reruns only call the LLM
- * for new ticker/dates. Tickers missing from today's SEC CIK map (delisted/renamed) are skipped.
+ * stop counts as stopped before any target. Filings, news and premarket data stop at 09:00 ET on the
+ * trade date, matching the live cron's default run time. LLM earnings reads are cached in
+ * ~/triple-beat-llm-cache.json so reruns only call the LLM for new ticker/dates. Tickers missing from
+ * today's SEC CIK map (delisted/renamed) are skipped.
  */
 import dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
@@ -80,12 +81,12 @@ async function main() {
     const results = await Promise.allSettled(candidates.slice(offset, offset + 10).map(async ({ ticker, date }) => {
       const priorSession = getPreviousTradingSession(date)!;
       const windowStart = nyDateTimeToEpoch(priorSession, '16:00:00')!;
-      const windowEnd = nyDateTimeToEpoch(date, '09:30:00')!;
+      const windowEnd = nyDateTimeToEpoch(date, '09:00:00')!;
       const filing = findEarningsFiling(await filingsFor(ticker), windowStart, windowEnd);
       if (!filing) return null;
       const [bars, extended, splits] = await Promise.all([
         fetchDailyBars(ticker, addCalendarDays(date, -400), addCalendarDays(date, 100)),
-        fetchExtendedHoursStats(ticker, priorSession, date, Number.POSITIVE_INFINITY),
+        fetchExtendedHoursStats(ticker, priorSession, date, windowEnd),
         fetchSplitHistory(ticker).catch(() => []),
       ]);
       if (!extended) return null;
