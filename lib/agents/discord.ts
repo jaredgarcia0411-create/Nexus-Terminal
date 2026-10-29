@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { agentReports, agentStepEffects } from '@/lib/db/schema';
 import type { ParabolicGrade, ParabolicScanReport } from '@/lib/parabolic/scan';
+import type { TripleBeatGrade, TripleBeatScanReport } from '@/lib/triple-beat/scan';
 import { recordStepEffect } from './checkpoints';
 import type { AgentDb } from './db';
 import type {
@@ -390,7 +391,9 @@ async function deliverStoredReport(
     };
   }
 
-  const embeds = report.reportType === 'parabolic-scan' ? buildParabolicScanEmbeds(report) : [selectEmbed(report)];
+  const embeds = report.reportType === 'parabolic-scan' ? buildParabolicScanEmbeds(report)
+    : report.reportType === 'triple-beat-scan' ? buildTripleBeatScanEmbeds(report)
+      : [selectEmbed(report)];
   const deliveryResult = await postWebhook(embeds, url);
 
   if (deliveryResult.status === 'published') {
@@ -845,6 +848,91 @@ export function buildParabolicScanEmbeds(report: AgentReport): DiscordEmbed[] {
   return [header, ...cards];
 }
 
+const TRIPLE_BEAT_GRADE_COLORS: Record<TripleBeatGrade, number> = {
+  'A+': 0x23A55A,
+  A: 0xF0B232,
+  B: 0x80848E,
+  Pass: 0x80848E,
+};
+// Short checklist names for the card footer, keyed by the score item labels in lib/triple-beat/scan.ts.
+const TRIPLE_BEAT_SHORT_LABELS: Record<string, string> = {
+  'EPS beat': 'EPS',
+  'Revenue beat': 'Rev',
+  'Guidance raised': 'Guide',
+  '3-month base': 'Base',
+  'Clears 3-month high': 'Breakout',
+  'Not extended into earnings': 'Fresh',
+  'Heavy extended-hours volume': 'PM vol',
+  'Projected RVOL 3x+': 'RVOL',
+  'Gap 10%+': 'Gap 10',
+  'Holding near highs': 'Hold',
+  'Stop within 1.5 ATR': 'Stop',
+  'Price $10+': '$10+',
+  '$20M+ dollar volume': '$Vol',
+};
+
+export function buildTripleBeatScanEmbeds(report: AgentReport): DiscordEmbed[] {
+  const payload = report.reportJson as TripleBeatScanReport;
+  const pct = (value: number, digits = 1) => `${value >= 0 ? '+' : ''}${value.toFixed(digits)}%`;
+  const usd = (value: number) => `$${value.toFixed(2)}`;
+  const dayLabel = new Date(`${payload.tradingDate}T12:00:00Z`).toLocaleDateString('en-US', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+  const asOfEt = new Date(payload.asOf).toLocaleTimeString('en-US', {
+    timeZone: 'America/New_York',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  const scanned = `${payload.gappersChecked} gappers · ${payload.earningsFilings} with earnings filings · premarket as of ${asOfEt} ET`;
+  const title = `Triple Beat earnings · ${dayLabel}`;
+
+  if (payload.setups.length === 0) {
+    return [{ title, description: `No setups today · ${scanned}`, color: TRIPLE_BEAT_GRADE_COLORS.B }];
+  }
+
+  const count = (grade: TripleBeatGrade) => payload.setups.filter((setup) => setup.grade === grade).length;
+  const shown = payload.setups.slice(0, PARABOLIC_MAX_CARDS);
+  const overflow = payload.setups.length > shown.length ? `\nShowing the top ${shown.length} of ${payload.setups.length}.` : '';
+  const header: DiscordEmbed = {
+    title,
+    description: `🟢 A+ ${count('A+')} · 🟡 A ${count('A')} · ⚪ B ${count('B')} · ${scanned}${overflow}`,
+    color: PARABOLIC_HEADER_COLOR,
+    footer: { text: '⚠️ Entry needs a premarket-high break with 3x+ RVOL. Partial at 2R; trail the runner on a 10EMA close.' },
+  };
+
+  const cards = shown.map((setup): DiscordEmbed => {
+    const { metrics, plan, earnings } = setup;
+    const checklist = setup.scoreItems.map((item) => {
+      const icon = item.status === 'met' ? '✅' : item.status === 'unknown' ? '❔' : '❌';
+      return `${icon} ${TRIPLE_BEAT_SHORT_LABELS[item.label] ?? item.label}`;
+    });
+    const description = [
+      setup.strictTripleBeat ? '🏆 Strict triple beat' : null,
+      earnings.note || null,
+      earnings.mixedCatalyst ? '⚠️ Mixed catalyst. Check headlines.' : null,
+    ].filter(Boolean).join('\n');
+    return {
+      title: `${setup.ticker} · ${setup.grade} · ${setup.score}/${setup.maxScore} · ${PARABOLIC_SIZE_LABELS[plan.riskFraction]}`,
+      ...(description ? { description } : {}),
+      color: TRIPLE_BEAT_GRADE_COLORS[setup.grade],
+      fields: [
+        buildField('Entry · PM high', usd(plan.entry)),
+        buildField('Stop · PM low', usd(plan.stop)),
+        buildField('Risk / share', `${usd(plan.riskPerShare)} · ${plan.riskAtr.toFixed(1)} ATR`),
+        buildField('T1 partial', `${usd(plan.target1)} · 2R`),
+        buildField('Runner', `Trail 10EMA (${usd(metrics.ema10)})`),
+        buildField('Gap · hold', `${pct(metrics.gapPct)} · ${metrics.holdPct.toFixed(0)}% of range`),
+      ],
+      footer: { text: checklist.join(' ') },
+    };
+  });
+
+  return [header, ...cards];
+}
+
 export function buildSystemEmbed(
   title: string,
   detail: string,
@@ -869,6 +957,8 @@ export function resolveWebhookUrl(agentId: AgentId, reportType: string): string 
     envName = 'DISCORD_WEBHOOK_MACRO_DAILY';
   } else if (agentId === 'orchestrator' && reportType === 'parabolic-scan') {
     envName = 'DISCORD_WEBHOOK_PARABOLIC';
+  } else if (agentId === 'orchestrator' && reportType === 'triple-beat-scan') {
+    envName = 'DISCORD_WEBHOOK_TRIPLE_BEAT';
   } else if (agentId === 'orchestrator' && (reportType === 'system-alert' || reportType.startsWith('system-'))) {
     envName = 'DISCORD_WEBHOOK_SYSTEM';
   } else if (agentId === 'small-cap-trader' && reportType === 'pre-market-scan') {

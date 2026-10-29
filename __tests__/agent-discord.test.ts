@@ -11,6 +11,7 @@ vi.mock('@/lib/agents/checkpoints', () => ({
 import {
   buildMacroIntradayEmbed,
   buildParabolicScanEmbeds,
+  buildTripleBeatScanEmbeds,
   buildResearchEmbed,
   buildMacroSummaryEmbed,
   buildSwingSetupEmbed,
@@ -23,6 +24,9 @@ import type {
   SmallCapResearchReport,
   SwingResearchReport,
 } from '@/lib/agents/types';
+
+import { evaluateTripleBeatSetup } from '@/lib/triple-beat/scan';
+import { UNKNOWN_EARNINGS_READ } from '@/lib/triple-beat/classify';
 
 type RowQueues = Map<unknown, unknown[][]>;
 
@@ -217,6 +221,22 @@ function createParabolicReportJson() {
       metrics: { tradeDayGapPct: 22.6, ext10Pct: 50.8, greenStreak: 3 },
       plan: { riskFraction: 0, entry: 6.94, stop: 7.56, riskPerShare: 0.62, target1: 5.66, target1RR: 2.04, target2: 4.76, target2RR: 3.52 },
     }],
+  };
+}
+
+function createTripleBeatReportJson() {
+  const history = Array.from({ length: 80 }, () => ({
+    date: '2026-10-28', open: 19.9, high: 20.4, low: 19.6, close: 20, volume: 2000000, vwap: null,
+  }));
+  const setup = evaluateTripleBeatSetup(history, {
+    last: 23, high: 23.4, low: 21.5, volume: 800000, premarketHigh: 23.4, premarketLow: 22.6,
+  }, {
+    ...UNKNOWN_EARNINGS_READ, epsBeat: 'yes', revenueBeat: 'yes', guidance: 'raised',
+    note: 'Beat on EPS and revenue and raised full-year guidance.',
+  })!;
+  return {
+    tradingDate: '2026-10-29', asOf: '2026-10-29T13:00:00.000Z', gappersChecked: 26, earningsFilings: 2,
+    setups: [{ ticker: 'NCLH', ...setup, plan: setup.plan! }],
   };
 }
 
@@ -431,6 +451,7 @@ describe('agent discord helpers', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     vi.stubEnv('DISCORD_WEBHOOK_MACRO_DAILY', 'https://discord.test/macro-daily');
+    vi.stubEnv('DISCORD_WEBHOOK_TRIPLE_BEAT', 'https://discord.test/triple-beat');
     vi.stubEnv('DISCORD_WEBHOOK_PARABOLIC', 'https://discord.test/parabolic');
     vi.stubEnv('DISCORD_WEBHOOK_RESEARCH', 'https://discord.test/research');
     vi.stubEnv('DISCORD_WEBHOOK_SWING_SETUPS', 'https://discord.test/swing-setups');
@@ -438,6 +459,7 @@ describe('agent discord helpers', () => {
     expect(resolveWebhookUrl('orchestrator', 'macro-summary')).toBe('https://discord.test/macro-daily');
     expect(resolveWebhookUrl('orchestrator', 'macro-intraday')).toBe('https://discord.test/macro-daily');
     expect(resolveWebhookUrl('orchestrator', 'parabolic-scan')).toBe('https://discord.test/parabolic');
+    expect(resolveWebhookUrl('orchestrator', 'triple-beat-scan')).toBe('https://discord.test/triple-beat');
     expect(resolveWebhookUrl('small-cap-trader', 'research')).toBe('https://discord.test/research');
     expect(resolveWebhookUrl('swing-trader', 'research')).toBe('https://discord.test/swing-setups');
     expect(warnSpy).not.toHaveBeenCalled();
@@ -502,6 +524,71 @@ describe('agent discord helpers', () => {
     const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
     expect(body.embeds.map((embed: { title: string }) => embed.title))
       .toEqual(['Parabolic shorts · Tue, Apr 7', 'NUWE · C · 8/17 · Watch only']);
+  });
+
+  it('renders an empty Triple Beat scan as a gray card', () => {
+    const embeds = buildTripleBeatScanEmbeds(createStoredReport({
+      agentId: 'orchestrator', reportType: 'triple-beat-scan',
+      reportJson: { ...createTripleBeatReportJson(), setups: [] },
+    }) as never);
+    expect(embeds).toEqual([{
+      title: 'Triple Beat earnings · Thu, Oct 29',
+      description: 'No setups today · 26 gappers · 2 with earnings filings · premarket as of 9:00 AM ET',
+      color: 0x80848E,
+    }]);
+  });
+
+  it('renders the Triple Beat header, plan fields, evidence note, and checklist', () => {
+    const embeds = buildTripleBeatScanEmbeds(createStoredReport({
+      agentId: 'orchestrator', reportType: 'triple-beat-scan', reportJson: createTripleBeatReportJson(),
+    }) as never);
+    expect(embeds).toHaveLength(2);
+    expect(embeds[0]).toMatchObject({ title: 'Triple Beat earnings · Thu, Oct 29', color: 0x5865F2 });
+    expect(embeds[1]).toEqual({
+      title: 'NCLH · A+ · 90/90 · Full size (1R)', color: 0x23A55A,
+      description: '🏆 Strict triple beat\nBeat on EPS and revenue and raised full-year guidance.',
+      fields: [
+        { name: 'Entry · PM high', value: '$23.40', inline: true },
+        { name: 'Stop · PM low', value: '$22.60', inline: true },
+        { name: 'Risk / share', value: '$0.80 · 1.0 ATR', inline: true },
+        { name: 'T1 partial', value: '$25.00 · 2R', inline: true },
+        { name: 'Runner', value: 'Trail 10EMA ($20.00)', inline: true },
+        { name: 'Gap · hold', value: '+15.0% · 79% of range', inline: true },
+      ],
+      footer: { text: '✅ EPS ✅ Rev ✅ Guide ✅ Base ✅ Breakout ✅ Fresh ✅ PM vol ❔ RVOL ✅ Gap 10 ✅ Hold ✅ Stop ✅ $10+ ✅ $Vol' },
+    });
+  });
+
+  it('limits Triple Beat setup cards to nine and flags mixed catalysts', () => {
+    const payload = createTripleBeatReportJson();
+    payload.setups[0].earnings.mixedCatalyst = true;
+    payload.setups = Array.from({ length: 11 }, () => payload.setups[0]);
+    const embeds = buildTripleBeatScanEmbeds(createStoredReport({ reportJson: payload }) as never);
+    expect(embeds).toHaveLength(10);
+    expect(embeds[0].description).toContain('Showing the top 9 of 11.');
+    expect(embeds[1].description).toContain('⚠️ Mixed catalyst. Check headlines.');
+  });
+
+  it('posts every triple-beat card in a single webhook message', async () => {
+    vi.stubEnv('DISCORD_WEBHOOK_TRIPLE_BEAT', 'https://discord.test/triple-beat');
+    const stored = createStoredReport({
+      id: 'job-1:triple-beat-scan', agentId: 'orchestrator', reportType: 'triple-beat-scan',
+      title: '2026-10-29 triple beat earnings scan', reportJson: createTripleBeatReportJson(),
+    });
+    const rows = new Map<unknown, unknown[][]>();
+    rows.set(agentReports, [[], [stored]]);
+    rows.set(agentStepEffects, [[]]);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+
+    await writeAndDeliverReport(makeDb(rows) as never, {
+      jobId: 'job-1', userId: 'system-agent-user', agentId: 'orchestrator', reportType: 'triple-beat-scan',
+      title: stored.title, summary: null, reportJson: stored.reportJson,
+    });
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(body.embeds.map((embed: { title: string }) => embed.title))
+      .toEqual(['Triple Beat earnings · Thu, Oct 29', 'NCLH · A+ · 90/90 · Full size (1R)']);
   });
 
   it('returns null for unknown webhook combinations and logs the mismatch once', () => {

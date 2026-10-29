@@ -9,7 +9,7 @@ vi.mock('@/lib/sec/client', () => ({
   secFetchText: vi.fn(),
 }));
 
-import { extractPrHeadline, enrichFilingHeadlines } from '@/lib/sec/filing-headline';
+import { extractPrHeadline, enrichFilingHeadlines, fetchPressReleaseHtml } from '@/lib/sec/filing-headline';
 import { secFetchJson, secFetchText } from '@/lib/sec/client';
 import type { SecFiling } from '@/lib/sec/submissions';
 
@@ -77,5 +77,17 @@ describe('SEC PR headline enrichment', () => {
     await expect(enrichFilingHeadlines(filings)).resolves.toEqual(new Map());
     expect(secFetchJson).not.toHaveBeenCalled();
     expect(secFetchText).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('fetchPressReleaseHtml', () => {
+  it('finds exh_991 exhibits when index types are text.gif', async () => {
+    vi.mocked(secFetchJson).mockResolvedValue({ directory: { item: [
+      { name: 'f8k_102826.htm', type: 'text.gif' }, { name: 'exh_991.htm', type: 'text.gif' },
+    ] } });
+    vi.mocked(secFetchText).mockResolvedValue('<p>release</p>');
+    expect(await fetchPressReleaseHtml('0001513761', '0001171843-26-006957')).toBe('<p>release</p>');
+    expect(secFetchText).toHaveBeenCalledWith('https://www.sec.gov/Archives/edgar/data/1513761/000117184326006957/exh_991.htm');
   });
 });

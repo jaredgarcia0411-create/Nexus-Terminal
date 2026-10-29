@@ -40,4 +40,11 @@ describe('fetchEodhdNews', () => {
     expect(requestUrl.searchParams.get('api_token')).toBe('test-key');
     expect(requestUrl.searchParams.get('fmt')).toBe('json');
   });
+  it('passes the optional news date range', async () => {
+    process.env.EODHD_API_KEY = 'test-key';
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('[]'));
+    await fetchEodhdNews('NCLH', 20, { from: '2026-10-28', to: '2026-10-29' });
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('from=2026-10-28&to=2026-10-29');
+  });
+
 });

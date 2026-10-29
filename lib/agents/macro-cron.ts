@@ -20,7 +20,11 @@ function readDefaultParabolicCronHour(): number {
   return Number(process.env.PARABOLIC_CRON_HOUR_ET) || 9;
 }
 
-type CronTriggerType = 'macro-summary' | 'macro-intraday' | 'parabolic-scan';
+function readDefaultTripleBeatCronHour(): number {
+  return Number(process.env.TRIPLE_BEAT_CRON_HOUR_ET) || 9;
+}
+
+type CronTriggerType = 'macro-summary' | 'macro-intraday' | 'parabolic-scan' | 'triple-beat-scan';
 type CronJobInputFactory = (tradingDate: string) => Record<string, unknown>;
 type RunTickOptions = {
   triggerType: CronTriggerType;
@@ -178,6 +182,33 @@ export function startParabolicCron(
       jobInput: (tradingDate) => ({ tradingDate }),
     }).catch((error) => {
       console.error('parabolic cron tick failed', { error });
+    });
+  };
+
+  executeTick();
+
+  const timer = setInterval(executeTick, checkIntervalMs);
+
+  return {
+    stop: async () => {
+      clearInterval(timer);
+    },
+  };
+}
+
+export function startTripleBeatCron(
+  db: AgentDb,
+  options: { hourEt?: number; checkIntervalMs?: number } = {},
+): MacroCronHandle {
+  const hourEt = options.hourEt ?? readDefaultTripleBeatCronHour();
+  const checkIntervalMs = options.checkIntervalMs ?? DEFAULT_CHECK_INTERVAL_MS;
+  const executeTick = () => {
+    void runTick(db, hourEt, {
+      triggerType: 'triple-beat-scan',
+      jobType: 'triple-beat-scan',
+      jobInput: (tradingDate) => ({ tradingDate }),
+    }).catch((error) => {
+      console.error('triple beat cron tick failed', { error });
     });
   };
 

@@ -74,7 +74,8 @@ export function extractPrHeadline(html: string): string | null {
   return null;
 }
 
-async function fetchExhibitHeadline(cik: string, accession: string): Promise<string | null> {
+// Exhibit names vary by filing agent: ex99-1.htm, ex-99_1.htm, d123dex991.htm, exh_991.htm.
+export async function fetchPressReleaseHtml(cik: string, accession: string): Promise<string | null> {
   const cikUnpadded = String(parseInt(cik, 10));
   const accNoDashes = accession.replace(/-/g, '');
   const baseUrl = `https://www.sec.gov/Archives/edgar/data/${cikUnpadded}/${accNoDashes}`;
@@ -83,12 +84,16 @@ async function fetchExhibitHeadline(cik: string, accession: string): Promise<str
   }>(`${baseUrl}/index.json`);
   const items = idx.directory?.item ?? [];
   const exhibit = items.find((item) => item.type && /^EX-99(\.0?1)?$/i.test(item.type))
-    ?? items.find((item) => item.name && /ex-?99[._-]?0?1/i.test(item.name));
+    ?? items.find((item) => item.name && /exh?[-_]?99[._-]?0?1/i.test(item.name));
 
   if (!exhibit?.name) return null;
 
-  const html = await secFetchText(`${baseUrl}/${exhibit.name}`);
-  return extractPrHeadline(html);
+  return secFetchText(`${baseUrl}/${exhibit.name}`);
+}
+
+async function fetchExhibitHeadline(cik: string, accession: string): Promise<string | null> {
+  const html = await fetchPressReleaseHtml(cik, accession);
+  return html ? extractPrHeadline(html) : null;
 }
 
 export async function enrichFilingHeadlines(filings: SecFiling[]): Promise<Map<string, string>> {

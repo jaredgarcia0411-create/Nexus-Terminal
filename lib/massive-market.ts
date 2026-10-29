@@ -35,7 +35,7 @@ export interface MassiveMarketMoverTicker {
   todaysChangePerc?: number;
   updated?: number;
   day?: { c?: number };
-  prevDay?: { c?: number };
+  prevDay?: { c?: number; v?: number };
 }
 
 export interface MassiveTopMoversResponse {
@@ -249,6 +249,13 @@ export async function fetchTopMarketMovers(direction: MassiveDirection) {
   });
 }
 
+// Whole-market snapshot. Populated from 04:00 ET, so todaysChangePerc is the premarket gap before the open.
+export async function fetchAllTickerSnapshots() {
+  return fetchMassiveJson<MassiveTopMoversResponse>('/v2/snapshot/locale/us/markets/stocks/tickers', {
+    include_otc: 'false',
+  });
+}
+
 export async function fetchDailyTickerSummary(ticker: string, date: string) {
   return fetchMassiveJson<MassiveDailyTickerSummaryResponse>(`/v1/open-close/${encodeURIComponent(ticker)}/${encodeURIComponent(date)}`, {
     adjusted: 'true',
@@ -302,6 +309,21 @@ export async function fetchTickerNews(ticker: string, daysBack = 3): Promise<Mas
     order: 'desc',
     sort: 'published_utc',
     limit: '10',
+  });
+
+  return response.results ?? [];
+}
+
+export async function fetchTickerNewsBetween(ticker: string, fromIso: string, toIso: string): Promise<MassiveNewsArticle[]> {
+  const response = await fetchMassiveJson<{
+    results?: MassiveNewsArticle[];
+  }>('/v2/reference/news', {
+    ticker: normalizeMassiveTicker(ticker),
+    'published_utc.gte': fromIso,
+    'published_utc.lte': toIso,
+    order: 'desc',
+    sort: 'published_utc',
+    limit: '20',
   });
 
   return response.results ?? [];

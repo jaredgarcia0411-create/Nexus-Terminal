@@ -14,7 +14,7 @@ function toEodhdSymbol(ticker: string): string {
   return upper.includes('.') ? upper : `${upper}.US`;
 }
 
-export async function fetchEodhdNews(ticker: string, limit = 20): Promise<AskEdgarResponse<unknown>> {
+export async function fetchEodhdNews(ticker: string, limit = 20, range?: { from: string; to: string }): Promise<AskEdgarResponse<unknown>> {
   const apiKey = getApiKey();
   if (!apiKey) return { status: 'error', count: 0, results: [], error: 'EODHD_API_KEY not configured' };
 
@@ -28,6 +28,11 @@ export async function fetchEodhdNews(ticker: string, limit = 20): Promise<AskEdg
     api_token: apiKey,
     fmt: 'json',
   });
+
+  if (range) {
+    params.set('from', range.from);
+    params.set('to', range.to);
+  }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
