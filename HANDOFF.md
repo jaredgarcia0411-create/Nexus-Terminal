@@ -1,11 +1,11 @@
 # Nexus Terminal - HANDOFF.md
 
-> Updated: 2026-10-05
+> Updated: 2026-10-29
 > Purpose: active execution context for Codex. Older implementation detail lives in git history, `specs/`, and durable docs such as `docs/repo-cleanup.md`.
 
 Historical completed sections were removed to keep this file focused. Use git history and the `specs/` directory for archived implementation detail.
 
-> **Parked:** the Scanner Epic 1 execution spec was moved to `specs/scanner-epic1-handoff.md` (not started — still waiting on the worktree + Neon-branch setup). Move it back here when you're ready to run it.
+> **Parked:** the Scanner Epic 1 execution spec was moved to `specs/scanner-epic1-handoff.md` (not started — still waiting on the worktree + Neon-branch setup). Move it back here when you're ready to run it. The Parabolic Short Scanner (completed below) is deliberately **independent** of that epic.
 
 ---
 
@@ -15,11 +15,9 @@ Playbook rich text:
 - Roll `RichTextEditor` into the daily/weekly journal review sections (same `type: 'text'` pattern).
 - Optional: Notion-style slash (`/`) command menu; checklists / code blocks / highlight.
 
-Deferred Sheets roadmap (not started):
-- Manual authenticated smoke for sharing (invite logged-in coworker, flip role, remove; unknown-email error; viewer read-only / editor sees no manage buttons).
-- Self-leave (non-owner removing own membership), ownership transfer, email/invite-link notifications for users who haven't signed in.
-- Templates / per-day "start today's sheet" flow beyond plain Duplicate.
-- CSV export, archive/unarchive UI, undo/redo, polling/SSE invalidation.
+Sheets:
+- Manual smoke for the AH/PM + numeric filter columns (known past runner, `>0.33` + `>10m` filter) not yet run.
+- Deferred roadmap (not started): manual authenticated sharing smoke (invite logged-in coworker, flip role, remove; unknown-email error; viewer read-only / editor sees no manage buttons); self-leave, ownership transfer, invite notifications; templates / per-day "start today's sheet"; archive/unarchive UI, undo/redo, polling/SSE invalidation.
 
 ---
 
@@ -30,20 +28,18 @@ Deferred Sheets roadmap (not started):
 - If only docs/workflow assets change, run `npm run workflow:audit`.
 - Do not modify `.env*` or secret files.
 
-
 ---
 
 ## Recently Completed
 
-### Sheets: AH/PM Session Highs, Extension Ratio, Numeric Filters
+### Parabolic Short Scanner v1 — Pre-Market Scan + Historical Replay
 
-Status: completed 2026-10-05 (commit 052966c).
+Status: completed 2026-10-29.
 
 Outcome:
-- Six Massive-backed column types (`pdc`, `pd_range`, `ah_high`, `pm_high_early`, `pm_high_late`, `pm_extension`) filled by `fill-massive` from unadjusted 1-minute bars; windows only fill after they close.
-- Numeric `>`/`>=`/`<`/`<=` filters with k/m/b suffixes on number, volume, float, and the new columns; blank cells never match.
-- `isNyTradingDay` now skips a hardcoded NYSE holiday list (2024–2027) in `lib/time-utils.ts`; extend it yearly. Early-close half days are not modeled.
+- Orchestrator worker scores premarket parabolic short setups at `PARABOLIC_CRON_HOUR_ET` (default 9 ET) and posts a ranked embed to `DISCORD_WEBHOOK_PARABOLIC`; pure code, no LLM; thresholds live in `RULES` in `lib/parabolic/scan.ts`.
+- `scripts/parabolic-replay.ts` replays the scorecard over a date range and writes an outcome CSV to the home directory; review fix rescales split-adjusted bars to as-of-date prices so the $5 / 1M filters are point-in-time.
 
 Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm test` (113 files / 878 tests) all pass.
-- Manual smoke (known past runner, `>0.33` + `>10m` filter) not yet run.
+- `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npm test` (907/907), `npm run build`, `npm run workflow:audit`
+- Replay smoke 2026-10-14→15: 1 B setup, CSV written. Optiplex deploy + live Discord post not yet run.

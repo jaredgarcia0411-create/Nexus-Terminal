@@ -17,7 +17,7 @@ import { writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import Papa from 'papaparse';
-import { fetchGroupedDailyAggregates, fetchSharesOutstanding, type DailyOhlcBar } from '@/lib/massive-market';
+import { fetchGroupedDailyAggregates, fetchSharesOutstanding, fetchSplitHistory, type DailyOhlcBar } from '@/lib/massive-market';
 import { addCalendarDays, fetchDailyBars, fetchPremarketStats } from '@/lib/parabolic/data';
 import { MIN_HISTORY_BARS, evaluateParabolicSetup, measureReplayOutcome, passesReplayPrefilter } from '@/lib/parabolic/scan';
 import { getNextTradingSession, getPreviousTradingSession } from '@/lib/time-utils';
@@ -47,7 +47,7 @@ async function main() {
   const candidates: Array<{ ticker: string; date: string }> = [];
   let datesChecked = 0;
   for (let date: string | null = cursor; date && date <= to; date = getNextTradingSession(date)) {
-    const bars = await fetchGroupedDailyAggregates(date);
+    const bars = await fetchGroupedDailyAggregates(date, false);
     for (const bar of bars) {
       const window = windows.get(bar.ticker) ?? [];
       if (date >= from && passesReplayPrefilter(window, bar.open)) candidates.push({ ticker: bar.ticker, date });
@@ -63,29 +63,43 @@ async function main() {
   const rows = [];
   for (let offset = 0; offset < candidates.length; offset += 10) {
     const results = await Promise.allSettled(candidates.slice(offset, offset + 10).map(async ({ ticker, date }) => {
-      const [bars, premarket, sharesOutstanding] = await Promise.all([
+      const [bars, premarket, sharesOutstanding, splits] = await Promise.all([
         fetchDailyBars(ticker, addCalendarDays(date, -120), addCalendarDays(date, 20)),
         fetchPremarketStats(ticker, date, Number.POSITIVE_INFINITY),
         fetchSharesOutstanding(ticker, date).catch(() => null),
+        fetchSplitHistory(ticker).catch(() => []),
       ]);
-      const history = bars.filter((bar) => bar.date < date);
-      const sessions = bars.filter((bar) => bar.date >= date);
+      // Massive candles are adjusted for splits after `date`; undo that so the $5 / 1M filters see what traded that day.
+      // Same rule as adjustPriceForSplits in lib/splits.ts: the first split executed after `date` carries the cumulative factor.
+      const factor = splits.find((split) => split.executionDate > date)?.factor ?? 1;
+      const asOfBars = bars.map((bar) => ({
+        ...bar,
+        open: bar.open / factor,
+        high: bar.high / factor,
+        low: bar.low / factor,
+        close: bar.close / factor,
+        volume: bar.volume * factor,
+        vwap: bar.vwap == null ? null : bar.vwap / factor,
+      }));
+      const pmHigh = premarket ? premarket.high / factor : null;
+      const history = asOfBars.filter((bar) => bar.date < date);
+      const sessions = asOfBars.filter((bar) => bar.date >= date);
       if (sessions[0]?.date !== date) return null;
-      const setup = evaluateParabolicSetup(history, { referencePrice: sessions[0].open, highSoFar: premarket?.high ?? sessions[0].open });
+      const setup = evaluateParabolicSetup(history, { referencePrice: sessions[0].open, highSoFar: pmHigh ?? sessions[0].open });
       if (!setup) return null;
       const { metrics, plan } = setup;
       const outcome = plan ? measureReplayOutcome(history.slice(-60), plan, sessions) : null;
       return {
         date, ticker, qualified: setup.qualified, grade: setup.grade, score: setup.score,
         failedFilters: setup.failedFilters.join('; '), riskFraction: rounded(plan?.riskFraction),
-        open: rounded(sessions[0].open), pmHigh: rounded(premarket?.high ?? null),
+        open: rounded(sessions[0].open), pmHigh: rounded(pmHigh),
         priorClose: rounded(metrics.priorClose), gapPct: rounded(metrics.tradeDayGapPct),
         ext10Pct: rounded(metrics.ext10Pct), ext20Pct: rounded(metrics.ext20Pct), atrAbove50: rounded(metrics.atrAbove50),
         greenStreak: metrics.greenStreak, gapUpStreak: metrics.gapUpStreak,
         rangeExpansions: metrics.rangeExpansions, volumeExpansions: metrics.volumeExpansions,
         cleanParabolic: setup.scoreItems.find((item) => item.label === 'Clean parabolic structure')?.status ?? '',
         change3Pct: rounded(metrics.change3Pct), change5Pct: rounded(metrics.change5Pct), change10Pct: rounded(metrics.change10Pct),
-        avgVolume20: rounded(metrics.avgVolume20), sharesOutstanding: rounded(sharesOutstanding),
+        avgVolume20: rounded(metrics.avgVolume20), sharesOutstanding: rounded(sharesOutstanding), splitFactor: factor,
         entry: rounded(plan?.entry), stop: rounded(plan?.stop), riskPerShare: rounded(plan?.riskPerShare),
         target1RR: rounded(plan?.target1RR), target2RR: rounded(plan?.target2RR),
         stoppedOutDay0: outcome?.stoppedOutDay0 ?? '', dayR: rounded(outcome?.dayR),
