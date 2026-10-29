@@ -1,18 +1,18 @@
 import { z } from 'zod';
-import { fetchAllTickerSnapshots } from '@/lib/massive-market';
+import { fetchSharesOutstanding } from '@/lib/massive-market';
 import { addCalendarDays, fetchDailyBars } from '@/lib/parabolic/data';
 import { getRecentFilings } from '@/lib/sec/submissions';
 import { UNKNOWN_EARNINGS_READ, buildEarningsEvidence, classifyEarnings } from '@/lib/triple-beat/classify';
 import {
-  fetchEarningsNews, fetchExtendedHoursStats, fetchPressReleaseText, findEarningsFiling, isEarningsHeadline,
+  fetchEarningsFilerTickers, fetchEarningsNews, fetchExtendedHoursStats, fetchPressReleaseText, findEarningsFiling, isEarningsHeadline,
 } from '@/lib/triple-beat/data';
-import { evaluateTripleBeatSetup, passesLivePrefilter, type TripleBeatScanReport } from '@/lib/triple-beat/scan';
+import { evaluateTripleBeatSetup, type TripleBeatScanReport } from '@/lib/triple-beat/scan';
 import { getPreviousTradingSession, isNyTradingDay, nyDateTimeToEpoch } from '@/lib/time-utils';
 import { writeAndDeliverReport } from '../discord';
 import type { Blueprint, StepResult } from '../types';
 
 const jobInputSchema = z.object({ tradingDate: z.string().max(10).date() });
-// Small batches: SEC requests are serialized at 10/s and each survivor may make one LLM call.
+// Small batches: each filer makes 3 Massive calls; survivors add SEC requests (10/s) and one LLM call.
 const BATCH_SIZE = 5;
 
 type ScanStepOutput =
@@ -47,35 +47,27 @@ export const orchestratorTripleBeatScanBlueprint: Blueprint = {
         const windowStart = nyDateTimeToEpoch(priorSession, '16:00:00') ?? asOfMs;
         // Premarket data stops at the open, so a late run is still "as of" 9:30.
         const windowEnd = Math.min(asOfMs, nyDateTimeToEpoch(tradingDate, '09:30:00') ?? asOfMs);
-        const snapshot = await fetchAllTickerSnapshots();
-        const gappers = (snapshot.tickers ?? []).flatMap((ticker) => (
-          ticker.ticker && passesLivePrefilter({
-            gapPct: ticker.todaysChangePerc ?? 0,
-            priorClose: ticker.prevDay?.c ?? 0,
-            priorVolume: ticker.prevDay?.v ?? 0,
-          }) ? [ticker.ticker] : []
-        ));
+        const tickers = await fetchEarningsFilerTickers(windowStart, windowEnd);
         const from = addCalendarDays(tradingDate, -400);
-        let earningsFilings = 0;
         const setups: TripleBeatScanReport['setups'] = [];
-        for (let offset = 0; offset < gappers.length; offset += BATCH_SIZE) {
-          const results = await Promise.allSettled(gappers.slice(offset, offset + BATCH_SIZE).map(async (ticker) => {
+        for (let offset = 0; offset < tickers.length; offset += BATCH_SIZE) {
+          const results = await Promise.allSettled(tickers.slice(offset, offset + BATCH_SIZE).map(async (ticker) => {
+            const [history, extended, sharesOutstanding] = await Promise.all([
+              fetchDailyBars(ticker, from, priorSession),
+              fetchExtendedHoursStats(ticker, priorSession, tradingDate, asOfMs),
+              fetchSharesOutstanding(ticker, priorSession).catch(() => null),
+            ]);
+            if (!extended) return null;
+            // Cheap technical gate first so SEC and the LLM only run on names that can qualify.
+            if (!evaluateTripleBeatSetup(history, extended, UNKNOWN_EARNINGS_READ, sharesOutstanding)?.qualified) return null;
             const filings = await getRecentFilings(ticker, { limit: 20, sinceDays: 5 });
             const filing = findEarningsFiling(filings.results, windowStart, windowEnd);
             if (!filing) return null;
-            earningsFilings += 1;
-            const [history, extended] = await Promise.all([
-              fetchDailyBars(ticker, from, priorSession),
-              fetchExtendedHoursStats(ticker, priorSession, tradingDate, asOfMs),
-            ]);
-            if (!extended) return null;
-            // Cheap technical gate first so the LLM only runs on names that can qualify.
-            if (!evaluateTripleBeatSetup(history, extended, UNKNOWN_EARNINGS_READ)?.qualified) return null;
             const news = await fetchEarningsNews(ticker, windowStart, windowEnd);
             if (filing.form_type === '6-K' && !news.some((item) => isEarningsHeadline(item.title))) return null;
             const evidence = buildEarningsEvidence(await fetchPressReleaseText(filing), news);
             const earnings = await classifyEarnings(ticker, evidence) ?? UNKNOWN_EARNINGS_READ;
-            const setup = evaluateTripleBeatSetup(history, extended, earnings);
+            const setup = evaluateTripleBeatSetup(history, extended, earnings, sharesOutstanding);
             if (!setup?.plan || setup.grade === 'Pass') return null;
             return { ticker, ...setup, plan: setup.plan };
           }));
@@ -90,7 +82,7 @@ export const orchestratorTripleBeatScanBlueprint: Blueprint = {
         setups.sort((a, b) => b.score - a.score || b.metrics.gapPct - a.metrics.gapPct);
         return completedResult<ScanStepOutput>({
           skipped: false, tradingDate, asOf: new Date(windowEnd).toISOString(),
-          gappersChecked: gappers.length, earningsFilings, setups,
+          earningsFilings: tickers.length, setups,
         }, Date.now() - startedAt);
       },
     },
@@ -105,7 +97,7 @@ export const orchestratorTripleBeatScanBlueprint: Blueprint = {
         }
         const reportJson: TripleBeatScanReport = {
           tradingDate: output.tradingDate, asOf: output.asOf,
-          gappersChecked: output.gappersChecked, earningsFilings: output.earningsFilings, setups: output.setups,
+          earningsFilings: output.earningsFilings, setups: output.setups,
         };
         const n = output.setups.length;
         const a = output.setups.filter((setup) => setup.grade === 'A').length;

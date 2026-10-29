@@ -155,6 +155,13 @@ export async function getCikForTicker(rawTicker: string): Promise<CikMapEntry | 
   return inMemoryMap?.get(normalized) ?? null;
 }
 
+export async function getTickersForCiks(ciks: Set<string>): Promise<string[]> {
+  if (!inMemoryMap || Date.now() - lastLoadAt > REFRESH_INTERVAL_MS) {
+    await loadCikMap();
+  }
+  return [...(inMemoryMap?.values() ?? [])].filter((entry) => ciks.has(entry.cik)).map((entry) => entry.ticker);
+}
+
 // Test-only reset hook. Do not call from runtime code.
 export function __resetCikMapForTests(): void {
   inMemoryMap = null;

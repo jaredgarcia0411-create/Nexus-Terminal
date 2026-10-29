@@ -5,9 +5,12 @@
  * Reads MASSIVE_API_KEY, EODHD_API_KEY, BACKGROUND_LLM_* and DATABASE_URL (CIK map) from .env.local.
  * Usage: npx tsx scripts/triple-beat-replay.ts --from 2024-11-01 --to 2026-10-15 [--out /path/file.csv]
  *
- * Entry is a break of the premarket high, filled at the open when it gaps above. A day that touches the
- * stop counts as stopped before any target. Filings, news and premarket data stop at 09:00 ET on the
- * trade date, matching the live cron's default run time. LLM earnings reads are cached in
+ * Candidates are liquid ticker-days ($5M+ 20-day dollar volume) with an SEC earnings filing accepted between the
+ * prior session's 16:00 ET and 09:00 ET on the trade date, matching the live cron; gap, price and market-cap rules
+ * then use minute bars and shares outstanding as of the prior session. The first run pulls SEC filing history for
+ * every liquid ticker (roughly 10–20 minutes at SEC's 10 requests/second). Entry is a break of the premarket high,
+ * filled at the open when it gaps above. A day that touches the stop counts as stopped before any target.
+ * LLM earnings reads are cached in
  * ~/triple-beat-llm-cache.json so reruns only call the LLM for new ticker/dates. Tickers missing from
  * today's SEC CIK map (delisted/renamed) are skipped.
  */
@@ -18,7 +21,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import Papa from 'papaparse';
-import { fetchGroupedDailyAggregates, fetchSplitHistory, type DailyOhlcBar } from '@/lib/massive-market';
+import { fetchGroupedDailyAggregates, fetchSharesOutstanding, fetchSplitHistory, type DailyOhlcBar } from '@/lib/massive-market';
 import { addCalendarDays, fetchDailyBars } from '@/lib/parabolic/data';
 import { getRecentFilings, type SecFiling } from '@/lib/sec/submissions';
 import { buildEarningsEvidence, classifyEarnings, UNKNOWN_EARNINGS_READ, type EarningsRead } from '@/lib/triple-beat/classify';
@@ -54,7 +57,7 @@ async function main() {
     const bars = await fetchGroupedDailyAggregates(date, false);
     for (const bar of bars) {
       const window = windows.get(bar.ticker) ?? [];
-      if (date >= from && passesReplayPrefilter(window, bar.open)) candidates.push({ ticker: bar.ticker, date });
+      if (date >= from && passesReplayPrefilter(window)) candidates.push({ ticker: bar.ticker, date });
       window.push({ date, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.volume, vwap: bar.vwap });
       while (window.length > 20) window.shift();
       windows.set(bar.ticker, window);
@@ -78,16 +81,19 @@ async function main() {
   const rounded = (value: number | null | undefined): number | '' => value == null ? '' : Number(value.toFixed(2));
   const rows = [];
   for (let offset = 0; offset < candidates.length; offset += 10) {
+    if (offset % 20000 === 0) console.log(`pass 2: ${offset}/${candidates.length} (${rows.length} rows)`);
+    const readsBefore = newLlmReads;
     const results = await Promise.allSettled(candidates.slice(offset, offset + 10).map(async ({ ticker, date }) => {
       const priorSession = getPreviousTradingSession(date)!;
       const windowStart = nyDateTimeToEpoch(priorSession, '16:00:00')!;
       const windowEnd = nyDateTimeToEpoch(date, '09:00:00')!;
       const filing = findEarningsFiling(await filingsFor(ticker), windowStart, windowEnd);
       if (!filing) return null;
-      const [bars, extended, splits] = await Promise.all([
+      const [bars, extended, splits, sharesOutstanding] = await Promise.all([
         fetchDailyBars(ticker, addCalendarDays(date, -400), addCalendarDays(date, 100)),
         fetchExtendedHoursStats(ticker, priorSession, date, windowEnd),
         fetchSplitHistory(ticker).catch(() => []),
+        fetchSharesOutstanding(ticker, priorSession).catch(() => null),
       ]);
       if (!extended) return null;
       // Same split rule as scripts/parabolic-replay.ts: undo splits executed after `date`.
@@ -108,7 +114,7 @@ async function main() {
       const history = asOfBars.filter((bar) => bar.date < date);
       const sessions = asOfBars.filter((bar) => bar.date >= date);
       if (sessions[0]?.date !== date) return null;
-      if (!evaluateTripleBeatSetup(history, asOfExtended, UNKNOWN_EARNINGS_READ)?.qualified) return null;
+      if (!evaluateTripleBeatSetup(history, asOfExtended, UNKNOWN_EARNINGS_READ, sharesOutstanding)?.qualified) return null;
       const news = await fetchEarningsNews(ticker, windowStart, windowEnd);
       if (filing.form_type === '6-K' && !news.some((item) => isEarningsHeadline(item.title))) return null;
       const key = `${ticker}:${date}`;
@@ -119,7 +125,7 @@ async function main() {
         if (read) llmCache[key] = read;
         earnings = read ?? UNKNOWN_EARNINGS_READ;
       }
-      const setup = evaluateTripleBeatSetup(history, asOfExtended, earnings)!;
+      const setup = evaluateTripleBeatSetup(history, asOfExtended, earnings, sharesOutstanding)!;
       const { metrics, plan } = setup;
       const outcome = plan ? measureTripleBeatOutcome(history, plan, sessions) : null;
       return {
@@ -127,10 +133,11 @@ async function main() {
         strictTripleBeat: setup.strictTripleBeat,
         epsBeat: earnings.epsBeat, revenueBeat: earnings.revenueBeat, guidance: earnings.guidance,
         mixedCatalyst: earnings.mixedCatalyst, note: earnings.note, filingForm: filing.form_type,
-        gapPct: rounded(metrics.gapPct), holdPct: rounded(metrics.holdPct),
+        gapPct: rounded(metrics.gapPct), maxGapPct: rounded(metrics.maxGapPct), holdPct: rounded(metrics.holdPct),
         extendedVolumeRatio: rounded(metrics.extendedVolumeRatio), baseRangePct: rounded(metrics.baseRangePct), runUpPct: rounded(metrics.runUpPct),
         clearsBaseHigh: setup.scoreItems.find((item) => item.label === 'Clears 3-month high')?.status ?? '',
-        avgDollarVolume20: rounded(metrics.avgDollarVolume20), riskAtr: rounded(plan?.riskAtr),
+        avgDollarVolume20: rounded(metrics.avgDollarVolume20),
+        marketCapM: metrics.marketCap == null ? '' : Math.round(metrics.marketCap / 1e6), riskAtr: rounded(plan?.riskAtr),
         riskFraction: rounded(plan?.riskFraction), entry: rounded(plan?.entry), stop: rounded(plan?.stop), splitFactor: factor,
         triggered: outcome?.triggered ?? '', fill: rounded(outcome?.fill), stoppedOutDay0: outcome?.stoppedOutDay0 ?? '',
         dayR: rounded(outcome?.dayR), hit2R: outcome?.hit2R ?? '', runnerR: rounded(outcome?.runnerR), totalR: rounded(outcome?.totalR),
@@ -144,7 +151,7 @@ async function main() {
         console.warn('triple beat replay ticker failed', candidates[offset + index], result.reason);
       }
     }
-    writeFileSync(cachePath, JSON.stringify(llmCache));
+    if (newLlmReads > readsBefore) writeFileSync(cachePath, JSON.stringify(llmCache));
   }
   rows.sort((a, b) => a.date.localeCompare(b.date) || b.score - a.score);
   writeFileSync(out, Papa.unparse(rows));
@@ -156,7 +163,7 @@ async function main() {
     console.log(`${label}: ${group.length} setups, ${traded.length} triggered, win rate ${traded.length ? (100 * wins / traded.length).toFixed(1) + '%' : 'n/a'}, avg dayR ${average('dayR')}, avg totalR ${average('totalR')}`);
   };
   for (const grade of ['A+', 'A', 'B', 'Pass']) summarize(`Grade ${grade}`, rows.filter((row) => row.grade === grade));
-  for (const bucket of ['4-7.9', '8-9.9', '10+']) summarize(`Gap ${bucket}%`, rows.filter((row) => row.gapBucket === bucket));
+  for (const bucket of ['<4', '4-7.9', '8-9.9', '10+']) summarize(`Gap ${bucket}%`, rows.filter((row) => row.gapBucket === bucket));
   summarize('Strict triple beat', rows.filter((row) => row.strictTripleBeat === true));
   console.log(`New LLM reads: ${newLlmReads} (cache: ${cachePath})`);
   console.log(`Output: ${out}`);

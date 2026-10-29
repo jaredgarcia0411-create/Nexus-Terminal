@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchMassiveAggregateBars, fetchTickerNewsBetween } from '@/lib/massive-market';
 import { fetchEodhdNews } from '@/lib/eodhd';
-import { fetchEarningsNews, fetchExtendedHoursStats, fetchPressReleaseText, findEarningsFiling, isEarningsHeadline } from '@/lib/triple-beat/data';
+import { fetchEarningsFilerTickers, fetchEarningsNews, fetchExtendedHoursStats, fetchPressReleaseText, findEarningsFiling, isEarningsHeadline } from '@/lib/triple-beat/data';
+import { secFetchText } from '@/lib/sec/client';
+import { getTickersForCiks } from '@/lib/sec/cik-map';
 import { fetchPressReleaseHtml } from '@/lib/sec/filing-headline';
 import type { SecFiling } from '@/lib/sec/submissions';
 
 vi.mock('@/lib/massive-market', () => ({ fetchMassiveAggregateBars: vi.fn(), fetchTickerNewsBetween: vi.fn() }));
 vi.mock('@/lib/eodhd', () => ({ fetchEodhdNews: vi.fn() }));
 vi.mock('@/lib/sec/filing-headline', () => ({ fetchPressReleaseHtml: vi.fn() }));
+vi.mock('@/lib/sec/client', () => ({ secFetchText: vi.fn() }));
+vi.mock('@/lib/sec/cik-map', () => ({ getTickersForCiks: vi.fn() }));
 const start = Date.parse('2026-10-28T20:00:00Z');
 const end = Date.parse('2026-10-29T13:00:00Z');
 const filing = (overrides: Partial<SecFiling> = {}): SecFiling => ({
@@ -19,6 +23,43 @@ const filing = (overrides: Partial<SecFiling> = {}): SecFiling => ({
 
 describe('Triple Beat data', () => {
   beforeEach(() => vi.resetAllMocks());
+  it('selects exact earnings forms inside the window and stops after short feed pages', async () => {
+    const entry = (cik: string, form: string, items: string, accepted = '2026-10-29T07:00:29-04:00') => `<entry>
+      <title>${form} - Company (${cik}) (Filer)</title>
+      <summary type="html">&lt;br&gt;${items}</summary>
+      <updated>${accepted}</updated>
+      <category scheme="https://www.sec.gov/" label="form type" term="${form}"/>
+    </entry>`;
+    vi.mocked(secFetchText).mockImplementation(async (url) => `<feed>${url.includes('type=8-K') ? [
+      entry('0000000001', '8-K', 'Item 2.02: Results of Operations and Financial Condition'),
+      entry('0000000002', '8-K', 'Item 5.02: Directors'),
+      entry('0000000003', '8-K/A', 'Item 2.02: Results of Operations'),
+      entry('0000000005', '8-K', 'Item 2.02: Results of Operations', '2026-10-28T15:59:59-04:00'),
+    ].join('') : entry('0000000004', '6-K', '')}</feed>`);
+    vi.mocked(getTickersForCiks).mockImplementation(async (ciks) => [...ciks]);
+
+    expect(await fetchEarningsFilerTickers(start, end)).toEqual(['0000000001', '0000000004']);
+    expect(secFetchText).toHaveBeenCalledTimes(2);
+    expect(secFetchText).toHaveBeenNthCalledWith(1, expect.stringContaining('&type=8-K&start=0'));
+    expect(secFetchText).toHaveBeenNthCalledWith(2, expect.stringContaining('&type=6-K&start=0'));
+  });
+  it('propagates feed failures rather than reporting no candidates', async () => {
+    vi.mocked(secFetchText).mockRejectedValue(new Error('SEC unavailable'));
+    await expect(fetchEarningsFilerTickers(start, end)).rejects.toThrow('SEC unavailable');
+    expect(getTickersForCiks).not.toHaveBeenCalled();
+  });
+  it('pages full feeds and deduplicates filers across pages', async () => {
+    const entry = (cik: string) => `<entry><title>8-K - Company (${cik}) (Filer)</title>
+      <summary>Item 2.02: Results of Operations</summary><updated>2026-10-29T07:00:00-04:00</updated>
+      <category label="form type" term="8-K"/></entry>`;
+    vi.mocked(secFetchText).mockResolvedValueOnce(`<feed>${entry('0000000001').repeat(100)}</feed>`)
+      .mockResolvedValueOnce(`<feed>${entry('0000000001')}${entry('0000000002')}</feed>`)
+      .mockResolvedValueOnce('<feed></feed>');
+    vi.mocked(getTickersForCiks).mockImplementation(async (ciks) => [...ciks]);
+    expect(await fetchEarningsFilerTickers(start, end)).toEqual(['0000000001', '0000000002']);
+    expect(secFetchText).toHaveBeenCalledTimes(3);
+    expect(secFetchText).toHaveBeenNthCalledWith(2, expect.stringContaining('&type=8-K&start=100'));
+  });
   it('combines AH and PM stats while excluding the regular session', async () => {
     vi.mocked(fetchMassiveAggregateBars).mockResolvedValue([
       { t: Date.parse('2026-10-28T20:30:00Z'), h: 22, l: 21, c: 21.8, v: 100000 },

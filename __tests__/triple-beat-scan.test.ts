@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { UNKNOWN_EARNINGS_READ } from '@/lib/triple-beat/classify';
-import { evaluateTripleBeatSetup, gapBucket, measureTripleBeatOutcome, passesLivePrefilter, passesReplayPrefilter } from '@/lib/triple-beat/scan';
+import { evaluateTripleBeatSetup, gapBucket, measureTripleBeatOutcome, passesReplayPrefilter } from '@/lib/triple-beat/scan';
 import { getPreviousTradingSession } from '@/lib/time-utils';
 import type { DailyOhlcBar } from '@/lib/massive-market';
 const dates: string[] = [];
@@ -32,23 +32,41 @@ describe('Triple Beat scoring', () => {
     expect(setup.plan!.riskAtr).toBeCloseTo(3);
     expect(setup.scoreItems.find((item) => item.label === 'Stop within 1.5 ATR')?.status).toBe('not met');
   });
-  it('disqualifies faded gaps, low prices, illiquidity, and absent entry/stop', () => {
+  it('accepts faded gaps that reached +5% overnight and remain at or above the prior close', () => {
     const faded = evaluateTripleBeatSetup(history, { ...extended, last: 20.5 }, STRICT)!;
-    expect(faded).toMatchObject({ qualified: false, plan: null });
-    expect(faded.failedFilters).toContain('Gap < 4%');
-    expect(evaluateTripleBeatSetup(history, { ...extended, last: 4.9 }, STRICT)!.failedFilters).toContain('Price < $5');
+    expect(faded).toMatchObject({ qualified: true, failedFilters: [] });
+    expect(faded.plan).not.toBeNull();
+    expect(evaluateTripleBeatSetup(history, { ...extended, last: 20 }, STRICT)!.qualified).toBe(true);
+  });
+  it('rejects prices below the prior close or overnight highs below +5%', () => {
+    expect(evaluateTripleBeatSetup(history, { ...extended, last: 19.9 }, STRICT)!.failedFilters).toContain('Below prior close');
+    expect(evaluateTripleBeatSetup(history, {
+      ...extended, high: 20.9, low: 20.3, premarketHigh: 20.9, premarketLow: 20.3, last: 20.5,
+    }, STRICT)!.failedFilters).toEqual(['Overnight high < +5%']);
+    expect(evaluateTripleBeatSetup(history, {
+      ...extended, high: 21, low: 20.3, premarketHigh: 21, premarketLow: 20.3, last: 20.2,
+    }, STRICT)!.qualified).toBe(true);
+  });
+  it('disqualifies low prices, illiquidity, and absent entry/stop', () => {
+    expect(evaluateTripleBeatSetup(history, { ...extended, last: 2.9 }, STRICT)!.failedFilters).toContain('Price < $3');
+    expect(evaluateTripleBeatSetup(history, { ...extended, last: 3 }, STRICT)!.failedFilters).not.toContain('Price < $3');
     expect(evaluateTripleBeatSetup(history.map((bar) => ({ ...bar, volume: 1 })), extended, STRICT)!.failedFilters).toContain('Dollar volume < $5M');
     expect(evaluateTripleBeatSetup(history, { ...extended, premarketLow: extended.premarketHigh }, STRICT)!.plan).toBeNull();
     expect(evaluateTripleBeatSetup(history.map((bar) => ({ ...bar, high: 20, low: 20 })), extended, STRICT)!.plan).toBeNull();
   });
+  it('applies the $250M market-cap floor only when shares are known', () => {
+    expect(evaluateTripleBeatSetup(history, extended, STRICT, 10_000_000)!.failedFilters).toContain('Market cap < $250M');
+    expect(evaluateTripleBeatSetup(history, extended, STRICT, 20_000_000)).toMatchObject({
+      qualified: true, metrics: { marketCap: 460_000_000 },
+    });
+    expect(evaluateTripleBeatSetup(history, extended, STRICT, null)).toMatchObject({ qualified: true, metrics: { marketCap: null } });
+  });
   it('requires 61 bars', () => expect(evaluateTripleBeatSetup(history.slice(-60), extended, STRICT)).toBeNull());
-  it('buckets gaps and applies live and replay floors', () => {
+  it('buckets gaps and applies replay liquidity and history floors', () => {
     expect([4, 9.99, 10, 3].map(gapBucket)).toEqual(['4-7.9', '8-9.9', '10+', '<4']);
-    expect(passesLivePrefilter({ gapPct: 3.5, priorClose: 4.5, priorVolume: 300000 })).toBe(true);
-    expect(passesLivePrefilter({ gapPct: 3.4, priorClose: 4.5, priorVolume: 300000 })).toBe(false);
-    expect(passesReplayPrefilter(history.slice(-19), 23)).toBe(false);
-    expect(passesReplayPrefilter(history, 4.9)).toBe(false);
-    expect(passesReplayPrefilter(history, 23)).toBe(true);
+    expect(passesReplayPrefilter(history.slice(-19))).toBe(false);
+    expect(passesReplayPrefilter(history.map((bar) => ({ ...bar, volume: 1 })))).toBe(false);
+    expect(passesReplayPrefilter(history)).toBe(true);
   });
 });
 describe('Triple Beat outcomes', () => {

@@ -44,16 +44,49 @@ describe('parabolic scoring', () => {
       .toMatchObject({ qualified: false, failedFilters: ['Gap < 3%'], plan: null });
   });
 
-  it('uses a loose live prefilter but still requires the green streak', () => {
+  it('uses a loose live prefilter but still requires two of the last three days green', () => {
     const bars = fixture(20);
     expect(passesLivePrefilter(bars)).toBe(true);
     bars[bars.length - 1] = { ...bars[bars.length - 1], open: 17, close: 16.5 };
+    expect(passesLivePrefilter(bars)).toBe(true);
+    bars[bars.length - 2] = { ...bars[bars.length - 2], open: 14, close: 13.5 };
     expect(passesLivePrefilter(bars)).toBe(false);
+  });
+
+  it('qualifies with one red bar among the last three without awarding the green-streak score', () => {
+    const bars = fixture(20);
+    bars[bars.length - 2] = { ...bars[bars.length - 2], open: 13.6 };
+    const setup = evaluateParabolicSetup(bars, { referencePrice: 18, highSoFar: 18.5 })!;
+    expect(setup.qualified).toBe(true);
+    expect(setup.failedFilters).not.toContain('< 2 of last 3 green');
+    expect(setup.scoreItems.find((item) => item.label === '3+ consecutive green days')?.status).toBe('not met');
+  });
+
+  it('qualifies via a five-day gain when extension above the current-price 10SMA is under 25%', () => {
+    const bars = fixture(20);
+    for (let i = 0; i < bars.length - 5; i += 1) {
+      bars[i] = { ...bars[i], open: 17.9, high: 18.2, low: 17.8, close: 18 };
+    }
+    const setup = evaluateParabolicSetup(bars, { referencePrice: 18, highSoFar: 18.5 })!;
+    expect(setup.qualified).toBe(true);
+    expect(setup.metrics.ext10Pct).toBeCloseTo((18 / 15.25 - 1) * 100);
+    expect(setup.metrics.ext10Pct).toBeLessThan(25);
+    expect(setup.metrics.gain5Pct).toBeCloseTo(80);
+    expect(passesReplayPrefilter(bars, 18)).toBe(true);
+    expect(passesLivePrefilter(bars)).toBe(true);
   });
 
   it('applies the known opening gap in the replay prefilter', () => {
     expect(passesReplayPrefilter(fixture(20), 18)).toBe(true);
     expect(passesReplayPrefilter(fixture(20), 17.2)).toBe(false);
+  });
+
+  it('rejects a setup when both extension and five-day gain are below their floors', () => {
+    const bars = fixture(20).map((bar) => ({ ...bar, open: 17.9, high: 18.2, low: 17.8, close: 18 }));
+    expect(evaluateParabolicSetup(bars, { referencePrice: 19, highSoFar: 19.5 })).toMatchObject({
+      qualified: false, failedFilters: ['< 25% above 10SMA and < 35% in 5 days'], plan: null,
+    });
+    expect(passesReplayPrefilter(bars, 19)).toBe(false);
   });
 
   it('uses only the last 60 history bars', () => {

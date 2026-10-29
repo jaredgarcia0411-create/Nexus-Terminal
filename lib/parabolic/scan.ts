@@ -1,13 +1,17 @@
 import { atr, ema } from '@/lib/indicators';
 import type { DailyOhlcBar } from '@/lib/massive-market';
 
-// Research thresholds from the parabolic short playbook. Provisional until the replay validates them.
+// Research thresholds from the parabolic short playbook; mandatory filters match the coworker's thinkorswim pre-scan v2.
 const RULES = {
   minPrice: 5,
   minAvgVolume: 1_000_000,
   minGreenDays: 3,
+  greenLookback: 3,
+  minGreenInLookback: 2,
   minGapPct: 3,
-  minExt10Pct: 30,
+  minExt10Pct: 25,
+  minGain5Pct: 35,
+  livePrefilterMinGain5Pct: 20,
   preferredExt20Pct: 40,
   preferredAtrAbove50: 8,
   minGapUpStreak: 2,
@@ -47,6 +51,7 @@ export interface ParabolicMetrics {
   tradeDayGapPct: number;
   ext10Pct: number;
   ext20Pct: number;
+  gain5Pct: number;
   atrAbove50: number | null;
   atr14: number;
   ema9: number;
@@ -118,9 +123,17 @@ function countExpansions(values: number[]): number {
   return count;
 }
 
-function hasGreenStreakAndVolume(bars: DailyOhlcBar[]): boolean {
+// Matches the thinkorswim pre-scan: its 10SMA includes the current price; the 5-day gain is vs the close 5 sessions back.
+function extension(closes: number[], price: number): { ext10Pct: number; gain5Pct: number } {
+  return {
+    ext10Pct: pctChange(mean([...closes.slice(-(RULES.sma10Period - 1)), price]), price),
+    gain5Pct: pctChange(closes[closes.length - 5], price),
+  };
+}
+
+function hasGreenDaysAndVolume(bars: DailyOhlcBar[]): boolean {
   return bars.length >= MIN_HISTORY_BARS
-    && bars.slice(-RULES.minGreenDays).every((bar) => bar.close > bar.open)
+    && bars.slice(-RULES.greenLookback).filter((bar) => bar.close > bar.open).length >= RULES.minGreenInLookback
     && mean(bars.slice(-RULES.sma20Period).map((bar) => bar.volume)) >= RULES.minAvgVolume;
 }
 
@@ -133,20 +146,23 @@ function gradeFor(score: number): ParabolicGrade {
 
 // Live: premarket price is unknown at prefilter time, so this is intentionally looser than the real filters.
 export function passesLivePrefilter(bars: DailyOhlcBar[]): boolean {
-  if (!hasGreenStreakAndVolume(bars)) return false;
+  if (!hasGreenDaysAndVolume(bars)) return false;
   const priorClose = bars[bars.length - 1].close;
   const sma10 = mean(bars.slice(-RULES.sma10Period).map((bar) => bar.close));
-  return priorClose >= RULES.livePrefilterMinClose && priorClose >= sma10 * RULES.livePrefilterMinSma10Ratio;
+  const closes = bars.map((bar) => bar.close);
+  return priorClose >= RULES.livePrefilterMinClose
+    && (priorClose >= sma10 * RULES.livePrefilterMinSma10Ratio
+      || pctChange(closes[closes.length - 5], priorClose) >= RULES.livePrefilterMinGain5Pct);
 }
 
 // Replay: the trade-day open is known, so apply the exact mandatory price/gap/extension filters.
 export function passesReplayPrefilter(bars: DailyOhlcBar[], tradeOpen: number): boolean {
-  if (!hasGreenStreakAndVolume(bars)) return false;
+  if (!hasGreenDaysAndVolume(bars)) return false;
   const priorClose = bars[bars.length - 1].close;
-  const sma10 = mean(bars.slice(-RULES.sma10Period).map((bar) => bar.close));
+  const ext = extension(bars.map((bar) => bar.close), tradeOpen);
   return tradeOpen >= RULES.minPrice
     && pctChange(priorClose, tradeOpen) >= RULES.minGapPct
-    && pctChange(sma10, tradeOpen) >= RULES.minExt10Pct;
+    && (ext.ext10Pct >= RULES.minExt10Pct || ext.gain5Pct >= RULES.minGain5Pct);
 }
 
 export function evaluateParabolicSetup(history: DailyOhlcBar[], tradeDay: TradeDayInput): ParabolicSetup | null {
@@ -173,7 +189,7 @@ export function evaluateParabolicSetup(history: DailyOhlcBar[], tradeDay: TradeD
     greenStreak,
     gapUpStreak,
     tradeDayGapPct: pctChange(prior.close, referencePrice),
-    ext10Pct: pctChange(mean(closes.slice(-RULES.sma10Period)), referencePrice),
+    ...extension(closes, referencePrice),
     ext20Pct: pctChange(mean(closes.slice(-RULES.sma20Period)), referencePrice),
     atrAbove50: n < RULES.sma50Period ? null : (referencePrice - mean(closes.slice(-RULES.sma50Period))) / atr14,
     atr14,
@@ -187,9 +203,9 @@ export function evaluateParabolicSetup(history: DailyOhlcBar[], tradeDay: TradeD
   const failedFilters: string[] = [];
   if (referencePrice < RULES.minPrice) failedFilters.push('Price < $5');
   if (metrics.avgVolume20 < RULES.minAvgVolume) failedFilters.push('Avg volume < 1M');
-  if (greenStreak < RULES.minGreenDays) failedFilters.push('< 3 green days');
+  if (bars.slice(-RULES.greenLookback).filter((bar) => bar.close > bar.open).length < RULES.minGreenInLookback) failedFilters.push('< 2 of last 3 green');
   if (metrics.tradeDayGapPct < RULES.minGapPct) failedFilters.push('Gap < 3%');
-  if (metrics.ext10Pct < RULES.minExt10Pct) failedFilters.push('< 30% above 10SMA');
+  if (metrics.ext10Pct < RULES.minExt10Pct && metrics.gain5Pct < RULES.minGain5Pct) failedFilters.push('< 25% above 10SMA and < 35% in 5 days');
   const qualified = failedFilters.length === 0;
   const cleanParabolic = closes.slice(-3).every((close, index) => close > closes[n - 4 + index])
     && metrics.change3Pct >= RULES.parabolicMin3DayPct

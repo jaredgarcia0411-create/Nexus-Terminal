@@ -249,13 +249,6 @@ export async function fetchTopMarketMovers(direction: MassiveDirection) {
   });
 }
 
-// Whole-market snapshot. Populated from 04:00 ET, so todaysChangePerc is the premarket gap before the open.
-export async function fetchAllTickerSnapshots() {
-  return fetchMassiveJson<MassiveTopMoversResponse>('/v2/snapshot/locale/us/markets/stocks/tickers', {
-    include_otc: 'false',
-  });
-}
-
 export async function fetchDailyTickerSummary(ticker: string, date: string) {
   return fetchMassiveJson<MassiveDailyTickerSummaryResponse>(`/v1/open-close/${encodeURIComponent(ticker)}/${encodeURIComponent(date)}`, {
     adjusted: 'true',

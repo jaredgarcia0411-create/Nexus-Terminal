@@ -1,5 +1,7 @@
 import { fetchEodhdNews } from '@/lib/eodhd';
 import { fetchMassiveAggregateBars, fetchTickerNewsBetween } from '@/lib/massive-market';
+import { getTickersForCiks } from '@/lib/sec/cik-map';
+import { secFetchText } from '@/lib/sec/client';
 import { stripFilingBodyHtml } from '@/lib/sec/filing-body';
 import { fetchPressReleaseHtml } from '@/lib/sec/filing-headline';
 import type { SecFiling } from '@/lib/sec/submissions';
@@ -8,6 +10,8 @@ import { nyDateTimeToEpoch } from '@/lib/time-utils';
 const PRESS_RELEASE_MAX_CHARS = 12_000;
 const NEWS_TEXT_MAX_CHARS = 1_500;
 const EARNINGS_HEADLINE_RE = /\b(earnings|financial results|quarterly results|EPS)\b/i;
+const SEC_LATEST_FILINGS_URL = 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&owner=include&count=100&output=atom';
+const SEC_LATEST_FILINGS_MAX_START = 2000;
 
 export interface ExtendedHoursStats {
   last: number;
@@ -56,6 +60,28 @@ export async function fetchExtendedHoursStats(
     premarketHigh: Math.max(...premarket.map((bar) => Number(bar.h))),
     premarketLow: Math.min(...premarket.map((bar) => Number(bar.l))),
   };
+}
+
+// SEC's "latest filings" feed lists each filing's 8-K items and acceptance time, newest first, and pages back
+// ~2,000 filings (several days). 6-Ks carry no items, so callers still confirm them with an earnings headline.
+export async function fetchEarningsFilerTickers(startMs: number, endMs: number): Promise<string[]> {
+  const ciks = new Set<string>();
+  for (const form of ['8-K', '6-K']) {
+    for (let start = 0; start < SEC_LATEST_FILINGS_MAX_START; start += 100) {
+      const entries = (await secFetchText(`${SEC_LATEST_FILINGS_URL}&type=${form}&start=${start}`)).split('<entry>').slice(1);
+      let oldest = Number.POSITIVE_INFINITY;
+      for (const entry of entries) {
+        const accepted = Date.parse(entry.match(/<updated>([^<]+)<\/updated>/)?.[1] ?? '');
+        const cik = entry.match(/\((\d{10})\) \(Filer\)/)?.[1];
+        const formType = entry.match(/label="form type" term="([^"]+)"/)?.[1];
+        oldest = Math.min(oldest, accepted);
+        if (cik && formType === form && accepted >= startMs && accepted <= endMs
+          && (form === '6-K' || entry.includes('Item 2.02'))) ciks.add(cik);
+      }
+      if (entries.length < 100 || oldest < startMs) break;
+    }
+  }
+  return getTickersForCiks(ciks);
 }
 
 // 8-K item 2.02 is an exact earnings signal; foreign filers' 6-Ks carry no item codes, so callers

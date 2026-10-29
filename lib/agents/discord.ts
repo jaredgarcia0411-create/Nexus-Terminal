@@ -886,7 +886,7 @@ export function buildTripleBeatScanEmbeds(report: AgentReport): DiscordEmbed[] {
     hour: 'numeric',
     minute: '2-digit',
   });
-  const scanned = `${payload.gappersChecked} gappers · ${payload.earningsFilings} with earnings filings · premarket as of ${asOfEt} ET`;
+  const scanned = `${payload.earningsFilings} earnings filers · premarket as of ${asOfEt} ET`;
   const title = `Triple Beat earnings · ${dayLabel}`;
 
   if (payload.setups.length === 0) {
@@ -924,7 +924,7 @@ export function buildTripleBeatScanEmbeds(report: AgentReport): DiscordEmbed[] {
         buildField('Risk / share', `${usd(plan.riskPerShare)} · ${plan.riskAtr.toFixed(1)} ATR`),
         buildField('T1 partial', `${usd(plan.target1)} · 2R`),
         buildField('Runner', `Trail 10EMA (${usd(metrics.ema10)})`),
-        buildField('Gap · hold', `${pct(metrics.gapPct)} · ${metrics.holdPct.toFixed(0)}% of range`),
+        buildField('Gap · hold', `${pct(metrics.gapPct)} (high ${pct(metrics.maxGapPct)}) · ${metrics.holdPct.toFixed(0)}% of range`),
       ],
       footer: { text: checklist.join(' ') },
     };

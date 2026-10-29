@@ -233,9 +233,9 @@ function createTripleBeatReportJson() {
   }, {
     ...UNKNOWN_EARNINGS_READ, epsBeat: 'yes', revenueBeat: 'yes', guidance: 'raised',
     note: 'Beat on EPS and revenue and raised full-year guidance.',
-  })!;
+  }, 20_000_000)!;
   return {
-    tradingDate: '2026-10-29', asOf: '2026-10-29T13:00:00.000Z', gappersChecked: 26, earningsFilings: 2,
+    tradingDate: '2026-10-29', asOf: '2026-10-29T13:00:00.000Z', earningsFilings: 2,
     setups: [{ ticker: 'NCLH', ...setup, plan: setup.plan! }],
   };
 }
@@ -533,7 +533,7 @@ describe('agent discord helpers', () => {
     }) as never);
     expect(embeds).toEqual([{
       title: 'Triple Beat earnings · Thu, Oct 29',
-      description: 'No setups today · 26 gappers · 2 with earnings filings · premarket as of 9:00 AM ET',
+      description: 'No setups today · 2 earnings filers · premarket as of 9:00 AM ET',
       color: 0x80848E,
     }]);
   });
@@ -543,7 +543,10 @@ describe('agent discord helpers', () => {
       agentId: 'orchestrator', reportType: 'triple-beat-scan', reportJson: createTripleBeatReportJson(),
     }) as never);
     expect(embeds).toHaveLength(2);
-    expect(embeds[0]).toMatchObject({ title: 'Triple Beat earnings · Thu, Oct 29', color: 0x5865F2 });
+    expect(embeds[0]).toMatchObject({
+      title: 'Triple Beat earnings · Thu, Oct 29', color: 0x5865F2,
+      description: '🟢 A+ 1 · 🟡 A 0 · ⚪ B 0 · 2 earnings filers · premarket as of 9:00 AM ET',
+    });
     expect(embeds[1]).toEqual({
       title: 'NCLH · A+ · 90/90 · Full size (1R)', color: 0x23A55A,
       description: '🏆 Strict triple beat\nBeat on EPS and revenue and raised full-year guidance.',
@@ -553,7 +556,7 @@ describe('agent discord helpers', () => {
         { name: 'Risk / share', value: '$0.80 · 1.0 ATR', inline: true },
         { name: 'T1 partial', value: '$25.00 · 2R', inline: true },
         { name: 'Runner', value: 'Trail 10EMA ($20.00)', inline: true },
-        { name: 'Gap · hold', value: '+15.0% · 79% of range', inline: true },
+        { name: 'Gap · hold', value: '+15.0% (high +17.0%) · 79% of range', inline: true },
       ],
       footer: { text: '✅ EPS ✅ Rev ✅ Guide ✅ Base ✅ Breakout ✅ Fresh ✅ PM vol ❔ RVOL ✅ Gap 10 ✅ Hold ✅ Stop ✅ $10+ ✅ $Vol' },
     });

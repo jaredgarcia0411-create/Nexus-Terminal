@@ -4,11 +4,13 @@ import type { ScoreItem, ScoreItemStatus } from '@/lib/parabolic/scan';
 import type { EarningsRead } from '@/lib/triple-beat/classify';
 import type { ExtendedHoursStats } from '@/lib/triple-beat/data';
 
-// Thresholds from the Triple Beat Earnings playbook v1.0. Provisional until the replay validates them.
+// Thresholds from the Triple Beat Earnings playbook v1.0; price, gap and market-cap floors match the coworker's thinkorswim scan.
 const RULES = {
-  minPrice: 5,
+  minPrice: 3,
   minDollarVolume: 5_000_000,
-  minGapPct: 4,
+  minMaxGapPct: 5,
+  minCurrentGapPct: 0,
+  minMarketCap: 250_000_000,
   bigGapPct: 10,
   preferredPrice: 10,
   preferredDollarVolume: 20_000_000,
@@ -24,10 +26,6 @@ const RULES = {
   trailEmaPeriod: 10,
   maxSwingSessions: 60,
   outcomeWindow: 20,
-  // Loose live prefilter on the market snapshot; the exact filters run after the per-ticker fetch.
-  livePrefilterMinGapPct: 3.5,
-  livePrefilterMinClose: 4.5,
-  livePrefilterMinDollarVolume: 1_000_000,
 };
 
 export const MIN_HISTORY_BARS = 61;
@@ -40,10 +38,12 @@ export interface TripleBeatMetrics {
   referencePrice: number;
   priorClose: number;
   gapPct: number;
+  maxGapPct: number;
   holdPct: number;
   extendedVolumeRatio: number;
   avgVolume20: number;
   avgDollarVolume20: number;
+  marketCap: number | null;
   baseHigh: number;
   baseRangePct: number;
   runUpPct: number;
@@ -76,7 +76,6 @@ export interface TripleBeatSetup {
 export interface TripleBeatScanReport {
   tradingDate: string;
   asOf: string;
-  gappersChecked: number;
   earningsFilings: number;
   setups: Array<TripleBeatSetup & { ticker: string; plan: TripleBeatPlan }>;
 }
@@ -117,25 +116,16 @@ export function gapBucket(gapPct: number): GapBucket {
   return '<4';
 }
 
-export function passesLivePrefilter(snapshot: { gapPct: number; priorClose: number; priorVolume: number }): boolean {
-  return snapshot.gapPct >= RULES.livePrefilterMinGapPct
-    && snapshot.priorClose >= RULES.livePrefilterMinClose
-    && snapshot.priorClose * snapshot.priorVolume >= RULES.livePrefilterMinDollarVolume;
-}
-
-// Replay: the trade-day open is known, so apply the exact price/gap/dollar-volume floors.
-export function passesReplayPrefilter(bars: DailyOhlcBar[], tradeOpen: number): boolean {
-  if (bars.length < 20) return false;
-  const priorClose = bars[bars.length - 1].close;
-  return tradeOpen >= RULES.minPrice
-    && pctChange(priorClose, tradeOpen) >= RULES.minGapPct
-    && mean(bars.slice(-20).map((bar) => bar.volume * bar.close)) >= RULES.minDollarVolume;
+// Replay: any liquid ticker-day; the earnings-filing check and overnight gap rules run per ticker.
+export function passesReplayPrefilter(bars: DailyOhlcBar[]): boolean {
+  return bars.length >= 20 && mean(bars.slice(-20).map((bar) => bar.volume * bar.close)) >= RULES.minDollarVolume;
 }
 
 export function evaluateTripleBeatSetup(
   history: DailyOhlcBar[],
   extended: ExtendedHoursStats,
   earnings: EarningsRead,
+  sharesOutstanding: number | null = null,
 ): TripleBeatSetup | null {
   const bars = history.slice(-260);
   const n = bars.length;
@@ -155,10 +145,12 @@ export function evaluateTripleBeatSetup(
     referencePrice: extended.last,
     priorClose: prior.close,
     gapPct: pctChange(prior.close, extended.last),
+    maxGapPct: pctChange(prior.close, extended.high),
     holdPct: extended.high === extended.low ? 100 : ((extended.last - extended.low) / (extended.high - extended.low)) * 100,
     extendedVolumeRatio: extended.volume / avgVolume20,
     avgVolume20,
     avgDollarVolume20: mean(last20.map((bar) => bar.volume * bar.close)),
+    marketCap: sharesOutstanding == null ? null : sharesOutstanding * extended.last,
     baseHigh,
     baseRangePct: pctChange(baseLow, baseHigh),
     runUpPct: pctChange(closes[n - 1 - RULES.runUpPeriod], prior.close),
@@ -171,9 +163,11 @@ export function evaluateTripleBeatSetup(
   const riskAtr = atr14 > 0 ? riskPerShare / atr14 : Number.POSITIVE_INFINITY;
 
   const failedFilters: string[] = [];
-  if (metrics.referencePrice < RULES.minPrice) failedFilters.push('Price < $5');
+  if (metrics.referencePrice < RULES.minPrice) failedFilters.push('Price < $3');
   if (metrics.avgDollarVolume20 < RULES.minDollarVolume) failedFilters.push('Dollar volume < $5M');
-  if (metrics.gapPct < RULES.minGapPct) failedFilters.push('Gap < 4%');
+  if (metrics.marketCap != null && metrics.marketCap < RULES.minMarketCap) failedFilters.push('Market cap < $250M');
+  if (metrics.maxGapPct < RULES.minMaxGapPct) failedFilters.push('Overnight high < +5%');
+  if (metrics.gapPct < RULES.minCurrentGapPct) failedFilters.push('Below prior close');
   if (riskPerShare <= 0 || atr14 <= 0) failedFilters.push('No entry/stop');
   const qualified = failedFilters.length === 0;
 
