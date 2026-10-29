@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { agentJobs, agentScheduledRuns } from '@/lib/db/schema';
 import type { AgentDb } from './db';
+import type { JobType } from './types';
 
 const DEFAULT_CHECK_INTERVAL_MS = 60_000;
 const DEFAULT_INTRADAY_CRON_HOUR_ET = 12;
@@ -15,10 +16,15 @@ function readDefaultIntradayCronHour(): number {
   return Number(process.env.MACRO_INTRADAY_HOUR_ET) || DEFAULT_INTRADAY_CRON_HOUR_ET;
 }
 
-type CronTriggerType = 'macro-summary' | 'macro-intraday';
+function readDefaultParabolicCronHour(): number {
+  return Number(process.env.PARABOLIC_CRON_HOUR_ET) || 9;
+}
+
+type CronTriggerType = 'macro-summary' | 'macro-intraday' | 'parabolic-scan';
 type CronJobInputFactory = (tradingDate: string) => Record<string, unknown>;
 type RunTickOptions = {
   triggerType: CronTriggerType;
+  jobType: JobType;
   jobInput: CronJobInputFactory;
 };
 
@@ -90,7 +96,7 @@ async function runTick(
       id: jobId,
       agentId: 'orchestrator',
       userId: 'system-agent-user',
-      jobType: 'macro-summary',
+      jobType: options.jobType,
       status: 'queued',
       input: options.jobInput(tradingDate),
     });
@@ -114,6 +120,7 @@ export function startMacroCron(
   const executeTick = () => {
     void runTick(db, hourEt, {
       triggerType: 'macro-summary',
+      jobType: 'macro-summary',
       jobInput: (tradingDate) => ({ tradingDate }),
     }).catch((error) => {
       console.error('macro cron tick failed', { error });
@@ -140,9 +147,37 @@ export function startIntradayCron(
   const executeTick = () => {
     void runTick(db, hourEt, {
       triggerType: 'macro-intraday',
+      jobType: 'macro-summary',
       jobInput: (tradingDate) => ({ tradingDate, intradayUpdate: true }),
     }).catch((error) => {
       console.error('intraday cron tick failed', { error });
+    });
+  };
+
+  executeTick();
+
+  const timer = setInterval(executeTick, checkIntervalMs);
+
+  return {
+    stop: async () => {
+      clearInterval(timer);
+    },
+  };
+}
+
+export function startParabolicCron(
+  db: AgentDb,
+  options: { hourEt?: number; checkIntervalMs?: number } = {},
+): MacroCronHandle {
+  const hourEt = options.hourEt ?? readDefaultParabolicCronHour();
+  const checkIntervalMs = options.checkIntervalMs ?? DEFAULT_CHECK_INTERVAL_MS;
+  const executeTick = () => {
+    void runTick(db, hourEt, {
+      triggerType: 'parabolic-scan',
+      jobType: 'parabolic-scan',
+      jobInput: (tradingDate) => ({ tradingDate }),
+    }).catch((error) => {
+      console.error('parabolic cron tick failed', { error });
     });
   };
 

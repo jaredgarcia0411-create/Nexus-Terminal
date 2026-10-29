@@ -11,6 +11,9 @@ import {
   orchestratorMarketPulseBlueprint,
 } from './blueprints/orchestrator-market-pulse';
 import {
+  orchestratorParabolicScanBlueprint,
+} from './blueprints/orchestrator-parabolic-scan';
+import {
   smallCapResearchBlueprint,
 } from './blueprints/small-cap-research';
 import {
@@ -66,12 +69,13 @@ export const AGENT_CONFIGS: Record<AgentId, AgentConfig> = {
     displayName: 'Orchestrator',
     llmLane: 'interactive',
     temperature: 0.3,
-    capabilities: ['chat', 'macro-summary', 'market-pulse'],
+    capabilities: ['chat', 'macro-summary', 'market-pulse', 'parabolic-scan'],
     rolePromptPath: 'lib/agents/prompts/orchestrator.md',
     blueprints: {
       chat: orchestratorChatBlueprint,
       'macro-summary': orchestratorMacroSummaryBlueprint,
       'market-pulse': orchestratorMarketPulseBlueprint,
+      'parabolic-scan': orchestratorParabolicScanBlueprint,
     },
     blueprintResolver: (job) => {
       if (job.jobType === 'macro-summary') {

@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { agentReports, agentStepEffects } from '@/lib/db/schema';
+import type { ParabolicScanReport } from '@/lib/parabolic/scan';
 import { recordStepEffect } from './checkpoints';
 import type { AgentDb } from './db';
 import type {
@@ -227,6 +228,10 @@ function selectEmbed(report: AgentReport): DiscordEmbed {
     && (report.reportType === 'research' || report.reportType === 'momentum-scan')
   ) {
     return buildSwingSetupEmbed(report);
+  }
+
+  if (report.reportType === 'parabolic-scan') {
+    return buildParabolicScanEmbed(report);
   }
 
   if (report.reportType === 'system-alert' || report.reportType.startsWith('system-')) {
@@ -759,6 +764,59 @@ export function buildMacroIntradayEmbed(report: AgentReport): DiscordEmbed {
   );
 }
 
+export function buildParabolicScanEmbed(report: AgentReport): DiscordEmbed {
+  const payload = report.reportJson as ParabolicScanReport;
+  const pct = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
+  const usd = (value: number) => `$${value.toFixed(2)}`;
+  const rr = (value: number | null) => (value === null ? 'n/a' : value.toFixed(1));
+  const size = (fraction: number) => (fraction === 0 ? 'Watch only' : `${fraction}R`);
+  const asOfEt = new Date(payload.asOf).toLocaleTimeString('en-US', {
+    timeZone: 'America/New_York',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  const lines = [
+    `${report.summary ?? ''} Premarket data as of ${asOfEt} ET; ${payload.candidatesChecked} candidates checked.`,
+    '⚠️ Confirm borrow before shorting. Entry is unconfirmed — wait for a VWAP or opening-range breakdown. Scores are research heuristics.',
+  ];
+  if (payload.setups.length > 0) {
+    lines.push(
+      '```',
+      ...payload.setups.slice(0, 15).map((setup, index) => [
+        String(index + 1).padStart(2),
+        setup.ticker.padEnd(5),
+        setup.grade.padEnd(4),
+        `${setup.score}/${setup.maxScore}`.padEnd(5),
+        `gap ${pct(setup.metrics.tradeDayGapPct)}`.padEnd(12),
+        `10SMA ${pct(setup.metrics.ext10Pct)}`.padEnd(14),
+        size(setup.plan.riskFraction),
+      ].join(' ')),
+      '```',
+    );
+  }
+
+  const fields = payload.setups.slice(0, 5).map((setup, index) => {
+    const { metrics, plan } = setup;
+    const missing = setup.scoreItems
+      .filter((item) => item.status !== 'met')
+      .map((item) => (item.status === 'unknown' ? `${item.label} (unknown)` : item.label));
+    return buildField(
+      `#${index + 1} ${setup.ticker} — ${setup.grade} ${setup.score}/${setup.maxScore} • ${size(plan.riskFraction)}`,
+      [
+        `Entry ~${usd(plan.entry)} (PM last) • Stop ${usd(plan.stop)} (PM high + 0.1 ATR) • Risk/sh ${usd(plan.riskPerShare)}`,
+        `T1 ${usd(plan.target1)} prior close (R:R ${rr(plan.target1RR)}) • T2 ${usd(plan.target2)} 9EMA (R:R ${rr(plan.target2RR)})`,
+        `20SMA ${pct(metrics.ext20Pct)} • 50SMA ${metrics.atrAbove50 === null ? 'n/a' : `${metrics.atrAbove50.toFixed(1)} ATR`} • Avg vol ${(metrics.avgVolume20 / 1_000_000).toFixed(1)}M`,
+        `Green ${metrics.greenStreak} • Gap-ups ${metrics.gapUpStreak} • Range↑ ${metrics.rangeExpansions}/3 • Vol↑ ${metrics.volumeExpansions}/3`,
+        `Missing: ${missing.join(', ') || 'none'}`,
+      ].join('\n'),
+      false,
+    );
+  });
+
+  return buildBaseEmbed(report, fields, lines.join('\n'));
+}
+
 export function buildSystemEmbed(
   title: string,
   detail: string,
@@ -781,6 +839,8 @@ export function resolveWebhookUrl(agentId: AgentId, reportType: string): string 
     envName = 'DISCORD_WEBHOOK_MACRO_DAILY';
   } else if (agentId === 'orchestrator' && reportType === 'macro-intraday') {
     envName = 'DISCORD_WEBHOOK_MACRO_DAILY';
+  } else if (agentId === 'orchestrator' && reportType === 'parabolic-scan') {
+    envName = 'DISCORD_WEBHOOK_PARABOLIC';
   } else if (agentId === 'orchestrator' && (reportType === 'system-alert' || reportType.startsWith('system-'))) {
     envName = 'DISCORD_WEBHOOK_SYSTEM';
   } else if (agentId === 'small-cap-trader' && reportType === 'pre-market-scan') {

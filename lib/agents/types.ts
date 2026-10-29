@@ -9,7 +9,8 @@ export type JobType =
   | 'market-pulse'
   | 'pre-market-scan'
   | 'momentum-scan'
-  | 'pattern-check';
+  | 'pattern-check'
+  | 'parabolic-scan';
 
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed';
 

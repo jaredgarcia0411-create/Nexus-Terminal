@@ -102,6 +102,10 @@ describe('agent config registry', () => {
       jobType: 'market-pulse',
     })).id).toBe('orchestrator:market-pulse');
     expect(resolveBlueprint(createJob({
+      agentId: 'orchestrator',
+      jobType: 'parabolic-scan',
+    })).id).toBe('orchestrator:parabolic-scan');
+    expect(resolveBlueprint(createJob({
       agentId: 'small-cap-trader',
       jobType: 'research',
     })).id).toBe('small-cap-trader:research');

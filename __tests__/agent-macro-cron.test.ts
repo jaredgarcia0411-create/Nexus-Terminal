@@ -6,7 +6,7 @@ vi.mock('node:crypto', () => ({
   randomUUID: randomUUIDMock,
 }));
 
-import { startIntradayCron, startMacroCron } from '@/lib/agents/macro-cron';
+import { startIntradayCron, startMacroCron, startParabolicCron } from '@/lib/agents/macro-cron';
 import type { AgentDb } from '@/lib/agents/db';
 
 type TxFailurePlan = Record<number, 'insert' | 'update'>;
@@ -331,6 +331,98 @@ describe('startIntradayCron', () => {
 
     expect(db.execute).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(db._state.executeQueries[0])).toContain('macro-intraday');
+    expect(db.transaction).toHaveBeenCalledTimes(2);
+    expect(db._state.insertedJobs).toHaveLength(1);
+    expect(db._state.updateValues).toHaveLength(1);
+
+    await handle.stop();
+  });
+});
+
+describe('startParabolicCron', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    randomUUIDMock.mockReset()
+      .mockReturnValueOnce('scheduled-run-row')
+      .mockReturnValueOnce('macro-job-1')
+      .mockReturnValueOnce('scheduled-run-row-2')
+      .mockReturnValueOnce('macro-job-2')
+      .mockReturnValue('extra-id');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('skips ticks that are outside the configured America/New_York trigger hour', async () => {
+    vi.setSystemTime(new Date('2026-04-07T12:00:00.000Z'));
+    const db = createDb();
+    const handle = startParabolicCron(db, { hourEt: 9, checkIntervalMs: 1_000 });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(db.execute).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
+
+    await handle.stop();
+  });
+
+  it('skips weekend ticks even when the trigger hour matches', async () => {
+    // 2026-04-12 is a Sunday. 13:00 UTC = 09:00 ET, matching the parabolic trigger hour.
+    vi.setSystemTime(new Date('2026-04-12T13:00:00.000Z'));
+    const db = createDb([[{ id: 'scheduled-run-row' }]]);
+    const handle = startParabolicCron(db, { hourEt: 9, checkIntervalMs: 1_000 });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(db.execute).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
+
+    await handle.stop();
+  });
+
+  it('claims the scheduled run, enqueues one parabolic-scan job, and marks the run completed', async () => {
+    vi.setSystemTime(new Date('2026-04-07T13:00:00.000Z'));
+    const db = createDb([[{ id: 'scheduled-run-row' }]]);
+    const handle = startParabolicCron(db, { hourEt: 9, checkIntervalMs: 1_000 });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(db.execute).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(db._state.executeQueries[0])).toContain('parabolic-scan');
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(db._state.insertedJobs).toEqual([{
+      id: 'macro-job-1',
+      agentId: 'orchestrator',
+      userId: 'system-agent-user',
+      jobType: 'parabolic-scan',
+      status: 'queued',
+      input: { tradingDate: '2026-04-07' },
+    }]);
+    expect(db._state.updateValues).toEqual([{
+      jobId: 'macro-job-1',
+      status: 'completed',
+      completedAt: expect.any(Object),
+    }]);
+
+    await handle.stop();
+  });
+
+  it('dedupes concurrent ticks by skipping job creation when the on-conflict insert returns no row', async () => {
+    vi.setSystemTime(new Date('2026-04-07T13:00:00.000Z'));
+    const db = createDb([
+      [{ id: 'scheduled-run-row' }],
+      [],
+    ]);
+    const handle = startParabolicCron(db, { hourEt: 9, checkIntervalMs: 1_000 });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(db.execute).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(db._state.executeQueries[0])).toContain('parabolic-scan');
     expect(db.transaction).toHaveBeenCalledTimes(2);
     expect(db._state.insertedJobs).toHaveLength(1);
     expect(db._state.updateValues).toHaveLength(1);

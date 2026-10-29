@@ -10,6 +10,7 @@ vi.mock('@/lib/agents/checkpoints', () => ({
 
 import {
   buildMacroIntradayEmbed,
+  buildParabolicScanEmbed,
   buildResearchEmbed,
   buildMacroSummaryEmbed,
   buildSwingSetupEmbed,
@@ -409,14 +410,29 @@ describe('agent discord helpers', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     vi.stubEnv('DISCORD_WEBHOOK_MACRO_DAILY', 'https://discord.test/macro-daily');
+    vi.stubEnv('DISCORD_WEBHOOK_PARABOLIC', 'https://discord.test/parabolic');
     vi.stubEnv('DISCORD_WEBHOOK_RESEARCH', 'https://discord.test/research');
     vi.stubEnv('DISCORD_WEBHOOK_SWING_SETUPS', 'https://discord.test/swing-setups');
 
     expect(resolveWebhookUrl('orchestrator', 'macro-summary')).toBe('https://discord.test/macro-daily');
     expect(resolveWebhookUrl('orchestrator', 'macro-intraday')).toBe('https://discord.test/macro-daily');
+    expect(resolveWebhookUrl('orchestrator', 'parabolic-scan')).toBe('https://discord.test/parabolic');
     expect(resolveWebhookUrl('small-cap-trader', 'research')).toBe('https://discord.test/research');
     expect(resolveWebhookUrl('swing-trader', 'research')).toBe('https://discord.test/swing-setups');
     expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('renders an empty parabolic scan without a code block or fields', () => {
+    const embed = buildParabolicScanEmbed(createStoredReport({
+      agentId: 'orchestrator', reportType: 'parabolic-scan',
+      summary: 'No qualified parabolic short setups.',
+      reportJson: { tradingDate: '2026-04-07', asOf: '2026-04-07T13:00:00.000Z', candidatesChecked: 12, setups: [] },
+    }) as never);
+    expect(embed.description).toContain('No qualified');
+    expect(embed.description).toContain('12 candidates checked');
+    expect(embed.description).toContain('Confirm borrow');
+    expect(embed.description).not.toContain('```');
+    expect(embed.fields).toBeUndefined();
   });
 
   it('returns null for unknown webhook combinations and logs the mismatch once', () => {

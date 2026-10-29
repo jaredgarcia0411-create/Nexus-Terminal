@@ -1,6 +1,6 @@
 import { AGENT_CONFIGS } from '../lib/agents/config';
 import { getAgentDb } from '../lib/agents/db';
-import { startIntradayCron, startMacroCron, type MacroCronHandle } from '../lib/agents/macro-cron';
+import { startIntradayCron, startMacroCron, startParabolicCron, type MacroCronHandle } from '../lib/agents/macro-cron';
 import { startWorker, type WorkerHandle } from '../lib/agents/worker';
 import type { AgentId } from '../lib/agents/types';
 
@@ -31,6 +31,7 @@ async function main() {
   let worker: WorkerHandle | null = null;
   let macroCron: MacroCronHandle | null = null;
   let intradayCron: MacroCronHandle | null = null;
+  let parabolicCron: MacroCronHandle | null = null;
   let shuttingDown = false;
 
   try {
@@ -41,6 +42,7 @@ async function main() {
     });
     if (agentId === 'orchestrator') {
       macroCron = startMacroCron(db);
+      parabolicCron = startParabolicCron(db);
       if (process.env.MACRO_INTRADAY_ENABLED === '1') {
         intradayCron = startIntradayCron(db);
       }
@@ -58,6 +60,9 @@ async function main() {
     }
     if (intradayCron) {
       await intradayCron.stop();
+    }
+    if (parabolicCron) {
+      await parabolicCron.stop();
     }
     process.exit(1);
   }
@@ -80,6 +85,9 @@ async function main() {
       }
       if (intradayCron) {
         await intradayCron.stop();
+      }
+      if (parabolicCron) {
+        await parabolicCron.stop();
       }
       logEvent('entrypoint.shutdown_complete', { agentId, signal });
       process.exit(0);
