@@ -21,6 +21,8 @@ const RULES = {
   minExtendedVolumeRatio: 0.25,
   minHoldPct: 65,
   maxStopAtr: 1.5,
+  // Jul–Aug 2026 replay: stops under 0.5 ATR sat inside normal noise (71–90% stopped on day 0, −16R over 40 trades).
+  minStopAtr: 0.5,
   target1R: 2,
   atrPeriod: 14,
   trailEmaPeriod: 10,
@@ -169,6 +171,7 @@ export function evaluateTripleBeatSetup(
   if (metrics.maxGapPct < RULES.minMaxGapPct) failedFilters.push('Overnight high < +5%');
   if (metrics.gapPct < RULES.minCurrentGapPct) failedFilters.push('Below prior close');
   if (riskPerShare <= 0 || atr14 <= 0) failedFilters.push('No entry/stop');
+  else if (riskAtr < RULES.minStopAtr) failedFilters.push('Stop < 0.5 ATR');
   const qualified = failedFilters.length === 0;
 
   const beat = (status: EarningsRead['epsBeat']): ScoreItemStatus => (
@@ -222,6 +225,7 @@ export function measureTripleBeatOutcome(
   history: DailyOhlcBar[],
   plan: TripleBeatPlan,
   sessions: DailyOhlcBar[],
+  day0Minutes: Array<{ high: number; low: number }> = [],
 ): TripleBeatOutcome {
   const day0 = sessions[0];
   if (day0.high < plan.entry) {
@@ -233,16 +237,31 @@ export function measureTripleBeatOutcome(
   const fill = Math.max(day0.open, plan.entry);
   const risk = fill - plan.stop;
   const toR = (price: number) => (price - fill) / risk;
-  const stoppedOutDay0 = day0.low <= plan.stop;
   const target = fill + RULES.target1R * risk;
   const window = sessions.slice(0, RULES.maxSwingSessions);
   const closes = history.map((bar) => bar.close);
   let hit2R = false;
   let exit: number | null = null;
   let daysHeld = window.length - 1;
+  // A daily bar can't say whether the stop or the target came first, so without day-0 minute bars a stop touch wins.
+  // Minute bars also ignore dips below the stop that happen before the entry triggers.
+  let stoppedOutDay0 = day0.low <= plan.stop;
+  if (day0Minutes.length > 0) {
+    stoppedOutDay0 = false;
+    let inTrade = false;
+    for (const bar of day0Minutes) {
+      inTrade ||= bar.high >= plan.entry;
+      if (!inTrade) continue;
+      if (bar.low <= plan.stop) {
+        stoppedOutDay0 = true;
+        break;
+      }
+      if (bar.high >= target) hit2R = true;
+    }
+  }
   for (let k = 0; k < window.length; k += 1) {
     const bar = window[k];
-    if (bar.low <= plan.stop) {
+    if (k === 0 ? stoppedOutDay0 : bar.low <= plan.stop) {
       exit = plan.stop;
       daysHeld = k;
       break;

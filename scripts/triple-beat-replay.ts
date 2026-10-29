@@ -9,7 +9,8 @@
  * prior session's 16:00 ET and 09:00 ET on the trade date, matching the live cron; gap, price and market-cap rules
  * then use minute bars and shares outstanding as of the prior session. The first run pulls SEC filing history for
  * every liquid ticker (roughly 10–20 minutes at SEC's 10 requests/second). Entry is a break of the premarket high,
- * filled at the open when it gaps above. A day that touches the stop counts as stopped before any target.
+ * filled at the open when it gaps above. Day 0 is walked in minute bars so the stop and 2R target resolve in order;
+ * on later days a bar that touches the stop counts as stopped before any target.
  * LLM earnings reads are cached in
  * ~/triple-beat-llm-cache.json so reruns only call the LLM for new ticker/dates. Tickers missing from
  * today's SEC CIK map (delisted/renamed) are skipped.
@@ -21,7 +22,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import Papa from 'papaparse';
-import { fetchGroupedDailyAggregates, fetchSharesOutstanding, fetchSplitHistory, type DailyOhlcBar } from '@/lib/massive-market';
+import { fetchGroupedDailyAggregates, fetchMassiveAggregateBars, fetchSharesOutstanding, fetchSplitHistory, type DailyOhlcBar } from '@/lib/massive-market';
 import { addCalendarDays, fetchDailyBars } from '@/lib/parabolic/data';
 import { getRecentFilings, type SecFiling } from '@/lib/sec/submissions';
 import { buildEarningsEvidence, classifyEarnings, UNKNOWN_EARNINGS_READ, type EarningsRead } from '@/lib/triple-beat/classify';
@@ -127,7 +128,14 @@ async function main() {
       }
       const setup = evaluateTripleBeatSetup(history, asOfExtended, earnings, sharesOutstanding)!;
       const { metrics, plan } = setup;
-      const outcome = plan ? measureTripleBeatOutcome(history, plan, sessions) : null;
+      const open = nyDateTimeToEpoch(date, '09:30:00')!;
+      const close = nyDateTimeToEpoch(date, '16:00:00')!;
+      const day0Minutes = plan && sessions[0].high >= plan.entry
+        ? (await fetchMassiveAggregateBars({ ticker, multiplier: '1', timespan: 'minute', from: String(open), to: String(close) }))
+          .filter((bar) => Number(bar.t) >= open && Number(bar.t) < close && bar.h != null && bar.l != null)
+          .map((bar) => ({ high: Number(bar.h) / factor, low: Number(bar.l) / factor }))
+        : [];
+      const outcome = plan ? measureTripleBeatOutcome(history, plan, sessions, day0Minutes) : null;
       return {
         date, ticker, gapBucket: gapBucket(metrics.gapPct), grade: setup.grade, score: setup.score,
         strictTripleBeat: setup.strictTripleBeat,
