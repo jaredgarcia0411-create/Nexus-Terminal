@@ -799,20 +799,21 @@ describe('agent blueprints', () => {
 
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       systemPrompt: expect.any(String),
+      maxTokens: 12_000,
       userMessage: expect.stringContaining('Source index:\n'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('RSS Headlines:\n'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('FRED rates data:\n'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Recent daily OHLC bars (use for key level identification):\n'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).not.toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Fear & Greed'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(result.data).toEqual({
       marketBias: 'neutral',
       summary: 'Macro summary',
@@ -937,19 +938,19 @@ describe('agent blueprints', () => {
 
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Sentiment (crypto-derived Fear & Greed Index'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Score: 23/100 - Extreme Fear'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Prior day context (use to write delta sentences in the "deltas" field):'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Prior trading date: 2026-04-07'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Prior SPY key levels: 518.00 / 525.00'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(result.data).toEqual(expect.objectContaining({
       sentimentData: {
         score: 23,
@@ -2347,24 +2348,28 @@ describe('agent blueprints', () => {
         userMessage: expect.stringContaining('<untrusted-news>'),
       }),
       'background',
+      { timeoutMs: 180_000 },
     );
     expect(callLlmMock).toHaveBeenCalledWith(
       expect.objectContaining({
         userMessage: expect.stringContaining('<untrusted-market-snapshot>'),
       }),
       'background',
+      { timeoutMs: 180_000 },
     );
     expect(callLlmMock).toHaveBeenCalledWith(
       expect.objectContaining({
         userMessage: expect.stringContaining('<untrusted-fred-data>'),
       }),
       'background',
+      { timeoutMs: 180_000 },
     );
     expect(callLlmMock).toHaveBeenCalledWith(
       expect.objectContaining({
         userMessage: expect.stringContaining('<untrusted-ohlc-bars>'),
       }),
       'background',
+      { timeoutMs: 180_000 },
     );
   });
 
@@ -2414,6 +2419,7 @@ describe('agent blueprints', () => {
         userMessage: expect.stringContaining('<untrusted-prior-day-context>'),
       }),
       'background',
+      { timeoutMs: 180_000 },
     );
   });
 

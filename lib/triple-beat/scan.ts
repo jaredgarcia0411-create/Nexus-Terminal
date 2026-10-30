@@ -15,6 +15,7 @@ const RULES = {
   basePeriod: 60,
   maxBaseRangePct: 40,
   runUpPeriod: 20,
+  // Sizing gate only, not scored: A/A+ setups with wider stops rarely reached 2R in the Apr, Jul and Oct replays (+0.40R vs +0.12R avg).
   maxStopAtr: 1.5,
   // Jul–Aug 2026 replay: stops under 0.5 ATR sat inside normal noise (71–90% stopped on day 0, −16R over 40 trades).
   minStopAtr: 0.5,
@@ -173,7 +174,8 @@ export function evaluateTripleBeatSetup(
     status === 'yes' ? 'met' : status === 'no' ? 'not met' : 'unknown'
   );
   // Only items that separated winners from losers in the Apr, Jul and Oct 2026 replays (575 trades). Dropped for no edge
-  // or a backwards one: extended-hours volume, 10%+ gap, holding near highs, stop within 1.5 ATR, run-up, $20M volume.
+  // or a backwards one: extended-hours volume, 10%+ gap, holding near highs, run-up, $20M volume. Stop width still gates
+  // sizing (maxStopAtr): across all grades it had no edge, but within A/A+ it did.
   const items: Array<[string, number, boolean | ScoreItemStatus]> = [
     ['EPS beat', 8, beat(earnings.epsBeat)],
     ['Revenue beat', 8, beat(earnings.revenueBeat)],
