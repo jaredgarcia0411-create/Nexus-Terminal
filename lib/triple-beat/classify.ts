@@ -70,9 +70,9 @@ export async function classifyEarnings(ticker: string, evidence: string): Promis
       userMessage: `Ticker: ${ticker}\n\n${evidence}`,
       temperature: 0,
       // Reasoning models (the background lane runs MiniMax) spend tokens thinking before the JSON;
-      // a tight cap cuts the answer off mid-string.
-      maxTokens: 4096,
-    }, 'background');
+      // a tight cap cuts the answer off mid-string. Same headroom as the macro briefing, which hit the 4096 cap in Oct 2026.
+      maxTokens: 12_000,
+    }, 'background', { timeoutMs: 180_000 });
     const json = response.content.replace(/^```(?:json)?\s*|\s*```$/g, '');
     return verifyEarningsRead(earningsReadSchema.parse(JSON.parse(json)), evidence);
   } catch (error) {

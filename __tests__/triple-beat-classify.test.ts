@@ -26,7 +26,7 @@ describe('verified earnings classification', () => {
   it('parses fenced JSON, verifies it, and uses the deterministic background lane', async () => {
     vi.mocked(callLlm).mockResolvedValue({ content: '```json\n' + JSON.stringify(read) + '\n```', inputTokens: 100, outputTokens: 0, durationMs: 1, modelUsed: 'test' });
     expect(await classifyEarnings('NCLH', evidence)).toEqual(read);
-    expect(callLlm).toHaveBeenCalledWith(expect.objectContaining({ temperature: 0, maxTokens: 4096 }), 'background');
+    expect(callLlm).toHaveBeenCalledWith(expect.objectContaining({ temperature: 0, maxTokens: 12_000 }), 'background', { timeoutMs: 180_000 });
   });
   it('returns uncached null for network, malformed JSON, and invalid schema failures', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
