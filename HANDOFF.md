@@ -42,6 +42,7 @@ Outcome:
 - Parabolic: 2 of last 3 days green; ≥25% above a 10SMA that includes the current price OR ≥35% in 5 days; 3% trade-day gap kept.
 - Follow-up: replay walks day-0 minute bars (stop vs 2R order, pre-entry dips ignored); Jul 15–Aug 15 replay went −0.12R → +0.04R avg. Added Triple Beat filter `Stop < 0.5 ATR` (those 40 trades lost 16R). (Parabolic replay needs no such fix: entry is the open and there's no day-0 target, so any stop touch is a real stop-out.)
 - Score rebuilt from Apr/Jul/Oct replays (575 matured trades): kept EPS, revenue, guidance, 3-month base, clears 3-month high, price $10+ (45 pts; B 26+, A 34+, A+ 40+). Score 26+ averaged +0.29R vs −0.06R below, positive in all three seasons; items are in-sample, so watch live posts. Unknown earnings (LLM failure) now grade Pass and don't post.
+- Parabolic replay 2024-11-01→2026-10-15 (2,040 trades, short at open, cover at close): +0.32R year 1, +0.08R year 2 (2026 Q3 −0.15R); top 5% of trades carry all the profit. Grades don't rank out of sample; wider stops (ATR or % of price) and covering at the gap fill both did worse. Card now drops grade sizing and says hold past the gap fill; scan/score unchanged. Replay CSV adds `day0Close`/`highBeforeFill` (minute bars) for stop tests. Next: spec an intraday entry-trigger test (opening-range/VWAP break vs short at the open).
 
 Validation:
 - `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npm test` (957/957), `npm run build`

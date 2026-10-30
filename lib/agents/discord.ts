@@ -820,7 +820,8 @@ export function buildParabolicScanEmbeds(report: AgentReport): DiscordEmbed[] {
     title,
     description: `🟢 A ${count('A')} · 🟡 B ${count('B')} · ⚪ C ${count('C')} · ${scanned}${overflow}`,
     color: PARABOLIC_HEADER_COLOR,
-    footer: { text: '⚠️ Confirm borrow. Entry needs a VWAP or opening-range break.' },
+    // 2024-11 to 2026-10 replay: grades didn't rank results, and covering everything at the gap fill underperformed holding to the close.
+    footer: { text: '⚠️ Confirm borrow. Entry needs a VWAP or opening-range break. Same size for every grade. Gap fill isn\'t the exit: hold to the close unless stopped.' },
   };
 
   const cards = shown.map((setup): DiscordEmbed => {
@@ -831,14 +832,14 @@ export function buildParabolicScanEmbeds(report: AgentReport): DiscordEmbed[] {
       return `${icon} ${name === 'Green' ? `Green ${metrics.greenStreak}` : name}`;
     });
     return {
-      title: `${setup.ticker} · ${setup.grade} · ${setup.score}/${setup.maxScore} · ${PARABOLIC_SIZE_LABELS[plan.riskFraction]}`,
+      title: `${setup.ticker} · ${setup.grade} · ${setup.score}/${setup.maxScore}`,
       color: PARABOLIC_GRADE_COLORS[setup.grade],
       fields: [
         buildField('Entry', usd(plan.entry)),
         buildField('Stop', usd(plan.stop)),
         buildField('Risk / share', usd(plan.riskPerShare)),
-        buildField('T1 prior close', target(plan.target1, plan.target1RR)),
-        buildField('T2 9EMA', target(plan.target2, plan.target2RR)),
+        buildField('Gap fill', target(plan.target1, plan.target1RR)),
+        buildField('9EMA', target(plan.target2, plan.target2RR)),
         buildField('Gap · 10SMA', `${pct(metrics.tradeDayGapPct)} · ${pct(metrics.ext10Pct, 0)}`),
       ],
       footer: { text: checklist.join(' ') },

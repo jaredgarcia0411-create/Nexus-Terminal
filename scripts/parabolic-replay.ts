@@ -17,10 +17,10 @@ import { writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import Papa from 'papaparse';
-import { fetchGroupedDailyAggregates, fetchSharesOutstanding, fetchSplitHistory, type DailyOhlcBar } from '@/lib/massive-market';
+import { fetchGroupedDailyAggregates, fetchMassiveAggregateBars, fetchSharesOutstanding, fetchSplitHistory, type DailyOhlcBar } from '@/lib/massive-market';
 import { addCalendarDays, fetchDailyBars, fetchPremarketStats } from '@/lib/parabolic/data';
 import { MIN_HISTORY_BARS, evaluateParabolicSetup, measureReplayOutcome, passesReplayPrefilter } from '@/lib/parabolic/scan';
-import { getNextTradingSession, getPreviousTradingSession } from '@/lib/time-utils';
+import { getNextTradingSession, getPreviousTradingSession, nyDateTimeToEpoch } from '@/lib/time-utils';
 
 function readArg(name: string): string | undefined {
   const index = process.argv.indexOf('--' + name);
@@ -89,6 +89,23 @@ async function main() {
       if (!setup) return null;
       const { metrics, plan } = setup;
       const outcome = plan ? measureReplayOutcome(history.slice(-60), plan, sessions) : null;
+      // For testing other stops: the highest price before the gap filled back to the prior close, from day-0 minute bars.
+      const open = nyDateTimeToEpoch(date, '09:30:00')!;
+      const close = nyDateTimeToEpoch(date, '16:00:00')!;
+      const day0Minutes = plan
+        ? (await fetchMassiveAggregateBars({ ticker, multiplier: '1', timespan: 'minute', from: String(open), to: String(close) }))
+          .filter((bar) => Number(bar.t) >= open && Number(bar.t) < close && bar.h != null && bar.l != null)
+          .map((bar) => ({ high: Number(bar.h) / factor, low: Number(bar.l) / factor }))
+        : [];
+      let highSoFar = sessions[0].open;
+      let highBeforeFill: number | null = null;
+      for (const bar of day0Minutes) {
+        highSoFar = Math.max(highSoFar, bar.high);
+        if (bar.low <= metrics.priorClose) {
+          highBeforeFill = highSoFar;
+          break;
+        }
+      }
       return {
         date, ticker, qualified: setup.qualified, grade: setup.grade, score: setup.score,
         failedFilters: setup.failedFilters.join('; '), riskFraction: rounded(plan?.riskFraction),
@@ -105,6 +122,8 @@ async function main() {
         stoppedOutDay0: outcome?.stoppedOutDay0 ?? '', dayR: rounded(outcome?.dayR),
         mfeDayR: rounded(outcome?.mfeDayR), maeDayR: rounded(outcome?.maeDayR),
         mfe10R: rounded(outcome?.mfe10R), mae10R: rounded(outcome?.mae10R), daysTo9Ema: rounded(outcome?.daysTo9Ema),
+        atr14: rounded(metrics.atr14), day0Close: rounded(sessions[0].close), day0High: rounded(sessions[0].high),
+        minuteBars: day0Minutes.length, highBeforeFill: rounded(highBeforeFill),
       };
     }));
     for (const [index, result] of results.entries()) {

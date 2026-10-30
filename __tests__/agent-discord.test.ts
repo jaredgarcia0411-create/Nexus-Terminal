@@ -488,17 +488,17 @@ describe('agent discord helpers', () => {
       title: 'Parabolic shorts · Tue, Apr 7',
       description: '🟢 A 0 · 🟡 B 0 · ⚪ C 1 · 26 scanned · premarket as of 9:00 AM ET',
       color: 0x5865F2,
-      footer: { text: '⚠️ Confirm borrow. Entry needs a VWAP or opening-range break.' },
+      footer: { text: '⚠️ Confirm borrow. Entry needs a VWAP or opening-range break. Same size for every grade. Gap fill isn\'t the exit: hold to the close unless stopped.' },
     });
     expect(embeds[1]).toEqual({
-      title: 'NUWE · C · 8/17 · Watch only',
+      title: 'NUWE · C · 8/17',
       color: 0x80848E,
       fields: [
         { name: 'Entry', value: '$6.94', inline: true },
         { name: 'Stop', value: '$7.56', inline: true },
         { name: 'Risk / share', value: '$0.62', inline: true },
-        { name: 'T1 prior close', value: '$5.66 · 2.0R', inline: true },
-        { name: 'T2 9EMA', value: '$4.76 · 3.5R', inline: true },
+        { name: 'Gap fill', value: '$5.66 · 2.0R', inline: true },
+        { name: '9EMA', value: '$4.76 · 3.5R', inline: true },
         { name: 'Gap · 10SMA', value: '+22.6% · +51%', inline: true },
       ],
       footer: { text: '✅ Green 3 ✅ Gap ❌ Gap-ups ❌ Ranges ❌ Volume ❌ MA ext ❔ Climax ✅ Parabolic' },
@@ -523,7 +523,7 @@ describe('agent discord helpers', () => {
 
     const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
     expect(body.embeds.map((embed: { title: string }) => embed.title))
-      .toEqual(['Parabolic shorts · Tue, Apr 7', 'NUWE · C · 8/17 · Watch only']);
+      .toEqual(['Parabolic shorts · Tue, Apr 7', 'NUWE · C · 8/17']);
   });
 
   it('renders an empty Triple Beat scan as a gray card', () => {
