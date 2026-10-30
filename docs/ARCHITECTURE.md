@@ -118,9 +118,9 @@ Runs on a self-hosted box (OptiPlex), **not Vercel**.
 | `swing-trader` | same | Swing setup detection + alerts. |
 | `discord-bot` | `discord-bot/` (separate context) | Discord slash commands → calls back into `/api/agents/*`. |
 
-Compose file: `services/docker-compose.yml`. Env: `services/.env`. Restart on update:
+Compose file: `services/docker-compose.yml`. Env: `services/.env`. The agent images copy `lib/` at build time, so rebuild after any code change:
 ```bash
-cd services && docker compose down && docker compose up -d
+git pull && cd services && docker compose up --build -d
 docker compose logs -f --tail=20   # watch for entrypoint.started events
 ```
 
@@ -154,7 +154,7 @@ Small on purpose. Each hook has a clear domain:
 - **`lib/db/schema.ts`** → run `npm run db:generate` to create a numbered SQL file in `drizzle/`, inspect the SQL, then `npm run db:migrate` to apply it. Never `db:push` — see `MEMORY.md`.
 - **New API route** → confirm auth helper (requireUser / requireCronSecret / requireAgentAdmin / requireServiceAuth). Add Zod validation via `parseAndValidate()`.
 - **New SSE route** → add `export const dynamic = 'force-dynamic'` and `export const maxDuration = 60`; use `lib/sse.ts`.
-- **Agent config change** (`lib/agents/config.ts`) → restart services (`docker compose down && up -d`); env vars in `services/.env` must match.
+- **Agent config change** (`lib/agents/config.ts`) → rebuild services (`docker compose up --build -d`); env vars in `services/.env` must match.
 - **New env var** → add to: `.env.example` (local template), `services/.env.example` (services template), `services/docker-compose.yml` (explicit `environment:` line for each agent that needs it), Vercel project env settings.
 - **New shadcn primitive** → keep it in `components/ui/`, don't co-locate with feature components.
 
