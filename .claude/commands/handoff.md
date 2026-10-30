@@ -80,3 +80,18 @@ Show me a summary of:
 - What the sanity-check (Step 4) found and fixed
 - Number of files to change and estimated risk
 - Any open questions or decisions I need to make before Codex starts
+
+### Step 7: Run Codex in the background, then review
+
+If Step 6 raised open questions, ask them (AskUserQuestion), fold the answers into the spec, and re-run Step 4 on what changed. Once there are no open questions, start Codex yourself — don't wait for Jared to open another terminal:
+
+```bash
+codex exec --sandbox workspace-write -C <repo root> -o <scratchpad>/codex-last.md \
+  '$nexus-execute <Spec Title>. Execute the full active spec in HANDOFF.md in order. This is a non-interactive run: if a step is stale in a way that changes behavior, stop and report instead of guessing. Run the spec validation commands and report pass/fail for each. Skip manual steps that need network or secrets. Do not commit and do not mark the spec reviewed or ready to ship.' \
+  > <scratchpad>/codex-run.log 2>&1
+```
+
+- Run it with `run_in_background: true`. Name the skill explicitly (`$nexus-execute`) so Codex loads it.
+- `workspace-write` has no network, so Codex can't run replays, API smokes, or anything that reads `.env.local`. Tell Jared which manual steps Codex will skip.
+- While it runs, don't edit the spec's target files.
+- When the completion notification arrives, read `codex-last.md` and `git diff`, run any network smoke steps Codex skipped, then invoke the `review` skill on the spec title. Don't commit; Jared runs `/commit` after the review.

@@ -5,10 +5,11 @@
  * Reads MASSIVE_API_KEY from .env.local.
  * Usage: npx tsx scripts/parabolic-replay.ts --from 2024-11-01 --to 2026-10-15 [--out /path/file.csv]
  *
- * Entry uses the open as a proxy for a confirmed intraday trigger. A touched stop
- * counts as -1R; borrow fees, locates, and slippage are not modeled. Dates within
- * about two weeks of today have fewer forward sessions. Opening volume climax
- * is not measured, so the maximum score remains 17.
+ * Short-at-the-open (dayR) is the baseline; or5/or15/vwap/belowVwap columns replay intraday triggers (before 10:30 ET)
+ * with a high-of-day stop (HodR) and the card's premarket-high stop (PmR), covering at the close; a stop under
+ * 0.5 ATR from the entry counts as no trade. A touched
+ * stop counts as -1R; borrow fees, locates, and slippage are not modeled. Dates within about two weeks of
+ * today have fewer forward sessions. Opening volume climax is not measured, so the maximum score remains 17.
  */
 import dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
@@ -19,7 +20,7 @@ import { join } from 'node:path';
 import Papa from 'papaparse';
 import { fetchGroupedDailyAggregates, fetchMassiveAggregateBars, fetchSharesOutstanding, fetchSplitHistory, type DailyOhlcBar } from '@/lib/massive-market';
 import { addCalendarDays, fetchDailyBars, fetchPremarketStats } from '@/lib/parabolic/data';
-import { MIN_HISTORY_BARS, evaluateParabolicSetup, measureReplayOutcome, passesReplayPrefilter } from '@/lib/parabolic/scan';
+import { MIN_HISTORY_BARS, evaluateParabolicSetup, measureIntradayTriggers, measureReplayOutcome, passesReplayPrefilter } from '@/lib/parabolic/scan';
 import { getNextTradingSession, getPreviousTradingSession, nyDateTimeToEpoch } from '@/lib/time-utils';
 
 function readArg(name: string): string | undefined {
@@ -59,7 +60,7 @@ async function main() {
     if (datesChecked % 25 === 0) console.log(`pass 1: ${date} (${candidates.length} candidates)`);
   }
 
-  const rounded = (value: number | null | undefined) => value == null ? '' : Number(value.toFixed(2));
+  const rounded = (value: number | null | undefined): number | '' => value == null ? '' : Number(value.toFixed(2));
   const rows = [];
   for (let offset = 0; offset < candidates.length; offset += 10) {
     const results = await Promise.allSettled(candidates.slice(offset, offset + 10).map(async ({ ticker, date }) => {
@@ -89,14 +90,26 @@ async function main() {
       if (!setup) return null;
       const { metrics, plan } = setup;
       const outcome = plan ? measureReplayOutcome(history.slice(-60), plan, sessions) : null;
-      // For testing other stops: the highest price before the gap filled back to the prior close, from day-0 minute bars.
       const open = nyDateTimeToEpoch(date, '09:30:00')!;
       const close = nyDateTimeToEpoch(date, '16:00:00')!;
-      const day0Minutes = plan
-        ? (await fetchMassiveAggregateBars({ ticker, multiplier: '1', timespan: 'minute', from: String(open), to: String(close) }))
-          .filter((bar) => Number(bar.t) >= open && Number(bar.t) < close && bar.h != null && bar.l != null)
-          .map((bar) => ({ high: Number(bar.h) / factor, low: Number(bar.l) / factor }))
+      // From 04:00 ET so the VWAP trigger includes premarket volume.
+      const premarketStart = nyDateTimeToEpoch(date, '04:00:00')!;
+      const minutes = plan
+        ? (await fetchMassiveAggregateBars({ ticker, multiplier: '1', timespan: 'minute', from: String(premarketStart), to: String(close) }))
+          .filter((bar) => Number(bar.t) >= premarketStart && Number(bar.t) < close
+            && bar.o != null && bar.h != null && bar.l != null && bar.c != null)
+          .map((bar) => ({
+            time: Number(bar.t),
+            open: Number(bar.o) / factor,
+            high: Number(bar.h) / factor,
+            low: Number(bar.l) / factor,
+            close: Number(bar.c) / factor,
+            volume: Number(bar.v ?? 0) * factor,
+          }))
         : [];
+      const triggers = plan ? measureIntradayTriggers(plan, metrics.atr14, minutes, open, sessions[0].close) : null;
+      // For testing other stops: the highest price before the gap filled back to the prior close, from day-0 minute bars.
+      const day0Minutes = minutes.filter((bar) => bar.time >= open);
       let highSoFar = sessions[0].open;
       let highBeforeFill: number | null = null;
       for (const bar of day0Minutes) {
@@ -124,6 +137,10 @@ async function main() {
         mfe10R: rounded(outcome?.mfe10R), mae10R: rounded(outcome?.mae10R), daysTo9Ema: rounded(outcome?.daysTo9Ema),
         atr14: rounded(metrics.atr14), day0Close: rounded(sessions[0].close), day0High: rounded(sessions[0].high),
         minuteBars: day0Minutes.length, highBeforeFill: rounded(highBeforeFill),
+        or5Min: triggers?.or5.minutesAfterOpen ?? '', or5Entry: rounded(triggers?.or5.entry), or5HodStop: rounded(triggers?.or5.hodStop), or5HodR: rounded(triggers?.or5.hodR), or5PmR: rounded(triggers?.or5.pmR),
+        or15Min: triggers?.or15.minutesAfterOpen ?? '', or15Entry: rounded(triggers?.or15.entry), or15HodStop: rounded(triggers?.or15.hodStop), or15HodR: rounded(triggers?.or15.hodR), or15PmR: rounded(triggers?.or15.pmR),
+        vwapMin: triggers?.vwap.minutesAfterOpen ?? '', vwapEntry: rounded(triggers?.vwap.entry), vwapHodStop: rounded(triggers?.vwap.hodStop), vwapHodR: rounded(triggers?.vwap.hodR), vwapPmR: rounded(triggers?.vwap.pmR),
+        belowVwapMin: triggers?.belowVwap.minutesAfterOpen ?? '', belowVwapEntry: rounded(triggers?.belowVwap.entry), belowVwapHodStop: rounded(triggers?.belowVwap.hodStop), belowVwapHodR: rounded(triggers?.belowVwap.hodR), belowVwapPmR: rounded(triggers?.belowVwap.pmR),
       };
     }));
     for (const [index, result] of results.entries()) {
@@ -134,7 +151,7 @@ async function main() {
       }
     }
   }
-  rows.sort((a, b) => a.date.localeCompare(b.date) || b.score - a.score);
+  rows.sort((a, b) => a.date.localeCompare(b.date) || b.score - a.score || Number(b.ext10Pct) - Number(a.ext10Pct));
   writeFileSync(out, Papa.unparse(rows));
   for (const grade of ['A', 'B', 'C', 'Pass']) {
     const outcomes = rows.filter((row) => row.grade === grade && typeof row.dayR === 'number');
@@ -142,6 +159,30 @@ async function main() {
     const average = outcomes.reduce((sum, row) => sum + Number(row.dayR), 0) / outcomes.length;
     console.log(`${grade}: ${outcomes.length} setups, win rate ${outcomes.length ? (100 * wins / outcomes.length).toFixed(1) + '%' : 'n/a'}, average dayR ${outcomes.length ? average.toFixed(2) : 'n/a'}`);
   }
+  // Same set the live card posts: grade A–C, top 9 per day.
+  const postedPerDay = new Map<string, number>();
+  const posted = rows.filter((row) => {
+    if (row.grade === 'Pass' || typeof row.dayR !== 'number') return false;
+    const count = postedPerDay.get(row.date) ?? 0;
+    postedPerDay.set(row.date, count + 1);
+    return count < 9;
+  });
+  const summarize = (label: string, values: Array<number | ''>) => {
+    const trades = values.filter((value): value is number => typeof value === 'number');
+    const total = trades.reduce((sum, value) => sum + value, 0);
+    const wins = trades.filter((value) => value > 0).length;
+    console.log(`${label}: ${trades.length}/${posted.length} trades, win rate ${trades.length ? (100 * wins / trades.length).toFixed(1) + '%' : 'n/a'}, average R ${trades.length ? (total / trades.length).toFixed(2) : 'n/a'}, total R ${total.toFixed(1)}`);
+  };
+  console.log(`Posted setups (grade A–C, top 9/day): ${posted.length}`);
+  summarize('Short at open', posted.map((row) => row.dayR));
+  summarize('OR5 break, HOD stop', posted.map((row) => row.or5HodR));
+  summarize('OR5 break, PM stop', posted.map((row) => row.or5PmR));
+  summarize('OR15 break, HOD stop', posted.map((row) => row.or15HodR));
+  summarize('OR15 break, PM stop', posted.map((row) => row.or15PmR));
+  summarize('VWAP loss, HOD stop', posted.map((row) => row.vwapHodR));
+  summarize('VWAP loss, PM stop', posted.map((row) => row.vwapPmR));
+  summarize('Below VWAP, HOD stop', posted.map((row) => row.belowVwapHodR));
+  summarize('Below VWAP, PM stop', posted.map((row) => row.belowVwapPmR));
   console.log(`Output: ${out}`);
 }
 

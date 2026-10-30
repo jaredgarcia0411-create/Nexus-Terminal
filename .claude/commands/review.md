@@ -8,7 +8,7 @@ Read `HANDOFF.md` and find the section matching $ARGUMENTS. If no arguments give
 
 ### Step 2: Audit the implementation
 
-Use the Agent tool with `subagent_type: "nexus-architect"` to:
+Do the audit inline: read `git diff` plus any spec file you haven't already read in this session. Don't spawn nexus-architect to re-read files you already hold. Use it only if the spec touches a broad, unfamiliar area, and say so before spawning it.
 
 1. Read every file listed in the spec's "Files Changed Summary"
 2. Compare what was built against every numbered step in the spec

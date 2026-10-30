@@ -1,4 +1,4 @@
-import { atr, ema } from '@/lib/indicators';
+import { atr, ema, vwap, type OHLCData } from '@/lib/indicators';
 import type { DailyOhlcBar } from '@/lib/massive-market';
 
 // Research thresholds from the parabolic short playbook; mandatory filters match the coworker's thinkorswim pre-scan v2.
@@ -19,6 +19,10 @@ const RULES = {
   parabolicMin3DayPct: 20,
   parabolicSteepening: 2,
   stopBufferAtr: 0.1,
+  // Replay-only: intraday short triggers must fire before 10:30 ET.
+  triggerCutoffMinutes: 60,
+  // Replay-only: a stop closer than 0.5 ATR to the entry is noise and inflates R, so skip it (same rule as Triple Beat).
+  minTriggerRiskAtr: 0.5,
   sma10Period: 10,
   sma20Period: 20,
   sma50Period: 50,
@@ -104,6 +108,16 @@ export interface ReplayOutcome {
   mfe10R: number;
   mae10R: number;
   daysTo9Ema: number | null;
+}
+
+export type IntradayTrigger = 'or5' | 'or15' | 'vwap' | 'belowVwap';
+
+export interface IntradayTriggerOutcome {
+  minutesAfterOpen: number | null;
+  entry: number | null;
+  hodStop: number | null;
+  hodR: number | null;
+  pmR: number | null;
 }
 
 function mean(values: number[]): number {
@@ -266,4 +280,59 @@ export function measureReplayOutcome(history: DailyOhlcBar[], plan: ParabolicPla
     closes.push(window[k].close);
   }
   return { stoppedOutDay0, dayR, mfeDayR, maeDayR, mfe10R, mae10R, daysTo9Ema };
+}
+
+// Replay-only: short on an intraday trigger instead of the open, then cover at the close or the first stop touch.
+// `minutes` are 1-minute bars from 04:00 ET (premarket only feeds VWAP); `openMs` is 09:30 ET.
+// Stops are checked from the bar after the trigger, since one minute bar can't order its own high and low.
+export function measureIntradayTriggers(
+  plan: ParabolicPlan,
+  atr14: number,
+  minutes: OHLCData[],
+  openMs: number,
+  day0Close: number,
+): Record<IntradayTrigger, IntradayTriggerOutcome> {
+  const vwaps = vwap(minutes);
+  const rth = minutes.flatMap((bar, index) => bar.time >= openMs ? [{ ...bar, vwap: vwaps[index] }] : []);
+  const cutoff = openMs + RULES.triggerCutoffMinutes * 60_000;
+  const noTrigger: IntradayTriggerOutcome = { minutesAfterOpen: null, entry: null, hodStop: null, hodR: null, pmR: null };
+  const resolve = (index: number, entry: number, stop: number) => {
+    if (stop <= entry || stop - entry < RULES.minTriggerRiskAtr * atr14) return null;
+    return rth.slice(index + 1).some((bar) => bar.high >= stop) ? -1 : (entry - day0Close) / (stop - entry);
+  };
+  const triggered = (index: number, entry: number): IntradayTriggerOutcome => {
+    const hodStop = Math.max(...rth.slice(0, index + 1).map((bar) => bar.high)) + RULES.stopBufferAtr * atr14;
+    return {
+      minutesAfterOpen: (rth[index].time - openMs) / 60_000,
+      entry,
+      hodStop,
+      hodR: resolve(index, entry, hodStop),
+      pmR: resolve(index, entry, plan.stop),
+    };
+  };
+  const openingRangeBreak = (rangeMinutes: number): IntradayTriggerOutcome => {
+    const rangeEnd = openMs + rangeMinutes * 60_000;
+    const range = rth.filter((bar) => bar.time < rangeEnd);
+    if (range.length === 0) return noTrigger;
+    const rangeLow = Math.min(...range.map((bar) => bar.low));
+    const index = rth.findIndex((bar) => bar.time >= rangeEnd && bar.time < cutoff && bar.low < rangeLow);
+    return index === -1 ? noTrigger : triggered(index, Math.min(rth[index].open, rangeLow));
+  };
+  let vwapLoss = noTrigger;
+  let belowVwap = noTrigger;
+  let seenAbove = false;
+  for (const [index, bar] of rth.entries()) {
+    if (bar.time >= cutoff) break;
+    if (bar.vwap == null) continue;
+    if (bar.close >= bar.vwap) {
+      seenAbove = true;
+      continue;
+    }
+    if (belowVwap === noTrigger) belowVwap = triggered(index, bar.close);
+    if (seenAbove) {
+      vwapLoss = triggered(index, bar.close);
+      break;
+    }
+  }
+  return { or5: openingRangeBreak(5), or15: openingRangeBreak(15), vwap: vwapLoss, belowVwap };
 }

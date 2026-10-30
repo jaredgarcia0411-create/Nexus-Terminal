@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateParabolicSetup, measureReplayOutcome, passesLivePrefilter, passesReplayPrefilter } from '@/lib/parabolic/scan';
+import { evaluateParabolicSetup, measureIntradayTriggers, measureReplayOutcome, passesLivePrefilter, passesReplayPrefilter } from '@/lib/parabolic/scan';
+import type { OHLCData } from '@/lib/indicators';
 import type { DailyOhlcBar } from '@/lib/massive-market';
 
 function bar(date: string, open: number, high: number, low: number, close: number, volume = 1_500_000): DailyOhlcBar {
@@ -110,5 +111,87 @@ describe('parabolic replay outcome', () => {
     expect(outcome.mae10R).toBeCloseTo(0.3 / plan!.riskPerShare);
     expect(measureReplayOutcome(history, plan!, [{ ...sessions[0], high: 19 }, sessions[1]]))
       .toMatchObject({ stoppedOutDay0: true, dayR: -1 });
+  });
+});
+
+describe('parabolic intraday triggers', () => {
+  const OPEN = Date.UTC(2026, 3, 7, 13, 30);
+  const plan = { riskFraction: 1 as const, entry: 18, stop: 19, riskPerShare: 1, target1: 15, target1RR: 3, target2: 14, target2RR: 4 };
+  function minute(offset: number, open: number, high: number, low: number, close: number, volume = 1000): OHLCData {
+    return { time: OPEN + offset * 60_000, open, high, low, close, volume };
+  }
+  function repeat(from: number, to: number, open: number, high: number, low: number, close: number): OHLCData[] {
+    return Array.from({ length: to - from + 1 }, (_, i) => minute(from + i, open, high, low, close));
+  }
+
+  const base = [
+    minute(-60, 17, 17, 17, 17, 100_000),
+    minute(0, 18, 18.6, 17.9, 18.3),
+    ...repeat(1, 4, 18.2, 18.3, 18.0, 18.1),
+    ...repeat(5, 9, 18.1, 18.2, 18.0, 18.1),
+    minute(10, 18.1, 18.2, 17.8, 18.0),
+    ...repeat(11, 14, 18.1, 18.2, 18.0, 18.1),
+    ...repeat(15, 19, 18.0, 18.1, 17.9, 18.0),
+    minute(20, 17.9, 18.0, 16.8, 16.9),
+    ...repeat(21, 29, 16.9, 17.0, 16.7, 16.8),
+  ];
+
+  it('triggers each entry and covers at the close when no stop is touched', () => {
+    const outcomes = measureIntradayTriggers(plan, 1, base, OPEN, 17);
+    expect(outcomes.or5.minutesAfterOpen).toBeCloseTo(10);
+    expect(outcomes.or5.entry).toBeCloseTo(17.9);
+    expect(outcomes.or5.hodStop).toBeCloseTo(18.7);
+    expect(outcomes.or5.hodR).toBeCloseTo(1.125);
+    expect(outcomes.or5.pmR).toBeCloseTo(0.9 / 1.1);
+    expect(outcomes.or15.minutesAfterOpen).toBeCloseTo(20);
+    expect(outcomes.or15.entry).toBeCloseTo(17.8);
+    expect(outcomes.or15.hodStop).toBeCloseTo(18.7);
+    expect(outcomes.or15.hodR).toBeCloseTo(0.8 / 0.9);
+    expect(outcomes.or15.pmR).toBeCloseTo(0.8 / 1.2);
+    expect(outcomes.vwap.minutesAfterOpen).toBeCloseTo(20);
+    expect(outcomes.vwap.entry).toBeCloseTo(16.9);
+    expect(outcomes.vwap.hodStop).toBeCloseTo(18.7);
+    expect(outcomes.vwap.hodR).toBeCloseTo(-0.1 / 1.8);
+    expect(outcomes.vwap.pmR).toBeCloseTo(-0.1 / 2.1);
+    expect(outcomes.belowVwap).toEqual(outcomes.vwap);
+  });
+
+  it('stops the HOD stop but not the premarket stop after the trigger', () => {
+    const outcomes = measureIntradayTriggers(plan, 1, [...base, minute(90, 17.5, 18.75, 17.4, 17.6)], OPEN, 17);
+    for (const outcome of Object.values(outcomes)) expect(outcome.hodR).toBe(-1);
+    expect(outcomes.or5.pmR).toBeCloseTo(0.9 / 1.1);
+    expect(outcomes.or15.pmR).toBeCloseTo(0.8 / 1.2);
+    expect(outcomes.vwap.pmR).toBeCloseTo(-0.1 / 2.1);
+    expect(outcomes.belowVwap.pmR).toBeCloseTo(-0.1 / 2.1);
+  });
+
+  it('ignores breaks at or after 10:30 ET', () => {
+    const bars = [
+      minute(-60, 17, 17, 17, 17, 100_000),
+      minute(0, 18, 18.6, 17.9, 18.3),
+      ...repeat(1, 59, 18.2, 18.3, 18.0, 18.1),
+      minute(60, 18.0, 18.0, 16.5, 16.6),
+    ];
+    const outcomes = measureIntradayTriggers(plan, 1, bars, OPEN, 17);
+    for (const outcome of Object.values(outcomes)) {
+      expect(outcome).toEqual({ minutesAfterOpen: null, entry: null, hodStop: null, hodR: null, pmR: null });
+    }
+  });
+
+  it('fires belowVwap but not vwap when the open never trades above VWAP, skipping a stop under 0.5 ATR away', () => {
+    const bars = [
+      minute(-60, 20, 20, 20, 20, 100_000),
+      minute(0, 18, 18.6, 17.9, 18.3),
+      ...repeat(1, 29, 18.2, 18.3, 18.0, 18.1),
+    ];
+    const outcomes = measureIntradayTriggers(plan, 1, bars, OPEN, 17);
+    expect(outcomes.belowVwap.minutesAfterOpen).toBeCloseTo(0);
+    expect(outcomes.belowVwap.entry).toBeCloseTo(18.3);
+    expect(outcomes.belowVwap.hodStop).toBeCloseTo(18.7);
+    expect(outcomes.belowVwap.hodR).toBeNull();
+    expect(outcomes.belowVwap.pmR).toBeCloseTo(1.3 / 0.7);
+    for (const trigger of ['or5', 'or15', 'vwap'] as const) {
+      expect(outcomes[trigger]).toEqual({ minutesAfterOpen: null, entry: null, hodStop: null, hodR: null, pmR: null });
+    }
   });
 });

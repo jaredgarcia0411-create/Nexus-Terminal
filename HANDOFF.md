@@ -1,6 +1,6 @@
 # Nexus Terminal - HANDOFF.md
 
-> Updated: 2026-10-29
+> Updated: 2026-10-30
 > Purpose: active execution context for Codex. Older implementation detail lives in git history, `specs/`, and durable docs such as `docs/repo-cleanup.md`.
 
 Historical completed sections were removed to keep this file focused. Use git history and the `specs/` directory for archived implementation detail.
@@ -32,6 +32,19 @@ Sheets:
 
 ## Recently Completed
 
+### Parabolic Replay: Intraday Entry Triggers (OR5 / OR15 / VWAP Loss / Below VWAP) × Two Stops
+
+Status: completed 2026-10-30.
+
+Outcome:
+- `measureIntradayTriggers` (`lib/parabolic/scan.ts`) replays four short triggers before 10:30 ET — 5/15-min opening-range low break, VWAP loss, first close below VWAP (VWAP from 04:00) — each with a high-of-day + 0.1 ATR stop and the card's premarket-high stop, covering at the close. A stop under 0.5 ATR from the entry counts as no trade.
+- `scripts/parabolic-replay.ts` adds 20 CSV columns, matches the live ext10Pct tiebreak, and prints a posted-set summary (grade A–C, top 9/day) comparing the eight scenarios with short-at-the-open.
+- First Codex run executed in the background via `codex exec` + `$nexus-execute`, then reviewed here.
+
+Validation:
+- `npm run lint`, `npx tsc --noEmit`, `npm test` (964/964), `npm run workflow:audit`
+- Replay smoke 2026-10-14→15: 11 posted, new columns + summary printed. Pending: full 2026-01-02→10-29 run (open baseline should land near +28.3R / 555).
+
 ### Scanner Rules: Align Triple Beat + Parabolic With the Coworker's thinkorswim Scans
 
 Status: completed 2026-10-29.
@@ -48,29 +61,3 @@ Outcome:
 Validation:
 - `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npm test` (957/957), `npm run build`
 - Pending manual: compare the next 9:00 ET post with the coworker's thinkorswim list; rerun replay 2026-10-28→29 (expect >44 rows incl. `<4` faders).
-
-### Triple Beat Earnings Scanner v1 — Pre-Market Long Scan + Historical Replay
-
-Status: completed 2026-10-29.
-
-Outcome:
-- Orchestrator worker scans premarket earnings gap-ups (SEC 8-K Item 2.02 / 6-K gate) at `TRIPLE_BEAT_CRON_HOUR_ET` (default 9 ET) and posts grade-colored cards to `DISCORD_WEBHOOK_TRIPLE_BEAT`; scoring is pure code in `lib/triple-beat/scan.ts`, the LLM only reads EPS/revenue/guidance with quotes verified against the evidence.
-- `scripts/triple-beat-replay.ts` replays over a date range (CSV + LLM cache in the home directory). Review fixes: replay cuts off at 09:00 ET to match the live run; SEC press-release failures fall back to news-only; LLM `maxTokens` 600 → 4096 because the MiniMax reasoning model was truncating the JSON (~20% failed reads).
-- Known replay limits: candidates are picked by the 9:30 open gap (premarket faders missed); delisted tickers skipped.
-
-Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npm test` (945/945), `npm run workflow:audit`
-- Replay smoke 2026-10-28→29: 44 rows, NCLH B/64 strict triple beat (yes/yes/raised); rerun `New LLM reads: 0`. Optiplex orchestrator rebuilt on 4f8f1bb (healthy, webhook set); first live post 2026-10-30 9:00 ET.
-
-### Parabolic Short Scanner v1 — Pre-Market Scan + Historical Replay
-
-Status: completed 2026-10-29.
-
-Outcome:
-- Orchestrator worker scores premarket parabolic short setups at `PARABOLIC_CRON_HOUR_ET` (default 9 ET) and posts a ranked embed to `DISCORD_WEBHOOK_PARABOLIC`; pure code, no LLM; thresholds live in `RULES` in `lib/parabolic/scan.ts`.
-- `scripts/parabolic-replay.ts` replays the scorecard over a date range and writes an outcome CSV to the home directory; review fix rescales split-adjusted bars to as-of-date prices so the $5 / 1M filters are point-in-time.
-- Discord post redesigned as cards (option 1 of `~/Downloads/parabolic-discord-options.html`): blue header card + one grade-colored card per setup (top 9), sent as one multi-embed webhook message; "as of" time capped at 9:30 ET.
-
-Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npm test` (907/907), `npm run build`, `npm run workflow:audit`
-- Replay smoke 2026-10-14→15: 1 B setup, CSV written. Optiplex orchestrator rebuilt on 597e670 (healthy) and a live test post landed in Discord on 2026-10-29.
