@@ -775,7 +775,7 @@ const PARABOLIC_SIZE_LABELS: Record<number, string> = {
   0.5: 'Half size (½R)',
   0: 'Watch only',
 };
-// Short checklist names for the card footer, keyed by the score item labels in lib/parabolic/scan.ts.
+// Short checklist names for the card, keyed by the score item labels in lib/parabolic/scan.ts.
 const PARABOLIC_SHORT_LABELS: Record<string, string> = {
   '3+ consecutive green days': 'Green',
   'Trade-day gap-up': 'Gap',
@@ -818,10 +818,11 @@ export function buildParabolicScanEmbeds(report: AgentReport): DiscordEmbed[] {
   const overflow = payload.setups.length > shown.length ? `\nShowing the top ${shown.length} of ${payload.setups.length}.` : '';
   const header: DiscordEmbed = {
     title,
-    description: `🟢 A ${count('A')} · 🟡 B ${count('B')} · ⚪ C ${count('C')} · ${scanned}${overflow}`,
-    color: PARABOLIC_HEADER_COLOR,
+    // Footer text renders small in Discord, so the instructions live in the description.
     // 2024-11 to 2026-10 replay: grades didn't rank results, and covering everything at the gap fill underperformed holding to the close.
-    footer: { text: '⚠️ Confirm borrow. Entry needs a VWAP or opening-range break. Same size for every grade. Gap fill isn\'t the exit: hold to the close unless stopped.' },
+    // Waiting for a VWAP or opening-range break gave up most of the move (2024-11 to 2025-12: +87R vs +253R at the open); it only helped in the weak 2026 stretch.
+    description: `🟢 A ${count('A')} · 🟡 B ${count('B')} · ⚪ C ${count('C')} · ${scanned}${overflow}\n⚠️ Confirm borrow. Short the open with the card's stop. Same size for every grade. Gap fill isn't the exit: hold to the close unless stopped.`,
+    color: PARABOLIC_HEADER_COLOR,
   };
 
   const cards = shown.map((setup): DiscordEmbed => {
@@ -829,7 +830,7 @@ export function buildParabolicScanEmbeds(report: AgentReport): DiscordEmbed[] {
     const checklist = setup.scoreItems.map((item) => {
       const icon = item.status === 'met' ? '✅' : item.status === 'unknown' ? '❔' : '❌';
       const name = PARABOLIC_SHORT_LABELS[item.label] ?? item.label;
-      return `${icon} ${name === 'Green' ? `Green ${metrics.greenStreak}` : name}`;
+      return `${name === 'Green' ? `Green ${metrics.greenStreak}` : name} ${icon}`;
     });
     return {
       title: `${setup.ticker} · ${setup.grade} · ${setup.score}/${setup.maxScore}`,
@@ -841,8 +842,8 @@ export function buildParabolicScanEmbeds(report: AgentReport): DiscordEmbed[] {
         buildField('Gap fill', target(plan.target1, plan.target1RR)),
         buildField('9EMA', target(plan.target2, plan.target2RR)),
         buildField('Gap · 10SMA', `${pct(metrics.tradeDayGapPct)} · ${pct(metrics.ext10Pct, 0)}`),
+        buildField('Checklist', checklist.join('  '), false),
       ],
-      footer: { text: checklist.join(' ') },
     };
   });
 
@@ -855,7 +856,7 @@ const TRIPLE_BEAT_GRADE_COLORS: Record<TripleBeatGrade, number> = {
   B: 0x80848E,
   Pass: 0x80848E,
 };
-// Short checklist names for the card footer, keyed by the score item labels in lib/triple-beat/scan.ts.
+// Short checklist names for the card, keyed by the score item labels in lib/triple-beat/scan.ts.
 const TRIPLE_BEAT_SHORT_LABELS: Record<string, string> = {
   'EPS beat': 'EPS',
   'Revenue beat': 'Rev',
@@ -892,16 +893,15 @@ export function buildTripleBeatScanEmbeds(report: AgentReport): DiscordEmbed[] {
   const overflow = payload.setups.length > shown.length ? `\nShowing the top ${shown.length} of ${payload.setups.length}.` : '';
   const header: DiscordEmbed = {
     title,
-    description: `🟢 A+ ${count('A+')} · 🟡 A ${count('A')} · ⚪ B ${count('B')} · ${scanned}${overflow}`,
+    description: `🟢 A+ ${count('A+')} · 🟡 A ${count('A')} · ⚪ B ${count('B')} · ${scanned}${overflow}\n⚠️ Entry needs a premarket-high break with 3x+ RVOL. Partial at 2R; trail the runner on a 10EMA close.`,
     color: PARABOLIC_HEADER_COLOR,
-    footer: { text: '⚠️ Entry needs a premarket-high break with 3x+ RVOL. Partial at 2R; trail the runner on a 10EMA close.' },
   };
 
   const cards = shown.map((setup): DiscordEmbed => {
     const { metrics, plan, earnings } = setup;
     const checklist = setup.scoreItems.map((item) => {
       const icon = item.status === 'met' ? '✅' : item.status === 'unknown' ? '❔' : '❌';
-      return `${icon} ${TRIPLE_BEAT_SHORT_LABELS[item.label] ?? item.label}`;
+      return `${TRIPLE_BEAT_SHORT_LABELS[item.label] ?? item.label} ${icon}`;
     });
     const description = [
       setup.strictTripleBeat ? '🏆 Strict triple beat' : null,
@@ -919,8 +919,8 @@ export function buildTripleBeatScanEmbeds(report: AgentReport): DiscordEmbed[] {
         buildField('T1 partial', `${usd(plan.target1)} · 2R`),
         buildField('Runner', `Trail 10EMA (${usd(metrics.ema10)})`),
         buildField('Gap · hold', `${pct(metrics.gapPct)} (high ${pct(metrics.maxGapPct)}) · ${metrics.holdPct.toFixed(0)}% of range`),
+        buildField('Checklist', checklist.join('  '), false),
       ],
-      footer: { text: checklist.join(' ') },
     };
   });
 

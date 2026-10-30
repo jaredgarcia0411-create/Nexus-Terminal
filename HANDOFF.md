@@ -43,7 +43,9 @@ Outcome:
 
 Validation:
 - `npm run lint`, `npx tsc --noEmit`, `npm test` (964/964), `npm run workflow:audit`
-- Replay smoke 2026-10-14→15: 11 posted, new columns + summary printed. Pending: full 2026-01-02→10-29 run (open baseline should land near +28.3R / 555).
+- Replay smoke 2026-10-14→15: 11 posted, new columns + summary printed.
+- Full 2026-01-02→10-29 (555 posted; open baseline matched +28.3R): VWAP loss + HOD stop best at +44.4R / 236 trades, positive every quarter and without its top 5 trades (+18.5R), drawdown −17R vs −36R at the open. OR5/HOD +30.3R. Every PM-stop variant is weak (+10R or worse), so a trigger needs the HOD stop. Chosen in-sample from 8 options.
+- Out-of-sample 2024-11-01→2025-12-31 (712 posted): short at open +252.6R (positive every quarter, +51.9R without its top 20 trades) vs VWAP loss/HOD +86.6R; every trigger gave up most of the move. Triggers only help when the setup itself is failing (2026 Q2–Q4 open ≈ −19R). Card footer now says to short the open with the card's stop.
 
 ### Scanner Rules: Align Triple Beat + Parabolic With the Coworker's thinkorswim Scans
 

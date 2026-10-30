@@ -486,9 +486,8 @@ describe('agent discord helpers', () => {
     expect(embeds).toHaveLength(2);
     expect(embeds[0]).toMatchObject({
       title: 'Parabolic shorts · Tue, Apr 7',
-      description: '🟢 A 0 · 🟡 B 0 · ⚪ C 1 · 26 scanned · premarket as of 9:00 AM ET',
+      description: '🟢 A 0 · 🟡 B 0 · ⚪ C 1 · 26 scanned · premarket as of 9:00 AM ET\n⚠️ Confirm borrow. Short the open with the card\'s stop. Same size for every grade. Gap fill isn\'t the exit: hold to the close unless stopped.',
       color: 0x5865F2,
-      footer: { text: '⚠️ Confirm borrow. Entry needs a VWAP or opening-range break. Same size for every grade. Gap fill isn\'t the exit: hold to the close unless stopped.' },
     });
     expect(embeds[1]).toEqual({
       title: 'NUWE · C · 8/17',
@@ -500,8 +499,8 @@ describe('agent discord helpers', () => {
         { name: 'Gap fill', value: '$5.66 · 2.0R', inline: true },
         { name: '9EMA', value: '$4.76 · 3.5R', inline: true },
         { name: 'Gap · 10SMA', value: '+22.6% · +51%', inline: true },
+        { name: 'Checklist', value: 'Green 3 ✅  Gap ✅  Gap-ups ❌  Ranges ❌  Volume ❌  MA ext ❌  Climax ❔  Parabolic ✅', inline: false },
       ],
-      footer: { text: '✅ Green 3 ✅ Gap ❌ Gap-ups ❌ Ranges ❌ Volume ❌ MA ext ❔ Climax ✅ Parabolic' },
     });
   });
 
@@ -545,7 +544,7 @@ describe('agent discord helpers', () => {
     expect(embeds).toHaveLength(2);
     expect(embeds[0]).toMatchObject({
       title: 'Triple Beat earnings · Thu, Oct 29', color: 0x5865F2,
-      description: '🟢 A+ 1 · 🟡 A 0 · ⚪ B 0 · 2 earnings filers · premarket as of 9:00 AM ET',
+      description: '🟢 A+ 1 · 🟡 A 0 · ⚪ B 0 · 2 earnings filers · premarket as of 9:00 AM ET\n⚠️ Entry needs a premarket-high break with 3x+ RVOL. Partial at 2R; trail the runner on a 10EMA close.',
     });
     expect(embeds[1]).toEqual({
       title: 'NCLH · A+ · 45/45 · Full size (1R)', color: 0x23A55A,
@@ -557,8 +556,8 @@ describe('agent discord helpers', () => {
         { name: 'T1 partial', value: '$25.00 · 2R', inline: true },
         { name: 'Runner', value: 'Trail 10EMA ($20.00)', inline: true },
         { name: 'Gap · hold', value: '+15.0% (high +17.0%) · 79% of range', inline: true },
+        { name: 'Checklist', value: 'EPS ✅  Rev ✅  Guide ✅  Base ✅  Breakout ✅  $10+ ✅', inline: false },
       ],
-      footer: { text: '✅ EPS ✅ Rev ✅ Guide ✅ Base ✅ Breakout ✅ $10+' },
     });
   });
 
