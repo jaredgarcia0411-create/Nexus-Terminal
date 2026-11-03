@@ -20,6 +20,7 @@ export interface ExtendedHoursStats {
   volume: number;
   premarketHigh: number;
   premarketLow: number;
+  premarketVolume: number;
 }
 
 export interface NewsItem {
@@ -29,7 +30,7 @@ export interface NewsItem {
 }
 
 // Split-adjusted 1-minute bars from `priorSession` 16:00 ET (after-hours) through `date` premarket,
-// ending at the earlier of `untilMs` and the 09:30 open. high/low/volume span both sessions.
+// ending at the earlier of `untilMs` and the 09:30 open. high/low/volume span both sessions; premarketHigh/Low/Volume are 04:00 ET onward only.
 export async function fetchExtendedHoursStats(
   ticker: string,
   priorSession: string,
@@ -59,6 +60,7 @@ export async function fetchExtendedHoursStats(
     volume: bars.reduce((sum, bar) => sum + Number(bar.v ?? 0), 0),
     premarketHigh: Math.max(...premarket.map((bar) => Number(bar.h))),
     premarketLow: Math.min(...premarket.map((bar) => Number(bar.l))),
+    premarketVolume: premarket.reduce((sum, bar) => sum + Number(bar.v ?? 0), 0),
   };
 }
 

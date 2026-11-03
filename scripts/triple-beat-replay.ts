@@ -111,6 +111,7 @@ async function main() {
       const asOfExtended = {
         last: extended.last / factor, high: extended.high / factor, low: extended.low / factor,
         volume: extended.volume * factor, premarketHigh: extended.premarketHigh / factor, premarketLow: extended.premarketLow / factor,
+        premarketVolume: extended.premarketVolume * factor,
       };
       const history = asOfBars.filter((bar) => bar.date < date);
       const sessions = asOfBars.filter((bar) => bar.date >= date);
@@ -142,7 +143,8 @@ async function main() {
         epsBeat: earnings.epsBeat, revenueBeat: earnings.revenueBeat, guidance: earnings.guidance,
         mixedCatalyst: earnings.mixedCatalyst, note: earnings.note, filingForm: filing.form_type,
         gapPct: rounded(metrics.gapPct), maxGapPct: rounded(metrics.maxGapPct), holdPct: rounded(metrics.holdPct),
-        extendedVolumeRatio: rounded(metrics.extendedVolumeRatio), baseRangePct: rounded(metrics.baseRangePct), runUpPct: rounded(metrics.runUpPct),
+        extendedVolumeRatio: rounded(metrics.extendedVolumeRatio), premarketVolume: Math.round(asOfExtended.premarketVolume),
+        baseRangePct: rounded(metrics.baseRangePct), runUpPct: rounded(metrics.runUpPct),
         clearsBaseHigh: setup.scoreItems.find((item) => item.label === 'Clears 3-month high')?.status ?? '',
         avgDollarVolume20: rounded(metrics.avgDollarVolume20),
         marketCapM: metrics.marketCap == null ? '' : Math.round(metrics.marketCap / 1e6), riskAtr: rounded(plan?.riskAtr),
@@ -161,18 +163,31 @@ async function main() {
     }
     if (newLlmReads > readsBefore) writeFileSync(cachePath, JSON.stringify(llmCache));
   }
-  rows.sort((a, b) => a.date.localeCompare(b.date) || b.score - a.score);
+  rows.sort((a, b) => a.date.localeCompare(b.date) || b.score - a.score || Number(b.gapPct) - Number(a.gapPct));
   writeFileSync(out, Papa.unparse(rows));
   const summarize = (label: string, group: Array<{ dayR: number | ''; totalR: number | '' }>) => {
     const traded = group.filter((row) => typeof row.totalR === 'number');
     const wins = traded.filter((row) => Number(row.totalR) > 0).length;
     const average = (key: 'dayR' | 'totalR') => (traded.length
       ? (traded.reduce((sum, row) => sum + Number(row[key]), 0) / traded.length).toFixed(2) : 'n/a');
-    console.log(`${label}: ${group.length} setups, ${traded.length} triggered, win rate ${traded.length ? (100 * wins / traded.length).toFixed(1) + '%' : 'n/a'}, avg dayR ${average('dayR')}, avg totalR ${average('totalR')}`);
+    const total = traded.reduce((sum, row) => sum + Number(row.totalR), 0);
+    console.log(`${label}: ${group.length} setups, ${traded.length} triggered, win rate ${traded.length ? (100 * wins / traded.length).toFixed(1) + '%' : 'n/a'}, avg dayR ${average('dayR')}, avg totalR ${average('totalR')}, total R ${total.toFixed(1)}`);
   };
   for (const grade of ['A+', 'A', 'B', 'Pass']) summarize(`Grade ${grade}`, rows.filter((row) => row.grade === grade));
   for (const bucket of ['<4', '4-7.9', '8-9.9', '10+']) summarize(`Gap ${bucket}%`, rows.filter((row) => row.gapBucket === bucket));
   summarize('Strict triple beat', rows.filter((row) => row.strictTripleBeat === true));
+  // 2026-11-03: the coworker's thinkorswim scan needs 300k+ premarket shares. Apply the floor first, then the card's top 9 per day.
+  for (const floor of [0, 100_000, 300_000]) {
+    const postedPerDay = new Map<string, number>();
+    const posted = rows.filter((row) => {
+      if (row.grade === 'Pass' || row.premarketVolume < floor) return false;
+      const count = postedPerDay.get(row.date) ?? 0;
+      postedPerDay.set(row.date, count + 1);
+      return count < 9;
+    });
+    summarize(`Posted (top 9/day), premarket volume >= ${floor / 1000}k`, posted);
+    summarize(`  sized (A/A+, stop <= 1.5 ATR)`, posted.filter((row) => Number(row.riskFraction) > 0));
+  }
   console.log(`New LLM reads: ${newLlmReads} (cache: ${cachePath})`);
   console.log(`Output: ${out}`);
 }

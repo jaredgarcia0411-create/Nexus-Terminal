@@ -75,7 +75,7 @@ export interface TripleBeatScanReport {
   tradingDate: string;
   asOf: string;
   earningsFilings: number;
-  setups: Array<TripleBeatSetup & { ticker: string; plan: TripleBeatPlan }>;
+  setups: Array<TripleBeatSetup & { ticker: string; plan: TripleBeatPlan; name?: string | null }>;
 }
 
 export interface TripleBeatOutcome {

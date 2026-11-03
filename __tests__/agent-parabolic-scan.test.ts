@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchGroupedDailyAggregates, type DailyOhlcBar } from '@/lib/massive-market';
+import { fetchGroupedDailyAggregates, fetchTickerReference, type DailyOhlcBar } from '@/lib/massive-market';
 import { fetchDailyBars, fetchPremarketStats } from '@/lib/parabolic/data';
 import { orchestratorParabolicScanBlueprint } from '@/lib/agents/blueprints/orchestrator-parabolic-scan';
 import { writeAndDeliverReport } from '@/lib/agents/discord';
@@ -7,7 +7,7 @@ import { getPreviousTradingSession } from '@/lib/time-utils';
 import type { StepInput } from '@/lib/agents/types';
 import type { ParabolicScanReport } from '@/lib/parabolic/scan';
 
-vi.mock('@/lib/massive-market', () => ({ fetchGroupedDailyAggregates: vi.fn() }));
+vi.mock('@/lib/massive-market', () => ({ fetchGroupedDailyAggregates: vi.fn(), fetchTickerReference: vi.fn() }));
 vi.mock('@/lib/parabolic/data', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/parabolic/data')>(), fetchDailyBars: vi.fn(), fetchPremarketStats: vi.fn(),
 }));
@@ -61,11 +61,16 @@ describe('orchestrator parabolic scan', () => {
       return bars;
     });
     vi.mocked(fetchPremarketStats).mockImplementation(async (ticker) => ticker === 'NOPM' ? null : { last: ticker === 'HIGH' ? 19 : 18, high: 19.5 });
+    vi.mocked(fetchTickerReference).mockImplementation(async (ticker) => {
+      if (ticker === 'HIGH') throw new Error('reference unavailable');
+      return { type: 'ETF', name: 'Low Fund ETF' };
+    });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const scan = await orchestratorParabolicScanBlueprint.steps[0].run(input());
     const report = scan.data as ParabolicScanReport;
     expect(report.candidatesChecked).toBe(4);
     expect(report.setups.map((setup) => setup.ticker)).toEqual(['HIGH', 'LOW']);
+    expect(report.setups.map((setup) => [setup.name, setup.fundType])).toEqual([[null, null], ['Low Fund ETF', 'ETF']]);
     expect(fetchDailyBars).toHaveBeenCalledWith('HIGH', '2025-12-08', '2026-04-06');
     expect(fetchPremarketStats).toHaveBeenCalledWith('HIGH', '2026-04-07', Date.now());
     expect(warn).toHaveBeenCalledOnce();
@@ -74,6 +79,19 @@ describe('orchestrator parabolic scan', () => {
       reportType: 'parabolic-scan', userId: 'system-agent-user', summary: '2 qualified setups (A 2 • B 0 • C 0)',
       reportJson: { tradingDate: report.tradingDate, asOf: report.asOf, candidatesChecked: 4, setups: report.setups },
     }));
+  });
+
+  it('labels only fund types and leaves common stock unlabeled', async () => {
+    const bars = history();
+    vi.mocked(fetchGroupedDailyAggregates).mockImplementation(async (date) => ['HIGH'].map((ticker) => ({
+      ...bars.find((bar) => bar.date === date)!, ticker, timestamp: Date.parse(`${date}T04:00:00Z`),
+    })));
+    vi.mocked(fetchDailyBars).mockResolvedValue(bars);
+    vi.mocked(fetchPremarketStats).mockResolvedValue({ last: 19, high: 19.5 });
+    vi.mocked(fetchTickerReference).mockResolvedValue({ type: 'CS', name: 'High Corp' });
+    const scan = await orchestratorParabolicScanBlueprint.steps[0].run(input());
+    const report = scan.data as ParabolicScanReport;
+    expect(report.setups[0]).toMatchObject({ name: 'High Corp', fundType: null });
   });
 
   it('delivers a no-setups report on an ordinary trading day', async () => {

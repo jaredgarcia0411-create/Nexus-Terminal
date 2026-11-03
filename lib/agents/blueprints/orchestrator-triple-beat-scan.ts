@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fetchSharesOutstanding } from '@/lib/massive-market';
+import { fetchSharesOutstanding, fetchTickerReference } from '@/lib/massive-market';
 import { addCalendarDays, fetchDailyBars } from '@/lib/parabolic/data';
 import { getRecentFilings } from '@/lib/sec/submissions';
 import { UNKNOWN_EARNINGS_READ, buildEarningsEvidence, classifyEarnings } from '@/lib/triple-beat/classify';
@@ -69,7 +69,9 @@ export const orchestratorTripleBeatScanBlueprint: Blueprint = {
             const earnings = await classifyEarnings(ticker, evidence) ?? UNKNOWN_EARNINGS_READ;
             const setup = evaluateTripleBeatSetup(history, extended, earnings, sharesOutstanding);
             if (!setup?.plan || setup.grade === 'Pass') return null;
-            return { ticker, ...setup, plan: setup.plan };
+            // Company name for the card; a failed lookup just shows the ticker alone.
+            const reference = await fetchTickerReference(ticker).catch(() => null);
+            return { ticker, ...setup, plan: setup.plan, name: reference?.name ?? null };
           }));
           for (const result of results) {
             if (result.status === 'fulfilled') {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fetchGroupedDailyAggregates, type DailyOhlcBar } from '@/lib/massive-market';
+import { fetchGroupedDailyAggregates, fetchTickerReference, type DailyOhlcBar } from '@/lib/massive-market';
 import { addCalendarDays, fetchDailyBars, fetchPremarketStats } from '@/lib/parabolic/data';
 import { evaluateParabolicSetup, passesLivePrefilter, type ParabolicScanReport } from '@/lib/parabolic/scan';
 import { getPreviousTradingSession, isNyTradingDay, nyDateTimeToEpoch } from '@/lib/time-utils';
@@ -8,6 +8,8 @@ import type { Blueprint, StepResult } from '../types';
 
 const jobInputSchema = z.object({ tradingDate: z.string().max(10).date() });
 const BATCH_SIZE = 20;
+// Massive type codes for funds. Kept on the card, not filtered: ETFs carried the replay edge (2026 YTD funds +32.8R, stocks −4.4R).
+const FUND_TYPES = new Set(['ETF', 'ETN', 'ETV', 'ETS', 'FUND']);
 
 type ScanStepOutput =
   | ({ skipped: false } & ParabolicScanReport)
@@ -68,7 +70,13 @@ export const orchestratorParabolicScanBlueprint: Blueprint = {
             // The prior-session end date excludes today's in-progress daily bar.
             const setup = evaluateParabolicSetup(history, { referencePrice: premarket.last, highSoFar: premarket.high });
             if (!setup?.qualified || !setup.plan || setup.grade === 'Pass') return null;
-            return { ticker, ...setup, plan: setup.plan };
+            // Only qualified setups reach this lookup, so it is a handful of calls; a failed lookup just leaves the card unlabeled.
+            const reference = await fetchTickerReference(ticker).catch(() => null);
+            const type = reference?.type ?? null;
+            return {
+              ticker, ...setup, plan: setup.plan,
+              name: reference?.name ?? null, fundType: type && FUND_TYPES.has(type) ? type : null,
+            };
           }));
           for (const result of results) {
             if (result.status === 'fulfilled') {

@@ -68,7 +68,7 @@ describe('Triple Beat data', () => {
       { t: Date.parse('2026-10-29T13:30:00Z'), h: 30, l: 10, c: 25, v: 9 },
     ]);
     expect(await fetchExtendedHoursStats('NCLH', '2026-10-28', '2026-10-29', end)).toEqual({
-      last: 23.1, high: 23.4, low: 21, volume: 450000, premarketHigh: 23.4, premarketLow: 22.6,
+      last: 23.1, high: 23.4, low: 21, volume: 450000, premarketHigh: 23.4, premarketLow: 22.6, premarketVolume: 350000,
     });
     expect(fetchMassiveAggregateBars).toHaveBeenCalledWith({ ticker: 'NCLH', multiplier: '1', timespan: 'minute', from: String(start), to: String(end) });
   });

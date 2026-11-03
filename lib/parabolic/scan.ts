@@ -97,7 +97,7 @@ export interface ParabolicScanReport {
   tradingDate: string;
   asOf: string;
   candidatesChecked: number;
-  setups: Array<ParabolicSetup & { ticker: string; plan: ParabolicPlan }>;
+  setups: Array<ParabolicSetup & { ticker: string; plan: ParabolicPlan; name?: string | null; fundType?: string | null }>;
 }
 
 export interface ReplayOutcome {

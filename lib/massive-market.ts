@@ -221,6 +221,24 @@ export async function fetchTickerDetails(ticker: string): Promise<MassiveTickerD
   };
 }
 
+// Massive's security type code (CS = common stock, ETF, ETN, ...) and display name for a ticker.
+// Names often end in a share-class suffix ("Fiserv, Inc. Common Stock", "Grab Holdings Limited
+// Class A Ordinary Shares"), which is trimmed so scan cards show just the company.
+export async function fetchTickerReference(ticker: string): Promise<{ type: string | null; name: string | null }> {
+  const normalized = normalizeMassiveTicker(ticker);
+  const payload = await fetchMassiveJson<{ results?: { type?: string | null; name?: string | null } }>(
+    `/v3/reference/tickers/${encodeURIComponent(normalized)}`,
+    {},
+  );
+  const name = typeof payload.results?.name === 'string'
+    ? payload.results.name.replace(/\s+(Class [A-Z]\b.*|Common Stock|Common Shares|Ordinary Shares|American Depositary Shares.*)$/i, '').trim()
+    : '';
+  return {
+    type: typeof payload.results?.type === 'string' ? payload.results.type : null,
+    name: name || null,
+  };
+}
+
 // `date` (YYYY-MM-DD) asks the reference endpoint for shares outstanding as of
 // that date, so historical sheet rows get the float that was accurate then —
 // important for the low-float small-caps that dilute often. Omit it for the

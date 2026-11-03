@@ -229,7 +229,7 @@ function createTripleBeatReportJson() {
     date: '2026-10-28', open: 19.9, high: 20.4, low: 19.6, close: 20, volume: 2000000, vwap: null,
   }));
   const setup = evaluateTripleBeatSetup(history, {
-    last: 23, high: 23.4, low: 21.5, volume: 800000, premarketHigh: 23.4, premarketLow: 22.6,
+    last: 23, high: 23.4, low: 21.5, volume: 800000, premarketHigh: 23.4, premarketLow: 22.6, premarketVolume: 500000,
   }, {
     ...UNKNOWN_EARNINGS_READ, epsBeat: 'yes', revenueBeat: 'yes', guidance: 'raised',
     note: 'Beat on EPS and revenue and raised full-year guidance.',
@@ -490,7 +490,7 @@ describe('agent discord helpers', () => {
       color: 0x5865F2,
     });
     expect(embeds[1]).toEqual({
-      title: 'NUWE · C · 8/17',
+      description: '**NUWE**\n**C · 8/17**',
       color: 0x80848E,
       fields: [
         { name: 'Entry', value: '$6.94', inline: true },
@@ -502,6 +502,21 @@ describe('agent discord helpers', () => {
         { name: 'Checklist', value: 'Green 3 ✅  Gap ✅  Gap-ups ❌  Ranges ❌  Volume ❌  MA ext ❌  Climax ❔  Parabolic ✅', inline: false },
       ],
     });
+  });
+
+  it('puts the name and the grade plus fund type on the first two card lines', () => {
+    const parabolic = createParabolicReportJson();
+    const parabolicEmbeds = buildParabolicScanEmbeds(createStoredReport({
+      agentId: 'orchestrator', reportType: 'parabolic-scan',
+      reportJson: { ...parabolic, setups: [{ ...parabolic.setups[0], name: 'Defiance Daily Target 2x Short PLTR ETF', fundType: 'ETF' }] },
+    }) as never);
+    expect(parabolicEmbeds[1].description).toBe('**NUWE · Defiance Daily Target 2x Short PLTR ETF**\n**C · 8/17** · ETF');
+    const tripleBeat = createTripleBeatReportJson();
+    const tripleBeatEmbeds = buildTripleBeatScanEmbeds(createStoredReport({
+      agentId: 'orchestrator', reportType: 'triple-beat-scan',
+      reportJson: { ...tripleBeat, setups: [{ ...tripleBeat.setups[0], name: 'Norwegian Cruise Line Holdings Ltd.' }] },
+    }) as never);
+    expect(tripleBeatEmbeds[1].description).toMatch(/^\*\*NCLH · Norwegian Cruise Line Holdings Ltd\.\*\*\n\*\*A\+ · 45\/45\*\*/);
   });
 
   it('posts every parabolic card in a single webhook message', async () => {
@@ -522,7 +537,7 @@ describe('agent discord helpers', () => {
 
     const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
     expect(body.embeds.map((embed: { title: string }) => embed.title))
-      .toEqual(['Parabolic shorts · Tue, Apr 7', 'NUWE · C · 8/17']);
+      .toEqual(['Parabolic shorts · Tue, Apr 7', undefined]);
   });
 
   it('renders an empty Triple Beat scan as a gray card', () => {
@@ -547,8 +562,8 @@ describe('agent discord helpers', () => {
       description: '🟢 A+ 1 · 🟡 A 0 · ⚪ B 0 · 2 earnings filers · premarket as of 9:00 AM ET\n⚠️ Entry needs a premarket-high break with 3x+ RVOL. Partial at 2R; trail the runner on a 10EMA close.',
     });
     expect(embeds[1]).toEqual({
-      title: 'NCLH · A+ · 45/45 · Full size (1R)', color: 0x23A55A,
-      description: '🏆 Strict triple beat\nBeat on EPS and revenue and raised full-year guidance.',
+      color: 0x23A55A,
+      description: '**NCLH**\n**A+ · 45/45** · Full size (1R)\n🏆 Strict triple beat\nBeat on EPS and revenue and raised full-year guidance.',
       fields: [
         { name: 'Entry · PM high', value: '$23.40', inline: true },
         { name: 'Stop · PM low', value: '$22.60', inline: true },
@@ -590,7 +605,7 @@ describe('agent discord helpers', () => {
     expect(fetchSpy).toHaveBeenCalledOnce();
     const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
     expect(body.embeds.map((embed: { title: string }) => embed.title))
-      .toEqual(['Triple Beat earnings · Thu, Oct 29', 'NCLH · A+ · 45/45 · Full size (1R)']);
+      .toEqual(['Triple Beat earnings · Thu, Oct 29', undefined]);
   });
 
   it('returns null for unknown webhook combinations and logs the mismatch once', () => {

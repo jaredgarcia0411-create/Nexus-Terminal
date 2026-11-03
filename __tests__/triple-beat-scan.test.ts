@@ -7,7 +7,7 @@ const dates: string[] = [];
 let cursor = '2026-10-29';
 for (let i = 0; i < 80; i += 1) { cursor = getPreviousTradingSession(cursor)!; dates.unshift(cursor); }
 const history: DailyOhlcBar[] = dates.map((date) => ({ date, open: 19.9, high: 20.4, low: 19.6, close: 20, volume: 2_000_000, vwap: null }));
-const extended = { last: 23, high: 23.4, low: 21.5, volume: 800000, premarketHigh: 23.4, premarketLow: 22.6 };
+const extended = { last: 23, high: 23.4, low: 21.5, volume: 800000, premarketHigh: 23.4, premarketLow: 22.6, premarketVolume: 500000 };
 const STRICT = { ...UNKNOWN_EARNINGS_READ, epsBeat: 'yes' as const, revenueBeat: 'yes' as const, guidance: 'raised' as const };
 const plan = evaluateTripleBeatSetup(history, extended, STRICT)!.plan!;
 const day = (overrides: Partial<DailyOhlcBar>): DailyOhlcBar => ({ date: '2026-10-29', open: 23.1, high: 25.2, low: 23, close: 25, volume: 2000000, vwap: null, ...overrides });

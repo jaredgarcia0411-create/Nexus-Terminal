@@ -26,7 +26,7 @@ export interface DiscordEmbedField {
 }
 
 export interface DiscordEmbed {
-  title: string;
+  title?: string;
   description?: string;
   color: number;
   fields?: DiscordEmbedField[];
@@ -772,7 +772,7 @@ const PARABOLIC_GRADE_COLORS: Record<ParabolicGrade, number> = {
 };
 const PARABOLIC_SIZE_LABELS: Record<number, string> = {
   1: 'Full size (1R)',
-  0.5: 'Half size (½R)',
+  0.5: 'Half size (0.5R)',
   0: 'Watch only',
 };
 // Short checklist names for the card, keyed by the score item labels in lib/parabolic/scan.ts.
@@ -833,7 +833,11 @@ export function buildParabolicScanEmbeds(report: AgentReport): DiscordEmbed[] {
       return `${name === 'Green' ? `Green ${metrics.greenStreak}` : name} ${icon}`;
     });
     return {
-      title: `${setup.ticker} · ${setup.grade} · ${setup.score}/${setup.maxScore}`,
+      // No embed title: Discord renders titles larger than description text, and the name and grade lines should match.
+      description: [
+        `**${setup.name ? `${setup.ticker} · ${setup.name}` : setup.ticker}**`,
+        `**${setup.grade} · ${setup.score}/${setup.maxScore}**${setup.fundType ? ` · ${setup.fundType}` : ''}`,
+      ].join('\n'),
       color: PARABOLIC_GRADE_COLORS[setup.grade],
       fields: [
         buildField('Entry', usd(plan.entry)),
@@ -903,14 +907,16 @@ export function buildTripleBeatScanEmbeds(report: AgentReport): DiscordEmbed[] {
       const icon = item.status === 'met' ? '✅' : item.status === 'unknown' ? '❔' : '❌';
       return `${TRIPLE_BEAT_SHORT_LABELS[item.label] ?? item.label} ${icon}`;
     });
+    // No embed title: Discord renders titles larger than description text, and the name and grade lines should match.
     const description = [
+      `**${setup.name ? `${setup.ticker} · ${setup.name}` : setup.ticker}**`,
+      `**${setup.grade} · ${setup.score}/${setup.maxScore}** · ${PARABOLIC_SIZE_LABELS[plan.riskFraction]}`,
       setup.strictTripleBeat ? '🏆 Strict triple beat' : null,
       earnings.note || null,
       earnings.mixedCatalyst ? '⚠️ Mixed catalyst. Check headlines.' : null,
     ].filter(Boolean).join('\n');
     return {
-      title: `${setup.ticker} · ${setup.grade} · ${setup.score}/${setup.maxScore} · ${PARABOLIC_SIZE_LABELS[plan.riskFraction]}`,
-      ...(description ? { description } : {}),
+      description,
       color: TRIPLE_BEAT_GRADE_COLORS[setup.grade],
       fields: [
         buildField('Entry · PM high', usd(plan.entry)),

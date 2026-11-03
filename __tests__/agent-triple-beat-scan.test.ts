@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchSharesOutstanding, type DailyOhlcBar } from '@/lib/massive-market';
+import { fetchSharesOutstanding, fetchTickerReference, type DailyOhlcBar } from '@/lib/massive-market';
 import { fetchDailyBars } from '@/lib/parabolic/data';
 import { getRecentFilings, type SecFiling } from '@/lib/sec/submissions';
 import { fetchEarningsFilerTickers, fetchEarningsNews, fetchExtendedHoursStats, fetchPressReleaseText } from '@/lib/triple-beat/data';
@@ -10,7 +10,7 @@ import { getPreviousTradingSession } from '@/lib/time-utils';
 import type { StepInput } from '@/lib/agents/types';
 import type { TripleBeatScanReport } from '@/lib/triple-beat/scan';
 
-vi.mock('@/lib/massive-market', () => ({ fetchSharesOutstanding: vi.fn() }));
+vi.mock('@/lib/massive-market', () => ({ fetchSharesOutstanding: vi.fn(), fetchTickerReference: vi.fn() }));
 vi.mock('@/lib/sec/submissions', () => ({ getRecentFilings: vi.fn() }));
 vi.mock('@/lib/parabolic/data', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/parabolic/data')>(), fetchDailyBars: vi.fn(),
@@ -43,7 +43,8 @@ describe('orchestrator Triple Beat scan', () => {
     vi.mocked(writeAndDeliverReport).mockResolvedValue({ reportId: 'scan-job:triple-beat-scan', status: 'published', deliveryError: null });
     vi.mocked(fetchDailyBars).mockResolvedValue(history());
     vi.mocked(fetchSharesOutstanding).mockResolvedValue(null);
-    vi.mocked(fetchExtendedHoursStats).mockResolvedValue({ last: 23, high: 23.4, low: 21.5, volume: 800000, premarketHigh: 23.4, premarketLow: 22.6 });
+    vi.mocked(fetchTickerReference).mockResolvedValue({ type: 'CS', name: 'Acme Corp' });
+    vi.mocked(fetchExtendedHoursStats).mockResolvedValue({ last: 23, high: 23.4, low: 21.5, volume: 800000, premarketHigh: 23.4, premarketLow: 22.6, premarketVolume: 500000 });
     vi.mocked(fetchEarningsNews).mockResolvedValue([]);
     vi.mocked(fetchPressReleaseText).mockResolvedValue('Earnings release');
   });
@@ -96,13 +97,13 @@ describe('orchestrator Triple Beat scan', () => {
   it('does not fetch news or classify technically disqualified names', async () => {
     vi.mocked(fetchEarningsFilerTickers).mockResolvedValue(['AAA']);
     vi.mocked(getRecentFilings).mockResolvedValue({ status: 'success', count: 1, results: [filing] });
-    vi.mocked(fetchExtendedHoursStats).mockResolvedValue({ last: 2.9, high: 23.4, low: 2.9, volume: 800000, premarketHigh: 23.4, premarketLow: 2.9 });
+    vi.mocked(fetchExtendedHoursStats).mockResolvedValue({ last: 2.9, high: 23.4, low: 2.9, volume: 800000, premarketHigh: 23.4, premarketLow: 2.9, premarketVolume: 500000 });
     await orchestratorTripleBeatScanBlueprint.steps[0].run(input());
     expect(fetchEarningsNews).not.toHaveBeenCalled(); expect(classifyEarnings).not.toHaveBeenCalled();
   });
   it('skips filing details when an overnight spike fades below the prior close', async () => {
     vi.mocked(fetchEarningsFilerTickers).mockResolvedValue(['AAA']);
-    vi.mocked(fetchExtendedHoursStats).mockResolvedValue({ last: 19.9, high: 23.4, low: 19.8, volume: 800000, premarketHigh: 23.4, premarketLow: 19.8 });
+    vi.mocked(fetchExtendedHoursStats).mockResolvedValue({ last: 19.9, high: 23.4, low: 19.8, volume: 800000, premarketHigh: 23.4, premarketLow: 19.8, premarketVolume: 500000 });
     const scan = await orchestratorTripleBeatScanBlueprint.steps[0].run(input());
     expect(scan.data).toMatchObject({ earningsFilings: 1, setups: [] });
     expect(getRecentFilings).not.toHaveBeenCalled();
@@ -110,12 +111,12 @@ describe('orchestrator Triple Beat scan', () => {
   });
   it('keeps a faded overnight spike above the prior close and tolerates missing shares', async () => {
     vi.mocked(fetchEarningsFilerTickers).mockResolvedValue(['AAA']);
-    vi.mocked(fetchExtendedHoursStats).mockResolvedValue({ last: 20.5, high: 23.4, low: 20.3, volume: 800000, premarketHigh: 20.9, premarketLow: 20.3 });
+    vi.mocked(fetchExtendedHoursStats).mockResolvedValue({ last: 20.5, high: 23.4, low: 20.3, volume: 800000, premarketHigh: 20.9, premarketLow: 20.3, premarketVolume: 500000 });
     vi.mocked(fetchSharesOutstanding).mockRejectedValue(new Error('unavailable'));
     vi.mocked(getRecentFilings).mockResolvedValue({ status: 'success', count: 1, results: [filing] });
     vi.mocked(classifyEarnings).mockResolvedValue({ ...UNKNOWN_EARNINGS_READ, epsBeat: 'yes', revenueBeat: 'yes', guidance: 'raised' });
     const scan = await orchestratorTripleBeatScanBlueprint.steps[0].run(input());
-    expect((scan.data as TripleBeatScanReport).setups).toMatchObject([{ ticker: 'AAA', qualified: true, metrics: { marketCap: null } }]);
+    expect((scan.data as TripleBeatScanReport).setups).toMatchObject([{ ticker: 'AAA', name: 'Acme Corp', qualified: true, metrics: { marketCap: null } }]);
     expect(classifyEarnings).toHaveBeenCalledOnce();
   });
   it('fails the step when the earnings feed fails', async () => {
