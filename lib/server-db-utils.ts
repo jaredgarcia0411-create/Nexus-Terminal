@@ -22,8 +22,8 @@ export async function requireUser() {
     return { error: Response.json({ error: 'Unauthorized' }, { status: 401 }) };
   }
   // The allowlist is enforced at sign-in, but the JWT session lives for weeks
-  // after that. Re-check here so removing an email from ALLOWED_EMAILS cuts off
-  // API access immediately instead of when the cookie expires.
+  // after that. Re-check here so removing an email from ALLOWED_EMAILS and redeploying
+  // cuts off API access instead of waiting for the cookie to expire.
   if (!isEmailAllowed(user.email)) {
     return { error: Response.json({ error: 'Unauthorized' }, { status: 401 }) };
   }

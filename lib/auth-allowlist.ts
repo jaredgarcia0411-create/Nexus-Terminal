@@ -1,5 +1,5 @@
-// Single source of truth for the ALLOWED_EMAILS gate. Read at call time so a
-// change to the env var applies on the next request, not the next deploy.
+// Single source of truth for the ALLOWED_EMAILS gate. Checked on every request, so
+// after you edit the env var and redeploy, sessions already signed in are re-checked too.
 //
 // Fail closed: a missing or empty allowlist denies everyone rather than letting
 // any Google account through.
