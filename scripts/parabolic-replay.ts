@@ -8,8 +8,8 @@
  * Short-at-the-open (dayR, daily bar) is the baseline. minuteDayR replays the same trade on 09:30–16:00 minute bars, and
  * gapFillR / ema9R cover at the card's gap-fill or 9EMA target if it comes before the stop. or5/or15/vwap/belowVwap columns replay intraday triggers (before 10:30 ET)
  * with a high-of-day stop (HodR) and the card's premarket-high stop (PmR), covering at the close; a stop under
- * 0.5 ATR from the entry counts as no trade. A touched
- * stop counts as -1R; borrow fees, locates, and slippage are not modeled. The open short has no stop-width floor (the
+ * 0.5 ATR from the entry counts as no trade. On the daily bar a touched stop counts as -1R. On minute bars a stop fills at
+ * the stop, or at a later minute's open if it gaps above the stop, which can lose more than 1R. Borrow fees, locates, and slippage are not modeled. The open short has no stop-width floor (the
  * live card posts whatever the premarket high gives), so riskAtr records the stop width in ATRs and the summary repeats
  * each open-short line with stops under 0.5 ATR removed: an open at the premarket high leaves a 0.1 ATR stop, where an
  * ordinary 1 ATR fall prints +10R. Dates within about two weeks of

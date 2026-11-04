@@ -161,6 +161,20 @@ describe('parabolic intraday triggers', () => {
     expect(measureOpenShortMinutes(plan, [], 17)).toBeNull();
   });
 
+  it('fills a later minute that gaps through the stop at its open', () => {
+    // Minute 2 opens at 21 against a 19 stop: the gap fill already covered at +3R, the other two lose 3R.
+    expect(measureOpenShortMinutes(plan, [minute(0, 18, 18.5, 17.5, 17.6), minute(1, 17.6, 17.7, 14.9, 15.2), minute(2, 21, 21.5, 20.5, 21)], 21))
+      .toEqual({ dayR: -3, gapFillR: 3, ema9R: -3 });
+    // The entry minute's open is the entry, so it still fills at the stop.
+    expect(measureOpenShortMinutes(plan, [minute(0, 20, 20.5, 17, 17.2)], 17)).toEqual({ dayR: -1, gapFillR: -1, ema9R: -1 });
+  });
+
+  it('fills an intraday-trigger stop at the open when a later minute gaps through it', () => {
+    const outcomes = measureIntradayTriggers(plan, 1, [...base, minute(90, 21, 21.5, 20.5, 21)], OPEN, 17);
+    expect(outcomes.or5.hodR).toBeCloseTo((17.9 - 21) / 0.8);
+    expect(outcomes.or5.pmR).toBeCloseTo((17.9 - 21) / 1.1);
+  });
+
   it('triggers each entry and covers at the close when no stop is touched', () => {
     const outcomes = measureIntradayTriggers(plan, 1, base, OPEN, 17);
     expect(outcomes.or5.minutesAfterOpen).toBeCloseTo(10);
