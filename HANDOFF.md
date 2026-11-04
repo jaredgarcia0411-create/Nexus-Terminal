@@ -37,6 +37,20 @@ Scans (context from the 2026-10-29/30 work, details in git history):
 
 ## Recently Completed
 
+### Small-Cap Research: Report Accuracy
+
+Status: shipped 2026-11-04. Not yet checked on a production report, and FTCI hasn't run with these rules. Check that its S-1 equity line isn't described as capped and that its offering risk section mentions the cap.
+
+Outcome:
+- Market cap now prices Ask Edgar's share count, and the SEC share trend ignores rows from before the latest reverse split (`772a019`).
+- Code calculates each dilution percentage against tradable float and shares outstanding, plus a baby-shelf estimate. Prompt rules cover capacity wording and unsupported buyer or pattern claims.
+- Ask Edgar's `baby_shelf_raisable_amount` isn't the SEC limit: on CHSN and FTCI it is offering amount minus total raised. The site's "Baby Shelf: $X Left" badge still shows it, and Jared chose to leave that for now.
+
+Validation:
+- `npm run lint`, `npx tsc --noEmit`, `npm test` (998 tests) passed.
+- Two paid CHSN runs fixed most errors, but the model can still ignore a rule on any run: the second left the cap out of `overallOfferingRisk`. The two rule tightenings after that run haven't had a paid run.
+- Output tokens varied from 3,192 to 10,576 across runs, so the cap is now 16,000.
+
 ### Small-Cap Research: Pump-and-Dump Tracker, Intraday Runners, Ticker Changes
 
 Status: code reviewed 2026-11-04. Production checks passed 2026-11-04, except the longer TLDR limits, which aren't verified live yet.

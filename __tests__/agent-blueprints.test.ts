@@ -1679,7 +1679,7 @@ describe('agent blueprints', () => {
     }));
 
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
-      maxTokens: 12_000,
+      maxTokens: 16_000,
       userMessage: expect.stringContaining('AskEdgar sections:'),
     }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -2775,6 +2775,62 @@ describe('small-cap research prompt: tracker, runners, and gap session detail', 
     expect(prompt).toContain('14:05');
     expect(prompt).not.toContain('13:32');
     expect(prompt).toContain('| 2023-12-05 | n/a | n/a | n/a | n/a | n/a | 10:05 | n/a | 14:05 | n/a | n/a | n/a |');
+  });
+
+  it('calculates dilution percentages against named bases, using recent rows only', async () => {
+    const recent = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const prompt = await buildPrompt({
+      currentShares: { outstanding: 7_416_111, tradableFloat: 2_415_031 },
+      offerings: [
+        { headline: 'PRIVATE PLACEMENT (EQUITY)', filed_at: recent, shares_amount: 5_000_000 },
+        { headline: 'OLD OFFERING', filed_at: '2023-03-30', shares_amount: 423 },
+      ],
+      dilutionData: [
+        { details: 'Live Warrant', filed_at: '2025-06-13', warrants_remaining: 3_306 },
+        { details: 'Exercised Warrant', filed_at: '2025-06-13', warrants_remaining: 0 },
+      ],
+    });
+
+    expect(prompt).toContain('"percentOfTradableFloat": 207');
+    expect(prompt).toContain('"percentOfOutstanding": 67.4');
+    expect(prompt).toContain('"item": "Live Warrant"');
+    expect(prompt).not.toContain('"item": "OLD OFFERING"');
+    expect(prompt).not.toContain('"item": "Exercised Warrant"');
+  });
+
+  it('estimates the baby-shelf limit from float and the 60-day high, and sums recent ATM sales', async () => {
+    const recent = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const offerings = [
+      { headline: 'ATM USED', filed_at: recent, offering_amount: 13_000_000 },
+      { headline: 'ATM USED', filed_at: recent, offering_amount: 100_000 },
+      { headline: 'ATM USED', filed_at: '2023-06-30', offering_amount: 24_400_000 },
+      { headline: 'PRIVATE PLACEMENT (EQUITY)', filed_at: recent, offering_amount: 4_000_000 },
+    ];
+    const registrations = [{ '60_day_high': 3.38 }];
+
+    const small = await buildPrompt({
+      offerings,
+      registrations,
+      currentShares: { outstanding: 7_416_111, tradableFloat: 2_415_031, float: 7_415_031 },
+    });
+    expect(small).toContain('"estimatedPublicFloat": 25062805');
+    expect(small).toContain('"estimatedOneThirdLimit": 8354268');
+    expect(small).toContain('"reportedAtmSalesLast12Months": 13100000');
+
+    const noFloatField = await buildPrompt({
+      registrations,
+      currentShares: { outstanding: 7_416_111, tradableFloat: 2_415_031 },
+    });
+    expect(noFloatField).toContain('"estimatedPublicFloat": 8162805');
+
+    const large = await buildPrompt({
+      registrations,
+      currentShares: { outstanding: 50_000_000, tradableFloat: 40_000_000, float: 40_000_000 },
+    });
+    expect(large).toContain('"belowThreshold": false');
+    expect(large).toContain('"estimatedOneThirdLimit": null');
+
+    expect(await buildPrompt({ currentShares: null })).toContain('"babyShelf": null');
   });
 
   it('computes the share trend only from rows since the latest reverse split', async () => {
