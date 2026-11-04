@@ -154,7 +154,7 @@ describe('ResearchTickerView', () => {
     });
     expect(screen.getByTestId('research-chart').textContent).toContain('chart AAPL');
     expect(screen.getByTestId('research-report-sections').textContent).toContain('AAPL overview');
-    expect(reportCacheMock.prefetchResearchReport).toHaveBeenCalledWith('AAPL');
+    expect(reportCacheMock.prefetchResearchReport).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByText('Reports'));
     expect(screen.getByTestId('research-report-sections').textContent).toContain('AAPL research');

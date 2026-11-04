@@ -160,12 +160,17 @@ export function parseJson(text: string): unknown {
     return JSON.parse(text);
   } catch {
     const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/i);
-    if (fenceMatch) {
-      return JSON.parse(fenceMatch[1]);
+    const body = fenceMatch ? fenceMatch[1] : text;
+
+    try {
+      // MiniMax sometimes corrupts a key as `"dilution":": {`. Quotes in valid strings are
+      // escaped, so this pattern can't match inside them.
+      return JSON.parse(body.replace(/":":\s*/g, '": '));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`LLM did not return valid JSON: ${detail}`);
     }
   }
-
-  throw new Error('LLM did not return valid JSON');
 }
 
 export function readResults(
@@ -806,6 +811,8 @@ export async function generateSmallCapResearchReport(
     systemPrompt: await loadSmallCapSystemPrompt(),
     userMessage: buildResearchPrompt(pipelineInput),
     temperature: 0.2,
+    // MiniMax reasons before writing and that counts toward the cap, so the default 4096 can cut the JSON off.
+    maxTokens: 12_000,
   }, 'background', { timeoutMs: 240_000 });
 
   // 5. Parse + apply the same post-LLM commentary override the blueprint uses.
@@ -953,7 +960,8 @@ export const smallCapResearchBlueprint: Blueprint = {
           systemPrompt: await loadSmallCapSystemPrompt(),
           userMessage: buildResearchPrompt(input),
           temperature: 0.2,
-        }, 'background');
+          maxTokens: 12_000,
+        }, 'background', { timeoutMs: 180_000 });
         const parsed = researchReportSchema.parse(parseJson(llmResponse.content));
         parsed.gapStatsTable = input.gapStatsTable;
 

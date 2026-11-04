@@ -55,7 +55,7 @@ vi.mock('@/lib/agents/sentiment-client', () => ({
 }));
 
 import { AGENT_CONFIGS, resolveBlueprint } from '@/lib/agents/config';
-import { extractGapStatsTable as extractGapStatsTableSmallCap } from '@/lib/agents/blueprints/small-cap-research';
+import { extractGapStatsTable as extractGapStatsTableSmallCap, parseJson } from '@/lib/agents/blueprints/small-cap-research';
 import { extractGapStatsTable as extractGapStatsTableSwing } from '@/lib/agents/blueprints/swing-trader-research';
 
 function createJob(overrides: Partial<AgentJob> = {}): AgentJob {
@@ -1679,26 +1679,27 @@ describe('agent blueprints', () => {
     }));
 
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      maxTokens: 12_000,
       userMessage: expect.stringContaining('AskEdgar sections:'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Historical Gap Data (last 5, most recent first):'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Deterministic analysis:\n'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Recent news & filings (headline, date, formType, summary):\n'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining("quote the exact headline text of the single most relevant item"),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Management Commentary (from SEC filings / earnings):'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.not.stringContaining('Filings:\n'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(result.data).toMatchObject({
       ticker: 'AAPL',
       gapStatsTable: [{
@@ -2559,24 +2560,28 @@ describe('agent blueprints', () => {
         userMessage: expect.stringContaining('<untrusted-filing>'),
       }),
       'background',
+      { timeoutMs: 180_000 },
     );
     expect(callLlmMock).toHaveBeenCalledWith(
       expect.objectContaining({
         userMessage: expect.stringContaining('<untrusted-price-context>'),
       }),
       'background',
+      { timeoutMs: 180_000 },
     );
     expect(callLlmMock).toHaveBeenCalledWith(
       expect.objectContaining({
         userMessage: expect.stringContaining('<untrusted-news>'),
       }),
       'background',
+      { timeoutMs: 180_000 },
     );
     expect(callLlmMock).toHaveBeenCalledWith(
       expect.objectContaining({
         userMessage: expect.stringContaining('<untrusted-deterministic-analysis>'),
       }),
       'background',
+      { timeoutMs: 180_000 },
     );
   });
 
@@ -2700,6 +2705,29 @@ describe('extractGapStatsTable alias resolution', () => {
     const rows = extractGapStatsTable(raw);
     expect(rows).toHaveLength(10);
     expect(rows[0]).toEqual({ date: '2026-04-01', gapPct: 10, open: 11, close: 10.5 });
+  });
+});
+
+describe('parseJson (small-cap research)', () => {
+  const corrupted = '{\n  "ticker": "CHSN",\n  "dilution":": {\n    "rating": "red"\n  }\n}';
+  const repaired = { ticker: 'CHSN', dilution: { rating: 'red' } };
+
+  it('repairs a corrupted key', () => {
+    expect(parseJson(corrupted)).toEqual(repaired);
+  });
+
+  it('repairs a corrupted key in a code fence', () => {
+    expect(parseJson(`\`\`\`json\n${corrupted}\n\`\`\``)).toEqual(repaired);
+  });
+
+  it('leaves valid JSON unchanged, including text that looks like the corrupted key', () => {
+    const value = { note: 'he said ":": then left', bullets: '- one\n- two', fence: '```json\n{}\n```' };
+    expect(parseJson(JSON.stringify(value, null, 2))).toEqual(value);
+  });
+
+  it('reports the parse error for text it cannot repair', () => {
+    expect(() => parseJson('not json')).toThrow(/^LLM did not return valid JSON: /);
+    expect(() => parseJson('```json\nnot json\n```')).toThrow(/^LLM did not return valid JSON: /);
   });
 });
 

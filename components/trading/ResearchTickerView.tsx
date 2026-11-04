@@ -105,8 +105,6 @@ export default function ResearchTickerView({ ticker }: Props) {
     setActiveTab('overview');
     setHistoricalDate(null);
     void fetchData(ticker);
-    // Warm the Research Report cache in the background so the Research tab renders instantly when clicked.
-    void prefetchResearchReport(ticker);
   }, [ticker, fetchData]);
 
   if (loading) {

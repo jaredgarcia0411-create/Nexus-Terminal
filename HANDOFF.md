@@ -44,7 +44,7 @@ Status: code reviewed 2026-11-04. Manual checks below are still pending.
 Outcome:
 - The small-cap report now gets Ask Edgar's pump-and-dump tracker, flagged intraday runners and gap session detail, shown through the `chartHistory` text. Scam notes sit in their own untrusted block.
 - `/v1/historical-tickers` is replaced by `/v1/ticker-changes`. A no-changes reply is stored with `results: []`, so it doesn't count as data.
-- `snapshot` is now an explicit 13-key list, so Research page loads never pay for runners (about $0.035 a row).
+- `snapshot` is now an explicit 13-key list, and opening a ticker no longer prefetches its report, so runners (about $0.035 a row) are only paid for when the Reports tab opens or a ticker is added to a sheet.
 
 Validation:
 - `npm run lint`, `npx tsc --noEmit`, `npm test` (990 tests) passed in review; `npm run build`, `npm run workflow:audit` passed in the Codex run.

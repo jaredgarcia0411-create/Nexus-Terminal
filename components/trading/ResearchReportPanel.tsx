@@ -71,7 +71,8 @@ export function getCachedReportId(ticker: string): string | null {
 const prefetchInFlight = new Map<string, Promise<void>>();
 
 // Warms reportCache for a ticker by running the same GET-then-POST flow the panel uses on mount.
-// Called by ResearchTickerView as soon as a ticker loads so the Research tab renders instantly when clicked.
+// Called when a ticker is added to a sheet. Not called on ticker open, because each new report pays
+// for an LLM call and Ask Edgar runners.
 export function prefetchResearchReport(ticker: string): Promise<void> {
   if (!ticker) return Promise.resolve();
   if (reportCache.has(ticker)) return Promise.resolve();
