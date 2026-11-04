@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   getIntradaySessionWindow,
-  getLatestClosedTradingSession,
   getNextTradingSession,
   getNyExtendedCloseTime,
   getNyRegularCloseTime,
@@ -197,23 +196,5 @@ describe('time-utils holidays and half days', () => {
     expect(getNyRegularCloseTime('2026-11-30')).toBe('16:00:00');
     expect(getNyExtendedCloseTime('2026-12-24')).toBe('17:00:00');
     expect(getNyExtendedCloseTime('2026-12-28')).toBe('20:00:00');
-  });
-
-  it('picks the latest session that has already closed', () => {
-    // Friday 2026-03-06 at 18:30 ET (EST): Friday has closed.
-    expect(getLatestClosedTradingSession(Date.parse('2026-03-06T18:30:00-05:00'))).toBe('2026-03-06');
-    // Monday 2026-03-09 at 15:59 ET (EDT): Monday is still open, so Friday is the latest closed session.
-    expect(getLatestClosedTradingSession(Date.parse('2026-03-09T15:59:00-04:00'))).toBe('2026-03-06');
-    expect(getLatestClosedTradingSession(Date.parse('2026-03-09T16:00:00-04:00'))).toBe('2026-03-09');
-    // Vercel cron instant, 22:30 UTC, lands after the close in both EST and EDT.
-    expect(getLatestClosedTradingSession(Date.parse('2026-03-06T22:30:00Z'))).toBe('2026-03-06');
-    expect(getLatestClosedTradingSession(Date.parse('2026-03-09T22:30:00Z'))).toBe('2026-03-09');
-    expect(getLatestClosedTradingSession(Date.parse('2026-11-02T22:30:00Z'))).toBe('2026-11-02');
-    // Weekend and holiday roll back to the previous trading day.
-    expect(getLatestClosedTradingSession(Date.parse('2026-03-08T12:00:00-04:00'))).toBe('2026-03-06');
-    expect(getLatestClosedTradingSession(Date.parse('2026-11-26T22:30:00Z'))).toBe('2026-11-25');
-    // Half day: closed from 13:00.
-    expect(getLatestClosedTradingSession(Date.parse('2026-11-27T13:00:00-05:00'))).toBe('2026-11-27');
-    expect(getLatestClosedTradingSession(Date.parse('2026-11-27T12:59:00-05:00'))).toBe('2026-11-25');
   });
 });

@@ -30,6 +30,7 @@ vi.mock('@/lib/market-pulse/capture', () => ({
 }));
 
 import { GET } from '@/app/api/cron/market-pulse-eod/route';
+import vercelConfig from '@/vercel.json';
 
 function createDb() {
   const limitMock = vi.fn().mockResolvedValue([]);
@@ -70,18 +71,21 @@ describe('market pulse eod route', () => {
     vi.useRealTimers();
   });
 
+  it('runs Tuesday to Saturday so every weekday session gets captured the next day', () => {
+    const cron = vercelConfig.crons.find((entry) => entry.path === '/api/cron/market-pulse-eod');
+    expect(cron?.schedule).toBe('30 22 * * 2-6');
+  });
+
   it.each([
-    // The Vercel schedule (22:30 UTC, Mon-Fri) lands after the close in both EST and EDT, so the
-    // session that just ended is captured. Friday used to be skipped under the old "yesterday" default.
-    ['2026-03-06T22:30:00.000Z', '2026-03-06'],
-    ['2026-03-09T22:30:00.000Z', '2026-03-09'],
-    ['2026-10-30T22:30:00.000Z', '2026-10-30'],
-    ['2026-11-02T22:30:00.000Z', '2026-11-02'],
-    // A manual run during the session captures the previous trading day instead.
-    ['2026-03-09T15:00:00.000Z', '2026-03-06'],
-    // Thanksgiving evening rolls back to Wednesday.
-    ['2026-11-26T22:30:00.000Z', '2026-11-25'],
-  ])('defaults to the latest closed New York session at %s', async (nowIso, expectedDate) => {
+    // Tuesday captures Monday, in both EDT and EST.
+    ['2026-03-10T22:30:00.000Z', '2026-03-09'],
+    ['2026-11-03T22:30:00.000Z', '2026-11-02'],
+    // Saturday captures Friday, which the old Monday-to-Friday schedule never did.
+    ['2026-03-07T22:30:00.000Z', '2026-03-06'],
+    ['2026-10-31T22:30:00.000Z', '2026-10-30'],
+    // Saturday also captures a half-day Friday.
+    ['2026-11-28T22:30:00.000Z', '2026-11-27'],
+  ])('defaults to yesterday in New York at %s', async (nowIso, expectedDate) => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(nowIso));
     getDbMock.mockReturnValue(createDb());

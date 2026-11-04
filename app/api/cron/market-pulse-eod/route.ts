@@ -6,7 +6,6 @@ import { getDb } from '@/lib/db';
 import { agentJobs, agentReports, marketPulseDailyStats } from '@/lib/db/schema';
 import { captureMarketPulseForDate } from '@/lib/market-pulse/capture';
 import { dbUnavailable, requireCronSecret } from '@/lib/server-db-utils';
-import { getLatestClosedTradingSession } from '@/lib/time-utils';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -119,7 +118,7 @@ function getDatePlan(url: URL): {
   const days = Number.isFinite(daysParam) && daysParam > 0
     ? Math.min(30, Math.floor(daysParam))
     : 1;
-  const startDate = from ?? defaultTradeDate();
+  const startDate = from ?? yesterdayInNewYork();
   if (!hasDaysParam) {
     return { dates: collectCalendarDates(startDate, 1), requestedTradingDays: null, explicitDate: false };
   }
@@ -141,11 +140,15 @@ function parseDateParam(raw: string | null): string | null {
   return Number.isFinite(timestamp) ? raw : null;
 }
 
-// The Vercel cron fires at 22:30 UTC (17:30 EST / 18:30 EDT), after the close, so the session that
-// just ended is the one to capture. Before the close (manual runs) this falls back to the previous
-// trading day. The old "yesterday in New York" default never captured Friday on a Mon-Fri schedule.
-function defaultTradeDate(): string {
-  return getLatestClosedTradingSession() ?? new Date().toISOString().slice(0, 10);
+function yesterdayInNewYork(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date()).split('-').map(Number);
+  const midnightUtc = Date.UTC(parts[0]!, parts[1]! - 1, parts[2]!);
+  return new Date(midnightUtc - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 function collectCalendarDates(from: string, days: number): string[] {

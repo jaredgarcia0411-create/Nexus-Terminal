@@ -1,6 +1,7 @@
 // Client-safe utilities for AskEdgar API response handling.
 // No server-only imports — safe to use in client components.
 
+import { epochToNySortKey } from '@/lib/time-utils';
 import type { ResearchSnapshotRegistration, ResearchSnapshotWarrant } from '@/lib/types';
 
 export interface AskEdgarEndpointResponse {
@@ -204,7 +205,7 @@ export function getWarrantStatus(
     return { label, colorClass: warrantStatusColor(label) };
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = epochToNySortKey(Date.now());
   const registered = warrant.registered ?? '';
   const exercisePrice = warrant.exercisePrice;
   const remaining = warrant.remaining;

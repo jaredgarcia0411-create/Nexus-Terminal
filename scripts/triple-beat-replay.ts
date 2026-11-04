@@ -6,7 +6,7 @@
  * Usage: npx tsx scripts/triple-beat-replay.ts --from 2024-11-01 --to 2026-10-15 [--out /path/file.csv]
  *
  * Candidates are liquid ticker-days ($5M+ 20-day dollar volume) with an SEC earnings filing accepted between the
- * prior session's 16:00 ET and 09:00 ET on the trade date, matching the live cron; gap, price and market-cap rules
+ * prior session's close (16:00 ET, or 13:00 ET after a half day) and 09:00 ET on the trade date, matching the live cron; gap, price and market-cap rules
  * then use minute bars and shares outstanding as of the prior session. The first run pulls SEC filing history for
  * every liquid ticker (roughly 10–20 minutes at SEC's 10 requests/second). Entry is a break of the premarket high,
  * filled at the open when it gaps above. Day 0 is walked in minute bars so the stop and 2R target resolve in order.

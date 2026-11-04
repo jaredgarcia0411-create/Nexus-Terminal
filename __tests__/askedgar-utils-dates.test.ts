@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { formatDate } from '@/lib/askedgar-utils';
+import { formatDate, getWarrantStatus } from '@/lib/askedgar-utils';
 
 // Node re-reads process.env.TZ at runtime, so each block runs the formatter as a viewer in that zone.
 function describeInTimeZone(timeZone: string, run: () => void) {
@@ -35,5 +35,25 @@ describe('askedgar-utils formatDate', () => {
     expect(formatDate('')).toBe('--');
     expect(formatDate(null)).toBe('--');
     expect(formatDate('not a date')).toBe('not a date');
+  });
+});
+
+describe('askedgar-utils getWarrantStatus', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('compares warrant dates against the New York day, not the UTC day', () => {
+    const warrant = {
+      details: '', amount: 100, remaining: 100, exercisePrice: 5, prefundedCost: null, registered: 'Registered',
+      exercisableDate: '2026-11-05', expirationDate: '2027-11-05', filedAt: null, isPrefunded: false, status: null, documentUrl: null,
+    };
+    vi.useFakeTimers();
+    // 21:00 ET on 2026-11-04 is already 2026-11-05 in UTC, but the warrant isn't exercisable yet.
+    vi.setSystemTime(new Date('2026-11-05T02:00:00Z'));
+    expect(getWarrantStatus(warrant, 6).label).toBe('Not In Play');
+    // 00:00 ET on 2026-11-05.
+    vi.setSystemTime(new Date('2026-11-05T05:00:00Z'));
+    expect(getWarrantStatus(warrant, 6).label).toBe('In Play');
   });
 });

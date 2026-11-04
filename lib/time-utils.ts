@@ -150,17 +150,6 @@ export function shiftCalendarDays(sortKey: string, days: number): string | null 
   return date.toISOString().slice(0, 10);
 }
 
-// The most recent NY session whose regular hours have already ended at `nowMs`: today once the
-// close (16:00, or 13:00 on half days) has passed, otherwise the previous trading day.
-export function getLatestClosedTradingSession(nowMs = Date.now()): string | null {
-  const today = epochToNySortKey(nowMs);
-  if (isNyTradingDay(today)) {
-    const close = nyDateTimeToEpoch(today, getNyRegularCloseTime(today));
-    if (close != null && nowMs >= close) return today;
-  }
-  return getPreviousTradingSession(today);
-}
-
 // Step by calendar day rather than by 24 hours of epoch time: across a DST change a New York day is
 // 23 or 25 hours long, so a 24-hour step lands on the wrong date (23:00 of the day before).
 export function getPreviousTradingSession(sortKey: string): string | null {
