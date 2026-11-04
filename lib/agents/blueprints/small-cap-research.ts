@@ -674,19 +674,23 @@ function buildDilutionMath(input: z.infer<typeof researchPipelineInputSchema>) {
 
   // Ask Edgar's baby_shelf_raisable_amount isn't this limit: on CHSN and FTCI it is just offering
   // amount minus total raised. Public float counts restricted shares held by non-affiliates, so
-  // prefer `float`, which on CHSN includes the 5M PIPE shares that tradable_float leaves out.
+  // prefer `float`, which on CHSN and OMH is tradable_float plus their restricted PIPE shares.
   const sixtyDayHigh = asArray(input.registrations)
     .map((row) => getNumberField(row, ['60_day_high']))
-    .find((value) => value) ?? null;
+    .find((value) => value) ?? 0;
   const floatShares = input.currentShares?.float ?? tradableFloat;
-  const estimatedPublicFloat = sixtyDayHigh && floatShares ? Math.round(sixtyDayHigh * floatShares) : null;
+  // A spike can lift float past $75M, and Ask Edgar's 60-day high lags it (OMH: $3.32 at a $15.93 price).
+  const floatPrice = Math.max(sixtyDayHigh, input.priceContext?.price ?? 0);
+  const estimatedPublicFloat = floatPrice && floatShares ? Math.round(floatPrice * floatShares) : null;
   const belowThreshold = estimatedPublicFloat !== null && estimatedPublicFloat < 75_000_000;
   const babyShelf = estimatedPublicFloat === null ? null : {
     estimatedPublicFloat,
     belowThreshold,
     estimatedOneThirdLimit: belowThreshold ? Math.round(estimatedPublicFloat / 3) : null,
-    reportedAtmSalesLast12Months: recentOfferings
-      .filter((row) => getStringField(row, ['headline'])?.toUpperCase().includes('ATM USED'))
+    // Every primary sale off the shelf counts, not just ATM draws: OMH's $4M registered direct does.
+    // Ask Edgar's amount_sold_12_mos can't be used: it shows 0 on CHSN despite $13.1M of ATM sales.
+    reportedShelfSalesLast12Months: recentOfferings
+      .filter((row) => ['F-3', 'S-3'].includes(getStringField(row, ['offering_type']) ?? ''))
       .reduce<number>((sum, row) => sum + (getNumberField(row, ['offering_amount']) ?? 0), 0),
   };
 
@@ -770,6 +774,9 @@ export function buildResearchPrompt(input: z.infer<typeof researchPipelineInputS
 
   return [
     `Ticker: ${input.ticker}`,
+    // en-CA formats as YYYY-MM-DD, matching the dates in the data. Without this the model guessed
+    // how old dates were: FTCI's September 2026 repayment read as near-term in November.
+    `Today's date: ${new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })}. A deadline before today has passed, so do not call it upcoming or near-term.`,
     'Return strict JSON matching this exact shape (no markdown, no extra keys):',
     JSON.stringify(exampleShape, null, 2),
     `Price context:\n${wrapUntrusted('price-context', JSON.stringify(priceContext, null, 2))}`,
@@ -805,8 +812,9 @@ export function buildResearchPrompt(input: z.infer<typeof researchPipelineInputS
     'For today\'s share count, float, and any percent of float, use currentShares when it has a value. priceContext.marketCap already uses currentShares.outstanding when it is available. Never present a historicalFloat row as the current share count.',
     'historicalFloat rows are SEC share counts as filed. Each count reflects the reverse splits executed on or before its filed date. Compare two rows only when no reverseSplits execution_date falls between their filed dates. If a split falls between them, or a row has no filed date, do not state a growth or decline figure between those rows.',
     'Every percentage must name its base, such as "207% of tradable float" or "67% of shares outstanding". For rows in dilutionMath.shareRows, copy those percentages instead of calculating your own. They compare a row\'s shares with today\'s counts, and do not mean those shares are already included in that count. Do not quote the percentage in dilutionRating.dilution_desc, because its base is not stated.',
-    'offering_amount and the amounts in offering_ability_desc are amounts filed, not amounts left. amount_remaining_atm is Ask Edgar\'s figure and can miss reported sales. If it equals the ATM\'s offering_amount while offerings has ATM USED rows filed after that ATM, write "filed for $X, with $Y in reported sales" and do not call any amount "remaining" or "capacity left". Ignore over_baby_shelf and baby_shelf_raisable_amount, because they are not the SEC limit.',
-    'dilutionMath.babyShelf is our estimate, not a filed figure. When belowThreshold is true, mention it in offeringAbility and overallOfferingRisk for any F-3 or S-3 shelf or ATM: with public float under $75M, primary sales off these forms are generally capped at one-third of public float in any 12 months. Give estimatedOneThirdLimit and reportedAtmSalesLast12Months as estimates. Also say the cap may not apply if the ATM supplement was filed while public float was at least $75M, that this data does not show the float at that filing, and so it cannot confirm how much can be sold. Never write that the full filed amount can be sold, that stock can be sold into any strength, or that sales are blocked. The cap does not cover S-1 registrations or private placements.',
+    'offering_amount is the amount filed. The amounts in offering_ability_desc and amount_remaining_atm are Ask Edgar\'s figures: they can miss reported sales and they ignore the baby-shelf cap. Write them as "Ask Edgar lists $X", never as "remaining capacity" or "capacity left". If amount_remaining_atm equals the ATM\'s offering_amount while offerings has ATM USED rows filed after that ATM, write "filed for $X, with $Y in reported sales" instead. Ignore over_baby_shelf, baby_shelf_raisable_amount, and amount_sold_12_mos, because they are not the SEC limit or a complete sales count.',
+    'In offerings, shares_amount and share_price are adjusted for reverse splits, while the text in selling_shareholder_details is as filed. Use the adjusted fields for share counts and prices.',
+    'dilutionMath.babyShelf is our estimate, not a filed figure. When belowThreshold is true, mention it in offeringAbility and overallOfferingRisk for any F-3 or S-3 shelf or ATM: with public float under $75M, primary sales off these forms are generally capped at one-third of public float in any 12 months. Give estimatedOneThirdLimit and reportedShelfSalesLast12Months as estimates. If there is an active ATM, also say the cap may not apply if its supplement was filed while public float was at least $75M, that this data does not show the float at that filing, and so it cannot confirm how much can be sold. When belowThreshold is false for a company with an F-3 or S-3 shelf or ATM, say the estimate is at or above $75M at this price, so the cap may not limit sales right now, and that it depends on the price holding. Never write that the full filed amount can be sold, that stock can be sold into any strength, or that sales are blocked. The cap does not cover S-1 registrations or private placements.',
     'State only what the data says about who and why. Name insiders, management, the chairman, or affiliates as buyers only if a filing in this prompt says so; if it says "investors" or names no buyer, write that. Do not present patterns or motives as fact, including labels such as "classic", "pump", "distribution", or "dilution-enabler". Describe what happened and, if you infer more, mark it as your read with "could suggest". Price and volume alone do not show who is buying or selling, so do not call a session "distribution" or attribute it to insiders or institutions.',
     'For split and offering timing, cite the dates. Do not write a span such as "two splits in 13 months" or "in the past year". When citing offering_frequency_desc, copy its category counts and do not add them into a total.',
     'For chartHistory: write 2-4 sentences rating the ticker\'s technical posture and historical gap behavior. Read numeric inputs directly from the deterministicAnalysis JSON block (for gapCount, sameDayFadeRate, avgHighExtension, avgCloseVsOpen) and the priceContext JSON block (for rsi, ema9, ema21, high1m, low1m, sector). Translate those numbers into plain-English phrasing — e.g., "fades intraday about half the time", "averages ~25% above the open", "RSI 69 is approaching overbought", "trades between $2.98 and $6.57 over the last month". Do NOT echo the raw field identifiers in your output (no literal "gapCount", "sameDayFadeRate", "avgHighExtension", "avgCloseVsOpen", "high1m", "low1m", "ema9", or "ema21" tokens in the sentence). Do NOT count rows from the Historical Gap Data display table — trust the gapCount value in deterministicAnalysis (the display table may be a truncated view). Do NOT write "no historical gap data available" in chartHistory — that phrase belongs only to the gapStatsTable section. If gapCount is 0, still rate the chart setup using price-context technicals and acknowledge thin gap priors in one clause.',

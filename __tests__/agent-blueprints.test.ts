@@ -2777,6 +2777,15 @@ describe('small-cap research prompt: tracker, runners, and gap session detail', 
     expect(prompt).toContain('| 2023-12-05 | n/a | n/a | n/a | n/a | n/a | 10:05 | n/a | 14:05 | n/a | n/a | n/a |');
   });
 
+  it("tells the model today's Eastern date", async () => {
+    vi.useFakeTimers({ now: new Date('2026-11-05T03:00:00Z') });
+    try {
+      expect(await buildPrompt({})).toContain("Today's date: 2026-11-04.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('calculates dilution percentages against named bases, using recent rows only', async () => {
     const recent = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const prompt = await buildPrompt({
@@ -2798,13 +2807,14 @@ describe('small-cap research prompt: tracker, runners, and gap session detail', 
     expect(prompt).not.toContain('"item": "Exercised Warrant"');
   });
 
-  it('estimates the baby-shelf limit from float and the 60-day high, and sums recent ATM sales', async () => {
+  it('estimates the baby-shelf limit from float and the higher of the 60-day high and live price', async () => {
     const recent = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const offerings = [
-      { headline: 'ATM USED', filed_at: recent, offering_amount: 13_000_000 },
-      { headline: 'ATM USED', filed_at: recent, offering_amount: 100_000 },
-      { headline: 'ATM USED', filed_at: '2023-06-30', offering_amount: 24_400_000 },
-      { headline: 'PRIVATE PLACEMENT (EQUITY)', filed_at: recent, offering_amount: 4_000_000 },
+      { headline: 'ATM USED', offering_type: 'S-3', filed_at: recent, offering_amount: 13_000_000 },
+      { headline: 'REGISTERED OFFERING (RDO)', offering_type: 'F-3', filed_at: recent, offering_amount: 100_000 },
+      { headline: 'ATM USED', offering_type: 'S-3', filed_at: '2023-06-30', offering_amount: 24_400_000 },
+      { headline: 'REGISTERED OFFERING', offering_type: 'F-1', filed_at: recent, offering_amount: 7_000_000 },
+      { headline: 'PRIVATE PLACEMENT (EQUITY)', offering_type: null, filed_at: recent, offering_amount: 4_000_000 },
     ];
     const registrations = [{ '60_day_high': 3.38 }];
 
@@ -2815,7 +2825,18 @@ describe('small-cap research prompt: tracker, runners, and gap session detail', 
     });
     expect(small).toContain('"estimatedPublicFloat": 25062805');
     expect(small).toContain('"estimatedOneThirdLimit": 8354268');
-    expect(small).toContain('"reportedAtmSalesLast12Months": 13100000');
+    expect(small).toContain('"reportedShelfSalesLast12Months": 13100000');
+
+    const spiking = await buildPrompt({
+      registrations: [{ '60_day_high': 3.32 }],
+      currentShares: { outstanding: 5_128_724, tradableFloat: 2_005_226, float: 5_111_893 },
+      priceContext: {
+        price: 15.93, change: null, volume: null, avgVolume90d: null, marketCap: null, sector: null,
+        high1m: null, low1m: null, rsi: null, macdSignal: null, ema9: null, ema21: null,
+      },
+    });
+    expect(spiking).toContain('"estimatedPublicFloat": 81432455');
+    expect(spiking).toContain('"belowThreshold": false');
 
     const noFloatField = await buildPrompt({
       registrations,
