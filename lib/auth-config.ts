@@ -1,6 +1,8 @@
 import NextAuth, { type NextAuthConfig } from 'next-auth';
 import Google from 'next-auth/providers/google';
 
+import { isEmailAllowed } from '@/lib/auth-allowlist';
+
 const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim();
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
 const missingGoogleConfig = !googleClientId || !googleClientSecret;
@@ -30,13 +32,13 @@ const config: NextAuthConfig = {
     signIn({ user }) {
       // Fail closed: if the allowlist is missing or empty, deny everyone
       // rather than letting any Google account sign in.
-      const allowedRaw = process.env.ALLOWED_EMAILS?.trim();
-      if (!allowedRaw) return false;
-      const allowed = allowedRaw.split(',').map((email) => email.trim().toLowerCase());
-      return allowed.includes(user.email?.toLowerCase() ?? '');
+      return isEmailAllowed(user.email);
     },
     authorized({ auth, request: { nextUrl } }) {
-      const isLoggedIn = !!auth?.user;
+      // Sessions are JWTs that outlive an allowlist edit, so a removed user
+      // still carries a valid cookie. Re-check the allowlist on every page
+      // request; API routes do the same inside requireUser().
+      const isLoggedIn = !!auth?.user && isEmailAllowed(auth.user.email);
       const isLoginPage = nextUrl.pathname === '/login';
 
       if (isLoginPage) {

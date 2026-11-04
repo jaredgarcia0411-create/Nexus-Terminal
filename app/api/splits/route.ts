@@ -20,6 +20,9 @@ export async function GET(request: Request): Promise<Response> {
     if (!symbol) {
       return Response.json({ error: 'Missing symbol' }, { status: 400 });
     }
+    if (!/^[A-Z0-9.\-^:]{1,20}$/.test(symbol)) {
+      return Response.json({ error: 'Invalid symbol' }, { status: 400 });
+    }
 
     if (!isMassiveConfigured()) {
       return Response.json({ error: 'Market data provider not configured' }, { status: 503 });

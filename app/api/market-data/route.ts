@@ -7,6 +7,20 @@ import {
 } from '@/lib/massive-market';
 import { requireUser } from '@/lib/server-db-utils';
 
+// Massive ticker symbols: equities plus prefixed forms like C:EURUSD / I:SPX.
+const SYMBOL_REGEX = /^[A-Z0-9.\-^:]{1,20}$/;
+const FREQUENCY_TYPES = new Set(['minute', 'daily', 'weekly', 'monthly']);
+const PERIOD_TYPES = new Set(['day', 'month', 'year']);
+// Intraday bar size in minutes. Massive accepts any positive multiplier; a day
+// is the sane upper bound for a minute timespan.
+const MAX_MINUTE_MULTIPLIER = 1440;
+
+function parseMinuteMultiplier(raw: string): string | null {
+  if (!/^\d{1,4}$/.test(raw)) return null;
+  const value = Number(raw);
+  return value >= 1 && value <= MAX_MINUTE_MULTIPLIER ? String(value) : null;
+}
+
 function toMassiveTimespan(frequencyType: string, frequency: string) {
   if (frequencyType === 'minute') return { multiplier: frequency, timespan: 'minute' };
   if (frequencyType === 'daily') return { multiplier: '1', timespan: 'day' };
@@ -18,7 +32,7 @@ function toMassiveTimespan(frequencyType: string, frequency: string) {
 function computeDateRange(periodType: string, period: string) {
   const now = new Date();
   const to = now.toISOString().split('T')[0];
-  const value = Math.max(1, Number(period) || 1);
+  const value = Math.min(1000, Math.max(1, Math.floor(Number(period)) || 1));
 
   const past = new Date(now);
   if (periodType === 'day') {
@@ -52,6 +66,9 @@ export async function GET(request: Request): Promise<Response> {
     if (!symbol) {
       return Response.json({ error: 'Missing symbol' }, { status: 400 });
     }
+    if (!SYMBOL_REGEX.test(symbol)) {
+      return Response.json({ error: 'Invalid symbol' }, { status: 400 });
+    }
 
     if (!isMassiveConfigured()) {
       return Response.json({ error: 'Market data provider not configured' }, { status: 503 });
@@ -60,11 +77,21 @@ export async function GET(request: Request): Promise<Response> {
     const periodType = searchParams.get('periodType') ?? 'day';
     const period = searchParams.get('period') ?? '1';
     const frequencyType = searchParams.get('frequencyType') ?? 'minute';
-    const frequency = searchParams.get('frequency') ?? '5';
+    const frequencyRaw = searchParams.get('frequency') ?? '5';
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     // includePrePost is accepted for backward compatibility but not forwarded.
     void searchParams.get('includePrePost');
+
+    // These values become path segments of the upstream Massive URL. Only a
+    // known timespan and a small integer bar size may reach the provider.
+    if (!FREQUENCY_TYPES.has(frequencyType) || !PERIOD_TYPES.has(periodType)) {
+      return Response.json({ error: 'Invalid frequencyType or periodType' }, { status: 400 });
+    }
+    const frequency = frequencyType === 'minute' ? parseMinuteMultiplier(frequencyRaw) : '1';
+    if (!frequency) {
+      return Response.json({ error: 'frequency must be a whole number of minutes' }, { status: 400 });
+    }
 
     const { multiplier, timespan } = toMassiveTimespan(frequencyType, frequency);
 

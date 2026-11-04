@@ -24,6 +24,23 @@ describe('Massive aggregate price basis', () => {
     const url = new URL(String(fetchSpy.mock.calls[0][0]));
     expect(url.searchParams.get('adjusted')).toBe(expected);
   });
+
+  it('encodes every path segment so a value cannot change the upstream endpoint', async () => {
+    vi.stubEnv('MASSIVE_API_KEY', 'test-key');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ results: [] }));
+
+    await fetchMassiveAggregateBars({
+      ticker: 'AAPL', multiplier: '../../v3/reference/tickers?x=1#', timespan: 'minute',
+      from: '1780689600000', to: '1780925400000',
+    });
+
+    const url = new URL(String(fetchSpy.mock.calls[0][0]));
+    expect(url.pathname).toBe(
+      '/v2/aggs/ticker/AAPL/range/..%2F..%2Fv3%2Freference%2Ftickers%3Fx%3D1%23/minute/1780689600000/1780925400000',
+    );
+    expect(url.searchParams.get('x')).toBeNull();
+    expect(url.searchParams.get('apiKey')).toBe('test-key');
+  });
 });
 
 describe('Massive ticker reference', () => {

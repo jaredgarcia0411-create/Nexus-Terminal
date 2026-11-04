@@ -1,4 +1,6 @@
 import { and, eq, inArray, or } from 'drizzle-orm';
+import { secretsMatch } from '@/lib/api-route-utils';
+import { isEmailAllowed } from '@/lib/auth-allowlist';
 import { type Db, type PoolDb } from '@/lib/db';
 import { users, trades, tradeTags } from '@/lib/db/schema';
 import type { ApiTrade } from '@/lib/types';
@@ -17,6 +19,12 @@ export async function requireUser() {
   const session = await auth();
   const user = session?.user as ({ id?: string; email?: string | null; name?: string | null; image?: string | null } | undefined);
   if (!user?.id || !user.email) {
+    return { error: Response.json({ error: 'Unauthorized' }, { status: 401 }) };
+  }
+  // The allowlist is enforced at sign-in, but the JWT session lives for weeks
+  // after that. Re-check here so removing an email from ALLOWED_EMAILS cuts off
+  // API access immediately instead of when the cookie expires.
+  if (!isEmailAllowed(user.email)) {
     return { error: Response.json({ error: 'Unauthorized' }, { status: 401 }) };
   }
   return {
@@ -122,7 +130,7 @@ export function requireCronSecret(request: Request): Response | null {
 
   const authHeader = request.headers.get('authorization');
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
-  if (!token || token !== secret) {
+  if (!token || !secretsMatch(token, secret)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
