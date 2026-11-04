@@ -7,7 +7,8 @@ import { getCachedResearchTldr } from '@/lib/research';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 30;
+// Room for callLlm's two 60s attempts, so a timeout returns our error instead of a Vercel 504.
+export const maxDuration = 130;
 
 const tldrSchema = z.object({
   ticker: z.string().trim().toUpperCase().regex(/^[A-Z0-9.\-^]{1,10}$/, 'Valid ticker required'),

@@ -39,7 +39,7 @@ Scans (context from the 2026-10-29/30 work, details in git history):
 
 ### Small-Cap Research: Pump-and-Dump Tracker, Intraday Runners, Ticker Changes
 
-Status: code reviewed 2026-11-04. Manual checks below are still pending.
+Status: code reviewed 2026-11-04. Production checks passed 2026-11-04, except the longer TLDR limits, which aren't verified live yet.
 
 Outcome:
 - The small-cap report now gets Ask Edgar's pump-and-dump tracker, flagged intraday runners and gap session detail, shown through the `chartHistory` text. Scam notes sit in their own untrusted block.
@@ -47,7 +47,8 @@ Outcome:
 - `snapshot` is now an explicit 13-key list, and opening a ticker no longer prefetches its report, so runners (about $0.035 a row) are only paid for when the Reports tab opens or a ticker is added to a sheet.
 
 Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm test` (990 tests) passed in review; `npm run build`, `npm run workflow:audit` passed in the Codex run.
+- `npm run lint`, `npx tsc --noEmit`, `npm test` (994 tests) passed; `npm run build`, `npm run workflow:audit` passed in the Codex run.
 - Live `/v1/ticker-changes` smoke passed: XYZ returned `count: 1` with `old_ticker: SQ` and `effective_date: 2025-01-21` ($0.0137). NHBI returned the no-changes shape.
-- Pending: CHSN report Chart History wording; new-ticker Research load logs `requested: 13` with no runner fetch.
+- Production: CHSN and FTCI reports generated with the expected Chart History wording and Dilution bullets. FTCI's load sent no report POST before the Reports tab opened, and its TLDR log shows `fetchedFresh=0/13`.
+- TLDR: CHSN's first request hit the route's 30s limit (504) and its retry worked; FTCI worked first try. Limits are now 60s per attempt and 130s for the route.
 - Deploy: the agent images copy `lib/` at build time, so the server update needs `--build`.
