@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateParabolicSetup, measureIntradayTriggers, measureReplayOutcome, passesLivePrefilter, passesReplayPrefilter } from '@/lib/parabolic/scan';
+import { evaluateParabolicSetup, measureIntradayTriggers, measureOpenShortMinutes, measureReplayOutcome, passesLivePrefilter, passesReplayPrefilter } from '@/lib/parabolic/scan';
 import type { OHLCData } from '@/lib/indicators';
 import type { DailyOhlcBar } from '@/lib/massive-market';
 
@@ -135,6 +135,17 @@ describe('parabolic intraday triggers', () => {
     minute(20, 17.9, 18.0, 16.8, 16.9),
     ...repeat(21, 29, 16.9, 17.0, 16.7, 16.8),
   ];
+
+  it('replays the open short on minute bars, covering at a target only if it comes before the stop', () => {
+    // Gap fill (15) prints in minute 1, then the stop (19) in minute 2: holding to the close is stopped, covering at the gap fill is +3R.
+    expect(measureOpenShortMinutes(plan, [minute(0, 18, 18.5, 17.5, 17.6), minute(1, 17.6, 17.7, 14.9, 15.2), minute(2, 15.2, 19.2, 15, 19)], 18.5))
+      .toEqual({ dayR: -1, gapFillR: 3, ema9R: -1 });
+    expect(measureOpenShortMinutes(plan, [minute(0, 18, 18.5, 17, 17.2)], 17)).toEqual({ dayR: 1, gapFillR: 1, ema9R: 1 });
+    // One bar that reaches both the stop and the target counts as stopped.
+    expect(measureOpenShortMinutes(plan, [minute(0, 18, 19.1, 14.8, 15)], 15)).toEqual({ dayR: -1, gapFillR: -1, ema9R: -1 });
+    expect(measureOpenShortMinutes({ ...plan, target2RR: null }, [minute(0, 18, 18.5, 17, 17.2)], 17)?.ema9R).toBeNull();
+    expect(measureOpenShortMinutes(plan, [], 17)).toBeNull();
+  });
 
   it('triggers each entry and covers at the close when no stop is touched', () => {
     const outcomes = measureIntradayTriggers(plan, 1, base, OPEN, 17);

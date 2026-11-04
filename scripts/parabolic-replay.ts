@@ -5,7 +5,8 @@
  * Reads MASSIVE_API_KEY from .env.local.
  * Usage: npx tsx scripts/parabolic-replay.ts --from 2024-11-01 --to 2026-10-15 [--out /path/file.csv]
  *
- * Short-at-the-open (dayR) is the baseline; or5/or15/vwap/belowVwap columns replay intraday triggers (before 10:30 ET)
+ * Short-at-the-open (dayR, daily bar) is the baseline. minuteDayR replays the same trade on 09:30–16:00 minute bars, and
+ * gapFillR / ema9R cover at the card's gap-fill or 9EMA target if it comes before the stop. or5/or15/vwap/belowVwap columns replay intraday triggers (before 10:30 ET)
  * with a high-of-day stop (HodR) and the card's premarket-high stop (PmR), covering at the close; a stop under
  * 0.5 ATR from the entry counts as no trade. A touched
  * stop counts as -1R; borrow fees, locates, and slippage are not modeled. Dates within about two weeks of
@@ -20,7 +21,7 @@ import { join } from 'node:path';
 import Papa from 'papaparse';
 import { fetchGroupedDailyAggregates, fetchMassiveAggregateBars, fetchSharesOutstanding, fetchSplitHistory, type DailyOhlcBar } from '@/lib/massive-market';
 import { addCalendarDays, fetchDailyBars, fetchPremarketStats } from '@/lib/parabolic/data';
-import { MIN_HISTORY_BARS, evaluateParabolicSetup, measureIntradayTriggers, measureReplayOutcome, passesReplayPrefilter } from '@/lib/parabolic/scan';
+import { MIN_HISTORY_BARS, evaluateParabolicSetup, measureIntradayTriggers, measureOpenShortMinutes, measureReplayOutcome, passesReplayPrefilter } from '@/lib/parabolic/scan';
 import { getNextTradingSession, getPreviousTradingSession, nyDateTimeToEpoch } from '@/lib/time-utils';
 
 function readArg(name: string): string | undefined {
@@ -110,6 +111,7 @@ async function main() {
       const triggers = plan ? measureIntradayTriggers(plan, metrics.atr14, minutes, open, sessions[0].close) : null;
       // For testing other stops: the highest price before the gap filled back to the prior close, from day-0 minute bars.
       const day0Minutes = minutes.filter((bar) => bar.time >= open);
+      const minuteOutcome = plan ? measureOpenShortMinutes(plan, day0Minutes, sessions[0].close) : null;
       let highSoFar = sessions[0].open;
       let highBeforeFill: number | null = null;
       for (const bar of day0Minutes) {
@@ -133,6 +135,7 @@ async function main() {
         entry: rounded(plan?.entry), stop: rounded(plan?.stop), riskPerShare: rounded(plan?.riskPerShare),
         target1RR: rounded(plan?.target1RR), target2RR: rounded(plan?.target2RR),
         stoppedOutDay0: outcome?.stoppedOutDay0 ?? '', dayR: rounded(outcome?.dayR),
+        minuteDayR: rounded(minuteOutcome?.dayR), gapFillR: rounded(minuteOutcome?.gapFillR), ema9R: rounded(minuteOutcome?.ema9R),
         mfeDayR: rounded(outcome?.mfeDayR), maeDayR: rounded(outcome?.maeDayR),
         mfe10R: rounded(outcome?.mfe10R), mae10R: rounded(outcome?.mae10R), daysTo9Ema: rounded(outcome?.daysTo9Ema),
         atr14: rounded(metrics.atr14), day0Close: rounded(sessions[0].close), day0High: rounded(sessions[0].high),
@@ -174,7 +177,10 @@ async function main() {
     console.log(`${label}: ${trades.length}/${posted.length} trades, win rate ${trades.length ? (100 * wins / trades.length).toFixed(1) + '%' : 'n/a'}, average R ${trades.length ? (total / trades.length).toFixed(2) : 'n/a'}, total R ${total.toFixed(1)}`);
   };
   console.log(`Posted setups (grade A–C, top 9/day): ${posted.length}`);
-  summarize('Short at open', posted.map((row) => row.dayR));
+  summarize('Short at open (daily bar)', posted.map((row) => row.dayR));
+  summarize('Short at open (minute bars)', posted.map((row) => row.minuteDayR));
+  summarize('Cover at gap fill or stop', posted.map((row) => row.gapFillR));
+  summarize('Cover at 9EMA or stop', posted.map((row) => row.ema9R));
   summarize('OR5 break, HOD stop', posted.map((row) => row.or5HodR));
   summarize('OR5 break, PM stop', posted.map((row) => row.or5PmR));
   summarize('OR15 break, HOD stop', posted.map((row) => row.or15HodR));

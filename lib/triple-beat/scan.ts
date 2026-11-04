@@ -27,6 +27,9 @@ const RULES = {
 };
 
 export const MIN_HISTORY_BARS = 61;
+// The card's entry rule: the premarket-high break needs 3x+ time-of-day RVOL. Replay-only until the live scan measures it.
+export const MIN_ENTRY_RVOL = 3;
+export const RVOL_SESSIONS = 20;
 export const MAX_PREMARKET_SCORE = 45;
 
 export type TripleBeatGrade = 'A+' | 'A' | 'B' | 'Pass';
@@ -212,21 +215,56 @@ export function evaluateTripleBeatSetup(
   };
 }
 
-// Day 0 is ordered by minute bars when given; later daily bars that touch the stop count as stopped before the target.
-export function measureTripleBeatOutcome(
+// Time-of-day RVOL at each minute after the open: volume since 09:30 ÷ the average volume over the same minutes in the
+// prior sessions. Arrays are indexed by minutes after 09:30, with 0 for minutes that had no trades. With no prior
+// volume to compare against, RVOL is 0 so the entry can't be confirmed.
+export function timeOfDayRvol(day0Volumes: number[], priorSessionVolumes: number[][]): number[] {
+  let cumulative = 0;
+  let priorCumulative = 0;
+  return day0Volumes.map((volume, minute) => {
+    cumulative += volume;
+    for (const session of priorSessionVolumes) priorCumulative += session[minute] ?? 0;
+    const average = priorSessionVolumes.length > 0 ? priorCumulative / priorSessionVolumes.length : 0;
+    return average > 0 ? cumulative / average : 0;
+  });
+}
+
+export interface TripleBeatMinuteBar {
+  open: number;
+  high: number;
+  low: number;
+  rvol?: number;
+}
+
+// Day 0 is ordered by minute bars when given. With `loadMinutes`, every later day is walked in its 04:00–16:00 minute
+// bars, since the stop and the 2R partial are both worked premarket: a print through either fills at that level. Without
+// minute bars, a daily bar that touches the stop wins.
+// With minute bars, the entry fills on the first bar that trades at or above the premarket high while its RVOL is at
+// least `minRvol` (at that bar's open if it is already above). A bar's RVOL includes its own volume, so a mid-minute
+// fill sees up to a minute of volume early. `minRvol` above 0 needs minute bars; without them nothing triggers.
+export async function measureTripleBeatOutcome(
   history: DailyOhlcBar[],
   plan: TripleBeatPlan,
   sessions: DailyOhlcBar[],
-  day0Minutes: Array<{ high: number; low: number }> = [],
-): TripleBeatOutcome {
+  day0Minutes: TripleBeatMinuteBar[] = [],
+  minRvol = 0,
+  loadMinutes?: (date: string) => Promise<TripleBeatMinuteBar[]>,
+): Promise<TripleBeatOutcome> {
   const day0 = sessions[0];
-  if (day0.high < plan.entry) {
-    return {
-      triggered: false, fill: null, stoppedOutDay0: null, dayR: null, hit2R: null, runnerR: null,
-      totalR: null, daysHeld: null, openAtEnd: null, mfe20R: null, mae20R: null,
-    };
+  const notTriggered: TripleBeatOutcome = {
+    triggered: false, fill: null, stoppedOutDay0: null, dayR: null, hit2R: null, runnerR: null,
+    totalR: null, daysHeld: null, openAtEnd: null, mfe20R: null, mae20R: null,
+  };
+  if (day0.high < plan.entry) return notTriggered;
+  let fill = Math.max(day0.open, plan.entry);
+  let entryIndex = 0;
+  if (day0Minutes.length > 0) {
+    entryIndex = day0Minutes.findIndex((bar) => bar.high >= plan.entry && (bar.rvol ?? Number.POSITIVE_INFINITY) >= minRvol);
+    if (entryIndex === -1) return notTriggered;
+    fill = Math.max(day0Minutes[entryIndex].open, plan.entry);
+  } else if (minRvol > 0) {
+    return notTriggered;
   }
-  const fill = Math.max(day0.open, plan.entry);
   const risk = fill - plan.stop;
   const toR = (price: number) => (price - fill) / risk;
   const target = fill + RULES.target1R * risk;
@@ -240,10 +278,7 @@ export function measureTripleBeatOutcome(
   let stoppedOutDay0 = day0.low <= plan.stop;
   if (day0Minutes.length > 0) {
     stoppedOutDay0 = false;
-    let inTrade = false;
-    for (const bar of day0Minutes) {
-      inTrade ||= bar.high >= plan.entry;
-      if (!inTrade) continue;
+    for (const bar of day0Minutes.slice(entryIndex)) {
       if (bar.low <= plan.stop) {
         stoppedOutDay0 = true;
         break;
@@ -253,12 +288,37 @@ export function measureTripleBeatOutcome(
   }
   for (let k = 0; k < window.length; k += 1) {
     const bar = window[k];
-    if (k === 0 ? stoppedOutDay0 : bar.low <= plan.stop) {
-      exit = plan.stop;
-      daysHeld = k;
-      break;
+    if (k === 0) {
+      if (stoppedOutDay0) {
+        exit = plan.stop;
+        daysHeld = 0;
+        break;
+      }
+      // Day 0's daily high can come before a late entry, so with minute bars only the walk above counts on day 0.
+      if (day0Minutes.length === 0 && bar.high >= target) hit2R = true;
+    } else {
+      const minutes = loadMinutes ? await loadMinutes(bar.date) : [];
+      let stopped = false;
+      if (minutes.length > 0) {
+        for (const minute of minutes) {
+          // A minute that reaches both counts as stopped, since one bar can't order its own high and low.
+          if (minute.low <= plan.stop) {
+            stopped = true;
+            break;
+          }
+          if (minute.high >= target) hit2R = true;
+        }
+      } else if (bar.low <= plan.stop) {
+        stopped = true;
+      } else if (bar.high >= target) {
+        hit2R = true;
+      }
+      if (stopped) {
+        exit = plan.stop;
+        daysHeld = k;
+        break;
+      }
     }
-    if (bar.high >= target) hit2R = true;
     closes.push(bar.close);
     const ema10 = ema(closes, RULES.trailEmaPeriod).at(-1);
     if (k > 0 && ema10 != null && bar.close < ema10) {

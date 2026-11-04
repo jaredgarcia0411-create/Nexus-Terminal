@@ -110,6 +110,12 @@ export interface ReplayOutcome {
   daysTo9Ema: number | null;
 }
 
+export interface OpenShortMinuteOutcome {
+  dayR: number;
+  gapFillR: number | null;
+  ema9R: number | null;
+}
+
 export type IntradayTrigger = 'or5' | 'or15' | 'vwap' | 'belowVwap';
 
 export interface IntradayTriggerOutcome {
@@ -280,6 +286,27 @@ export function measureReplayOutcome(history: DailyOhlcBar[], plan: ParabolicPla
     closes.push(window[k].close);
   }
   return { stoppedOutDay0, dayR, mfeDayR, maeDayR, mfe10R, mae10R, daysTo9Ema };
+}
+
+// Replay-only: short the open and walk the 09:30–16:00 minute bars in order. Holding to the close only depends on whether
+// the stop was touched. The gap-fill and 9EMA columns cover at whichever of target or stop comes first; a bar that reaches
+// both counts as stopped, since one minute bar can't order its own high and low. Null when there are no minute bars.
+export function measureOpenShortMinutes(plan: ParabolicPlan, rth: OHLCData[], day0Close: number): OpenShortMinuteOutcome | null {
+  if (rth.length === 0) return null;
+  const closeR = (plan.entry - day0Close) / plan.riskPerShare;
+  const coverAt = (target: number, targetRR: number | null): number | null => {
+    if (targetRR == null) return null;
+    for (const bar of rth) {
+      if (bar.high >= plan.stop) return -1;
+      if (bar.low <= target) return targetRR;
+    }
+    return closeR;
+  };
+  return {
+    dayR: rth.some((bar) => bar.high >= plan.stop) ? -1 : closeR,
+    gapFillR: coverAt(plan.target1, plan.target1RR),
+    ema9R: coverAt(plan.target2, plan.target2RR),
+  };
 }
 
 // Replay-only: short on an intraday trigger instead of the open, then cover at the close or the first stop touch.
