@@ -46,7 +46,7 @@ The database is Neon PostgreSQL, accessed through Drizzle ORM. The schema is one
 - `app/page.tsx` is the entire single-page UI. It owns the active tab, the selected trade, the command palette, and the global keyboard shortcuts, then renders one tab component at a time. Page-level orchestration is supposed to live here and nowhere else.
 - `app/layout.tsx` is the root HTML shell (theme provider, session provider, toaster).
 - `app/login/page.tsx` is the Google sign-in screen.
-- `app/api/**/route.ts` is every HTTP endpoint. Each folder is a feature: `trades/`, `sheets/`, `askedgar/`, `backtests/`, `agents/`, `cron/`, and so on. There are about 64 route files. Every one follows the same shape, described in section 3.
+- `app/api/**/route.ts` is every HTTP endpoint. Each folder is a feature: `trades/`, `sheets/`, `askedgar/`, `backtests/`, `agents/`, `cron/`, and so on. There are about 64 route files. Almost all follow the same shape, described in section 3. The exceptions: `health/` is public, `auth/[...nextauth]/` is NextAuth's own handler, and `tradingview/gainers/` exports no HTTP handler.
 
 ### `lib/` — shared business logic
 
@@ -58,10 +58,10 @@ Everything that is not React and not an HTTP handler. The important sub-areas:
 | `lib/server-db-utils.ts` | `requireUser()`, `ensureUser()`, `dbUnavailable()`, `requireCronSecret()`, and row-to-API mappers like `toTrade()`. |
 | `lib/api-route-utils.ts` | `parseAndValidate()` for Zod body validation, plus the generic error helpers. |
 | `lib/validations/` | Zod schemas for request bodies, one file per feature. |
-| `lib/auth-config.ts` | NextAuth config: Google OAuth, an email allowlist, JWT sessions. |
+| `lib/auth-config.ts` | NextAuth config: Google OAuth, the email allowlist check (`lib/auth-allowlist.ts`), JWT sessions. |
 | `lib/agents/` | The agent runtime: job queue, worker loop, blueprints, LLM client, Discord delivery. See section 4. |
 | `lib/parabolic/`, `lib/triple-beat/` | The two scanners. Pure scoring in `scan.ts`, market-data loaders in `data.ts`. No React, no DB. |
-| `lib/massive-market.ts` | Client for the Massive market-data API (daily bars, premarket stats, ticker reference). |
+| `lib/massive-market.ts` | Client for the Massive market-data API (daily bars, minute bars, ticker reference). Premarket stats are built from those bars in `lib/parabolic/data.ts`. |
 | `lib/askedgar.ts`, `lib/askedgar/` | Cached client for the usage-billed AskEdgar research API. Always use `getCachedTickerData`. |
 | `lib/sec/` | SEC EDGAR client with the required User-Agent, rate limit, and retries. |
 | `lib/trade-utils.ts` | Pure trade math and the browser-side `apiRequest()` helper. |
@@ -125,7 +125,7 @@ Follow one concrete example: the Trades tab loading the user's trade list.
 `app/api/trades/route.ts` exports a `GET` function. API routes are excluded from `middleware.ts`, so the route must check auth itself.
 
 **Step 4: the handler authenticates.**
-The first line is `const authState = await requireUser()` from `lib/server-db-utils.ts`. It calls NextAuth's `auth()`, reads the JWT session, and returns either `{ user }` or `{ error: Response }` with a 401. The handler returns early on error.
+The first line is `const authState = await requireUser()` from `lib/server-db-utils.ts`. It calls NextAuth's `auth()`, reads the JWT session, re-checks the email against `ALLOWED_EMAILS`, and returns either `{ user }` or `{ error: Response }` with a 401. The handler returns early on error.
 
 **Step 5: the handler gets a DB client.**
 `const db = getDb()` from `lib/db.ts` returns a Drizzle client over Neon's HTTP driver, or `null` if `DATABASE_URL` is missing, in which case the handler returns `dbUnavailable()` (503). For bulk transactional writes routes use `getPoolDb()` instead.
@@ -162,7 +162,7 @@ if (bodyState.error) return bodyState.error;
 |--------------|-------------|--------------|
 | `/api/trades`, `/api/sheets`, most routes | `requireUser()` | The browser, with a session cookie |
 | `/api/cron/*` | `requireCronSecret()` | Vercel cron, with a bearer token |
-| `/api/agents/admin/*` | `requireAgentAdmin()` | Admin UI |
+| `/api/agents/admin/*` | `requireAgentAdmin()` | An admin running curl with the `x-agent-admin-key` header (there is no admin UI) |
 | `/api/agents/service/*` | `requireServiceAuth()` / `requireServiceKey()` | The Discord bot, with a service key header |
 
 Streaming routes use `createSSEResponse()` from `lib/sse.ts` and declare `export const dynamic = 'force-dynamic'` and `export const maxDuration = 60`.
@@ -179,7 +179,7 @@ The scan cards are the embeds posted every trading morning to the parabolic and 
 
 `services/agent-entrypoint.ts` starts the orchestrator container. Because the agent id is `orchestrator`, it calls `startParabolicCron(db)` and `startTripleBeatCron(db)` from `lib/agents/macro-cron.ts`.
 
-Each cron checks the clock once a minute. When the Eastern-time hour matches `PARABOLIC_CRON_HOUR_ET` (default 9) on a weekday, `runTick()` opens a transaction, inserts a row into `agent_scheduled_runs` keyed on `(agent_id, trigger_type, trading_date)`, and inserts a row into `agent_jobs` with `jobType: 'parabolic-scan'` and `input: { tradingDate }`. The unique key on `agent_scheduled_runs` is what prevents a second container, or a restart, from enqueuing the same scan twice.
+Each cron checks the clock once a minute. When the Eastern-time hour matches `PARABOLIC_CRON_HOUR_ET` (default 9) on a NYSE trading day, `runTick()` opens a transaction, inserts a row into `agent_scheduled_runs` keyed on `(agent_id, trigger_type, trading_date)`, and inserts a row into `agent_jobs` with `jobType: 'parabolic-scan'` and `input: { tradingDate }`. The unique key on `agent_scheduled_runs` is what prevents a second container, or a restart, from enqueuing the same scan twice.
 
 Nothing is computed yet. The cron only writes a job row.
 
@@ -230,7 +230,7 @@ The card text is derived entirely from `reportJson`, so the embed builder can be
 
 - The candidate universe is tickers that filed an earnings 8-K (or a 6-K with an earnings headline) in the window, found through `lib/sec/`.
 - Scoring lives in `lib/triple-beat/scan.ts` with its own `RULES` and a 45-point scale.
-- There is exactly one LLM call, `classifyEarnings()` in `lib/triple-beat/classify.ts`. It runs on the background lane at temperature 0, returns strict JSON, and every claim must quote the press release verbatim or it is downgraded to unknown. The LLM never scores or sizes the trade.
+- There is exactly one LLM call, `classifyEarnings()` in `lib/triple-beat/classify.ts`. It runs on the background lane at temperature 0, returns strict JSON, and every claim must quote the filing or news text it was given verbatim, or it is downgraded to unknown. The LLM never scores or sizes the trade.
 - Delivery goes to `DISCORD_WEBHOOK_TRIPLE_BEAT` and the cards come from `buildTripleBeatScanEmbeds()`.
 
 ### 4.8 The whole path in one line
@@ -259,7 +259,7 @@ In order. Each one teaches a pattern that the rest of the repo repeats.
    Every table in one file. Reading the table names alone tells you what the product stores: trades, executions, tags, research reports, the AskEdgar cache, SEC caches, the agent queue and reports, reviews, backtests, sheets. Each `userId` column is a tenant boundary.
 
 4. **`lib/server-db-utils.ts`**
-   `requireUser()`, `ensureUser()`, `dbUnavailable()`, `requireCronSecret()`, and `toTrade()`. These four helpers are the first lines of almost every route handler.
+   `requireUser()`, `ensureUser()`, `dbUnavailable()`, `requireCronSecret()`, and `toTrade()`. These five helpers are the first lines of almost every route handler.
 
 5. **`app/api/trades/route.ts`**
    The canonical route handler. Auth, DB guard, `ensureUser`, Zod validation on POST, a Drizzle query, a mapped response, and a `try/catch` that logs and returns a generic 500. Once you have read this, you can read any of the other 60-odd route files.
@@ -285,7 +285,7 @@ If you have time for an eleventh, read `services/agent-entrypoint.ts`. It is sho
 
 ## 6. Where to go next
 
-- To run the app locally: `npm install`, copy `.env.example` to `.env.local` and fill it in, then `npm run dev`. `.env.example` lists every env var the web app reads; `services/.env.example` does the same for the agents.
+- To run the app locally: `npm install`, copy `.env.example` to `.env.local` and fill it in, then `npm run dev`. `.env.example` lists the env vars you need to get the web app running; `services/.env.example` does the same for the agents. Neither is guaranteed complete, so search the code for `process.env` if you're looking for a specific setting.
 - To validate a change: `npm run lint`, `npx tsc --noEmit`, `npm test`, plus `npm run typecheck:services` if you touched `services/`.
 - To deploy the agents: on the home server, `git pull && cd services && docker compose up --build -d`. The `--build` is required because the images copy `lib/`.
 - To tune a scanner: change the `RULES` constant in `lib/parabolic/scan.ts` or `lib/triple-beat/scan.ts`, then replay with `npx tsx scripts/parabolic-replay.ts --from … --to …` before touching the live cron.
