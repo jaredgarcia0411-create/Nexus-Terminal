@@ -29,6 +29,10 @@ export const edgarSectionsSchema = z.object({
   dilutionData: z.unknown().nullable(),
   historicalFloat: z.array(z.unknown()),
   reverseSplits: z.array(z.unknown()),
+  currentShares: z.object({
+    outstanding: z.number().nullable(),
+    tradableFloat: z.number().nullable(),
+  }).nullable().default(null),
   nasdaqCompliance: z.unknown().nullable(),
   news: z.array(z.unknown()),
   filingTitles: z.array(z.unknown()).default([]),
@@ -264,6 +268,18 @@ function getBooleanField(source: unknown, keys: string[]): boolean | null {
 
 function getNumberField(source: unknown, keys: string[]): number | null {
   return toNullableNumber(getFieldValue(source, keys));
+}
+
+function readCurrentShares(screener: unknown) {
+  if (!screener) {
+    return null;
+  }
+
+  // `|| null` because Number(null) is 0, and a missing count must not read as zero shares.
+  return {
+    outstanding: getNumberField(screener, ['outstanding']) || null,
+    tradableFloat: getNumberField(screener, ['tradable_float']) || null,
+  };
 }
 
 function parseLooseDate(value: unknown): Date | null {
@@ -553,9 +569,14 @@ export function computeDeterministicAnalysis(
     ? Math.ceil((complianceRow.deadline.getTime() - Date.now()) / 86400000)
     : null;
 
+  // SEC counts aren't comparable across a reverse split: FTCI's 1-for-10 read as "decreasing"
+  // while its shares were growing. So the trend only uses rows since the latest split.
+  const latestSplitMs = Math.max(0, ...input.reverseSplits.map((row) => (
+    parseLooseDate(getFieldValue(row, ['execution_date']))?.getTime() ?? 0
+  )));
   const historicalFloatRows = asArray(input.historicalFloat)
     .map(normalizeHistoricalFloatRow)
-    .filter((row): row is { date: Date; float: number } => row !== null)
+    .filter((row): row is { date: Date; float: number } => row !== null && row.date.getTime() >= latestSplitMs)
     .sort((left, right) => left.date.getTime() - right.date.getTime());
   const floatTrend = (() => {
     if (historicalFloatRows.length < 2) {
@@ -669,6 +690,11 @@ export function buildResearchPrompt(input: z.infer<typeof researchPipelineInputS
     }, null, 2)
     : 'No Reddit allegations in the AskEdgar tracker row.';
   const commentaryText = input.managementCommentary?.trim() || 'No management commentary available.';
+  // TradingView's market cap can miss newly issued shares (CHSN: 2.3M shares vs Ask Edgar's 7.4M
+  // after a PIPE), so price Ask Edgar's share count at the live price when we have both.
+  const priceContext = input.priceContext && input.currentShares?.outstanding
+    ? { ...input.priceContext, marketCap: Math.round(input.priceContext.price * input.currentShares.outstanding) }
+    : input.priceContext;
   const exampleShape = {
     ticker: input.ticker,
     newsWhyRunning: { rating: 'green | yellow | red', explanation: 'string' },
@@ -691,7 +717,7 @@ export function buildResearchPrompt(input: z.infer<typeof researchPipelineInputS
     `Ticker: ${input.ticker}`,
     'Return strict JSON matching this exact shape (no markdown, no extra keys):',
     JSON.stringify(exampleShape, null, 2),
-    `Price context:\n${wrapUntrusted('price-context', JSON.stringify(input.priceContext, null, 2))}`,
+    `Price context:\n${wrapUntrusted('price-context', JSON.stringify(priceContext, null, 2))}`,
     [
       'AskEdgar sections:',
       `gapStats:\n${wrapUntrusted('filing', gapTableSection)}`,
@@ -706,6 +732,7 @@ export function buildResearchPrompt(input: z.infer<typeof researchPipelineInputS
       `dilutionData:\n${wrapUntrusted('filing', JSON.stringify(input.dilutionData, null, 2))}`,
       `historicalFloat:\n${wrapUntrusted('filing', JSON.stringify(input.historicalFloat, null, 2))}`,
       `reverseSplits:\n${wrapUntrusted('filing', JSON.stringify(input.reverseSplits, null, 2))}`,
+      `currentShares:\n${wrapUntrusted('filing', JSON.stringify(input.currentShares, null, 2))}`,
       `nasdaqCompliance:\n${wrapUntrusted('filing', JSON.stringify(input.nasdaqCompliance, null, 2))}`,
       `Recent news & filings (headline, date, formType, summary):\n${wrapUntrusted('news', JSON.stringify(input.newsFeed, null, 2))}`,
       `cashPosition:\n${wrapUntrusted('filing', JSON.stringify(input.cashPosition, null, 2))}`,
@@ -719,6 +746,8 @@ export function buildResearchPrompt(input: z.infer<typeof researchPipelineInputS
     "When rating 'News / Why It's Running', quote the exact headline text of the single most relevant item from the Recent news & filings section. Reference the formType in parentheses (e.g., (8-K)).",
     'Do not claim "no recent news available" unless the Recent news & filings section is empty. Do not fabricate headlines.',
     'Use the Deterministic analysis section as precomputed inputs. Do not recalculate those values in the response.',
+    'For today\'s share count, float, and any percent of float, use currentShares when it has a value. priceContext.marketCap already uses currentShares.outstanding when it is available. Never present a historicalFloat row as the current share count.',
+    'historicalFloat rows are SEC share counts as filed. Each count reflects the reverse splits executed on or before its filed date. Compare two rows only when no reverseSplits execution_date falls between their filed dates. If a split falls between them, or a row has no filed date, do not state a growth or decline figure between those rows.',
     'For chartHistory: write 2-4 sentences rating the ticker\'s technical posture and historical gap behavior. Read numeric inputs directly from the deterministicAnalysis JSON block (for gapCount, sameDayFadeRate, avgHighExtension, avgCloseVsOpen) and the priceContext JSON block (for rsi, ema9, ema21, high1m, low1m, sector). Translate those numbers into plain-English phrasing — e.g., "fades intraday about half the time", "averages ~25% above the open", "RSI 69 is approaching overbought", "trades between $2.98 and $6.57 over the last month". Do NOT echo the raw field identifiers in your output (no literal "gapCount", "sameDayFadeRate", "avgHighExtension", "avgCloseVsOpen", "high1m", "low1m", "ema9", or "ema21" tokens in the sentence). Do NOT count rows from the Historical Gap Data display table — trust the gapCount value in deterministicAnalysis (the display table may be a truncated view). Do NOT write "no historical gap data available" in chartHistory — that phrase belongs only to the gapStatsTable section. If gapCount is 0, still rate the chart setup using price-context technicals and acknowledge thin gap priors in one clause.',
     'For chartHistory, treat gap behavior and intraday behavior as separate histories. Historical Gap Data and gapSessionDetail cover sessions that gapped at the open. intradayRunners covers sessions AskEdgar flagged for an intraday run, which can start from a small or negative gap. Do not use one to predict the other, and do not assume a run or gap fades; state what the close location, VWAP, and spike duration columns show. All times in these tables are already Eastern, so do not convert them.',
     'intradayRunners lists AskEdgar flagged runs, not a full history. Say "flagged runs" and cite their dates. Never write that a ticker has "only" N runs or "no runs since" a date, because a missing date is not evidence that no run happened.',
@@ -776,6 +805,7 @@ export async function generateSmallCapResearchReport(
     dilutionData: readResults(rawData['dilution-data']),
     historicalFloat: readResults(rawData['historical-float-pro']),
     reverseSplits: readResults(rawData['reverse-splits']),
+    currentShares: readCurrentShares(readResults(rawData['screener'])[0]),
     nasdaqCompliance: readResults(rawData['nasdaq-compliance'])[0] ?? null,
     news: readResults(rawData['news']),
     filingTitles: readResults(rawData['filing-titles']),
@@ -879,6 +909,7 @@ export const smallCapResearchBlueprint: Blueprint = {
           dilutionData: readResults(rawData['dilution-data']),
           historicalFloat: readResults(rawData['historical-float-pro']),
           reverseSplits: readResults(rawData['reverse-splits']),
+          currentShares: readCurrentShares(readResults(rawData['screener'])[0]),
           nasdaqCompliance: readResults(rawData['nasdaq-compliance'])[0] ?? null,
           news: readResults(rawData['news']),
           filingTitles: readResults(rawData['filing-titles']),

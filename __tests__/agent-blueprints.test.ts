@@ -2777,6 +2777,38 @@ describe('small-cap research prompt: tracker, runners, and gap session detail', 
     expect(prompt).toContain('| 2023-12-05 | n/a | n/a | n/a | n/a | n/a | 10:05 | n/a | 14:05 | n/a | n/a | n/a |');
   });
 
+  it('computes the share trend only from rows since the latest reverse split', async () => {
+    const { computeDeterministicAnalysis, priceContextSchema } = await import('@/lib/agents/blueprints/small-cap-research');
+    const trend = (reverseSplits: unknown[]) => computeDeterministicAnalysis(priceContextSchema.parse({
+      ...baseInput,
+      historicalFloat: [
+        { date: '2026-10-30', outstanding: 18_293_783 },
+        { date: '2025-02-28', outstanding: 12_867_671 },
+        { date: '2024-10-31', outstanding: 127_767_183 },
+      ],
+      reverseSplits,
+    })).floatTrend;
+
+    expect(trend([])).toBe('decreasing');
+    expect(trend([{ split_from: 10, split_to: 1, execution_date: '2024-12-02' }])).toBe('increasing');
+    expect(trend([{ split_from: 100, split_to: 1, execution_date: '2026-10-31' }])).toBeNull();
+  });
+
+  it('prices the current share count at the live price, and falls back to TradingView without one', async () => {
+    const priceContext = {
+      price: 4, change: null, volume: null, avgVolume90d: null, marketCap: 9_000_000, sector: null,
+      high1m: null, low1m: null, rsi: null, macdSignal: null, ema9: null, ema21: null,
+    };
+
+    const withShares = await buildPrompt({ priceContext, currentShares: { outstanding: 7_416_111, tradableFloat: 2_415_031 } });
+    expect(withShares).toContain('"marketCap": 29664444');
+    expect(withShares).not.toContain('"marketCap": 9000000');
+    expect(withShares).toContain('"tradableFloat": 2415031');
+
+    expect(await buildPrompt({ priceContext, currentShares: { outstanding: null, tradableFloat: null } })).toContain('"marketCap": 9000000');
+    expect(await buildPrompt({ priceContext })).toContain('"marketCap": 9000000');
+  });
+
   it('adds gap session detail without changing the gap table the model copies', async () => {
     const prompt = await buildPrompt({
       gapStats: [{

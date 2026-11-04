@@ -10,6 +10,7 @@ const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 export interface ShareSnapshot {
   date: string;
   outstanding: number;
+  filed: string;
 }
 
 export interface CompanyFactsResponse {
@@ -115,7 +116,8 @@ function parsePayload(payload: CompanyFactsPayload, limit: number): ShareSnapsho
   const entries = pickShareEntries(payload.facts);
   const deduped = dedupeByEnd(entries);
   deduped.sort((a, b) => (a.end < b.end ? 1 : a.end > b.end ? -1 : 0));
-  return deduped.slice(0, limit).map((e) => ({ date: e.end, outstanding: e.val }));
+  // `filed` shows which splits a count reflects: later filings restate older periods for a split.
+  return deduped.slice(0, limit).map((e) => ({ date: e.end, outstanding: e.val, filed: e.filed }));
 }
 
 export async function getHistoricalOutstanding(

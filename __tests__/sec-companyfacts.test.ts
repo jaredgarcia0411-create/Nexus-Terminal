@@ -78,7 +78,7 @@ describe('sec-companyfacts', () => {
     const mod = await import('@/lib/sec/companyfacts');
     const result = await mod.getHistoricalOutstanding('AAPL');
     expect(result.status).toBe('success');
-    expect(result.results[0]).toMatchObject({ date: '2024-09-30', outstanding: 15_000_000 });
+    expect(result.results[0]).toEqual({ date: '2024-09-30', outstanding: 15_000_000, filed: '2024-10-01' });
   });
 
   it('falls back to us-gaap CommonStockSharesOutstanding when dei is empty', async () => {
