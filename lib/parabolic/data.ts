@@ -7,6 +7,19 @@ export function addCalendarDays(date: string, days: number): string {
   return shifted.toISOString().slice(0, 10);
 }
 
+// Massive's grouped daily feed can list a ticker twice on one date (TPC did). Replays keep the first row, so the
+// duplicate neither becomes a second copy of the same trade nor corrupts the ticker's rolling history window.
+export function dedupeGroupedBars<T extends { ticker: string }>(bars: T[]): T[] {
+  const seen = new Set<string>();
+  const unique: T[] = [];
+  for (const bar of bars) {
+    if (seen.has(bar.ticker)) continue;
+    seen.add(bar.ticker);
+    unique.push(bar);
+  }
+  return unique;
+}
+
 export async function fetchDailyBars(ticker: string, from: string, to: string): Promise<DailyOhlcBar[]> {
   const bars = await fetchMassiveAggregateBars({ ticker, multiplier: '1', timespan: 'day', from, to });
   return bars.flatMap((bar) => {

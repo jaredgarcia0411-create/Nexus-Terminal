@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateParabolicSetup, measureIntradayTriggers, measureOpenShortMinutes, measureReplayOutcome, passesLivePrefilter, passesReplayPrefilter } from '@/lib/parabolic/scan';
+import { evaluateParabolicSetup, isNoiseStop, measureIntradayTriggers, measureOpenShortMinutes, measureReplayOutcome, passesLivePrefilter, passesReplayPrefilter } from '@/lib/parabolic/scan';
 import type { OHLCData } from '@/lib/indicators';
 import type { DailyOhlcBar } from '@/lib/massive-market';
 
@@ -111,6 +111,20 @@ describe('parabolic replay outcome', () => {
     expect(outcome.mae10R).toBeCloseTo(0.3 / plan!.riskPerShare);
     expect(measureReplayOutcome(history, plan!, [{ ...sessions[0], high: 19 }, sessions[1]]))
       .toMatchObject({ stoppedOutDay0: true, dayR: -1 });
+  });
+
+  it('flags an open at the premarket high as a noise stop, since its 0.1 ATR risk turns a 1 ATR fall into +10R', () => {
+    const history = fixture(50);
+    const { plan, metrics } = evaluateParabolicSetup(history, { referencePrice: 18, highSoFar: 18 })!;
+    expect(plan!.riskPerShare).toBeCloseTo(0.1 * metrics.atr14);
+    expect(isNoiseStop(plan!.riskPerShare, metrics.atr14)).toBe(true);
+    const outcome = measureReplayOutcome(history, plan!, [bar('2026-04-07', 18, 18 + 0.05 * metrics.atr14, 16, 18 - metrics.atr14)]);
+    expect(outcome.stoppedOutDay0).toBe(false);
+    expect(outcome.dayR).toBeCloseTo(10);
+    // The same fall with the stop a full 0.5 ATR away is +2R, and that stop is wide enough to keep.
+    const { plan: wide } = evaluateParabolicSetup(history, { referencePrice: 18, highSoFar: 18 + 0.4 * metrics.atr14 })!;
+    expect(isNoiseStop(wide!.riskPerShare, metrics.atr14)).toBe(false);
+    expect(measureReplayOutcome(history, wide!, [bar('2026-04-07', 18, 18 + 0.05 * metrics.atr14, 16, 18 - metrics.atr14)]).dayR).toBeCloseTo(2);
   });
 });
 

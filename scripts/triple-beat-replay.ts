@@ -11,12 +11,14 @@
  * every liquid ticker (roughly 10–20 minutes at SEC's 10 requests/second). Entry is a break of the premarket high,
  * filled at the open when it gaps above. Day 0 is walked in minute bars so the stop and 2R target resolve in order.
  * Every later day is walked in 04:00–16:00 minute bars, so a premarket print through the stop or the 2R target fills
- * at that level. The main outcome columns also need
- * 3x+ time-of-day RVOL at the break (volume since 09:30 vs the same minutes over the prior 20 sessions), matching the
- * card; the noRvol* columns are the same trade without that rule.
+ * at that level, except that a bar which opens below the stop fills the stop at its open. The main outcome columns also need
+ * 3x+ time-of-day RVOL at the break (volume since 09:30 through the prior minute vs the same minutes over the prior 20
+ * sessions, so the break minute's own volume is not counted), matching the card; the noRvol* columns are the same trade
+ * without that rule.
  * LLM earnings reads are cached in
  * ~/triple-beat-llm-cache.json so reruns only call the LLM for new ticker/dates. Tickers missing from
- * today's SEC CIK map (delisted/renamed) are skipped.
+ * today's SEC CIK map (delisted/renamed) are skipped: that is survivorship bias, since companies that were later
+ * delisted (bankruptcies, and acquisitions) or renamed never enter the sample, so treat the totals as slightly flattering.
  */
 import dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
@@ -26,7 +28,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import Papa from 'papaparse';
 import { fetchGroupedDailyAggregates, fetchMassiveAggregateBars, fetchSharesOutstanding, fetchSplitHistory, type DailyOhlcBar } from '@/lib/massive-market';
-import { addCalendarDays, fetchDailyBars } from '@/lib/parabolic/data';
+import { addCalendarDays, dedupeGroupedBars, fetchDailyBars } from '@/lib/parabolic/data';
 import { getRecentFilings, type SecFiling } from '@/lib/sec/submissions';
 import { buildEarningsEvidence, classifyEarnings, UNKNOWN_EARNINGS_READ, type EarningsRead } from '@/lib/triple-beat/classify';
 import { fetchEarningsNews, fetchExtendedHoursStats, fetchPressReleaseText, findEarningsFiling, isEarningsHeadline } from '@/lib/triple-beat/data';
@@ -58,12 +60,8 @@ async function main() {
   const candidates: Array<{ ticker: string; date: string }> = [];
   let datesChecked = 0;
   for (let date: string | null = cursor; date && date <= to; date = getNextTradingSession(date)) {
-    const bars = await fetchGroupedDailyAggregates(date, false);
-    // The grouped feed can list a ticker twice on a date (TPC did), which would count the same trade twice.
-    const seenToday = new Set<string>();
+    const bars = dedupeGroupedBars(await fetchGroupedDailyAggregates(date, false));
     for (const bar of bars) {
-      if (seenToday.has(bar.ticker)) continue;
-      seenToday.add(bar.ticker);
       const window = windows.get(bar.ticker) ?? [];
       if (date >= from && passesReplayPrefilter(window)) candidates.push({ ticker: bar.ticker, date });
       window.push({ date, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.volume, vwap: bar.vwap });

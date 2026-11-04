@@ -1,12 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchMassiveAggregateBars } from '@/lib/massive-market';
-import { addCalendarDays, fetchDailyBars, fetchPremarketStats } from '@/lib/parabolic/data';
+import { addCalendarDays, dedupeGroupedBars, fetchDailyBars, fetchPremarketStats } from '@/lib/parabolic/data';
 import { nyDateTimeToEpoch } from '@/lib/time-utils';
 
 vi.mock('@/lib/massive-market', () => ({ fetchMassiveAggregateBars: vi.fn() }));
 
 describe('parabolic Massive loaders', () => {
   beforeEach(() => vi.resetAllMocks());
+
+  it('keeps the first grouped row per ticker so a ticker listed twice on one date is one trade, not two', () => {
+    const rows = [
+      { ticker: 'TPC', open: 10, close: 11 }, { ticker: 'ABC', open: 5, close: 6 }, { ticker: 'TPC', open: 10.5, close: 11 },
+    ];
+    expect(dedupeGroupedBars(rows)).toEqual([rows[0], rows[1]]);
+    expect(dedupeGroupedBars([])).toEqual([]);
+  });
 
   it('loads a historical daily range and assigns ET dates', async () => {
     vi.mocked(fetchMassiveAggregateBars).mockResolvedValue([

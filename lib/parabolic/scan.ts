@@ -21,8 +21,9 @@ const RULES = {
   stopBufferAtr: 0.1,
   // Replay-only: intraday short triggers must fire before 10:30 ET.
   triggerCutoffMinutes: 60,
-  // Replay-only: a stop closer than 0.5 ATR to the entry is noise and inflates R, so skip it (same rule as Triple Beat).
-  minTriggerRiskAtr: 0.5,
+  // Replay-only: a stop closer than 0.5 ATR to the entry is noise and inflates R (same rule as Triple Beat). Intraday
+  // triggers skip it; the open short reports it (riskAtr) so the summary can be read with and without those trades.
+  minRiskAtr: 0.5,
   sma10Period: 10,
   sma20Period: 20,
   sma50Period: 50,
@@ -264,6 +265,13 @@ export function evaluateParabolicSetup(history: DailyOhlcBar[], tradeDay: TradeD
   return { qualified, failedFilters, grade, score, maxScore: MAX_PREMARKET_SCORE, scoreItems, metrics, plan };
 }
 
+// A stop under 0.5 ATR from the entry sits inside normal noise: it is usually hit within minutes, and the few trades that
+// survive show +10R or more on an ordinary move, which dominates any R total. Slippage on such a stop is also a large
+// multiple of the risk, so replay R for these trades is not achievable live.
+export function isNoiseStop(riskPerShare: number, atr14: number): boolean {
+  return riskPerShare < RULES.minRiskAtr * atr14;
+}
+
 export function measureReplayOutcome(history: DailyOhlcBar[], plan: ParabolicPlan, sessions: DailyOhlcBar[]): ReplayOutcome {
   const day0 = sessions[0];
   const risk = plan.riskPerShare;
@@ -324,7 +332,7 @@ export function measureIntradayTriggers(
   const cutoff = openMs + RULES.triggerCutoffMinutes * 60_000;
   const noTrigger: IntradayTriggerOutcome = { minutesAfterOpen: null, entry: null, hodStop: null, hodR: null, pmR: null };
   const resolve = (index: number, entry: number, stop: number) => {
-    if (stop <= entry || stop - entry < RULES.minTriggerRiskAtr * atr14) return null;
+    if (stop <= entry || isNoiseStop(stop - entry, atr14)) return null;
     return rth.slice(index + 1).some((bar) => bar.high >= stop) ? -1 : (entry - day0Close) / (stop - entry);
   };
   const triggered = (index: number, entry: number): IntradayTriggerOutcome => {

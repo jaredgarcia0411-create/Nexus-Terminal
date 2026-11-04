@@ -9,7 +9,10 @@
  * gapFillR / ema9R cover at the card's gap-fill or 9EMA target if it comes before the stop. or5/or15/vwap/belowVwap columns replay intraday triggers (before 10:30 ET)
  * with a high-of-day stop (HodR) and the card's premarket-high stop (PmR), covering at the close; a stop under
  * 0.5 ATR from the entry counts as no trade. A touched
- * stop counts as -1R; borrow fees, locates, and slippage are not modeled. Dates within about two weeks of
+ * stop counts as -1R; borrow fees, locates, and slippage are not modeled. The open short has no stop-width floor (the
+ * live card posts whatever the premarket high gives), so riskAtr records the stop width in ATRs and the summary repeats
+ * each open-short line with stops under 0.5 ATR removed: an open at the premarket high leaves a 0.1 ATR stop, where an
+ * ordinary 1 ATR fall prints +10R. Dates within about two weeks of
  * today have fewer forward sessions. Opening volume climax is not measured, so the maximum score remains 17.
  */
 import dotenv from 'dotenv';
@@ -20,8 +23,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import Papa from 'papaparse';
 import { fetchGroupedDailyAggregates, fetchMassiveAggregateBars, fetchSharesOutstanding, fetchSplitHistory, type DailyOhlcBar } from '@/lib/massive-market';
-import { addCalendarDays, fetchDailyBars, fetchPremarketStats } from '@/lib/parabolic/data';
-import { MIN_HISTORY_BARS, evaluateParabolicSetup, measureIntradayTriggers, measureOpenShortMinutes, measureReplayOutcome, passesReplayPrefilter } from '@/lib/parabolic/scan';
+import { addCalendarDays, dedupeGroupedBars, fetchDailyBars, fetchPremarketStats } from '@/lib/parabolic/data';
+import { MIN_HISTORY_BARS, evaluateParabolicSetup, isNoiseStop, measureIntradayTriggers, measureOpenShortMinutes, measureReplayOutcome, passesReplayPrefilter } from '@/lib/parabolic/scan';
 import { getNextTradingSession, getPreviousTradingSession, nyDateTimeToEpoch } from '@/lib/time-utils';
 
 function readArg(name: string): string | undefined {
@@ -49,7 +52,7 @@ async function main() {
   const candidates: Array<{ ticker: string; date: string }> = [];
   let datesChecked = 0;
   for (let date: string | null = cursor; date && date <= to; date = getNextTradingSession(date)) {
-    const bars = await fetchGroupedDailyAggregates(date, false);
+    const bars = dedupeGroupedBars(await fetchGroupedDailyAggregates(date, false));
     for (const bar of bars) {
       const window = windows.get(bar.ticker) ?? [];
       if (date >= from && passesReplayPrefilter(window, bar.open)) candidates.push({ ticker: bar.ticker, date });
@@ -133,6 +136,8 @@ async function main() {
         change3Pct: rounded(metrics.change3Pct), change5Pct: rounded(metrics.change5Pct), change10Pct: rounded(metrics.change10Pct),
         avgVolume20: rounded(metrics.avgVolume20), sharesOutstanding: rounded(sharesOutstanding), splitFactor: factor,
         entry: rounded(plan?.entry), stop: rounded(plan?.stop), riskPerShare: rounded(plan?.riskPerShare),
+        riskAtr: rounded(plan && metrics.atr14 > 0 ? plan.riskPerShare / metrics.atr14 : null),
+        noiseStop: plan ? isNoiseStop(plan.riskPerShare, metrics.atr14) : ('' as const),
         target1RR: rounded(plan?.target1RR), target2RR: rounded(plan?.target2RR),
         stoppedOutDay0: outcome?.stoppedOutDay0 ?? '', dayR: rounded(outcome?.dayR),
         minuteDayR: rounded(minuteOutcome?.dayR), gapFillR: rounded(minuteOutcome?.gapFillR), ema9R: rounded(minuteOutcome?.ema9R),
@@ -181,6 +186,13 @@ async function main() {
   summarize('Short at open (minute bars)', posted.map((row) => row.minuteDayR));
   summarize('Cover at gap fill or stop', posted.map((row) => row.gapFillR));
   summarize('Cover at 9EMA or stop', posted.map((row) => row.ema9R));
+  // Same trades with stops under 0.5 ATR treated as no trade, matching the intraday-trigger rule.
+  const wideStop = (value: number | '', row: { noiseStop: boolean | '' }): number | '' => (row.noiseStop ? '' : value);
+  console.log(`Of which stop under 0.5 ATR (noise): ${posted.filter((row) => row.noiseStop === true).length}`);
+  summarize('Short at open (daily bar), stop >= 0.5 ATR', posted.map((row) => wideStop(row.dayR, row)));
+  summarize('Short at open (minute bars), stop >= 0.5 ATR', posted.map((row) => wideStop(row.minuteDayR, row)));
+  summarize('Cover at gap fill or stop, stop >= 0.5 ATR', posted.map((row) => wideStop(row.gapFillR, row)));
+  summarize('Cover at 9EMA or stop, stop >= 0.5 ATR', posted.map((row) => wideStop(row.ema9R, row)));
   summarize('OR5 break, HOD stop', posted.map((row) => row.or5HodR));
   summarize('OR5 break, PM stop', posted.map((row) => row.or5PmR));
   summarize('OR15 break, HOD stop', posted.map((row) => row.or15HodR));
