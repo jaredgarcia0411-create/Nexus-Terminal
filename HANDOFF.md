@@ -1,6 +1,6 @@
 # Nexus Terminal - HANDOFF.md
 
-> Updated: 2026-11-03
+> Updated: 2026-11-04
 > Purpose: active execution context for Codex. Older implementation detail lives in git history, `specs/`, and durable docs such as `docs/repo-cleanup.md`.
 
 Historical completed sections were removed to keep this file focused. Use git history and the `specs/` directory for archived implementation detail.
@@ -37,15 +37,17 @@ Scans (context from the 2026-10-29/30 work, details in git history):
 
 ## Recently Completed
 
-### Scan Check Follow-Ups: Parabolic ETF Label + Triple Beat Premarket-Volume Replay
+### Small-Cap Research: Pump-and-Dump Tracker, Intraday Runners, Ticker Changes
 
-Status: completed 2026-11-03.
+Status: code reviewed 2026-11-04. Manual checks below are still pending.
 
 Outcome:
-- Both scan cards open with two same-size bold lines, `TICKER · Company/fund name` then the grade line (`C · 10/17 · ETF`, `A · 37/45 · Half size (0.5R)`). They're in the description with no embed title, because Discord renders titles larger. Names come from the Massive reference `name` via `fetchTickerReference`, with the share-class suffix trimmed; a failed lookup shows the ticker alone. Funds stay in the parabolic scan because they carried the replay edge.
-- Triple Beat `ExtendedHoursStats.premarketVolume` plus a replay CSV column and 0k/100k/300k floor summary. No live rule change.
-- 2026 YTD replay: no floor gives 343 trades +42.7R (80 sized, +25.1R). A 300k floor gives 63 trades +33.8R but only 8 sized, +6.6R. A floor would cut most sized trades, so none was added.
+- The small-cap report now gets Ask Edgar's pump-and-dump tracker, flagged intraday runners and gap session detail, shown through the `chartHistory` text. Scam notes sit in their own untrusted block.
+- `/v1/historical-tickers` is replaced by `/v1/ticker-changes`. A no-changes reply is stored with `results: []`, so it doesn't count as data.
+- `snapshot` is now an explicit 13-key list, so Research page loads never pay for runners (about $0.035 a row).
 
 Validation:
-- `npm run lint`, `npx tsc --noEmit`, `npm run typecheck:services`, `npm test` (966), `npm run build`
-- Smoke: PLTZ→ETF, NBIX→CS, SQQQ→ETF; unknown ticker 404 → unlabeled. Deploy needs the agent server update with `--build`.
+- `npm run lint`, `npx tsc --noEmit`, `npm test` (990 tests) passed in review; `npm run build`, `npm run workflow:audit` passed in the Codex run.
+- Live `/v1/ticker-changes` smoke passed: XYZ returned `count: 1` with `old_ticker: SQ` and `effective_date: 2025-01-21` ($0.0137). NHBI returned the no-changes shape.
+- Pending: CHSN report Chart History wording; new-ticker Research load logs `requested: 13` with no runner fetch.
+- Deploy: the agent images copy `lib/` at build time, so the server update needs `--build`.

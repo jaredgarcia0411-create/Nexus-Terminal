@@ -42,7 +42,7 @@ The live registry has 16 logical endpoint keys. Eleven currently call Ask Edgar.
 Legacy notes:
 
 - `filing-titles` is no longer in `ENDPOINT_REGISTRY`. It remains only as a compatibility read in the small-cap blueprint and old tests.
-- `float-outstanding` and `pump-and-dump-tracker` are not in the current live registry.
+- `float-outstanding` is not in the current live registry.
 - `sec-filings` is the current first-party replacement for Research Filings metadata.
 
 ## Product Call Graph
@@ -108,7 +108,7 @@ Implementing this needs per-endpoint TTLs in `lib/askedgar/cache.ts` (currently 
 
 Current scopes in `ENDPOINT_SCOPES`:
 
-- `snapshot`: all 15 registry keys.
+- `snapshot`: an explicit list of 13 keys, every registry key except `pump-and-dump-tracker` and `intraday-runners`.
 - `scanner-summary`: `registrations`, `dilution-rating`, `dilution-data`, `equity-lines`.
 - `small-cap-research`: all 15 registry keys.
 - `swing-trader-research`: `dilution-data`, `dilution-rating`, `offerings`, `registrations`, `news`, `historical-float-pro`, `gap-stats`, `ownership`.
@@ -139,6 +139,9 @@ Recommended scope changes:
 | `reverse-splits` | First-party SEC parser | Reverse Splits table; small-cap prompt | Optional but active; not Ask Edgar-billed | Keep first-party. Fold into a broader `split-status` lifecycle. |
 | `identity-events` | First-party SEC parser | Former Symbols UI | Optional UI; not consumed by agents | Keep for UI. Remove from `small-cap-research` scope unless agent prompts start using former-symbol identity evidence. |
 | `gap-stats` | Ask Edgar `/v1/gap-stats?limit=50` | Gap Up Days table, chart date selection, small-cap and swing prompts | Required | Keep until Nexus owns market-derived history. Concrete replacement path: Polygon `/v2/aggs` for OHLCV history (Starter $29/mo includes 2 years daily, intraday, and premarket), then derive gap %, gap-fill, volume vs. avg, and tag with our `sec-filings` events. Reuses the Massive/Polygon helpers already in the repo. |
+| `ticker-changes` | Ask Edgar `/v1/ticker-changes` | Former Ticker table | Required | Replaced the deprecated `/v1/historical-tickers`. |
+| `pump-and-dump-tracker` | Ask Edgar `/v1/pump-and-dump-tracker?limit=1` | Small-cap research prompt | Optional | Keep out of `snapshot`. Liquidations are AE's 70%+ close-to-close drops, and scam notes are Reddit allegations. |
+| `intraday-runners` | Ask Edgar `/v1/intraday-runners?limit=25` | Small-cap research prompt | Optional | Keep out of `snapshot`, since it costs about $0.035 a row. These are flagged runs, not a full history. |
 | `ownership` | Ask Edgar `/v1/ownership` | Owners table; holder-overhang in agents | Optional but active | High-medium priority replacement. Start with Forms 3/4/5 and SC 13D/G. Treat 13F/institutional coverage as a separate tradeoff. |
 | `split-status` | Ask Edgar `/v1/split-status` | Split Status table; small-cap prompt | Optional but active | Best next replacement. Extend current reverse-split parser into lifecycle states: proposed, vote pending, approved, announced/effective, completed. |
 | `filing-titles` | Not in current registry | Legacy small-cap compatibility read only | Dead/legacy | Remove compatibility read/tests, or map explicitly to `sec-filings` if prompt wording still expects it. |
@@ -157,7 +160,7 @@ Ask Edgar offers additional endpoints we have evaluated and intentionally do not
 | `/v1/pump-and-dump` | Heuristic flag with unclear methodology; we prefer our own filing+price-action signals once Priority 2 lands. |
 | `/v1/right-of-first-refusal` | Overlapping with `agreements`, which itself is being dropped from the fanout (see immediate-action plan). |
 | `/v1/research-report` | LLM-generated DD report; we already generate our own via `lib/research.ts` + `lib/agents/blueprints/*` so this would be duplicate AI cost. |
-| `/v1/historical-tickers` | `identity-events` already covers former tickers/company names from SEC submissions. |
+| `/v1/historical-tickers` | Deprecated by Ask Edgar. Use `/v1/ticker-changes`. |
 | `/v1/news-basic` | NOT YET EVALUATED — same per-KB rate as `/v1/news` but documented as a smaller payload. Worth a one-off test if `/v1/news` cost remains high after the form-type filter and 15-min TTL changes. |
 
 ## Replacement Priorities

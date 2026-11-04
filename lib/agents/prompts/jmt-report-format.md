@@ -21,5 +21,5 @@ Every analysis section uses a traffic-light rating:
 ## Evidence Citation
 - Reference specific filing types (e.g., "424B filed 2026-03-15").
 - Reference specific data points (e.g., "volume 3.2x 90-day average").
-- Reference gap-stats dates when discussing chart history.
+- Reference gap-stats or flagged intraday-runner dates when discussing chart history.
 - Use evidenceIds to track which AskEdgar endpoints informed each section.

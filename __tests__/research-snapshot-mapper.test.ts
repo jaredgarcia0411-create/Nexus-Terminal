@@ -10,14 +10,16 @@ const emptyResponse: AskEdgarResponse<unknown> = {
 };
 
 describe('normalizeAskEdgarResponse', () => {
-  it('maps AE historical tickers into the client-safe snapshot contract', () => {
+  it('maps AE ticker changes into the client-safe snapshot contract', () => {
     const rawData: Record<string, AskEdgarResponse<unknown>> = {
-      'historical-tickers': {
+      'ticker-changes': {
         status: 'success',
         count: 1,
         results: [{
-          current_ticker: 'BINI',
-          historical_tickers: [{ ticker: 'MULN', date_changed: '2025-07-28' }],
+          query_ticker: 'NHBI',
+          has_changes: true,
+          current_ticker: 'NHBI',
+          history: [{ old_ticker: 'MULN', new_ticker: 'BINI', effective_date: '2025-07-28' }],
         }],
       },
     };
@@ -33,6 +35,29 @@ describe('normalizeAskEdgarResponse', () => {
       ticker: 'MULN',
       dateChanged: '2025-07-28',
     }]);
+  });
+
+  it.each([
+    ['no changes', {
+      status: 'success',
+      count: 0,
+      results: [{ query_ticker: 'CHSN', has_changes: false, current_ticker: null, history: [] }],
+    }],
+    ['an ambiguous lineage error', {
+      status: 'error',
+      count: 0,
+      results: [],
+      error: '409 ambiguous ticker lineage',
+    }],
+  ] satisfies [string, AskEdgarResponse<unknown>][])('returns no former tickers for %s', (_label, response) => {
+    const snapshot = normalizeAskEdgarResponse({ 'ticker-changes': response }, {
+      ticker: 'CHSN',
+      companyName: 'Chanson International',
+      fetchedAt: '2026-05-15T00:00:00.000Z',
+      warnings: [],
+    });
+
+    expect(snapshot.historicalTickers).toEqual([]);
   });
 
   it('maps AE reverse-split rows into the existing snapshot shape', () => {

@@ -370,12 +370,12 @@ export function normalizeAskEdgarResponse(
     } satisfies ResearchSnapshotReverseSplit;
   });
 
-  const historicalTickersResult = firstResult(rawData, ['historical-tickers', 'historicalTickers']);
-  const historicalTickers: ResearchSnapshotHistoricalTicker[] = Array.isArray(historicalTickersResult.historical_tickers)
-    ? (historicalTickersResult.historical_tickers as Record<string, unknown>[])
+  const tickerChangesResult = firstResult(rawData, ['ticker-changes']);
+  const historicalTickers: ResearchSnapshotHistoricalTicker[] = Array.isArray(tickerChangesResult.history)
+    ? (tickerChangesResult.history as Record<string, unknown>[])
         .map((row) => ({
-          ticker: getStringField(row, ['ticker']),
-          dateChanged: getStringField(row, ['date_changed', 'dateChanged']),
+          ticker: getStringField(row, ['old_ticker']),
+          dateChanged: getStringField(row, ['effective_date']),
         }))
         .filter((row): row is ResearchSnapshotHistoricalTicker => row.ticker !== null)
     : [];

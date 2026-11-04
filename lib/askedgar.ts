@@ -6,7 +6,6 @@ export type {
   TickerDataResult,
 } from '@/lib/askedgar/types';
 export {
-  ALL_ENDPOINT_KEYS,
   ENDPOINT_REGISTRY,
   ENDPOINT_SCOPES,
 } from '@/lib/askedgar/endpoints';

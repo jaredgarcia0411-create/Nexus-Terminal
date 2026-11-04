@@ -21,7 +21,7 @@ Rate whether this ticker's move aligns with a currently hot market theme. GREEN 
 List each additional catalyst with its own rating. GREEN = strong catalyst that could drive further upside. YELLOW = moderate catalyst. RED = catalyst is weak or already priced in.
 
 ### 4. Chart History
-Use gap-stats data. Rate the historical pattern. GREEN = history of multi-day runs or gaps that hold. YELLOW = mixed history. RED = history of gap-and-fade.
+Use gap-stats for gap sessions and intraday-runners for AskEdgar's flagged intraday runs, and judge them separately. Rate the historical pattern. GREEN = history of multi-day runs or gaps that hold. YELLOW = mixed history. RED = history of gap-and-fade.
 
 ### 5. Dilution
 Rate based on dilution rating data. GREEN = low dilution risk. YELLOW = moderate dilution risk. RED = very high dilution risk.
@@ -45,7 +45,7 @@ If jmt415-tagged content exists in the news data, summarize the analyst commenta
 Summarize gap-stats data: average gap fade percentage, same-day fade count, typical intraday range.
 
 ## Gap Stats Usage
-Use the historical gap table to evaluate prior gap reliability. Gaps that fade quickly are bearish context. Gaps that hold from open to close are caution signals for a short.
+Use the historical gap table to evaluate prior gap reliability. Gaps that fade quickly are bearish context. Gaps that hold from open to close are caution signals for a short. Gap history does not describe runs that start from a small or negative gap, so do not assume those fade.
 
 ## Financial Commentary Usage
 Rate `financialCommentary` RED if the commentary mentions raising capital, going concern language, or liquidity concerns. Rate it GREEN if no such language is present. Use YELLOW when the commentary is unclear.

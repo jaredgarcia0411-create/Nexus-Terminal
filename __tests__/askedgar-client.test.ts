@@ -248,7 +248,7 @@ describe('askedgar client', () => {
     const result = await client.getCachedTickerData('AAPL');
 
     // 6 endpoints not yet cached (screener, equity-lines, nasdaq-compliance,
-    // reverse-splits, sec-filings, historical-tickers). One is SEC-backed,
+    // reverse-splits, sec-filings, ticker-changes). One is SEC-backed,
     // and news is fresh in the cache from the first call, so only 5 AskEdgar
     // fetches happen.
     expect(fetchSpy).toHaveBeenCalledTimes(5);
@@ -346,14 +346,51 @@ describe('askedgar client', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('routes historical-tickers through AskEdgar', async () => {
+  it('routes ticker-changes through AskEdgar', async () => {
     const fetchSpy = mockSuccessfulEndpointFetch();
     const client = await import('@/lib/askedgar');
 
-    await client.fetchTickerData('AAPL', { endpoints: ['historical-tickers'] });
+    await client.fetchTickerData('AAPL', { endpoints: ['ticker-changes'] });
 
-    const [historicalTickersUrl] = fetchCallUrls(fetchSpy);
-    expect(historicalTickersUrl.pathname).toBe('/v1/historical-tickers');
+    const [tickerChangesUrl] = fetchCallUrls(fetchSpy);
+    expect(tickerChangesUrl.pathname).toBe('/v1/ticker-changes');
+    expect(tickerChangesUrl.searchParams.get('ticker')).toBe('AAPL');
+  });
+
+  it('treats a no-changes ticker-changes reply as no data', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
+      status: 'success',
+      count: 0,
+      results: [{ query_ticker: 'CHSN', has_changes: false, current_ticker: null, history: [] }],
+    })));
+    const client = await import('@/lib/askedgar');
+
+    const result = await client.fetchTickerData('CHSN', { endpoints: ['ticker-changes'] });
+
+    expect(result.rawData['ticker-changes'].results).toEqual([]);
+    expect(result.hasAnyData).toBe(false);
+  });
+
+  it('routes the tracker and runners with their row limits', async () => {
+    const fetchSpy = mockSuccessfulEndpointFetch();
+    const client = await import('@/lib/askedgar');
+
+    await client.fetchTickerData('AAPL', { endpoints: ['pump-and-dump-tracker', 'intraday-runners'] });
+
+    const urls = fetchCallUrls(fetchSpy);
+    expect(urls.find((url) => url.pathname === '/v1/pump-and-dump-tracker')?.searchParams.get('limit')).toBe('1');
+    expect(urls.find((url) => url.pathname === '/v1/intraday-runners')?.searchParams.get('limit')).toBe('25');
+  });
+
+  it('keeps the tracker and runners out of Research page loads', async () => {
+    const client = await import('@/lib/askedgar');
+    const snapshot: readonly string[] = client.ENDPOINT_SCOPES.snapshot;
+    const smallCap: readonly string[] = client.ENDPOINT_SCOPES['small-cap-research'];
+
+    expect(snapshot).not.toContain('pump-and-dump-tracker');
+    expect(snapshot).not.toContain('intraday-runners');
+    expect(smallCap).toContain('pump-and-dump-tracker');
+    expect(smallCap).toContain('intraday-runners');
   });
 
   it('does not send an effective_status filter when fetching registrations', async () => {

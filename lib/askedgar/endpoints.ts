@@ -239,10 +239,13 @@ export async function fetchReverseSplits(ticker: string) {
   return requestAskEdgar<unknown>('/v1/reverse-splits', { ticker: validated });
 }
 
-export async function fetchHistoricalTickers(ticker: string) {
+export async function fetchTickerChanges(ticker: string) {
   const validated = validateTickerOrError<unknown>(ticker);
   if (typeof validated !== 'string') return validated;
-  return requestAskEdgar<unknown>('/v1/historical-tickers', { ticker: validated });
+  const response = await requestAskEdgar<unknown>('/v1/ticker-changes', { ticker: validated });
+  // A no-changes reply has count 0 but still one result row. Keeping that row would
+  // make getAskEdgarSnapshotAvailability treat an otherwise empty ticker as usable.
+  return response.count === 0 ? { ...response, results: [] } : response;
 }
 
 export async function fetchHistoricalDilutionRating(ticker: string, date: string) {
@@ -273,6 +276,18 @@ export async function fetchGapStats(ticker: string, limit = 50) {
   return requestAskEdgar<unknown>('/v1/gap-stats', { ticker: validated, limit });
 }
 
+export async function fetchPumpAndDumpTracker(ticker: string) {
+  const validated = validateTickerOrError<unknown>(ticker);
+  if (typeof validated !== 'string') return validated;
+  return requestAskEdgar<unknown>('/v1/pump-and-dump-tracker', { ticker: validated, limit: 1 });
+}
+
+export async function fetchIntradayRunners(ticker: string, limit = 25) {
+  const validated = validateTickerOrError<unknown>(ticker);
+  if (typeof validated !== 'string') return validated;
+  return requestAskEdgar<unknown>('/v1/intraday-runners', { ticker: validated, limit });
+}
+
 export const ENDPOINT_REGISTRY = {
   screener: { label: 'Screener', run: (ticker) => fetchScreenerByTicker(ticker) },
   'dilution-rating': { label: 'Dilution Rating', run: (ticker) => fetchDilutionRating(ticker) },
@@ -285,26 +300,30 @@ export const ENDPOINT_REGISTRY = {
   'nasdaq-compliance': { label: 'Nasdaq Compliance', run: (ticker) => fetchNasdaqCompliance(ticker) },
   'historical-float-pro': { label: 'Historical Outstanding Shares', run: (ticker) => getHistoricalOutstanding(ticker, { limit: 20 }) },
   'reverse-splits': { label: 'Reverse Splits', run: (ticker) => fetchReverseSplits(ticker) },
-  'historical-tickers': { label: 'Historical Tickers', run: (ticker) => fetchHistoricalTickers(ticker) },
+  'ticker-changes': { label: 'Ticker Changes', run: (ticker) => fetchTickerChanges(ticker) },
   'gap-stats': { label: 'Gap Stats', run: (ticker) => fetchGapStats(ticker, 50) },
+  'pump-and-dump-tracker': { label: 'Pump & Dump Tracker', run: (ticker) => fetchPumpAndDumpTracker(ticker) },
+  'intraday-runners': { label: 'Intraday Runners', run: (ticker) => fetchIntradayRunners(ticker, 25) },
 } satisfies Record<string, EndpointRegistryEntry>;
 
 export type EndpointKey = keyof typeof ENDPOINT_REGISTRY;
 
 export const ENDPOINT_REGISTRY_LOOKUP: Partial<Record<string, EndpointRegistryEntry>> = ENDPOINT_REGISTRY;
 
-export const ALL_ENDPOINT_KEYS = Object.keys(ENDPOINT_REGISTRY) as readonly EndpointKey[];
-
 export const ENDPOINT_SCOPES = {
-  snapshot: ALL_ENDPOINT_KEYS,
+  snapshot: [
+    'screener', 'dilution-rating', 'dilution-data', 'offerings', 'sec-filings',
+    'equity-lines', 'registrations', 'news', 'nasdaq-compliance',
+    'historical-float-pro', 'reverse-splits', 'ticker-changes', 'gap-stats',
+  ],
   'scanner-summary': [
     'registrations', 'dilution-rating', 'dilution-data', 'equity-lines',
   ],
   'small-cap-research': [
     'screener', 'dilution-rating', 'dilution-data', 'offerings', 'equity-lines',
     'registrations', 'news', 'nasdaq-compliance',
-    'historical-float-pro', 'reverse-splits', 'sec-filings', 'historical-tickers',
-    'gap-stats',
+    'historical-float-pro', 'reverse-splits', 'sec-filings', 'ticker-changes',
+    'gap-stats', 'pump-and-dump-tracker', 'intraday-runners',
   ],
   'swing-trader-research': [
     'dilution-data', 'dilution-rating', 'offerings', 'registrations',
