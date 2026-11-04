@@ -47,6 +47,34 @@ describe('buildExtendedHoursShadeSegments', () => {
     ]);
   });
 
+  it('starts the overnight band at 13:00 after a half day', () => {
+    // 2026-11-27 is the half day after Thanksgiving (2026-11-26 is closed).
+    expect(buildExtendedHoursShadeSegments(['2026-11-27'])).toEqual([
+      {
+        key: '2026-11-25:overnight:2026-11-27',
+        start: epoch('2026-11-25', '16:00:00'),
+        end: epoch('2026-11-27', '09:30:00'),
+      },
+      {
+        key: '2026-11-27:overnight:2026-11-30',
+        start: epoch('2026-11-27', '13:00:00'),
+        end: epoch('2026-11-30', '09:30:00'),
+      },
+    ]);
+  });
+
+  it('spans the spring-forward weekend with real instants on both sides', () => {
+    const [friday, monday] = buildExtendedHoursShadeSegments(['2026-03-09']);
+    expect(friday).toEqual({
+      key: '2026-03-06:overnight:2026-03-09',
+      start: Date.parse('2026-03-06T16:00:00-05:00'),
+      end: Date.parse('2026-03-09T09:30:00-04:00'),
+    });
+    expect(monday?.key).toBe('2026-03-09:overnight:2026-03-10');
+    // Friday's close to Monday's open reads as 65.5 wall-clock hours, but the skipped hour makes it 64.5 real hours.
+    expect((friday!.end - friday!.start) / 3_600_000).toBe(64.5);
+  });
+
   it('maps shades to candle ranges when the exact session boundary has no candle', () => {
     const candles = [
       { datetime: epoch('2026-04-21', '15:55:00') },

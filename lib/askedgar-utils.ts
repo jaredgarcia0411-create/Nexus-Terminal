@@ -93,10 +93,16 @@ export function toStringValue(value: string | number | boolean | null | undefine
 
 // Formats an ISO date string as a locale date. Returns the original string if
 // it can't be parsed, so callers always get something displayable.
+// A bare YYYY-MM-DD (filing dates, expirations, ticker changes) is a calendar date, not an instant:
+// `new Date('2026-05-15')` is midnight UTC, which the default local rendering shows as 5/14 anywhere
+// west of Greenwich. Pin those to UTC so the day the source gave us is the day shown.
 export function formatDate(value: string | null | undefined): string {
   if (!value) return '--';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return parsed.toLocaleDateString(undefined, { timeZone: 'UTC' });
+  }
   return parsed.toLocaleDateString();
 }
 

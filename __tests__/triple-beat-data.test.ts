@@ -72,6 +72,28 @@ describe('Triple Beat data', () => {
     });
     expect(fetchMassiveAggregateBars).toHaveBeenCalledWith({ ticker: 'NCLH', multiplier: '1', timespan: 'minute', from: String(start), to: String(end) });
   });
+  it('opens the after-hours window at 13:00 when the prior session was a half day', async () => {
+    // 2026-11-27 closed at 13:00 ET; the earnings window for Monday 2026-11-30 starts there.
+    const halfDayClose = Date.parse('2026-11-27T13:00:00-05:00');
+    vi.mocked(fetchMassiveAggregateBars).mockResolvedValue([
+      { t: Date.parse('2026-11-27T12:59:00-05:00'), h: 50, l: 1, c: 10, v: 1 },
+      { t: Date.parse('2026-11-27T13:05:00-05:00'), h: 22, l: 21, c: 21.8, v: 100000 },
+      { t: Date.parse('2026-11-30T04:00:00-05:00'), h: 23.4, l: 22.6, c: 23, v: 300000 },
+    ]);
+    expect(await fetchExtendedHoursStats('NCLH', '2026-11-27', '2026-11-30', Infinity)).toEqual({
+      last: 23, high: 23.4, low: 21, volume: 400000, premarketHigh: 23.4, premarketLow: 22.6, premarketVolume: 300000,
+    });
+    expect(fetchMassiveAggregateBars).toHaveBeenCalledWith(expect.objectContaining({
+      from: String(halfDayClose), to: String(Date.parse('2026-11-30T09:30:00-05:00')),
+    }));
+  });
+  it('builds the window across the fall-back weekend with the right offsets on each side', async () => {
+    vi.mocked(fetchMassiveAggregateBars).mockResolvedValue([]);
+    await fetchExtendedHoursStats('NCLH', '2026-10-30', '2026-11-02', Infinity);
+    expect(fetchMassiveAggregateBars).toHaveBeenCalledWith(expect.objectContaining({
+      from: String(Date.parse('2026-10-30T16:00:00-04:00')), to: String(Date.parse('2026-11-02T09:30:00-05:00')),
+    }));
+  });
   it('requires premarket bars and caps a late request at the open', async () => {
     vi.mocked(fetchMassiveAggregateBars).mockResolvedValue([{ t: start + 60000, h: 22, l: 21, c: 22 }]);
     expect(await fetchExtendedHoursStats('NCLH', '2026-10-28', '2026-10-29', Infinity)).toBeNull();

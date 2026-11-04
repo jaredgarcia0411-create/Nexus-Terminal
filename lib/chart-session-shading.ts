@@ -1,4 +1,4 @@
-import { getPreviousTradingSession, isNyTradingDay, nyDateTimeToEpoch, parseSortKey } from '@/lib/time-utils';
+import { getNextTradingSession, getNyRegularCloseTime, getPreviousTradingSession, nyDateTimeToEpoch } from '@/lib/time-utils';
 
 export type SessionShadeSegment = {
   key: string;
@@ -18,27 +18,6 @@ type TimedCandle = {
 
 function toEpoch(sortKey: string, time: string) {
   return nyDateTimeToEpoch(sortKey, time);
-}
-
-function shiftCalendarDays(dateKey: string, days: number) {
-  const parsed = parseSortKey(dateKey);
-  if (!parsed) return null;
-
-  const date = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day));
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
-function getNextTradingSession(sortKey: string): string | null {
-  let cursor = sortKey;
-  for (let safety = 0; safety < 14; safety += 1) {
-    const next = shiftCalendarDays(cursor, 1);
-    if (next == null) return null;
-    if (isNyTradingDay(next)) return next;
-    cursor = next;
-  }
-
-  return null;
 }
 
 function addSegment(
@@ -65,7 +44,8 @@ export function buildExtendedHoursShadeSegments(dayKeys: Iterable<string>): Sess
     addSegment(
       segments,
       key,
-      toEpoch(sessionKey, '16:00:00'),
+      // Half days close at 13:00, so the overnight band starts there.
+      toEpoch(sessionKey, getNyRegularCloseTime(sessionKey)),
       toEpoch(nextSessionKey, '09:30:00'),
     );
   };

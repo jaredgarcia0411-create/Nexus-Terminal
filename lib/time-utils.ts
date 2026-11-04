@@ -102,6 +102,22 @@ const NYSE_HOLIDAYS = new Set([
   '2027-07-05', '2027-09-06', '2027-11-25', '2027-12-24',
 ]);
 
+// 13:00 ET early closes (day before Independence Day, day after Thanksgiving, Christmas Eve).
+// Extend alongside NYSE_HOLIDAYS. 2026-07-03 and 2027-12-24 are full holidays, so no early close that week.
+const NYSE_EARLY_CLOSES = new Set([
+  '2024-07-03', '2024-11-29', '2024-12-24',
+  '2025-07-03', '2025-11-28', '2025-12-24',
+  '2026-11-27', '2026-12-24',
+  '2027-11-26',
+]);
+
+export const NY_REGULAR_OPEN = '09:30:00';
+export const NY_REGULAR_CLOSE = '16:00:00';
+export const NY_EARLY_CLOSE = '13:00:00';
+export const NY_EXTENDED_OPEN = '04:00:00';
+export const NY_EXTENDED_CLOSE = '20:00:00';
+export const NY_EARLY_EXTENDED_CLOSE = '17:00:00';
+
 export function isNyTradingDay(sortKey: string): boolean {
   const start = nyDateTimeToEpoch(sortKey, '00:00:00');
   if (start == null) return false;
@@ -110,29 +126,66 @@ export function isNyTradingDay(sortKey: string): boolean {
   return weekday !== 'Sat' && weekday !== 'Sun' && !NYSE_HOLIDAYS.has(sortKey);
 }
 
-export function getPreviousTradingSession(sortKey: string): string | null {
-  const start = nyDateTimeToEpoch(sortKey, '00:00:00');
-  if (start == null) return null;
+export function isNyEarlyCloseDay(sortKey: string): boolean {
+  return NYSE_EARLY_CLOSES.has(sortKey) && isNyTradingDay(sortKey);
+}
 
-  let cursor = start;
+// Regular-session close for the date: 13:00 on half days, 16:00 otherwise.
+export function getNyRegularCloseTime(sortKey: string): string {
+  return isNyEarlyCloseDay(sortKey) ? NY_EARLY_CLOSE : NY_REGULAR_CLOSE;
+}
+
+// After-hours trading ends four hours after the regular close: 17:00 on half days, 20:00 otherwise.
+export function getNyExtendedCloseTime(sortKey: string): string {
+  return isNyEarlyCloseDay(sortKey) ? NY_EARLY_EXTENDED_CLOSE : NY_EXTENDED_CLOSE;
+}
+
+// Calendar arithmetic on a YYYY-MM-DD key. Done in UTC so a DST day (23 or 25 hours in New York)
+// still counts as exactly one step.
+export function shiftCalendarDays(sortKey: string, days: number): string | null {
+  const parts = parseSortKey(sortKey);
+  if (!parts) return null;
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+// The most recent NY session whose regular hours have already ended at `nowMs`: today once the
+// close (16:00, or 13:00 on half days) has passed, otherwise the previous trading day.
+export function getLatestClosedTradingSession(nowMs = Date.now()): string | null {
+  const today = epochToNySortKey(nowMs);
+  if (isNyTradingDay(today)) {
+    const close = nyDateTimeToEpoch(today, getNyRegularCloseTime(today));
+    if (close != null && nowMs >= close) return today;
+  }
+  return getPreviousTradingSession(today);
+}
+
+// Step by calendar day rather than by 24 hours of epoch time: across a DST change a New York day is
+// 23 or 25 hours long, so a 24-hour step lands on the wrong date (23:00 of the day before).
+export function getPreviousTradingSession(sortKey: string): string | null {
+  if (!parseSortKey(sortKey)) return null;
+
+  let cursor = sortKey;
   for (let safety = 0; safety < 14; safety += 1) {
-    cursor -= 24 * 60 * 60 * 1000;
-    const candidate = epochToNySortKey(cursor);
+    const candidate = shiftCalendarDays(cursor, -1);
+    if (candidate == null) return null;
     if (isNyTradingDay(candidate)) return candidate;
+    cursor = candidate;
   }
 
   return null;
 }
 
 export function getNextTradingSession(sortKey: string): string | null {
-  const start = nyDateTimeToEpoch(sortKey, '00:00:00');
-  if (start == null) return null;
+  if (!parseSortKey(sortKey)) return null;
 
-  let cursor = start;
+  let cursor = sortKey;
   for (let safety = 0; safety < 14; safety += 1) {
-    cursor += 24 * 60 * 60 * 1000;
-    const candidate = epochToNySortKey(cursor);
+    const candidate = shiftCalendarDays(cursor, 1);
+    if (candidate == null) return null;
     if (isNyTradingDay(candidate)) return candidate;
+    cursor = candidate;
   }
 
   return null;
@@ -207,7 +260,7 @@ export function nyDateTimeToEpoch(sortKey: string, time: string): number | null 
   const timeParts = parseClockTime(time);
   if (!dateParts || !timeParts) return null;
 
-  const utcGuess = Date.UTC(
+  const wallClockAsUtc = Date.UTC(
     dateParts.year,
     dateParts.month - 1,
     dateParts.day,
@@ -216,7 +269,18 @@ export function nyDateTimeToEpoch(sortKey: string, time: string): number | null 
     timeParts.seconds,
   );
 
-  return utcGuess - getNyOffsetMs(utcGuess);
+  // The offset must be read at the instant we are solving for, not at the wall-clock value read as
+  // UTC. Those differ when a DST change falls between them (03:00-06:59 on the spring-forward day,
+  // 02:00-05:59 on the fall-back day), which made the old single pass an hour off. Two passes settle
+  // on the right offset; a non-existent spring-forward time (02:30) resolves to the instant an hour
+  // later, and an ambiguous fall-back time (01:30) resolves to its first, daylight-time occurrence.
+  const firstGuess = wallClockAsUtc - getNyOffsetMs(wallClockAsUtc);
+  const secondGuess = wallClockAsUtc - getNyOffsetMs(firstGuess);
+  if (secondGuess === firstGuess) return firstGuess;
+
+  const thirdGuess = wallClockAsUtc - getNyOffsetMs(secondGuess);
+  if (thirdGuess === secondGuess) return secondGuess;
+  return Math.max(secondGuess, thirdGuess);
 }
 
 export function epochToNySortKey(epochMs: number): string {

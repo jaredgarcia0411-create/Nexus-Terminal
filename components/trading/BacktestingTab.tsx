@@ -12,6 +12,7 @@ import BacktestingSidebar, { type BacktestSelection } from '@/components/trading
 import ResearchSubNav from '@/components/trading/ResearchSubNav';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { epochToNySortKey } from '@/lib/time-utils';
 
 type ActiveBacktestSummary = {
   id: string | null;
@@ -65,7 +66,7 @@ function getPersistedTicker(): string {
 }
 
 function todayIsoDate(): string {
-  return new Date().toISOString().slice(0, 10);
+  return epochToNySortKey(Date.now());
 }
 
 export default function BacktestingTab() {
@@ -146,7 +147,7 @@ export default function BacktestingTab() {
     if (!ticker) return;
     const date = /^\d{4}-\d{2}-\d{2}$/.test(lookupDate)
       ? lookupDate
-      : new Date().toISOString().slice(0, 10);
+      : todayIsoDate();
     handleSelect({ ticker, date });
   };
 

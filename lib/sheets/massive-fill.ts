@@ -1,4 +1,4 @@
-import { nyDateTimeToEpoch } from '@/lib/time-utils';
+import { getNyExtendedCloseTime, getNyRegularCloseTime, nyDateTimeToEpoch } from '@/lib/time-utils';
 import type { GroupedDailyBar } from '@/lib/massive-market';
 import type { SheetColumn } from '@/lib/sheets/columns';
 
@@ -61,7 +61,8 @@ export function computeSessionHighs(
   };
 
   return {
-    ahHigh: windowHigh(scanDate, '16:00:00', '20:00:00'),
+    // Half days (13:00 close) run after-hours 13:00-17:00 instead of 16:00-20:00.
+    ahHigh: windowHigh(scanDate, getNyRegularCloseTime(scanDate), getNyExtendedCloseTime(scanDate)),
     pmEarlyHigh: windowHigh(tradeDate, '04:00:00', '07:00:00'),
     pmLateHigh: windowHigh(tradeDate, '07:00:00', '09:30:00'),
     complete: nowMs >= nyDateTimeToEpoch(tradeDate, '09:30:00')!,

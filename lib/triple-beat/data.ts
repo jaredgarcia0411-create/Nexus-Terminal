@@ -5,7 +5,7 @@ import { secFetchText } from '@/lib/sec/client';
 import { stripFilingBodyHtml } from '@/lib/sec/filing-body';
 import { fetchPressReleaseHtml } from '@/lib/sec/filing-headline';
 import type { SecFiling } from '@/lib/sec/submissions';
-import { nyDateTimeToEpoch } from '@/lib/time-utils';
+import { getNyRegularCloseTime, nyDateTimeToEpoch } from '@/lib/time-utils';
 
 const PRESS_RELEASE_MAX_CHARS = 12_000;
 const NEWS_TEXT_MAX_CHARS = 1_500;
@@ -29,7 +29,7 @@ export interface NewsItem {
   text: string;
 }
 
-// Split-adjusted 1-minute bars from `priorSession` 16:00 ET (after-hours) through `date` premarket,
+// Split-adjusted 1-minute bars from `priorSession`'s close (16:00 ET, or 13:00 on a half day) through `date` premarket,
 // ending at the earlier of `untilMs` and the 09:30 open. high/low/volume span both sessions; premarketHigh/Low/Volume are 04:00 ET onward only.
 export async function fetchExtendedHoursStats(
   ticker: string,
@@ -37,7 +37,7 @@ export async function fetchExtendedHoursStats(
   date: string,
   untilMs: number,
 ): Promise<ExtendedHoursStats | null> {
-  const start = nyDateTimeToEpoch(priorSession, '16:00:00');
+  const start = nyDateTimeToEpoch(priorSession, getNyRegularCloseTime(priorSession));
   const premarketStart = nyDateTimeToEpoch(date, '04:00:00');
   const open = nyDateTimeToEpoch(date, '09:30:00');
   if (start == null || premarketStart == null || open == null) return null;

@@ -31,7 +31,7 @@ import { getRecentFilings, type SecFiling } from '@/lib/sec/submissions';
 import { buildEarningsEvidence, classifyEarnings, UNKNOWN_EARNINGS_READ, type EarningsRead } from '@/lib/triple-beat/classify';
 import { fetchEarningsNews, fetchExtendedHoursStats, fetchPressReleaseText, findEarningsFiling, isEarningsHeadline } from '@/lib/triple-beat/data';
 import { MIN_ENTRY_RVOL, RVOL_SESSIONS, type TripleBeatMinuteBar, evaluateTripleBeatSetup, gapBucket, measureTripleBeatOutcome, passesReplayPrefilter, timeOfDayRvol } from '@/lib/triple-beat/scan';
-import { epochToNySortKey, getNextTradingSession, getPreviousTradingSession, nyDateTimeToEpoch } from '@/lib/time-utils';
+import { epochToNySortKey, getNextTradingSession, getNyRegularCloseTime, getPreviousTradingSession, nyDateTimeToEpoch } from '@/lib/time-utils';
 
 function readArg(name: string): string | undefined {
   const index = process.argv.indexOf('--' + name);
@@ -93,7 +93,7 @@ async function main() {
     const readsBefore = newLlmReads;
     const results = await Promise.allSettled(candidates.slice(offset, offset + 10).map(async ({ ticker, date }) => {
       const priorSession = getPreviousTradingSession(date)!;
-      const windowStart = nyDateTimeToEpoch(priorSession, '16:00:00')!;
+      const windowStart = nyDateTimeToEpoch(priorSession, getNyRegularCloseTime(priorSession))!;
       const windowEnd = nyDateTimeToEpoch(date, '09:00:00')!;
       const filing = findEarningsFiling(await filingsFor(ticker), windowStart, windowEnd);
       if (!filing) return null;
@@ -137,7 +137,7 @@ async function main() {
       const setup = evaluateTripleBeatSetup(history, asOfExtended, earnings, sharesOutstanding)!;
       const { metrics, plan } = setup;
       const open = nyDateTimeToEpoch(date, '09:30:00')!;
-      const close = nyDateTimeToEpoch(date, '16:00:00')!;
+      const close = nyDateTimeToEpoch(date, getNyRegularCloseTime(date))!;
       // Minute bars from the first RVOL session's open through day 0's close: day 0 walks the trade, the prior sessions
       // give the average volume at each minute of the day.
       const rvolDates = history.slice(-RVOL_SESSIONS).map((bar) => bar.date);
@@ -178,7 +178,7 @@ async function main() {
       const loadMinutes = (sessionDate: string) => {
         if (!laterMinutes.has(sessionDate)) {
           const premarketStart = nyDateTimeToEpoch(sessionDate, '04:00:00')!;
-          const dayClose = nyDateTimeToEpoch(sessionDate, '16:00:00')!;
+          const dayClose = nyDateTimeToEpoch(sessionDate, getNyRegularCloseTime(sessionDate))!;
           laterMinutes.set(sessionDate, fetchMassiveAggregateBars({ ticker, multiplier: '1', timespan: 'minute', from: String(premarketStart), to: String(dayClose) })
             .then((bars) => bars
               .filter((bar) => Number(bar.t) >= premarketStart && Number(bar.t) < dayClose && bar.o != null && bar.h != null && bar.l != null)

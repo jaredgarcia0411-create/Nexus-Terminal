@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   captureMarketPulseForDateMock,
@@ -64,6 +64,34 @@ describe('market pulse eod route', () => {
       statsUpserted: 1,
       stats: { tradeDate: '2026-05-08' },
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each([
+    // The Vercel schedule (22:30 UTC, Mon-Fri) lands after the close in both EST and EDT, so the
+    // session that just ended is captured. Friday used to be skipped under the old "yesterday" default.
+    ['2026-03-06T22:30:00.000Z', '2026-03-06'],
+    ['2026-03-09T22:30:00.000Z', '2026-03-09'],
+    ['2026-10-30T22:30:00.000Z', '2026-10-30'],
+    ['2026-11-02T22:30:00.000Z', '2026-11-02'],
+    // A manual run during the session captures the previous trading day instead.
+    ['2026-03-09T15:00:00.000Z', '2026-03-06'],
+    // Thanksgiving evening rolls back to Wednesday.
+    ['2026-11-26T22:30:00.000Z', '2026-11-25'],
+  ])('defaults to the latest closed New York session at %s', async (nowIso, expectedDate) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(nowIso));
+    getDbMock.mockReturnValue(createDb());
+    captureMarketPulseForDateMock.mockResolvedValue({ skipped: false, barsUpserted: 1, statsUpserted: 1, stats: {} });
+
+    const response = await GET(new Request('http://localhost/api/cron/market-pulse-eod?enqueue=0'));
+
+    expect(response.status).toBe(200);
+    expect(captureMarketPulseForDateMock).toHaveBeenCalledTimes(1);
+    expect(captureMarketPulseForDateMock).toHaveBeenCalledWith(expect.anything(), expectedDate);
   });
 
   it('requires cron auth', async () => {
