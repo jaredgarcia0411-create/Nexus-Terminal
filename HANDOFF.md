@@ -20,8 +20,8 @@ Sheets:
 - Deferred roadmap (not started): manual authenticated sharing smoke (invite logged-in coworker, flip role, remove; unknown-email error; viewer read-only / editor sees no manage buttons); self-leave, ownership transfer, invite notifications; templates / per-day "start today's sheet"; archive/unarchive UI, undo/redo, polling/SSE invalidation.
 
 Scans (context from the 2026-10-29/30 work, details in git history):
-- Parabolic: short the open with the card's stop, hold to the close. 2024-11→2025-12 +252.6R / 712 posted; 2026 YTD +28.3R / 555. Intraday triggers (OR/VWAP) gave up most of the move out of sample.
-- Triple Beat: 45-pt score (EPS, revenue, guidance, base, breakout, $10+), built in-sample on Apr/Jul/Oct 2026; 2026 YTD +38.8R at 1R, but non-window months −13.6R. Judge on live posts.
+- Parabolic: short the open with the card's stop, hold to the close. 2024-11→2025-12 +252.6R / 712 posted; 2026 YTD +28.3R / 555. With stops of 0.5 ATR or wider: +124.8R / 402 and +3.6R / 257, since a few tight-stop trades supply most of the rest and their fills may not be achievable. Intraday triggers (OR/VWAP) gave up most of the move out of sample.
+- Triple Beat: 45-pt score (EPS, revenue, guidance, base, breakout, $10+), built in-sample on Apr/Jul/Oct 2026. Posted with the 3x RVOL rule and no hindsight: 2024-11→2025-12 +23.3R / 378; 2026 YTD +25.7R / 319. Without the rule: +27.2R / 406 and +49.3R / 345. The replay can't enter during the 09:30 minute, so the with-rule row is on the cautious side. Judge on live posts.
 - Earnings read is not fully repeatable: on 2026-11-03 FISV posted B 28, then an identical rerun at 9:12 graded A 36 (revenue/guidance read differently). Watch for grade flips.
 
 ---
@@ -36,6 +36,22 @@ Scans (context from the 2026-10-29/30 work, details in git history):
 ---
 
 ## Recently Completed
+
+### PR Review Fixes (PRs 1 to 4)
+
+Status: merged 2026-11-04 in the order PR 2 `eaa9f74`, PR 4 `6f18467`, PR 3 `6c5829f`, PR 1 `860b4de`. Vercel deployed PRs 2 to 4.
+
+Next:
+- Rebuild the agent containers with `--build` right after this commit (deadline 2026-11-25, before the Thanksgiving half day).
+- Confirm the first Tuesday-to-Saturday EOD capture runs at 17:30 ET on 2026-11-05 and stores 2026-11-04.
+- Undecided, no rule changed: the Triple Beat 3x RVOL rule and a Parabolic 0.5 ATR floor. Jared has not ruled on either.
+- Jared: rename Neon's "Backup Branch" (live data, database `nexus`) to `live` and never delete or reset it. Make the repo private later, after confirming the server can still `git pull`.
+
+Outcome:
+- PR 2 enforces the email allowlist per request and locks down other API gaps. PR 4 fixes DST, holiday and half-day bugs and moves EOD to next-day capture. PR 3 removes replay hindsight and scores gap-through stops at the bar's open, without changing any card. PR 1 adds `docs/CODEBASE_TOUR.md`.
+
+Validation:
+- Merged tree: lint, `npx tsc --noEmit`, `npm run typecheck:services`, `npm run build`, 1116 tests under ET and UTC. PR 2 sign-in passed for Jared and a coworker.
 
 ### Small-Cap Research: Report Accuracy
 
