@@ -125,6 +125,59 @@ describe('startMacroCron', () => {
     await handle.stop();
   });
 
+  it('skips NYSE holiday ticks even when the trigger hour matches', async () => {
+    // 2026-11-26 is Thanksgiving (Thursday). 11:00 UTC = 06:00 EST, matching the trigger hour.
+    vi.setSystemTime(new Date('2026-11-26T11:00:00.000Z'));
+    const db = createDb([[{ id: 'scheduled-run-row' }]]);
+    const handle = startMacroCron(db, { hourEt: 6, checkIntervalMs: 1_000 });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(db.execute).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
+
+    await handle.stop();
+  });
+
+  it.each([
+    // Friday before the spring-forward weekend: 06:00 EST is 11:00 UTC.
+    ['2026-03-06T11:00:00.000Z', '2026-03-06'],
+    // Monday after: 06:00 EDT is 10:00 UTC.
+    ['2026-03-09T10:00:00.000Z', '2026-03-09'],
+    // Friday before the fall-back weekend: 06:00 EDT.
+    ['2026-10-30T10:00:00.000Z', '2026-10-30'],
+    // Monday after: 06:00 EST.
+    ['2026-11-02T11:00:00.000Z', '2026-11-02'],
+  ])('fires at 06:00 Eastern on %s regardless of the UTC offset', async (nowIso, tradingDate) => {
+    vi.setSystemTime(new Date(nowIso));
+    const db = createDb([[{ id: 'scheduled-run-row' }]]);
+    const handle = startMacroCron(db, { hourEt: 6, checkIntervalMs: 1_000 });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(db._state.insertedJobs[0]?.input).toEqual({ tradingDate });
+
+    await handle.stop();
+  });
+
+  it.each([
+    // 11:00 UTC is 07:00 EDT once clocks have sprung forward.
+    ['2026-03-09T11:00:00.000Z'],
+    // 10:00 UTC is 05:00 EST once clocks have fallen back.
+    ['2026-11-02T10:00:00.000Z'],
+  ])('does not fire at the stale UTC hour after a DST change (%s)', async (nowIso) => {
+    vi.setSystemTime(new Date(nowIso));
+    const db = createDb([[{ id: 'scheduled-run-row' }]]);
+    const handle = startMacroCron(db, { hourEt: 6, checkIntervalMs: 1_000 });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(db.transaction).not.toHaveBeenCalled();
+
+    await handle.stop();
+  });
+
   it('claims the scheduled run, enqueues one macro-summary job, and marks the run completed', async () => {
     vi.setSystemTime(new Date('2026-04-07T10:00:00.000Z'));
     const db = createDb([[{ id: 'scheduled-run-row' }]]);

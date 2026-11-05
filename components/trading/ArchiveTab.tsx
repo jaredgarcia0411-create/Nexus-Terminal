@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { epochToNySortKey } from '@/lib/time-utils';
 import { formatCurrency } from '@/lib/ui-trade-utils';
 import type { Trade } from '@/lib/types';
 
@@ -52,7 +53,7 @@ interface WeeklyReviewResponse {
 }
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return epochToNySortKey(Date.now());
 }
 
 function ninetyDaysAgo() {

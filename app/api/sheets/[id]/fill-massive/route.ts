@@ -15,7 +15,7 @@ import { getSheetRole } from '@/lib/sheets/access';
 import { computeRowFill, computeSessionHighs, getMassiveFillKeys, isEmptySheetCell, type MassiveFillKeys } from '@/lib/sheets/massive-fill';
 import { applySheetTagsForDates } from '@/lib/sheets/trade-tags';
 import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
-import { getNextTradingSession, isNyTradingDay, nyDateTimeToEpoch } from '@/lib/time-utils';
+import { getNextTradingSession, getNyRegularCloseTime, isNyTradingDay, nyDateTimeToEpoch } from '@/lib/time-utils';
 import { fillMassiveSchema } from '@/lib/validations/sheets';
 
 function hasMassiveFillKey(keys: MassiveFillKeys): boolean {
@@ -144,7 +144,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           ticker,
           multiplier: '1',
           timespan: 'minute',
-          from: String(nyDateTimeToEpoch(date, '16:00:00')),
+          from: String(nyDateTimeToEpoch(date, getNyRegularCloseTime(date))),
           to: String(nyDateTimeToEpoch(tradeDate, '09:30:00')),
           adjusted: false,
         });

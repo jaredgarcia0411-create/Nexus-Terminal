@@ -22,7 +22,7 @@ import Papa from 'papaparse';
 import { fetchGroupedDailyAggregates, fetchMassiveAggregateBars, fetchSharesOutstanding, fetchSplitHistory, type DailyOhlcBar } from '@/lib/massive-market';
 import { addCalendarDays, fetchDailyBars, fetchPremarketStats } from '@/lib/parabolic/data';
 import { MIN_HISTORY_BARS, evaluateParabolicSetup, measureIntradayTriggers, measureOpenShortMinutes, measureReplayOutcome, passesReplayPrefilter } from '@/lib/parabolic/scan';
-import { getNextTradingSession, getPreviousTradingSession, nyDateTimeToEpoch } from '@/lib/time-utils';
+import { getNextTradingSession, getNyRegularCloseTime, getPreviousTradingSession, nyDateTimeToEpoch } from '@/lib/time-utils';
 
 function readArg(name: string): string | undefined {
   const index = process.argv.indexOf('--' + name);
@@ -92,7 +92,7 @@ async function main() {
       const { metrics, plan } = setup;
       const outcome = plan ? measureReplayOutcome(history.slice(-60), plan, sessions) : null;
       const open = nyDateTimeToEpoch(date, '09:30:00')!;
-      const close = nyDateTimeToEpoch(date, '16:00:00')!;
+      const close = nyDateTimeToEpoch(date, getNyRegularCloseTime(date))!;
       // From 04:00 ET so the VWAP trigger includes premarket volume.
       const premarketStart = nyDateTimeToEpoch(date, '04:00:00')!;
       const minutes = plan

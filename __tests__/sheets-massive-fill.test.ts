@@ -133,6 +133,40 @@ describe('sheets session highs and extension', () => {
     ], '2026-06-05', '2026-06-08', at('2026-06-08', '09:30:00'))).toEqual(completeHighs);
   });
 
+  it('uses the 13:00-17:00 after-hours window when the scan day is a half day', () => {
+    // 2026-11-27 (day after Thanksgiving) closes at 13:00; its after-hours session is 13:00-17:00.
+    const halfDayBars = [
+      { t: at('2026-11-27', '12:59:00'), h: 100 },
+      { t: at('2026-11-27', '13:00:00'), h: 3.1 },
+      { t: at('2026-11-27', '16:30:00'), h: 3.4 },
+      { t: at('2026-11-27', '17:00:00'), h: 100 },
+      { t: at('2026-11-30', '04:00:00'), h: 2.5 },
+      { t: at('2026-11-30', '07:00:00'), h: 2.9 },
+    ];
+    expect(computeSessionHighs(halfDayBars, '2026-11-27', '2026-11-30', at('2026-11-27', '16:59:00')))
+      .toEqual({ ahHigh: null, pmEarlyHigh: null, pmLateHigh: null, complete: false });
+    expect(computeSessionHighs(halfDayBars, '2026-11-27', '2026-11-30', at('2026-11-27', '17:00:00')))
+      .toEqual({ ahHigh: 3.4, pmEarlyHigh: null, pmLateHigh: null, complete: false });
+    expect(computeSessionHighs(halfDayBars, '2026-11-27', '2026-11-30', at('2026-11-30', '09:30:00')))
+      .toEqual({ ahHigh: 3.4, pmEarlyHigh: 2.5, pmLateHigh: 2.9, complete: true });
+  });
+
+  it('keeps the premarket windows on the right clock across the fall-back weekend', () => {
+    // Scan Friday 2026-10-30 (EDT), trade Monday 2026-11-02 (EST).
+    const bars = [
+      { t: Date.parse('2026-10-30T16:05:00-04:00'), h: 2.4 },
+      { t: Date.parse('2026-11-02T03:59:00-05:00'), h: 100 },
+      { t: Date.parse('2026-11-02T04:00:00-05:00'), h: 2.5 },
+      { t: Date.parse('2026-11-02T06:59:00-05:00'), h: 2.6 },
+      { t: Date.parse('2026-11-02T07:00:00-05:00'), h: 2.9 },
+      { t: Date.parse('2026-11-02T09:30:00-05:00'), h: 100 },
+    ];
+    expect(computeSessionHighs(bars, '2026-10-30', '2026-11-02', Date.parse('2026-11-02T09:30:00-05:00')))
+      .toEqual({ ahHigh: 2.4, pmEarlyHigh: 2.6, pmLateHigh: 2.9, complete: true });
+    expect(computeSessionHighs(bars, '2026-10-30', '2026-11-02', Date.parse('2026-11-02T06:59:00-05:00')))
+      .toEqual({ ahHigh: 2.4, pmEarlyHigh: null, pmLateHigh: null, complete: false });
+  });
+
   it.each([
     ['2026-06-05', '19:59:00', { ahHigh: null, pmEarlyHigh: null, pmLateHigh: null, complete: false }],
     ['2026-06-05', '20:00:00', { ahHigh: 2.4, pmEarlyHigh: null, pmLateHigh: null, complete: false }],

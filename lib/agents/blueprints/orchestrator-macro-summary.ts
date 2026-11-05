@@ -9,6 +9,7 @@ import { callLlm } from '../llm-client';
 import { fetchRssItems, type RssItem } from '../rss-lite';
 import { fetchPageText } from '../scrape-lite';
 import { wrapUntrusted } from '@/lib/agents/trust-boundary';
+import { epochToNySortKey, nyDateTimeToEpoch } from '@/lib/time-utils';
 import type { AgentDb } from '../db';
 import type {
   Blueprint,
@@ -224,7 +225,7 @@ function getTradingDate(jobInput: unknown): string {
   const parsed = macroJobInputSchema.safeParse(jobInput);
   return parsed.success && parsed.data.tradingDate
     ? parsed.data.tradingDate
-    : new Date().toISOString().slice(0, 10);
+    : epochToNySortKey(Date.now());
 }
 
 function getHeadlineUrls(): string[] {
@@ -309,7 +310,7 @@ async function fetchPriorMacroReport(
         eq(agentReports.agentId, 'orchestrator'),
         eq(agentReports.reportType, 'macro-summary'),
         eq(agentReports.status, 'published'),
-        lt(agentReports.createdAt, new Date(`${tradingDate}T00:00:00.000Z`)),
+        lt(agentReports.createdAt, new Date(nyDateTimeToEpoch(tradingDate, '00:00:00') ?? Date.parse(`${tradingDate}T00:00:00.000Z`))),
       ),
     )
     .orderBy(desc(agentReports.createdAt))

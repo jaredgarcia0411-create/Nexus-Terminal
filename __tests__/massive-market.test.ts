@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { fetchMassiveAggregateBars, fetchTickerReference } from '@/lib/massive-market';
+import { fetchMassiveAggregateBars, fetchTickerReference, getEasternMarketSession } from '@/lib/massive-market';
 
 describe('Massive aggregate price basis', () => {
   afterEach(() => {
@@ -60,5 +60,33 @@ describe('Massive ticker reference', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ results: { type: 'CS', name } }));
 
     expect(await fetchTickerReference('ABC')).toEqual({ type: 'CS', name: expected });
+  });
+});
+
+describe('getEasternMarketSession', () => {
+  it.each([
+    // Regular weekdays, read on the Eastern clock in both EST and EDT.
+    ['2026-03-06T08:59:00Z', 'closed'],
+    ['2026-03-06T09:00:00Z', 'pre-market'],
+    ['2026-03-06T14:30:00Z', 'regular'],
+    ['2026-03-06T20:59:00Z', 'regular'],
+    ['2026-03-06T21:00:00Z', 'after-hours'],
+    ['2026-03-06T01:00:00Z', 'closed'],
+    ['2026-03-09T08:00:00Z', 'pre-market'],
+    ['2026-03-09T13:29:00Z', 'pre-market'],
+    ['2026-03-09T13:30:00Z', 'regular'],
+    ['2026-03-09T20:00:00Z', 'after-hours'],
+    ['2026-03-09T23:59:00Z', 'after-hours'],
+    ['2026-03-10T00:00:00Z', 'closed'],
+    // Weekend and holiday.
+    ['2026-03-08T14:30:00Z', 'closed'],
+    ['2026-11-26T15:00:00Z', 'closed'],
+    // Half day: regular until 13:00 ET, after-hours until 17:00 ET.
+    ['2026-11-27T17:59:00Z', 'regular'],
+    ['2026-11-27T18:00:00Z', 'after-hours'],
+    ['2026-11-27T21:59:00Z', 'after-hours'],
+    ['2026-11-27T22:00:00Z', 'closed'],
+  ])('classifies %s as %s', (iso, expected) => {
+    expect(getEasternMarketSession(new Date(iso))).toBe(expected);
   });
 });

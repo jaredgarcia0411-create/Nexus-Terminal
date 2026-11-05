@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   captureMarketPulseForDateMock,
@@ -30,6 +30,7 @@ vi.mock('@/lib/market-pulse/capture', () => ({
 }));
 
 import { GET } from '@/app/api/cron/market-pulse-eod/route';
+import vercelConfig from '@/vercel.json';
 
 function createDb() {
   const limitMock = vi.fn().mockResolvedValue([]);
@@ -64,6 +65,37 @@ describe('market pulse eod route', () => {
       statsUpserted: 1,
       stats: { tradeDate: '2026-05-08' },
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('runs Tuesday to Saturday so every weekday session gets captured the next day', () => {
+    const cron = vercelConfig.crons.find((entry) => entry.path === '/api/cron/market-pulse-eod');
+    expect(cron?.schedule).toBe('30 22 * * 2-6');
+  });
+
+  it.each([
+    // Tuesday captures Monday, in both EDT and EST.
+    ['2026-03-10T22:30:00.000Z', '2026-03-09'],
+    ['2026-11-03T22:30:00.000Z', '2026-11-02'],
+    // Saturday captures Friday, which the old Monday-to-Friday schedule never did.
+    ['2026-03-07T22:30:00.000Z', '2026-03-06'],
+    ['2026-10-31T22:30:00.000Z', '2026-10-30'],
+    // Saturday also captures a half-day Friday.
+    ['2026-11-28T22:30:00.000Z', '2026-11-27'],
+  ])('defaults to yesterday in New York at %s', async (nowIso, expectedDate) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(nowIso));
+    getDbMock.mockReturnValue(createDb());
+    captureMarketPulseForDateMock.mockResolvedValue({ skipped: false, barsUpserted: 1, statsUpserted: 1, stats: {} });
+
+    const response = await GET(new Request('http://localhost/api/cron/market-pulse-eod?enqueue=0'));
+
+    expect(response.status).toBe(200);
+    expect(captureMarketPulseForDateMock).toHaveBeenCalledTimes(1);
+    expect(captureMarketPulseForDateMock).toHaveBeenCalledWith(expect.anything(), expectedDate);
   });
 
   it('requires cron auth', async () => {
