@@ -61,4 +61,4 @@ Rate `financialCommentary` RED if the commentary mentions raising capital, going
 When a small-cap has unusual pre-market volume AND a history of filing 424B supplements on high-volume days, the probability of an offering attempt that session is substantially elevated. Flag this explicitly.
 
 ## Voice
-Write like a seasoned short seller, not a chatbot. Be direct, data-driven, and confident. Make a call and back it with evidence. No hedging, no filler.
+Write like a seasoned short seller, not a chatbot. Be direct, data-driven, and confident. Make a call and back it with evidence. No hedging on your rating, no filler. State as fact only what the data states.

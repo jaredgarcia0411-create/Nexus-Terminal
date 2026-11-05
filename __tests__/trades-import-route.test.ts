@@ -472,9 +472,9 @@ describe('POST /api/trades/import', () => {
     expect(db._mocks.tradeInsertValuesMock).not.toHaveBeenCalled();
   });
 
-  it('returns detailed 500 payload when transaction fails unexpectedly', async () => {
+  it('returns a generic 500 payload without the raw database message when the transaction fails', async () => {
     const db = {
-      transaction: vi.fn().mockRejectedValue(new Error('db write failed')),
+      transaction: vi.fn().mockRejectedValue(new Error('db write failed: relation "trades" column "secret_col"')),
       select: vi.fn(),
     };
     getPoolDbMock.mockReturnValue(db as unknown as ReturnType<typeof makeDbWithBatchState>);
@@ -506,6 +506,51 @@ describe('POST /api/trades/import', () => {
 
     expect(response.status).toBe(500);
     expect(payload.error).toBe('Import failed while saving trades');
-    expect(payload.details).toBe('db write failed');
+    expect(payload.details).toBe('Unexpected database error');
+    expect(JSON.stringify(payload)).not.toContain('secret_col');
+  });
+
+  it('maps a unique-violation to 409 with a friendly message and no constraint name', async () => {
+    const pgError = Object.assign(
+      new Error('duplicate key value violates unique constraint "trades_user_id_id_pk"'),
+      { code: '23505', constraint: 'trades_user_id_id_pk' },
+    );
+    const db = {
+      transaction: vi.fn().mockRejectedValue(pgError),
+      select: vi.fn(),
+    };
+    getPoolDbMock.mockReturnValue(db as unknown as ReturnType<typeof makeDbWithBatchState>);
+
+    const response = await POST(new Request('http://localhost/api/trades/import', {
+      method: 'POST',
+      body: JSON.stringify({
+        trades: [
+          {
+            id: 'trade-1',
+            date: '2026-03-06T12:00:00.000Z',
+            sortKey: '2026-03-06',
+            symbol: 'AAPL',
+            direction: 'LONG',
+            avgEntryPrice: 100,
+            avgExitPrice: 105,
+            totalQuantity: 10,
+            pnl: 48,
+            rawExecutions: [],
+            tags: [],
+          },
+        ],
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    if (!response) throw new Error('Expected response');
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload).toEqual({
+      error: 'Import failed while saving trades',
+      details: 'A trade with the same id already exists',
+      code: '23505',
+    });
   });
 });

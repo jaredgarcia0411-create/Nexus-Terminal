@@ -194,6 +194,7 @@ describe('ResearchReportSections filings UI', () => {
     expect(screen.getByText('Management flagged future financing needs.')).toBeTruthy();
     expect(screen.getByText('Former Symbols')).toBeTruthy();
     expect(screen.getByText('OHAR')).toBeTruthy();
-    expect(screen.getByText('5/14/2026')).toBeTruthy();
+    // dateChanged is a calendar date, so it must render as 5/15 whatever the viewer's timezone.
+    expect(screen.getByText('5/15/2026')).toBeTruthy();
   });
 });

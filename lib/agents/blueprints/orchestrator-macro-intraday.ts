@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { agentReports } from '@/lib/db/schema';
 import { fetchUnifiedSnapshot, type MassiveSnapshotResult } from '@/lib/massive-market';
 import { wrapUntrusted } from '@/lib/agents/trust-boundary';
+import { epochToNySortKey, nyDateTimeToEpoch } from '@/lib/time-utils';
 import { writeAndDeliverReport } from '../discord';
 import { callLlm } from '../llm-client';
 import type { AgentDb } from '../db';
@@ -97,7 +98,7 @@ function getTradingDate(jobInput: unknown): string {
   const parsed = intradayJobInputSchema.safeParse(jobInput);
   return parsed.success && parsed.data.tradingDate
     ? parsed.data.tradingDate
-    : new Date().toISOString().slice(0, 10);
+    : epochToNySortKey(Date.now());
 }
 
 async function loadOrchestratorSystemPrompt() {
@@ -157,7 +158,7 @@ async function fetchMorningReport(
         eq(agentReports.agentId, 'orchestrator'),
         eq(agentReports.reportType, 'macro-summary'),
         eq(agentReports.status, 'published'),
-        gte(agentReports.createdAt, new Date(`${tradingDate}T00:00:00.000Z`)),
+        gte(agentReports.createdAt, new Date(nyDateTimeToEpoch(tradingDate, '00:00:00') ?? Date.parse(`${tradingDate}T00:00:00.000Z`))),
       ),
     )
     .orderBy(desc(agentReports.createdAt))

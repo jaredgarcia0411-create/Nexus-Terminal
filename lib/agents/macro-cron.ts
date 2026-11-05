@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { agentJobs, agentScheduledRuns } from '@/lib/db/schema';
+import { isNyTradingDay } from '@/lib/time-utils';
 import type { AgentDb } from './db';
 import type { JobType } from './types';
 
@@ -46,7 +47,6 @@ function unwrapRows(result: ScheduledRunRowsResult): ScheduledRunRow[] {
 function getTradingWindow(now = new Date()) {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
-    weekday: 'short',
     hour: 'numeric',
     hour12: false,
     year: 'numeric',
@@ -64,7 +64,6 @@ function getTradingWindow(now = new Date()) {
   return {
     tradingDate: `${parts.year}-${parts.month}-${parts.day}`,
     currentHour: Number(parts.hour) % 24,
-    weekday: parts.weekday,
   };
 }
 
@@ -73,12 +72,12 @@ async function runTick(
   hourEt: number,
   options: RunTickOptions,
 ) {
-  const { tradingDate, currentHour, weekday } = getTradingWindow();
+  const { tradingDate, currentHour } = getTradingWindow();
   if (currentHour !== hourEt) {
     return;
   }
-  // Markets are closed on weekends — skip macro briefing runs entirely.
-  if (weekday === 'Sat' || weekday === 'Sun') {
+  // Markets are closed on weekends and NYSE holidays — skip scheduled runs entirely.
+  if (!isNyTradingDay(tradingDate)) {
     return;
   }
 

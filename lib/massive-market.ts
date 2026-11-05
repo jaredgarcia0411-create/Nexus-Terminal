@@ -1,3 +1,12 @@
+import {
+  NY_EXTENDED_OPEN,
+  NY_REGULAR_OPEN,
+  epochToNySortKey,
+  getNyExtendedCloseTime,
+  getNyRegularCloseTime,
+  isNyTradingDay,
+  nyDateTimeToEpoch,
+} from '@/lib/time-utils';
 import type { SplitEvent } from '@/lib/splits';
 
 const MASSIVE_BASE_URL = 'https://api.massive.com';
@@ -126,31 +135,29 @@ function toNumberOrNull(value: unknown) {
 }
 
 export function getEasternMarketSession(now = new Date()): EasternMarketSession {
-  const nyDayLabel = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    weekday: 'short',
-  }).format(now);
-  if (nyDayLabel === 'Sat' || nyDayLabel === 'Sun') {
+  const nowMs = now.getTime();
+  const sortKey = epochToNySortKey(nowMs);
+  // Weekends and NYSE holidays have no session at all.
+  if (!isNyTradingDay(sortKey)) {
     return 'closed';
   }
 
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(now);
-  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0');
-  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0');
-  const totalMinutes = (hour * 60) + minute;
+  const premarketStart = nyDateTimeToEpoch(sortKey, NY_EXTENDED_OPEN);
+  const open = nyDateTimeToEpoch(sortKey, NY_REGULAR_OPEN);
+  // Half days close at 13:00 and after-hours ends at 17:00.
+  const close = nyDateTimeToEpoch(sortKey, getNyRegularCloseTime(sortKey));
+  const afterHoursEnd = nyDateTimeToEpoch(sortKey, getNyExtendedCloseTime(sortKey));
+  if (premarketStart == null || open == null || close == null || afterHoursEnd == null) {
+    return 'closed';
+  }
 
-  if (totalMinutes >= 240 && totalMinutes < 570) {
+  if (nowMs >= premarketStart && nowMs < open) {
     return 'pre-market';
   }
-  if (totalMinutes >= 570 && totalMinutes < 960) {
+  if (nowMs >= open && nowMs < close) {
     return 'regular';
   }
-  if (totalMinutes >= 960 && totalMinutes < 1200) {
+  if (nowMs >= close && nowMs < afterHoursEnd) {
     return 'after-hours';
   }
   return 'closed';
@@ -349,10 +356,20 @@ export async function fetchMassiveAggregateBars(params: {
   limit?: number;
   adjusted?: boolean;
 }): Promise<MassiveAggregateBar[]> {
+  // Every segment is encoded so a caller-supplied value can't carry `/`, `?`
+  // or `#` and rewrite which Massive endpoint the server's API key hits.
+  const segments = [
+    params.ticker.trim().toUpperCase(),
+    params.multiplier,
+    params.timespan,
+    params.from,
+    params.to,
+  ].map((segment) => encodeURIComponent(segment));
+  const [ticker, multiplier, timespan, from, to] = segments;
   const payload = await fetchMassiveJson<{
     results?: MassiveAggregateBar[];
   }>(
-    `/v2/aggs/ticker/${encodeURIComponent(params.ticker.trim().toUpperCase())}/range/${params.multiplier}/${params.timespan}/${params.from}/${params.to}`,
+    `/v2/aggs/ticker/${ticker}/range/${multiplier}/${timespan}/${from}/${to}`,
     { adjusted: String(params.adjusted ?? true), sort: 'asc', limit: String(params.limit ?? 50000) },
   );
 

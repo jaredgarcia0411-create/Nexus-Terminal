@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/market-pulse-eod",
-      "schedule": "30 22 * * 1-5"
+      "schedule": "30 22 * * 2-6"
     }
   ]
 }

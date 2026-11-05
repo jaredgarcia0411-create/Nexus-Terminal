@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { fetchMassiveAggregateBars, fetchTickerReference } from '@/lib/massive-market';
+import { fetchMassiveAggregateBars, fetchTickerReference, getEasternMarketSession } from '@/lib/massive-market';
 
 describe('Massive aggregate price basis', () => {
   afterEach(() => {
@@ -24,6 +24,23 @@ describe('Massive aggregate price basis', () => {
     const url = new URL(String(fetchSpy.mock.calls[0][0]));
     expect(url.searchParams.get('adjusted')).toBe(expected);
   });
+
+  it('encodes every path segment so a value cannot change the upstream endpoint', async () => {
+    vi.stubEnv('MASSIVE_API_KEY', 'test-key');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ results: [] }));
+
+    await fetchMassiveAggregateBars({
+      ticker: 'AAPL', multiplier: '../../v3/reference/tickers?x=1#', timespan: 'minute',
+      from: '1780689600000', to: '1780925400000',
+    });
+
+    const url = new URL(String(fetchSpy.mock.calls[0][0]));
+    expect(url.pathname).toBe(
+      '/v2/aggs/ticker/AAPL/range/..%2F..%2Fv3%2Freference%2Ftickers%3Fx%3D1%23/minute/1780689600000/1780925400000',
+    );
+    expect(url.searchParams.get('x')).toBeNull();
+    expect(url.searchParams.get('apiKey')).toBe('test-key');
+  });
 });
 
 describe('Massive ticker reference', () => {
@@ -43,5 +60,33 @@ describe('Massive ticker reference', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ results: { type: 'CS', name } }));
 
     expect(await fetchTickerReference('ABC')).toEqual({ type: 'CS', name: expected });
+  });
+});
+
+describe('getEasternMarketSession', () => {
+  it.each([
+    // Regular weekdays, read on the Eastern clock in both EST and EDT.
+    ['2026-03-06T08:59:00Z', 'closed'],
+    ['2026-03-06T09:00:00Z', 'pre-market'],
+    ['2026-03-06T14:30:00Z', 'regular'],
+    ['2026-03-06T20:59:00Z', 'regular'],
+    ['2026-03-06T21:00:00Z', 'after-hours'],
+    ['2026-03-06T01:00:00Z', 'closed'],
+    ['2026-03-09T08:00:00Z', 'pre-market'],
+    ['2026-03-09T13:29:00Z', 'pre-market'],
+    ['2026-03-09T13:30:00Z', 'regular'],
+    ['2026-03-09T20:00:00Z', 'after-hours'],
+    ['2026-03-09T23:59:00Z', 'after-hours'],
+    ['2026-03-10T00:00:00Z', 'closed'],
+    // Weekend and holiday.
+    ['2026-03-08T14:30:00Z', 'closed'],
+    ['2026-11-26T15:00:00Z', 'closed'],
+    // Half day: regular until 13:00 ET, after-hours until 17:00 ET.
+    ['2026-11-27T17:59:00Z', 'regular'],
+    ['2026-11-27T18:00:00Z', 'after-hours'],
+    ['2026-11-27T21:59:00Z', 'after-hours'],
+    ['2026-11-27T22:00:00Z', 'closed'],
+  ])('classifies %s as %s', (iso, expected) => {
+    expect(getEasternMarketSession(new Date(iso))).toBe(expected);
   });
 });

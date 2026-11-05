@@ -7,7 +7,7 @@ import {
   fetchEarningsFilerTickers, fetchEarningsNews, fetchExtendedHoursStats, fetchPressReleaseText, findEarningsFiling, isEarningsHeadline,
 } from '@/lib/triple-beat/data';
 import { evaluateTripleBeatSetup, type TripleBeatScanReport } from '@/lib/triple-beat/scan';
-import { getPreviousTradingSession, isNyTradingDay, nyDateTimeToEpoch } from '@/lib/time-utils';
+import { getNyRegularCloseTime, getPreviousTradingSession, isNyTradingDay, nyDateTimeToEpoch } from '@/lib/time-utils';
 import { writeAndDeliverReport } from '../discord';
 import type { Blueprint, StepResult } from '../types';
 
@@ -44,7 +44,7 @@ export const orchestratorTripleBeatScanBlueprint: Blueprint = {
           return completedResult<ScanStepOutput>({ skipped: true, tradingDate }, Date.now() - startedAt);
         }
         const asOfMs = Date.now();
-        const windowStart = nyDateTimeToEpoch(priorSession, '16:00:00') ?? asOfMs;
+        const windowStart = nyDateTimeToEpoch(priorSession, getNyRegularCloseTime(priorSession)) ?? asOfMs;
         // Premarket data stops at the open, so a late run is still "as of" 9:30.
         const windowEnd = Math.min(asOfMs, nyDateTimeToEpoch(tradingDate, '09:30:00') ?? asOfMs);
         const tickers = await fetchEarningsFilerTickers(windowStart, windowEnd);

@@ -8,19 +8,19 @@ export const backtestSessionUpsertSchema = z.object({
   ticker: z.string().trim().min(1, 'ticker is required').max(20, 'ticker must be 20 characters or fewer').transform((value) => value.toUpperCase()),
   date: z.string().trim().regex(ISO_DATE_RE, 'date must be YYYY-MM-DD'),
   riskDollars: z.number().positive('riskDollars must be positive'),
-  backtestId: z.string().trim().nullable().optional(),
-  sheetRowId: z.string().trim().nullable().optional(),
+  backtestId: z.string().trim().max(128).nullable().optional(),
+  sheetRowId: z.string().trim().max(128).nullable().optional(),
 });
 
 export type BacktestSessionUpsertBody = z.infer<typeof backtestSessionUpsertSchema>;
 
 export const backtestActionCreateSchema = z.object({
-  sessionId: z.string().trim().min(1, 'sessionId is required'),
+  sessionId: z.string().trim().min(1, 'sessionId is required').max(128),
   actionType: z.enum(backtestActionTypes),
   price: z.number().positive('price must be positive'),
   shares: z.number().positive('shares must be positive'),
   stopPrice: z.number().positive('stopPrice must be positive').nullable(),
-  barTime: z.string().trim().min(1, 'barTime is required'),
+  barTime: z.string().trim().min(1, 'barTime is required').max(64),
 });
 
 export type BacktestActionCreateBody = z.infer<typeof backtestActionCreateSchema>;
@@ -30,10 +30,10 @@ export type BacktestActionCreateBody = z.infer<typeof backtestActionCreateSchema
 // enforces the outer envelope and accepts both the legacy flat shape and
 // the new bucketed shape; existing snapshots predate the migration.
 const drawingsField = z.union([
-  z.array(z.unknown()),
+  z.array(z.unknown()).max(2000),
   z.object({
-    intraday: z.array(z.unknown()).optional(),
-    higher: z.array(z.unknown()).optional(),
+    intraday: z.array(z.unknown()).max(2000).optional(),
+    higher: z.array(z.unknown()).max(2000).optional(),
   }),
 ]).optional();
 
@@ -53,9 +53,9 @@ export const chartStateSchema = z.object({
 export type ChartStateBody = z.infer<typeof chartStateSchema>;
 
 export const backtestSessionReviewSchema = z.object({
-  sessionId: z.string().trim().min(1, 'sessionId is required'),
-  label: z.string().trim().optional(),
-  notes: z.string().trim().optional(),
+  sessionId: z.string().trim().min(1, 'sessionId is required').max(128),
+  label: z.string().trim().max(200).optional(),
+  notes: z.string().trim().max(10000).optional(),
   chartState: chartStateSchema.optional(),
 });
 

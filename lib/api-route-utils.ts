@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 
 type ValidateResult<T> =
@@ -26,6 +27,17 @@ export async function parseAndValidate<T>(
   }
 
   return { data: result.data };
+}
+
+// Constant-time comparison for shared secrets (cron, service and admin keys).
+// A plain `===` short-circuits on the first differing byte, which leaks how
+// much of a guess was right. Hashing both sides first gives equal-length
+// buffers so timingSafeEqual can be used regardless of input length.
+export function secretsMatch(provided: string, expected: string): boolean {
+  if (!provided || !expected) return false;
+  const providedDigest = createHash('sha256').update(provided).digest();
+  const expectedDigest = createHash('sha256').update(expected).digest();
+  return timingSafeEqual(providedDigest, expectedDigest);
 }
 
 export function logRouteError(route: string, error: unknown) {

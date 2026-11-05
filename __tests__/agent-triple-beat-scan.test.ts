@@ -124,6 +124,12 @@ describe('orchestrator Triple Beat scan', () => {
     await expect(orchestratorTripleBeatScanBlueprint.steps[0].run(input())).rejects.toThrow('SEC unavailable');
     expect(writeAndDeliverReport).not.toHaveBeenCalled();
   });
+  it('starts the filing window at 13:00 ET when the prior session was a half day', async () => {
+    vi.setSystemTime(new Date('2026-11-30T14:00:00Z'));
+    vi.mocked(fetchEarningsFilerTickers).mockResolvedValue([]);
+    await orchestratorTripleBeatScanBlueprint.steps[0].run(input({ jobInput: { tradingDate: '2026-11-30' } }));
+    expect(fetchEarningsFilerTickers).toHaveBeenCalledWith(Date.parse('2026-11-27T18:00:00Z'), Date.now());
+  });
   it('delivers an empty report', async () => {
     vi.mocked(fetchEarningsFilerTickers).mockResolvedValue([]);
     const scan = await orchestratorTripleBeatScanBlueprint.steps[0].run(input());

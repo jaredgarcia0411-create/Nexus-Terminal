@@ -55,7 +55,7 @@ vi.mock('@/lib/agents/sentiment-client', () => ({
 }));
 
 import { AGENT_CONFIGS, resolveBlueprint } from '@/lib/agents/config';
-import { extractGapStatsTable as extractGapStatsTableSmallCap } from '@/lib/agents/blueprints/small-cap-research';
+import { extractGapStatsTable as extractGapStatsTableSmallCap, parseJson } from '@/lib/agents/blueprints/small-cap-research';
 import { extractGapStatsTable as extractGapStatsTableSwing } from '@/lib/agents/blueprints/swing-trader-research';
 
 function createJob(overrides: Partial<AgentJob> = {}): AgentJob {
@@ -1679,26 +1679,27 @@ describe('agent blueprints', () => {
     }));
 
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
+      maxTokens: 16_000,
       userMessage: expect.stringContaining('AskEdgar sections:'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Historical Gap Data (last 5, most recent first):'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Deterministic analysis:\n'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Recent news & filings (headline, date, formType, summary):\n'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining("quote the exact headline text of the single most relevant item"),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Management Commentary (from SEC filings / earnings):'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.not.stringContaining('Filings:\n'),
-    }), 'background');
+    }), 'background', { timeoutMs: 180_000 });
     expect(result.data).toMatchObject({
       ticker: 'AAPL',
       gapStatsTable: [{
@@ -2559,24 +2560,28 @@ describe('agent blueprints', () => {
         userMessage: expect.stringContaining('<untrusted-filing>'),
       }),
       'background',
+      { timeoutMs: 180_000 },
     );
     expect(callLlmMock).toHaveBeenCalledWith(
       expect.objectContaining({
         userMessage: expect.stringContaining('<untrusted-price-context>'),
       }),
       'background',
+      { timeoutMs: 180_000 },
     );
     expect(callLlmMock).toHaveBeenCalledWith(
       expect.objectContaining({
         userMessage: expect.stringContaining('<untrusted-news>'),
       }),
       'background',
+      { timeoutMs: 180_000 },
     );
     expect(callLlmMock).toHaveBeenCalledWith(
       expect.objectContaining({
         userMessage: expect.stringContaining('<untrusted-deterministic-analysis>'),
       }),
       'background',
+      { timeoutMs: 180_000 },
     );
   });
 
@@ -2703,6 +2708,29 @@ describe('extractGapStatsTable alias resolution', () => {
   });
 });
 
+describe('parseJson (small-cap research)', () => {
+  const corrupted = '{\n  "ticker": "CHSN",\n  "dilution":": {\n    "rating": "red"\n  }\n}';
+  const repaired = { ticker: 'CHSN', dilution: { rating: 'red' } };
+
+  it('repairs a corrupted key', () => {
+    expect(parseJson(corrupted)).toEqual(repaired);
+  });
+
+  it('repairs a corrupted key in a code fence', () => {
+    expect(parseJson(`\`\`\`json\n${corrupted}\n\`\`\``)).toEqual(repaired);
+  });
+
+  it('leaves valid JSON unchanged, including text that looks like the corrupted key', () => {
+    const value = { note: 'he said ":": then left', bullets: '- one\n- two', fence: '```json\n{}\n```' };
+    expect(parseJson(JSON.stringify(value, null, 2))).toEqual(value);
+  });
+
+  it('reports the parse error for text it cannot repair', () => {
+    expect(() => parseJson('not json')).toThrow(/^LLM did not return valid JSON: /);
+    expect(() => parseJson('```json\nnot json\n```')).toThrow(/^LLM did not return valid JSON: /);
+  });
+});
+
 describe('small-cap research prompt: tracker, runners, and gap session detail', () => {
   const baseInput = {
     ticker: 'CHSN',
@@ -2747,6 +2775,115 @@ describe('small-cap research prompt: tracker, runners, and gap session detail', 
     expect(prompt).toContain('14:05');
     expect(prompt).not.toContain('13:32');
     expect(prompt).toContain('| 2023-12-05 | n/a | n/a | n/a | n/a | n/a | 10:05 | n/a | 14:05 | n/a | n/a | n/a |');
+  });
+
+  it("tells the model today's Eastern date", async () => {
+    vi.useFakeTimers({ now: new Date('2026-11-05T03:00:00Z') });
+    try {
+      expect(await buildPrompt({})).toContain("Today's date: 2026-11-04.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('calculates dilution percentages against named bases, using recent rows only', async () => {
+    const recent = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const prompt = await buildPrompt({
+      currentShares: { outstanding: 7_416_111, tradableFloat: 2_415_031 },
+      offerings: [
+        { headline: 'PRIVATE PLACEMENT (EQUITY)', filed_at: recent, shares_amount: 5_000_000 },
+        { headline: 'OLD OFFERING', filed_at: '2023-03-30', shares_amount: 423 },
+      ],
+      dilutionData: [
+        { details: 'Live Warrant', filed_at: '2025-06-13', warrants_remaining: 3_306 },
+        { details: 'Exercised Warrant', filed_at: '2025-06-13', warrants_remaining: 0 },
+      ],
+    });
+
+    expect(prompt).toContain('"percentOfTradableFloat": 207');
+    expect(prompt).toContain('"percentOfOutstanding": 67.4');
+    expect(prompt).toContain('"item": "Live Warrant"');
+    expect(prompt).not.toContain('"item": "OLD OFFERING"');
+    expect(prompt).not.toContain('"item": "Exercised Warrant"');
+  });
+
+  it('estimates the baby-shelf limit from float and the higher of the 60-day high and live price', async () => {
+    const recent = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const offerings = [
+      { headline: 'ATM USED', offering_type: 'S-3', filed_at: recent, offering_amount: 13_000_000 },
+      { headline: 'REGISTERED OFFERING (RDO)', offering_type: 'F-3', filed_at: recent, offering_amount: 100_000 },
+      { headline: 'ATM USED', offering_type: 'S-3', filed_at: '2023-06-30', offering_amount: 24_400_000 },
+      { headline: 'REGISTERED OFFERING', offering_type: 'F-1', filed_at: recent, offering_amount: 7_000_000 },
+      { headline: 'PRIVATE PLACEMENT (EQUITY)', offering_type: null, filed_at: recent, offering_amount: 4_000_000 },
+    ];
+    const registrations = [{ '60_day_high': 3.38 }];
+
+    const small = await buildPrompt({
+      offerings,
+      registrations,
+      currentShares: { outstanding: 7_416_111, tradableFloat: 2_415_031, float: 7_415_031 },
+    });
+    expect(small).toContain('"estimatedPublicFloat": 25062805');
+    expect(small).toContain('"estimatedOneThirdLimit": 8354268');
+    expect(small).toContain('"reportedShelfSalesLast12Months": 13100000');
+
+    const spiking = await buildPrompt({
+      registrations: [{ '60_day_high': 3.32 }],
+      currentShares: { outstanding: 5_128_724, tradableFloat: 2_005_226, float: 5_111_893 },
+      priceContext: {
+        price: 15.93, change: null, volume: null, avgVolume90d: null, marketCap: null, sector: null,
+        high1m: null, low1m: null, rsi: null, macdSignal: null, ema9: null, ema21: null,
+      },
+    });
+    expect(spiking).toContain('"estimatedPublicFloat": 81432455');
+    expect(spiking).toContain('"belowThreshold": false');
+
+    const noFloatField = await buildPrompt({
+      registrations,
+      currentShares: { outstanding: 7_416_111, tradableFloat: 2_415_031 },
+    });
+    expect(noFloatField).toContain('"estimatedPublicFloat": 8162805');
+
+    const large = await buildPrompt({
+      registrations,
+      currentShares: { outstanding: 50_000_000, tradableFloat: 40_000_000, float: 40_000_000 },
+    });
+    expect(large).toContain('"belowThreshold": false');
+    expect(large).toContain('"estimatedOneThirdLimit": null');
+
+    expect(await buildPrompt({ currentShares: null })).toContain('"babyShelf": null');
+  });
+
+  it('computes the share trend only from rows since the latest reverse split', async () => {
+    const { computeDeterministicAnalysis, priceContextSchema } = await import('@/lib/agents/blueprints/small-cap-research');
+    const trend = (reverseSplits: unknown[]) => computeDeterministicAnalysis(priceContextSchema.parse({
+      ...baseInput,
+      historicalFloat: [
+        { date: '2026-10-30', outstanding: 18_293_783 },
+        { date: '2025-02-28', outstanding: 12_867_671 },
+        { date: '2024-10-31', outstanding: 127_767_183 },
+      ],
+      reverseSplits,
+    })).floatTrend;
+
+    expect(trend([])).toBe('decreasing');
+    expect(trend([{ split_from: 10, split_to: 1, execution_date: '2024-12-02' }])).toBe('increasing');
+    expect(trend([{ split_from: 100, split_to: 1, execution_date: '2026-10-31' }])).toBeNull();
+  });
+
+  it('prices the current share count at the live price, and falls back to TradingView without one', async () => {
+    const priceContext = {
+      price: 4, change: null, volume: null, avgVolume90d: null, marketCap: 9_000_000, sector: null,
+      high1m: null, low1m: null, rsi: null, macdSignal: null, ema9: null, ema21: null,
+    };
+
+    const withShares = await buildPrompt({ priceContext, currentShares: { outstanding: 7_416_111, tradableFloat: 2_415_031 } });
+    expect(withShares).toContain('"marketCap": 29664444');
+    expect(withShares).not.toContain('"marketCap": 9000000');
+    expect(withShares).toContain('"tradableFloat": 2415031');
+
+    expect(await buildPrompt({ priceContext, currentShares: { outstanding: null, tradableFloat: null } })).toContain('"marketCap": 9000000');
+    expect(await buildPrompt({ priceContext })).toContain('"marketCap": 9000000');
   });
 
   it('adds gap session detail without changing the gap table the model copies', async () => {

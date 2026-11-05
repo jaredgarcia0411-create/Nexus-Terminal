@@ -9,8 +9,8 @@ export const chartDrawingsQuerySchema = z.object({
 });
 
 export const chartDrawingsPutSchema = z.object({
-  drawings: z.array(z.unknown()),
-  indicators: z.record(z.string(), z.array(z.string())),
+  drawings: z.array(z.unknown()).max(2000),
+  indicators: z.record(z.string().max(100), z.array(z.string().max(100)).max(50)),
 });
 
 export type ChartDrawingsPutBody = z.infer<typeof chartDrawingsPutSchema>;

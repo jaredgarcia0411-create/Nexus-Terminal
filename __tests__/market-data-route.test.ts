@@ -156,6 +156,54 @@ describe('GET /api/market-data', () => {
     expect(payload).toEqual({ error: 'Failed to fetch market data' });
   });
 
+  it('rejects a frequency that is not a whole number of minutes so it cannot rewrite the upstream path', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    const response = await GET(new Request(
+      'http://localhost/api/market-data?symbol=AAPL&frequencyType=minute&frequency=' +
+        encodeURIComponent('../../../v3/reference/tickers?limit=1000#'),
+    ));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toMatch(/frequency/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown frequencyType or periodType', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    const badFrequencyType = await GET(new Request('http://localhost/api/market-data?symbol=AAPL&frequencyType=hourly'));
+    expect(badFrequencyType.status).toBe(400);
+
+    const badPeriodType = await GET(new Request('http://localhost/api/market-data?symbol=AAPL&periodType=decade'));
+    expect(badPeriodType.status).toBe(400);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects a symbol with path or query characters', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    const response = await GET(new Request('http://localhost/api/market-data?symbol=' + encodeURIComponent('AAPL/../x?y')));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload).toEqual({ error: 'Invalid symbol' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('forwards an accepted minute multiplier as a single upstream path segment', async () => {
+    mockFetchResponse(MASSIVE_RESPONSE);
+
+    const response = await GET(new Request(
+      'http://localhost/api/market-data?symbol=AAPL&frequencyType=minute&frequency=15&startDate=1700000000000&endDate=1700000300000',
+    ));
+    expect(response.status).toBe(200);
+
+    const calledUrl = new URL((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    expect(calledUrl.pathname).toBe('/v2/aggs/ticker/AAPL/range/15/minute/1700000000000/1700000300000');
+  });
+
   it('returns 502 when upstream fetch throws', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('network unavailable'));
 

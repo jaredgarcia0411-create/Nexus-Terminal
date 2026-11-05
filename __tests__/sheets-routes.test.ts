@@ -902,6 +902,33 @@ describe('sheets routes', () => {
     expect(db._mocks.updateSetMock).toHaveBeenCalledWith(expect.objectContaining({ values: filledValues }));
   });
 
+  it('POST /api/sheets/[id]/fill-massive starts session bars at 13:00 ET after a half day', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(nyDateTimeToEpoch('2026-11-30', '12:00:00')!);
+    fetchGroupedDailyAggregatesMock.mockResolvedValue([{
+      ticker: 'AAPL', open: 1, high: 3, low: 1, close: 2, volume: 1000, vwap: 2.5, timestamp: 0,
+    }]);
+    fetchMassiveAggregateBarsMock.mockResolvedValue([]);
+    const values = { ticker: 'AAPL', date: '2026-11-27' };
+    const db = createDbMock({
+      selectQueue: [
+        [{ columns: [...DEFAULT_SHEET_COLUMNS, { key: 'ah', name: 'AH High', type: 'ah_high' }] }],
+        [{ id: 'row-1', sheetId: 'sheet-1', position: 0, values, version: 0 }],
+      ],
+      updateResult: [{ id: 'row-1', sheetId: 'sheet-1', position: 0, values, version: 1 }],
+    });
+    getDbMock.mockReturnValue(db);
+
+    const response = ensureResponse(await fillMassive(new Request('http://localhost/api/sheets/sheet-1/fill-massive', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rowIds: ['row-1'] }),
+    }), { params: Promise.resolve({ id: 'sheet-1' }) }));
+
+    expect(response.status).toBe(200);
+    expect(fetchMassiveAggregateBarsMock).toHaveBeenCalledWith(expect.objectContaining({
+      from: String(nyDateTimeToEpoch('2026-11-27', '13:00:00')),
+      to: String(nyDateTimeToEpoch('2026-11-30', '09:30:00')),
+    }));
+  });
+
   it.each([
     { scenario: 'before AH closes', nowDate: '2026-06-05', nowTime: '19:59:00', failure: false, calls: 0, fill: {} },
     { scenario: 'before early PM closes', nowDate: '2026-06-08', nowTime: '06:00:00', failure: false, calls: 1, fill: { ah: 2.4 } },

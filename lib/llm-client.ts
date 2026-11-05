@@ -1,6 +1,6 @@
 const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
 const DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const DEFAULT_TIMEOUT_MS = 25_000;
+const DEFAULT_TIMEOUT_MS = 60_000;
 
 function normalizeBaseUrl(value: string): string {
   const trimmed = value.trim();
