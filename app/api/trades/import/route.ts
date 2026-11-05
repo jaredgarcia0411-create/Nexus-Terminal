@@ -150,15 +150,24 @@ function getPostgresErrorCode(error: unknown): string | undefined {
   return undefined;
 }
 
-function getPostgresErrorConstraint(error: unknown): string | undefined {
-  if (error && typeof error === 'object') {
-    const typed = error as { constraint?: unknown };
-    if (typeof typed.constraint === 'string') {
-      return typed.constraint;
-    }
+// Postgres error text names tables, columns, constraints and the offending
+// values, so it stays in the server log. The client gets a code-mapped
+// explanation plus the trade it failed on, which is what the toast needs.
+function describeImportFailure(code: string | undefined): string {
+  switch (code) {
+    case '23505':
+      return 'A trade with the same id already exists';
+    case '23514':
+      return 'A trade failed a database check';
+    case '23502':
+      return 'A trade is missing a required field';
+    case '23503':
+      return 'A trade references a record that does not exist';
+    case '22P02':
+      return 'A trade contains a value in the wrong format';
+    default:
+      return 'Unexpected database error';
   }
-
-  return undefined;
 }
 
 function importFailure(error: unknown) {
@@ -166,7 +175,6 @@ function importFailure(error: unknown) {
   const cause = error instanceof Error && (error as { cause?: unknown }).cause;
   const causeLike = cause && typeof cause === 'object' ? cause : error;
   const code = getPostgresErrorCode(causeLike) ?? getPostgresErrorCode(error);
-  const constraint = getPostgresErrorConstraint(causeLike) ?? getPostgresErrorConstraint(error);
 
   const status =
     code === '23505' || code === '23514'
@@ -179,12 +187,10 @@ function importFailure(error: unknown) {
     return Response.json({ error: 'Import failed while saving trades', details: 'Unknown error' }, { status: 500 });
   }
 
-  const message = (cause instanceof Error ? cause.message : error.message) || 'Unknown error';
   return Response.json({
     error: 'Import failed while saving trades',
-    details: message,
+    details: describeImportFailure(code),
     ...(code ? { code } : {}),
-    ...(constraint ? { constraint } : {}),
     ...(importContext ? { tradeIndex: importContext.tradeIndex, tradeId: importContext.tradeId } : {}),
   }, { status });
 }

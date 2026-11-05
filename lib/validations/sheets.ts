@@ -36,9 +36,17 @@ const columnSchema = z.object({
   asTags: z.boolean().optional(),
 });
 
+// Cell values are free-form JSON, so bound the serialized size as well as the
+// field count; PostgreSQL jsonb has no inherent limit.
+const MAX_ROW_VALUES_JSON_LENGTH = 50_000;
+
 const rowValuesSchema = z
-  .record(z.string(), z.unknown())
-  .refine((value) => Object.keys(value).length <= 60, 'a row may have at most 60 fields');
+  .record(z.string().max(40), z.unknown())
+  .refine((value) => Object.keys(value).length <= 60, 'a row may have at most 60 fields')
+  .refine(
+    (value) => JSON.stringify(value).length <= MAX_ROW_VALUES_JSON_LENGTH,
+    'row values are too large',
+  );
 
 export const sheetCreateSchema = z.object({
   name: z.string().trim().min(1, 'name is required').max(100),

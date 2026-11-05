@@ -349,10 +349,20 @@ export async function fetchMassiveAggregateBars(params: {
   limit?: number;
   adjusted?: boolean;
 }): Promise<MassiveAggregateBar[]> {
+  // Every segment is encoded so a caller-supplied value can't carry `/`, `?`
+  // or `#` and rewrite which Massive endpoint the server's API key hits.
+  const segments = [
+    params.ticker.trim().toUpperCase(),
+    params.multiplier,
+    params.timespan,
+    params.from,
+    params.to,
+  ].map((segment) => encodeURIComponent(segment));
+  const [ticker, multiplier, timespan, from, to] = segments;
   const payload = await fetchMassiveJson<{
     results?: MassiveAggregateBar[];
   }>(
-    `/v2/aggs/ticker/${encodeURIComponent(params.ticker.trim().toUpperCase())}/range/${params.multiplier}/${params.timespan}/${params.from}/${params.to}`,
+    `/v2/aggs/ticker/${ticker}/range/${multiplier}/${timespan}/${from}/${to}`,
     { adjusted: String(params.adjusted ?? true), sort: 'asc', limit: String(params.limit ?? 50000) },
   );
 

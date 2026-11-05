@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const authMock = vi.hoisted(() => vi.fn());
 
@@ -7,7 +7,54 @@ vi.mock('@/lib/auth-config', () => ({
 }));
 
 import { users } from '@/lib/db/schema';
-import { ensureUser } from '@/lib/server-db-utils';
+import { ensureUser, requireUser } from '@/lib/server-db-utils';
+
+describe('requireUser', () => {
+  const originalAllowed = process.env.ALLOWED_EMAILS;
+
+  beforeEach(() => {
+    authMock.mockReset();
+    process.env.ALLOWED_EMAILS = 'jared@example.com, teammate@example.com';
+  });
+
+  afterEach(() => {
+    if (originalAllowed === undefined) delete process.env.ALLOWED_EMAILS;
+    else process.env.ALLOWED_EMAILS = originalAllowed;
+  });
+
+  it('returns the session user when the email is on the allowlist', async () => {
+    authMock.mockResolvedValue({ user: { id: 'u1', email: 'Jared@Example.com', name: 'Jared', image: null } });
+
+    const result = await requireUser();
+
+    expect('user' in result && result.user).toEqual({ id: 'u1', email: 'Jared@Example.com', name: 'Jared', picture: null });
+  });
+
+  it('returns 401 when there is no session', async () => {
+    authMock.mockResolvedValue(null);
+
+    const result = await requireUser();
+
+    expect('error' in result && result.error?.status).toBe(401);
+  });
+
+  it('returns 401 for a valid session whose email was removed from the allowlist', async () => {
+    authMock.mockResolvedValue({ user: { id: 'u9', email: 'former@example.com', name: 'Former', image: null } });
+
+    const result = await requireUser();
+
+    expect('error' in result && result.error?.status).toBe(401);
+  });
+
+  it('returns 401 for every session when the allowlist is unset', async () => {
+    delete process.env.ALLOWED_EMAILS;
+    authMock.mockResolvedValue({ user: { id: 'u1', email: 'jared@example.com', name: 'Jared', image: null } });
+
+    const result = await requireUser();
+
+    expect('error' in result && result.error?.status).toBe(401);
+  });
+});
 
 type DbRow = { id: string; email: string; name: string | null; picture: string | null };
 

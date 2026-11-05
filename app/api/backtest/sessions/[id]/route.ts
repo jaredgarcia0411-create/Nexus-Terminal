@@ -8,8 +8,8 @@ import { dbUnavailable, ensureUser, requireUser } from '@/lib/server-db-utils';
 
 const backtestSessionPatchSchema = z.object({
   riskDollars: z.number().positive('riskDollars must be positive').optional(),
-  notes: z.string().trim().nullable().optional(),
-  label: z.string().trim().nullable().optional(),
+  notes: z.string().trim().max(10000).nullable().optional(),
+  label: z.string().trim().max(200).nullable().optional(),
 });
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -28,14 +28,19 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       .where(eq(backtestSessions.id, id))
       .limit(1);
 
-    if (!session) {
+    // Saved reviews are shared across the team, but an ACTIVE session is one
+    // user's in-progress work and is only ever listed to its owner. Treat
+    // someone else's active session as missing so its actions, notes and
+    // chart state can't be read by guessing an id.
+    const isOwner = session?.userId === authState.user.id;
+    if (!session || (!isOwner && session.status !== 'REVIEWED')) {
       return Response.json({ error: 'Session not found' }, { status: 404 });
     }
 
     const actions = await db
       .select()
       .from(backtestActions)
-      .where(eq(backtestActions.sessionId, id))
+      .where(and(eq(backtestActions.userId, session.userId), eq(backtestActions.sessionId, id)))
       .orderBy(asc(backtestActions.sequence));
 
     return Response.json({ session, actions });

@@ -6,7 +6,9 @@ import { z } from 'zod';
 // the user's free-form text for that section. Existing rows that used the old
 // fixed-shape (overview, checklist, entry, invalidation, risk, targets, notes)
 // keep working because those keys are still strings → strings.
-export const playbookSectionsSchema = z.record(z.string(), z.string());
+export const playbookSectionsSchema = z
+  .record(z.string().max(100), z.string().max(50000))
+  .refine((value) => Object.keys(value).length <= 50, 'a playbook may have at most 50 sections');
 
 export type PlaybookSections = z.infer<typeof playbookSectionsSchema>;
 

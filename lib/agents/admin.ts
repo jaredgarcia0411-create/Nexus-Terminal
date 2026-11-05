@@ -1,3 +1,5 @@
+import { secretsMatch } from '@/lib/api-route-utils';
+
 export interface AgentServiceUser {
   id: string;
   email: string;
@@ -49,7 +51,7 @@ export function requireAgentAdmin(request: Request): Response | null {
   }
 
   const providedKey = readHeader(request, 'x-agent-admin-key');
-  if (!providedKey || providedKey !== configuredKey) {
+  if (!providedKey || !secretsMatch(providedKey, configuredKey)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -66,7 +68,7 @@ export function requireServiceAuth(
   }
 
   const providedKey = readHeader(request, 'x-agent-service-key');
-  if (!providedKey || providedKey !== configuredKey) {
+  if (!providedKey || !secretsMatch(providedKey, configuredKey)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -90,7 +92,7 @@ export function requireServiceKey(request: Request): Response | null {
   }
 
   const providedKey = readHeader(request, 'x-agent-service-key');
-  if (!providedKey || providedKey !== configuredKey) {
+  if (!providedKey || !secretsMatch(providedKey, configuredKey)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
