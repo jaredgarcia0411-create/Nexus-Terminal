@@ -42,13 +42,14 @@ Scans (context from the 2026-10-29/30 work, details in git history):
 Status: merged 2026-11-04 in the order PR 2 `eaa9f74`, PR 4 `6f18467`, PR 3 `6c5829f`, PR 1 `860b4de`. Vercel deployed PRs 2 to 4.
 
 Next:
-- Rebuild the agent containers with `--build` right after this commit (deadline 2026-11-25, before the Thanksgiving half day).
 - Confirm the first Tuesday-to-Saturday EOD capture runs at 17:30 ET on 2026-11-05 and stores 2026-11-04.
-- Undecided, no rule changed: the Triple Beat 3x RVOL rule and a Parabolic 0.5 ATR floor. Jared has not ruled on either.
 - Jared: rename Neon's "Backup Branch" (live data, database `nexus`) to `live` and never delete or reset it. Make the repo private later, after confirming the server can still `git pull`.
 
 Outcome:
 - PR 2 enforces the email allowlist per request and locks down other API gaps. PR 4 fixes DST, holiday and half-day bugs and moves EOD to next-day capture. PR 3 removes replay hindsight and scores gap-through stops at the bar's open, without changing any card. PR 1 adds `docs/CODEBASE_TOUR.md`.
+
+- Agent containers rebuilt on the server 2026-11-04 at `ec6cf99`. The Discord bot doesn't use `lib/`, so it wasn't rebuilt.
+- Jared's decision 2026-11-04 after the replays: keep the Triple Beat 3x RVOL rule, and don't add a Parabolic 0.5 ATR floor.
 
 Validation:
 - Merged tree: lint, `npx tsc --noEmit`, `npm run typecheck:services`, `npm run build`, 1116 tests under ET and UTC. PR 2 sign-in passed for Jared and a coworker.
