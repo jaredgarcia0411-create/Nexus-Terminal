@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateParabolicSetup, measureIntradayTriggers, measureOpenShortMinutes, measureReplayOutcome, passesLivePrefilter, passesReplayPrefilter } from '@/lib/parabolic/scan';
+import { evaluateParabolicSetup, isNoiseStop, measureIntradayTriggers, measureOpenShortMinutes, measureReplayOutcome, passesLivePrefilter, passesReplayPrefilter } from '@/lib/parabolic/scan';
 import type { OHLCData } from '@/lib/indicators';
 import type { DailyOhlcBar } from '@/lib/massive-market';
 
@@ -112,6 +112,20 @@ describe('parabolic replay outcome', () => {
     expect(measureReplayOutcome(history, plan!, [{ ...sessions[0], high: 19 }, sessions[1]]))
       .toMatchObject({ stoppedOutDay0: true, dayR: -1 });
   });
+
+  it('flags an open at the premarket high as a noise stop, since its 0.1 ATR risk turns a 1 ATR fall into +10R', () => {
+    const history = fixture(50);
+    const { plan, metrics } = evaluateParabolicSetup(history, { referencePrice: 18, highSoFar: 18 })!;
+    expect(plan!.riskPerShare).toBeCloseTo(0.1 * metrics.atr14);
+    expect(isNoiseStop(plan!.riskPerShare, metrics.atr14)).toBe(true);
+    const outcome = measureReplayOutcome(history, plan!, [bar('2026-04-07', 18, 18 + 0.05 * metrics.atr14, 16, 18 - metrics.atr14)]);
+    expect(outcome.stoppedOutDay0).toBe(false);
+    expect(outcome.dayR).toBeCloseTo(10);
+    // The same fall with the stop a full 0.5 ATR away is +2R, and that stop is wide enough to keep.
+    const { plan: wide } = evaluateParabolicSetup(history, { referencePrice: 18, highSoFar: 18 + 0.4 * metrics.atr14 })!;
+    expect(isNoiseStop(wide!.riskPerShare, metrics.atr14)).toBe(false);
+    expect(measureReplayOutcome(history, wide!, [bar('2026-04-07', 18, 18 + 0.05 * metrics.atr14, 16, 18 - metrics.atr14)]).dayR).toBeCloseTo(2);
+  });
 });
 
 describe('parabolic intraday triggers', () => {
@@ -145,6 +159,20 @@ describe('parabolic intraday triggers', () => {
     expect(measureOpenShortMinutes(plan, [minute(0, 18, 19.1, 14.8, 15)], 15)).toEqual({ dayR: -1, gapFillR: -1, ema9R: -1 });
     expect(measureOpenShortMinutes({ ...plan, target2RR: null }, [minute(0, 18, 18.5, 17, 17.2)], 17)?.ema9R).toBeNull();
     expect(measureOpenShortMinutes(plan, [], 17)).toBeNull();
+  });
+
+  it('fills a later minute that gaps through the stop at its open', () => {
+    // Minute 2 opens at 21 against a 19 stop: the gap fill already covered at +3R, the other two lose 3R.
+    expect(measureOpenShortMinutes(plan, [minute(0, 18, 18.5, 17.5, 17.6), minute(1, 17.6, 17.7, 14.9, 15.2), minute(2, 21, 21.5, 20.5, 21)], 21))
+      .toEqual({ dayR: -3, gapFillR: 3, ema9R: -3 });
+    // The entry minute's open is the entry, so it still fills at the stop.
+    expect(measureOpenShortMinutes(plan, [minute(0, 20, 20.5, 17, 17.2)], 17)).toEqual({ dayR: -1, gapFillR: -1, ema9R: -1 });
+  });
+
+  it('fills an intraday-trigger stop at the open when a later minute gaps through it', () => {
+    const outcomes = measureIntradayTriggers(plan, 1, [...base, minute(90, 21, 21.5, 20.5, 21)], OPEN, 17);
+    expect(outcomes.or5.hodR).toBeCloseTo((17.9 - 21) / 0.8);
+    expect(outcomes.or5.pmR).toBeCloseTo((17.9 - 21) / 1.1);
   });
 
   it('triggers each entry and covers at the close when no stop is touched', () => {

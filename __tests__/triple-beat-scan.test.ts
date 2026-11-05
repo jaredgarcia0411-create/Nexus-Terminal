@@ -88,6 +88,23 @@ describe('Triple Beat outcomes', () => {
     expect(outcome).toMatchObject({ stoppedOutDay0: true, hit2R: true, dayR: -1, runnerR: -1, daysHeld: 0 });
     expect(outcome.totalR).toBeCloseTo(0.5);
   });
+  it('fills a day-zero stop at the open of a minute that gaps through it after the entry', async () => {
+    // Entry fills at 23.4 in minute 0. Minute 1 opens at 22 (a halt resume), under the 22.6 stop, so the exit is 22: -1.75R.
+    const outcome = await measureTripleBeatOutcome(history, plan, [day({ open: 23.1, high: 23.5, low: 21.9, close: 22.3 })], [
+      { open: 23.1, high: 23.5, low: 23.05 }, { open: 22, high: 22.2, low: 21.9 },
+    ]);
+    expect(outcome).toMatchObject({ stoppedOutDay0: true, hit2R: false, daysHeld: 0 });
+    expect(outcome.dayR).toBeCloseTo(-1.75);
+    expect(outcome.runnerR).toBeCloseTo(-1.75);
+    expect(outcome.totalR).toBeCloseTo(-1.75);
+  });
+  it('fills a stop at the stop price when the entry minute itself opens below it', async () => {
+    // The entry minute opens at 22.5, runs through 23.4, and its low touches the stop. Its open came before the entry, so the stop fills at 22.6.
+    const outcome = await measureTripleBeatOutcome(history, plan, [day({ open: 22.5, high: 23.5, low: 22.4, close: 23 })], [
+      { open: 22.5, high: 23.5, low: 22.4 },
+    ]);
+    expect(outcome).toMatchObject({ fill: 23.4, stoppedOutDay0: true, dayR: -1, runnerR: -1 });
+  });
   it('ignores day-zero dips below the stop before the entry triggers', async () => {
     const outcome = await measureTripleBeatOutcome(history, plan, [day({ low: 22.5 })], [
       { open: 23.1, high: 23.2, low: 22.5 }, { open: 23.2, high: 23.6, low: 23.1 }, { open: 24, high: 25.2, low: 24 },
@@ -109,10 +126,11 @@ describe('Triple Beat outcomes', () => {
     expect(await measureTripleBeatOutcome(history, plan, [day({})], quiet, 3)).toMatchObject({ triggered: false, totalR: null });
     expect(await measureTripleBeatOutcome(history, plan, [day({})], [], 3)).toMatchObject({ triggered: false, totalR: null });
   });
-  it('measures time-of-day RVOL against the average of prior sessions', () => {
-    expect(timeOfDayRvol([300, 300], [[50, 150], [150, 50]])).toEqual([3, 3]);
-    expect(timeOfDayRvol([300, 0], [[100, 100]])).toEqual([3, 1.5]);
-    expect(timeOfDayRvol([300], [])).toEqual([0]);
+  it('measures time-of-day RVOL as known at each minute\'s open, without that minute\'s own volume', () => {
+    // Nothing has traded at 09:30:00, so minute 0 is always 0; minute 1 compares the first minute's 300 with the prior average of 100.
+    expect(timeOfDayRvol([300, 300], [[50, 150], [150, 50]])).toEqual([0, 3]);
+    expect(timeOfDayRvol([300, 0, 0], [[100, 100, 100]])).toEqual([0, 3, 1.5]);
+    expect(timeOfDayRvol([300, 300], [])).toEqual([0, 0]);
   });
   describe('later days', () => {
     // Day 0 never reaches the 25 target; day 1 touches both the 22.6 stop and the target.
@@ -142,11 +160,18 @@ describe('Triple Beat outcomes', () => {
       expect(outcome).toMatchObject({ hit2R: true, openAtEnd: true });
       expect(outcome.totalR).toBeCloseTo(1 + 0.5 * 0.75);
     });
-    it('exits a stop that gaps at the stop price', async () => {
+    it('fills a stop at the open of a bar that gaps through it, not at the stop price', async () => {
+      // Fill 23.4, stop 22.6 (risk 0.8). The next day opens at 22, below the stop, so the stop order fills at 22: -1.75R, not -1R.
       const gap = day({ date: '2026-10-30', open: 22, high: 22.3, low: 21.8, close: 22.1 });
-      expect((await measureTripleBeatOutcome(history, plan, [day0, gap])).runnerR).toBeCloseTo(-1);
+      expect((await measureTripleBeatOutcome(history, plan, [day0, gap])).runnerR).toBeCloseTo(-1.75);
+      // With premarket minute bars, the first print through the stop is at 22.1, so the fill is 22.1: -1.625R.
       const minutes = async () => [{ open: 22.1, high: 22.3, low: 21.9 }];
-      expect((await measureTripleBeatOutcome(history, plan, [day0, gap], [], 0, minutes)).runnerR).toBeCloseTo(-1);
+      const outcome = await measureTripleBeatOutcome(history, plan, [day0, gap], [], 0, minutes);
+      expect(outcome.runnerR).toBeCloseTo(-1.625);
+      expect(outcome.totalR).toBeCloseTo(-1.625);
+      // A bar that opens above the stop and trades down through it still fills at the stop.
+      const touch = async () => [{ open: 23, high: 23.1, low: 22.5 }];
+      expect((await measureTripleBeatOutcome(history, plan, [day0, gap], [], 0, touch)).runnerR).toBeCloseTo(-1);
     });
   });
   it('takes a 2R partial and exits the runner below the EMA', async () => {

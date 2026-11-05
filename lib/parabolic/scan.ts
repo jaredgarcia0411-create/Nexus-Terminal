@@ -21,8 +21,9 @@ const RULES = {
   stopBufferAtr: 0.1,
   // Replay-only: intraday short triggers must fire before 10:30 ET.
   triggerCutoffMinutes: 60,
-  // Replay-only: a stop closer than 0.5 ATR to the entry is noise and inflates R, so skip it (same rule as Triple Beat).
-  minTriggerRiskAtr: 0.5,
+  // Replay-only: a stop closer than 0.5 ATR to the entry is noise and inflates R (same rule as Triple Beat). Intraday
+  // triggers skip it; the open short reports it (riskAtr) so the summary can be read with and without those trades.
+  minRiskAtr: 0.5,
   sma10Period: 10,
   sma20Period: 20,
   sma50Period: 50,
@@ -264,6 +265,13 @@ export function evaluateParabolicSetup(history: DailyOhlcBar[], tradeDay: TradeD
   return { qualified, failedFilters, grade, score, maxScore: MAX_PREMARKET_SCORE, scoreItems, metrics, plan };
 }
 
+// A stop under 0.5 ATR from the entry sits inside normal noise: it is usually hit within minutes, and the few trades that
+// survive show +10R or more on an ordinary move, which dominates any R total. Slippage on such a stop is also a large
+// multiple of the risk, so replay R for these trades is not achievable live.
+export function isNoiseStop(riskPerShare: number, atr14: number): boolean {
+  return riskPerShare < RULES.minRiskAtr * atr14;
+}
+
 export function measureReplayOutcome(history: DailyOhlcBar[], plan: ParabolicPlan, sessions: DailyOhlcBar[]): ReplayOutcome {
   const day0 = sessions[0];
   const risk = plan.riskPerShare;
@@ -288,22 +296,25 @@ export function measureReplayOutcome(history: DailyOhlcBar[], plan: ParabolicPla
   return { stoppedOutDay0, dayR, mfeDayR, maeDayR, mfe10R, mae10R, daysTo9Ema };
 }
 
-// Replay-only: short the open and walk the 09:30–16:00 minute bars in order. Holding to the close only depends on whether
-// the stop was touched. The gap-fill and 9EMA columns cover at whichever of target or stop comes first; a bar that reaches
-// both counts as stopped, since one minute bar can't order its own high and low. Null when there are no minute bars.
+// Replay-only: short the open and walk the 09:30–16:00 minute bars in order. The gap-fill and 9EMA columns cover at whichever
+// of target or stop comes first; a bar that reaches both counts as stopped, since one minute bar can't order its own high and low.
+// A later minute that opens above the stop fills at that open, so a gap can lose more than 1R. The entry minute fills at the
+// stop, since its open is the entry itself. Null when there are no minute bars.
 export function measureOpenShortMinutes(plan: ParabolicPlan, rth: OHLCData[], day0Close: number): OpenShortMinuteOutcome | null {
   if (rth.length === 0) return null;
   const closeR = (plan.entry - day0Close) / plan.riskPerShare;
+  const stopR = (index: number) => (plan.entry - (index === 0 ? plan.stop : Math.max(plan.stop, rth[index].open))) / plan.riskPerShare;
   const coverAt = (target: number, targetRR: number | null): number | null => {
     if (targetRR == null) return null;
-    for (const bar of rth) {
-      if (bar.high >= plan.stop) return -1;
+    for (const [index, bar] of rth.entries()) {
+      if (bar.high >= plan.stop) return stopR(index);
       if (bar.low <= target) return targetRR;
     }
     return closeR;
   };
+  const stopIndex = rth.findIndex((bar) => bar.high >= plan.stop);
   return {
-    dayR: rth.some((bar) => bar.high >= plan.stop) ? -1 : closeR,
+    dayR: stopIndex === -1 ? closeR : stopR(stopIndex),
     gapFillR: coverAt(plan.target1, plan.target1RR),
     ema9R: coverAt(plan.target2, plan.target2RR),
   };
@@ -311,7 +322,8 @@ export function measureOpenShortMinutes(plan: ParabolicPlan, rth: OHLCData[], da
 
 // Replay-only: short on an intraday trigger instead of the open, then cover at the close or the first stop touch.
 // `minutes` are 1-minute bars from 04:00 ET (premarket only feeds VWAP); `openMs` is 09:30 ET.
-// Stops are checked from the bar after the trigger, since one minute bar can't order its own high and low.
+// Stops are checked from the bar after the trigger, since one minute bar can't order its own high and low. A bar that opens
+// above the stop fills at that open, so a gap can lose more than 1R.
 export function measureIntradayTriggers(
   plan: ParabolicPlan,
   atr14: number,
@@ -324,8 +336,9 @@ export function measureIntradayTriggers(
   const cutoff = openMs + RULES.triggerCutoffMinutes * 60_000;
   const noTrigger: IntradayTriggerOutcome = { minutesAfterOpen: null, entry: null, hodStop: null, hodR: null, pmR: null };
   const resolve = (index: number, entry: number, stop: number) => {
-    if (stop <= entry || stop - entry < RULES.minTriggerRiskAtr * atr14) return null;
-    return rth.slice(index + 1).some((bar) => bar.high >= stop) ? -1 : (entry - day0Close) / (stop - entry);
+    if (stop <= entry || isNoiseStop(stop - entry, atr14)) return null;
+    const stopBar = rth.slice(index + 1).find((bar) => bar.high >= stop);
+    return (entry - (stopBar ? Math.max(stop, stopBar.open) : day0Close)) / (stop - entry);
   };
   const triggered = (index: number, entry: number): IntradayTriggerOutcome => {
     const hodStop = Math.max(...rth.slice(0, index + 1).map((bar) => bar.high)) + RULES.stopBufferAtr * atr14;
