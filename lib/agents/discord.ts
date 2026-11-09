@@ -322,7 +322,92 @@ async function ensureStoredReport(
   return stored;
 }
 
+// Discord rejects the whole message with a 400 if any limit is broken. Nov 2026: a longer macro briefing had
+// 1,387-char fields and 8,767 chars total, so it never posted.
+const DISCORD_DESCRIPTION_LIMIT = 4096;
+const DISCORD_FIELD_VALUE_LIMIT = 1024;
+const DISCORD_MESSAGE_CHAR_LIMIT = 6000;
+const DISCORD_MESSAGE_EMBED_LIMIT = 10;
+
+function trimToLimit(value: string, limit: number): string {
+  return value.length <= limit ? value : `${value.slice(0, limit - 1)}…`;
+}
+
+// Discord counts title + description + footer + every field name and value toward the 6,000 per message.
+function countEmbedChars(embed: DiscordEmbed): number {
+  return (embed.title?.length ?? 0)
+    + (embed.description?.length ?? 0)
+    + (embed.footer?.text.length ?? 0)
+    + (embed.fields ?? []).reduce((sum, field) => sum + field.name.length + field.value.length, 0);
+}
+
+// One embed that's too big on its own gets its later fields moved into "(cont.)" embeds.
+function splitOversizedEmbed(embed: DiscordEmbed): DiscordEmbed[] {
+  if (countEmbedChars(embed) <= DISCORD_MESSAGE_CHAR_LIMIT) {
+    return [embed];
+  }
+
+  const { fields = [], ...head } = embed;
+  const parts: DiscordEmbed[] = [];
+  let current: DiscordEmbed = { ...head, fields: [] };
+  for (const field of fields) {
+    const fieldChars = field.name.length + field.value.length;
+    if (current.fields!.length > 0 && countEmbedChars(current) + fieldChars > DISCORD_MESSAGE_CHAR_LIMIT) {
+      parts.push(current);
+      current = { title: `${embed.title ?? 'Report'} (cont.)`, color: embed.color, fields: [] };
+    }
+    current.fields!.push(field);
+  }
+  parts.push(current);
+  return parts;
+}
+
+// Trim anything over a per-item limit, then group embeds into as few messages as fit Discord's limits.
+// Reports that already fit come back as a single message, unchanged.
+export function packEmbedsForDiscord(embeds: DiscordEmbed[]): DiscordEmbed[][] {
+  const fitted = embeds
+    .map((embed) => ({
+      ...embed,
+      ...(embed.description ? { description: trimToLimit(embed.description, DISCORD_DESCRIPTION_LIMIT) } : {}),
+      ...(embed.fields
+        ? { fields: embed.fields.map((field) => ({ ...field, value: trimToLimit(field.value, DISCORD_FIELD_VALUE_LIMIT) })) }
+        : {}),
+    }))
+    .flatMap(splitOversizedEmbed);
+
+  const messages: DiscordEmbed[][] = [];
+  let current: DiscordEmbed[] = [];
+  let currentChars = 0;
+  for (const embed of fitted) {
+    const embedChars = countEmbedChars(embed);
+    const full = currentChars + embedChars > DISCORD_MESSAGE_CHAR_LIMIT || current.length >= DISCORD_MESSAGE_EMBED_LIMIT;
+    if (current.length > 0 && full) {
+      messages.push(current);
+      current = [];
+      currentChars = 0;
+    }
+    current.push(embed);
+    currentChars += embedChars;
+  }
+  if (current.length > 0) {
+    messages.push(current);
+  }
+  return messages;
+}
+
+// Posts each message in order and stops at the first failure.
 async function postWebhook(embeds: DiscordEmbed[], url: string): Promise<DeliveryResult> {
+  for (const messageEmbeds of packEmbedsForDiscord(embeds)) {
+    const result = await postWebhookMessage(messageEmbeds, url);
+    if (result.status !== 'published') {
+      return result;
+    }
+  }
+
+  return { status: 'published', deliveryError: null };
+}
+
+async function postWebhookMessage(embeds: DiscordEmbed[], url: string): Promise<DeliveryResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DISCORD_TIMEOUT_MS);
   const payload: DiscordWebhookPayload = { embeds };

@@ -15,6 +15,7 @@ import {
   buildResearchEmbed,
   buildMacroSummaryEmbed,
   buildSwingSetupEmbed,
+  packEmbedsForDiscord,
   redeliverReport,
   resolveWebhookUrl,
   writeAndDeliverReport,
@@ -1022,5 +1023,50 @@ describe('agent discord helpers', () => {
       effectType: 'discord-delivery',
       idempotencyKey: expect.stringMatching(/^discord-delivery:job-1:research:manual:/),
     }));
+  });
+  it('sends an embed that fits Discord limits as one unchanged message', () => {
+    const embed = { title: 'Macro', color: 1, fields: [{ name: 'TLDR', value: 'short' }] };
+    expect(packEmbedsForDiscord([embed])).toEqual([[embed]]);
+  });
+
+  it('trims fields over 1024 chars and splits an embed over 6000 chars across messages', () => {
+    const fields = Array.from({ length: 8 }, (_, index) => ({ name: `Section ${index}`, value: 'x'.repeat(1400) }));
+    const messages = packEmbedsForDiscord([{ title: 'Daily Macro', color: 1, footer: { text: 'orchestrator' }, fields }]);
+
+    expect(messages.length).toBeGreaterThan(1);
+    const embeds = messages.flat();
+    expect(embeds[0]?.title).toBe('Daily Macro');
+    expect(embeds[1]?.title).toBe('Daily Macro (cont.)');
+    // Every field survives, trimmed to Discord's 1024-char cap, in the original order.
+    const sentFields = embeds.flatMap((embed) => embed.fields ?? []);
+    expect(sentFields.map((field) => field.name)).toEqual(fields.map((field) => field.name));
+    expect(sentFields.every((field) => field.value.length === 1024 && field.value.endsWith('…'))).toBe(true);
+    for (const message of messages) {
+      const chars = message.reduce((sum, embed) => sum + (embed.title?.length ?? 0) + (embed.footer?.text.length ?? 0)
+        + (embed.fields ?? []).reduce((total, field) => total + field.name.length + field.value.length, 0), 0);
+      expect(chars).toBeLessThanOrEqual(6000);
+    }
+  });
+
+  it('trims an over-long system alert description to fit Discord', async () => {
+    vi.stubEnv('DISCORD_WEBHOOK_SYSTEM', 'https://discord.test/system');
+    const longDetail = 'y'.repeat(5000);
+    const stored = createStoredReport({
+      id: 'job-1:system-alert', agentId: 'orchestrator', reportType: 'system-alert',
+      title: 'Scheduled job failed', summary: longDetail, reportJson: { severity: 'error' },
+    });
+    const rows = new Map<unknown, unknown[][]>();
+    rows.set(agentReports, [[], [stored]]);
+    rows.set(agentStepEffects, [[]]);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+
+    const result = await writeAndDeliverReport(makeDb(rows) as never, {
+      jobId: 'job-1', userId: 'system-agent-user', agentId: 'orchestrator', reportType: 'system-alert',
+      title: stored.title, summary: longDetail, reportJson: stored.reportJson,
+    });
+
+    expect(result.status).toBe('published');
+    const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(body.embeds[0].description.length).toBe(4096);
   });
 });
