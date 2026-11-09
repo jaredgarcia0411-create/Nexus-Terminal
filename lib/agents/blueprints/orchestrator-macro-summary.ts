@@ -712,7 +712,7 @@ export const orchestratorMacroSummaryBlueprint: Blueprint = {
       outputSchema: macroBriefingDraftSchema,
       metadata: {
         canRetry: true,
-        timeoutMs: 180000,
+        timeoutMs: 240000,
         maxRepairAttempts: 1,
         sideEffect: false,
         lane: 'background',
@@ -733,11 +733,11 @@ export const orchestratorMacroSummaryBlueprint: Blueprint = {
           systemPrompt: await loadOrchestratorSystemPrompt(),
           userMessage: buildBriefingPrompt(getTradingDate(jobInput), input),
           temperature: 0.2,
-          // The background lane runs a MiniMax reasoning model that thinks before writing the JSON. At the default
-          // 4096 cap the briefing got cut off mid-JSON (Oct 2026: the one success used 4043 tokens in 36s), so allow
-          // 3x the tokens and the time to generate them.
-          maxTokens: 12_000,
-        }, 'background', { timeoutMs: 180_000 });
+          // The background lane runs a MiniMax reasoning model that thinks before writing the JSON, and the thinking
+          // counts against max_tokens. If it runs out, the JSON is cut off and fails to parse. Nov 2026 on
+          // M3.1-Flash: 9.8k-11.6k output tokens (6-8k of it thinking) in 46-58s, right at the old 12k cap, so allow 2x.
+          maxTokens: 24_000,
+        }, 'background', { timeoutMs: 240_000 });
 
         const parsedBriefing = macroBriefingSchema.parse(parseJson(llmResponse.content));
         const briefing = macroBriefingDraftSchema.parse({
