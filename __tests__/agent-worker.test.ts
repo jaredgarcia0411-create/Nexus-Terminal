@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   heartbeatJob: vi.fn(),
   calculateBackoffMs: vi.fn((attempt: number) => Math.pow(4, attempt - 1) * 2000),
   runBlueprint: vi.fn(),
+  writeAndDeliverReport: vi.fn(),
   writeFileSync: vi.fn(),
 }));
 
@@ -35,6 +36,10 @@ vi.mock('@/lib/agents/queue', () => ({
 
 vi.mock('@/lib/agents/blueprint-runner', () => ({
   runBlueprint: mocks.runBlueprint,
+}));
+
+vi.mock('@/lib/agents/discord', () => ({
+  writeAndDeliverReport: mocks.writeAndDeliverReport,
 }));
 
 vi.mock('node:fs', () => ({
@@ -567,6 +572,73 @@ describe('agent worker loop', () => {
       'NotImplementedBlueprintError: blueprint not implemented in Sprint 3: orchestrator:chat',
     );
     expect(mocks.scheduleJobRetry).not.toHaveBeenCalled();
+
+    await handle.stop();
+  });
+
+  it('posts a system alert when a scheduled job fails for good', async () => {
+    const db = createWorkerDb();
+    const job = createAgentJob({
+      userId: 'system-agent-user',
+      jobType: 'macro-summary',
+      input: { tradingDate: '2026-11-09' },
+      attempt: 3,
+      maxAttempts: 3,
+      leaseVersion: 9,
+    });
+    const agentConfig = createAgentConfig();
+
+    mocks.getAgentDb.mockReturnValue(db);
+    mocks.failJob.mockResolvedValue(true);
+    mocks.claimNextQueuedJob
+      .mockResolvedValueOnce({ job, leaseVersion: 9 } satisfies QueueClaimResult)
+      .mockResolvedValueOnce(null);
+    mocks.runBlueprint.mockRejectedValue(new Error('LLM request failed with status 400'));
+
+    const { startWorker } = await import('@/lib/agents/worker');
+    const handle = await startWorker({
+      agentId: 'orchestrator',
+      pollIntervalMs: POLL_INTERVAL_MS,
+      agentConfig,
+    });
+
+    await settleWorker();
+
+    expect(mocks.failJob).toHaveBeenCalledWith(db, job.id, WORKER_ID, 9, 'LLM request failed with status 400');
+    expect(mocks.writeAndDeliverReport).toHaveBeenCalledWith(db, expect.objectContaining({
+      jobId: job.id,
+      userId: 'system-agent-user',
+      agentId: 'orchestrator',
+      reportType: 'system-alert',
+      summary: 'LLM request failed with status 400',
+    }));
+
+    await handle.stop();
+  });
+
+  it('does not post a system alert when a user job fails', async () => {
+    const db = createWorkerDb();
+    const job = createAgentJob({ attempt: 3, maxAttempts: 3, leaseVersion: 10 });
+    const agentConfig = createAgentConfig();
+
+    mocks.getAgentDb.mockReturnValue(db);
+    mocks.failJob.mockResolvedValue(true);
+    mocks.claimNextQueuedJob
+      .mockResolvedValueOnce({ job, leaseVersion: 10 } satisfies QueueClaimResult)
+      .mockResolvedValueOnce(null);
+    mocks.runBlueprint.mockRejectedValue(new Error('chat failed'));
+
+    const { startWorker } = await import('@/lib/agents/worker');
+    const handle = await startWorker({
+      agentId: 'orchestrator',
+      pollIntervalMs: POLL_INTERVAL_MS,
+      agentConfig,
+    });
+
+    await settleWorker();
+
+    expect(mocks.failJob).toHaveBeenCalled();
+    expect(mocks.writeAndDeliverReport).not.toHaveBeenCalled();
 
     await handle.stop();
   });

@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { agentRegistry } from '@/lib/db/schema';
 import { runBlueprint } from './blueprint-runner';
 import { getAgentDb, type AgentDb } from './db';
+import { writeAndDeliverReport } from './discord';
 import { startHeartbeat } from './heartbeat';
 import {
   calculateBackoffMs,
@@ -22,6 +23,8 @@ import type {
 
 const DEFAULT_FAILURE_REASON = 'Unknown blueprint failure';
 const JOB_LEASE_HEARTBEAT_INTERVAL_MS = 60_000;
+// Jobs created by the cron (Macro Daily, Parabolic, Triple Beat, Market Pulse) run as this user.
+const SYSTEM_AGENT_USER_ID = 'system-agent-user';
 
 export interface WorkerHandle {
   stop: () => Promise<void>;
@@ -106,6 +109,56 @@ async function applyLeaseFencedFinalizer(
   return succeeded;
 }
 
+// Final failure (no retries left). Chat/research jobs have a user watching for the error, but scheduled jobs
+// don't — before this, a failed Macro Daily only sat in agent_jobs.error_message and nobody knew. So we log it
+// and post it to the Discord system channel (DISCORD_WEBHOOK_SYSTEM via the 'system-alert' report type).
+async function failJobAndAlert(
+  db: AgentDb,
+  job: AgentJob,
+  workerId: string,
+  leaseVersion: number,
+  reason: string,
+) {
+  const failed = await applyLeaseFencedFinalizer(
+    'failJob',
+    failJob(db, job.id, workerId, leaseVersion, reason),
+    job.id,
+    workerId,
+    leaseVersion,
+  );
+  // If we lost the lease, another worker owns the job now; let it decide whether to alert.
+  if (!failed) {
+    return;
+  }
+
+  console.error(`agent worker job ${job.id} failed`, {
+    agentId: job.agentId,
+    jobType: job.jobType,
+    attempt: job.attempt,
+    reason,
+  });
+
+  if (job.agentId !== 'orchestrator' || job.userId !== SYSTEM_AGENT_USER_ID) {
+    return;
+  }
+
+  // Alerting must never crash the worker loop, so a Discord problem is only logged.
+  try {
+    const detail = reason.slice(0, 1000);
+    await writeAndDeliverReport(db, {
+      jobId: job.id,
+      userId: job.userId,
+      agentId: 'orchestrator',
+      reportType: 'system-alert',
+      title: `Scheduled ${job.jobType} job failed`,
+      summary: detail,
+      reportJson: { severity: 'error', detail, jobType: job.jobType, input: job.input },
+    });
+  } catch (error) {
+    console.error(`agent worker failure alert failed for job ${job.id}`, error);
+  }
+}
+
 function startJobLeaseHeartbeat(
   db: AgentDb,
   jobId: string,
@@ -174,19 +227,7 @@ async function processClaim(
   try {
     blueprint = config.agentConfig.blueprintResolver(job);
   } catch (error) {
-    await applyLeaseFencedFinalizer(
-      'failJob',
-      failJob(
-        db,
-        job.id,
-        workerId,
-        leaseVersion,
-        formatWorkerFailure(error),
-      ),
-      job.id,
-      workerId,
-      leaseVersion,
-    );
+    await failJobAndAlert(db, job, workerId, leaseVersion, formatWorkerFailure(error));
     return;
   }
 
@@ -224,19 +265,7 @@ async function processClaim(
       return;
     }
 
-    await applyLeaseFencedFinalizer(
-      'failJob',
-      failJob(
-        db,
-        job.id,
-        workerId,
-        leaseVersion,
-        formatWorkerFailure(error),
-      ),
-      job.id,
-      workerId,
-      leaseVersion,
-    );
+    await failJobAndAlert(db, job, workerId, leaseVersion, formatWorkerFailure(error));
     return;
   }
 
@@ -284,36 +313,9 @@ async function processClaim(
       return;
     }
 
-    const failed = await applyLeaseFencedFinalizer(
-      'failJob',
-      failJob(
-        db,
-        job.id,
-        workerId,
-        leaseVersion,
-        result.failureReason ?? DEFAULT_FAILURE_REASON,
-      ),
-      job.id,
-      workerId,
-      leaseVersion,
-    );
-    if (!failed) {
-      return;
-    }
+    await failJobAndAlert(db, job, workerId, leaseVersion, result.failureReason ?? DEFAULT_FAILURE_REASON);
   } catch (error) {
-    await applyLeaseFencedFinalizer(
-      'failJob',
-      failJob(
-        db,
-        job.id,
-        workerId,
-        leaseVersion,
-        formatWorkerFailure(error),
-      ),
-      job.id,
-      workerId,
-      leaseVersion,
-    );
+    await failJobAndAlert(db, job, workerId, leaseVersion, formatWorkerFailure(error));
   }
 }
 
