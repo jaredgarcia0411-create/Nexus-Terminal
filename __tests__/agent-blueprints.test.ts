@@ -526,6 +526,28 @@ describe('agent blueprints', () => {
     expect(insertValues).not.toHaveBeenCalled();
   });
 
+  it('uses the latest trade price for the snapshot when pre-market has no session close', async () => {
+    vi.stubEnv('MASSIVE_API_KEY', 'test-key');
+    fetchUnifiedSnapshotMock.mockResolvedValue({
+      results: [
+        { ticker: 'SPY', session: { price: 753.41, change_percent: 0.1, previous_close: 752.66 } },
+        { ticker: 'QQQ', session: { close: 677.4, change_percent: -0.29 } },
+      ],
+    });
+
+    const job = createJob({ agentId: 'orchestrator', jobType: 'macro-summary', input: {} });
+    const step = resolveBlueprint(job).steps.find((s) => s.name === 'fetch-market-snapshot');
+    const result = await step!.run(createStepInput(job, AGENT_CONFIGS.orchestrator, {
+      previousOutput: { headlines: [], rssHeadlines: [] },
+    }));
+    vi.unstubAllEnvs();
+
+    expect((result.data as { crossAssetSnapshot: unknown }).crossAssetSnapshot).toEqual([
+      { ticker: 'SPY', price: 753.41, changePercent: 0.1 },
+      { ticker: 'QQQ', price: 677.4, changePercent: -0.29 },
+    ]);
+  });
+
   it('fetches sentiment data and threads it into the macro briefing context', async () => {
     fetchFearGreedIndexMock.mockResolvedValue({
       score: 23,

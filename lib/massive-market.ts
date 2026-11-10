@@ -20,6 +20,8 @@ export interface MassiveSnapshotResult {
   name?: string;
   market_status?: string;
   session?: {
+    // Latest trade, including pre/after-hours. `close` is only set once the regular session has a bar.
+    price?: number;
     close?: number;
     previous_close?: number;
     change?: number;

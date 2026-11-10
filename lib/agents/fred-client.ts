@@ -39,7 +39,8 @@ export async function fetchFredSeries(
         url.searchParams.set('api_key', apiKey);
         url.searchParams.set('file_type', 'json');
         url.searchParams.set('sort_order', 'desc');
-        url.searchParams.set('limit', '1');
+        // A few rows back, because FRED adds a "." row for bond-market holidays and the newest row can be one.
+        url.searchParams.set('limit', '5');
 
         const response = await fetch(url.toString(), { signal: controller.signal });
         if (!response.ok) {
@@ -50,9 +51,13 @@ export async function fetchFredSeries(
           observations?: Array<{ date?: string; value?: string }>;
         };
 
-        const obs = data.observations?.[0];
+        // Newest row with a real number; FRED uses "." for missing data (holidays).
+        const observations = data.observations ?? [];
+        const obs = observations.find((row) => {
+          const raw = row.value?.trim();
+          return raw && raw !== '.' && Number.isFinite(Number(raw));
+        }) ?? observations[0];
         const rawValue = obs?.value?.trim();
-        // FRED uses "." for missing data (holidays, weekends)
         const numericValue = rawValue && rawValue !== '.' ? Number(rawValue) : null;
 
         return {

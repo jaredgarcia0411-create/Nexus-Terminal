@@ -257,7 +257,8 @@ function buildCrossAssetSnapshot(results: MassiveSnapshotResult[]): CrossAssetEn
     ticker: typeof result.ticker === 'string' && result.ticker.trim()
       ? result.ticker.trim().toUpperCase()
       : 'UNKNOWN',
-    price: result.session?.close ?? null,
+    // Pre-market (the 6 AM briefing) has no session close yet, so prefer the latest trade price.
+    price: result.session?.price ?? result.session?.close ?? null,
     changePercent: result.session?.change_percent ?? null,
   }));
 }
