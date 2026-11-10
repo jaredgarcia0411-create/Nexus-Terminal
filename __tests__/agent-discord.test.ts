@@ -13,7 +13,7 @@ import {
   buildParabolicScanEmbeds,
   buildTripleBeatScanEmbeds,
   buildResearchEmbed,
-  buildMacroSummaryEmbed,
+  buildMacroSummaryEmbeds,
   buildSwingSetupEmbed,
   packEmbedsForDiscord,
   redeliverReport,
@@ -811,8 +811,8 @@ describe('agent discord helpers', () => {
     ]));
   });
 
-  it('builds the macro summary embed from the typed report contract', () => {
-    const embed = buildMacroSummaryEmbed(createStoredReport({
+  it('builds the macro summary as a bias-colored header, a key levels card, and a story card', () => {
+    const cards = buildMacroSummaryEmbeds(createStoredReport({
       agentId: 'orchestrator',
       reportType: 'macro-summary',
       title: '2026-04-12 macro briefing',
@@ -820,141 +820,128 @@ describe('agent discord helpers', () => {
       reportJson: createMacroReportJson(),
     }) as never);
 
-    expect(embed.description).toBe('Risk appetite improved as macro data eased near-term rate fears.');
-    const fields = embed.fields ?? [];
-    expect(fields).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'Market Bias', value: 'bullish' }),
-      expect.objectContaining({ name: 'Confidence', value: 'high' }),
-      expect.objectContaining({
-        name: 'Risk Assessment',
-        value: expect.stringContaining('Rates and volatility are still the main cross-asset risks'),
+    expect(cards).toHaveLength(3);
+    const [header, levels, story] = cards;
+
+    expect(header.title).toBe('Macro Daily · Sun, Apr 12');
+    expect(header.color).toBe(0x23A55A);
+    expect(header.description).toBe('🟢 **Bullish** · High\nRisk appetite improved as macro data eased near-term rate fears.');
+    expect(header.fields).toEqual([
+      { name: 'SPY', value: '520.12 · +0.80%', inline: true },
+      { name: 'TLT', value: '95.34 · −0.40%', inline: true },
+    ]);
+    expect(header.footer).toBeUndefined();
+
+    expect(levels.description).toBe('**Key levels** · 10Y 4.32% · curve +47bp');
+    expect(levels.fields).toEqual([
+      { name: 'SPY S / R', value: '`520.00` / `535.00`', inline: true },
+      { name: 'QQQ S / R', value: '`450.00` / `462.00`', inline: true },
+      {
+        name: 'Why',
+        value: 'SPY: Prior breakout range remains intact. · QQQ: Semis-led leadership is holding.',
         inline: false,
-      }),
-      expect.objectContaining({
-        name: 'Key Levels',
-        value: expect.stringContaining('**SPY**: 520.00 / 535.00'),
+      },
+      {
+        name: 'Rates read',
+        value: '10Y yields remain the key driver for tape direction, while the curve is still constructive.',
         inline: false,
-      }),
-      expect.objectContaining({
-        name: 'Rates',
-        value: expect.stringContaining('10Y Treasury: 4.32%'),
-        inline: false,
-      }),
-      expect.objectContaining({
-        name: 'Catalysts',
-        value: expect.stringContaining('FOMC rate decision (2026-04-15) - Could reset the risk-on backdrop.'),
-        inline: false,
-      }),
-      expect.objectContaining({
-        name: 'Desk Implications',
-        value: expect.stringContaining('• Stay long beta into stronger tape.'),
-        inline: false,
-      }),
-      expect.objectContaining({
-        name: 'Sector Rotation',
-        value: expect.stringContaining('• Semis bid'),
-        inline: false,
-      }),
-      expect.objectContaining({
-        name: 'Scenarios',
-        value: expect.stringContaining('Consensus'),
-        inline: false,
-      }),
-      expect.objectContaining({
-        name: 'TLDR',
-        value: expect.stringContaining('• Risk appetite is improving.'),
-        inline: false,
-      }),
-    ]));
-    const topDrivers = fields.find((field) => field.name === 'Top Drivers');
-    expect(topDrivers).toEqual(expect.objectContaining({
-      name: 'Top Drivers',
-      inline: false,
-    }));
-    expect(topDrivers?.value).toContain('🟢 CPI print came in softer than expected');
-    expect(topDrivers?.value).toContain('🟡 Fed speakers stayed balanced');
-    expect(topDrivers?.value).toContain('🔴 Rates backed off into the close');
-    expect(fields.some((field) => field.name === 'crossAssetSnapshot')).toBe(false);
+      },
+    ]);
+
+    expect(story.description).toBe([
+      '**Drivers**',
+      '🟢 CPI print came in softer than expected',
+      '🟡 Fed speakers stayed balanced',
+      '🔴 Rates backed off into the close',
+    ].join('\n'));
+    expect(story.fields).toEqual([
+      { name: 'This week', value: '• FOMC rate decision · Wed, Apr 15 — Could reset the risk-on backdrop.', inline: false },
+      { name: '✅ Base case', value: 'SPY stays above support and large-cap growth keeps leadership.', inline: false },
+      { name: '⚠️ What breaks it', value: 'A sharp move higher in yields breaks support and narrows breadth.', inline: false },
+    ]);
+    expect(story.footer).toEqual({ text: 'orchestrator • macro-summary' });
+
+    // Sections the shorter briefing dropped never render, even when an older report still has them.
+    const text = JSON.stringify(cards);
+    expect(text).not.toContain('Stay long beta');
+    expect(text).not.toContain('Semis bid');
+    expect(text).not.toContain('Risk appetite is improving.');
   });
 
-  it('renders the Fear & Greed field when sentiment data is present', () => {
-    const embed = buildMacroSummaryEmbed(createStoredReport({
-      agentId: 'orchestrator',
-      reportType: 'macro-summary',
-      title: '2026-04-12 macro briefing',
-      summary: 'Legacy summary should not be used for the embed body.',
-      reportJson: createMacroReportJson({
-        sentimentData: {
-          score: 23,
-          classification: 'Extreme Fear',
-          source: 'alternative.me/fng',
-        },
-      }),
-    }) as never);
-
-    const fields = embed.fields ?? [];
-    const fearAndGreed = fields.find((field) => field.name === 'Fear & Greed');
-
-    expect(fearAndGreed).toEqual(expect.objectContaining({
-      name: 'Fear & Greed',
-      value: expect.stringContaining('23/100 - Extreme Fear'),
-      inline: false,
-    }));
-  });
-
-  it('skips Fear & Greed when sentiment data is absent', () => {
-    const embed = buildMacroSummaryEmbed(createStoredReport({
-      agentId: 'orchestrator',
-      reportType: 'macro-summary',
-      title: '2026-04-12 macro briefing',
-      summary: 'Legacy summary should not be used for the embed body.',
-      reportJson: createMacroReportJson(),
-    }) as never);
-
-    const fields = embed.fields ?? [];
-
-    expect(fields.some((field) => field.name === 'Fear & Greed')).toBe(false);
-  });
-
-  it('skips empty macro summary sections and omits rates when fred data is unavailable', () => {
-    const embed = buildMacroSummaryEmbed(createStoredReport({
+  it('adds Fear & Greed to the header line when sentiment data is present', () => {
+    const [header] = buildMacroSummaryEmbeds(createStoredReport({
       agentId: 'orchestrator',
       reportType: 'macro-summary',
       title: '2026-04-12 macro briefing',
       reportJson: createMacroReportJson({
+        marketBias: 'neutral',
+        confidence: 'medium',
+        sentimentData: { score: 32, classification: 'Fear', source: 'alternative.me/fng' },
+      }),
+    }) as never);
+
+    expect(header.color).toBe(0x80848E);
+    expect(header.description).toMatch(/^⚪ \*\*Neutral\*\* · Medium · F&G 32 Fear\n/);
+  });
+
+  it('collapses to the header card with the footer when the other sections are empty', () => {
+    const cards = buildMacroSummaryEmbeds(createStoredReport({
+      agentId: 'orchestrator',
+      reportType: 'macro-summary',
+      title: '2026-04-12 macro briefing',
+      reportJson: createMacroReportJson({
+        marketBias: 'bearish',
+        drivers: [],
+        keyLevels: [],
         fredData: [],
-        ratesOutlook: 'Rates still matter, but no hard data was available.',
+        ratesOutlook: '',
         scheduledCatalysts: [],
-        sectorRotation: [],
-        deskImplications: [],
+        scenarioAnalysis: { consensus: '', disruption: '' },
       }),
     }) as never);
 
-    const fieldNames = (embed.fields ?? []).map((field) => field.name);
-
-    expect(fieldNames).not.toContain('Rates');
-    expect(fieldNames).not.toContain('Catalysts');
-    expect(fieldNames).not.toContain('Sector Rotation');
-    expect(fieldNames).not.toContain('Desk Implications');
+    expect(cards).toHaveLength(1);
+    expect(cards[0].color).toBe(0xF23F43);
+    expect(cards[0].footer).toEqual({ text: 'orchestrator • macro-summary' });
   });
 
-  it('renders the Deltas field when delta sentences are present', () => {
-    const embed = buildMacroSummaryEmbed(createStoredReport({
+  it('labels a catalyst with no date as date TBD', () => {
+    const cards = buildMacroSummaryEmbeds(createStoredReport({
       agentId: 'orchestrator',
       reportType: 'macro-summary',
       title: '2026-04-12 macro briefing',
       reportJson: createMacroReportJson({
-        deltas: ['10Y at 4.32%, unchanged from yesterday.'],
+        scheduledCatalysts: [{ event: 'October CPI', date: null, expectedImpact: 'Hot print tests QQQ 662.' }],
       }),
     }) as never);
 
-    const deltas = (embed.fields ?? []).find((field) => field.name === 'Deltas');
-
-    expect(deltas).toEqual(expect.objectContaining({
-      name: 'Deltas',
-      value: expect.stringContaining('10Y at 4.32%, unchanged from yesterday.'),
+    expect(cards[2].fields?.[0]).toEqual({
+      name: 'This week',
+      value: '• October CPI · date TBD — Hot print tests QQQ 662.',
       inline: false,
-    }));
+    });
+  });
+
+  it('posts every macro card in a single webhook message', async () => {
+    vi.stubEnv('DISCORD_WEBHOOK_MACRO_DAILY', 'https://discord.test/macro');
+    const stored = createStoredReport({
+      id: 'job-1:macro-summary', agentId: 'orchestrator', reportType: 'macro-summary',
+      title: '2026-04-12 macro briefing', reportJson: createMacroReportJson(),
+    });
+    const rows = new Map<unknown, unknown[][]>();
+    rows.set(agentReports, [[], [stored]]);
+    rows.set(agentStepEffects, [[]]);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+
+    await writeAndDeliverReport(makeDb(rows) as never, {
+      jobId: 'job-1', userId: 'system-agent-user', agentId: 'orchestrator', reportType: 'macro-summary',
+      title: stored.title, summary: null, reportJson: stored.reportJson,
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(body.embeds.map((embed: { title?: string }) => embed.title))
+      .toEqual(['Macro Daily · Sun, Apr 12', undefined, undefined]);
   });
 
   it('builds the macro intraday embed with session-specific sections', () => {

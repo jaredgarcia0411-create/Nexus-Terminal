@@ -212,10 +212,6 @@ function selectEmbed(report: AgentReport): DiscordEmbed {
     return buildMacroIntradayEmbed(report);
   }
 
-  if (report.reportType === 'macro-summary') {
-    return buildMacroSummaryEmbed(report);
-  }
-
   if (report.reportType === 'pre-market-scan') {
     return buildScanEmbed(report);
   }
@@ -478,7 +474,8 @@ async function deliverStoredReport(
 
   const embeds = report.reportType === 'parabolic-scan' ? buildParabolicScanEmbeds(report)
     : report.reportType === 'triple-beat-scan' ? buildTripleBeatScanEmbeds(report)
-      : [selectEmbed(report)];
+      : report.reportType === 'macro-summary' ? buildMacroSummaryEmbeds(report)
+        : [selectEmbed(report)];
   const deliveryResult = await postWebhook(embeds, url);
 
   if (deliveryResult.status === 'published') {
@@ -693,131 +690,126 @@ function formatFredValue(point: FredDataPoint): string {
   return `${point.value.toFixed(2)}%`;
 }
 
-export function buildMacroSummaryEmbed(report: AgentReport): DiscordEmbed {
+const MACRO_BIAS_COLORS: Record<MacroSummaryReport['marketBias'], number> = {
+  bullish: 0x23A55A,
+  bearish: 0xF23F43,
+  neutral: 0x80848E,
+};
+const MACRO_BIAS_EMOJI: Record<MacroSummaryReport['marketBias'], string> = {
+  bullish: '🟢',
+  bearish: '🔴',
+  neutral: '⚪',
+};
+// The 9 ETFs on the header card's price tape (3 rows of 3), out of the 17 the briefing snapshots.
+const MACRO_TAPE_TICKERS = ['SPY', 'QQQ', 'IWM', 'DIA', 'SMH', 'XLF', 'TLT', 'GLD', 'UVXY'];
+const MACRO_STORY_COLOR = 0x5865F2;
+
+// Three cards, styled like the scan posts: a header colored by bias (summary + price tape), a key levels card,
+// and a card with drivers, catalysts and scenarios. Nov 2026: replaced the single 13-section embed.
+export function buildMacroSummaryEmbeds(report: AgentReport): DiscordEmbed[] {
   const payload = asRecord(report.reportJson) as Partial<MacroSummaryReport>;
-  const impactEmoji = (impact: MacroSummaryReport['drivers'][number]['impact']): string => {
-    if (impact === 'positive') return '\u{1F7E2}';
-    if (impact === 'negative') return '\u{1F534}';
-    return '\u{1F7E1}';
+  const bias = payload.marketBias && payload.marketBias in MACRO_BIAS_COLORS ? payload.marketBias : 'neutral';
+  const pct = (value: number) => `${value >= 0 ? '+' : '−'}${Math.abs(value).toFixed(2)}%`;
+  const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+  // 'YYYY-MM-DD' -> 'Tue, Nov 10'. Noon UTC keeps the date from shifting a day in any timezone.
+  const shortDate = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+  const hasDate = typeof payload.tradingDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(payload.tradingDate);
+  const title = hasDate ? `Macro Daily · ${shortDate(payload.tradingDate!)}` : coerceFieldValue(report.title);
+
+  // Header line: bias, confidence, and Fear & Greed when the score is usable.
+  const headerParts = [`${MACRO_BIAS_EMOJI[bias]} **${capitalize(bias)}**`];
+  if (typeof payload.confidence === 'string') {
+    headerParts.push(capitalize(payload.confidence));
+  }
+  const sentiment = payload.sentimentData;
+  if (sentiment && typeof sentiment.score === 'number' && typeof sentiment.classification === 'string'
+    && sentiment.score >= 0 && sentiment.score <= 100) {
+    headerParts.push(`F&G ${sentiment.score} ${sentiment.classification}`);
+  }
+  const summary = optionalText(payload.summary, report.summary);
+
+  const snapshot = Array.isArray(payload.crossAssetSnapshot) ? payload.crossAssetSnapshot : [];
+  const tapeFields = MACRO_TAPE_TICKERS.flatMap((ticker) => {
+    const entry = snapshot.find((item) => item?.ticker === ticker);
+    if (!entry || typeof entry.price !== 'number' || typeof entry.changePercent !== 'number') {
+      return [];
+    }
+    return [buildField(ticker, `${entry.price.toFixed(2)} · ${pct(entry.changePercent)}`)];
+  });
+
+  const header: DiscordEmbed = {
+    title,
+    description: [headerParts.join(' · '), summary].filter(Boolean).join('\n'),
+    color: MACRO_BIAS_COLORS[bias],
+    ...(tapeFields.length > 0 ? { fields: tapeFields } : {}),
   };
-  const fields: DiscordEmbedField[] = [
-    buildField('Market Bias', payload.marketBias),
-    buildField('Confidence', payload.confidence),
+
+  // Key levels card: support / resistance side by side, the LLM's short notes in one line underneath,
+  // and the 10Y, 2Y and curve from FRED in the label line.
+  const fred = Array.isArray(payload.fredData) ? payload.fredData : [];
+  const rateLabels: Record<string, string> = { DGS10: '10Y', DGS2: '2Y', T10Y2Y: 'curve' };
+  const rates = Object.keys(rateLabels).flatMap((seriesId) => {
+    const point = fred.find((item) => item?.seriesId === seriesId);
+    return point && point.value !== null ? [`${rateLabels[seriesId]} ${formatFredValue(point)}`] : [];
+  });
+  const levels = Array.isArray(payload.keyLevels) ? payload.keyLevels.filter((level) => level?.ticker) : [];
+  const notes = levels
+    .filter((level) => typeof level.note === 'string' && level.note.trim())
+    .map((level) => `${level.ticker}: ${level.note.trim()}`);
+  const ratesRead = optionalText(payload.ratesOutlook);
+  const levelsCard: DiscordEmbed | null = levels.length > 0 || rates.length > 0 || ratesRead
+    ? {
+      description: ['**Key levels**', ...rates].join(' · '),
+      color: MACRO_STORY_COLOR,
+      fields: [
+        ...levels.map((level) => buildField(`${level.ticker} S / R`, `\`${level.support}\` / \`${level.resistance}\``)),
+        ...(notes.length > 0 ? [buildField('Why', notes.join(' · '), false)] : []),
+        ...(ratesRead ? [buildField('Rates read', ratesRead, false)] : []),
+      ],
+    }
+    : null;
+
+  // Story card: drivers in the description, then catalysts and the two scenarios as full-width fields.
+  const impactEmoji = (impact: unknown) => (impact === 'positive' ? '🟢' : impact === 'negative' ? '🔴' : '🟡');
+  const drivers = (Array.isArray(payload.drivers) ? payload.drivers : [])
+    .filter((driver) => driver && typeof driver.driver === 'string' && driver.driver.trim())
+    .slice(0, 3)
+    .map((driver) => `${impactEmoji(driver.impact)} ${driver.driver.trim()}`);
+  const catalysts = (Array.isArray(payload.scheduledCatalysts) ? payload.scheduledCatalysts : [])
+    .filter((catalyst) => catalyst && typeof catalyst.event === 'string' && catalyst.event.trim())
+    .slice(0, 3)
+    .map((catalyst) => {
+      const when = catalyst.date && /^\d{4}-\d{2}-\d{2}$/.test(catalyst.date) ? shortDate(catalyst.date) : 'date TBD';
+      const impact = typeof catalyst.expectedImpact === 'string' && catalyst.expectedImpact.trim()
+        ? ` — ${catalyst.expectedImpact.trim()}`
+        : '';
+      return `• ${catalyst.event.trim()} · ${when}${impact}`;
+    });
+  const consensus = optionalText(payload.scenarioAnalysis?.consensus);
+  const disruption = optionalText(payload.scenarioAnalysis?.disruption);
+  const storyFields = [
+    ...(catalysts.length > 0 ? [buildField('This week', catalysts.join('\n'), false)] : []),
+    ...(consensus ? [buildField('✅ Base case', consensus, false)] : []),
+    ...(disruption ? [buildField('⚠️ What breaks it', disruption, false)] : []),
   ];
-
-  if (typeof payload.riskAssessment === 'string' && payload.riskAssessment.trim()) {
-    fields.push(buildField('Risk Assessment', payload.riskAssessment, false));
-  }
-
-  fields.push(buildField(
-    'Top Drivers',
-    Array.isArray(payload.drivers) && payload.drivers.length > 0
-      ? payload.drivers.slice(0, 4).map((driver) => {
-        if (!driver || typeof driver !== 'object') {
-          return null;
-        }
-
-        const entry = driver as MacroSummaryReport['drivers'][number];
-        return `${impactEmoji(entry.impact)} ${entry.driver}`;
-      }).filter((value): value is string => Boolean(value)).join('\n')
-      : UNKNOWN_VALUE,
-    false,
-  ));
-
-  if (Array.isArray(payload.keyLevels) && payload.keyLevels.length > 0) {
-    fields.push(buildField(
-      'Key Levels',
-      payload.keyLevels.map((level) => `**${level.ticker}**: ${level.support} / ${level.resistance} - ${level.note}`).join('\n'),
-      false,
-    ));
-  }
-
-  if (Array.isArray(payload.fredData) && payload.fredData.length > 0) {
-    const ratesLine = payload.fredData.map((point) => `${point.label}: ${formatFredValue(point)}`).join(' | ');
-    const ratesText = typeof payload.ratesOutlook === 'string' && payload.ratesOutlook.trim()
-      ? `${ratesLine}\n${payload.ratesOutlook}`
-      : ratesLine;
-    fields.push(buildField('Rates', ratesText, false));
-  }
-
-  const sentimentData = readJsonValue(payload, 'sentimentData');
-  if (sentimentData && typeof sentimentData === 'object' && !Array.isArray(sentimentData)) {
-    const sentiment = sentimentData as {
-      score?: unknown;
-      classification?: unknown;
-      source?: unknown;
-    };
-    const score = typeof sentiment.score === 'number'
-      ? sentiment.score
-      : Number(sentiment.score);
-    const classification = typeof sentiment.classification === 'string'
-      ? sentiment.classification.trim()
-      : '';
-    const source = typeof sentiment.source === 'string'
-      ? sentiment.source.trim()
-      : '';
-
-    if (
-      Number.isFinite(score)
-      && score >= 0
-      && score <= 100
-      && classification
-      && source
-    ) {
-      fields.push(buildField('Fear & Greed', `${score}/100 - ${classification} (${source})`, false));
+  const storyCard: DiscordEmbed | null = drivers.length > 0 || storyFields.length > 0
+    ? {
+      ...(drivers.length > 0 ? { description: ['**Drivers**', ...drivers].join('\n') } : {}),
+      color: MACRO_STORY_COLOR,
+      ...(storyFields.length > 0 ? { fields: storyFields } : {}),
     }
-  }
+    : null;
 
-  if (Array.isArray(payload.scheduledCatalysts) && payload.scheduledCatalysts.length > 0) {
-    fields.push(buildField(
-      'Catalysts',
-      payload.scheduledCatalysts.map((catalyst) => {
-        const when = catalyst.date ? ` (${catalyst.date})` : '';
-        return `• ${catalyst.event}${when} - ${catalyst.expectedImpact}`;
-      }).join('\n'),
-      false,
-    ));
-  }
-
-  if (Array.isArray(payload.sectorRotation) && payload.sectorRotation.length > 0) {
-    fields.push(buildField('Sector Rotation', formatBulletList(payload.sectorRotation), false));
-  }
-
-  if (payload.scenarioAnalysis && typeof payload.scenarioAnalysis === 'object') {
-    const consensus = typeof payload.scenarioAnalysis.consensus === 'string'
-      ? payload.scenarioAnalysis.consensus.trim()
-      : '';
-    const disruption = typeof payload.scenarioAnalysis.disruption === 'string'
-      ? payload.scenarioAnalysis.disruption.trim()
-      : '';
-    const sections = [
-      consensus ? `✅ **Consensus:** ${consensus}` : null,
-      disruption ? `⚠️ **Disruption:** ${disruption}` : null,
-    ].filter(Boolean);
-
-    if (sections.length > 0) {
-      fields.push(buildField('Scenarios', sections.join('\n'), false));
-    }
-  }
-
-  if (Array.isArray(payload.deskImplications) && payload.deskImplications.length > 0) {
-    fields.push(buildField('Desk Implications', formatBulletList(payload.deskImplications), false));
-  }
-
-  if (Array.isArray(payload.tldr) && payload.tldr.length > 0) {
-    fields.push(buildField('TLDR', formatBulletList(payload.tldr), false));
-  }
-
-  const deltas = readJsonValue(payload, 'deltas');
-  if (Array.isArray(deltas) && deltas.length > 0) {
-    fields.push(buildField('Deltas', formatBulletList(deltas), false));
-  }
-
-  return buildBaseEmbed(
-    report,
-    fields,
-    optionalText(payload.summary, report.summary),
-  );
+  const cards = [header, levelsCard, storyCard].filter((card): card is DiscordEmbed => card !== null);
+  // Footer and timestamp go on the last card only, like the bottom of a single post.
+  const base = buildBaseEmbed(report, []);
+  cards[cards.length - 1] = { ...cards[cards.length - 1], footer: base.footer, timestamp: base.timestamp };
+  return cards;
 }
 
 export function buildMacroIntradayEmbed(report: AgentReport): DiscordEmbed {

@@ -943,7 +943,7 @@ describe('agent blueprints', () => {
       userMessage: expect.stringContaining('Score: 23/100 - Extreme Fear'),
     }), 'background', { timeoutMs: 240_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
-      userMessage: expect.stringContaining('Prior day context (use to write delta sentences in the "deltas" field):'),
+      userMessage: expect.stringContaining('Prior day context (use for the change-since-prior-briefing sentence in summary):'),
     }), 'background', { timeoutMs: 240_000 });
     expect(callLlmMock).toHaveBeenCalledWith(expect.objectContaining({
       userMessage: expect.stringContaining('Prior trading date: 2026-04-07'),
@@ -988,7 +988,7 @@ describe('agent blueprints', () => {
         },
         deskImplications: ['Stay with leaders.'],
         confidence: 'medium',
-        tldr: ['Bias is bullish.', 'Watch the open.', 'Breadth is improving.', 'Rates are steady.', 'Stay selective.'],
+        tldr: ['Bias is bullish.'],
       }),
       modelUsed: 'background-model',
       inputTokens: 10,
@@ -1014,8 +1014,46 @@ describe('agent blueprints', () => {
     expect(consoleWarnSpy).toHaveBeenCalledWith('[macro-summary] quality issues:', expect.arrayContaining([
       expect.stringContaining('SPY support 500.00 outside 5-day range'),
       expect.stringContaining('SPY resistance 540.00 outside 5-day range'),
-      expect.stringContaining('tldr has 5 bullets (expected 2-4)'),
     ]));
+  });
+
+  it('accepts the short briefing shape and strips inline source tags from the prose', async () => {
+    callLlmMock.mockResolvedValue({
+      content: JSON.stringify({
+        marketBias: 'neutral',
+        summary: 'Rotation tape: SPY +0.10% [snapshot:SPY][snapshot:DIA] with value leading.',
+        drivers: [{
+          driver: 'Waller floats a 50bp December hike [rss:feeds.content.dowjones.io]',
+          impact: 'negative',
+          sourceRefs: ['headline:example.com'],
+        }],
+        keyLevels: [{ ticker: 'SPY', support: '518.00', resistance: '524.00', note: 'Prior range.' }],
+        ratesOutlook: 'Front end reprices higher [data:fred].',
+        scheduledCatalysts: [],
+        scenarioAnalysis: { consensus: 'SPY holds 518.', disruption: 'SPY loses 518.' },
+        confidence: 'medium',
+      }),
+      modelUsed: 'background-model',
+      inputTokens: 10,
+      outputTokens: 5,
+      durationMs: 123,
+    });
+    const job = createJob({ agentId: 'orchestrator', jobType: 'macro-summary', input: {} });
+    const generateStep = resolveBlueprint(job).steps.find((step) => step.name === 'generate-briefing');
+
+    const result = await generateStep!.run(createStepInput(job, AGENT_CONFIGS.orchestrator, {
+      previousOutput: createMacroPreviousOutput(null),
+    }));
+
+    expect(result.status).toBe('completed');
+    expect(result.data).toEqual(expect.objectContaining({
+      summary: 'Rotation tape: SPY +0.10% with value leading.',
+      ratesOutlook: 'Front end reprices higher.',
+      drivers: [expect.objectContaining({
+        driver: 'Waller floats a 50bp December hike',
+        sourceRefs: ['headline:example.com'],
+      })],
+    }));
   });
 
   it('reuses a legacy macro briefing draft when resuming across the inserted sentiment step', async () => {

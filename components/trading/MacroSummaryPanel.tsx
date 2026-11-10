@@ -64,7 +64,7 @@ interface MacroSummaryReport {
   tradingDate: string;
   marketBias: Bias;
   summary: string;
-  riskAssessment: string;
+  riskAssessment?: string;
   drivers: MacroDriver[];
   crossAssetSnapshot: CrossAssetEntry[];
   keyLevels: KeyLevel[];
@@ -72,12 +72,12 @@ interface MacroSummaryReport {
   fredData: FredDataPoint[];
   sentimentData?: SentimentDataPoint;
   scheduledCatalysts: ScheduledCatalyst[];
-  sectorRotation: string[];
+  sectorRotation?: string[];
   scenarioAnalysis: ScenarioAnalysis;
-  deskImplications: string[];
+  deskImplications?: string[];
   sourceIndex: MacroSource[];
   confidence: Confidence;
-  tldr: string[];
+  tldr?: string[];
   deltas?: string[];
 }
 
@@ -93,6 +93,17 @@ interface ApiResponse {
 // Module-level cache so flipping tabs doesn't refetch the same report.
 let cachedReport: { report: MacroSummaryReport; generatedAt: string | null } | null = null;
 
+// The 9 ETFs shown in the price grid (3 rows of 3), same set as the Discord header card.
+const TAPE_TICKERS = ['SPY', 'QQQ', 'IWM', 'DIA', 'SMH', 'XLF', 'TLT', 'GLD', 'UVXY'];
+const RATE_LABELS: Record<string, string> = { DGS10: '10Y', DGS2: '2Y', T10Y2Y: 'Curve' };
+
+// Bias pill tint. Data-meaning colors: emerald = bullish, rose = bearish, amber = neutral.
+const BIAS_PILL: Record<Bias, string> = {
+  bullish: 'bg-emerald-500/10 text-emerald-400',
+  bearish: 'bg-rose-500/10 text-rose-400',
+  neutral: 'bg-amber-500/10 text-amber-300',
+};
+
 function impactToRating(impact: Impact): Rating {
   if (impact === 'positive') return 'green';
   if (impact === 'negative') return 'red';
@@ -105,18 +116,23 @@ function dotClass(rating: Rating): string {
   return 'bg-emerald-500';
 }
 
+// mt-1.5 lines the dot up with the first line of text when a driver wraps to two lines.
 function RatingDot({ rating }: { rating: Rating }) {
   return (
     <span
       role="img"
       aria-label={`${rating} rating`}
-      className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${dotClass(rating)}`}
+      className={`mt-1.5 inline-block h-2.5 w-2.5 shrink-0 rounded-full ${dotClass(rating)}`}
     />
   );
 }
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return <h5 className="mb-1 text-sm font-semibold text-foreground">{children}</h5>;
+}
+
+function Pill({ className, children }: { className: string; children: React.ReactNode }) {
+  return <span className={`rounded-sm px-2 py-0.5 text-xs font-semibold capitalize ${className}`}>{children}</span>;
 }
 
 function formatFredValue(point: FredDataPoint): string {
@@ -128,9 +144,20 @@ function formatFredValue(point: FredDataPoint): string {
   return `${point.value.toFixed(2)}%`;
 }
 
-function formatChange(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return 'n/a';
-  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+// Uses a real minus sign (−) so negative numbers line up with positive ones in mono font.
+function formatChange(value: number): string {
+  return `${value >= 0 ? '+' : '\u2212'}${Math.abs(value).toFixed(2)}%`;
+}
+
+// 'YYYY-MM-DD' -> 'Tue, Nov 10'. Noon UTC keeps the date from shifting a day in any timezone.
+function shortDate(date: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+  return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 export default function MacroSummaryPanel() {
@@ -198,205 +225,165 @@ export default function MacroSummaryPanel() {
     );
   }
 
+  const tape = TAPE_TICKERS.flatMap((ticker) => {
+    const entry = report.crossAssetSnapshot.find((item) => item.ticker === ticker);
+    return entry && entry.price !== null && entry.changePercent !== null
+      ? [{ ticker, price: entry.price, changePercent: entry.changePercent }]
+      : [];
+  });
+  const rates = Object.keys(RATE_LABELS).flatMap((seriesId) => {
+    const point = report.fredData.find((item) => item.seriesId === seriesId);
+    return point && point.value !== null ? [{ label: RATE_LABELS[seriesId], value: formatFredValue(point) }] : [];
+  });
+  const levelNotes = report.keyLevels
+    .filter((level) => level.note?.trim())
+    .map((level) => `${level.ticker}: ${level.note.trim()}`);
+  const sentiment = report.sentimentData;
+  const generatedTime = generatedAt
+    ? new Date(generatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : null;
+
   return (
-    <div className="space-y-4 rounded border border-border bg-accent p-4">
+    // @container lets the two-column split key off the panel's own width (not the screen's),
+    // so it stays one column inside the narrower expand dialog.
+    <div className="@container space-y-4 rounded border border-border bg-accent p-4">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <span className="flex flex-wrap items-center gap-2">
-          <span className="text-xs uppercase tracking-wide text-muted-foreground">Bias</span>
-          <span className="rounded bg-card/40 px-2 py-0.5 text-xs font-medium uppercase text-foreground">
-            {report.marketBias}
-          </span>
-          <span className="ml-2 text-xs uppercase tracking-wide text-muted-foreground">Confidence</span>
-          <span className="rounded bg-card/40 px-2 py-0.5 text-xs font-medium uppercase text-foreground">
-            {report.confidence}
-          </span>
-        </span>
-        <span className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>{report.tradingDate}</span>
-          {generatedAt ? <span className="hidden sm:inline">· {new Date(generatedAt).toLocaleString()}</span> : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Bias</span>
+          <Pill className={BIAS_PILL[report.marketBias] ?? BIAS_PILL.neutral}>{report.marketBias}</Pill>
+          <span className="text-xs text-muted-foreground">Confidence</span>
+          <Pill className="bg-card font-medium text-foreground">{report.confidence}</Pill>
+          {sentiment ? (
+            <>
+              <span className="text-xs text-muted-foreground">Fear &amp; Greed</span>
+              <Pill className="bg-card font-mono font-medium tabular-nums text-foreground">
+                {sentiment.score} · {sentiment.classification}
+              </Pill>
+            </>
+          ) : null}
+        </div>
+        <span className="font-mono text-xs tabular-nums text-muted-foreground">
+          {shortDate(report.tradingDate)}
+          {generatedTime ? ` · ${generatedTime}` : ''}
         </span>
       </div>
 
-      {report.tldr.length > 0 ? (
-        <div>
-          <SectionHeading>TLDR</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
-            {report.tldr.map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      {/* 5-column grid at 768px+ panel width: the story takes 3, the numbers take 2. */}
+      <div className="grid grid-cols-1 gap-5 @3xl:grid-cols-5">
+        <div className="min-w-0 space-y-4 @3xl:col-span-3">
+          {report.summary ? <p className="text-sm text-foreground">{report.summary}</p> : null}
 
-      {report.summary ? (
-        <div>
-          <SectionHeading>Summary</SectionHeading>
-          <p className="text-sm text-foreground">{report.summary}</p>
-        </div>
-      ) : null}
-
-      {report.riskAssessment ? (
-        <div>
-          <SectionHeading>Risk Assessment</SectionHeading>
-          <p className="text-sm text-foreground">{report.riskAssessment}</p>
-        </div>
-      ) : null}
-
-      {report.drivers.length > 0 ? (
-        <div>
-          <SectionHeading>Top Drivers</SectionHeading>
-          <ul className="space-y-1">
-            {report.drivers.map((d, i) => (
-              <li key={i} className="flex items-center gap-2">
-                <RatingDot rating={impactToRating(d.impact)} />
-                <span className="text-sm text-foreground">{d.driver}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {report.keyLevels.length > 0 ? (
-        <div>
-          <SectionHeading>Key Levels</SectionHeading>
-          <ul className="space-y-1 text-sm text-foreground">
-            {report.keyLevels.map((level, i) => (
-              <li key={i}>
-                <span className="font-semibold">{level.ticker}</span>
-                <span> · </span>
-                <span>{level.support} / {level.resistance}</span>
-                {level.note ? <span> — {level.note}</span> : null}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {(report.fredData.length > 0 || report.ratesOutlook) ? (
-        <div>
-          <SectionHeading>Rates</SectionHeading>
-          {report.fredData.length > 0 ? (
-            <p className="text-sm text-foreground">
-              {report.fredData.map((p) => `${p.label}: ${formatFredValue(p)}`).join(' | ')}
-            </p>
+          {report.drivers.length > 0 ? (
+            <div>
+              <SectionHeading>Drivers</SectionHeading>
+              <ul className="space-y-1.5">
+                {report.drivers.slice(0, 3).map((d, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <RatingDot rating={impactToRating(d.impact)} />
+                    <span className="text-sm text-foreground">{d.driver}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
-          {report.ratesOutlook ? (
-            <p className="mt-1 text-sm text-foreground">{report.ratesOutlook}</p>
+
+          {report.scheduledCatalysts.length > 0 ? (
+            <div>
+              <SectionHeading>This week</SectionHeading>
+              <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
+                {report.scheduledCatalysts.slice(0, 3).map((c, i) => (
+                  <li key={i}>
+                    {c.event} · {c.date ? shortDate(c.date) : 'date TBD'}
+                    {c.expectedImpact ? ` — ${c.expectedImpact}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {(report.scenarioAnalysis?.consensus || report.scenarioAnalysis?.disruption) ? (
+            <div>
+              <SectionHeading>Scenarios</SectionHeading>
+              <div className="space-y-2 text-sm text-foreground">
+                {report.scenarioAnalysis.consensus ? (
+                  <p>
+                    <span className="font-semibold text-emerald-400">Base case </span>
+                    {report.scenarioAnalysis.consensus}
+                  </p>
+                ) : null}
+                {report.scenarioAnalysis.disruption ? (
+                  <p>
+                    <span className="font-semibold text-rose-400">What breaks it </span>
+                    {report.scenarioAnalysis.disruption}
+                  </p>
+                ) : null}
+              </div>
+            </div>
           ) : null}
         </div>
-      ) : null}
 
-      {report.sentimentData ? (
-        <div>
-          <SectionHeading>Fear &amp; Greed</SectionHeading>
-          <p className="text-sm text-foreground">
-            {report.sentimentData.score}/100 — {report.sentimentData.classification}
-            <span> ({report.sentimentData.source})</span>
-          </p>
-        </div>
-      ) : null}
-
-      {report.scheduledCatalysts.length > 0 ? (
-        <div>
-          <SectionHeading>Scheduled Catalysts</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
-            {report.scheduledCatalysts.map((c, i) => (
-              <li key={i}>
-                {c.date ? <span>{c.date} · </span> : null}
-                <span>{c.event}</span>
-                {c.expectedImpact ? <span> — {c.expectedImpact}</span> : null}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {report.sectorRotation.length > 0 ? (
-        <div>
-          <SectionHeading>Sector Rotation</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
-            {report.sectorRotation.map((s, i) => (
-              <li key={i}>{s}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {(report.scenarioAnalysis?.consensus || report.scenarioAnalysis?.disruption) ? (
-        <div>
-          <SectionHeading>Scenario Analysis</SectionHeading>
-          {report.scenarioAnalysis.consensus ? (
-            <p className="text-sm text-foreground">
-              <span className="font-semibold">Consensus: </span>
-              {report.scenarioAnalysis.consensus}
-            </p>
-          ) : null}
-          {report.scenarioAnalysis.disruption ? (
-            <p className="mt-1 text-sm text-foreground">
-              <span className="font-semibold">Disruption: </span>
-              {report.scenarioAnalysis.disruption}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {report.deskImplications.length > 0 ? (
-        <div>
-          <SectionHeading>Desk Implications</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
-            {report.deskImplications.map((d, i) => (
-              <li key={i}>{d}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {report.crossAssetSnapshot.length > 0 ? (
-        <div>
-          <SectionHeading>Cross-Asset Snapshot</SectionHeading>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-            {report.crossAssetSnapshot.map((entry) => (
-              <div
-                key={entry.ticker}
-                className="rounded border border-border bg-accent px-2 py-1 text-xs text-foreground"
-              >
-                <div className="font-semibold">{entry.ticker}</div>
-                <div className="flex items-center justify-between gap-2">
-                  <span>{entry.price !== null ? entry.price.toFixed(2) : 'n/a'}</span>
-                  <span
-                    className={
-                      entry.changePercent === null
-                        ? 'text-muted-foreground'
-                        : entry.changePercent >= 0
-                          ? 'text-emerald-400'
-                          : 'text-rose-400'
-                    }
+        <div className="min-w-0 space-y-4 @3xl:col-span-2">
+          {tape.length > 0 ? (
+            <div className="grid grid-cols-3 gap-1.5">
+              {tape.map((entry) => (
+                <div key={entry.ticker} className="min-w-0 rounded bg-card px-2 py-1.5 text-xs">
+                  <div className="font-semibold text-foreground">{entry.ticker}</div>
+                  <div className="font-mono tabular-nums text-foreground">{entry.price.toFixed(2)}</div>
+                  <div
+                    className={`font-mono tabular-nums ${entry.changePercent >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}
                   >
                     {formatChange(entry.changePercent)}
-                  </span>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
+              ))}
+            </div>
+          ) : null}
 
-      {report.deltas && report.deltas.length > 0 ? (
-        <div>
-          <SectionHeading>Deltas</SectionHeading>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
-            {report.deltas.map((d, i) => (
-              <li key={i}>{d}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+          {report.keyLevels.length > 0 ? (
+            <div>
+              <SectionHeading>Key levels</SectionHeading>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs tracking-wider text-foreground">
+                    <th className="pb-1 text-left font-normal">Ticker</th>
+                    <th className="pb-1 text-right font-normal">Support</th>
+                    <th className="pb-1 text-right font-normal">Resistance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.keyLevels.map((level) => (
+                    <tr key={level.ticker} className="border-t border-border">
+                      <td className="py-1 font-semibold text-foreground">{level.ticker}</td>
+                      <td className="py-1 text-right font-mono tabular-nums text-foreground">{level.support}</td>
+                      <td className="py-1 text-right font-mono tabular-nums text-foreground">{level.resistance}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {levelNotes.length > 0 ? (
+                <p className="mt-1.5 text-xs text-muted-foreground">{levelNotes.join(' · ')}</p>
+              ) : null}
+            </div>
+          ) : null}
 
-      {report.sourceIndex.length > 0 ? (
-        <p className="text-xs text-muted-foreground">
-          Sources: {report.sourceIndex.length}
-        </p>
-      ) : null}
+          {(rates.length > 0 || report.ratesOutlook) ? (
+            <div>
+              <SectionHeading>Rates</SectionHeading>
+              {rates.length > 0 ? (
+                <div className="flex flex-wrap gap-x-3.5 gap-y-1 text-sm">
+                  {rates.map((rate) => (
+                    <span key={rate.label}>
+                      <span className="text-muted-foreground">{rate.label}</span>{' '}
+                      <span className="font-mono tabular-nums text-foreground">{rate.value}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {report.ratesOutlook ? <p className="mt-1 text-sm text-foreground">{report.ratesOutlook}</p> : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

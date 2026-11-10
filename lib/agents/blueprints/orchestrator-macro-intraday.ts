@@ -36,7 +36,8 @@ const morningReportSchema = z.object({
     resistance: z.string(),
     note: z.string(),
   })),
-  tldr: z.array(z.string()),
+  // Optional since the Nov 2026 shorter briefing stopped writing tldr.
+  tldr: z.array(z.string()).optional(),
 }).passthrough();
 
 const sessionSnapshotSchema = z.object({

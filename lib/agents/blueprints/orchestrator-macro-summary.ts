@@ -69,7 +69,10 @@ const scenarioSchema = z.object({
 const macroBriefingSchema = z.object({
   marketBias: z.enum(['bullish', 'bearish', 'neutral']),
   summary: z.string(),
-  riskAssessment: z.string(),
+  // Nov 2026: the briefing was cut down to fit one short Discord card, so the prompt no longer asks for
+  // riskAssessment, sectorRotation, deskImplications, tldr or deltas. They stay optional so older saved
+  // reports and resumed runs still parse.
+  riskAssessment: z.string().optional(),
   drivers: z.array(z.object({
     driver: z.string(),
     impact: z.enum(['positive', 'negative', 'mixed']),
@@ -82,11 +85,11 @@ const macroBriefingSchema = z.object({
     date: z.string().nullable(),
     expectedImpact: z.string(),
   })),
-  sectorRotation: z.array(z.string()),
+  sectorRotation: z.array(z.string()).optional(),
   scenarioAnalysis: scenarioSchema,
-  deskImplications: z.array(z.string()),
+  deskImplications: z.array(z.string()).optional(),
   confidence: z.enum(['high', 'medium', 'low']),
-  tldr: z.array(z.string()),
+  tldr: z.array(z.string()).optional(),
   deltas: z.array(z.string()).optional(),
 });
 
@@ -221,6 +224,13 @@ function parseJson(text: string): unknown {
   throw new Error('LLM did not return valid JSON');
 }
 
+// The global agent policy says "cite every claim", so the model sometimes pastes source ids into the prose
+// as [snapshot:SPY][rss:feeds.nbcnews.com]. The prompt forbids that; this strips any that slip through.
+// sourceRefs values ("snapshot:SPY") have no brackets, so they are left alone.
+function stripInlineSourceTags(text: string): string {
+  return text.replace(/\s*\[(?:snapshot|rss|headline|data):[^\]"]*\]/g, '');
+}
+
 function getTradingDate(jobInput: unknown): string {
   const parsed = macroJobInputSchema.safeParse(jobInput);
   return parsed.success && parsed.data.tradingDate
@@ -349,15 +359,14 @@ function buildBriefingPrompt(
   const sections: string[] = [
     `Trading date: ${tradingDate}`,
     '',
-    'You are writing a pre-market macro analysis for active day traders. This is read before the bell - be specific, actionable, and data-driven. Do NOT pad with generic filler; every sentence must contain specific data or analysis.',
+    'You are writing a short pre-market macro briefing for active day traders. It is read on a phone before the bell, so keep it tight: every sentence must carry a specific number, level, or catalyst. No filler, and do not restate the same move in more than one field.',
     '',
     'Return strict JSON with this shape and no markdown:',
     JSON.stringify({
       marketBias: 'bullish | bearish | neutral',
-      summary: '2-3 sentence executive summary of the macro setup',
-      riskAssessment: '2-4 sentences on the risk environment - what is driving risk-on or risk-off, cross-asset signals, where conviction is highest or lowest',
+      summary: '2 sentences, under 60 words total. Sentence 1: the bias and the main reason. Sentence 2: the 1-2 biggest changes since the prior briefing.',
       drivers: [{
-        driver: 'market-moving headline or driver',
+        driver: 'market-moving headline and its market effect, under 25 words',
         impact: 'positive | negative | mixed',
         sourceRefs: ['headline:marketwatch.com'],
       }],
@@ -365,34 +374,32 @@ function buildBriefingPrompt(
         ticker: 'SPY',
         support: 'price level (e.g. 520.00)',
         resistance: 'price level (e.g. 535.00)',
-        note: 'why these levels matter - reference recent price action from daily bars',
+        note: 'why these levels matter, under 15 words',
       }],
-      ratesOutlook: '1-2 sentences on rates environment and equity implications - reference actual FRED values when available',
+      ratesOutlook: '1 sentence, under 25 words, on rates and what it means for equities',
       scheduledCatalysts: [{
         event: 'scheduled catalyst',
         date: 'YYYY-MM-DD or null',
-        expectedImpact: 'brief description',
+        expectedImpact: 'under 15 words',
       }],
-      sectorRotation: ['sector rotation note with specific tickers or ETFs'],
       scenarioAnalysis: {
-        consensus: 'what plays out if the base case holds - be specific with levels and sectors',
-        disruption: 'what breaks the thesis and consequences - be specific',
+        consensus: '1 sentence, under 30 words: the base case with the levels that define it',
+        disruption: '1 sentence, under 30 words: what breaks the base case and where price goes',
       },
-      deskImplications: ['market-side observation, e.g. "Possible buyers market for tech (XLK leading on rate-cut repricing)"'],
       confidence: 'high | medium | low',
-      tldr: ['2-4 bullet points - start with overall bias, end with what to watch today'],
-      deltas: ['delta sentence e.g. "10Y at 4.35% (+3bp from yesterday)" — omit if no prior context'],
     }, null, 2),
     '',
     'Rules:',
-    '- Every driver must include at least one sourceRefs entry matching an id from sourceIndex.',
-    '- keyLevels: focus on SPY, QQQ, IWM. Use the daily OHLC bars to identify meaningful support/resistance (recent swing highs/lows, prior day close, round numbers). Include specific price levels.',
-    '- scenarioAnalysis: consensus is the base case, disruption is what breaks it. Both must reference specific data.',
-    '- deltas: 1–4 sentences. Each must reference a specific number and compare to prior day (e.g. "10Y at 4.35%, up 3bp from 4.32% yesterday"). Omit if no prior context.',
-    '- sentimentData (when present): reference the score and classification in riskAssessment and deskImplications. High fear (score < 30) is often contrarian bullish for equities; extreme greed (score > 75) warrants caution. Note: this index tracks crypto sentiment correlates, not pure equities.',
-    '- deskImplications: Frame as market-side observations, NOT trade recommendations. Use phrasing like "Possible buyers market for X" or "Possible sellers market for X" where X is a sector, asset, or theme — and back each one with a specific data point or driver. Do NOT say "buy", "sell", "short", "go long", "trim", "add", or any other action verb directed at the reader.',
-    '- Ticker references: Do NOT prefix ETF or index tickers with "the". Write "SPY is holding 520" not "the SPY is holding 520". Same for QQQ, IWM, DIA, XLE, XLF, XLK, GLD, USO, TLT, UVXY, UUP, SMH, IEF, HYG, EEM, BITO, and any other ticker symbol.',
-    '- tldr: what someone reads if they read nothing else. Every bullet should be specific and actionable.',
+    '- Source citations go ONLY in drivers[].sourceRefs (every driver needs at least one id from sourceIndex). Never write source ids such as snapshot:SPY, rss:..., headline:... or data:..., or any [bracketed] reference, inside summary, driver, note, ratesOutlook, catalyst, or scenario text. This replaces the general "cite every claim" rule for this report.',
+    '- summary: when prior day context is present, sentence 2 compares to it with numbers (e.g. "Bias flips from bullish to neutral; 10Y 4.35%, up 3bp"). Without prior context, use sentence 2 for the one thing to watch today.',
+    '- drivers: at most 3, most market-moving first. One headline per driver, no stacking two stories into one.',
+    '- keyLevels: exactly SPY, QQQ, IWM. Pick support/resistance from the daily OHLC bars (recent swing highs/lows, prior close, round numbers).',
+    '- scheduledCatalysts: at most 3, only events today or this week with a known or clearly reported date. Skip vague themes (e.g. "policy implementation") that are not scheduled events.',
+    '- scenarioAnalysis: consensus is the base case, disruption is what breaks it. Both must name specific levels.',
+    '- Dates in prose: write "yesterday", a weekday ("Fri"), or "Nov 6". Never write YYYY-MM-DD outside the catalyst date field.',
+    '- sentimentData (when present) is already shown on the card; do not restate it. It is crypto-derived, not an equities reading.',
+    '- Describe the market, do not instruct the reader. No "buy", "sell", "short", "go long", "trim", "add", or similar action verbs.',
+    '- Ticker references: do NOT prefix ETF or index tickers with "the". Write "SPY is holding 520" not "the SPY is holding 520".',
     '',
     `Headlines:\n${wrapUntrusted('news', JSON.stringify(input.headlines, null, 2))}`,
     '',
@@ -422,11 +429,11 @@ function buildBriefingPrompt(
 
     sections.push(
       '',
-      'Prior day context (use to write delta sentences in the "deltas" field):',
+      'Prior day context (use for the change-since-prior-briefing sentence in summary):',
       wrapUntrusted('prior-day-context', lines.join('\n')),
     );
   } else {
-    sections.push('', 'No prior day context available — omit the deltas field or return an empty array.');
+    sections.push('', 'No prior day context available — use summary sentence 2 for what to watch today.');
   }
 
   if (input.sentimentData !== null && input.sentimentData !== undefined) {
@@ -483,8 +490,8 @@ function scoreReportQuality(
     }
   }
 
-  if (briefing.tldr.length < 2 || briefing.tldr.length > 4) {
-    issues.push(`tldr has ${briefing.tldr.length} bullets (expected 2-4)`);
+  if (briefing.drivers.length > 3) {
+    issues.push(`drivers has ${briefing.drivers.length} entries (expected at most 3)`);
   }
 
   if (issues.length > 0) {
@@ -739,7 +746,7 @@ export const orchestratorMacroSummaryBlueprint: Blueprint = {
           maxTokens: 24_000,
         }, 'background', { timeoutMs: 240_000 });
 
-        const parsedBriefing = macroBriefingSchema.parse(parseJson(llmResponse.content));
+        const parsedBriefing = macroBriefingSchema.parse(parseJson(stripInlineSourceTags(llmResponse.content)));
         const briefing = macroBriefingDraftSchema.parse({
           crossAssetSnapshot: input.crossAssetSnapshot,
           sourceIndex: input.sourceIndex,

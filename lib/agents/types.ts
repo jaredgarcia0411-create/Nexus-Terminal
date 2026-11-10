@@ -127,7 +127,7 @@ export interface MacroSummaryReport {
   tradingDate: string;
   marketBias: 'bullish' | 'bearish' | 'neutral';
   summary: string;
-  riskAssessment: string;
+  riskAssessment?: string;
   drivers: MacroDriver[];
   crossAssetSnapshot: CrossAssetEntry[];
   keyLevels: KeyLevel[];
@@ -135,12 +135,12 @@ export interface MacroSummaryReport {
   fredData: FredDataPoint[];
   sentimentData?: SentimentDataPoint;
   scheduledCatalysts: ScheduledCatalyst[];
-  sectorRotation: string[];
+  sectorRotation?: string[];
   scenarioAnalysis: ScenarioAnalysis;
-  deskImplications: string[];
+  deskImplications?: string[];
   sourceIndex: MacroSource[];
   confidence: Confidence;
-  tldr: string[];
+  tldr?: string[];
   deltas?: string[];
 }
 
