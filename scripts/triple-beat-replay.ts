@@ -35,6 +35,54 @@ import { fetchEarningsNews, fetchExtendedHoursStats, fetchPressReleaseText, find
 import { MIN_ENTRY_RVOL, RVOL_SESSIONS, type TripleBeatMinuteBar, evaluateTripleBeatSetup, gapBucket, measureTripleBeatOutcome, passesReplayPrefilter, timeOfDayRvol } from '@/lib/triple-beat/scan';
 import { epochToNySortKey, getNextTradingSession, getNyRegularCloseTime, getPreviousTradingSession, nyDateTimeToEpoch } from '@/lib/time-utils';
 
+// Replay-only (2026-11-12): buy the first break of the opening range high instead of the premarket high. The range is
+// the first `rangeMinutes` minutes from 09:30; the entry is a buy stop 1 cent above its high, filled at the open of a
+// minute that gaps past it. The stop is 1 cent under the regular-session low of day before the entry minute (the entry
+// minute's own low may come after the fill). No RVOL rule, no stop-width floor, and the trade is closed by the end of
+// day 0. atrTargetR sells everything at fill + 2 ATR, and twoRTargetR at fill + 2x the risk (entry minus stop), or at the
+// stop or the close if that comes first; closeR only exits at the stop or the close. A minute that reaches both the stop
+// and the target counts as stopped, since one minute bar can't order its own high and low. Null when the range high never breaks.
+interface OrbMinute { time: number; open: number; high: number; low: number }
+function measureOpeningRangeBreak(minutes: OrbMinute[], openMs: number, rangeMinutes: number, atr14: number, day0Close: number) {
+  const rangeEnd = openMs + rangeMinutes * 60_000;
+  const range = minutes.filter((bar) => bar.time < rangeEnd);
+  if (range.length === 0) return null;
+  const trigger = Math.max(...range.map((bar) => bar.high)) + 0.01;
+  const entryIndex = minutes.findIndex((bar) => bar.time >= rangeEnd && bar.high >= trigger);
+  if (entryIndex === -1) return null;
+  const fill = Math.max(minutes[entryIndex].open, trigger);
+  const stop = Math.min(...minutes.slice(0, entryIndex).map((bar) => bar.low)) - 0.01;
+  const risk = fill - stop;
+  if (risk <= 0) return null;
+  const atrTarget = fill + 2 * atr14;
+  const twoRTarget = fill + 2 * risk;
+  const toR = (price: number) => (price - fill) / risk;
+  let atrTargetR: number | null = null;
+  let twoRTargetR: number | null = null;
+  let closeR: number | null = null;
+  for (const [offset, bar] of minutes.slice(entryIndex).entries()) {
+    if (bar.low <= stop) {
+      // The entry minute fills the stop at the stop, since its open came before the entry.
+      const stopR = toR(offset === 0 ? stop : Math.min(stop, bar.open));
+      if (atrTargetR === null) atrTargetR = stopR;
+      if (twoRTargetR === null) twoRTargetR = stopR;
+      closeR = stopR;
+      break;
+    }
+    if (atrTargetR === null && bar.high >= atrTarget) atrTargetR = toR(atrTarget);
+    if (twoRTargetR === null && bar.high >= twoRTarget) twoRTargetR = 2;
+  }
+  return {
+    minutesAfterOpen: (minutes[entryIndex].time - openMs) / 60_000,
+    fill,
+    stop,
+    riskAtr: risk / atr14,
+    atrTargetR: atrTargetR ?? toR(day0Close),
+    twoRTargetR: twoRTargetR ?? toR(day0Close),
+    closeR: closeR ?? toR(day0Close),
+  };
+}
+
 function readArg(name: string): string | undefined {
   const index = process.argv.indexOf('--' + name);
   return index === -1 ? undefined : process.argv[index + 1];
@@ -140,7 +188,8 @@ async function main() {
       // give the average volume at each minute of the day.
       const rvolDates = history.slice(-RVOL_SESSIONS).map((bar) => bar.date);
       const rvolStart = nyDateTimeToEpoch(rvolDates[0], '09:30:00')!;
-      const minuteBars = plan && sessions[0].high >= plan.entry
+      // Every planned setup loads minute bars, since the opening range break can trigger without a premarket-high break.
+      const minuteBars = plan
         ? (await fetchMassiveAggregateBars({ ticker, multiplier: '1', timespan: 'minute', from: String(rvolStart), to: String(close) }))
           .filter((bar) => bar.o != null && bar.h != null && bar.l != null)
         : [];
@@ -165,6 +214,7 @@ async function main() {
       const day0Minutes = minuteBars
         .filter((bar) => Number(bar.t) >= open && Number(bar.t) < close)
         .map((bar) => ({
+          time: Number(bar.t),
           open: Number(bar.o) / factor,
           high: Number(bar.h) / factor,
           low: Number(bar.l) / factor,
@@ -187,6 +237,8 @@ async function main() {
       const outcome = plan ? await measureTripleBeatOutcome(history, plan, sessions, day0Minutes, MIN_ENTRY_RVOL, loadMinutes) : null;
       const noRvol = plan ? await measureTripleBeatOutcome(history, plan, sessions, day0Minutes, 0, loadMinutes) : null;
       const firstBreak = plan ? day0Minutes.find((bar) => bar.high >= plan.entry) : undefined;
+      const orb2 = plan ? measureOpeningRangeBreak(day0Minutes, open, 2, metrics.atr14, sessions[0].close) : null;
+      const orb3 = plan ? measureOpeningRangeBreak(day0Minutes, open, 3, metrics.atr14, sessions[0].close) : null;
       return {
         date, ticker, gapBucket: gapBucket(metrics.gapPct), grade: setup.grade, score: setup.score,
         strictTripleBeat: setup.strictTripleBeat,
@@ -204,6 +256,10 @@ async function main() {
         daysHeld: rounded(outcome?.daysHeld), openAtEnd: outcome?.openAtEnd ?? '', mfe20R: rounded(outcome?.mfe20R), mae20R: rounded(outcome?.mae20R),
         rvolAtFirstBreak: rounded(firstBreak?.rvol), noRvolTriggered: noRvol?.triggered ?? '', noRvolFill: rounded(noRvol?.fill),
         noRvolDayR: rounded(noRvol?.dayR), noRvolTotalR: rounded(noRvol?.totalR),
+        orb2Min: orb2?.minutesAfterOpen ?? '', orb2Fill: rounded(orb2?.fill), orb2Stop: rounded(orb2?.stop), orb2RiskAtr: rounded(orb2?.riskAtr),
+        orb2AtrTargetR: rounded(orb2?.atrTargetR), orb2TwoRTargetR: rounded(orb2?.twoRTargetR), orb2CloseR: rounded(orb2?.closeR),
+        orb3Min: orb3?.minutesAfterOpen ?? '', orb3Fill: rounded(orb3?.fill), orb3Stop: rounded(orb3?.stop), orb3RiskAtr: rounded(orb3?.riskAtr),
+        orb3AtrTargetR: rounded(orb3?.atrTargetR), orb3TwoRTargetR: rounded(orb3?.twoRTargetR), orb3CloseR: rounded(orb3?.closeR),
       };
     }));
     for (const [index, result] of results.entries()) {
@@ -242,6 +298,36 @@ async function main() {
     const withoutRvol = (group: typeof posted) => group.map((row) => ({ dayR: row.noRvolDayR, totalR: row.noRvolTotalR }));
     summarize(`  without the RVOL rule`, withoutRvol(posted));
     summarize(`  sized, without the RVOL rule`, withoutRvol(posted.filter((row) => Number(row.riskFraction) > 0)));
+  }
+  // Opening range breaks over the same posted set (top 9/day, no premarket volume floor).
+  const orbPerDay = new Map<string, number>();
+  const orbPosted = rows.filter((row) => {
+    if (row.grade === 'Pass') return false;
+    const count = orbPerDay.get(row.date) ?? 0;
+    orbPerDay.set(row.date, count + 1);
+    return count < 9;
+  });
+  const summarizeR = (label: string, values: Array<number | ''>) => {
+    const trades = values.filter((value): value is number => typeof value === 'number');
+    const total = trades.reduce((sum, value) => sum + value, 0);
+    const wins = trades.filter((value) => value > 0).length;
+    console.log(`${label}: ${trades.length}/${values.length} trades, win rate ${trades.length ? (100 * wins / trades.length).toFixed(1) + '%' : 'n/a'}, average R ${trades.length ? (total / trades.length).toFixed(2) : 'n/a'}, total R ${total.toFixed(1)}`);
+  };
+  const orbVariants = [
+    { label: '2-minute ORB', atrTargetR: 'orb2AtrTargetR', twoRTargetR: 'orb2TwoRTargetR', closeR: 'orb2CloseR' },
+    { label: '3-minute ORB', atrTargetR: 'orb3AtrTargetR', twoRTargetR: 'orb3TwoRTargetR', closeR: 'orb3CloseR' },
+  ] as const;
+  for (const variant of orbVariants) {
+    const groups: Array<[string, typeof orbPosted]> = [
+      ['posted', orbPosted],
+      // Grade only: the card's sizing gate measures the premarket-low stop, which these trades don't use.
+      ['grade A/A+', orbPosted.filter((row) => row.grade === 'A+' || row.grade === 'A')],
+    ];
+    for (const [groupLabel, group] of groups) {
+      summarizeR(`${variant.label}, 2 ATR target or close, ${groupLabel}`, group.map((row) => row[variant.atrTargetR]));
+      summarizeR(`${variant.label}, 2R target or close, ${groupLabel}`, group.map((row) => row[variant.twoRTargetR]));
+      summarizeR(`${variant.label}, stop or close, ${groupLabel}`, group.map((row) => row[variant.closeR]));
+    }
   }
   console.log(`New LLM reads: ${newLlmReads} (cache: ${cachePath})`);
   console.log(`Output: ${out}`);
