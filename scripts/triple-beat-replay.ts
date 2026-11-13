@@ -16,7 +16,10 @@
  * sessions, so the break minute's own volume is not counted), matching the card; the noRvol* columns are the same trade
  * without that rule.
  * LLM earnings reads are cached in
- * ~/triple-beat-llm-cache.json so reruns only call the LLM for new ticker/dates. Tickers missing from
+ * ~/triple-beat-llm-cache.json so reruns only call the LLM for new ticker/dates.
+ * Setups whose cached read has an unknown EPS or revenue beat (8-K filers only) get EODHD consensus estimates:
+ * EODHD's EPS actual vs. estimate replaces the EPS read, and a revenue consensus triggers one re-read cached under "ticker:date:consensus".
+ * Tickers missing from
  * today's SEC CIK map (delisted/renamed) are skipped: that is survivorship bias, since companies that were later
  * delisted (bankruptcies, and acquisitions) or renamed never enter the sample, so treat the totals as slightly flattering.
  */
@@ -27,12 +30,13 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import Papa from 'papaparse';
+import { fetchEodhdEarningsEstimates } from '@/lib/eodhd';
 import { fetchGroupedDailyAggregates, fetchMassiveAggregateBars, fetchSharesOutstanding, fetchSplitHistory, type DailyOhlcBar } from '@/lib/massive-market';
 import { addCalendarDays, dedupeGroupedBars, fetchDailyBars } from '@/lib/parabolic/data';
 import { getRecentFilings, type SecFiling } from '@/lib/sec/submissions';
-import { buildEarningsEvidence, classifyEarnings, UNKNOWN_EARNINGS_READ, type EarningsRead } from '@/lib/triple-beat/classify';
+import { applyConsensusEps, buildEarningsEvidence, classifyEarnings, UNKNOWN_EARNINGS_READ, type EarningsRead } from '@/lib/triple-beat/classify';
 import { fetchEarningsNews, fetchExtendedHoursStats, fetchPressReleaseText, findEarningsFiling, isEarningsHeadline } from '@/lib/triple-beat/data';
-import { MIN_ENTRY_RVOL, RVOL_SESSIONS, type TripleBeatMinuteBar, evaluateTripleBeatSetup, gapBucket, measureTripleBeatOutcome, passesReplayPrefilter, timeOfDayRvol } from '@/lib/triple-beat/scan';
+import { MIN_ENTRY_RVOL, MIN_STOP_PCT, RVOL_SESSIONS, type TripleBeatMinuteBar, evaluateTripleBeatSetup, gapBucket, measureTripleBeatOutcome, passesReplayPrefilter, timeOfDayRvol } from '@/lib/triple-beat/scan';
 import { epochToNySortKey, getNextTradingSession, getNyRegularCloseTime, getPreviousTradingSession, nyDateTimeToEpoch } from '@/lib/time-utils';
 
 // Replay-only (2026-11-12): buy the first break of the opening range high instead of the premarket high. The range is
@@ -43,6 +47,38 @@ import { epochToNySortKey, getNextTradingSession, getNyRegularCloseTime, getPrev
 // stop or the close if that comes first; closeR only exits at the stop or the close. A minute that reaches both the stop
 // and the target counts as stopped, since one minute bar can't order its own high and low. Null when the range high never breaks.
 interface OrbMinute { time: number; open: number; high: number; low: number }
+
+// De-risking exits for the opening range break, walked minute by minute from the entry minute; returns the trade's R.
+// targetR sells what's left at fill + that many R. breakevenAtR moves the stop to the fill once a minute's high reaches
+// fill + that many R, starting with the next minute (one minute bar can't show whether its high or low came first).
+// halfAtR sells half at fill + that many R. The stop is checked before any target in each minute, like the columns above.
+function walkOrbExit(
+  fromEntry: OrbMinute[], fill: number, stop: number, day0Close: number,
+  targetR: number, breakevenAtR: number | null, halfAtR: number | null,
+): number {
+  const risk = fill - stop;
+  const toR = (price: number) => (price - fill) / risk;
+  let currentStop = stop;
+  let moveStopNextMinute = false;
+  let bankedR = 0;
+  let size = 1;
+  for (const [offset, bar] of fromEntry.entries()) {
+    if (moveStopNextMinute) currentStop = Math.max(currentStop, fill);
+    if (bar.low <= currentStop) {
+      // A minute that opens below the stop fills at its open; the entry minute fills at the stop.
+      const exit = offset === 0 ? currentStop : Math.min(currentStop, bar.open);
+      return bankedR + size * toR(exit);
+    }
+    if (halfAtR !== null && size === 1 && bar.high >= fill + halfAtR * risk) {
+      bankedR += 0.5 * halfAtR;
+      size = 0.5;
+    }
+    if (bar.high >= fill + targetR * risk) return bankedR + size * targetR;
+    if (breakevenAtR !== null && bar.high >= fill + breakevenAtR * risk) moveStopNextMinute = true;
+  }
+  return bankedR + size * toR(day0Close);
+}
+
 function measureOpeningRangeBreak(minutes: OrbMinute[], openMs: number, rangeMinutes: number, atr14: number, day0Close: number) {
   const rangeEnd = openMs + rangeMinutes * 60_000;
   const range = minutes.filter((bar) => bar.time < rangeEnd);
@@ -72,6 +108,7 @@ function measureOpeningRangeBreak(minutes: OrbMinute[], openMs: number, rangeMin
     if (atrTargetR === null && bar.high >= atrTarget) atrTargetR = toR(atrTarget);
     if (twoRTargetR === null && bar.high >= twoRTarget) twoRTargetR = 2;
   }
+  const fromEntry = minutes.slice(entryIndex);
   return {
     minutesAfterOpen: (minutes[entryIndex].time - openMs) / 60_000,
     fill,
@@ -80,6 +117,12 @@ function measureOpeningRangeBreak(minutes: OrbMinute[], openMs: number, rangeMin
     atrTargetR: atrTargetR ?? toR(day0Close),
     twoRTargetR: twoRTargetR ?? toR(day0Close),
     closeR: closeR ?? toR(day0Close),
+    // Same 2R target, but the stop moves to the fill at +1R.
+    breakevenR: walkOrbExit(fromEntry, fill, stop, day0Close, 2, 1, null),
+    // Half sold at +1R, the stop moves to the fill, and the other half targets 2R or the close.
+    halfOffR: walkOrbExit(fromEntry, fill, stop, day0Close, 2, 1, 1),
+    target15R: walkOrbExit(fromEntry, fill, stop, day0Close, 1.5, null, null),
+    target3R: walkOrbExit(fromEntry, fill, stop, day0Close, 3, null, null),
   };
 }
 
@@ -180,6 +223,16 @@ async function main() {
         if (read) llmCache[key] = read;
         earnings = read ?? UNKNOWN_EARNINGS_READ;
       }
+      if (filing.form_type === '8-K' && (earnings.epsBeat === 'unknown' || earnings.revenueBeat === 'unknown')) {
+        const estimates = await fetchEodhdEarningsEstimates(ticker, priorSession, date);
+        const consensusKey = `${key}:consensus`;
+        if (earnings.revenueBeat === 'unknown' && estimates?.revenueEstimate != null && !llmCache[consensusKey]) {
+          const read = await classifyEarnings(ticker, buildEarningsEvidence(await fetchPressReleaseText(filing), news, estimates));
+          newLlmReads += 1;
+          if (read) llmCache[consensusKey] = read;
+        }
+        earnings = applyConsensusEps(llmCache[consensusKey] ?? earnings, estimates);
+      }
       const setup = evaluateTripleBeatSetup(history, asOfExtended, earnings, sharesOutstanding)!;
       const { metrics, plan } = setup;
       const open = nyDateTimeToEpoch(date, '09:30:00')!;
@@ -258,8 +311,12 @@ async function main() {
         noRvolDayR: rounded(noRvol?.dayR), noRvolTotalR: rounded(noRvol?.totalR),
         orb2Min: orb2?.minutesAfterOpen ?? '', orb2Fill: rounded(orb2?.fill), orb2Stop: rounded(orb2?.stop), orb2RiskAtr: rounded(orb2?.riskAtr),
         orb2AtrTargetR: rounded(orb2?.atrTargetR), orb2TwoRTargetR: rounded(orb2?.twoRTargetR), orb2CloseR: rounded(orb2?.closeR),
+        orb2BreakevenR: rounded(orb2?.breakevenR), orb2HalfOffR: rounded(orb2?.halfOffR),
+        orb2Target15R: rounded(orb2?.target15R), orb2Target3R: rounded(orb2?.target3R),
         orb3Min: orb3?.minutesAfterOpen ?? '', orb3Fill: rounded(orb3?.fill), orb3Stop: rounded(orb3?.stop), orb3RiskAtr: rounded(orb3?.riskAtr),
         orb3AtrTargetR: rounded(orb3?.atrTargetR), orb3TwoRTargetR: rounded(orb3?.twoRTargetR), orb3CloseR: rounded(orb3?.closeR),
+        orb3BreakevenR: rounded(orb3?.breakevenR), orb3HalfOffR: rounded(orb3?.halfOffR),
+        orb3Target15R: rounded(orb3?.target15R), orb3Target3R: rounded(orb3?.target3R),
       };
     }));
     for (const [index, result] of results.entries()) {
@@ -294,10 +351,8 @@ async function main() {
       return count < 9;
     });
     summarize(`Posted (top 9/day), premarket volume >= ${floor / 1000}k`, posted);
-    summarize(`  sized (A/A+, stop <= 1.5 ATR)`, posted.filter((row) => Number(row.riskFraction) > 0));
     const withoutRvol = (group: typeof posted) => group.map((row) => ({ dayR: row.noRvolDayR, totalR: row.noRvolTotalR }));
     summarize(`  without the RVOL rule`, withoutRvol(posted));
-    summarize(`  sized, without the RVOL rule`, withoutRvol(posted.filter((row) => Number(row.riskFraction) > 0)));
   }
   // Opening range breaks over the same posted set (top 9/day, no premarket volume floor).
   const orbPerDay = new Map<string, number>();
@@ -314,20 +369,36 @@ async function main() {
     console.log(`${label}: ${trades.length}/${values.length} trades, win rate ${trades.length ? (100 * wins / trades.length).toFixed(1) + '%' : 'n/a'}, average R ${trades.length ? (total / trades.length).toFixed(2) : 'n/a'}, total R ${total.toFixed(1)}`);
   };
   const orbVariants = [
-    { label: '2-minute ORB', atrTargetR: 'orb2AtrTargetR', twoRTargetR: 'orb2TwoRTargetR', closeR: 'orb2CloseR' },
-    { label: '3-minute ORB', atrTargetR: 'orb3AtrTargetR', twoRTargetR: 'orb3TwoRTargetR', closeR: 'orb3CloseR' },
+    {
+      label: '2-minute ORB', atrTargetR: 'orb2AtrTargetR', twoRTargetR: 'orb2TwoRTargetR', closeR: 'orb2CloseR',
+      breakevenR: 'orb2BreakevenR', halfOffR: 'orb2HalfOffR', target15R: 'orb2Target15R', target3R: 'orb2Target3R',
+    },
+    {
+      label: '3-minute ORB', atrTargetR: 'orb3AtrTargetR', twoRTargetR: 'orb3TwoRTargetR', closeR: 'orb3CloseR',
+      breakevenR: 'orb3BreakevenR', halfOffR: 'orb3HalfOffR', target15R: 'orb3Target15R', target3R: 'orb3Target3R',
+    },
   ] as const;
   for (const variant of orbVariants) {
     const groups: Array<[string, typeof orbPosted]> = [
       ['posted', orbPosted],
-      // Grade only: the card's sizing gate measures the premarket-low stop, which these trades don't use.
       ['grade A/A+', orbPosted.filter((row) => row.grade === 'A+' || row.grade === 'A')],
     ];
     for (const [groupLabel, group] of groups) {
       summarizeR(`${variant.label}, 2 ATR target or close, ${groupLabel}`, group.map((row) => row[variant.atrTargetR]));
       summarizeR(`${variant.label}, 2R target or close, ${groupLabel}`, group.map((row) => row[variant.twoRTargetR]));
       summarizeR(`${variant.label}, stop or close, ${groupLabel}`, group.map((row) => row[variant.closeR]));
+      summarizeR(`${variant.label}, 2R target, breakeven at +1R, ${groupLabel}`, group.map((row) => row[variant.breakevenR]));
+      summarizeR(`${variant.label}, half off at +1R then breakeven, ${groupLabel}`, group.map((row) => row[variant.halfOffR]));
+      summarizeR(`${variant.label}, 1.5R target or close, ${groupLabel}`, group.map((row) => row[variant.target15R]));
+      summarizeR(`${variant.label}, 3R target or close, ${groupLabel}`, group.map((row) => row[variant.target3R]));
     }
+  }
+  // The card's rule: every non-Pass setup (not just the top 9), 2-minute ORB, 3R target or close, skipped under a 2% stop.
+  const cardRule = rows.filter((row) => row.grade !== 'Pass' && typeof row.orb2Fill === 'number' && typeof row.orb2Stop === 'number'
+    && row.orb2Fill - row.orb2Stop >= (MIN_STOP_PCT / 100) * row.orb2Fill);
+  summarizeR('Card rule, all posted', cardRule.map((row) => row.orb2Target3R));
+  for (const grade of ['A+', 'A', 'B']) {
+    summarizeR(`Card rule, grade ${grade}`, cardRule.filter((row) => row.grade === grade).map((row) => row.orb2Target3R));
   }
   console.log(`New LLM reads: ${newLlmReads} (cache: ${cachePath})`);
   console.log(`Output: ${out}`);

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { callLlm } from '@/lib/agents/llm-client';
-import { buildEarningsEvidence, classifyEarnings, UNKNOWN_EARNINGS_READ, verifyEarningsRead } from '@/lib/triple-beat/classify';
+import { applyConsensusEps, buildEarningsEvidence, classifyEarnings, UNKNOWN_EARNINGS_READ, verifyEarningsRead } from '@/lib/triple-beat/classify';
 vi.mock('@/lib/agents/llm-client', () => ({ callLlm: vi.fn() }));
 const evidence = buildEarningsEvidence(
   'Raised full year 2026 guidance, with 2026 Adjusted EBITDA now expected to be approximately $2.55 billion',
@@ -14,6 +14,26 @@ const read = {
 describe('verified earnings classification', () => {
   beforeEach(() => vi.resetAllMocks());
   afterEach(() => vi.restoreAllMocks());
+  it('appends revenue consensus without exposing the EPS estimate', () => {
+    const result = buildEarningsEvidence('Release', [], {
+      quarter: '2026-09-30', epsEstimate: 0.17, epsActual: 0.18, revenueEstimate: 1264367430, revenueAnalysts: 19,
+    });
+    expect(result.endsWith('[CONSENSUS · EODHD] Analyst consensus revenue estimate for the quarter ending 2026-09-30: $1264.4 million (19 analysts).')).toBe(true);
+    expect(result).not.toContain('0.17');
+  });
+  it('keeps evidence unchanged without a revenue estimate', () => {
+    expect(buildEarningsEvidence('Release', [], {
+      quarter: '2026-09-30', epsEstimate: 0.17, epsActual: 0.18, revenueEstimate: null, revenueAnalysts: null,
+    })).toBe(buildEarningsEvidence('Release', []));
+  });
+  it('overrides EPS on the EODHD basis and preserves other answers', () => {
+    const estimates = { quarter: '2026-09-30', epsEstimate: 0.17, epsActual: 0.18, revenueEstimate: null, revenueAnalysts: null };
+    expect(applyConsensusEps(read, estimates)).toEqual({ ...read, epsBeat: 'yes', epsQuote: 'EODHD: EPS 0.18 vs 0.17 consensus' });
+    expect(applyConsensusEps(read, { ...estimates, epsActual: 0.17 }).epsBeat).toBe('no');
+    expect(applyConsensusEps(read, { ...estimates, epsActual: null })).toBe(read);
+    expect(applyConsensusEps(read, { ...estimates, epsEstimate: null })).toBe(read);
+    expect(applyConsensusEps(read, null)).toBe(read);
+  });
   it('keeps quotes despite whitespace and case differences', () => {
     expect(verifyEarningsRead(read, evidence)).toEqual(read);
   });

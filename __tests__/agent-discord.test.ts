@@ -560,17 +560,13 @@ describe('agent discord helpers', () => {
     expect(embeds).toHaveLength(2);
     expect(embeds[0]).toMatchObject({
       title: 'Triple Beat earnings · Thu, Oct 29', color: 0x5865F2,
-      description: '🟢 A+ 1 · 🟡 A 0 · ⚪ B 0 · 2 earnings filers · premarket as of 9:00 AM ET\n⚠️ Entry needs a premarket-high break with 3x+ RVOL. Partial at 2R; trail the runner on a 10EMA close.',
+      description: '🟢 A+ 1 · 🟡 A 0 · ⚪ B 0 · 2 earnings filers · premarket as of 9:00 AM ET\n⚠️ Buy 1¢ over the 9:30–9:32 high. Stop 1¢ under the low of day; skip if that\'s under 2% of price. Sell at 3R or the close.',
     });
     expect(embeds[1]).toEqual({
       color: 0x23A55A,
-      description: '**NCLH**\n**A+ · 45/45** · Full size (1R)\n🏆 Strict triple beat\nBeat on EPS and revenue and raised full-year guidance.',
+      description: '**NCLH**\n**A+ · 45/45** · Half size (0.5R)\n🏆 Strict triple beat\nBeat on EPS and revenue and raised full-year guidance.',
       fields: [
-        { name: 'Entry · PM high', value: '$23.40', inline: true },
-        { name: 'Stop · PM low', value: '$22.60', inline: true },
-        { name: 'Risk / share', value: '$0.80 · 1.0 ATR', inline: true },
-        { name: 'T1 partial', value: '$25.00 · 2R', inline: true },
-        { name: 'Runner', value: 'Trail 10EMA ($20.00)', inline: true },
+        { name: 'Min stop', value: '$0.46 · 2% of $23.00', inline: true },
         { name: 'Gap · hold', value: '+15.0% (high +17.0%) · 79% of range', inline: true },
         { name: 'Checklist', value: 'EPS ✅  Rev ✅  Guide ✅  Base ✅  Breakout ✅  $10+ ✅', inline: false },
       ],

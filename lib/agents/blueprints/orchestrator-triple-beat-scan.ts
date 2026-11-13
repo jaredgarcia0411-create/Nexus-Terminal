@@ -1,8 +1,9 @@
 import { z } from 'zod';
+import { fetchEodhdEarningsEstimates } from '@/lib/eodhd';
 import { fetchSharesOutstanding, fetchTickerReference } from '@/lib/massive-market';
 import { addCalendarDays, fetchDailyBars } from '@/lib/parabolic/data';
 import { getRecentFilings } from '@/lib/sec/submissions';
-import { UNKNOWN_EARNINGS_READ, buildEarningsEvidence, classifyEarnings } from '@/lib/triple-beat/classify';
+import { UNKNOWN_EARNINGS_READ, applyConsensusEps, buildEarningsEvidence, classifyEarnings } from '@/lib/triple-beat/classify';
 import {
   fetchEarningsFilerTickers, fetchEarningsNews, fetchExtendedHoursStats, fetchPressReleaseText, findEarningsFiling, isEarningsHeadline,
 } from '@/lib/triple-beat/data';
@@ -65,8 +66,10 @@ export const orchestratorTripleBeatScanBlueprint: Blueprint = {
             if (!filing) return null;
             const news = await fetchEarningsNews(ticker, windowStart, windowEnd);
             if (filing.form_type === '6-K' && !news.some((item) => isEarningsHeadline(item.title))) return null;
-            const evidence = buildEarningsEvidence(await fetchPressReleaseText(filing), news);
-            const earnings = await classifyEarnings(ticker, evidence) ?? UNKNOWN_EARNINGS_READ;
+            // 6-Ks skip EODHD: foreign filers' figures can be in local currency or per ordinary share, not per ADR.
+            const estimates = filing.form_type === '8-K' ? await fetchEodhdEarningsEstimates(ticker, priorSession, tradingDate) : null;
+            const evidence = buildEarningsEvidence(await fetchPressReleaseText(filing), news, estimates);
+            const earnings = applyConsensusEps(await classifyEarnings(ticker, evidence) ?? UNKNOWN_EARNINGS_READ, estimates);
             const setup = evaluateTripleBeatSetup(history, extended, earnings, sharesOutstanding);
             if (!setup?.plan || setup.grade === 'Pass') return null;
             // Company name for the card; a failed lookup just shows the ticker alone.

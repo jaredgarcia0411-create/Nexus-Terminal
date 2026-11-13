@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { agentReports, agentStepEffects } from '@/lib/db/schema';
 import type { ParabolicGrade, ParabolicScanReport } from '@/lib/parabolic/scan';
-import type { TripleBeatGrade, TripleBeatScanReport } from '@/lib/triple-beat/scan';
+import { MIN_STOP_PCT, type TripleBeatGrade, type TripleBeatScanReport } from '@/lib/triple-beat/scan';
 import { recordStepEffect } from './checkpoints';
 import type { AgentDb } from './db';
 import type {
@@ -974,7 +974,7 @@ export function buildTripleBeatScanEmbeds(report: AgentReport): DiscordEmbed[] {
   const overflow = payload.setups.length > shown.length ? `\nShowing the top ${shown.length} of ${payload.setups.length}.` : '';
   const header: DiscordEmbed = {
     title,
-    description: `🟢 A+ ${count('A+')} · 🟡 A ${count('A')} · ⚪ B ${count('B')} · ${scanned}${overflow}\n⚠️ Entry needs a premarket-high break with 3x+ RVOL. Partial at 2R; trail the runner on a 10EMA close.`,
+    description: `🟢 A+ ${count('A+')} · 🟡 A ${count('A')} · ⚪ B ${count('B')} · ${scanned}${overflow}\n⚠️ Buy 1¢ over the 9:30–9:32 high. Stop 1¢ under the low of day; skip if that's under ${MIN_STOP_PCT}% of price. Sell at 3R or the close.`,
     color: PARABOLIC_HEADER_COLOR,
   };
 
@@ -996,11 +996,7 @@ export function buildTripleBeatScanEmbeds(report: AgentReport): DiscordEmbed[] {
       description,
       color: TRIPLE_BEAT_GRADE_COLORS[setup.grade],
       fields: [
-        buildField('Entry · PM high', usd(plan.entry)),
-        buildField('Stop · PM low', usd(plan.stop)),
-        buildField('Risk / share', `${usd(plan.riskPerShare)} · ${plan.riskAtr.toFixed(1)} ATR`),
-        buildField('T1 partial', `${usd(plan.target1)} · 2R`),
-        buildField('Runner', `Trail 10EMA (${usd(metrics.ema10)})`),
+        buildField('Min stop', `${usd((MIN_STOP_PCT / 100) * metrics.referencePrice)} · ${MIN_STOP_PCT}% of ${usd(metrics.referencePrice)}`),
         buildField('Gap · hold', `${pct(metrics.gapPct)} (high ${pct(metrics.maxGapPct)}) · ${metrics.holdPct.toFixed(0)}% of range`),
         buildField('Checklist', checklist.join('  '), false),
       ],

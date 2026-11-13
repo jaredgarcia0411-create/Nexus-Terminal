@@ -15,7 +15,7 @@ const day = (overrides: Partial<DailyOhlcBar>): DailyOhlcBar => ({ date: '2026-1
 describe('Triple Beat scoring', () => {
   it('scores a strict triple beat at 45/45 with an A+ plan', () => {
     const setup = evaluateTripleBeatSetup(history, extended, STRICT)!;
-    expect(setup).toMatchObject({ qualified: true, score: 45, maxScore: 45, grade: 'A+', strictTripleBeat: true, plan: { riskFraction: 1, entry: 23.4, stop: 22.6 } });
+    expect(setup).toMatchObject({ qualified: true, score: 45, maxScore: 45, grade: 'A+', strictTripleBeat: true, plan: { riskFraction: 0.5, entry: 23.4, stop: 22.6 } });
     expect(setup.plan!.riskPerShare).toBeCloseTo(0.8);
     expect(setup.plan!.riskAtr).toBeCloseTo(1);
     expect(setup.plan!.target1).toBeCloseTo(25);
@@ -26,9 +26,9 @@ describe('Triple Beat scoring', () => {
     expect(setup).toMatchObject({ score: 20, grade: 'Pass', plan: { riskFraction: 0 } });
     expect(setup.scoreItems.slice(0, 3).map((item) => item.status)).toEqual(['unknown', 'unknown', 'unknown']);
   });
-  it('forces wide stops to watch only even at grade A+', () => {
+  it('sizes every posted grade at half size, even with a wide premarket range', () => {
     const setup = evaluateTripleBeatSetup(history, { ...extended, premarketLow: 21, low: 21 }, STRICT)!;
-    expect(setup).toMatchObject({ score: 45, grade: 'A+', plan: { riskFraction: 0 } });
+    expect(setup).toMatchObject({ score: 45, grade: 'A+', plan: { riskFraction: 0.5 } });
     expect(setup.plan!.riskAtr).toBeCloseTo(3);
   });
   it('accepts faded gaps that reached +5% overnight and remain at or above the prior close', () => {

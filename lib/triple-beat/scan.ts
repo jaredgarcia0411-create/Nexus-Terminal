@@ -15,8 +15,6 @@ const RULES = {
   basePeriod: 60,
   maxBaseRangePct: 40,
   runUpPeriod: 20,
-  // Sizing gate only, not scored: A/A+ setups with wider stops rarely reached 2R in the Apr, Jul and Oct replays (+0.40R vs +0.12R avg).
-  maxStopAtr: 1.5,
   // Jul–Aug 2026 replay: stops under 0.5 ATR sat inside normal noise (71–90% stopped on day 0, −16R over 40 trades).
   minStopAtr: 0.5,
   target1R: 2,
@@ -27,10 +25,13 @@ const RULES = {
 };
 
 export const MIN_HISTORY_BARS = 61;
-// The card's entry rule: the premarket-high break needs 3x+ time-of-day RVOL. Replay-only until the live scan measures it.
+// The old card entry rule (premarket-high break with 3x+ time-of-day RVOL), kept in the replay for comparison.
 export const MIN_ENTRY_RVOL = 3;
 export const RVOL_SESSIONS = 20;
 export const MAX_PREMARKET_SCORE = 45;
+// The card's exit since 2026-11-12: 2-minute opening range break, low-of-day stop, 3R target or the close. Trades whose
+// stop is under 2% of price are skipped: in the replay, 0.1%/side slippage turned them from the edge into the loss.
+export const MIN_STOP_PCT = 2;
 
 export type TripleBeatGrade = 'A+' | 'A' | 'B' | 'Pass';
 export type GapBucket = '<4' | '4-7.9' | '8-9.9' | '10+';
@@ -177,8 +178,7 @@ export function evaluateTripleBeatSetup(
     status === 'yes' ? 'met' : status === 'no' ? 'not met' : 'unknown'
   );
   // Only items that separated winners from losers in the Apr, Jul and Oct 2026 replays (575 trades). Dropped for no edge
-  // or a backwards one: extended-hours volume, 10%+ gap, holding near highs, run-up, $20M volume. Stop width still gates
-  // sizing (maxStopAtr): across all grades it had no edge, but within A/A+ it did.
+  // or a backwards one: extended-hours volume, 10%+ gap, holding near highs, run-up, $20M volume.
   const items: Array<[string, number, boolean | ScoreItemStatus]> = [
     ['EPS beat', 8, beat(earnings.epsBeat)],
     ['Revenue beat', 8, beat(earnings.revenueBeat)],
@@ -194,7 +194,8 @@ export function evaluateTripleBeatSetup(
   const score = scoreItems.reduce((sum, item) => sum + item.points, 0);
   const grade = gradeFor(score);
   const plan: TripleBeatPlan | null = !qualified ? null : {
-    riskFraction: riskAtr > RULES.maxStopAtr ? 0 : grade === 'A+' ? 1 : grade === 'A' ? 0.5 : 0,
+    // Flat half size until the grades are reworked: with the ORB exit, A+, A and B made about the same per trade.
+    riskFraction: grade === 'Pass' ? 0 : 0.5,
     entry,
     stop,
     riskPerShare,

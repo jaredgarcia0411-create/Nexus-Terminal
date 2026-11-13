@@ -61,3 +61,55 @@ export async function fetchEodhdNews(ticker: string, limit = 20, range?: { from:
     clearTimeout(timeoutId);
   }
 }
+
+export interface EodhdEarningsEstimates {
+  quarter: string;
+  epsEstimate: number | null;
+  epsActual: number | null;
+  revenueEstimate: number | null;
+  revenueAnalysts: number | null;
+}
+
+async function fetchEodhdCalendar(path: string, params: Record<string, string>): Promise<unknown> {
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+  try {
+    const query = new URLSearchParams({ ...params, api_token: apiKey, fmt: 'json' });
+    const response = await fetch(`https://eodhd.com/api/calendar/${path}?${query.toString()}`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      cache: 'no-store',
+    });
+    return response.ok ? await response.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+// Consensus for the report released between `from` and `to` (YYYY-MM-DD, NY dates). EPS estimate and actual come
+// from the earnings calendar on the same basis. Revenue consensus comes from the trends row frozen for that
+// quarter ("0q" dated the quarter end), which survives the report. Null when no report falls in the range.
+export async function fetchEodhdEarningsEstimates(ticker: string, from: string, to: string): Promise<EodhdEarningsEstimates | null> {
+  const symbol = toEodhdSymbol(ticker);
+  const calendar = await fetchEodhdCalendar('earnings', { symbols: symbol, from, to }) as {
+    earnings?: Array<{ report_date?: string; date?: string; actual?: number | null; estimate?: number | null }>;
+  } | null;
+  const report = (calendar?.earnings ?? [])
+    .filter((row) => row.date && row.report_date && row.report_date >= from && row.report_date <= to)
+    .at(-1);
+  if (!report?.date) return null;
+
+  const trends = await fetchEodhdCalendar('trends', { symbols: symbol }) as {
+    trends?: Array<Array<{ date?: string; period?: string; revenueEstimateAvg?: string | null; revenueEstimateNumberOfAnalysts?: string | null }>>;
+  } | null;
+  const quarter = (trends?.trends ?? []).flat().find((row) => row.period === '0q' && row.date === report.date);
+  const revenueEstimate = Number(quarter?.revenueEstimateAvg);
+  const revenueAnalysts = Number(quarter?.revenueEstimateNumberOfAnalysts);
+  return {
+    quarter: report.date,
+    epsEstimate: typeof report.estimate === 'number' ? report.estimate : null,
+    epsActual: typeof report.actual === 'number' ? report.actual : null,
+    revenueEstimate: Number.isFinite(revenueEstimate) && revenueEstimate > 0 ? revenueEstimate : null,
+    revenueAnalysts: Number.isFinite(revenueAnalysts) && revenueAnalysts > 0 ? revenueAnalysts : null,
+  };
+}

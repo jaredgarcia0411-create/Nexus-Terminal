@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fetchEodhdEarningsEstimates } from '@/lib/eodhd';
 import { fetchSharesOutstanding, fetchTickerReference, type DailyOhlcBar } from '@/lib/massive-market';
 import { fetchDailyBars } from '@/lib/parabolic/data';
 import { getRecentFilings, type SecFiling } from '@/lib/sec/submissions';
@@ -10,6 +11,9 @@ import { getPreviousTradingSession } from '@/lib/time-utils';
 import type { StepInput } from '@/lib/agents/types';
 import type { TripleBeatScanReport } from '@/lib/triple-beat/scan';
 
+vi.mock('@/lib/eodhd', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/eodhd')>(), fetchEodhdEarningsEstimates: vi.fn(),
+}));
 vi.mock('@/lib/massive-market', () => ({ fetchSharesOutstanding: vi.fn(), fetchTickerReference: vi.fn() }));
 vi.mock('@/lib/sec/submissions', () => ({ getRecentFilings: vi.fn() }));
 vi.mock('@/lib/parabolic/data', async (importOriginal) => ({
@@ -46,6 +50,7 @@ describe('orchestrator Triple Beat scan', () => {
     vi.mocked(fetchTickerReference).mockResolvedValue({ type: 'CS', name: 'Acme Corp' });
     vi.mocked(fetchExtendedHoursStats).mockResolvedValue({ last: 23, high: 23.4, low: 21.5, volume: 800000, premarketHigh: 23.4, premarketLow: 22.6, premarketVolume: 500000 });
     vi.mocked(fetchEarningsNews).mockResolvedValue([]);
+    vi.mocked(fetchEodhdEarningsEstimates).mockResolvedValue(null);
     vi.mocked(fetchPressReleaseText).mockResolvedValue('Earnings release');
   });
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -70,6 +75,7 @@ describe('orchestrator Triple Beat scan', () => {
     expect(report.setups.map((setup) => [setup.ticker, setup.grade])).toEqual([['AAA', 'A+']]);
     expect(warn).toHaveBeenCalledOnce();
     expect(getRecentFilings).toHaveBeenCalledWith('AAA', { limit: 20, sinceDays: 5 });
+    expect(fetchEodhdEarningsEstimates).toHaveBeenCalledWith('AAA', '2026-10-28', '2026-10-29');
     expect(getRecentFilings).not.toHaveBeenCalledWith('BBB', expect.anything());
     expect(fetchDailyBars).toHaveBeenCalledWith('AAA', '2025-09-24', '2026-10-28');
     expect(fetchExtendedHoursStats).toHaveBeenCalledWith('AAA', '2026-10-28', '2026-10-29', Date.now());
@@ -93,6 +99,21 @@ describe('orchestrator Triple Beat scan', () => {
     vi.mocked(classifyEarnings).mockResolvedValue({ ...UNKNOWN_EARNINGS_READ, epsBeat: 'yes', revenueBeat: 'yes', guidance: 'raised' });
     const confirmed = await orchestratorTripleBeatScanBlueprint.steps[0].run(input());
     expect((confirmed.data as TripleBeatScanReport).setups).toHaveLength(1);
+    expect(fetchEodhdEarningsEstimates).not.toHaveBeenCalled();
+  });
+  it('overrides the LLM EPS beat with EODHD actual versus consensus', async () => {
+    vi.mocked(fetchEarningsFilerTickers).mockResolvedValue(['AAA']);
+    vi.mocked(getRecentFilings).mockResolvedValue({ status: 'success', count: 1, results: [filing] });
+    vi.mocked(fetchEodhdEarningsEstimates).mockResolvedValue({
+      quarter: '2026-09-30', epsEstimate: 1, epsActual: 0.9, revenueEstimate: null, revenueAnalysts: null,
+    });
+    vi.mocked(classifyEarnings).mockResolvedValue({ ...UNKNOWN_EARNINGS_READ, epsBeat: 'yes', revenueBeat: 'yes', guidance: 'raised' });
+    const scan = await orchestratorTripleBeatScanBlueprint.steps[0].run(input());
+    const report = scan.data as TripleBeatScanReport;
+    expect(report.setups).toHaveLength(1);
+    expect(report.setups[0].earnings).toMatchObject({
+      epsBeat: 'no', epsQuote: 'EODHD: EPS 0.9 vs 1 consensus', revenueBeat: 'yes',
+    });
   });
   it('does not fetch news or classify technically disqualified names', async () => {
     vi.mocked(fetchEarningsFilerTickers).mockResolvedValue(['AAA']);
