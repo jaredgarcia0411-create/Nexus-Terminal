@@ -29,8 +29,9 @@ export const MIN_HISTORY_BARS = 61;
 export const MIN_ENTRY_RVOL = 3;
 export const RVOL_SESSIONS = 20;
 export const MAX_PREMARKET_SCORE = 45;
-// The card's exit since 2026-11-12: 2-minute opening range break, low-of-day stop, 3R target or the close. Trades whose
-// stop is under 2% of price are skipped: in the replay, 0.1%/side slippage turned them from the edge into the loss.
+// The card's exit since 2026-11-12: 2-minute opening range break, low-of-day stop, held to the close (since 2026-11-13 it
+// replaced a 3R target, which made less in both periods at the same drawdown). Trades whose stop is under 2% of price are
+// skipped: in the replay, 0.1%/side slippage turned them from the edge into the loss.
 export const MIN_STOP_PCT = 2;
 // Trades whose stop is wider than 1.35 ATR are skipped too: in the 2026-11-13 replay they made 0R over 537 trades, while
 // stops inside the range made +0.21R per trade in both periods.

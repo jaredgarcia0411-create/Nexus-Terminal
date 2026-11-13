@@ -974,7 +974,7 @@ export function buildTripleBeatScanEmbeds(report: AgentReport): DiscordEmbed[] {
   const overflow = payload.setups.length > shown.length ? `\nShowing the top ${shown.length} of ${payload.setups.length}.` : '';
   const header: DiscordEmbed = {
     title,
-    description: `🟢 A+ ${count('A+')} · 🟡 A ${count('A')} · ⚪ B ${count('B')} · ${scanned}${overflow}\n⚠️ Buy 1¢ over the 9:30–9:32 high. Stop 1¢ under the low of day; skip if that's under ${MIN_STOP_PCT}% of price or over ${MAX_STOP_ATR} ATR. Sell at 3R or the close.`,
+    description: `🟢 A+ ${count('A+')} · 🟡 A ${count('A')} · ⚪ B ${count('B')} · ${scanned}${overflow}\n⚠️ Buy 1¢ over the 9:30–9:32 high. Stop 1¢ under the low of day; skip if that's under ${MIN_STOP_PCT}% of price or over ${MAX_STOP_ATR} ATR. Sell at the close.`,
     color: PARABOLIC_HEADER_COLOR,
   };
 

@@ -412,18 +412,18 @@ async function main() {
       summarizeR(`${variant.label}, 3R target or close, ${groupLabel}`, group.map((row) => row[variant.target3R]));
     }
   }
-  // The card's rule: every non-Pass setup (not just the top 9), 2-minute ORB, 3R target or close, skipped under a 2% stop or over 1.35 ATR.
+  // The card's rule: every non-Pass setup (not just the top 9), 2-minute ORB held to the close, skipped under a 2% stop or over 1.35 ATR.
   const cardRule = qualifiedRows.filter((row) => row.grade !== 'Pass' && typeof row.orb2Fill === 'number' && typeof row.orb2Stop === 'number'
     && row.orb2Fill - row.orb2Stop >= (MIN_STOP_PCT / 100) * row.orb2Fill
     && typeof row.orb2RiskAtr === 'number' && row.orb2RiskAtr <= MAX_STOP_ATR);
-  summarizeR('Card rule, all posted', cardRule.map((row) => row.orb2Target3R));
+  summarizeR('Card rule, all posted', cardRule.map((row) => row.orb2CloseR));
   for (const grade of ['A+', 'A', 'B']) {
-    summarizeR(`Card rule, grade ${grade}`, cardRule.filter((row) => row.grade === grade).map((row) => row.orb2Target3R));
+    summarizeR(`Card rule, grade ${grade}`, cardRule.filter((row) => row.grade === grade).map((row) => row.orb2CloseR));
   }
   summarizeR('Card rule, premarket range < 0.5 ATR (not posted)', rows.filter((row) => row.pmRangeFiltered && row.grade !== 'Pass'
     && typeof row.orb2Fill === 'number' && typeof row.orb2Stop === 'number'
     && row.orb2Fill - row.orb2Stop >= (MIN_STOP_PCT / 100) * row.orb2Fill
-    && typeof row.orb2RiskAtr === 'number' && row.orb2RiskAtr <= MAX_STOP_ATR).map((row) => row.orb2Target3R));
+    && typeof row.orb2RiskAtr === 'number' && row.orb2RiskAtr <= MAX_STOP_ATR).map((row) => row.orb2CloseR));
   console.log(`New LLM reads: ${newLlmReads} (cache: ${cachePath})`);
   console.log(`Output: ${out}`);
 }

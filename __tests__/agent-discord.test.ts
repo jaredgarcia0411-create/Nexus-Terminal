@@ -560,7 +560,7 @@ describe('agent discord helpers', () => {
     expect(embeds).toHaveLength(2);
     expect(embeds[0]).toMatchObject({
       title: 'Triple Beat earnings · Thu, Oct 29', color: 0x5865F2,
-      description: `🟢 A+ 1 · 🟡 A 0 · ⚪ B 0 · 2 earnings filers · premarket as of 9:00 AM ET\n⚠️ Buy 1¢ over the 9:30–9:32 high. Stop 1¢ under the low of day; skip if that's under 2% of price or over ${MAX_STOP_ATR} ATR. Sell at 3R or the close.`,
+      description: `🟢 A+ 1 · 🟡 A 0 · ⚪ B 0 · 2 earnings filers · premarket as of 9:00 AM ET\n⚠️ Buy 1¢ over the 9:30–9:32 high. Stop 1¢ under the low of day; skip if that's under 2% of price or over ${MAX_STOP_ATR} ATR. Sell at the close.`,
     });
     expect(embeds[1]).toEqual({
       color: 0x23A55A,
