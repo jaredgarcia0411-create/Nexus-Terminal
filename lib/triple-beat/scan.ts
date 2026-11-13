@@ -32,6 +32,9 @@ export const MAX_PREMARKET_SCORE = 45;
 // The card's exit since 2026-11-12: 2-minute opening range break, low-of-day stop, 3R target or the close. Trades whose
 // stop is under 2% of price are skipped: in the replay, 0.1%/side slippage turned them from the edge into the loss.
 export const MIN_STOP_PCT = 2;
+// Trades whose stop is wider than 1.35 ATR are skipped too: in the 2026-11-13 replay they made 0R over 537 trades, while
+// stops inside the range made +0.21R per trade in both periods.
+export const MAX_STOP_ATR = 1.35;
 
 export type TripleBeatGrade = 'A+' | 'A' | 'B' | 'Pass';
 export type GapBucket = '<4' | '4-7.9' | '8-9.9' | '10+';
@@ -194,7 +197,7 @@ export function evaluateTripleBeatSetup(
   const score = scoreItems.reduce((sum, item) => sum + item.points, 0);
   const grade = gradeFor(score);
   const plan: TripleBeatPlan | null = !qualified ? null : {
-    // Flat half size until the grades are reworked: with the ORB exit, A+, A and B made about the same per trade.
+    // Flat half size: after the consensus re-reads A+ and A beat B mostly in 2024–25 only, so grades don't change size yet.
     riskFraction: grade === 'Pass' ? 0 : 0.5,
     entry,
     stop,

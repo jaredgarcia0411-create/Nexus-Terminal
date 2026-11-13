@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { agentReports, agentStepEffects } from '@/lib/db/schema';
 import type { ParabolicGrade, ParabolicScanReport } from '@/lib/parabolic/scan';
-import { MIN_STOP_PCT, type TripleBeatGrade, type TripleBeatScanReport } from '@/lib/triple-beat/scan';
+import { MAX_STOP_ATR, MIN_STOP_PCT, type TripleBeatGrade, type TripleBeatScanReport } from '@/lib/triple-beat/scan';
 import { recordStepEffect } from './checkpoints';
 import type { AgentDb } from './db';
 import type {
@@ -974,7 +974,7 @@ export function buildTripleBeatScanEmbeds(report: AgentReport): DiscordEmbed[] {
   const overflow = payload.setups.length > shown.length ? `\nShowing the top ${shown.length} of ${payload.setups.length}.` : '';
   const header: DiscordEmbed = {
     title,
-    description: `🟢 A+ ${count('A+')} · 🟡 A ${count('A')} · ⚪ B ${count('B')} · ${scanned}${overflow}\n⚠️ Buy 1¢ over the 9:30–9:32 high. Stop 1¢ under the low of day; skip if that's under ${MIN_STOP_PCT}% of price. Sell at 3R or the close.`,
+    description: `🟢 A+ ${count('A+')} · 🟡 A ${count('A')} · ⚪ B ${count('B')} · ${scanned}${overflow}\n⚠️ Buy 1¢ over the 9:30–9:32 high. Stop 1¢ under the low of day; skip if that's under ${MIN_STOP_PCT}% of price or over ${MAX_STOP_ATR} ATR. Sell at 3R or the close.`,
     color: PARABOLIC_HEADER_COLOR,
   };
 
@@ -997,6 +997,9 @@ export function buildTripleBeatScanEmbeds(report: AgentReport): DiscordEmbed[] {
       color: TRIPLE_BEAT_GRADE_COLORS[setup.grade],
       fields: [
         buildField('Min stop', `${usd((MIN_STOP_PCT / 100) * metrics.referencePrice)} · ${MIN_STOP_PCT}% of ${usd(metrics.referencePrice)}`),
+        buildField('Max stop', MAX_STOP_ATR * metrics.atr14 < (MIN_STOP_PCT / 100) * metrics.referencePrice
+          ? 'Under min stop, skip'
+          : `${usd(MAX_STOP_ATR * metrics.atr14)} · ${MAX_STOP_ATR} ATR (${usd(metrics.atr14)})`),
         buildField('Gap · hold', `${pct(metrics.gapPct)} (high ${pct(metrics.maxGapPct)}) · ${metrics.holdPct.toFixed(0)}% of range`),
         buildField('Checklist', checklist.join('  '), false),
       ],

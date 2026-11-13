@@ -19,6 +19,9 @@
  * ~/triple-beat-llm-cache.json so reruns only call the LLM for new ticker/dates.
  * Setups whose cached read has an unknown EPS or revenue beat (8-K filers only) get EODHD consensus estimates:
  * EODHD's EPS actual vs. estimate replaces the EPS read, and a revenue consensus triggers one re-read cached under "ticker:date:consensus".
+ * Setups that fail only the premarket-range filter ("Stop < 0.5 ATR") are also read and measured with the ORB columns
+ * (pmRangeFiltered = true). The card doesn't post them today, so every summary line except the last leaves them out.
+ * openDollarVolume2m and openRvol2m cover day 0's 09:30 and 09:31 minute bars (the 2-minute opening range).
  * Tickers missing from
  * today's SEC CIK map (delisted/renamed) are skipped: that is survivorship bias, since companies that were later
  * delisted (bankruptcies, and acquisitions) or renamed never enter the sample, so treat the totals as slightly flattering.
@@ -36,7 +39,7 @@ import { addCalendarDays, dedupeGroupedBars, fetchDailyBars } from '@/lib/parabo
 import { getRecentFilings, type SecFiling } from '@/lib/sec/submissions';
 import { applyConsensusEps, buildEarningsEvidence, classifyEarnings, UNKNOWN_EARNINGS_READ, type EarningsRead } from '@/lib/triple-beat/classify';
 import { fetchEarningsNews, fetchExtendedHoursStats, fetchPressReleaseText, findEarningsFiling, isEarningsHeadline } from '@/lib/triple-beat/data';
-import { MIN_ENTRY_RVOL, MIN_STOP_PCT, RVOL_SESSIONS, type TripleBeatMinuteBar, evaluateTripleBeatSetup, gapBucket, measureTripleBeatOutcome, passesReplayPrefilter, timeOfDayRvol } from '@/lib/triple-beat/scan';
+import { MAX_STOP_ATR, MIN_ENTRY_RVOL, MIN_STOP_PCT, RVOL_SESSIONS, type TripleBeatMinuteBar, evaluateTripleBeatSetup, gapBucket, measureTripleBeatOutcome, passesReplayPrefilter, timeOfDayRvol } from '@/lib/triple-beat/scan';
 import { epochToNySortKey, getNextTradingSession, getNyRegularCloseTime, getPreviousTradingSession, nyDateTimeToEpoch } from '@/lib/time-utils';
 
 // Replay-only (2026-11-12): buy the first break of the opening range high instead of the premarket high. The range is
@@ -212,7 +215,11 @@ async function main() {
       const history = asOfBars.filter((bar) => bar.date < date);
       const sessions = asOfBars.filter((bar) => bar.date >= date);
       if (sessions[0]?.date !== date) return null;
-      if (!evaluateTripleBeatSetup(history, asOfExtended, UNKNOWN_EARNINGS_READ, sharesOutstanding)?.qualified) return null;
+      const prefilter = evaluateTripleBeatSetup(history, asOfExtended, UNKNOWN_EARNINGS_READ, sharesOutstanding);
+      if (!prefilter) return null;
+      // The ORB card doesn't use the premarket range, so setups that fail only that filter are measured too (not posted).
+      const pmRangeFiltered = prefilter.failedFilters.length === 1 && prefilter.failedFilters[0] === 'Stop < 0.5 ATR';
+      if (!prefilter.qualified && !pmRangeFiltered) return null;
       const news = await fetchEarningsNews(ticker, windowStart, windowEnd);
       if (filing.form_type === '6-K' && !news.some((item) => isEarningsHeadline(item.title))) return null;
       const key = `${ticker}:${date}`;
@@ -235,14 +242,15 @@ async function main() {
       }
       const setup = evaluateTripleBeatSetup(history, asOfExtended, earnings, sharesOutstanding)!;
       const { metrics, plan } = setup;
+      const measured = plan != null || pmRangeFiltered;
       const open = nyDateTimeToEpoch(date, '09:30:00')!;
       const close = nyDateTimeToEpoch(date, getNyRegularCloseTime(date))!;
       // Minute bars from the first RVOL session's open through day 0's close: day 0 walks the trade, the prior sessions
       // give the average volume at each minute of the day.
       const rvolDates = history.slice(-RVOL_SESSIONS).map((bar) => bar.date);
       const rvolStart = nyDateTimeToEpoch(rvolDates[0], '09:30:00')!;
-      // Every planned setup loads minute bars, since the opening range break can trigger without a premarket-high break.
-      const minuteBars = plan
+      // Every planned setup, and every setup filtered only by its premarket range, loads minute bars for the opening range break.
+      const minuteBars = measured
         ? (await fetchMassiveAggregateBars({ ticker, multiplier: '1', timespan: 'minute', from: String(rvolStart), to: String(close) }))
           .filter((bar) => bar.o != null && bar.h != null && bar.l != null)
         : [];
@@ -264,6 +272,13 @@ async function main() {
       }
       const volumesFor = (sessionDate: string) => volumesByDate.get(sessionDate) ?? new Array<number>(390).fill(0);
       const rvols = minuteBars.length > 0 ? timeOfDayRvol(volumesFor(date), rvolDates.map(volumesFor)) : [];
+      // Opening range volume: the 09:30 and 09:31 bars. Dollar volume uses Massive's raw price × volume (both adjusted to
+      // today, so the product matches the as-of dollars); the RVOL compares shares against the same two minutes of the prior sessions.
+      const openVolume = (sessionDate: string) => volumesFor(sessionDate)[0] + volumesFor(sessionDate)[1];
+      const priorOpenVolume = rvolDates.reduce((sum, rvolDate) => sum + openVolume(rvolDate), 0) / rvolDates.length;
+      const openDollarVolume2m = minuteBars
+        .filter((bar) => Number(bar.t) >= open && Number(bar.t) < open + 2 * 60_000)
+        .reduce((sum, bar) => sum + Number(bar.v ?? 0) * Number(bar.vw ?? bar.c ?? 0), 0);
       const day0Minutes = minuteBars
         .filter((bar) => Number(bar.t) >= open && Number(bar.t) < close)
         .map((bar) => ({
@@ -290,15 +305,17 @@ async function main() {
       const outcome = plan ? await measureTripleBeatOutcome(history, plan, sessions, day0Minutes, MIN_ENTRY_RVOL, loadMinutes) : null;
       const noRvol = plan ? await measureTripleBeatOutcome(history, plan, sessions, day0Minutes, 0, loadMinutes) : null;
       const firstBreak = plan ? day0Minutes.find((bar) => bar.high >= plan.entry) : undefined;
-      const orb2 = plan ? measureOpeningRangeBreak(day0Minutes, open, 2, metrics.atr14, sessions[0].close) : null;
-      const orb3 = plan ? measureOpeningRangeBreak(day0Minutes, open, 3, metrics.atr14, sessions[0].close) : null;
+      const orb2 = measured ? measureOpeningRangeBreak(day0Minutes, open, 2, metrics.atr14, sessions[0].close) : null;
+      const orb3 = measured ? measureOpeningRangeBreak(day0Minutes, open, 3, metrics.atr14, sessions[0].close) : null;
       return {
         date, ticker, gapBucket: gapBucket(metrics.gapPct), grade: setup.grade, score: setup.score,
         strictTripleBeat: setup.strictTripleBeat,
         epsBeat: earnings.epsBeat, revenueBeat: earnings.revenueBeat, guidance: earnings.guidance,
         mixedCatalyst: earnings.mixedCatalyst, note: earnings.note, filingForm: filing.form_type,
+        pmRangeFiltered,
         gapPct: rounded(metrics.gapPct), maxGapPct: rounded(metrics.maxGapPct), holdPct: rounded(metrics.holdPct),
         extendedVolumeRatio: rounded(metrics.extendedVolumeRatio), premarketVolume: Math.round(asOfExtended.premarketVolume),
+        openDollarVolume2m: minuteBars.length > 0 ? Math.round(openDollarVolume2m) : '', openRvol2m: minuteBars.length > 0 && priorOpenVolume > 0 ? rounded(openVolume(date) / priorOpenVolume) : '',
         baseRangePct: rounded(metrics.baseRangePct), runUpPct: rounded(metrics.runUpPct),
         clearsBaseHigh: setup.scoreItems.find((item) => item.label === 'Clears 3-month high')?.status ?? '',
         avgDollarVolume20: rounded(metrics.avgDollarVolume20),
@@ -330,6 +347,8 @@ async function main() {
   }
   rows.sort((a, b) => a.date.localeCompare(b.date) || b.score - a.score || Number(b.gapPct) - Number(a.gapPct));
   writeFileSync(out, Papa.unparse(rows));
+  // Setups filtered only by their premarket range aren't posted, so the summaries below leave them out (except the last line).
+  const qualifiedRows = rows.filter((row) => !row.pmRangeFiltered);
   const summarize = (label: string, group: Array<{ dayR: number | ''; totalR: number | '' }>) => {
     const traded = group.filter((row) => typeof row.totalR === 'number');
     const wins = traded.filter((row) => Number(row.totalR) > 0).length;
@@ -338,13 +357,13 @@ async function main() {
     const total = traded.reduce((sum, row) => sum + Number(row.totalR), 0);
     console.log(`${label}: ${group.length} setups, ${traded.length} triggered, win rate ${traded.length ? (100 * wins / traded.length).toFixed(1) + '%' : 'n/a'}, avg dayR ${average('dayR')}, avg totalR ${average('totalR')}, total R ${total.toFixed(1)}`);
   };
-  for (const grade of ['A+', 'A', 'B', 'Pass']) summarize(`Grade ${grade}`, rows.filter((row) => row.grade === grade));
-  for (const bucket of ['<4', '4-7.9', '8-9.9', '10+']) summarize(`Gap ${bucket}%`, rows.filter((row) => row.gapBucket === bucket));
-  summarize('Strict triple beat', rows.filter((row) => row.strictTripleBeat === true));
+  for (const grade of ['A+', 'A', 'B', 'Pass']) summarize(`Grade ${grade}`, qualifiedRows.filter((row) => row.grade === grade));
+  for (const bucket of ['<4', '4-7.9', '8-9.9', '10+']) summarize(`Gap ${bucket}%`, qualifiedRows.filter((row) => row.gapBucket === bucket));
+  summarize('Strict triple beat', qualifiedRows.filter((row) => row.strictTripleBeat === true));
   // 2026-11-03: the coworker's thinkorswim scan needs 300k+ premarket shares. Apply the floor first, then the card's top 9 per day.
   for (const floor of [0, 100_000, 300_000]) {
     const postedPerDay = new Map<string, number>();
-    const posted = rows.filter((row) => {
+    const posted = qualifiedRows.filter((row) => {
       if (row.grade === 'Pass' || row.premarketVolume < floor) return false;
       const count = postedPerDay.get(row.date) ?? 0;
       postedPerDay.set(row.date, count + 1);
@@ -356,7 +375,7 @@ async function main() {
   }
   // Opening range breaks over the same posted set (top 9/day, no premarket volume floor).
   const orbPerDay = new Map<string, number>();
-  const orbPosted = rows.filter((row) => {
+  const orbPosted = qualifiedRows.filter((row) => {
     if (row.grade === 'Pass') return false;
     const count = orbPerDay.get(row.date) ?? 0;
     orbPerDay.set(row.date, count + 1);
@@ -393,13 +412,18 @@ async function main() {
       summarizeR(`${variant.label}, 3R target or close, ${groupLabel}`, group.map((row) => row[variant.target3R]));
     }
   }
-  // The card's rule: every non-Pass setup (not just the top 9), 2-minute ORB, 3R target or close, skipped under a 2% stop.
-  const cardRule = rows.filter((row) => row.grade !== 'Pass' && typeof row.orb2Fill === 'number' && typeof row.orb2Stop === 'number'
-    && row.orb2Fill - row.orb2Stop >= (MIN_STOP_PCT / 100) * row.orb2Fill);
+  // The card's rule: every non-Pass setup (not just the top 9), 2-minute ORB, 3R target or close, skipped under a 2% stop or over 1.35 ATR.
+  const cardRule = qualifiedRows.filter((row) => row.grade !== 'Pass' && typeof row.orb2Fill === 'number' && typeof row.orb2Stop === 'number'
+    && row.orb2Fill - row.orb2Stop >= (MIN_STOP_PCT / 100) * row.orb2Fill
+    && typeof row.orb2RiskAtr === 'number' && row.orb2RiskAtr <= MAX_STOP_ATR);
   summarizeR('Card rule, all posted', cardRule.map((row) => row.orb2Target3R));
   for (const grade of ['A+', 'A', 'B']) {
     summarizeR(`Card rule, grade ${grade}`, cardRule.filter((row) => row.grade === grade).map((row) => row.orb2Target3R));
   }
+  summarizeR('Card rule, premarket range < 0.5 ATR (not posted)', rows.filter((row) => row.pmRangeFiltered && row.grade !== 'Pass'
+    && typeof row.orb2Fill === 'number' && typeof row.orb2Stop === 'number'
+    && row.orb2Fill - row.orb2Stop >= (MIN_STOP_PCT / 100) * row.orb2Fill
+    && typeof row.orb2RiskAtr === 'number' && row.orb2RiskAtr <= MAX_STOP_ATR).map((row) => row.orb2Target3R));
   console.log(`New LLM reads: ${newLlmReads} (cache: ${cachePath})`);
   console.log(`Output: ${out}`);
 }

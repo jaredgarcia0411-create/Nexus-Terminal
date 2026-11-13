@@ -26,7 +26,7 @@ import type {
   SwingResearchReport,
 } from '@/lib/agents/types';
 
-import { evaluateTripleBeatSetup } from '@/lib/triple-beat/scan';
+import { MAX_STOP_ATR, evaluateTripleBeatSetup } from '@/lib/triple-beat/scan';
 import { UNKNOWN_EARNINGS_READ } from '@/lib/triple-beat/classify';
 
 type RowQueues = Map<unknown, unknown[][]>;
@@ -560,17 +560,25 @@ describe('agent discord helpers', () => {
     expect(embeds).toHaveLength(2);
     expect(embeds[0]).toMatchObject({
       title: 'Triple Beat earnings · Thu, Oct 29', color: 0x5865F2,
-      description: '🟢 A+ 1 · 🟡 A 0 · ⚪ B 0 · 2 earnings filers · premarket as of 9:00 AM ET\n⚠️ Buy 1¢ over the 9:30–9:32 high. Stop 1¢ under the low of day; skip if that\'s under 2% of price. Sell at 3R or the close.',
+      description: `🟢 A+ 1 · 🟡 A 0 · ⚪ B 0 · 2 earnings filers · premarket as of 9:00 AM ET\n⚠️ Buy 1¢ over the 9:30–9:32 high. Stop 1¢ under the low of day; skip if that's under 2% of price or over ${MAX_STOP_ATR} ATR. Sell at 3R or the close.`,
     });
     expect(embeds[1]).toEqual({
       color: 0x23A55A,
       description: '**NCLH**\n**A+ · 45/45** · Half size (0.5R)\n🏆 Strict triple beat\nBeat on EPS and revenue and raised full-year guidance.',
       fields: [
         { name: 'Min stop', value: '$0.46 · 2% of $23.00', inline: true },
+        { name: 'Max stop', value: '$1.08 · 1.35 ATR ($0.80)', inline: true },
         { name: 'Gap · hold', value: '+15.0% (high +17.0%) · 79% of range', inline: true },
         { name: 'Checklist', value: 'EPS ✅  Rev ✅  Guide ✅  Base ✅  Breakout ✅  $10+ ✅', inline: false },
       ],
     });
+  });
+
+  it('tells the trader to skip when the max stop is under the min stop', () => {
+    const payload = createTripleBeatReportJson();
+    payload.setups[0].metrics.atr14 = 0.3;
+    const embeds = buildTripleBeatScanEmbeds(createStoredReport({ reportJson: payload }) as never);
+    expect(embeds[1].fields).toContainEqual({ name: 'Max stop', value: 'Under min stop, skip', inline: true });
   });
 
   it('limits Triple Beat setup cards to nine and flags mixed catalysts', () => {

@@ -1,6 +1,6 @@
 # Nexus Terminal - HANDOFF.md
 
-> Updated: 2026-11-12
+> Updated: 2026-11-13
 > Purpose: active execution context for Codex. Older implementation detail lives in git history, `specs/`, and durable docs such as `docs/repo-cleanup.md`.
 
 Historical completed sections were removed to keep this file focused. Use git history and the `specs/` directory for archived implementation detail.
@@ -10,6 +10,30 @@ Historical completed sections were removed to keep this file focused. Use git hi
 ---
 
 ## Recently Completed
+
+### Triple Beat: Max Stop of 1.35 ATR on the Cards
+
+Status: completed 2026-11-13.
+
+Outcome:
+- `MAX_STOP_ATR` = 1.35 (`lib/triple-beat/scan.ts`): cards show `Max stop` in dollars next to `Min stop` ("Under min stop, skip" when 1.35 ATR < 2% of price), and the header says to skip stops over 1.35 ATR.
+- Replay `Card rule` lines apply both the 2% floor and the 1.35 ATR cap. Sizing stays flat 0.5R.
+
+Validation:
+- `npm run lint`, `npx tsc --noEmit`, `npm test` (1,138), `npm run workflow:audit`, `npm run build`: PASS.
+- One-day replay smoke (2026-11-05→06): card rule 18/30 trades kept, +7.1R. Still to do: server deploy with `--build`, then check the next post shows `Max stop`.
+
+### Triple Beat Replay: Measure Premarket-Range-Filtered Setups and Opening Volume
+
+Status: completed 2026-11-12.
+
+Outcome:
+- Setups failing only `Stop < 0.5 ATR` now get an earnings read and ORB columns, flagged `pmRangeFiltered`; existing summary lines exclude them, with one new `Card rule, premarket range < 0.5 ATR (not posted)` line.
+- New columns `openDollarVolume2m` and `openRvol2m` (09:30 + 09:31 bars) for the liquidity filter.
+
+Validation:
+- `npm run lint`, `npx tsc --noEmit`, `npm test` (1,137), `npm run workflow:audit`: PASS.
+- One-day smoke (2026-11-05→06): 105 rows, 11 `pmRangeFiltered`, 13 new reads, opening-volume columns filled.
 
 ### Triple Beat: EODHD Consensus Estimates in the Earnings Read
 
@@ -23,7 +47,7 @@ Outcome:
 Validation:
 - `npm run lint`, `npx tsc --noEmit`, `npm test` (1,137), `npm run workflow:audit`, `npm run build`: PASS.
 - One-day replay smoke (2026-11-05→06): 0 new reads on rerun; APP 2026-11-05 now EPS/revenue yes.
-- Still to do: server deploy with `--build`, then check how many live `epsQuote` values start with `EODHD:` after the 9:00 ET scan.
+- Deployed 2026-11-12 (351da77); the 2026-11-13 live post quoted an EODHD revenue consensus (LFTO). `epsQuote` count not checked.
 
 ### Triple Beat: ORB Exit and Flat Half Size on the Cards
 
@@ -36,7 +60,7 @@ Outcome:
 
 Validation:
 - `npm run lint`, `npx tsc --noEmit`, `npm test` (1,137), `npm run workflow:audit`, `npm run build`: PASS.
-- Still to do: server deploy with `--build`, then check the next 9:00 ET post shows the new header, `Half size (0.5R)` and `Min stop`.
+- Deployed 2026-11-12 (351da77); Jared confirmed the 2026-11-13 post shows the new header, `Half size (0.5R)` and `Min stop`.
 
 ---
 
@@ -60,7 +84,7 @@ Ops (Jared):
 Scans (context from the 2026-10-29/30 work, details in git history):
 - Parabolic: short the open with the card's stop, hold to the close. 2024-11→2025-12 +252.6R / 712 posted; 2026 YTD +28.3R / 555. With stops of 0.5 ATR or wider: +124.8R / 402 and +3.6R / 257, since a few tight-stop trades supply most of the rest and their fills may not be achievable. Intraday triggers (OR/VWAP) gave up most of the move out of sample.
 - Triple Beat: 45-pt score (EPS, revenue, guidance, base, breakout, $10+), built in-sample on Apr/Jul/Oct 2026. Posted with the 3x RVOL rule and no hindsight: 2024-11→2025-12 +23.3R / 378; 2026 YTD +25.7R / 319. Without the rule: +27.2R / 406 and +49.3R / 345. The replay can't enter during the 09:30 minute, so the with-rule row is on the cautious side. Judge on live posts.
-- Triple Beat ORB exits (2026-11-12, replay only, `~/replay-compare/orb-derisk/`): on all posted (non-Pass) setups across both periods, 2-min ORB + LOD stop made +119R to +154R before costs for every exit (2R, 3R, 1.5R, breakeven at +1R, half off at +1R); 0.1%/side slippage erases all of them unless stops under 2% of price are skipped. With that floor: 3R target +106R / 1,015 (DD 20R), hold to close +115R (DD 23R), 2R +85R. Jared chose for the cards: 2-min ORB, LOD stop, skip if stop < 2% of price, 3R target or close, no breakeven move. A+ grades lose with every exit while B with the floor makes +43R to +64R, so grading/sizing needs a rework; also open: re-read 2024-25 with consensus, liquidity filter (opening-minute volume).
+- Triple Beat grading (2026-11-13, replay only, `~/replay-compare/grading/`, both periods with consensus re-reads, 0.1%/side slippage, 2% floor): posted +128.8R / 1,155; per trade A+ +0.17, A +0.16, B +0.06 (the earlier "A+ loses" came from pre-consensus 2024-25 reads). Stop ≤ 1.35 ATR was the only factor that held on setups not used to choose it (posted +0.21R/trade vs 0R / 537 wider) → now on the cards. Guidance raised, mixed catalyst, mcap and early trigger were mixed out of sample; opening-minute volume gave no clean liquidity filter; setups dropped by the premarket-range filter trade like posted ones (+0.10, n=99, low priority to drop). Lead to watch live: A+/A with ≥4 of 5 factor points made +0.51R / 182 (mostly in-sample), so sizing stays flat 0.5R until live posts confirm.
 - Earnings read is not fully repeatable: on 2026-11-03 FISV posted B 28, then an identical rerun at 9:12 graded A 36 (revenue/guidance read differently). Watch for grade flips.
 
 ---
